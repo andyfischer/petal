@@ -1,0 +1,71 @@
+// Dataflow Syntax Exploration
+// This file explores the @ operator and other dataflow-oriented syntax
+
+// The @ operator for dataflow programming
+fn process_data(data) {
+    return data
+        @ filter(x => x > 0)
+        @ map(x => x * 2)
+        @ sum()
+}
+
+// Pipeline-style processing
+let numbers = [1, -2, 3, -4, 5, 6]
+let result = numbers @ process_data()
+
+// More complex dataflow with @ operator
+fn image_pipeline(image) {
+    return image
+        @ resize(width: 800, height: 600)
+        @ apply_filter(:gaussian_blur, radius: 2)
+        @ adjust_brightness(0.1)
+        @ save_to("output.png")
+}
+
+// Dataflow with intermediate variables for clarity
+fn data_analysis(dataset) {
+    let cleaned = dataset @ remove_nulls() @ deduplicate()
+    let normalized = cleaned @ normalize() @ scale(0, 1)
+    let features = normalized @ extract_features()
+    return features @ train_model()
+}
+
+// Combining @ operator with pattern matching
+fn process_result(input) {
+    let processed = input @ validate() @ transform()
+    
+    match processed {
+        Success(data) => data @ store() @ notify_completion()
+        Error(msg) => msg @ log_error() @ send_alert()
+        _ => print("Unknown result type")
+    }
+}
+
+// @ operator with optional parameters
+fn graphics_pipeline(scene) {
+    return scene
+        @ render(quality: :high, shadows: true)
+        @ post_process(bloom: true, aa: :msaa4x)
+        @ output(format: :png)
+}
+
+// Dataflow with branching
+fn conditional_processing(data, mode) {
+    let base = data @ clean() @ validate()
+    
+    match mode {
+        :fast => base @ quick_process() @ cache()
+        :quality => base @ detailed_process() @ optimize() @ cache()
+        :debug => base @ add_debug_info() @ log_steps() @ process()
+    }
+}
+
+// Nested dataflow operations
+fn complex_pipeline(inputs) {
+    return inputs @ map(item => {
+        item @ preprocess()
+             @ analyze()
+             @ postprocess()
+    }) @ combine_results()
+       @ finalize()
+}

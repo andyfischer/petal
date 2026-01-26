@@ -1,0 +1,80 @@
+// Functions in Petal
+
+// Basic function
+fn greet(name) {
+    println("Hello, " + name + "!")
+}
+
+greet("World")
+greet("Petal")
+
+println("")
+
+// Function with return value
+fn add(a, b) {
+    return a + b
+}
+
+let sum = add(3, 4)
+println("3 + 4 = " + sum)
+
+println("")
+
+// Single-expression function
+fn square(x) -> x * x
+
+println("square(5) = " + square(5))
+println("square(12) = " + square(12))
+
+println("")
+
+// Recursive function - Factorial
+fn factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+println("factorial(5) = " + factorial(5))
+println("factorial(10) = " + factorial(10))
+
+println("")
+
+// Recursive function - Fibonacci
+fn fibonacci(n) {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+println("First 10 Fibonacci numbers:")
+for i in range(0, 10) {
+    print(fibonacci(i))
+    print(" ")
+}
+println("")
+
+println("")
+
+// Function returning a function (closure)
+fn create_multiplier(factor) {
+    return fn(x) => x * factor
+}
+
+let double = create_multiplier(2)
+let triple = create_multiplier(3)
+
+println("double(5) = " + double(5))
+println("triple(5) = " + triple(5))
+
+println("")
+
+// Higher-order functions
+fn apply_twice(f, x) {
+    return f(f(x))
+}
+
+let result = apply_twice(square, 2)
+println("apply_twice(square, 2) = " + result)

@@ -1,0 +1,78 @@
+// Dataflow programming with the @ operator
+
+// Object updates with @
+let player = {
+    name: "Hero"
+    health: 100
+    score: 0
+}
+
+println("Initial player: " + player)
+
+// Update object using @
+let updated_player = player @ { health: 80 }
+println("After damage: " + updated_player)
+
+// Multiple updates
+let final_player = updated_player @ {
+    score: 100
+    health: 90
+}
+println("After scoring and healing: " + final_player)
+println("")
+
+// Dataflow with functions
+fn double_all(arr) {
+    return map(arr, fn(x) => x * 2)
+}
+
+fn keep_evens(arr) {
+    return filter(arr, fn(x) => x % 2 == 0)
+}
+
+fn total(arr) {
+    return reduce(arr, fn(acc, n) => acc + n, 0)
+}
+
+let numbers = [1, 2, 3, 4, 5]
+println("Original numbers: " + numbers)
+
+// Chain with @ operator
+let doubled = numbers @ double_all()
+println("Doubled: " + doubled)
+
+let evens = doubled @ keep_evens()
+println("Keep evens: " + evens)
+
+let sum_val = evens @ total()
+println("Sum: " + sum_val)
+
+println("")
+
+// Full pipeline
+let result = [1, 2, 3, 4, 5]
+    @ double_all()
+    @ keep_evens()
+    @ total()
+println("Pipeline result: " + result)
+
+println("")
+
+// Game state example
+let game = {
+    level: 1
+    score: 0
+    lives: 3
+}
+
+println("Initial game state: " + game)
+
+// Simulate game updates
+let game = game @ { score: game.score + 100 }
+println("After scoring: " + game)
+
+let game = game @ { lives: game.lives - 1 }
+println("After losing a life: " + game)
+
+let game = game @ { level: game.level + 1, score: game.score + 500 }
+println("After completing level: " + game)

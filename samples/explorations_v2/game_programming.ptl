@@ -1,0 +1,367 @@
+// Game Programming Examples
+// Demonstrating syntax patterns useful for game development
+
+// Game entity system
+struct Entity {
+    id: int
+    position: [float, 2]
+    velocity: [float, 2]
+    components: Map<string, Component>
+}
+
+enum Component {
+    Transform(position: [float, 2], rotation: float, scale: float)
+    Sprite(texture: string, tint: Color)
+    Physics(mass: float, friction: float)
+    Health(current: int, maximum: int)
+    Input(bindings: Map<string, string>)
+}
+
+// Entity creation with fluent syntax
+fn create_player() -> Entity {
+    return Entity{id: generate_id(), position: [0.0, 0.0], velocity: [0.0, 0.0], components: Map([])}
+        @ add_component("transform", Transform([100.0, 100.0], 0.0, 1.0))
+        @ add_component("sprite", Sprite("player.png", :FFFFFF))
+        @ add_component("physics", Physics(1.0, 0.8))
+        @ add_component("health", Health(100, 100))
+        @ add_component("input", Input(Map([
+            ("w", "move_up"),
+            ("s", "move_down"),
+            ("a", "move_left"),
+            ("d", "move_right"),
+            ("space", "jump")
+        ])))
+}
+
+// Game state management
+enum GameState {
+    MainMenu
+    Playing
+    Paused
+    GameOver
+    Loading
+}
+
+struct Game {
+    state: GameState
+    entities: [Entity]
+    systems: [System]
+    input_state: InputState
+    delta_time: float
+}
+
+// System processing with dataflow
+fn update_physics_system(entities, dt) {
+    return entities
+        @ filter(e => e @ has_component("physics") && e @ has_component("transform"))
+        @ map(e => e @ update_physics(dt))
+}
+
+fn update_render_system(entities, camera) {
+    return entities
+        @ filter(e => e @ has_component("sprite") && e @ is_visible(camera))
+        @ sort_by(e => e @ get_render_order())
+        @ map(e => e @ render(camera))
+}
+
+// Input handling for games
+fn process_game_input(input_event, game) {
+    match [game.state, input_event] {
+        [MainMenu, KeyPress("enter", _)] => {
+            game.state = GameState::Playing
+            start_new_game(game)
+        }
+        [Playing, KeyPress("escape", _)] => {
+            game.state = GameState::Paused
+        }
+        [Playing, input] => {
+            game.entities
+                @ filter(e => e @ has_component("input"))
+                @ map(e => e @ process_input(input))
+        }
+        [Paused, KeyPress("escape", _)] => {
+            game.state = GameState::Playing
+        }
+        _ => null
+    }
+}
+
+// Animation system
+struct Animation {
+    frames: [string]
+    frame_duration: float
+    current_frame: int
+    elapsed: float
+    looping: bool
+}
+
+fn Animation.update(self, dt) {
+    self.elapsed += dt
+    
+    if self.elapsed >= self.frame_duration {
+        self.elapsed = 0.0
+        self.current_frame += 1
+        
+        if self.current_frame >= self.frames.length {
+            if self.looping {
+                self.current_frame = 0
+            } else {
+                self.current_frame = self.frames.length - 1
+            }
+        }
+    }
+}
+
+fn Animation.get_current_frame(self) -> string {
+    return self.frames[self.current_frame]
+}
+
+// Collision detection
+struct AABB {
+    min: [float, 2]
+    max: [float, 2]
+}
+
+fn AABB.intersects(self, other) -> bool {
+    return self.max[0] >= other.min[0] &&
+           self.min[0] <= other.max[0] &&
+           self.max[1] >= other.min[1] &&
+           self.min[1] <= other.max[1]
+}
+
+fn check_collisions(entities) {
+    let collisions = []
+    
+    for i in range(0, entities.length) {
+        for j in range(i + 1, entities.length) {
+            let entity_a = entities[i]
+            let entity_b = entities[j]
+            
+            if entity_a @ has_component("collider") && entity_b @ has_component("collider") {
+                let aabb_a = entity_a @ get_aabb()
+                let aabb_b = entity_b @ get_aabb()
+                
+                if aabb_a @ intersects(aabb_b) {
+                    collisions @ push(Collision{entity_a: entity_a, entity_b: entity_b})
+                }
+            }
+        }
+    }
+    
+    return collisions
+}
+
+// Particle system for effects
+struct ParticleSystem {
+    particles: [Particle]
+    emitter_position: [float, 2]
+    emission_rate: float
+    particle_lifetime: float
+    spawn_timer: float
+}
+
+struct Particle {
+    position: [float, 2]
+    velocity: [float, 2]
+    life: float
+    max_life: float
+    color: Color
+    size: float
+}
+
+fn ParticleSystem.update(self, dt) {
+    // Update existing particles
+    self.particles = self.particles
+        @ map(p => p @ update(dt))
+        @ filter(p => p.life > 0.0)
+    
+    // Emit new particles
+    self.spawn_timer += dt
+    let particles_to_spawn = (self.spawn_timer * self.emission_rate) @ floor()
+    
+    if particles_to_spawn > 0 {
+        for i in range(0, particles_to_spawn) {
+            self.particles @ push(self @ create_particle())
+        }
+        self.spawn_timer = 0.0
+    }
+}
+
+// AI behavior trees
+enum BehaviorResult {
+    Success
+    Failure
+    Running
+}
+
+enum BehaviorNode {
+    Sequence(children: [BehaviorNode])
+    Selector(children: [BehaviorNode])
+    Action(action: fn(Entity) -> BehaviorResult)
+    Condition(predicate: fn(Entity) -> bool)
+}
+
+fn execute_behavior(node, entity) -> BehaviorResult {
+    match node {
+        Sequence(children) => {
+            for child in children {
+                match execute_behavior(child, entity) {
+                    Success => continue
+                    result => return result
+                }
+            }
+            return Success
+        }
+        Selector(children) => {
+            for child in children {
+                match execute_behavior(child, entity) {
+                    Failure => continue
+                    result => return result
+                }
+            }
+            return Failure
+        }
+        Action(action) => action(entity)
+        Condition(predicate) => {
+            if predicate(entity) {
+                Success
+            } else {
+                Failure
+            }
+        }
+    }
+}
+
+// Game events and messaging
+enum GameEvent {
+    PlayerDied(player_id: int)
+    EnemySpawned(enemy: Entity)
+    ItemCollected(item_id: int, player_id: int)
+    LevelCompleted(level: int, score: int)
+    ScoreChanged(new_score: int)
+}
+
+struct EventBus {
+    listeners: Map<string, [fn(GameEvent)]>
+}
+
+fn EventBus.subscribe(self, event_type: string, callback: fn(GameEvent)) {
+    match self.listeners @ get(event_type) {
+        Some(callbacks) => callbacks @ push(callback)
+        None => self.listeners @ set(event_type, [callback])
+    }
+}
+
+fn EventBus.publish(self, event: GameEvent) {
+    let event_type = event @ get_type_name()
+    match self.listeners @ get(event_type) {
+        Some(callbacks) => {
+            for callback in callbacks {
+                callback(event)
+            }
+        }
+        None => null
+    }
+}
+
+// Game loop structure
+fn game_loop(game: Game) {
+    let last_time = current_time()
+    
+    loop {
+        let current_time = current_time()
+        let dt = current_time - last_time
+        last_time = current_time
+        
+        // Process input
+        let input_events = poll_input_events()
+        for event in input_events {
+            process_game_input(event, game)
+        }
+        
+        // Update game state
+        match game.state {
+            Playing => {
+                game @ update_systems(dt)
+                game @ check_win_conditions()
+                game @ clean_up_entities()
+            }
+            Paused => {
+                // Only update UI systems
+                game @ update_ui_systems(dt)
+            }
+            _ => null
+        }
+        
+        // Render
+        game @ render_frame()
+        
+        // Cap frame rate
+        let frame_time = current_time() - current_time
+        if frame_time < target_frame_time {
+            sleep(target_frame_time - frame_time)
+        }
+    }
+}
+
+// Resource management
+struct ResourceManager {
+    textures: Map<string, Texture>
+    sounds: Map<string, Sound>
+    fonts: Map<string, Font>
+}
+
+fn ResourceManager.load_texture(self, name: string, path: string) {
+    let texture = load_texture_from_file(path)
+    self.textures @ set(name, texture)
+}
+
+fn ResourceManager.get_texture(self, name: string) -> Option<Texture> {
+    return self.textures @ get(name)
+}
+
+// Tween/interpolation system
+struct Tween {
+    start_value: float
+    end_value: float
+    duration: float
+    elapsed: float
+    easing: EasingFunction
+    complete: bool
+}
+
+enum EasingFunction {
+    Linear
+    EaseIn
+    EaseOut
+    EaseInOut
+}
+
+fn Tween.update(self, dt) -> float {
+    if self.complete {
+        return self.end_value
+    }
+    
+    self.elapsed += dt
+    let t = (self.elapsed / self.duration) @ clamp(0.0, 1.0)
+    
+    if t >= 1.0 {
+        self.complete = true
+        return self.end_value
+    }
+    
+    let eased_t = match self.easing {
+        Linear => t
+        EaseIn => t * t
+        EaseOut => 1.0 - (1.0 - t) * (1.0 - t)
+        EaseInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                1.0 - 2.0 * (1.0 - t) * (1.0 - t)
+            }
+        }
+    }
+    
+    return self.start_value + (self.end_value - self.start_value) * eased_t
+}

@@ -1,0 +1,49 @@
+// Simple function
+func greet(name) {
+    print("Hello, " + name)
+}
+
+// Function with return type
+func add(a: int, b: int) -> int {
+    return a + b
+}
+
+// Function with default parameters
+func multiply(x: float, factor: float = 2.0) -> float {
+    return x * factor
+}
+
+// Anonymous functions
+let square = func(x) => x * x
+let cube = func(x) => x ** 3
+
+// Higher-order functions
+func apply_twice(f, x) {
+    return f(f(x))
+}
+
+let result = apply_twice(square, 3)  // 81
+
+// Variadic functions
+func sum(...numbers) {
+    let total = 0
+    for n in numbers {
+        total = total + n
+    }
+    return total
+}
+
+// Named parameters
+func create_point(x: 0, y: 0, z: 0) {
+    return {x, y, z}
+}
+
+let p = create_point(y: 10, x: 5)  // z defaults to 0
+
+// Recursive function
+func factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}

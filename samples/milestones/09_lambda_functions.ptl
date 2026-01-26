@@ -1,0 +1,33 @@
+// Milestone 9: Lambda functions and closures
+// Test anonymous function syntax
+
+// Simple lambdas
+let square = func(x) => x * x
+let add = func(a, b) => a + b
+let greet = func(name) => "Hello, " + name
+
+// Multi-line lambdas
+let complex = func(x, y) => {
+    let intermediate = x * x + y * y
+    return sqrt(intermediate)
+}
+
+// Lambdas with captures
+let multiplier = 10
+let scale = func(x) => x * multiplier
+
+// Lambdas in higher-order functions
+numbers @ map(func(n) => n * 2)
+items @ filter(func(item) => item.active)
+pairs @ sort(func(a, b) => a.value - b.value)
+
+// Nested lambdas
+let compose = func(f, g) => func(x) => f(g(x))
+
+// Lambda as return value
+func create_adder(n) {
+    return func(x) => x + n
+}
+
+// Immediately invoked lambda
+let result = func(x) => x * x + 1 (5)

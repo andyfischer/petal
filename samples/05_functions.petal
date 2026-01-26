@@ -1,0 +1,55 @@
+// Basic function
+fn greet(name) {
+    print("Hello,", name)
+}
+
+greet("Alice")
+greet("Bob")
+
+// Function with return value
+fn add(a, b) {
+    return a + b
+}
+
+let result = add(3, 5)
+print("3 + 5 =", result)
+
+// Function with multiple operations
+fn factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+print("5! =", factorial(5))
+print("10! =", factorial(10))
+
+// Single-expression function
+fn square(x) -> x * x
+
+print("7 squared =", square(7))
+
+// Function returning early
+fn find_first_even(arr) {
+    for n in arr {
+        if n % 2 == 0 {
+            return n
+        }
+    }
+    return null
+}
+
+let nums = [1, 3, 5, 6, 7, 8]
+print("First even number:", find_first_even(nums))
+
+// Higher-order function
+fn apply_twice(f, x) {
+    return f(f(x))
+}
+
+fn double(n) {
+    return n * 2
+}
+
+print("double applied twice to 3:", apply_twice(double, 3))

@@ -1,0 +1,57 @@
+// Built-in math functions
+print("=== Basic Math ===")
+print("abs(-5):", abs(-5))
+print("min(3, 7):", min(3, 7))
+print("max(3, 7):", max(3, 7))
+print("pow(2, 10):", pow(2, 10))
+
+print("=== Rounding ===")
+let x = 3.7
+print("x =", x)
+print("floor(x):", floor(x))
+print("ceil(x):", ceil(x))
+print("round(x):", round(x))
+
+print("=== Trigonometry ===")
+let pi = 3.14159265359
+print("sin(0):", sin(0))
+print("cos(0):", cos(0))
+print("sin(pi/2):", sin(pi / 2))
+print("cos(pi):", cos(pi))
+
+print("=== Square Roots ===")
+print("sqrt(16):", sqrt(16))
+print("sqrt(2):", sqrt(2))
+
+// Calculate distance
+fn distance(x1, y1, x2, y2) {
+    let dx = x2 - x1
+    let dy = y2 - y1
+    return sqrt(dx * dx + dy * dy)
+}
+
+print("=== Distance ===")
+print("Distance from (0,0) to (3,4):", distance(0, 0, 3, 4))
+
+// Quadratic formula
+fn solve_quadratic(a, b, c) {
+    let discriminant = b * b - 4 * a * c
+    if discriminant < 0 {
+        return []
+    }
+    else if discriminant == 0 {
+        return [-b / (2 * a)]
+    }
+    else {
+        let sqrt_d = sqrt(discriminant)
+        return [
+            (-b + sqrt_d) / (2 * a),
+            (-b - sqrt_d) / (2 * a)
+        ]
+    }
+}
+
+print("=== Quadratic Solutions ===")
+print("x^2 - 5x + 6 = 0:", solve_quadratic(1, -5, 6))
+print("x^2 - 4 = 0:", solve_quadratic(1, 0, -4))
+print("x^2 + 1 = 0:", solve_quadratic(1, 0, 1))

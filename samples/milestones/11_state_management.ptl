@@ -1,0 +1,74 @@
+// Milestone 11: State keyword and stateful programming
+// Test the unique state management features
+
+// Basic state
+func counter() {
+    state count = 0
+    count += 1
+    return count
+}
+
+// Multiple state variables
+func timer() {
+    state elapsed = 0.0
+    state last_time = current_time()
+    
+    let current = current_time()
+    let delta = current - last_time
+    elapsed += delta
+    last_time = current
+    
+    return elapsed
+}
+
+// State in conditionals
+func adaptive_behavior(mode) {
+    if mode == :fast {
+        state fast_counter = 0
+        fast_counter += 2
+        return fast_counter
+    } else {
+        state slow_counter = 0
+        slow_counter += 1
+        return slow_counter
+    }
+}
+
+// State in loops
+func animated_grid(width, height) {
+    let grid = []
+    
+    for y in range(0, height) {
+        let row = []
+        for x in range(0, width) {
+            state cell_phase = random(0.0, 6.28)
+            cell_phase += get_delta_time() * 2.0
+            let value = sin(cell_phase)
+            row @ push(value)
+        }
+        grid @ push(row)
+    }
+    
+    return grid
+}
+
+// Complex state structures
+func particle_system() {
+    state particles = []
+    state emitter = {
+        position: [0.0, 0.0]
+        rate: 10.0
+        timer: 0.0
+    }
+    
+    let dt = get_delta_time()
+    emitter.timer += dt
+    
+    if emitter.timer > (1.0 / emitter.rate) {
+        let new_particle = create_particle(emitter.position)
+        particles @ push(new_particle)
+        emitter.timer = 0.0
+    }
+    
+    return particles
+}

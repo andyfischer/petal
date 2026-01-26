@@ -1,0 +1,482 @@
+[
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/cli/test_main.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/cli/test_main.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/bytecode/compile.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/bytecode/compile.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/bytecode/debug_format_bytecode.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/bytecode/debug_format_bytecode.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/bytecode/debug_format_program.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/bytecode/debug_format_program.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/lib_public.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/lib_public.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/lexer_char_iterator.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/lexer_char_iterator.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/parse_context.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/parse_context.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/parse_error.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/parse_error.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/parse_program.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/parse_program.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/parse_token_iterator.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/parse_token_iterator.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/block.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/block.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/find_by_name.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/find_by_name.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/global_state.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/global_state.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/name_map.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/name_map.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/program.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/program.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/program_building.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/program_building.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/term.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/term.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/term_id.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/term_id.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/program/term_ref.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/program/term_ref.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/const_data_buffer.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/const_data_buffer.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/heap.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/heap.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/heap_types.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/heap_types.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/test_variant.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/test_variant.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/test_vm.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/test_vm.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/variant.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/variant.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/runtime/vm.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/runtime/vm.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/utils/id_source.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/utils/id_source.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/lexer.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/lexer.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/cli/tests.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/cli/tests.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/unity.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/unity.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/cli/main.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/cli/main.cpp"
+  },
+  {
+    "arguments": [
+      "g++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-g",
+      "-Isrc",
+      "-c",
+      "src/parser/parse_steps.cpp"
+    ],
+    "directory": "/Users/andy.fischer/scaffold/petal",
+    "file": "src/parser/parse_steps.cpp"
+  }
+]

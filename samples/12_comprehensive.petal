@@ -1,0 +1,122 @@
+// Comprehensive example: Simple task manager
+
+// Create a task
+fn create_task(id, title, priority) {
+    return {
+        id: id,
+        title: title,
+        priority: priority,
+        completed: false
+    }
+}
+
+// Task manager operations
+fn add_task(tasks, task) {
+    push(tasks, task)
+    return tasks
+}
+
+fn complete_task(tasks, task_id) {
+    for task in tasks {
+        if task.id == task_id {
+            task.completed = true
+        }
+    }
+    return tasks
+}
+
+fn get_pending_tasks(tasks) {
+    let pending = []
+    for task in tasks {
+        if !task.completed {
+            push(pending, task)
+        }
+    }
+    return pending
+}
+
+fn get_tasks_by_priority(tasks, priority) {
+    let result = []
+    for task in tasks {
+        if task.priority == priority {
+            push(result, task)
+        }
+    }
+    return result
+}
+
+fn print_task(task) {
+    let status = "[DONE]"
+    if !task.completed {
+        status = "[    ]"
+    }
+    print(status, "Task", task.id + ":", task.title, "(Priority:", task.priority + ")")
+}
+
+fn print_all_tasks(tasks) {
+    if len(tasks) == 0 {
+        print("No tasks found.")
+        return null
+    }
+    for task in tasks {
+        print_task(task)
+    }
+}
+
+// Main program
+print("=== Task Manager ===")
+print("")
+
+let tasks = []
+
+// Add some tasks
+tasks = add_task(tasks, create_task(1, "Write documentation", "high"))
+tasks = add_task(tasks, create_task(2, "Fix login bug", "high"))
+tasks = add_task(tasks, create_task(3, "Update dependencies", "medium"))
+tasks = add_task(tasks, create_task(4, "Review pull requests", "medium"))
+tasks = add_task(tasks, create_task(5, "Clean up old code", "low"))
+
+print("All tasks:")
+print_all_tasks(tasks)
+print("")
+
+// Complete some tasks
+tasks = complete_task(tasks, 2)
+tasks = complete_task(tasks, 4)
+
+print("After completing tasks 2 and 4:")
+print_all_tasks(tasks)
+print("")
+
+// Show pending tasks
+print("Pending tasks:")
+let pending = get_pending_tasks(tasks)
+print_all_tasks(pending)
+print("")
+
+// Show high priority tasks
+print("High priority tasks:")
+let high_priority = get_tasks_by_priority(tasks, "high")
+print_all_tasks(high_priority)
+print("")
+
+// Statistics
+fn count_completed(tasks) {
+    let count = 0
+    for task in tasks {
+        if task.completed {
+            count += 1
+        }
+    }
+    return count
+}
+
+let total = len(tasks)
+let completed = count_completed(tasks)
+let remaining = total - completed
+
+print("=== Statistics ===")
+print("Total tasks:", total)
+print("Completed:", completed)
+print("Remaining:", remaining)
+print("Completion rate:", (completed * 100) / total, "%")

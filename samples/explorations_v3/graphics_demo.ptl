@@ -1,0 +1,599 @@
+// Graphics Rendering Demo
+// Showcase of various graphics capabilities in Petal
+
+import Graphics
+import Math
+import Input
+
+// Constants
+let SCREEN_WIDTH = 800
+let SCREEN_HEIGHT = 600
+let PI = 3.14159265359
+
+struct DemoState {
+    time: float
+    demo_mode: int
+    mouse_pos: [float, float]
+    particles: [Particle]
+    shapes: [AnimatedShape]
+    fractal_depth: int
+    animation_speed: float
+}
+
+struct Particle {
+    position: [float, float]
+    velocity: [float, float]
+    lifetime: float
+    max_lifetime: float
+    color: Color
+    size: float
+}
+
+struct AnimatedShape {
+    position: [float, float]
+    rotation: float
+    scale: float
+    color: Color
+    shape_type: ShapeType
+    animation_phase: float
+}
+
+enum ShapeType {
+    Circle = 0
+    Square = 1
+    Triangle = 2
+    Star = 3
+    Hexagon = 4
+}
+
+func main() {
+    state demo = create_initial_demo()
+    
+    let dt = get_delta_time()
+    demo = demo @ update_demo(dt) @ handle_input()
+    
+    render_demo(demo, dt)
+}
+
+func create_initial_demo() -> DemoState {
+    return DemoState {
+        time: 0.0
+        demo_mode: 0
+        mouse_pos: [SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2]
+        particles: []
+        shapes: create_animated_shapes()
+        fractal_depth: 4
+        animation_speed: 1.0
+    }
+}
+
+func create_animated_shapes() -> [AnimatedShape] {
+    return for i in range(0, 20) {
+        let angle = (i / 20.0) * 2.0 * PI
+        let radius = 200.0
+        
+        AnimatedShape {
+            position: [
+                SCREEN_WIDTH / 2 + Math.cos(angle) * radius,
+                SCREEN_HEIGHT / 2 + Math.sin(angle) * radius
+            ]
+            rotation: Math.random(0.0, 360.0)
+            scale: Math.random(0.5, 2.0)
+            color: hsv_to_rgb(i * 18.0, 0.8, 0.9)
+            shape_type: (i % 5) @ to_shape_type()
+            animation_phase: Math.random(0.0, 2.0 * PI)
+        }
+    }
+}
+
+func to_shape_type(index: int) -> ShapeType {
+    return match index {
+        0 -> ShapeType::Circle
+        1 -> ShapeType::Square
+        2 -> ShapeType::Triangle
+        3 -> ShapeType::Star
+        4 -> ShapeType::Hexagon
+        _ -> ShapeType::Circle
+    }
+}
+
+func handle_input(demo: DemoState) -> DemoState {
+    let updated_demo = demo
+    
+    // Update mouse position
+    updated_demo.mouse_pos = Input.get_mouse_position()
+    
+    // Switch demo modes
+    if Input.key_pressed("1") { updated_demo.demo_mode = 0 }
+    if Input.key_pressed("2") { updated_demo.demo_mode = 1 }
+    if Input.key_pressed("3") { updated_demo.demo_mode = 2 }
+    if Input.key_pressed("4") { updated_demo.demo_mode = 3 }
+    if Input.key_pressed("5") { updated_demo.demo_mode = 4 }
+    if Input.key_pressed("6") { updated_demo.demo_mode = 5 }
+    
+    // Adjust fractal depth
+    if Input.key_pressed("up") {
+        updated_demo.fractal_depth = Math.min(7, updated_demo.fractal_depth + 1)
+    }
+    if Input.key_pressed("down") {
+        updated_demo.fractal_depth = Math.max(1, updated_demo.fractal_depth - 1)
+    }
+    
+    // Adjust animation speed
+    if Input.key_pressed("left") {
+        updated_demo.animation_speed = Math.max(0.1, updated_demo.animation_speed - 0.1)
+    }
+    if Input.key_pressed("right") {
+        updated_demo.animation_speed = Math.min(3.0, updated_demo.animation_speed + 0.1)
+    }
+    
+    // Create particles on mouse click
+    if Input.mouse_pressed("left") {
+        let new_particles = create_mouse_particles(updated_demo.mouse_pos)
+        updated_demo.particles = updated_demo.particles @ extend(new_particles)
+    }
+    
+    return updated_demo
+}
+
+func update_demo(demo: DemoState, dt: float) -> DemoState {
+    let updated_demo = demo
+    
+    updated_demo.time += dt * demo.animation_speed
+    
+    // Update particles
+    updated_demo.particles = demo.particles
+        @ map(func(p) => update_particle(p, dt))
+        @ filter(func(p) => p.lifetime > 0.0)
+    
+    // Update animated shapes
+    updated_demo.shapes = demo.shapes
+        @ map(func(s) => update_animated_shape(s, dt, demo.time))
+    
+    return updated_demo
+}
+
+func update_particle(particle: Particle, dt: float) -> Particle {
+    return particle @ {
+        position: [
+            particle.position[0] + particle.velocity[0] * dt,
+            particle.position[1] + particle.velocity[1] * dt
+        ]
+        velocity: [
+            particle.velocity[0] * 0.99,  // Air resistance
+            particle.velocity[1] + 200.0 * dt  // Gravity
+        ]
+        lifetime: particle.lifetime - dt
+    }
+}
+
+func update_animated_shape(shape: AnimatedShape, dt: float, time: float) -> AnimatedShape {
+    let orbit_speed = 0.5
+    let orbit_radius = 150.0 + Math.sin(time + shape.animation_phase) * 50.0
+    let angle = time * orbit_speed + shape.animation_phase
+    
+    return shape @ {
+        position: [
+            SCREEN_WIDTH / 2 + Math.cos(angle) * orbit_radius,
+            SCREEN_HEIGHT / 2 + Math.sin(angle) * orbit_radius
+        ]
+        rotation: shape.rotation + 90.0 * dt
+        scale: 0.8 + Math.sin(time * 2.0 + shape.animation_phase) * 0.4
+    }
+}
+
+func create_mouse_particles(position: [float, float]) -> [Particle] {
+    return for i in range(0, 15) {
+        let angle = Math.random(0.0, 2.0 * PI)
+        let speed = Math.random(50.0, 200.0)
+        let lifetime = Math.random(1.0, 3.0)
+        
+        Particle {
+            position: position
+            velocity: [
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed - 100.0  // Initial upward velocity
+            ]
+            lifetime: lifetime
+            max_lifetime: lifetime
+            color: hsv_to_rgb(Math.random(0.0, 360.0), 0.8, 1.0)
+            size: Math.random(2.0, 6.0)
+        }
+    }
+}
+
+func render_demo(demo: DemoState, dt: float) {
+    match demo.demo_mode {
+        0 -> render_particle_demo(demo)
+        1 -> render_geometric_shapes(demo)
+        2 -> render_color_gradients(demo)
+        3 -> render_fractal_trees(demo)
+        4 -> render_wave_patterns(demo)
+        5 -> render_interactive_canvas(demo)
+        _ -> render_particle_demo(demo)
+    }
+    
+    render_ui(demo)
+    Graphics.present()
+}
+
+func render_particle_demo(demo: DemoState) {
+    Graphics.clear(:000011)  // Very dark blue
+    
+    // Render background stars
+    render_starfield(demo.time)
+    
+    // Render animated shapes
+    demo.shapes @ for_each(func(shape) => render_animated_shape(shape))
+    
+    // Render particles
+    demo.particles @ for_each(func(particle) => render_particle(particle))
+    
+    // Render mouse trail
+    render_mouse_trail(demo.mouse_pos, demo.time)
+}
+
+func render_geometric_shapes(demo: DemoState) {
+    Graphics.clear(:1a1a2e)  // Dark purple background
+    
+    let center_x = SCREEN_WIDTH / 2
+    let center_y = SCREEN_HEIGHT / 2
+    let time = demo.time
+    
+    // Rotating geometric patterns
+    for layer in range(0, 5) {
+        let radius = 50.0 + layer * 60.0
+        let shape_count = 6 + layer * 2
+        let rotation_speed = 0.5 - layer * 0.1
+        
+        for i in range(0, shape_count) {
+            let angle = (i / shape_count) * 2.0 * PI + time * rotation_speed
+            let x = center_x + Math.cos(angle) * radius
+            let y = center_y + Math.sin(angle) * radius
+            let size = 20.0 - layer * 3.0
+            
+            let color = hsv_to_rgb((layer * 60.0 + time * 30.0) % 360.0, 0.7, 0.8)
+            
+            match layer % 3 {
+                0 -> Graphics.draw_circle(x, y, size, color, true)
+                1 -> Graphics.draw_rectangle([x - size, y - size, size * 2, size * 2], color, true)
+                2 -> render_triangle(x, y, size, angle, color)
+            }
+        }
+    }
+}
+
+func render_color_gradients(demo: DemoState) {
+    Graphics.clear(:000000)
+    
+    let time = demo.time
+    let grid_size = 40
+    
+    // Animated color grid
+    for y in range(0, SCREEN_HEIGHT / grid_size + 1) {
+        for x in range(0, SCREEN_WIDTH / grid_size + 1) {
+            let screen_x = x * grid_size
+            let screen_y = y * grid_size
+            
+            let hue = (x * 30.0 + y * 20.0 + time * 50.0) % 360.0
+            let saturation = 0.5 + Math.sin(time + x * 0.1) * 0.3
+            let brightness = 0.5 + Math.cos(time + y * 0.1) * 0.3
+            
+            let color = hsv_to_rgb(hue, saturation, brightness)
+            Graphics.draw_rectangle([screen_x, screen_y, grid_size, grid_size], color, true)
+        }
+    }
+    
+    // Radial gradient overlay
+    let center_x = SCREEN_WIDTH / 2 + Math.sin(time) * 100.0
+    let center_y = SCREEN_HEIGHT / 2 + Math.cos(time * 0.7) * 80.0
+    
+    for radius in range(10, 200, 10) {
+        let alpha = 1.0 - (radius / 200.0)
+        let color = hsv_to_rgb(time * 60.0 % 360.0, 0.8, 1.0) @ with_alpha(alpha * 0.3)
+        Graphics.draw_circle(center_x, center_y, radius, color, false)
+    }
+}
+
+func render_fractal_trees(demo: DemoState) {
+    Graphics.clear(:0f0f1f)  // Very dark blue
+    
+    let tree_count = 5
+    let spacing = SCREEN_WIDTH / (tree_count + 1)
+    
+    for i in range(0, tree_count) {
+        let x = spacing * (i + 1)
+        let y = SCREEN_HEIGHT - 50
+        let angle_offset = Math.sin(demo.time + i) * 20.0
+        
+        render_fractal_tree(
+            x, y,
+            -90.0 + angle_offset,  // Start pointing up
+            80.0,  // Initial length
+            demo.fractal_depth,
+            hsv_to_rgb(i * 72.0, 0.6, 0.8)
+        )
+    }
+}
+
+func render_fractal_tree(x: float, y: float, angle: float, length: float, depth: int, color: Color) {
+    if depth <= 0 || length < 5.0 {
+        return
+    }
+    
+    let angle_rad = Math.to_radians(angle)
+    let end_x = x + Math.cos(angle_rad) * length
+    let end_y = y + Math.sin(angle_rad) * length
+    
+    // Draw branch
+    let line_color = color @ with_alpha(depth / 7.0)
+    Graphics.draw_line(x, y, end_x, end_y, line_color, depth)
+    
+    // Draw leaves at the end of small branches
+    if depth <= 2 {
+        let leaf_color = hsv_to_rgb(120.0, 0.7, 0.8)
+        Graphics.draw_circle(end_x, end_y, 3, leaf_color, true)
+    }
+    
+    // Recursive branches
+    let new_length = length * 0.7
+    let new_depth = depth - 1
+    
+    render_fractal_tree(end_x, end_y, angle - 25.0, new_length, new_depth, color)
+    render_fractal_tree(end_x, end_y, angle + 25.0, new_length, new_depth, color)
+}
+
+func render_wave_patterns(demo: DemoState) {
+    Graphics.clear(:000a1a)  // Dark teal
+    
+    let time = demo.time
+    let wave_count = 8
+    
+    // Multiple sine wave layers
+    for wave in range(0, wave_count) {
+        let amplitude = 50.0 + wave * 20.0
+        let frequency = 0.01 + wave * 0.005
+        let phase = time + wave * 0.5
+        let y_offset = SCREEN_HEIGHT / 2 + wave * 15.0
+        
+        let color = hsv_to_rgb(wave * 30.0 + time * 20.0, 0.7, 0.6)
+        
+        let points = for x in range(0, SCREEN_WIDTH, 4) {
+            let y = y_offset + Math.sin(x * frequency + phase) * amplitude
+            [x, y]
+        }
+        
+        Graphics.draw_polyline(points, color, 2)
+    }
+    
+    // Interference patterns
+    let grid_spacing = 40
+    for y in range(0, SCREEN_HEIGHT / grid_spacing) {
+        for x in range(0, SCREEN_WIDTH / grid_spacing) {
+            let screen_x = x * grid_spacing
+            let screen_y = y * grid_spacing
+            
+            let wave1 = Math.sin((screen_x * 0.02 + time) * 2.0)
+            let wave2 = Math.cos((screen_y * 0.02 + time) * 2.0)
+            let interference = (wave1 + wave2) / 2.0
+            
+            let alpha = Math.abs(interference) * 0.5
+            let color = hsv_to_rgb(interference * 180.0 + 180.0, 0.8, 1.0) @ with_alpha(alpha)
+            
+            Graphics.draw_circle(screen_x, screen_y, 8, color, true)
+        }
+    }
+}
+
+func render_interactive_canvas(demo: DemoState) {
+    Graphics.clear(:2a2a3a)
+    
+    let mouse_x = demo.mouse_pos[0]
+    let mouse_y = demo.mouse_pos[1]
+    let time = demo.time
+    
+    // Grid that responds to mouse
+    let grid_size = 30
+    for y in range(0, SCREEN_HEIGHT / grid_size + 1) {
+        for x in range(0, SCREEN_WIDTH / grid_size + 1) {
+            let screen_x = x * grid_size
+            let screen_y = y * grid_size
+            
+            let distance = Math.sqrt(
+                (screen_x - mouse_x) * (screen_x - mouse_x) +
+                (screen_y - mouse_y) * (screen_y - mouse_y)
+            )
+            
+            let influence = Math.max(0.0, 1.0 - distance / 150.0)
+            let size = 5.0 + influence * 15.0
+            let brightness = 0.3 + influence * 0.7
+            
+            let hue = (distance * 0.5 + time * 50.0) % 360.0
+            let color = hsv_to_rgb(hue, 0.8, brightness)
+            
+            Graphics.draw_circle(screen_x, screen_y, size, color, true)
+        }
+    }
+    
+    // Mouse cursor effect
+    for radius in range(10, 100, 15) {
+        let alpha = 1.0 - (radius / 100.0)
+        let color = hsv_to_rgb(time * 120.0 % 360.0, 0.9, 1.0) @ with_alpha(alpha * 0.4)
+        Graphics.draw_circle(mouse_x, mouse_y, radius, color, false)
+    }
+    
+    // Trailing effect
+    state mouse_trail = []
+    mouse_trail = [demo.mouse_pos] @ extend(mouse_trail @ take(20))
+    
+    for i in range(0, mouse_trail.length - 1) {
+        let alpha = (mouse_trail.length - i) / mouse_trail.length * 0.6
+        let color = hsv_to_rgb(i * 18.0 + time * 60.0, 0.8, 1.0) @ with_alpha(alpha)
+        Graphics.draw_circle(
+            mouse_trail[i][0], mouse_trail[i][1],
+            8.0 - i * 0.3,
+            color, true
+        )
+    }
+}
+
+func render_starfield(time: float) {
+    state stars = create_stars()
+    
+    for star in stars {
+        let twinkle = Math.sin(time * (star[2] + 1.0)) * 0.3 + 0.7
+        let color = :FFFFFF @ with_alpha(twinkle)
+        Graphics.draw_point(star[0], star[1], color)
+    }
+}
+
+func create_stars() -> [[float, float, float]] {
+    return for i in range(0, 200) {
+        [
+            Math.random(0, SCREEN_WIDTH),
+            Math.random(0, SCREEN_HEIGHT),
+            Math.random(1.0, 4.0)  // Twinkle speed
+        ]
+    }
+}
+
+func render_animated_shape(shape: AnimatedShape) {
+    let pos = shape.position
+    let size = 20.0 * shape.scale
+    
+    Graphics.push_transform()
+    Graphics.translate(pos[0], pos[1])
+    Graphics.rotate(shape.rotation)
+    Graphics.scale(shape.scale, shape.scale)
+    
+    match shape.shape_type {
+        ShapeType::Circle -> {
+            Graphics.draw_circle(0, 0, size, shape.color, true)
+        }
+        ShapeType::Square -> {
+            Graphics.draw_rectangle([-size, -size, size * 2, size * 2], shape.color, true)
+        }
+        ShapeType::Triangle -> {
+            render_triangle(0, 0, size, 0, shape.color)
+        }
+        ShapeType::Star -> {
+            render_star(0, 0, size, shape.color)
+        }
+        ShapeType::Hexagon -> {
+            render_hexagon(0, 0, size, shape.color)
+        }
+    }
+    
+    Graphics.pop_transform()
+}
+
+func render_triangle(x: float, y: float, size: float, rotation: float, color: Color) {
+    let points = for i in range(0, 3) {
+        let angle = rotation + i * 120.0
+        let angle_rad = Math.to_radians(angle)
+        [
+            x + Math.cos(angle_rad) * size,
+            y + Math.sin(angle_rad) * size
+        ]
+    }
+    Graphics.draw_polygon(points, color, true)
+}
+
+func render_star(x: float, y: float, size: float, color: Color) {
+    let points = for i in range(0, 10) {
+        let angle = i * 36.0
+        let angle_rad = Math.to_radians(angle)
+        let radius = if i % 2 == 0 { size } else { size * 0.5 }
+        [
+            x + Math.cos(angle_rad) * radius,
+            y + Math.sin(angle_rad) * radius
+        ]
+    }
+    Graphics.draw_polygon(points, color, true)
+}
+
+func render_hexagon(x: float, y: float, size: float, color: Color) {
+    let points = for i in range(0, 6) {
+        let angle = i * 60.0
+        let angle_rad = Math.to_radians(angle)
+        [
+            x + Math.cos(angle_rad) * size,
+            y + Math.sin(angle_rad) * size
+        ]
+    }
+    Graphics.draw_polygon(points, color, true)
+}
+
+func render_particle(particle: Particle) {
+    let alpha = particle.lifetime / particle.max_lifetime
+    let color = particle.color @ with_alpha(alpha)
+    Graphics.draw_circle(particle.position[0], particle.position[1], particle.size, color, true)
+}
+
+func render_mouse_trail(mouse_pos: [float, float], time: float) {
+    let trail_length = 30
+    
+    for i in range(0, trail_length) {
+        let age = i / trail_length
+        let offset_angle = time * 2.0 + i * 0.2
+        let offset_radius = age * 20.0
+        
+        let x = mouse_pos[0] + Math.cos(offset_angle) * offset_radius
+        let y = mouse_pos[1] + Math.sin(offset_angle) * offset_radius
+        
+        let alpha = 1.0 - age
+        let hue = (time * 120.0 + i * 12.0) % 360.0
+        let color = hsv_to_rgb(hue, 0.8, 1.0) @ with_alpha(alpha * 0.6)
+        
+        Graphics.draw_circle(x, y, 4.0 - age * 3.0, color, true)
+    }
+}
+
+func hsv_to_rgb(h: float, s: float, v: float) -> Color {
+    let h_normalized = (h % 360.0) / 60.0
+    let c = v * s
+    let x = c * (1.0 - Math.abs((h_normalized % 2.0) - 1.0))
+    let m = v - c
+    
+    let [r, g, b] = if h_normalized < 1.0 {
+        [c, x, 0.0]
+    } else if h_normalized < 2.0 {
+        [x, c, 0.0]
+    } else if h_normalized < 3.0 {
+        [0.0, c, x]
+    } else if h_normalized < 4.0 {
+        [0.0, x, c]
+    } else if h_normalized < 5.0 {
+        [x, 0.0, c]
+    } else {
+        [c, 0.0, x]
+    }
+    
+    let red = ((r + m) * 255) @ round()
+    let green = ((g + m) * 255) @ round()
+    let blue = ((b + m) * 255) @ round()
+    
+    return Color.from_rgb(red, green, blue)
+}
+
+func render_ui(demo: DemoState) {
+    // Mode indicator
+    let mode_name = match demo.demo_mode {
+        0 -> "Particle Demo"
+        1 -> "Geometric Shapes"
+        2 -> "Color Gradients"
+        3 -> "Fractal Trees"
+        4 -> "Wave Patterns"
+        5 -> "Interactive Canvas"
+        _ -> "Unknown"
+    }
+    
+    Graphics.draw_text("Mode: " + mode_name + " (Press 1-6)", 10, 10, :FFFFFF, 18)
+    Graphics.draw_text("Fractal Depth: " + demo.fractal_depth + " (↑↓)", 10, 35, :FFFFFF, 14)
+    Graphics.draw_text("Animation Speed: " + (demo.animation_speed @ round(1)) + "x (←→)", 10, 55, :FFFFFF, 14)
+    Graphics.draw_text("Click to create particles", 10, 75, :FFFFFF, 14)
+    
+    // Performance info
+    Graphics.draw_text("Particles: " + demo.particles.length, 10, SCREEN_HEIGHT - 40, :AAAAAA, 12)
+    Graphics.draw_text("Time: " + (demo.time @ round(1)) + "s", 10, SCREEN_HEIGHT - 25, :AAAAAA, 12)
+}

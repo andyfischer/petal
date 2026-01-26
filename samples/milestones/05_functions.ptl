@@ -1,0 +1,37 @@
+// Milestone 5: Function calls and declarations
+// Test basic function syntax
+
+// Function calls
+print("hello")
+add(1, 2)
+max(x, y)
+create_circle(50, :FF0000)
+
+// Function calls with optional commas
+add(1 2 3)
+create_rect(100 200 :0000FF)
+
+// Function calls with named parameters
+draw_line(x1: 0, y1: 0, x2: 100, y2: 100)
+create_window(width: 800, height: 600, title: "Game")
+
+// Method calls
+player.move(10, 5)
+text.length()
+array.push(item)
+
+// Function declarations
+func greet() {
+    print("Hello!")
+}
+
+func add(a, b) {
+    return a + b
+}
+
+func multiply(x: int, y: int) -> int {
+    return x * y
+}
+
+// Function with body expression
+func square(x) -> x * x

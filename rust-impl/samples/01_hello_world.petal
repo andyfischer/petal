@@ -1,0 +1,6 @@
+// Hello World - The simplest Petal program
+println("Hello, World!")
+
+// You can also print without newline
+print("Hello ")
+println("Petal!")

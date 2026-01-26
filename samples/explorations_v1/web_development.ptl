@@ -1,0 +1,345 @@
+// Web development with HTTP, HTML, and server-side programming
+import web::{Server, Request, Response, Router, Middleware}
+import html::{Html, Element, Attribute}
+import json::{Json, JsonValue}
+import template::{Template, Context}
+
+// Basic HTTP server
+func create_server() -> Server {
+    let server = Server::new("localhost", 8080)
+    
+    // Basic route
+    server.get("/", |req: Request| -> Response {
+        return Response::ok()
+            .with_body("Hello, World!")
+            .with_header("Content-Type", "text/plain")
+    })
+    
+    // JSON API endpoint
+    server.get("/api/users", |req: Request| -> Response {
+        let users = [
+            {id: 1, name: "Alice", email: "alice@example.com"},
+            {id: 2, name: "Bob", email: "bob@example.com"}
+        ]
+        
+        return Response::json(users)
+    })
+    
+    // Route with parameters
+    server.get("/users/:id", |req: Request| -> Response {
+        let user_id = req.param("id").parse::<int>()
+        
+        match user_id {
+            Ok(id) => {
+                if let Some(user) = find_user(id) {
+                    return Response::json(user)
+                } else {
+                    return Response::not_found()
+                        .with_body("User not found")
+                }
+            }
+            Err(_) => {
+                return Response::bad_request()
+                    .with_body("Invalid user ID")
+            }
+        }
+    })
+    
+    // POST endpoint
+    server.post("/api/users", |req: Request| -> Response {
+        let body = req.json::<CreateUserRequest>()
+        
+        match body {
+            Ok(user_data) => {
+                let user = create_user(user_data)
+                return Response::created()
+                    .with_json(user)
+            }
+            Err(error) => {
+                return Response::bad_request()
+                    .with_json({error: error.to_string()})
+            }
+        }
+    })
+    
+    return server
+}
+
+// Middleware
+func logging_middleware(req: Request, next: func(Request) -> Response) -> Response {
+    let start_time = Instant::now()
+    let response = next(req)
+    let duration = start_time.elapsed()
+    
+    println("[{}] {} {} - {} ({:.2}ms)", 
+        now().format("%Y-%m-%d %H:%M:%S"),
+        req.method(),
+        req.path(),
+        response.status(),
+        duration.as_millis()
+    )
+    
+    return response
+}
+
+func cors_middleware(req: Request, next: func(Request) -> Response) -> Response {
+    let mut response = next(req)
+    
+    response.add_header("Access-Control-Allow-Origin", "*")
+    response.add_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    response.add_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    
+    return response
+}
+
+// HTML generation
+func generate_html() -> string {
+    let page = Html::new()
+        .with_title("Petal Web App")
+        .with_meta("viewport", "width=device-width, initial-scale=1")
+        .with_stylesheet("/static/style.css")
+        .with_script("/static/app.js")
+    
+    let body = page.body()
+    
+    // Header
+    let header = Element::new("header")
+        .with_class("main-header")
+        .with_child(
+            Element::new("h1")
+                .with_text("Welcome to Petal")
+                .with_class("title")
+        )
+    
+    // Navigation
+    let nav = Element::new("nav")
+        .with_class("navigation")
+        .with_child(
+            Element::new("ul")
+                .with_children([
+                    Element::new("li")
+                        .with_child(Element::new("a")
+                            .with_attribute("href", "/")
+                            .with_text("Home")),
+                    Element::new("li")
+                        .with_child(Element::new("a")
+                            .with_attribute("href", "/about")
+                            .with_text("About")),
+                    Element::new("li")
+                        .with_child(Element::new("a")
+                            .with_attribute("href", "/contact")
+                            .with_text("Contact"))
+                ])
+        )
+    
+    // Main content
+    let main = Element::new("main")
+        .with_class("main-content")
+        .with_child(
+            Element::new("section")
+                .with_class("hero")
+                .with_child(
+                    Element::new("p")
+                        .with_text("This is a sample web application built with Petal.")
+                        .with_class("hero-text")
+                )
+        )
+    
+    // Form example
+    let form = Element::new("form")
+        .with_attribute("action", "/submit")
+        .with_attribute("method", "POST")
+        .with_class("contact-form")
+        .with_children([
+            Element::new("div")
+                .with_class("form-group")
+                .with_children([
+                    Element::new("label")
+                        .with_attribute("for", "name")
+                        .with_text("Name:"),
+                    Element::new("input")
+                        .with_attribute("type", "text")
+                        .with_attribute("id", "name")
+                        .with_attribute("name", "name")
+                        .with_attribute("required", "true")
+                ]),
+            Element::new("div")
+                .with_class("form-group")
+                .with_children([
+                    Element::new("label")
+                        .with_attribute("for", "email")
+                        .with_text("Email:"),
+                    Element::new("input")
+                        .with_attribute("type", "email")
+                        .with_attribute("id", "email")
+                        .with_attribute("name", "email")
+                        .with_attribute("required", "true")
+                ]),
+            Element::new("button")
+                .with_attribute("type", "submit")
+                .with_text("Submit")
+                .with_class("submit-btn")
+        ])
+    
+    body.add_child(header)
+    body.add_child(nav)
+    body.add_child(main)
+    body.add_child(form)
+    
+    return page.to_string()
+}
+
+// Template system
+func render_template(template_name: string, context: Context) -> string {
+    let template = Template::load("templates/" + template_name + ".html")
+    return template.render(context)
+}
+
+// User management
+struct User {
+    id: int,
+    name: string,
+    email: string,
+    created_at: DateTime
+}
+
+struct CreateUserRequest {
+    name: string,
+    email: string
+}
+
+func find_user(id: int) -> Option<User> {
+    // Database query simulation
+    if id == 1 {
+        return Option::Some(User{
+            id: 1,
+            name: "Alice",
+            email: "alice@example.com",
+            created_at: DateTime::now()
+        })
+    }
+    return Option::None
+}
+
+func create_user(data: CreateUserRequest) -> User {
+    // Database insertion simulation
+    return User{
+        id: generate_id(),
+        name: data.name,
+        email: data.email,
+        created_at: DateTime::now()
+    }
+}
+
+// WebSocket support
+func setup_websocket(server: Server) {
+    server.websocket("/ws", {
+        on_connect: |ws: WebSocket| {
+            println("Client connected: " + ws.id())
+            ws.send_text("Welcome to the chat!")
+        },
+        
+        on_message: |ws: WebSocket, message: string| {
+            println("Received: " + message)
+            
+            // Echo the message back
+            ws.send_text("Echo: " + message)
+            
+            // Broadcast to all connected clients
+            broadcast_to_all(message)
+        },
+        
+        on_disconnect: |ws: WebSocket| {
+            println("Client disconnected: " + ws.id())
+        }
+    })
+}
+
+// Session management
+struct Session {
+    id: string,
+    user_id: Option<int>,
+    data: Map<string, JsonValue>,
+    expires_at: DateTime
+}
+
+func session_middleware(req: Request, next: func(Request) -> Response) -> Response {
+    let session_id = req.cookie("session_id")
+    let session = if let Some(id) = session_id {
+        load_session(id)
+    } else {
+        create_session()
+    }
+    
+    req.set_session(session)
+    
+    let mut response = next(req)
+    
+    // Save session and set cookie
+    save_session(req.session())
+    response.set_cookie("session_id", req.session().id, {
+        max_age: Duration::from_hours(24),
+        http_only: true,
+        secure: true,
+        same_site: "Lax"
+    })
+    
+    return response
+}
+
+// Database abstraction
+trait Database {
+    func connect(connection_string: string) -> Result<Self, DatabaseError>
+    func query(sql: string, params: [JsonValue]) -> Result<[Row], DatabaseError>
+    func execute(sql: string, params: [JsonValue]) -> Result<int, DatabaseError>
+}
+
+struct PostgresDatabase {
+    connection: Connection
+}
+
+impl Database for PostgresDatabase {
+    func connect(connection_string: string) -> Result<PostgresDatabase, DatabaseError> {
+        let connection = postgres::connect(connection_string)?
+        return Ok(PostgresDatabase{connection})
+    }
+    
+    func query(sql: string, params: [JsonValue]) -> Result<[Row], DatabaseError> {
+        return self.connection.query(sql, params)
+    }
+    
+    func execute(sql: string, params: [JsonValue]) -> Result<int, DatabaseError> {
+        return self.connection.execute(sql, params)
+    }
+}
+
+// Main web application
+func main() {
+    let mut server = create_server()
+    
+    // Add middleware
+    server.use_middleware(logging_middleware)
+    server.use_middleware(cors_middleware)
+    server.use_middleware(session_middleware)
+    
+    // Serve static files
+    server.serve_static("/static", "public/")
+    
+    // Setup WebSocket
+    setup_websocket(server)
+    
+    // Add template routes
+    server.get("/about", |req: Request| -> Response {
+        let context = Context::new()
+            .with("title", "About Us")
+            .with("content", "This is the about page")
+        
+        let html = render_template("about", context)
+        return Response::ok()
+            .with_body(html)
+            .with_header("Content-Type", "text/html")
+    })
+    
+    println("Server starting on http://localhost:8080")
+    server.listen()
+}

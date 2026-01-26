@@ -1,0 +1,135 @@
+// Symbols and Enums in Petal
+
+// ============================================
+// Symbols
+// ============================================
+// Symbols are lightweight identifiers prefixed with :
+let status = :active
+let color = :red
+
+println("Status: " + status)
+println("Color: " + color)
+println("")
+
+// Using symbols for state
+fn get_traffic_light_action(light) {
+    return match light {
+        :red -> "Stop"
+        :yellow -> "Caution"
+        :green -> "Go"
+        _ -> "Unknown"
+    }
+}
+
+println("Red light: " + get_traffic_light_action(:red))
+println("Yellow light: " + get_traffic_light_action(:yellow))
+println("Green light: " + get_traffic_light_action(:green))
+println("")
+
+// ============================================
+// State machine with symbols (using if-else)
+// ============================================
+fn next_state(current, event) {
+    if current == :idle && event == :start {
+        return :running
+    }
+    if current == :running && event == :pause {
+        return :paused
+    }
+    if current == :running && event == :stop {
+        return :stopped
+    }
+    if current == :paused && event == :resume {
+        return :running
+    }
+    if current == :paused && event == :stop {
+        return :stopped
+    }
+    if current == :stopped && event == :reset {
+        return :idle
+    }
+    return current
+}
+
+let current_state = :idle
+println("Initial state: " + current_state)
+
+current_state = next_state(current_state, :start)
+println("After start: " + current_state)
+
+current_state = next_state(current_state, :pause)
+println("After pause: " + current_state)
+
+current_state = next_state(current_state, :resume)
+println("After resume: " + current_state)
+
+current_state = next_state(current_state, :stop)
+println("After stop: " + current_state)
+
+current_state = next_state(current_state, :reset)
+println("After reset: " + current_state)
+println("")
+
+// ============================================
+// Using symbols as tags
+// ============================================
+fn create_result(success, value) {
+    if success {
+        return { tag: :ok, value: value }
+    }
+    else {
+        return { tag: :error, value: value }
+    }
+}
+
+fn handle_result(result) {
+    return match result {
+        { tag: :ok } -> "Success: " + result.value
+        { tag: :error } -> "Error: " + result.value
+        _ -> "Unknown result"
+    }
+}
+
+let good = create_result(true, 42)
+let bad = create_result(false, "Something went wrong")
+
+println(handle_result(good))
+println(handle_result(bad))
+println("")
+
+// ============================================
+// Enum-like behavior with symbols
+// ============================================
+let directions = [:north, :east, :south, :west]
+
+fn turn_right(dir) {
+    return match dir {
+        :north -> :east
+        :east -> :south
+        :south -> :west
+        :west -> :north
+        _ -> dir
+    }
+}
+
+fn turn_left(dir) {
+    return match dir {
+        :north -> :west
+        :west -> :south
+        :south -> :east
+        :east -> :north
+        _ -> dir
+    }
+}
+
+let facing = :north
+println("Facing: " + facing)
+
+facing = turn_right(facing)
+println("After right turn: " + facing)
+
+facing = turn_right(facing)
+println("After right turn: " + facing)
+
+facing = turn_left(facing)
+println("After left turn: " + facing)

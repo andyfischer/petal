@@ -1,0 +1,37 @@
+// Milestone 8: Dataflow programming with @ operator
+// Test the core dataflow syntax
+
+// Basic dataflow chains
+data @ filter(positive) @ map(double) @ sum()
+
+numbers @ sort() @ reverse() @ take(5)
+
+text @ trim() @ to_lowercase() @ split(" ")
+
+// Multiline dataflow
+let result = input
+    @ validate()
+    @ clean()
+    @ transform()
+    @ save()
+
+// Dataflow with lambdas
+items
+    @ filter(func(x) => x > 0)
+    @ map(func(x) => x * 2)
+    @ collect()
+
+// Object updates with @
+player @ { health: 100 }
+
+game @ {
+    score: game.score + points
+    level: 2
+}
+
+// Mixed dataflow and updates
+state
+    @ { score: 0 }
+    @ handle_input()
+    @ update_physics()
+    @ { frame_count: state.frame_count + 1 }

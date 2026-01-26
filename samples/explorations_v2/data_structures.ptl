@@ -1,0 +1,268 @@
+// Data Structures Exploration
+// Demonstrating various data structure syntax and patterns
+
+// Arrays with optional commas (per design notes)
+let numbers = [1 2 3 4 5]
+let mixed = [1, "hello", true, 3.14]
+let nested = [[1 2] [3 4] [5 6]]
+
+// Array operations
+let first = numbers[0]
+let last = numbers[-1]  // Negative indexing
+let slice = numbers[1:3]  // Slicing
+let length = numbers.length
+
+// Array methods with dataflow
+let doubled = numbers @ map(x => x * 2)
+let evens = numbers @ filter(x => x % 2 == 0)
+let sum = numbers @ reduce((acc, x) => acc + x, 0)
+
+// Objects/Maps
+let person = {
+    name: "Alice"
+    age: 30
+    email: "alice@example.com"
+    address: {
+        street: "123 Main St"
+        city: "Anytown"
+        zip: "12345"
+    }
+}
+
+// Property access
+let name = person.name
+let city = person.address.city
+let dynamic_key = "email"
+let email = person[dynamic_key]
+
+// Object operations with dataflow
+let updated = person @ merge({age: 31, phone: "555-1234"})
+let keys = person @ get_keys()
+let values = person @ get_values()
+
+// Structs (per design notes - no 'impl' keyword)
+struct Point {
+    x: float
+    y: float
+}
+
+struct Rectangle {
+    top_left: Point
+    width: float
+    height: float
+}
+
+// Member functions declared outside struct
+fn Point.distance_to(self, other) -> float {
+    let dx = other.x - self.x
+    let dy = other.y - self.y
+    return sqrt(dx * dx + dy * dy)
+}
+
+fn Rectangle.area(self) -> float {
+    return self.width * self.height
+}
+
+fn Rectangle.contains(self, point) -> bool {
+    let x_in_range = point.x >= self.top_left.x && 
+                     point.x <= (self.top_left.x + self.width)
+    let y_in_range = point.y >= self.top_left.y && 
+                     point.y <= (self.top_left.y + self.height)
+    return x_in_range && y_in_range
+}
+
+// Using structs
+let p1 = Point{x: 0.0, y: 0.0}
+let p2 = Point{x: 3.0, y: 4.0}
+let distance = p1.distance_to(p2)
+
+let rect = Rectangle{
+    top_left: Point{x: 10.0, y: 10.0},
+    width: 100.0,
+    height: 50.0
+}
+
+// Enums with data
+enum Shape {
+    Circle(radius: float, center: Point)
+    Rectangle(rect: Rectangle)
+    Triangle(a: Point, b: Point, c: Point)
+}
+
+enum Option<T> {
+    Some(T)
+    None
+}
+
+enum Result<T, E> {
+    Ok(T)
+    Err(E)
+}
+
+// Using enums
+let circle = Shape::Circle(radius: 5.0, center: Point{x: 0.0, y: 0.0})
+let maybe_value = Option::Some(42)
+let result = Result::Ok("success")
+
+// Pattern matching on data structures
+fn describe_shape(shape) {
+    match shape {
+        Circle(r, center) => "Circle with radius " + r + " at " + center.x + "," + center.y
+        Rectangle(rect) => "Rectangle with area " + rect.area()
+        Triangle(a, b, c) => "Triangle with vertices at three points"
+    }
+}
+
+// Tuples
+let coordinates = (10.0, 20.0)
+let (x, y) = coordinates
+let named_tuple = (x: 10.0, y: 20.0, z: 30.0)
+
+// Sets
+let unique_numbers = Set([1 2 3 2 1])  // {1, 2, 3}
+let contains_two = unique_numbers @ contains(2)
+let union = unique_numbers @ union(Set([4 5 6]))
+
+// Maps/Dictionaries
+let scores = Map([
+    ("Alice", 95),
+    ("Bob", 87),
+    ("Charlie", 92)
+])
+
+let alice_score = scores @ get("Alice")
+let updated_scores = scores @ set("David", 89)
+
+// Generic data structures
+struct Container<T> {
+    items: [T]
+    capacity: int
+}
+
+fn Container.new<T>(capacity: int) -> Container<T> {
+    return Container{
+        items: [],
+        capacity: capacity
+    }
+}
+
+fn Container.add<T>(self, item: T) -> Result<(), string> {
+    if self.items.length >= self.capacity {
+        return Result::Err("Container is full")
+    }
+    
+    self.items @ push(item)
+    return Result::Ok(())
+}
+
+// Tree structures
+struct TreeNode<T> {
+    value: T
+    children: [TreeNode<T>]
+}
+
+fn TreeNode.add_child<T>(self, child: TreeNode<T>) {
+    self.children @ push(child)
+}
+
+fn TreeNode.find<T>(self, target: T) -> Option<TreeNode<T>> {
+    if self.value == target {
+        return Option::Some(self)
+    }
+    
+    for child in self.children {
+        let found = child.find(target)
+        match found {
+            Some(node) => return found
+            None => continue
+        }
+    }
+    
+    return Option::None
+}
+
+// Linked list
+struct ListNode<T> {
+    value: T
+    next: Option<ListNode<T>>
+}
+
+fn create_list<T>(items: [T]) -> Option<ListNode<T>> {
+    if items.length == 0 {
+        return Option::None
+    }
+    
+    let head = ListNode{value: items[0], next: Option::None}
+    let current = head
+    
+    for i in range(1, items.length) {
+        let new_node = ListNode{value: items[i], next: Option::None}
+        current.next = Option::Some(new_node)
+        current = new_node
+    }
+    
+    return Option::Some(head)
+}
+
+// Graph structures
+struct Graph<T> {
+    nodes: [T]
+    edges: [(int, int)]  // Indices into nodes array
+}
+
+fn Graph.add_node<T>(self, node: T) -> int {
+    self.nodes @ push(node)
+    return self.nodes.length - 1
+}
+
+fn Graph.add_edge<T>(self, from: int, to: int) {
+    self.edges @ push((from, to))
+}
+
+fn Graph.neighbors<T>(self, node_index: int) -> [int] {
+    return self.edges
+        @ filter(edge => edge.0 == node_index)
+        @ map(edge => edge.1)
+}
+
+// Matrix operations
+struct Matrix {
+    data: [[float]]
+    rows: int
+    cols: int
+}
+
+fn Matrix.new(rows: int, cols: int) -> Matrix {
+    let data = range(0, rows) @ map(i => 
+        range(0, cols) @ map(j => 0.0)
+    )
+    return Matrix{data: data, rows: rows, cols: cols}
+}
+
+fn Matrix.get(self, row: int, col: int) -> float {
+    return self.data[row][col]
+}
+
+fn Matrix.set(self, row: int, col: int, value: float) {
+    self.data[row][col] = value
+}
+
+fn Matrix.multiply(self, other: Matrix) -> Option<Matrix> {
+    if self.cols != other.rows {
+        return Option::None
+    }
+    
+    let result = Matrix.new(self.rows, other.cols)
+    
+    for i in range(0, self.rows) {
+        for j in range(0, other.cols) {
+            let sum = 0.0
+            for k in range(0, self.cols) {
+                sum += self.get(i, k) * other.get(k, j)
+            }
+            result.set(i, j, sum)
+        }
+    }
+    
+    return Option::Some(result)
+}

@@ -1,0 +1,60 @@
+// Milestone 12: Advanced language features
+// Test complex syntax combinations and edge cases
+
+// String interpolation
+let name = "Alice"
+let greeting = "Hello, ${name}!"
+let complex = "Score: ${score}, Level: ${level + 1}"
+
+// Multiline strings
+let multiline = """
+    This is a
+    multiline string
+    with ${interpolation}
+"""
+
+// Destructuring assignment
+let [x, y] = [10, 20]
+let {name, age} = person
+let [first, ...rest] = numbers
+
+// Complex nested patterns
+match event {
+    {type: "click", position: {x, y}, button: "left"} -> handle_left_click(x, y)
+    {type: "key", key: key_code, modifiers: [...mods]} -> handle_key(key_code, mods)
+    _ -> {}
+}
+
+// Chained method calls
+let result = text
+    .trim()
+    .to_lowercase()
+    .replace(" ", "_")
+    .split("_")
+
+// Complex dataflow with multiple operations
+let processed = raw_data
+    @ validate()
+    @ filter(func(item) => item.score > threshold)
+    @ map(func(item) => item @ { 
+        normalized_score: item.score / max_score,
+        category: classify(item)
+    })
+    @ group_by(func(item) => item.category)
+    @ map_values(func(group) => group @ sort_by(func(item) => item.score))
+
+// Recursive function with pattern matching
+func factorial(n) {
+    match n {
+        0 -> 1
+        1 -> 1
+        n -> n * factorial(n - 1)
+    }
+}
+
+// Higher-order function composition
+let transform = compose(
+    func(x) => x @ filter(positive),
+    func(x) => x @ map(double),
+    func(x) => x @ sum()
+)

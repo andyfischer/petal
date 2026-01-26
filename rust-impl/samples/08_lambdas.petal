@@ -1,0 +1,75 @@
+// Lambdas and functional programming in Petal
+
+// Simple lambda
+let square = fn(x) => x * x
+let cube = fn(x) => x * x * x
+
+println("square(4) = " + square(4))
+println("cube(3) = " + cube(3))
+println("")
+
+// Lambda with multiple parameters
+let add = fn(a, b) => a + b
+let multiply = fn(a, b) => a * b
+
+println("add(2, 3) = " + add(2, 3))
+println("multiply(4, 5) = " + multiply(4, 5))
+println("")
+
+// Using filter with lambda
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let evens = filter(numbers, fn(n) => n % 2 == 0)
+println("Numbers: " + numbers)
+println("Evens: " + evens)
+println("")
+
+// Using map with lambda
+let squared = map(numbers, fn(n) => n * n)
+println("Squared: " + squared)
+println("")
+
+// Using reduce with lambda
+let sum_result = reduce(numbers, fn(acc, n) => acc + n, 0)
+println("Sum: " + sum_result)
+
+let product = reduce(numbers, fn(acc, n) => acc * n, 1)
+println("Product: " + product)
+println("")
+
+// Chaining operations
+let result = filter(numbers, fn(n) => n % 2 == 0)
+result = map(result, fn(n) => n * n)
+result = reduce(result, fn(acc, n) => acc + n, 0)
+println("Sum of squares of evens: " + result)
+println("")
+
+// Closures capturing variables
+let multiplier = 10
+let scale = fn(x) => x * multiplier
+println("scale(5) with multiplier=10: " + scale(5))
+
+// Function that returns a lambda
+fn make_adder(n) {
+    return fn(x) => x + n
+}
+
+let add5 = make_adder(5)
+let add10 = make_adder(10)
+
+println("add5(3) = " + add5(3))
+println("add10(3) = " + add10(3))
+println("")
+
+// Composing functions
+fn compose(f, g) {
+    return fn(x) => f(g(x))
+}
+
+let add_one = fn(x) => x + 1
+let double = fn(x) => x * 2
+
+let add_then_double = compose(double, add_one)
+let double_then_add = compose(add_one, double)
+
+println("add_then_double(5) = " + add_then_double(5))  // (5+1)*2 = 12
+println("double_then_add(5) = " + double_then_add(5))  // (5*2)+1 = 11

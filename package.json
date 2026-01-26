@@ -1,0 +1,29 @@
+{
+  "name": "@scaffold/petal",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "generate:cpp": "tsx ./ts/generateCpp.ts",
+    "doctest": "yarn build-tests && ./dist/tests/main",
+    "test-all": "yarn doctest && yarn test",
+    "tsc": "tsc",
+    "build": "make",
+    "build:wasm": "./ts/buildWasm.ts --target node",
+    "build:wasm:web": "./ts/buildWasm.ts --target web",
+    "build-and-vitest": "./ts/buildWasm.ts --target node && yarn vitest",
+    "vitest": "vitest"
+  },
+  "dependencies": {
+    "chokidar": "4.0.3",
+    "source-map-support": "0.5.21",
+    "@modelcontextprotocol/sdk": "1.13.2",
+    "yargs": "17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "4.19.4",
+    "typescript": "^4.2.4",
+    "vitest": "3.1.4"
+  }
+}

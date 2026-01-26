@@ -1,0 +1,110 @@
+// Result type for error handling
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+// Option type for nullable values
+enum Option<T> {
+    Some(T),
+    Null
+}
+
+// Function that might fail
+func divide(a: float, b: float) -> Result<float, string> {
+    if b == 0.0 {
+        return Result::Err("Division by zero")
+    }
+    return Result::Ok(a / b)
+}
+
+// Handling results
+let result = divide(10.0, 2.0)
+match result {
+    Result::Ok(value) => print("Result: " + value)
+    Result::Err(error) => print("Error: " + error)
+}
+
+// Result methods
+let value = divide(10.0, 2.0)
+    .unwrap_or(0.0)  // Get value or default
+
+let maybe_result = divide(10.0, 0.0)
+    .unwrap_or_else(|error| {
+        print("Got error: " + error)
+        return 0.0
+    })
+
+// Try operator (?)
+func complex_calculation(x: float, y: float) -> Result<float, string> {
+    let a = divide(x, 2.0)?
+    let b = divide(y, 3.0)?
+    let c = divide(a, b)?
+    return Result::Ok(c * 100.0)
+}
+
+// Option handling
+func find_user(id: int) -> Option<User> {
+    if id in users {
+        return Option::Some(users[id])
+    }
+    return Option::None
+}
+
+let user = find_user(123)
+match user {
+    Option::Some(u) => print("Found user: " + u.name)
+    Option::None => print("User not found")
+}
+
+// Exceptions (for unrecoverable errors)
+func panic_example() {
+    panic("Something went terribly wrong!")
+}
+
+// Try-catch for exceptions
+try {
+    let file = open_file("config.txt")
+    let content = file.read_all()
+    process_config(content)
+} catch FileNotFound {
+    print("Config file not found, using defaults")
+} catch PermissionDenied {
+    print("Cannot read config file, check permissions")
+} catch error {
+    print("Unexpected error: " + error.message)
+} finally {
+    cleanup_resources()
+}
+
+// Custom error types
+struct ValidationError {
+    field: string,
+    message: string
+}
+
+func validate_email(email: string) -> Result<(), ValidationError> {
+    if !email.contains("@") {
+        return Result::Err(ValidationError::new("email", "Must contain @"))
+    }
+    return Result::Ok(())
+}
+
+// Error propagation
+func validate_user(user: User) -> Result<(), [ValidationError]> {
+    let mut errors = []
+    
+    if let Result::Err(e) = validate_email(user.email) {
+        errors.push(e)
+    }
+    
+    if user.age < 0 {
+        errors.push(ValidationError::new("age", "Must be non-negative"))
+    }
+    
+    if errors.is_empty() {
+        return Result::Ok(())
+    } else {
+        return Result::Err(errors)
+    }
+}

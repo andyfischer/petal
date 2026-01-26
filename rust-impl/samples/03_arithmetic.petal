@@ -1,0 +1,40 @@
+// Arithmetic operations in Petal
+
+let a = 10
+let b = 3
+
+println("a = " + a)
+println("b = " + b)
+println("")
+
+// Basic arithmetic
+println("a + b = " + (a + b))
+println("a - b = " + (a - b))
+println("a * b = " + (a * b))
+println("a / b = " + (a / b))
+println("a % b = " + (a % b))
+println("a ** b = " + (a ** b))
+println("")
+
+// Compound assignment
+let x = 100
+println("x = " + x)
+x += 10
+println("x += 10 => " + x)
+x -= 5
+println("x -= 5 => " + x)
+x *= 2
+println("x *= 2 => " + x)
+x /= 5
+println("x /= 5 => " + x)
+println("")
+
+// Math functions
+println("sqrt(16) = " + sqrt(16))
+println("abs(-5) = " + abs(-5))
+println("floor(3.7) = " + floor(3.7))
+println("ceil(3.2) = " + ceil(3.2))
+println("round(3.5) = " + round(3.5))
+println("min(5, 3) = " + min(5, 3))
+println("max(5, 3) = " + max(5, 3))
+println("pow(2, 8) = " + pow(2, 8))

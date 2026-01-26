@@ -1,0 +1,29 @@
+// Milestone 1: Basic literal values
+// Test the parser's ability to handle primitive literals
+
+// Numeric literals
+42
+3.14159
+1.23e-4
+0xFF
+0b1010
+-5
+-2.5
+
+// String literals
+"hello"
+"world"
+""
+
+// Boolean literals
+true
+false
+
+// Null literal
+null
+
+// Color literals
+:FF0000
+:00FF00
+:0000FF
+:FFFFFF80

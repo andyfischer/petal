@@ -1,0 +1,87 @@
+// Classic recursive algorithms
+
+// Factorial
+fn factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+print("=== Factorial ===")
+for i in range(0, 11) {
+    print(str(i) + "! =", factorial(i))
+}
+
+// GCD using Euclidean algorithm
+fn gcd(a, b) {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+print("=== GCD ===")
+print("gcd(48, 18) =", gcd(48, 18))
+print("gcd(100, 35) =", gcd(100, 35))
+print("gcd(17, 23) =", gcd(17, 23))
+
+// LCM using GCD
+fn lcm(a, b) {
+    return (a * b) / gcd(a, b)
+}
+
+print("=== LCM ===")
+print("lcm(4, 6) =", lcm(4, 6))
+print("lcm(15, 20) =", lcm(15, 20))
+
+// Sum of digits (iterative to avoid deep recursion)
+fn sum_digits(n) {
+    let total = 0
+    while n > 0 {
+        total += n % 10
+        n = floor(n / 10)
+    }
+    return total
+}
+
+print("=== Sum of Digits ===")
+print("sum_digits(12345) =", sum_digits(12345))
+print("sum_digits(9999) =", sum_digits(9999))
+
+// Power function (iterative)
+fn power(base, exp) {
+    let result = 1
+    while exp > 0 {
+        if exp % 2 == 1 {
+            result = result * base
+        }
+        base = base * base
+        exp = floor(exp / 2)
+    }
+    return result
+}
+
+print("=== Power ===")
+print("2^10 =", power(2, 10))
+print("3^5 =", power(3, 5))
+
+// Fibonacci (iterative to avoid stack overflow)
+fn fib(n) {
+    if n <= 1 {
+        return n
+    }
+    let a = 0
+    let b = 1
+    for i in range(2, n + 1) {
+        let temp = a + b
+        a = b
+        b = temp
+    }
+    return b
+}
+
+print("=== Fibonacci ===")
+for i in range(0, 15) {
+    print("fib(" + str(i) + ") =", fib(i))
+}

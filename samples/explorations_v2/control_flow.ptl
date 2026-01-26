@@ -1,0 +1,249 @@
+// Control Flow Exploration
+// Demonstrating various control flow patterns and syntax
+
+// Basic if-else statements
+fn check_temperature(temp) {
+    if temp < 0 {
+        return "freezing"
+    } else if temp < 20 {
+        return "cold"
+    } else if temp < 30 {
+        return "warm"
+    } else {
+        return "hot"
+    }
+}
+
+// If expressions (returning values)
+fn max(a, b) {
+    return if a > b { a } else { b }
+}
+
+// For loops with range function (per design notes)
+fn sum_range(start, end) {
+    let total = 0
+    for i in range(start, end) {
+        total += i
+    }
+    return total
+}
+
+// For loop with step
+fn count_by_twos(limit) {
+    let numbers = []
+    for i in range(0, limit, 2) {
+        numbers @ push(i)
+    }
+    return numbers
+}
+
+// For each over collections
+fn process_items(items) {
+    for item in items {
+        print("Processing: " + item)
+        item @ validate() @ transform() @ save()
+    }
+}
+
+// For loop with index and value
+fn find_index(items, target) {
+    for (index, item) in items @ enumerate() {
+        if item == target {
+            return index
+        }
+    }
+    return null
+}
+
+// While loops
+fn find_first_power_of_two_greater_than(n) {
+    let power = 1
+    while power <= n {
+        power *= 2
+    }
+    return power
+}
+
+// Loop with break and continue
+fn process_until_error(data) {
+    let processed = []
+    
+    for item in data {
+        if item == null {
+            continue  // Skip null items
+        }
+        
+        let result = item @ validate()
+        match result {
+            Error(msg) => {
+                print("Error encountered: " + msg)
+                break  // Stop processing on error
+            }
+            Success(value) => {
+                processed @ push(value)
+            }
+        }
+    }
+    
+    return processed
+}
+
+// Infinite loop with break conditions
+fn interactive_loop() {
+    loop {
+        let input = get_user_input()
+        
+        match input {
+            "quit" => break
+            "help" => show_help()
+            "reset" => reset_state()
+            command => {
+                let result = execute_command(command)
+                print("Result: " + result)
+            }
+        }
+    }
+}
+
+// Early returns for control flow
+fn validate_user_input(input) {
+    if input == null {
+        return Error("Input cannot be null")
+    }
+    
+    if input.length == 0 {
+        return Error("Input cannot be empty")
+    }
+    
+    if input.length > 100 {
+        return Error("Input too long")
+    }
+    
+    let sanitized = input @ trim() @ escape_html()
+    return Success(sanitized)
+}
+
+// Control flow with dataflow operator
+fn pipeline_with_early_exit(data) {
+    return data
+        @ validate()
+        @ check(result => match result {
+            Error(_) => return result  // Early exit on error
+            Success(value) => value
+        })
+        @ transform()
+        @ check(result => match result {
+            Error(_) => return result
+            Success(value) => value
+        })
+        @ save()
+}
+
+// Nested control flow
+fn complex_processing(matrix) {
+    let results = []
+    
+    for row in matrix {
+        let row_results = []
+        
+        for cell in row {
+            if cell < 0 {
+                continue  // Skip negative values
+            }
+            
+            let processed = match cell {
+                0 => null
+                n if n < 10 => n * 2
+                n if n < 100 => n + 10
+                _ => 999
+            }
+            
+            if processed != null {
+                row_results @ push(processed)
+            }
+        }
+        
+        if row_results.length > 0 {
+            results @ push(row_results)
+        }
+    }
+    
+    return results
+}
+
+// Control flow with error handling
+fn safe_divide(a, b) {
+    if b == 0 {
+        return Error("Division by zero")
+    }
+    
+    let result = a / b
+    
+    if result @ is_nan() {
+        return Error("Result is NaN")
+    }
+    
+    if result @ is_infinite() {
+        return Error("Result is infinite")
+    }
+    
+    return Success(result)
+}
+
+// Pattern-based control flow
+fn route_request(request) {
+    match request.path {
+        "/api/users" => {
+            match request.method {
+                "GET" => list_users()
+                "POST" => create_user(request.body)
+                _ => error_response(405, "Method not allowed")
+            }
+        }
+        "/api/users/" + user_id => {
+            match request.method {
+                "GET" => get_user(user_id)
+                "PUT" => update_user(user_id, request.body)
+                "DELETE" => delete_user(user_id)
+                _ => error_response(405, "Method not allowed")
+            }
+        }
+        "/health" => health_check()
+        _ => error_response(404, "Not found")
+    }
+}
+
+// State machine using control flow
+enum State {
+    Idle
+    Loading
+    Processing
+    Complete
+    Error(message: string)
+}
+
+fn state_machine(current_state, event) {
+    match [current_state, event] {
+        [Idle, "start"] => Loading
+        [Loading, "data_loaded"] => Processing
+        [Processing, "complete"] => Complete
+        [Processing, "error"] => Error("Processing failed")
+        [Complete, "reset"] => Idle
+        [Error(_), "retry"] => Loading
+        [Error(_), "reset"] => Idle
+        _ => current_state  // No state change
+    }
+}
+
+// Tail recursion for control flow
+fn factorial_tail(n, acc) {
+    if n <= 1 {
+        return acc
+    } else {
+        return factorial_tail(n - 1, acc * n)
+    }
+}
+
+fn factorial(n) {
+    return factorial_tail(n, 1)
+}

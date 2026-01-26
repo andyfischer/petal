@@ -1,0 +1,10 @@
+CompileFlags:
+  Add: [-std=c++17]
+  
+Diagnostics:
+  ClangTidy:
+    Add: [readability-*, performance-*, modernize-*]
+    Remove: [modernize-use-trailing-return-type]
+    
+Index:
+  Background: Build

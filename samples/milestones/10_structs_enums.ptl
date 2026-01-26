@@ -1,0 +1,53 @@
+// Milestone 10: Structs and enums
+// Test type definitions and instantiation
+
+// Simple struct
+struct Point {
+    x: float
+    y: float
+}
+
+// Struct instantiation
+let p1 = Point{x: 0.0, y: 0.0}
+let p2 = Point{x: 10.0, y: 20.0}
+
+// Complex struct
+struct Player {
+    name: string
+    position: Point
+    health: int
+    inventory: [string]
+    stats: {strength: int, agility: int}
+}
+
+// Struct with methods
+func Point.distance_to(self, other) -> float {
+    let dx = other.x - self.x
+    let dy = other.y - self.y
+    return sqrt(dx * dx + dy * dy)
+}
+
+// Simple enum
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+// Enum with data
+enum Shape {
+    Circle(radius: float)
+    Rectangle(width: float, height: float)
+    Triangle(a: float, b: float, c: float)
+}
+
+// Enum usage
+let red = Color::Red
+let circle = Shape::Circle(radius: 5.0)
+let rect = Shape::Rectangle(width: 10.0, height: 20.0)
+
+// Generic struct
+struct Container<T> {
+    items: [T]
+    capacity: int
+}

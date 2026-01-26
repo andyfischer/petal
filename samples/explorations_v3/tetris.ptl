@@ -1,0 +1,619 @@
+// Tetris Game Implementation
+// Classic falling block puzzle game
+
+import Graphics
+import Input
+import Audio
+
+// Constants
+let BOARD_WIDTH = 10
+let BOARD_HEIGHT = 20
+let BLOCK_SIZE = 30
+let BOARD_X = 50
+let BOARD_Y = 50
+let PREVIEW_X = 400
+let PREVIEW_Y = 100
+
+// Colors for different piece types
+let PIECE_COLORS = [
+    :FF0000,  // I - Red
+    :00FF00,  // O - Green  
+    :0000FF,  // T - Blue
+    :FFFF00,  // S - Yellow
+    :FF00FF,  // Z - Magenta
+    :00FFFF,  // J - Cyan
+    :FFA500   // L - Orange
+]
+
+// Tetris piece definitions (as 4x4 grids)
+let PIECE_SHAPES = [
+    // I piece
+    [
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0]
+    ],
+    // O piece
+    [
+        [0, 0, 0, 0],
+        [0, 1, 1, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    // T piece
+    [
+        [0, 0, 0, 0],
+        [0, 1, 0, 0],
+        [1, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    // S piece
+    [
+        [0, 0, 0, 0],
+        [0, 1, 1, 0],
+        [1, 1, 0, 0],
+        [0, 0, 0, 0]
+    ],
+    // Z piece
+    [
+        [0, 0, 0, 0],
+        [1, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    // J piece
+    [
+        [0, 0, 0, 0],
+        [1, 0, 0, 0],
+        [1, 1, 1, 0],
+        [0, 0, 0, 0]
+    ],
+    // L piece
+    [
+        [0, 0, 0, 0],
+        [0, 0, 1, 0],
+        [1, 1, 1, 0],
+        [0, 0, 0, 0]
+    ]
+]
+
+struct GameState {
+    board: [[int]]  // 0 = empty, 1-7 = piece type
+    current_piece: Piece
+    next_piece: Piece
+    score: int
+    lines_cleared: int
+    level: int
+    fall_timer: float
+    fall_speed: float
+    game_over: bool
+    paused: bool
+}
+
+struct Piece {
+    type: int       // Index into PIECE_SHAPES
+    rotation: int   // 0-3
+    x: int
+    y: int
+}
+
+func main() {
+    state game = create_initial_game()
+    
+    let dt = get_delta_time()
+    
+    if !game.paused && !game.game_over {
+        game = game @ handle_input() @ update_game(dt)
+    } else {
+        game = game @ handle_menu_input()
+    }
+    
+    render_game(game)
+}
+
+func create_initial_game() -> GameState {
+    return GameState {
+        board: create_empty_board()
+        current_piece: create_random_piece()
+        next_piece: create_random_piece()
+        score: 0
+        lines_cleared: 0
+        level: 1
+        fall_timer: 0.0
+        fall_speed: 1.0
+        game_over: false
+        paused: false
+    }
+}
+
+func create_empty_board() -> [[int]] {
+    return for y in range(0, BOARD_HEIGHT) {
+        for x in range(0, BOARD_WIDTH) { 0 }
+    }
+}
+
+func create_random_piece() -> Piece {
+    let piece_type = Math.random(0, PIECE_SHAPES.length) @ floor()
+    return Piece {
+        type: piece_type
+        rotation: 0
+        x: BOARD_WIDTH / 2 - 2
+        y: 0
+    }
+}
+
+func handle_input(game: GameState) -> GameState {
+    // Handle pause first
+    let paused_game = if Input.key_pressed("p") {
+        game @ { paused: !game.paused }
+    } else {
+        game
+    }
+    
+    // Movement
+    let after_left = if Input.key_pressed("left") || Input.key_pressed("a") {
+        paused_game @ try_move_piece(-1, 0)
+    } else {
+        paused_game
+    }
+    
+    let after_right = if Input.key_pressed("right") || Input.key_pressed("d") {
+        after_left @ try_move_piece(1, 0)
+    } else {
+        after_left
+    }
+    
+    let after_down = if Input.key_pressed("down") || Input.key_pressed("s") {
+        after_right @ try_move_piece(0, 1)
+    } else {
+        after_right
+    }
+    
+    // Rotation
+    let after_rotation = if Input.key_pressed("up") || Input.key_pressed("w") || Input.key_pressed("space") {
+        after_down @ try_rotate_piece()
+    } else {
+        after_down
+    }
+    
+    // Hard drop
+    let final_game = if Input.key_pressed("enter") {
+        after_rotation @ hard_drop_piece()
+    } else {
+        after_rotation
+    }
+    
+    return final_game
+}
+
+func handle_menu_input(game: GameState) -> GameState {
+    if Input.key_pressed("p") {
+        return game @ { paused: !game.paused }
+    }
+    
+    if game.game_over && Input.key_pressed("r") {
+        return create_initial_game()
+    }
+    
+    return game
+}
+
+func try_move_piece(game: GameState, dx: int, dy: int) -> GameState {
+    let new_piece = game.current_piece @ {
+        x: game.current_piece.x + dx
+        y: game.current_piece.y + dy
+    }
+    
+    if is_valid_position(game.board, new_piece) {
+        return game @ { current_piece: new_piece }
+    }
+    
+    return game
+}
+
+func try_rotate_piece(game: GameState) -> GameState {
+    let new_piece = game.current_piece @ {
+        rotation: (game.current_piece.rotation + 1) % 4
+    }
+    
+    if is_valid_position(game.board, new_piece) {
+        Audio.play_sound("rotate")
+        return game @ { current_piece: new_piece }
+    }
+    
+    return game
+}
+
+func hard_drop_piece(game: GameState) -> GameState {
+    // Find the lowest valid position recursively
+    func find_drop_position(piece: Piece, distance: int) -> [Piece, int] {
+        let test_piece = piece @ { y: piece.y + 1 }
+        if is_valid_position(game.board, test_piece) {
+            return find_drop_position(test_piece, distance + 1)
+        } else {
+            return [piece, distance]
+        }
+    }
+    
+    let [final_piece, drop_distance] = find_drop_position(game.current_piece, 0)
+    
+    // Award points for hard drop
+    let bonus_score = drop_distance * 2
+    
+    return game @ {
+        current_piece: final_piece
+        score: game.score + bonus_score
+    } @ lock_piece()
+}
+
+func is_valid_position(board: [[int]], piece: Piece) -> bool {
+    let shape = get_piece_shape(piece)
+    
+    for y in range(0, 4) {
+        for x in range(0, 4) {
+            if shape[y][x] != 0 {
+                let board_x = piece.x + x
+                let board_y = piece.y + y
+                
+                // Check bounds
+                if board_x < 0 || board_x >= BOARD_WIDTH || 
+                   board_y < 0 || board_y >= BOARD_HEIGHT {
+                    return false
+                }
+                
+                // Check collision with existing blocks
+                if board[board_y][board_x] != 0 {
+                    return false
+                }
+            }
+        }
+    }
+    
+    return true
+}
+
+func get_piece_shape(piece: Piece) -> [[int]] {
+    let base_shape = PIECE_SHAPES[piece.type]
+    
+    return match piece.rotation {
+        0 -> base_shape
+        1 -> rotate_shape_90(base_shape)
+        2 -> rotate_shape_180(base_shape)
+        3 -> rotate_shape_270(base_shape)
+        _ -> base_shape  // Should never happen
+    }
+}
+
+func rotate_shape_90(shape: [[int]]) -> [[int]] {
+    return for y in range(0, 4) {
+        for x in range(0, 4) {
+            shape[3 - x][y]
+        }
+    }
+}
+
+func rotate_shape_180(shape: [[int]]) -> [[int]] {
+    return for y in range(0, 4) {
+        for x in range(0, 4) {
+            shape[3 - y][3 - x]
+        }
+    }
+}
+
+func rotate_shape_270(shape: [[int]]) -> [[int]] {
+    return for y in range(0, 4) {
+        for x in range(0, 4) {
+            shape[x][3 - y]
+        }
+    }
+}
+
+func update_game(game: GameState, dt: float) -> GameState {
+    // Update fall timer and speed
+    let new_fall_timer = game.fall_timer + dt
+    let new_fall_speed = calculate_fall_speed(game.level)
+    
+    // Check if piece should fall
+    if new_fall_timer >= new_fall_speed {
+        return game @ {
+            fall_timer: 0.0
+            fall_speed: new_fall_speed
+        } @ try_fall_piece()
+    } else {
+        return game @ {
+            fall_timer: new_fall_timer
+            fall_speed: new_fall_speed
+        }
+    }
+}
+
+func calculate_fall_speed(level: int) -> float {
+    return Math.max(0.1, 1.0 - (level - 1) * 0.1)
+}
+
+func try_fall_piece(game: GameState) -> GameState {
+    let fallen_piece = game.current_piece @ { y: game.current_piece.y + 1 }
+    
+    if is_valid_position(game.board, fallen_piece) {
+        return game @ { current_piece: fallen_piece }
+    } else {
+        return game @ lock_piece()
+    }
+}
+
+func lock_piece(game: GameState) -> GameState {
+    let shape = get_piece_shape(game.current_piece)
+    let piece = game.current_piece
+    
+    // Create updated board by placing piece
+    let updated_board = place_piece_on_board(game.board, piece, shape)
+    
+    Audio.play_sound("lock")
+    
+    let with_new_piece = game @ {
+        board: updated_board
+        current_piece: game.next_piece
+        next_piece: create_random_piece()
+    }
+    
+    // Clear completed lines
+    let after_lines = with_new_piece @ clear_completed_lines()
+    
+    // Check game over
+    if !is_valid_position(after_lines.board, after_lines.current_piece) {
+        Audio.play_sound("game_over")
+        return after_lines @ { game_over: true }
+    }
+    
+    return after_lines
+}
+
+func place_piece_on_board(board: [[int]], piece: Piece, shape: [[int]]) -> [[int]] {
+    return for row_y in range(0, BOARD_HEIGHT) {
+        for col_x in range(0, BOARD_WIDTH) {
+            // Check if this position should be updated by the piece
+            let piece_updated = false
+            for shape_y in range(0, 4) {
+                for shape_x in range(0, 4) {
+                    if shape[shape_y][shape_x] != 0 {
+                        let board_x = piece.x + shape_x
+                        let board_y = piece.y + shape_y
+                        
+                        if board_x == col_x && board_y == row_y {
+                            piece_updated = true
+                        }
+                    }
+                }
+            }
+            
+            if piece_updated {
+                piece.type + 1
+            } else {
+                board[row_y][col_x]
+            }
+        }
+    }
+}
+
+func clear_completed_lines(game: GameState) -> GameState {
+    let updated_board = game.board
+    let lines_cleared = 0
+    
+    // Check each row from bottom to top
+    for y in range(BOARD_HEIGHT - 1, -1, -1) {
+        if is_line_complete(updated_board[y]) {
+            // Remove the completed line
+            updated_board = remove_line(updated_board, y)
+            lines_cleared += 1
+        }
+    }
+    
+    if lines_cleared > 0 {
+        Audio.play_sound("line_clear")
+        
+        let line_score = match lines_cleared {
+            1 -> 100
+            2 -> 300
+            3 -> 500
+            4 -> 800  // Tetris!
+            _ -> 0
+        }
+        
+        let level_bonus = line_score * game.level
+        
+        return game @ {
+            board: updated_board
+            score: game.score + line_score + level_bonus
+            lines_cleared: game.lines_cleared + lines_cleared
+            level: (game.lines_cleared + lines_cleared) / 10 + 1
+        }
+    }
+    
+    return game @ { board: updated_board }
+}
+
+func is_line_complete(line: [int]) -> bool {
+    return line @ all(func(cell) => cell != 0)
+}
+
+func remove_line(board: [[int]], line_index: int) -> [[int]] {
+    let empty_line = for x in range(0, BOARD_WIDTH) { 0 }
+    
+    return [empty_line] @ extend(
+        board @ take(line_index) @ extend(board @ skip(line_index + 1))
+    )
+}
+
+func render_game(game: GameState) {
+    Graphics.clear(:222222)  // Dark gray background
+    
+    // Render game board
+    render_board(game.board)
+    
+    // Render current piece
+    if !game.game_over {
+        render_piece(game.current_piece, BOARD_X, BOARD_Y)
+        render_piece_ghost(game.current_piece, game.board)
+    }
+    
+    // Render next piece preview
+    render_next_piece(game.next_piece)
+    
+    // Render UI
+    render_ui(game)
+    
+    // Render game over screen
+    if game.game_over {
+        render_game_over(game)
+    }
+    
+    // Render pause screen
+    if game.paused {
+        render_pause_screen()
+    }
+    
+    Graphics.present()
+}
+
+func render_board(board: [[int]]) {
+    // Draw board border
+    let border_rect = [
+        BOARD_X - 2, BOARD_Y - 2,
+        BOARD_WIDTH * BLOCK_SIZE + 4, BOARD_HEIGHT * BLOCK_SIZE + 4
+    ]
+    Graphics.draw_rectangle(border_rect, :FFFFFF, false)
+    
+    // Draw board cells
+    for y in range(0, BOARD_HEIGHT) {
+        for x in range(0, BOARD_WIDTH) {
+            let cell_value = board[y][x]
+            let screen_x = BOARD_X + x * BLOCK_SIZE
+            let screen_y = BOARD_Y + y * BLOCK_SIZE
+            
+            if cell_value != 0 {
+                let color = PIECE_COLORS[cell_value - 1]
+                Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], color, true)
+                Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], :FFFFFF, false)
+            } else {
+                // Draw grid lines
+                Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], :444444, false)
+            }
+        }
+    }
+}
+
+func render_piece(piece: Piece, offset_x: int, offset_y: int) {
+    let shape = get_piece_shape(piece)
+    let color = PIECE_COLORS[piece.type]
+    
+    for y in range(0, 4) {
+        for x in range(0, 4) {
+            if shape[y][x] != 0 {
+                let screen_x = offset_x + (piece.x + x) * BLOCK_SIZE
+                let screen_y = offset_y + (piece.y + y) * BLOCK_SIZE
+                
+                Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], color, true)
+                Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], :FFFFFF, false)
+            }
+        }
+    }
+}
+
+func render_piece_ghost(piece: Piece, board: [[int]]) {
+    // Find ghost piece position (lowest valid position)
+    let ghost_piece = piece
+    
+    loop {
+        let test_piece = ghost_piece @ { y: ghost_piece.y + 1 }
+        if is_valid_position(board, test_piece) {
+            ghost_piece = test_piece
+        } else {
+            break
+        }
+    }
+    
+    // Only render ghost if it's different from current position
+    if ghost_piece.y != piece.y {
+        let shape = get_piece_shape(ghost_piece)
+        let ghost_color = PIECE_COLORS[piece.type] @ with_alpha(0.3)
+        
+        for y in range(0, 4) {
+            for x in range(0, 4) {
+                if shape[y][x] != 0 {
+                    let screen_x = BOARD_X + (ghost_piece.x + x) * BLOCK_SIZE
+                    let screen_y = BOARD_Y + (ghost_piece.y + y) * BLOCK_SIZE
+                    
+                    Graphics.draw_rectangle([screen_x, screen_y, BLOCK_SIZE, BLOCK_SIZE], ghost_color, true)
+                }
+            }
+        }
+    }
+}
+
+func render_next_piece(piece: Piece) {
+    // Draw preview box
+    Graphics.draw_text("NEXT", PREVIEW_X, PREVIEW_Y - 25, :FFFFFF)
+    Graphics.draw_rectangle([PREVIEW_X - 5, PREVIEW_Y - 5, 110, 110], :FFFFFF, false)
+    
+    // Render the next piece
+    let shape = PIECE_SHAPES[piece.type]  // Always show rotation 0
+    let color = PIECE_COLORS[piece.type]
+    
+    for y in range(0, 4) {
+        for x in range(0, 4) {
+            if shape[y][x] != 0 {
+                let screen_x = PREVIEW_X + x * 25
+                let screen_y = PREVIEW_Y + y * 25
+                
+                Graphics.draw_rectangle([screen_x, screen_y, 25, 25], color, true)
+                Graphics.draw_rectangle([screen_x, screen_y, 25, 25], :FFFFFF, false)
+            }
+        }
+    }
+}
+
+func render_ui(game: GameState) {
+    let ui_x = 450
+    let ui_y = 250
+    
+    // Score
+    Graphics.draw_text("SCORE", ui_x, ui_y, :FFFFFF)
+    Graphics.draw_text(game.score @ to_string(), ui_x, ui_y + 25, :FFFF00)
+    
+    // Lines cleared
+    Graphics.draw_text("LINES", ui_x, ui_y + 70, :FFFFFF)
+    Graphics.draw_text(game.lines_cleared @ to_string(), ui_x, ui_y + 95, :FFFF00)
+    
+    // Level
+    Graphics.draw_text("LEVEL", ui_x, ui_y + 140, :FFFFFF)
+    Graphics.draw_text(game.level @ to_string(), ui_x, ui_y + 165, :FFFF00)
+    
+    // Controls
+    let controls_y = 450
+    Graphics.draw_text("CONTROLS:", 50, controls_y, :AAAAAA, 16)
+    Graphics.draw_text("A/D or ←/→: Move", 50, controls_y + 25, :AAAAAA, 14)
+    Graphics.draw_text("S or ↓: Soft drop", 50, controls_y + 45, :AAAAAA, 14)
+    Graphics.draw_text("W/Space or ↑: Rotate", 50, controls_y + 65, :AAAAAA, 14)
+    Graphics.draw_text("Enter: Hard drop", 50, controls_y + 85, :AAAAAA, 14)
+    Graphics.draw_text("P: Pause", 50, controls_y + 105, :AAAAAA, 14)
+}
+
+func render_game_over(game: GameState) {
+    let overlay_color = :000000 @ with_alpha(0.8)
+    Graphics.draw_rectangle([0, 0, 800, 600], overlay_color, true)
+    
+    Graphics.draw_text("GAME OVER", 300, 250, :FF0000, 32)
+    Graphics.draw_text("Final Score: " + game.score, 320, 300, :FFFFFF, 20)
+    Graphics.draw_text("Lines Cleared: " + game.lines_cleared, 315, 330, :FFFFFF, 20)
+    Graphics.draw_text("Level Reached: " + game.level, 320, 360, :FFFFFF, 20)
+    Graphics.draw_text("Press R to restart", 320, 410, :FFFF00, 18)
+}
+
+func render_pause_screen() {
+    let overlay_color = :000000 @ with_alpha(0.6)
+    Graphics.draw_rectangle([0, 0, 800, 600], overlay_color, true)
+    
+    Graphics.draw_text("PAUSED", 350, 280, :FFFF00, 32)
+    Graphics.draw_text("Press P to continue", 320, 320, :FFFFFF, 18)
+}

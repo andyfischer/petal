@@ -1,0 +1,110 @@
+// Arrays
+let numbers = [1, 2, 3, 4, 5]
+let mixed = [1, "hello", true, 3.14]
+
+// Array operations
+let first = numbers[0]
+numbers[1] = 10
+numbers.push(6)
+let last = numbers.pop()
+let length = numbers.length
+
+// Array methods
+let doubled = numbers.map(x => x * 2)
+let evens = numbers.filter(x => x % 2 == 0)
+let sum = numbers.reduce((acc, x) => acc + x, 0)
+
+// Multi-dimensional arrays
+let matrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+let element = matrix[1][2]  // 6
+
+// Objects/Maps
+let person = {
+    name: "Alice",
+    age: 30,
+    email: "alice@example.com",
+    address: {
+        street: "123 Main St",
+        city: "Springfield",
+        zip: "12345"
+    }
+}
+
+// Property access
+let name = person.name
+let city = person.address.city
+let alt_name = person["name"]
+
+// Dynamic property access
+let key = "age"
+let age = person[key]
+
+// Object methods
+let keys = person.keys()
+let values = person.values()
+let entries = person.entries()
+
+// Object merging
+let updated = {...person, age: 31, phone: "555-1234"}
+
+// Sets
+let unique_numbers = Set([1, 2, 3, 2, 1])  // {1, 2, 3}
+unique_numbers.add(4)
+unique_numbers.remove(1)
+let has_two = unique_numbers.has(2)
+
+// Tuples
+let coordinates = (10, 20)
+let (x, y) = coordinates
+
+// Named tuples
+let point = (x: 10, y: 20, z: 30)
+let x_coord = point.x
+
+// Enums
+enum Color {
+    Red,
+    Green,
+    Blue,
+    RGB(r: int, g: int, b: int),
+    HSL(h: float, s: float, l: float)
+}
+
+let red = Color.Red
+let purple = Color.RGB(r: 128, g: 0, b: 128)
+
+// Structs
+struct Point {
+    x: float,
+    y: float
+}
+
+func Point::new(x: float, y: float) -> Point {
+    return Point{x, y}
+}
+
+func Point.distance_to(self, other: Point) -> float {
+    let dx = self.x - other.x
+    let dy = self.y - other.y
+    return sqrt(dx * dx + dy * dy)
+}
+
+let p1 = Point::new(0.0, 0.0)
+let p2 = Point{x: 3.0, y: 4.0}
+let distance = p1.distance_to(p2)
+
+// Union types
+type Value = int | float | string | bool
+
+func process_value(val: Value) {
+    match val {
+        int(n) => print("Integer: " + n)
+        float(f) => print("Float: " + f)
+        string(s) => print("String: " + s)
+        bool(b) => print("Boolean: " + b)
+    }
+}

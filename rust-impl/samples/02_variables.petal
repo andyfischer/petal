@@ -1,0 +1,32 @@
+// Variables and basic types in Petal
+
+// Integer
+let age = 25
+println("Age: " + age)
+
+// Float
+let pi = 3.14159
+println("Pi: " + pi)
+
+// String
+let name = "Alice"
+println("Name: " + name)
+
+// Boolean
+let is_active = true
+println("Active: " + is_active)
+
+// Null
+let nothing = null
+println("Nothing: " + nothing)
+
+// Type conversion
+let float_val = to_float(age)
+println("Age as float: " + float_val)
+
+let str_val = to_string(pi)
+println("Pi as string: " + str_val)
+
+// String interpolation
+let greeting = "Hello, ${name}! You are ${age} years old."
+println(greeting)

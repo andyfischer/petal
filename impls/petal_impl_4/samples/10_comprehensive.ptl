@@ -1,0 +1,19 @@
+// Comprehensive example: Data processing with Petal
+
+print("=== People Database ===")
+
+// Create sample data
+let people = [
+    {name: "Alice", age: 30},
+    {name: "Bob", age: 25}
+]
+
+print("Total people:", len(people))
+
+// Show names
+for person in people {
+    print("Name:", person.name)
+}
+
+print("")
+print("=== Done! ===")

@@ -1,0 +1,40 @@
+// Particle System Demo
+// Demonstrates state management in functions
+
+fn update_particle(id) {
+    // Each particle is tracked by its own function call
+    // State persists across multiple calls with same id
+    print("  Updating particle", id)
+}
+
+fn animate(frames) {
+    state frame_count = 0
+
+    for f in range(0, frames) {
+        frame_count = frame_count + 1
+        print("Frame", frame_count)
+
+        // Simple animation state
+        state x = 0
+        state direction = 1
+
+        x = x + direction * 5
+
+        if x >= 50 {
+            direction = -1
+        }
+        if x <= 0 {
+            direction = 1
+        }
+
+        print("  Position:", x, "Direction:", direction)
+        print("")
+    }
+}
+
+print("Animation Demo")
+print("==============")
+print("Demonstrating state persistence across frames")
+print("")
+
+animate(10)

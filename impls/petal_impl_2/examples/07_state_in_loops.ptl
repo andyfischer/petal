@@ -1,0 +1,42 @@
+// State in loops - per-iteration state
+
+fn particle_simulation(steps) {
+    print("Simulating", steps, "steps")
+
+    for step in range(0, steps) {
+        // Each particle has its own persistent state
+        for particle_id in range(0, 3) {
+            state x = random(0.0, 10.0)
+            state y = random(0.0, 10.0)
+            state vx = random(-0.5, 0.5)
+            state vy = random(-0.5, 0.5)
+
+            // Update position
+            x = x + vx
+            y = y + vy
+
+            // Bounce off walls
+            if x < 0.0 {
+                x = 0.0
+                vx = -vx
+            }
+            if x > 10.0 {
+                x = 10.0
+                vx = -vx
+            }
+            if y < 0.0 {
+                y = 0.0
+                vy = -vy
+            }
+            if y > 10.0 {
+                y = 10.0
+                vy = -vy
+            }
+
+            print("  Particle", particle_id, "at (", floor(x * 10.0) / 10.0, ",", floor(y * 10.0) / 10.0, ")")
+        }
+        print("")
+    }
+}
+
+particle_simulation(5)

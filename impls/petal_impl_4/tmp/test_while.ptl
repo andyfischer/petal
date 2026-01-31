@@ -1,0 +1,9 @@
+// Debug while loop
+let count = 0
+print("Before while, count =", count)
+while (count < 3) {
+    print("Inside while, count =", count)
+    count = count + 1
+    print("After increment, count =", count)
+}
+print("After while, count =", count)

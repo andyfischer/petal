@@ -1,0 +1,16 @@
+[package]
+name = "petal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slotmap = "1.0"
+thiserror = "1.0"
+smallvec = "1.11"
+
+[[bin]]
+name = "petal"
+path = "src/main.rs"
+
+[dev-dependencies]
+# For testing

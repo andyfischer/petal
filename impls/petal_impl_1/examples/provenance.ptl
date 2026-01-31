@@ -1,0 +1,9 @@
+// Provenance Demo
+// This program is used to demonstrate execution tracing
+
+let a = 10
+let b = 20
+let c = a + b
+let d = c * 2
+
+print("Result:", d)

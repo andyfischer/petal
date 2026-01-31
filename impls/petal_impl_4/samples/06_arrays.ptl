@@ -1,0 +1,43 @@
+// Arrays
+
+// Creating arrays
+let empty = []
+let numbers = [1, 2, 3, 4, 5]
+let mixed = [1, "hello", true, 3.14]
+
+print("empty array:", empty)
+print("numbers:", numbers)
+print("mixed:", mixed)
+
+// Array operations
+print("Length of numbers:", len(numbers))
+
+// Push elements
+push(numbers, 6)
+print("After push:", numbers)
+
+// Pop element
+let last = pop(numbers)
+print("Popped:", last)
+print("After pop:", numbers)
+
+// Index access
+print("First element:", numbers[0])
+print("Third element:", numbers[2])
+
+// Iterating over arrays
+print("\nIterating over numbers:")
+for n in numbers {
+    print("n =", n)
+}
+
+// Array of arrays (matrix)
+let matrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+print("\nMatrix:")
+for row in matrix {
+    print(row)
+}

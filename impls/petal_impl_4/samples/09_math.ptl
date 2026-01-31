@@ -1,0 +1,28 @@
+// Math functions
+
+// Square root
+print("sqrt(16) =", sqrt(16))
+print("sqrt(2) =", sqrt(2))
+
+// Trigonometric functions
+print("\nTrigonometry:")
+print("sin(0) =", sin(0))
+print("sin(pi/2) ~", sin(1.57))
+print("cos(0) =", cos(0))
+print("tan(0) =", tan(0))
+
+// Rounding functions
+print("\nRounding:")
+print("floor(3.7) =", floor(3.7))
+print("ceil(3.2) =", ceil(3.2))
+print("round(3.5) =", round(3.5))
+
+// Power
+print("\nPower:")
+print("2^10 =", 2 ** 10)
+print("3^3 =", 3 ** 3)
+
+// Modulo
+print("\nModulo:")
+print("10 % 3 =", 10 % 3)
+print("17 % 5 =", 17 % 5)

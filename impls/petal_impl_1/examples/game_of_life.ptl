@@ -1,0 +1,90 @@
+// Conway's Game of Life (simplified)
+// Demonstrates nested loops, lists, and state
+
+fn count_neighbors(grid, x, y, width, height) {
+    let count = 0
+    for dy in range(-1, 2) {
+        for dx in range(-1, 2) {
+            if dx == 0 && dy == 0 {
+                // Skip self
+            } else {
+                let nx = x + dx
+                let ny = y + dy
+                if nx >= 0 && nx < width && ny >= 0 && ny < height {
+                    if grid[ny][nx] == 1 {
+                        count = count + 1
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+fn print_grid(grid, width, height) {
+    for y in range(0, height) {
+        let row = ""
+        for x in range(0, width) {
+            if grid[y][x] == 1 {
+                row = row + "#"
+            } else {
+                row = row + "."
+            }
+        }
+        print(row)
+    }
+}
+
+fn step_simulation(grid, width, height) {
+    let new_grid = []
+    for y in range(0, height) {
+        let new_row = []
+        for x in range(0, width) {
+            let neighbors = count_neighbors(grid, x, y, width, height)
+            let cell = grid[y][x]
+            if cell == 1 {
+                // Live cell
+                if neighbors < 2 || neighbors > 3 {
+                    push(new_row, 0)  // Dies
+                } else {
+                    push(new_row, 1)  // Survives
+                }
+            } else {
+                // Dead cell
+                if neighbors == 3 {
+                    push(new_row, 1)  // Born
+                } else {
+                    push(new_row, 0)  // Stays dead
+                }
+            }
+        }
+        push(new_grid, new_row)
+    }
+    new_grid
+}
+
+print("Conway's Game of Life")
+print("=====================")
+print("")
+
+// Glider pattern
+let width = 6
+let height = 6
+let grid = [
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0],
+    [0, 1, 1, 1, 0, 0],
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0]
+]
+
+print("Initial state:")
+print_grid(grid, width, height)
+
+for gen in range(1, 5) {
+    print("")
+    print("Generation", gen)
+    grid = step_simulation(grid, width, height)
+    print_grid(grid, width, height)
+}

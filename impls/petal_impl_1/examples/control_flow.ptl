@@ -1,0 +1,53 @@
+// Control Flow in Petal
+
+print("Control Flow Demo")
+print("=================")
+print("")
+
+// If-else expressions (they return values!)
+let x = 10
+
+let result = if x > 0 {
+    "positive"
+} else if x < 0 {
+    "negative"
+} else {
+    "zero"
+}
+
+print("x =", x, "is", result)
+
+// Comparisons
+print("")
+print("Comparisons:")
+print("5 > 3:", 5 > 3)
+print("5 < 3:", 5 < 3)
+print("5 == 5:", 5 == 5)
+print("5 != 3:", 5 != 3)
+print("5 >= 5:", 5 >= 5)
+print("3 <= 5:", 3 <= 5)
+
+// Logical operators
+print("")
+print("Logical operators:")
+print("true && true:", true && true)
+print("true && false:", true && false)
+print("true || false:", true || false)
+print("!true:", !true)
+
+// For loops
+print("")
+print("For loop (0 to 4):")
+for i in range(0, 5) {
+    print("  i =", i)
+}
+
+// While loop
+print("")
+print("While loop (countdown):")
+let n = 5
+while n > 0 {
+    print("  n =", n)
+    n = n - 1
+}
+print("  Liftoff!")

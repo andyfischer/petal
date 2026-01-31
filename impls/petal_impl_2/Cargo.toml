@@ -1,0 +1,12 @@
+[package]
+name = "petal"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "petal"
+path = "src/bin/main.rs"
+
+[dependencies]
+thiserror = "2.0"
+rand = "0.8"

@@ -1,0 +1,6 @@
+fn test() {
+    print("in test")
+}
+print("After defining test")
+test()
+print("After calling test")

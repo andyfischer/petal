@@ -1,0 +1,30 @@
+// Animated counter - demonstrates state management
+// This is a more complex example showing how state persists across function calls
+
+fn animated_counter(frames) {
+    state count = 0
+    state direction = 1
+
+    for frame in range(0, frames) {
+        print("Frame", frame, "| Count:", count)
+
+        count = count + direction
+
+        // Reverse direction at boundaries
+        if count >= 10 {
+            direction = -1
+        }
+        if count <= 0 {
+            direction = 1
+        }
+    }
+
+    print("Final count:", count)
+    count
+}
+
+print("Running animated counter for 30 frames:\n")
+animated_counter(30)
+
+print("\n\nRunning again (state preserved!):\n")
+animated_counter(20)

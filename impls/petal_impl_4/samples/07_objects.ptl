@@ -1,0 +1,52 @@
+// Objects (maps)
+
+// Creating objects
+let empty = {}
+let person = {
+    name: "Alice",
+    age: 30,
+    city: "New York"
+}
+
+print("Person:", person)
+
+// Field access
+print("Name:", person.name)
+print("Age:", person.age)
+
+// Nested objects
+let company = {
+    name: "TechCorp",
+    address: {
+        street: "123 Main St",
+        city: "San Francisco",
+        zip: "94105"
+    },
+    employees: 50
+}
+
+print("\nCompany:")
+print("Name:", company.name)
+print("City:", company.address.city)
+print("Employees:", company.employees)
+
+// Objects in arrays
+let people = [
+    {name: "Alice", age: 30},
+    {name: "Bob", age: 25},
+    {name: "Charlie", age: 35}
+]
+
+print("\nPeople:")
+for p in people {
+    print(p.name, "is", p.age, "years old")
+}
+
+// Array in object
+let data = {
+    values: [10, 20, 30, 40, 50],
+    label: "Sample Data"
+}
+
+print("\nData label:", data.label)
+print("First value:", data.values[0])

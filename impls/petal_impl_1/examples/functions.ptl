@@ -1,0 +1,46 @@
+// Functions in Petal
+
+// Simple function
+fn greet(name) {
+    print("Hello,", name)
+}
+
+greet("Alice")
+greet("Bob")
+
+// Function with return value
+fn square(n) {
+    n * n
+}
+
+print("square(5) =", square(5))
+print("square(12) =", square(12))
+
+// Recursive function: factorial
+fn factorial(n) {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+print("")
+print("Factorials:")
+print("5! =", factorial(5))
+print("10! =", factorial(10))
+
+// Recursive function: fibonacci
+fn fib(n) {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+print("")
+print("Fibonacci numbers:")
+for i in range(0, 12) {
+    print("fib(" + str(i) + ") =", fib(i))
+}

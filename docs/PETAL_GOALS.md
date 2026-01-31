@@ -1,6 +1,6 @@
 # Petal Language Goals
 
-This document describes the high-level design philosophy and goals of the Petal programming language. While the [language specification](./PETAL_SPEC.md) defines syntax and semantics, this document explores the *why* behind those decisions.
+This document describes the high-level design philosophy and goals of the Petal programming language.
 
 ---
 
@@ -13,7 +13,7 @@ The language is built on four foundational pillars:
 1. **Dataflow-First Semantics** - Every construct maps naturally to a dataflow graph
 2. **First-Class State** - Inline state management integrated at the language level
 3. **Projectional Views** - Multiple representations of the same program for different purposes
-4. **Live Editing** - Modify running programs with automatic state reconciliation
+4. **Live Editing** - Modify source code while programs are running
 
 ---
 
@@ -128,6 +128,11 @@ State is not separate from the dataflow model—it is part of it. State creates 
 - Back-propagation can flow through state across time steps
 - The provenance of stateful computations remains intact
 
+
+Another way to think about the state is to think about a program's 'control flow graph', which is a graph of all possible branches of all control flow primitives.
+
+The state of a program is a **subset** of the control flow graph. Some branches are stateful and some are not.
+
 ---
 
 ## Goal 3: Projectional Views
@@ -194,6 +199,28 @@ The workflow might look like:
 
 This enables working at the right level of abstraction for the task at hand.
 
+### Abstract Programming and Cross-Language Editing
+
+A powerful consequence of projectional editing is the ability to work with **foreign programming languages** through Petal's projectional lens.
+
+Consider a program written in a completely different language—JavaScript, C, Python, or any other. Rather than editing the foreign syntax directly, we can:
+
+1. **Mount** the foreign program through a projectional adapter
+2. **View** it as a Petal-style representation (dataflow graph, simplified logic, etc.)
+3. **Edit** the projection using Petal's tools and semantics
+4. **Propagate** those changes back to the foreign syntax
+
+This is *abstract programming*—working at a higher level of abstraction that isn't tied to any particular surface syntax. The projection becomes a universal interface through which any language can be manipulated.
+
+#### Benefits of Cross-Language Projection
+
+- **Unified tooling** - Use the same editing environment regardless of target language
+- **Semantic editing** - Work with program meaning rather than textual syntax
+- **Language migration** - Gradually transform codebases between languages
+- **Polyglot systems** - Reason about systems spanning multiple languages through a single lens
+
+The key insight is that many languages share underlying computational structures (dataflow, control flow, state management) even when their surface syntax differs dramatically. Projections can expose these common structures, enabling cross-language comprehension and manipulation.
+
 ### Projection and Differentiation Together
 
 The projection system synergizes with back-propagation:
@@ -206,144 +233,98 @@ The projection system synergizes with back-propagation:
 
 This combination makes complex optimization tractable by reducing it to a focused, understandable subproblem.
 
-### Abstract Programming and Cross-Language Targeting
-
-A powerful application of projectional editing is **abstract programming**—working with code at a higher level of abstraction that can target multiple underlying representations.
-
-Because projections are bidirectional, Petal can serve as an **abstract editing layer** over foreign programming languages:
-
-1. **Mount** a foreign source file (JavaScript, C, Python, etc.) through a projectional lens
-2. The projection presents the code in Petal's abstract representation
-3. **Edit** the projection using Petal's tools and semantics
-4. Changes are **mapped back** to valid syntax in the foreign language
-
-This enables several workflows:
-
-- **Unified editing experience** - Work with multiple languages through a consistent interface
-- **Cross-language refactoring** - Apply Petal's dataflow analysis to foreign codebases
-- **Gradual migration** - Edit legacy code through Petal projections while maintaining the original language
-- **Polyglot programs** - Seamlessly work across language boundaries in a single project
-
-The key insight is that many programming concepts are universal—functions, loops, conditionals, data structures—even when their syntax differs. A projectional layer can abstract over syntactic differences while preserving semantic intent.
-
-This is related to:
-- **Language-parametric tooling** in IDE research
-- **Abstract syntax trees** as language-independent representations
-- **Transpilation** and source-to-source compilation
-- **Universal AST** projects that aim to unify code representation
-
 ---
 
 ## Goal 4: Live Editing
 
-### The Challenge of Live Modification
+### The Dream of Hot-Reloading
 
-**Live editing** (or "hot reloading") allows developers to modify source code while a program is running, seeing changes take effect immediately without restarting. This creates a fluid, interactive development experience that dramatically tightens the feedback loop.
+One of the most powerful capabilities for interactive development is **live editing**—the ability to modify source code while a program is running and see changes take effect immediately, without restarting.
 
-However, live editing faces a fundamental challenge: **state reconciliation**. When source code changes, how do we handle the live state from the running program?
+Live editing transforms the development experience:
+- **Immediate feedback** - See the effect of changes instantly
+- **State preservation** - Don't lose application state when making changes
+- **Exploration** - Experiment freely without restart penalties
+- **Creative flow** - Stay in the zone without interruptions
 
-- Variables may be added, removed, or renamed
-- Data structures may change shape
-- Initialization logic may differ
-- The relationship between old state and new code may be ambiguous
+### The State Reconciliation Problem
 
-Traditional approaches either:
-- Discard all state on reload (losing work and context)
-- Attempt brittle heuristics to preserve state (often failing unpredictably)
-- Require explicit migration code (adding developer burden)
+The fundamental challenge of live editing is **state reconciliation**: how do we translate the live state from the running program into the new source code?
 
-### Inline State as the Solution
+When source code changes, the runtime faces difficult questions:
+- If a variable is renamed, does the old state carry over?
+- If a new state variable is added, what should its initial value be?
+- If state structure changes, how do we migrate existing state?
+- If control flow changes, which state is still valid?
 
-Petal's **inline state system** provides a natural solution to state reconciliation. Because state is declared inline with `state` keywords at specific locations in the code, the language has explicit knowledge of:
+Traditional languages punt on this problem—either you lose all state on reload, or you're limited to superficial changes that don't affect state shape.
 
-- **Where** state exists in the program structure
-- **What** each piece of state represents
-- **How** state relates to control flow (loops, conditionals)
+### Inline State Enables Live Editing
 
-This structural information enables intelligent state reconciliation:
+Petal's **inline state system** provides a principled solution to state reconciliation. Because state is declared inline with explicit structure, the runtime can automatically handle state changes across code edits.
+
+When source code is modified while a program is running:
+
+1. **State additions** - New `state` declarations are initialized with their default values
+2. **State removals** - Removed `state` declarations are garbage collected
+3. **State modifications** - Changed `state` declarations can be migrated based on structural similarity
+
+The key insight is that inline state creates a **correspondence** between source locations and runtime state. This mapping enables the runtime to intelligently reconcile old state with new code.
 
 ```petal
 fn game_loop() {
-    state player_x = 100      // Identified by location + name
-    state player_y = 200
-    state score = 0
+    state player_x = 0.0
+    state player_y = 0.0
+    state score = 0        // Add this line while running
+    // state lives = 3     // Remove this line while running
 
-    for enemy in enemies {
-        state enemy_health = 100  // Per-iteration state, keyed by loop identity
+    // ... game logic
+}
+```
+
+When the user adds the `score` line during live editing, it initializes to `0` without disturbing `player_x` or `player_y`. When `lives` is removed, its state is cleaned up.
+
+### Control Flow and State Correspondence
+
+The connection between control flow and state (from Goal 2) becomes crucial for live editing. Since state declarations are tied to their control flow context, the runtime can:
+
+- Track which branch of a conditional each state belongs to
+- Preserve loop-iteration state when loop bounds change
+- Handle structural refactoring while maintaining state identity
+
+```petal
+fn animated_particles(count) {
+    for i in range(0, count) {
+        state x = random(0.0, 1.0)
+        state y = random(0.0, 1.0)
+        state velocity = random(0.1, 0.5)
         // ...
     }
 }
 ```
 
-### Automatic State Reconciliation
+If `count` changes from 10 to 15 during live editing, particles 0-9 keep their existing state, and particles 10-14 are initialized fresh.
 
-When source code is modified during execution, Petal can automatically handle state changes:
+### Live Editing and the Dataflow Graph
 
-**State Preservation**
-- State declarations that remain unchanged keep their current values
-- The structural position (function + control flow path + name) serves as a stable identity
+Live editing integrates with Petal's dataflow-first design. When code changes:
 
-**State Insertion**
-- New `state` declarations are initialized with their default values
-- Existing execution continues with the new state seamlessly added
+- The dataflow graph is incrementally updated
+- Only affected nodes are recomputed
+- State flows through the new graph structure
+- Back-propagation paths update accordingly
 
-**State Removal**
-- Removed `state` declarations are cleaned up automatically
-- No orphaned state or memory leaks
+This means live editing isn't just cosmetic—it preserves the full computational semantics while enabling real-time modification.
 
-**State Modification**
-- If a state's type or initial value changes, the system can:
-  - Keep the old value if types are compatible
-  - Re-initialize if types are incompatible
-  - Apply user-defined migration functions for complex cases
+### Related Concepts
 
-### Structural Diffing
+Petal's live editing draws inspiration from:
 
-The key mechanism is **structural diffing** of the state topology:
-
-1. Before: Record the set of active state locations and their values
-2. Edit: User modifies source code
-3. After: Parse the new code and identify state declarations
-4. Diff: Match old state locations to new ones by structural identity
-5. Reconcile: Preserve matched state, initialize new state, remove orphaned state
-
-Because state locations are explicit in the syntax, this diffing is precise and predictable—unlike approaches that rely on variable names alone or runtime heuristics.
-
-### Live Editing Workflow
-
-The intended workflow:
-
-1. **Run** a Petal program (game, visualization, interactive tool)
-2. **Edit** source code in an editor while the program runs
-3. **See** changes take effect immediately—new logic executes, but state persists
-4. **Iterate** rapidly without losing application context
-
-For example, while a game is running:
-- Modify enemy behavior → enemies immediately use new AI
-- Adjust physics parameters → physics changes without resetting positions
-- Add new game mechanic → appears without restarting the level
-- Fix a bug → fixed immediately in the running game
-
-### Relationship to Dataflow
-
-Live editing integrates with Petal's dataflow model:
-
-- The dataflow graph is **incrementally updated** when code changes
-- Only affected computation paths are re-evaluated
-- State nodes in the graph maintain their values across edits
-- Provenance information remains valid for unchanged portions
-
-This means live editing is not just "restart with preserved state" but true **incremental recomputation**—only the changed parts of the program re-execute.
-
-### Relationship to Existing Work
-
-Petal's live editing approach draws from:
-
-- **Smalltalk** and **Lisp** environments - pioneering live programming
-- **Hot module replacement** (Webpack, Vite) - live reloading in web development
-- **React Fast Refresh** - preserving component state across edits
-- **Elm's time-travel debugger** - structured approach to state and history
-- **Live programming research** (Sean McDirmid, Bret Victor) - immediate feedback loops
+- **Hot module replacement** (Webpack, Vite) - But with semantic state preservation
+- **Smalltalk environments** - Live objects with modifiable classes
+- **REPLs and notebooks** - Interactive execution with state
+- **Live coding** (Sonic Pi, Tidal Cycles) - Real-time creative coding
+- **Edit-and-continue debugging** - But as a first-class language feature
 
 ---
 
@@ -384,10 +365,10 @@ These goals have concrete implications for the language design:
 |------|---------|------------------|
 | Dataflow-First | Provenance, back-propagation, reasoning | Dataflow programming, automatic differentiation, FRP |
 | First-Class State | Clean stateful applications, temporal dataflow | React hooks, state machines, temporal logic |
-| Projectional Views | Complexity management, focused editing, AI assistance, cross-language programming | Program slicing, bidirectional transformations, lenses, abstract syntax |
-| Live Editing | Rapid iteration, interactive development, state-preserving hot reload | Hot module replacement, live programming, incremental computation |
+| Projectional Views | Complexity management, focused editing, cross-language programming | Program slicing, bidirectional transformations, lenses |
+| Live Editing | Real-time code modification, state preservation | Hot reloading, Smalltalk, live coding environments |
 
-Together, these goals position Petal as a language where programs are not opaque procedures but **transparent, queryable, and manipulable computation graphs**. This foundation enables capabilities—tracing, differentiation, projection—that are difficult or impossible to add to languages designed around imperative mutation.
+Together, these goals position Petal as a language where programs are not opaque procedures but **transparent, queryable, and manipulable computation graphs**. This foundation enables capabilities—tracing, differentiation, projection, live editing—that are difficult or impossible to add to languages designed around imperative mutation.
 
 ---
 
@@ -402,8 +383,7 @@ Concepts and research areas related to Petal's design goals:
 - **Data Provenance**: Database lineage, why-provenance, how-provenance
 - **Bidirectional Transformations**: Lenses, symmetric lenses, asymmetric lenses
 - **Projectional Editing**: JetBrains MPS, Intentional Software, language workbenches
+- **Cross-Language Transformation**: Language-agnostic ASTs, universal syntax trees
+- **Live Coding**: Sonic Pi, Tidal Cycles, Extempore, live programming environments
+- **Hot Reloading**: Smalltalk image persistence, Erlang hot code swapping, React Fast Refresh
 - **Functional Reactive Programming**: Fran, Elm architecture, signal graphs
-- **Live Programming**: Sean McDirmid's work, Bret Victor's "Inventing on Principle"
-- **Hot Reloading**: Webpack HMR, React Fast Refresh, Erlang hot code swapping
-- **Incremental Computation**: Self-adjusting computation, incremental view maintenance
-- **Language-Parametric Tooling**: Spoofax, universal AST representations

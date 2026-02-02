@@ -1,0 +1,5 @@
+# List creation and operations
+print([1, 2, 3])
+print(range(0, 5))
+print(len([1, 2, 3]))
+print(len("hello"))

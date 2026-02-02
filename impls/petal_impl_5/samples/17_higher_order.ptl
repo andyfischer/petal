@@ -1,0 +1,12 @@
+# Functions as values
+fn apply_twice(f_result, multiplier) {
+    f_result * multiplier * multiplier
+}
+
+fn square(x) {
+    x * x
+}
+
+print(apply_twice(5, 2))
+print(square(7))
+print(apply_twice(square(3), 2))

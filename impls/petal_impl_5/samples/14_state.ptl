@@ -1,0 +1,3 @@
+# State management - persistent across invocations
+state counter = 0
+print(counter)

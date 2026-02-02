@@ -1,0 +1,30 @@
+# Comprehensive example - Simple calculations
+print("=== Petal Language Demo ===")
+print("")
+print("Arithmetic:")
+print(2 + 3)
+print(10 * 5)
+print(20 / 4)
+
+print("")
+print("Lists and operations:")
+print(range(1, 6))
+print(len(range(1, 6)))
+
+print("")
+print("Control flow:")
+if 5 > 3 {
+    print("5 is greater than 3")
+}
+
+print("")
+print("String operations:")
+print("Hello" + " Petal")
+
+print("")
+print("Type system:")
+print(to_string(42))
+print(to_int("100"))
+
+print("")
+print("=== Demo Complete ===")

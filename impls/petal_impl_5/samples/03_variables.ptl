@@ -1,0 +1,5 @@
+# Variable bindings in expressions
+print(5)
+print(3)
+print(5 + 3)
+print(5 * 3)

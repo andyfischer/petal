@@ -1,6 +1,6 @@
-# instructions
+# Instructions
 
-in this directory create a full & working implementation of the Petal programming language.
+In this directory create a full & working implementation of the Petal programming language.
 Use Rust for the implementation.
 
 Read all docs in ../../docs/* to see the technical outline.
@@ -16,16 +16,9 @@ When finished provide:
  - Feedback on the docs - areas where the docs need improvement?
  - Thoughts for next steps
 
-# followup
-
-### If they start running random scripts:
-
-Set up a test script to help you eval sections of code on the command line (this will make permission checks
-  easier)
-
-# test set
+# Test directories
 
 petal_impl_1 - Opus 4.5
 petal_impl_2 - Sonnet 4.5
-petal_impl_3 - xxx
+petal_impl_3 - unused
 petal_impl_4 - Kimi 2.5

@@ -1,0 +1,87 @@
+// Gradient Descent
+// Using Petal's backflow to optimize parameters toward a target.
+//
+// stdlib function: optimize(f, initial_args, target, options) -> record
+//   Iteratively adjusts inputs to minimize |f(args) - target|.
+//   options: { learning_rate, max_steps, tolerance }
+//   Returns: { args, value, steps, converged }
+//
+// This example also shows manual gradient descent using grad().
+
+// --- Example 1: Find x where x^2 = 25 (i.e., x = 5) ---
+
+fn square(x) { x * x }
+
+// Manual gradient descent
+let x = 1.0
+let learning_rate = 0.01
+let target = 25.0
+
+for step in range(0, 200) {
+    let value = square(x)
+    let error = value - target
+
+    if abs(error) < 0.001 {
+        print("Converged at step", step)
+        print("  x =", x, " x^2 =", value)
+        break
+    }
+
+    // gradient of (x^2 - 25)^2 with respect to x is 4x(x^2 - 25)
+    // but with Petal's grad, we get d(x^2)/dx = 2x, and adjust by error
+    let g = grad(square)
+    let gradient = g(x)
+    x = x - learning_rate * error * gradient / target
+}
+
+print("")
+
+// --- Example 2: Using the optimize stdlib ---
+// Find inputs where f(a, b) = a^2 + b^2 reaches minimum (closest to 0)
+
+fn sum_of_squares(a, b) {
+    a * a + b * b
+}
+
+let result = optimize(sum_of_squares, [3.0, 4.0], 0.0, {
+    learning_rate: 0.1
+    max_steps: 100
+    tolerance: 0.001
+})
+
+print("Minimizing a^2 + b^2 from (3, 4):")
+print("  Final args:", result.args)
+print("  Final value:", result.value)
+print("  Steps:", result.steps)
+print("  Converged:", result.converged)
+print("")
+
+// --- Example 3: Fitting a linear function ---
+// Find m and b where m*x + b best fits some data points
+
+fn linear(m, b, x) {
+    m * x + b
+}
+
+// Target: y = 2x + 1
+let data = [[1, 3], [2, 5], [3, 7], [4, 9]]
+
+fn loss(m, b) {
+    let total = 0.0
+    for point in data {
+        let predicted = linear(m, b, point[0])
+        let diff = predicted - point[1]
+        total = total + diff * diff
+    }
+    total
+}
+
+let fit = optimize(loss, [0.0, 0.0], 0.0, {
+    learning_rate: 0.01
+    max_steps: 1000
+    tolerance: 0.0001
+})
+
+print("Fitting y = mx + b to data points:")
+print("  m =", fit.args[0], " b =", fit.args[1])
+print("  Loss:", fit.value)

@@ -1,8 +1,0 @@
-// Debug with print
-let count = 0
-print("Before loop")
-while (count < 2) {
-    print("In loop, count:", count)
-    count = count + 1
-}
-print("After loop, count:", count)

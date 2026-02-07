@@ -1,0 +1,73 @@
+// Live Editing
+// Modifying a running program while preserving its state.
+// See tech_outline/topics/Metaprogramming.md for the full Program API.
+//
+// Key methods used here:
+//   Program.parse(source)              -- parse source into a Program
+//   program.run()                      -- execute (state persists across calls)
+//   program.edit(old_text, new_text)   -- apply edit, returns Reconciliation
+//   program.source()                   -- current source code as string
+
+// --- Example 1: Edit a counter's increment ---
+
+let prog = Program.parse("
+    fn counter() {
+        state count = 0
+        count = count + 1
+        count
+    }
+    counter()
+")
+
+print("=== Live Edit Demo ===")
+print("")
+print("Original program:")
+print(prog.source())
+
+// Run three times to build up state
+for i in range(1, 4) {
+    print("Call", i, ":", prog.run())
+}
+
+// Now edit: change "count + 1" to "count + 10"
+print("")
+let recon = prog.edit("count + 1", "count + 10")
+print("--- Edit applied ---")
+print("Modified program:")
+print(prog.source())
+print("")
+print("State reconciliation:")
+print("  Preserved:", recon.preserved)
+print("  Initialized:", recon.initialized)
+print("  Removed:", recon.removed)
+print("")
+
+// Continue running -- state picks up where it left off
+for i in range(4, 7) {
+    print("Call", i, ":", prog.run())
+}
+print("")
+print("The count continued from 3, now incrementing by 10!")
+print("")
+
+// --- Example 2: Adding new state to a running program ---
+
+let anim = Program.parse("
+    state x = 0
+    x = x + 1
+    print(\"x =\", x)
+")
+
+print("=== Adding State ===")
+anim.run()
+anim.run()
+
+// Add a new state variable
+let recon2 = anim.edit(
+    "state x = 0",
+    "state x = 0\n    state y = 100"
+)
+print("Added 'y' state variable:")
+print("  Preserved:", recon2.preserved, " Initialized:", recon2.initialized)
+
+anim.run()

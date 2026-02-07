@@ -1,8 +1,0 @@
-state x = 0
-print("Start")
-while x < 2 {
-    print("In loop: ")
-    print(x)
-    x += 1
-}
-print("Done")

@@ -15,13 +15,13 @@ The foundational data structure used throughout the Petal runtime. Most operatio
 use slotmap::{SlotMap, new_key_type};
 
 new_key_type! {
-    pub struct ProgramKey;
+    pub struct ProgramId;
     pub struct StackKey;
 }
 
 pub struct Env {
     /// Programs stored with generational indices for safe access
-    programs: SlotMap<ProgramKey, Program>,
+    programs: SlotMap<ProgramId, Program>,
 
     /// Stacks stored with generational indices for safe access
     stacks: SlotMap<StackKey, Stack>,
@@ -40,7 +40,7 @@ pub struct FunctionTable {
     /// Built-in functions
     builtins: HashMap<String, BuiltinFn>,
     /// User-defined functions (maps to program that defines the function)
-    user_functions: HashMap<FunctionId, ProgramKey>,
+    user_functions: HashMap<FunctionId, ProgramId>,
 }
 
 pub struct Globals {

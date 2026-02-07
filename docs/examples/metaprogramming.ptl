@@ -1,0 +1,129 @@
+// Metaprogramming
+// Programs as first-class values: inspect, build, transform, and compose.
+// See tech_outline/topics/Metaprogramming.md for the full API.
+
+// --- Example 1: Self-inspection ---
+
+fn add(a, b) { a + b }
+fn mul(a, b) { a * b }
+
+let me = Program.current()
+print("=== Self-Inspection ===")
+print("This program has", len(me.terms()), "terms")
+print("Functions defined:")
+for func in me.functions() {
+    print("  ", func.name, "-", len(func.terms()), "terms")
+}
+print("")
+
+// --- Example 2: Building programs from code ---
+
+let doubler = Program.build(fn(b) {
+    let x = b.param("x")
+    b.return(b.mul(x, b.literal(2)))
+})
+
+print("=== Program Builder ===")
+print("Built program source:")
+print(doubler.source())
+print("doubler(21) =", doubler.run(21))
+print("")
+
+// --- Example 3: Generating specialized functions ---
+// Build a polynomial evaluator from coefficients at runtime.
+
+fn make_polynomial(coefficients) {
+    Program.build(fn(b) {
+        let x = b.param("x")
+        let result = b.literal(0.0)
+        for i in range(0, len(coefficients)) {
+            let power = b.literal(1.0)
+            for _ in range(0, i) {
+                power = b.mul(power, x)
+            }
+            result = b.add(result, b.mul(b.literal(coefficients[i]), power))
+        }
+        b.return(result)
+    })
+}
+
+// p(x) = 1 + 2x + 3x^2
+let p = make_polynomial([1.0, 2.0, 3.0])
+print("=== Generated Polynomial ===")
+print("p(x) = 1 + 2x + 3x^2")
+print("p(0) =", p.run(0.0))     // 1
+print("p(1) =", p.run(1.0))     // 6
+print("p(2) =", p.run(2.0))     // 17
+
+// We can differentiate the generated program
+let p_prime = grad(p.run)
+print("p'(x) = 2 + 6x")
+print("p'(2) =", p_prime(2.0))  // 14
+print("")
+
+// --- Example 4: Program transformation ---
+// Swap all additions for multiplications.
+
+let original = Program.parse("
+    let a = 2
+    let b = 3
+    let c = a + b
+    c
+")
+print("=== Program Transform ===")
+print("Original:", original.run())  // 5
+
+let swapped = original.clone()
+swapped.transform(fn(term) {
+    match term.op {
+        Add -> term.with_op(Mul)
+        _ -> term
+    }
+})
+print("After Add->Mul:", swapped.run())  // 6
+print("")
+
+// --- Example 5: Program composition ---
+// Pipe one program's output into another.
+
+let parse_step = Program.parse("
+    fn step(input) { input * 2 }
+    step
+")
+let format_step = Program.parse("
+    fn step(input) { str(input) ++ \"!\" }
+    step
+")
+
+let pipeline = parse_step.pipe(format_step)
+print("=== Composition ===")
+print("Pipeline(5):", pipeline.run(5))  // "10!"
+print("")
+
+// --- Example 6: Inspecting a term's dataflow ---
+
+let prog = Program.parse("
+    fn f(x, y) {
+        let a = x + 1
+        let b = y * 2
+        let c = a + b
+        c
+    }
+    f(3, 4)
+")
+
+let c_term = prog.find("c")
+print("=== Term Inspection ===")
+print("Term 'c':")
+print("  op:", c_term.op)
+print("  inputs:", c_term.inputs)
+print("  Depends on:")
+for input in c_term.inputs {
+    print("    ", input.name, "(", input.op, ")")
+}
+
+let dependents = prog.find("x").dependents
+print("'x' feeds into:")
+for d in dependents {
+    print("    ", d.name)
+}

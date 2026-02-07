@@ -1,5 +1,0 @@
-fn f1(x) { x + 1 }
-fn f2(x) { x * 2 }
-print(f1(5))
-print(f2(5))
-print(f1(f2(3)))

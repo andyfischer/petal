@@ -1,0 +1,53 @@
+// State Management
+// The 'state' keyword creates persistent variables that survive across invocations.
+
+// A counter that increments each time it's called.
+// The 'state' declaration initializes only once; subsequent calls
+// see the previous value.
+fn counter() {
+    state count = 0
+    count = count + 1
+    count
+}
+
+print("Counter Demo")
+print("============")
+print("Call 1:", counter())
+print("Call 2:", counter())
+print("Call 3:", counter())
+
+// An accumulator that maintains a running total
+fn accumulator(value) {
+    state total = 0
+    total = total + value
+    total
+}
+
+print("")
+print("Accumulator Demo")
+print("================")
+for i in range(1, 6) {
+    print("After adding", i, "-> total:", accumulator(i))
+}
+
+// State inside conditionals: each branch gets its own state
+fn branch_counter(flag) {
+    if flag {
+        state true_count = 0
+        true_count = true_count + 1
+        print("  true branch called", true_count, "times")
+    } else {
+        state false_count = 0
+        false_count = false_count + 1
+        print("  false branch called", false_count, "times")
+    }
+}
+
+print("")
+print("Branch State Demo")
+print("=================")
+branch_counter(true)
+branch_counter(true)
+branch_counter(false)
+branch_counter(true)
+branch_counter(false)

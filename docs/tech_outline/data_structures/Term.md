@@ -5,6 +5,7 @@ A single expression/node in the program graph.
 ## Related Data Structures
 
 - [[Program]] - Contains the collection of terms
+- [[Block]] - Each term belongs to exactly one block
 - [[Value]] - Runtime values produced by term evaluation
 - [[Stack]] - Execution context that evaluates terms
 
@@ -14,7 +15,7 @@ Terms have two forms of identification:
 
 **Local ID (`TermId`)** - A numeric index unique within a single [[Program]]. This is compact and used for all intra-program references (inputs, control flow links, etc.).
 
-**Global ID (`GlobalTermId`)** - Combines the `ProgramKey` with the local `TermId`. This is unique within an [[Env]] and used when referencing terms across program boundaries.
+**Global ID (`GlobalTermId`)** - Combines the `ProgramId` with the local `TermId`. This is unique within an [[Env]] and used when referencing terms across program boundaries.
 
 ```rust
 /// Local term identifier - unique within a Program
@@ -24,12 +25,11 @@ pub struct TermId(pub u32);
 /// Global term identifier - unique within an Env
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlobalTermId {
-    pub program: ProgramKey,
+    pub program: ProgramId,
     pub term: TermId,
 }
 ```
 
-There are no UUIDs. Term IDs are simple numeric indices assigned during parsing/compilation. When a program is modified via live editing, the system rebuilds the ID mapping as needed (see [[StateSchema]] for how state is reconciled).
 
 ## Definition
 
@@ -43,9 +43,15 @@ pub struct Term {
     /// Input terms (dataflow edges)
     pub inputs: SmallVec<[TermId; 4]>,
 
-    /// Control flow ordering (for effectful terms only)
-    pub control_flow_next: Option<TermId>,
-    pub control_flow_prev: Option<TermId>,
+    /// The block this term belongs to
+    pub block_id: BlockId,
+
+    /// Linked list ordering within the block
+    pub block_next: Option<TermId>,
+    pub block_prev: Option<TermId>,
+
+    /// Optional name for binding terms (e.g., variable declarations)
+    pub name: Option<String>,
 
     /// Register assignment for evaluation
     pub register: RegisterIndex,
@@ -99,26 +105,28 @@ pub enum TermOp {
 }
 ```
 
-## Dataflow vs Control Flow
+## Dataflow vs Block Ordering
 
 Terms participate in two graphs:
 
 **Dataflow Graph** - The `inputs` field connects terms by data dependency. A term's inputs are the terms whose values it consumes. This graph is acyclic for pure computation.
 
-**Control Flow List** - The `control_flow_next`/`control_flow_prev` fields form a linked list of *effectful* terms that must execute in order. Pure/dataflow-only terms (like `Add`, `Mul`, literals) do not participate in this list and have `None` for these fields.
+**Block Ordering** - The `block_next`/`block_prev` fields form a linked list of terms within a [[Block]]. This establishes the execution order for terms in the same scope. All terms in a block participate in this list.
 
 Examples:
-- `Add` term: Has `inputs` (the two operands), but no control flow links. Evaluated when needed.
-- `StateWrite` term: Has `inputs` (the value to write), AND control flow links (must execute in order relative to other state operations).
-- `Call` term: Has `inputs` (arguments), AND control flow links (function may have effects).
+- `Add` term: Has `inputs` (the two operands), and block links positioning it in its block's execution order.
+- `StateWrite` term: Has `inputs` (the value to write), and block links (must execute in order relative to other terms in the block).
+- `Call` term: Has `inputs` (arguments), and block links (positioned in the block's execution sequence).
 
-The interpreter walks the control flow list for execution order, evaluating dataflow dependencies on-demand as needed.
+The interpreter walks the block's term list for execution order, evaluating dataflow dependencies on-demand as needed. When control flow branches into a nested block (e.g., entering an if-body), the interpreter creates a new [[Stack#Frame|Frame]] for that block.
 
 ## Design Notes
 
 - `SmallVec` avoids heap allocation for common cases (most terms have 0-3 inputs)
-- Control flow links only exist on effectful terms - pure terms are demand-driven
+- Block links (`block_next`/`block_prev`) establish order within a scope; nested scopes use separate [[Block|Blocks]]
+- The `name` field is only set on binding terms (variable declarations, function parameters)
 - `StateKey` enables state reconciliation during live editing (see [[StateSchema]])
+- See [[NameLookup]] for how names are resolved using block structure
 
 ---
 

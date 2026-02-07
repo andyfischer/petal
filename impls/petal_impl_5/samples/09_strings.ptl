@@ -1,5 +1,0 @@
-# String operations
-print("Hello" + " " + "World")
-print(len("Petal"))
-print("abc" == "abc")
-print("abc" == "def")

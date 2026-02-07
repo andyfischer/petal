@@ -1,0 +1,117 @@
+// Projection (Program Slicing)
+// Extract the subset of code relevant to a particular value.
+// See tech_outline/topics/Metaprogramming.md for the full Projection API.
+//
+// Key methods used here:
+//   program.slice(target)                -- backward slice: what influences target?
+//   program.impact(source)               -- forward slice: what does source affect?
+//   program.dynamic_slice(stack, target) -- execution-based slice
+//   projection.source()                  -- render slice as simplified source
+//   projection.intersect(other)          -- terms common to both slices
+//   projection.extract()                 -- extract slice as standalone Program
+
+// --- Example 1: Backward slice ---
+
+fn compute(a, b, c) {
+    let x = a + b
+    let y = b * c
+    let unused = 999     // not related to output
+    let z = x + y
+    z
+}
+
+let prog = Program.current()
+let deps = prog.slice("z")
+print("=== Backward Slice ===")
+print("What influences 'z' in compute(a, b, c)?")
+print(deps.source())
+// Shows: a, b, c, x, y, z -- but NOT 'unused'
+print("Terms in slice:", deps.size())
+print("")
+
+// --- Example 2: Forward slice (impact analysis) ---
+
+let effects = prog.impact("b")
+print("=== Forward Slice ===")
+print("What does 'b' influence?")
+print(effects.source())
+// Shows: x, y, z -- since b flows into both x and y
+print("")
+
+// --- Example 3: Dynamic slice ---
+// Only shows what actually executed for specific inputs.
+
+fn classify(n) {
+    let abs_n = abs(n)
+    if n > 0 {
+        let positive_label = "positive"
+        positive_label
+    } else if n == 0 {
+        let zero_label = "zero"
+        zero_label
+    } else {
+        let negative_label = "negative"
+        negative_label
+    }
+}
+
+let classify_prog = Program.parse("
+    fn classify(n) {
+        let abs_n = abs(n)
+        if n > 0 {
+            let positive_label = \"positive\"
+            positive_label
+        } else if n == 0 {
+            let zero_label = \"zero\"
+            zero_label
+        } else {
+            let negative_label = \"negative\"
+            negative_label
+        }
+    }
+    classify(5)
+")
+let stack = classify_prog.create_stack()
+stack.run()
+let dyn = classify_prog.dynamic_slice(stack, "return")
+print("=== Dynamic Slice ===")
+print("classify(5) actually used:")
+print(dyn.source())
+// Only shows the n > 0 branch, not the other two
+print("")
+
+// --- Example 4: Finding shared dependencies ---
+
+fn pipeline(input) {
+    let parsed = parse_input(input)
+    let validated = validate(parsed)
+    let formatted = format_output(validated)
+    let logged = write_log(validated)
+    { output: formatted, log: logged }
+}
+
+let pipe_prog = Program.current()
+let output_deps = pipe_prog.slice("formatted")
+let log_deps = pipe_prog.slice("logged")
+
+// Projection algebra: intersect, union, subtract
+let shared = output_deps.intersect(log_deps)
+let unique_to_output = output_deps.subtract(log_deps)
+
+print("=== Shared Dependencies ===")
+print("Both 'formatted' and 'logged' depend on:")
+print(shared.source())
+// Shows: parsed, validated
+
+print("Only 'formatted' depends on:")
+print(unique_to_output.source())
+// Shows: format_output, formatted
+print("")
+
+// --- Example 5: Extracting a sub-program ---
+
+let sub = output_deps.extract()
+print("=== Extracted Sub-Program ===")
+print("Standalone program for computing 'formatted':")
+print(sub.source())
+// The extracted program has parameters for the slice's external inputs

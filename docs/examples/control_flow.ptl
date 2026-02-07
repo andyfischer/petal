@@ -1,0 +1,42 @@
+// Control Flow
+// If/else expressions, loops, and logical operators.
+
+// If/else as expressions (they return values)
+let n = 42
+let parity = if n % 2 == 0 { "even" } else { "odd" }
+print(n, "is", parity)
+
+// Comparisons
+print("10 > 5:", 10 > 5)
+print("10 < 5:", 10 < 5)
+print("10 == 10:", 10 == 10)
+print("10 != 5:", 10 != 5)
+
+// Logical operators
+let sunny = true
+let warm = false
+print("sunny && warm:", sunny && warm)
+print("sunny || warm:", sunny || warm)
+print("!sunny:", !sunny)
+
+// For loops with range
+print("Counting 1 to 5:")
+for i in range(1, 6) {
+    print(" ", i)
+}
+
+// While loops
+let count = 1
+let total = 0
+while count <= 10 {
+    total = total + count
+    count = count + 1
+}
+print("Sum of 1..10 =", total)
+
+// Nested loops
+for row in range(0, 3) {
+    for col in range(0, 3) {
+        print("(", row, ",", col, ")")
+    }
+}

@@ -40,7 +40,7 @@ The `load_program` method:
 1. Parses the source into [[Term|Terms]]
 2. Builds the [[SourceMap|SourceMap]] for debugging
 3. Registers the [[Program|Program]] in the Env
-4. Returns a `ProgramKey` for future reference
+4. Returns a `ProgramId` for future reference
 
 ## Creating a Stack
 

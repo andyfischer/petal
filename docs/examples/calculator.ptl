@@ -1,0 +1,58 @@
+// Calculator
+// A multi-function calculator using enums and pattern matching.
+
+enum Op {
+    Add(a, b)
+    Sub(a, b)
+    Mul(a, b)
+    Div(a, b)
+    Pow(base, exp)
+}
+
+fn calculate(op) {
+    match op {
+        Add(a, b) -> a + b
+        Sub(a, b) -> a - b
+        Mul(a, b) -> a * b
+        Div(a, b) -> {
+            if b == 0 {
+                print("  Error: division by zero")
+                0
+            } else {
+                a / b
+            }
+        }
+        Pow(base, exp) -> {
+            let result = 1
+            for _ in range(0, exp) {
+                result = result * base
+            }
+            result
+        }
+    }
+}
+
+fn show(label, op) {
+    print(label, "=", calculate(op))
+}
+
+print("Calculator")
+print("==========")
+show("10 + 3", Add(10, 3))
+show("10 - 3", Sub(10, 3))
+show("10 * 3", Mul(10, 3))
+show("10 / 3", Div(10, 3))
+show("10 / 0", Div(10, 0))
+show("2 ^ 10", Pow(2, 10))
+
+// Expression trees
+print("")
+print("Expression: (2 + 3) * 4 - 6 / 2")
+let result = calculate(Sub(
+    calculate(Mul(calculate(Add(2, 3)), 4)),
+    calculate(Div(6, 2))
+))
+// Simpler: just use arithmetic directly
+let check = (2 + 3) * 4 - 6 / 2
+print("Result:", result)
+print("Check:", check)

@@ -9,16 +9,18 @@ How to modify a compiled [[Program|Program]].
 
 ## The Program Graph
 
-A [[Program|Program]] is a collection of [[Term|Terms]] connected by dataflow edges. Each term has:
+A [[Program|Program]] is a collection of [[Term|Terms]] organized into [[Block|Blocks]]. Each term has:
 - An operation (`TermOp`)
 - Input references to other terms
-- Control flow links (next/prev)
+- Block membership (`block_id`)
+- Block ordering (`block_next`/`block_prev`)
+- Optional name (for binding terms)
 
 ## Reading Program Structure
 
 ```rust
 // Get a reference to the program
-let program = env.get_program(program_key)?;
+let program = env.get_program(program_id)?;
 
 // Iterate over all terms
 for (term_id, term) in program.terms() {
@@ -36,12 +38,12 @@ Terms can be modified in place:
 
 ```rust
 // Change a literal value
-env.modify_term(program_key, term_id, |term| {
+env.modify_term(program_id, term_id, |term| {
     term.op = TermOp::IntLiteral(42);
 })?;
 
 // Rewire inputs
-env.modify_term(program_key, term_id, |term| {
+env.modify_term(program_id, term_id, |term| {
     term.inputs[0] = other_term_id;
 })?;
 ```
@@ -50,12 +52,14 @@ env.modify_term(program_key, term_id, |term| {
 
 ```rust
 // Add a new term to the program
-let new_term_id = env.add_term(program_key, Term {
+let new_term_id = env.add_term(program_id, Term {
     id: TermId(0), // Will be assigned
     op: TermOp::Add,
     inputs: smallvec![left_term, right_term],
-    control_flow_next: None,
-    control_flow_prev: Some(prev_term),
+    block_id: current_block,
+    block_next: None,
+    block_prev: Some(prev_term),
+    name: None, // Only set for binding terms
     register: RegisterIndex(0), // Will be assigned
     state_key: None,
 })?;
@@ -65,10 +69,10 @@ let new_term_id = env.add_term(program_key, Term {
 
 ```rust
 // Remove a term (disconnects it from the graph)
-env.remove_term(program_key, term_id)?;
+env.remove_term(program_id, term_id)?;
 ```
 
-Note: Removing a term that other terms depend on will leave dangling references. Use `env.validate_program(program_key)` to check for issues.
+Note: Removing a term that other terms depend on will leave dangling references. Use `env.validate_program(program_id)` to check for issues.
 
 ## Recomputing Metadata
 
@@ -76,13 +80,13 @@ After modifications, you may need to update derived data:
 
 ```rust
 // Recompute register assignments
-env.assign_registers(program_key)?;
+env.assign_registers(program_id)?;
 
 // Update the source map (if source positions changed)
-env.rebuild_source_map(program_key)?;
+env.rebuild_source_map(program_id)?;
 
 // Validate the program graph
-let errors = env.validate_program(program_key)?;
+let errors = env.validate_program(program_id)?;
 ```
 
 ## Cloning Programs
@@ -90,7 +94,7 @@ let errors = env.validate_program(program_key)?;
 To experiment with modifications without affecting the original:
 
 ```rust
-let cloned_program = env.clone_program(program_key)?;
+let cloned_program = env.clone_program(program_id)?;
 
 // Modify the clone freely
 env.modify_term(cloned_program, term_id, |term| {

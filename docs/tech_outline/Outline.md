@@ -8,7 +8,8 @@ This document describes the Rust implementation strategy for the Petal language 
 |------|---------|
 | `lib.rs` | Public API exports and crate root |
 | `env.rs` | [[Env\|Env]] implementation - owns all programs and stacks |
-| `program.rs` | [[Program\|Program]] and [[Term\|Term]] types |
+| `program.rs` | [[Program\|Program]], [[Block\|Block]], and [[Term\|Term]] types |
+| `constant_table.rs` | [[ConstantTable\|ConstantTable]] for storing literals |
 | `stack.rs` | [[Stack\|Stack]] and Frame types for execution |
 | `value.rs` | [[Value\|Value]] enum and operations |
 | `eval.rs` | Interpreter/evaluator - executes terms |
@@ -31,9 +32,11 @@ Detailed guides on specific functionality:
 - [[Setup|Setup]] - How to set up an Env and get started
 - [[CodeManipulation|Code Manipulation]] - How to modify a compiled program
 - [[Execution|Execution]] - How to run a program with the interpreter
+- [[NameLookup|Name Lookup]] - How to resolve names to terms at a given location
 - [[LiveEditing|Live Editing]] - How to transfer state from a running program to a modified program
 - [[Backflow|Backflow]] - How to use differentiation to apply signals & goals
 - [[Projection|Projection]] - How to create and use a projection
+- [[Metaprogramming|Metaprogramming]] - Program as a first-class value: inspect, execute, transform, and compose programs from Petal
 - [[Heap|Heap]] - Garbage-collected heap for runtime values
 - [[WebAssembly|WebAssembly]] - More about the WASM API
 
@@ -44,8 +47,10 @@ Detailed guides on specific functionality:
 Key data structures are documented in the [[data_structures]] folder:
 
 - [[Env|Env]] - The foundational environment, owns programs and stacks
-- [[Program|Program]] - A block of code as a collection of terms
+- [[Program|Program]] - A block of code as a collection of terms and blocks
+- [[Block|Block]] - Control flow scope containing a sequence of terms
 - [[Term|Term]] - A single expression/node in the program graph
+- [[ConstantTable|ConstantTable]] - Stores literal values for a program
 - [[Stack|Stack]] - Runtime evaluation context
 - [[Value|Value]] - Runtime representation of data
 - [[SourceMap|SourceMap]] - Maps terms to source locations
@@ -66,10 +71,10 @@ impl Env {
     pub fn new() -> Self;
 
     /// Load a program from source
-    pub fn load_program(&mut self, source: &str) -> Result<ProgramKey, ParseError>;
+    pub fn load_program(&mut self, source: &str) -> Result<ProgramId, ParseError>;
 
     /// Create a new execution stack for a program
-    pub fn create_stack(&mut self, program_id: ProgramKey) -> Result<StackKey, Error>;
+    pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, Error>;
 
     /// Run one step of execution
     pub fn step(&mut self, stack_id: StackKey) -> Result<StepResult, Error>;
@@ -81,7 +86,7 @@ impl Env {
     pub fn get_term_value(&self, stack_id: StackKey, term_id: TermId) -> Option<&Value>;
 
     /// Get provenance: what terms influenced this term?
-    pub fn get_provenance(&self, program_id: ProgramKey, term_id: TermId) -> Vec<TermId>;
+    pub fn get_provenance(&self, program_id: ProgramId, term_id: TermId) -> Vec<TermId>;
 }
 
 pub enum StepResult {
@@ -99,7 +104,7 @@ impl Env {
     /// Apply a source edit while a stack is running
     pub fn live_edit(
         &mut self,
-        program_id: ProgramKey,
+        program_id: ProgramId,
         edit: SourceEdit
     ) -> Result<LiveEditResult, Error>;
 
@@ -135,7 +140,7 @@ impl Env {
     /// Create a projection (slice) of a program
     pub fn project(
         &self,
-        program_id: ProgramKey,
+        program_id: ProgramId,
         focus: ProjectionFocus,
     ) -> Result<Projection, Error>;
 }
@@ -307,7 +312,7 @@ pub extern "C" fn petal_create_stack(
             None => return 0,
         };
 
-        match env.create_stack(ProgramKey::from_ffi(program)) {
+        match env.create_stack(ProgramId::from_ffi(program)) {
             Ok(stack_key) => stack_key.0.as_ffi(),
             Err(_) => 0,
         }
@@ -445,7 +450,7 @@ Arena allocators (`typed-arena`, `bumpalo`) provide better cache locality and si
 
 **ECS-Style Architecture**
 
-For future consideration: storing term properties in separate vectors (struct-of-arrays) can improve cache utilization when iterating over specific properties. This could be beneficial if we find hot loops that only access one property (e.g., iterating all `control_flow_next` links).
+For future consideration: storing term properties in separate vectors (struct-of-arrays) can improve cache utilization when iterating over specific properties. This could be beneficial if we find hot loops that only access one property (e.g., iterating all `block_next` links).
 
 ---
 

@@ -1,0 +1,4 @@
+// Hello World
+// The simplest Petal program.
+
+print("Hello, World!")

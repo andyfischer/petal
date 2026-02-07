@@ -1,4 +1,0 @@
-state a = 10
-state b = 20
-print(a)
-print(b)

@@ -1,0 +1,79 @@
+// Conway's Game of Life
+// Demonstrates nested loops, 2D lists, and complex logic.
+
+fn count_neighbors(grid, x, y, width, height) {
+    let count = 0
+    for dy in range(-1, 2) {
+        for dx in range(-1, 2) {
+            if dx == 0 && dy == 0 {
+                // skip self
+            } else {
+                let nx = x + dx
+                let ny = y + dy
+                if nx >= 0 && nx < width && ny >= 0 && ny < height {
+                    if grid[ny][nx] == 1 {
+                        count = count + 1
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+fn print_grid(grid, width, height) {
+    for y in range(0, height) {
+        let row = ""
+        for x in range(0, width) {
+            row = row ++ if grid[y][x] == 1 { "#" } else { "." }
+        }
+        print(row)
+    }
+}
+
+fn step(grid, width, height) {
+    let next = []
+    for y in range(0, height) {
+        let row = []
+        for x in range(0, width) {
+            let neighbors = count_neighbors(grid, x, y, width, height)
+            let cell = grid[y][x]
+            if cell == 1 {
+                // Live cell: survives with 2-3 neighbors
+                push(row, if neighbors == 2 || neighbors == 3 { 1 } else { 0 })
+            } else {
+                // Dead cell: born with exactly 3 neighbors
+                push(row, if neighbors == 3 { 1 } else { 0 })
+            }
+        }
+        push(next, row)
+    }
+    next
+}
+
+// Glider pattern
+let width = 8
+let height = 8
+let grid = [
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0, 0],
+    [0, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0]
+]
+
+print("Conway's Game of Life - Glider")
+print("==============================")
+print("")
+print("Generation 0:")
+print_grid(grid, width, height)
+
+for gen in range(1, 6) {
+    grid = step(grid, width, height)
+    print("")
+    print("Generation", gen, ":")
+    print_grid(grid, width, height)
+}

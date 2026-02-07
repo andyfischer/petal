@@ -1,0 +1,113 @@
+// Provenance Tracking
+// Trace what inputs influenced each computed value.
+// See tech_outline/topics/Metaprogramming.md for the full Trace API.
+//
+// Key methods used here:
+//   program.trace(args...)         -- run with tracing, returns Trace
+//   trace.steps / trace.result    -- inspect execution
+//   trace.influences(name)        -- what influenced a variable?
+//   trace.path(from, to)          -- dataflow path between names
+//   trace.print()                 -- human-readable output
+
+// --- Example 1: Simple trace ---
+
+fn compute(a, b) {
+    let sum = a + b
+    let doubled = sum * 2
+    doubled
+}
+
+let prog = Program.parse("
+    fn compute(a, b) {
+        let sum = a + b
+        let doubled = sum * 2
+        doubled
+    }
+    compute(10, 20)
+")
+
+let t = prog.trace()
+print("=== Execution Trace ===")
+print("compute(10, 20):")
+t.print()
+// Expected output:
+//   a = 10
+//   b = 20
+//   sum = a + b -> 30
+//   doubled = sum * 2 -> 60
+//   return: 60
+print("Steps:", t.step_count())
+print("")
+
+// --- Example 2: Provenance query ---
+// "What inputs influenced the final result?"
+
+let weighted_prog = Program.parse("
+    fn weighted(x, y, z) {
+        let temp = x * 2
+        let unused = z + 1
+        let result = temp + y
+        result
+    }
+    weighted(3, 4, 5)
+")
+
+let t2 = weighted_prog.trace()
+let chain = t2.influences("result")
+print("=== Provenance ===")
+print("What influenced 'result' in weighted(3, 4, 5)?")
+for item in chain {
+    print("  ", item.name, "(", item.op, ")")
+}
+// Shows: x -> temp -> result, y -> result
+// Does NOT include z or unused
+
+// Check specific contributions
+print("Did 'z' contribute to result?", t2.contributed?("unused", to: "result"))
+print("")
+
+// --- Example 3: Tracing through a stack ---
+
+let counter_prog = Program.parse("
+    fn counter() {
+        state count = 0
+        count = count + 1
+        count
+    }
+    counter()
+")
+
+let stack = counter_prog.create_stack()
+stack.enable_tracing()
+stack.run()
+stack.reset()
+stack.run()
+stack.reset()
+stack.run()
+
+let t3 = stack.trace()
+print("=== Stateful Trace ===")
+print("Three invocations of counter():")
+t3.print()
+// Shows state reads and writes across invocations
+print("Final result:", t3.result)
+
+// --- Example 4: Dataflow path ---
+
+let pipeline_prog = Program.parse("
+    let raw = 100
+    let parsed = raw * 2
+    let validated = parsed + 1
+    let formatted = str(validated)
+    formatted
+")
+
+let t4 = pipeline_prog.trace()
+let path = t4.path("raw", "formatted")
+print("")
+print("=== Dataflow Path ===")
+print("Path from 'raw' to 'formatted':")
+for step in path {
+    print("  ", step.name, "=", step.output)
+}
+// raw=100 -> parsed=200 -> validated=201 -> formatted="201"

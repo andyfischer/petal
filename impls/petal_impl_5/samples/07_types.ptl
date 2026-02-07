@@ -1,8 +1,0 @@
-# Type conversions
-print(to_string(42))
-print(to_string(3.14))
-print(to_string(true))
-print(to_int("123"))
-print(to_int(45.67))
-print(to_float("3.14"))
-print(to_float(5))

@@ -1,0 +1,54 @@
+// Fibonacci Sequence
+// Multiple approaches to computing Fibonacci numbers.
+
+// Recursive (simple but slow for large n)
+fn fib_recursive(n) {
+    if n <= 0 { 0 }
+    else if n == 1 { 1 }
+    else { fib_recursive(n - 1) + fib_recursive(n - 2) }
+}
+
+// Iterative (fast)
+fn fib_iterative(n) {
+    if n <= 0 { return 0 }
+    if n == 1 { return 1 }
+    let a = 0
+    let b = 1
+    for _ in range(2, n + 1) {
+        let temp = b
+        b = a + b
+        a = temp
+    }
+    b
+}
+
+// Using state (memoized across calls)
+fn fib_stateful() {
+    state a = 0
+    state b = 1
+    let result = a
+    let temp = b
+    b = a + b
+    a = temp
+    result
+}
+
+print("Fibonacci - Recursive")
+print("=====================")
+for i in range(0, 12) {
+    print("fib(" ++ str(i) ++ ") =", fib_recursive(i))
+}
+
+print("")
+print("Fibonacci - Iterative")
+print("=====================")
+for i in range(0, 20) {
+    print("fib(" ++ str(i) ++ ") =", fib_iterative(i))
+}
+
+print("")
+print("Fibonacci - Stateful Generator")
+print("==============================")
+for i in range(0, 15) {
+    print("next:", fib_stateful())
+}

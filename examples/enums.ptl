@@ -1,0 +1,57 @@
+// Enums
+// Named variants, associated data, and pattern matching.
+
+// Simple enum (no associated data)
+enum Color { Red, Green, Blue }
+
+let favorite = Blue
+print("Favorite color:", favorite)
+
+// Enum with associated data
+enum Shape {
+    Circle(radius)
+    Rectangle(width, height)
+    Triangle(base, height)
+}
+
+fn area(shape) {
+    match shape {
+        Circle(r) -> 3.14159 * r * r
+        Rectangle(w, h) -> w * h
+        Triangle(b, h) -> 0.5 * b * h
+    }
+}
+
+let shapes = [
+    Circle(5.0),
+    Rectangle(4.0, 6.0),
+    Triangle(3.0, 8.0)
+]
+
+for s in shapes {
+    print("Area:", area(s))
+}
+
+// Result type for error handling
+enum Result {
+    Ok(value)
+    Error(message)
+}
+
+fn safe_divide(a, b) {
+    if b == 0 {
+        Error("division by zero")
+    } else {
+        Ok(a / b)
+    }
+}
+
+match safe_divide(10, 3) {
+    Ok(v) -> print("10 / 3 =", v)
+    Error(msg) -> print("Error:", msg)
+}
+
+match safe_divide(10, 0) {
+    Ok(v) -> print("10 / 0 =", v)
+    Error(msg) -> print("Error:", msg)
+}

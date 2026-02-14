@@ -2,34 +2,40 @@
 //!
 //! See docs/tech_outline/data_structures/SourceMap.md
 
+use std::collections::HashMap;
+
 use crate::program::TermId;
 
-#[derive(Debug, Clone)]
-pub struct SourceRange {
-    pub start: usize,
-    pub end: usize,
+#[derive(Debug, Clone, Copy)]
+pub struct SourcePosition {
+    pub line: u32,
+    pub column: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SourceSpan {
+    pub start: SourcePosition,
+    pub end: SourcePosition,
 }
 
 pub struct SourceMap {
-    entries: Vec<(TermId, SourceRange)>,
+    term_spans: HashMap<TermId, SourceSpan>,
 }
 
 impl SourceMap {
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            term_spans: HashMap::new(),
         }
     }
 
-    pub fn add(&mut self, term_id: TermId, range: SourceRange) {
-        self.entries.push((term_id, range));
+    pub fn add(&mut self, term_id: TermId, span: SourceSpan) {
+        self.term_spans.insert(term_id, span);
     }
 
-    pub fn get(&self, term_id: TermId) -> Option<&SourceRange> {
-        self.entries
-            .iter()
-            .find(|(id, _)| *id == term_id)
-            .map(|(_, range)| range)
+    pub fn get(&self, term_id: TermId) -> Option<&SourceSpan> {
+        self.term_spans.get(&term_id)
     }
 }
 

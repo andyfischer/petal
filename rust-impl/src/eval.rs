@@ -1,820 +1,1166 @@
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
+//! Eval - Step-based IR evaluator.
+//!
+//! Executes a program by walking the term graph one term at a time.
+
+use std::collections::BTreeMap;
 
 use crate::ast::*;
-use crate::env_scope::Environment;
-use crate::value::Value;
+use crate::builtins::{self, BuiltinTable};
+use crate::constant_table::{ConstantId, ConstantValue};
+use crate::heap::Heap;
+use crate::program::*;
+use crate::stack::{Frame, Stack};
+use crate::value::{self, Value};
 
-/// Control flow signals propagated via the error channel.
-/// Return and Break propagate up through ? until caught at the right boundary.
+/// Result of a single evaluation step.
 #[derive(Debug)]
-pub enum Signal {
+pub enum StepResult {
+    Continue,
+    Complete(Value),
     Error(String),
+}
+
+/// Signal for control flow within the evaluator.
+enum ControlFlow {
+    /// Normal — advance to next term
+    Advance,
+    /// Frame was pushed — don't advance, execute new frame
+    FramePushed,
+    /// Return from function
     Return(Value),
+    /// Break from loop
     Break,
+    /// Fatal error
+    Error(String),
 }
 
-impl From<String> for Signal {
-    fn from(s: String) -> Self {
-        Signal::Error(s)
-    }
-}
+/// The evaluator operates on Env's data.
+pub struct Evaluator;
 
-impl From<&str> for Signal {
-    fn from(s: &str) -> Self {
-        Signal::Error(s.to_string())
-    }
-}
-
-impl std::fmt::Display for Signal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Signal::Error(msg) => write!(f, "{}", msg),
-            Signal::Return(_) => write!(f, "return outside of function"),
-            Signal::Break => write!(f, "break outside of loop"),
-        }
-    }
-}
-
-type Res = Result<Value, Signal>;
-
-pub struct Interpreter {
-    global_env: Environment,
-    enum_variants: HashMap<String, String>,
-    state_store: HashMap<usize, Value>,
-    state_initialized: HashMap<usize, bool>,
-    active_state_names: Vec<(String, usize)>,
-    pub output: Vec<String>,
-    capture_output: bool,
-}
-
-impl Interpreter {
-    pub fn new() -> Self {
-        let env = Environment::new();
-        let mut interp = Self {
-            global_env: env,
-            enum_variants: HashMap::new(),
-            state_store: HashMap::new(),
-            state_initialized: HashMap::new(),
-            active_state_names: Vec::new(),
-            output: Vec::new(),
-            capture_output: false,
+impl Evaluator {
+    /// Execute one step: evaluate the current term and advance.
+    pub fn step(
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> StepResult {
+        let frame_idx = match stack.frames.len().checked_sub(1) {
+            Some(idx) => idx,
+            None => return StepResult::Complete(Value::Nil),
         };
-        interp.register_builtins();
-        interp
-    }
 
-    fn register_builtins(&mut self) {
-        let builtins = [
-            "print", "range", "len", "push", "str", "abs", "sqrt", "floor", "ceil", "float",
-            "int", "random", "type", "append", "pop", "keys", "values", "contains",
-            "min", "max", "round",
-        ];
-        for name in builtins {
-            self.global_env
-                .set(name, Value::BuiltinFunction(name.to_string()));
+        let current_term_id = match stack.frames[frame_idx].current_term {
+            Some(tid) => tid,
+            None => {
+                // Block is done — pop frame
+                return Self::pop_frame(program, stack, heap);
+            }
+        };
+
+        let term = program.get_term(current_term_id);
+
+        // Read input values
+        let input_values: Vec<Value> = term
+            .inputs
+            .iter()
+            .map(|&input_tid| Self::read_register(program, stack, input_tid))
+            .collect();
+
+        // Execute the term
+        let result = Self::exec_term(
+            term,
+            &input_values,
+            program,
+            stack,
+            heap,
+            closures,
+            builtins,
+            output,
+        );
+
+        match result {
+            ControlFlow::Advance => {
+                // Store result and advance
+                Self::advance(stack, term);
+                StepResult::Continue
+            }
+            ControlFlow::FramePushed => {
+                // New frame was pushed — continue executing it
+                StepResult::Continue
+            }
+            ControlFlow::Return(val) => {
+                // Pop frames to function boundary
+                Self::handle_return(program, stack, val);
+                StepResult::Continue
+            }
+            ControlFlow::Break => {
+                stack.break_flag = true;
+                // Advance past the break term then the loop handler will catch it
+                Self::advance(stack, term);
+                StepResult::Continue
+            }
+            ControlFlow::Error(msg) => StepResult::Error(msg),
         }
     }
 
-    pub fn run(&mut self, program: &[Stmt]) -> Result<Value, String> {
-        let env = self.global_env.clone();
-        match self.exec_stmts(program, &env) {
-            Ok(v) => Ok(v),
-            Err(Signal::Error(e)) => Err(e),
-            Err(Signal::Return(v)) => Ok(v),
-            Err(Signal::Break) => Err("break outside of loop".to_string()),
-        }
-    }
+    /// Read a value from the register of the term that produced it.
+    fn read_register(program: &Program, stack: &Stack, term_id: TermId) -> Value {
+        let term = program.get_term(term_id);
+        let term_block = term.block_id;
+        let reg_idx = term.register.0 as usize;
 
-    fn exec_stmts(&mut self, stmts: &[Stmt], env: &Environment) -> Res {
-        let mut last = Value::Nil;
-        for stmt in stmts {
-            last = self.exec_stmt(stmt, env)?;
-        }
-        Ok(last)
-    }
-
-    fn exec_stmt(&mut self, stmt: &Stmt, env: &Environment) -> Res {
-        match stmt {
-            Stmt::Let { name, value } => {
-                let val = self.eval_expr(value, env)?;
-                env.set(name, val);
-                Ok(Value::Nil)
-            }
-            Stmt::Assign { target, value } => {
-                let val = self.eval_expr(value, env)?;
-                self.exec_assign(target, val, env)?;
-                Ok(Value::Nil)
-            }
-            Stmt::Expr(expr) => self.eval_expr(expr, env),
-            Stmt::FnDecl { name, params, body } => {
-                let func = Value::Function {
-                    name: name.clone(),
-                    params: params.clone(),
-                    body: body.clone(),
-                    closure: env.clone(),
-                };
-                env.set(name, func);
-                Ok(Value::Nil)
-            }
-            Stmt::EnumDecl { name: _, variants } => {
-                for variant in variants {
-                    self.enum_variants
-                        .insert(variant.name.clone(), variant.name.clone());
-                    if variant.fields.is_empty() {
-                        env.set(
-                            &variant.name,
-                            Value::EnumVariant {
-                                name: variant.name.clone(),
-                                data: Vec::new(),
-                            },
-                        );
-                    } else {
-                        env.set(
-                            &variant.name,
-                            Value::BuiltinFunction(format!("__enum__{}", variant.name)),
-                        );
-                    }
-                }
-                Ok(Value::Nil)
-            }
-            Stmt::For { var, iter, body } => {
-                let iter_val = self.eval_expr(iter, env)?;
-                let items = match &iter_val {
-                    Value::List(list) => list.borrow().clone(),
-                    _ => return Err(Signal::Error(format!(
-                        "Cannot iterate over {}",
-                        iter_val.type_name()
-                    ))),
-                };
-                for item in items {
-                    let loop_env = Environment::with_parent(env);
-                    loop_env.set(var, item);
-                    match self.exec_stmts(body, &loop_env) {
-                        Ok(_) => {}
-                        Err(Signal::Break) => break,
-                        Err(e) => return Err(e), // propagate Return and Error
-                    }
-                }
-                Ok(Value::Nil)
-            }
-            Stmt::While { condition, body } => {
-                loop {
-                    let cond = self.eval_expr(condition, env)?;
-                    if !cond.is_truthy() {
-                        break;
-                    }
-                    let loop_env = Environment::with_parent(env);
-                    match self.exec_stmts(body, &loop_env) {
-                        Ok(_) => {}
-                        Err(Signal::Break) => break,
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(Value::Nil)
-            }
-            Stmt::Return(expr) => {
-                let val = if let Some(e) = expr {
-                    self.eval_expr(e, env)?
+        // Search from current frame upward through parent_frame links
+        let mut frame_idx = stack.frames.len() - 1;
+        loop {
+            let frame = &stack.frames[frame_idx];
+            if frame.block_id == term_block {
+                return if reg_idx < frame.registers.len() {
+                    frame.registers[reg_idx]
                 } else {
                     Value::Nil
                 };
-                Err(Signal::Return(val))
             }
-            Stmt::Break => Err(Signal::Break),
-            Stmt::State { name, init, id } => {
-                if !self.state_initialized.get(id).copied().unwrap_or(false) {
-                    let val = self.eval_expr(init, env)?;
-                    self.state_store.insert(*id, val.clone());
-                    self.state_initialized.insert(*id, true);
-                    env.set(name, val);
-                } else if let Some(val) = self.state_store.get(id) {
-                    env.set(name, val.clone());
-                }
-                self.active_state_names.push((name.clone(), *id));
-                Ok(Value::Nil)
+            match frame.parent_frame {
+                Some(parent) => frame_idx = parent,
+                None => return Value::Nil, // not found
             }
         }
     }
 
-    fn exec_assign(&mut self, target: &AssignTarget, value: Value, env: &Environment) -> Res {
-        match target {
-            AssignTarget::Name(name) => {
-                self.update_state_if_needed(name, &value);
-                if !env.assign(name, value.clone()) {
-                    env.set(name, value);
-                }
+    /// Store result in current frame's register and advance to next term.
+    fn advance(stack: &mut Stack, term: &Term) {
+        if let Some(frame) = stack.frames.last_mut() {
+            let reg = term.register.0 as usize;
+            // Ensure register file is large enough
+            if reg >= frame.registers.len() {
+                frame.registers.resize(reg + 1, Value::Nil);
             }
-            AssignTarget::Field(object, field) => {
-                let obj = self.eval_expr(object, env)?;
-                match obj {
-                    Value::Record(map) => {
-                        map.borrow_mut().insert(field.clone(), value);
-                    }
-                    _ => return Err(Signal::Error(format!("Cannot set field on {}", obj.type_name()))),
-                }
+            // Note: result was already written by exec_term for most ops
+            frame.current_term = term.block_next;
+        }
+    }
+
+    /// Write a value to the current term's register.
+    fn write_register(stack: &mut Stack, term: &Term, value: Value) {
+        if let Some(frame) = stack.frames.last_mut() {
+            let reg = term.register.0 as usize;
+            if reg >= frame.registers.len() {
+                frame.registers.resize(reg + 1, Value::Nil);
             }
-            AssignTarget::Index(object, index) => {
-                let obj = self.eval_expr(object, env)?;
-                let idx = self.eval_expr(index, env)?;
-                match (&obj, &idx) {
-                    (Value::List(list), Value::Int(i)) => {
-                        let mut list = list.borrow_mut();
-                        let i = *i as usize;
-                        if i < list.len() {
-                            list[i] = value;
-                        } else {
-                            return Err(Signal::Error(format!(
-                                "Index {} out of bounds (len {})", i, list.len()
-                            )));
+            frame.registers[reg] = value;
+        }
+    }
+
+    /// Pop the current frame and handle the result.
+    fn pop_frame(program: &Program, stack: &mut Stack, _heap: &Heap) -> StepResult {
+        let frame = match stack.pop_frame() {
+            Some(f) => f,
+            None => return StepResult::Complete(Value::Nil),
+        };
+
+        // Get the last term's value as the block result
+        let block = program.get_block(frame.block_id);
+        let result = Self::get_last_register_value(&frame, block, program);
+
+        if stack.frames.is_empty() {
+            // Program complete
+            return StepResult::Complete(result);
+        }
+
+        // Write result to the parent term's register
+        if let Some(return_term) = frame.return_term {
+            let parent_term = program.get_term(return_term);
+            let reg = parent_term.register.0 as usize;
+            if let Some(parent_frame) = stack.frames.last_mut() {
+                if reg >= parent_frame.registers.len() {
+                    parent_frame.registers.resize(reg + 1, Value::Nil);
+                }
+                parent_frame.registers[reg] = result;
+            }
+        }
+
+        StepResult::Continue
+    }
+
+    fn get_last_register_value(frame: &Frame, block: &Block, program: &Program) -> Value {
+        // Find the last term in this block and read its register
+        let mut current = block.entry;
+        let mut last_tid = None;
+        while let Some(tid) = current {
+            last_tid = Some(tid);
+            current = program.get_term(tid).block_next;
+        }
+        if let Some(tid) = last_tid {
+            let term = program.get_term(tid);
+            let reg = term.register.0 as usize;
+            if reg < frame.registers.len() {
+                return frame.registers[reg];
+            }
+        }
+        Value::Nil
+    }
+
+    fn handle_return(program: &Program, stack: &mut Stack, value: Value) {
+        // Pop frames until we find a function call frame (parent_frame == None)
+        loop {
+            let frame = match stack.pop_frame() {
+                Some(f) => f,
+                None => return,
+            };
+            if frame.parent_frame.is_none() {
+                // This was a function frame — write return value to caller
+                if let Some(return_term) = frame.return_term {
+                    let parent_term = program.get_term(return_term);
+                    let reg = parent_term.register.0 as usize;
+                    if let Some(caller_frame) = stack.frames.last_mut() {
+                        if reg >= caller_frame.registers.len() {
+                            caller_frame.registers.resize(reg + 1, Value::Nil);
                         }
+                        caller_frame.registers[reg] = value;
+                        // Advance past the Call term
+                        caller_frame.current_term = parent_term.block_next;
                     }
-                    _ => return Err(Signal::Error(format!(
-                        "Cannot index-assign {} with {}",
-                        obj.type_name(), idx.type_name()
-                    ))),
                 }
-            }
-        }
-        Ok(Value::Nil)
-    }
-
-    fn update_state_if_needed(&mut self, name: &str, value: &Value) {
-        for (sname, sid) in self.active_state_names.iter().rev() {
-            if sname == name {
-                self.state_store.insert(*sid, value.clone());
                 return;
             }
         }
     }
 
-    fn eval_expr(&mut self, expr: &Expr, env: &Environment) -> Res {
-        match expr {
-            Expr::Literal(lit) => Ok(self.literal_to_value(lit)),
-            Expr::Ident(name) => env
-                .get(name)
-                .ok_or_else(|| Signal::Error(format!("Undefined variable: {}", name))),
-            Expr::BinaryOp { op, left, right } => {
-                if *op == BinOp::And {
-                    let l = self.eval_expr(left, env)?;
-                    if !l.is_truthy() {
-                        return Ok(Value::Bool(false));
-                    }
-                    let r = self.eval_expr(right, env)?;
-                    return Ok(Value::Bool(r.is_truthy()));
-                }
-                if *op == BinOp::Or {
-                    let l = self.eval_expr(left, env)?;
-                    if l.is_truthy() {
-                        return Ok(Value::Bool(true));
-                    }
-                    let r = self.eval_expr(right, env)?;
-                    return Ok(Value::Bool(r.is_truthy()));
-                }
-                let l = self.eval_expr(left, env)?;
-                let r = self.eval_expr(right, env)?;
-                self.eval_binop(*op, &l, &r)
+    // -----------------------------------------------------------------------
+    // Term execution
+    // -----------------------------------------------------------------------
+
+    fn exec_term(
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> ControlFlow {
+        match &term.op {
+            TermOp::Constant(cid) => {
+                let val = Self::constant_to_value(*cid, program, heap);
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
             }
-            Expr::UnaryOp { op, operand } => {
-                let val = self.eval_expr(operand, env)?;
-                self.eval_unaryop(*op, &val)
+
+            TermOp::Error(cid) => {
+                let msg = match program.constants.get(*cid) {
+                    ConstantValue::String(s) => s.clone(),
+                    _ => "Unknown error".to_string(),
+                };
+                ControlFlow::Error(msg)
             }
-            Expr::Call { function, args } => {
-                let func = self.eval_expr(function, env)?;
-                let mut arg_vals = Vec::new();
-                for arg in args {
-                    arg_vals.push(self.eval_expr(arg, env)?);
-                }
-                self.call_function(&func, arg_vals)
+
+            TermOp::Copy => {
+                // Identity / variable reference
+                let val = inputs.first().copied().unwrap_or(Value::Nil);
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
             }
-            Expr::If {
-                condition,
-                then_body,
-                else_body,
-            } => {
-                let cond = self.eval_expr(condition, env)?;
-                if cond.is_truthy() {
-                    let block_env = Environment::with_parent(env);
-                    self.exec_stmts(then_body, &block_env)
-                } else if let Some(else_br) = else_body {
-                    match else_br {
-                        ElseBranch::Block(stmts) => {
-                            let block_env = Environment::with_parent(env);
-                            self.exec_stmts(stmts, &block_env)
+
+            TermOp::Assign(target_tid) => {
+                // Write value to the target term's register in its frame
+                let val = inputs.first().copied().unwrap_or(Value::Nil);
+                let target_term = program.get_term(*target_tid);
+                let target_block = target_term.block_id;
+                let target_reg = target_term.register.0 as usize;
+
+                // Walk parent_frame links to find the frame holding the target block
+                let mut frame_idx = stack.frames.len() - 1;
+                loop {
+                    if stack.frames[frame_idx].block_id == target_block {
+                        if target_reg < stack.frames[frame_idx].registers.len() {
+                            stack.frames[frame_idx].registers[target_reg] = val;
                         }
-                        ElseBranch::ElseIf(expr) => self.eval_expr(expr, env),
+                        break;
                     }
+                    match stack.frames[frame_idx].parent_frame {
+                        Some(parent) => frame_idx = parent,
+                        None => break,
+                    }
+                }
+
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::Add => Self::numeric_binop(term, inputs, stack, heap,
+                |a, b| Value::Int(a + b), |a, b| Value::Float(a + b)),
+            TermOp::Sub => Self::numeric_binop(term, inputs, stack, heap,
+                |a, b| Value::Int(a - b), |a, b| Value::Float(a - b)),
+            TermOp::Mul => Self::numeric_binop(term, inputs, stack, heap,
+                |a, b| Value::Int(a * b), |a, b| Value::Float(a * b)),
+            TermOp::Div => {
+                if inputs.len() < 2 {
+                    return ControlFlow::Error("Div: missing inputs".into());
+                }
+                match (&inputs[0], &inputs[1]) {
+                    (_, Value::Int(0)) => return ControlFlow::Error("Division by zero".into()),
+                    (_, Value::Float(f)) if *f == 0.0 => return ControlFlow::Error("Division by zero".into()),
+                    _ => {}
+                }
+                Self::numeric_binop(term, inputs, stack, heap,
+                    |a, b| Value::Int(a / b), |a, b| Value::Float(a / b))
+            }
+            TermOp::Mod => {
+                if inputs.len() < 2 {
+                    return ControlFlow::Error("Mod: missing inputs".into());
+                }
+                Self::numeric_binop(term, inputs, stack, heap,
+                    |a, b| Value::Int(a % b), |a, b| Value::Float(a % b))
+            }
+
+            TermOp::Neg => {
+                let val = match inputs.first() {
+                    Some(Value::Int(n)) => Value::Int(-n),
+                    Some(Value::Float(f)) => Value::Float(-f),
+                    Some(v) => return ControlFlow::Error(format!("Cannot negate {}", v.type_name())),
+                    None => return ControlFlow::Error("Neg: missing input".into()),
+                };
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::Not => {
+                let val = match inputs.first() {
+                    Some(v) => Value::Bool(!v.is_truthy()),
+                    None => return ControlFlow::Error("Not: missing input".into()),
+                };
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::Eq => {
+                let val = Value::Bool(value::values_equal(&inputs[0], &inputs[1], heap));
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+            TermOp::Ne => {
+                let val = Value::Bool(!value::values_equal(&inputs[0], &inputs[1], heap));
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+            TermOp::Lt => Self::comparison_op(term, inputs, stack, heap, |ord| ord == std::cmp::Ordering::Less),
+            TermOp::Le => Self::comparison_op(term, inputs, stack, heap, |ord| ord != std::cmp::Ordering::Greater),
+            TermOp::Gt => Self::comparison_op(term, inputs, stack, heap, |ord| ord == std::cmp::Ordering::Greater),
+            TermOp::Ge => Self::comparison_op(term, inputs, stack, heap, |ord| ord != std::cmp::Ordering::Less),
+
+            TermOp::Concat => {
+                let l = value::value_to_display_string(&inputs[0], heap);
+                let r = value::value_to_display_string(&inputs[1], heap);
+                let s = format!("{}{}", l, r);
+                let sid = heap.alloc_string(s);
+                Self::write_register(stack, term, Value::String(sid));
+                ControlFlow::Advance
+            }
+
+            TermOp::And => {
+                let left = inputs[0];
+                if !left.is_truthy() {
+                    Self::write_register(stack, term, Value::Bool(false));
+                    ControlFlow::Advance
                 } else {
-                    Ok(Value::Nil)
+                    // Push frame for RHS block
+                    let rhs_block = term.child_blocks[0];
+                    Self::push_child_frame(program, stack, rhs_block, term);
+                    ControlFlow::FramePushed
                 }
             }
-            Expr::Match { subject, arms } => {
-                let val = self.eval_expr(subject, env)?;
-                for arm in arms {
-                    let match_env = Environment::with_parent(env);
-                    if self.match_pattern(&arm.pattern, &val, &match_env)? {
-                        if let Some(guard) = &arm.guard {
-                            let guard_val = self.eval_expr(guard, &match_env)?;
-                            if !guard_val.is_truthy() {
-                                continue;
+
+            TermOp::Or => {
+                let left = inputs[0];
+                if left.is_truthy() {
+                    Self::write_register(stack, term, Value::Bool(true));
+                    ControlFlow::Advance
+                } else {
+                    let rhs_block = term.child_blocks[0];
+                    Self::push_child_frame(program, stack, rhs_block, term);
+                    ControlFlow::FramePushed
+                }
+            }
+
+            TermOp::Branch => {
+                let cond = inputs[0];
+                let block_idx = if cond.is_truthy() { 0 } else { 1 };
+                let target_block = term.child_blocks[block_idx];
+                Self::push_child_frame(program, stack, target_block, term);
+                ControlFlow::FramePushed
+            }
+
+            TermOp::ForLoop => {
+                let iter_val = inputs[0];
+                match iter_val {
+                    Value::List(list_id) => {
+                        let body_block = term.child_blocks[0];
+                        // Get list elements (copy them since we'll iterate)
+                        let elements: Vec<Value> = heap.get_list(list_id).to_vec();
+
+                        for elem in elements {
+                            if stack.break_flag {
+                                stack.break_flag = false;
+                                break;
+                            }
+
+                            // Push frame for body block
+                            let block = program.get_block(body_block);
+                            let reg_count = block.register_count as usize;
+                            let parent_frame_idx = stack.frames.len() - 1;
+                            stack.push_frame(Frame {
+                                block_id: body_block,
+                                current_term: block.entry,
+                                registers: vec![Value::Nil; reg_count],
+                                return_term: Some(term.id),
+                                parent_frame: Some(parent_frame_idx),
+                            });
+
+                            // Set loop variable (first register)
+                            if let Some(frame) = stack.frames.last_mut() {
+                                if !frame.registers.is_empty() {
+                                    frame.registers[0] = elem;
+                                }
+                            }
+
+                            // Execute body to completion
+                            loop {
+                                let step = Self::step(
+                                    program, stack, heap, closures, builtins_table, output,
+                                );
+                                match step {
+                                    StepResult::Continue => {
+                                        if stack.break_flag {
+                                            // Pop the body frame
+                                            while stack.frames.len() > parent_frame_idx + 1 {
+                                                stack.pop_frame();
+                                            }
+                                            break;
+                                        }
+                                        // Check if we returned to our frame
+                                        if stack.frames.len() <= parent_frame_idx + 1 {
+                                            break;
+                                        }
+                                    }
+                                    StepResult::Complete(_) => break,
+                                    StepResult::Error(e) => return ControlFlow::Error(e),
+                                }
+                            }
+
+                            if stack.break_flag {
+                                stack.break_flag = false;
+                                break;
                             }
                         }
-                        return self.eval_expr(&arm.body, &match_env);
+
+                        Self::write_register(stack, term, Value::Nil);
+                        ControlFlow::Advance
+                    }
+                    _ => ControlFlow::Error(format!(
+                        "Cannot iterate over {}",
+                        iter_val.type_name()
+                    )),
+                }
+            }
+
+            TermOp::WhileLoop => {
+                let cond_block = term.child_blocks[0];
+                let body_block = term.child_blocks[1];
+
+                loop {
+                    if stack.break_flag {
+                        stack.break_flag = false;
+                        break;
+                    }
+
+                    // Evaluate condition
+                    let cond_val = Self::eval_block_to_value(
+                        program, stack, heap, closures, builtins_table, output,
+                        cond_block, term,
+                    );
+                    let cond_val = match cond_val {
+                        Ok(v) => v,
+                        Err(e) => return ControlFlow::Error(e),
+                    };
+
+                    if !cond_val.is_truthy() {
+                        break;
+                    }
+
+                    // Evaluate body
+                    let _ = Self::eval_block_to_value(
+                        program, stack, heap, closures, builtins_table, output,
+                        body_block, term,
+                    );
+
+                    if stack.break_flag {
+                        stack.break_flag = false;
+                        break;
                     }
                 }
-                Err(Signal::Error(format!("No matching pattern for value: {}", val)))
+
+                Self::write_register(stack, term, Value::Nil);
+                ControlFlow::Advance
             }
-            Expr::List(elements) => {
-                let mut items = Vec::new();
-                for elem in elements {
-                    items.push(self.eval_expr(elem, env)?);
+
+            TermOp::Break => ControlFlow::Break,
+
+            TermOp::Return => {
+                let val = inputs.first().copied().unwrap_or(Value::Nil);
+                ControlFlow::Return(val)
+            }
+
+            TermOp::Call => {
+                let callable = inputs[0];
+                let args = &inputs[1..];
+
+                match callable {
+                    Value::Closure(closure_id) => {
+                        let closure = &closures[closure_id.0 as usize];
+                        let func = &program.functions[closure.function_id.0 as usize];
+                        let body_block = func.body_block;
+                        let block = program.get_block(body_block);
+
+                        if args.len() != func.params.len() {
+                            return ControlFlow::Error(format!(
+                                "Expected {} arguments, got {}",
+                                func.params.len(),
+                                args.len()
+                            ));
+                        }
+
+                        let reg_count = block.register_count as usize;
+                        let mut registers = vec![Value::Nil; reg_count];
+
+                        // Set parameter registers (first N registers)
+                        for (i, arg) in args.iter().enumerate() {
+                            if i < registers.len() {
+                                registers[i] = *arg;
+                            }
+                        }
+
+                        // Set capture registers (at compiler-specified positions)
+                        for (i, cap) in closure.captures.iter().enumerate() {
+                            if i < func.capture_registers.len() {
+                                let reg_idx = func.capture_registers[i].0 as usize;
+                                if reg_idx < registers.len() {
+                                    registers[reg_idx] = *cap;
+                                }
+                            }
+                        }
+
+                        // Self-reference for recursion
+                        if let Some(self_reg) = func.self_ref_register {
+                            let reg_idx = self_reg.0 as usize;
+                            if reg_idx < registers.len() {
+                                registers[reg_idx] = callable;
+                            }
+                        }
+
+                        // Advance caller past the Call term before pushing
+                        if let Some(caller_frame) = stack.frames.last_mut() {
+                            caller_frame.current_term = term.block_next;
+                        }
+
+                        // Push function frame (no parent_frame — it's a call boundary)
+                        stack.push_frame(Frame {
+                            block_id: body_block,
+                            current_term: block.entry,
+                            registers,
+                            return_term: Some(term.id),
+                            parent_frame: None,
+                        });
+
+                        ControlFlow::FramePushed
+                    }
+
+                    Value::BuiltinFunction(builtin_id) => {
+                        match builtins::call_builtin(builtin_id, args, heap, output) {
+                            Ok(val) => {
+                                Self::write_register(stack, term, val);
+                                ControlFlow::Advance
+                            }
+                            Err(e) => ControlFlow::Error(e),
+                        }
+                    }
+
+                    Value::EnumVariant { .. } if args.is_empty() => {
+                        // Calling a fieldless variant returns itself
+                        Self::write_register(stack, term, callable);
+                        ControlFlow::Advance
+                    }
+
+                    _ => ControlFlow::Error(format!("Cannot call {}", callable.type_name())),
                 }
-                Ok(Value::List(Rc::new(RefCell::new(items))))
             }
-            Expr::Record(fields) => {
+
+            TermOp::MakeClosure(fn_id) => {
+                let captures: Vec<Value> = inputs.to_vec();
+                let closure_id = ClosureId(closures.len() as u32);
+                closures.push(RuntimeClosure {
+                    function_id: *fn_id,
+                    captures,
+                });
+                Self::write_register(stack, term, Value::Closure(closure_id));
+                ControlFlow::Advance
+            }
+
+            TermOp::StateInit => {
+                let state_key = term.state_key.unwrap();
+                if !stack.state.contains_key(&state_key) {
+                    let init_val = inputs.first().copied().unwrap_or(Value::Nil);
+                    stack.state.insert(state_key, init_val);
+                }
+                let val = stack.state[&state_key];
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::StateRead => {
+                let state_key = term.state_key.unwrap();
+                let val = stack.state.get(&state_key).copied().unwrap_or(Value::Nil);
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::StateWrite => {
+                let state_key = term.state_key.unwrap();
+                let val = inputs.first().copied().unwrap_or(Value::Nil);
+                stack.state.insert(state_key, val);
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
+            }
+
+            TermOp::AllocList => {
+                let list_id = heap.alloc_list(inputs.to_vec());
+                Self::write_register(stack, term, Value::List(list_id));
+                ControlFlow::Advance
+            }
+
+            TermOp::AllocMap { fields } => {
                 let mut map = BTreeMap::new();
-                for (key, value) in fields {
-                    map.insert(key.clone(), self.eval_expr(value, env)?);
-                }
-                Ok(Value::Record(Rc::new(RefCell::new(map))))
-            }
-            Expr::FieldAccess { object, field } => {
-                let obj = self.eval_expr(object, env)?;
-                match &obj {
-                    Value::Record(map) => {
-                        let map = map.borrow();
-                        map.get(field)
-                            .cloned()
-                            .ok_or_else(|| Signal::Error(format!("No field '{}' on record", field)))
+                for (i, field_cid) in fields.iter().enumerate() {
+                    if let ConstantValue::String(key) = program.constants.get(*field_cid) {
+                        let val = inputs.get(i).copied().unwrap_or(Value::Nil);
+                        map.insert(key.clone(), val);
                     }
-                    _ => Err(Signal::Error(format!(
-                        "Cannot access field '{}' on {}",
-                        field,
-                        obj.type_name()
-                    ))),
                 }
+                let map_id = heap.alloc_map(map);
+                Self::write_register(stack, term, Value::Map(map_id));
+                ControlFlow::Advance
             }
-            Expr::IndexAccess { object, index } => {
-                let obj = self.eval_expr(object, env)?;
-                let idx = self.eval_expr(index, env)?;
-                match (&obj, &idx) {
-                    (Value::List(list), Value::Int(i)) => {
-                        let list = list.borrow();
-                        let idx = if *i < 0 {
-                            (list.len() as i64 + *i) as usize
-                        } else {
-                            *i as usize
+
+            TermOp::GetField(field_cid) => {
+                let obj = inputs[0];
+                match obj {
+                    Value::Map(map_id) => {
+                        let field_name = match program.constants.get(*field_cid) {
+                            ConstantValue::String(s) => s.as_str(),
+                            _ => return ControlFlow::Error("GetField: invalid field name".into()),
                         };
-                        list.get(idx)
-                            .cloned()
-                            .ok_or_else(|| Signal::Error(format!(
-                                "Index {} out of bounds (len {})", i, list.len()
-                            )))
+                        let map = heap.get_map(map_id);
+                        let val = map
+                            .get(field_name)
+                            .copied()
+                            .ok_or_else(|| format!("No field '{}' on record", field_name));
+                        match val {
+                            Ok(v) => {
+                                Self::write_register(stack, term, v);
+                                ControlFlow::Advance
+                            }
+                            Err(e) => ControlFlow::Error(e),
+                        }
                     }
-                    (Value::Record(map), Value::String(key)) => {
-                        let map = map.borrow();
-                        map.get(key)
-                            .cloned()
-                            .ok_or_else(|| Signal::Error(format!("No key '{}' on record", key)))
+                    _ => ControlFlow::Error(format!(
+                        "Cannot access field on {}",
+                        obj.type_name()
+                    )),
+                }
+            }
+
+            TermOp::SetField(field_cid) => {
+                let obj = inputs[0];
+                let val = inputs[1];
+                match obj {
+                    Value::Map(map_id) => {
+                        let field_name = match program.constants.get(*field_cid) {
+                            ConstantValue::String(s) => s.clone(),
+                            _ => return ControlFlow::Error("SetField: invalid field name".into()),
+                        };
+                        heap.get_map_mut(map_id).insert(field_name, val);
+                        Self::write_register(stack, term, Value::Nil);
+                        ControlFlow::Advance
                     }
-                    _ => Err(Signal::Error(format!(
+                    _ => ControlFlow::Error(format!(
+                        "Cannot set field on {}",
+                        obj.type_name()
+                    )),
+                }
+            }
+
+            TermOp::GetIndex => {
+                let obj = inputs[0];
+                let idx = inputs[1];
+                match (obj, idx) {
+                    (Value::List(list_id), Value::Int(i)) => {
+                        let list = heap.get_list(list_id);
+                        let index = if i < 0 {
+                            (list.len() as i64 + i) as usize
+                        } else {
+                            i as usize
+                        };
+                        match list.get(index) {
+                            Some(&v) => {
+                                Self::write_register(stack, term, v);
+                                ControlFlow::Advance
+                            }
+                            None => ControlFlow::Error(format!(
+                                "Index {} out of bounds (len {})",
+                                i,
+                                list.len()
+                            )),
+                        }
+                    }
+                    (Value::Map(map_id), Value::String(key_id)) => {
+                        let key = heap.get_string(key_id).to_string();
+                        let map = heap.get_map(map_id);
+                        match map.get(&key) {
+                            Some(&v) => {
+                                Self::write_register(stack, term, v);
+                                ControlFlow::Advance
+                            }
+                            None => ControlFlow::Error(format!("No key '{}' on record", key)),
+                        }
+                    }
+                    _ => ControlFlow::Error(format!(
                         "Cannot index {} with {}",
                         obj.type_name(),
                         idx.type_name()
-                    ))),
+                    )),
                 }
             }
-            Expr::Block(stmts) => {
-                let block_env = Environment::with_parent(env);
-                self.exec_stmts(stmts, &block_env)
+
+            TermOp::SetIndex => {
+                let obj = inputs[0];
+                let idx = inputs[1];
+                let val = inputs[2];
+                match (obj, idx) {
+                    (Value::List(list_id), Value::Int(i)) => {
+                        let list = heap.get_list_mut(list_id);
+                        let index = i as usize;
+                        if index < list.len() {
+                            list[index] = val;
+                            Self::write_register(stack, term, Value::Nil);
+                            ControlFlow::Advance
+                        } else {
+                            ControlFlow::Error(format!(
+                                "Index {} out of bounds (len {})",
+                                i,
+                                list.len()
+                            ))
+                        }
+                    }
+                    _ => ControlFlow::Error(format!(
+                        "Cannot index-assign {} with {}",
+                        obj.type_name(),
+                        idx.type_name()
+                    )),
+                }
             }
-            Expr::Lambda { params, body } => Ok(Value::Lambda {
-                params: params.clone(),
-                body: body.clone(),
-                closure: env.clone(),
-            }),
-        }
-    }
 
-    fn literal_to_value(&self, lit: &Literal) -> Value {
-        match lit {
-            Literal::Nil => Value::Nil,
-            Literal::Bool(b) => Value::Bool(*b),
-            Literal::Int(n) => Value::Int(*n),
-            Literal::Float(f) => Value::Float(*f),
-            Literal::String(s) => Value::String(s.clone()),
-        }
-    }
-
-    fn eval_binop(&self, op: BinOp, left: &Value, right: &Value) -> Res {
-        match op {
-            BinOp::Add => self.numeric_op(left, right, |a, b| a + b, |a, b| a + b),
-            BinOp::Sub => self.numeric_op(left, right, |a, b| a - b, |a, b| a - b),
-            BinOp::Mul => self.numeric_op(left, right, |a, b| a * b, |a, b| a * b),
-            BinOp::Div => match (left, right) {
-                (_, Value::Int(0)) => Err("Division by zero".into()),
-                (_, Value::Float(f)) if *f == 0.0 => Err("Division by zero".into()),
-                _ => self.numeric_op(left, right, |a, b| a / b, |a, b| a / b),
-            },
-            BinOp::Mod => self.numeric_op(left, right, |a, b| a % b, |a, b| a % b),
-            BinOp::Eq => Ok(Value::Bool(left == right)),
-            BinOp::Ne => Ok(Value::Bool(left != right)),
-            BinOp::Lt => self.compare_op(left, right, |ord| ord == std::cmp::Ordering::Less),
-            BinOp::Le => self.compare_op(left, right, |ord| ord != std::cmp::Ordering::Greater),
-            BinOp::Gt => self.compare_op(left, right, |ord| ord == std::cmp::Ordering::Greater),
-            BinOp::Ge => self.compare_op(left, right, |ord| ord != std::cmp::Ordering::Less),
-            BinOp::Concat => {
-                let l = left.to_display_string();
-                let r = right.to_display_string();
-                Ok(Value::String(format!("{}{}", l, r)))
+            TermOp::MakeEnumVariant(name_cid) => {
+                let name_str = match program.constants.get(*name_cid) {
+                    ConstantValue::String(s) => s.clone(),
+                    _ => return ControlFlow::Error("MakeEnumVariant: invalid name".into()),
+                };
+                let tag = heap.alloc_string(name_str);
+                let data = heap.alloc_list(inputs.to_vec());
+                Self::write_register(stack, term, Value::EnumVariant { tag, data });
+                ControlFlow::Advance
             }
-            BinOp::And | BinOp::Or => unreachable!(),
+
+            TermOp::Match => {
+                let subject = inputs[0];
+                let arm_metas = match program.match_arms.get(&term.id) {
+                    Some(arms) => arms,
+                    None => return ControlFlow::Error("Match: no arm metadata".into()),
+                };
+
+                for arm_meta in arm_metas {
+                    // Try to match pattern
+                    let mut bindings = Vec::new();
+                    if Self::match_pattern(&arm_meta.pattern, subject, heap, &mut bindings) {
+                        // Check guard if present (with pattern bindings available)
+                        if let Some(guard_block) = arm_meta.guard_block {
+                            // Push guard frame with pattern bindings
+                            let gb = program.get_block(guard_block);
+                            let gb_reg_count = gb.register_count as usize;
+                            let parent_idx = stack.frames.len() - 1;
+                            stack.push_frame(Frame {
+                                block_id: guard_block,
+                                current_term: gb.entry,
+                                registers: vec![Value::Nil; gb_reg_count],
+                                return_term: Some(term.id),
+                                parent_frame: Some(parent_idx),
+                            });
+                            if let Some(frame) = stack.frames.last_mut() {
+                                Self::apply_pattern_bindings(program, guard_block, &bindings, frame);
+                            }
+                            // Run guard to completion
+                            let target_depth = parent_idx + 1;
+                            let mut guard_result = Value::Bool(false);
+                            loop {
+                                if stack.frames.len() <= target_depth {
+                                    if let Some(frame) = stack.frames.last() {
+                                        let reg = term.register.0 as usize;
+                                        if reg < frame.registers.len() {
+                                            guard_result = frame.registers[reg];
+                                        }
+                                    }
+                                    break;
+                                }
+                                match Self::step(program, stack, heap, closures, builtins_table, output) {
+                                    StepResult::Continue => {}
+                                    StepResult::Complete(v) => { guard_result = v; break; }
+                                    StepResult::Error(e) => return ControlFlow::Error(e),
+                                }
+                            }
+                            if !guard_result.is_truthy() {
+                                continue;
+                            }
+                        }
+
+                        // Advance parent frame past the Match term
+                        if let Some(parent_frame) = stack.frames.last_mut() {
+                            parent_frame.current_term = term.block_next;
+                        }
+
+                        // Execute body block with bindings
+                        let body_block_id = arm_meta.body_block;
+                        let block = program.get_block(body_block_id);
+                        let reg_count = block.register_count as usize;
+                        let parent_frame_idx = stack.frames.len() - 1;
+
+                        stack.push_frame(Frame {
+                            block_id: body_block_id,
+                            current_term: block.entry,
+                            registers: vec![Value::Nil; reg_count],
+                            return_term: Some(term.id),
+                            parent_frame: Some(parent_frame_idx),
+                        });
+
+                        // Apply pattern bindings to the body frame's registers
+                        if let Some(frame) = stack.frames.last_mut() {
+                            Self::apply_pattern_bindings(program, body_block_id, &bindings, frame);
+                        }
+
+                        return ControlFlow::FramePushed;
+                    }
+                }
+
+                ControlFlow::Error(format!(
+                    "No matching pattern for value: {}",
+                    value::value_to_display_string(&subject, heap)
+                ))
+            }
         }
     }
 
-    fn numeric_op(
-        &self,
-        left: &Value,
-        right: &Value,
-        int_op: impl Fn(i64, i64) -> i64,
-        float_op: impl Fn(f64, f64) -> f64,
-    ) -> Res {
-        match (left, right) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(int_op(*a, *b))),
-            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(float_op(*a, *b))),
-            (Value::Int(a), Value::Float(b)) => Ok(Value::Float(float_op(*a as f64, *b))),
-            (Value::Float(a), Value::Int(b)) => Ok(Value::Float(float_op(*a, *b as f64))),
-            _ => Err(Signal::Error(format!(
-                "Cannot perform arithmetic on {} and {}",
-                left.type_name(),
-                right.type_name()
-            ))),
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn constant_to_value(cid: ConstantId, program: &Program, heap: &mut Heap) -> Value {
+        match program.constants.get(cid) {
+            ConstantValue::Nil => Value::Nil,
+            ConstantValue::Bool(b) => Value::Bool(*b),
+            ConstantValue::Int(n) => Value::Int(*n),
+            ConstantValue::Float(bits) => Value::Float(f64::from_bits(*bits)),
+            ConstantValue::String(s) => {
+                let sid = heap.alloc_string(s.clone());
+                Value::String(sid)
+            }
         }
     }
 
-    fn compare_op(
-        &self,
-        left: &Value,
-        right: &Value,
-        pred: impl Fn(std::cmp::Ordering) -> bool,
-    ) -> Res {
-        let ord = match (left, right) {
-            (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::String(a), Value::String(b)) => a.cmp(b),
-            _ => return Err(Signal::Error(format!(
-                "Cannot compare {} and {}",
-                left.type_name(),
-                right.type_name()
-            ))),
+    fn numeric_binop(
+        term: &Term,
+        inputs: &[Value],
+        stack: &mut Stack,
+        _heap: &Heap,
+        int_op: impl Fn(i64, i64) -> Value,
+        float_op: impl Fn(f64, f64) -> Value,
+    ) -> ControlFlow {
+        if inputs.len() < 2 {
+            return ControlFlow::Error("Binary op: missing inputs".into());
+        }
+        let val = match (&inputs[0], &inputs[1]) {
+            (Value::Int(a), Value::Int(b)) => int_op(*a, *b),
+            (Value::Float(a), Value::Float(b)) => float_op(*a, *b),
+            (Value::Int(a), Value::Float(b)) => float_op(*a as f64, *b),
+            (Value::Float(a), Value::Int(b)) => float_op(*a, *b as f64),
+            _ => {
+                return ControlFlow::Error(format!(
+                    "Cannot perform arithmetic on {} and {}",
+                    inputs[0].type_name(),
+                    inputs[1].type_name()
+                ))
+            }
         };
-        Ok(Value::Bool(pred(ord)))
+        Self::write_register(stack, term, val);
+        ControlFlow::Advance
     }
 
-    fn eval_unaryop(&self, op: UnaryOp, val: &Value) -> Res {
-        match op {
-            UnaryOp::Neg => match val {
-                Value::Int(n) => Ok(Value::Int(-n)),
-                Value::Float(f) => Ok(Value::Float(-f)),
-                _ => Err(Signal::Error(format!("Cannot negate {}", val.type_name()))),
-            },
-            UnaryOp::Not => Ok(Value::Bool(!val.is_truthy())),
+    fn comparison_op(
+        term: &Term,
+        inputs: &[Value],
+        stack: &mut Stack,
+        heap: &Heap,
+        pred: impl Fn(std::cmp::Ordering) -> bool,
+    ) -> ControlFlow {
+        match builtins::compare_values(&inputs[0], &inputs[1], heap) {
+            Ok(ord) => {
+                Self::write_register(stack, term, Value::Bool(pred(ord)));
+                ControlFlow::Advance
+            }
+            Err(e) => ControlFlow::Error(e),
         }
     }
 
-    fn call_function(&mut self, func: &Value, args: Vec<Value>) -> Res {
-        match func {
-            Value::Function {
-                name: _,
-                params,
-                body,
-                closure,
-            } => {
-                if args.len() != params.len() {
-                    return Err(Signal::Error(format!(
-                        "Expected {} arguments, got {}",
-                        params.len(),
-                        args.len()
-                    )));
+    fn push_child_frame(
+        program: &Program,
+        stack: &mut Stack,
+        block_id: BlockId,
+        parent_term: &Term,
+    ) {
+        let block = program.get_block(block_id);
+        let reg_count = block.register_count as usize;
+        let parent_frame_idx = stack.frames.len() - 1;
+
+        // Advance parent frame past the control flow term
+        if let Some(parent_frame) = stack.frames.last_mut() {
+            parent_frame.current_term = parent_term.block_next;
+        }
+
+        stack.push_frame(Frame {
+            block_id,
+            current_term: block.entry,
+            registers: vec![Value::Nil; reg_count],
+            return_term: Some(parent_term.id),
+            parent_frame: Some(parent_frame_idx),
+        });
+    }
+
+    /// Evaluate a child block to completion, returning its final value.
+    fn eval_block_to_value(
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+        block_id: BlockId,
+        parent_term: &Term,
+    ) -> Result<Value, String> {
+        let block = program.get_block(block_id);
+        let reg_count = block.register_count as usize;
+        let parent_frame_idx = stack.frames.len() - 1;
+
+        stack.push_frame(Frame {
+            block_id,
+            current_term: block.entry,
+            registers: vec![Value::Nil; reg_count],
+            return_term: Some(parent_term.id),
+            parent_frame: Some(parent_frame_idx),
+        });
+
+        let target_depth = parent_frame_idx + 1;
+
+        loop {
+            if stack.frames.len() <= target_depth {
+                // Frame was popped — get result from parent term's register
+                if let Some(frame) = stack.frames.last() {
+                    let reg = parent_term.register.0 as usize;
+                    if reg < frame.registers.len() {
+                        return Ok(frame.registers[reg]);
+                    }
                 }
-                let func_env = Environment::with_parent(closure);
-                for (param, arg) in params.iter().zip(args.into_iter()) {
-                    func_env.set(param, arg);
-                }
-                match self.exec_stmts(body, &func_env) {
-                    Ok(v) => Ok(v),
-                    Err(Signal::Return(v)) => Ok(v), // catch return
-                    Err(e) => Err(e),
-                }
+                return Ok(Value::Nil);
             }
-            Value::Lambda {
-                params,
-                body,
-                closure,
-            } => {
-                if args.len() != params.len() {
-                    return Err(Signal::Error(format!(
-                        "Expected {} arguments, got {}",
-                        params.len(),
-                        args.len()
-                    )));
+
+            let step = Self::step(program, stack, heap, closures, builtins_table, output);
+            match step {
+                StepResult::Continue => {
+                    if stack.break_flag {
+                        // Pop back to target depth
+                        while stack.frames.len() > target_depth {
+                            stack.pop_frame();
+                        }
+                        return Ok(Value::Nil);
+                    }
                 }
-                let func_env = Environment::with_parent(closure);
-                for (param, arg) in params.iter().zip(args.into_iter()) {
-                    func_env.set(param, arg);
-                }
-                match self.exec_stmts(body, &func_env) {
-                    Ok(v) => Ok(v),
-                    Err(Signal::Return(v)) => Ok(v),
-                    Err(e) => Err(e),
-                }
+                StepResult::Complete(v) => return Ok(v),
+                StepResult::Error(e) => return Err(e),
             }
-            Value::BuiltinFunction(name) => self.call_builtin(name, args),
-            Value::EnumVariant { name, data } if data.is_empty() && args.is_empty() => {
-                Ok(Value::EnumVariant {
-                    name: name.clone(),
-                    data: Vec::new(),
-                })
-            }
-            _ => Err(Signal::Error(format!("Cannot call {}", func.type_name()))),
         }
     }
 
-    fn call_builtin(&mut self, name: &str, args: Vec<Value>) -> Res {
-        if let Some(enum_name) = name.strip_prefix("__enum__") {
-            return Ok(Value::EnumVariant {
-                name: enum_name.to_string(),
-                data: args,
-            });
-        }
+    // -----------------------------------------------------------------------
+    // Pattern matching (runtime)
+    // -----------------------------------------------------------------------
 
-        match name {
-            "print" => {
-                let parts: Vec<String> = args.iter().map(|v| v.to_display_string()).collect();
-                let line = parts.join(" ");
-                if self.capture_output {
-                    self.output.push(line);
-                } else {
-                    println!("{}", line);
-                }
-                Ok(Value::Nil)
-            }
-            "range" => {
-                if args.len() != 2 {
-                    return Err("range() expects 2 arguments".into());
-                }
-                let start = match &args[0] {
-                    Value::Int(n) => *n,
-                    _ => return Err("range() expects integer arguments".into()),
-                };
-                let end = match &args[1] {
-                    Value::Int(n) => *n,
-                    _ => return Err("range() expects integer arguments".into()),
-                };
-                let items: Vec<Value> = (start..end).map(Value::Int).collect();
-                Ok(Value::List(Rc::new(RefCell::new(items))))
-            }
-            "len" => {
-                if args.len() != 1 { return Err("len() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::List(list) => Ok(Value::Int(list.borrow().len() as i64)),
-                    Value::String(s) => Ok(Value::Int(s.len() as i64)),
-                    _ => Err(Signal::Error(format!("Cannot get length of {}", args[0].type_name()))),
-                }
-            }
-            "push" => {
-                if args.len() != 2 { return Err("push() expects 2 arguments".into()); }
-                match &args[0] {
-                    Value::List(list) => {
-                        list.borrow_mut().push(args[1].clone());
-                        Ok(Value::Nil)
-                    }
-                    _ => Err("push() expects a list as first argument".into()),
-                }
-            }
-            "str" => {
-                if args.len() != 1 { return Err("str() expects 1 argument".into()); }
-                Ok(Value::String(args[0].to_display_string()))
-            }
-            "abs" => {
-                if args.len() != 1 { return Err("abs() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Int(n) => Ok(Value::Int(n.abs())),
-                    Value::Float(f) => Ok(Value::Float(f.abs())),
-                    _ => Err("abs() expects a number".into()),
-                }
-            }
-            "sqrt" => {
-                if args.len() != 1 { return Err("sqrt() expects 1 argument".into()); }
-                let n = to_float(&args[0])?;
-                Ok(Value::Float(n.sqrt()))
-            }
-            "floor" => {
-                if args.len() != 1 { return Err("floor() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Int(n) => Ok(Value::Int(*n)),
-                    Value::Float(f) => Ok(Value::Float(f.floor())),
-                    _ => Err("floor() expects a number".into()),
-                }
-            }
-            "ceil" => {
-                if args.len() != 1 { return Err("ceil() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Int(n) => Ok(Value::Int(*n)),
-                    Value::Float(f) => Ok(Value::Float(f.ceil())),
-                    _ => Err("ceil() expects a number".into()),
-                }
-            }
-            "float" => {
-                if args.len() != 1 { return Err("float() expects 1 argument".into()); }
-                let f = to_float(&args[0])?;
-                Ok(Value::Float(f))
-            }
-            "int" => {
-                if args.len() != 1 { return Err("int() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Int(n) => Ok(Value::Int(*n)),
-                    Value::Float(f) => Ok(Value::Int(*f as i64)),
-                    Value::String(s) => s.parse::<i64>().map(Value::Int)
-                        .map_err(|_| Signal::Error(format!("Cannot convert '{}' to int", s))),
-                    _ => Err(Signal::Error(format!("Cannot convert {} to int", args[0].type_name()))),
-                }
-            }
-            "random" => {
-                if args.len() != 2 { return Err("random() expects 2 arguments".into()); }
-                let min = to_float(&args[0])?;
-                let max = to_float(&args[1])?;
-                let pseudo = ((std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .subsec_nanos() as f64) / 4_294_967_295.0)
-                    * (max - min) + min;
-                Ok(Value::Float(pseudo))
-            }
-            "type" => {
-                if args.len() != 1 { return Err("type() expects 1 argument".into()); }
-                Ok(Value::String(args[0].type_name().to_string()))
-            }
-            "pop" => {
-                if args.len() != 1 { return Err("pop() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::List(list) => Ok(list.borrow_mut().pop().unwrap_or(Value::Nil)),
-                    _ => Err("pop() expects a list".into()),
-                }
-            }
-            "append" => {
-                if args.len() != 2 { return Err("append() expects 2 arguments".into()); }
-                match &args[0] {
-                    Value::List(list) => {
-                        list.borrow_mut().push(args[1].clone());
-                        Ok(Value::Nil)
-                    }
-                    _ => Err("append() expects a list".into()),
-                }
-            }
-            "keys" => {
-                if args.len() != 1 { return Err("keys() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Record(map) => {
-                        let keys: Vec<Value> = map.borrow().keys().map(|k| Value::String(k.clone())).collect();
-                        Ok(Value::List(Rc::new(RefCell::new(keys))))
-                    }
-                    _ => Err("keys() expects a record".into()),
-                }
-            }
-            "values" => {
-                if args.len() != 1 { return Err("values() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Record(map) => {
-                        let vals: Vec<Value> = map.borrow().values().cloned().collect();
-                        Ok(Value::List(Rc::new(RefCell::new(vals))))
-                    }
-                    _ => Err("values() expects a record".into()),
-                }
-            }
-            "contains" => {
-                if args.len() != 2 { return Err("contains() expects 2 arguments".into()); }
-                match &args[0] {
-                    Value::List(list) => Ok(Value::Bool(list.borrow().iter().any(|v| v == &args[1]))),
-                    Value::String(s) => match &args[1] {
-                        Value::String(sub) => Ok(Value::Bool(s.contains(sub.as_str()))),
-                        _ => Err("contains() on string expects a string".into()),
-                    },
-                    _ => Err("contains() expects a list or string".into()),
-                }
-            }
-            "min" => {
-                if args.len() != 2 { return Err("min() expects 2 arguments".into()); }
-                let less = self.compare_op(&args[0], &args[1], |ord| ord == std::cmp::Ordering::Less)?;
-                Ok(if less == Value::Bool(true) { args[0].clone() } else { args[1].clone() })
-            }
-            "max" => {
-                if args.len() != 2 { return Err("max() expects 2 arguments".into()); }
-                let greater = self.compare_op(&args[0], &args[1], |ord| ord == std::cmp::Ordering::Greater)?;
-                Ok(if greater == Value::Bool(true) { args[0].clone() } else { args[1].clone() })
-            }
-            "round" => {
-                if args.len() != 1 { return Err("round() expects 1 argument".into()); }
-                match &args[0] {
-                    Value::Int(n) => Ok(Value::Int(*n)),
-                    Value::Float(f) => Ok(Value::Float(f.round())),
-                    _ => Err("round() expects a number".into()),
-                }
-            }
-            _ => Err(Signal::Error(format!("Unknown builtin function: {}", name))),
-        }
-    }
-
-    fn match_pattern(&self, pattern: &Pattern, value: &Value, env: &Environment) -> Result<bool, Signal> {
+    fn match_pattern(
+        pattern: &Pattern,
+        value: Value,
+        heap: &mut Heap,
+        bindings: &mut Vec<(String, Value)>,
+    ) -> bool {
         match pattern {
-            Pattern::Wildcard => Ok(true),
+            Pattern::Wildcard => true,
+
             Pattern::Literal(lit) => {
-                let pat_val = self.literal_to_value(lit);
-                Ok(pat_val == *value)
+                match (lit, value) {
+                    (Literal::Nil, Value::Nil) => true,
+                    (Literal::Bool(a), Value::Bool(b)) => *a == b,
+                    (Literal::Int(a), Value::Int(b)) => *a == b,
+                    (Literal::Float(a), Value::Float(b)) => *a == b,
+                    (Literal::String(a), Value::String(sid)) => a == heap.get_string(sid),
+                    _ => false,
+                }
             }
+
             Pattern::Variable(name) => {
-                if self.enum_variants.contains_key(name) {
-                    match value {
-                        Value::EnumVariant { name: vname, data } => {
-                            Ok(vname == name && data.is_empty())
-                        }
-                        _ => Ok(false),
+                // Check if it's a known enum variant (fieldless)
+                if let Value::EnumVariant { tag, data } = value {
+                    let variant_name = heap.get_string(tag);
+                    if variant_name == name && heap.get_list(data).is_empty() {
+                        return true;
                     }
+                }
+                bindings.push((name.clone(), value));
+                true
+            }
+
+            Pattern::Variant { name, fields } => {
+                if let Value::EnumVariant { tag, data } = value {
+                    let variant_name = heap.get_string(tag);
+                    if variant_name != name {
+                        return false;
+                    }
+                    let data_fields = heap.get_list(data);
+                    if data_fields.len() != fields.len() {
+                        return false;
+                    }
+                    let data_copy: Vec<Value> = data_fields.to_vec();
+                    for (pat, val) in fields.iter().zip(data_copy.iter()) {
+                        if !Self::match_pattern(pat, *val, heap, bindings) {
+                            return false;
+                        }
+                    }
+                    true
                 } else {
-                    env.set(name, value.clone());
-                    Ok(true)
+                    false
                 }
             }
-            Pattern::Variant { name, fields } => match value {
-                Value::EnumVariant { name: vname, data } => {
-                    if vname != name || data.len() != fields.len() {
-                        return Ok(false);
-                    }
-                    for (pat, val) in fields.iter().zip(data.iter()) {
-                        if !self.match_pattern(pat, val, env)? {
-                            return Ok(false);
-                        }
-                    }
-                    Ok(true)
-                }
-                _ => Ok(false),
-            },
-            Pattern::List { elements, rest } => match value {
-                Value::List(list) => {
-                    let list = list.borrow();
+
+            Pattern::List { elements, rest } => {
+                if let Value::List(list_id) = value {
+                    let list = heap.get_list(list_id);
                     if let Some(rest_name) = rest {
                         if list.len() < elements.len() {
-                            return Ok(false);
+                            return false;
                         }
-                        for (pat, val) in elements.iter().zip(list.iter()) {
-                            if !self.match_pattern(pat, val, env)? {
-                                return Ok(false);
+                        let list_copy: Vec<Value> = list.to_vec();
+                        for (pat, val) in elements.iter().zip(list_copy.iter()) {
+                            if !Self::match_pattern(pat, *val, heap, bindings) {
+                                return false;
                             }
                         }
-                        let rest_vals: Vec<Value> = list[elements.len()..].to_vec();
-                        env.set(rest_name, Value::List(Rc::new(RefCell::new(rest_vals))));
-                        Ok(true)
+                        let rest_vals: Vec<Value> = list_copy[elements.len()..].to_vec();
+                        let rest_list = Value::List(heap.alloc_list(rest_vals));
+                        bindings.push((rest_name.clone(), rest_list));
+                        true
                     } else {
                         if list.len() != elements.len() {
-                            return Ok(false);
+                            return false;
                         }
-                        for (pat, val) in elements.iter().zip(list.iter()) {
-                            if !self.match_pattern(pat, val, env)? {
-                                return Ok(false);
+                        let list_copy: Vec<Value> = list.to_vec();
+                        for (pat, val) in elements.iter().zip(list_copy.iter()) {
+                            if !Self::match_pattern(pat, *val, heap, bindings) {
+                                return false;
                             }
                         }
-                        Ok(true)
+                        true
                     }
+                } else {
+                    false
                 }
-                _ => Ok(false),
-            },
-            Pattern::Record(fields) => match value {
-                Value::Record(map) => {
-                    let map = map.borrow();
-                    for (key, pat) in fields {
-                        if let Some(val) = map.get(key) {
-                            if !self.match_pattern(pat, val, env)? {
-                                return Ok(false);
-                            }
-                        } else {
-                            return Ok(false);
+            }
+
+            Pattern::Record(fields) => {
+                if let Value::Map(map_id) = value {
+                    // Copy relevant entries out before recursive matching
+                    let entries: Vec<(String, Value)> = {
+                        let map = heap.get_map(map_id);
+                        fields
+                            .iter()
+                            .filter_map(|(key, _)| {
+                                map.get(key).map(|&val| (key.clone(), val))
+                            })
+                            .collect()
+                    };
+                    if entries.len() != fields.len() {
+                        return false; // Some fields missing
+                    }
+                    for ((_, pat), (_, val)) in fields.iter().zip(entries.iter()) {
+                        if !Self::match_pattern(pat, *val, heap, bindings) {
+                            return false;
                         }
                     }
-                    Ok(true)
+                    true
+                } else {
+                    false
                 }
-                _ => Ok(false),
-            },
+            }
         }
     }
+
+    /// Apply pattern bindings to a frame's registers by matching names to
+    /// terms in the block (including phantom terms not in the linked list).
+    fn apply_pattern_bindings(
+        program: &Program,
+        block_id: BlockId,
+        bindings: &[(String, Value)],
+        frame: &mut Frame,
+    ) {
+        // Scan all terms to find ones in this block with matching names
+        for term in &program.terms {
+            if term.block_id == block_id {
+                if let Some(ref term_name) = term.name {
+                    for (bind_name, bind_val) in bindings {
+                        if term_name == bind_name {
+                            let reg = term.register.0 as usize;
+                            if reg < frame.registers.len() {
+                                frame.registers[reg] = *bind_val;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Match pattern needs mutable heap for rest-pattern list allocation
+    // -----------------------------------------------------------------------
 }
 
-fn to_float(val: &Value) -> Result<f64, Signal> {
-    match val {
-        Value::Int(n) => Ok(*n as f64),
-        Value::Float(f) => Ok(*f),
-        _ => Err(Signal::Error(format!("Cannot convert {} to float", val.type_name()))),
-    }
+/// Runtime closure — captures + function reference.
+pub struct RuntimeClosure {
+    pub function_id: FunctionId,
+    pub captures: Vec<Value>,
 }

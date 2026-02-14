@@ -5,26 +5,25 @@
 
 use std::collections::HashMap;
 
-use crate::eval::Interpreter;
+use crate::builtins::BuiltinTable;
+use crate::compiler::Compiler;
+use crate::eval::{Evaluator, RuntimeClosure, StepResult};
+use crate::heap::Heap;
 use crate::lexer::Lexer;
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId};
-use crate::stack::{Stack, StackKey};
+use crate::stack::{Frame, Stack, StackKey, StackStatus};
 use crate::value::Value;
 
 pub struct Env {
     programs: HashMap<ProgramId, Program>,
     stacks: HashMap<StackKey, Stack>,
-    interpreter: Interpreter,
+    heap: Heap,
+    builtins: BuiltinTable,
+    closures: Vec<RuntimeClosure>,
+    output: Vec<String>,
     next_program_id: u32,
     next_stack_id: u32,
-}
-
-#[derive(Debug)]
-pub enum StepResult {
-    Continue,
-    Complete(Value),
-    Error(String),
 }
 
 impl Env {
@@ -33,7 +32,10 @@ impl Env {
         Self {
             programs: HashMap::new(),
             stacks: HashMap::new(),
-            interpreter: Interpreter::new(),
+            heap: Heap::new(),
+            builtins: BuiltinTable::new(),
+            closures: Vec::new(),
+            output: Vec::new(),
             next_program_id: 1,
             next_stack_id: 1,
         }
@@ -49,30 +51,81 @@ impl Env {
         let id = ProgramId(self.next_program_id);
         self.next_program_id += 1;
 
-        let program = Program::new(id, source.to_string(), stmts);
+        let compiler = Compiler::new();
+        let program = compiler.compile(&stmts, source.to_string(), id);
         self.programs.insert(id, program);
         Ok(id)
     }
 
     /// Create a new execution stack for a program
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String> {
-        if !self.programs.contains_key(&program_id) {
-            return Err("Program not found".to_string());
-        }
+        let program = self
+            .programs
+            .get(&program_id)
+            .ok_or("Program not found")?;
+
         let key = StackKey(self.next_stack_id);
         self.next_stack_id += 1;
-        let stack = Stack::new(key, program_id);
+
+        let mut stack = Stack::new(key, program_id);
+
+        // Push initial frame for the root block
+        let root_block = program.get_block(program.root_block);
+        let reg_count = root_block.register_count as usize;
+
+        // Pre-populate builtin function values in the first N registers
+        let mut registers = vec![Value::Nil; reg_count];
+        for i in 0..self.builtins.count() {
+            let builtin_id = crate::program::BuiltinId(i as u16);
+            if i < registers.len() {
+                registers[i] = Value::BuiltinFunction(builtin_id);
+            }
+        }
+
+        stack.push_frame(Frame {
+            block_id: program.root_block,
+            current_term: root_block.entry,
+            registers,
+            return_term: None,
+            parent_frame: None,
+        });
+
         self.stacks.insert(key, stack);
         Ok(key)
     }
 
+    /// Run one step of execution
+    pub fn step(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
+        let stack = self
+            .stacks
+            .get_mut(&stack_id)
+            .ok_or("Stack not found")?;
+        let program = self
+            .programs
+            .get(&stack.program_id)
+            .ok_or("Program not found")?;
+
+        let result = Evaluator::step(
+            program,
+            stack,
+            &mut self.heap,
+            &mut self.closures,
+            &self.builtins,
+            &mut self.output,
+        );
+
+        Ok(result)
+    }
+
     /// Run a program to completion
     pub fn run(&mut self, stack_id: StackKey) -> Result<Value, String> {
-        let stack = self.stacks.get(&stack_id)
-            .ok_or("Stack not found")?;
-        let program = self.programs.get(&stack.program_id)
-            .ok_or("Program not found")?;
-        self.interpreter.run(&program.stmts)
+        loop {
+            match self.step(stack_id)? {
+                StepResult::Continue => continue,
+                StepResult::Complete(val) => return Ok(val),
+                StepResult::Error(e) => return Err(e),
+            }
+        }
     }
 
     /// Run a program from source directly (convenience method)
@@ -88,8 +141,40 @@ impl Env {
     }
 
     /// Reset a stack to re-run while keeping state
-    pub fn reset_stack(&mut self, _stack_id: StackKey) -> Result<(), String> {
-        // State persists in the interpreter's state_store
+    pub fn reset_stack(&mut self, stack_id: StackKey) -> Result<(), String> {
+        let stack = self
+            .stacks
+            .get_mut(&stack_id)
+            .ok_or("Stack not found")?;
+        let program = self
+            .programs
+            .get(&stack.program_id)
+            .ok_or("Program not found")?;
+
+        // Keep state, reset frames
+        stack.frames.clear();
+        stack.status = StackStatus::Ready;
+        stack.break_flag = false;
+
+        let root_block = program.get_block(program.root_block);
+        let reg_count = root_block.register_count as usize;
+
+        let mut registers = vec![Value::Nil; reg_count];
+        for i in 0..self.builtins.count() {
+            let builtin_id = crate::program::BuiltinId(i as u16);
+            if i < registers.len() {
+                registers[i] = Value::BuiltinFunction(builtin_id);
+            }
+        }
+
+        stack.push_frame(Frame {
+            block_id: program.root_block,
+            current_term: root_block.entry,
+            registers,
+            return_term: None,
+            parent_frame: None,
+        });
+
         Ok(())
     }
 }

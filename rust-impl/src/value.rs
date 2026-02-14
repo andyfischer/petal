@@ -1,36 +1,25 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
+//! Value - Runtime representation of data.
+//!
+//! See docs/tech_outline/data_structures/Value.md
+
 use std::fmt;
-use std::rc::Rc;
 
-use crate::ast::Stmt;
+use crate::heap::{ListId, MapId, StringId};
+use crate::program::{BuiltinId, ClosureId};
 
-#[derive(Debug, Clone)]
+/// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
+#[derive(Clone, Copy, PartialEq)]
 pub enum Value {
     Nil,
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(String),
-    List(Rc<RefCell<Vec<Value>>>),
-    Record(Rc<RefCell<BTreeMap<String, Value>>>),
-    Function {
-        name: String,
-        params: Vec<String>,
-        body: Vec<Stmt>,
-        closure: crate::env_scope::Environment,
-    },
-    BuiltinFunction(String),
-    EnumVariant {
-        name: String,
-        data: Vec<Value>,
-    },
-    /// Represents a lambda/anonymous function
-    Lambda {
-        params: Vec<String>,
-        body: Vec<Stmt>,
-        closure: crate::env_scope::Environment,
-    },
+    String(StringId),
+    List(ListId),
+    Map(MapId),
+    Closure(ClosureId),
+    BuiltinFunction(BuiltinId),
+    EnumVariant { tag: StringId, data: ListId },
 }
 
 impl Value {
@@ -40,8 +29,6 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Int(n) => *n != 0,
             Value::Float(f) => *f != 0.0,
-            Value::String(s) => !s.is_empty(),
-            Value::List(l) => !l.borrow().is_empty(),
             _ => true,
         }
     }
@@ -54,52 +41,10 @@ impl Value {
             Value::Float(_) => "float",
             Value::String(_) => "string",
             Value::List(_) => "list",
-            Value::Record(_) => "record",
-            Value::Function { .. } => "function",
+            Value::Map(_) => "record",
+            Value::Closure(_) => "function",
             Value::BuiltinFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
-            Value::Lambda { .. } => "function",
-        }
-    }
-
-    pub fn to_display_string(&self) -> String {
-        match self {
-            Value::Nil => "nil".to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::Int(n) => n.to_string(),
-            Value::Float(f) => format_float(*f),
-            Value::String(s) => s.clone(),
-            Value::List(items) => {
-                let items = items.borrow();
-                let parts: Vec<String> = items.iter().map(|v| v.to_debug_string()).collect();
-                format!("[{}]", parts.join(", "))
-            }
-            Value::Record(fields) => {
-                let fields = fields.borrow();
-                let parts: Vec<String> = fields
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v.to_debug_string()))
-                    .collect();
-                format!("{{ {} }}", parts.join(", "))
-            }
-            Value::Function { name, .. } => format!("<fn {}>", name),
-            Value::BuiltinFunction(name) => format!("<builtin {}>", name),
-            Value::EnumVariant { name, data } => {
-                if data.is_empty() {
-                    name.clone()
-                } else {
-                    let parts: Vec<String> = data.iter().map(|v| v.to_debug_string()).collect();
-                    format!("{}({})", name, parts.join(", "))
-                }
-            }
-            Value::Lambda { .. } => "<lambda>".to_string(),
-        }
-    }
-
-    pub fn to_debug_string(&self) -> String {
-        match self {
-            Value::String(s) => format!("\"{}\"", s),
-            other => other.to_display_string(),
         }
     }
 }
@@ -112,27 +57,113 @@ fn format_float(f: f64) -> String {
     }
 }
 
-impl fmt::Display for Value {
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_display_string())
+        match self {
+            Value::Nil => write!(f, "Nil"),
+            Value::Bool(b) => write!(f, "Bool({b})"),
+            Value::Int(n) => write!(f, "Int({n})"),
+            Value::Float(v) => write!(f, "Float({v})"),
+            Value::String(id) => write!(f, "String({:?})", id),
+            Value::List(id) => write!(f, "List({:?})", id),
+            Value::Map(id) => write!(f, "Map({:?})", id),
+            Value::Closure(id) => write!(f, "Closure({:?})", id),
+            Value::BuiltinFunction(id) => write!(f, "BuiltinFunction({:?})", id),
+            Value::EnumVariant { tag, data } => {
+                write!(f, "EnumVariant({:?}, {:?})", tag, data)
+            }
+        }
     }
 }
 
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::Nil, Value::Nil) => true,
-            (Value::Bool(a), Value::Bool(b)) => a == b,
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Float(a), Value::Float(b)) => a == b,
-            (Value::Int(a), Value::Float(b)) => (*a as f64) == *b,
-            (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
-            (Value::String(a), Value::String(b)) => a == b,
-            (Value::EnumVariant { name: a, data: ad }, Value::EnumVariant { name: b, data: bd }) => {
-                a == b && ad == bd
-            }
-            (Value::List(a), Value::List(b)) => *a.borrow() == *b.borrow(),
-            _ => false,
+/// Display helpers that need heap access. These are standalone functions
+/// rather than methods because they need &Heap.
+use crate::heap::Heap;
+
+pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
+    match val {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => format_float(*f),
+        Value::String(id) => heap.get_string(*id).to_string(),
+        Value::List(id) => {
+            let elems = heap.get_list(*id);
+            let parts: Vec<String> = elems
+                .iter()
+                .map(|v| value_to_debug_string(v, heap))
+                .collect();
+            format!("[{}]", parts.join(", "))
         }
+        Value::Map(id) => {
+            let map = heap.get_map(*id);
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, value_to_debug_string(v, heap)))
+                .collect();
+            format!("{{ {} }}", parts.join(", "))
+        }
+        Value::Closure(_) => "<function>".to_string(),
+        Value::BuiltinFunction(_) => "<builtin>".to_string(),
+        Value::EnumVariant { tag, data } => {
+            let name = heap.get_string(*tag);
+            let fields = heap.get_list(*data);
+            if fields.is_empty() {
+                name.to_string()
+            } else {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|v| value_to_debug_string(v, heap))
+                    .collect();
+                format!("{}({})", name, parts.join(", "))
+            }
+        }
+    }
+}
+
+pub fn value_to_debug_string(val: &Value, heap: &Heap) -> String {
+    match val {
+        Value::String(id) => format!("\"{}\"", heap.get_string(*id)),
+        other => value_to_display_string(other, heap),
+    }
+}
+
+/// Compare two values for equality. Needs heap access for deep comparison
+/// of lists and maps.
+pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
+    match (a, b) {
+        (Value::Nil, Value::Nil) => true,
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Int(a), Value::Int(b)) => a == b,
+        (Value::Float(a), Value::Float(b)) => a == b,
+        (Value::Int(a), Value::Float(b)) => (*a as f64) == *b,
+        (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
+        (Value::String(a), Value::String(b)) => {
+            heap.get_string(*a) == heap.get_string(*b)
+        }
+        (
+            Value::EnumVariant { tag: at, data: ad },
+            Value::EnumVariant { tag: bt, data: bd },
+        ) => {
+            heap.get_string(*at) == heap.get_string(*bt) && {
+                let a_fields = heap.get_list(*ad);
+                let b_fields = heap.get_list(*bd);
+                a_fields.len() == b_fields.len()
+                    && a_fields
+                        .iter()
+                        .zip(b_fields.iter())
+                        .all(|(a, b)| values_equal(a, b, heap))
+            }
+        }
+        (Value::List(a), Value::List(b)) => {
+            let a_elems = heap.get_list(*a);
+            let b_elems = heap.get_list(*b);
+            a_elems.len() == b_elems.len()
+                && a_elems
+                    .iter()
+                    .zip(b_elems.iter())
+                    .all(|(a, b)| values_equal(a, b, heap))
+        }
+        _ => false,
     }
 }

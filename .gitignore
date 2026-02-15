@@ -9,3 +9,5 @@ build
 
 # Local Claude settings
 **/.claude/settings.local.json
+
+node_modules

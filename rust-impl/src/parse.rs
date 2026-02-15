@@ -706,14 +706,8 @@ impl Parser {
 
         while !matches!(self.peek(), Token::RBracket | Token::Eof) {
             // Check for ...rest
-            if matches!(self.peek(), Token::DotDot) {
-                // Actually the syntax uses `...name` but we have `..` token
-                // Let's handle `...` as DotDot followed by a `.`
-                // Or we could handle it specially
-                self.advance(); // consume '..'
-                if matches!(self.peek(), Token::Dot) {
-                    self.advance(); // consume third '.'
-                }
+            if matches!(self.peek(), Token::DotDotDot) {
+                self.advance(); // consume '...'
                 let name = self.expect_ident()?;
                 rest = Some(name);
                 self.skip_newlines();

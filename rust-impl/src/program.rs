@@ -4,10 +4,12 @@
 
 use std::collections::HashMap;
 
+use serde::Serialize;
 use smallvec::SmallVec;
 
 use crate::ast::Pattern;
 use crate::constant_table::{ConstantId, ConstantTable};
+use crate::ir_serialize::serialize_termid_map;
 use crate::source_map::SourceMap;
 
 // ---------------------------------------------------------------------------
@@ -15,42 +17,42 @@ use crate::source_map::SourceMap;
 // ---------------------------------------------------------------------------
 
 /// Unique identifier for a program within an Env.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ProgramId(pub u32);
 
 /// Unique identifier for a term within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct TermId(pub u32);
 
 /// Unique identifier for a block within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct BlockId(pub u32);
 
 /// Global term identifier - unique within an Env.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct GlobalTermId {
     pub program: ProgramId,
     pub term: TermId,
 }
 
 /// Register index within a Frame's register file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct RegisterIndex(pub u16);
 
 /// Unique key for persistent state values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct StateKey(pub u64);
 
 /// Identifier for a function definition within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct FunctionId(pub u32);
 
 /// Identifier for a builtin function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct BuiltinId(pub u16);
 
 /// Identifier for a runtime closure instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ClosureId(pub u32);
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,7 @@ pub struct ClosureId(pub u32);
 // ---------------------------------------------------------------------------
 
 /// The operation a term performs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum TermOp {
     // --- Core (from docs/tech_outline/data_structures/Term.md) ---
 
@@ -153,6 +155,7 @@ pub enum TermOp {
 // ---------------------------------------------------------------------------
 
 /// A single expression/node in the program graph.
+#[derive(Serialize)]
 pub struct Term {
     pub id: TermId,
     pub op: TermOp,
@@ -178,6 +181,7 @@ pub struct Term {
 // ---------------------------------------------------------------------------
 
 /// A control flow block within a Program.
+#[derive(Serialize)]
 pub struct Block {
     pub id: BlockId,
     /// The term that creates this block's scope. None for the root block.
@@ -195,6 +199,7 @@ pub struct Block {
 // ---------------------------------------------------------------------------
 
 /// Compile-time function metadata.
+#[derive(Serialize)]
 pub struct FunctionDef {
     pub id: FunctionId,
     pub name: Option<String>,
@@ -213,6 +218,7 @@ pub struct FunctionDef {
 // ---------------------------------------------------------------------------
 
 /// Metadata for a compiled match arm.
+#[derive(Serialize)]
 pub struct MatchArmMeta {
     pub pattern: Pattern,
     pub guard_block: Option<BlockId>,
@@ -224,6 +230,7 @@ pub struct MatchArmMeta {
 // ---------------------------------------------------------------------------
 
 /// A compiled program ready for execution.
+#[derive(Serialize)]
 pub struct Program {
     pub id: ProgramId,
     pub source: String,
@@ -236,6 +243,7 @@ pub struct Program {
     pub source_map: SourceMap,
     pub has_errors: bool,
     pub functions: Vec<FunctionDef>,
+    #[serde(serialize_with = "serialize_termid_map")]
     pub match_arms: HashMap<TermId, Vec<MatchArmMeta>>,
 }
 

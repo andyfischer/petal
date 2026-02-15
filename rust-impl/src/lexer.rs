@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum Token {
     // Literals
     Int(i64),
@@ -52,7 +52,8 @@ pub enum Token {
     Dot,
     Colon,
     Arrow, // ->
-    DotDot, // ..
+    DotDot,    // ..
+    DotDotDot, // ...
 
     // Special
     Newline,
@@ -136,8 +137,13 @@ impl Lexer {
                 }
                 '.' => {
                     if self.peek_next() == Some('.') {
-                        self.tokens.push(Token::DotDot);
-                        self.pos += 2;
+                        if self.pos + 2 < self.input.len() && self.input[self.pos + 2] == '.' {
+                            self.tokens.push(Token::DotDotDot);
+                            self.pos += 3;
+                        } else {
+                            self.tokens.push(Token::DotDot);
+                            self.pos += 2;
+                        }
                     } else {
                         self.tokens.push(Token::Dot);
                         self.pos += 1;

@@ -42,7 +42,18 @@ npx vitest -t "emits Add"
 
 ```bash
 ./bin/test-each.sh          # Run all 16 examples with timeout
-./bin/test-snippet.sh f.ptl # Run a single .ptl file
 ```
 
 Example programs live in `examples/*.ptl`.
+
+## MCP Tool: TestSnippet
+
+An MCP server (`tools/petal-mcp.ts`) provides a `TestSnippet` tool that compiles and runs
+Petal code directly. It automatically builds the Rust binary before running. Use this to
+quickly test Petal snippets without shelling out manually.
+
+```
+TestSnippet({ code: 'print("hello")' })
+```
+
+Returns stdout, stderr, and exit code.

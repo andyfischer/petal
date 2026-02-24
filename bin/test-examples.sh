@@ -7,9 +7,9 @@ set -e
 cd "$(dirname "$0")/.."
 
 # Build first
-cargo build --quiet --manifest-path rust-impl/Cargo.toml
+cargo build --quiet --manifest-path rust/Cargo.toml
 
-PETAL="rust-impl/target/debug/petal"
+PETAL="rust/target/debug/petal"
 FULL=false
 if [ "$1" = "--full" ]; then
     FULL=true

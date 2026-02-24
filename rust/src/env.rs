@@ -88,6 +88,8 @@ impl Env {
             registers,
             return_term: None,
             parent_frame: None,
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
         });
 
         self.stacks.insert(key, stack);
@@ -151,7 +153,7 @@ impl Env {
             .get(&stack.program_id)
             .ok_or("Program not found")?;
 
-        // Keep state, reset frames
+        // Keep state, reset frames and any in-progress loop tracking
         stack.frames.clear();
         stack.status = StackStatus::Ready;
         stack.break_flag = false;
@@ -173,6 +175,8 @@ impl Env {
             registers,
             return_term: None,
             parent_frame: None,
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
         });
 
         Ok(())

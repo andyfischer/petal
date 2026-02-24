@@ -5,9 +5,9 @@
 cd "$(dirname "$0")/.."
 
 TIMEOUT=${1:-3}
-PETAL="rust-impl/target/debug/petal"
+PETAL="rust/target/debug/petal"
 
-cargo build --quiet --manifest-path rust-impl/Cargo.toml 2>&1 | grep -v warning
+cargo build --quiet --manifest-path rust/Cargo.toml 2>&1 | grep -v warning
 
 PASS=0
 FAIL=0

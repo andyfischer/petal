@@ -9,7 +9,7 @@ use crate::builtins::{self, BuiltinTable};
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
 use crate::program::*;
-use crate::stack::{Frame, Stack};
+use crate::stack::{Frame, LoopState, Stack};
 use crate::value::{self, Value};
 
 /// Result of a single evaluation step.
@@ -59,6 +59,13 @@ impl Evaluator {
                 return Self::pop_frame(program, stack, heap);
             }
         };
+
+        // If break_flag is set and the current frame is a direct loop body,
+        // skip remaining terms and pop immediately so the parent loop term
+        // can handle the break on its next execution.
+        if stack.break_flag && stack.frames[frame_idx].is_loop_body {
+            return Self::pop_frame(program, stack, heap);
+        }
 
         let term = program.get_term(current_term_id);
 
@@ -395,116 +402,161 @@ impl Evaluator {
             }
 
             TermOp::ForLoop => {
-                let iter_val = inputs[0];
-                match iter_val {
-                    Value::List(list_id) => {
-                        let body_block = term.child_blocks[0];
-                        // Get list elements (copy them since we'll iterate)
-                        let elements: Vec<Value> = heap.get_list(list_id).to_vec();
+                // Handle break from a completed iteration.
+                if stack.break_flag {
+                    stack.break_flag = false;
+                    if let Some(frame) = stack.frames.last_mut() {
+                        frame.loop_states.remove(&term.id);
+                    }
+                    Self::write_register(stack, term, Value::Nil);
+                    return ControlFlow::Advance;
+                }
 
-                        for elem in elements {
-                            if stack.break_flag {
-                                stack.break_flag = false;
-                                break;
-                            }
+                let body_block = term.child_blocks[0];
 
-                            // Push frame for body block
-                            let block = program.get_block(body_block);
-                            let reg_count = block.register_count as usize;
-                            let parent_frame_idx = stack.frames.len() - 1;
-                            stack.push_frame(Frame {
-                                block_id: body_block,
-                                current_term: block.entry,
-                                registers: vec![Value::Nil; reg_count],
-                                return_term: Some(term.id),
-                                parent_frame: Some(parent_frame_idx),
-                            });
-
-                            // Set loop variable (first register)
+                // Initialize loop state on the first visit.
+                let needs_init = stack.frames.last()
+                    .map(|f| !f.loop_states.contains_key(&term.id))
+                    .unwrap_or(false);
+                if needs_init {
+                    match inputs[0] {
+                        Value::List(list_id) => {
+                            let elements = heap.get_list(list_id).to_vec();
                             if let Some(frame) = stack.frames.last_mut() {
-                                if !frame.registers.is_empty() {
-                                    frame.registers[0] = elem;
-                                }
-                            }
-
-                            // Execute body to completion
-                            loop {
-                                let step = Self::step(
-                                    program, stack, heap, closures, builtins_table, output,
+                                frame.loop_states.insert(
+                                    term.id,
+                                    LoopState::For { elements, index: 0 },
                                 );
-                                match step {
-                                    StepResult::Continue => {
-                                        if stack.break_flag {
-                                            // Pop the body frame
-                                            while stack.frames.len() > parent_frame_idx + 1 {
-                                                stack.pop_frame();
-                                            }
-                                            break;
-                                        }
-                                        // Check if we returned to our frame
-                                        if stack.frames.len() <= parent_frame_idx + 1 {
-                                            break;
-                                        }
-                                    }
-                                    StepResult::Complete(_) => break,
-                                    StepResult::Error(e) => return ControlFlow::Error(e),
-                                }
-                            }
-
-                            if stack.break_flag {
-                                stack.break_flag = false;
-                                break;
                             }
                         }
+                        other => {
+                            return ControlFlow::Error(format!(
+                                "Cannot iterate over {}",
+                                other.type_name()
+                            ))
+                        }
+                    }
+                }
 
+                // Get the next element (or detect loop completion).
+                let maybe_elem: Option<Value> = {
+                    let frame = stack.frames.last_mut().unwrap();
+                    match frame.loop_states.get_mut(&term.id) {
+                        Some(LoopState::For { elements, index }) => {
+                            if *index < elements.len() {
+                                let elem = elements[*index];
+                                *index += 1;
+                                Some(elem)
+                            } else {
+                                frame.loop_states.remove(&term.id);
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                };
+
+                match maybe_elem {
+                    Some(elem) => {
+                        // Push body frame for this iteration.
+                        // Note: we do NOT pre-advance the parent frame here (unlike
+                        // push_child_frame). This keeps current_term pointing at the
+                        // ForLoop term so it re-executes after the body returns.
+                        let block = program.get_block(body_block);
+                        let reg_count = block.register_count as usize;
+                        let parent_frame_idx = stack.frames.len() - 1;
+                        stack.push_frame(Frame {
+                            block_id: body_block,
+                            current_term: block.entry,
+                            registers: vec![Value::Nil; reg_count],
+                            return_term: Some(term.id),
+                            parent_frame: Some(parent_frame_idx),
+                            is_loop_body: true,
+                            loop_states: std::collections::HashMap::new(),
+                        });
+                        // Set the loop variable in the first register.
+                        if let Some(frame) = stack.frames.last_mut() {
+                            if !frame.registers.is_empty() {
+                                frame.registers[0] = elem;
+                            }
+                        }
+                        ControlFlow::FramePushed
+                    }
+                    None => {
+                        // All iterations complete.
                         Self::write_register(stack, term, Value::Nil);
                         ControlFlow::Advance
                     }
-                    _ => ControlFlow::Error(format!(
-                        "Cannot iterate over {}",
-                        iter_val.type_name()
-                    )),
                 }
             }
 
             TermOp::WhileLoop => {
+                // Handle break from the body.
+                if stack.break_flag {
+                    stack.break_flag = false;
+                    if let Some(frame) = stack.frames.last_mut() {
+                        frame.loop_states.remove(&term.id);
+                    }
+                    Self::write_register(stack, term, Value::Nil);
+                    return ControlFlow::Advance;
+                }
+
                 let cond_block = term.child_blocks[0];
                 let body_block = term.child_blocks[1];
 
-                loop {
-                    if stack.break_flag {
-                        stack.break_flag = false;
-                        break;
-                    }
+                let is_awaiting_cond = stack.frames.last()
+                    .map(|f| matches!(f.loop_states.get(&term.id), Some(LoopState::WhileCondition)))
+                    .unwrap_or(false);
 
-                    // Evaluate condition
-                    let cond_val = Self::eval_block_to_value(
-                        program, stack, heap, closures, builtins_table, output,
-                        cond_block, term,
-                    );
-                    let cond_val = match cond_val {
-                        Ok(v) => v,
-                        Err(e) => return ControlFlow::Error(e),
-                    };
+                if is_awaiting_cond {
+                    // The condition block just returned; its result was written to
+                    // this term's register by pop_frame.
+                    let cond_val = Self::read_register(program, stack, term.id);
+                    if let Some(frame) = stack.frames.last_mut() {
+                        frame.loop_states.remove(&term.id);
+                    }
 
                     if !cond_val.is_truthy() {
-                        break;
+                        // Condition false — loop done.
+                        Self::write_register(stack, term, Value::Nil);
+                        return ControlFlow::Advance;
                     }
 
-                    // Evaluate body
-                    let _ = Self::eval_block_to_value(
-                        program, stack, heap, closures, builtins_table, output,
-                        body_block, term,
-                    );
-
-                    if stack.break_flag {
-                        stack.break_flag = false;
-                        break;
-                    }
+                    // Push body frame.
+                    // No state entry: after body returns we re-enter with no state
+                    // and push condition again.
+                    let block = program.get_block(body_block);
+                    let reg_count = block.register_count as usize;
+                    let parent_frame_idx = stack.frames.len() - 1;
+                    stack.push_frame(Frame {
+                        block_id: body_block,
+                        current_term: block.entry,
+                        registers: vec![Value::Nil; reg_count],
+                        return_term: Some(term.id),
+                        parent_frame: Some(parent_frame_idx),
+                        is_loop_body: true,
+                        loop_states: std::collections::HashMap::new(),
+                    });
+                    return ControlFlow::FramePushed;
                 }
 
-                Self::write_register(stack, term, Value::Nil);
-                ControlFlow::Advance
+                // Fresh start or body just returned — push condition block.
+                let block = program.get_block(cond_block);
+                let reg_count = block.register_count as usize;
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(Frame {
+                    block_id: cond_block,
+                    current_term: block.entry,
+                    registers: vec![Value::Nil; reg_count],
+                    return_term: Some(term.id),
+                    parent_frame: Some(parent_frame_idx),
+                    is_loop_body: false,
+                    loop_states: std::collections::HashMap::new(),
+                });
+                if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
+                    frame.loop_states.insert(term.id, LoopState::WhileCondition);
+                }
+                ControlFlow::FramePushed
             }
 
             TermOp::Break => ControlFlow::Break,
@@ -573,6 +625,8 @@ impl Evaluator {
                             registers,
                             return_term: Some(term.id),
                             parent_frame: None,
+                            is_loop_body: false,
+                            loop_states: std::collections::HashMap::new(),
                         });
 
                         ControlFlow::FramePushed
@@ -806,6 +860,8 @@ impl Evaluator {
                                 registers: vec![Value::Nil; gb_reg_count],
                                 return_term: Some(term.id),
                                 parent_frame: Some(parent_idx),
+                                is_loop_body: false,
+                                loop_states: std::collections::HashMap::new(),
                             });
                             if let Some(frame) = stack.frames.last_mut() {
                                 Self::apply_pattern_bindings(program, guard_block, &bindings, frame);
@@ -851,6 +907,8 @@ impl Evaluator {
                             registers: vec![Value::Nil; reg_count],
                             return_term: Some(term.id),
                             parent_frame: Some(parent_frame_idx),
+                            is_loop_body: false,
+                            loop_states: std::collections::HashMap::new(),
                         });
 
                         // Apply pattern bindings to the body frame's registers
@@ -952,6 +1010,8 @@ impl Evaluator {
             registers: vec![Value::Nil; reg_count],
             return_term: Some(parent_term.id),
             parent_frame: Some(parent_frame_idx),
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
         });
     }
 
@@ -976,6 +1036,8 @@ impl Evaluator {
             registers: vec![Value::Nil; reg_count],
             return_term: Some(parent_term.id),
             parent_frame: Some(parent_frame_idx),
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
         });
 
         let target_depth = parent_frame_idx + 1;

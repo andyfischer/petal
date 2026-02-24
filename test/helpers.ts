@@ -1,12 +1,12 @@
 import { execSync } from "child_process";
 import { resolve } from "path";
 
-const PETAL = resolve(__dirname, "../rust-impl/target/debug/petal");
+const PETAL = resolve(__dirname, "../rust/target/debug/petal");
 let built = false;
 
 export function ensureBuild() {
   if (built) return;
-  execSync("cargo build --manifest-path rust-impl/Cargo.toml", {
+  execSync("cargo build --manifest-path rust/Cargo.toml", {
     cwd: resolve(__dirname, ".."),
     stdio: "pipe",
   });

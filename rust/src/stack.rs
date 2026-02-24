@@ -11,6 +11,18 @@ use crate::value::Value;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StackKey(pub u32);
 
+/// Per-loop state stored in the frame that owns the loop term.
+///
+/// Because this lives on the Frame, it is automatically discarded when the
+/// frame is popped (e.g. by an early `return`), which prevents stale state
+/// from leaking across function calls.
+pub enum LoopState {
+    /// For-each loop: elements copied from the list and the next index to process.
+    For { elements: Vec<Value>, index: usize },
+    /// While loop: the condition block has been pushed; waiting for its result.
+    WhileCondition,
+}
+
 /// Runtime execution state for a program.
 pub struct Stack {
     pub id: StackKey,
@@ -26,11 +38,18 @@ pub struct Frame {
     pub block_id: BlockId,
     pub current_term: Option<TermId>,
     pub registers: Vec<Value>,
-    /// Term in the parent frame to resume at when this frame completes
+    /// Term in the parent frame to resume at when this frame completes.
     pub return_term: Option<TermId>,
     /// Index into stack.frames of the parent frame (for cross-frame register reads).
     /// None for function call frames (captures are in local registers).
     pub parent_frame: Option<usize>,
+    /// True if this frame is the direct body of a loop (for/while body).
+    /// When `break_flag` is set, the evaluator immediately pops loop-body
+    /// frames so the parent loop term can handle the break.
+    pub is_loop_body: bool,
+    /// Loop state for any loop terms executing within this frame.
+    /// Keyed by TermId of the ForLoop / WhileLoop term.
+    pub loop_states: HashMap<TermId, LoopState>,
 }
 
 #[derive(Debug, Clone)]

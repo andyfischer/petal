@@ -44,7 +44,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
-        builtins: &BuiltinTable,
+        builtins_table: &BuiltinTable,
         output: &mut Vec<String>,
     ) -> StepResult {
         let frame_idx = match stack.frames.len().checked_sub(1) {
@@ -84,7 +84,7 @@ impl Evaluator {
             stack,
             heap,
             closures,
-            builtins,
+            builtins_table,
             output,
         );
 
@@ -172,6 +172,9 @@ impl Evaluator {
         let block = program.get_block(frame.block_id);
         let result = Self::get_last_register_value(&frame, block, program);
 
+        // Always store the result for synchronous closure callers
+        stack.last_pop_result = Some(result);
+
         if stack.frames.is_empty() {
             // Program complete
             return StepResult::Complete(result);
@@ -218,6 +221,8 @@ impl Evaluator {
                 None => return,
             };
             if frame.parent_frame.is_none() {
+                // Store for synchronous closure callers
+                stack.last_pop_result = Some(value);
                 // This was a function frame — write return value to caller
                 if let Some(return_term) = frame.return_term {
                     let parent_term = program.get_term(return_term);
@@ -633,12 +638,44 @@ impl Evaluator {
                     }
 
                     Value::BuiltinFunction(builtin_id) => {
-                        match builtins::call_builtin(builtin_id, args, heap, output) {
-                            Ok(val) => {
-                                Self::write_register(stack, term, val);
-                                ControlFlow::Advance
+                        // Higher-order builtins need evaluator access to call closures
+                        match builtin_id {
+                            crate::builtins::BUILTIN_MAP => {
+                                match Self::builtin_map(args, program, stack, heap, closures, builtins_table, output) {
+                                    Ok(val) => {
+                                        Self::write_register(stack, term, val);
+                                        ControlFlow::Advance
+                                    }
+                                    Err(e) => ControlFlow::Error(e),
+                                }
                             }
-                            Err(e) => ControlFlow::Error(e),
+                            crate::builtins::BUILTIN_FILTER => {
+                                match Self::builtin_filter(args, program, stack, heap, closures, builtins_table, output) {
+                                    Ok(val) => {
+                                        Self::write_register(stack, term, val);
+                                        ControlFlow::Advance
+                                    }
+                                    Err(e) => ControlFlow::Error(e),
+                                }
+                            }
+                            crate::builtins::BUILTIN_REDUCE => {
+                                match Self::builtin_reduce(args, program, stack, heap, closures, builtins_table, output) {
+                                    Ok(val) => {
+                                        Self::write_register(stack, term, val);
+                                        ControlFlow::Advance
+                                    }
+                                    Err(e) => ControlFlow::Error(e),
+                                }
+                            }
+                            _ => {
+                                match crate::builtins::call_builtin(builtin_id, args, heap, output) {
+                                    Ok(val) => {
+                                        Self::write_register(stack, term, val);
+                                        ControlFlow::Advance
+                                    }
+                                    Err(e) => ControlFlow::Error(e),
+                                }
+                            }
                         }
                     }
 
@@ -1069,6 +1106,195 @@ impl Evaluator {
                 StepResult::Error(e) => return Err(e),
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Higher-order builtin helpers
+    // -----------------------------------------------------------------------
+
+    /// Call a closure synchronously with the given arguments, returning the result.
+    fn call_closure_sync(
+        callable: Value,
+        call_args: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        let closure_id = match callable {
+            Value::Closure(id) => id,
+            _ => return Err(format!("Expected a function, got {}", callable.type_name())),
+        };
+
+        let closure = &closures[closure_id.0 as usize];
+        let func = &program.functions[closure.function_id.0 as usize];
+        let body_block = func.body_block;
+        let block = program.get_block(body_block);
+
+        if call_args.len() != func.params.len() {
+            return Err(format!(
+                "Expected {} arguments, got {}",
+                func.params.len(),
+                call_args.len()
+            ));
+        }
+
+        let reg_count = block.register_count as usize;
+        let mut registers = vec![Value::Nil; reg_count];
+
+        for (i, arg) in call_args.iter().enumerate() {
+            if i < registers.len() {
+                registers[i] = *arg;
+            }
+        }
+
+        // Captures need to be read before we borrow closures again
+        let captures: Vec<Value> = closures[closure_id.0 as usize].captures.clone();
+        let capture_registers: Vec<RegisterIndex> =
+            program.functions[closures[closure_id.0 as usize].function_id.0 as usize]
+                .capture_registers.clone();
+        let self_ref_register =
+            program.functions[closures[closure_id.0 as usize].function_id.0 as usize]
+                .self_ref_register;
+
+        for (i, cap) in captures.iter().enumerate() {
+            if i < capture_registers.len() {
+                let reg_idx = capture_registers[i].0 as usize;
+                if reg_idx < registers.len() {
+                    registers[reg_idx] = *cap;
+                }
+            }
+        }
+
+        if let Some(self_reg) = self_ref_register {
+            let reg_idx = self_reg.0 as usize;
+            if reg_idx < registers.len() {
+                registers[reg_idx] = callable;
+            }
+        }
+
+        let target_depth = stack.frames.len();
+
+        stack.push_frame(Frame {
+            block_id: body_block,
+            current_term: block.entry,
+            registers,
+            return_term: None,
+            parent_frame: None,
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
+        });
+
+        stack.last_pop_result = None;
+
+        loop {
+            if stack.frames.len() <= target_depth {
+                // Frame was popped — retrieve the result
+                return Ok(stack.last_pop_result.take().unwrap_or(Value::Nil));
+            }
+
+            let step = Self::step(program, stack, heap, closures, builtins_table, output);
+            match step {
+                StepResult::Continue => {}
+                StepResult::Complete(v) => return Ok(v),
+                StepResult::Error(e) => return Err(e),
+            }
+        }
+    }
+
+    fn builtin_map(
+        args: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("map() expects 2 arguments (list, function)".into());
+        }
+        let list_id = match args[0] {
+            Value::List(id) => id,
+            _ => return Err("map() expects a list as first argument".into()),
+        };
+        let func = args[1];
+        let elements = heap.get_list(list_id).to_vec();
+
+        let mut results = Vec::with_capacity(elements.len());
+        for elem in elements {
+            let result = Self::call_closure_sync(
+                func, &[elem], program, stack, heap, closures, builtins_table, output,
+            )?;
+            results.push(result);
+        }
+
+        let result_id = heap.alloc_list(results);
+        Ok(Value::List(result_id))
+    }
+
+    fn builtin_filter(
+        args: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("filter() expects 2 arguments (list, function)".into());
+        }
+        let list_id = match args[0] {
+            Value::List(id) => id,
+            _ => return Err("filter() expects a list as first argument".into()),
+        };
+        let func = args[1];
+        let elements = heap.get_list(list_id).to_vec();
+
+        let mut results = Vec::new();
+        for elem in elements {
+            let keep = Self::call_closure_sync(
+                func, &[elem], program, stack, heap, closures, builtins_table, output,
+            )?;
+            if keep.is_truthy() {
+                results.push(elem);
+            }
+        }
+
+        let result_id = heap.alloc_list(results);
+        Ok(Value::List(result_id))
+    }
+
+    fn builtin_reduce(
+        args: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        builtins_table: &BuiltinTable,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        if args.len() != 3 {
+            return Err("reduce() expects 3 arguments (list, initial, function)".into());
+        }
+        let list_id = match args[0] {
+            Value::List(id) => id,
+            _ => return Err("reduce() expects a list as first argument".into()),
+        };
+        let func = args[2];
+        let elements = heap.get_list(list_id).to_vec();
+        let mut acc = args[1];
+
+        for elem in elements {
+            acc = Self::call_closure_sync(
+                func, &[acc, elem], program, stack, heap, closures, builtins_table, output,
+            )?;
+        }
+
+        Ok(acc)
     }
 
     // -----------------------------------------------------------------------

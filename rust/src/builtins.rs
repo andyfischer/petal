@@ -31,11 +31,14 @@ pub const BUILTIN_CONTAINS: BuiltinId = BuiltinId(17);
 pub const BUILTIN_MIN: BuiltinId = BuiltinId(18);
 pub const BUILTIN_MAX: BuiltinId = BuiltinId(19);
 pub const BUILTIN_ROUND: BuiltinId = BuiltinId(20);
+pub const BUILTIN_MAP: BuiltinId = BuiltinId(21);
+pub const BUILTIN_FILTER: BuiltinId = BuiltinId(22);
+pub const BUILTIN_REDUCE: BuiltinId = BuiltinId(23);
 
 const BUILTIN_NAMES: &[&str] = &[
     "print", "range", "len", "push", "str", "abs", "sqrt", "floor", "ceil",
     "float", "int", "random", "type", "append", "pop", "keys", "values",
-    "contains", "min", "max", "round",
+    "contains", "min", "max", "round", "map", "filter", "reduce",
 ];
 
 impl BuiltinTable {

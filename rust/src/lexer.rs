@@ -55,6 +55,10 @@ pub enum Token {
     DotDot,    // ..
     DotDotDot, // ...
 
+    // String interpolation
+    InterpStart, // signals start of interpolation expression
+    InterpEnd,   // signals end of interpolation expression
+
     // Special
     Newline,
     Eof,
@@ -271,11 +275,19 @@ impl Lexer {
     fn read_string(&mut self) -> Result<(), String> {
         self.pos += 1; // skip opening quote
         let mut s = String::new();
+        let mut has_interp = false;
+
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch == '"' {
                 self.pos += 1;
-                self.tokens.push(Token::String(s));
+                if has_interp {
+                    // Emit trailing string part (even if empty, for concatenation)
+                    self.tokens.push(Token::String(s));
+                    self.tokens.push(Token::InterpEnd);
+                } else {
+                    self.tokens.push(Token::String(s));
+                }
                 return Ok(());
             }
             if ch == '\\' {
@@ -288,17 +300,154 @@ impl Lexer {
                     't' => s.push('\t'),
                     '\\' => s.push('\\'),
                     '"' => s.push('"'),
+                    '{' => s.push('{'),
+                    '}' => s.push('}'),
                     other => {
                         s.push('\\');
                         s.push(other);
                     }
                 }
-            } else {
-                s.push(ch);
+                self.pos += 1;
+                continue;
             }
+            if ch == '{' {
+                // Start of interpolation
+                if !has_interp {
+                    has_interp = true;
+                    self.tokens.push(Token::InterpStart);
+                }
+                // Emit the string part accumulated so far
+                self.tokens.push(Token::String(s));
+                s = String::new();
+                self.pos += 1;
+
+                // Tokenize the expression inside braces
+                let mut depth = 1;
+                while self.pos < self.input.len() && depth > 0 {
+                    self.skip_whitespace_no_newline();
+                    if self.pos >= self.input.len() {
+                        break;
+                    }
+                    let inner_ch = self.input[self.pos];
+                    if inner_ch == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            self.pos += 1;
+                            break;
+                        }
+                        self.tokens.push(Token::RBrace);
+                        self.pos += 1;
+                    } else if inner_ch == '{' {
+                        depth += 1;
+                        self.tokens.push(Token::LBrace);
+                        self.pos += 1;
+                    } else {
+                        // Tokenize one token from the interpolation expression
+                        self.tokenize_one()?;
+                    }
+                }
+                if depth > 0 {
+                    return Err("Unterminated string interpolation".to_string());
+                }
+                continue;
+            }
+            s.push(ch);
             self.pos += 1;
         }
         Err("Unterminated string".to_string())
+    }
+
+    /// Tokenize a single token at the current position (used inside string interpolation).
+    fn tokenize_one(&mut self) -> Result<(), String> {
+        if self.pos >= self.input.len() {
+            return Ok(());
+        }
+        let ch = self.input[self.pos];
+        match ch {
+            '"' => self.read_string()?,
+            '(' => { self.tokens.push(Token::LParen); self.pos += 1; }
+            ')' => { self.tokens.push(Token::RParen); self.pos += 1; }
+            '[' => { self.tokens.push(Token::LBracket); self.pos += 1; }
+            ']' => { self.tokens.push(Token::RBracket); self.pos += 1; }
+            ',' => { self.tokens.push(Token::Comma); self.pos += 1; }
+            ':' => { self.tokens.push(Token::Colon); self.pos += 1; }
+            '.' => {
+                if self.peek_next() == Some('.') {
+                    if self.pos + 2 < self.input.len() && self.input[self.pos + 2] == '.' {
+                        self.tokens.push(Token::DotDotDot); self.pos += 3;
+                    } else {
+                        self.tokens.push(Token::DotDot); self.pos += 2;
+                    }
+                } else {
+                    self.tokens.push(Token::Dot); self.pos += 1;
+                }
+            }
+            '+' => {
+                if self.peek_next() == Some('+') {
+                    self.tokens.push(Token::PlusPlus); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Plus); self.pos += 1;
+                }
+            }
+            '-' => {
+                if self.peek_next() == Some('>') {
+                    self.tokens.push(Token::Arrow); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Minus); self.pos += 1;
+                }
+            }
+            '*' => { self.tokens.push(Token::Star); self.pos += 1; }
+            '/' => { self.tokens.push(Token::Slash); self.pos += 1; }
+            '%' => { self.tokens.push(Token::Percent); self.pos += 1; }
+            '=' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::Eq); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Assign); self.pos += 1;
+                }
+            }
+            '!' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::Ne); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Bang); self.pos += 1;
+                }
+            }
+            '<' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::Le); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Lt); self.pos += 1;
+                }
+            }
+            '>' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::Ge); self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Gt); self.pos += 1;
+                }
+            }
+            '&' => {
+                if self.peek_next() == Some('&') {
+                    self.tokens.push(Token::And); self.pos += 2;
+                } else {
+                    return Err(format!("Unexpected character '&' at position {}", self.pos));
+                }
+            }
+            '|' => {
+                if self.peek_next() == Some('|') {
+                    self.tokens.push(Token::Or); self.pos += 2;
+                } else {
+                    return Err(format!("Unexpected character '|' at position {}", self.pos));
+                }
+            }
+            c if c.is_ascii_digit() => self.read_number()?,
+            c if c.is_alphabetic() || c == '_' => self.read_identifier(),
+            _ => {
+                return Err(format!("Unexpected character '{}' in interpolation at position {}", ch, self.pos));
+            }
+        }
+        Ok(())
     }
 
     fn read_number(&mut self) -> Result<(), String> {

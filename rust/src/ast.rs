@@ -74,6 +74,12 @@ pub enum Expr {
         params: Vec<String>,
         body: Vec<Stmt>,
     },
+    /// String interpolation: alternating string parts and expressions.
+    /// parts has one more element than exprs (parts[0], exprs[0], parts[1], exprs[1], ..., parts[N]).
+    StringInterp {
+        parts: Vec<String>,
+        exprs: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

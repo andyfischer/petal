@@ -841,6 +841,27 @@ impl Compiler {
             Expr::Lambda { params, body } => {
                 self.compile_function(None, params, body)
             }
+
+            Expr::StringInterp { parts, exprs } => {
+                // Build: str(parts[0]) ++ str(exprs[0]) ++ str(parts[1]) ++ str(exprs[1]) ++ ... ++ str(parts[N])
+                // Start with the first string part
+                let first_cid = self.constants.intern(ConstantValue::String(parts[0].clone()));
+                let mut result = self.emit_term(TermOp::Constant(first_cid), smallvec![], None);
+
+                for (i, expr) in exprs.iter().enumerate() {
+                    // Compile the expression and convert to string via Concat
+                    // (Concat already handles str conversion in the evaluator)
+                    let expr_tid = self.compile_expr(expr);
+                    result = self.emit_term(TermOp::Concat, smallvec![result, expr_tid], None);
+
+                    // Add the next string part
+                    let part_cid = self.constants.intern(ConstantValue::String(parts[i + 1].clone()));
+                    let part_tid = self.emit_term(TermOp::Constant(part_cid), smallvec![], None);
+                    result = self.emit_term(TermOp::Concat, smallvec![result, part_tid], None);
+                }
+
+                result
+            }
         }
     }
 

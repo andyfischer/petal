@@ -446,6 +446,9 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Literal(Literal::Float(f)))
             }
+            Token::InterpStart => {
+                return self.parse_string_interp();
+            }
             Token::String(s) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::String(s)))
@@ -756,6 +759,50 @@ impl Parser {
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
         Ok(Expr::Lambda { params, body })
+    }
+
+    fn parse_string_interp(&mut self) -> Result<Expr, String> {
+        self.advance(); // consume InterpStart
+        let mut parts: Vec<String> = Vec::new();
+        let mut exprs: Vec<Expr> = Vec::new();
+
+        // Token stream: String, expr_tokens, String, expr_tokens, ..., String, InterpEnd
+        loop {
+            // Expect a string part
+            match self.peek().clone() {
+                Token::String(s) => {
+                    self.advance();
+                    parts.push(s);
+                }
+                Token::InterpEnd => {
+                    // Edge case: shouldn't happen without a string first, but be safe
+                    parts.push(String::new());
+                }
+                other => {
+                    return Err(format!(
+                        "Expected string part in interpolation, got {:?}",
+                        other
+                    ));
+                }
+            }
+
+            // Check if we're done
+            if matches!(self.peek(), Token::InterpEnd) {
+                self.advance();
+                break;
+            }
+
+            // Parse expression
+            let expr = self.parse_expr()?;
+            exprs.push(expr);
+        }
+
+        // If no expressions were found, it's just a plain string
+        if exprs.is_empty() {
+            Ok(Expr::Literal(Literal::String(parts.into_iter().next().unwrap_or_default())))
+        } else {
+            Ok(Expr::StringInterp { parts, exprs })
+        }
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {

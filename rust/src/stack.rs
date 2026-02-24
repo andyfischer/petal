@@ -31,6 +31,7 @@ pub struct Stack {
     pub state: HashMap<StateKey, Value>,
     pub status: StackStatus,
     pub break_flag: bool,
+    pub continue_flag: bool,
     /// Temporary storage for the result of the last popped frame.
     /// Used by synchronous closure calls (map/filter/reduce) to capture return values.
     pub last_pop_result: Option<Value>,
@@ -72,6 +73,7 @@ impl Stack {
             state: HashMap::new(),
             status: StackStatus::Ready,
             break_flag: false,
+            continue_flag: false,
             last_pop_result: None,
         }
     }

@@ -109,6 +109,7 @@ pub enum TermOp {
     /// while loop: child_blocks=[cond_block, body_block]
     WhileLoop,
     Break,
+    Continue,
     /// Return from function: inputs=[value] or empty for bare return
     Return,
 

@@ -94,6 +94,10 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::Break)
             }
+            Token::Continue => {
+                self.advance();
+                Ok(Stmt::Continue)
+            }
             Token::State => self.parse_state(),
             Token::Enum => self.parse_enum_decl(),
             _ => self.parse_expr_or_assign(),

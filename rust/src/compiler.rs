@@ -475,6 +475,10 @@ impl Compiler {
                 self.emit_term(TermOp::Break, smallvec![], None);
             }
 
+            Stmt::Continue => {
+                self.emit_term(TermOp::Continue, smallvec![], None);
+            }
+
             Stmt::State { name, init, id } => {
                 let init_tid = self.compile_expr(init);
                 let state_key = StateKey(*id as u64);

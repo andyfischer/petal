@@ -30,6 +30,8 @@ enum ControlFlow {
     Return(Value),
     /// Break from loop
     Break,
+    /// Continue to next iteration
+    Continue,
     /// Fatal error
     Error(String),
 }
@@ -60,10 +62,10 @@ impl Evaluator {
             }
         };
 
-        // If break_flag is set and the current frame is a direct loop body,
+        // If break_flag or continue_flag is set and the current frame is a direct loop body,
         // skip remaining terms and pop immediately so the parent loop term
-        // can handle the break on its next execution.
-        if stack.break_flag && stack.frames[frame_idx].is_loop_body {
+        // can handle the break/continue on its next execution.
+        if (stack.break_flag || stack.continue_flag) && stack.frames[frame_idx].is_loop_body {
             return Self::pop_frame(program, stack, heap);
         }
 
@@ -106,6 +108,11 @@ impl Evaluator {
             ControlFlow::Break => {
                 stack.break_flag = true;
                 // Advance past the break term then the loop handler will catch it
+                Self::advance(stack, term);
+                StepResult::Continue
+            }
+            ControlFlow::Continue => {
+                stack.continue_flag = true;
                 Self::advance(stack, term);
                 StepResult::Continue
             }
@@ -167,6 +174,12 @@ impl Evaluator {
             Some(f) => f,
             None => return StepResult::Complete(Value::Nil),
         };
+
+        // When a loop body pops due to continue, clear the flag immediately
+        // so it doesn't propagate to outer loop bodies.
+        if stack.continue_flag && frame.is_loop_body {
+            stack.continue_flag = false;
+        }
 
         // Get the last term's value as the block result
         let block = program.get_block(frame.block_id);
@@ -417,6 +430,11 @@ impl Evaluator {
                     return ControlFlow::Advance;
                 }
 
+                // Handle continue — just clear the flag and proceed to next iteration.
+                if stack.continue_flag {
+                    stack.continue_flag = false;
+                }
+
                 let body_block = term.child_blocks[0];
 
                 // Initialize loop state on the first visit.
@@ -506,6 +524,11 @@ impl Evaluator {
                     return ControlFlow::Advance;
                 }
 
+                // Handle continue — clear the flag and re-evaluate condition.
+                if stack.continue_flag {
+                    stack.continue_flag = false;
+                }
+
                 let cond_block = term.child_blocks[0];
                 let body_block = term.child_blocks[1];
 
@@ -565,6 +588,7 @@ impl Evaluator {
             }
 
             TermOp::Break => ControlFlow::Break,
+            TermOp::Continue => ControlFlow::Continue,
 
             TermOp::Return => {
                 let val = inputs.first().copied().unwrap_or(Value::Nil);

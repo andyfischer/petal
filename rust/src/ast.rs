@@ -155,6 +155,7 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Break,
+    Continue,
     State {
         name: String,
         init: Expr,

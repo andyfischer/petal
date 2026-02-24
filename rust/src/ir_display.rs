@@ -131,6 +131,7 @@ fn format_op(op: &TermOp) -> String {
         TermOp::ForLoop => "ForLoop".into(),
         TermOp::WhileLoop => "WhileLoop".into(),
         TermOp::Break => "Break".into(),
+        TermOp::Continue => "Continue".into(),
         TermOp::Return => "Return".into(),
         TermOp::MakeClosure(fid) => format!("MakeClosure(fn{})", fid.0),
         TermOp::Call => "Call".into(),

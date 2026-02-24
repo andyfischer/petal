@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   ensureBuild,
   showIrJson,
+  runPetal,
   termsByOp,
 } from "./helpers";
 
@@ -114,5 +115,53 @@ describe("break and return", () => {
     const ir = showIrJson("fn f() { return 1 }");
     const returns = termsByOp(ir, "Return");
     expect(returns.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("continue", () => {
+  it("emits Continue inside for loop", () => {
+    const ir = showIrJson("for i in [1,2,3] { if i == 2 { continue } }");
+    const continues = termsByOp(ir, "Continue");
+    expect(continues.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("continue skips rest of for-loop iteration", () => {
+    const result = runPetal(`
+      let result = []
+      for i in [1, 2, 3, 4, 5] {
+        if i == 3 { continue }
+        push(result, i)
+      }
+      print(result)
+    `);
+    expect(result).toBe("[1, 2, 4, 5]");
+  });
+
+  it("continue works in while loops", () => {
+    const result = runPetal(`
+      let i = 0
+      let result = []
+      while i < 5 {
+        i = i + 1
+        if i == 3 { continue }
+        push(result, i)
+      }
+      print(result)
+    `);
+    expect(result).toBe("[1, 2, 4, 5]");
+  });
+
+  it("continue in nested loops only affects inner loop", () => {
+    const result = runPetal(`
+      let result = []
+      for i in [1, 2] {
+        for j in [10, 20, 30] {
+          if j == 20 { continue }
+          push(result, i * 100 + j)
+        }
+      }
+      print(result)
+    `);
+    expect(result).toBe("[110, 130, 210, 230]");
   });
 });

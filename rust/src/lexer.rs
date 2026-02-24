@@ -20,6 +20,7 @@ pub enum Token {
     Match,
     Return,
     Break,
+    Continue,
     State,
     Enum,
 
@@ -507,6 +508,7 @@ impl Lexer {
             "match" => Token::Match,
             "return" => Token::Return,
             "break" => Token::Break,
+            "continue" => Token::Continue,
             "state" => Token::State,
             "enum" => Token::Enum,
             "true" => Token::True,

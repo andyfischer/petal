@@ -17,17 +17,17 @@ All three are useful: tokens for lexer debugging, AST for parser verification, I
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `rust-impl/Cargo.toml` | Modify | Add serde, serde_json deps |
-| `rust-impl/src/lib.rs` | Modify | Register 3 new modules |
-| `rust-impl/src/main.rs` | Rewrite | Delegate to cli module |
-| `rust-impl/src/ast.rs` | Modify | Add `Serialize` derives |
-| `rust-impl/src/lexer.rs` | Modify | Add `Serialize` derive to Token |
-| `rust-impl/src/program.rs` | Modify | Add `Serialize` derives to all types |
-| `rust-impl/src/constant_table.rs` | Modify | Add `Serialize` derives, `#[serde(skip)]` on dedup, add accessor methods |
-| `rust-impl/src/source_map.rs` | Modify | Add `Serialize` derives |
-| `rust-impl/src/cli.rs` | **New** | CLI arg parsing & subcommand dispatch |
-| `rust-impl/src/ir_display.rs` | **New** | Human-readable IR text formatting |
-| `rust-impl/src/ir_serialize.rs` | **New** | Serde helpers (HashMap key serialization) |
+| `rust/Cargo.toml` | Modify | Add serde, serde_json deps |
+| `rust/src/lib.rs` | Modify | Register 3 new modules |
+| `rust/src/main.rs` | Rewrite | Delegate to cli module |
+| `rust/src/ast.rs` | Modify | Add `Serialize` derives |
+| `rust/src/lexer.rs` | Modify | Add `Serialize` derive to Token |
+| `rust/src/program.rs` | Modify | Add `Serialize` derives to all types |
+| `rust/src/constant_table.rs` | Modify | Add `Serialize` derives, `#[serde(skip)]` on dedup, add accessor methods |
+| `rust/src/source_map.rs` | Modify | Add `Serialize` derives |
+| `rust/src/cli.rs` | **New** | CLI arg parsing & subcommand dispatch |
+| `rust/src/ir_display.rs` | **New** | Human-readable IR text formatting |
+| `rust/src/ir_serialize.rs` | **New** | Serde helpers (HashMap key serialization) |
 
 ### TypeScript/Test Changes (8 new files, 1 modified)
 
@@ -46,7 +46,7 @@ All three are useful: tokens for lexer debugging, AST for parser verification, I
 
 ## Phase 1: Rust Dependencies
 
-**`rust-impl/Cargo.toml`** — Add serde ecosystem:
+**`rust/Cargo.toml`** — Add serde ecosystem:
 ```toml
 smallvec = { version = "1", features = ["serde"] }  # SmallVec serialization
 serde = { version = "1", features = ["derive"] }
@@ -148,7 +148,7 @@ serde's default externally-tagged enum representation:
 
 ## Verification
 
-1. `cd rust-impl && cargo build` — compiles with new deps
+1. `cd rust && cargo build` — compiles with new deps
 2. `petal show-ir examples/hello.ptl` — human-readable output
 3. `petal show-ir --json examples/hello.ptl | jq .` — valid JSON
 4. `petal show-ast --json -e 'let x = 1 + 2' | jq .` — valid JSON

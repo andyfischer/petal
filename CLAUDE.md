@@ -2,7 +2,7 @@
 
 A custom programming language: Lexer → Parser → AST → Compiler → IR → Step Evaluator.
 
-Source: `rust-impl/src/`
+Source: `rust/src/`
 
 ## Testing
 

@@ -378,11 +378,21 @@ impl Evaluator {
             TermOp::Ge => Self::comparison_op(term, inputs, stack, heap, |ord| ord != std::cmp::Ordering::Less),
 
             TermOp::Concat => {
-                let l = value::value_to_display_string(&inputs[0], heap);
-                let r = value::value_to_display_string(&inputs[1], heap);
-                let s = format!("{}{}", l, r);
-                let sid = heap.alloc_string(s);
-                Self::write_register(stack, term, Value::String(sid));
+                match (inputs[0], inputs[1]) {
+                    (Value::List(a), Value::List(b)) => {
+                        let mut combined = heap.get_list(a).to_vec();
+                        combined.extend_from_slice(heap.get_list(b));
+                        let id = heap.alloc_list(combined);
+                        Self::write_register(stack, term, Value::List(id));
+                    }
+                    _ => {
+                        let l = value::value_to_display_string(&inputs[0], heap);
+                        let r = value::value_to_display_string(&inputs[1], heap);
+                        let s = format!("{}{}", l, r);
+                        let sid = heap.alloc_string(s);
+                        Self::write_register(stack, term, Value::String(sid));
+                    }
+                }
                 ControlFlow::Advance
             }
 

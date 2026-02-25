@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   ensureBuild,
   showIrJson,
+  runPetal,
   termsByOp,
 } from "./helpers";
 
@@ -87,11 +88,31 @@ describe("enums", () => {
   });
 });
 
-describe("string concatenation", () => {
+describe("concat operator (++)", () => {
   it("emits Concat for ++", () => {
     const ir = showIrJson('let s = "hello" ++ " world"');
     const concats = termsByOp(ir, "Concat");
     expect(concats.length).toBeGreaterThanOrEqual(1);
     expect(concats[0].inputs).toHaveLength(2);
+  });
+
+  it("concatenates two lists", () => {
+    expect(runPetal("print([1, 2] ++ [3, 4])")).toBe("[1, 2, 3, 4]");
+  });
+
+  it("concatenates empty list with non-empty", () => {
+    expect(runPetal("print([] ++ [1, 2])")).toBe("[1, 2]");
+  });
+
+  it("concatenates non-empty list with empty", () => {
+    expect(runPetal("print([1, 2] ++ [])")).toBe("[1, 2]");
+  });
+
+  it("concatenates strings", () => {
+    expect(runPetal('print("hello" ++ " world")')).toBe("hello world");
+  });
+
+  it("converts non-string to string when one side is string", () => {
+    expect(runPetal('print("count: " ++ 42)')).toBe("count: 42");
   });
 });

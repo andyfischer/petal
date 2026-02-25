@@ -1,0 +1,14 @@
+{
+  "services": [
+    {
+      "name": "playground-api",
+      "shell": "node --watch src/api.ts",
+      "root": "playground"
+    },
+    {
+      "name": "playground-web",
+      "shell": "pnpm dev",
+      "root": "playground/web"
+    }
+  ]
+}

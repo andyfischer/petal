@@ -57,6 +57,7 @@ pub enum Token {
     Comma,
     Dot,
     Colon,
+    Pipe,  // |>
     Arrow, // ->
     DotDot,    // ..
     DotDotDot, // ...
@@ -302,6 +303,9 @@ impl Lexer {
             '|' => {
                 if self.peek_next() == Some('|') {
                     self.tokens.push(Token::Or);
+                    self.pos += 2;
+                } else if self.peek_next() == Some('>') {
+                    self.tokens.push(Token::Pipe);
                     self.pos += 2;
                 } else {
                     return Err(format!("Unexpected character '|' at position {}", self.pos));

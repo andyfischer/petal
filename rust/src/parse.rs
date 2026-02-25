@@ -266,7 +266,30 @@ impl Parser {
     // ---- Expression Parsing (Pratt parser) ----
 
     fn parse_expr(&mut self) -> Result<Expr, String> {
-        self.parse_or()
+        self.parse_pipe()
+    }
+
+    fn parse_pipe(&mut self) -> Result<Expr, String> {
+        let mut left = self.parse_or()?;
+        while matches!(self.peek(), Token::Pipe) {
+            self.advance();
+            self.skip_newlines();
+            // Parse the RHS as a regular or-expression (not pipe, so pipe is left-assoc)
+            let rhs = self.parse_or()?;
+            // Desugar: if RHS is a Call, prepend left as the first arg.
+            // Otherwise, wrap as Call(rhs, [left]).
+            left = match rhs {
+                Expr::Call { function, mut args } => {
+                    args.insert(0, left);
+                    Expr::Call { function, args }
+                }
+                _ => Expr::Call {
+                    function: Box::new(rhs),
+                    args: vec![left],
+                },
+            };
+        }
+        Ok(left)
     }
 
     fn parse_or(&mut self) -> Result<Expr, String> {

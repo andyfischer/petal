@@ -105,8 +105,7 @@ impl Compiler {
         }
 
         // Finalize root block
-        let root_reg_count = self.next_register.get(&root_block).copied().unwrap_or(0);
-        self.blocks[root_block.0 as usize].register_count = root_reg_count;
+        self.finalize_block(root_block);
 
         self.pop_scope();
 
@@ -145,6 +144,26 @@ impl Compiler {
         let old = self.current_block;
         self.current_block = block_id;
         old
+    }
+
+    /// Finalize a block's register count after compilation.
+    fn finalize_block(&mut self, block_id: BlockId) {
+        let reg_count = self.next_register.get(&block_id).copied().unwrap_or(0);
+        self.blocks[block_id.0 as usize].register_count = reg_count;
+    }
+
+    /// Switch to a block, push a new scope, run the compilation closure,
+    /// then finalize, pop scope, and restore the previous block.
+    fn compile_in_block<F>(&mut self, block_id: BlockId, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let saved = self.set_block(block_id);
+        self.push_scope(false);
+        f(self);
+        self.finalize_block(block_id);
+        self.pop_scope();
+        self.set_block(saved);
     }
 
     // -----------------------------------------------------------------------
@@ -410,22 +429,14 @@ impl Compiler {
                 self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
                 // Compile body in body_block
-                let saved = self.set_block(body_block);
-                self.push_scope(false);
-
-                // Bind loop variable as phantom — evaluator populates register 0
-                let var_tid = self.emit_phantom_term(var.clone());
-                self.scope_bind(var.clone(), var_tid);
-
-                for s in body {
-                    self.compile_stmt(s);
-                }
-
-                let body_reg_count = self.next_register.get(&body_block).copied().unwrap_or(0);
-                self.blocks[body_block.0 as usize].register_count = body_reg_count;
-
-                self.pop_scope();
-                self.set_block(saved);
+                self.compile_in_block(body_block, |c| {
+                    // Bind loop variable as phantom — evaluator populates register 0
+                    let var_tid = c.emit_phantom_term(var.clone());
+                    c.scope_bind(var.clone(), var_tid);
+                    for s in body {
+                        c.compile_stmt(s);
+                    }
+                });
             }
 
             Stmt::While { condition, body } => {
@@ -442,24 +453,16 @@ impl Compiler {
                 self.blocks[body_block.0 as usize].parent_term_id = Some(while_tid);
 
                 // Compile condition in cond_block
-                let saved = self.set_block(cond_block);
-                self.push_scope(false);
-                self.compile_expr(condition);
-                let cond_reg_count = self.next_register.get(&cond_block).copied().unwrap_or(0);
-                self.blocks[cond_block.0 as usize].register_count = cond_reg_count;
-                self.pop_scope();
-                self.set_block(saved);
+                self.compile_in_block(cond_block, |c| {
+                    c.compile_expr(condition);
+                });
 
                 // Compile body in body_block
-                let saved = self.set_block(body_block);
-                self.push_scope(false);
-                for s in body {
-                    self.compile_stmt(s);
-                }
-                let body_reg_count = self.next_register.get(&body_block).copied().unwrap_or(0);
-                self.blocks[body_block.0 as usize].register_count = body_reg_count;
-                self.pop_scope();
-                self.set_block(saved);
+                self.compile_in_block(body_block, |c| {
+                    for s in body {
+                        c.compile_stmt(s);
+                    }
+                });
             }
 
             Stmt::Return(expr) => {
@@ -670,39 +673,31 @@ impl Compiler {
                 self.blocks[else_block.0 as usize].parent_term_id = Some(branch_tid);
 
                 // Compile then body
-                let saved = self.set_block(then_block);
-                self.push_scope(false);
-                for s in then_body {
-                    self.compile_stmt(s);
-                }
-                let then_reg_count = self.next_register.get(&then_block).copied().unwrap_or(0);
-                self.blocks[then_block.0 as usize].register_count = then_reg_count;
-                self.pop_scope();
-                self.set_block(saved);
+                self.compile_in_block(then_block, |c| {
+                    for s in then_body {
+                        c.compile_stmt(s);
+                    }
+                });
 
                 // Compile else body
-                let saved = self.set_block(else_block);
-                self.push_scope(false);
-                if let Some(else_br) = else_body {
-                    match else_br {
-                        ElseBranch::Block(stmts) => {
-                            for s in stmts {
-                                self.compile_stmt(s);
+                self.compile_in_block(else_block, |c| {
+                    if let Some(else_br) = else_body {
+                        match else_br {
+                            ElseBranch::Block(stmts) => {
+                                for s in stmts {
+                                    c.compile_stmt(s);
+                                }
+                            }
+                            ElseBranch::ElseIf(expr) => {
+                                c.compile_expr(expr);
                             }
                         }
-                        ElseBranch::ElseIf(expr) => {
-                            self.compile_expr(expr);
-                        }
+                    } else {
+                        // No else — emit Nil
+                        let nil_cid = c.constants.intern(ConstantValue::Nil);
+                        c.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
                     }
-                } else {
-                    // No else — emit Nil
-                    let nil_cid = self.constants.intern(ConstantValue::Nil);
-                    self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
-                }
-                let else_reg_count = self.next_register.get(&else_block).copied().unwrap_or(0);
-                self.blocks[else_block.0 as usize].register_count = else_reg_count;
-                self.pop_scope();
-                self.set_block(saved);
+                });
 
                 branch_tid
             }
@@ -723,34 +718,24 @@ impl Compiler {
                     // Compile guard if present (with pattern vars in scope)
                     let guard_block = arm.guard.as_ref().map(|guard_expr| {
                         let gb = self.new_block(None);
-                        let saved = self.set_block(gb);
-                        self.push_scope(false);
-                        // Create phantom terms for pattern variables in guard block
-                        for var_name in &pattern_vars {
-                            let phantom = self.emit_phantom_term(var_name.clone());
-                            self.scope_bind(var_name.clone(), phantom);
-                        }
-                        self.compile_expr(guard_expr);
-                        let reg_count = self.next_register.get(&gb).copied().unwrap_or(0);
-                        self.blocks[gb.0 as usize].register_count = reg_count;
-                        self.pop_scope();
-                        self.set_block(saved);
+                        self.compile_in_block(gb, |c| {
+                            for var_name in &pattern_vars {
+                                let phantom = c.emit_phantom_term(var_name.clone());
+                                c.scope_bind(var_name.clone(), phantom);
+                            }
+                            c.compile_expr(guard_expr);
+                        });
                         gb
                     });
 
                     // Compile body with pattern variable bindings
-                    let saved = self.set_block(body_block);
-                    self.push_scope(false);
-                    // Create phantom terms for pattern variable bindings
-                    for var_name in &pattern_vars {
-                        let phantom = self.emit_phantom_term(var_name.clone());
-                        self.scope_bind(var_name.clone(), phantom);
-                    }
-                    self.compile_expr(&arm.body);
-                    let body_reg_count = self.next_register.get(&body_block).copied().unwrap_or(0);
-                    self.blocks[body_block.0 as usize].register_count = body_reg_count;
-                    self.pop_scope();
-                    self.set_block(saved);
+                    self.compile_in_block(body_block, |c| {
+                        for var_name in &pattern_vars {
+                            let phantom = c.emit_phantom_term(var_name.clone());
+                            c.scope_bind(var_name.clone(), phantom);
+                        }
+                        c.compile_expr(&arm.body);
+                    });
 
                     arm_metas.push(MatchArmMeta {
                         pattern: arm.pattern.clone(),
@@ -883,13 +868,9 @@ impl Compiler {
         let rhs_block = self.new_block(None);
 
         // Compile RHS in its own block
-        let saved = self.set_block(rhs_block);
-        self.push_scope(false);
-        self.compile_expr(right);
-        let rhs_reg_count = self.next_register.get(&rhs_block).copied().unwrap_or(0);
-        self.blocks[rhs_block.0 as usize].register_count = rhs_reg_count;
-        self.pop_scope();
-        self.set_block(saved);
+        self.compile_in_block(rhs_block, |c| {
+            c.compile_expr(right);
+        });
 
         let op = if is_and { TermOp::And } else { TermOp::Or };
         let tid = self.emit_term_with_children(
@@ -943,8 +924,8 @@ impl Compiler {
             self.compile_stmt(s);
         }
 
-        let body_reg_count = self.next_register.get(&body_block).copied().unwrap_or(0);
-        self.blocks[body_block.0 as usize].register_count = body_reg_count;
+        self.finalize_block(body_block);
+        let body_reg_count = self.blocks[body_block.0 as usize].register_count;
 
         // Collect captures
         self.function_body_blocks.pop();
@@ -1010,8 +991,8 @@ impl Compiler {
             .intern(ConstantValue::String(variant.name.clone()));
         self.emit_term(TermOp::MakeEnumVariant(name_const), field_tids, None);
 
-        let body_reg_count = self.next_register.get(&body_block).copied().unwrap_or(0);
-        self.blocks[body_block.0 as usize].register_count = body_reg_count;
+        self.finalize_block(body_block);
+        let body_reg_count = self.blocks[body_block.0 as usize].register_count;
 
         self.function_body_blocks.pop();
         let _captures = self.capture_stack.pop().unwrap_or_default();

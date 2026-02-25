@@ -13,6 +13,7 @@ pub mod heap;
 pub mod ir_display;
 pub mod ir_serialize;
 pub mod lexer;
+pub mod native_fn;
 pub mod parse;
 pub mod program;
 pub mod source_map;

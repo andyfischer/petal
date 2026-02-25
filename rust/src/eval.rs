@@ -8,6 +8,7 @@ use crate::ast::*;
 use crate::builtins::{self, BuiltinTable};
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
+use crate::native_fn::{NativeFnTable, PetalState};
 use crate::program::*;
 use crate::stack::{Frame, LoopState, Stack};
 use crate::value::{self, Value};
@@ -47,6 +48,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> StepResult {
         let frame_idx = match stack.frames.len().checked_sub(1) {
@@ -87,6 +89,7 @@ impl Evaluator {
             heap,
             closures,
             builtins_table,
+            native_fns,
             output,
         );
 
@@ -266,6 +269,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
         match &term.op {
@@ -630,7 +634,7 @@ impl Evaluator {
                         // Higher-order builtins need evaluator access to call closures
                         match builtin_id {
                             crate::builtins::BUILTIN_MAP => {
-                                match Self::builtin_map(args, program, stack, heap, closures, builtins_table, output) {
+                                match Self::builtin_map(args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                     Ok(val) => {
                                         Self::write_register(stack, term, val);
                                         ControlFlow::Advance
@@ -639,7 +643,7 @@ impl Evaluator {
                                 }
                             }
                             crate::builtins::BUILTIN_FILTER => {
-                                match Self::builtin_filter(args, program, stack, heap, closures, builtins_table, output) {
+                                match Self::builtin_filter(args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                     Ok(val) => {
                                         Self::write_register(stack, term, val);
                                         ControlFlow::Advance
@@ -648,7 +652,7 @@ impl Evaluator {
                                 }
                             }
                             crate::builtins::BUILTIN_REDUCE => {
-                                match Self::builtin_reduce(args, program, stack, heap, closures, builtins_table, output) {
+                                match Self::builtin_reduce(args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                     Ok(val) => {
                                         Self::write_register(stack, term, val);
                                         ControlFlow::Advance
@@ -665,6 +669,24 @@ impl Evaluator {
                                     Err(e) => ControlFlow::Error(e),
                                 }
                             }
+                        }
+                    }
+
+                    Value::NativeFunction(native_id) => {
+                        let func = native_fns.get_func(native_id);
+                        let mut state = PetalState::new(args, heap, output);
+                        match func(&mut state) {
+                            Ok(count) => {
+                                let results = state.take_results();
+                                let val = if count > 0 && !results.is_empty() {
+                                    results[0]
+                                } else {
+                                    Value::Nil
+                                };
+                                Self::write_register(stack, term, val);
+                                ControlFlow::Advance
+                            }
+                            Err(e) => ControlFlow::Error(e),
                         }
                     }
 
@@ -727,7 +749,7 @@ impl Evaluator {
                     // Handle higher-order builtins
                     match builtin_id {
                         crate::builtins::BUILTIN_MAP => {
-                            match Self::builtin_map(&full_args, program, stack, heap, closures, builtins_table, output) {
+                            match Self::builtin_map(&full_args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                 Ok(val) => {
                                     Self::write_register(stack, term, val);
                                     ControlFlow::Advance
@@ -736,7 +758,7 @@ impl Evaluator {
                             }
                         }
                         crate::builtins::BUILTIN_FILTER => {
-                            match Self::builtin_filter(&full_args, program, stack, heap, closures, builtins_table, output) {
+                            match Self::builtin_filter(&full_args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                 Ok(val) => {
                                     Self::write_register(stack, term, val);
                                     ControlFlow::Advance
@@ -745,7 +767,7 @@ impl Evaluator {
                             }
                         }
                         crate::builtins::BUILTIN_REDUCE => {
-                            match Self::builtin_reduce(&full_args, program, stack, heap, closures, builtins_table, output) {
+                            match Self::builtin_reduce(&full_args, program, stack, heap, closures, builtins_table, native_fns, output) {
                                 Ok(val) => {
                                     Self::write_register(stack, term, val);
                                     ControlFlow::Advance
@@ -1045,7 +1067,7 @@ impl Evaluator {
                                     }
                                     break;
                                 }
-                                match Self::step(program, stack, heap, closures, builtins_table, output) {
+                                match Self::step(program, stack, heap, closures, builtins_table, native_fns, output) {
                                     StepResult::Continue => {}
                                     StepResult::Complete(v) => { guard_result = v; break; }
                                     StepResult::Error(e) => return ControlFlow::Error(e),
@@ -1188,6 +1210,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
         block_id: BlockId,
         parent_term: &Term,
@@ -1220,7 +1243,7 @@ impl Evaluator {
                 return Ok(Value::Nil);
             }
 
-            let step = Self::step(program, stack, heap, closures, builtins_table, output);
+            let step = Self::step(program, stack, heap, closures, builtins_table, native_fns, output);
             match step {
                 StepResult::Continue => {
                     if stack.break_flag {
@@ -1320,6 +1343,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
         let frame = Self::build_closure_frame(callable, call_args, program, closures, None)?;
@@ -1334,7 +1358,7 @@ impl Evaluator {
                 return Ok(stack.last_pop_result.take().unwrap_or(Value::Nil));
             }
 
-            let step = Self::step(program, stack, heap, closures, builtins_table, output);
+            let step = Self::step(program, stack, heap, closures, builtins_table, native_fns, output);
             match step {
                 StepResult::Continue => {}
                 StepResult::Complete(v) => return Ok(v),
@@ -1350,6 +1374,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
         if args.len() != 2 {
@@ -1365,7 +1390,7 @@ impl Evaluator {
         let mut results = Vec::with_capacity(elements.len());
         for elem in elements {
             let result = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, builtins_table, output,
+                func, &[elem], program, stack, heap, closures, builtins_table, native_fns, output,
             )?;
             results.push(result);
         }
@@ -1381,6 +1406,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
         if args.len() != 2 {
@@ -1396,7 +1422,7 @@ impl Evaluator {
         let mut results = Vec::new();
         for elem in elements {
             let keep = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, builtins_table, output,
+                func, &[elem], program, stack, heap, closures, builtins_table, native_fns, output,
             )?;
             if keep.is_truthy() {
                 results.push(elem);
@@ -1414,6 +1440,7 @@ impl Evaluator {
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         builtins_table: &BuiltinTable,
+        native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
         if args.len() != 3 {
@@ -1429,7 +1456,7 @@ impl Evaluator {
 
         for elem in elements {
             acc = Self::call_closure_sync(
-                func, &[acc, elem], program, stack, heap, closures, builtins_table, output,
+                func, &[acc, elem], program, stack, heap, closures, builtins_table, native_fns, output,
             )?;
         }
 

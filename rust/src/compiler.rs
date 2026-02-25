@@ -9,6 +9,7 @@ use smallvec::{smallvec, SmallVec};
 use crate::ast::*;
 use crate::builtins::BuiltinTable;
 use crate::constant_table::{ConstantTable, ConstantValue};
+use crate::native_fn::NativeFnTable;
 use crate::program::*;
 use crate::source_map::SourceMap;
 
@@ -78,6 +79,7 @@ impl Compiler {
         stmts: &[Stmt],
         source: String,
         program_id: ProgramId,
+        native_fns: &NativeFnTable,
     ) -> Program {
         // Create root block
         let root_block = self.new_block(None);
@@ -94,6 +96,16 @@ impl Compiler {
         for name in builtin_names {
             let tid = self.emit_phantom_term(name.clone());
             self.scope_bind(name, tid);
+        }
+
+        // Register native functions as phantom terms (after builtins).
+        for i in 0..native_fns.count() {
+            let name = native_fns.get_name(crate::native_fn::NativeFnId(i as u32)).to_string();
+            // Skip if name already bound (e.g. a builtin has the same name)
+            if self.scope_lookup(&name).is_none() {
+                let tid = self.emit_phantom_term(name.clone());
+                self.scope_bind(name, tid);
+            }
         }
 
         // Pre-scan for fn and enum declarations to allow forward references

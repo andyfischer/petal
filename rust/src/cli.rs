@@ -7,6 +7,7 @@ use crate::compiler::Compiler;
 use crate::env::Env;
 use crate::ir_display::display_program;
 use crate::lexer::Lexer;
+use crate::native_fn::NativeFnTable;
 use crate::parse::Parser;
 use crate::program::ProgramId;
 
@@ -216,7 +217,8 @@ pub fn execute(cli: CliArgs) {
                 }
             };
             let compiler = Compiler::new();
-            let program = compiler.compile(&stmts, source.clone(), ProgramId(0));
+            let empty_natives = NativeFnTable::new();
+            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &empty_natives);
             if json {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {

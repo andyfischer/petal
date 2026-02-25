@@ -5,6 +5,7 @@
 use std::fmt;
 
 use crate::heap::{ElementId, ListId, MapId, StringId};
+use crate::native_fn::NativeFnId;
 use crate::program::{BuiltinId, ClosureId};
 
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
@@ -19,6 +20,7 @@ pub enum Value {
     Map(MapId),
     Closure(ClosureId),
     BuiltinFunction(BuiltinId),
+    NativeFunction(NativeFnId),
     EnumVariant { tag: StringId, data: ListId },
     Element(ElementId),
 }
@@ -45,6 +47,7 @@ impl Value {
             Value::Map(_) => "record",
             Value::Closure(_) => "function",
             Value::BuiltinFunction(_) => "function",
+            Value::NativeFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
         }
@@ -71,6 +74,7 @@ impl fmt::Debug for Value {
             Value::Map(id) => write!(f, "Map({:?})", id),
             Value::Closure(id) => write!(f, "Closure({:?})", id),
             Value::BuiltinFunction(id) => write!(f, "BuiltinFunction({:?})", id),
+            Value::NativeFunction(id) => write!(f, "NativeFunction({:?})", id),
             Value::EnumVariant { tag, data } => {
                 write!(f, "EnumVariant({:?}, {:?})", tag, data)
             }
@@ -109,6 +113,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         Value::Element(id) => element_to_display_string(*id, heap),
         Value::Closure(_) => "<function>".to_string(),
         Value::BuiltinFunction(_) => "<builtin>".to_string(),
+        Value::NativeFunction(_) => "<native>".to_string(),
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag);
             let fields = heap.get_list(*data);
@@ -197,6 +202,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                     .zip(b_elems.iter())
                     .all(|(a, b)| values_equal(a, b, heap))
         }
+        (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

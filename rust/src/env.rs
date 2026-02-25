@@ -10,6 +10,7 @@ use crate::compiler::Compiler;
 use crate::eval::{Evaluator, RuntimeClosure, StepResult};
 use crate::heap::Heap;
 use crate::lexer::Lexer;
+use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId};
 use crate::stack::{Frame, Stack, StackKey, StackStatus};
@@ -20,6 +21,7 @@ pub struct Env {
     stacks: HashMap<StackKey, Stack>,
     heap: Heap,
     builtins: BuiltinTable,
+    native_fns: NativeFnTable,
     closures: Vec<RuntimeClosure>,
     output: Vec<String>,
     next_program_id: u32,
@@ -34,6 +36,7 @@ impl Env {
             stacks: HashMap::new(),
             heap: Heap::new(),
             builtins: BuiltinTable::new(),
+            native_fns: NativeFnTable::new(),
             closures: Vec::new(),
             output: Vec::new(),
             next_program_id: 1,
@@ -52,7 +55,7 @@ impl Env {
         self.next_program_id += 1;
 
         let compiler = Compiler::new();
-        let program = compiler.compile(&stmts, source.to_string(), id);
+        let program = compiler.compile(&stmts, source.to_string(), id, &self.native_fns);
         self.programs.insert(id, program);
         Ok(id)
     }
@@ -79,6 +82,15 @@ impl Env {
             let builtin_id = crate::program::BuiltinId(i as u16);
             if i < registers.len() {
                 registers[i] = Value::BuiltinFunction(builtin_id);
+            }
+        }
+
+        // Pre-populate native function values after builtins
+        let native_offset = self.builtins.count();
+        for i in 0..self.native_fns.count() {
+            let reg = native_offset + i;
+            if reg < registers.len() {
+                registers[reg] = Value::NativeFunction(NativeFnId(i as u32));
             }
         }
 
@@ -113,6 +125,7 @@ impl Env {
             &mut self.heap,
             &mut self.closures,
             &self.builtins,
+            &self.native_fns,
             &mut self.output,
         );
 
@@ -169,6 +182,14 @@ impl Env {
             }
         }
 
+        let native_offset = self.builtins.count();
+        for i in 0..self.native_fns.count() {
+            let reg = native_offset + i;
+            if reg < registers.len() {
+                registers[reg] = Value::NativeFunction(NativeFnId(i as u32));
+            }
+        }
+
         stack.push_frame(Frame {
             block_id: program.root_block,
             current_term: root_block.entry,
@@ -180,6 +201,12 @@ impl Env {
         });
 
         Ok(())
+    }
+
+    /// Register a native function that can be called from Petal code.
+    /// Must be called before `load_program` so the compiler knows about it.
+    pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
+        self.native_fns.register(name, func)
     }
 }
 

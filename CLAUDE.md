@@ -46,6 +46,26 @@ npx vitest -t "emits Add"
 
 Example programs live in `examples/*.ptl`.
 
+## Playground
+
+An interactive web app (`playground/`) for exploring Petal's compiler pipeline. Built with
+Prism Framework (API + React frontend).
+
+```bash
+cd playground && npm run dev    # Starts API (port 4027) + Vite dev server (port 4028)
+```
+
+**Features:**
+- Source code editor with live analysis (tokens, AST, IR, and program output)
+- Example file picker — loads examples from `examples/*.ptl` into the editor
+
+**API endpoints** (`playground/src/services/petal-service.ts`):
+- `POST /analyze` — returns JSON tokens, AST, IR, and run output
+- `POST /analyze-text` — returns human-readable text representations
+- `GET /examples` — lists all example files with their contents
+
+**Frontend** (`playground/web/`): React + Vite, proxied to the API via `vite.config.ts`.
+
 ## MCP Tool: TestSnippet
 
 An MCP server (`tools/petal-mcp.ts`) provides a `TestSnippet` tool that compiles and runs

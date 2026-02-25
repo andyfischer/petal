@@ -14,6 +14,7 @@ export default defineConfig({
     port: WEB_PORT,
     proxy: {
       '/analyze': `http://localhost:${API_PORT}`,
+      '/examples': `http://localhost:${API_PORT}`,
     },
   },
 });

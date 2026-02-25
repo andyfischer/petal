@@ -80,6 +80,25 @@ body {
   font-weight: 500;
 }
 
+.example-picker {
+  background: #0d1117;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.example-picker:hover {
+  border-color: #555;
+}
+
+.example-picker:focus {
+  border-color: #0f3460;
+}
+
 .editor-textarea {
   flex: 1;
   width: 100%;

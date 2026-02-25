@@ -17,6 +17,12 @@ interface TextResult {
   ir: string;
 }
 
+interface Example {
+  filename: string;
+  name: string;
+  content: string;
+}
+
 const DEFAULT_CODE = `// Welcome to the Petal Playground!
 // Edit code here and see the compiler internals on the right.
 
@@ -37,6 +43,7 @@ export function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [textResult, setTextResult] = useState<TextResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [examples, setExamples] = useState<Example[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const analyze = useCallback(async (source: string) => {
@@ -62,6 +69,22 @@ export function App() {
     debounceRef.current = setTimeout(() => analyze(newCode), 400);
   }, [analyze]);
 
+  const handleLoadExample = useCallback((filename: string) => {
+    const example = examples.find((ex) => ex.filename === filename);
+    if (example) {
+      setCode(example.content);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      analyze(example.content);
+    }
+  }, [examples, analyze]);
+
+  // Fetch example list on mount
+  useEffect(() => {
+    webFetch('GET /examples').then((result: unknown) => {
+      setExamples(result as Example[]);
+    }).catch(() => {});
+  }, []);
+
   // Initial analysis
   useEffect(() => {
     analyze(code);
@@ -75,7 +98,12 @@ export function App() {
         {analyzing && <span className="analyzing-indicator">Analyzing...</span>}
       </header>
       <div className="app-body">
-        <Editor code={code} onChange={handleCodeChange} />
+        <Editor
+          code={code}
+          onChange={handleCodeChange}
+          examples={examples}
+          onLoadExample={handleLoadExample}
+        />
         <DiagnosticPanel analysis={analysis} textResult={textResult} />
       </div>
     </div>

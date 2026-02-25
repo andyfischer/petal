@@ -3,14 +3,15 @@ import type { ServiceDefinition } from '@facetlayer/prism-framework-api';
 import { z } from 'zod';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
-const PETAL_BIN = path.resolve(
-  new URL('../../..', import.meta.url).pathname,
-  'rust-impl/target/release/petal',
-);
+const PROJECT_ROOT = path.resolve(new URL('../../..', import.meta.url).pathname);
+
+const PETAL_BIN = path.resolve(PROJECT_ROOT, 'rust/target/debug/petal');
+const EXAMPLES_DIR = path.resolve(PROJECT_ROOT, 'examples');
 
 async function runPetal(
   command: string,
@@ -43,7 +44,7 @@ const analyze = createEndpoint({
   requestSchema: z.object({
     code: z.string(),
   }),
-  handler: async (input) => {
+  handler: async (input: { code: string }) => {
     const code = input.code;
 
     const [tokens, ast, ir, run] = await Promise.all([
@@ -82,7 +83,7 @@ const analyzeText = createEndpoint({
   requestSchema: z.object({
     code: z.string(),
   }),
-  handler: async (input) => {
+  handler: async (input: { code: string }) => {
     const code = input.code;
 
     const [tokens, ast, ir] = await Promise.all([
@@ -99,7 +100,24 @@ const analyzeText = createEndpoint({
   },
 });
 
+const listExamples = createEndpoint({
+  method: 'GET',
+  path: '/examples',
+  description: 'List available Petal example files',
+  handler: async () => {
+    const files = await readdir(EXAMPLES_DIR);
+    const ptlFiles = files.filter((f) => f.endsWith('.ptl')).sort();
+    return Promise.all(
+      ptlFiles.map(async (f) => ({
+        filename: f,
+        name: f.replace('.ptl', '').replace(/_/g, ' '),
+        content: await readFile(path.join(EXAMPLES_DIR, f), 'utf-8'),
+      })),
+    );
+  },
+});
+
 export const petalService: ServiceDefinition = {
   name: 'petal',
-  endpoints: [analyze, analyzeText],
+  endpoints: [analyze, analyzeText, listExamples],
 };

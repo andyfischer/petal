@@ -831,6 +831,42 @@ impl Compiler {
                 self.compile_function(None, params, body)
             }
 
+            Expr::Element { tag, props, children } => {
+                let tag_cid = self.constants.intern(ConstantValue::String(tag.clone()));
+                let mut prop_keys = Vec::new();
+                let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
+
+                // Compile prop values
+                for (key, value) in props {
+                    prop_keys.push(
+                        self.constants.intern(ConstantValue::String(key.clone())),
+                    );
+                    inputs.push(self.compile_expr(value));
+                }
+
+                // Compile children
+                for child in children {
+                    match child {
+                        JsxChild::Text(text) => {
+                            let cid = self.constants.intern(ConstantValue::String(text.clone()));
+                            inputs.push(self.emit_term(TermOp::Constant(cid), smallvec![], None));
+                        }
+                        JsxChild::Expr(expr) => {
+                            inputs.push(self.compile_expr(expr));
+                        }
+                        JsxChild::Element(expr) => {
+                            inputs.push(self.compile_expr(expr));
+                        }
+                    }
+                }
+
+                self.emit_term(
+                    TermOp::AllocElement { tag: tag_cid, prop_keys },
+                    inputs,
+                    None,
+                )
+            }
+
             Expr::StringInterp { parts, exprs } => {
                 // Build: str(parts[0]) ++ str(exprs[0]) ++ str(parts[1]) ++ str(exprs[1]) ++ ... ++ str(parts[N])
                 // Start with the first string part

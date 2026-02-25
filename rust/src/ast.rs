@@ -80,6 +80,19 @@ pub enum Expr {
         parts: Vec<String>,
         exprs: Vec<Expr>,
     },
+    /// JSX-like element: `<tag props...>children</tag>`
+    Element {
+        tag: String,
+        props: Vec<(String, Expr)>,
+        children: Vec<JsxChild>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum JsxChild {
+    Text(String),
+    Expr(Expr),
+    Element(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Serialize)]

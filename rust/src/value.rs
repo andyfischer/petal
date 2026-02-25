@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use crate::heap::{ListId, MapId, StringId};
+use crate::heap::{ElementId, ListId, MapId, StringId};
 use crate::program::{BuiltinId, ClosureId};
 
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
@@ -20,6 +20,7 @@ pub enum Value {
     Closure(ClosureId),
     BuiltinFunction(BuiltinId),
     EnumVariant { tag: StringId, data: ListId },
+    Element(ElementId),
 }
 
 impl Value {
@@ -45,6 +46,7 @@ impl Value {
             Value::Closure(_) => "function",
             Value::BuiltinFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
+            Value::Element(_) => "element",
         }
     }
 }
@@ -72,6 +74,7 @@ impl fmt::Debug for Value {
             Value::EnumVariant { tag, data } => {
                 write!(f, "EnumVariant({:?}, {:?})", tag, data)
             }
+            Value::Element(id) => write!(f, "Element({:?})", id),
         }
     }
 }
@@ -103,6 +106,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                 .collect();
             format!("{{ {} }}", parts.join(", "))
         }
+        Value::Element(id) => element_to_display_string(*id, heap),
         Value::Closure(_) => "<function>".to_string(),
         Value::BuiltinFunction(_) => "<builtin>".to_string(),
         Value::EnumVariant { tag, data } => {
@@ -126,6 +130,35 @@ pub fn value_to_debug_string(val: &Value, heap: &Heap) -> String {
         Value::String(id) => format!("\"{}\"", heap.get_string(*id)),
         other => value_to_display_string(other, heap),
     }
+}
+
+fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String {
+    let tag_id = heap.get_element_tag(id);
+    let tag = heap.get_string(tag_id);
+    let props_id = heap.get_element_props(id);
+    let children_id = heap.get_element_children(id);
+    let props = heap.get_map(props_id);
+    let children = heap.get_list(children_id);
+
+    let mut s = format!("<{}", tag);
+    for (k, v) in props {
+        s.push(' ');
+        s.push_str(k);
+        s.push_str("=\"");
+        s.push_str(&value_to_display_string(v, heap));
+        s.push('"');
+    }
+
+    if children.is_empty() {
+        s.push_str(" />");
+    } else {
+        s.push('>');
+        for child in children {
+            s.push_str(&value_to_display_string(child, heap));
+        }
+        s.push_str(&format!("</{}>", tag));
+    }
+    s
 }
 
 /// Compare two values for equality. Needs heap access for deep comparison
@@ -163,6 +196,21 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                     .iter()
                     .zip(b_elems.iter())
                     .all(|(a, b)| values_equal(a, b, heap))
+        }
+        (Value::Element(a), Value::Element(b)) => {
+            let a_tag = heap.get_string(heap.get_element_tag(*a));
+            let b_tag = heap.get_string(heap.get_element_tag(*b));
+            a_tag == b_tag
+                && values_equal(
+                    &Value::Map(heap.get_element_props(*a)),
+                    &Value::Map(heap.get_element_props(*b)),
+                    heap,
+                )
+                && values_equal(
+                    &Value::List(heap.get_element_children(*a)),
+                    &Value::List(heap.get_element_children(*b)),
+                    heap,
+                )
         }
         _ => false,
     }

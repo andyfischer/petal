@@ -769,6 +769,40 @@ impl Evaluator {
                 ControlFlow::Advance
             }
 
+            TermOp::AllocElement { tag, prop_keys } => {
+                let tag_str = match program.constants.get(*tag) {
+                    ConstantValue::String(s) => s.clone(),
+                    _ => return ControlFlow::Error("AllocElement: invalid tag".into()),
+                };
+                let tag_id = heap.alloc_string(tag_str);
+
+                let num_props = prop_keys.len();
+                let mut map = BTreeMap::new();
+                for (i, key_cid) in prop_keys.iter().enumerate() {
+                    if let ConstantValue::String(key) = program.constants.get(*key_cid) {
+                        let val = inputs.get(i).copied().unwrap_or(Value::Nil);
+                        map.insert(key.clone(), val);
+                    }
+                }
+                let props_id = heap.alloc_map(map);
+
+                // Children are the remaining inputs after prop values
+                let children: Vec<Value> = inputs[num_props..].to_vec();
+                // Convert string children to heap strings
+                let child_values: Vec<Value> = children
+                    .into_iter()
+                    .map(|v| match v {
+                        // String values stay as-is (already on heap)
+                        other => other,
+                    })
+                    .collect();
+                let children_id = heap.alloc_list(child_values);
+
+                let elem_id = heap.alloc_element(tag_id, props_id, children_id);
+                Self::write_register(stack, term, Value::Element(elem_id));
+                ControlFlow::Advance
+            }
+
             TermOp::GetField(field_cid) => {
                 let obj = inputs[0];
                 match obj {
@@ -789,6 +823,28 @@ impl Evaluator {
                             }
                             Err(e) => ControlFlow::Error(e),
                         }
+                    }
+                    Value::Element(elem_id) => {
+                        let field_name = match program.constants.get(*field_cid) {
+                            ConstantValue::String(s) => s.as_str(),
+                            _ => return ControlFlow::Error("GetField: invalid field name".into()),
+                        };
+                        let val = match field_name {
+                            "tag" => {
+                                let tag_id = heap.get_element_tag(elem_id);
+                                Value::String(tag_id)
+                            }
+                            "props" => Value::Map(heap.get_element_props(elem_id)),
+                            "children" => Value::List(heap.get_element_children(elem_id)),
+                            _ => {
+                                return ControlFlow::Error(format!(
+                                    "No field '{}' on element",
+                                    field_name
+                                ))
+                            }
+                        };
+                        Self::write_register(stack, term, val);
+                        ControlFlow::Advance
                     }
                     _ => ControlFlow::Error(format!(
                         "Cannot access field on {}",

@@ -149,5 +149,13 @@ fn format_op(op: &TermOp) -> String {
         TermOp::SetIndex => "SetIndex".into(),
         TermOp::MakeEnumVariant(cid) => format!("MakeEnumVariant(c{})", cid.0),
         TermOp::Match => "Match".into(),
+        TermOp::AllocElement { tag, prop_keys } => {
+            let keys: Vec<String> = prop_keys.iter().map(|c| format!("c{}", c.0)).collect();
+            if keys.is_empty() {
+                format!("AllocElement(c{})", tag.0)
+            } else {
+                format!("AllocElement(c{}, props=[{}])", tag.0, keys.join(", "))
+            }
+        }
     }
 }

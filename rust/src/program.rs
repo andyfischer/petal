@@ -141,6 +141,11 @@ pub enum TermOp {
     /// Write by index: inputs=[object, index, value]
     SetIndex,
 
+    // Elements (JSX-like)
+    /// Allocate an element: inputs=[prop_val0, ..., child0, ...]
+    /// prop_keys.len() determines where prop values end and children begin
+    AllocElement { tag: ConstantId, prop_keys: Vec<ConstantId> },
+
     // Enums
     /// Construct an enum variant: inputs=[field values], variant name as constant
     MakeEnumVariant(ConstantId),

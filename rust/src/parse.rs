@@ -506,6 +506,7 @@ impl Parser {
             Token::If => self.parse_if_expr(),
             Token::Match => self.parse_match_expr(),
             Token::Fn => self.parse_lambda(),
+            Token::JsxOpenStart => self.parse_jsx_element(),
             other => Err(format!("Unexpected token: {:?}", other)),
         }
     }
@@ -829,6 +830,122 @@ impl Parser {
         } else {
             Ok(Expr::StringInterp { parts, exprs })
         }
+    }
+
+    fn parse_jsx_element(&mut self) -> Result<Expr, String> {
+        // Consume JsxOpenStart (already matched by caller but not advanced)
+        self.advance();
+        // Expect tag name
+        let tag = match self.advance() {
+            Token::JsxTagName(name) => name,
+            other => return Err(format!("Expected JSX tag name, got {:?}", other)),
+        };
+
+        // Parse attributes until `>` or `/>`
+        let mut props = Vec::new();
+        loop {
+            match self.peek().clone() {
+                Token::Gt => {
+                    self.advance();
+                    break;
+                }
+                Token::JsxSelfClose => {
+                    self.advance();
+                    return Ok(Expr::Element {
+                        tag,
+                        props,
+                        children: Vec::new(),
+                    });
+                }
+                Token::Ident(attr_name) => {
+                    self.advance();
+                    self.expect(&Token::Assign)?;
+                    // Attribute value: string literal or {expr}
+                    let value = match self.peek().clone() {
+                        Token::String(s) => {
+                            self.advance();
+                            Expr::Literal(Literal::String(s))
+                        }
+                        Token::LBrace => {
+                            self.advance();
+                            let expr = self.parse_expr()?;
+                            self.expect(&Token::RBrace)?;
+                            expr
+                        }
+                        other => {
+                            return Err(format!(
+                                "Expected string or {{expr}} for attribute value, got {:?}",
+                                other
+                            ))
+                        }
+                    };
+                    props.push((attr_name, value));
+                }
+                other => {
+                    return Err(format!(
+                        "Unexpected token in JSX tag: {:?}",
+                        other
+                    ))
+                }
+            }
+        }
+
+        // Parse children until `</tag>`
+        let mut children = Vec::new();
+        loop {
+            match self.peek().clone() {
+                Token::JsxCloseStart => {
+                    self.advance();
+                    // Expect matching tag name
+                    match self.advance() {
+                        Token::JsxTagName(close_tag) => {
+                            if close_tag != tag {
+                                return Err(format!(
+                                    "Mismatched JSX tags: <{}> and </{}>",
+                                    tag, close_tag
+                                ));
+                            }
+                        }
+                        other => {
+                            return Err(format!(
+                                "Expected closing tag name, got {:?}",
+                                other
+                            ))
+                        }
+                    }
+                    break;
+                }
+                Token::JsxText(text) => {
+                    self.advance();
+                    children.push(JsxChild::Text(text));
+                }
+                Token::LBrace => {
+                    self.advance();
+                    let expr = self.parse_expr()?;
+                    self.expect(&Token::RBrace)?;
+                    children.push(JsxChild::Expr(expr));
+                }
+                Token::JsxOpenStart => {
+                    let nested = self.parse_jsx_element()?;
+                    children.push(JsxChild::Element(Box::new(nested)));
+                }
+                Token::Eof => {
+                    return Err(format!("Unclosed JSX element <{}>", tag));
+                }
+                other => {
+                    return Err(format!(
+                        "Unexpected token in JSX children: {:?}",
+                        other
+                    ))
+                }
+            }
+        }
+
+        Ok(Expr::Element {
+            tag,
+            props,
+            children,
+        })
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {

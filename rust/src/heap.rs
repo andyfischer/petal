@@ -18,6 +18,10 @@ pub struct ListId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MapId(pub u32);
 
+/// Opaque handle to a heap-allocated element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ElementId(pub u32);
+
 struct HeapString {
     data: String,
     _gc_mark: bool,
@@ -33,10 +37,18 @@ struct HeapMap {
     _gc_mark: bool,
 }
 
+struct HeapElement {
+    tag: StringId,
+    props: MapId,
+    children: ListId,
+    _gc_mark: bool,
+}
+
 pub struct Heap {
     strings: Vec<HeapString>,
     lists: Vec<HeapList>,
     maps: Vec<HeapMap>,
+    elements: Vec<HeapElement>,
 }
 
 impl Heap {
@@ -45,6 +57,7 @@ impl Heap {
             strings: Vec::new(),
             lists: Vec::new(),
             maps: Vec::new(),
+            elements: Vec::new(),
         }
     }
 
@@ -103,6 +116,31 @@ impl Heap {
 
     pub fn get_map_mut(&mut self, id: MapId) -> &mut BTreeMap<String, Value> {
         &mut self.maps[id.0 as usize].entries
+    }
+
+    // --- Element allocation ---
+
+    pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
+        let id = ElementId(self.elements.len() as u32);
+        self.elements.push(HeapElement {
+            tag,
+            props,
+            children,
+            _gc_mark: false,
+        });
+        id
+    }
+
+    pub fn get_element_tag(&self, id: ElementId) -> StringId {
+        self.elements[id.0 as usize].tag
+    }
+
+    pub fn get_element_props(&self, id: ElementId) -> MapId {
+        self.elements[id.0 as usize].props
+    }
+
+    pub fn get_element_children(&self, id: ElementId) -> ListId {
+        self.elements[id.0 as usize].children
     }
 
     /// GC stub - no-op for now.

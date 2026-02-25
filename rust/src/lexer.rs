@@ -41,6 +41,11 @@ pub enum Token {
     Or,       // ||
     Bang,     // !
     Assign,   // =
+    PlusAssign,    // +=
+    MinusAssign,   // -=
+    StarAssign,    // *=
+    SlashAssign,   // /=
+    PercentAssign, // %=
 
     // Delimiters
     LParen,
@@ -150,6 +155,9 @@ impl Lexer {
                 if self.peek_next() == Some('+') {
                     self.tokens.push(Token::PlusPlus);
                     self.pos += 2;
+                } else if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::PlusAssign);
+                    self.pos += 2;
                 } else {
                     self.tokens.push(Token::Plus);
                     self.pos += 1;
@@ -159,14 +167,41 @@ impl Lexer {
                 if self.peek_next() == Some('>') {
                     self.tokens.push(Token::Arrow);
                     self.pos += 2;
+                } else if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::MinusAssign);
+                    self.pos += 2;
                 } else {
                     self.tokens.push(Token::Minus);
                     self.pos += 1;
                 }
             }
-            '*' => { self.tokens.push(Token::Star); self.pos += 1; }
-            '/' => { self.tokens.push(Token::Slash); self.pos += 1; }
-            '%' => { self.tokens.push(Token::Percent); self.pos += 1; }
+            '*' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::StarAssign);
+                    self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Star);
+                    self.pos += 1;
+                }
+            }
+            '/' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::SlashAssign);
+                    self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Slash);
+                    self.pos += 1;
+                }
+            }
+            '%' => {
+                if self.peek_next() == Some('=') {
+                    self.tokens.push(Token::PercentAssign);
+                    self.pos += 2;
+                } else {
+                    self.tokens.push(Token::Percent);
+                    self.pos += 1;
+                }
+            }
             '=' => {
                 if self.peek_next() == Some('=') {
                     self.tokens.push(Token::Eq);

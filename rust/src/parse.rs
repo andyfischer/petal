@@ -203,8 +203,30 @@ impl Parser {
             let value = self.parse_expr()?;
             let target = expr_to_assign_target(expr)?;
             Ok(Stmt::Assign { target, value })
+        } else if let Some(op) = self.peek_compound_assign_op() {
+            self.advance(); // consume the compound assignment token
+            let rhs = self.parse_expr()?;
+            // Desugar: target op= rhs  →  target = target op rhs
+            let target = expr_to_assign_target(expr.clone())?;
+            let value = Expr::BinaryOp {
+                op,
+                left: Box::new(expr),
+                right: Box::new(rhs),
+            };
+            Ok(Stmt::Assign { target, value })
         } else {
             Ok(Stmt::Expr(expr))
+        }
+    }
+
+    fn peek_compound_assign_op(&self) -> Option<BinOp> {
+        match self.peek() {
+            Token::PlusAssign => Some(BinOp::Add),
+            Token::MinusAssign => Some(BinOp::Sub),
+            Token::StarAssign => Some(BinOp::Mul),
+            Token::SlashAssign => Some(BinOp::Div),
+            Token::PercentAssign => Some(BinOp::Mod),
+            _ => None,
         }
     }
 

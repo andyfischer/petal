@@ -2,16 +2,12 @@ import { execSync } from "child_process";
 import { resolve } from "path";
 
 const PETAL = resolve(__dirname, "../rust/target/debug/petal");
-let built = false;
-
-export function ensureBuild() {
-  if (built) return;
-  execSync("cargo build --manifest-path rust/Cargo.toml", {
-    cwd: resolve(__dirname, ".."),
-    stdio: "pipe",
-  });
-  built = true;
-}
+/**
+ * No-op. Build now happens once in globalSetup (test/global-setup.ts)
+ * before any test workers start, eliminating the race condition where
+ * parallel workers would all run cargo build concurrently.
+ */
+export function ensureBuild() {}
 
 function run(args: string[]): string {
   return execSync([PETAL, ...args].join(" "), {
@@ -21,22 +17,18 @@ function run(args: string[]): string {
 }
 
 export function showIrJson(code: string): any {
-  ensureBuild();
   return JSON.parse(run(["show-ir", "--json", "-e", shellEscape(code)]));
 }
 
 export function showAstJson(code: string): any {
-  ensureBuild();
   return JSON.parse(run(["show-ast", "--json", "-e", shellEscape(code)]));
 }
 
 export function showTokensJson(code: string): any {
-  ensureBuild();
   return JSON.parse(run(["show-tokens", "--json", "-e", shellEscape(code)]));
 }
 
 export function runPetal(code: string): string {
-  ensureBuild();
   return run(["run", "-e", shellEscape(code)]);
 }
 

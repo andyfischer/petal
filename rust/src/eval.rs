@@ -678,6 +678,100 @@ impl Evaluator {
                 }
             }
 
+            TermOp::MethodCall(method_cid) => {
+                let obj = inputs[0];
+                let args = &inputs[1..];
+                let method_name = match program.constants.get(*method_cid) {
+                    ConstantValue::String(s) => s.clone(),
+                    _ => return ControlFlow::Error("Invalid method name".into()),
+                };
+
+                // 1) If obj is a map, check for a callable field first
+                if let Value::Map(map_id) = obj {
+                    let map = heap.get_map(map_id);
+                    if let Some(&field_val) = map.get(&method_name) {
+                        match field_val {
+                            Value::Closure(_) => {
+                                match Self::build_closure_frame(
+                                    field_val, args, program, closures, Some(term.id),
+                                ) {
+                                    Ok(frame) => {
+                                        if let Some(caller_frame) = stack.frames.last_mut() {
+                                            caller_frame.current_term = term.block_next;
+                                        }
+                                        stack.push_frame(frame);
+                                        return ControlFlow::FramePushed;
+                                    }
+                                    Err(e) => return ControlFlow::Error(e),
+                                }
+                            }
+                            Value::BuiltinFunction(builtin_id) => {
+                                match crate::builtins::call_builtin(builtin_id, args, heap, output) {
+                                    Ok(val) => {
+                                        Self::write_register(stack, term, val);
+                                        return ControlFlow::Advance;
+                                    }
+                                    Err(e) => return ControlFlow::Error(e),
+                                }
+                            }
+                            _ => {} // not callable, fall through to builtin lookup
+                        }
+                    }
+                }
+
+                // 2) Look up method as a builtin, calling with obj prepended to args
+                if let Some(builtin_id) = builtins_table.lookup_name(&method_name) {
+                    let mut full_args = vec![obj];
+                    full_args.extend_from_slice(args);
+
+                    // Handle higher-order builtins
+                    match builtin_id {
+                        crate::builtins::BUILTIN_MAP => {
+                            match Self::builtin_map(&full_args, program, stack, heap, closures, builtins_table, output) {
+                                Ok(val) => {
+                                    Self::write_register(stack, term, val);
+                                    ControlFlow::Advance
+                                }
+                                Err(e) => ControlFlow::Error(e),
+                            }
+                        }
+                        crate::builtins::BUILTIN_FILTER => {
+                            match Self::builtin_filter(&full_args, program, stack, heap, closures, builtins_table, output) {
+                                Ok(val) => {
+                                    Self::write_register(stack, term, val);
+                                    ControlFlow::Advance
+                                }
+                                Err(e) => ControlFlow::Error(e),
+                            }
+                        }
+                        crate::builtins::BUILTIN_REDUCE => {
+                            match Self::builtin_reduce(&full_args, program, stack, heap, closures, builtins_table, output) {
+                                Ok(val) => {
+                                    Self::write_register(stack, term, val);
+                                    ControlFlow::Advance
+                                }
+                                Err(e) => ControlFlow::Error(e),
+                            }
+                        }
+                        _ => {
+                            match crate::builtins::call_builtin(builtin_id, &full_args, heap, output) {
+                                Ok(val) => {
+                                    Self::write_register(stack, term, val);
+                                    ControlFlow::Advance
+                                }
+                                Err(e) => ControlFlow::Error(e),
+                            }
+                        }
+                    }
+                } else {
+                    ControlFlow::Error(format!(
+                        "No method '{}' on type {}",
+                        method_name,
+                        obj.type_name()
+                    ))
+                }
+            }
+
             TermOp::MakeClosure(fn_id) => {
                 let captures: Vec<Value> = inputs.to_vec();
                 let closure_id = ClosureId(closures.len() as u32);

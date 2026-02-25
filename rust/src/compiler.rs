@@ -646,12 +646,25 @@ impl Compiler {
             }
 
             Expr::Call { function, args } => {
-                let func_tid = self.compile_expr(function);
-                let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
-                for arg in args {
-                    inputs.push(self.compile_expr(arg));
+                // Detect method syntax: obj.method(args...)
+                if let Expr::FieldAccess { object, field } = function.as_ref() {
+                    let obj_tid = self.compile_expr(object);
+                    let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
+                    for arg in args {
+                        inputs.push(self.compile_expr(arg));
+                    }
+                    let field_const = self
+                        .constants
+                        .intern(ConstantValue::String(field.clone()));
+                    self.emit_term(TermOp::MethodCall(field_const), inputs, None)
+                } else {
+                    let func_tid = self.compile_expr(function);
+                    let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
+                    for arg in args {
+                        inputs.push(self.compile_expr(arg));
+                    }
+                    self.emit_term(TermOp::Call, inputs, None)
                 }
-                self.emit_term(TermOp::Call, inputs, None)
             }
 
             Expr::If {

@@ -118,6 +118,9 @@ pub enum TermOp {
     MakeClosure(FunctionId),
     /// Dynamic call: inputs=[callable, arg0, arg1, ...]
     Call,
+    /// Method call: inputs=[object, arg0, arg1, ...], method name as constant
+    /// At runtime: tries record field first, then builtin/scope lookup with obj prepended
+    MethodCall(ConstantId),
 
     // State
     /// Initialize state if not yet set: inputs=[init_value], state_key set

@@ -22,15 +22,15 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust-impl/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust-impl/Cargo.lock') }}
+            rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       - name: Build Rust
-        run: cargo build --manifest-path rust-impl/Cargo.toml
+        run: cargo build --manifest-path rust/Cargo.toml
 
       - name: Run Rust tests
-        run: cargo test --manifest-path rust-impl/Cargo.toml
+        run: cargo test --manifest-path rust/Cargo.toml
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

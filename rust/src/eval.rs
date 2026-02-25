@@ -610,65 +610,20 @@ impl Evaluator {
                 let args = &inputs[1..];
 
                 match callable {
-                    Value::Closure(closure_id) => {
-                        let closure = &closures[closure_id.0 as usize];
-                        let func = &program.functions[closure.function_id.0 as usize];
-                        let body_block = func.body_block;
-                        let block = program.get_block(body_block);
-
-                        if args.len() != func.params.len() {
-                            return ControlFlow::Error(format!(
-                                "Expected {} arguments, got {}",
-                                func.params.len(),
-                                args.len()
-                            ));
-                        }
-
-                        let reg_count = block.register_count as usize;
-                        let mut registers = vec![Value::Nil; reg_count];
-
-                        // Set parameter registers (first N registers)
-                        for (i, arg) in args.iter().enumerate() {
-                            if i < registers.len() {
-                                registers[i] = *arg;
-                            }
-                        }
-
-                        // Set capture registers (at compiler-specified positions)
-                        for (i, cap) in closure.captures.iter().enumerate() {
-                            if i < func.capture_registers.len() {
-                                let reg_idx = func.capture_registers[i].0 as usize;
-                                if reg_idx < registers.len() {
-                                    registers[reg_idx] = *cap;
+                    Value::Closure(_) => {
+                        match Self::build_closure_frame(
+                            callable, args, program, closures, Some(term.id),
+                        ) {
+                            Ok(frame) => {
+                                // Advance caller past the Call term before pushing
+                                if let Some(caller_frame) = stack.frames.last_mut() {
+                                    caller_frame.current_term = term.block_next;
                                 }
+                                stack.push_frame(frame);
+                                ControlFlow::FramePushed
                             }
+                            Err(e) => ControlFlow::Error(e),
                         }
-
-                        // Self-reference for recursion
-                        if let Some(self_reg) = func.self_ref_register {
-                            let reg_idx = self_reg.0 as usize;
-                            if reg_idx < registers.len() {
-                                registers[reg_idx] = callable;
-                            }
-                        }
-
-                        // Advance caller past the Call term before pushing
-                        if let Some(caller_frame) = stack.frames.last_mut() {
-                            caller_frame.current_term = term.block_next;
-                        }
-
-                        // Push function frame (no parent_frame — it's a call boundary)
-                        stack.push_frame(Frame {
-                            block_id: body_block,
-                            current_term: block.entry,
-                            registers,
-                            return_term: Some(term.id),
-                            parent_frame: None,
-                            is_loop_body: false,
-                            loop_states: std::collections::HashMap::new(),
-                        });
-
-                        ControlFlow::FramePushed
                     }
 
                     Value::BuiltinFunction(builtin_id) => {
@@ -1189,6 +1144,76 @@ impl Evaluator {
     }
 
     // -----------------------------------------------------------------------
+    // Closure call helpers
+    // -----------------------------------------------------------------------
+
+    /// Build a Frame for calling a closure with the given arguments.
+    /// Handles parameter binding, capture registers, and self-reference.
+    fn build_closure_frame(
+        callable: Value,
+        args: &[Value],
+        program: &Program,
+        closures: &[RuntimeClosure],
+        return_term: Option<TermId>,
+    ) -> Result<Frame, String> {
+        let closure_id = match callable {
+            Value::Closure(id) => id,
+            _ => return Err(format!("Expected a function, got {}", callable.type_name())),
+        };
+
+        let closure = &closures[closure_id.0 as usize];
+        let func = &program.functions[closure.function_id.0 as usize];
+        let body_block = func.body_block;
+        let block = program.get_block(body_block);
+
+        if args.len() != func.params.len() {
+            return Err(format!(
+                "Expected {} arguments, got {}",
+                func.params.len(),
+                args.len()
+            ));
+        }
+
+        let reg_count = block.register_count as usize;
+        let mut registers = vec![Value::Nil; reg_count];
+
+        // Set parameter registers
+        for (i, arg) in args.iter().enumerate() {
+            if i < registers.len() {
+                registers[i] = *arg;
+            }
+        }
+
+        // Set capture registers
+        for (i, cap) in closure.captures.iter().enumerate() {
+            if i < func.capture_registers.len() {
+                let reg_idx = func.capture_registers[i].0 as usize;
+                if reg_idx < registers.len() {
+                    registers[reg_idx] = *cap;
+                }
+            }
+        }
+
+        // Self-reference for recursion
+        if let Some(self_reg) = func.self_ref_register {
+            let reg_idx = self_reg.0 as usize;
+            if reg_idx < registers.len() {
+                registers[reg_idx] = callable;
+            }
+        }
+
+        Ok(Frame {
+            block_id: body_block,
+            current_term: block.entry,
+            registers,
+            return_term,
+            parent_frame: None,
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // Higher-order builtin helpers
     // -----------------------------------------------------------------------
 
@@ -1203,69 +1228,9 @@ impl Evaluator {
         builtins_table: &BuiltinTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
-        let closure_id = match callable {
-            Value::Closure(id) => id,
-            _ => return Err(format!("Expected a function, got {}", callable.type_name())),
-        };
-
-        let closure = &closures[closure_id.0 as usize];
-        let func = &program.functions[closure.function_id.0 as usize];
-        let body_block = func.body_block;
-        let block = program.get_block(body_block);
-
-        if call_args.len() != func.params.len() {
-            return Err(format!(
-                "Expected {} arguments, got {}",
-                func.params.len(),
-                call_args.len()
-            ));
-        }
-
-        let reg_count = block.register_count as usize;
-        let mut registers = vec![Value::Nil; reg_count];
-
-        for (i, arg) in call_args.iter().enumerate() {
-            if i < registers.len() {
-                registers[i] = *arg;
-            }
-        }
-
-        // Captures need to be read before we borrow closures again
-        let captures: Vec<Value> = closures[closure_id.0 as usize].captures.clone();
-        let capture_registers: Vec<RegisterIndex> =
-            program.functions[closures[closure_id.0 as usize].function_id.0 as usize]
-                .capture_registers.clone();
-        let self_ref_register =
-            program.functions[closures[closure_id.0 as usize].function_id.0 as usize]
-                .self_ref_register;
-
-        for (i, cap) in captures.iter().enumerate() {
-            if i < capture_registers.len() {
-                let reg_idx = capture_registers[i].0 as usize;
-                if reg_idx < registers.len() {
-                    registers[reg_idx] = *cap;
-                }
-            }
-        }
-
-        if let Some(self_reg) = self_ref_register {
-            let reg_idx = self_reg.0 as usize;
-            if reg_idx < registers.len() {
-                registers[reg_idx] = callable;
-            }
-        }
-
+        let frame = Self::build_closure_frame(callable, call_args, program, closures, None)?;
         let target_depth = stack.frames.len();
-
-        stack.push_frame(Frame {
-            block_id: body_block,
-            current_term: block.entry,
-            registers,
-            return_term: None,
-            parent_frame: None,
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
+        stack.push_frame(frame);
 
         stack.last_pop_result = None;
 

@@ -1392,13 +1392,8 @@ impl Evaluator {
             }
 
             Pattern::Variable(name) => {
-                // Check if it's a known enum variant (fieldless)
-                if let Value::EnumVariant { tag, data } = value {
-                    let variant_name = heap.get_string(tag);
-                    if variant_name == name && heap.get_list(data).is_empty() {
-                        return true;
-                    }
-                }
+                // Pure variable binding — always matches and captures the value.
+                // (Known enum variant names are resolved to Pattern::Variant by the compiler.)
                 bindings.push((name.clone(), value));
                 true
             }

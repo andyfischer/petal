@@ -86,6 +86,46 @@ describe("match", () => {
     const match_ = termsByOp(ir, "Match")[0];
     expect(match_.inputs).toHaveLength(1);
   });
+
+  it("enum variant pattern only matches the variant, not any value", () => {
+    const result = runPetal(`
+      enum Color { Red, Blue, Green }
+      let v = "hello"
+      let result = match v {
+        Red -> "matched Red"
+        Blue -> "matched Blue"
+        x -> "other: " ++ x
+      }
+      print(result)
+    `);
+    expect(result).toBe("other: hello");
+  });
+
+  it("enum variant pattern matches the correct variant", () => {
+    const result = runPetal(`
+      enum Color { Red, Blue, Green }
+      let v = Blue
+      let result = match v {
+        Red -> "red"
+        Blue -> "blue"
+        Green -> "green"
+      }
+      print(result)
+    `);
+    expect(result).toBe("blue");
+  });
+
+  it("variable binding still works in match when not an enum variant", () => {
+    const result = runPetal(`
+      let v = 42
+      let result = match v {
+        0 -> "zero"
+        n -> "number: " ++ str(n)
+      }
+      print(result)
+    `);
+    expect(result).toBe("number: 42");
+  });
 });
 
 describe("short-circuit operators", () => {

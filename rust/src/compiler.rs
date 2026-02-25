@@ -712,8 +712,11 @@ impl Compiler {
                     let body_block = self.new_block(None);
                     child_blocks.push(body_block);
 
-                    // Extract pattern variables first (needed by both guard and body)
-                    let pattern_vars = Self::extract_pattern_vars(&arm.pattern);
+                    // Resolve pattern: convert known enum variant names to Variant patterns
+                    let pattern = self.resolve_pattern(&arm.pattern);
+
+                    // Extract pattern variables (after resolution, so enum names aren't bindings)
+                    let pattern_vars = Self::extract_pattern_vars(&pattern);
 
                     // Compile guard if present (with pattern vars in scope)
                     let guard_block = arm.guard.as_ref().map(|guard_expr| {
@@ -738,7 +741,7 @@ impl Compiler {
                     });
 
                     arm_metas.push(MatchArmMeta {
-                        pattern: arm.pattern.clone(),
+                        pattern,
                         guard_block,
                         body_block,
                     });
@@ -1056,6 +1059,39 @@ impl Compiler {
     // -----------------------------------------------------------------------
     // Pattern variable extraction
     // -----------------------------------------------------------------------
+
+    /// Convert Pattern::Variable to Pattern::Variant for known enum variant names.
+    /// This ensures pattern matching only matches the actual variant, not any value.
+    fn resolve_pattern(&self, pattern: &Pattern) -> Pattern {
+        match pattern {
+            Pattern::Variable(name) => {
+                if let Some(&field_count) = self.enum_variants.get(name) {
+                    if field_count == 0 {
+                        return Pattern::Variant {
+                            name: name.clone(),
+                            fields: vec![],
+                        };
+                    }
+                }
+                pattern.clone()
+            }
+            Pattern::Variant { name, fields } => Pattern::Variant {
+                name: name.clone(),
+                fields: fields.iter().map(|f| self.resolve_pattern(f)).collect(),
+            },
+            Pattern::List { elements, rest } => Pattern::List {
+                elements: elements.iter().map(|e| self.resolve_pattern(e)).collect(),
+                rest: rest.clone(),
+            },
+            Pattern::Record(fields) => Pattern::Record(
+                fields
+                    .iter()
+                    .map(|(k, p)| (k.clone(), self.resolve_pattern(p)))
+                    .collect(),
+            ),
+            _ => pattern.clone(),
+        }
+    }
 
     fn extract_pattern_vars(pattern: &Pattern) -> Vec<String> {
         match pattern {

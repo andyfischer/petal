@@ -390,33 +390,7 @@ impl Lexer {
                 s = String::new();
                 self.pos += 1;
 
-                // Tokenize the expression inside braces
-                let mut depth = 1;
-                while self.pos < self.input.len() && depth > 0 {
-                    self.skip_whitespace_no_newline();
-                    if self.pos >= self.input.len() {
-                        break;
-                    }
-                    let inner_ch = self.input[self.pos];
-                    if inner_ch == '}' {
-                        depth -= 1;
-                        if depth == 0 {
-                            self.pos += 1;
-                            break;
-                        }
-                        self.tokens.push(Token::RBrace);
-                        self.pos += 1;
-                    } else if inner_ch == '{' {
-                        depth += 1;
-                        self.tokens.push(Token::LBrace);
-                        self.pos += 1;
-                    } else {
-                        self.tokenize_one()?;
-                    }
-                }
-                if depth > 0 {
-                    return Err("Unterminated string interpolation".to_string());
-                }
+                self.tokenize_braced_expr(false, false)?;
                 continue;
             }
             s.push(ch);
@@ -455,6 +429,55 @@ impl Lexer {
         } else {
             let n: i64 = text.parse().map_err(|e| format!("Invalid integer: {}", e))?;
             self.tokens.push(Token::Int(n));
+        }
+        Ok(())
+    }
+
+    /// Tokenize an expression inside braces (already past the opening `{`).
+    /// Tracks brace depth and stops at the matching `}`.
+    /// - `emit_close`: whether to emit `RBrace` for the final `}`
+    /// - `skip_newlines`: whether to silently skip newline characters
+    fn tokenize_braced_expr(
+        &mut self,
+        emit_close: bool,
+        skip_newlines: bool,
+    ) -> Result<(), String> {
+        let mut depth = 1;
+        while self.pos < self.input.len() && depth > 0 {
+            self.skip_whitespace_no_newline();
+            if self.pos >= self.input.len() {
+                break;
+            }
+            let ch = self.input[self.pos];
+            if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    if emit_close {
+                        self.tokens.push(Token::RBrace);
+                    }
+                    self.pos += 1;
+                    break;
+                }
+                self.tokens.push(Token::RBrace);
+                self.pos += 1;
+            } else if ch == '{' {
+                depth += 1;
+                self.tokens.push(Token::LBrace);
+                self.pos += 1;
+            } else if skip_newlines && (ch == '\n' || ch == '\r') {
+                self.pos += 1;
+                if ch == '\r'
+                    && self.pos < self.input.len()
+                    && self.input[self.pos] == '\n'
+                {
+                    self.pos += 1;
+                }
+            } else {
+                self.tokenize_one()?;
+            }
+        }
+        if depth > 0 {
+            return Err("Unterminated braced expression".to_string());
         }
         Ok(())
     }
@@ -524,39 +547,7 @@ impl Lexer {
                     self.flush_jsx_text(&mut text);
                     self.tokens.push(Token::LBrace);
                     self.pos += 1;
-                    // Lex expression tokens until matching `}`
-                    let mut depth = 1;
-                    while self.pos < self.input.len() && depth > 0 {
-                        self.skip_whitespace_no_newline();
-                        if self.pos >= self.input.len() {
-                            break;
-                        }
-                        let inner_ch = self.input[self.pos];
-                        if inner_ch == '}' {
-                            depth -= 1;
-                            if depth == 0 {
-                                self.tokens.push(Token::RBrace);
-                                self.pos += 1;
-                                break;
-                            }
-                            self.tokens.push(Token::RBrace);
-                            self.pos += 1;
-                        } else if inner_ch == '{' {
-                            depth += 1;
-                            self.tokens.push(Token::LBrace);
-                            self.pos += 1;
-                        } else if inner_ch == '\n' || inner_ch == '\r' {
-                            self.pos += 1;
-                            if inner_ch == '\r'
-                                && self.pos < self.input.len()
-                                && self.input[self.pos] == '\n'
-                            {
-                                self.pos += 1;
-                            }
-                        } else {
-                            self.tokenize_one()?;
-                        }
-                    }
+                    self.tokenize_braced_expr(true, true)?;
                     return Ok(());
                 }
                 _ => {

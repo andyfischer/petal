@@ -854,9 +854,6 @@ impl Compiler {
                         JsxChild::Expr(expr) => {
                             inputs.push(self.compile_expr(expr));
                         }
-                        JsxChild::Element(expr) => {
-                            inputs.push(self.compile_expr(expr));
-                        }
                     }
                 }
 

@@ -927,7 +927,7 @@ impl Parser {
                 }
                 Token::JsxOpenStart => {
                     let nested = self.parse_jsx_element()?;
-                    children.push(JsxChild::Element(Box::new(nested)));
+                    children.push(JsxChild::Expr(nested));
                 }
                 Token::Eof => {
                     return Err(format!("Unclosed JSX element <{}>", tag));

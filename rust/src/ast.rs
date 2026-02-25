@@ -92,7 +92,6 @@ pub enum Expr {
 pub enum JsxChild {
     Text(String),
     Expr(Expr),
-    Element(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Serialize)]

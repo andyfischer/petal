@@ -786,17 +786,7 @@ impl Evaluator {
                 }
                 let props_id = heap.alloc_map(map);
 
-                // Children are the remaining inputs after prop values
-                let children: Vec<Value> = inputs[num_props..].to_vec();
-                // Convert string children to heap strings
-                let child_values: Vec<Value> = children
-                    .into_iter()
-                    .map(|v| match v {
-                        // String values stay as-is (already on heap)
-                        other => other,
-                    })
-                    .collect();
-                let children_id = heap.alloc_list(child_values);
+                let children_id = heap.alloc_list(inputs[num_props..].to_vec());
 
                 let elem_id = heap.alloc_element(tag_id, props_id, children_id);
                 Self::write_register(stack, term, Value::Element(elem_id));

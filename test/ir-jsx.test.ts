@@ -94,8 +94,8 @@ describe("JSX elements", () => {
       const elem = ast[0].Expr.Element;
       expect(elem.tag).toBe("div");
       expect(elem.children).toHaveLength(1);
-      const child = elem.children[0].Element;
-      expect(child.Element.tag).toBe("p");
+      const child = elem.children[0].Expr.Element;
+      expect(child.tag).toBe("p");
     });
   });
 

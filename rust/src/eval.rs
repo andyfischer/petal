@@ -1495,15 +1495,17 @@ impl Evaluator {
 
     /// Apply pattern bindings to a frame's registers by matching names to
     /// terms in the block (including phantom terms not in the linked list).
+    /// Uses the precomputed block_terms index for O(B) lookup instead of O(N)
+    /// where B is the number of terms in the block and N is total program terms.
     fn apply_pattern_bindings(
         program: &Program,
         block_id: BlockId,
         bindings: &[(String, Value)],
         frame: &mut Frame,
     ) {
-        // Scan all terms to find ones in this block with matching names
-        for term in &program.terms {
-            if term.block_id == block_id {
+        if let Some(term_ids) = program.block_terms.get(&block_id) {
+            for tid in term_ids {
+                let term = program.get_term(*tid);
                 if let Some(ref term_name) = term.name {
                     for (bind_name, bind_val) in bindings {
                         if term_name == bind_name {

@@ -103,6 +103,16 @@ impl Compiler {
 
         self.pop_scope();
 
+        // Build block→terms index
+        let mut block_terms: std::collections::HashMap<BlockId, Vec<TermId>> =
+            std::collections::HashMap::new();
+        for term in &self.terms {
+            block_terms
+                .entry(term.block_id)
+                .or_default()
+                .push(term.id);
+        }
+
         Program {
             id: program_id,
             source,
@@ -114,6 +124,7 @@ impl Compiler {
             has_errors: false,
             functions: self.functions,
             match_arms: self.match_arms,
+            block_terms,
         }
     }
 

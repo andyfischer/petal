@@ -250,6 +250,10 @@ pub struct Program {
     pub functions: Vec<FunctionDef>,
     #[serde(serialize_with = "serialize_termid_map")]
     pub match_arms: HashMap<TermId, Vec<MatchArmMeta>>,
+    /// Index from block to all terms in that block (including phantoms).
+    /// Built once at compile time to avoid O(N) scans over all terms.
+    #[serde(skip)]
+    pub block_terms: HashMap<BlockId, Vec<TermId>>,
 }
 
 impl Program {

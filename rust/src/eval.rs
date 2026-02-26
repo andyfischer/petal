@@ -642,48 +642,9 @@ impl Evaluator {
                     }
 
                     Value::NativeFunction(native_id) => {
-                        // Check for higher-order intrinsics that need evaluator context
-                        if native_id == builtins::native_map_id() {
-                            match Self::builtin_map(args, program, stack, heap, closures, native_fns, output) {
-                                Ok(val) => {
-                                    Self::write_register(stack, term, val);
-                                    ControlFlow::Advance
-                                }
-                                Err(e) => ControlFlow::Error(e),
-                            }
-                        } else if native_id == builtins::native_filter_id() {
-                            match Self::builtin_filter(args, program, stack, heap, closures, native_fns, output) {
-                                Ok(val) => {
-                                    Self::write_register(stack, term, val);
-                                    ControlFlow::Advance
-                                }
-                                Err(e) => ControlFlow::Error(e),
-                            }
-                        } else if native_id == builtins::native_reduce_id() {
-                            match Self::builtin_reduce(args, program, stack, heap, closures, native_fns, output) {
-                                Ok(val) => {
-                                    Self::write_register(stack, term, val);
-                                    ControlFlow::Advance
-                                }
-                                Err(e) => ControlFlow::Error(e),
-                            }
-                        } else {
-                            let func = native_fns.get_func(native_id);
-                            let mut state = PetalState::new(args, heap, output);
-                            match func(&mut state) {
-                                Ok(count) => {
-                                    let results = state.take_results();
-                                    let val = if count > 0 && !results.is_empty() {
-                                        results[0]
-                                    } else {
-                                        Value::Nil
-                                    };
-                                    Self::write_register(stack, term, val);
-                                    ControlFlow::Advance
-                                }
-                                Err(e) => ControlFlow::Error(e),
-                            }
-                        }
+                        Self::call_native_or_intrinsic(
+                            native_id, args, term, program, stack, heap, closures, native_fns, output,
+                        )
                     }
 
                     Value::EnumVariant { .. } if args.is_empty() => {
@@ -724,16 +685,8 @@ impl Evaluator {
                                 }
                             }
                             Value::NativeFunction(native_id) => {
-                                let func = native_fns.get_func(native_id);
-                                let mut state = PetalState::new(args, heap, output);
-                                match func(&mut state) {
-                                    Ok(count) => {
-                                        let results = state.take_results();
-                                        let val = if count > 0 && !results.is_empty() {
-                                            results[0]
-                                        } else {
-                                            Value::Nil
-                                        };
+                                match Self::call_native_fn(native_id, args, native_fns, heap, output) {
+                                    Ok(val) => {
                                         Self::write_register(stack, term, val);
                                         return ControlFlow::Advance;
                                     }
@@ -749,49 +702,9 @@ impl Evaluator {
                 if let Some(native_id) = native_fns.lookup_name(&method_name) {
                     let mut full_args = vec![obj];
                     full_args.extend_from_slice(args);
-
-                    // Check for higher-order intrinsics
-                    if native_id == builtins::native_map_id() {
-                        match Self::builtin_map(&full_args, program, stack, heap, closures, native_fns, output) {
-                            Ok(val) => {
-                                Self::write_register(stack, term, val);
-                                ControlFlow::Advance
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    } else if native_id == builtins::native_filter_id() {
-                        match Self::builtin_filter(&full_args, program, stack, heap, closures, native_fns, output) {
-                            Ok(val) => {
-                                Self::write_register(stack, term, val);
-                                ControlFlow::Advance
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    } else if native_id == builtins::native_reduce_id() {
-                        match Self::builtin_reduce(&full_args, program, stack, heap, closures, native_fns, output) {
-                            Ok(val) => {
-                                Self::write_register(stack, term, val);
-                                ControlFlow::Advance
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    } else {
-                        let func = native_fns.get_func(native_id);
-                        let mut state = PetalState::new(&full_args, heap, output);
-                        match func(&mut state) {
-                            Ok(count) => {
-                                let results = state.take_results();
-                                let val = if count > 0 && !results.is_empty() {
-                                    results[0]
-                                } else {
-                                    Value::Nil
-                                };
-                                Self::write_register(stack, term, val);
-                                ControlFlow::Advance
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    }
+                    Self::call_native_or_intrinsic(
+                        native_id, &full_args, term, program, stack, heap, closures, native_fns, output,
+                    )
                 } else {
                     ControlFlow::Error(format!(
                         "No method '{}' on type {}",
@@ -1210,59 +1123,59 @@ impl Evaluator {
         });
     }
 
-    /// Evaluate a child block to completion, returning its final value.
-    fn eval_block_to_value(
+    // -----------------------------------------------------------------------
+    // Native function dispatch
+    // -----------------------------------------------------------------------
+
+    /// Call a native function (non-intrinsic) via PetalState, returning the result value.
+    fn call_native_fn(
+        native_id: crate::native_fn::NativeFnId,
+        args: &[Value],
+        native_fns: &NativeFnTable,
+        heap: &mut Heap,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        let func = native_fns.get_func(native_id);
+        let mut state = PetalState::new(args, heap, output);
+        let count = func(&mut state)?;
+        let results = state.take_results();
+        let val = if count > 0 && !results.is_empty() {
+            results[0]
+        } else {
+            Value::Nil
+        };
+        Ok(val)
+    }
+
+    /// Dispatch a native function call, handling higher-order intrinsics (map, filter, reduce)
+    /// specially since they need evaluator context to call closures.
+    fn call_native_or_intrinsic(
+        native_id: crate::native_fn::NativeFnId,
+        args: &[Value],
+        term: &Term,
         program: &Program,
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
-        block_id: BlockId,
-        parent_term: &Term,
-    ) -> Result<Value, String> {
-        let block = program.get_block(block_id);
-        let reg_count = block.register_count as usize;
-        let parent_frame_idx = stack.frames.len() - 1;
+    ) -> ControlFlow {
+        let result = if native_id == builtins::native_map_id() {
+            Self::builtin_map(args, program, stack, heap, closures, native_fns, output)
+        } else if native_id == builtins::native_filter_id() {
+            Self::builtin_filter(args, program, stack, heap, closures, native_fns, output)
+        } else if native_id == builtins::native_reduce_id() {
+            Self::builtin_reduce(args, program, stack, heap, closures, native_fns, output)
+        } else {
+            Self::call_native_fn(native_id, args, native_fns, heap, output)
+        };
 
-        stack.push_frame(Frame {
-            block_id,
-            current_term: block.entry,
-            registers: vec![Value::Nil; reg_count],
-            return_term: Some(parent_term.id),
-            parent_frame: Some(parent_frame_idx),
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
-
-        let target_depth = parent_frame_idx + 1;
-
-        loop {
-            if stack.frames.len() <= target_depth {
-                // Frame was popped — get result from parent term's register
-                if let Some(frame) = stack.frames.last() {
-                    let reg = parent_term.register.0 as usize;
-                    if reg < frame.registers.len() {
-                        return Ok(frame.registers[reg]);
-                    }
-                }
-                return Ok(Value::Nil);
+        match result {
+            Ok(val) => {
+                Self::write_register(stack, term, val);
+                ControlFlow::Advance
             }
-
-            let step = Self::step(program, stack, heap, closures, native_fns, output);
-            match step {
-                StepResult::Continue => {
-                    if stack.break_flag {
-                        // Pop back to target depth
-                        while stack.frames.len() > target_depth {
-                            stack.pop_frame();
-                        }
-                        return Ok(Value::Nil);
-                    }
-                }
-                StepResult::Complete(v) => return Ok(v),
-                StepResult::Error(e) => return Err(e),
-            }
+            Err(e) => ControlFlow::Error(e),
         }
     }
 

@@ -22,6 +22,9 @@ pub enum Value {
     NativeFunction(NativeFnId),
     EnumVariant { tag: StringId, data: ListId },
     Element(ElementId),
+    /// Dual number for forward-mode automatic differentiation.
+    /// Carries a primal value and its derivative (tangent).
+    Dual { value: f64, derivative: f64 },
 }
 
 impl Value {
@@ -31,6 +34,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Int(n) => *n != 0,
             Value::Float(f) => *f != 0.0,
+            Value::Dual { value, .. } => *value != 0.0,
             _ => true,
         }
     }
@@ -48,6 +52,25 @@ impl Value {
             Value::NativeFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
+            Value::Dual { .. } => "dual",
+        }
+    }
+
+    /// Extract the numeric value as f64 (for arithmetic with Dual numbers).
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            Value::Int(n) => Some(*n as f64),
+            Value::Float(f) => Some(*f),
+            Value::Dual { value, .. } => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Extract the derivative component (0.0 for non-Dual values).
+    pub fn derivative(&self) -> f64 {
+        match self {
+            Value::Dual { derivative, .. } => *derivative,
+            _ => 0.0,
         }
     }
 }
@@ -76,6 +99,9 @@ impl fmt::Debug for Value {
                 write!(f, "EnumVariant({:?}, {:?})", tag, data)
             }
             Value::Element(id) => write!(f, "Element({:?})", id),
+            Value::Dual { value, derivative } => {
+                write!(f, "Dual({}, {})", format_float(*value), format_float(*derivative))
+            }
         }
     }
 }
@@ -122,6 +148,9 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                     .collect();
                 format!("{}({})", name, parts.join(", "))
             }
+        }
+        Value::Dual { value, derivative } => {
+            format!("dual({}, {})", format_float(*value), format_float(*derivative))
         }
     }
 }
@@ -200,6 +229,16 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                     .all(|(a, b)| values_equal(a, b, heap))
         }
         (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
+        (Value::Dual { value: av, derivative: ad }, Value::Dual { value: bv, derivative: bd }) => {
+            av == bv && ad == bd
+        }
+        // Dual compared with numeric: compare primal values only
+        (Value::Dual { value, .. }, Value::Float(f)) | (Value::Float(f), Value::Dual { value, .. }) => {
+            value == f
+        }
+        (Value::Dual { value, .. }, Value::Int(n)) | (Value::Int(n), Value::Dual { value, .. }) => {
+            *value == *n as f64
+        }
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

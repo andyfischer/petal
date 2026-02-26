@@ -361,6 +361,9 @@ impl Evaluator {
                 let val = match inputs.first() {
                     Some(Value::Int(n)) => Value::Int(-n),
                     Some(Value::Float(f)) => Value::Float(-f),
+                    Some(Value::Dual { value, derivative }) => {
+                        Value::Dual { value: -value, derivative: -derivative }
+                    }
                     Some(v) => return ControlFlow::Error(format!("Cannot negate {}", v.type_name())),
                     None => return ControlFlow::Error("Neg: missing input".into()),
                 };
@@ -1096,6 +1099,10 @@ impl Evaluator {
             return ControlFlow::Error("Binary op: missing inputs".into());
         }
         let val = match (&inputs[0], &inputs[1]) {
+            // Dual number arithmetic (forward-mode AD)
+            (Value::Dual { .. }, _) | (_, Value::Dual { .. }) => {
+                return Self::dual_binop(term, inputs, stack);
+            }
             (Value::Int(a), Value::Int(b)) => int_op(*a, *b),
             (Value::Float(a), Value::Float(b)) => float_op(*a, *b),
             (Value::Int(a), Value::Float(b)) => float_op(*a as f64, *b),
@@ -1109,6 +1116,51 @@ impl Evaluator {
             }
         };
         Self::write_register(stack, term, val);
+        ControlFlow::Advance
+    }
+
+    /// Forward-mode AD arithmetic for Dual numbers.
+    fn dual_binop(
+        term: &Term,
+        inputs: &[Value],
+        stack: &mut Stack,
+    ) -> ControlFlow {
+        let a_val = match inputs[0].as_f64() {
+            Some(v) => v,
+            None => return ControlFlow::Error(format!(
+                "Cannot perform arithmetic on {} and {}",
+                inputs[0].type_name(), inputs[1].type_name()
+            )),
+        };
+        let b_val = match inputs[1].as_f64() {
+            Some(v) => v,
+            None => return ControlFlow::Error(format!(
+                "Cannot perform arithmetic on {} and {}",
+                inputs[0].type_name(), inputs[1].type_name()
+            )),
+        };
+        let a_deriv = inputs[0].derivative();
+        let b_deriv = inputs[1].derivative();
+
+        let (value, derivative) = match &term.op {
+            TermOp::Add => (a_val + b_val, a_deriv + b_deriv),
+            TermOp::Sub => (a_val - b_val, a_deriv - b_deriv),
+            TermOp::Mul => (a_val * b_val, a_deriv * b_val + a_val * b_deriv),
+            TermOp::Div => {
+                if b_val == 0.0 {
+                    return ControlFlow::Error("Division by zero".into());
+                }
+                (a_val / b_val, (a_deriv * b_val - a_val * b_deriv) / (b_val * b_val))
+            }
+            TermOp::Mod => {
+                // Mod derivative: d(a%b)/da = 1, d(a%b)/db is complex;
+                // approximate: treat as a - floor(a/b)*b
+                (a_val % b_val, a_deriv)
+            }
+            _ => return ControlFlow::Error("Unsupported dual operation".into()),
+        };
+
+        Self::write_register(stack, term, Value::Dual { value, derivative });
         ControlFlow::Advance
     }
 

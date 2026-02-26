@@ -31,6 +31,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("min", native_min);
     table.register("max", native_max);
     table.register("round", native_round);
+    table.register("dual", native_dual);
+    table.register("value_of", native_value_of);
+    table.register("deriv_of", native_deriv_of);
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
@@ -347,6 +350,51 @@ fn native_round(state: &mut PetalState) -> Result<u32, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Automatic differentiation (dual numbers)
+// ---------------------------------------------------------------------------
+
+fn native_dual(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("dual() expects 2 arguments (value, derivative)".into());
+    }
+    let value = match state.get_value(1)? {
+        Value::Int(n) => n as f64,
+        Value::Float(f) => f,
+        _ => return Err("dual() value must be a number".into()),
+    };
+    let derivative = match state.get_value(2)? {
+        Value::Int(n) => n as f64,
+        Value::Float(f) => f,
+        _ => return Err("dual() derivative must be a number".into()),
+    };
+    state.push_value(Value::Dual { value, derivative });
+    Ok(1)
+}
+
+fn native_value_of(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("value_of() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Dual { value, .. } => { state.push_float(value); Ok(1) }
+        Value::Int(n) => { state.push_float(n as f64); Ok(1) }
+        Value::Float(f) => { state.push_float(f); Ok(1) }
+        _ => Err("value_of() expects a number or dual".into()),
+    }
+}
+
+fn native_deriv_of(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("deriv_of() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Dual { derivative, .. } => { state.push_float(derivative); Ok(1) }
+        Value::Int(_) | Value::Float(_) => { state.push_float(0.0); Ok(1) }
+        _ => Err("deriv_of() expects a number or dual".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Utility (used by eval.rs for sorting, etc.)
 // ---------------------------------------------------------------------------
 
@@ -371,6 +419,12 @@ pub fn compare_values(
         }
         (Value::String(a), Value::String(b)) => {
             Ok(heap.get_string(*a).cmp(heap.get_string(*b)))
+        }
+        // Dual comparisons use primal value only
+        _ if a.as_f64().is_some() && b.as_f64().is_some() => {
+            let af = a.as_f64().unwrap();
+            let bf = b.as_f64().unwrap();
+            Ok(af.partial_cmp(&bf).unwrap_or(std::cmp::Ordering::Equal))
         }
         _ => Err(format!(
             "Cannot compare {} and {}",

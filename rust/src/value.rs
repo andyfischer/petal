@@ -173,13 +173,14 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         (Value::Int(a), Value::Float(b)) => (*a as f64) == *b,
         (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
         (Value::String(a), Value::String(b)) => {
-            heap.get_string(*a) == heap.get_string(*b)
+            // With string interning, equal content means equal IDs
+            a == b || heap.get_string(*a) == heap.get_string(*b)
         }
         (
             Value::EnumVariant { tag: at, data: ad },
             Value::EnumVariant { tag: bt, data: bd },
         ) => {
-            heap.get_string(*at) == heap.get_string(*bt) && {
+            (at == bt || heap.get_string(*at) == heap.get_string(*bt)) && {
                 let a_fields = heap.get_list(*ad);
                 let b_fields = heap.get_list(*bd);
                 a_fields.len() == b_fields.len()

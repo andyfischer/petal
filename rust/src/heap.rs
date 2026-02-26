@@ -2,7 +2,7 @@
 //!
 //! See docs/tech_outline/topics/Heap.md
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::value::Value;
 
@@ -58,6 +58,8 @@ pub struct Heap {
     free_lists: Vec<u32>,
     free_maps: Vec<u32>,
     free_elements: Vec<u32>,
+    /// String intern table: content → existing StringId
+    intern_table: HashMap<String, StringId>,
     /// Allocation counter — GC triggers after this many allocations
     alloc_count: u32,
 }
@@ -76,6 +78,7 @@ impl Heap {
             free_lists: Vec::new(),
             free_maps: Vec::new(),
             free_elements: Vec::new(),
+            intern_table: HashMap::new(),
             alloc_count: 0,
         }
     }
@@ -92,22 +95,34 @@ impl Heap {
     // --- String allocation ---
 
     pub fn alloc_string(&mut self, s: String) -> StringId {
+        // Check intern table for an existing live string with the same content
+        if let Some(&existing_id) = self.intern_table.get(&s) {
+            let slot = &self.strings[existing_id.0 as usize];
+            if slot.alive {
+                return existing_id;
+            }
+            // Stale entry — will be overwritten below
+        }
+
         self.tick_alloc();
-        if let Some(idx) = self.free_strings.pop() {
+        let id = if let Some(idx) = self.free_strings.pop() {
             let slot = &mut self.strings[idx as usize];
-            slot.data = s;
+            slot.data = s.clone();
             slot.gc_mark = false;
             slot.alive = true;
             StringId(idx)
         } else {
             let id = StringId(self.strings.len() as u32);
             self.strings.push(HeapString {
-                data: s,
+                data: s.clone(),
                 gc_mark: false,
                 alive: true,
             });
             id
-        }
+        };
+
+        self.intern_table.insert(s, id);
+        id
     }
 
     pub fn get_string(&self, id: StringId) -> &str {
@@ -288,6 +303,7 @@ impl Heap {
                     slot.gc_mark = false;
                 } else {
                     slot.alive = false;
+                    self.intern_table.remove(&slot.data);
                     slot.data.clear();
                     self.free_strings.push(i as u32);
                 }

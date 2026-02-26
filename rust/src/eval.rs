@@ -445,171 +445,11 @@ impl Evaluator {
             }
 
             TermOp::ForLoop => {
-                // Handle break from a completed iteration.
-                if stack.break_flag {
-                    stack.break_flag = false;
-                    if let Some(frame) = stack.frames.last_mut() {
-                        frame.loop_states.remove(&term.id);
-                    }
-                    Self::write_register(stack, term, Value::Nil);
-                    return ControlFlow::Advance;
-                }
-
-                // Handle continue — just clear the flag and proceed to next iteration.
-                if stack.continue_flag {
-                    stack.continue_flag = false;
-                }
-
-                let body_block = term.child_blocks[0];
-
-                // Initialize loop state on the first visit.
-                let needs_init = stack.frames.last()
-                    .map(|f| !f.loop_states.contains_key(&term.id))
-                    .unwrap_or(false);
-                if needs_init {
-                    match inputs[0] {
-                        Value::List(list_id) => {
-                            let elements = heap.get_list(list_id).to_vec();
-                            if let Some(frame) = stack.frames.last_mut() {
-                                frame.loop_states.insert(
-                                    term.id,
-                                    LoopState::For { elements, index: 0 },
-                                );
-                            }
-                        }
-                        other => {
-                            return ControlFlow::Error(format!(
-                                "Cannot iterate over {}",
-                                other.type_name()
-                            ))
-                        }
-                    }
-                }
-
-                // Get the next element (or detect loop completion).
-                let maybe_elem: Option<Value> = {
-                    let frame = stack.frames.last_mut().unwrap();
-                    match frame.loop_states.get_mut(&term.id) {
-                        Some(LoopState::For { elements, index }) => {
-                            if *index < elements.len() {
-                                let elem = elements[*index];
-                                *index += 1;
-                                Some(elem)
-                            } else {
-                                frame.loop_states.remove(&term.id);
-                                None
-                            }
-                        }
-                        _ => None,
-                    }
-                };
-
-                match maybe_elem {
-                    Some(elem) => {
-                        // Push body frame for this iteration.
-                        // Note: we do NOT pre-advance the parent frame here (unlike
-                        // push_child_frame). This keeps current_term pointing at the
-                        // ForLoop term so it re-executes after the body returns.
-                        let block = program.get_block(body_block);
-                        let reg_count = block.register_count as usize;
-                        let parent_frame_idx = stack.frames.len() - 1;
-                        stack.push_frame(Frame {
-                            block_id: body_block,
-                            current_term: block.entry,
-                            registers: vec![Value::Nil; reg_count],
-                            return_term: Some(term.id),
-                            parent_frame: Some(parent_frame_idx),
-                            is_loop_body: true,
-                            loop_states: std::collections::HashMap::new(),
-                        });
-                        // Set the loop variable in the first register.
-                        if let Some(frame) = stack.frames.last_mut() {
-                            if !frame.registers.is_empty() {
-                                frame.registers[0] = elem;
-                            }
-                        }
-                        ControlFlow::FramePushed
-                    }
-                    None => {
-                        // All iterations complete.
-                        Self::write_register(stack, term, Value::Nil);
-                        ControlFlow::Advance
-                    }
-                }
+                Self::exec_for_loop(term, inputs, program, stack, heap)
             }
 
             TermOp::WhileLoop => {
-                // Handle break from the body.
-                if stack.break_flag {
-                    stack.break_flag = false;
-                    if let Some(frame) = stack.frames.last_mut() {
-                        frame.loop_states.remove(&term.id);
-                    }
-                    Self::write_register(stack, term, Value::Nil);
-                    return ControlFlow::Advance;
-                }
-
-                // Handle continue — clear the flag and re-evaluate condition.
-                if stack.continue_flag {
-                    stack.continue_flag = false;
-                }
-
-                let cond_block = term.child_blocks[0];
-                let body_block = term.child_blocks[1];
-
-                let is_awaiting_cond = stack.frames.last()
-                    .map(|f| matches!(f.loop_states.get(&term.id), Some(LoopState::WhileCondition)))
-                    .unwrap_or(false);
-
-                if is_awaiting_cond {
-                    // The condition block just returned; its result was written to
-                    // this term's register by pop_frame.
-                    let cond_val = Self::read_register(program, stack, term.id);
-                    if let Some(frame) = stack.frames.last_mut() {
-                        frame.loop_states.remove(&term.id);
-                    }
-
-                    if !cond_val.is_truthy() {
-                        // Condition false — loop done.
-                        Self::write_register(stack, term, Value::Nil);
-                        return ControlFlow::Advance;
-                    }
-
-                    // Push body frame.
-                    // No state entry: after body returns we re-enter with no state
-                    // and push condition again.
-                    let block = program.get_block(body_block);
-                    let reg_count = block.register_count as usize;
-                    let parent_frame_idx = stack.frames.len() - 1;
-                    stack.push_frame(Frame {
-                        block_id: body_block,
-                        current_term: block.entry,
-                        registers: vec![Value::Nil; reg_count],
-                        return_term: Some(term.id),
-                        parent_frame: Some(parent_frame_idx),
-                        is_loop_body: true,
-                        loop_states: std::collections::HashMap::new(),
-                    });
-                    return ControlFlow::FramePushed;
-                }
-
-                // Fresh start or body just returned — push condition block.
-                let block = program.get_block(cond_block);
-                let reg_count = block.register_count as usize;
-                let parent_frame_idx = stack.frames.len() - 1;
-                stack.push_frame(Frame {
-                    block_id: cond_block,
-                    current_term: block.entry,
-                    registers: vec![Value::Nil; reg_count],
-                    return_term: Some(term.id),
-                    parent_frame: Some(parent_frame_idx),
-                    is_loop_body: false,
-                    loop_states: std::collections::HashMap::new(),
-                });
-                if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
-                    frame.loop_states.insert(term.id, LoopState::WhileCondition);
-                }
-                ControlFlow::FramePushed
+                Self::exec_while_loop(term, program, stack)
             }
 
             TermOp::Break => ControlFlow::Break,
@@ -621,97 +461,11 @@ impl Evaluator {
             }
 
             TermOp::Call => {
-                let callable = inputs[0];
-                let args = &inputs[1..];
-
-                match callable {
-                    Value::Closure(_) => {
-                        match Self::build_closure_frame(
-                            callable, args, program, closures, Some(term.id),
-                        ) {
-                            Ok(frame) => {
-                                // Advance caller past the Call term before pushing
-                                if let Some(caller_frame) = stack.frames.last_mut() {
-                                    caller_frame.current_term = term.block_next;
-                                }
-                                stack.push_frame(frame);
-                                ControlFlow::FramePushed
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    }
-
-                    Value::NativeFunction(native_id) => {
-                        Self::call_native_or_intrinsic(
-                            native_id, args, term, program, stack, heap, closures, native_fns, output,
-                        )
-                    }
-
-                    Value::EnumVariant { .. } if args.is_empty() => {
-                        // Calling a fieldless variant returns itself
-                        Self::write_register(stack, term, callable);
-                        ControlFlow::Advance
-                    }
-
-                    _ => ControlFlow::Error(format!("Cannot call {}", callable.type_name())),
-                }
+                Self::exec_call(term, inputs, program, stack, heap, closures, native_fns, output)
             }
 
             TermOp::MethodCall(method_cid) => {
-                let obj = inputs[0];
-                let args = &inputs[1..];
-                let method_name = match program.constants.get(*method_cid) {
-                    ConstantValue::String(s) => s.clone(),
-                    _ => return ControlFlow::Error("Invalid method name".into()),
-                };
-
-                // 1) If obj is a map, check for a callable field first
-                if let Value::Map(map_id) = obj {
-                    let map = heap.get_map(map_id);
-                    if let Some(&field_val) = map.get(&method_name) {
-                        match field_val {
-                            Value::Closure(_) => {
-                                match Self::build_closure_frame(
-                                    field_val, args, program, closures, Some(term.id),
-                                ) {
-                                    Ok(frame) => {
-                                        if let Some(caller_frame) = stack.frames.last_mut() {
-                                            caller_frame.current_term = term.block_next;
-                                        }
-                                        stack.push_frame(frame);
-                                        return ControlFlow::FramePushed;
-                                    }
-                                    Err(e) => return ControlFlow::Error(e),
-                                }
-                            }
-                            Value::NativeFunction(native_id) => {
-                                match Self::call_native_fn(native_id, args, native_fns, heap, output) {
-                                    Ok(val) => {
-                                        Self::write_register(stack, term, val);
-                                        return ControlFlow::Advance;
-                                    }
-                                    Err(e) => return ControlFlow::Error(e),
-                                }
-                            }
-                            _ => {} // not callable, fall through to method lookup
-                        }
-                    }
-                }
-
-                // 2) Look up method as a native function, calling with obj prepended to args
-                if let Some(native_id) = native_fns.lookup_name(&method_name) {
-                    let mut full_args = vec![obj];
-                    full_args.extend_from_slice(args);
-                    Self::call_native_or_intrinsic(
-                        native_id, &full_args, term, program, stack, heap, closures, native_fns, output,
-                    )
-                } else {
-                    ControlFlow::Error(format!(
-                        "No method '{}' on type {}",
-                        method_name,
-                        obj.type_name()
-                    ))
-                }
+                Self::exec_method_call(*method_cid, term, inputs, program, stack, heap, closures, native_fns, output)
             }
 
             TermOp::MakeClosure(fn_id) => {
@@ -946,94 +700,397 @@ impl Evaluator {
             }
 
             TermOp::Match => {
-                let subject = inputs[0];
-                let arm_metas = match program.match_arms.get(&term.id) {
-                    Some(arms) => arms,
-                    None => return ControlFlow::Error("Match: no arm metadata".into()),
-                };
+                Self::exec_match(term, inputs, program, stack, heap, closures, native_fns, output)
+            }
+        }
+    }
 
-                for arm_meta in arm_metas {
-                    // Try to match pattern
-                    let mut bindings = Vec::new();
-                    if Self::match_pattern(&arm_meta.pattern, subject, heap, &mut bindings) {
-                        // Check guard if present (with pattern bindings available)
-                        if let Some(guard_block) = arm_meta.guard_block {
-                            // Push guard frame with pattern bindings
-                            let gb = program.get_block(guard_block);
-                            let gb_reg_count = gb.register_count as usize;
-                            let parent_idx = stack.frames.len() - 1;
-                            stack.push_frame(Frame {
-                                block_id: guard_block,
-                                current_term: gb.entry,
-                                registers: vec![Value::Nil; gb_reg_count],
-                                return_term: Some(term.id),
-                                parent_frame: Some(parent_idx),
-                                is_loop_body: false,
-                                loop_states: std::collections::HashMap::new(),
-                            });
-                            if let Some(frame) = stack.frames.last_mut() {
-                                Self::apply_pattern_bindings(program, guard_block, &bindings, frame);
-                            }
-                            // Run guard to completion
-                            let target_depth = parent_idx + 1;
-                            let mut guard_result = Value::Bool(false);
-                            loop {
-                                if stack.frames.len() <= target_depth {
-                                    if let Some(frame) = stack.frames.last() {
-                                        let reg = term.register.0 as usize;
-                                        if reg < frame.registers.len() {
-                                            guard_result = frame.registers[reg];
-                                        }
-                                    }
-                                    break;
+    // -----------------------------------------------------------------------
+    // Extracted term handlers
+    // -----------------------------------------------------------------------
+
+    fn exec_for_loop(
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+    ) -> ControlFlow {
+        // Handle break from a completed iteration.
+        if stack.break_flag {
+            stack.break_flag = false;
+            if let Some(frame) = stack.frames.last_mut() {
+                frame.loop_states.remove(&term.id);
+            }
+            Self::write_register(stack, term, Value::Nil);
+            return ControlFlow::Advance;
+        }
+
+        // Handle continue — just clear the flag and proceed to next iteration.
+        if stack.continue_flag {
+            stack.continue_flag = false;
+        }
+
+        let body_block = term.child_blocks[0];
+
+        // Initialize loop state on the first visit.
+        let needs_init = stack.frames.last()
+            .map(|f| !f.loop_states.contains_key(&term.id))
+            .unwrap_or(false);
+        if needs_init {
+            match inputs[0] {
+                Value::List(list_id) => {
+                    let elements = heap.get_list(list_id).to_vec();
+                    if let Some(frame) = stack.frames.last_mut() {
+                        frame.loop_states.insert(
+                            term.id,
+                            LoopState::For { elements, index: 0 },
+                        );
+                    }
+                }
+                other => {
+                    return ControlFlow::Error(format!(
+                        "Cannot iterate over {}",
+                        other.type_name()
+                    ))
+                }
+            }
+        }
+
+        // Get the next element (or detect loop completion).
+        let maybe_elem: Option<Value> = {
+            let frame = stack.frames.last_mut().unwrap();
+            match frame.loop_states.get_mut(&term.id) {
+                Some(LoopState::For { elements, index }) => {
+                    if *index < elements.len() {
+                        let elem = elements[*index];
+                        *index += 1;
+                        Some(elem)
+                    } else {
+                        frame.loop_states.remove(&term.id);
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        match maybe_elem {
+            Some(elem) => {
+                // Push body frame for this iteration.
+                let block = program.get_block(body_block);
+                let reg_count = block.register_count as usize;
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(Frame {
+                    block_id: body_block,
+                    current_term: block.entry,
+                    registers: vec![Value::Nil; reg_count],
+                    return_term: Some(term.id),
+                    parent_frame: Some(parent_frame_idx),
+                    is_loop_body: true,
+                    loop_states: std::collections::HashMap::new(),
+                });
+                // Set the loop variable in the first register.
+                if let Some(frame) = stack.frames.last_mut() {
+                    if !frame.registers.is_empty() {
+                        frame.registers[0] = elem;
+                    }
+                }
+                ControlFlow::FramePushed
+            }
+            None => {
+                // All iterations complete.
+                Self::write_register(stack, term, Value::Nil);
+                ControlFlow::Advance
+            }
+        }
+    }
+
+    fn exec_while_loop(
+        term: &Term,
+        program: &Program,
+        stack: &mut Stack,
+    ) -> ControlFlow {
+        // Handle break from the body.
+        if stack.break_flag {
+            stack.break_flag = false;
+            if let Some(frame) = stack.frames.last_mut() {
+                frame.loop_states.remove(&term.id);
+            }
+            Self::write_register(stack, term, Value::Nil);
+            return ControlFlow::Advance;
+        }
+
+        // Handle continue — clear the flag and re-evaluate condition.
+        if stack.continue_flag {
+            stack.continue_flag = false;
+        }
+
+        let cond_block = term.child_blocks[0];
+        let body_block = term.child_blocks[1];
+
+        let is_awaiting_cond = stack.frames.last()
+            .map(|f| matches!(f.loop_states.get(&term.id), Some(LoopState::WhileCondition)))
+            .unwrap_or(false);
+
+        if is_awaiting_cond {
+            // The condition block just returned; its result was written to
+            // this term's register by pop_frame.
+            let cond_val = Self::read_register(program, stack, term.id);
+            if let Some(frame) = stack.frames.last_mut() {
+                frame.loop_states.remove(&term.id);
+            }
+
+            if !cond_val.is_truthy() {
+                // Condition false — loop done.
+                Self::write_register(stack, term, Value::Nil);
+                return ControlFlow::Advance;
+            }
+
+            // Push body frame.
+            let block = program.get_block(body_block);
+            let reg_count = block.register_count as usize;
+            let parent_frame_idx = stack.frames.len() - 1;
+            stack.push_frame(Frame {
+                block_id: body_block,
+                current_term: block.entry,
+                registers: vec![Value::Nil; reg_count],
+                return_term: Some(term.id),
+                parent_frame: Some(parent_frame_idx),
+                is_loop_body: true,
+                loop_states: std::collections::HashMap::new(),
+            });
+            return ControlFlow::FramePushed;
+        }
+
+        // Fresh start or body just returned — push condition block.
+        let block = program.get_block(cond_block);
+        let reg_count = block.register_count as usize;
+        let parent_frame_idx = stack.frames.len() - 1;
+        stack.push_frame(Frame {
+            block_id: cond_block,
+            current_term: block.entry,
+            registers: vec![Value::Nil; reg_count],
+            return_term: Some(term.id),
+            parent_frame: Some(parent_frame_idx),
+            is_loop_body: false,
+            loop_states: std::collections::HashMap::new(),
+        });
+        if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
+            frame.loop_states.insert(term.id, LoopState::WhileCondition);
+        }
+        ControlFlow::FramePushed
+    }
+
+    fn exec_call(
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        native_fns: &NativeFnTable,
+        output: &mut Vec<String>,
+    ) -> ControlFlow {
+        let callable = inputs[0];
+        let args = &inputs[1..];
+
+        match callable {
+            Value::Closure(_) => {
+                match Self::build_closure_frame(
+                    callable, args, program, closures, Some(term.id),
+                ) {
+                    Ok(frame) => {
+                        // Advance caller past the Call term before pushing
+                        if let Some(caller_frame) = stack.frames.last_mut() {
+                            caller_frame.current_term = term.block_next;
+                        }
+                        stack.push_frame(frame);
+                        ControlFlow::FramePushed
+                    }
+                    Err(e) => ControlFlow::Error(e),
+                }
+            }
+
+            Value::NativeFunction(native_id) => {
+                Self::call_native_or_intrinsic(
+                    native_id, args, term, program, stack, heap, closures, native_fns, output,
+                )
+            }
+
+            Value::EnumVariant { .. } if args.is_empty() => {
+                // Calling a fieldless variant returns itself
+                Self::write_register(stack, term, callable);
+                ControlFlow::Advance
+            }
+
+            _ => ControlFlow::Error(format!("Cannot call {}", callable.type_name())),
+        }
+    }
+
+    fn exec_method_call(
+        method_cid: ConstantId,
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        native_fns: &NativeFnTable,
+        output: &mut Vec<String>,
+    ) -> ControlFlow {
+        let obj = inputs[0];
+        let args = &inputs[1..];
+        let method_name = match program.constants.get(method_cid) {
+            ConstantValue::String(s) => s.clone(),
+            _ => return ControlFlow::Error("Invalid method name".into()),
+        };
+
+        // 1) If obj is a map, check for a callable field first
+        if let Value::Map(map_id) = obj {
+            let map = heap.get_map(map_id);
+            if let Some(&field_val) = map.get(&method_name) {
+                match field_val {
+                    Value::Closure(_) => {
+                        match Self::build_closure_frame(
+                            field_val, args, program, closures, Some(term.id),
+                        ) {
+                            Ok(frame) => {
+                                if let Some(caller_frame) = stack.frames.last_mut() {
+                                    caller_frame.current_term = term.block_next;
                                 }
-                                match Self::step(program, stack, heap, closures, native_fns, output) {
-                                    StepResult::Continue => {}
-                                    StepResult::Complete(v) => { guard_result = v; break; }
-                                    StepResult::Error(e) => return ControlFlow::Error(e),
+                                stack.push_frame(frame);
+                                return ControlFlow::FramePushed;
+                            }
+                            Err(e) => return ControlFlow::Error(e),
+                        }
+                    }
+                    Value::NativeFunction(native_id) => {
+                        match Self::call_native_fn(native_id, args, native_fns, heap, output) {
+                            Ok(val) => {
+                                Self::write_register(stack, term, val);
+                                return ControlFlow::Advance;
+                            }
+                            Err(e) => return ControlFlow::Error(e),
+                        }
+                    }
+                    _ => {} // not callable, fall through to method lookup
+                }
+            }
+        }
+
+        // 2) Look up method as a native function, calling with obj prepended to args
+        if let Some(native_id) = native_fns.lookup_name(&method_name) {
+            let mut full_args = vec![obj];
+            full_args.extend_from_slice(args);
+            Self::call_native_or_intrinsic(
+                native_id, &full_args, term, program, stack, heap, closures, native_fns, output,
+            )
+        } else {
+            ControlFlow::Error(format!(
+                "No method '{}' on type {}",
+                method_name,
+                obj.type_name()
+            ))
+        }
+    }
+
+    fn exec_match(
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        native_fns: &NativeFnTable,
+        output: &mut Vec<String>,
+    ) -> ControlFlow {
+        let subject = inputs[0];
+        let arm_metas = match program.match_arms.get(&term.id) {
+            Some(arms) => arms,
+            None => return ControlFlow::Error("Match: no arm metadata".into()),
+        };
+
+        for arm_meta in arm_metas {
+            // Try to match pattern
+            let mut bindings = Vec::new();
+            if Self::match_pattern(&arm_meta.pattern, subject, heap, &mut bindings) {
+                // Check guard if present (with pattern bindings available)
+                if let Some(guard_block) = arm_meta.guard_block {
+                    // Push guard frame with pattern bindings
+                    let gb = program.get_block(guard_block);
+                    let gb_reg_count = gb.register_count as usize;
+                    let parent_idx = stack.frames.len() - 1;
+                    stack.push_frame(Frame {
+                        block_id: guard_block,
+                        current_term: gb.entry,
+                        registers: vec![Value::Nil; gb_reg_count],
+                        return_term: Some(term.id),
+                        parent_frame: Some(parent_idx),
+                        is_loop_body: false,
+                        loop_states: std::collections::HashMap::new(),
+                    });
+                    if let Some(frame) = stack.frames.last_mut() {
+                        Self::apply_pattern_bindings(program, guard_block, &bindings, frame);
+                    }
+                    // Run guard to completion
+                    let target_depth = parent_idx + 1;
+                    let mut guard_result = Value::Bool(false);
+                    loop {
+                        if stack.frames.len() <= target_depth {
+                            if let Some(frame) = stack.frames.last() {
+                                let reg = term.register.0 as usize;
+                                if reg < frame.registers.len() {
+                                    guard_result = frame.registers[reg];
                                 }
                             }
-                            if !guard_result.is_truthy() {
-                                continue;
-                            }
+                            break;
                         }
-
-                        // Advance parent frame past the Match term
-                        if let Some(parent_frame) = stack.frames.last_mut() {
-                            parent_frame.current_term = term.block_next;
+                        match Self::step(program, stack, heap, closures, native_fns, output) {
+                            StepResult::Continue => {}
+                            StepResult::Complete(v) => { guard_result = v; break; }
+                            StepResult::Error(e) => return ControlFlow::Error(e),
                         }
-
-                        // Execute body block with bindings
-                        let body_block_id = arm_meta.body_block;
-                        let block = program.get_block(body_block_id);
-                        let reg_count = block.register_count as usize;
-                        let parent_frame_idx = stack.frames.len() - 1;
-
-                        stack.push_frame(Frame {
-                            block_id: body_block_id,
-                            current_term: block.entry,
-                            registers: vec![Value::Nil; reg_count],
-                            return_term: Some(term.id),
-                            parent_frame: Some(parent_frame_idx),
-                            is_loop_body: false,
-                            loop_states: std::collections::HashMap::new(),
-                        });
-
-                        // Apply pattern bindings to the body frame's registers
-                        if let Some(frame) = stack.frames.last_mut() {
-                            Self::apply_pattern_bindings(program, body_block_id, &bindings, frame);
-                        }
-
-                        return ControlFlow::FramePushed;
+                    }
+                    if !guard_result.is_truthy() {
+                        continue;
                     }
                 }
 
-                ControlFlow::Error(format!(
-                    "No matching pattern for value: {}",
-                    value::value_to_display_string(&subject, heap)
-                ))
+                // Advance parent frame past the Match term
+                if let Some(parent_frame) = stack.frames.last_mut() {
+                    parent_frame.current_term = term.block_next;
+                }
+
+                // Execute body block with bindings
+                let body_block_id = arm_meta.body_block;
+                let block = program.get_block(body_block_id);
+                let reg_count = block.register_count as usize;
+                let parent_frame_idx = stack.frames.len() - 1;
+
+                stack.push_frame(Frame {
+                    block_id: body_block_id,
+                    current_term: block.entry,
+                    registers: vec![Value::Nil; reg_count],
+                    return_term: Some(term.id),
+                    parent_frame: Some(parent_frame_idx),
+                    is_loop_body: false,
+                    loop_states: std::collections::HashMap::new(),
+                });
+
+                // Apply pattern bindings to the body frame's registers
+                if let Some(frame) = stack.frames.last_mut() {
+                    Self::apply_pattern_bindings(program, body_block_id, &bindings, frame);
+                }
+
+                return ControlFlow::FramePushed;
             }
         }
+
+        ControlFlow::Error(format!(
+            "No matching pattern for value: {}",
+            value::value_to_display_string(&subject, heap)
+        ))
     }
 
     // -----------------------------------------------------------------------

@@ -124,7 +124,11 @@ impl Env {
     pub fn run(&mut self, stack_id: StackKey) -> Result<Value, String> {
         loop {
             match self.step(stack_id)? {
-                StepResult::Continue => continue,
+                StepResult::Continue => {
+                    if self.heap.should_collect() {
+                        self.collect_garbage();
+                    }
+                }
                 StepResult::Complete(val) => return Ok(val),
                 StepResult::Error(e) => return Err(e),
             }
@@ -186,6 +190,51 @@ impl Env {
     /// Must be called before `load_program` so the compiler knows about it.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    /// Run a mark-and-sweep garbage collection cycle.
+    /// Marks all values reachable from roots (stack registers, state, closures,
+    /// loop state), then sweeps unmarked heap objects.
+    fn collect_garbage(&mut self) {
+        // Mark phase: trace all roots
+
+        // 1. Stack frame registers and state
+        for stack in self.stacks.values() {
+            for frame in &stack.frames {
+                for val in &frame.registers {
+                    self.heap.mark_value(*val);
+                }
+                // Loop state elements (ForLoop stores Vec<Value>)
+                for loop_state in frame.loop_states.values() {
+                    if let crate::stack::LoopState::For { elements, .. } = loop_state {
+                        for val in elements {
+                            self.heap.mark_value(*val);
+                        }
+                    }
+                }
+            }
+            // Persistent state values
+            for val in stack.state.values() {
+                self.heap.mark_value(*val);
+            }
+            // Last pop result (used by synchronous closure calls)
+            if let Some(val) = stack.last_pop_result {
+                self.heap.mark_value(val);
+            }
+        }
+
+        // 2. Closure captures
+        for closure in &self.closures {
+            for val in &closure.captures {
+                self.heap.mark_value(*val);
+            }
+        }
+
+        // 3. Output buffer (contains strings, but they're Rust Strings not heap-allocated)
+        // — no heap values to mark
+
+        // Sweep phase
+        self.heap.sweep();
     }
 }
 

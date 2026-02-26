@@ -52,7 +52,7 @@ describe("compound assignment operators", () => {
   it("desugars += to x = x + expr in AST", () => {
     const ast = showAstJson("let x = 0\nx += 1");
     // Second statement should be a regular Assign
-    const assignStmt = ast[1];
+    const assignStmt = ast[1].kind;
     expect(assignStmt).toHaveProperty("Assign");
   });
 });

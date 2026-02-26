@@ -59,7 +59,7 @@ describe("JSX elements", () => {
   describe("AST", () => {
     it("parses self-closing element", () => {
       const ast = showAstJson("<div />");
-      const expr = ast[0].Expr;
+      const expr = ast[0].kind.Expr.kind;
       expect(expr.Element).toBeDefined();
       expect(expr.Element.tag).toBe("div");
       expect(expr.Element.props).toEqual([]);
@@ -68,7 +68,7 @@ describe("JSX elements", () => {
 
     it("parses element with text child", () => {
       const ast = showAstJson("<p>hello</p>");
-      const elem = ast[0].Expr.Element;
+      const elem = ast[0].kind.Expr.kind.Element;
       expect(elem.tag).toBe("p");
       expect(elem.children).toHaveLength(1);
       expect(elem.children[0].Text).toBe("hello");
@@ -76,14 +76,14 @@ describe("JSX elements", () => {
 
     it("parses element with expression child", () => {
       const ast = showAstJson("<p>{x}</p>");
-      const elem = ast[0].Expr.Element;
+      const elem = ast[0].kind.Expr.kind.Element;
       expect(elem.children).toHaveLength(1);
       expect(elem.children[0].Expr).toBeDefined();
     });
 
     it("parses element with props", () => {
       const ast = showAstJson('<div class="foo" id="bar" />');
-      const elem = ast[0].Expr.Element;
+      const elem = ast[0].kind.Expr.kind.Element;
       expect(elem.props).toHaveLength(2);
       expect(elem.props[0][0]).toBe("class");
       expect(elem.props[1][0]).toBe("id");
@@ -91,10 +91,10 @@ describe("JSX elements", () => {
 
     it("parses nested elements", () => {
       const ast = showAstJson("<div><p>text</p></div>");
-      const elem = ast[0].Expr.Element;
+      const elem = ast[0].kind.Expr.kind.Element;
       expect(elem.tag).toBe("div");
       expect(elem.children).toHaveLength(1);
-      const child = elem.children[0].Expr.Element;
+      const child = elem.children[0].Expr.kind.Element;
       expect(child.tag).toBe("p");
     });
   });

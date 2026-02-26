@@ -86,11 +86,17 @@ enum LexerMode {
     JsxContent, // Between `>` and `</` — lexing children
 }
 
+use crate::source_map::{SourcePosition, SourceSpan};
+
 pub struct Lexer {
     input: Vec<char>,
     pos: usize,
     pub tokens: Vec<Token>,
+    pub token_spans: Vec<SourceSpan>,
     mode_stack: Vec<LexerMode>,
+    // Line/column tracking (1-based)
+    line: u32,
+    col: u32,
 }
 
 impl Lexer {
@@ -99,12 +105,51 @@ impl Lexer {
             input: input.chars().collect(),
             pos: 0,
             tokens: Vec::new(),
+            token_spans: Vec::new(),
             mode_stack: Vec::new(),
+            line: 1,
+            col: 1,
         }
     }
 
     fn current_mode(&self) -> &LexerMode {
         self.mode_stack.last().unwrap_or(&LexerMode::Normal)
+    }
+
+    /// Record current position as a SourcePosition.
+    fn current_pos(&self) -> SourcePosition {
+        SourcePosition {
+            line: self.line,
+            column: self.col,
+            offset: self.pos as u32,
+        }
+    }
+
+    /// Push a token with its source span.
+    fn push_token(&mut self, token: Token, start: SourcePosition) {
+        let end = self.current_pos();
+        self.tokens.push(token);
+        self.token_spans.push(SourceSpan { start, end });
+    }
+
+    /// Advance position by one character, updating line/column tracking.
+    fn advance_char(&mut self) {
+        if self.pos < self.input.len() {
+            if self.input[self.pos] == '\n' {
+                self.line += 1;
+                self.col = 1;
+            } else {
+                self.col += 1;
+            }
+            self.pos += 1;
+        }
+    }
+
+    /// Advance position by n characters.
+    fn advance_n(&mut self, n: usize) {
+        for _ in 0..n {
+            self.advance_char();
+        }
     }
 
     pub fn tokenize(&mut self) -> Result<&[Token], String> {
@@ -130,21 +175,24 @@ impl Lexer {
             // Handle newlines (top-level only, not inside interpolation)
             match ch {
                 '\n' => {
-                    self.tokens.push(Token::Newline);
-                    self.pos += 1;
+                    let start = self.current_pos();
+                    self.advance_char();
+                    self.push_token(Token::Newline, start);
                 }
                 '\r' => {
-                    self.pos += 1;
+                    let start = self.current_pos();
+                    self.advance_char();
                     if self.pos < self.input.len() && self.input[self.pos] == '\n' {
-                        self.pos += 1;
+                        self.advance_char();
                     }
-                    self.tokens.push(Token::Newline);
+                    self.push_token(Token::Newline, start);
                 }
                 _ => self.tokenize_one()?,
             }
         }
 
-        self.tokens.push(Token::Eof);
+        let start = self.current_pos();
+        self.push_token(Token::Eof, start);
         Ok(&self.tokens)
     }
 
@@ -154,61 +202,62 @@ impl Lexer {
             return Ok(());
         }
         let ch = self.input[self.pos];
+        let start = self.current_pos();
         match ch {
             '"' => self.read_string()?,
-            '(' => { self.tokens.push(Token::LParen); self.pos += 1; }
-            ')' => { self.tokens.push(Token::RParen); self.pos += 1; }
-            '{' => { self.tokens.push(Token::LBrace); self.pos += 1; }
-            '}' => { self.tokens.push(Token::RBrace); self.pos += 1; }
-            '[' => { self.tokens.push(Token::LBracket); self.pos += 1; }
-            ']' => { self.tokens.push(Token::RBracket); self.pos += 1; }
-            ',' => { self.tokens.push(Token::Comma); self.pos += 1; }
-            ':' => { self.tokens.push(Token::Colon); self.pos += 1; }
+            '(' => { self.advance_char(); self.push_token(Token::LParen, start); }
+            ')' => { self.advance_char(); self.push_token(Token::RParen, start); }
+            '{' => { self.advance_char(); self.push_token(Token::LBrace, start); }
+            '}' => { self.advance_char(); self.push_token(Token::RBrace, start); }
+            '[' => { self.advance_char(); self.push_token(Token::LBracket, start); }
+            ']' => { self.advance_char(); self.push_token(Token::RBracket, start); }
+            ',' => { self.advance_char(); self.push_token(Token::Comma, start); }
+            ':' => { self.advance_char(); self.push_token(Token::Colon, start); }
             '.' => {
                 if self.peek_next() == Some('.') {
                     if self.pos + 2 < self.input.len() && self.input[self.pos + 2] == '.' {
-                        self.tokens.push(Token::DotDotDot);
-                        self.pos += 3;
+                        self.advance_n(3);
+                        self.push_token(Token::DotDotDot, start);
                     } else {
-                        self.tokens.push(Token::DotDot);
-                        self.pos += 2;
+                        self.advance_n(2);
+                        self.push_token(Token::DotDot, start);
                     }
                 } else {
-                    self.tokens.push(Token::Dot);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Dot, start);
                 }
             }
             '+' => {
                 if self.peek_next() == Some('+') {
-                    self.tokens.push(Token::PlusPlus);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::PlusPlus, start);
                 } else if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::PlusAssign);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::PlusAssign, start);
                 } else {
-                    self.tokens.push(Token::Plus);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Plus, start);
                 }
             }
             '-' => {
                 if self.peek_next() == Some('>') {
-                    self.tokens.push(Token::Arrow);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Arrow, start);
                 } else if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::MinusAssign);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::MinusAssign, start);
                 } else {
-                    self.tokens.push(Token::Minus);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Minus, start);
                 }
             }
             '*' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::StarAssign);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::StarAssign, start);
                 } else {
-                    self.tokens.push(Token::Star);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Star, start);
                 }
             }
             '/' => {
@@ -216,97 +265,97 @@ impl Lexer {
                     && *self.current_mode() == LexerMode::JsxTag
                 {
                     // Self-closing JSX tag: `/>`
-                    self.tokens.push(Token::JsxSelfClose);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::JsxSelfClose, start);
                     self.mode_stack.pop(); // pop JsxTag
                 } else if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::SlashAssign);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::SlashAssign, start);
                 } else {
-                    self.tokens.push(Token::Slash);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Slash, start);
                 }
             }
             '%' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::PercentAssign);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::PercentAssign, start);
                 } else {
-                    self.tokens.push(Token::Percent);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Percent, start);
                 }
             }
             '=' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::Eq);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Eq, start);
                 } else {
-                    self.tokens.push(Token::Assign);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Assign, start);
                 }
             }
             '!' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::Ne);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Ne, start);
                 } else {
-                    self.tokens.push(Token::Bang);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Bang, start);
                 }
             }
             '<' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::Le);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Le, start);
                 } else if self.peek_next().map_or(false, |c| c.is_ascii_alphabetic()) {
                     // JSX open tag: `<div`
-                    self.tokens.push(Token::JsxOpenStart);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::JsxOpenStart, start);
                     self.read_jsx_tag_name()?;
                     self.mode_stack.push(LexerMode::JsxTag);
                 } else if self.peek_next() == Some('/') {
                     // JSX close tag: `</div>`
-                    self.tokens.push(Token::JsxCloseStart);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::JsxCloseStart, start);
                     self.read_jsx_tag_name()?;
                     self.expect_char('>')?;
                     self.mode_stack.pop(); // pop JsxContent
                 } else {
-                    self.tokens.push(Token::Lt);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Lt, start);
                 }
             }
             '>' => {
                 if self.peek_next() == Some('=') {
-                    self.tokens.push(Token::Ge);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Ge, start);
                 } else if *self.current_mode() == LexerMode::JsxTag {
                     // End of JSX open tag — switch to content mode
-                    self.tokens.push(Token::Gt);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Gt, start);
                     // Replace JsxTag with JsxContent
                     self.mode_stack.pop();
                     self.mode_stack.push(LexerMode::JsxContent);
                 } else {
-                    self.tokens.push(Token::Gt);
-                    self.pos += 1;
+                    self.advance_char();
+                    self.push_token(Token::Gt, start);
                 }
             }
             '&' => {
                 if self.peek_next() == Some('&') {
-                    self.tokens.push(Token::And);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::And, start);
                 } else {
                     return Err(format!("Unexpected character '&' at position {}", self.pos));
                 }
             }
             '|' => {
                 if self.peek_next() == Some('|') {
-                    self.tokens.push(Token::Or);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Or, start);
                 } else if self.peek_next() == Some('>') {
-                    self.tokens.push(Token::Pipe);
-                    self.pos += 2;
+                    self.advance_n(2);
+                    self.push_token(Token::Pipe, start);
                 } else {
                     return Err(format!("Unexpected character '|' at position {}", self.pos));
                 }
@@ -332,7 +381,7 @@ impl Lexer {
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch == ' ' || ch == '\t' {
-                self.pos += 1;
+                self.advance_char();
             } else {
                 break;
             }
@@ -341,30 +390,31 @@ impl Lexer {
 
     fn skip_line_comment(&mut self) {
         while self.pos < self.input.len() && self.input[self.pos] != '\n' {
-            self.pos += 1;
+            self.advance_char();
         }
     }
 
     fn read_string(&mut self) -> Result<(), String> {
-        self.pos += 1; // skip opening quote
+        let start = self.current_pos();
+        self.advance_char(); // skip opening quote
         let mut s = String::new();
         let mut has_interp = false;
 
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch == '"' {
-                self.pos += 1;
+                self.advance_char();
                 if has_interp {
                     // Emit trailing string part (even if empty, for concatenation)
-                    self.tokens.push(Token::String(s));
-                    self.tokens.push(Token::InterpEnd);
+                    self.push_token(Token::String(s), start);
+                    self.push_token(Token::InterpEnd, start);
                 } else {
-                    self.tokens.push(Token::String(s));
+                    self.push_token(Token::String(s), start);
                 }
                 return Ok(());
             }
             if ch == '\\' {
-                self.pos += 1;
+                self.advance_char();
                 if self.pos >= self.input.len() {
                     return Err("Unterminated string escape".to_string());
                 }
@@ -380,35 +430,37 @@ impl Lexer {
                         s.push(other);
                     }
                 }
-                self.pos += 1;
+                self.advance_char();
                 continue;
             }
             if ch == '{' {
                 // Start of interpolation
                 if !has_interp {
                     has_interp = true;
-                    self.tokens.push(Token::InterpStart);
+                    self.push_token(Token::InterpStart, start);
                 }
                 // Emit the string part accumulated so far
-                self.tokens.push(Token::String(s));
+                let part_start = self.current_pos();
+                self.push_token(Token::String(s), part_start);
                 s = String::new();
-                self.pos += 1;
+                self.advance_char();
 
                 self.tokenize_braced_expr(false, false)?;
                 continue;
             }
             s.push(ch);
-            self.pos += 1;
+            self.advance_char();
         }
         Err("Unterminated string".to_string())
     }
 
     fn read_number(&mut self) -> Result<(), String> {
+        let start_pos = self.current_pos();
         let start = self.pos;
         let mut is_float = false;
 
         while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
-            self.pos += 1;
+            self.advance_char();
         }
 
         if self.pos < self.input.len() && self.input[self.pos] == '.' {
@@ -417,9 +469,9 @@ impl Lexer {
                 // It's a range like 1..10, don't consume the dot
             } else if self.pos + 1 < self.input.len() && self.input[self.pos + 1].is_ascii_digit() {
                 is_float = true;
-                self.pos += 1; // skip the dot
+                self.advance_char(); // skip the dot
                 while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
-                    self.pos += 1;
+                    self.advance_char();
                 }
             } else {
                 // Could be a method call like `5.method()` - don't consume
@@ -429,10 +481,10 @@ impl Lexer {
         let text: String = self.input[start..self.pos].iter().collect();
         if is_float {
             let f: f64 = text.parse().map_err(|e| format!("Invalid float: {}", e))?;
-            self.tokens.push(Token::Float(f));
+            self.push_token(Token::Float(f), start_pos);
         } else {
             let n: i64 = text.parse().map_err(|e| format!("Invalid integer: {}", e))?;
-            self.tokens.push(Token::Int(n));
+            self.push_token(Token::Int(n), start_pos);
         }
         Ok(())
     }
@@ -457,24 +509,29 @@ impl Lexer {
                 depth -= 1;
                 if depth == 0 {
                     if emit_close {
-                        self.tokens.push(Token::RBrace);
+                        let start = self.current_pos();
+                        self.advance_char();
+                        self.push_token(Token::RBrace, start);
+                    } else {
+                        self.advance_char();
                     }
-                    self.pos += 1;
                     break;
                 }
-                self.tokens.push(Token::RBrace);
-                self.pos += 1;
+                let start = self.current_pos();
+                self.advance_char();
+                self.push_token(Token::RBrace, start);
             } else if ch == '{' {
                 depth += 1;
-                self.tokens.push(Token::LBrace);
-                self.pos += 1;
+                let start = self.current_pos();
+                self.advance_char();
+                self.push_token(Token::LBrace, start);
             } else if skip_newlines && (ch == '\n' || ch == '\r') {
-                self.pos += 1;
+                self.advance_char();
                 if ch == '\r'
                     && self.pos < self.input.len()
                     && self.input[self.pos] == '\n'
                 {
-                    self.pos += 1;
+                    self.advance_char();
                 }
             } else {
                 self.tokenize_one()?;
@@ -488,7 +545,7 @@ impl Lexer {
 
     fn expect_char(&mut self, expected: char) -> Result<(), String> {
         if self.pos < self.input.len() && self.input[self.pos] == expected {
-            self.pos += 1;
+            self.advance_char();
             Ok(())
         } else {
             Err(format!(
@@ -499,20 +556,21 @@ impl Lexer {
     }
 
     fn read_jsx_tag_name(&mut self) -> Result<(), String> {
-        let start = self.pos;
+        let start = self.current_pos();
+        let text_start = self.pos;
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-                self.pos += 1;
+                self.advance_char();
             } else {
                 break;
             }
         }
-        if self.pos == start {
+        if self.pos == text_start {
             return Err(format!("Expected tag name at position {}", self.pos));
         }
-        let name: String = self.input[start..self.pos].iter().collect();
-        self.tokens.push(Token::JsxTagName(name));
+        let name: String = self.input[text_start..self.pos].iter().collect();
+        self.push_token(Token::JsxTagName(name), start);
         Ok(())
     }
 
@@ -527,36 +585,39 @@ impl Lexer {
 
                     if self.peek_next() == Some('/') {
                         // Closing tag: `</div>`
-                        self.tokens.push(Token::JsxCloseStart);
-                        self.pos += 2;
+                        let start = self.current_pos();
+                        self.advance_n(2);
+                        self.push_token(Token::JsxCloseStart, start);
                         self.read_jsx_tag_name()?;
                         self.expect_char('>')?;
                         self.mode_stack.pop(); // pop JsxContent
                         return Ok(());
                     } else if self.peek_next().map_or(false, |c| c.is_ascii_alphabetic()) {
                         // Nested open tag
-                        self.tokens.push(Token::JsxOpenStart);
-                        self.pos += 1;
+                        let start = self.current_pos();
+                        self.advance_char();
+                        self.push_token(Token::JsxOpenStart, start);
                         self.read_jsx_tag_name()?;
                         // Push JsxTag on top of JsxContent (content stays)
                         self.mode_stack.push(LexerMode::JsxTag);
                         return Ok(());
                     } else {
                         text.push(ch);
-                        self.pos += 1;
+                        self.advance_char();
                     }
                 }
                 '{' => {
                     // Expression hole
                     self.flush_jsx_text(&mut text);
-                    self.tokens.push(Token::LBrace);
-                    self.pos += 1;
+                    let start = self.current_pos();
+                    self.advance_char();
+                    self.push_token(Token::LBrace, start);
                     self.tokenize_braced_expr(true, true)?;
                     return Ok(());
                 }
                 _ => {
                     text.push(ch);
-                    self.pos += 1;
+                    self.advance_char();
                 }
             }
         }
@@ -569,23 +630,25 @@ impl Lexer {
         // Trim and collapse whitespace
         let trimmed = collapse_jsx_whitespace(text);
         if !trimmed.is_empty() {
-            self.tokens.push(Token::JsxText(trimmed));
+            let start = self.current_pos();
+            self.push_token(Token::JsxText(trimmed), start);
         }
         text.clear();
     }
 
     fn read_identifier(&mut self) {
-        let start = self.pos;
+        let start = self.current_pos();
+        let text_start = self.pos;
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch.is_alphanumeric() || ch == '_' || ch == '?' {
-                self.pos += 1;
+                self.advance_char();
             } else {
                 break;
             }
         }
 
-        let text: String = self.input[start..self.pos].iter().collect();
+        let text: String = self.input[text_start..self.pos].iter().collect();
         let token = match text.as_str() {
             "let" => Token::Let,
             "fn" => Token::Fn,
@@ -605,7 +668,7 @@ impl Lexer {
             "nil" => Token::Nil,
             _ => Token::Ident(text),
         };
-        self.tokens.push(token);
+        self.push_token(token, start);
     }
 }
 

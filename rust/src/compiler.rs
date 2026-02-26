@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::constant_table::{ConstantTable, ConstantValue};
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
-use crate::source_map::SourceMap;
+use crate::source_map::{SourceMap, SourceSpan};
 
 /// Info about a captured variable in the current function being compiled.
 struct CaptureInfo {
@@ -344,12 +344,12 @@ impl Compiler {
 
     fn prescan_declarations(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            match stmt {
-                Stmt::FnDecl { name, .. } => {
+            match &stmt.kind {
+                StmtKind::FnDecl { name, .. } => {
                     let tid = self.emit_phantom_term(name.clone());
                     self.scope_bind(name.clone(), tid);
                 }
-                Stmt::EnumDecl { variants, .. } => {
+                StmtKind::EnumDecl { variants, .. } => {
                     for variant in variants {
                         self.enum_variants
                             .insert(variant.name.clone(), variant.fields.len());
@@ -367,28 +367,28 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
-        match stmt {
-            Stmt::Let { name, value } => {
+        match &stmt.kind {
+            StmtKind::Let { name, value } => {
                 let val_tid = self.compile_expr(value);
                 self.terms[val_tid.0 as usize].name = Some(name.clone());
                 self.scope_bind(name.clone(), val_tid);
             }
 
-            Stmt::Assign { target, value } => {
+            StmtKind::Assign { target, value } => {
                 self.compile_assign(target, value);
             }
 
-            Stmt::Expr(expr) => {
+            StmtKind::Expr(expr) => {
                 self.compile_expr(expr);
             }
 
-            Stmt::FnDecl { name, params, body } => {
+            StmtKind::FnDecl { name, params, body } => {
                 let closure_tid = self.compile_function(Some(name.clone()), params, body);
                 // Overwrite the placeholder binding
                 self.scope_bind(name.clone(), closure_tid);
             }
 
-            Stmt::EnumDecl { name: _, variants } => {
+            StmtKind::EnumDecl { name: _, variants } => {
                 for variant in variants {
                     if variant.fields.is_empty() {
                         // Fieldless variant — store as a constant enum value
@@ -409,7 +409,7 @@ impl Compiler {
                 }
             }
 
-            Stmt::For { var, iter, body } => {
+            StmtKind::For { var, iter, body } => {
                 let iter_tid = self.compile_expr(iter);
                 let body_block = self.new_block(None);
                 self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
@@ -433,7 +433,7 @@ impl Compiler {
                 });
             }
 
-            Stmt::While { condition, body } => {
+            StmtKind::While { condition, body } => {
                 let cond_block = self.new_block(None);
                 let body_block = self.new_block(None);
 
@@ -459,7 +459,7 @@ impl Compiler {
                 });
             }
 
-            Stmt::Return(expr) => {
+            StmtKind::Return(expr) => {
                 if let Some(e) = expr {
                     let val_tid = self.compile_expr(e);
                     self.emit_term(TermOp::Return, smallvec![val_tid], None);
@@ -468,15 +468,15 @@ impl Compiler {
                 }
             }
 
-            Stmt::Break => {
+            StmtKind::Break => {
                 self.emit_term(TermOp::Break, smallvec![], None);
             }
 
-            Stmt::Continue => {
+            StmtKind::Continue => {
                 self.emit_term(TermOp::Continue, smallvec![], None);
             }
 
-            Stmt::State { name, init, id } => {
+            StmtKind::State { name, init, id } => {
                 let init_tid = self.compile_expr(init);
                 let state_key = StateKey(*id as u64);
                 let state_tid = self.emit_term(
@@ -571,8 +571,16 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     fn compile_expr(&mut self, expr: &Expr) -> TermId {
+        let span = expr.span;
+        let tid = self.compile_expr_kind(&expr.kind, span);
+        // Record source span for the primary term emitted by this expression
+        self.source_map.add(tid, span);
+        tid
+    }
+
+    fn compile_expr_kind(&mut self, expr: &ExprKind, _span: SourceSpan) -> TermId {
         match expr {
-            Expr::Literal(lit) => {
+            ExprKind::Literal(lit) => {
                 let cv = match lit {
                     Literal::Nil => ConstantValue::Nil,
                     Literal::Bool(b) => ConstantValue::Bool(*b),
@@ -584,7 +592,7 @@ impl Compiler {
                 self.emit_term(TermOp::Constant(cid), smallvec![], None)
             }
 
-            Expr::Ident(name) => {
+            ExprKind::Ident(name) => {
                 if let Some(tid) = self.scope_lookup(name) {
                     // Check if this reference crosses a function boundary (needs capture)
                     if self.needs_capture(name) {
@@ -601,7 +609,7 @@ impl Compiler {
                 }
             }
 
-            Expr::BinaryOp { op, left, right } => {
+            ExprKind::BinaryOp { op, left, right } => {
                 // Short-circuit ops
                 if *op == BinOp::And {
                     return self.compile_short_circuit(left, right, true);
@@ -630,7 +638,7 @@ impl Compiler {
                 self.emit_term(term_op, smallvec![l, r], None)
             }
 
-            Expr::UnaryOp { op, operand } => {
+            ExprKind::UnaryOp { op, operand } => {
                 let val = self.compile_expr(operand);
                 let term_op = match op {
                     UnaryOp::Neg => TermOp::Neg,
@@ -639,9 +647,9 @@ impl Compiler {
                 self.emit_term(term_op, smallvec![val], None)
             }
 
-            Expr::Call { function, args } => {
+            ExprKind::Call { function, args } => {
                 // Detect method syntax: obj.method(args...)
-                if let Expr::FieldAccess { object, field } = function.as_ref() {
+                if let ExprKind::FieldAccess { object, field } = &function.kind {
                     let obj_tid = self.compile_expr(object);
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
@@ -661,7 +669,7 @@ impl Compiler {
                 }
             }
 
-            Expr::If {
+            ExprKind::If {
                 condition,
                 then_body,
                 else_body,
@@ -709,7 +717,7 @@ impl Compiler {
                 branch_tid
             }
 
-            Expr::Match { subject, arms } => {
+            ExprKind::Match { subject, arms } => {
                 let subj_tid = self.compile_expr(subject);
                 let mut child_blocks: SmallVec<[BlockId; 2]> = SmallVec::new();
                 let mut arm_metas = Vec::new();
@@ -773,7 +781,7 @@ impl Compiler {
                 match_tid
             }
 
-            Expr::List(elements) => {
+            ExprKind::List(elements) => {
                 let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
                 for elem in elements {
                     inputs.push(self.compile_expr(elem));
@@ -781,7 +789,7 @@ impl Compiler {
                 self.emit_term(TermOp::AllocList, inputs, None)
             }
 
-            Expr::Record(fields) => {
+            ExprKind::Record(fields) => {
                 let mut field_names = Vec::new();
                 let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
                 for (key, value) in fields {
@@ -800,7 +808,7 @@ impl Compiler {
                 )
             }
 
-            Expr::FieldAccess { object, field } => {
+            ExprKind::FieldAccess { object, field } => {
                 let obj_tid = self.compile_expr(object);
                 let field_const = self
                     .constants
@@ -808,13 +816,13 @@ impl Compiler {
                 self.emit_term(TermOp::GetField(field_const), smallvec![obj_tid], None)
             }
 
-            Expr::IndexAccess { object, index } => {
+            ExprKind::IndexAccess { object, index } => {
                 let obj_tid = self.compile_expr(object);
                 let idx_tid = self.compile_expr(index);
                 self.emit_term(TermOp::GetIndex, smallvec![obj_tid, idx_tid], None)
             }
 
-            Expr::Block(stmts) => {
+            ExprKind::Block(stmts) => {
                 // Compile in a new scope but same block (inline block)
                 self.push_scope(false);
                 let nil_cid = self.constants.intern(ConstantValue::Nil);
@@ -824,8 +832,8 @@ impl Compiler {
                     None,
                 );
                 for s in stmts {
-                    match s {
-                        Stmt::Expr(e) => {
+                    match &s.kind {
+                        StmtKind::Expr(e) => {
                             last_tid = self.compile_expr(e);
                         }
                         _ => {
@@ -837,11 +845,11 @@ impl Compiler {
                 last_tid
             }
 
-            Expr::Lambda { params, body } => {
+            ExprKind::Lambda { params, body } => {
                 self.compile_function(None, params, body)
             }
 
-            Expr::Element { tag, props, children } => {
+            ExprKind::Element { tag, props, children } => {
                 let tag_cid = self.constants.intern(ConstantValue::String(tag.clone()));
                 let mut prop_keys = Vec::new();
                 let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
@@ -874,7 +882,7 @@ impl Compiler {
                 )
             }
 
-            Expr::StringInterp { parts, exprs } => {
+            ExprKind::StringInterp { parts, exprs } => {
                 // Build: str(parts[0]) ++ str(exprs[0]) ++ str(parts[1]) ++ str(exprs[1]) ++ ... ++ str(parts[N])
                 // Start with the first string part
                 let first_cid = self.constants.intern(ConstantValue::String(parts[0].clone()));

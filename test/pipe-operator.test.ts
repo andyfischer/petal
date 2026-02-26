@@ -17,22 +17,22 @@ describe("pipe operator |>", () => {
   it("parses x |> f as f(x)", () => {
     const ast = showAstJson("5 |> str");
     // Should desugar to: str(5)
-    const expr = ast[0].Expr;
+    const expr = ast[0].kind.Expr.kind;
     expect(expr.Call).toBeDefined();
-    expect(expr.Call.function.Ident).toBe("str");
+    expect(expr.Call.function.kind.Ident).toBe("str");
     expect(expr.Call.args).toHaveLength(1);
-    expect(expr.Call.args[0].Literal.Int).toBe(5);
+    expect(expr.Call.args[0].kind.Literal.Int).toBe(5);
   });
 
   it("parses x |> f(y) as f(x, y)", () => {
     const ast = showAstJson("10 |> min(20)");
     // Should desugar to: min(10, 20)
-    const expr = ast[0].Expr;
+    const expr = ast[0].kind.Expr.kind;
     expect(expr.Call).toBeDefined();
-    expect(expr.Call.function.Ident).toBe("min");
+    expect(expr.Call.function.kind.Ident).toBe("min");
     expect(expr.Call.args).toHaveLength(2);
-    expect(expr.Call.args[0].Literal.Int).toBe(10);
-    expect(expr.Call.args[1].Literal.Int).toBe(20);
+    expect(expr.Call.args[0].kind.Literal.Int).toBe(10);
+    expect(expr.Call.args[1].kind.Literal.Int).toBe(20);
   });
 
   it("chains multiple pipes", () => {

@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::source_map::SourceSpan;
+
 #[derive(Debug, Clone, Serialize)]
 pub enum Literal {
     Nil,
@@ -33,8 +35,15 @@ pub enum UnaryOp {
     Not,
 }
 
+/// An expression with source location.
 #[derive(Debug, Clone, Serialize)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum ExprKind {
     Literal(Literal),
     Ident(String),
     BinaryOp {
@@ -136,8 +145,15 @@ pub struct EnumVariant {
     pub fields: Vec<String>,
 }
 
+/// A statement with source location.
 #[derive(Debug, Clone, Serialize)]
-pub enum Stmt {
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum StmtKind {
     Let {
         name: String,
         value: Expr,

@@ -185,7 +185,7 @@ pub fn execute(cli: CliArgs) {
                 eprintln!("Lexer error: {}", e);
                 process::exit(1);
             }
-            let mut parser = Parser::new(lexer.tokens);
+            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
             match parser.parse_program() {
                 Ok(stmts) => {
                     if json {
@@ -208,7 +208,7 @@ pub fn execute(cli: CliArgs) {
                 eprintln!("Lexer error: {}", e);
                 process::exit(1);
             }
-            let mut parser = Parser::new(lexer.tokens);
+            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
             let stmts = match parser.parse_program() {
                 Ok(s) => s,
                 Err(e) => {

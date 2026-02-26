@@ -1,16 +1,19 @@
 use crate::ast::*;
 use crate::lexer::Token;
+use crate::source_map::{SourceSpan, ZERO_SPAN};
 
 pub struct Parser {
     tokens: Vec<Token>,
+    token_spans: Vec<SourceSpan>,
     pos: usize,
     next_state_id: usize,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token>, token_spans: Vec<SourceSpan>) -> Self {
         Self {
             tokens,
+            token_spans,
             pos: 0,
             next_state_id: 0,
         }
@@ -80,49 +83,80 @@ impl Parser {
         }
     }
 
+    /// Get the span of the token at position - 1 (the last consumed token).
+    fn prev_span(&self) -> SourceSpan {
+        if self.pos > 0 && self.pos - 1 < self.token_spans.len() {
+            self.token_spans[self.pos - 1]
+        } else {
+            ZERO_SPAN
+        }
+    }
+
+    /// Create a span from start_pos (token index) to the last consumed token.
+    fn span_from(&self, start_pos: usize) -> SourceSpan {
+        let start = if start_pos < self.token_spans.len() {
+            self.token_spans[start_pos].start
+        } else {
+            ZERO_SPAN.start
+        };
+        let end = self.prev_span().end;
+        SourceSpan { start, end }
+    }
+
+    /// Helper to create an Expr with a span from start_pos to the last consumed token.
+    fn mk_expr(&self, kind: ExprKind, start_pos: usize) -> Expr {
+        Expr { kind, span: self.span_from(start_pos) }
+    }
+
+    /// Helper to create a Stmt with a span from start_pos to the last consumed token.
+    fn mk_stmt(&self, kind: StmtKind, start_pos: usize) -> Stmt {
+        Stmt { kind, span: self.span_from(start_pos) }
+    }
+
     // ---- Statement Parsing ----
 
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
         self.skip_newlines();
+        let start = self.pos;
         match self.peek().clone() {
-            Token::Let => self.parse_let(),
-            Token::Fn => self.parse_fn_decl(),
-            Token::For => self.parse_for(),
-            Token::While => self.parse_while(),
-            Token::Return => self.parse_return(),
+            Token::Let => self.parse_let(start),
+            Token::Fn => self.parse_fn_decl(start),
+            Token::For => self.parse_for(start),
+            Token::While => self.parse_while(start),
+            Token::Return => self.parse_return(start),
             Token::Break => {
                 self.advance();
-                Ok(Stmt::Break)
+                Ok(self.mk_stmt(StmtKind::Break, start))
             }
             Token::Continue => {
                 self.advance();
-                Ok(Stmt::Continue)
+                Ok(self.mk_stmt(StmtKind::Continue, start))
             }
-            Token::State => self.parse_state(),
-            Token::Enum => self.parse_enum_decl(),
-            _ => self.parse_expr_or_assign(),
+            Token::State => self.parse_state(start),
+            Token::Enum => self.parse_enum_decl(start),
+            _ => self.parse_expr_or_assign(start),
         }
     }
 
-    fn parse_let(&mut self) -> Result<Stmt, String> {
+    fn parse_let(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'let'
         let name = self.expect_ident()?;
         self.expect(&Token::Assign)?;
         let value = self.parse_expr()?;
-        Ok(Stmt::Let { name, value })
+        Ok(self.mk_stmt(StmtKind::Let { name, value }, start))
     }
 
-    fn parse_state(&mut self) -> Result<Stmt, String> {
+    fn parse_state(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'state'
         let name = self.expect_ident()?;
         self.expect(&Token::Assign)?;
         let init = self.parse_expr()?;
         let id = self.next_state_id;
         self.next_state_id += 1;
-        Ok(Stmt::State { name, init, id })
+        Ok(self.mk_stmt(StmtKind::State { name, init, id }, start))
     }
 
-    fn parse_fn_decl(&mut self) -> Result<Stmt, String> {
+    fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'fn'
         let name = self.expect_ident()?;
         self.expect(&Token::LParen)?;
@@ -132,10 +166,10 @@ impl Parser {
         self.expect(&Token::LBrace)?;
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::FnDecl { name, params, body })
+        Ok(self.mk_stmt(StmtKind::FnDecl { name, params, body }, start))
     }
 
-    fn parse_enum_decl(&mut self) -> Result<Stmt, String> {
+    fn parse_enum_decl(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
         self.expect(&Token::LBrace)?;
@@ -159,10 +193,10 @@ impl Parser {
             self.skip_separator();
         }
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::EnumDecl { name, variants })
+        Ok(self.mk_stmt(StmtKind::EnumDecl { name, variants }, start))
     }
 
-    fn parse_for(&mut self) -> Result<Stmt, String> {
+    fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'for'
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
@@ -171,51 +205,54 @@ impl Parser {
         self.expect(&Token::LBrace)?;
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::For { var, iter, body })
+        Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
     }
 
-    fn parse_while(&mut self) -> Result<Stmt, String> {
+    fn parse_while(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'while'
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::LBrace)?;
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::While { condition, body })
+        Ok(self.mk_stmt(StmtKind::While { condition, body }, start))
     }
 
-    fn parse_return(&mut self) -> Result<Stmt, String> {
+    fn parse_return(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'return'
         // Check if there's an expression following (not a newline or closing brace)
         if matches!(self.peek(), Token::Newline | Token::RBrace | Token::Eof) {
-            Ok(Stmt::Return(None))
+            Ok(self.mk_stmt(StmtKind::Return(None), start))
         } else {
             let expr = self.parse_expr()?;
-            Ok(Stmt::Return(Some(expr)))
+            Ok(self.mk_stmt(StmtKind::Return(Some(expr)), start))
         }
     }
 
-    fn parse_expr_or_assign(&mut self) -> Result<Stmt, String> {
+    fn parse_expr_or_assign(&mut self, start: usize) -> Result<Stmt, String> {
         let expr = self.parse_expr()?;
 
         if matches!(self.peek(), Token::Assign) {
             self.advance(); // consume '='
             let value = self.parse_expr()?;
             let target = expr_to_assign_target(expr)?;
-            Ok(Stmt::Assign { target, value })
+            Ok(self.mk_stmt(StmtKind::Assign { target, value }, start))
         } else if let Some(op) = self.peek_compound_assign_op() {
             self.advance(); // consume the compound assignment token
             let rhs = self.parse_expr()?;
             // Desugar: target op= rhs  →  target = target op rhs
             let target = expr_to_assign_target(expr.clone())?;
-            let value = Expr::BinaryOp {
-                op,
-                left: Box::new(expr),
-                right: Box::new(rhs),
+            let value = Expr {
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(expr),
+                    right: Box::new(rhs),
+                },
+                span: self.span_from(start),
             };
-            Ok(Stmt::Assign { target, value })
+            Ok(self.mk_stmt(StmtKind::Assign { target, value }, start))
         } else {
-            Ok(Stmt::Expr(expr))
+            Ok(self.mk_stmt(StmtKind::Expr(expr), start))
         }
     }
 
@@ -272,21 +309,21 @@ impl Parser {
     fn parse_pipe(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_or()?;
         while matches!(self.peek(), Token::Pipe) {
+            let start = self.pos;
             self.advance();
             self.skip_newlines();
-            // Parse the RHS as a regular or-expression (not pipe, so pipe is left-assoc)
             let rhs = self.parse_or()?;
-            // Desugar: if RHS is a Call, prepend left as the first arg.
-            // Otherwise, wrap as Call(rhs, [left]).
-            left = match rhs {
-                Expr::Call { function, mut args } => {
+            left = match rhs.kind {
+                ExprKind::Call { function, mut args } => {
                     args.insert(0, left);
-                    Expr::Call { function, args }
+                    self.mk_expr(ExprKind::Call { function, args }, start)
                 }
-                _ => Expr::Call {
-                    function: Box::new(rhs),
-                    args: vec![left],
-                },
+                _ => {
+                    self.mk_expr(ExprKind::Call {
+                        function: Box::new(rhs),
+                        args: vec![left],
+                    }, start)
+                }
             };
         }
         Ok(left)
@@ -298,10 +335,16 @@ impl Parser {
             self.advance();
             self.skip_newlines();
             let right = self.parse_and()?;
-            left = Expr::BinaryOp {
-                op: BinOp::Or,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op: BinOp::Or,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -313,10 +356,16 @@ impl Parser {
             self.advance();
             self.skip_newlines();
             let right = self.parse_equality()?;
-            left = Expr::BinaryOp {
-                op: BinOp::And,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op: BinOp::And,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -332,10 +381,16 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_comparison()?;
-            left = Expr::BinaryOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -353,10 +408,16 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_concat()?;
-            left = Expr::BinaryOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -368,10 +429,16 @@ impl Parser {
             self.advance();
             self.skip_newlines();
             let right = self.parse_additive()?;
-            left = Expr::BinaryOp {
-                op: BinOp::Concat,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op: BinOp::Concat,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -387,10 +454,16 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_multiplicative()?;
-            left = Expr::BinaryOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
@@ -407,32 +480,39 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_unary()?;
-            left = Expr::BinaryOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                },
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
         Ok(left)
     }
 
     fn parse_unary(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         match self.peek().clone() {
             Token::Minus => {
                 self.advance();
                 let operand = self.parse_unary()?;
-                Ok(Expr::UnaryOp {
+                Ok(self.mk_expr(ExprKind::UnaryOp {
                     op: UnaryOp::Neg,
                     operand: Box::new(operand),
-                })
+                }, start))
             }
             Token::Bang => {
                 self.advance();
                 let operand = self.parse_unary()?;
-                Ok(Expr::UnaryOp {
+                Ok(self.mk_expr(ExprKind::UnaryOp {
                     op: UnaryOp::Not,
                     operand: Box::new(operand),
-                })
+                }, start))
             }
             _ => self.parse_postfix(),
         }
@@ -445,30 +525,46 @@ impl Parser {
                 Token::Dot => {
                     self.advance();
                     let field = self.expect_ident()?;
-                    expr = Expr::FieldAccess {
-                        object: Box::new(expr),
-                        field,
+                    expr = Expr {
+                        span: SourceSpan {
+                            start: expr.span.start,
+                            end: self.prev_span().end,
+                        },
+                        kind: ExprKind::FieldAccess {
+                            object: Box::new(expr),
+                            field,
+                        },
                     };
                 }
                 Token::LBracket => {
                     self.advance();
                     let index = self.parse_expr()?;
                     self.expect(&Token::RBracket)?;
-                    expr = Expr::IndexAccess {
-                        object: Box::new(expr),
-                        index: Box::new(index),
+                    expr = Expr {
+                        span: SourceSpan {
+                            start: expr.span.start,
+                            end: self.prev_span().end,
+                        },
+                        kind: ExprKind::IndexAccess {
+                            object: Box::new(expr),
+                            index: Box::new(index),
+                        },
                     };
                 }
                 Token::LParen => {
-                    // Only treat as function call if the paren is on the same "logical line"
-                    // We check if the expression is callable (ident, field access, etc.)
                     if self.is_callable(&expr) {
                         self.advance();
                         let args = self.parse_arg_list()?;
                         self.expect(&Token::RParen)?;
-                        expr = Expr::Call {
-                            function: Box::new(expr),
-                            args,
+                        expr = Expr {
+                            span: SourceSpan {
+                                start: expr.span.start,
+                                end: self.prev_span().end,
+                            },
+                            kind: ExprKind::Call {
+                                function: Box::new(expr),
+                                args,
+                            },
                         };
                     } else {
                         break;
@@ -486,37 +582,38 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         match self.peek().clone() {
             Token::Int(n) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Int(n)))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::Int(n)), start))
             }
             Token::Float(f) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Float(f)))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::Float(f)), start))
             }
             Token::InterpStart => {
-                return self.parse_string_interp();
+                self.parse_string_interp()
             }
             Token::String(s) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::String(s)))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::String(s)), start))
             }
             Token::True => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Bool(true)))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::Bool(true)), start))
             }
             Token::False => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Bool(false)))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::Bool(false)), start))
             }
             Token::Nil => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Nil))
+                Ok(self.mk_expr(ExprKind::Literal(Literal::Nil), start))
             }
             Token::Ident(_) => {
                 let name = self.expect_ident()?;
-                Ok(Expr::Ident(name))
+                Ok(self.mk_expr(ExprKind::Ident(name), start))
             }
             Token::LParen => {
                 self.advance();
@@ -535,6 +632,7 @@ impl Parser {
     }
 
     fn parse_list_literal(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume '['
         let mut elements = Vec::new();
         self.skip_newlines();
@@ -548,12 +646,10 @@ impl Parser {
             }
         }
         self.expect(&Token::RBracket)?;
-        Ok(Expr::List(elements))
+        Ok(self.mk_expr(ExprKind::List(elements), start))
     }
 
     fn parse_record_or_block(&mut self) -> Result<Expr, String> {
-        // Peek ahead to determine if this is a record { key: val } or block { stmts }
-        // A record starts with { ident : ... }
         let is_record = self.is_record_start();
         if is_record {
             self.parse_record_literal()
@@ -563,16 +659,12 @@ impl Parser {
     }
 
     fn is_record_start(&self) -> bool {
-        // Look ahead past newlines for ident : pattern
-        let mut offset = 1; // skip the '{'
-        // Skip newlines
+        let mut offset = 1;
         while matches!(self.peek_ahead(offset), Token::Newline) {
             offset += 1;
         }
-        // Check for ident followed by colon
         if let Token::Ident(_) = self.peek_ahead(offset) {
             offset += 1;
-            // Skip newlines
             while matches!(self.peek_ahead(offset), Token::Newline) {
                 offset += 1;
             }
@@ -583,6 +675,7 @@ impl Parser {
     }
 
     fn parse_record_literal(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume '{'
         let mut fields = Vec::new();
         self.skip_newlines();
@@ -594,17 +687,19 @@ impl Parser {
             self.skip_separator();
         }
         self.expect(&Token::RBrace)?;
-        Ok(Expr::Record(fields))
+        Ok(self.mk_expr(ExprKind::Record(fields), start))
     }
 
     fn parse_block_expr(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume '{'
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
-        Ok(Expr::Block(body))
+        Ok(self.mk_expr(ExprKind::Block(body), start))
     }
 
     fn parse_if_expr(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume 'if'
         let condition = self.parse_expr()?;
         self.skip_newlines();
@@ -629,14 +724,15 @@ impl Parser {
             None
         };
 
-        Ok(Expr::If {
+        Ok(self.mk_expr(ExprKind::If {
             condition: Box::new(condition),
             then_body,
             else_body,
-        })
+        }, start))
     }
 
     fn parse_match_expr(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume 'match'
         let subject = self.parse_expr()?;
         self.skip_newlines();
@@ -651,10 +747,10 @@ impl Parser {
         }
         self.expect(&Token::RBrace)?;
 
-        Ok(Expr::Match {
+        Ok(self.mk_expr(ExprKind::Match {
             subject: Box::new(subject),
             arms,
-        })
+        }, start))
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
@@ -684,7 +780,6 @@ impl Parser {
             }
             Token::Ident(name) => {
                 self.advance();
-                // Check for variant with fields: Name(p1, p2)
                 if matches!(self.peek(), Token::LParen) {
                     self.advance();
                     let mut fields = Vec::new();
@@ -701,8 +796,6 @@ impl Parser {
                     self.expect(&Token::RParen)?;
                     Ok(Pattern::Variant { name, fields })
                 } else {
-                    // Could be a simple enum variant or a variable binding
-                    // We distinguish at runtime based on whether the name is a known enum variant
                     Ok(Pattern::Variable(name))
                 }
             }
@@ -733,7 +826,6 @@ impl Parser {
             Token::LBracket => self.parse_list_pattern(),
             Token::LBrace => self.parse_record_pattern(),
             Token::Minus => {
-                // Negative number literal
                 self.advance();
                 match self.peek().clone() {
                     Token::Int(n) => {
@@ -758,9 +850,8 @@ impl Parser {
         self.skip_newlines();
 
         while !matches!(self.peek(), Token::RBracket | Token::Eof) {
-            // Check for ...rest
             if matches!(self.peek(), Token::DotDotDot) {
-                self.advance(); // consume '...'
+                self.advance();
                 let name = self.expect_ident()?;
                 rest = Some(name);
                 self.skip_newlines();
@@ -800,6 +891,7 @@ impl Parser {
     }
 
     fn parse_lambda(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume 'fn'
         self.expect(&Token::LParen)?;
         let params = self.parse_param_list()?;
@@ -808,24 +900,22 @@ impl Parser {
         self.expect(&Token::LBrace)?;
         let body = self.parse_block_body()?;
         self.expect(&Token::RBrace)?;
-        Ok(Expr::Lambda { params, body })
+        Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
     }
 
     fn parse_string_interp(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
         self.advance(); // consume InterpStart
         let mut parts: Vec<String> = Vec::new();
         let mut exprs: Vec<Expr> = Vec::new();
 
-        // Token stream: String, expr_tokens, String, expr_tokens, ..., String, InterpEnd
         loop {
-            // Expect a string part
             match self.peek().clone() {
                 Token::String(s) => {
                     self.advance();
                     parts.push(s);
                 }
                 Token::InterpEnd => {
-                    // Edge case: shouldn't happen without a string first, but be safe
                     parts.push(String::new());
                 }
                 other => {
@@ -836,35 +926,33 @@ impl Parser {
                 }
             }
 
-            // Check if we're done
             if matches!(self.peek(), Token::InterpEnd) {
                 self.advance();
                 break;
             }
 
-            // Parse expression
             let expr = self.parse_expr()?;
             exprs.push(expr);
         }
 
-        // If no expressions were found, it's just a plain string
         if exprs.is_empty() {
-            Ok(Expr::Literal(Literal::String(parts.into_iter().next().unwrap_or_default())))
+            Ok(self.mk_expr(
+                ExprKind::Literal(Literal::String(parts.into_iter().next().unwrap_or_default())),
+                start,
+            ))
         } else {
-            Ok(Expr::StringInterp { parts, exprs })
+            Ok(self.mk_expr(ExprKind::StringInterp { parts, exprs }, start))
         }
     }
 
     fn parse_jsx_element(&mut self) -> Result<Expr, String> {
-        // Consume JsxOpenStart (already matched by caller but not advanced)
-        self.advance();
-        // Expect tag name
+        let start = self.pos;
+        self.advance(); // consume JsxOpenStart
         let tag = match self.advance() {
             Token::JsxTagName(name) => name,
             other => return Err(format!("Expected JSX tag name, got {:?}", other)),
         };
 
-        // Parse attributes until `>` or `/>`
         let mut props = Vec::new();
         loop {
             match self.peek().clone() {
@@ -874,20 +962,20 @@ impl Parser {
                 }
                 Token::JsxSelfClose => {
                     self.advance();
-                    return Ok(Expr::Element {
+                    return Ok(self.mk_expr(ExprKind::Element {
                         tag,
                         props,
                         children: Vec::new(),
-                    });
+                    }, start));
                 }
                 Token::Ident(attr_name) => {
                     self.advance();
                     self.expect(&Token::Assign)?;
-                    // Attribute value: string literal or {expr}
                     let value = match self.peek().clone() {
                         Token::String(s) => {
+                            let attr_start = self.pos;
                             self.advance();
-                            Expr::Literal(Literal::String(s))
+                            self.mk_expr(ExprKind::Literal(Literal::String(s)), attr_start)
                         }
                         Token::LBrace => {
                             self.advance();
@@ -913,13 +1001,11 @@ impl Parser {
             }
         }
 
-        // Parse children until `</tag>`
         let mut children = Vec::new();
         loop {
             match self.peek().clone() {
                 Token::JsxCloseStart => {
                     self.advance();
-                    // Expect matching tag name
                     match self.advance() {
                         Token::JsxTagName(close_tag) => {
                             if close_tag != tag {
@@ -964,11 +1050,11 @@ impl Parser {
             }
         }
 
-        Ok(Expr::Element {
+        Ok(self.mk_expr(ExprKind::Element {
             tag,
             props,
             children,
-        })
+        }, start))
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {
@@ -988,10 +1074,10 @@ impl Parser {
 }
 
 fn expr_to_assign_target(expr: Expr) -> Result<AssignTarget, String> {
-    match expr {
-        Expr::Ident(name) => Ok(AssignTarget::Name(name)),
-        Expr::FieldAccess { object, field } => Ok(AssignTarget::Field(object, field)),
-        Expr::IndexAccess { object, index } => Ok(AssignTarget::Index(object, index)),
+    match expr.kind {
+        ExprKind::Ident(name) => Ok(AssignTarget::Name(name)),
+        ExprKind::FieldAccess { object, field } => Ok(AssignTarget::Field(object, field)),
+        ExprKind::IndexAccess { object, index } => Ok(AssignTarget::Index(object, index)),
         _ => Err("Invalid assignment target".to_string()),
     }
 }

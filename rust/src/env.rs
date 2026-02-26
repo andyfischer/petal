@@ -47,7 +47,7 @@ impl Env {
     pub fn load_program(&mut self, source: &str) -> Result<ProgramId, String> {
         let mut lexer = Lexer::new(source);
         lexer.tokenize()?;
-        let mut parser = Parser::new(lexer.tokens);
+        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
         let stmts = parser.parse_program()?;
 
         let id = ProgramId(self.next_program_id);

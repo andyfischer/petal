@@ -117,7 +117,21 @@ impl Evaluator {
                 Self::advance(stack, term);
                 StepResult::Continue
             }
-            ControlFlow::Error(msg) => StepResult::Error(msg),
+            ControlFlow::Error(msg) => {
+                // Annotate error with source position from the term that failed
+                if let Some(span) = program.source_map.get(current_term_id) {
+                    if span.start.line > 0 {
+                        StepResult::Error(format!(
+                            "{} [line {}, column {}]",
+                            msg, span.start.line, span.start.column
+                        ))
+                    } else {
+                        StepResult::Error(msg)
+                    }
+                } else {
+                    StepResult::Error(msg)
+                }
+            }
         }
     }
 

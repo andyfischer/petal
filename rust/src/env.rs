@@ -80,26 +80,7 @@ impl Env {
         let mut stack = Stack::new(key, program_id);
 
         // Push initial frame for the root block
-        let root_block = program.get_block(program.root_block);
-        let reg_count = root_block.register_count as usize;
-
-        // Pre-populate native function values in registers
-        let mut registers = vec![Value::Nil; reg_count];
-        for i in 0..self.native_fns.count() {
-            if i < registers.len() {
-                registers[i] = Value::NativeFunction(NativeFnId(i as u32));
-            }
-        }
-
-        stack.push_frame(Frame {
-            block_id: program.root_block,
-            current_term: root_block.entry,
-            registers,
-            return_term: None,
-            parent_frame: None,
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
+        Self::push_root_frame(&self.native_fns,&mut stack, program);
 
         self.stacks.insert(key, stack);
         Ok(key)
@@ -171,25 +152,7 @@ impl Env {
         stack.status = StackStatus::Ready;
         stack.break_flag = false;
 
-        let root_block = program.get_block(program.root_block);
-        let reg_count = root_block.register_count as usize;
-
-        let mut registers = vec![Value::Nil; reg_count];
-        for i in 0..self.native_fns.count() {
-            if i < registers.len() {
-                registers[i] = Value::NativeFunction(NativeFnId(i as u32));
-            }
-        }
-
-        stack.push_frame(Frame {
-            block_id: program.root_block,
-            current_term: root_block.entry,
-            registers,
-            return_term: None,
-            parent_frame: None,
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
+        Self::push_root_frame(&self.native_fns,stack, program);
 
         Ok(())
     }
@@ -236,32 +199,20 @@ impl Env {
         self.closures.clear();
 
         // Reset stack: keep state but restart execution with new program
-        let stack = self.stacks.get_mut(&stack_id).unwrap();
-        // Remove state keys that no longer exist in the new program
-        stack.state.retain(|k, _| new_state_keys.contains(k));
-
-        stack.frames.clear();
-        stack.status = StackStatus::Ready;
-        stack.break_flag = false;
-        stack.continue_flag = false;
-        stack.last_pop_result = None;
-
-        let program = self.programs.get(&old_program_id).unwrap();
-        let root_block = program.get_block(program.root_block);
-        let reg_count = root_block.register_count as usize;
-
-        let mut registers = vec![Value::Nil; reg_count];
-        for i in 0..self.native_fns.count() {
-            if i < registers.len() {
-                registers[i] = Value::NativeFunction(NativeFnId(i as u32));
-            }
+        {
+            let stack = self.stacks.get_mut(&stack_id).unwrap();
+            // Remove state keys that no longer exist in the new program
+            stack.state.retain(|k, _| new_state_keys.contains(k));
+            stack.frames.clear();
+            stack.status = StackStatus::Ready;
+            stack.break_flag = false;
+            stack.continue_flag = false;
+            stack.last_pop_result = None;
         }
 
-        let mut frame = Frame::new(
-            program.root_block, root_block.entry, 0, None, None,
-        );
-        frame.registers = registers;
-        stack.push_frame(frame);
+        let program = self.programs.get(&old_program_id).unwrap();
+        let stack = self.stacks.get_mut(&stack_id).unwrap();
+        Self::push_root_frame(&self.native_fns,stack, program);
 
         Ok(HotReloadResult {
             state_preserved: preserved,
@@ -273,6 +224,26 @@ impl Env {
     /// Must be called before `load_program` so the compiler knows about it.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    /// Build and push the initial root frame for a program, with native function
+    /// values pre-populated in registers.
+    fn push_root_frame(
+        native_fns: &NativeFnTable,
+        stack: &mut Stack,
+        program: &Program,
+    ) {
+        let root_block = program.get_block(program.root_block);
+        let mut frame = Frame::new(
+            program.root_block, root_block.entry,
+            root_block.register_count as usize, None, None,
+        );
+        for i in 0..native_fns.count() {
+            if i < frame.registers.len() {
+                frame.registers[i] = Value::NativeFunction(NativeFnId(i as u32));
+            }
+        }
+        stack.push_frame(frame);
     }
 
     /// Run a mark-and-sweep garbage collection cycle.

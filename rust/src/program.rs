@@ -264,4 +264,59 @@ impl Program {
     pub fn get_block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
     }
+
+    /// Find a term by name (e.g. variable name like "x") or by id string (e.g. "t24").
+    pub fn find_term(&self, query: &str) -> Option<TermId> {
+        // Try "tN" id format first
+        if let Some(id_str) = query.strip_prefix('t') {
+            if let Ok(id) = id_str.parse::<u32>() {
+                if (id as usize) < self.terms.len() {
+                    return Some(TermId(id));
+                }
+            }
+        }
+        // Search by name (last match wins — like variable shadowing)
+        let mut found = None;
+        for term in &self.terms {
+            if term.name.as_deref() == Some(query) {
+                found = Some(term.id);
+            }
+        }
+        found
+    }
+
+    /// Trace provenance: collect all transitive input ancestors of a term.
+    /// Returns (ancestor_ids_in_order, edges) where each edge is (from, to)
+    /// meaning `from` is an input of `to`.
+    pub fn trace_provenance(&self, root_id: TermId) -> (Vec<TermId>, Vec<(TermId, TermId)>) {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        let mut ancestors = Vec::new();
+        let mut edges = Vec::new();
+
+        // Seed with the root's direct inputs
+        let root_term = self.get_term(root_id);
+        for &input_id in &root_term.inputs {
+            if visited.insert(input_id) {
+                queue.push_back(input_id);
+            }
+            edges.push((input_id, root_id));
+        }
+
+        // BFS backward through inputs
+        while let Some(term_id) = queue.pop_front() {
+            ancestors.push(term_id);
+            let term = self.get_term(term_id);
+            for &input_id in &term.inputs {
+                edges.push((input_id, term_id));
+                if visited.insert(input_id) {
+                    queue.push_back(input_id);
+                }
+            }
+        }
+
+        (ancestors, edges)
+    }
 }

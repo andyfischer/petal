@@ -16,6 +16,7 @@ pub enum Command {
     ShowIr { json: bool },
     ShowAst { json: bool },
     ShowTokens { json: bool },
+    ShowProvenance { json: bool, term: String },
 }
 
 pub enum SourceInput {
@@ -43,6 +44,7 @@ pub fn parse_args() -> CliArgs {
         "show-ir" => parse_show_args(&args[1..], |json| Command::ShowIr { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
+        "show-provenance" => parse_provenance_args(&args[1..]),
         // Backward compat: petal -e <code> or petal <file>
         "-e" => {
             if args.len() < 2 {
@@ -120,6 +122,54 @@ fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliAr
     }
 }
 
+fn parse_provenance_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut source: Option<SourceInput> = None;
+    let mut term: Option<String> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--term" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected term name or id after --term");
+                    process::exit(1);
+                }
+                term = Some(args[i].clone());
+            }
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Expected a file path or -e <code>");
+        process::exit(1);
+    });
+
+    let term = term.unwrap_or_else(|| {
+        eprintln!("Expected --term <name_or_id>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::ShowProvenance { json, term },
+        source,
+    }
+}
+
 fn print_usage() {
     eprintln!("Usage: petal <command> [options] <file>");
     eprintln!();
@@ -129,6 +179,8 @@ fn print_usage() {
     eprintln!("  show-ir [--json] <file>        Display compiled IR");
     eprintln!("  show-ast [--json] <file>       Display parsed AST");
     eprintln!("  show-tokens [--json] <file>    Display lexer tokens");
+    eprintln!("  show-provenance [--json] --term <name> <file>");
+    eprintln!("                                 Trace provenance of a term");
     eprintln!();
     eprintln!("  petal <file>                   Shorthand for 'run'");
     eprintln!("  petal -e <code>                Shorthand for 'run -e'");
@@ -226,5 +278,83 @@ pub fn execute(cli: CliArgs) {
                 print!("{}", display_program(&program));
             }
         }
+        Command::ShowProvenance { json, term: term_query } => {
+            let mut lexer = Lexer::new(&source);
+            if let Err(e) = lexer.tokenize() {
+                eprintln!("Lexer error: {}", e);
+                process::exit(1);
+            }
+            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
+            let stmts = match parser.parse_program() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Parse error: {}", e);
+                    process::exit(1);
+                }
+            };
+            let compiler = Compiler::new();
+            let mut natives = NativeFnTable::new();
+            crate::builtins::register_builtins(&mut natives);
+            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &natives);
+
+            let root_id = match program.find_term(&term_query) {
+                Some(id) => id,
+                None => {
+                    eprintln!("Term '{}' not found", term_query);
+                    process::exit(1);
+                }
+            };
+
+            let root_term = program.get_term(root_id);
+            let (ancestor_ids, edges) = program.trace_provenance(root_id);
+
+            if json {
+                let root_json = term_to_json(root_term);
+                let ancestors_json: Vec<_> = ancestor_ids
+                    .iter()
+                    .map(|&id| term_to_json(program.get_term(id)))
+                    .collect();
+                let edges_json: Vec<_> = edges
+                    .iter()
+                    .map(|(from, to)| {
+                        serde_json::json!({ "from": from.0, "to": to.0 })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "root": root_json,
+                    "ancestors": ancestors_json,
+                    "edges": edges_json,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                println!("Provenance of t{} ({}):", root_id.0,
+                    root_term.name.as_deref().unwrap_or("unnamed"));
+                println!("  op: {:?}", root_term.op);
+                println!("  inputs: {:?}", root_term.inputs.iter().map(|i| i.0).collect::<Vec<_>>());
+                println!();
+                println!("Ancestors ({}):", ancestor_ids.len());
+                for &aid in &ancestor_ids {
+                    let t = program.get_term(aid);
+                    println!("  t{}: {:?} {}", t.id.0, t.op,
+                        t.name.as_deref().unwrap_or(""));
+                }
+                println!();
+                println!("Edges ({}):", edges.len());
+                for (from, to) in &edges {
+                    println!("  t{} -> t{}", from.0, to.0);
+                }
+            }
+        }
     }
+}
+
+fn term_to_json(term: &crate::program::Term) -> serde_json::Value {
+    // Simplified term representation for provenance output
+    let op = serde_json::to_value(&term.op).unwrap_or(serde_json::Value::Null);
+    serde_json::json!({
+        "id": term.id.0,
+        "op": op,
+        "name": term.name,
+        "inputs": term.inputs.iter().map(|i| i.0).collect::<Vec<_>>(),
+    })
 }

@@ -199,6 +199,27 @@ fn read_source(input: &SourceInput) -> String {
     }
 }
 
+/// Run the lexer, parser, and compiler pipeline. Returns the compiled Program.
+fn compile_source(source: &str) -> crate::program::Program {
+    let mut lexer = Lexer::new(source);
+    if let Err(e) = lexer.tokenize() {
+        eprintln!("Lexer error: {}", e);
+        process::exit(1);
+    }
+    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
+    let stmts = match parser.parse_program() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            process::exit(1);
+        }
+    };
+    let compiler = Compiler::new();
+    let mut natives = NativeFnTable::new();
+    crate::builtins::register_builtins(&mut natives);
+    compiler.compile(&stmts, source.to_string(), ProgramId(0), &natives)
+}
+
 pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
@@ -255,23 +276,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowIr { json } => {
-            let mut lexer = Lexer::new(&source);
-            if let Err(e) = lexer.tokenize() {
-                eprintln!("Lexer error: {}", e);
-                process::exit(1);
-            }
-            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-            let stmts = match parser.parse_program() {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("Parse error: {}", e);
-                    process::exit(1);
-                }
-            };
-            let compiler = Compiler::new();
-            let mut natives = NativeFnTable::new();
-            crate::builtins::register_builtins(&mut natives);
-            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &natives);
+            let program = compile_source(&source);
             if json {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {
@@ -279,23 +284,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowProvenance { json, term: term_query } => {
-            let mut lexer = Lexer::new(&source);
-            if let Err(e) = lexer.tokenize() {
-                eprintln!("Lexer error: {}", e);
-                process::exit(1);
-            }
-            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-            let stmts = match parser.parse_program() {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("Parse error: {}", e);
-                    process::exit(1);
-                }
-            };
-            let compiler = Compiler::new();
-            let mut natives = NativeFnTable::new();
-            crate::builtins::register_builtins(&mut natives);
-            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &natives);
+            let program = compile_source(&source);
 
             let root_id = match program.find_term(&term_query) {
                 Some(id) => id,

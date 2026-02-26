@@ -217,8 +217,9 @@ pub fn execute(cli: CliArgs) {
                 }
             };
             let compiler = Compiler::new();
-            let empty_natives = NativeFnTable::new();
-            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &empty_natives);
+            let mut natives = NativeFnTable::new();
+            crate::builtins::register_builtins(&mut natives);
+            let program = compiler.compile(&stmts, source.clone(), ProgramId(0), &natives);
             if json {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {

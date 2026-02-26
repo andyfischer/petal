@@ -12,7 +12,7 @@ Autonomously pick and implement the highest-impact next task for this project.
 Read the project's goals and documentation to understand the vision and current priorities:
 
 1. Read `docs/PETAL_GOALS.md` (the primary goals document).
-2. Read all `.md` files in the project root directory (e.g. `README.md`, `CLAUDE.md`, and any other top-level markdown files).
+2. Read all `.md` files in the project root directory (e.g. any `Goals_` documents and etc).
 3. Read `CLAUDE.md` for project conventions, testing instructions, and build commands.
 
 Summarize your understanding of the project's goals and current priorities before proceeding.
@@ -60,7 +60,11 @@ If TDD doesn't fit the task (e.g. documentation-only changes), skip the failing-
 1. Run the full test suite one final time to confirm everything passes.
 2. If there are example programs (`examples/*.ptl`), run a quick smoke test with `./bin/test-each.sh` to check for regressions.
 
-## Step 7: Commit
+## Step 7: Update docs
+
+If you are working on an item from a 'goals' document, then update the document with new comments to reflect the latest progress.
+
+## Step 8: Commit
 
 Once everything is green:
 

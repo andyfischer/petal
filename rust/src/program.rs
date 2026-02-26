@@ -47,10 +47,6 @@ pub struct StateKey(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct FunctionId(pub u32);
 
-/// Identifier for a builtin function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-pub struct BuiltinId(pub u16);
-
 /// Identifier for a runtime closure instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ClosureId(pub u32);

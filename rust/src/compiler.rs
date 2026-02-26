@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::ast::*;
-use crate::builtins::BuiltinTable;
 use crate::constant_table::{ConstantTable, ConstantValue};
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
@@ -39,9 +38,6 @@ pub struct Compiler {
     enum_variants: HashMap<String, usize>, // variant name -> field count
     next_register: HashMap<BlockId, u16>,
 
-    // Builtin table for resolving builtin names at compile time
-    builtins: BuiltinTable,
-
     // Function scope depth tracking for closure capture
     function_boundaries: Vec<usize>, // scope indices that are function boundaries
 
@@ -66,7 +62,6 @@ impl Compiler {
             scopes: Vec::new(),
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
-            builtins: BuiltinTable::new(),
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
@@ -88,24 +83,11 @@ impl Compiler {
         // Push global scope
         self.push_scope(false);
 
-        // Register builtins in global scope as phantom terms.
-        let builtin_count = self.builtins.count();
-        let builtin_names: Vec<String> = (0..builtin_count)
-            .map(|i| self.builtins.get_name(BuiltinId(i as u16)).to_string())
-            .collect();
-        for name in builtin_names {
-            let tid = self.emit_phantom_term(name.clone());
-            self.scope_bind(name, tid);
-        }
-
-        // Register native functions as phantom terms (after builtins).
+        // Register native functions (including builtins) as phantom terms.
         for i in 0..native_fns.count() {
             let name = native_fns.get_name(crate::native_fn::NativeFnId(i as u32)).to_string();
-            // Skip if name already bound (e.g. a builtin has the same name)
-            if self.scope_lookup(&name).is_none() {
-                let tid = self.emit_phantom_term(name.clone());
-                self.scope_bind(name, tid);
-            }
+            let tid = self.emit_phantom_term(name.clone());
+            self.scope_bind(name, tid);
         }
 
         // Pre-scan for fn and enum declarations to allow forward references

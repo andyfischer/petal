@@ -6,7 +6,7 @@ use std::fmt;
 
 use crate::heap::{ElementId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
-use crate::program::{BuiltinId, ClosureId};
+use crate::program::ClosureId;
 
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
 #[derive(Clone, Copy, PartialEq)]
@@ -19,7 +19,6 @@ pub enum Value {
     List(ListId),
     Map(MapId),
     Closure(ClosureId),
-    BuiltinFunction(BuiltinId),
     NativeFunction(NativeFnId),
     EnumVariant { tag: StringId, data: ListId },
     Element(ElementId),
@@ -46,7 +45,6 @@ impl Value {
             Value::List(_) => "list",
             Value::Map(_) => "record",
             Value::Closure(_) => "function",
-            Value::BuiltinFunction(_) => "function",
             Value::NativeFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
@@ -73,7 +71,6 @@ impl fmt::Debug for Value {
             Value::List(id) => write!(f, "List({:?})", id),
             Value::Map(id) => write!(f, "Map({:?})", id),
             Value::Closure(id) => write!(f, "Closure({:?})", id),
-            Value::BuiltinFunction(id) => write!(f, "BuiltinFunction({:?})", id),
             Value::NativeFunction(id) => write!(f, "NativeFunction({:?})", id),
             Value::EnumVariant { tag, data } => {
                 write!(f, "EnumVariant({:?}, {:?})", tag, data)
@@ -112,7 +109,6 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Element(id) => element_to_display_string(*id, heap),
         Value::Closure(_) => "<function>".to_string(),
-        Value::BuiltinFunction(_) => "<builtin>".to_string(),
         Value::NativeFunction(_) => "<native>".to_string(),
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag);

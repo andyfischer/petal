@@ -1,339 +1,376 @@
-//! Builtins - Built-in function registry and implementations.
+//! Builtins - Built-in function implementations registered via native FFI.
 
 use crate::heap::Heap;
-use crate::program::BuiltinId;
+use crate::native_fn::{NativeFnId, NativeFnTable, PetalState};
 use crate::value::{self, Value};
 
-/// Registry of built-in functions.
-pub struct BuiltinTable {
-    names: Vec<&'static str>,
+/// IDs for higher-order builtins that need evaluator intrinsic dispatch.
+/// These are set during `register_builtins` and used by the evaluator.
+pub static mut NATIVE_MAP: NativeFnId = NativeFnId(0);
+pub static mut NATIVE_FILTER: NativeFnId = NativeFnId(0);
+pub static mut NATIVE_REDUCE: NativeFnId = NativeFnId(0);
+
+/// Get the NativeFnId for map (safe accessor).
+pub fn native_map_id() -> NativeFnId {
+    unsafe { NATIVE_MAP }
 }
 
-// Builtin IDs (constants for fast dispatch)
-pub const BUILTIN_PRINT: BuiltinId = BuiltinId(0);
-pub const BUILTIN_RANGE: BuiltinId = BuiltinId(1);
-pub const BUILTIN_LEN: BuiltinId = BuiltinId(2);
-pub const BUILTIN_PUSH: BuiltinId = BuiltinId(3);
-pub const BUILTIN_STR: BuiltinId = BuiltinId(4);
-pub const BUILTIN_ABS: BuiltinId = BuiltinId(5);
-pub const BUILTIN_SQRT: BuiltinId = BuiltinId(6);
-pub const BUILTIN_FLOOR: BuiltinId = BuiltinId(7);
-pub const BUILTIN_CEIL: BuiltinId = BuiltinId(8);
-pub const BUILTIN_FLOAT: BuiltinId = BuiltinId(9);
-pub const BUILTIN_INT: BuiltinId = BuiltinId(10);
-pub const BUILTIN_RANDOM: BuiltinId = BuiltinId(11);
-pub const BUILTIN_TYPE: BuiltinId = BuiltinId(12);
-pub const BUILTIN_APPEND: BuiltinId = BuiltinId(13);
-pub const BUILTIN_POP: BuiltinId = BuiltinId(14);
-pub const BUILTIN_KEYS: BuiltinId = BuiltinId(15);
-pub const BUILTIN_VALUES: BuiltinId = BuiltinId(16);
-pub const BUILTIN_CONTAINS: BuiltinId = BuiltinId(17);
-pub const BUILTIN_MIN: BuiltinId = BuiltinId(18);
-pub const BUILTIN_MAX: BuiltinId = BuiltinId(19);
-pub const BUILTIN_ROUND: BuiltinId = BuiltinId(20);
-pub const BUILTIN_MAP: BuiltinId = BuiltinId(21);
-pub const BUILTIN_FILTER: BuiltinId = BuiltinId(22);
-pub const BUILTIN_REDUCE: BuiltinId = BuiltinId(23);
+/// Get the NativeFnId for filter (safe accessor).
+pub fn native_filter_id() -> NativeFnId {
+    unsafe { NATIVE_FILTER }
+}
 
-const BUILTIN_NAMES: &[&str] = &[
-    "print", "range", "len", "push", "str", "abs", "sqrt", "floor", "ceil",
-    "float", "int", "random", "type", "append", "pop", "keys", "values",
-    "contains", "min", "max", "round", "map", "filter", "reduce",
-];
+/// Get the NativeFnId for reduce (safe accessor).
+pub fn native_reduce_id() -> NativeFnId {
+    unsafe { NATIVE_REDUCE }
+}
 
-impl BuiltinTable {
-    pub fn new() -> Self {
-        Self {
-            names: BUILTIN_NAMES.to_vec(),
+/// Register all built-in functions into the native function table.
+/// Must be called once at startup before any programs are loaded.
+pub fn register_builtins(table: &mut NativeFnTable) {
+    // Order matters — these must be registered in the same order as the old
+    // BuiltinTable so that phantom term indices stay consistent.
+    table.register("print", native_print);
+    table.register("range", native_range);
+    table.register("len", native_len);
+    table.register("push", native_push);
+    table.register("str", native_str);
+    table.register("abs", native_abs);
+    table.register("sqrt", native_sqrt);
+    table.register("floor", native_floor);
+    table.register("ceil", native_ceil);
+    table.register("float", native_float);
+    table.register("int", native_int);
+    table.register("random", native_random);
+    table.register("type", native_type);
+    table.register("append", native_append);
+    table.register("pop", native_pop);
+    table.register("keys", native_keys);
+    table.register("values", native_values);
+    table.register("contains", native_contains);
+    table.register("min", native_min);
+    table.register("max", native_max);
+    table.register("round", native_round);
+
+    // Higher-order builtins: registered so the compiler sees them, but
+    // dispatched as evaluator intrinsics at runtime.
+    let map_id = table.register("map", native_intrinsic_placeholder);
+    let filter_id = table.register("filter", native_intrinsic_placeholder);
+    let reduce_id = table.register("reduce", native_intrinsic_placeholder);
+
+    unsafe {
+        NATIVE_MAP = map_id;
+        NATIVE_FILTER = filter_id;
+        NATIVE_REDUCE = reduce_id;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder for higher-order builtins (should never be called directly)
+// ---------------------------------------------------------------------------
+
+fn native_intrinsic_placeholder(_state: &mut PetalState) -> Result<u32, String> {
+    Err("This function requires evaluator context and should be dispatched as an intrinsic".into())
+}
+
+// ---------------------------------------------------------------------------
+// Native function implementations
+// ---------------------------------------------------------------------------
+
+fn native_print(state: &mut PetalState) -> Result<u32, String> {
+    let parts: Vec<String> = (1..=state.arg_count())
+        .map(|i| {
+            let v = state.get_value(i).unwrap();
+            value::value_to_display_string(&v, state.heap())
+        })
+        .collect();
+    let line = parts.join(" ");
+    state.print(line);
+    state.push_nil();
+    Ok(1)
+}
+
+fn native_range(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("range() expects 2 arguments".into());
+    }
+    let start = state.get_int(1)?;
+    let end = state.get_int(2)?;
+    let items: Vec<Value> = (start..end).map(Value::Int).collect();
+    state.push_list(items);
+    Ok(1)
+}
+
+fn native_len(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("len() expects 1 argument".into());
+    }
+    let v = state.get_value(1)?;
+    match v {
+        Value::List(id) => {
+            state.push_int(state.heap().list_len(id) as i64);
+            Ok(1)
         }
-    }
-
-    pub fn lookup_name(&self, name: &str) -> Option<BuiltinId> {
-        self.names
-            .iter()
-            .position(|&n| n == name)
-            .map(|i| BuiltinId(i as u16))
-    }
-
-    pub fn get_name(&self, id: BuiltinId) -> &str {
-        self.names[id.0 as usize]
-    }
-
-    pub fn count(&self) -> usize {
-        self.names.len()
+        Value::String(id) => {
+            state.push_int(state.heap().get_string(id).len() as i64);
+            Ok(1)
+        }
+        _ => Err(format!("Cannot get length of {}", v.type_name())),
     }
 }
 
-impl Default for BuiltinTable {
-    fn default() -> Self {
-        Self::new()
+fn native_push(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("push() expects 2 arguments".into());
+    }
+    let list = state.get_value(1)?;
+    let val = state.get_value(2)?;
+    match list {
+        Value::List(id) => {
+            state.heap_mut().get_list_mut(id).push(val);
+            state.push_nil();
+            Ok(1)
+        }
+        _ => Err("push() expects a list as first argument".into()),
     }
 }
 
-/// Execute a builtin function. Returns Ok(Value) or Err(error message).
-pub fn call_builtin(
-    id: BuiltinId,
-    args: &[Value],
-    heap: &mut Heap,
-    output: &mut Vec<String>,
-) -> Result<Value, String> {
-    match id {
-        BUILTIN_PRINT => {
-            let parts: Vec<String> = args
-                .iter()
-                .map(|v| value::value_to_display_string(v, heap))
+fn native_str(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("str() expects 1 argument".into());
+    }
+    let v = state.get_value(1)?;
+    let s = value::value_to_display_string(&v, state.heap());
+    state.push_string(s);
+    Ok(1)
+}
+
+fn native_abs(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("abs() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Int(n) => { state.push_int(n.abs()); Ok(1) }
+        Value::Float(f) => { state.push_float(f.abs()); Ok(1) }
+        _ => Err("abs() expects a number".into()),
+    }
+}
+
+fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("sqrt() expects 1 argument".into());
+    }
+    let n = state.get_float(1)?;
+    state.push_float(n.sqrt());
+    Ok(1)
+}
+
+fn native_floor(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("floor() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Int(n) => { state.push_int(n); Ok(1) }
+        Value::Float(f) => { state.push_float(f.floor()); Ok(1) }
+        _ => Err("floor() expects a number".into()),
+    }
+}
+
+fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("ceil() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Int(n) => { state.push_int(n); Ok(1) }
+        Value::Float(f) => { state.push_float(f.ceil()); Ok(1) }
+        _ => Err("ceil() expects a number".into()),
+    }
+}
+
+fn native_float(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("float() expects 1 argument".into());
+    }
+    let f = state.get_float(1)?;
+    state.push_float(f);
+    Ok(1)
+}
+
+fn native_int(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("int() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Int(n) => { state.push_int(n); Ok(1) }
+        Value::Float(f) => { state.push_int(f as i64); Ok(1) }
+        Value::String(id) => {
+            let s = state.heap().get_string(id).to_string();
+            match s.parse::<i64>() {
+                Ok(n) => { state.push_int(n); Ok(1) }
+                Err(_) => Err(format!("Cannot convert '{}' to int", s)),
+            }
+        }
+        v => Err(format!("Cannot convert {} to int", v.type_name())),
+    }
+}
+
+fn native_random(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("random() expects 2 arguments".into());
+    }
+    let min = state.get_float(1)?;
+    let max = state.get_float(2)?;
+    let pseudo = ((std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as f64)
+        / 4_294_967_295.0)
+        * (max - min)
+        + min;
+    state.push_float(pseudo);
+    Ok(1)
+}
+
+fn native_type(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("type() expects 1 argument".into());
+    }
+    let v = state.get_value(1)?;
+    state.push_string(v.type_name().to_string());
+    Ok(1)
+}
+
+fn native_append(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("append() expects 2 arguments".into());
+    }
+    let list = state.get_value(1)?;
+    let val = state.get_value(2)?;
+    match list {
+        Value::List(id) => {
+            state.heap_mut().get_list_mut(id).push(val);
+            state.push_nil();
+            Ok(1)
+        }
+        _ => Err("append() expects a list".into()),
+    }
+}
+
+fn native_pop(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("pop() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let v = state.heap_mut().get_list_mut(id).pop().unwrap_or(Value::Nil);
+            state.push_value(v);
+            Ok(1)
+        }
+        _ => Err("pop() expects a list".into()),
+    }
+}
+
+fn native_keys(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("keys() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Map(id) => {
+            let key_strings: Vec<String> = state.heap().get_map(id).keys().cloned().collect();
+            let keys: Vec<Value> = key_strings
+                .into_iter()
+                .map(|k| {
+                    let sid = state.heap_mut().alloc_string(k);
+                    Value::String(sid)
+                })
                 .collect();
-            let line = parts.join(" ");
-            println!("{}", line);
-            output.push(line);
-            Ok(Value::Nil)
+            state.push_list(keys);
+            Ok(1)
         }
-        BUILTIN_RANGE => {
-            if args.len() != 2 {
-                return Err("range() expects 2 arguments".into());
-            }
-            let start = match args[0] {
-                Value::Int(n) => n,
-                _ => return Err("range() expects integer arguments".into()),
-            };
-            let end = match args[1] {
-                Value::Int(n) => n,
-                _ => return Err("range() expects integer arguments".into()),
-            };
-            let items: Vec<Value> = (start..end).map(Value::Int).collect();
-            let id = heap.alloc_list(items);
-            Ok(Value::List(id))
-        }
-        BUILTIN_LEN => {
-            if args.len() != 1 {
-                return Err("len() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::List(id) => Ok(Value::Int(heap.list_len(id) as i64)),
-                Value::String(id) => Ok(Value::Int(heap.get_string(id).len() as i64)),
-                _ => Err(format!("Cannot get length of {}", args[0].type_name())),
-            }
-        }
-        BUILTIN_PUSH => {
-            if args.len() != 2 {
-                return Err("push() expects 2 arguments".into());
-            }
-            match args[0] {
-                Value::List(id) => {
-                    heap.get_list_mut(id).push(args[1]);
-                    Ok(Value::Nil)
-                }
-                _ => Err("push() expects a list as first argument".into()),
-            }
-        }
-        BUILTIN_STR => {
-            if args.len() != 1 {
-                return Err("str() expects 1 argument".into());
-            }
-            let s = value::value_to_display_string(&args[0], heap);
-            let id = heap.alloc_string(s);
-            Ok(Value::String(id))
-        }
-        BUILTIN_ABS => {
-            if args.len() != 1 {
-                return Err("abs() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Int(n) => Ok(Value::Int(n.abs())),
-                Value::Float(f) => Ok(Value::Float(f.abs())),
-                _ => Err("abs() expects a number".into()),
-            }
-        }
-        BUILTIN_SQRT => {
-            if args.len() != 1 {
-                return Err("sqrt() expects 1 argument".into());
-            }
-            let n = to_float(&args[0])?;
-            Ok(Value::Float(n.sqrt()))
-        }
-        BUILTIN_FLOOR => {
-            if args.len() != 1 {
-                return Err("floor() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Int(n) => Ok(Value::Int(n)),
-                Value::Float(f) => Ok(Value::Float(f.floor())),
-                _ => Err("floor() expects a number".into()),
-            }
-        }
-        BUILTIN_CEIL => {
-            if args.len() != 1 {
-                return Err("ceil() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Int(n) => Ok(Value::Int(n)),
-                Value::Float(f) => Ok(Value::Float(f.ceil())),
-                _ => Err("ceil() expects a number".into()),
-            }
-        }
-        BUILTIN_FLOAT => {
-            if args.len() != 1 {
-                return Err("float() expects 1 argument".into());
-            }
-            let f = to_float(&args[0])?;
-            Ok(Value::Float(f))
-        }
-        BUILTIN_INT => {
-            if args.len() != 1 {
-                return Err("int() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Int(n) => Ok(Value::Int(n)),
-                Value::Float(f) => Ok(Value::Int(f as i64)),
-                Value::String(id) => {
-                    let s = heap.get_string(id);
-                    s.parse::<i64>()
-                        .map(Value::Int)
-                        .map_err(|_| format!("Cannot convert '{}' to int", s))
-                }
-                _ => Err(format!("Cannot convert {} to int", args[0].type_name())),
-            }
-        }
-        BUILTIN_RANDOM => {
-            if args.len() != 2 {
-                return Err("random() expects 2 arguments".into());
-            }
-            let min = to_float(&args[0])?;
-            let max = to_float(&args[1])?;
-            let pseudo = ((std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos() as f64)
-                / 4_294_967_295.0)
-                * (max - min)
-                + min;
-            Ok(Value::Float(pseudo))
-        }
-        BUILTIN_TYPE => {
-            if args.len() != 1 {
-                return Err("type() expects 1 argument".into());
-            }
-            let s = args[0].type_name().to_string();
-            let id = heap.alloc_string(s);
-            Ok(Value::String(id))
-        }
-        BUILTIN_APPEND => {
-            if args.len() != 2 {
-                return Err("append() expects 2 arguments".into());
-            }
-            match args[0] {
-                Value::List(id) => {
-                    heap.get_list_mut(id).push(args[1]);
-                    Ok(Value::Nil)
-                }
-                _ => Err("append() expects a list".into()),
-            }
-        }
-        BUILTIN_POP => {
-            if args.len() != 1 {
-                return Err("pop() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::List(id) => Ok(heap.get_list_mut(id).pop().unwrap_or(Value::Nil)),
-                _ => Err("pop() expects a list".into()),
-            }
-        }
-        BUILTIN_KEYS => {
-            if args.len() != 1 {
-                return Err("keys() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Map(id) => {
-                    let key_strings: Vec<String> =
-                        heap.get_map(id).keys().cloned().collect();
-                    let keys: Vec<Value> = key_strings
-                        .into_iter()
-                        .map(|k| {
-                            let sid = heap.alloc_string(k);
-                            Value::String(sid)
-                        })
-                        .collect();
-                    let lid = heap.alloc_list(keys);
-                    Ok(Value::List(lid))
-                }
-                _ => Err("keys() expects a record".into()),
-            }
-        }
-        BUILTIN_VALUES => {
-            if args.len() != 1 {
-                return Err("values() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Map(id) => {
-                    let vals: Vec<Value> = heap.get_map(id).values().copied().collect();
-                    let lid = heap.alloc_list(vals);
-                    Ok(Value::List(lid))
-                }
-                _ => Err("values() expects a record".into()),
-            }
-        }
-        BUILTIN_CONTAINS => {
-            if args.len() != 2 {
-                return Err("contains() expects 2 arguments".into());
-            }
-            match args[0] {
-                Value::List(id) => {
-                    let elems = heap.get_list(id);
-                    let found = elems
-                        .iter()
-                        .any(|v| value::values_equal(v, &args[1], heap));
-                    Ok(Value::Bool(found))
-                }
-                Value::String(id) => match args[1] {
-                    Value::String(sub_id) => {
-                        let s = heap.get_string(id);
-                        let sub = heap.get_string(sub_id);
-                        Ok(Value::Bool(s.contains(sub)))
-                    }
-                    _ => Err("contains() on string expects a string".into()),
-                },
-                _ => Err("contains() expects a list or string".into()),
-            }
-        }
-        BUILTIN_MIN => {
-            if args.len() != 2 {
-                return Err("min() expects 2 arguments".into());
-            }
-            match compare_values(&args[0], &args[1], heap)? {
-                std::cmp::Ordering::Less | std::cmp::Ordering::Equal => Ok(args[0]),
-                std::cmp::Ordering::Greater => Ok(args[1]),
-            }
-        }
-        BUILTIN_MAX => {
-            if args.len() != 2 {
-                return Err("max() expects 2 arguments".into());
-            }
-            match compare_values(&args[0], &args[1], heap)? {
-                std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => Ok(args[0]),
-                std::cmp::Ordering::Less => Ok(args[1]),
-            }
-        }
-        BUILTIN_ROUND => {
-            if args.len() != 1 {
-                return Err("round() expects 1 argument".into());
-            }
-            match args[0] {
-                Value::Int(n) => Ok(Value::Int(n)),
-                Value::Float(f) => Ok(Value::Float(f.round())),
-                _ => Err("round() expects a number".into()),
-            }
-        }
-        _ => Err(format!("Unknown builtin ID: {:?}", id)),
+        _ => Err("keys() expects a record".into()),
     }
 }
 
-fn to_float(val: &Value) -> Result<f64, String> {
-    match val {
-        Value::Int(n) => Ok(*n as f64),
-        Value::Float(f) => Ok(*f),
-        _ => Err(format!("Cannot convert {} to float", val.type_name())),
+fn native_values(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("values() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Map(id) => {
+            let vals: Vec<Value> = state.heap().get_map(id).values().copied().collect();
+            state.push_list(vals);
+            Ok(1)
+        }
+        _ => Err("values() expects a record".into()),
     }
 }
+
+fn native_contains(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("contains() expects 2 arguments".into());
+    }
+    let container = state.get_value(1)?;
+    let needle = state.get_value(2)?;
+    match container {
+        Value::List(id) => {
+            let elems = state.heap().get_list(id);
+            let found = elems
+                .iter()
+                .any(|v| value::values_equal(v, &needle, state.heap()));
+            state.push_bool(found);
+            Ok(1)
+        }
+        Value::String(id) => match needle {
+            Value::String(sub_id) => {
+                let s = state.heap().get_string(id).to_string();
+                let sub = state.heap().get_string(sub_id).to_string();
+                state.push_bool(s.contains(&sub));
+                Ok(1)
+            }
+            _ => Err("contains() on string expects a string".into()),
+        },
+        _ => Err("contains() expects a list or string".into()),
+    }
+}
+
+fn native_min(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("min() expects 2 arguments".into());
+    }
+    let a = state.get_value(1)?;
+    let b = state.get_value(2)?;
+    match compare_values(&a, &b, state.heap())? {
+        std::cmp::Ordering::Less | std::cmp::Ordering::Equal => { state.push_value(a); Ok(1) }
+        std::cmp::Ordering::Greater => { state.push_value(b); Ok(1) }
+    }
+}
+
+fn native_max(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("max() expects 2 arguments".into());
+    }
+    let a = state.get_value(1)?;
+    let b = state.get_value(2)?;
+    match compare_values(&a, &b, state.heap())? {
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => { state.push_value(a); Ok(1) }
+        std::cmp::Ordering::Less => { state.push_value(b); Ok(1) }
+    }
+}
+
+fn native_round(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("round() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::Int(n) => { state.push_int(n); Ok(1) }
+        Value::Float(f) => { state.push_float(f.round()); Ok(1) }
+        _ => Err("round() expects a number".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Utility (used by eval.rs for sorting, etc.)
+// ---------------------------------------------------------------------------
 
 pub fn compare_values(
     a: &Value,

@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 
-use crate::builtins::BuiltinTable;
 use crate::compiler::Compiler;
 use crate::eval::{Evaluator, RuntimeClosure, StepResult};
 use crate::heap::Heap;
@@ -20,7 +19,6 @@ pub struct Env {
     programs: HashMap<ProgramId, Program>,
     stacks: HashMap<StackKey, Stack>,
     heap: Heap,
-    builtins: BuiltinTable,
     native_fns: NativeFnTable,
     closures: Vec<RuntimeClosure>,
     output: Vec<String>,
@@ -31,12 +29,13 @@ pub struct Env {
 impl Env {
     /// Create a new environment
     pub fn new() -> Self {
+        let mut native_fns = NativeFnTable::new();
+        crate::builtins::register_builtins(&mut native_fns);
         Self {
             programs: HashMap::new(),
             stacks: HashMap::new(),
             heap: Heap::new(),
-            builtins: BuiltinTable::new(),
-            native_fns: NativeFnTable::new(),
+            native_fns,
             closures: Vec::new(),
             output: Vec::new(),
             next_program_id: 1,
@@ -76,21 +75,11 @@ impl Env {
         let root_block = program.get_block(program.root_block);
         let reg_count = root_block.register_count as usize;
 
-        // Pre-populate builtin function values in the first N registers
+        // Pre-populate native function values in registers
         let mut registers = vec![Value::Nil; reg_count];
-        for i in 0..self.builtins.count() {
-            let builtin_id = crate::program::BuiltinId(i as u16);
-            if i < registers.len() {
-                registers[i] = Value::BuiltinFunction(builtin_id);
-            }
-        }
-
-        // Pre-populate native function values after builtins
-        let native_offset = self.builtins.count();
         for i in 0..self.native_fns.count() {
-            let reg = native_offset + i;
-            if reg < registers.len() {
-                registers[reg] = Value::NativeFunction(NativeFnId(i as u32));
+            if i < registers.len() {
+                registers[i] = Value::NativeFunction(NativeFnId(i as u32));
             }
         }
 
@@ -124,7 +113,6 @@ impl Env {
             stack,
             &mut self.heap,
             &mut self.closures,
-            &self.builtins,
             &self.native_fns,
             &mut self.output,
         );
@@ -175,18 +163,9 @@ impl Env {
         let reg_count = root_block.register_count as usize;
 
         let mut registers = vec![Value::Nil; reg_count];
-        for i in 0..self.builtins.count() {
-            let builtin_id = crate::program::BuiltinId(i as u16);
-            if i < registers.len() {
-                registers[i] = Value::BuiltinFunction(builtin_id);
-            }
-        }
-
-        let native_offset = self.builtins.count();
         for i in 0..self.native_fns.count() {
-            let reg = native_offset + i;
-            if reg < registers.len() {
-                registers[reg] = Value::NativeFunction(NativeFnId(i as u32));
+            if i < registers.len() {
+                registers[i] = Value::NativeFunction(NativeFnId(i as u32));
             }
         }
 

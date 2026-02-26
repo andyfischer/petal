@@ -692,3 +692,120 @@ fn collapse_jsx_whitespace(s: &str) -> String {
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tokenize(src: &str) -> Vec<Token> {
+        let mut lexer = Lexer::new(src);
+        lexer.tokenize().expect("tokenize failed");
+        lexer.tokens.into_iter().filter(|t| !matches!(t, Token::Newline | Token::Eof)).collect()
+    }
+
+    #[test]
+    fn lex_integer_literal() {
+        assert_eq!(tokenize("42"), vec![Token::Int(42)]);
+    }
+
+    #[test]
+    fn lex_float_literal() {
+        assert_eq!(tokenize("3.14"), vec![Token::Float(3.14)]);
+    }
+
+    #[test]
+    fn lex_string_literal() {
+        assert_eq!(tokenize(r#""hello""#), vec![Token::String("hello".into())]);
+    }
+
+    #[test]
+    fn lex_keywords() {
+        let tokens = tokenize("let fn if else for in while match return break continue state enum");
+        assert_eq!(tokens, vec![
+            Token::Let, Token::Fn, Token::If, Token::Else,
+            Token::For, Token::In, Token::While, Token::Match,
+            Token::Return, Token::Break, Token::Continue,
+            Token::State, Token::Enum,
+        ]);
+    }
+
+    #[test]
+    fn lex_operators() {
+        let tokens = tokenize("+ - * / % ++ == != < <= > >= && || !");
+        assert_eq!(tokens, vec![
+            Token::Plus, Token::Minus, Token::Star, Token::Slash,
+            Token::Percent, Token::PlusPlus, Token::Eq, Token::Ne,
+            Token::Lt, Token::Le, Token::Gt, Token::Ge,
+            Token::And, Token::Or, Token::Bang,
+        ]);
+    }
+
+    #[test]
+    fn lex_compound_assignment() {
+        let tokens = tokenize("+= -= *= /= %=");
+        assert_eq!(tokens, vec![
+            Token::PlusAssign, Token::MinusAssign, Token::StarAssign,
+            Token::SlashAssign, Token::PercentAssign,
+        ]);
+    }
+
+    #[test]
+    fn lex_delimiters() {
+        let tokens = tokenize("( ) { } [ ] , . :");
+        assert_eq!(tokens, vec![
+            Token::LParen, Token::RParen, Token::LBrace, Token::RBrace,
+            Token::LBracket, Token::RBracket, Token::Comma, Token::Dot,
+            Token::Colon,
+        ]);
+    }
+
+    #[test]
+    fn lex_arrow_and_pipe() {
+        let tokens = tokenize("-> |>");
+        assert_eq!(tokens, vec![Token::Arrow, Token::Pipe]);
+    }
+
+    #[test]
+    fn lex_identifier() {
+        assert_eq!(tokenize("foo_bar"), vec![Token::Ident("foo_bar".into())]);
+    }
+
+    #[test]
+    fn lex_skips_comments() {
+        let tokens = tokenize("42 // this is a comment\n7");
+        assert_eq!(tokens, vec![Token::Int(42), Token::Int(7)]);
+    }
+
+    #[test]
+    fn lex_string_interp() {
+        let tokens = tokenize(r#""hello {name}""#);
+        assert_eq!(tokens, vec![
+            Token::InterpStart,
+            Token::String("hello ".into()),
+            Token::Ident("name".into()),
+            Token::String(String::new()),
+            Token::InterpEnd,
+        ]);
+    }
+
+    #[test]
+    fn lex_booleans_and_nil() {
+        let tokens = tokenize("true false nil");
+        assert_eq!(tokens, vec![Token::True, Token::False, Token::Nil]);
+    }
+
+    #[test]
+    fn collapse_jsx_whitespace_single_line() {
+        assert_eq!(collapse_jsx_whitespace("hello world"), "hello world");
+    }
+
+    #[test]
+    fn collapse_jsx_whitespace_multiline() {
+        assert_eq!(collapse_jsx_whitespace("  hello\n  world  "), "hello world");
+    }
+
+    #[test]
+    fn collapse_jsx_whitespace_blank_lines() {
+        assert_eq!(collapse_jsx_whitespace("a\n\n\nb"), "a b");
+    }
+}

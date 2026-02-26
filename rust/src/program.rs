@@ -320,3 +320,120 @@ impl Program {
         (ancestors, edges)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constant_table::ConstantTable;
+    use crate::source_map::SourceMap;
+
+    /// Build a minimal program with the given terms for testing.
+    fn test_program(terms: Vec<Term>) -> Program {
+        let root_block = BlockId(0);
+        let blocks = vec![Block {
+            id: root_block,
+            parent_term_id: None,
+            entry: terms.first().map(|t| t.id),
+            param_names: vec![],
+            register_count: terms.len() as u16,
+        }];
+        Program {
+            id: ProgramId(0),
+            source: String::new(),
+            terms,
+            blocks,
+            root_block,
+            constants: ConstantTable::new(),
+            source_map: SourceMap::new(),
+            has_errors: false,
+            functions: vec![],
+            match_arms: HashMap::new(),
+            block_terms: HashMap::new(),
+        }
+    }
+
+    fn make_term(id: u32, op: TermOp, inputs: Vec<u32>, name: Option<&str>) -> Term {
+        Term {
+            id: TermId(id),
+            op,
+            inputs: inputs.into_iter().map(TermId).collect(),
+            block_id: BlockId(0),
+            block_next: None,
+            block_prev: None,
+            name: name.map(|s| s.to_string()),
+            register: RegisterIndex(id as u16),
+            state_key: None,
+            child_blocks: SmallVec::new(),
+        }
+    }
+
+    #[test]
+    fn find_term_by_name() {
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("x")),
+            make_term(1, TermOp::Copy, vec![0], Some("y")),
+        ]);
+        assert_eq!(prog.find_term("x"), Some(TermId(0)));
+        assert_eq!(prog.find_term("y"), Some(TermId(1)));
+        assert_eq!(prog.find_term("z"), None);
+    }
+
+    #[test]
+    fn find_term_by_id_string() {
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], None),
+        ]);
+        assert_eq!(prog.find_term("t0"), Some(TermId(0)));
+        assert_eq!(prog.find_term("t99"), None);
+    }
+
+    #[test]
+    fn find_term_last_name_wins() {
+        // Like variable shadowing: last definition with same name is found
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("x")),
+            make_term(1, TermOp::Constant(ConstantId(1)), vec![], Some("x")),
+        ]);
+        assert_eq!(prog.find_term("x"), Some(TermId(1)));
+    }
+
+    #[test]
+    fn trace_provenance_leaf_has_no_ancestors() {
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("x")),
+        ]);
+        let (ancestors, edges) = prog.trace_provenance(TermId(0));
+        assert!(ancestors.is_empty());
+        assert!(edges.is_empty());
+    }
+
+    #[test]
+    fn trace_provenance_single_input() {
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+        ]);
+        let (ancestors, edges) = prog.trace_provenance(TermId(1));
+        assert_eq!(ancestors, vec![TermId(0)]);
+        assert_eq!(edges, vec![(TermId(0), TermId(1))]);
+    }
+
+    #[test]
+    fn trace_provenance_diamond() {
+        // c depends on a and b, both depend on const
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], None),
+            make_term(1, TermOp::Copy, vec![0], Some("a")),
+            make_term(2, TermOp::Copy, vec![0], Some("b")),
+            make_term(3, TermOp::Add, vec![1, 2], Some("c")),
+        ]);
+        let (ancestors, edges) = prog.trace_provenance(TermId(3));
+        // BFS order: 1, 2, 0 (1 and 2 are direct inputs, 0 is shared ancestor)
+        assert_eq!(ancestors.len(), 3);
+        assert!(ancestors.contains(&TermId(1)));
+        assert!(ancestors.contains(&TermId(2)));
+        assert!(ancestors.contains(&TermId(0)));
+        // Should have 4 edges: (1,3), (2,3), (0,1), (0,2)
+        assert_eq!(edges.len(), 4);
+    }
+}

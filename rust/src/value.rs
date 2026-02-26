@@ -218,3 +218,62 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nil_is_falsy() {
+        assert!(!Value::Nil.is_truthy());
+    }
+
+    #[test]
+    fn false_is_falsy() {
+        assert!(!Value::Bool(false).is_truthy());
+    }
+
+    #[test]
+    fn true_is_truthy() {
+        assert!(Value::Bool(true).is_truthy());
+    }
+
+    #[test]
+    fn zero_int_is_falsy() {
+        assert!(!Value::Int(0).is_truthy());
+    }
+
+    #[test]
+    fn nonzero_int_is_truthy() {
+        assert!(Value::Int(42).is_truthy());
+    }
+
+    #[test]
+    fn zero_float_is_falsy() {
+        assert!(!Value::Float(0.0).is_truthy());
+    }
+
+    #[test]
+    fn nonzero_float_is_truthy() {
+        assert!(Value::Float(3.14).is_truthy());
+    }
+
+    #[test]
+    fn type_names() {
+        assert_eq!(Value::Nil.type_name(), "nil");
+        assert_eq!(Value::Bool(true).type_name(), "bool");
+        assert_eq!(Value::Int(1).type_name(), "int");
+        assert_eq!(Value::Float(1.0).type_name(), "float");
+    }
+
+    #[test]
+    fn format_float_whole_numbers() {
+        assert_eq!(format_float(5.0), "5.0");
+        assert_eq!(format_float(0.0), "0.0");
+    }
+
+    #[test]
+    fn format_float_fractional() {
+        assert_eq!(format_float(3.14), "3.14");
+    }
+}

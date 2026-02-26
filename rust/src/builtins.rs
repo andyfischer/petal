@@ -1,29 +1,9 @@
 //! Builtins - Built-in function implementations registered via native FFI.
 
 use crate::heap::Heap;
-use crate::native_fn::{NativeFnId, NativeFnTable, PetalState};
+use crate::native_fn::{NativeFnTable, PetalState};
 use crate::value::{self, Value};
 
-/// IDs for higher-order builtins that need evaluator intrinsic dispatch.
-/// These are set during `register_builtins` and used by the evaluator.
-pub static mut NATIVE_MAP: NativeFnId = NativeFnId(0);
-pub static mut NATIVE_FILTER: NativeFnId = NativeFnId(0);
-pub static mut NATIVE_REDUCE: NativeFnId = NativeFnId(0);
-
-/// Get the NativeFnId for map (safe accessor).
-pub fn native_map_id() -> NativeFnId {
-    unsafe { NATIVE_MAP }
-}
-
-/// Get the NativeFnId for filter (safe accessor).
-pub fn native_filter_id() -> NativeFnId {
-    unsafe { NATIVE_FILTER }
-}
-
-/// Get the NativeFnId for reduce (safe accessor).
-pub fn native_reduce_id() -> NativeFnId {
-    unsafe { NATIVE_REDUCE }
-}
 
 /// Register all built-in functions into the native function table.
 /// Must be called once at startup before any programs are loaded.
@@ -58,11 +38,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let filter_id = table.register("filter", native_intrinsic_placeholder);
     let reduce_id = table.register("reduce", native_intrinsic_placeholder);
 
-    unsafe {
-        NATIVE_MAP = map_id;
-        NATIVE_FILTER = filter_id;
-        NATIVE_REDUCE = reduce_id;
-    }
+    table.intrinsic_map = Some(map_id);
+    table.intrinsic_filter = Some(filter_id);
+    table.intrinsic_reduce = Some(reduce_id);
 }
 
 // ---------------------------------------------------------------------------

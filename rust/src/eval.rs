@@ -1186,11 +1186,11 @@ impl Evaluator {
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
-        let result = if native_id == builtins::native_map_id() {
+        let result = if native_fns.intrinsic_map == Some(native_id) {
             Self::builtin_map(args, program, stack, heap, closures, native_fns, output)
-        } else if native_id == builtins::native_filter_id() {
+        } else if native_fns.intrinsic_filter == Some(native_id) {
             Self::builtin_filter(args, program, stack, heap, closures, native_fns, output)
-        } else if native_id == builtins::native_reduce_id() {
+        } else if native_fns.intrinsic_reduce == Some(native_id) {
             Self::builtin_reduce(args, program, stack, heap, closures, native_fns, output)
         } else {
             Self::call_native_fn(native_id, args, native_fns, heap, output)

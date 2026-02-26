@@ -27,12 +27,19 @@ struct NativeFnEntry {
 /// Registry of native functions, mapping IDs to names and function pointers.
 pub struct NativeFnTable {
     entries: Vec<NativeFnEntry>,
+    /// IDs for higher-order builtins that need evaluator intrinsic dispatch.
+    pub intrinsic_map: Option<NativeFnId>,
+    pub intrinsic_filter: Option<NativeFnId>,
+    pub intrinsic_reduce: Option<NativeFnId>,
 }
 
 impl NativeFnTable {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            intrinsic_map: None,
+            intrinsic_filter: None,
+            intrinsic_reduce: None,
         }
     }
 

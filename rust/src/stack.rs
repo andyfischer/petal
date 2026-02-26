@@ -64,6 +64,33 @@ pub enum StackStatus {
     Error(String),
 }
 
+impl Frame {
+    /// Create a new frame for a block with default settings.
+    pub fn new(
+        block_id: BlockId,
+        entry: Option<TermId>,
+        register_count: usize,
+        return_term: Option<TermId>,
+        parent_frame: Option<usize>,
+    ) -> Self {
+        Self {
+            block_id,
+            current_term: entry,
+            registers: vec![Value::Nil; register_count],
+            return_term,
+            parent_frame,
+            is_loop_body: false,
+            loop_states: HashMap::new(),
+        }
+    }
+
+    /// Set this frame as a loop body frame.
+    pub fn as_loop_body(mut self) -> Self {
+        self.is_loop_body = true;
+        self
+    }
+}
+
 impl Stack {
     pub fn new(id: StackKey, program_id: ProgramId) -> Self {
         Self {

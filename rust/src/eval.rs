@@ -779,17 +779,12 @@ impl Evaluator {
             Some(elem) => {
                 // Push body frame for this iteration.
                 let block = program.get_block(body_block);
-                let reg_count = block.register_count as usize;
                 let parent_frame_idx = stack.frames.len() - 1;
-                stack.push_frame(Frame {
-                    block_id: body_block,
-                    current_term: block.entry,
-                    registers: vec![Value::Nil; reg_count],
-                    return_term: Some(term.id),
-                    parent_frame: Some(parent_frame_idx),
-                    is_loop_body: true,
-                    loop_states: std::collections::HashMap::new(),
-                });
+                stack.push_frame(
+                    Frame::new(body_block, block.entry, block.register_count as usize,
+                        Some(term.id), Some(parent_frame_idx))
+                    .as_loop_body()
+                );
                 // Set the loop variable in the first register.
                 if let Some(frame) = stack.frames.last_mut() {
                     if !frame.registers.is_empty() {
@@ -849,33 +844,22 @@ impl Evaluator {
 
             // Push body frame.
             let block = program.get_block(body_block);
-            let reg_count = block.register_count as usize;
             let parent_frame_idx = stack.frames.len() - 1;
-            stack.push_frame(Frame {
-                block_id: body_block,
-                current_term: block.entry,
-                registers: vec![Value::Nil; reg_count],
-                return_term: Some(term.id),
-                parent_frame: Some(parent_frame_idx),
-                is_loop_body: true,
-                loop_states: std::collections::HashMap::new(),
-            });
+            stack.push_frame(
+                Frame::new(body_block, block.entry, block.register_count as usize,
+                    Some(term.id), Some(parent_frame_idx))
+                .as_loop_body()
+            );
             return ControlFlow::FramePushed;
         }
 
         // Fresh start or body just returned — push condition block.
         let block = program.get_block(cond_block);
-        let reg_count = block.register_count as usize;
         let parent_frame_idx = stack.frames.len() - 1;
-        stack.push_frame(Frame {
-            block_id: cond_block,
-            current_term: block.entry,
-            registers: vec![Value::Nil; reg_count],
-            return_term: Some(term.id),
-            parent_frame: Some(parent_frame_idx),
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
+        stack.push_frame(Frame::new(
+            cond_block, block.entry, block.register_count as usize,
+            Some(term.id), Some(parent_frame_idx),
+        ));
         if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
             frame.loop_states.insert(term.id, LoopState::WhileCondition);
         }
@@ -1021,15 +1005,10 @@ impl Evaluator {
                     let gb = program.get_block(guard_block);
                     let gb_reg_count = gb.register_count as usize;
                     let parent_idx = stack.frames.len() - 1;
-                    stack.push_frame(Frame {
-                        block_id: guard_block,
-                        current_term: gb.entry,
-                        registers: vec![Value::Nil; gb_reg_count],
-                        return_term: Some(term.id),
-                        parent_frame: Some(parent_idx),
-                        is_loop_body: false,
-                        loop_states: std::collections::HashMap::new(),
-                    });
+                    stack.push_frame(Frame::new(
+                        guard_block, gb.entry, gb_reg_count,
+                        Some(term.id), Some(parent_idx),
+                    ));
                     if let Some(frame) = stack.frames.last_mut() {
                         Self::apply_pattern_bindings(program, guard_block, &bindings, frame);
                     }
@@ -1068,15 +1047,10 @@ impl Evaluator {
                 let reg_count = block.register_count as usize;
                 let parent_frame_idx = stack.frames.len() - 1;
 
-                stack.push_frame(Frame {
-                    block_id: body_block_id,
-                    current_term: block.entry,
-                    registers: vec![Value::Nil; reg_count],
-                    return_term: Some(term.id),
-                    parent_frame: Some(parent_frame_idx),
-                    is_loop_body: false,
-                    loop_states: std::collections::HashMap::new(),
-                });
+                stack.push_frame(Frame::new(
+                    body_block_id, block.entry, reg_count,
+                    Some(term.id), Some(parent_frame_idx),
+                ));
 
                 // Apply pattern bindings to the body frame's registers
                 if let Some(frame) = stack.frames.last_mut() {
@@ -1169,15 +1143,10 @@ impl Evaluator {
             parent_frame.current_term = parent_term.block_next;
         }
 
-        stack.push_frame(Frame {
-            block_id,
-            current_term: block.entry,
-            registers: vec![Value::Nil; reg_count],
-            return_term: Some(parent_term.id),
-            parent_frame: Some(parent_frame_idx),
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        });
+        stack.push_frame(Frame::new(
+            block_id, block.entry, reg_count,
+            Some(parent_term.id), Some(parent_frame_idx),
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -1295,15 +1264,11 @@ impl Evaluator {
             }
         }
 
-        Ok(Frame {
-            block_id: body_block,
-            current_term: block.entry,
-            registers,
-            return_term,
-            parent_frame: None,
-            is_loop_body: false,
-            loop_states: std::collections::HashMap::new(),
-        })
+        let mut frame = Frame::new(
+            body_block, block.entry, 0, return_term, None,
+        );
+        frame.registers = registers;
+        Ok(frame)
     }
 
     // -----------------------------------------------------------------------

@@ -552,23 +552,20 @@ impl Parser {
                     };
                 }
                 Token::LParen => {
-                    if self.is_callable(&expr) {
-                        self.advance();
-                        let args = self.parse_arg_list()?;
-                        self.expect(&Token::RParen)?;
-                        expr = Expr {
-                            span: SourceSpan {
-                                start: expr.span.start,
-                                end: self.prev_span().end,
-                            },
-                            kind: ExprKind::Call {
-                                function: Box::new(expr),
-                                args,
-                            },
-                        };
-                    } else {
-                        break;
-                    }
+                    self.check_callable(&expr)?;
+                    self.advance();
+                    let args = self.parse_arg_list()?;
+                    self.expect(&Token::RParen)?;
+                    expr = Expr {
+                        span: SourceSpan {
+                            start: expr.span.start,
+                            end: self.prev_span().end,
+                        },
+                        kind: ExprKind::Call {
+                            function: Box::new(expr),
+                            args,
+                        },
+                    };
                 }
                 _ => break,
             }
@@ -576,9 +573,27 @@ impl Parser {
         Ok(expr)
     }
 
-    fn is_callable(&self, _expr: &Expr) -> bool {
-        // All expressions followed by ( are treated as calls
-        true
+    fn check_callable(&self, expr: &Expr) -> Result<(), String> {
+        match &expr.kind {
+            // Definitely callable: identifiers, field/index access, calls, lambdas, blocks
+            ExprKind::Ident(_)
+            | ExprKind::FieldAccess { .. }
+            | ExprKind::IndexAccess { .. }
+            | ExprKind::Call { .. }
+            | ExprKind::Lambda { .. }
+            | ExprKind::Block(_)
+            | ExprKind::If { .. }
+            | ExprKind::Match { .. } => Ok(()),
+
+            // Not callable: literals, operators, collections, etc.
+            ExprKind::Literal(_) => Err("Literal value cannot be called as a function".to_string()),
+            ExprKind::BinaryOp { .. } => Err("Binary operation result cannot be called as a function".to_string()),
+            ExprKind::UnaryOp { .. } => Err("Unary operation result cannot be called as a function".to_string()),
+            ExprKind::List(_) => Err("List literal cannot be called as a function".to_string()),
+            ExprKind::Record(_) => Err("Record literal cannot be called as a function".to_string()),
+            ExprKind::StringInterp { .. } => Err("String interpolation cannot be called as a function".to_string()),
+            ExprKind::Element { .. } => Err("Element cannot be called as a function".to_string()),
+        }
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {

@@ -1,0 +1,33 @@
+state ball_x = 400.0
+state ball_y = 300.0
+state ball_dx = 200.0
+state ball_dy = 150.0
+state paddle_y = 250.0
+state score = 0
+
+let delta = dt()
+
+paddle_y = float(mouse_y()) - 40.0
+paddle_y = max(0.0, min(paddle_y, 520.0))
+
+ball_x += ball_dx * delta
+ball_y += ball_dy * delta
+
+if ball_y < 0.0 || ball_y > 590.0 { ball_dy = -ball_dy }
+if ball_x > 790.0 { ball_dx = -ball_dx }
+
+if ball_x < 30.0 && ball_y > paddle_y && ball_y < paddle_y + 80.0 {
+    ball_dx = abs(ball_dx)
+    score += 1
+}
+
+if ball_x < 0.0 {
+    ball_x = 400.0
+    ball_y = 300.0
+    score = 0
+}
+
+clear(0, 0, 40)
+draw_rect(20, int(paddle_y), 10, 80, 255, 255, 255)
+draw_circle(int(ball_x), int(ball_y), 8, 255, 200, 50)
+draw_text("Score: " ++ str(score), 350, 20, 24, 255, 255, 255)

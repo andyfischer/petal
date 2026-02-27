@@ -8,7 +8,7 @@ use serde::Serialize;
 use smallvec::SmallVec;
 
 use crate::ast::Pattern;
-use crate::constant_table::{ConstantId, ConstantTable};
+use crate::constant_table::{ConstantId, ConstantTable, ConstantValue};
 use crate::ir_serialize::serialize_termid_map;
 use crate::source_map::SourceMap;
 
@@ -263,6 +263,14 @@ impl Program {
 
     pub fn get_block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
+    }
+
+    /// Resolve a ConstantId that's expected to be a string. Returns None if not a string.
+    pub fn get_string_constant(&self, cid: ConstantId) -> Option<&str> {
+        match self.constants.get(cid) {
+            ConstantValue::String(s) => Some(s.as_str()),
+            _ => None,
+        }
     }
 
     /// Find a term by name (e.g. variable name like "x") or by id string (e.g. "t24").

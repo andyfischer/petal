@@ -291,10 +291,9 @@ impl Evaluator {
             }
 
             TermOp::Error(cid) => {
-                let msg = match program.constants.get(*cid) {
-                    ConstantValue::String(s) => s.clone(),
-                    _ => "Unknown error".to_string(),
-                };
+                let msg = program.get_string_constant(*cid)
+                    .unwrap_or("Unknown error")
+                    .to_string();
                 ControlFlow::Error(msg)
             }
 
@@ -517,9 +516,9 @@ impl Evaluator {
             TermOp::AllocMap { fields } => {
                 let mut map = BTreeMap::new();
                 for (i, field_cid) in fields.iter().enumerate() {
-                    if let ConstantValue::String(key) = program.constants.get(*field_cid) {
+                    if let Some(key) = program.get_string_constant(*field_cid) {
                         let val = inputs.get(i).copied().unwrap_or(Value::Nil);
-                        map.insert(key.clone(), val);
+                        map.insert(key.to_string(), val);
                     }
                 }
                 let map_id = heap.alloc_map(map);
@@ -528,18 +527,18 @@ impl Evaluator {
             }
 
             TermOp::AllocElement { tag, prop_keys } => {
-                let tag_str = match program.constants.get(*tag) {
-                    ConstantValue::String(s) => s.clone(),
-                    _ => return ControlFlow::Error("AllocElement: invalid tag".into()),
+                let tag_str = match program.get_string_constant(*tag) {
+                    Some(s) => s.to_string(),
+                    None => return ControlFlow::Error("AllocElement: invalid tag".into()),
                 };
                 let tag_id = heap.alloc_string(tag_str);
 
                 let num_props = prop_keys.len();
                 let mut map = BTreeMap::new();
                 for (i, key_cid) in prop_keys.iter().enumerate() {
-                    if let ConstantValue::String(key) = program.constants.get(*key_cid) {
+                    if let Some(key) = program.get_string_constant(*key_cid) {
                         let val = inputs.get(i).copied().unwrap_or(Value::Nil);
-                        map.insert(key.clone(), val);
+                        map.insert(key.to_string(), val);
                     }
                 }
                 let props_id = heap.alloc_map(map);
@@ -553,12 +552,12 @@ impl Evaluator {
 
             TermOp::GetField(field_cid) => {
                 let obj = inputs[0];
+                let field_name = match program.get_string_constant(*field_cid) {
+                    Some(s) => s,
+                    None => return ControlFlow::Error("GetField: invalid field name".into()),
+                };
                 match obj {
                     Value::Map(map_id) => {
-                        let field_name = match program.constants.get(*field_cid) {
-                            ConstantValue::String(s) => s.as_str(),
-                            _ => return ControlFlow::Error("GetField: invalid field name".into()),
-                        };
                         let map = heap.get_map(map_id);
                         let val = map
                             .get(field_name)
@@ -573,10 +572,6 @@ impl Evaluator {
                         }
                     }
                     Value::Element(elem_id) => {
-                        let field_name = match program.constants.get(*field_cid) {
-                            ConstantValue::String(s) => s.as_str(),
-                            _ => return ControlFlow::Error("GetField: invalid field name".into()),
-                        };
                         let val = match field_name {
                             "tag" => {
                                 let tag_id = heap.get_element_tag(elem_id);
@@ -606,9 +601,9 @@ impl Evaluator {
                 let val = inputs[1];
                 match obj {
                     Value::Map(map_id) => {
-                        let field_name = match program.constants.get(*field_cid) {
-                            ConstantValue::String(s) => s.clone(),
-                            _ => return ControlFlow::Error("SetField: invalid field name".into()),
+                        let field_name = match program.get_string_constant(*field_cid) {
+                            Some(s) => s.to_string(),
+                            None => return ControlFlow::Error("SetField: invalid field name".into()),
                         };
                         heap.get_map_mut(map_id).insert(field_name, val);
                         Self::write_register(stack, term, Value::Nil);
@@ -692,9 +687,9 @@ impl Evaluator {
             }
 
             TermOp::MakeEnumVariant(name_cid) => {
-                let name_str = match program.constants.get(*name_cid) {
-                    ConstantValue::String(s) => s.clone(),
-                    _ => return ControlFlow::Error("MakeEnumVariant: invalid name".into()),
+                let name_str = match program.get_string_constant(*name_cid) {
+                    Some(s) => s.to_string(),
+                    None => return ControlFlow::Error("MakeEnumVariant: invalid name".into()),
                 };
                 let tag = heap.alloc_string(name_str);
                 let data = heap.alloc_list(inputs.to_vec());
@@ -928,9 +923,9 @@ impl Evaluator {
     ) -> ControlFlow {
         let obj = inputs[0];
         let args = &inputs[1..];
-        let method_name = match program.constants.get(method_cid) {
-            ConstantValue::String(s) => s.clone(),
-            _ => return ControlFlow::Error("Invalid method name".into()),
+        let method_name = match program.get_string_constant(method_cid) {
+            Some(s) => s.to_string(),
+            None => return ControlFlow::Error("Invalid method name".into()),
         };
 
         // 1) If obj is a map, check for a callable field first

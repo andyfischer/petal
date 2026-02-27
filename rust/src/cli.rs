@@ -17,6 +17,8 @@ pub enum Command {
     ShowAst { json: bool },
     ShowTokens { json: bool },
     ShowProvenance { json: bool, term: String },
+    ShowDependents { json: bool, term: String },
+    ShowSlice { json: bool, terms: Vec<String> },
 }
 
 pub enum SourceInput {
@@ -45,6 +47,8 @@ pub fn parse_args() -> CliArgs {
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "show-provenance" => parse_provenance_args(&args[1..]),
+        "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
+        "show-slice" => parse_slice_args(&args[1..]),
         // Backward compat: petal -e <code> or petal <file>
         "-e" => {
             if args.len() < 2 {
@@ -123,6 +127,11 @@ fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliAr
 }
 
 fn parse_provenance_args(args: &[String]) -> CliArgs {
+    parse_term_query_args(args, |json, term| Command::ShowProvenance { json, term })
+}
+
+/// Parse args for commands that take --term, --json, and a source (provenance, dependents).
+fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Command) -> CliArgs {
     let mut json = false;
     let mut source: Option<SourceInput> = None;
     let mut term: Option<String> = None;
@@ -165,7 +174,55 @@ fn parse_provenance_args(args: &[String]) -> CliArgs {
     });
 
     CliArgs {
-        command: Command::ShowProvenance { json, term },
+        command: make_cmd(json, term),
+        source,
+    }
+}
+
+fn parse_slice_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut source: Option<SourceInput> = None;
+    let mut terms: Vec<String> = Vec::new();
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--term" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected term name or id after --term");
+                    process::exit(1);
+                }
+                terms.push(args[i].clone());
+            }
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Expected a file path or -e <code>");
+        process::exit(1);
+    });
+
+    if terms.is_empty() {
+        eprintln!("Expected at least one --term <name_or_id>");
+        process::exit(1);
+    }
+
+    CliArgs {
+        command: Command::ShowSlice { json, terms },
         source,
     }
 }
@@ -180,7 +237,11 @@ fn print_usage() {
     eprintln!("  show-ast [--json] <file>       Display parsed AST");
     eprintln!("  show-tokens [--json] <file>    Display lexer tokens");
     eprintln!("  show-provenance [--json] --term <name> <file>");
-    eprintln!("                                 Trace provenance of a term");
+    eprintln!("                                 Trace provenance (backward slice) of a term");
+    eprintln!("  show-dependents [--json] --term <name> <file>");
+    eprintln!("                                 Trace dependents (forward slice) of a term");
+    eprintln!("  show-slice [--json] --term <name> [--term <name2>] <file>");
+    eprintln!("                                 Compute minimal dataflow slice for targets");
     eprintln!();
     eprintln!("  petal <file>                   Shorthand for 'run'");
     eprintln!("  petal -e <code>                Shorthand for 'run -e'");
@@ -331,6 +392,96 @@ pub fn execute(cli: CliArgs) {
                 println!("Edges ({}):", edges.len());
                 for (from, to) in &edges {
                     println!("  t{} -> t{}", from.0, to.0);
+                }
+            }
+        }
+        Command::ShowDependents { json, term: term_query } => {
+            let program = compile_source(&source);
+
+            let root_id = match program.find_term(&term_query) {
+                Some(id) => id,
+                None => {
+                    eprintln!("Term '{}' not found", term_query);
+                    process::exit(1);
+                }
+            };
+
+            let root_term = program.get_term(root_id);
+            let (dependent_ids, edges) = program.trace_dependents(root_id);
+
+            if json {
+                let root_json = term_to_json(root_term);
+                let dependents_json: Vec<_> = dependent_ids
+                    .iter()
+                    .map(|&id| term_to_json(program.get_term(id)))
+                    .collect();
+                let edges_json: Vec<_> = edges
+                    .iter()
+                    .map(|(from, to)| {
+                        serde_json::json!({ "from": from.0, "to": to.0 })
+                    })
+                    .collect();
+                let output = serde_json::json!({
+                    "root": root_json,
+                    "dependents": dependents_json,
+                    "edges": edges_json,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                println!("Dependents of t{} ({}):", root_id.0,
+                    root_term.name.as_deref().unwrap_or("unnamed"));
+                println!("  op: {:?}", root_term.op);
+                println!();
+                println!("Downstream ({}):", dependent_ids.len());
+                for &did in &dependent_ids {
+                    let t = program.get_term(did);
+                    println!("  t{}: {:?} {}", t.id.0, t.op,
+                        t.name.as_deref().unwrap_or(""));
+                }
+                println!();
+                println!("Edges ({}):", edges.len());
+                for (from, to) in &edges {
+                    println!("  t{} -> t{}", from.0, to.0);
+                }
+            }
+        }
+        Command::ShowSlice { json, terms: term_queries } => {
+            let program = compile_source(&source);
+
+            let mut target_ids = Vec::new();
+            for query in &term_queries {
+                match program.find_term(query) {
+                    Some(id) => target_ids.push(id),
+                    None => {
+                        eprintln!("Term '{}' not found", query);
+                        process::exit(1);
+                    }
+                }
+            }
+
+            let slice_ids = program.slice(&target_ids);
+
+            if json {
+                let terms_json: Vec<_> = slice_ids
+                    .iter()
+                    .map(|&id| term_to_json(program.get_term(id)))
+                    .collect();
+                let output = serde_json::json!({
+                    "targets": target_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    "slice": terms_json,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                println!("Slice for targets: {}", target_ids.iter()
+                    .map(|id| format!("t{}", id.0))
+                    .collect::<Vec<_>>()
+                    .join(", "));
+                println!();
+                println!("Terms ({}):", slice_ids.len());
+                for &sid in &slice_ids {
+                    let t = program.get_term(sid);
+                    println!("  t{}: {:?} {}", t.id.0, t.op,
+                        t.name.as_deref().unwrap_or(""));
                 }
             }
         }

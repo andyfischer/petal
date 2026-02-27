@@ -319,6 +319,74 @@ impl Program {
 
         (ancestors, edges)
     }
+
+    /// Forward slice: collect all terms that transitively depend on the given term.
+    /// This is the complement of `trace_provenance` (backward slice).
+    /// Returns (dependent_ids_in_order, edges) where each edge is (from, to)
+    /// meaning `from` is an input of `to`.
+    pub fn trace_dependents(&self, root_id: TermId) -> (Vec<TermId>, Vec<(TermId, TermId)>) {
+        use std::collections::{HashMap as StdHashMap, HashSet, VecDeque};
+
+        // Build a reverse index: term_id -> list of terms that use it as input
+        let mut users: StdHashMap<TermId, Vec<TermId>> = StdHashMap::new();
+        for term in &self.terms {
+            for &input_id in &term.inputs {
+                users.entry(input_id).or_default().push(term.id);
+            }
+        }
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        let mut dependents = Vec::new();
+        let mut edges = Vec::new();
+
+        // Seed with the root's direct users
+        if let Some(direct_users) = users.get(&root_id) {
+            for &user_id in direct_users {
+                if visited.insert(user_id) {
+                    queue.push_back(user_id);
+                }
+                edges.push((root_id, user_id));
+            }
+        }
+
+        // BFS forward through users
+        while let Some(term_id) = queue.pop_front() {
+            dependents.push(term_id);
+            if let Some(term_users) = users.get(&term_id) {
+                for &user_id in term_users {
+                    edges.push((term_id, user_id));
+                    if visited.insert(user_id) {
+                        queue.push_back(user_id);
+                    }
+                }
+            }
+        }
+
+        (dependents, edges)
+    }
+
+    /// Compute a dataflow slice: the minimal subgraph needed to compute the
+    /// given target terms from their transitive inputs. Returns term IDs in
+    /// topological order (inputs before outputs).
+    pub fn slice(&self, targets: &[TermId]) -> Vec<TermId> {
+        use std::collections::HashSet;
+
+        // Collect all ancestors of all targets (backward slice)
+        let mut needed: HashSet<TermId> = HashSet::new();
+        for &target in targets {
+            needed.insert(target);
+            let (ancestors, _) = self.trace_provenance(target);
+            for id in ancestors {
+                needed.insert(id);
+            }
+        }
+
+        // Return in program order (which is topological for a well-formed IR)
+        let mut result: Vec<TermId> = needed.into_iter().collect();
+        result.sort_by_key(|id| id.0);
+        result
+    }
 }
 
 #[cfg(test)]
@@ -435,5 +503,93 @@ mod tests {
         assert!(ancestors.contains(&TermId(0)));
         // Should have 4 edges: (1,3), (2,3), (0,1), (0,2)
         assert_eq!(edges.len(), 4);
+    }
+
+    #[test]
+    fn trace_dependents_leaf_has_no_dependents() {
+        // Terminal node with no users
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("x")),
+            make_term(1, TermOp::Copy, vec![0], Some("y")),
+        ]);
+        let (dependents, edges) = prog.trace_dependents(TermId(1));
+        assert!(dependents.is_empty());
+        assert!(edges.is_empty());
+    }
+
+    #[test]
+    fn trace_dependents_single_user() {
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+        ]);
+        let (dependents, edges) = prog.trace_dependents(TermId(0));
+        assert_eq!(dependents, vec![TermId(1)]);
+        assert_eq!(edges, vec![(TermId(0), TermId(1))]);
+    }
+
+    #[test]
+    fn trace_dependents_transitive() {
+        // a -> b -> c
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+            make_term(2, TermOp::Copy, vec![1], Some("c")),
+        ]);
+        let (dependents, _edges) = prog.trace_dependents(TermId(0));
+        assert_eq!(dependents.len(), 2);
+        assert!(dependents.contains(&TermId(1)));
+        assert!(dependents.contains(&TermId(2)));
+    }
+
+    #[test]
+    fn trace_dependents_fan_out() {
+        // a used by both b and c
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+            make_term(2, TermOp::Copy, vec![0], Some("c")),
+        ]);
+        let (dependents, edges) = prog.trace_dependents(TermId(0));
+        assert_eq!(dependents.len(), 2);
+        assert!(dependents.contains(&TermId(1)));
+        assert!(dependents.contains(&TermId(2)));
+        assert_eq!(edges.len(), 2);
+    }
+
+    #[test]
+    fn slice_returns_minimal_subgraph() {
+        // a(0) -> b(1), c(2) -> d(3) = b + c, e(4) = unrelated
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+            make_term(2, TermOp::Constant(ConstantId(1)), vec![], Some("c")),
+            make_term(3, TermOp::Add, vec![1, 2], Some("d")),
+            make_term(4, TermOp::Constant(ConstantId(2)), vec![], Some("e")),
+        ]);
+        let slice = prog.slice(&[TermId(3)]);
+        // Should include a, b, c, d but NOT e
+        assert!(slice.contains(&TermId(0))); // a
+        assert!(slice.contains(&TermId(1))); // b
+        assert!(slice.contains(&TermId(2))); // c
+        assert!(slice.contains(&TermId(3))); // d
+        assert!(!slice.contains(&TermId(4))); // e is unrelated
+        assert_eq!(slice.len(), 4);
+        // Should be in topological order
+        assert_eq!(slice, vec![TermId(0), TermId(1), TermId(2), TermId(3)]);
+    }
+
+    #[test]
+    fn slice_multiple_targets() {
+        // a(0) -> b(1), c(2) -> d(3)
+        let prog = test_program(vec![
+            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("a")),
+            make_term(1, TermOp::Copy, vec![0], Some("b")),
+            make_term(2, TermOp::Constant(ConstantId(1)), vec![], Some("c")),
+            make_term(3, TermOp::Copy, vec![2], Some("d")),
+        ]);
+        // Slice for both b and d should include a, b, c, d
+        let slice = prog.slice(&[TermId(1), TermId(3)]);
+        assert_eq!(slice.len(), 4);
     }
 }

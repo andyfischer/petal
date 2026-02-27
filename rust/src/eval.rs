@@ -59,7 +59,7 @@ impl Evaluator {
             Some(tid) => tid,
             None => {
                 // Block is done — pop frame
-                return Self::pop_frame(program, stack, heap);
+                return Self::pop_frame(program, stack);
             }
         };
 
@@ -67,7 +67,7 @@ impl Evaluator {
         // skip remaining terms and pop immediately so the parent loop term
         // can handle the break/continue on its next execution.
         if (stack.break_flag || stack.continue_flag) && stack.frames[frame_idx].is_loop_body {
-            return Self::pop_frame(program, stack, heap);
+            return Self::pop_frame(program, stack);
         }
 
         let term = program.get_term(current_term_id);
@@ -184,7 +184,7 @@ impl Evaluator {
     }
 
     /// Pop the current frame and handle the result.
-    fn pop_frame(program: &Program, stack: &mut Stack, _heap: &Heap) -> StepResult {
+    fn pop_frame(program: &Program, stack: &mut Stack) -> StepResult {
         let frame = match stack.pop_frame() {
             Some(f) => f,
             None => return StepResult::Complete(Value::Nil),
@@ -330,11 +330,11 @@ impl Evaluator {
                 ControlFlow::Advance
             }
 
-            TermOp::Add => Self::numeric_binop(term, inputs, stack, heap,
+            TermOp::Add => Self::numeric_binop(term, inputs, stack,
                 |a, b| Value::Int(a + b), |a, b| Value::Float(a + b)),
-            TermOp::Sub => Self::numeric_binop(term, inputs, stack, heap,
+            TermOp::Sub => Self::numeric_binop(term, inputs, stack,
                 |a, b| Value::Int(a - b), |a, b| Value::Float(a - b)),
-            TermOp::Mul => Self::numeric_binop(term, inputs, stack, heap,
+            TermOp::Mul => Self::numeric_binop(term, inputs, stack,
                 |a, b| Value::Int(a * b), |a, b| Value::Float(a * b)),
             TermOp::Div => {
                 if inputs.len() < 2 {
@@ -345,14 +345,14 @@ impl Evaluator {
                     (_, Value::Float(f)) if *f == 0.0 => return ControlFlow::Error("Division by zero".into()),
                     _ => {}
                 }
-                Self::numeric_binop(term, inputs, stack, heap,
+                Self::numeric_binop(term, inputs, stack,
                     |a, b| Value::Int(a / b), |a, b| Value::Float(a / b))
             }
             TermOp::Mod => {
                 if inputs.len() < 2 {
                     return ControlFlow::Error("Mod: missing inputs".into());
                 }
-                Self::numeric_binop(term, inputs, stack, heap,
+                Self::numeric_binop(term, inputs, stack,
                     |a, b| Value::Int(a % b), |a, b| Value::Float(a % b))
             }
 
@@ -1086,7 +1086,6 @@ impl Evaluator {
         term: &Term,
         inputs: &[Value],
         stack: &mut Stack,
-        _heap: &Heap,
         int_op: impl Fn(i64, i64) -> Value,
         float_op: impl Fn(f64, f64) -> Value,
     ) -> ControlFlow {

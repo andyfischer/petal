@@ -11,7 +11,7 @@ use crate::heap::Heap;
 use crate::lexer::Lexer;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
-use crate::program::{Program, ProgramId};
+use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{Frame, Stack, StackKey, StackStatus};
 use crate::value::Value;
 
@@ -224,6 +224,83 @@ impl Env {
     /// Must be called before `load_program` so the compiler knows about it.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    // ── Heap access ──────────────────────────────────────────────
+
+    /// Get a shared reference to the heap.
+    pub fn heap(&self) -> &Heap {
+        &self.heap
+    }
+
+    /// Get a mutable reference to the heap.
+    pub fn heap_mut(&mut self) -> &mut Heap {
+        &mut self.heap
+    }
+
+    // ── State inspection ─────────────────────────────────────────
+
+    /// Get the current value of a single state variable.
+    pub fn get_state(&self, stack_id: StackKey, key: StateKey) -> Option<Value> {
+        self.stacks.get(&stack_id)?.state.get(&key).copied()
+    }
+
+    /// Get all current state as a reference to the HashMap.
+    pub fn get_all_state(&self, stack_id: StackKey) -> Option<&HashMap<StateKey, Value>> {
+        self.stacks.get(&stack_id).map(|s| &s.state)
+    }
+
+    /// Set a state variable's value directly.
+    pub fn set_state(&mut self, stack_id: StackKey, key: StateKey, value: Value) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.state.insert(key, value);
+        }
+    }
+
+    // ── State key name resolution ────────────────────────────────
+
+    /// Build a map from StateKey → variable name by scanning program terms.
+    /// O(n) over terms, call once or on hot-reload.
+    pub fn state_key_names(&self, program_id: ProgramId) -> HashMap<StateKey, String> {
+        let mut map = HashMap::new();
+        if let Some(program) = self.programs.get(&program_id) {
+            for term in &program.terms {
+                if let (Some(sk), Some(name)) = (term.state_key, &term.name) {
+                    map.entry(sk).or_insert_with(|| name.clone());
+                }
+            }
+        }
+        map
+    }
+
+    // ── State snapshots ──────────────────────────────────────────
+
+    /// Clone all state values. Cheap since Value is Copy.
+    pub fn snapshot_state(&self, stack_id: StackKey) -> Option<HashMap<StateKey, Value>> {
+        self.stacks.get(&stack_id).map(|s| s.state.clone())
+    }
+
+    /// Restore state from a previous snapshot, replacing all current state.
+    pub fn restore_state(&mut self, stack_id: StackKey, snapshot: HashMap<StateKey, Value>) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.state = snapshot;
+        }
+    }
+
+    // ── Speculative execution ────────────────────────────────────
+
+    /// Run one frame without committing state changes.
+    /// Snapshots state → reset_stack → run → restore snapshot.
+    /// Side effects (print output) still occur. Heap allocations persist
+    /// but get GC'd naturally.
+    pub fn run_speculative(&mut self, stack_id: StackKey) -> Result<Value, String> {
+        let snapshot = self
+            .snapshot_state(stack_id)
+            .ok_or("Stack not found")?;
+        self.reset_stack(stack_id)?;
+        let result = self.run(stack_id);
+        self.restore_state(stack_id, snapshot);
+        result
     }
 
     /// Build and push the initial root frame for a program, with native function

@@ -191,6 +191,37 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     s
 }
 
+/// Convert a Value to serde_json::Value for JSON serialization.
+/// Nil→null, Bool→bool, Int/Float→number, String→string,
+/// List→array (recursive), Map→object (recursive), others→string via display.
+pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
+    match val {
+        Value::Nil => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(*b),
+        Value::Int(n) => serde_json::json!(*n),
+        Value::Float(f) => serde_json::json!(*f),
+        Value::String(id) => serde_json::Value::String(heap.get_string(*id).to_string()),
+        Value::List(id) => {
+            let elems = heap.get_list(*id);
+            let arr: Vec<serde_json::Value> = elems.iter().map(|v| value_to_json(v, heap)).collect();
+            serde_json::Value::Array(arr)
+        }
+        Value::Map(id) => {
+            let map = heap.get_map(*id);
+            let obj: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), value_to_json(v, heap)))
+                .collect();
+            serde_json::Value::Object(obj)
+        }
+        Value::Dual { value, derivative } => {
+            serde_json::json!({ "type": "dual", "value": *value, "derivative": *derivative })
+        }
+        // Closures, native functions, enum variants, elements → string representation
+        other => serde_json::Value::String(value_to_display_string(other, heap)),
+    }
+}
+
 /// Compare two values for equality. Needs heap access for deep comparison
 /// of lists and maps.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {

@@ -395,20 +395,46 @@ fn native_round(state: &mut PetalState) -> Result<u32, String> {
 // List & string manipulation
 // ---------------------------------------------------------------------------
 
+/// Sort key extracted from Values so sorting doesn't need heap access.
+#[derive(PartialEq, PartialOrd)]
+enum SortKey {
+    Num(f64),
+    Str(String),
+    Other,
+}
+
+impl Eq for SortKey {}
+
+impl Ord for SortKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
 fn native_sort(state: &mut PetalState) -> Result<u32, String> {
     if state.arg_count() != 1 {
         return Err("sort() expects 1 argument".into());
     }
     match state.get_value(1)? {
         Value::List(id) => {
-            let mut items: Vec<Value> = state.heap().get_list(id).to_vec();
-            let heap = state.heap() as *const Heap;
-            // Safe: we only read from heap during comparison, no mutation
-            items.sort_by(|a, b| {
-                compare_values(a, b, unsafe { &*heap })
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            state.push_list(items);
+            let items = state.heap().get_list(id).to_vec();
+            // Build sort keys: extract string content and numeric values up front
+            // so the sort closure doesn't need heap access.
+            let mut keyed: Vec<(SortKey, Value)> = items.into_iter()
+                .map(|v| {
+                    let key = match v {
+                        Value::Int(n) => SortKey::Num(n as f64),
+                        Value::Float(f) => SortKey::Num(f),
+                        Value::Dual { value, .. } => SortKey::Num(value),
+                        Value::String(sid) => SortKey::Str(state.heap().get_string(sid).to_string()),
+                        _ => SortKey::Other,
+                    };
+                    (key, v)
+                })
+                .collect();
+            keyed.sort_by(|(a, _), (b, _)| a.cmp(b));
+            let sorted: Vec<Value> = keyed.into_iter().map(|(_, v)| v).collect();
+            state.push_list(sorted);
             Ok(1)
         }
         _ => Err("sort() expects a list".into()),

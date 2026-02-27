@@ -50,7 +50,7 @@ function shellEscape(s: string): string {
 }
 
 /** Number of builtin phantom terms (t0..t{N-1}) in the root block. */
-export const BUILTIN_COUNT = 31;
+export const BUILTIN_COUNT = 35;
 
 /** Get only the "user" terms (after builtins) from IR JSON */
 export function userTerms(ir: any): any[] {

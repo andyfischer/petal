@@ -38,6 +38,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("reverse", native_reverse);
     table.register("join", native_join);
     table.register("split", native_split);
+    table.register("enumerate", native_enumerate);
+    table.register("zip", native_zip);
+    table.register("slice", native_slice);
+    table.register("flat", native_flat);
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
@@ -502,6 +506,122 @@ fn native_split(state: &mut PetalState) -> Result<u32, String> {
             Ok(1)
         }
         _ => Err("split() expects (string, string)".into()),
+    }
+}
+
+fn native_enumerate(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("enumerate() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let items = state.heap().get_list(id).to_vec();
+            let pairs: Vec<Value> = items.into_iter().enumerate()
+                .map(|(i, v)| {
+                    let pair = vec![Value::Int(i as i64), v];
+                    let pair_id = state.heap_mut().alloc_list(pair);
+                    Value::List(pair_id)
+                })
+                .collect();
+            state.push_list(pairs);
+            Ok(1)
+        }
+        _ => Err("enumerate() expects a list".into()),
+    }
+}
+
+fn native_zip(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("zip() expects 2 arguments".into());
+    }
+    let a = state.get_value(1)?;
+    let b = state.get_value(2)?;
+    match (a, b) {
+        (Value::List(a_id), Value::List(b_id)) => {
+            let a_items = state.heap().get_list(a_id).to_vec();
+            let b_items = state.heap().get_list(b_id).to_vec();
+            let pairs: Vec<Value> = a_items.into_iter().zip(b_items)
+                .map(|(x, y)| {
+                    let pair = vec![x, y];
+                    let pair_id = state.heap_mut().alloc_list(pair);
+                    Value::List(pair_id)
+                })
+                .collect();
+            state.push_list(pairs);
+            Ok(1)
+        }
+        _ => Err("zip() expects two lists".into()),
+    }
+}
+
+fn native_slice(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() < 2 || state.arg_count() > 3 {
+        return Err("slice() expects 2-3 arguments (list, start[, end])".into());
+    }
+    let list = state.get_value(1)?;
+    let start = state.get_int(2)?;
+    match list {
+        Value::List(id) => {
+            let items = state.heap().get_list(id);
+            let len = items.len() as i64;
+            let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
+            let end_idx = if state.arg_count() == 3 {
+                let end = state.get_int(3)?;
+                if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize }
+            } else {
+                len as usize
+            };
+            let sliced = if start_idx <= end_idx {
+                items[start_idx..end_idx].to_vec()
+            } else {
+                Vec::new()
+            };
+            state.push_list(sliced);
+            Ok(1)
+        }
+        Value::String(id) => {
+            let s = state.heap().get_string(id);
+            let len = s.len() as i64;
+            let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
+            let end_idx = if state.arg_count() == 3 {
+                let end = state.get_int(3)?;
+                if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize }
+            } else {
+                len as usize
+            };
+            let sliced = if start_idx <= end_idx {
+                s[start_idx..end_idx].to_string()
+            } else {
+                String::new()
+            };
+            state.push_string(sliced);
+            Ok(1)
+        }
+        _ => Err("slice() expects a list or string".into()),
+    }
+}
+
+fn native_flat(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("flat() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let items = state.heap().get_list(id).to_vec();
+            let mut result = Vec::new();
+            for item in items {
+                match item {
+                    Value::List(inner_id) => {
+                        let inner = state.heap().get_list(inner_id).to_vec();
+                        result.extend(inner);
+                    }
+                    _ => result.push(item),
+                }
+            }
+            state.push_list(result);
+            Ok(1)
+        }
+        _ => Err("flat() expects a list".into()),
     }
 }
 

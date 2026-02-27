@@ -133,6 +133,12 @@ fn native_abs(state: &mut PetalState) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n.abs()); Ok(1) }
         Value::Float(f) => { state.push_float(f.abs()); Ok(1) }
+        Value::Dual { value, derivative } => {
+            // d/dx |x| = sign(x) * dx
+            let sign = if value > 0.0 { 1.0 } else if value < 0.0 { -1.0 } else { 0.0 };
+            state.push_value(Value::Dual { value: value.abs(), derivative: sign * derivative });
+            Ok(1)
+        }
         _ => Err("abs() expects a number".into()),
     }
 }
@@ -141,9 +147,20 @@ fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
     if state.arg_count() != 1 {
         return Err("sqrt() expects 1 argument".into());
     }
-    let n = state.get_float(1)?;
-    state.push_float(n.sqrt());
-    Ok(1)
+    match state.get_value(1)? {
+        Value::Dual { value, derivative } => {
+            // d/dx sqrt(x) = 1 / (2 * sqrt(x))
+            let sqrt_val = value.sqrt();
+            let d = if sqrt_val == 0.0 { 0.0 } else { derivative / (2.0 * sqrt_val) };
+            state.push_value(Value::Dual { value: sqrt_val, derivative: d });
+            Ok(1)
+        }
+        _ => {
+            let n = state.get_float(1)?;
+            state.push_float(n.sqrt());
+            Ok(1)
+        }
+    }
 }
 
 fn native_floor(state: &mut PetalState) -> Result<u32, String> {
@@ -153,6 +170,11 @@ fn native_floor(state: &mut PetalState) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.floor()); Ok(1) }
+        Value::Dual { value, .. } => {
+            // floor is a step function: derivative is 0 almost everywhere
+            state.push_value(Value::Dual { value: value.floor(), derivative: 0.0 });
+            Ok(1)
+        }
         _ => Err("floor() expects a number".into()),
     }
 }
@@ -164,6 +186,10 @@ fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.ceil()); Ok(1) }
+        Value::Dual { value, .. } => {
+            state.push_value(Value::Dual { value: value.ceil(), derivative: 0.0 });
+            Ok(1)
+        }
         _ => Err("ceil() expects a number".into()),
     }
 }
@@ -172,9 +198,17 @@ fn native_float(state: &mut PetalState) -> Result<u32, String> {
     if state.arg_count() != 1 {
         return Err("float() expects 1 argument".into());
     }
-    let f = state.get_float(1)?;
-    state.push_float(f);
-    Ok(1)
+    match state.get_value(1)? {
+        Value::Dual { value, derivative } => {
+            state.push_value(Value::Dual { value, derivative });
+            Ok(1)
+        }
+        _ => {
+            let f = state.get_float(1)?;
+            state.push_float(f);
+            Ok(1)
+        }
+    }
 }
 
 fn native_int(state: &mut PetalState) -> Result<u32, String> {
@@ -345,6 +379,10 @@ fn native_round(state: &mut PetalState) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.round()); Ok(1) }
+        Value::Dual { value, .. } => {
+            state.push_value(Value::Dual { value: value.round(), derivative: 0.0 });
+            Ok(1)
+        }
         _ => Err("round() expects a number".into()),
     }
 }

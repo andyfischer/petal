@@ -123,6 +123,46 @@ describe("forward-mode automatic differentiation", () => {
     });
   });
 
+  describe("AD through math builtins", () => {
+    it("sqrt propagates derivatives", () => {
+      // d/dx sqrt(x) = 1/(2*sqrt(x)), at x=4: value=2, deriv=0.25
+      const code = `let x = dual(4, 1)\nlet y = sqrt(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("2.0 0.25");
+    });
+
+    it("abs propagates sign for positive", () => {
+      const code = `let x = dual(3, 1)\nlet y = abs(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("3.0 1.0");
+    });
+
+    it("abs propagates sign for negative", () => {
+      const code = `let x = dual(-3, 1)\nlet y = abs(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("3.0 -1.0");
+    });
+
+    it("floor has zero derivative", () => {
+      const code = `let x = dual(3.7, 1)\nlet y = floor(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("3.0 0.0");
+    });
+
+    it("ceil has zero derivative", () => {
+      const code = `let x = dual(3.2, 1)\nlet y = ceil(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("4.0 0.0");
+    });
+
+    it("round has zero derivative", () => {
+      const code = `let x = dual(3.7, 1)\nlet y = round(x)\nprint(value_of(y), deriv_of(y))`;
+      expect(runPetal(code)).toBe("4.0 0.0");
+    });
+
+    it("sqrt composes with chain rule", () => {
+      // d/dx sqrt(x^2 + 1) at x=3: f=sqrt(10), f'= 2x / (2*sqrt(x^2+1)) = 3/sqrt(10)
+      const code = `let x = dual(3, 1)\nlet y = sqrt(x * x + 1)\nprint(value_of(y))`;
+      const output = runPetal(code);
+      expect(output).toContain("3.16");
+    });
+  });
+
   describe("error handling", () => {
     it("dual() requires 2 arguments", () => {
       const err = runPetalError(`dual(1)`);

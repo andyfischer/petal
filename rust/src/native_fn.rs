@@ -130,10 +130,12 @@ impl<'a> PetalState<'a> {
     }
 
     /// Get a float argument at 1-indexed position.
+    /// Also accepts Dual numbers (extracts the primal value).
     pub fn get_float(&self, index: usize) -> Result<f64, String> {
         match self.get_value(index)? {
             Value::Float(f) => Ok(f),
             Value::Int(n) => Ok(n as f64),
+            Value::Dual { value, .. } => Ok(value),
             other => Err(format!("Expected float at arg {}, got {}", index, other.type_name())),
         }
     }

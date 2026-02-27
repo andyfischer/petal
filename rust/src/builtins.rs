@@ -34,6 +34,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("dual", native_dual);
     table.register("value_of", native_value_of);
     table.register("deriv_of", native_deriv_of);
+    table.register("sort", native_sort);
+    table.register("reverse", native_reverse);
+    table.register("join", native_join);
+    table.register("split", native_split);
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
@@ -384,6 +388,94 @@ fn native_round(state: &mut PetalState) -> Result<u32, String> {
             Ok(1)
         }
         _ => Err("round() expects a number".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// List & string manipulation
+// ---------------------------------------------------------------------------
+
+fn native_sort(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("sort() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let mut items: Vec<Value> = state.heap().get_list(id).to_vec();
+            let heap = state.heap() as *const Heap;
+            // Safe: we only read from heap during comparison, no mutation
+            items.sort_by(|a, b| {
+                compare_values(a, b, unsafe { &*heap })
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            state.push_list(items);
+            Ok(1)
+        }
+        _ => Err("sort() expects a list".into()),
+    }
+}
+
+fn native_reverse(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 1 {
+        return Err("reverse() expects 1 argument".into());
+    }
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let mut items: Vec<Value> = state.heap().get_list(id).to_vec();
+            items.reverse();
+            state.push_list(items);
+            Ok(1)
+        }
+        Value::String(id) => {
+            let s: String = state.heap().get_string(id).chars().rev().collect();
+            state.push_string(s);
+            Ok(1)
+        }
+        _ => Err("reverse() expects a list or string".into()),
+    }
+}
+
+fn native_join(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("join() expects 2 arguments (list, separator)".into());
+    }
+    let list = state.get_value(1)?;
+    let sep = state.get_value(2)?;
+    match (list, sep) {
+        (Value::List(list_id), Value::String(sep_id)) => {
+            let separator = state.heap().get_string(sep_id).to_string();
+            let elements = state.heap().get_list(list_id);
+            let parts: Vec<String> = elements.iter()
+                .map(|v| value::value_to_display_string(v, state.heap()))
+                .collect();
+            let result = parts.join(&separator);
+            state.push_string(result);
+            Ok(1)
+        }
+        _ => Err("join() expects (list, string)".into()),
+    }
+}
+
+fn native_split(state: &mut PetalState) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("split() expects 2 arguments (string, separator)".into());
+    }
+    let s = state.get_value(1)?;
+    let sep = state.get_value(2)?;
+    match (s, sep) {
+        (Value::String(s_id), Value::String(sep_id)) => {
+            let string = state.heap().get_string(s_id).to_string();
+            let separator = state.heap().get_string(sep_id).to_string();
+            let parts: Vec<Value> = string.split(&separator)
+                .map(|part| {
+                    let id = state.heap_mut().alloc_string(part.to_string());
+                    Value::String(id)
+                })
+                .collect();
+            state.push_list(parts);
+            Ok(1)
+        }
+        _ => Err("split() expects (string, string)".into()),
     }
 }
 

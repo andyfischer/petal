@@ -32,12 +32,14 @@ export function runPetal(code: string): string {
   return run(["run", "-e", shellEscape(code)]);
 }
 
-/** Run petal code that's expected to fail, return stderr */
+/** Run petal code that's expected to fail, return stderr.
+ *  Uses pipe stdio to prevent error messages from leaking into test output. */
 export function runPetalError(code: string): string {
   try {
     execSync([PETAL, "run", "-e", shellEscape(code)].join(" "), {
       encoding: "utf-8",
       timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
     });
     throw new Error("Expected petal to fail but it succeeded");
   } catch (e: any) {

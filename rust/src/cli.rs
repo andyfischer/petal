@@ -19,6 +19,7 @@ pub enum Command {
     ShowProvenance { json: bool, term: String },
     ShowDependents { json: bool, term: String },
     ShowSlice { json: bool, terms: Vec<String> },
+    ShowGraph,
 }
 
 pub enum SourceInput {
@@ -49,6 +50,7 @@ pub fn parse_args() -> CliArgs {
         "show-provenance" => parse_provenance_args(&args[1..]),
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
         "show-slice" => parse_slice_args(&args[1..]),
+        "show-graph" => parse_show_args(&args[1..], |_json| Command::ShowGraph),
         // Backward compat: petal -e <code> or petal <file>
         "-e" => {
             if args.len() < 2 {
@@ -242,6 +244,7 @@ fn print_usage() {
     eprintln!("                                 Trace dependents (forward slice) of a term");
     eprintln!("  show-slice [--json] --term <name> [--term <name2>] <file>");
     eprintln!("                                 Compute minimal dataflow slice for targets");
+    eprintln!("  show-graph <file>              Output DOT-format dataflow graph");
     eprintln!();
     eprintln!("  petal <file>                   Shorthand for 'run'");
     eprintln!("  petal -e <code>                Shorthand for 'run -e'");
@@ -485,7 +488,62 @@ pub fn execute(cli: CliArgs) {
                 }
             }
         }
+        Command::ShowGraph => {
+            let program = compile_source(&source);
+            println!("{}", program_to_dot(&program));
+        }
     }
+}
+
+/// Generate a DOT-format graph representation of the program's dataflow.
+fn program_to_dot(program: &crate::program::Program) -> String {
+    use std::fmt::Write;
+    let mut dot = String::new();
+    writeln!(dot, "digraph dataflow {{").unwrap();
+    writeln!(dot, "  rankdir=TB;").unwrap();
+    writeln!(dot, "  node [shape=box, fontname=\"monospace\", fontsize=10];").unwrap();
+    writeln!(dot, "  edge [fontname=\"monospace\", fontsize=8];").unwrap();
+
+    for term in &program.terms {
+        let label = if let Some(ref name) = term.name {
+            format!("t{}: {} ({:?})", term.id.0, name, term.op)
+        } else {
+            format!("t{}: {:?}", term.id.0, term.op)
+        };
+        // Escape quotes in label
+        let label = label.replace('"', "\\\"");
+
+        // Color by operation type
+        let color = match &term.op {
+            crate::program::TermOp::Constant(_) => "lightblue",
+            crate::program::TermOp::StateInit | crate::program::TermOp::StateRead | crate::program::TermOp::StateWrite => "lightyellow",
+            crate::program::TermOp::Call | crate::program::TermOp::MethodCall(_) => "lightgreen",
+            crate::program::TermOp::Branch | crate::program::TermOp::Match => "lightsalmon",
+            crate::program::TermOp::ForLoop | crate::program::TermOp::WhileLoop => "plum",
+            crate::program::TermOp::MakeClosure(_) => "lightcoral",
+            _ => "white",
+        };
+
+        writeln!(dot, "  t{} [label=\"{}\", style=filled, fillcolor={}];",
+            term.id.0, label, color).unwrap();
+
+        // Dataflow edges (input -> term)
+        for input_id in &term.inputs {
+            writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap();
+        }
+
+        // Control flow edges (term -> child blocks, dashed)
+        for child_block in &term.child_blocks {
+            let block = program.get_block(*child_block);
+            if let Some(entry) = block.entry {
+                writeln!(dot, "  t{} -> t{} [style=dashed, color=gray];",
+                    term.id.0, entry.0).unwrap();
+            }
+        }
+    }
+
+    writeln!(dot, "}}").unwrap();
+    dot
 }
 
 fn term_to_json(term: &crate::program::Term) -> serde_json::Value {

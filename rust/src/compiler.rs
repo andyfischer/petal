@@ -129,6 +129,20 @@ impl Compiler {
     }
 
     // -----------------------------------------------------------------------
+    // Utility
+    // -----------------------------------------------------------------------
+
+    /// Compute a stable hash for a state variable name. This ensures state
+    /// keys are based on name, not declaration order, so reordering state
+    /// declarations doesn't break hot reload.
+    fn hash_state_name(name: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        name.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // -----------------------------------------------------------------------
     // Block management
     // -----------------------------------------------------------------------
 
@@ -487,9 +501,9 @@ impl Compiler {
                 self.emit_term(TermOp::Continue, smallvec![], None);
             }
 
-            StmtKind::State { name, init, id } => {
+            StmtKind::State { name, init, id: _ } => {
                 let init_tid = self.compile_expr(init);
-                let state_key = StateKey(*id as u64);
+                let state_key = StateKey(Self::hash_state_name(name));
                 let state_tid = self.emit_term(
                     TermOp::StateInit,
                     smallvec![init_tid],

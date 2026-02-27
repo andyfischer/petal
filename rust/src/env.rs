@@ -371,6 +371,40 @@ print(a)
     }
 
     #[test]
+    fn hot_reload_preserves_state_after_reordering() {
+        let mut env = Env::new();
+
+        // Run with a=1, b=2, modify both
+        let source_v1 = r#"
+state a = 0
+state b = 0
+a += 10
+b += 20
+print(a, b)
+"#;
+        let pid = env.load_program(source_v1).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        let output = env.take_output();
+        assert_eq!(output, vec!["10 20"]);
+
+        // Reload with state declarations in reversed order
+        let source_v2 = r#"
+state b = 0
+state a = 0
+print(a, b)
+"#;
+        let result = env.hot_reload(sid, source_v2).unwrap();
+        assert_eq!(result.state_preserved, 2); // both preserved
+        assert_eq!(result.state_dropped, 0);
+
+        env.run(sid).unwrap();
+        let output = env.take_output();
+        // Both values preserved despite reordering
+        assert_eq!(output, vec!["10 20"]);
+    }
+
+    #[test]
     fn hot_reload_fresh_state_gets_initialized() {
         let mut env = Env::new();
 

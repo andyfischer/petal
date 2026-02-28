@@ -31,9 +31,57 @@ pub struct GameConfig {
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
 
-/// Normal interactive game loop (no agent protocol).
-pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
-    run_game_inner(source_path, config)
+enum PollResult {
+    None,
+    Quit,
+    Escape,
+}
+
+/// Poll SDL events, updating INPUT_STATE. Returns Quit/Escape signals.
+fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
+    INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
+    let mut result = PollResult::None;
+    for event in event_pump.poll_iter() {
+        match event {
+            Event::Quit { .. } => return PollResult::Quit,
+            Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
+                result = PollResult::Escape;
+            }
+            Event::KeyDown { scancode: Some(sc), .. } => {
+                if let Some(name) = scancode_to_name(sc) {
+                    INPUT_STATE.with(|s| {
+                        s.borrow_mut().keys_down.insert(name.to_string());
+                    });
+                }
+            }
+            Event::KeyUp { scancode: Some(sc), .. } => {
+                if let Some(name) = scancode_to_name(sc) {
+                    INPUT_STATE.with(|s| {
+                        s.borrow_mut().keys_down.remove(name);
+                    });
+                }
+            }
+            Event::MouseMotion { x, y, .. } => {
+                INPUT_STATE.with(|s| {
+                    let mut state = s.borrow_mut();
+                    state.mouse_x = x;
+                    state.mouse_y = y;
+                });
+            }
+            Event::MouseButtonDown { mouse_btn, .. } => {
+                INPUT_STATE.with(|s| {
+                    s.borrow_mut().mouse_buttons.insert(mouse_btn as u8);
+                });
+            }
+            Event::MouseButtonUp { mouse_btn, .. } => {
+                INPUT_STATE.with(|s| {
+                    s.borrow_mut().mouse_buttons.remove(&(mouse_btn as u8));
+                });
+            }
+            _ => {}
+        }
+    }
+    result
 }
 
 fn populate_browser_state(examples_dir: &Path) {
@@ -73,10 +121,8 @@ fn populate_browser_state(examples_dir: &Path) {
     });
 }
 
-fn run_game_inner(
-    source_path: Option<&str>,
-    config: GameConfig,
-) -> Result<(), String> {
+/// Normal interactive game loop (no agent protocol).
+pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
@@ -119,59 +165,12 @@ fn run_game_inner(
     let mut frame_count: i64 = 0;
 
     'game: loop {
-        INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
-
-        let mut escape_pressed = false;
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'game,
-                Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
-                    escape_pressed = true;
-                }
-                Event::KeyDown { scancode: Some(sc), .. } => {
-                    if let Some(name) = scancode_to_name(sc) {
-                        INPUT_STATE.with(|s| {
-                            s.borrow_mut().keys_down.insert(name.to_string());
-                        });
-                    }
-                }
-                Event::KeyUp { scancode: Some(sc), .. } => {
-                    if let Some(name) = scancode_to_name(sc) {
-                        INPUT_STATE.with(|s| {
-                            s.borrow_mut().keys_down.remove(name);
-                        });
-                    }
-                }
-                Event::MouseMotion { x, y, .. } => {
-                    INPUT_STATE.with(|s| {
-                        let mut state = s.borrow_mut();
-                        state.mouse_x = x;
-                        state.mouse_y = y;
-                    });
-                }
-                Event::MouseButtonDown { mouse_btn, .. } => {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().mouse_buttons.insert(mouse_btn as u8);
-                    });
-                }
-                Event::MouseButtonUp { mouse_btn, .. } => {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().mouse_buttons.remove(&(mouse_btn as u8));
-                    });
-                }
-                _ => {}
-            }
-        }
-
-        // Handle Escape
-        if escape_pressed {
-            if in_browser {
-                // In browser mode, Escape quits
-                break 'game;
-            } else if has_browser {
+        match poll_sdl_events(&mut event_pump) {
+            PollResult::Quit => break 'game,
+            PollResult::Escape if in_browser || !has_browser => break 'game,
+            PollResult::Escape => {
                 // In game mode with browser available, return to browser
-                let source = BROWSER_SCRIPT.to_string();
-                match switch_script(&mut env, &source, &config) {
+                match switch_script(&mut env, BROWSER_SCRIPT, &config) {
                     Ok((pid, sid)) => {
                         program_id = pid;
                         stack_id = sid;
@@ -184,10 +183,8 @@ fn run_game_inner(
                     Err(e) => eprintln!("[browser] failed to return to browser: {}", e),
                 }
                 continue;
-            } else {
-                // Direct file mode with no browser, Escape quits
-                break 'game;
             }
+            PollResult::None => {}
         }
 
         let now = Instant::now();
@@ -327,46 +324,9 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
         }
 
         // Poll SDL events (always, even when paused, to keep window responsive)
-        INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'game,
-                Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
-                    break 'game
-                }
-                Event::KeyDown { scancode: Some(sc), .. } => {
-                    if let Some(name) = scancode_to_name(sc) {
-                        INPUT_STATE.with(|s| {
-                            s.borrow_mut().keys_down.insert(name.to_string());
-                        });
-                    }
-                }
-                Event::KeyUp { scancode: Some(sc), .. } => {
-                    if let Some(name) = scancode_to_name(sc) {
-                        INPUT_STATE.with(|s| {
-                            s.borrow_mut().keys_down.remove(name);
-                        });
-                    }
-                }
-                Event::MouseMotion { x, y, .. } => {
-                    INPUT_STATE.with(|s| {
-                        let mut state = s.borrow_mut();
-                        state.mouse_x = x;
-                        state.mouse_y = y;
-                    });
-                }
-                Event::MouseButtonDown { mouse_btn, .. } => {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().mouse_buttons.insert(mouse_btn as u8);
-                    });
-                }
-                Event::MouseButtonUp { mouse_btn, .. } => {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().mouse_buttons.remove(&(mouse_btn as u8));
-                    });
-                }
-                _ => {}
-            }
+        match poll_sdl_events(&mut event_pump) {
+            PollResult::Quit | PollResult::Escape => break 'game,
+            PollResult::None => {}
         }
 
         if !paused {

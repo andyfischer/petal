@@ -8,6 +8,7 @@ pub struct InputState {
     pub mouse_x: i32,
     pub mouse_y: i32,
     pub mouse_buttons: HashSet<u8>,
+    pub mouse_buttons_prev: HashSet<u8>,
 }
 
 impl InputState {
@@ -23,8 +24,13 @@ impl InputState {
         self.mouse_buttons.contains(&button)
     }
 
+    pub fn mouse_pressed(&self, button: u8) -> bool {
+        self.mouse_buttons.contains(&button) && !self.mouse_buttons_prev.contains(&button)
+    }
+
     pub fn begin_frame(&mut self) {
         self.keys_prev = self.keys_down.clone();
+        self.mouse_buttons_prev = self.mouse_buttons.clone();
     }
 }
 

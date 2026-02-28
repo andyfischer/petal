@@ -1,0 +1,92 @@
+// menu.ptl — Dropdown + Modal demo for petal-web
+//
+// Uses event injection pattern:
+//   next_id()    — returns a unique int per element per frame
+//   clicked(id)  — true if that element was clicked this frame
+//
+// State lives in app() to avoid the positional-state-key limitation
+// (two calls to the same function would share state).
+
+// ── Dropdown (stateless) ────────────────────────────────
+
+fn dropdown(label, items, open, btn_id) {
+  let menu_items = map(items, fn(item) {
+    <div class="dropdown-item">{item}</div>
+  })
+
+  let menu = if open {
+    <div class="dropdown-menu">{menu_items}</div>
+  } else {
+    <span></span>
+  }
+
+  <div class="dropdown">
+    <button class="dropdown-button" eid={btn_id}>{label}</button>
+    {menu}
+  </div>
+}
+
+// ── Modal (stateless) ───────────────────────────────────
+
+fn modal_view(title, body, visible, open_id, close_id) {
+  let dialog = if visible {
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h2>{title}</h2>
+        <p>{body}</p>
+        <button class="btn btn-secondary" eid={close_id}>Close</button>
+      </div>
+    </div>
+  } else {
+    <span></span>
+  }
+
+  <div>
+    <button class="btn btn-primary" eid={open_id}>{"Open " ++ title}</button>
+    {dialog}
+  </div>
+}
+
+// ── App (owns all state) ────────────────────────────────
+
+fn app() {
+  // Allocate stable element IDs
+  let file_btn_id = next_id()
+  let edit_btn_id = next_id()
+  let modal_open_id = next_id()
+  let modal_close_id = next_id()
+
+  // Dropdown state
+  state file_open = false
+  state edit_open = false
+  state modal_visible = false
+
+  if clicked(file_btn_id) {
+    file_open = !file_open
+  }
+  if clicked(edit_btn_id) {
+    edit_open = !edit_open
+  }
+  if clicked(modal_open_id) {
+    modal_visible = true
+  }
+  if clicked(modal_close_id) {
+    modal_visible = false
+  }
+
+  let file_dropdown = dropdown("File", ["New", "Open", "Save", "Export"], file_open, file_btn_id)
+  let edit_dropdown = dropdown("Edit", ["Undo", "Redo", "Cut", "Copy", "Paste"], edit_open, edit_btn_id)
+  let info_modal = modal_view("About Petal", "A custom programming language with JSX, state management, and more.", modal_visible, modal_open_id, modal_close_id)
+
+  <div>
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+      {file_dropdown}
+      {edit_dropdown}
+    </div>
+    <div style="margin-top: 1rem;">
+      {info_modal}
+    </div>
+  </div>
+}
+
+app()

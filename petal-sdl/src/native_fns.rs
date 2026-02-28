@@ -14,10 +14,22 @@ pub struct FrameInfo {
     pub screen_height: i32,
 }
 
+pub struct ExampleEntry {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Default)]
+pub struct BrowserState {
+    pub examples: Vec<ExampleEntry>,
+    pub pending_launch: Option<String>,
+}
+
 thread_local! {
     pub static DRAW_COMMANDS: RefCell<Vec<DrawCommand>> = RefCell::new(Vec::new());
     pub static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     pub static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
+    pub static BROWSER_STATE: RefCell<BrowserState> = RefCell::new(BrowserState::default());
 }
 
 pub fn register_all(env: &mut Env) {
@@ -32,10 +44,15 @@ pub fn register_all(env: &mut Env) {
     env.register_native("mouse_x", native_mouse_x);
     env.register_native("mouse_y", native_mouse_y);
     env.register_native("mouse_down", native_mouse_down);
+    env.register_native("mouse_pressed", native_mouse_pressed);
     env.register_native("dt", native_dt);
     env.register_native("frame_count", native_frame_count);
     env.register_native("screen_width", native_screen_width);
     env.register_native("screen_height", native_screen_height);
+    env.register_native("example_count", native_example_count);
+    env.register_native("example_name", native_example_name);
+    env.register_native("example_path", native_example_path);
+    env.register_native("launch_script", native_launch_script);
 }
 
 // --- Drawing ---
@@ -160,6 +177,13 @@ fn native_mouse_down(state: &mut PetalState) -> NativeResult {
     Ok(1)
 }
 
+fn native_mouse_pressed(state: &mut PetalState) -> NativeResult {
+    let button = state.get_int(1)? as u8;
+    let pressed = INPUT_STATE.with(|s| s.borrow().mouse_pressed(button));
+    state.push_bool(pressed);
+    Ok(1)
+}
+
 // --- Timing ---
 
 fn native_dt(state: &mut PetalState) -> NativeResult {
@@ -183,5 +207,42 @@ fn native_screen_width(state: &mut PetalState) -> NativeResult {
 fn native_screen_height(state: &mut PetalState) -> NativeResult {
     let h = FRAME_INFO.with(|f| f.borrow().screen_height);
     state.push_int(h as i64);
+    Ok(1)
+}
+
+// --- Browser ---
+
+fn native_example_count(state: &mut PetalState) -> NativeResult {
+    let count = BROWSER_STATE.with(|b| b.borrow().examples.len() as i64);
+    state.push_int(count);
+    Ok(1)
+}
+
+fn native_example_name(state: &mut PetalState) -> NativeResult {
+    let i = state.get_int(1)? as usize;
+    let name = BROWSER_STATE.with(|b| {
+        let bs = b.borrow();
+        bs.examples.get(i).map(|e| e.name.clone()).unwrap_or_default()
+    });
+    state.push_string(name);
+    Ok(1)
+}
+
+fn native_example_path(state: &mut PetalState) -> NativeResult {
+    let i = state.get_int(1)? as usize;
+    let path = BROWSER_STATE.with(|b| {
+        let bs = b.borrow();
+        bs.examples.get(i).map(|e| e.path.clone()).unwrap_or_default()
+    });
+    state.push_string(path);
+    Ok(1)
+}
+
+fn native_launch_script(state: &mut PetalState) -> NativeResult {
+    let path = state.get_string(1)?;
+    BROWSER_STATE.with(|b| {
+        b.borrow_mut().pending_launch = Some(path);
+    });
+    state.push_nil();
     Ok(1)
 }

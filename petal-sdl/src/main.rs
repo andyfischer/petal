@@ -6,7 +6,12 @@ mod protocol;
 mod renderer;
 mod screenshot;
 
+use std::path::PathBuf;
+
 use game_loop::GameConfig;
+
+/// Resolved at compile time to `petal-sdl/examples/`.
+const EXAMPLES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples");
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -70,15 +75,6 @@ fn main() {
         i += 1;
     }
 
-    let source_path = match source_path {
-        Some(p) => p,
-        None => {
-            eprintln!("Error: no source file provided");
-            print_usage();
-            std::process::exit(1);
-        }
-    };
-
     let config = GameConfig {
         width,
         height,
@@ -88,14 +84,25 @@ fn main() {
         headless,
     };
 
-    let result = if let Some(ref out_path) = screenshot_path {
-        game_loop::run_screenshot(&source_path, config, out_path, screenshot_frames)
-    } else if headless {
-        game_loop::run_headless(&source_path, config)
-    } else if agent {
-        game_loop::run_agent(&source_path, config)
+    let result = if let Some(ref sp) = source_path {
+        if let Some(ref out_path) = screenshot_path {
+            game_loop::run_screenshot(sp, config, out_path, screenshot_frames)
+        } else if headless {
+            game_loop::run_headless(sp, config)
+        } else if agent {
+            game_loop::run_agent(sp, config)
+        } else {
+            game_loop::run_game(sp, config)
+        }
     } else {
-        game_loop::run_game(&source_path, config)
+        // No source file — browser mode
+        let dir = PathBuf::from(EXAMPLES_DIR);
+        if !dir.is_dir() {
+            eprintln!("Error: no source file provided and examples directory not found at {}", EXAMPLES_DIR);
+            print_usage();
+            std::process::exit(1);
+        }
+        game_loop::run_browser(&dir, config)
     };
 
     if let Err(e) = result {

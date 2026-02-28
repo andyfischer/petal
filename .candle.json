@@ -9,6 +9,11 @@
       "name": "playground-web",
       "shell": "pnpm dev",
       "root": "playground/web"
+    },
+    {
+      "name": "dev",
+      "shell": "npx vite --port 4009",
+      "root": "petal-web"
     }
   ]
 }

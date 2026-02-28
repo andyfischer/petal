@@ -20,3 +20,6 @@ pub mod program;
 pub mod source_map;
 pub mod stack;
 pub mod value;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;

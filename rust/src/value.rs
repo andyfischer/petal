@@ -191,6 +191,32 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     s
 }
 
+fn element_to_json(id: crate::heap::ElementId, heap: &Heap) -> serde_json::Value {
+    let tag_id = heap.get_element_tag(id);
+    let tag = heap.get_string(tag_id).to_string();
+    let props_id = heap.get_element_props(id);
+    let children_id = heap.get_element_children(id);
+    let props = heap.get_map(props_id);
+    let children = heap.get_list(children_id);
+
+    let props_obj: serde_json::Map<String, serde_json::Value> = props
+        .iter()
+        .map(|(k, v)| (k.clone(), value_to_json(v, heap)))
+        .collect();
+
+    let children_arr: Vec<serde_json::Value> = children
+        .iter()
+        .map(|child| value_to_json(child, heap))
+        .collect();
+
+    serde_json::json!({
+        "type": "element",
+        "tag": tag,
+        "props": props_obj,
+        "children": children_arr
+    })
+}
+
 /// Convert a Value to serde_json::Value for JSON serialization.
 /// Nil→null, Bool→bool, Int/Float→number, String→string,
 /// List→array (recursive), Map→object (recursive), others→string via display.
@@ -217,7 +243,14 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
         Value::Dual { value, derivative } => {
             serde_json::json!({ "type": "dual", "value": *value, "derivative": *derivative })
         }
-        // Closures, native functions, enum variants, elements → string representation
+        Value::EnumVariant { tag, data } => {
+            let name = heap.get_string(*tag).to_string();
+            let fields = heap.get_list(*data);
+            let arr: Vec<serde_json::Value> = fields.iter().map(|v| value_to_json(v, heap)).collect();
+            serde_json::json!({ "type": "enum", "tag": name, "data": arr })
+        }
+        Value::Element(id) => element_to_json(*id, heap),
+        // Closures, native functions → string representation
         other => serde_json::Value::String(value_to_display_string(other, heap)),
     }
 }

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Instant;
 
@@ -11,7 +11,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::input::scancode_to_name;
-use crate::native_fns::{self, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
+use crate::native_fns::{self, ExampleEntry, BROWSER_STATE, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
 use crate::protocol::{self, Command, Response};
 use crate::renderer;
 use crate::screenshot;
@@ -27,8 +27,60 @@ pub struct GameConfig {
     pub headless: bool,
 }
 
+const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
+
 /// Normal interactive game loop (no agent protocol).
 pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
+    run_game_inner(Some(source_path), None, config)
+}
+
+/// Browser mode: no source file, show file browser.
+pub fn run_browser(examples_dir: &Path, config: GameConfig) -> Result<(), String> {
+    run_game_inner(None, Some(examples_dir), config)
+}
+
+fn populate_browser_state(examples_dir: &Path) {
+    let mut entries: Vec<ExampleEntry> = Vec::new();
+    if let Ok(mut dir_entries) = std::fs::read_dir(examples_dir) {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        while let Some(Ok(entry)) = dir_entries.next() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "ptl") {
+                let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                if name != "browser" {
+                    paths.push(path);
+                }
+            }
+        }
+        paths.sort();
+        for path in paths {
+            let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            // Capitalize first letter
+            let display_name = {
+                let mut c = name.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            };
+            entries.push(ExampleEntry {
+                name: display_name,
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+    BROWSER_STATE.with(|b| {
+        let mut bs = b.borrow_mut();
+        bs.examples = entries;
+        bs.pending_launch = None;
+    });
+}
+
+fn run_game_inner(
+    source_path: Option<&str>,
+    examples_dir: Option<&Path>,
+    config: GameConfig,
+) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
@@ -49,26 +101,52 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
     let mut event_pump = sdl.event_pump()?;
     let font = load_font(&ttf, 24)?;
 
-    let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
+    // Determine if we start in browser mode
+    let mut in_browser = source_path.is_none();
 
-    let (reload_tx, reload_rx) = mpsc::channel();
-    let _watcher = if config.hot_reload {
-        setup_watcher(source_path, reload_tx)?
+    // If browser mode, populate examples and load browser script
+    if let Some(dir) = examples_dir {
+        populate_browser_state(dir);
+    }
+
+    let (initial_source, initial_path) = if let Some(sp) = source_path {
+        let src = std::fs::read_to_string(sp)
+            .map_err(|e| format!("Failed to read {}: {}", sp, e))?;
+        (src, Some(sp.to_string()))
     } else {
-        None
+        (BROWSER_SCRIPT.to_string(), None)
     };
+
+    let (mut env, mut program_id, mut stack_id) = init_petal_from_source(&initial_source, &config)?;
+
+    let mut current_source_path: Option<String> = initial_path;
+
+    let (mut _reload_tx, mut reload_rx) = mpsc::channel();
+    let mut _watcher: Option<notify::RecommendedWatcher> = None;
+    if config.hot_reload {
+        if let Some(ref sp) = current_source_path {
+            let (tx, rx) = mpsc::channel();
+            _reload_tx = tx.clone();
+            reload_rx = rx;
+            _watcher = setup_watcher(sp, tx)?;
+        }
+    }
 
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
 
+    // Keep track of examples_dir for returning to browser
+    let examples_dir_buf = examples_dir.map(|d| d.to_path_buf());
+
     'game: loop {
         INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
 
+        let mut escape_pressed = false;
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'game,
                 Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
-                    break 'game
+                    escape_pressed = true;
                 }
                 Event::KeyDown { scancode: Some(sc), .. } => {
                     if let Some(name) = scancode_to_name(sc) {
@@ -105,6 +183,33 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
             }
         }
 
+        // Handle Escape
+        if escape_pressed {
+            if in_browser {
+                // In browser mode, Escape quits
+                break 'game;
+            } else if examples_dir_buf.is_some() {
+                // In game mode with browser available, return to browser
+                let source = BROWSER_SCRIPT.to_string();
+                match switch_script(&mut env, &source, &config) {
+                    Ok((pid, sid)) => {
+                        program_id = pid;
+                        stack_id = sid;
+                        in_browser = true;
+                        current_source_path = None;
+                        _watcher = None;
+                        frame_count = 0;
+                        last_frame = Instant::now();
+                    }
+                    Err(e) => eprintln!("[browser] failed to return to browser: {}", e),
+                }
+                continue;
+            } else {
+                // Direct file mode with no browser, Escape quits
+                break 'game;
+            }
+        }
+
         let now = Instant::now();
         let dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
@@ -116,7 +221,9 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
             info.frame_count = frame_count;
         });
 
-        check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
+        if let Some(ref sp) = current_source_path {
+            check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
+        }
 
         DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
 
@@ -127,12 +234,76 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
 
         drain_output(&mut env);
 
+        // Check if browser wants to launch a script
+        let pending = BROWSER_STATE.with(|b| b.borrow_mut().pending_launch.take());
+        if let Some(script_path) = pending {
+            match std::fs::read_to_string(&script_path) {
+                Ok(source) => {
+                    match switch_script(&mut env, &source, &config) {
+                        Ok((pid, sid)) => {
+                            program_id = pid;
+                            stack_id = sid;
+                            in_browser = false;
+                            current_source_path = Some(script_path.clone());
+                            frame_count = 0;
+                            last_frame = Instant::now();
+                            // Set up file watcher for new script
+                            if config.hot_reload {
+                                let (tx, rx) = mpsc::channel();
+                                _reload_tx = tx.clone();
+                                reload_rx = rx;
+                                _watcher = setup_watcher(&script_path, tx).unwrap_or(None);
+                            }
+                        }
+                        Err(e) => eprintln!("[browser] failed to launch {}: {}", script_path, e),
+                    }
+                }
+                Err(e) => eprintln!("[browser] failed to read {}: {}", script_path, e),
+            }
+        }
+
         let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
         renderer::render(&mut canvas, commands, &font);
         canvas.present();
     }
 
     Ok(())
+}
+
+fn switch_script(
+    env: &mut Env,
+    source: &str,
+    config: &GameConfig,
+) -> Result<(ProgramId, StackKey), String> {
+    let program_id = env.load_program(source)?;
+    let stack_id = env.create_stack(program_id)?;
+    FRAME_INFO.with(|f| {
+        let mut info = f.borrow_mut();
+        info.screen_width = config.width as i32;
+        info.screen_height = config.height as i32;
+        info.frame_count = 0;
+        info.dt = 0.0;
+    });
+    Ok((program_id, stack_id))
+}
+
+fn init_petal_from_source(
+    source: &str,
+    config: &GameConfig,
+) -> Result<(Env, ProgramId, StackKey), String> {
+    let mut env = Env::new();
+    native_fns::register_all(&mut env);
+
+    let program_id = env.load_program(source)?;
+    let stack_id = env.create_stack(program_id)?;
+
+    FRAME_INFO.with(|f| {
+        let mut info = f.borrow_mut();
+        info.screen_width = config.width as i32;
+        info.screen_height = config.height as i32;
+    });
+
+    Ok((env, program_id, stack_id))
 }
 
 /// Agent mode with SDL window (hybrid): game runs interactively,

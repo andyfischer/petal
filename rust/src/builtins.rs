@@ -4,6 +4,20 @@ use crate::heap::Heap;
 use crate::native_fn::{NativeFnTable, PetalState};
 use crate::value::{self, Value};
 
+/// Validate that a native function received exactly `$n` arguments.
+macro_rules! require_args {
+    ($state:expr, $n:expr, $name:expr) => {
+        if $state.arg_count() != $n {
+            return Err(format!(
+                "{}() expects {} argument{}",
+                $name,
+                $n,
+                if $n == 1 { "" } else { "s" }
+            ));
+        }
+    };
+}
+
 
 /// Register all built-in functions into the native function table.
 /// Must be called once at startup before any programs are loaded.
@@ -80,9 +94,7 @@ fn native_print(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_range(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("range() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "range");
     let start = state.get_int(1)?;
     let end = state.get_int(2)?;
     let items: Vec<Value> = (start..end).map(Value::Int).collect();
@@ -91,9 +103,7 @@ fn native_range(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_len(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("len() expects 1 argument".into());
-    }
+    require_args!(state, 1, "len");
     let v = state.get_value(1)?;
     match v {
         Value::List(id) => {
@@ -109,9 +119,7 @@ fn native_len(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_push(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("push() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "push");
     let list = state.get_value(1)?;
     let val = state.get_value(2)?;
     match list {
@@ -125,9 +133,7 @@ fn native_push(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_str(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("str() expects 1 argument".into());
-    }
+    require_args!(state, 1, "str");
     let v = state.get_value(1)?;
     let s = value::value_to_display_string(&v, state.heap());
     state.push_string(s);
@@ -135,9 +141,7 @@ fn native_str(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_abs(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("abs() expects 1 argument".into());
-    }
+    require_args!(state, 1, "abs");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n.abs()); Ok(1) }
         Value::Float(f) => { state.push_float(f.abs()); Ok(1) }
@@ -152,9 +156,7 @@ fn native_abs(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("sqrt() expects 1 argument".into());
-    }
+    require_args!(state, 1, "sqrt");
     match state.get_value(1)? {
         Value::Dual { value, derivative } => {
             // d/dx sqrt(x) = 1 / (2 * sqrt(x))
@@ -172,9 +174,7 @@ fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_floor(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("floor() expects 1 argument".into());
-    }
+    require_args!(state, 1, "floor");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.floor()); Ok(1) }
@@ -188,9 +188,7 @@ fn native_floor(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("ceil() expects 1 argument".into());
-    }
+    require_args!(state, 1, "ceil");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.ceil()); Ok(1) }
@@ -203,9 +201,7 @@ fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_float(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("float() expects 1 argument".into());
-    }
+    require_args!(state, 1, "float");
     match state.get_value(1)? {
         Value::Dual { value, derivative } => {
             state.push_value(Value::Dual { value, derivative });
@@ -220,9 +216,7 @@ fn native_float(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_int(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("int() expects 1 argument".into());
-    }
+    require_args!(state, 1, "int");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_int(f as i64); Ok(1) }
@@ -238,9 +232,7 @@ fn native_int(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_random(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("random() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "random");
     let min = state.get_float(1)?;
     let max = state.get_float(2)?;
     let pseudo = ((std::time::SystemTime::now()
@@ -255,18 +247,14 @@ fn native_random(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_type(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("type() expects 1 argument".into());
-    }
+    require_args!(state, 1, "type");
     let v = state.get_value(1)?;
     state.push_string(v.type_name().to_string());
     Ok(1)
 }
 
 fn native_append(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("append() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "append");
     let list = state.get_value(1)?;
     let val = state.get_value(2)?;
     match list {
@@ -280,9 +268,7 @@ fn native_append(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_pop(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("pop() expects 1 argument".into());
-    }
+    require_args!(state, 1, "pop");
     match state.get_value(1)? {
         Value::List(id) => {
             let v = state.heap_mut().get_list_mut(id).pop().unwrap_or(Value::Nil);
@@ -294,9 +280,7 @@ fn native_pop(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_keys(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("keys() expects 1 argument".into());
-    }
+    require_args!(state, 1, "keys");
     match state.get_value(1)? {
         Value::Map(id) => {
             let key_strings: Vec<String> = state.heap().get_map(id).keys().cloned().collect();
@@ -315,9 +299,7 @@ fn native_keys(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_values(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("values() expects 1 argument".into());
-    }
+    require_args!(state, 1, "values");
     match state.get_value(1)? {
         Value::Map(id) => {
             let vals: Vec<Value> = state.heap().get_map(id).values().copied().collect();
@@ -329,9 +311,7 @@ fn native_values(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_contains(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("contains() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "contains");
     let container = state.get_value(1)?;
     let needle = state.get_value(2)?;
     match container {
@@ -357,9 +337,7 @@ fn native_contains(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_min(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("min() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "min");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
     match compare_values(&a, &b, state.heap())? {
@@ -369,9 +347,7 @@ fn native_min(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_max(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("max() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "max");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
     match compare_values(&a, &b, state.heap())? {
@@ -381,9 +357,7 @@ fn native_max(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_round(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("round() expects 1 argument".into());
-    }
+    require_args!(state, 1, "round");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
         Value::Float(f) => { state.push_float(f.round()); Ok(1) }
@@ -416,9 +390,7 @@ impl Ord for SortKey {
 }
 
 fn native_sort(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("sort() expects 1 argument".into());
-    }
+    require_args!(state, 1, "sort");
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
@@ -446,9 +418,7 @@ fn native_sort(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_reverse(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("reverse() expects 1 argument".into());
-    }
+    require_args!(state, 1, "reverse");
     match state.get_value(1)? {
         Value::List(id) => {
             let mut items: Vec<Value> = state.heap().get_list(id).to_vec();
@@ -466,9 +436,7 @@ fn native_reverse(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_join(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("join() expects 2 arguments (list, separator)".into());
-    }
+    require_args!(state, 2, "join");
     let list = state.get_value(1)?;
     let sep = state.get_value(2)?;
     match (list, sep) {
@@ -487,9 +455,7 @@ fn native_join(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_split(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("split() expects 2 arguments (string, separator)".into());
-    }
+    require_args!(state, 2, "split");
     let s = state.get_value(1)?;
     let sep = state.get_value(2)?;
     match (s, sep) {
@@ -510,9 +476,7 @@ fn native_split(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_enumerate(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("enumerate() expects 1 argument".into());
-    }
+    require_args!(state, 1, "enumerate");
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
@@ -531,9 +495,7 @@ fn native_enumerate(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_zip(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("zip() expects 2 arguments".into());
-    }
+    require_args!(state, 2, "zip");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
     match (a, b) {
@@ -555,8 +517,8 @@ fn native_zip(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_slice(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() < 2 || state.arg_count() > 3 {
-        return Err("slice() expects 2-3 arguments (list, start[, end])".into());
+    if !(2..=3).contains(&state.arg_count()) {
+        return Err("slice() expects 2-3 arguments".into());
     }
     let list = state.get_value(1)?;
     let start = state.get_int(2)?;
@@ -602,9 +564,7 @@ fn native_slice(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_flat(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("flat() expects 1 argument".into());
-    }
+    require_args!(state, 1, "flat");
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
@@ -630,9 +590,7 @@ fn native_flat(state: &mut PetalState) -> Result<u32, String> {
 // ---------------------------------------------------------------------------
 
 fn native_dual(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 2 {
-        return Err("dual() expects 2 arguments (value, derivative)".into());
-    }
+    require_args!(state, 2, "dual");
     let value = match state.get_value(1)? {
         Value::Int(n) => n as f64,
         Value::Float(f) => f,
@@ -648,9 +606,7 @@ fn native_dual(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_value_of(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("value_of() expects 1 argument".into());
-    }
+    require_args!(state, 1, "value_of");
     match state.get_value(1)? {
         Value::Dual { value, .. } => { state.push_float(value); Ok(1) }
         Value::Int(n) => { state.push_float(n as f64); Ok(1) }
@@ -660,9 +616,7 @@ fn native_value_of(state: &mut PetalState) -> Result<u32, String> {
 }
 
 fn native_deriv_of(state: &mut PetalState) -> Result<u32, String> {
-    if state.arg_count() != 1 {
-        return Err("deriv_of() expects 1 argument".into());
-    }
+    require_args!(state, 1, "deriv_of");
     match state.get_value(1)? {
         Value::Dual { derivative, .. } => { state.push_float(derivative); Ok(1) }
         Value::Int(_) | Value::Float(_) => { state.push_float(0.0); Ok(1) }

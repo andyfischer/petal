@@ -4,8 +4,27 @@
 
 use std::collections::HashMap;
 
+use smallvec::SmallVec;
+
 use crate::program::{BlockId, ProgramId, StateKey, TermId};
 use crate::value::Value;
+
+/// Part of a compound runtime state key representing one loop nesting level.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LoopKeyPart {
+    /// Keyed by iteration index (default for loops).
+    Index(usize),
+    /// Keyed by an explicit hashed value (Phase 2: `state(expr)`).
+    Explicit(u64),
+}
+
+/// Runtime state key combining the static StateKey with loop iteration context.
+/// Top-level state (not in a loop) has an empty `loop_indices`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RuntimeStateKey {
+    pub base: StateKey,
+    pub loop_indices: SmallVec<[LoopKeyPart; 2]>,
+}
 
 /// Unique identifier for a stack within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,7 +39,8 @@ pub enum LoopState {
     /// For-each loop: elements copied from the list and the next index to process.
     For { elements: Vec<Value>, index: usize },
     /// While loop: the condition block has been pushed; waiting for its result.
-    WhileCondition,
+    /// `iteration` tracks the current iteration (0-based) for per-iteration state.
+    WhileCondition { iteration: usize },
 }
 
 /// Runtime execution state for a program.
@@ -28,7 +48,7 @@ pub struct Stack {
     pub id: StackKey,
     pub program_id: ProgramId,
     pub frames: Vec<Frame>,
-    pub state: HashMap<StateKey, Value>,
+    pub state: HashMap<RuntimeStateKey, Value>,
     pub status: StackStatus,
     pub break_flag: bool,
     pub continue_flag: bool,

@@ -46,6 +46,9 @@ pub struct Compiler {
 
     // Track function body blocks so capture phantoms are created in the right block
     function_body_blocks: Vec<BlockId>,
+
+    // Track loop nesting depth so state terms know if they're inside a loop
+    loop_depth: u32,
 }
 
 impl Compiler {
@@ -65,6 +68,7 @@ impl Compiler {
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
+            loop_depth: 0,
         }
     }
 
@@ -308,6 +312,7 @@ impl Compiler {
             register: reg,
             state_key: None,
             child_blocks: SmallVec::new(),
+            in_loop: false,
         };
 
         self.terms.push(term);
@@ -353,6 +358,7 @@ impl Compiler {
             register: reg,
             state_key: None,
             child_blocks: SmallVec::new(),
+            in_loop: false,
         });
         term_id
     }
@@ -448,6 +454,7 @@ impl Compiler {
                 self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
                 // Compile body in body_block
+                self.loop_depth += 1;
                 self.compile_in_block(body_block, |c| {
                     // Bind loop variable as phantom — evaluator populates register 0
                     let var_tid = c.emit_phantom_term(var.clone());
@@ -456,6 +463,7 @@ impl Compiler {
                         c.compile_stmt(s);
                     }
                 });
+                self.loop_depth -= 1;
             }
 
             StmtKind::While { condition, body } => {
@@ -477,11 +485,13 @@ impl Compiler {
                 });
 
                 // Compile body in body_block
+                self.loop_depth += 1;
                 self.compile_in_block(body_block, |c| {
                     for s in body {
                         c.compile_stmt(s);
                     }
                 });
+                self.loop_depth -= 1;
             }
 
             StmtKind::Return(expr) => {
@@ -501,7 +511,7 @@ impl Compiler {
                 self.emit_term(TermOp::Continue, smallvec![], None);
             }
 
-            StmtKind::State { name, init, id: _ } => {
+            StmtKind::State { name, init, id: _, key: _ } => {
                 let init_tid = self.compile_expr(init);
                 let state_key = StateKey(Self::hash_state_name(name));
                 let state_tid = self.emit_term(
@@ -510,6 +520,7 @@ impl Compiler {
                     Some(name.clone()),
                 );
                 self.terms[state_tid.0 as usize].state_key = Some(state_key);
+                self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
                 self.scope_bind(name.clone(), state_tid);
             }
         }
@@ -528,12 +539,14 @@ impl Compiler {
                 if let Some(existing_tid) = self.scope_lookup(name) {
                     if let TermOp::StateInit = &self.terms[existing_tid.0 as usize].op {
                         let state_key = self.terms[existing_tid.0 as usize].state_key;
+                        let in_loop = self.terms[existing_tid.0 as usize].in_loop;
                         let write_tid = self.emit_term(
                             TermOp::StateWrite,
                             smallvec![val_tid],
                             None,
                         );
                         self.terms[write_tid.0 as usize].state_key = state_key;
+                        self.terms[write_tid.0 as usize].in_loop = in_loop;
                     }
                 }
 

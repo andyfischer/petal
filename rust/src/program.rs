@@ -179,6 +179,9 @@ pub struct Term {
     pub state_key: Option<StateKey>,
     /// Child blocks for control flow terms (Branch, ForLoop, WhileLoop, Match, And, Or)
     pub child_blocks: SmallVec<[BlockId; 2]>,
+    /// True if this state term is inside a loop body (for per-iteration state).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub in_loop: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +443,7 @@ mod tests {
             register: RegisterIndex(id as u16),
             state_key: None,
             child_blocks: SmallVec::new(),
+            in_loop: false,
         }
     }
 

@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build *)",
+      "Bash(cargo test *)",
+      "Bash(cargo check *)",
+      "Bash(cargo run *)",
+      "Bash(npx vitest *)",
+      "Bash(./bin/*)",
+      "Bash(git *)",
+      "Bash(npm install *)",
+      "Bash(npm ls *)",
+      "Bash(npm run *)",
+      "Bash(cd *)",
+      "Bash(wc *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(tail *)",
+      "Bash(mkdir *)",
+      "Bash(chmod *)",
+      "Bash(rustc *)",
+      "Bash(rustup *)",
+      "Bash(wasm-pack *)",
+      "Bash(candle *)",
+      "Bash(port-assignment *)",
+      "Bash(prism *)",
+      "Bash(gh *)",
+      "Bash(cc-session-history *)",
+      "mcp__petal-tools__TestSnippet",
+      "mcp__petal-tools__ShowAST",
+      "mcp__petal-tools__ShowIR",
+      "mcp__petal-tools__ShowTokens"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

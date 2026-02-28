@@ -222,6 +222,29 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
     }
 }
 
+/// Convert a JSON value to a Petal Value.
+/// Supports null, bool, number (int/float), and string.
+pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value, String> {
+    match json {
+        serde_json::Value::Null => Ok(Value::Nil),
+        serde_json::Value::Bool(b) => Ok(Value::Bool(*b)),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Int(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Float(f))
+            } else {
+                Err("Invalid number".to_string())
+            }
+        }
+        serde_json::Value::String(s) => {
+            let id = heap.alloc_string(s.clone());
+            Ok(Value::String(id))
+        }
+        _ => Err("Only null, bool, number, and string values are supported".to_string()),
+    }
+}
+
 /// Compare two values for equality. Needs heap access for deep comparison
 /// of lists and maps.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {

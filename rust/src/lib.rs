@@ -9,6 +9,7 @@ pub mod compiler;
 pub mod constant_table;
 pub mod env;
 pub mod eval;
+pub mod hot_reload;
 pub mod heap;
 pub mod ir_display;
 pub mod ir_serialize;

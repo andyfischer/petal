@@ -8,7 +8,6 @@ use serde_json::Value as JsonValue;
 use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
-use petal::value;
 
 use crate::commands::DrawCommand;
 use crate::native_fns::{DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
@@ -130,19 +129,7 @@ pub fn get_state_json(
     program_id: ProgramId,
     stack_id: StackKey,
 ) -> serde_json::Map<String, JsonValue> {
-    let names = env.state_key_names(program_id);
-    let heap = env.heap();
-    let mut map = serde_json::Map::new();
-    if let Some(state) = env.get_all_state(stack_id) {
-        for (key, val) in state {
-            let name = names
-                .get(key)
-                .cloned()
-                .unwrap_or_else(|| format!("unknown_{}", key.0));
-            map.insert(name, value::value_to_json(val, heap));
-        }
-    }
-    map
+    env.get_state_json(program_id, stack_id)
 }
 
 pub fn capture_draw_commands(
@@ -202,35 +189,5 @@ pub fn set_state_from_json(
     name: &str,
     json_val: &JsonValue,
 ) -> Result<(), String> {
-    let names = env.state_key_names(program_id);
-    let key = names
-        .iter()
-        .find(|(_, n)| n.as_str() == name)
-        .map(|(k, _)| *k)
-        .ok_or_else(|| format!("No state variable named '{}'", name))?;
-
-    let val = json_to_value(json_val, env)?;
-    env.set_state(stack_id, key, val);
-    Ok(())
-}
-
-fn json_to_value(json: &JsonValue, env: &mut Env) -> Result<petal::value::Value, String> {
-    match json {
-        JsonValue::Null => Ok(petal::value::Value::Nil),
-        JsonValue::Bool(b) => Ok(petal::value::Value::Bool(*b)),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(petal::value::Value::Int(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(petal::value::Value::Float(f))
-            } else {
-                Err("Invalid number".to_string())
-            }
-        }
-        JsonValue::String(s) => {
-            let id = env.heap_mut().alloc_string(s.clone());
-            Ok(petal::value::Value::String(id))
-        }
-        _ => Err("Only null, bool, number, and string values are supported".to_string()),
-    }
+    env.set_state_from_json(program_id, stack_id, name, json_val)
 }

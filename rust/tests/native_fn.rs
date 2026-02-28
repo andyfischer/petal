@@ -1,31 +1,31 @@
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalState};
+use petal::native_fn::{NativeResult, PetalCxt};
 
-fn petal_string_repeat(state: &mut PetalState) -> NativeResult {
+fn petal_string_repeat(state: &mut PetalCxt) -> NativeResult {
     let s = state.get_string(1)?;
     let n = state.get_int(2)?;
     state.push_string(s.repeat(n as usize));
     Ok(1)
 }
 
-fn petal_add_ints(state: &mut PetalState) -> NativeResult {
+fn petal_add_ints(state: &mut PetalCxt) -> NativeResult {
     let a = state.get_int(1)?;
     let b = state.get_int(2)?;
     state.push_int(a + b);
     Ok(1)
 }
 
-fn petal_greet(state: &mut PetalState) -> NativeResult {
+fn petal_greet(state: &mut PetalCxt) -> NativeResult {
     let name = state.get_string(1)?;
     state.print(format!("Hello, {}!", name));
     Ok(0)
 }
 
-fn petal_no_args(_state: &mut PetalState) -> NativeResult {
+fn petal_no_args(_state: &mut PetalCxt) -> NativeResult {
     Ok(0)
 }
 
-fn petal_multi_type(state: &mut PetalState) -> NativeResult {
+fn petal_multi_type(state: &mut PetalCxt) -> NativeResult {
     let count = state.arg_count();
     state.push_int(count as i64);
     Ok(1)

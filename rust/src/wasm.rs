@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
 use crate::env::Env;
-use crate::native_fn::{NativeResult, PetalState};
+use crate::native_fn::{NativeResult, PetalCxt};
 use crate::program::ProgramId;
 use crate::stack::StackKey;
 use crate::value::value_to_json;
@@ -20,7 +20,7 @@ thread_local! {
     static CLICKED_ID: RefCell<i64> = RefCell::new(0);
 }
 
-fn native_next_id(state: &mut PetalState) -> NativeResult {
+fn native_next_id(state: &mut PetalCxt) -> NativeResult {
     let id = NEXT_EID.with(|c| {
         let mut val = c.borrow_mut();
         let id = *val;
@@ -31,7 +31,7 @@ fn native_next_id(state: &mut PetalState) -> NativeResult {
     Ok(1)
 }
 
-fn native_clicked(state: &mut PetalState) -> NativeResult {
+fn native_clicked(state: &mut PetalCxt) -> NativeResult {
     let query_id = state.get_int(1)?;
     let clicked = CLICKED_ID.with(|c| *c.borrow());
     state.push_bool(clicked == query_id);

@@ -16,7 +16,7 @@ pub struct NativeFnId(pub u32);
 pub type NativeResult = Result<u32, String>;
 
 /// Signature for native functions.
-pub type NativeFn = fn(&mut PetalState) -> NativeResult;
+pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;
 
 /// Entry in the native function table.
 struct NativeFnEntry {
@@ -85,14 +85,14 @@ impl Default for NativeFnTable {
 
 /// The handle passed to native functions, providing access to arguments,
 /// result pushing, output, and heap.
-pub struct PetalState<'a> {
+pub struct PetalCxt<'a> {
     args: &'a [Value],
     heap: &'a mut Heap,
     output: &'a mut Vec<String>,
     results: Vec<Value>,
 }
 
-impl<'a> PetalState<'a> {
+impl<'a> PetalCxt<'a> {
     pub fn new(args: &'a [Value], heap: &'a mut Heap, output: &'a mut Vec<String>) -> Self {
         Self {
             args,

@@ -8,7 +8,7 @@ use crate::ast::*;
 use crate::builtins;
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
-use crate::native_fn::{NativeFnTable, PetalState};
+use crate::native_fn::{NativeFnTable, PetalCxt};
 use crate::program::*;
 use crate::stack::{Frame, LoopState, Stack};
 use crate::value::{self, Value};
@@ -1199,7 +1199,7 @@ impl Evaluator {
     // Native function dispatch
     // -----------------------------------------------------------------------
 
-    /// Call a native function (non-intrinsic) via PetalState, returning the result value.
+    /// Call a native function (non-intrinsic) via PetalCxt, returning the result value.
     fn call_native_fn(
         native_id: crate::native_fn::NativeFnId,
         args: &[Value],
@@ -1208,7 +1208,7 @@ impl Evaluator {
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
         let func = native_fns.get_func(native_id);
-        let mut state = PetalState::new(args, heap, output);
+        let mut state = PetalCxt::new(args, heap, output);
         let count = func(&mut state)?;
         let results = state.take_results();
         let val = if count > 0 && !results.is_empty() {

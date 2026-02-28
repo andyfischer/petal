@@ -1,7 +1,7 @@
 //! Builtins - Built-in function implementations registered via native FFI.
 
 use crate::heap::Heap;
-use crate::native_fn::{NativeFnTable, PetalState};
+use crate::native_fn::{NativeFnTable, PetalCxt};
 use crate::value::{self, Value};
 
 /// Validate that a native function received exactly `$n` arguments.
@@ -72,7 +72,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 // Placeholder for higher-order builtins (should never be called directly)
 // ---------------------------------------------------------------------------
 
-fn native_intrinsic_placeholder(_state: &mut PetalState) -> Result<u32, String> {
+fn native_intrinsic_placeholder(_state: &mut PetalCxt) -> Result<u32, String> {
     Err("This function requires evaluator context and should be dispatched as an intrinsic".into())
 }
 
@@ -80,7 +80,7 @@ fn native_intrinsic_placeholder(_state: &mut PetalState) -> Result<u32, String> 
 // Native function implementations
 // ---------------------------------------------------------------------------
 
-fn native_print(state: &mut PetalState) -> Result<u32, String> {
+fn native_print(state: &mut PetalCxt) -> Result<u32, String> {
     let parts: Vec<String> = (1..=state.arg_count())
         .map(|i| {
             let v = state.get_value(i).unwrap();
@@ -93,7 +93,7 @@ fn native_print(state: &mut PetalState) -> Result<u32, String> {
     Ok(1)
 }
 
-fn native_range(state: &mut PetalState) -> Result<u32, String> {
+fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "range");
     let start = state.get_int(1)?;
     let end = state.get_int(2)?;
@@ -102,7 +102,7 @@ fn native_range(state: &mut PetalState) -> Result<u32, String> {
     Ok(1)
 }
 
-fn native_len(state: &mut PetalState) -> Result<u32, String> {
+fn native_len(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "len");
     let v = state.get_value(1)?;
     match v {
@@ -118,7 +118,7 @@ fn native_len(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_push(state: &mut PetalState) -> Result<u32, String> {
+fn native_push(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "push");
     let list = state.get_value(1)?;
     let val = state.get_value(2)?;
@@ -132,7 +132,7 @@ fn native_push(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_str(state: &mut PetalState) -> Result<u32, String> {
+fn native_str(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "str");
     let v = state.get_value(1)?;
     let s = value::value_to_display_string(&v, state.heap());
@@ -140,7 +140,7 @@ fn native_str(state: &mut PetalState) -> Result<u32, String> {
     Ok(1)
 }
 
-fn native_abs(state: &mut PetalState) -> Result<u32, String> {
+fn native_abs(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "abs");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n.abs()); Ok(1) }
@@ -155,7 +155,7 @@ fn native_abs(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
+fn native_sqrt(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "sqrt");
     match state.get_value(1)? {
         Value::Dual { value, derivative } => {
@@ -173,7 +173,7 @@ fn native_sqrt(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_floor(state: &mut PetalState) -> Result<u32, String> {
+fn native_floor(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "floor");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
@@ -187,7 +187,7 @@ fn native_floor(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
+fn native_ceil(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "ceil");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
@@ -200,7 +200,7 @@ fn native_ceil(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_float(state: &mut PetalState) -> Result<u32, String> {
+fn native_float(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "float");
     match state.get_value(1)? {
         Value::Dual { value, derivative } => {
@@ -215,7 +215,7 @@ fn native_float(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_int(state: &mut PetalState) -> Result<u32, String> {
+fn native_int(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "int");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
@@ -231,7 +231,7 @@ fn native_int(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_random(state: &mut PetalState) -> Result<u32, String> {
+fn native_random(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "random");
     let min = state.get_float(1)?;
     let max = state.get_float(2)?;
@@ -246,14 +246,14 @@ fn native_random(state: &mut PetalState) -> Result<u32, String> {
     Ok(1)
 }
 
-fn native_type(state: &mut PetalState) -> Result<u32, String> {
+fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "type");
     let v = state.get_value(1)?;
     state.push_string(v.type_name().to_string());
     Ok(1)
 }
 
-fn native_append(state: &mut PetalState) -> Result<u32, String> {
+fn native_append(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "append");
     let list = state.get_value(1)?;
     let val = state.get_value(2)?;
@@ -267,7 +267,7 @@ fn native_append(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_pop(state: &mut PetalState) -> Result<u32, String> {
+fn native_pop(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "pop");
     match state.get_value(1)? {
         Value::List(id) => {
@@ -279,7 +279,7 @@ fn native_pop(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_keys(state: &mut PetalState) -> Result<u32, String> {
+fn native_keys(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "keys");
     match state.get_value(1)? {
         Value::Map(id) => {
@@ -298,7 +298,7 @@ fn native_keys(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_values(state: &mut PetalState) -> Result<u32, String> {
+fn native_values(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "values");
     match state.get_value(1)? {
         Value::Map(id) => {
@@ -310,7 +310,7 @@ fn native_values(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_contains(state: &mut PetalState) -> Result<u32, String> {
+fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "contains");
     let container = state.get_value(1)?;
     let needle = state.get_value(2)?;
@@ -336,7 +336,7 @@ fn native_contains(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_min(state: &mut PetalState) -> Result<u32, String> {
+fn native_min(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "min");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
@@ -346,7 +346,7 @@ fn native_min(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_max(state: &mut PetalState) -> Result<u32, String> {
+fn native_max(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "max");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
@@ -356,7 +356,7 @@ fn native_max(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_round(state: &mut PetalState) -> Result<u32, String> {
+fn native_round(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "round");
     match state.get_value(1)? {
         Value::Int(n) => { state.push_int(n); Ok(1) }
@@ -389,7 +389,7 @@ impl Ord for SortKey {
     }
 }
 
-fn native_sort(state: &mut PetalState) -> Result<u32, String> {
+fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "sort");
     match state.get_value(1)? {
         Value::List(id) => {
@@ -417,7 +417,7 @@ fn native_sort(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_reverse(state: &mut PetalState) -> Result<u32, String> {
+fn native_reverse(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "reverse");
     match state.get_value(1)? {
         Value::List(id) => {
@@ -435,7 +435,7 @@ fn native_reverse(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_join(state: &mut PetalState) -> Result<u32, String> {
+fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "join");
     let list = state.get_value(1)?;
     let sep = state.get_value(2)?;
@@ -454,7 +454,7 @@ fn native_join(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_split(state: &mut PetalState) -> Result<u32, String> {
+fn native_split(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "split");
     let s = state.get_value(1)?;
     let sep = state.get_value(2)?;
@@ -475,7 +475,7 @@ fn native_split(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_enumerate(state: &mut PetalState) -> Result<u32, String> {
+fn native_enumerate(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "enumerate");
     match state.get_value(1)? {
         Value::List(id) => {
@@ -494,7 +494,7 @@ fn native_enumerate(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_zip(state: &mut PetalState) -> Result<u32, String> {
+fn native_zip(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "zip");
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
@@ -516,7 +516,7 @@ fn native_zip(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_slice(state: &mut PetalState) -> Result<u32, String> {
+fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
     if !(2..=3).contains(&state.arg_count()) {
         return Err("slice() expects 2-3 arguments".into());
     }
@@ -563,7 +563,7 @@ fn native_slice(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_flat(state: &mut PetalState) -> Result<u32, String> {
+fn native_flat(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "flat");
     match state.get_value(1)? {
         Value::List(id) => {
@@ -589,7 +589,7 @@ fn native_flat(state: &mut PetalState) -> Result<u32, String> {
 // Automatic differentiation (dual numbers)
 // ---------------------------------------------------------------------------
 
-fn native_dual(state: &mut PetalState) -> Result<u32, String> {
+fn native_dual(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 2, "dual");
     let value = match state.get_value(1)? {
         Value::Int(n) => n as f64,
@@ -605,7 +605,7 @@ fn native_dual(state: &mut PetalState) -> Result<u32, String> {
     Ok(1)
 }
 
-fn native_value_of(state: &mut PetalState) -> Result<u32, String> {
+fn native_value_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "value_of");
     match state.get_value(1)? {
         Value::Dual { value, .. } => { state.push_float(value); Ok(1) }
@@ -615,7 +615,7 @@ fn native_value_of(state: &mut PetalState) -> Result<u32, String> {
     }
 }
 
-fn native_deriv_of(state: &mut PetalState) -> Result<u32, String> {
+fn native_deriv_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 1, "deriv_of");
     match state.get_value(1)? {
         Value::Dual { derivative, .. } => { state.push_float(derivative); Ok(1) }

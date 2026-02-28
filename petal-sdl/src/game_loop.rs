@@ -14,6 +14,7 @@ use crate::input::scancode_to_name;
 use crate::native_fns::{self, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
 use crate::protocol::{self, Command, Response};
 use crate::renderer;
+use crate::screenshot;
 
 pub struct GameConfig {
     pub width: u32,
@@ -310,6 +311,30 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
     Ok(())
 }
 
+/// Screenshot mode: run N frames headlessly, save a PNG, exit.
+pub fn run_screenshot(
+    source_path: &str,
+    config: GameConfig,
+    output_path: &str,
+    frames: u32,
+) -> Result<(), String> {
+    let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
+
+    for _ in 0..frames {
+        protocol::run_one_frame(&mut env, stack_id)?;
+    }
+
+    // Capture draw commands from one more speculative frame
+    let commands = match protocol::capture_draw_commands(&mut env, stack_id) {
+        Ok((cmds, _)) => cmds,
+        Err(e) => return Err(e),
+    };
+
+    screenshot::save_png(&commands, config.width, config.height, output_path)?;
+    eprintln!("Screenshot saved to {}", output_path);
+    Ok(())
+}
+
 // --- Shared helpers ---
 
 fn init_petal(
@@ -403,6 +428,24 @@ fn handle_command(
             match protocol::set_state_from_json(env, program_id, stack_id, &name, &value) {
                 Ok(()) => protocol::send_response(&Response::ok()),
                 Err(e) => protocol::send_response(&Response::err(e)),
+            }
+        }
+        Command::Screenshot => {
+            match protocol::capture_draw_commands(env, stack_id) {
+                Ok((commands, _output)) => {
+                    let (w, h) = FRAME_INFO.with(|f| {
+                        let info = f.borrow();
+                        (info.screen_width as u32, info.screen_height as u32)
+                    });
+                    let b64 = screenshot::render_to_png_base64(&commands, w, h);
+                    protocol::send_response(&Response {
+                        screenshot: Some(b64),
+                        ..Response::ok()
+                    });
+                }
+                Err(e) => {
+                    protocol::send_response(&Response::err(e));
+                }
             }
         }
     }

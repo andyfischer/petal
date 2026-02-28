@@ -4,6 +4,7 @@ mod input;
 mod native_fns;
 mod protocol;
 mod renderer;
+mod screenshot;
 
 use game_loop::GameConfig;
 
@@ -16,6 +17,8 @@ fn main() {
     let mut hot_reload = true;
     let mut agent = false;
     let mut headless = false;
+    let mut screenshot_path: Option<String> = None;
+    let mut screenshot_frames: u32 = 120;
     let mut source_path: Option<String> = None;
 
     let mut i = 1;
@@ -47,6 +50,14 @@ fn main() {
                 headless = true;
                 agent = true; // headless implies agent
             }
+            "--screenshot" => {
+                i += 1;
+                screenshot_path = Some(args[i].clone());
+            }
+            "--frames" => {
+                i += 1;
+                screenshot_frames = args[i].parse().expect("Invalid frame count");
+            }
             arg if !arg.starts_with('-') => {
                 source_path = Some(arg.to_string());
             }
@@ -77,7 +88,9 @@ fn main() {
         headless,
     };
 
-    let result = if headless {
+    let result = if let Some(ref out_path) = screenshot_path {
+        game_loop::run_screenshot(&source_path, config, out_path, screenshot_frames)
+    } else if headless {
         game_loop::run_headless(&source_path, config)
     } else if agent {
         game_loop::run_agent(&source_path, config)
@@ -101,4 +114,6 @@ fn print_usage() {
     eprintln!("  --no-hot-reload   Disable file watching");
     eprintln!("  --agent           Enable agent protocol (JSON over stdin/stdout)");
     eprintln!("  --headless        Headless agent mode (no window, implies --agent)");
+    eprintln!("  --screenshot <f>  Run headlessly, save PNG screenshot to file, then exit");
+    eprintln!("  --frames <n>      Frames to run before screenshot (default: 120)");
 }

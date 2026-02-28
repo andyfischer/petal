@@ -1,33 +1,224 @@
+// === NEON PONG ===
+
 state ball_x = 400.0
 state ball_y = 300.0
-state ball_dx = 200.0
-state ball_dy = 150.0
+state ball_dx = 250.0
+state ball_dy = 180.0
 state paddle_y = 250.0
 state score = 0
+state high_score = 0
+state hit_flash = 0.0
+state shake_timer = 0.0
+
+// Ball trail (store last N positions)
+state trail = []
 
 let delta = dt()
+let fc = frame_count()
+let sw = screen_width()
+let sh = screen_height()
 
-paddle_y = float(mouse_y()) - 40.0
-paddle_y = max(0.0, min(paddle_y, 520.0))
+// --- Input ---
+paddle_y = float(mouse_y()) - 50.0
+paddle_y = max(0.0, min(paddle_y, float(sh) - 100.0))
 
+// --- Physics ---
 ball_x += ball_dx * delta
 ball_y += ball_dy * delta
 
-if ball_y < 0.0 || ball_y > 590.0 { ball_dy = -ball_dy }
-if ball_x > 790.0 { ball_dx = -ball_dx }
-
-if ball_x < 30.0 && ball_y > paddle_y && ball_y < paddle_y + 80.0 {
-    ball_dx = abs(ball_dx)
-    score += 1
+// Top/bottom bounce
+if ball_y < 5.0 || ball_y > float(sh) - 15.0 {
+    ball_dy = -ball_dy
+    if ball_y < 5.0 { ball_y = 5.0 }
+    if ball_y > float(sh) - 15.0 { ball_y = float(sh) - 15.0 }
 }
 
+// Right wall bounce
+if ball_x > float(sw) - 15.0 {
+    ball_dx = -ball_dx
+    ball_x = float(sw) - 15.0
+}
+
+// Paddle collision
+if ball_x < 45.0 && ball_x > 20.0 && ball_y > paddle_y - 10.0 && ball_y < paddle_y + 110.0 {
+    ball_dx = abs(ball_dx) * 1.02
+    // Angle based on where ball hits paddle
+    let paddle_center = paddle_y + 50.0
+    let offset = (ball_y - paddle_center) / 50.0
+    ball_dy = offset * 300.0
+    score += 1
+    if score > high_score { high_score = score }
+    hit_flash = 1.0
+    shake_timer = 0.15
+}
+
+// Ball missed - reset
 if ball_x < 0.0 {
     ball_x = 400.0
     ball_y = 300.0
+    ball_dx = 250.0
+    ball_dy = 180.0
     score = 0
+    trail = []
+    shake_timer = 0.3
 }
 
-clear(0, 0, 40)
-draw_rect(20, int(paddle_y), 10, 80, 255, 255, 255)
-draw_circle(int(ball_x), int(ball_y), 8, 255, 200, 50)
-draw_text("Score: " ++ str(score), 350, 20, 24, 255, 255, 255)
+// Cap ball speed
+if abs(ball_dx) > 600.0 { ball_dx = 600.0 * ball_dx / abs(ball_dx) }
+
+// Update timers
+hit_flash = max(0.0, hit_flash - delta * 3.0)
+shake_timer = max(0.0, shake_timer - delta)
+
+// Update trail
+push(trail, { x: ball_x, y: ball_y })
+if len(trail) > 12 {
+    trail = slice(trail, len(trail) - 12, len(trail))
+}
+
+// Screen shake offset
+let shake_x = 0
+let shake_y = 0
+if shake_timer > 0.0 {
+    shake_x = int(random(-3.0, 4.0))
+    shake_y = int(random(-3.0, 4.0))
+}
+
+// === DRAWING ===
+
+// Background - deep dark blue
+clear(5, 5, 20)
+
+// Subtle grid pattern
+for gx in range(0, 17) {
+    let xp = gx * 50
+    draw_line(xp, 0, xp, sh, 15, 15, 40)
+}
+for gy in range(0, 13) {
+    let yp = gy * 50
+    draw_line(0, yp, sw, yp, 15, 15, 40)
+}
+
+// Top and bottom neon borders
+draw_rect(0, 0, sw, 3, 0, 100, 255)
+draw_rect(0, sh - 3, sw, 3, 0, 100, 255)
+
+// Center dashed line (classic pong)
+for i in range(0, 20) {
+    let dash_y = i * 32
+    if i % 2 == 0 {
+        draw_rect(sw / 2 - 1, dash_y, 3, 20, 30, 50, 100)
+    }
+}
+
+// Corner decorations
+let corner_size = 30
+// Top-left
+draw_line(0, corner_size, corner_size, 0, 0, 80, 200)
+// Top-right
+draw_line(sw - corner_size, 0, sw, corner_size, 0, 80, 200)
+// Bottom-left
+draw_line(0, sh - corner_size, corner_size, sh, 0, 80, 200)
+// Bottom-right
+draw_line(sw - corner_size, sh, sw, sh - corner_size, 0, 80, 200)
+
+// --- Ball trail (fading neon glow) ---
+let trail_len = len(trail)
+for i in range(0, trail_len) {
+    let t = trail[i]
+    let alpha_frac = float(i) / float(trail_len)
+    let tr = int(alpha_frac * 255.0)
+    let tg = int(alpha_frac * 100.0)
+    let tb = int(alpha_frac * 30.0)
+    let trail_size = int(3.0 + alpha_frac * 6.0)
+    draw_circle(int(t.x) + shake_x, int(t.y) + shake_y, trail_size, tr, tg, tb)
+}
+
+// --- Ball glow (outer glow ring) ---
+let bx = int(ball_x) + shake_x
+let by = int(ball_y) + shake_y
+draw_circle(bx, by, 18, 60, 20, 5)
+draw_circle(bx, by, 14, 120, 50, 10)
+draw_circle(bx, by, 10, 255, 150, 30)
+draw_circle(bx, by, 6, 255, 230, 100)
+
+// --- Paddle glow and rendering ---
+let px = 25 + shake_x
+let py = int(paddle_y) + shake_y
+let paddle_h = 100
+let paddle_w = 12
+
+// Paddle outer glow
+let glow_r = 0
+let glow_g = 150
+let glow_b = 255
+if hit_flash > 0.0 {
+    glow_r = int(255.0 * hit_flash)
+    glow_g = int(255.0 * hit_flash)
+    glow_b = 255
+}
+draw_rect(px - 4, py - 4, paddle_w + 8, paddle_h + 8, int(float(glow_r) * 0.2), int(float(glow_g) * 0.2), int(float(glow_b) * 0.2))
+draw_rect(px - 2, py - 2, paddle_w + 4, paddle_h + 4, int(float(glow_r) * 0.4), int(float(glow_g) * 0.4), int(float(glow_b) * 0.4))
+
+// Paddle gradient effect (multiple rects, brighter in center)
+for seg in range(0, 10) {
+    let seg_y = py + seg * (paddle_h / 10)
+    let brightness = 1.0 - abs(float(seg) - 4.5) / 5.0
+    let pr = int(float(glow_r) * brightness)
+    let pg = int(float(glow_g) * brightness)
+    let pb = int(float(glow_b) * brightness * 0.8 + 50.0 * brightness)
+    draw_rect(px, seg_y, paddle_w, paddle_h / 10 + 1, pr, pg, pb)
+}
+
+// Paddle edge highlight
+draw_rect(px + paddle_w - 2, py, 2, paddle_h, min(255, glow_r + 100), min(255, glow_g + 100), 255)
+
+// --- AI paddle on right side (decorative, follows ball loosely) ---
+state ai_y = 300.0
+ai_y += (ball_y - ai_y - 50.0) * 2.0 * delta
+ai_y = max(0.0, min(ai_y, float(sh) - 100.0))
+let aix = sw - 37 + shake_x
+let aiy = int(ai_y) + shake_y
+draw_rect(aix - 2, aiy - 2, paddle_w + 4, paddle_h + 4, 20, 10, 40)
+for seg in range(0, 10) {
+    let seg_y = aiy + seg * (paddle_h / 10)
+    let brightness = 1.0 - abs(float(seg) - 4.5) / 5.0
+    let pr = int(180.0 * brightness)
+    let pg = int(50.0 * brightness)
+    let pb = int(255.0 * brightness)
+    draw_rect(aix, seg_y, paddle_w, paddle_h / 10 + 1, pr, pg, pb)
+}
+
+// --- Score display ---
+// Score background panel
+draw_rect(sw / 2 - 120, 8, 240, 40, 10, 10, 35)
+draw_rect_outline(sw / 2 - 120, 8, 240, 40, 0, 80, 180)
+
+// Player score (left)
+let score_text = str(score)
+draw_text(score_text, sw / 2 - 60, 14, 28, 0, 200, 255)
+
+// Divider
+draw_text("-", sw / 2 - 5, 14, 28, 60, 80, 120)
+
+// High score (right)
+draw_text(str(high_score), sw / 2 + 30, 14, 28, 180, 60, 255)
+
+// Labels
+draw_text("SCORE", sw / 2 - 90, 52, 12, 40, 70, 120)
+draw_text("BEST", sw / 2 + 30, 52, 12, 40, 70, 120)
+
+// Speed indicator
+let speed = sqrt(ball_dx * ball_dx + ball_dy * ball_dy)
+let speed_pct = min(100.0, speed / 6.0)
+let bar_w = int(speed_pct)
+let bar_color_r = int(min(255.0, speed_pct * 2.55))
+let bar_color_g = int(max(0.0, 255.0 - speed_pct * 2.55))
+draw_rect(sw / 2 - 50, sh - 18, bar_w, 6, bar_color_r, bar_color_g, 50)
+draw_rect_outline(sw / 2 - 50, sh - 18, 100, 6, 30, 40, 70)
+draw_text("SPEED", sw / 2 - 22, sh - 32, 10, 40, 60, 100)
+
+// Pulsing "NEON PONG" title (subtle, fades in and out)
+let title_alpha = abs(fc % 120 - 60)
+let ta = int(float(title_alpha) * 0.5) + 20
+draw_text("NEON PONG", sw / 2 - 50, sh - 50, 12, ta, ta + 20, ta + 50)

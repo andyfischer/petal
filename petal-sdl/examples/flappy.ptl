@@ -1,10 +1,12 @@
-// Flappy Bird clone
+// Flappy Bird clone — visually enhanced
 
 // Game constants
 let GRAVITY = 800.0
 let FLAP_STRENGTH = -300.0
 let PIPE_SPEED = 180.0
 let PIPE_WIDTH = 60
+let PIPE_CAP_W = 70
+let PIPE_CAP_H = 20
 let PIPE_GAP = 160
 let BIRD_X = 120
 let BIRD_RADIUS = 15
@@ -21,6 +23,20 @@ state game_over = false
 state started = false
 state pipe_timer = 0.0
 state frame = 0
+state clouds = []
+state clouds_init = false
+
+// Initialize clouds once
+if !clouds_init {
+    clouds_init = true
+    clouds = [
+        { x: 100.0, y: 60, size: 40 },
+        { x: 300.0, y: 100, size: 30 },
+        { x: 520.0, y: 45, size: 50 },
+        { x: 700.0, y: 120, size: 35 },
+        { x: 180.0, y: 160, size: 25 }
+    ]
+}
 
 frame += 1
 let delta = dt()
@@ -30,7 +46,6 @@ let flap = key_pressed("space")
 
 if game_over {
     if flap {
-        // Reset game
         bird_y = 300.0
         bird_vy = 0.0
         pipes = []
@@ -48,11 +63,9 @@ if !game_over {
     }
 
     if started {
-        // Apply gravity
         bird_vy += GRAVITY * delta
         bird_y += bird_vy * delta
 
-        // Spawn pipes
         pipe_timer += delta
         if pipe_timer > 1.6 {
             pipe_timer = 0.0
@@ -60,15 +73,12 @@ if !game_over {
             push(pipes, { x: float(SW), gap_y: gap_y, scored: false })
         }
 
-        // Move pipes
         pipes = map(pipes, fn(p) {
             { x: p.x - PIPE_SPEED * delta, gap_y: p.gap_y, scored: p.scored }
         })
 
-        // Remove off-screen pipes
-        pipes = filter(pipes, fn(p) { p.x > float(-PIPE_WIDTH) })
+        pipes = filter(pipes, fn(p) { p.x > float(-PIPE_WIDTH - 10) })
 
-        // Check scoring
         for i in range(0, len(pipes)) {
             let p = pipes[i]
             if !p.scored && int(p.x) + PIPE_WIDTH < BIRD_X {
@@ -77,20 +87,16 @@ if !game_over {
             }
         }
 
-        // Check collisions
         let bird_top = bird_y - float(BIRD_RADIUS)
         let bird_bottom = bird_y + float(BIRD_RADIUS)
 
-        // Ground and ceiling
         if bird_bottom > float(SH - GROUND_H) || bird_top < 0.0 {
             game_over = true
         }
 
-        // Pipe collisions
         for p in pipes {
             let px = int(p.x)
             if BIRD_X + BIRD_RADIUS > px && BIRD_X - BIRD_RADIUS < px + PIPE_WIDTH {
-                // Bird overlaps pipe horizontally
                 if bird_top < float(p.gap_y) || bird_bottom > float(p.gap_y + PIPE_GAP) {
                     game_over = true
                 }
@@ -99,48 +105,188 @@ if !game_over {
     }
 }
 
-// Drawing
-// Sky
-clear(100, 180, 255)
+// Move clouds slowly (parallax)
+clouds = map(clouds, fn(c) {
+    let nx = c.x - 30.0 * delta
+    if nx < -80.0 {
+        nx = float(SW + 40)
+    }
+    { x: nx, y: c.y, size: c.size }
+})
 
-// Pipes
-for p in pipes {
-    let px = int(p.x)
-    // Top pipe
-    draw_rect(px, 0, PIPE_WIDTH, p.gap_y, 80, 180, 50)
-    draw_rect_outline(px, 0, PIPE_WIDTH, p.gap_y, 40, 120, 30)
-    // Bottom pipe
-    let bottom_y = p.gap_y + PIPE_GAP
-    let bottom_h = SH - GROUND_H - bottom_y
-    draw_rect(px, bottom_y, PIPE_WIDTH, bottom_h, 80, 180, 50)
-    draw_rect_outline(px, bottom_y, PIPE_WIDTH, bottom_h, 40, 120, 30)
+// ====== DRAWING ======
+
+// Sky gradient (sunset-ish gradient from top to bottom)
+// Top: deep blue-sky, middle: lighter blue, bottom near ground: warm orange tint
+clear(70, 140, 220)
+// Draw gradient bands for sky
+for i in range(0, 12) {
+    let band_y = i * 45
+    let band_h = 46
+    // Transition from deep blue at top to warm peachy near ground
+    let r = 70 + i * 12
+    let g = 140 + i * 5
+    let b = 220 - i * 8
+    draw_rect(0, band_y, SW, band_h, r, g, b)
 }
 
-// Ground
-draw_rect(0, SH - GROUND_H, SW, GROUND_H, 180, 140, 80)
-draw_line(0, SH - GROUND_H, SW, SH - GROUND_H, 100, 80, 40)
+// Distant hills (background layer)
+// Hill 1
+let hill_offset = frame % 2400
+for hx in range(0, 20) {
+    let hx_pos = hx * 50 - 30
+    let hill_h = 40 + int(abs(float(10 - hx)) * 3.0)
+    let hy = SH - GROUND_H - hill_h + 30
+    draw_rect(hx_pos, hy, 52, hill_h + 10, 120, 180, 100)
+}
 
-// Bird
+// Clouds
+for c in clouds {
+    let cx = int(c.x)
+    let cy = c.y
+    let sz = c.size
+    // Cloud body (overlapping circles for puffy look)
+    draw_circle(cx, cy, sz, 255, 255, 255)
+    draw_circle(cx - sz + 8, cy + 5, sz - 10, 255, 255, 255)
+    draw_circle(cx + sz - 8, cy + 5, sz - 10, 255, 255, 255)
+    draw_circle(cx - 5, cy - 8, sz - 8, 255, 255, 255)
+    draw_circle(cx + 8, cy - 5, sz - 5, 255, 255, 255)
+    // Slight shadow underneath
+    draw_circle(cx, cy + 8, sz - 5, 230, 240, 250)
+}
+
+// Pipes with caps and gradient shading
+for p in pipes {
+    let px = int(p.x)
+    let cap_x = px - (PIPE_CAP_W - PIPE_WIDTH) / 2
+
+    // --- Top pipe ---
+    let top_h = p.gap_y
+    // Main body - darker green
+    draw_rect(px, 0, PIPE_WIDTH, top_h, 70, 170, 45)
+    // Light highlight strip on left
+    draw_rect(px + 4, 0, 10, top_h, 100, 210, 75)
+    // Dark shadow strip on right
+    draw_rect(px + PIPE_WIDTH - 10, 0, 10, top_h, 45, 120, 30)
+    // Cap at bottom of top pipe
+    draw_rect(cap_x, top_h - PIPE_CAP_H, PIPE_CAP_W, PIPE_CAP_H, 80, 190, 55)
+    draw_rect(cap_x + 3, top_h - PIPE_CAP_H + 3, PIPE_CAP_W - 6, 6, 110, 220, 90)
+    draw_rect_outline(cap_x, top_h - PIPE_CAP_H, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
+    // Outline for body
+    draw_rect_outline(px, 0, PIPE_WIDTH, top_h - PIPE_CAP_H, 40, 110, 25)
+
+    // --- Bottom pipe ---
+    let bottom_y = p.gap_y + PIPE_GAP
+    let bottom_h = SH - GROUND_H - bottom_y
+    // Main body
+    draw_rect(px, bottom_y, PIPE_WIDTH, bottom_h, 70, 170, 45)
+    // Light highlight
+    draw_rect(px + 4, bottom_y, 10, bottom_h, 100, 210, 75)
+    // Dark shadow
+    draw_rect(px + PIPE_WIDTH - 10, bottom_y, 10, bottom_h, 45, 120, 30)
+    // Cap at top of bottom pipe
+    draw_rect(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 80, 190, 55)
+    draw_rect(cap_x + 3, bottom_y + 3, PIPE_CAP_W - 6, 6, 110, 220, 90)
+    draw_rect_outline(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
+    // Outline for body
+    draw_rect_outline(px, bottom_y + PIPE_CAP_H, PIPE_WIDTH, bottom_h - PIPE_CAP_H, 40, 110, 25)
+}
+
+// Ground with grass and dirt layers
+// Dirt base
+draw_rect(0, SH - GROUND_H, SW, GROUND_H, 160, 120, 60)
+// Darker dirt bottom
+draw_rect(0, SH - 25, SW, 25, 130, 95, 45)
+// Grass top layer
+draw_rect(0, SH - GROUND_H, SW, 14, 80, 190, 50)
+// Grass highlight
+draw_rect(0, SH - GROUND_H, SW, 5, 110, 220, 70)
+// Grass tufts
+for gx in range(0, 40) {
+    let gx_pos = gx * 20 + 5
+    let tuft_h = 6 + (gx % 3) * 3
+    draw_rect(gx_pos, SH - GROUND_H - tuft_h, 4, tuft_h + 2, 70, 180, 45)
+}
+// Ground line
+draw_line(0, SH - GROUND_H, SW, SH - GROUND_H, 60, 140, 35)
+// Dirt texture dots
+for dx in range(0, 16) {
+    let dx_pos = dx * 50 + 20
+    draw_circle(dx_pos, SH - 35, 3, 140, 105, 50)
+    draw_circle(dx_pos + 25, SH - 20, 2, 140, 105, 50)
+}
+
+// Bird with wing animation and more detail
 let bird_yi = int(bird_y)
-draw_circle(BIRD_X, bird_yi, BIRD_RADIUS, 255, 220, 50)
-// Eye
-draw_circle(BIRD_X + 6, bird_yi - 4, 4, 255, 255, 255)
-draw_circle(BIRD_X + 8, bird_yi - 4, 2, 0, 0, 0)
 
-// Score
-draw_text(str(score), SW / 2 - 10, 40, 48, 255, 255, 255)
+// Bird body (orange outline for depth)
+draw_circle(BIRD_X, bird_yi, BIRD_RADIUS + 2, 230, 150, 20)
+// Main body
+draw_circle(BIRD_X, bird_yi, BIRD_RADIUS, 255, 220, 50)
+// Belly highlight
+draw_circle(BIRD_X - 2, bird_yi + 4, 9, 255, 240, 130)
+
+// Wing (animated flap)
+let wing_offset = 0
+if started && !game_over {
+    // Wing flaps based on frame
+    if frame % 12 < 4 {
+        wing_offset = -8
+    } else if frame % 12 < 8 {
+        wing_offset = 0
+    } else {
+        wing_offset = 6
+    }
+}
+// Wing shape (small ellipse approximation)
+draw_circle(BIRD_X - 8, bird_yi + wing_offset, 8, 230, 190, 30)
+draw_circle(BIRD_X - 12, bird_yi + wing_offset - 1, 5, 240, 200, 50)
+
+// Eye white
+draw_circle(BIRD_X + 6, bird_yi - 5, 6, 255, 255, 255)
+// Eye pupil
+draw_circle(BIRD_X + 8, bird_yi - 5, 3, 0, 0, 0)
+// Eye glint
+draw_circle(BIRD_X + 9, bird_yi - 7, 1, 255, 255, 255)
+
+// Beak
+draw_rect(BIRD_X + 12, bird_yi - 3, 10, 4, 255, 120, 30)
+draw_rect(BIRD_X + 12, bird_yi + 1, 10, 3, 230, 90, 20)
+
+// Score display with shadow/outline effect
+let score_str = str(score)
+let score_x = SW / 2 - 10
+// Shadow
+draw_text(score_str, score_x + 2, 42, 52, 0, 0, 0)
+// Main score
+draw_text(score_str, score_x, 40, 52, 255, 255, 255)
 
 // Game over overlay
 if game_over {
-    draw_text("GAME OVER", SW / 2 - 100, SH / 2 - 40, 40, 255, 0, 0)
+    // Dim overlay
+    draw_rect(0, SH / 2 - 70, SW, 140, 0, 0, 0)
+    // Semi-transparent effect (lighter inner box)
+    draw_rect(4, SH / 2 - 66, SW - 8, 132, 30, 30, 30)
+
+    // Game over text with shadow
+    draw_text("GAME OVER", SW / 2 - 102, SH / 2 - 42, 40, 80, 0, 0)
+    draw_text("GAME OVER", SW / 2 - 100, SH / 2 - 40, 40, 255, 60, 60)
+
+    // Score
+    draw_text("Score: " ++ score_str, SW / 2 - 60, SH / 2, 28, 255, 255, 255)
+
     if frame % 60 < 40 {
-        draw_text("Press SPACE to restart", SW / 2 - 140, SH / 2 + 20, 24, 255, 255, 255)
+        draw_text("Press SPACE to restart", SW / 2 - 140, SH / 2 + 40, 24, 200, 200, 200)
     }
 }
 
 // Start screen
 if !started && !game_over {
+    // Title (shadow first, then main text on top)
+    draw_text("FLAPPY BIRD", SW / 2 - 118, SH / 4 - 8, 40, 50, 50, 50)
+    draw_text("FLAPPY BIRD", SW / 2 - 120, SH / 4 - 10, 40, 255, 255, 255)
+
     if frame % 60 < 40 {
-        draw_text("Press SPACE to start", SW / 2 - 130, SH / 2, 24, 255, 255, 255)
+        draw_text("Press SPACE to start", SW / 2 - 130, SH / 2 + 20, 24, 255, 255, 255)
     }
 }

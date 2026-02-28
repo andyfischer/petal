@@ -5,8 +5,8 @@
 let grid_w = 10
 let grid_h = 20
 let cell_size = 28
-let board_x = 200
-let board_y = 20
+let board_x = 240
+let board_y = 18
 
 // --- Piece definitions ---
 // Each piece has 4 rotations, each rotation is a list of 8 ints (4 x,y pairs)
@@ -65,14 +65,59 @@ let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
 // Colors for each piece type (index 1-7 in grid, 0 = empty)
 // I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
 fn piece_color(t) {
-    if t == 1 { {r: 0, g: 255, b: 255} }
-    else if t == 2 { {r: 255, g: 255, b: 0} }
-    else if t == 3 { {r: 180, g: 0, b: 255} }
-    else if t == 4 { {r: 0, g: 255, b: 0} }
-    else if t == 5 { {r: 255, g: 0, b: 0} }
-    else if t == 6 { {r: 0, g: 100, b: 255} }
-    else if t == 7 { {r: 255, g: 165, b: 0} }
+    if t == 1 { {r: 0, g: 240, b: 240} }
+    else if t == 2 { {r: 240, g: 240, b: 0} }
+    else if t == 3 { {r: 180, g: 50, b: 255} }
+    else if t == 4 { {r: 50, g: 240, b: 50} }
+    else if t == 5 { {r: 240, g: 50, b: 50} }
+    else if t == 6 { {r: 50, g: 100, b: 240} }
+    else if t == 7 { {r: 240, g: 160, b: 30} }
     else { {r: 40, g: 40, b: 40} }
+}
+
+// Lighter highlight color for 3D top/left edge
+fn piece_highlight(t) {
+    if t == 1 { {r: 150, g: 255, b: 255} }
+    else if t == 2 { {r: 255, g: 255, b: 150} }
+    else if t == 3 { {r: 220, g: 150, b: 255} }
+    else if t == 4 { {r: 150, g: 255, b: 150} }
+    else if t == 5 { {r: 255, g: 150, b: 150} }
+    else if t == 6 { {r: 150, g: 170, b: 255} }
+    else if t == 7 { {r: 255, g: 210, b: 140} }
+    else { {r: 60, g: 60, b: 60} }
+}
+
+// Darker shadow color for 3D bottom/right edge
+fn piece_shadow(t) {
+    if t == 1 { {r: 0, g: 140, b: 140} }
+    else if t == 2 { {r: 150, g: 150, b: 0} }
+    else if t == 3 { {r: 100, g: 20, b: 150} }
+    else if t == 4 { {r: 20, g: 140, b: 20} }
+    else if t == 5 { {r: 150, g: 20, b: 20} }
+    else if t == 6 { {r: 20, g: 50, b: 150} }
+    else if t == 7 { {r: 150, g: 90, b: 10} }
+    else { {r: 20, g: 20, b: 20} }
+}
+
+// Draw a single cell with 3D beveled look
+fn draw_cell(px, py, sz, color_type) {
+    let c = piece_color(color_type)
+    let hi = piece_highlight(color_type)
+    let sh = piece_shadow(color_type)
+    let bevel = 3
+    // Main fill
+    draw_rect(px, py, sz - 1, sz - 1, c.r, c.g, c.b)
+    // Top highlight edge
+    draw_rect(px, py, sz - 1, bevel, hi.r, hi.g, hi.b)
+    // Left highlight edge
+    draw_rect(px, py, bevel, sz - 1, hi.r, hi.g, hi.b)
+    // Bottom shadow edge
+    draw_rect(px, py + sz - 1 - bevel, sz - 1, bevel, sh.r, sh.g, sh.b)
+    // Right shadow edge
+    draw_rect(px + sz - 1 - bevel, py, bevel, sz - 1, sh.r, sh.g, sh.b)
+    // Inner face (slightly brighter center)
+    let inset = bevel
+    draw_rect(px + inset, py + inset, sz - 1 - inset * 2, sz - 1 - inset * 2, c.r, c.g, c.b)
 }
 
 // --- State ---
@@ -87,8 +132,10 @@ state game_over = false
 state fall_timer = 0.0
 state initialized = false
 state next_type = 0
+state flash_timer = 0.0
+state level = 1
 
-let fall_interval = 0.5
+let fall_interval = max(0.1, 0.5 - float(level - 1) * 0.04)
 
 // --- Helper functions ---
 fn get_cell(grd, gx, gy) {
@@ -122,6 +169,15 @@ fn check_collision(grd, piece_type, rot, px, py) {
         i += 1
     }
     collides
+}
+
+// Compute ghost piece Y (hard drop preview)
+fn ghost_y(grd, piece_type, rot, px, py) {
+    let gy = py
+    while !check_collision(grd, piece_type, rot, px, gy + 1) {
+        gy += 1
+    }
+    gy
 }
 
 fn spawn_piece() {
@@ -187,7 +243,11 @@ fn clear_lines() {
     else if cleared == 2 { score += 300 }
     else if cleared == 3 { score += 500 }
     else if cleared == 4 { score += 800 }
+    if cleared > 0 {
+        flash_timer = 0.3
+    }
     lines_cleared += cleared
+    level = 1 + lines_cleared / 10
 }
 
 // --- Initialization ---
@@ -221,6 +281,16 @@ if !game_over {
         }
     }
 
+    // Hard drop
+    if key_pressed("space") {
+        let gy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
+        cur_y = gy
+        lock_piece()
+        clear_lines()
+        spawn_piece()
+        fall_timer = 0.0
+    }
+
     // Soft drop
     let effective_interval = fall_interval
     if key_down("down") {
@@ -241,11 +311,18 @@ if !game_over {
     }
 }
 
+// Flash timer countdown
+if flash_timer > 0.0 {
+    flash_timer -= dt()
+    if flash_timer < 0.0 { flash_timer = 0.0 }
+}
+
 // Restart
-if game_over && key_pressed("space") {
+if game_over && key_pressed("return") {
     game_over = false
     score = 0
     lines_cleared = 0
+    level = 1
     let i = 0
     while i < 200 {
         grid[i] = 0
@@ -256,80 +333,171 @@ if game_over && key_pressed("space") {
 }
 
 // --- Drawing ---
-clear(20, 20, 30)
+clear(15, 15, 25)
+
+// Background decorative side stripes
+let stripe = 0
+while stripe < 20 {
+    let sy = stripe * 30
+    let alpha_factor = stripe % 2
+    if alpha_factor == 0 {
+        draw_rect(0, sy, board_x - 20, 30, 18, 18, 28)
+    }
+    stripe += 1
+}
+
+// Board outer glow/border (layered rectangles for glow effect)
+draw_rect(board_x - 6, board_y - 6, grid_w * cell_size + 12, grid_h * cell_size + 12, 40, 60, 100)
+draw_rect(board_x - 4, board_y - 4, grid_w * cell_size + 8, grid_h * cell_size + 8, 25, 35, 60)
+draw_rect(board_x - 2, board_y - 2, grid_w * cell_size + 4, grid_h * cell_size + 4, 15, 20, 40)
 
 // Draw board background
-draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 10, 10, 15)
+draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 8, 8, 16)
 
-// Draw grid cells
+// Draw subtle grid lines
+let lx = 0
+while lx <= grid_w {
+    draw_line(board_x + lx * cell_size, board_y, board_x + lx * cell_size, board_y + grid_h * cell_size, 22, 22, 35)
+    lx += 1
+}
+let ly = 0
+while ly <= grid_h {
+    draw_line(board_x, board_y + ly * cell_size, board_x + grid_w * cell_size, board_y + ly * cell_size, 22, 22, 35)
+    ly += 1
+}
+
+// Flash effect overlay when lines cleared
+if flash_timer > 0.0 {
+    let flash_intensity = int(flash_timer * 400.0)
+    if flash_intensity > 120 { flash_intensity = 120 }
+    draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, flash_intensity, flash_intensity, flash_intensity)
+    // Redraw grid on top after flash
+    draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 8, 8, 16)
+}
+
+// Draw grid cells (locked pieces) with 3D effect
 let gy = 0
 while gy < grid_h {
     let gx = 0
     while gx < grid_w {
         let val = get_cell(grid, gx, gy)
         if val != 0 {
-            let c = piece_color(val)
-            draw_rect(board_x + gx * cell_size, board_y + gy * cell_size, cell_size - 1, cell_size - 1, c.r, c.g, c.b)
+            draw_cell(board_x + gx * cell_size, board_y + gy * cell_size, cell_size, val)
         }
         gx += 1
     }
     gy += 1
 }
 
-// Draw current piece
+// Draw ghost piece (drop preview)
+if !game_over {
+    let gpy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
+    if gpy != cur_y {
+        let blocks = get_blocks(cur_type, cur_rot)
+        let c = piece_color(cur_type + 1)
+        let i = 0
+        while i < 4 {
+            let bx = cur_x + blocks[i * 2]
+            let by = gpy + blocks[i * 2 + 1]
+            if by >= 0 {
+                draw_rect_outline(board_x + bx * cell_size + 1, board_y + by * cell_size + 1, cell_size - 3, cell_size - 3, c.r / 2, c.g / 2, c.b / 2)
+            }
+            i += 1
+        }
+    }
+}
+
+// Draw current piece with 3D effect
 if !game_over {
     let blocks = get_blocks(cur_type, cur_rot)
-    let c = piece_color(cur_type + 1)
     let i = 0
     while i < 4 {
         let bx = cur_x + blocks[i * 2]
         let by = cur_y + blocks[i * 2 + 1]
         if by >= 0 {
-            draw_rect(board_x + bx * cell_size, board_y + by * cell_size, cell_size - 1, cell_size - 1, c.r, c.g, c.b)
+            draw_cell(board_x + bx * cell_size, board_y + by * cell_size, cell_size, cur_type + 1)
         }
         i += 1
     }
 }
 
-// Draw board outline
-draw_rect_outline(board_x - 1, board_y - 1, grid_w * cell_size + 2, grid_h * cell_size + 2, 100, 100, 120)
+// Board outline (crisp border)
+draw_rect_outline(board_x - 1, board_y - 1, grid_w * cell_size + 2, grid_h * cell_size + 2, 80, 100, 150)
 
-// Draw grid lines
-let lx = 0
-while lx <= grid_w {
-    draw_line(board_x + lx * cell_size, board_y, board_x + lx * cell_size, board_y + grid_h * cell_size, 30, 30, 40)
-    lx += 1
-}
-let ly = 0
-while ly <= grid_h {
-    draw_line(board_x, board_y + ly * cell_size, board_x + grid_w * cell_size, board_y + ly * cell_size, 30, 30, 40)
-    ly += 1
-}
+// ---- Right sidebar ----
+let sidebar_x = board_x + grid_w * cell_size + 24
 
-// Draw next piece preview
-draw_text("NEXT", board_x + grid_w * cell_size + 30, board_y + 10, 20, 200, 200, 200)
+// NEXT piece panel
+draw_rect(sidebar_x, board_y, 130, 110, 20, 22, 38)
+draw_rect_outline(sidebar_x, board_y, 130, 110, 60, 70, 110)
+draw_text("NEXT", sidebar_x + 38, board_y + 8, 20, 120, 140, 200)
+// Draw next piece centered in panel
 let next_blocks = get_blocks(next_type, 0)
-let nc = piece_color(next_type + 1)
 let ni = 0
 while ni < 4 {
     let nx = next_blocks[ni * 2]
     let ny = next_blocks[ni * 2 + 1]
-    draw_rect(board_x + grid_w * cell_size + 40 + nx * 20, board_y + 40 + ny * 20, 19, 19, nc.r, nc.g, nc.b)
+    draw_cell(sidebar_x + 20 + nx * 22, board_y + 38 + ny * 22, 22, next_type + 1)
     ni += 1
 }
 
-// Draw score and lines
-draw_text("SCORE", board_x + grid_w * cell_size + 30, board_y + 140, 20, 200, 200, 200)
-draw_text(str(score), board_x + grid_w * cell_size + 30, board_y + 165, 24, 255, 255, 255)
-draw_text("LINES", board_x + grid_w * cell_size + 30, board_y + 210, 20, 200, 200, 200)
-draw_text(str(lines_cleared), board_x + grid_w * cell_size + 30, board_y + 235, 24, 255, 255, 255)
+// SCORE panel
+draw_rect(sidebar_x, board_y + 124, 130, 80, 20, 22, 38)
+draw_rect_outline(sidebar_x, board_y + 124, 130, 80, 60, 70, 110)
+draw_text("SCORE", sidebar_x + 32, board_y + 132, 18, 120, 140, 200)
+draw_text(str(score), sidebar_x + 14, board_y + 160, 28, 255, 255, 255)
 
-// Draw title
-draw_text("TETRIS", board_x + 30, board_y + grid_h * cell_size + 15, 30, 100, 200, 255)
+// LEVEL panel
+draw_rect(sidebar_x, board_y + 218, 130, 80, 20, 22, 38)
+draw_rect_outline(sidebar_x, board_y + 218, 130, 80, 60, 70, 110)
+draw_text("LEVEL", sidebar_x + 34, board_y + 226, 18, 120, 140, 200)
+draw_text(str(level), sidebar_x + 14, board_y + 254, 28, 100, 255, 180)
 
-// Game over
+// LINES panel
+draw_rect(sidebar_x, board_y + 312, 130, 80, 20, 22, 38)
+draw_rect_outline(sidebar_x, board_y + 312, 130, 80, 60, 70, 110)
+draw_text("LINES", sidebar_x + 36, board_y + 320, 18, 120, 140, 200)
+draw_text(str(lines_cleared), sidebar_x + 14, board_y + 348, 28, 255, 220, 100)
+
+// ---- Left sidebar ----
+let left_x = board_x - 160
+
+// Controls info
+draw_rect(left_x, board_y, 140, 200, 20, 22, 38)
+draw_rect_outline(left_x, board_y, 140, 200, 50, 55, 85)
+draw_text("CONTROLS", left_x + 16, board_y + 10, 16, 120, 140, 200)
+draw_text("< > Move", left_x + 14, board_y + 42, 14, 160, 160, 180)
+draw_text("Up  Rotate", left_x + 14, board_y + 66, 14, 160, 160, 180)
+draw_text("Dn  Soft drop", left_x + 14, board_y + 90, 14, 160, 160, 180)
+draw_text("Spc Hard drop", left_x + 14, board_y + 114, 14, 160, 160, 180)
+
+// Title
+draw_text("T", left_x + 14, board_y + 240, 36, 0, 240, 240)
+draw_text("E", left_x + 38, board_y + 240, 36, 240, 240, 0)
+draw_text("T", left_x + 62, board_y + 240, 36, 180, 50, 255)
+draw_text("R", left_x + 86, board_y + 240, 36, 50, 240, 50)
+draw_text("I", left_x + 112, board_y + 240, 36, 240, 50, 50)
+draw_text("S", left_x + 126, board_y + 240, 36, 240, 160, 30)
+
+// Decorative blocks on left side
+let deco = 0
+while deco < 6 {
+    let deco_type = (deco % 7) + 1
+    draw_cell(left_x + 10 + deco * 22, board_y + 290, 20, deco_type)
+    deco += 1
+}
+
+// Game over overlay
 if game_over {
-    draw_rect(board_x + 20, board_y + grid_h * cell_size / 2 - 30, grid_w * cell_size - 40, 60, 0, 0, 0)
-    draw_text("GAME OVER", board_x + 40, board_y + grid_h * cell_size / 2 - 20, 28, 255, 50, 50)
-    draw_text("SPACE to restart", board_x + 35, board_y + grid_h * cell_size / 2 + 10, 18, 200, 200, 200)
+    // Darken the board
+    draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 0, 0, 0)
+    // Redraw locked pieces dimmed (just draw dark overlay)
+    draw_rect(board_x + 10, board_y + grid_h * cell_size / 2 - 50, grid_w * cell_size - 20, 100, 20, 10, 30)
+    draw_rect_outline(board_x + 10, board_y + grid_h * cell_size / 2 - 50, grid_w * cell_size - 20, 100, 200, 50, 80)
+    draw_text("GAME OVER", board_x + 42, board_y + grid_h * cell_size / 2 - 35, 30, 255, 60, 80)
+    draw_text("Score: " ++ str(score), board_x + 65, board_y + grid_h * cell_size / 2, 22, 255, 255, 255)
+    // Blinking restart text
+    if frame_count() % 60 < 40 {
+        draw_text("ENTER to restart", board_x + 42, board_y + grid_h * cell_size / 2 + 30, 16, 200, 200, 220)
+    }
 }

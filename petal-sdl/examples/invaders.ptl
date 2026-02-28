@@ -20,11 +20,22 @@ state enemy_bullets = []
 state shoot_cooldown = 0.0
 state enemy_shoot_timer = 0.0
 
+// Explosions
+state explosions = []
+
+// Shields
+state shields = []
+state shields_inited = false
+
+// Stars
+state stars = []
+state stars_inited = false
+
 // Frame counter for animations
 state frame = 0
 
 // Player constants
-let player_y = 560.0
+let player_y = 550.0
 let player_w = 40.0
 let player_h = 16.0
 let player_speed = 300.0
@@ -35,16 +46,54 @@ let alien_h = 20.0
 let alien_gap_x = 50.0
 let alien_gap_y = 36.0
 let alien_start_x = 80.0
-let alien_start_y = 60.0
+let alien_start_y = 70.0
 
 // Bullet constants
 let bullet_w = 4.0
-let bullet_h = 10.0
+let bullet_h = 12.0
 let bullet_speed = 400.0
 let enemy_bullet_speed = 200.0
 
 let delta = dt()
 frame += 1
+
+// --- Init stars ---
+if !stars_inited {
+    stars_inited = true
+    for i in range(0, 80) {
+        push(stars, {
+            x: random(0.0, 800.0),
+            y: random(0.0, 600.0),
+            brightness: random(80.0, 255.0),
+            speed: random(5.0, 30.0),
+            size: int(random(1.0, 3.0))
+        })
+    }
+}
+
+// --- Init shields ---
+if !shields_inited {
+    shields_inited = true
+    for s in range(0, 4) {
+        let sx = 130.0 + float(s) * 160.0
+        let sy = 470.0
+        for row in range(0, 4) {
+            for col in range(0, 6) {
+                // Skip corners for arch shape
+                let skip = false
+                if row == 0 && (col == 0 || col == 5) { skip = true }
+                if row == 3 && (col == 2 || col == 3) { skip = true }
+                if !skip {
+                    push(shields, {
+                        x: sx + float(col) * 8.0,
+                        y: sy + float(row) * 8.0,
+                        health: 3
+                    })
+                }
+            }
+        }
+    }
+}
 
 // --- Init aliens ---
 if !aliens_inited {
@@ -62,6 +111,19 @@ if !aliens_inited {
 fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2) {
     x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
 }
+
+// --- Update stars ---
+stars = map(stars, fn(s) {
+    let ny = s.y + s.speed * delta
+    if ny > 600.0 { ny = 0.0 }
+    { x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size }
+})
+
+// --- Update explosions ---
+explosions = map(explosions, fn(e) {
+    { x: e.x, y: e.y, timer: e.timer - delta, r: e.r, g: e.g, b: e.b }
+})
+explosions = filter(explosions, fn(e) { e.timer > 0.0 })
 
 if !game_over {
     // --- Player input ---
@@ -129,6 +191,14 @@ if !game_over {
             if a.alive && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) {
                 hit = true
                 score += 10
+                // Spawn explosion
+                let er = 255
+                let eg = 200
+                let eb = 50
+                if a.row == 0 { er = 255  eg = 80  eb = 80 }
+                if a.row == 1 || a.row == 2 { er = 255  eg = 200  eb = 50 }
+                if a.row == 3 || a.row == 4 { er = 80  eg = 255  eb = 80 }
+                push(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
                 { x: a.x, y: a.y, alive: false, row: a.row }
             } else {
                 a
@@ -140,11 +210,46 @@ if !game_over {
     }
     bullets = new_bullets
 
+    // --- Bullet-shield collision (player bullets) ---
+    let new_bullets2 = []
+    for b in bullets {
+        let hit = false
+        shields = map(shields, fn(s) {
+            if s.health > 0 && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, s.x, s.y, 8.0, 8.0) {
+                hit = true
+                { x: s.x, y: s.y, health: s.health - 1 }
+            } else {
+                s
+            }
+        })
+        if !hit {
+            push(new_bullets2, b)
+        }
+    }
+    bullets = new_bullets2
+
+    // --- Enemy bullet-shield collision ---
+    let new_enemy_bullets = []
+    for b in enemy_bullets {
+        let hit = false
+        shields = map(shields, fn(s) {
+            if s.health > 0 && !hit && rects_collide(b.x, b.y, 4.0, 12.0, s.x, s.y, 8.0, 8.0) {
+                hit = true
+                { x: s.x, y: s.y, health: s.health - 1 }
+            } else {
+                s
+            }
+        })
+        if !hit {
+            push(new_enemy_bullets, b)
+        }
+    }
+    enemy_bullets = new_enemy_bullets
+
     // --- Enemy shooting ---
     enemy_shoot_timer -= delta
     if enemy_shoot_timer <= 0.0 {
         enemy_shoot_timer = 0.8
-        // Find alive aliens to shoot from
         let shooters = filter(aliens, fn(a) { a.alive })
         if len(shooters) > 0 {
             let idx = int(random(0.0, float(len(shooters))))
@@ -185,56 +290,191 @@ if !game_over {
     }
 }
 
+// =====================
 // --- Drawing ---
-clear(0, 0, 0)
+// =====================
+clear(5, 5, 20)
 
-// Draw player ship (triangle-ish shape using rects)
-draw_rect(int(player_x), int(player_y), int(player_w), int(player_h), 50, 255, 50)
-draw_rect(int(player_x + player_w / 2.0 - 4.0), int(player_y - 8.0), 8, 8, 50, 255, 50)
+// --- Starfield ---
+for s in stars {
+    let bright = int(s.brightness)
+    // Slight blue tint for smaller stars
+    if s.size == 1 {
+        draw_rect(int(s.x), int(s.y), 1, 1, bright - 30, bright - 20, bright)
+    } else {
+        draw_rect(int(s.x), int(s.y), s.size, s.size, bright, bright, bright - 10)
+    }
+}
 
-// Draw aliens
+// --- Ground line ---
+draw_line(0, 585, 800, 585, 0, 100, 0)
+draw_line(0, 586, 800, 586, 0, 60, 0)
+// Small hash marks on the ground
+for i in range(0, 40) {
+    let gx = i * 20
+    draw_line(gx, 587, gx + 6, 587, 0, 50, 0)
+}
+
+// --- Draw shields ---
+for s in shields {
+    if s.health > 0 {
+        let sr = 0
+        let sg = 0
+        let sb = 0
+        if s.health == 3 { sr = 40  sg = 200  sb = 40 }
+        if s.health == 2 { sr = 180  sg = 180  sb = 30 }
+        if s.health == 1 { sr = 150  sg = 80  sb = 30 }
+        draw_rect(int(s.x), int(s.y), 8, 8, sr, sg, sb)
+    }
+}
+
+// --- Draw player ship ---
+// Main body
+let px = int(player_x)
+let py = int(player_y)
+draw_rect(px + 2, py + 4, 36, 12, 30, 180, 30)
+// Cockpit / nose
+draw_rect(px + 16, py - 4, 8, 8, 60, 255, 60)
+draw_rect(px + 18, py - 8, 4, 4, 120, 255, 120)
+// Wings
+draw_rect(px, py + 8, 6, 8, 20, 150, 20)
+draw_rect(px + 34, py + 8, 6, 8, 20, 150, 20)
+// Engine glow (flicker)
+if frame % 4 < 2 {
+    draw_rect(px + 14, py + 16, 4, 4, 255, 200, 50)
+    draw_rect(px + 22, py + 16, 4, 4, 255, 200, 50)
+} else {
+    draw_rect(px + 14, py + 16, 4, 3, 255, 150, 30)
+    draw_rect(px + 22, py + 16, 4, 3, 255, 150, 30)
+}
+// Highlight on cockpit
+draw_rect(px + 18, py - 2, 2, 2, 200, 255, 200)
+
+// --- Draw aliens ---
+let anim_frame = (frame / 30) % 2
 for a in aliens {
     if a.alive {
         let r = 255
         let g = 100
         let b = 100
         if a.row == 0 {
-            r = 255
-            g = 50
-            b = 50
+            r = 255  g = 60  b = 60
         } else if a.row == 1 || a.row == 2 {
-            r = 255
-            g = 180
-            b = 50
+            r = 255  g = 180  b = 50
         } else {
-            r = 100
-            g = 255
-            b = 100
+            r = 80  g = 255  b = 80
         }
-        draw_rect(int(a.x), int(a.y), int(alien_w), int(alien_h), r, g, b)
-        // Eyes
-        draw_rect(int(a.x + 6.0), int(a.y + 6.0), 4, 4, 0, 0, 0)
-        draw_rect(int(a.x + 20.0), int(a.y + 6.0), 4, 4, 0, 0, 0)
+
+        let ax = int(a.x)
+        let ay = int(a.y)
+
+        // Body
+        draw_rect(ax + 4, ay + 2, 22, 14, r, g, b)
+        // Head bumps
+        draw_rect(ax + 6, ay, 6, 4, r, g, b)
+        draw_rect(ax + 18, ay, 6, 4, r, g, b)
+        // Eyes (white with dark pupil)
+        draw_rect(ax + 8, ay + 5, 5, 5, 220, 220, 255)
+        draw_rect(ax + 17, ay + 5, 5, 5, 220, 220, 255)
+        draw_rect(ax + 10, ay + 6, 2, 3, 20, 20, 60)
+        draw_rect(ax + 19, ay + 6, 2, 3, 20, 20, 60)
+        // Mouth
+        draw_rect(ax + 10, ay + 12, 10, 2, r - 60, g - 40, b - 40)
+        // Legs/tentacles (animate)
+        if anim_frame == 0 {
+            draw_rect(ax + 2, ay + 16, 4, 4, r - 30, g - 20, b - 20)
+            draw_rect(ax + 24, ay + 16, 4, 4, r - 30, g - 20, b - 20)
+            draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+            draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+        } else {
+            draw_rect(ax, ay + 14, 4, 4, r - 30, g - 20, b - 20)
+            draw_rect(ax + 26, ay + 14, 4, 4, r - 30, g - 20, b - 20)
+            draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+            draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+        }
     }
 }
 
-// Draw player bullets
+// --- Draw explosions ---
+for e in explosions {
+    let t = e.timer
+    let ex = int(e.x)
+    let ey = int(e.y)
+    let sz = int((0.4 - t) * 50.0)
+    let alpha_mult = t / 0.4
+    let er = int(float(e.r) * alpha_mult)
+    let eg = int(float(e.g) * alpha_mult)
+    let eb = int(float(e.b) * alpha_mult)
+    // Center flash
+    draw_rect(ex + 8 - sz / 4, ey + 4 - sz / 4, 14 + sz / 2, 12 + sz / 2, er, eg, eb)
+    // Particles flying out
+    let spread = int((0.4 - t) * 40.0)
+    draw_rect(ex + 2 - spread, ey + 4 - spread, 4, 4, er, eg, 0)
+    draw_rect(ex + 24 + spread, ey + 4 - spread, 4, 4, er, eg, 0)
+    draw_rect(ex + 2 - spread, ey + 12 + spread, 4, 4, er, 0, eb)
+    draw_rect(ex + 24 + spread, ey + 12 + spread, 4, 4, er, 0, eb)
+    draw_rect(ex + 12, ey - spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
+    draw_rect(ex + 12, ey + 16 + spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
+}
+
+// --- Draw player bullets (glowing) ---
 for b in bullets {
-    draw_rect(int(b.x), int(b.y), int(bullet_w), int(bullet_h), 255, 255, 100)
+    let bx = int(b.x)
+    let by = int(b.y)
+    // Glow
+    draw_rect(bx - 1, by - 1, 6, 14, 100, 100, 40)
+    // Core
+    draw_rect(bx, by, 4, 12, 255, 255, 120)
+    // Bright tip
+    draw_rect(bx + 1, by, 2, 3, 255, 255, 255)
 }
 
-// Draw enemy bullets
+// --- Draw enemy bullets (zigzag style) ---
 for b in enemy_bullets {
-    draw_rect(int(b.x), int(b.y), int(bullet_w), int(bullet_h), 255, 80, 80)
+    let bx = int(b.x)
+    let by = int(b.y)
+    // Lightning bolt shape
+    draw_rect(bx + 1, by, 3, 4, 255, 100, 100)
+    draw_rect(bx, by + 4, 3, 4, 255, 60, 60)
+    draw_rect(bx + 2, by + 8, 3, 4, 255, 100, 100)
+    // Hot core
+    draw_rect(bx + 1, by + 4, 2, 4, 255, 200, 200)
 }
 
-// HUD
-draw_text("SCORE: " ++ str(score), 20, 10, 24, 255, 255, 255)
-draw_text("LIVES: " ++ str(lives), 680, 10, 24, 255, 255, 255)
+// --- HUD ---
+// Score panel
+draw_rect(10, 6, 180, 28, 20, 20, 50)
+draw_rect_outline(10, 6, 180, 28, 60, 60, 150)
+draw_text("SCORE: " ++ str(score), 20, 10, 24, 0, 255, 100)
 
-// Game over screen
+// Lives display
+draw_rect(610, 6, 180, 28, 20, 20, 50)
+draw_rect_outline(610, 6, 180, 28, 60, 60, 150)
+draw_text("LIVES: ", 620, 10, 24, 200, 200, 255)
+// Draw small ships for lives
+for i in range(0, lives) {
+    let lx = 730 + i * 20
+    draw_rect(lx + 3, lx - lx + 16, 8, 6, 30, 180, 30)
+    draw_rect(lx + 5, lx - lx + 12, 4, 4, 60, 255, 60)
+}
+
+// --- Game over screen ---
 if game_over {
-    draw_rect(200, 230, 400, 140, 40, 0, 0)
-    draw_text("GAME OVER", 290, 260, 40, 255, 50, 50)
-    draw_text("Score: " ++ str(score), 330, 310, 28, 255, 255, 255)
+    // Darkened overlay
+    draw_rect(0, 0, 800, 600, 0, 0, 0)
+    // Redraw stars dimly
+    for s in stars {
+        let dim = int(s.brightness * 0.3)
+        draw_rect(int(s.x), int(s.y), 1, 1, dim, dim, dim)
+    }
+    // Panel
+    draw_rect(200, 220, 400, 160, 30, 5, 5)
+    draw_rect_outline(200, 220, 400, 160, 200, 30, 30)
+    draw_rect_outline(202, 222, 396, 156, 100, 15, 15)
+    draw_text("GAME OVER", 275, 245, 44, 255, 50, 50)
+    draw_text("Score: " ++ str(score), 325, 305, 28, 220, 220, 255)
+    // Blinking restart text
+    if frame % 60 < 40 {
+        draw_text("Press R to restart", 290, 350, 20, 180, 180, 180)
+    }
 }

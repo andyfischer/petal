@@ -47,8 +47,8 @@ if game_over && key_pressed("space") {
     next_dir_x = 1
     next_dir_y = 0
     score = 0
-    food_x = int(random(1.0, float(cols) - 1.0))
-    food_y = int(random(1.0, float(rows) - 1.0))
+    food_x = int(random(2.0, float(cols) - 2.0))
+    food_y = int(random(2.0, float(rows) - 2.0))
 }
 
 // Update logic
@@ -67,8 +67,8 @@ if !game_over {
         let new_x = head.x + dir_x
         let new_y = head.y + dir_y
 
-        // Check wall collision
-        if new_x < 0 || new_x >= cols || new_y < 0 || new_y >= rows {
+        // Check wall collision (inside the border)
+        if new_x < 1 || new_x >= cols - 1 || new_y < 1 || new_y >= rows - 1 {
             game_over = true
         }
 
@@ -100,9 +100,9 @@ if !game_over {
 
             if ate_food {
                 score += 1
-                // Spawn new food not on snake
-                food_x = int(random(1.0, float(cols) - 1.0))
-                food_y = int(random(1.0, float(rows) - 1.0))
+                // Spawn new food not on snake, inside border
+                food_x = int(random(2.0, float(cols) - 2.0))
+                food_y = int(random(2.0, float(rows) - 2.0))
             }
         }
     }
@@ -110,35 +110,149 @@ if !game_over {
 
 frame += 1
 
+// ============================================================
 // Drawing
-clear(20, 20, 30)
+// ============================================================
 
-// Draw grid border
-draw_rect_outline(0, 0, cols * grid_size, rows * grid_size, 60, 60, 80)
+// Dark background
+clear(15, 12, 30)
 
-// Draw food
-draw_rect(food_x * grid_size, food_y * grid_size, grid_size, grid_size, 255, 50, 50)
-
-// Draw snake
-for i in range(0, len(snake)) {
-    let seg = snake[i]
-    if i == 0 {
-        // Head is brighter
-        draw_rect(seg.x * grid_size, seg.y * grid_size, grid_size, grid_size, 100, 255, 100)
-    } else {
-        draw_rect(seg.x * grid_size, seg.y * grid_size, grid_size, grid_size, 50, 200, 50)
+// Subtle grid pattern
+for gx in range(1, cols - 1) {
+    for gy in range(1, rows - 1) {
+        if (gx + gy) % 2 == 0 {
+            draw_rect(gx * grid_size, gy * grid_size, grid_size, grid_size, 18, 15, 35)
+        }
     }
 }
 
-// Draw score
-draw_text("Score: " ++ str(score), 10, 10, 24, 255, 255, 255)
+// Border walls - thick neon border
+let border_r = 40
+let border_g = 30
+let border_b = 80
+// Top wall
+for bx in range(0, cols) {
+    draw_rect(bx * grid_size, 0, grid_size, grid_size, border_r, border_g, border_b)
+}
+// Bottom wall
+for bx in range(0, cols) {
+    draw_rect(bx * grid_size, (rows - 1) * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+}
+// Left wall
+for by in range(0, rows) {
+    draw_rect(0, by * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+}
+// Right wall
+for by in range(0, rows) {
+    draw_rect((cols - 1) * grid_size, by * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+}
+// Inner border glow line
+draw_rect_outline(grid_size + 1, grid_size + 1, (cols - 2) * grid_size - 2, (rows - 2) * grid_size - 2, 80, 60, 160)
+// Outer border highlight
+draw_rect_outline(0, 0, cols * grid_size, rows * grid_size, 60, 50, 120)
 
-// Game over screen
+// ---- Draw food with pulsing glow effect ----
+let pulse = frame % 40
+let pulse_size = 0
+if pulse < 20 {
+    pulse_size = pulse / 4
+} else {
+    pulse_size = (40 - pulse) / 4
+}
+
+// Outer glow
+let fx = food_x * grid_size + grid_size / 2
+let fy = food_y * grid_size + grid_size / 2
+draw_circle(fx, fy, 12 + pulse_size, 80, 10, 10)
+draw_circle(fx, fy, 10 + pulse_size, 140, 20, 20)
+// Main food body
+draw_circle(fx, fy, 8, 255, 60, 80)
+// Highlight
+draw_circle(fx - 2, fy - 2, 3, 255, 160, 160)
+
+// ---- Draw snake body with gradient ----
+let snake_len = len(snake)
+for i in range(0, snake_len) {
+    let seg = snake[i]
+    let sx = seg.x * grid_size
+    let sy = seg.y * grid_size
+    let pad = 1
+
+    // Gradient: head is bright cyan-green, fades to deep teal at tail
+    let t = 0.0
+    if snake_len > 1 {
+        t = float(i) / float(snake_len - 1)
+    }
+    // Color interpolation: head (100, 255, 200) -> tail (40, 160, 110)
+    let sr = int(100.0 - 60.0 * t)
+    let sg = int(255.0 - 95.0 * t)
+    let sb = int(200.0 - 90.0 * t)
+
+    if i == 0 {
+        // Head: draw slightly larger with brighter color
+        draw_rect(sx + pad, sy + pad, grid_size - pad * 2, grid_size - pad * 2, 100, 255, 200)
+        // Inner highlight on head
+        draw_rect(sx + 4, sy + 4, grid_size - 8, grid_size - 8, 160, 255, 220)
+
+        // Eyes
+        let eye_size = 3
+        if dir_x == 1 {
+            // Facing right
+            draw_circle(sx + 14, sy + 6, eye_size, 255, 255, 255)
+            draw_circle(sx + 14, sy + 14, eye_size, 255, 255, 255)
+            draw_circle(sx + 15, sy + 6, 1, 20, 20, 40)
+            draw_circle(sx + 15, sy + 14, 1, 20, 20, 40)
+        }
+        if dir_x == -1 {
+            // Facing left
+            draw_circle(sx + 6, sy + 6, eye_size, 255, 255, 255)
+            draw_circle(sx + 6, sy + 14, eye_size, 255, 255, 255)
+            draw_circle(sx + 5, sy + 6, 1, 20, 20, 40)
+            draw_circle(sx + 5, sy + 14, 1, 20, 20, 40)
+        }
+        if dir_y == -1 {
+            // Facing up
+            draw_circle(sx + 6, sy + 6, eye_size, 255, 255, 255)
+            draw_circle(sx + 14, sy + 6, eye_size, 255, 255, 255)
+            draw_circle(sx + 6, sy + 5, 1, 20, 20, 40)
+            draw_circle(sx + 14, sy + 5, 1, 20, 20, 40)
+        }
+        if dir_y == 1 {
+            // Facing down
+            draw_circle(sx + 6, sy + 14, eye_size, 255, 255, 255)
+            draw_circle(sx + 14, sy + 14, eye_size, 255, 255, 255)
+            draw_circle(sx + 6, sy + 15, 1, 20, 20, 40)
+            draw_circle(sx + 14, sy + 15, 1, 20, 20, 40)
+        }
+    } else {
+        // Body segment with gradient and padding for "segmented" look
+        draw_rect(sx + pad, sy + pad, grid_size - pad * 2, grid_size - pad * 2, sr, sg, sb)
+        // Subtle inner highlight
+        draw_rect(sx + 4, sy + 4, grid_size - 8, grid_size - 8, min(sr + 30, 255), min(sg + 20, 255), min(sb + 20, 255))
+    }
+}
+
+// ---- Score display with background panel ----
+draw_rect(10, 8, 160, 32, 20, 15, 40)
+draw_rect_outline(10, 8, 160, 32, 80, 60, 160)
+draw_text("Score: " ++ str(score), 18, 12, 24, 200, 255, 220)
+
+// ---- Game over screen ----
 if game_over {
-    draw_text("GAME OVER", screen_width() / 2 - 100, screen_height() / 2 - 30, 40, 255, 0, 0)
-    draw_text("Press SPACE to restart", screen_width() / 2 - 130, screen_height() / 2 + 20, 24, 200, 200, 200)
-    // Blink effect
-    if frame % 60 < 30 {
-        draw_text(">>", screen_width() / 2 - 150, screen_height() / 2 + 20, 24, 255, 255, 0)
+    // Dim overlay (draw a large semi-transparent-ish dark rect)
+    draw_rect(grid_size, grid_size, (cols - 2) * grid_size, (rows - 2) * grid_size, 10, 8, 20)
+
+    // Game over panel
+    let panel_x = screen_width() / 2 - 160
+    let panel_y = screen_height() / 2 - 60
+    draw_rect(panel_x, panel_y, 320, 120, 30, 20, 50)
+    draw_rect_outline(panel_x, panel_y, 320, 120, 120, 80, 200)
+
+    draw_text("GAME OVER", screen_width() / 2 - 100, screen_height() / 2 - 40, 40, 255, 80, 100)
+    draw_text("Score: " ++ str(score), screen_width() / 2 - 50, screen_height() / 2, 24, 200, 255, 220)
+
+    // Blinking restart prompt
+    if frame % 60 < 40 {
+        draw_text("Press SPACE to restart", screen_width() / 2 - 130, screen_height() / 2 + 35, 22, 180, 160, 220)
     }
 }

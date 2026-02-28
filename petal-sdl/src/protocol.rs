@@ -35,6 +35,7 @@ pub enum Command {
         name: String,
         value: JsonValue,
     },
+    Screenshot,
 }
 
 fn default_step_count() -> u32 {
@@ -58,6 +59,8 @@ pub struct Response {
     pub draw_commands: Option<Vec<DrawCommand>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screenshot: Option<String>,
 }
 
 impl Response {
@@ -70,6 +73,7 @@ impl Response {
             state: None,
             draw_commands: None,
             output: None,
+            screenshot: None,
         }
     }
 
@@ -82,6 +86,7 @@ impl Response {
             state: None,
             draw_commands: None,
             output: None,
+            screenshot: None,
         }
     }
 }

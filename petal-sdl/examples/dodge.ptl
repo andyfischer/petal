@@ -14,9 +14,30 @@ state score = 0.0
 state high_score = 0.0
 state game_over = false
 state frame = 0
+state trail = []
+state stars = []
+state particles = []
+state near_miss_flash = 0.0
+state combo = 0
+state combo_timer = 0.0
+state prev_px = 400.0
+state prev_py = 300.0
 
 frame += 1
 let delta = dt()
+
+// Initialize stars once
+if len(stars) == 0 {
+    for i in range(0, 80) {
+        push(stars, {
+            x: random(0.0, float(SW)),
+            y: random(0.0, float(SH)),
+            brightness: random(40.0, 140.0),
+            speed: random(10.0, 40.0),
+            size: int(random(1.0, 3.0))
+        })
+    }
+}
 
 // Player follows mouse
 let player_x = mouse_x()
@@ -28,8 +49,14 @@ if player_x > SW - PLAYER_RADIUS { player_x = SW - PLAYER_RADIUS }
 if player_y < PLAYER_RADIUS { player_y = PLAYER_RADIUS }
 if player_y > SH - PLAYER_RADIUS { player_y = SH - PLAYER_RADIUS }
 
+// Player velocity for trail
+let pvx = float(player_x) - prev_px
+let pvy = float(player_y) - prev_py
+let pspeed = sqrt(pvx * pvx + pvy * pvy)
+prev_px = float(player_x)
+prev_py = float(player_y)
+
 // Difficulty ramps with score (seconds survived)
-// spawn_interval decreases, speed multiplier increases
 let difficulty = score / 10.0
 let spawn_interval = max(0.08, 0.6 - difficulty * 0.05)
 let speed_mult = 1.0 + difficulty * 0.3
@@ -41,12 +68,41 @@ if game_over {
         spawn_timer = 0.0
         score = 0.0
         game_over = false
+        trail = []
+        particles = []
+        combo = 0
+        combo_timer = 0.0
+    }
+}
+
+// Near miss decay
+if near_miss_flash > 0.0 {
+    near_miss_flash = near_miss_flash - delta * 4.0
+    if near_miss_flash < 0.0 { near_miss_flash = 0.0 }
+}
+
+// Combo timer decay
+if combo_timer > 0.0 {
+    combo_timer = combo_timer - delta
+    if combo_timer <= 0.0 {
+        combo = 0
+        combo_timer = 0.0
     }
 }
 
 if !game_over {
     // Increase score (survival time in seconds)
     score += delta
+
+    // Add trail particles when moving
+    if pspeed > 2.0 {
+        push(trail, {
+            x: float(player_x),
+            y: float(player_y),
+            life: 1.0,
+            size: min(pspeed / 3.0, 8.0)
+        })
+    }
 
     // Spawn enemies
     spawn_timer += delta
@@ -55,21 +111,50 @@ if !game_over {
         let ex = random(20.0, float(SW - 20))
         let espeed = random(120.0, 300.0) * speed_mult
         let eradius = int(random(float(ENEMY_MIN_RADIUS), float(ENEMY_MAX_RADIUS)))
-        let er = int(random(150.0, 256.0))
-        let eg = int(random(0.0, 100.0))
-        let eb = int(random(0.0, 100.0))
-        push(enemies, { x: ex, y: -20.0, speed: espeed, radius: eradius, r: er, g: eg, b: eb })
+        // Varied enemy types with different color palettes
+        let etype = int(random(0.0, 3.0))
+        let er = 0
+        let eg = 0
+        let eb = 0
+        if etype == 0 {
+            // Hot red/orange
+            er = int(random(200.0, 256.0))
+            eg = int(random(40.0, 120.0))
+            eb = int(random(0.0, 40.0))
+        }
+        if etype == 1 {
+            // Purple/magenta
+            er = int(random(160.0, 230.0))
+            eg = int(random(20.0, 60.0))
+            eb = int(random(180.0, 256.0))
+        }
+        if etype == 2 {
+            // Green/toxic
+            er = int(random(40.0, 100.0))
+            eg = int(random(200.0, 256.0))
+            eb = int(random(20.0, 80.0))
+        }
+        let erot = random(0.0, 6.28)
+        push(enemies, {
+            x: ex, y: -20.0, speed: espeed, radius: eradius,
+            r: er, g: eg, b: eb, etype: etype, rot: erot
+        })
     }
 
     // Move enemies downward
     enemies = map(enemies, fn(e) {
-        { x: e.x, y: e.y + e.speed * delta, speed: e.speed, radius: e.radius, r: e.r, g: e.g, b: e.b }
+        {
+            x: e.x, y: e.y + e.speed * delta,
+            speed: e.speed, radius: e.radius,
+            r: e.r, g: e.g, b: e.b, etype: e.etype,
+            rot: e.rot + 3.0 * delta
+        }
     })
 
     // Remove off-screen enemies
     enemies = filter(enemies, fn(e) { e.y < float(SH + 40) })
 
-    // Check collisions (circle vs circle)
+    // Check collisions and near misses
     for e in enemies {
         let dx = float(player_x) - e.x
         let dy = float(player_y) - e.y
@@ -80,48 +165,201 @@ if !game_over {
             if score > high_score {
                 high_score = score
             }
+            // Spawn explosion particles
+            for p in range(0, 20) {
+                push(particles, {
+                    x: float(player_x), y: float(player_y),
+                    vx: random(-200.0, 200.0), vy: random(-200.0, 200.0),
+                    life: 1.0, r: 255, g: int(random(100.0, 255.0)), b: 50
+                })
+            }
+        }
+        // Near miss detection
+        let near_dist = float(PLAYER_RADIUS + e.radius + 20)
+        if dist_sq < near_dist * near_dist && dist_sq >= min_dist * min_dist {
+            near_miss_flash = 1.0
+            combo = combo + 1
+            combo_timer = 2.0
         }
     }
 }
 
+// Update trail
+trail = map(trail, fn(t) {
+    { x: t.x, y: t.y, life: t.life - delta * 3.0, size: t.size }
+})
+trail = filter(trail, fn(t) { t.life > 0.0 })
+
+// Update particles
+particles = map(particles, fn(p) {
+    { x: p.x + p.vx * delta, y: p.y + p.vy * delta,
+      vx: p.vx * 0.98, vy: p.vy * 0.98 + 200.0 * delta,
+      life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b }
+})
+particles = filter(particles, fn(p) { p.life > 0.0 })
+
+// Update stars (parallax scroll)
+stars = map(stars, fn(s) {
+    let ny = s.y + s.speed * delta
+    if ny > float(SH) { ny = 0.0 }
+    { x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size }
+})
+
 // === Drawing ===
-// Dark background
-clear(10, 10, 30)
 
-// Draw a subtle grid for visual depth
-let grid_spacing = 40
+// Gradient sky background - deep space feel
+clear(5, 5, 15)
+// Horizontal gradient bands
+for i in range(0, 12) {
+    let band_y = i * (SH / 12)
+    let band_h = SH / 12 + 1
+    let br = 5 + i * 1
+    let bg = 5 + i * 2
+    let bb = 15 + i * 3
+    draw_rect(0, band_y, SW, band_h, br, bg, bb)
+}
+
+// Draw stars
+for s in stars {
+    let pulse = s.brightness + 20.0 * (float(frame % 120) / 120.0)
+    let sb = int(min(pulse, 200.0))
+    draw_circle(int(s.x), int(s.y), s.size, sb, sb, sb + 20)
+}
+
+// Scrolling grid for depth
+let grid_spacing = 50
+let grid_offset = int(score * 30.0) % grid_spacing
 for gx in range(0, SW / grid_spacing + 1) {
-    draw_line(gx * grid_spacing, 0, gx * grid_spacing, SH, 20, 20, 50)
+    let line_x = gx * grid_spacing
+    // Fade grid lines based on distance from center
+    let cx_dist = abs(line_x - SW / 2)
+    let grid_alpha = max(10, 30 - cx_dist / 20)
+    draw_line(line_x, 0, line_x, SH, grid_alpha, grid_alpha, grid_alpha + 20)
 }
-for gy in range(0, SH / grid_spacing + 1) {
-    draw_line(0, gy * grid_spacing, SW, gy * grid_spacing, 20, 20, 50)
+for gy in range(0, SH / grid_spacing + 2) {
+    let line_y = gy * grid_spacing - grid_offset
+    draw_line(0, line_y, SW, line_y, 15, 15, 35)
 }
 
-// Draw enemies
+// Draw trail
+for t in trail {
+    let ta = int(t.life * 150.0)
+    let ts = int(t.size * t.life)
+    if ts > 0 {
+        draw_circle(int(t.x), int(t.y), ts, 30, ta, int(t.life * 255.0))
+    }
+}
+
+// Draw enemies with visual flair
 for e in enemies {
-    draw_circle(int(e.x), int(e.y), e.radius, e.r, e.g, e.b)
+    let ex = int(e.x)
+    let ey = int(e.y)
+    let er = e.radius
+
+    // Outer glow ring
+    draw_circle(ex, ey, er + 5, max(0, e.r / 3), max(0, e.g / 3), max(0, e.b / 3))
+
+    // Main body
+    draw_circle(ex, ey, er, e.r, e.g, e.b)
+
+    // Inner dark ring (creates a ring effect)
+    if er > 6 {
+        draw_circle(ex, ey, er - 3, e.r / 2, e.g / 2, e.b / 2)
+    }
+
+    // Bright core with highlight offset
+    draw_circle(ex, ey, max(2, er / 3), min(255, e.r + 80), min(255, e.g + 80), min(255, e.b + 80))
+    draw_circle(ex - 1, ey - 1, max(1, er / 5), 255, 255, 255)
 }
 
-// Draw player
-draw_circle(player_x, player_y, PLAYER_RADIUS, 50, 200, 255)
-// Inner glow
-draw_circle(player_x, player_y, PLAYER_RADIUS - 3, 150, 230, 255)
+// Near miss screen flash effect
+if near_miss_flash > 0.0 {
+    let flash_a = int(near_miss_flash * 30.0)
+    draw_rect(0, 0, SW, SH, flash_a, flash_a, flash_a + 10)
+}
 
-// HUD
+// Draw explosion particles
+for p in particles {
+    let pa = max(0, int(p.life * 255.0))
+    let ps = max(1, int(p.life * 4.0))
+    draw_circle(int(p.x), int(p.y), ps, p.r, min(pa, p.g), p.b)
+}
+
+// Draw player with shield-like layers
+// Outer shield ring
+let shield_pulse = 4.0 + 2.0 * (float(frame % 60) / 60.0)
+let shield_radius = PLAYER_RADIUS + int(shield_pulse)
+draw_circle(player_x, player_y, shield_radius, 20, 80, 140)
+// Shield outline
+draw_circle(player_x, player_y, PLAYER_RADIUS + 3, 40, 140, 220)
+// Main body
+draw_circle(player_x, player_y, PLAYER_RADIUS, 60, 180, 255)
+// Inner glow
+draw_circle(player_x, player_y, PLAYER_RADIUS - 3, 120, 210, 255)
+// Bright core
+draw_circle(player_x, player_y, 3, 220, 240, 255)
+
+// Direction indicator line
+if pspeed > 3.0 {
+    let dir_len = min(pspeed, 30.0)
+    let nx = pvx / pspeed
+    let ny = pvy / pspeed
+    draw_line(
+        player_x, player_y,
+        player_x + int(nx * dir_len), player_y + int(ny * dir_len),
+        100, 200, 255
+    )
+}
+
+// === HUD ===
+// Score bar background
+draw_rect(0, 0, SW, 45, 10, 10, 30)
+draw_line(0, 45, SW, 45, 40, 80, 140)
+
 let score_int = int(score)
-draw_text("SCORE: " ++ str(score_int), 20, 15, 24, 255, 255, 255)
+draw_text("SCORE", 20, 5, 14, 100, 160, 220)
+draw_text(str(score_int), 20, 20, 24, 255, 255, 255)
+
 let hs_int = int(high_score)
-draw_text("BEST: " ++ str(hs_int), SW - 160, 15, 24, 255, 220, 50)
+draw_text("BEST", SW - 120, 5, 14, 200, 180, 50)
+draw_text(str(hs_int), SW - 120, 20, 24, 255, 220, 80)
+
+// Difficulty indicator
+let diff_display = min(int(difficulty) + 1, 10)
+draw_text("LV " ++ str(diff_display), SW / 2 - 20, 12, 20, 180, 100, 255)
+
+// Combo display
+if combo > 1 {
+    let combo_bright = int(min(combo_timer, 1.0) * 255.0)
+    draw_text("CLOSE CALL x" ++ str(combo), SW / 2 - 70, 55, 18, 255, combo_bright, 80)
+}
+
+// Enemy count
+let enemy_count = len(enemies)
+draw_text(str(enemy_count) ++ " threats", SW / 2 - 40, SH - 30, 16, 80, 80, 120)
 
 // Game over overlay
 if game_over {
-    // Dim overlay (draw a big dark rect)
-    draw_rect(0, 0, SW, SH, 0, 0, 0)
-    // Redraw HUD on top
-    draw_text("GAME OVER", SW / 2 - 110, SH / 2 - 60, 48, 255, 50, 50)
-    draw_text("Score: " ++ str(score_int), SW / 2 - 70, SH / 2, 28, 255, 255, 255)
-    draw_text("Best: " ++ str(hs_int), SW / 2 - 60, SH / 2 + 40, 28, 255, 220, 50)
-    if frame % 60 < 40 {
-        draw_text("Press SPACE to restart", SW / 2 - 150, SH / 2 + 100, 24, 200, 200, 200)
+    // Semi-transparent overlay using dark rect
+    draw_rect(0, 0, SW, SH, 5, 0, 10)
+
+    // Decorative lines
+    draw_line(SW / 2 - 180, SH / 2 - 80, SW / 2 + 180, SH / 2 - 80, 255, 50, 80)
+    draw_line(SW / 2 - 180, SH / 2 + 130, SW / 2 + 180, SH / 2 + 130, 255, 50, 80)
+
+    draw_text("GAME OVER", SW / 2 - 120, SH / 2 - 60, 48, 255, 50, 70)
+    draw_text("Survived " ++ str(score_int) ++ " seconds", SW / 2 - 110, SH / 2 + 5, 24, 220, 220, 240)
+    draw_text("Best: " ++ str(hs_int) ++ "s", SW / 2 - 50, SH / 2 + 40, 22, 255, 220, 80)
+    draw_text("Level reached: " ++ str(diff_display), SW / 2 - 90, SH / 2 + 72, 20, 180, 100, 255)
+
+    if frame % 70 < 45 {
+        draw_text("[ SPACE to retry ]", SW / 2 - 110, SH / 2 + 110, 22, 180, 200, 220)
+    }
+
+    // Draw particles on top
+    for p in particles {
+        let pa2 = max(0, int(p.life * 255.0))
+        let ps2 = max(1, int(p.life * 5.0))
+        draw_circle(int(p.x), int(p.y), ps2, p.r, min(pa2, p.g), p.b)
     }
 }

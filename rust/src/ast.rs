@@ -188,5 +188,7 @@ pub enum StmtKind {
         name: String,
         init: Expr,
         id: usize,
+        /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
+        key: Option<Expr>,
     },
 }

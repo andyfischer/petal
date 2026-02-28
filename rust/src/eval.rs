@@ -10,7 +10,7 @@ use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnTable, PetalCxt};
 use crate::program::*;
-use crate::stack::{Frame, LoopState, Stack};
+use crate::stack::{Frame, LoopKeyPart, LoopState, RuntimeStateKey, Stack};
 use crate::value::{self, Value};
 
 /// Result of a single evaluation step.
@@ -41,6 +41,58 @@ enum ControlFlow {
 pub struct Evaluator;
 
 impl Evaluator {
+    /// Walk the stack frames collecting iteration indices from active loops.
+    /// Returns a SmallVec of LoopKeyParts for building RuntimeStateKeys.
+    fn resolve_loop_context(stack: &Stack) -> smallvec::SmallVec<[LoopKeyPart; 2]> {
+        let mut parts = smallvec::SmallVec::new();
+        for frame in &stack.frames {
+            for loop_state in frame.loop_states.values() {
+                match loop_state {
+                    LoopState::For { index, .. } => {
+                        // index is 1-past-current (already incremented), so current = index - 1
+                        parts.push(LoopKeyPart::Index(index.saturating_sub(1)));
+                    }
+                    LoopState::WhileCondition { iteration }
+                    | LoopState::WhileBody { iteration } => {
+                        parts.push(LoopKeyPart::Index(*iteration));
+                    }
+                }
+            }
+        }
+        parts
+    }
+
+    /// Build the RuntimeStateKey for a state term, taking into account loop context
+    /// and explicit keys.
+    fn resolve_runtime_state_key(
+        term: &Term,
+        inputs: &[Value],
+        stack: &Stack,
+        heap: &Heap,
+    ) -> RuntimeStateKey {
+        let base = term.state_key.unwrap();
+        if term.inputs.len() > 1 && inputs.len() > 1 {
+            // Explicit key (Phase 2): use hashed value instead of loop indices.
+            // The key value is the last input (index 1 for StateInit, index 1 for StateWrite).
+            let key_val = inputs.last().unwrap();
+            let hash = value::hash_value(key_val, heap);
+            RuntimeStateKey {
+                base,
+                loop_indices: smallvec::smallvec![LoopKeyPart::Explicit(hash)],
+            }
+        } else if term.in_loop {
+            RuntimeStateKey {
+                base,
+                loop_indices: Self::resolve_loop_context(stack),
+            }
+        } else {
+            RuntimeStateKey {
+                base,
+                loop_indices: smallvec::SmallVec::new(),
+            }
+        }
+    }
+
     /// Execute one step: evaluate the current term and advance.
     pub fn step(
         program: &Program,
@@ -482,27 +534,27 @@ impl Evaluator {
             }
 
             TermOp::StateInit => {
-                let state_key = term.state_key.unwrap();
-                if !stack.state.contains_key(&state_key) {
+                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
+                if !stack.state.contains_key(&runtime_key) {
                     let init_val = inputs.first().copied().unwrap_or(Value::Nil);
-                    stack.state.insert(state_key, init_val);
+                    stack.state.insert(runtime_key.clone(), init_val);
                 }
-                let val = stack.state[&state_key];
+                let val = stack.state[&runtime_key];
                 Self::write_register(stack, term, val);
                 ControlFlow::Advance
             }
 
             TermOp::StateRead => {
-                let state_key = term.state_key.unwrap();
-                let val = stack.state.get(&state_key).copied().unwrap_or(Value::Nil);
+                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
+                let val = stack.state.get(&runtime_key).copied().unwrap_or(Value::Nil);
                 Self::write_register(stack, term, val);
                 ControlFlow::Advance
             }
 
             TermOp::StateWrite => {
-                let state_key = term.state_key.unwrap();
+                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
                 let val = inputs.first().copied().unwrap_or(Value::Nil);
-                stack.state.insert(state_key, val);
+                stack.state.insert(runtime_key, val);
                 Self::write_register(stack, term, val);
                 ControlFlow::Advance
             }
@@ -822,46 +874,72 @@ impl Evaluator {
         let cond_block = term.child_blocks[0];
         let body_block = term.child_blocks[1];
 
-        let is_awaiting_cond = stack.frames.last()
-            .map(|f| matches!(f.loop_states.get(&term.id), Some(LoopState::WhileCondition)))
-            .unwrap_or(false);
+        // Determine current loop phase from loop_states.
+        let loop_phase = stack.frames.last()
+            .and_then(|f| f.loop_states.get(&term.id))
+            .map(|ls| match ls {
+                LoopState::WhileCondition { iteration } => (true, *iteration),
+                LoopState::WhileBody { iteration } => (false, *iteration),
+                _ => (false, 0),
+            });
 
-        if is_awaiting_cond {
-            // The condition block just returned; its result was written to
-            // this term's register by pop_frame.
-            let cond_val = Self::read_register(program, stack, term.id);
-            if let Some(frame) = stack.frames.last_mut() {
-                frame.loop_states.remove(&term.id);
+        match loop_phase {
+            Some((true, iteration)) => {
+                // Condition block just returned; check its result.
+                let cond_val = Self::read_register(program, stack, term.id);
+
+                if !cond_val.is_truthy() {
+                    // Condition false — loop done.
+                    if let Some(frame) = stack.frames.last_mut() {
+                        frame.loop_states.remove(&term.id);
+                    }
+                    Self::write_register(stack, term, Value::Nil);
+                    return ControlFlow::Advance;
+                }
+
+                // Transition to WhileBody so resolve_loop_context sees the iteration.
+                if let Some(frame) = stack.frames.last_mut() {
+                    frame.loop_states.insert(term.id, LoopState::WhileBody { iteration });
+                }
+
+                // Push body frame.
+                let block = program.get_block(body_block);
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(
+                    Frame::new(body_block, block.entry, block.register_count as usize,
+                        Some(term.id), Some(parent_frame_idx))
+                    .as_loop_body()
+                );
+                ControlFlow::FramePushed
             }
-
-            if !cond_val.is_truthy() {
-                // Condition false — loop done.
-                Self::write_register(stack, term, Value::Nil);
-                return ControlFlow::Advance;
+            Some((false, iteration)) => {
+                // Body just returned — push condition block for next iteration.
+                let next_iteration = iteration + 1;
+                let block = program.get_block(cond_block);
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(Frame::new(
+                    cond_block, block.entry, block.register_count as usize,
+                    Some(term.id), Some(parent_frame_idx),
+                ));
+                if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
+                    frame.loop_states.insert(term.id, LoopState::WhileCondition { iteration: next_iteration });
+                }
+                ControlFlow::FramePushed
             }
-
-            // Push body frame.
-            let block = program.get_block(body_block);
-            let parent_frame_idx = stack.frames.len() - 1;
-            stack.push_frame(
-                Frame::new(body_block, block.entry, block.register_count as usize,
-                    Some(term.id), Some(parent_frame_idx))
-                .as_loop_body()
-            );
-            return ControlFlow::FramePushed;
+            None => {
+                // Fresh start — push condition block, iteration 0.
+                let block = program.get_block(cond_block);
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(Frame::new(
+                    cond_block, block.entry, block.register_count as usize,
+                    Some(term.id), Some(parent_frame_idx),
+                ));
+                if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
+                    frame.loop_states.insert(term.id, LoopState::WhileCondition { iteration: 0 });
+                }
+                ControlFlow::FramePushed
+            }
         }
-
-        // Fresh start or body just returned — push condition block.
-        let block = program.get_block(cond_block);
-        let parent_frame_idx = stack.frames.len() - 1;
-        stack.push_frame(Frame::new(
-            cond_block, block.entry, block.register_count as usize,
-            Some(term.id), Some(parent_frame_idx),
-        ));
-        if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
-            frame.loop_states.insert(term.id, LoopState::WhileCondition);
-        }
-        ControlFlow::FramePushed
     }
 
     fn exec_call(

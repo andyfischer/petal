@@ -29,14 +29,14 @@ impl Env {
             .ok_or("Stack not found")?;
         let old_program_id = stack.program_id;
 
-        // Collect state keys from the new program to know which state to keep
+        // Collect base state keys from the new program to know which state to keep
         let new_state_keys: std::collections::HashSet<_> = new_program.terms.iter()
             .filter_map(|t| t.state_key)
             .collect();
 
-        // Determine which old state values will be preserved
+        // Determine which old state values will be preserved (match on base key)
         let preserved: usize = stack.state.keys()
-            .filter(|k| new_state_keys.contains(k))
+            .filter(|k| new_state_keys.contains(&k.base))
             .count();
         let dropped: usize = stack.state.len() - preserved;
 
@@ -50,7 +50,7 @@ impl Env {
         {
             let stack = self.stack_mut(stack_id).unwrap();
             // Remove state keys that no longer exist in the new program
-            stack.state.retain(|k, _| new_state_keys.contains(k));
+            stack.state.retain(|k, _| new_state_keys.contains(&k.base));
             stack.frames.clear();
             stack.status = StackStatus::Ready;
             stack.break_flag = false;

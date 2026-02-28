@@ -148,12 +148,23 @@ impl Parser {
 
     fn parse_state(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'state'
+
+        // Check for explicit key: state(expr) name = init
+        let key = if matches!(self.peek(), Token::LParen) {
+            self.advance(); // consume '('
+            let key_expr = self.parse_expr()?;
+            self.expect(&Token::RParen)?;
+            Some(key_expr)
+        } else {
+            None
+        };
+
         let name = self.expect_ident()?;
         self.expect(&Token::Assign)?;
         let init = self.parse_expr()?;
         let id = self.next_state_id;
         self.next_state_id += 1;
-        Ok(self.mk_stmt(StmtKind::State { name, init, id }, start))
+        Ok(self.mk_stmt(StmtKind::State { name, init, id, key }, start))
     }
 
     fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {

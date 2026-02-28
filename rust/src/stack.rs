@@ -38,9 +38,11 @@ pub struct StackKey(pub u32);
 pub enum LoopState {
     /// For-each loop: elements copied from the list and the next index to process.
     For { elements: Vec<Value>, index: usize },
-    /// While loop: the condition block has been pushed; waiting for its result.
+    /// While loop: condition has been pushed and we're awaiting its result.
     /// `iteration` tracks the current iteration (0-based) for per-iteration state.
     WhileCondition { iteration: usize },
+    /// While loop: body is executing for this iteration.
+    WhileBody { iteration: usize },
 }
 
 /// Runtime execution state for a program.

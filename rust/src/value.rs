@@ -278,6 +278,30 @@ pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value,
     }
 }
 
+/// Hash a value to a u64 for use as an explicit state key.
+/// Uses the value's content directly — no heap needed for primitives.
+pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    match val {
+        Value::Nil => 0u8.hash(&mut hasher),
+        Value::Bool(b) => { 1u8.hash(&mut hasher); b.hash(&mut hasher); }
+        Value::Int(n) => { 2u8.hash(&mut hasher); n.hash(&mut hasher); }
+        Value::Float(f) => { 3u8.hash(&mut hasher); f.to_bits().hash(&mut hasher); }
+        Value::String(id) => { 4u8.hash(&mut hasher); heap.get_string(*id).hash(&mut hasher); }
+        Value::List(id) => {
+            5u8.hash(&mut hasher);
+            let elems = heap.get_list(*id);
+            for elem in elems {
+                hash_value(elem, heap).hash(&mut hasher);
+            }
+        }
+        // For other types, hash the debug representation
+        other => { 6u8.hash(&mut hasher); format!("{:?}", other).hash(&mut hasher); }
+    }
+    hasher.finish()
+}
+
 /// Compare two values for equality. Needs heap access for deep comparison
 /// of lists and maps.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {

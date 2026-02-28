@@ -511,12 +511,17 @@ impl Compiler {
                 self.emit_term(TermOp::Continue, smallvec![], None);
             }
 
-            StmtKind::State { name, init, id: _, key: _ } => {
+            StmtKind::State { name, init, id: _, key } => {
                 let init_tid = self.compile_expr(init);
                 let state_key = StateKey(Self::hash_state_name(name));
+                let mut inputs: SmallVec<[TermId; 4]> = smallvec![init_tid];
+                if let Some(key_expr) = key {
+                    let key_tid = self.compile_expr(key_expr);
+                    inputs.push(key_tid);
+                }
                 let state_tid = self.emit_term(
                     TermOp::StateInit,
-                    smallvec![init_tid],
+                    inputs,
                     Some(name.clone()),
                 );
                 self.terms[state_tid.0 as usize].state_key = Some(state_key);
@@ -540,9 +545,16 @@ impl Compiler {
                     if let TermOp::StateInit = &self.terms[existing_tid.0 as usize].op {
                         let state_key = self.terms[existing_tid.0 as usize].state_key;
                         let in_loop = self.terms[existing_tid.0 as usize].in_loop;
+                        // If StateInit has an explicit key (2nd input), pass it to StateWrite too
+                        let has_explicit_key = self.terms[existing_tid.0 as usize].inputs.len() > 1;
+                        let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
+                        if has_explicit_key {
+                            let key_input = self.terms[existing_tid.0 as usize].inputs[1];
+                            write_inputs.push(key_input);
+                        }
                         let write_tid = self.emit_term(
                             TermOp::StateWrite,
-                            smallvec![val_tid],
+                            write_inputs,
                             None,
                         );
                         self.terms[write_tid.0 as usize].state_key = state_key;

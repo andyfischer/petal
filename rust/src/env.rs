@@ -12,7 +12,7 @@ use crate::lexer::Lexer;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId, StateKey};
-use crate::stack::{Frame, Stack, StackKey, StackStatus};
+use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
 use crate::value::Value;
 
 pub struct Env {
@@ -184,20 +184,31 @@ impl Env {
 
     // ── State inspection ─────────────────────────────────────────
 
-    /// Get the current value of a single state variable.
+    /// Get the current value of a single top-level state variable.
+    /// For per-iteration state, use `get_all_state` and filter by base key.
     pub fn get_state(&self, stack_id: StackKey, key: StateKey) -> Option<Value> {
-        self.stacks.get(&stack_id)?.state.get(&key).copied()
+        let stack = self.stacks.get(&stack_id)?;
+        // Find the first entry with matching base key (top-level state has empty loop_indices)
+        let runtime_key = RuntimeStateKey {
+            base: key,
+            loop_indices: smallvec::SmallVec::new(),
+        };
+        stack.state.get(&runtime_key).copied()
     }
 
     /// Get all current state as a reference to the HashMap.
-    pub fn get_all_state(&self, stack_id: StackKey) -> Option<&HashMap<StateKey, Value>> {
+    pub fn get_all_state(&self, stack_id: StackKey) -> Option<&HashMap<RuntimeStateKey, Value>> {
         self.stacks.get(&stack_id).map(|s| &s.state)
     }
 
-    /// Set a state variable's value directly.
+    /// Set a top-level state variable's value directly.
     pub fn set_state(&mut self, stack_id: StackKey, key: StateKey, value: Value) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
-            stack.state.insert(key, value);
+            let runtime_key = RuntimeStateKey {
+                base: key,
+                loop_indices: smallvec::SmallVec::new(),
+            };
+            stack.state.insert(runtime_key, value);
         }
     }
 
@@ -220,12 +231,12 @@ impl Env {
     // ── State snapshots ──────────────────────────────────────────
 
     /// Clone all state values. Cheap since Value is Copy.
-    pub fn snapshot_state(&self, stack_id: StackKey) -> Option<HashMap<StateKey, Value>> {
+    pub fn snapshot_state(&self, stack_id: StackKey) -> Option<HashMap<RuntimeStateKey, Value>> {
         self.stacks.get(&stack_id).map(|s| s.state.clone())
     }
 
     /// Restore state from a previous snapshot, replacing all current state.
-    pub fn restore_state(&mut self, stack_id: StackKey, snapshot: HashMap<StateKey, Value>) {
+    pub fn restore_state(&mut self, stack_id: StackKey, snapshot: HashMap<RuntimeStateKey, Value>) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.state = snapshot;
         }
@@ -291,6 +302,7 @@ impl Env {
     // ── State JSON helpers ──────────────────────────────────────
 
     /// Serialize all state variables to a JSON map keyed by variable name.
+    /// Per-iteration state entries are suffixed with their loop indices.
     pub fn get_state_json(
         &self,
         program_id: ProgramId,
@@ -301,17 +313,26 @@ impl Env {
         let mut map = serde_json::Map::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
-                let name = names
-                    .get(key)
+                let base_name = names
+                    .get(&key.base)
                     .cloned()
-                    .unwrap_or_else(|| format!("unknown_{}", key.0));
+                    .unwrap_or_else(|| format!("unknown_{}", key.base.0));
+                let name = if key.loop_indices.is_empty() {
+                    base_name
+                } else {
+                    let suffix: Vec<String> = key.loop_indices.iter().map(|p| match p {
+                        crate::stack::LoopKeyPart::Index(i) => i.to_string(),
+                        crate::stack::LoopKeyPart::Explicit(h) => format!("k{}", h),
+                    }).collect();
+                    format!("{}[{}]", base_name, suffix.join(","))
+                };
                 map.insert(name, crate::value::value_to_json(val, heap));
             }
         }
         map
     }
 
-    /// Set a state variable by name from a JSON value.
+    /// Set a top-level state variable by name from a JSON value.
     pub fn set_state_from_json(
         &mut self,
         program_id: ProgramId,
@@ -320,14 +341,14 @@ impl Env {
         json_val: &serde_json::Value,
     ) -> Result<(), String> {
         let names = self.state_key_names(program_id);
-        let key = names
+        let state_key = names
             .iter()
             .find(|(_, n)| n.as_str() == name)
             .map(|(k, _)| *k)
             .ok_or_else(|| format!("No state variable named '{}'", name))?;
 
         let val = crate::value::json_to_value(json_val, &mut self.heap)?;
-        self.set_state(stack_id, key, val);
+        self.set_state(stack_id, state_key, val);
         Ok(())
     }
 

@@ -1,12 +1,10 @@
 //! Hot-reload support for Petal programs.
 //!
-//! Recompiles source and replaces the program for a running stack,
+//! Replaces the program for a running stack with a new compiled program,
 //! preserving state values with matching StateKeys across the reload.
 
-use crate::compiler::Compiler;
 use crate::env::Env;
-use crate::lexer::Lexer;
-use crate::parse::Parser;
+use crate::program::Program;
 use crate::stack::StackStatus;
 
 /// Result of a hot-reload operation.
@@ -18,27 +16,18 @@ pub struct HotReloadResult {
 }
 
 impl Env {
-    /// Hot-reload: recompile source and replace the program for a running stack.
+    /// Hot-reload: replace the program for a running stack with a pre-compiled program.
     /// State values with matching StateKeys are preserved across the reload.
-    /// Returns the count of state values preserved.
+    /// The new program's ProgramId must match the stack's existing program.
     pub fn hot_reload(
         &mut self,
         stack_id: crate::stack::StackKey,
-        new_source: &str,
+        new_program: Program,
     ) -> Result<HotReloadResult, String> {
         let stack = self
             .stack(stack_id)
             .ok_or("Stack not found")?;
         let old_program_id = stack.program_id;
-
-        // Compile new program
-        let mut lexer = Lexer::new(new_source);
-        lexer.tokenize()?;
-        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-        let stmts = parser.parse_program()?;
-
-        let compiler = Compiler::new();
-        let new_program = compiler.compile(&stmts, new_source.to_string(), old_program_id, self.native_fns());
 
         // Collect state keys from the new program to know which state to keep
         let new_state_keys: std::collections::HashSet<_> = new_program.terms.iter()
@@ -46,7 +35,6 @@ impl Env {
             .collect();
 
         // Determine which old state values will be preserved
-        let stack = self.stack(stack_id).unwrap();
         let preserved: usize = stack.state.keys()
             .filter(|k| new_state_keys.contains(k))
             .count();
@@ -105,7 +93,8 @@ state counter = 0
 counter += 10
 print(counter)
 "#;
-        let result = env.hot_reload(sid, source_v2).unwrap();
+        let new_program = env.compile_program(pid, source_v2).unwrap();
+        let result = env.hot_reload(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1);
         assert_eq!(result.state_dropped, 0);
 
@@ -136,7 +125,8 @@ print(a + b)
 state a = 1
 print(a)
 "#;
-        let result = env.hot_reload(sid, source_v2).unwrap();
+        let new_program = env.compile_program(pid, source_v2).unwrap();
+        let result = env.hot_reload(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1); // 'a' preserved
         assert_eq!(result.state_dropped, 1);   // 'b' dropped
 
@@ -170,7 +160,8 @@ state b = 0
 state a = 0
 print(a, b)
 "#;
-        let result = env.hot_reload(sid, source_v2).unwrap();
+        let new_program = env.compile_program(pid, source_v2).unwrap();
+        let result = env.hot_reload(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 2); // both preserved
         assert_eq!(result.state_dropped, 0);
 
@@ -200,7 +191,8 @@ state x = 10
 state y = 20
 print(x + y)
 "#;
-        let result = env.hot_reload(sid, source_v2).unwrap();
+        let new_program = env.compile_program(pid, source_v2).unwrap();
+        let result = env.hot_reload(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1); // 'x' preserved
 
         env.run(sid).unwrap();

@@ -43,6 +43,21 @@ impl Env {
         }
     }
 
+    /// Compile source code into a Program without loading it.
+    /// Use this to prepare a program for `hot_reload`.
+    pub fn compile_program(
+        &self,
+        program_id: ProgramId,
+        source: &str,
+    ) -> Result<Program, String> {
+        let mut lexer = Lexer::new(source);
+        lexer.tokenize()?;
+        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
+        let stmts = parser.parse_program()?;
+        let compiler = Compiler::new();
+        Ok(compiler.compile(&stmts, source.to_string(), program_id, &self.native_fns))
+    }
+
     /// Load a program from source code
     pub fn load_program(&mut self, source: &str) -> Result<ProgramId, String> {
         let mut lexer = Lexer::new(source);
@@ -233,11 +248,6 @@ impl Env {
     }
 
     // ── Internal accessors (used by hot_reload module) ─────────
-
-    /// Get a reference to the native function table.
-    pub(crate) fn native_fns(&self) -> &NativeFnTable {
-        &self.native_fns
-    }
 
     /// Get a shared reference to a stack.
     pub(crate) fn stack(&self, key: StackKey) -> Option<&Stack> {

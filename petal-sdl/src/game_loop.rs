@@ -48,7 +48,7 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
     let mut event_pump = sdl.event_pump()?;
     let font = load_font(&ttf, 24)?;
 
-    let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
+    let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
 
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
@@ -115,7 +115,7 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
             info.frame_count = frame_count;
         });
 
-        check_hot_reload(&reload_rx, source_path, &mut env, stack_id);
+        check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
 
         DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
 
@@ -245,7 +245,7 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
                 info.frame_count = frame_count;
             });
 
-            check_hot_reload(&reload_rx, source_path, &mut env, stack_id);
+            check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
 
             DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
 
@@ -296,7 +296,7 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
             Err(_) => break, // stdin closed
         };
 
-        check_hot_reload(&reload_rx, source_path, &mut env, stack_id);
+        check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
 
         handle_command(
             cmd,
@@ -419,11 +419,19 @@ fn check_hot_reload(
     reload_rx: &mpsc::Receiver<()>,
     source_path: &str,
     env: &mut Env,
+    program_id: ProgramId,
     stack_id: StackKey,
 ) {
     if let Ok(()) = reload_rx.try_recv() {
         if let Ok(new_source) = std::fs::read_to_string(source_path) {
-            match env.hot_reload(stack_id, &new_source) {
+            let new_program = match env.compile_program(program_id, &new_source) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[hot-reload] compile error: {}", e);
+                    return;
+                }
+            };
+            match env.hot_reload(stack_id, new_program) {
                 Ok(result) => {
                     eprintln!(
                         "[hot-reload] preserved: {}, dropped: {}",

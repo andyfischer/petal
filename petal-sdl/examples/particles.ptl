@@ -1,0 +1,83 @@
+// Particle System Demo
+// Click anywhere to spawn a burst of colorful particles
+// Particles fall with gravity, fade out, and are removed when dead
+
+state particles = []
+state click_was_down = false
+
+let delta = dt()
+let gravity = 400.0
+let max_particles = 500
+
+// Detect mouse click (pressed this frame) or space bar
+let clicking = mouse_down(1)
+let just_clicked = clicking && !click_was_down
+click_was_down = clicking
+
+let spawn = just_clicked || key_pressed("space")
+
+// Spawn particles on click or space
+if spawn {
+    let mx = float(mouse_x())
+    let my = float(mouse_y())
+
+    // Color based on click position
+    let base_r = int(mx / float(screen_width()) * 255.0)
+    let base_g = int(my / float(screen_height()) * 255.0)
+    let base_b = int(255.0 - mx / float(screen_width()) * 128.0)
+
+    let count = 30
+    if len(particles) + count > max_particles {
+        count = max_particles - len(particles)
+    }
+
+    // Spread particles using index (random() barely varies in one frame)
+    let spread = random(0.8, 1.2)
+    for i in range(0, count) {
+        let t = float(i) / float(count)
+        let vx = (t - 0.5) * 500.0 * spread
+        let row = float(i % 5)
+        let vy = -100.0 - row * 60.0 - t * 50.0
+        let color_shift = int(t * 80.0) - 40
+        let pr = min(255, max(0, base_r + color_shift))
+        let pg = min(255, max(0, base_g - color_shift))
+        let pb = min(255, max(0, base_b + int(t * 30.0)))
+        push(particles, {
+            x: mx, y: my,
+            vx: vx, vy: vy,
+            life: 0.8 + t * 0.7,
+            r: pr, g: pg, b: pb
+        })
+    }
+}
+
+// Update particles: apply gravity, move, decay life
+particles = map(particles, fn(p) {
+    {
+        x: p.x + p.vx * delta,
+        y: p.y + (p.vy + gravity * delta) * delta,
+        vx: p.vx * 0.99,
+        vy: p.vy + gravity * delta,
+        life: p.life - delta * 0.8,
+        r: p.r, g: p.g, b: p.b
+    }
+})
+
+// Remove dead particles
+particles = filter(particles, fn(p) { p.life > 0.0 })
+
+// Draw
+clear(10, 10, 20)
+
+// Draw each particle as a small circle with faded color
+for p in particles {
+    let fade = max(0.0, p.life)
+    let cr = int(float(p.r) * fade)
+    let cg = int(float(p.g) * fade)
+    let cb = int(float(p.b) * fade)
+    draw_circle(int(p.x), int(p.y), 3, cr, cg, cb)
+}
+
+// HUD
+draw_text("Particles: " ++ str(len(particles)), 10, 10, 20, 200, 200, 200)
+draw_text("Click or press SPACE to spawn", 10, 36, 16, 120, 120, 120)

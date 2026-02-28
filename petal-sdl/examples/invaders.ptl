@@ -1,0 +1,240 @@
+// Space Invaders
+// Controls: Left/Right to move, Space to shoot
+
+// --- State ---
+state player_x = 380.0
+state lives = 3
+state score = 0
+state game_over = false
+
+// Alien grid: 5 rows x 8 cols
+state aliens = []
+state aliens_inited = false
+state alien_dir = 1.0
+state alien_speed = 40.0
+state alien_drop = 0.0
+
+// Bullets
+state bullets = []
+state enemy_bullets = []
+state shoot_cooldown = 0.0
+state enemy_shoot_timer = 0.0
+
+// Frame counter for animations
+state frame = 0
+
+// Player constants
+let player_y = 560.0
+let player_w = 40.0
+let player_h = 16.0
+let player_speed = 300.0
+
+// Alien constants
+let alien_w = 30.0
+let alien_h = 20.0
+let alien_gap_x = 50.0
+let alien_gap_y = 36.0
+let alien_start_x = 80.0
+let alien_start_y = 60.0
+
+// Bullet constants
+let bullet_w = 4.0
+let bullet_h = 10.0
+let bullet_speed = 400.0
+let enemy_bullet_speed = 200.0
+
+let delta = dt()
+frame += 1
+
+// --- Init aliens ---
+if !aliens_inited {
+    aliens_inited = true
+    for row in range(0, 5) {
+        for col in range(0, 8) {
+            let ax = alien_start_x + float(col) * alien_gap_x
+            let ay = alien_start_y + float(row) * alien_gap_y
+            push(aliens, { x: ax, y: ay, alive: true, row: row })
+        }
+    }
+}
+
+// --- Collision helper ---
+fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2) {
+    x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
+}
+
+if !game_over {
+    // --- Player input ---
+    if key_down("left") {
+        player_x -= player_speed * delta
+    }
+    if key_down("right") {
+        player_x += player_speed * delta
+    }
+    player_x = max(0.0, min(player_x, 800.0 - player_w))
+
+    // --- Shooting ---
+    shoot_cooldown -= delta
+    if key_pressed("space") && shoot_cooldown <= 0.0 {
+        shoot_cooldown = 0.3
+        push(bullets, { x: player_x + player_w / 2.0 - 2.0, y: player_y - bullet_h })
+    }
+
+    // --- Move bullets ---
+    bullets = map(bullets, fn(b) {
+        { x: b.x, y: b.y - bullet_speed * delta }
+    })
+    bullets = filter(bullets, fn(b) { b.y > -10.0 })
+
+    // --- Move enemy bullets ---
+    enemy_bullets = map(enemy_bullets, fn(b) {
+        { x: b.x, y: b.y + enemy_bullet_speed * delta }
+    })
+    enemy_bullets = filter(enemy_bullets, fn(b) { b.y < 620.0 })
+
+    // --- Move aliens ---
+    let should_drop = false
+    for a in aliens {
+        if a.alive {
+            if a.x + alien_w > 780.0 && alien_dir > 0.0 {
+                should_drop = true
+            }
+            if a.x < 20.0 && alien_dir < 0.0 {
+                should_drop = true
+            }
+        }
+    }
+
+    if should_drop {
+        alien_dir = -alien_dir
+        alien_drop = alien_gap_y / 2.0
+    }
+
+    aliens = map(aliens, fn(a) {
+        if a.alive {
+            let new_x = a.x + alien_dir * alien_speed * delta
+            let new_y = a.y + alien_drop
+            { x: new_x, y: new_y, alive: true, row: a.row }
+        } else {
+            a
+        }
+    })
+    alien_drop = 0.0
+
+    // --- Bullet-alien collision ---
+    let new_bullets = []
+    for b in bullets {
+        let hit = false
+        aliens = map(aliens, fn(a) {
+            if a.alive && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) {
+                hit = true
+                score += 10
+                { x: a.x, y: a.y, alive: false, row: a.row }
+            } else {
+                a
+            }
+        })
+        if !hit {
+            push(new_bullets, b)
+        }
+    }
+    bullets = new_bullets
+
+    // --- Enemy shooting ---
+    enemy_shoot_timer -= delta
+    if enemy_shoot_timer <= 0.0 {
+        enemy_shoot_timer = 0.8
+        // Find alive aliens to shoot from
+        let shooters = filter(aliens, fn(a) { a.alive })
+        if len(shooters) > 0 {
+            let idx = int(random(0.0, float(len(shooters))))
+            if idx >= len(shooters) {
+                idx = len(shooters) - 1
+            }
+            let shooter = shooters[idx]
+            push(enemy_bullets, { x: shooter.x + alien_w / 2.0 - 2.0, y: shooter.y + alien_h })
+        }
+    }
+
+    // --- Enemy bullet-player collision ---
+    enemy_bullets = filter(enemy_bullets, fn(b) {
+        if rects_collide(b.x, b.y, bullet_w, bullet_h, player_x, player_y, player_w, player_h) {
+            lives -= 1
+            if lives <= 0 {
+                game_over = true
+            }
+            false
+        } else {
+            true
+        }
+    })
+
+    // --- Aliens reach bottom ---
+    for a in aliens {
+        if a.alive && a.y + alien_h > player_y {
+            game_over = true
+        }
+    }
+
+    // --- All aliens dead: win / reset wave ---
+    let alive_count = len(filter(aliens, fn(a) { a.alive }))
+    if alive_count == 0 {
+        aliens = []
+        aliens_inited = false
+        alien_speed += 10.0
+    }
+}
+
+// --- Drawing ---
+clear(0, 0, 0)
+
+// Draw player ship (triangle-ish shape using rects)
+draw_rect(int(player_x), int(player_y), int(player_w), int(player_h), 50, 255, 50)
+draw_rect(int(player_x + player_w / 2.0 - 4.0), int(player_y - 8.0), 8, 8, 50, 255, 50)
+
+// Draw aliens
+for a in aliens {
+    if a.alive {
+        let r = 255
+        let g = 100
+        let b = 100
+        if a.row == 0 {
+            r = 255
+            g = 50
+            b = 50
+        } else if a.row == 1 || a.row == 2 {
+            r = 255
+            g = 180
+            b = 50
+        } else {
+            r = 100
+            g = 255
+            b = 100
+        }
+        draw_rect(int(a.x), int(a.y), int(alien_w), int(alien_h), r, g, b)
+        // Eyes
+        draw_rect(int(a.x + 6.0), int(a.y + 6.0), 4, 4, 0, 0, 0)
+        draw_rect(int(a.x + 20.0), int(a.y + 6.0), 4, 4, 0, 0, 0)
+    }
+}
+
+// Draw player bullets
+for b in bullets {
+    draw_rect(int(b.x), int(b.y), int(bullet_w), int(bullet_h), 255, 255, 100)
+}
+
+// Draw enemy bullets
+for b in enemy_bullets {
+    draw_rect(int(b.x), int(b.y), int(bullet_w), int(bullet_h), 255, 80, 80)
+}
+
+// HUD
+draw_text("SCORE: " ++ str(score), 20, 10, 24, 255, 255, 255)
+draw_text("LIVES: " ++ str(lives), 680, 10, 24, 255, 255, 255)
+
+// Game over screen
+if game_over {
+    draw_rect(200, 230, 400, 140, 40, 0, 0)
+    draw_text("GAME OVER", 290, 260, 40, 255, 50, 50)
+    draw_text("Score: " ++ str(score), 330, 310, 28, 255, 255, 255)
+}

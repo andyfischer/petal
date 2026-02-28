@@ -1,0 +1,133 @@
+// Simple Platformer
+// Arrow keys to move, space to jump
+// Collect coins to score points!
+
+// Player state
+state px = 100.0
+state py = 400.0
+state vx = 0.0
+state vy = 0.0
+state on_ground = false
+state score = 0
+
+// Platforms: list of {x, y, w, h}
+state platforms = [
+    {x: 0, y: 550, w: 800, h: 50},
+    {x: 150, y: 450, w: 120, h: 15},
+    {x: 400, y: 400, w: 150, h: 15},
+    {x: 600, y: 340, w: 120, h: 15},
+    {x: 50, y: 300, w: 100, h: 15},
+    {x: 300, y: 250, w: 130, h: 15},
+    {x: 550, y: 200, w: 140, h: 15},
+    {x: 100, y: 150, w: 110, h: 15}
+]
+
+// Coins: list of {x, y, collected}
+state coins = [
+    {x: 200, y: 420, collected: false},
+    {x: 460, y: 370, collected: false},
+    {x: 650, y: 310, collected: false},
+    {x: 90, y: 270, collected: false},
+    {x: 350, y: 220, collected: false},
+    {x: 600, y: 170, collected: false},
+    {x: 140, y: 120, collected: false},
+    {x: 400, y: 520, collected: false}
+]
+
+let delta = dt()
+let gravity = 800.0
+let move_speed = 250.0
+let jump_force = -400.0
+let pw = 24
+let ph = 32
+
+// Input
+vx = 0.0
+if key_down("left") { vx = -move_speed }
+if key_down("right") { vx = move_speed }
+if key_pressed("space") && on_ground {
+    vy = jump_force
+    on_ground = false
+}
+
+// Apply gravity
+vy += gravity * delta
+
+// Move horizontally
+px += vx * delta
+
+// Wrap horizontally
+if px > 800.0 { px = px - 824.0 }
+if px < -24.0 { px = px + 824.0 }
+
+// Move vertically
+py += vy * delta
+
+// Platform collision
+on_ground = false
+for plat in platforms {
+    let plat_x = float(plat.x)
+    let plat_y = float(plat.y)
+    let plat_w = float(plat.w)
+    let plat_h = float(plat.h)
+
+    // Check if player overlaps platform horizontally
+    if px + float(pw) > plat_x && px < plat_x + plat_w {
+        // Falling onto platform (feet at py + ph)
+        if vy >= 0.0 && py + float(ph) > plat_y && py + float(ph) < plat_y + plat_h + vy * delta {
+            py = plat_y - float(ph)
+            vy = 0.0
+            on_ground = true
+        }
+    }
+}
+
+// Coin collision
+coins = map(coins, fn(c) {
+    if c.collected {
+        c
+    } else {
+        let cx = float(c.x)
+        let cy = float(c.y)
+        let dist_x = px + float(pw) / 2.0 - cx
+        let dist_y = py + float(ph) / 2.0 - cy
+        if abs(dist_x) < 20.0 && abs(dist_y) < 20.0 {
+            score += 1
+            {x: c.x, y: c.y, collected: true}
+        } else {
+            c
+        }
+    }
+})
+
+// Keep player on screen vertically
+if py > 560.0 {
+    py = 400.0
+    vy = 0.0
+}
+
+// --- Drawing ---
+clear(40, 40, 80)
+
+// Draw platforms
+for plat in platforms {
+    draw_rect(plat.x, plat.y, plat.w, plat.h, 100, 180, 100)
+}
+
+// Draw coins
+for c in coins {
+    if !c.collected {
+        draw_circle(c.x, c.y, 8, 255, 220, 50)
+    }
+}
+
+// Draw player
+draw_rect(int(px), int(py), pw, ph, 80, 150, 255)
+
+// Draw eyes on player
+draw_rect(int(px) + 5, int(py) + 6, 4, 4, 255, 255, 255)
+draw_rect(int(px) + 15, int(py) + 6, 4, 4, 255, 255, 255)
+
+// HUD
+draw_text("Score: " ++ str(score), 20, 20, 24, 255, 255, 255)
+draw_text("Arrows: Move  Space: Jump", 250, 575, 16, 200, 200, 200)

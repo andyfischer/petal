@@ -1,0 +1,144 @@
+// Snake Game
+// Arrow keys to move. Eat food to grow. Don't hit walls or yourself.
+
+let grid_size = 20
+let cols = screen_width() / grid_size
+let rows = screen_height() / grid_size
+
+// Game state
+state dir_x = 1
+state dir_y = 0
+state next_dir_x = 1
+state next_dir_y = 0
+state snake = [{x: 10, y: 10}, {x: 9, y: 10}, {x: 8, y: 10}]
+state food_x = 15
+state food_y = 10
+state score = 0
+state game_over = false
+state move_timer = 0.0
+state frame = 0
+
+let move_interval = 0.1
+
+// Input handling — buffer direction so we don't reverse into ourselves
+if key_pressed("up") && dir_y != 1 {
+    next_dir_x = 0
+    next_dir_y = -1
+}
+if key_pressed("down") && dir_y != -1 {
+    next_dir_x = 0
+    next_dir_y = 1
+}
+if key_pressed("left") && dir_x != 1 {
+    next_dir_x = -1
+    next_dir_y = 0
+}
+if key_pressed("right") && dir_x != -1 {
+    next_dir_x = 1
+    next_dir_y = 0
+}
+
+// Restart on space after game over
+if game_over && key_pressed("space") {
+    game_over = false
+    snake = [{x: 10, y: 10}, {x: 9, y: 10}, {x: 8, y: 10}]
+    dir_x = 1
+    dir_y = 0
+    next_dir_x = 1
+    next_dir_y = 0
+    score = 0
+    food_x = int(random(1.0, float(cols) - 1.0))
+    food_y = int(random(1.0, float(rows) - 1.0))
+}
+
+// Update logic
+if !game_over {
+    move_timer += dt()
+
+    if move_timer >= move_interval {
+        move_timer = move_timer - move_interval
+
+        // Apply buffered direction
+        dir_x = next_dir_x
+        dir_y = next_dir_y
+
+        // Calculate new head position
+        let head = snake[0]
+        let new_x = head.x + dir_x
+        let new_y = head.y + dir_y
+
+        // Check wall collision
+        if new_x < 0 || new_x >= cols || new_y < 0 || new_y >= rows {
+            game_over = true
+        }
+
+        // Check self collision
+        if !game_over {
+            for i in range(0, len(snake)) {
+                let seg = snake[i]
+                if seg.x == new_x && seg.y == new_y {
+                    game_over = true
+                }
+            }
+        }
+
+        if !game_over {
+            // Build new snake with new head
+            let new_head = {x: new_x, y: new_y}
+            let new_snake = [new_head]
+            let ate_food = new_x == food_x && new_y == food_y
+
+            // Keep length: if ate food, keep all segments; otherwise drop last
+            let keep_count = len(snake)
+            if !ate_food {
+                keep_count = len(snake) - 1
+            }
+            for i in range(0, keep_count) {
+                push(new_snake, snake[i])
+            }
+            snake = new_snake
+
+            if ate_food {
+                score += 1
+                // Spawn new food not on snake
+                food_x = int(random(1.0, float(cols) - 1.0))
+                food_y = int(random(1.0, float(rows) - 1.0))
+            }
+        }
+    }
+}
+
+frame += 1
+
+// Drawing
+clear(20, 20, 30)
+
+// Draw grid border
+draw_rect_outline(0, 0, cols * grid_size, rows * grid_size, 60, 60, 80)
+
+// Draw food
+draw_rect(food_x * grid_size, food_y * grid_size, grid_size, grid_size, 255, 50, 50)
+
+// Draw snake
+for i in range(0, len(snake)) {
+    let seg = snake[i]
+    if i == 0 {
+        // Head is brighter
+        draw_rect(seg.x * grid_size, seg.y * grid_size, grid_size, grid_size, 100, 255, 100)
+    } else {
+        draw_rect(seg.x * grid_size, seg.y * grid_size, grid_size, grid_size, 50, 200, 50)
+    }
+}
+
+// Draw score
+draw_text("Score: " ++ str(score), 10, 10, 24, 255, 255, 255)
+
+// Game over screen
+if game_over {
+    draw_text("GAME OVER", screen_width() / 2 - 100, screen_height() / 2 - 30, 40, 255, 0, 0)
+    draw_text("Press SPACE to restart", screen_width() / 2 - 130, screen_height() / 2 + 20, 24, 200, 200, 200)
+    // Blink effect
+    if frame % 60 < 30 {
+        draw_text(">>", screen_width() / 2 - 150, screen_height() / 2 + 20, 24, 255, 255, 0)
+    }
+}

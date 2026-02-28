@@ -1,0 +1,179 @@
+// Breakout / Brick Breaker
+// Mouse controls the paddle horizontally. Ball bounces off walls, paddle, and bricks.
+
+// --- Constants ---
+let paddle_w = 120
+let paddle_h = 14
+let paddle_y_pos = 560.0
+let ball_radius = 6
+let brick_w = 70
+let brick_h = 20
+let brick_pad = 4
+let brick_cols = 10
+let brick_rows = 6
+let brick_offset_x = 30
+let brick_offset_y = 60
+let ball_speed = 350.0
+
+// --- State ---
+state ball_x = 400.0
+state ball_y = 400.0
+state ball_dx = 200.0
+state ball_dy = -300.0
+state score = 0
+state lives = 3
+state bricks = []
+state initialized = false
+
+// --- Initialize bricks ---
+if !initialized {
+    initialized = true
+    let row = 0
+    while row < brick_rows {
+        let col = 0
+        while col < brick_cols {
+            let bx = brick_offset_x + col * (brick_w + brick_pad)
+            let by = brick_offset_y + row * (brick_h + brick_pad)
+            push(bricks, { x: bx, y: by, alive: true, row: row })
+            col += 1
+        }
+        row += 1
+    }
+}
+
+// --- Brick colors by row ---
+fn brick_color(row) {
+    if row == 0 { { r: 255, g: 50, b: 50 } }
+    else if row == 1 { { r: 255, g: 140, b: 30 } }
+    else if row == 2 { { r: 255, g: 220, b: 30 } }
+    else if row == 3 { { r: 80, g: 220, b: 50 } }
+    else if row == 4 { { r: 50, g: 150, b: 255 } }
+    else { { r: 180, g: 80, b: 255 } }
+}
+
+let delta = dt()
+
+// --- Paddle position from mouse ---
+let paddle_x = float(mouse_x()) - float(paddle_w) / 2.0
+paddle_x = max(0.0, min(paddle_x, float(screen_width() - paddle_w)))
+
+// --- Ball movement ---
+ball_x += ball_dx * delta
+ball_y += ball_dy * delta
+
+// --- Wall collisions ---
+// Left wall
+if ball_x < float(ball_radius) {
+    ball_x = float(ball_radius)
+    ball_dx = abs(ball_dx)
+}
+// Right wall
+if ball_x > float(screen_width() - ball_radius) {
+    ball_x = float(screen_width() - ball_radius)
+    ball_dx = -abs(ball_dx)
+}
+// Top wall
+if ball_y < float(ball_radius) {
+    ball_y = float(ball_radius)
+    ball_dy = abs(ball_dy)
+}
+
+// --- Paddle collision ---
+if ball_dy > 0.0 && ball_y + float(ball_radius) >= paddle_y_pos && ball_y + float(ball_radius) <= paddle_y_pos + float(paddle_h) {
+    if ball_x >= paddle_x && ball_x <= paddle_x + float(paddle_w) {
+        ball_dy = -abs(ball_dy)
+        // Angle based on where ball hits paddle
+        let hit_pos = (ball_x - paddle_x) / float(paddle_w)
+        ball_dx = (hit_pos - 0.5) * 2.0 * ball_speed
+        ball_y = paddle_y_pos - float(ball_radius)
+    }
+}
+
+// --- Brick collision ---
+fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2) {
+    x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
+}
+
+let bx1 = ball_x - float(ball_radius)
+let by1 = ball_y - float(ball_radius)
+let bw = float(ball_radius * 2)
+let bh = float(ball_radius * 2)
+
+let i = 0
+while i < len(bricks) {
+    let b = bricks[i]
+    if b.alive {
+        if rects_collide(bx1, by1, bw, bh, float(b.x), float(b.y), float(brick_w), float(brick_h)) {
+            bricks[i] = { x: b.x, y: b.y, alive: false, row: b.row }
+            score += 10
+
+            // Determine bounce direction
+            let ball_cx = ball_x
+            let ball_cy = ball_y
+            let brick_cx = float(b.x) + float(brick_w) / 2.0
+            let brick_cy = float(b.y) + float(brick_h) / 2.0
+            let dx_dist = abs(ball_cx - brick_cx) / float(brick_w)
+            let dy_dist = abs(ball_cy - brick_cy) / float(brick_h)
+            if dx_dist > dy_dist {
+                ball_dx = -ball_dx
+            } else {
+                ball_dy = -ball_dy
+            }
+        }
+    }
+    i += 1
+}
+
+// --- Ball falls off bottom ---
+if ball_y > float(screen_height() + 20) {
+    lives -= 1
+    ball_x = 400.0
+    ball_y = 400.0
+    ball_dx = 200.0
+    ball_dy = -300.0
+}
+
+// --- Check win ---
+let all_dead = true
+let j = 0
+while j < len(bricks) {
+    if bricks[j].alive {
+        all_dead = false
+    }
+    j += 1
+}
+
+// --- Drawing ---
+clear(20, 20, 30)
+
+// Draw bricks
+let k = 0
+while k < len(bricks) {
+    let b = bricks[k]
+    if b.alive {
+        let c = brick_color(b.row)
+        draw_rect(b.x, b.y, brick_w, brick_h, c.r, c.g, c.b)
+    }
+    k += 1
+}
+
+// Draw paddle
+draw_rect(int(paddle_x), int(paddle_y_pos), paddle_w, paddle_h, 200, 200, 220)
+
+// Draw ball
+draw_circle(int(ball_x), int(ball_y), ball_radius, 255, 255, 255)
+
+// Draw score and lives
+draw_text("Score: " ++ str(score), 20, 10, 22, 255, 255, 255)
+draw_text("Lives: " ++ str(lives), 700, 10, 22, 255, 255, 255)
+
+// Win message
+if all_dead && initialized {
+    draw_text("YOU WIN!", 310, 300, 40, 50, 255, 50)
+}
+
+// Game over message
+if lives <= 0 {
+    draw_text("GAME OVER", 290, 300, 40, 255, 50, 50)
+    draw_text("Score: " ++ str(score), 330, 350, 28, 255, 255, 255)
+}

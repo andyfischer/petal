@@ -1,0 +1,92 @@
+// Paint — click and drag to draw
+// Keys 1-5: white, red, green, blue, yellow
+// +/- to change brush size, C to clear
+
+// Current brush color
+state brush_r = 255
+state brush_g = 255
+state brush_b = 255
+
+// Brush size
+state brush_size = 6
+
+// Stored points: list of {x, y, r, g, b, size} records
+state points = []
+
+// Color selection
+if key_pressed("1") {
+    brush_r = 255
+    brush_g = 255
+    brush_b = 255
+}
+if key_pressed("2") {
+    brush_r = 255
+    brush_g = 50
+    brush_b = 50
+}
+if key_pressed("3") {
+    brush_r = 50
+    brush_g = 255
+    brush_b = 50
+}
+if key_pressed("4") {
+    brush_r = 50
+    brush_g = 100
+    brush_b = 255
+}
+if key_pressed("5") {
+    brush_r = 255
+    brush_g = 255
+    brush_b = 50
+}
+
+// Brush size controls
+if key_pressed("=") {
+    brush_size = min(brush_size + 2, 40)
+}
+if key_pressed("-") {
+    brush_size = max(brush_size - 2, 2)
+}
+
+// Clear canvas
+if key_pressed("c") {
+    points = []
+}
+
+// Draw when mouse is held
+if mouse_down(1) {
+    if len(points) < 2000 {
+        let pt = {
+            x: mouse_x(),
+            y: mouse_y(),
+            r: brush_r,
+            g: brush_g,
+            b: brush_b,
+            size: brush_size
+        }
+        push(points, pt)
+    }
+}
+
+// Render
+clear(30, 30, 30)
+
+// Draw all stored points
+for i in range(0, len(points)) {
+    let p = points[i]
+    draw_circle(p.x, p.y, p.size, p.r, p.g, p.b)
+}
+
+// Draw cursor preview
+draw_circle(mouse_x(), mouse_y(), brush_size, brush_r, brush_g, brush_b)
+
+// UI bar at top
+draw_rect(0, 0, screen_width(), 30, 20, 20, 20)
+draw_text("Paint", 10, 5, 20, 200, 200, 200)
+draw_text("Color: 1-5", 120, 5, 18, 150, 150, 150)
+draw_text("+/- Size: " ++ str(brush_size), 280, 5, 18, 150, 150, 150)
+draw_text("C: Clear", 460, 5, 18, 150, 150, 150)
+draw_text("Points: " ++ str(len(points)) ++ "/2000", 600, 5, 18, 150, 150, 150)
+
+// Color swatches
+draw_rect(90, 5, 16, 16, brush_r, brush_g, brush_b)

@@ -1,0 +1,335 @@
+// Tetris
+// Arrow keys: left/right to move, up to rotate, down for soft drop
+// 10-wide, 20-tall grid. 7 tetromino shapes. Line clearing with score.
+
+let grid_w = 10
+let grid_h = 20
+let cell_size = 28
+let board_x = 200
+let board_y = 20
+
+// --- Piece definitions ---
+// Each piece has 4 rotations, each rotation is a list of 8 ints (4 x,y pairs)
+// I piece
+let piece_i = [
+    [0,-1, 1,-1, 2,-1, 3,-1],
+    [1,0, 1,1, 1,2, 1,3],
+    [0,-1, 1,-1, 2,-1, 3,-1],
+    [1,0, 1,1, 1,2, 1,3]
+]
+// O piece
+let piece_o = [
+    [0,0, 1,0, 0,1, 1,1],
+    [0,0, 1,0, 0,1, 1,1],
+    [0,0, 1,0, 0,1, 1,1],
+    [0,0, 1,0, 0,1, 1,1]
+]
+// T piece
+let piece_t = [
+    [0,0, 1,0, 2,0, 1,1],
+    [1,0, 1,1, 1,2, 0,1],
+    [0,1, 1,1, 2,1, 1,0],
+    [0,0, 0,1, 0,2, 1,1]
+]
+// S piece
+let piece_s = [
+    [1,0, 2,0, 0,1, 1,1],
+    [0,0, 0,1, 1,1, 1,2],
+    [1,0, 2,0, 0,1, 1,1],
+    [0,0, 0,1, 1,1, 1,2]
+]
+// Z piece
+let piece_z = [
+    [0,0, 1,0, 1,1, 2,1],
+    [1,0, 0,1, 1,1, 0,2],
+    [0,0, 1,0, 1,1, 2,1],
+    [1,0, 0,1, 1,1, 0,2]
+]
+// J piece
+let piece_j = [
+    [0,0, 0,1, 1,1, 2,1],
+    [1,0, 0,0, 0,1, 0,2],
+    [0,0, 1,0, 2,0, 2,1],
+    [1,0, 1,1, 1,2, 0,2]
+]
+// L piece
+let piece_l = [
+    [2,0, 0,1, 1,1, 2,1],
+    [0,0, 0,1, 0,2, 1,2],
+    [0,0, 1,0, 2,0, 0,1],
+    [0,0, 1,0, 1,1, 1,2]
+]
+
+let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
+
+// Colors for each piece type (index 1-7 in grid, 0 = empty)
+// I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
+fn piece_color(t) {
+    if t == 1 { {r: 0, g: 255, b: 255} }
+    else if t == 2 { {r: 255, g: 255, b: 0} }
+    else if t == 3 { {r: 180, g: 0, b: 255} }
+    else if t == 4 { {r: 0, g: 255, b: 0} }
+    else if t == 5 { {r: 255, g: 0, b: 0} }
+    else if t == 6 { {r: 0, g: 100, b: 255} }
+    else if t == 7 { {r: 255, g: 165, b: 0} }
+    else { {r: 40, g: 40, b: 40} }
+}
+
+// --- State ---
+state grid = []
+state cur_type = 0
+state cur_rot = 0
+state cur_x = 0
+state cur_y = 0
+state score = 0
+state lines_cleared = 0
+state game_over = false
+state fall_timer = 0.0
+state initialized = false
+state next_type = 0
+
+let fall_interval = 0.5
+
+// --- Helper functions ---
+fn get_cell(grd, gx, gy) {
+    grd[gy * 10 + gx]
+}
+
+fn set_cell(grd, gx, gy, val) {
+    grd[gy * 10 + gx] = val
+}
+
+fn get_blocks(piece_type, rot) {
+    let shapes = all_pieces[piece_type]
+    shapes[rot]
+}
+
+fn check_collision(grd, piece_type, rot, px, py) {
+    let blocks = get_blocks(piece_type, rot)
+    let collides = false
+    let i = 0
+    while i < 4 {
+        let bx = px + blocks[i * 2]
+        let by = py + blocks[i * 2 + 1]
+        if bx < 0 || bx >= 10 || by >= 20 {
+            collides = true
+        }
+        if !collides && by >= 0 {
+            if get_cell(grd, bx, by) != 0 {
+                collides = true
+            }
+        }
+        i += 1
+    }
+    collides
+}
+
+fn spawn_piece() {
+    cur_type = next_type
+    next_type = int(random(0.0, 7.0))
+    cur_rot = 0
+    cur_x = 3
+    cur_y = 0
+    if check_collision(grid, cur_type, cur_rot, cur_x, cur_y) {
+        game_over = true
+    }
+}
+
+fn lock_piece() {
+    let blocks = get_blocks(cur_type, cur_rot)
+    let i = 0
+    while i < 4 {
+        let bx = cur_x + blocks[i * 2]
+        let by = cur_y + blocks[i * 2 + 1]
+        if by >= 0 && by < 20 && bx >= 0 && bx < 10 {
+            set_cell(grid, bx, by, cur_type + 1)
+        }
+        i += 1
+    }
+}
+
+fn clear_lines() {
+    let cleared = 0
+    let y = 19
+    while y >= 0 {
+        let full = true
+        let x = 0
+        while x < 10 {
+            if get_cell(grid, x, y) == 0 {
+                full = false
+            }
+            x += 1
+        }
+        if full {
+            cleared += 1
+            // Shift everything above down by one
+            let row = y
+            while row > 0 {
+                let col = 0
+                while col < 10 {
+                    set_cell(grid, col, row, get_cell(grid, col, row - 1))
+                    col += 1
+                }
+                row -= 1
+            }
+            // Clear top row
+            let col = 0
+            while col < 10 {
+                set_cell(grid, col, 0, 0)
+                col += 1
+            }
+            // Don't decrement y - check same row again since rows shifted
+        } else {
+            y -= 1
+        }
+    }
+    if cleared == 1 { score += 100 }
+    else if cleared == 2 { score += 300 }
+    else if cleared == 3 { score += 500 }
+    else if cleared == 4 { score += 800 }
+    lines_cleared += cleared
+}
+
+// --- Initialization ---
+if !initialized {
+    initialized = true
+    let i = 0
+    while i < 200 {
+        push(grid, 0)
+        i += 1
+    }
+    next_type = int(random(0.0, 7.0))
+    spawn_piece()
+}
+
+// --- Input ---
+if !game_over {
+    if key_pressed("left") {
+        if !check_collision(grid, cur_type, cur_rot, cur_x - 1, cur_y) {
+            cur_x -= 1
+        }
+    }
+    if key_pressed("right") {
+        if !check_collision(grid, cur_type, cur_rot, cur_x + 1, cur_y) {
+            cur_x += 1
+        }
+    }
+    if key_pressed("up") {
+        let new_rot = (cur_rot + 1) % 4
+        if !check_collision(grid, cur_type, new_rot, cur_x, cur_y) {
+            cur_rot = new_rot
+        }
+    }
+
+    // Soft drop
+    let effective_interval = fall_interval
+    if key_down("down") {
+        effective_interval = 0.05
+    }
+
+    // Fall timer
+    fall_timer += dt()
+    if fall_timer >= effective_interval {
+        fall_timer = 0.0
+        if !check_collision(grid, cur_type, cur_rot, cur_x, cur_y + 1) {
+            cur_y += 1
+        } else {
+            lock_piece()
+            clear_lines()
+            spawn_piece()
+        }
+    }
+}
+
+// Restart
+if game_over && key_pressed("space") {
+    game_over = false
+    score = 0
+    lines_cleared = 0
+    let i = 0
+    while i < 200 {
+        grid[i] = 0
+        i += 1
+    }
+    next_type = int(random(0.0, 7.0))
+    spawn_piece()
+}
+
+// --- Drawing ---
+clear(20, 20, 30)
+
+// Draw board background
+draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 10, 10, 15)
+
+// Draw grid cells
+let gy = 0
+while gy < grid_h {
+    let gx = 0
+    while gx < grid_w {
+        let val = get_cell(grid, gx, gy)
+        if val != 0 {
+            let c = piece_color(val)
+            draw_rect(board_x + gx * cell_size, board_y + gy * cell_size, cell_size - 1, cell_size - 1, c.r, c.g, c.b)
+        }
+        gx += 1
+    }
+    gy += 1
+}
+
+// Draw current piece
+if !game_over {
+    let blocks = get_blocks(cur_type, cur_rot)
+    let c = piece_color(cur_type + 1)
+    let i = 0
+    while i < 4 {
+        let bx = cur_x + blocks[i * 2]
+        let by = cur_y + blocks[i * 2 + 1]
+        if by >= 0 {
+            draw_rect(board_x + bx * cell_size, board_y + by * cell_size, cell_size - 1, cell_size - 1, c.r, c.g, c.b)
+        }
+        i += 1
+    }
+}
+
+// Draw board outline
+draw_rect_outline(board_x - 1, board_y - 1, grid_w * cell_size + 2, grid_h * cell_size + 2, 100, 100, 120)
+
+// Draw grid lines
+let lx = 0
+while lx <= grid_w {
+    draw_line(board_x + lx * cell_size, board_y, board_x + lx * cell_size, board_y + grid_h * cell_size, 30, 30, 40)
+    lx += 1
+}
+let ly = 0
+while ly <= grid_h {
+    draw_line(board_x, board_y + ly * cell_size, board_x + grid_w * cell_size, board_y + ly * cell_size, 30, 30, 40)
+    ly += 1
+}
+
+// Draw next piece preview
+draw_text("NEXT", board_x + grid_w * cell_size + 30, board_y + 10, 20, 200, 200, 200)
+let next_blocks = get_blocks(next_type, 0)
+let nc = piece_color(next_type + 1)
+let ni = 0
+while ni < 4 {
+    let nx = next_blocks[ni * 2]
+    let ny = next_blocks[ni * 2 + 1]
+    draw_rect(board_x + grid_w * cell_size + 40 + nx * 20, board_y + 40 + ny * 20, 19, 19, nc.r, nc.g, nc.b)
+    ni += 1
+}
+
+// Draw score and lines
+draw_text("SCORE", board_x + grid_w * cell_size + 30, board_y + 140, 20, 200, 200, 200)
+draw_text(str(score), board_x + grid_w * cell_size + 30, board_y + 165, 24, 255, 255, 255)
+draw_text("LINES", board_x + grid_w * cell_size + 30, board_y + 210, 20, 200, 200, 200)
+draw_text(str(lines_cleared), board_x + grid_w * cell_size + 30, board_y + 235, 24, 255, 255, 255)
+
+// Draw title
+draw_text("TETRIS", board_x + 30, board_y + grid_h * cell_size + 15, 30, 100, 200, 255)
+
+// Game over
+if game_over {
+    draw_rect(board_x + 20, board_y + grid_h * cell_size / 2 - 30, grid_w * cell_size - 40, 60, 0, 0, 0)
+    draw_text("GAME OVER", board_x + 40, board_y + grid_h * cell_size / 2 - 20, 28, 255, 50, 50)
+    draw_text("SPACE to restart", board_x + 35, board_y + grid_h * cell_size / 2 + 10, 18, 200, 200, 200)
+}

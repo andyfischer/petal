@@ -1,0 +1,146 @@
+// Flappy Bird clone
+
+// Game constants
+let GRAVITY = 800.0
+let FLAP_STRENGTH = -300.0
+let PIPE_SPEED = 180.0
+let PIPE_WIDTH = 60
+let PIPE_GAP = 160
+let BIRD_X = 120
+let BIRD_RADIUS = 15
+let SW = screen_width()
+let SH = screen_height()
+let GROUND_H = 60
+
+// Game state
+state bird_y = 300.0
+state bird_vy = 0.0
+state pipes = []
+state score = 0
+state game_over = false
+state started = false
+state pipe_timer = 0.0
+state frame = 0
+
+frame += 1
+let delta = dt()
+
+// Handle input
+let flap = key_pressed("space")
+
+if game_over {
+    if flap {
+        // Reset game
+        bird_y = 300.0
+        bird_vy = 0.0
+        pipes = []
+        score = 0
+        game_over = false
+        started = false
+        pipe_timer = 0.0
+    }
+}
+
+if !game_over {
+    if flap {
+        started = true
+        bird_vy = FLAP_STRENGTH
+    }
+
+    if started {
+        // Apply gravity
+        bird_vy += GRAVITY * delta
+        bird_y += bird_vy * delta
+
+        // Spawn pipes
+        pipe_timer += delta
+        if pipe_timer > 1.6 {
+            pipe_timer = 0.0
+            let gap_y = int(random(120.0, float(SH - GROUND_H - 120 - PIPE_GAP)))
+            push(pipes, { x: float(SW), gap_y: gap_y, scored: false })
+        }
+
+        // Move pipes
+        pipes = map(pipes, fn(p) {
+            { x: p.x - PIPE_SPEED * delta, gap_y: p.gap_y, scored: p.scored }
+        })
+
+        // Remove off-screen pipes
+        pipes = filter(pipes, fn(p) { p.x > float(-PIPE_WIDTH) })
+
+        // Check scoring
+        for i in range(0, len(pipes)) {
+            let p = pipes[i]
+            if !p.scored && int(p.x) + PIPE_WIDTH < BIRD_X {
+                score += 1
+                pipes[i] = { x: p.x, gap_y: p.gap_y, scored: true }
+            }
+        }
+
+        // Check collisions
+        let bird_top = bird_y - float(BIRD_RADIUS)
+        let bird_bottom = bird_y + float(BIRD_RADIUS)
+
+        // Ground and ceiling
+        if bird_bottom > float(SH - GROUND_H) || bird_top < 0.0 {
+            game_over = true
+        }
+
+        // Pipe collisions
+        for p in pipes {
+            let px = int(p.x)
+            if BIRD_X + BIRD_RADIUS > px && BIRD_X - BIRD_RADIUS < px + PIPE_WIDTH {
+                // Bird overlaps pipe horizontally
+                if bird_top < float(p.gap_y) || bird_bottom > float(p.gap_y + PIPE_GAP) {
+                    game_over = true
+                }
+            }
+        }
+    }
+}
+
+// Drawing
+// Sky
+clear(100, 180, 255)
+
+// Pipes
+for p in pipes {
+    let px = int(p.x)
+    // Top pipe
+    draw_rect(px, 0, PIPE_WIDTH, p.gap_y, 80, 180, 50)
+    draw_rect_outline(px, 0, PIPE_WIDTH, p.gap_y, 40, 120, 30)
+    // Bottom pipe
+    let bottom_y = p.gap_y + PIPE_GAP
+    let bottom_h = SH - GROUND_H - bottom_y
+    draw_rect(px, bottom_y, PIPE_WIDTH, bottom_h, 80, 180, 50)
+    draw_rect_outline(px, bottom_y, PIPE_WIDTH, bottom_h, 40, 120, 30)
+}
+
+// Ground
+draw_rect(0, SH - GROUND_H, SW, GROUND_H, 180, 140, 80)
+draw_line(0, SH - GROUND_H, SW, SH - GROUND_H, 100, 80, 40)
+
+// Bird
+let bird_yi = int(bird_y)
+draw_circle(BIRD_X, bird_yi, BIRD_RADIUS, 255, 220, 50)
+// Eye
+draw_circle(BIRD_X + 6, bird_yi - 4, 4, 255, 255, 255)
+draw_circle(BIRD_X + 8, bird_yi - 4, 2, 0, 0, 0)
+
+// Score
+draw_text(str(score), SW / 2 - 10, 40, 48, 255, 255, 255)
+
+// Game over overlay
+if game_over {
+    draw_text("GAME OVER", SW / 2 - 100, SH / 2 - 40, 40, 255, 0, 0)
+    if frame % 60 < 40 {
+        draw_text("Press SPACE to restart", SW / 2 - 140, SH / 2 + 20, 24, 255, 255, 255)
+    }
+}
+
+// Start screen
+if !started && !game_over {
+    if frame % 60 < 40 {
+        draw_text("Press SPACE to start", SW / 2 - 130, SH / 2, 24, 255, 255, 255)
+    }
+}

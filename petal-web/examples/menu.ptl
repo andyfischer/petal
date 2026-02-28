@@ -9,13 +9,16 @@
 
 // ── Dropdown (stateless) ────────────────────────────────
 
-fn dropdown(label, items, open, btn_id) {
+fn dropdown(label, items, open, btn_id, backdrop_id) {
   let menu_items = map(items, fn(item) {
     <div class="dropdown-item">{item}</div>
   })
 
   let menu = if open {
-    <div class="dropdown-menu">{menu_items}</div>
+    <span>
+      <div class="dropdown-backdrop" eid={backdrop_id}></div>
+      <div class="dropdown-menu">{menu_items}</div>
+    </span>
   } else {
     <span></span>
   }
@@ -52,7 +55,9 @@ fn modal_view(title, body, visible, open_id, close_id) {
 fn app() {
   // Allocate stable element IDs
   let file_btn_id = next_id()
+  let file_backdrop_id = next_id()
   let edit_btn_id = next_id()
+  let edit_backdrop_id = next_id()
   let modal_open_id = next_id()
   let modal_close_id = next_id()
 
@@ -64,8 +69,14 @@ fn app() {
   if clicked(file_btn_id) {
     file_open = !file_open
   }
+  if clicked(file_backdrop_id) {
+    file_open = false
+  }
   if clicked(edit_btn_id) {
     edit_open = !edit_open
+  }
+  if clicked(edit_backdrop_id) {
+    edit_open = false
   }
   if clicked(modal_open_id) {
     modal_visible = true
@@ -74,8 +85,8 @@ fn app() {
     modal_visible = false
   }
 
-  let file_dropdown = dropdown("File", ["New", "Open", "Save", "Export"], file_open, file_btn_id)
-  let edit_dropdown = dropdown("Edit", ["Undo", "Redo", "Cut", "Copy", "Paste"], edit_open, edit_btn_id)
+  let file_dropdown = dropdown("File", ["New", "Open", "Save", "Export"], file_open, file_btn_id, file_backdrop_id)
+  let edit_dropdown = dropdown("Edit", ["Undo", "Redo", "Cut", "Copy", "Paste"], edit_open, edit_btn_id, edit_backdrop_id)
   let info_modal = modal_view("About Petal", "A custom programming language with JSX, state management, and more.", modal_visible, modal_open_id, modal_close_id)
 
   <div>

@@ -25,18 +25,15 @@ pub struct GameConfig {
     pub agent: bool,
     #[allow(dead_code)]
     pub headless: bool,
+    /// When set, enables browser mode: populate BROWSER_STATE from this directory.
+    pub examples_dir: Option<PathBuf>,
 }
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
 
 /// Normal interactive game loop (no agent protocol).
-pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
-    run_game_inner(Some(source_path), None, config)
-}
-
-/// Browser mode: no source file, show file browser.
-pub fn run_browser(examples_dir: &Path, config: GameConfig) -> Result<(), String> {
-    run_game_inner(None, Some(examples_dir), config)
+pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
+    run_game_inner(source_path, config)
 }
 
 fn populate_browser_state(examples_dir: &Path) {
@@ -78,7 +75,6 @@ fn populate_browser_state(examples_dir: &Path) {
 
 fn run_game_inner(
     source_path: Option<&str>,
-    examples_dir: Option<&Path>,
     config: GameConfig,
 ) -> Result<(), String> {
     let sdl = sdl2::init()?;
@@ -101,25 +97,12 @@ fn run_game_inner(
     let mut event_pump = sdl.event_pump()?;
     let font = load_font(&ttf, 24)?;
 
-    // Determine if we start in browser mode
     let mut in_browser = source_path.is_none();
+    let has_browser = config.examples_dir.is_some();
 
-    // If browser mode, populate examples and load browser script
-    if let Some(dir) = examples_dir {
-        populate_browser_state(dir);
-    }
+    let (mut env, mut program_id, mut stack_id) = init_petal(source_path, &config)?;
 
-    let (initial_source, initial_path) = if let Some(sp) = source_path {
-        let src = std::fs::read_to_string(sp)
-            .map_err(|e| format!("Failed to read {}: {}", sp, e))?;
-        (src, Some(sp.to_string()))
-    } else {
-        (BROWSER_SCRIPT.to_string(), None)
-    };
-
-    let (mut env, mut program_id, mut stack_id) = init_petal_from_source(&initial_source, &config)?;
-
-    let mut current_source_path: Option<String> = initial_path;
+    let mut current_source_path: Option<String> = source_path.map(|s| s.to_string());
 
     let (mut _reload_tx, mut reload_rx) = mpsc::channel();
     let mut _watcher: Option<notify::RecommendedWatcher> = None;
@@ -134,9 +117,6 @@ fn run_game_inner(
 
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
-
-    // Keep track of examples_dir for returning to browser
-    let examples_dir_buf = examples_dir.map(|d| d.to_path_buf());
 
     'game: loop {
         INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
@@ -188,7 +168,7 @@ fn run_game_inner(
             if in_browser {
                 // In browser mode, Escape quits
                 break 'game;
-            } else if examples_dir_buf.is_some() {
+            } else if has_browser {
                 // In game mode with browser available, return to browser
                 let source = BROWSER_SCRIPT.to_string();
                 match switch_script(&mut env, &source, &config) {
@@ -287,28 +267,9 @@ fn switch_script(
     Ok((program_id, stack_id))
 }
 
-fn init_petal_from_source(
-    source: &str,
-    config: &GameConfig,
-) -> Result<(Env, ProgramId, StackKey), String> {
-    let mut env = Env::new();
-    native_fns::register_all(&mut env);
-
-    let program_id = env.load_program(source)?;
-    let stack_id = env.create_stack(program_id)?;
-
-    FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.screen_width = config.width as i32;
-        info.screen_height = config.height as i32;
-    });
-
-    Ok((env, program_id, stack_id))
-}
-
 /// Agent mode with SDL window (hybrid): game runs interactively,
 /// LLM can pause/resume/step/inspect via stdin protocol.
-pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
+pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
@@ -333,7 +294,10 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
 
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
-        setup_watcher(source_path, reload_tx)?
+        match source_path {
+            Some(sp) => setup_watcher(sp, reload_tx)?,
+            None => None,
+        }
     } else {
         None
     };
@@ -417,7 +381,9 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
                 info.frame_count = frame_count;
             });
 
-            check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
+            if let Some(sp) = source_path {
+                check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
+            }
 
             DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
 
@@ -441,12 +407,15 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
 }
 
 /// Headless agent mode: no SDL window, purely protocol-driven.
-pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String> {
+pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
     let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
 
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
-        setup_watcher(source_path, reload_tx)?
+        match source_path {
+            Some(sp) => setup_watcher(sp, reload_tx)?,
+            None => None,
+        }
     } else {
         None
     };
@@ -468,7 +437,9 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
             Err(_) => break, // stdin closed
         };
 
-        check_hot_reload(&reload_rx, source_path, &mut env, program_id, stack_id);
+        if let Some(sp) = source_path {
+            check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
+        }
 
         handle_command(
             cmd,
@@ -484,7 +455,7 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
 
 /// Screenshot mode: run N frames headlessly, save a PNG, exit.
 pub fn run_screenshot(
-    source_path: &str,
+    source_path: Option<&str>,
     config: GameConfig,
     output_path: &str,
     frames: u32,
@@ -508,15 +479,25 @@ pub fn run_screenshot(
 
 // --- Shared helpers ---
 
+/// Initialize the Petal env from a source file path, or from the embedded
+/// browser script when `source_path` is None (browser mode).
+/// When `config.examples_dir` is set, populates BROWSER_STATE.
 fn init_petal(
-    source_path: &str,
+    source_path: Option<&str>,
     config: &GameConfig,
 ) -> Result<(Env, ProgramId, StackKey), String> {
     let mut env = Env::new();
     native_fns::register_all(&mut env);
 
-    let source = std::fs::read_to_string(source_path)
-        .map_err(|e| format!("Failed to read {}: {}", source_path, e))?;
+    if let Some(ref dir) = config.examples_dir {
+        populate_browser_state(dir);
+    }
+
+    let source = match source_path {
+        Some(sp) => std::fs::read_to_string(sp)
+            .map_err(|e| format!("Failed to read {}: {}", sp, e))?,
+        None => BROWSER_SCRIPT.to_string(),
+    };
 
     let program_id = env.load_program(&source)?;
     let stack_id = env.create_stack(program_id)?;

@@ -75,6 +75,19 @@ fn main() {
         i += 1;
     }
 
+    // When no source file is given, enable browser mode with the examples directory
+    let examples_dir = if source_path.is_none() {
+        let dir = PathBuf::from(EXAMPLES_DIR);
+        if !dir.is_dir() {
+            eprintln!("Error: no source file provided and examples directory not found at {}", EXAMPLES_DIR);
+            print_usage();
+            std::process::exit(1);
+        }
+        Some(dir)
+    } else {
+        None
+    };
+
     let config = GameConfig {
         width,
         height,
@@ -82,27 +95,19 @@ fn main() {
         hot_reload,
         agent,
         headless,
+        examples_dir,
     };
 
-    let result = if let Some(ref sp) = source_path {
-        if let Some(ref out_path) = screenshot_path {
-            game_loop::run_screenshot(sp, config, out_path, screenshot_frames)
-        } else if headless {
-            game_loop::run_headless(sp, config)
-        } else if agent {
-            game_loop::run_agent(sp, config)
-        } else {
-            game_loop::run_game(sp, config)
-        }
+    let sp = source_path.as_deref();
+
+    let result = if let Some(ref out_path) = screenshot_path {
+        game_loop::run_screenshot(sp, config, out_path, screenshot_frames)
+    } else if headless {
+        game_loop::run_headless(sp, config)
+    } else if agent {
+        game_loop::run_agent(sp, config)
     } else {
-        // No source file — browser mode
-        let dir = PathBuf::from(EXAMPLES_DIR);
-        if !dir.is_dir() {
-            eprintln!("Error: no source file provided and examples directory not found at {}", EXAMPLES_DIR);
-            print_usage();
-            std::process::exit(1);
-        }
-        game_loop::run_browser(&dir, config)
+        game_loop::run_game(sp, config)
     };
 
     if let Err(e) = result {

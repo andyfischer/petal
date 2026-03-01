@@ -2,7 +2,9 @@
 //!
 //! Executes a program by walking the term graph one term at a time.
 
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
+
+use smallvec::SmallVec;
 
 use crate::ast::*;
 use crate::builtins;
@@ -46,7 +48,7 @@ impl Evaluator {
     fn resolve_loop_context(stack: &Stack) -> smallvec::SmallVec<[LoopKeyPart; 2]> {
         let mut parts = smallvec::SmallVec::new();
         for frame in &stack.frames {
-            for loop_state in frame.loop_states.values() {
+            for (_, loop_state) in &frame.loop_states {
                 match loop_state {
                     LoopState::For { index, .. } => {
                         // index is 1-past-current (already incremented), so current = index - 1
@@ -124,8 +126,8 @@ impl Evaluator {
 
         let term = program.get_term(current_term_id);
 
-        // Read input values
-        let input_values: Vec<Value> = term
+        // Read input values (SmallVec avoids heap allocation for ≤4 inputs)
+        let input_values: SmallVec<[Value; 4]> = term
             .inputs
             .iter()
             .map(|&input_tid| Self::read_register(program, stack, input_tid))
@@ -193,8 +195,21 @@ impl Evaluator {
         let term_block = term.block_id;
         let reg_idx = term.register.0 as usize;
 
-        // Search from current frame upward through parent_frame links
-        let mut frame_idx = stack.frames.len() - 1;
+        // Fast path: most reads are from the current frame's block
+        let top = stack.frames.last().unwrap();
+        if top.block_id == term_block {
+            return if reg_idx < top.registers.len() {
+                top.registers[reg_idx]
+            } else {
+                Value::Nil
+            };
+        }
+
+        // Slow path: walk parent_frame links for cross-block reads
+        let mut frame_idx = match top.parent_frame {
+            Some(parent) => parent,
+            None => return Value::Nil,
+        };
         loop {
             let frame = &stack.frames[frame_idx];
             if frame.block_id == term_block {
@@ -206,7 +221,7 @@ impl Evaluator {
             }
             match frame.parent_frame {
                 Some(parent) => frame_idx = parent,
-                None => return Value::Nil, // not found
+                None => return Value::Nil,
             }
         }
     }
@@ -566,7 +581,7 @@ impl Evaluator {
             }
 
             TermOp::AllocMap { fields } => {
-                let mut map = BTreeMap::new();
+                let mut map = IndexMap::new();
                 for (i, field_cid) in fields.iter().enumerate() {
                     if let Some(key) = program.get_string_constant(*field_cid) {
                         let val = inputs.get(i).copied().unwrap_or(Value::Nil);
@@ -586,7 +601,7 @@ impl Evaluator {
                 let tag_id = heap.alloc_string(tag_str);
 
                 let num_props = prop_keys.len();
-                let mut map = BTreeMap::new();
+                let mut map = IndexMap::new();
                 for (i, key_cid) in prop_keys.iter().enumerate() {
                     if let Some(key) = program.get_string_constant(*key_cid) {
                         let val = inputs.get(i).copied().unwrap_or(Value::Nil);
@@ -770,7 +785,7 @@ impl Evaluator {
         if stack.break_flag {
             stack.break_flag = false;
             if let Some(frame) = stack.frames.last_mut() {
-                frame.loop_states.remove(&term.id);
+                frame.remove_loop_state(&term.id);
             }
             Self::write_register(stack, term, Value::Nil);
             return ControlFlow::Advance;
@@ -785,14 +800,14 @@ impl Evaluator {
 
         // Initialize loop state on the first visit.
         let needs_init = stack.frames.last()
-            .map(|f| !f.loop_states.contains_key(&term.id))
+            .map(|f| !f.has_loop_state(&term.id))
             .unwrap_or(false);
         if needs_init {
             match inputs[0] {
                 Value::List(list_id) => {
                     let elements = heap.get_list(list_id).to_vec();
                     if let Some(frame) = stack.frames.last_mut() {
-                        frame.loop_states.insert(
+                        frame.set_loop_state(
                             term.id,
                             LoopState::For { elements, index: 0 },
                         );
@@ -810,14 +825,14 @@ impl Evaluator {
         // Get the next element (or detect loop completion).
         let maybe_elem: Option<Value> = {
             let frame = stack.frames.last_mut().unwrap();
-            match frame.loop_states.get_mut(&term.id) {
+            match frame.get_loop_state_mut(&term.id) {
                 Some(LoopState::For { elements, index }) => {
                     if *index < elements.len() {
                         let elem = elements[*index];
                         *index += 1;
                         Some(elem)
                     } else {
-                        frame.loop_states.remove(&term.id);
+                        frame.remove_loop_state(&term.id);
                         None
                     }
                 }
@@ -860,7 +875,7 @@ impl Evaluator {
         if stack.break_flag {
             stack.break_flag = false;
             if let Some(frame) = stack.frames.last_mut() {
-                frame.loop_states.remove(&term.id);
+                frame.remove_loop_state(&term.id);
             }
             Self::write_register(stack, term, Value::Nil);
             return ControlFlow::Advance;
@@ -876,7 +891,7 @@ impl Evaluator {
 
         // Determine current loop phase from loop_states.
         let loop_phase = stack.frames.last()
-            .and_then(|f| f.loop_states.get(&term.id))
+            .and_then(|f| f.get_loop_state(&term.id))
             .map(|ls| match ls {
                 LoopState::WhileCondition { iteration } => (true, *iteration),
                 LoopState::WhileBody { iteration } => (false, *iteration),
@@ -891,7 +906,7 @@ impl Evaluator {
                 if !cond_val.is_truthy() {
                     // Condition false — loop done.
                     if let Some(frame) = stack.frames.last_mut() {
-                        frame.loop_states.remove(&term.id);
+                        frame.remove_loop_state(&term.id);
                     }
                     Self::write_register(stack, term, Value::Nil);
                     return ControlFlow::Advance;
@@ -899,7 +914,7 @@ impl Evaluator {
 
                 // Transition to WhileBody so resolve_loop_context sees the iteration.
                 if let Some(frame) = stack.frames.last_mut() {
-                    frame.loop_states.insert(term.id, LoopState::WhileBody { iteration });
+                    frame.set_loop_state(term.id, LoopState::WhileBody { iteration });
                 }
 
                 // Push body frame.
@@ -922,7 +937,7 @@ impl Evaluator {
                     Some(term.id), Some(parent_frame_idx),
                 ));
                 if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
-                    frame.loop_states.insert(term.id, LoopState::WhileCondition { iteration: next_iteration });
+                    frame.set_loop_state(term.id, LoopState::WhileCondition { iteration: next_iteration });
                 }
                 ControlFlow::FramePushed
             }
@@ -935,7 +950,7 @@ impl Evaluator {
                     Some(term.id), Some(parent_frame_idx),
                 ));
                 if let Some(frame) = stack.frames.get_mut(parent_frame_idx) {
-                    frame.loop_states.insert(term.id, LoopState::WhileCondition { iteration: 0 });
+                    frame.set_loop_state(term.id, LoopState::WhileCondition { iteration: 0 });
                 }
                 ControlFlow::FramePushed
             }

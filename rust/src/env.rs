@@ -385,7 +385,7 @@ impl Env {
                     self.heap.mark_value(*val);
                 }
                 // Loop state elements (ForLoop stores Vec<Value>)
-                for loop_state in frame.loop_states.values() {
+                for (_, loop_state) in &frame.loop_states {
                     if let crate::stack::LoopState::For { elements, .. } = loop_state {
                         for val in elements {
                             self.heap.mark_value(*val);

@@ -75,7 +75,8 @@ pub struct Frame {
     pub is_loop_body: bool,
     /// Loop state for any loop terms executing within this frame.
     /// Keyed by TermId of the ForLoop / WhileLoop term.
-    pub loop_states: HashMap<TermId, LoopState>,
+    /// SmallVec since most frames have 0-1 active loops; linear scan beats hashing.
+    pub loop_states: SmallVec<[(TermId, LoopState); 2]>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +103,7 @@ impl Frame {
             return_term,
             parent_frame,
             is_loop_body: false,
-            loop_states: HashMap::new(),
+            loop_states: SmallVec::new(),
         }
     }
 
@@ -110,6 +111,37 @@ impl Frame {
     pub fn as_loop_body(mut self) -> Self {
         self.is_loop_body = true;
         self
+    }
+
+    /// Check if a loop state exists for the given term.
+    pub fn has_loop_state(&self, term_id: &TermId) -> bool {
+        self.loop_states.iter().any(|(id, _)| id == term_id)
+    }
+
+    /// Get a reference to a loop state by term id.
+    pub fn get_loop_state(&self, term_id: &TermId) -> Option<&LoopState> {
+        self.loop_states.iter().find(|(id, _)| id == term_id).map(|(_, ls)| ls)
+    }
+
+    /// Get a mutable reference to a loop state by term id.
+    pub fn get_loop_state_mut(&mut self, term_id: &TermId) -> Option<&mut LoopState> {
+        self.loop_states.iter_mut().find(|(id, _)| id == term_id).map(|(_, ls)| ls)
+    }
+
+    /// Insert or update a loop state for the given term.
+    pub fn set_loop_state(&mut self, term_id: TermId, state: LoopState) {
+        if let Some(entry) = self.loop_states.iter_mut().find(|(id, _)| *id == term_id) {
+            entry.1 = state;
+        } else {
+            self.loop_states.push((term_id, state));
+        }
+    }
+
+    /// Remove a loop state for the given term.
+    pub fn remove_loop_state(&mut self, term_id: &TermId) {
+        if let Some(pos) = self.loop_states.iter().position(|(id, _)| id == term_id) {
+            self.loop_states.swap_remove(pos);
+        }
     }
 }
 

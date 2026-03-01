@@ -2,7 +2,9 @@
 //!
 //! See docs/tech_outline/topics/Heap.md
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
+
+use indexmap::IndexMap;
 
 use crate::value::Value;
 
@@ -35,7 +37,7 @@ struct HeapList {
 }
 
 struct HeapMap {
-    entries: BTreeMap<String, Value>,
+    entries: IndexMap<String, Value>,
     gc_mark: bool,
     alive: bool,
 }
@@ -164,7 +166,7 @@ impl Heap {
 
     // --- Map allocation ---
 
-    pub fn alloc_map(&mut self, entries: BTreeMap<String, Value>) -> MapId {
+    pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
         self.tick_alloc();
         if let Some(idx) = self.free_maps.pop() {
             let slot = &mut self.maps[idx as usize];
@@ -183,11 +185,11 @@ impl Heap {
         }
     }
 
-    pub fn get_map(&self, id: MapId) -> &BTreeMap<String, Value> {
+    pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
         &self.maps[id.0 as usize].entries
     }
 
-    pub fn get_map_mut(&mut self, id: MapId) -> &mut BTreeMap<String, Value> {
+    pub fn get_map_mut(&mut self, id: MapId) -> &mut IndexMap<String, Value> {
         &mut self.maps[id.0 as usize].entries
     }
 

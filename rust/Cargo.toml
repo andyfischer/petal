@@ -8,6 +8,7 @@ default = []
 wasm = ["wasm-bindgen"]
 
 [dependencies]
+indexmap = { version = "2", features = ["serde"] }
 smallvec = { version = "1", features = ["serde"] }
 slotmap = "1"
 serde = { version = "1", features = ["derive"] }

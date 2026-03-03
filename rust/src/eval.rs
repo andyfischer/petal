@@ -173,18 +173,29 @@ impl Evaluator {
             }
             ControlFlow::Error(msg) => {
                 // Annotate error with source position from the term that failed
-                if let Some(span) = program.source_map.get(current_term_id) {
+                let mut error_msg = if let Some(span) = program.source_map.get(current_term_id) {
                     if span.start.line > 0 {
-                        StepResult::Error(format!(
+                        format!(
                             "{} [line {}, column {}]",
                             msg, span.start.line, span.start.column
-                        ))
+                        )
                     } else {
-                        StepResult::Error(msg)
+                        msg
                     }
                 } else {
-                    StepResult::Error(msg)
+                    msg
+                };
+
+                // Build stack trace from call frames
+                let trace = Self::build_stack_trace(program, stack);
+                if !trace.is_empty() {
+                    error_msg.push_str("\nStack trace:");
+                    for entry in &trace {
+                        error_msg.push_str(&format!("\n  {}", entry));
+                    }
                 }
+
+                StepResult::Error(error_msg)
             }
         }
     }
@@ -248,6 +259,35 @@ impl Evaluator {
             }
             frame.registers[reg] = value;
         }
+    }
+
+    /// Build a stack trace from the current call frames.
+    /// Returns a list of strings like "in foo() [line 5, column 1]".
+    fn build_stack_trace(program: &Program, stack: &Stack) -> Vec<String> {
+        let mut trace = Vec::new();
+
+        // Walk frames from top to bottom, collecting call frames with function names
+        for frame in stack.frames.iter().rev() {
+            if let Some(ref name) = frame.fn_name {
+                // Find the call site: the return_term is the Call term in the parent
+                if let Some(return_tid) = frame.return_term {
+                    if let Some(span) = program.source_map.get(return_tid) {
+                        if span.start.line > 0 {
+                            trace.push(format!("in {}() [line {}, column {}]", name, span.start.line, span.start.column));
+                            continue;
+                        }
+                    }
+                }
+                trace.push(format!("in {}()", name));
+            }
+        }
+
+        // Only show trace if there are actual function calls (not just the root frame)
+        if trace.is_empty() {
+            return trace;
+        }
+
+        trace
     }
 
     /// Pop the current frame and handle the result.
@@ -1389,9 +1429,12 @@ impl Evaluator {
         let block = program.get_block(body_block);
 
         if args.len() != func.params.len() {
+            let name = func.name.as_deref().unwrap_or("<anonymous>");
             return Err(format!(
-                "Expected {} arguments, got {}",
+                "{}() expected {} argument{}, got {}",
+                name,
                 func.params.len(),
+                if func.params.len() == 1 { "" } else { "s" },
                 args.len()
             ));
         }
@@ -1428,6 +1471,7 @@ impl Evaluator {
             body_block, block.entry, 0, return_term, None,
         );
         frame.registers = registers;
+        frame.fn_name = func.name.clone();
         Ok(frame)
     }
 

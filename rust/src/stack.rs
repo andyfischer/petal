@@ -77,6 +77,9 @@ pub struct Frame {
     /// Keyed by TermId of the ForLoop / WhileLoop term.
     /// SmallVec since most frames have 0-1 active loops; linear scan beats hashing.
     pub loop_states: SmallVec<[(TermId, LoopState); 2]>,
+    /// Function name for this frame (if it's a function call frame).
+    /// Used for stack traces in error messages.
+    pub fn_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +107,7 @@ impl Frame {
             parent_frame,
             is_loop_body: false,
             loop_states: SmallVec::new(),
+            fn_name: None,
         }
     }
 

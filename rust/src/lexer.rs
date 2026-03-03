@@ -346,7 +346,7 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::And, start);
                 } else {
-                    return Err(format!("Unexpected character '&' at position {}", self.pos));
+                    return Err(format!("Unexpected character '&' [line {}, column {}]", self.line, self.col));
                 }
             }
             '|' => {
@@ -357,7 +357,7 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::Pipe, start);
                 } else {
-                    return Err(format!("Unexpected character '|' at position {}", self.pos));
+                    return Err(format!("Unexpected character '|' [line {}, column {}]", self.line, self.col));
                 }
             }
             c if c.is_ascii_digit() => self.read_number()?,
@@ -368,7 +368,7 @@ impl Lexer {
                 self.push_token(Token::Newline, start);
             }
             _ => {
-                return Err(format!("Unexpected character '{}' at position {}", ch, self.pos));
+                return Err(format!("Unexpected character '{}' [line {}, column {}]", ch, self.line, self.col));
             }
         }
         Ok(())
@@ -421,7 +421,7 @@ impl Lexer {
             if ch == '\\' {
                 self.advance_char();
                 if self.pos >= self.input.len() {
-                    return Err("Unterminated string escape".to_string());
+                    return Err(format!("Unterminated string escape [line {}, column {}]", self.line, self.col));
                 }
                 match self.input[self.pos] {
                     'n' => s.push('\n'),
@@ -456,7 +456,7 @@ impl Lexer {
             s.push(ch);
             self.advance_char();
         }
-        Err(format!("Unterminated string starting at line {}, column {}", start.line, start.column))
+        Err(format!("Unterminated string [line {}, column {}]", start.line, start.column))
     }
 
     fn read_number(&mut self) -> Result<(), String> {
@@ -543,7 +543,7 @@ impl Lexer {
             }
         }
         if depth > 0 {
-            return Err("Unterminated braced expression".to_string());
+            return Err(format!("Unterminated braced expression [line {}, column {}]", self.line, self.col));
         }
         Ok(())
     }
@@ -554,8 +554,8 @@ impl Lexer {
             Ok(())
         } else {
             Err(format!(
-                "Expected '{}' at position {}",
-                expected, self.pos
+                "Expected '{}' [line {}, column {}]",
+                expected, self.line, self.col
             ))
         }
     }
@@ -572,7 +572,7 @@ impl Lexer {
             }
         }
         if self.pos == text_start {
-            return Err(format!("Expected tag name at position {}", self.pos));
+            return Err(format!("Expected tag name [line {}, column {}]", self.line, self.col));
         }
         let name: String = self.input[text_start..self.pos].iter().collect();
         self.push_token(Token::JsxTagName(name), start);

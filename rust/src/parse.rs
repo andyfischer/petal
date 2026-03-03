@@ -76,7 +76,7 @@ impl Parser {
                     format!("Expected {:?}, got {:?}", expected, got)
                 }
             };
-            Err(msg)
+            Err(self.error_at_current(msg))
         }
     }
 
@@ -318,10 +318,44 @@ impl Parser {
         Ok(params)
     }
 
+    /// Get the span of the current token (the one at self.pos).
+    fn current_span(&self) -> SourceSpan {
+        if self.pos < self.token_spans.len() {
+            self.token_spans[self.pos]
+        } else {
+            ZERO_SPAN
+        }
+    }
+
+    /// Format an error message with the current token's source position.
+    fn error_at_current(&self, msg: String) -> String {
+        let span = self.current_span();
+        if span.start.line > 0 {
+            format!("{} [line {}, column {}]", msg, span.start.line, span.start.column)
+        } else {
+            msg
+        }
+    }
+
+    /// Format an error at a specific token position.
+    fn error_at(&self, pos: usize, msg: String) -> String {
+        if pos < self.token_spans.len() {
+            let span = self.token_spans[pos];
+            if span.start.line > 0 {
+                format!("{} [line {}, column {}]", msg, span.start.line, span.start.column)
+            } else {
+                msg
+            }
+        } else {
+            msg
+        }
+    }
+
     fn expect_ident(&mut self) -> Result<String, String> {
+        let pos = self.pos;
         match self.advance() {
             Token::Ident(name) => Ok(name),
-            other => Err(format!("Expected identifier, got {:?}", other)),
+            other => Err(self.error_at(pos, format!("Expected identifier, got {:?}", other))),
         }
     }
 
@@ -611,13 +645,13 @@ impl Parser {
             | ExprKind::Match { .. } => Ok(()),
 
             // Not callable: literals, operators, collections, etc.
-            ExprKind::Literal(_) => Err("Literal value cannot be called as a function".to_string()),
-            ExprKind::BinaryOp { .. } => Err("Binary operation result cannot be called as a function".to_string()),
-            ExprKind::UnaryOp { .. } => Err("Unary operation result cannot be called as a function".to_string()),
-            ExprKind::List(_) => Err("List literal cannot be called as a function".to_string()),
-            ExprKind::Record(_) => Err("Record literal cannot be called as a function".to_string()),
-            ExprKind::StringInterp { .. } => Err("String interpolation cannot be called as a function".to_string()),
-            ExprKind::Element { .. } => Err("Element cannot be called as a function".to_string()),
+            ExprKind::Literal(_) => Err(self.error_at_current("Literal value cannot be called as a function".to_string())),
+            ExprKind::BinaryOp { .. } => Err(self.error_at_current("Binary operation result cannot be called as a function".to_string())),
+            ExprKind::UnaryOp { .. } => Err(self.error_at_current("Unary operation result cannot be called as a function".to_string())),
+            ExprKind::List(_) => Err(self.error_at_current("List literal cannot be called as a function".to_string())),
+            ExprKind::Record(_) => Err(self.error_at_current("Record literal cannot be called as a function".to_string())),
+            ExprKind::StringInterp { .. } => Err(self.error_at_current("String interpolation cannot be called as a function".to_string())),
+            ExprKind::Element { .. } => Err(self.error_at_current("Element cannot be called as a function".to_string())),
         }
     }
 
@@ -667,7 +701,7 @@ impl Parser {
             Token::Match => self.parse_match_expr(),
             Token::Fn => self.parse_lambda(),
             Token::JsxOpenStart => self.parse_jsx_element(),
-            other => Err(format!("Unexpected token: {:?}", other)),
+            other => Err(self.error_at_current(format!("Unexpected token: {:?}", other))),
         }
     }
 
@@ -876,10 +910,10 @@ impl Parser {
                         self.advance();
                         Ok(Pattern::Literal(Literal::Float(-f)))
                     }
-                    _ => Err("Expected number after '-' in pattern".to_string()),
+                    _ => Err(self.error_at_current("Expected number after '-' in pattern".to_string())),
                 }
             }
-            other => Err(format!("Expected pattern, got {:?}", other)),
+            other => Err(self.error_at_current(format!("Expected pattern, got {:?}", other))),
         }
     }
 
@@ -959,10 +993,10 @@ impl Parser {
                     parts.push(String::new());
                 }
                 other => {
-                    return Err(format!(
+                    return Err(self.error_at_current(format!(
                         "Expected string part in interpolation, got {:?}",
                         other
-                    ));
+                    )));
                 }
             }
 
@@ -990,7 +1024,7 @@ impl Parser {
         self.advance(); // consume JsxOpenStart
         let tag = match self.advance() {
             Token::JsxTagName(name) => name,
-            other => return Err(format!("Expected JSX tag name, got {:?}", other)),
+            other => return Err(self.error_at(self.pos - 1, format!("Expected JSX tag name, got {:?}", other))),
         };
 
         let mut props = Vec::new();
@@ -1024,19 +1058,19 @@ impl Parser {
                             expr
                         }
                         other => {
-                            return Err(format!(
+                            return Err(self.error_at_current(format!(
                                 "Expected string or {{expr}} for attribute value, got {:?}",
                                 other
-                            ))
+                            )))
                         }
                     };
                     props.push((attr_name, value));
                 }
                 other => {
-                    return Err(format!(
+                    return Err(self.error_at_current(format!(
                         "Unexpected token in JSX tag: {:?}",
                         other
-                    ))
+                    )))
                 }
             }
         }
@@ -1049,17 +1083,17 @@ impl Parser {
                     match self.advance() {
                         Token::JsxTagName(close_tag) => {
                             if close_tag != tag {
-                                return Err(format!(
+                                return Err(self.error_at(self.pos - 1, format!(
                                     "Mismatched JSX tags: <{}> and </{}>",
                                     tag, close_tag
-                                ));
+                                )));
                             }
                         }
                         other => {
-                            return Err(format!(
+                            return Err(self.error_at(self.pos - 1, format!(
                                 "Expected closing tag name, got {:?}",
                                 other
-                            ))
+                            )))
                         }
                     }
                     break;
@@ -1079,13 +1113,13 @@ impl Parser {
                     children.push(JsxChild::Expr(nested));
                 }
                 Token::Eof => {
-                    return Err(format!("Unclosed JSX element <{}>", tag));
+                    return Err(self.error_at_current(format!("Unclosed JSX element <{}>", tag)));
                 }
                 other => {
-                    return Err(format!(
+                    return Err(self.error_at_current(format!(
                         "Unexpected token in JSX children: {:?}",
                         other
-                    ))
+                    )))
                 }
             }
         }
@@ -1114,10 +1148,17 @@ impl Parser {
 }
 
 fn expr_to_assign_target(expr: Expr) -> Result<AssignTarget, String> {
+    let span = expr.span;
     match expr.kind {
         ExprKind::Ident(name) => Ok(AssignTarget::Name(name)),
         ExprKind::FieldAccess { object, field } => Ok(AssignTarget::Field(object, field)),
         ExprKind::IndexAccess { object, index } => Ok(AssignTarget::Index(object, index)),
-        _ => Err("Invalid assignment target".to_string()),
+        _ => {
+            if span.start.line > 0 {
+                Err(format!("Invalid assignment target [line {}, column {}]", span.start.line, span.start.column))
+            } else {
+                Err("Invalid assignment target".to_string())
+            }
+        }
     }
 }

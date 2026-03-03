@@ -273,14 +273,14 @@ fn read_source(input: &SourceInput) -> String {
 fn compile_source(source: &str) -> crate::program::Program {
     let mut lexer = Lexer::new(source);
     if let Err(e) = lexer.tokenize() {
-        eprintln!("Lexer error: {}", e);
+        eprintln!("Error: {}", e);
         process::exit(1);
     }
     let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
     let stmts = match parser.parse_program() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Parse error: {}", e);
+            eprintln!("Error: {}", e);
             process::exit(1);
         }
     };
@@ -317,7 +317,7 @@ pub fn execute(cli: CliArgs) {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Lexer error: {}", e);
+                    eprintln!("Error: {}", e);
                     process::exit(1);
                 }
             }
@@ -325,7 +325,7 @@ pub fn execute(cli: CliArgs) {
         Command::ShowAst { json } => {
             let mut lexer = Lexer::new(&source);
             if let Err(e) = lexer.tokenize() {
-                eprintln!("Lexer error: {}", e);
+                eprintln!("Error: {}", e);
                 process::exit(1);
             }
             let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
@@ -340,7 +340,7 @@ pub fn execute(cli: CliArgs) {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Parse error: {}", e);
+                    eprintln!("Error: {}", e);
                     process::exit(1);
                 }
             }

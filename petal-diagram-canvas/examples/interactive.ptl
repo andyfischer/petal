@@ -1,0 +1,122 @@
+// Interactive Nodes — click to toggle, drag with mouse
+// Demonstrates state, mouse input, and dynamic drawing
+
+state nodes = [
+    {x: 150, y: 150, label: "Alpha",   active: true},
+    {x: 400, y: 100, label: "Beta",    active: false},
+    {x: 650, y: 150, label: "Gamma",   active: true},
+    {x: 250, y: 350, label: "Delta",   active: false},
+    {x: 550, y: 350, label: "Epsilon", active: true}
+]
+state dragging = -1
+state drag_offset_x = 0
+state drag_offset_y = 0
+
+let mx = mouse_x()
+let my = mouse_y()
+let pressed = mouse_pressed(1)
+let down = mouse_down(1)
+let node_r = 35
+
+// Connections between nodes (indices)
+let connections = [
+    [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
+]
+
+// Handle mouse press: start drag or toggle
+if pressed {
+    for i in range(0, len(nodes)) {
+        let n = nodes[i]
+        let dx = float(mx - n.x)
+        let dy = float(my - n.y)
+        let dist = dx * dx + dy * dy
+        if dist < float(node_r * node_r) {
+            dragging = i
+            drag_offset_x = n.x - mx
+            drag_offset_y = n.y - my
+        }
+    }
+}
+
+// Handle drag
+if down && dragging >= 0 {
+    let n = nodes[dragging]
+    nodes[dragging] = {
+        x: mx + drag_offset_x,
+        y: my + drag_offset_y,
+        label: n.label,
+        active: n.active
+    }
+} else {
+    // Release: if we were dragging and didn't move much, toggle
+    if !down && dragging >= 0 {
+        let n = nodes[dragging]
+        let dx = float(mx - n.x + drag_offset_x)
+        let dy = float(my - n.y + drag_offset_y)
+        let moved = dx * dx + dy * dy
+        if moved < 25.0 {
+            nodes[dragging] = {
+                x: n.x, y: n.y,
+                label: n.label,
+                active: !n.active
+            }
+        }
+    }
+    dragging = -1
+}
+
+// === DRAW ===
+clear(22, 24, 35)
+
+draw_text("Interactive Nodes — drag to move, click to toggle", 20, 10, 16, 140, 140, 170)
+
+// Draw connections
+for conn in connections {
+    let a = nodes[conn[0]]
+    let b = nodes[conn[1]]
+
+    let both_active = a.active && b.active
+    let cr = 60
+    let cg = 60
+    let cb = 80
+
+    if both_active {
+        cr = 80
+        cg = 180
+        cb = 120
+    }
+
+    draw_line(a.x, a.y, b.x, b.y, cr, cg, cb)
+}
+
+// Draw nodes
+for i in range(0, len(nodes)) {
+    let n = nodes[i]
+    let hover_dx = float(mx - n.x)
+    let hover_dy = float(my - n.y)
+    let hover = (hover_dx * hover_dx + hover_dy * hover_dy) < float(node_r * node_r)
+
+    if n.active {
+        // Active: green glow
+        if hover {
+            draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
+        }
+        draw_circle(n.x, n.y, node_r, 50, 160, 80)
+        draw_circle(n.x, n.y, node_r - 4, 60, 190, 100)
+    } else {
+        // Inactive: dim
+        if hover {
+            draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
+        }
+        draw_circle(n.x, n.y, node_r, 70, 60, 65)
+        draw_circle(n.x, n.y, node_r - 4, 85, 75, 80)
+    }
+
+    // Label
+    let tw = len(n.label) * 7
+    draw_text(n.label, n.x - tw / 2, n.y - 7, 14, 220, 220, 235)
+}
+
+// Status bar
+let active_count = len(filter(nodes, fn(n) { n.active }))
+draw_text("Active: " ++ str(active_count) ++ " / " ++ str(len(nodes)), 20, 560, 14, 120, 120, 150)

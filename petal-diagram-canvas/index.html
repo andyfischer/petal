@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Petal Canvas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #app {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 200px;
+      min-width: 200px;
+      background: #16162a;
+      border-right: 1px solid #2a2a44;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      gap: 20px;
+    }
+    #sidebar h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    #sidebar select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #sidebar select:hover { border-color: #666; }
+    .sidebar-section { display: flex; flex-direction: column; }
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .toggle-btn:hover { border-color: #666; background: #333350; }
+    .toggle-btn.active { border-color: #6c6cff; background: #3a3a5e; }
+    .toggle-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .toggle-btn.active .toggle-indicator { background: #6c6cff; }
+
+    /* Main area */
+    #main {
+      flex: 1;
+      display: flex;
+      position: relative;
+      min-width: 0;
+    }
+
+    /* Editor panel */
+    #editor-panel {
+      display: none;
+      width: 40%;
+      min-width: 250px;
+      border-right: 1px solid #2a2a44;
+      overflow: hidden;
+    }
+    #editor-panel.visible { display: flex; flex-direction: column; }
+    #editor-panel .cm-editor {
+      height: 100%;
+      font-size: 13px;
+    }
+    #editor-panel .cm-editor .cm-scroller {
+      overflow: auto;
+    }
+
+    /* Canvas wrap */
+    #canvas-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+    }
+    #canvas-wrap canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Error display */
+    #error-display {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      background: rgba(200, 50, 50, 0.9);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <h3>Examples</h3>
+        <select id="example-picker">
+          <option value="">Select example...</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <h3>Tools</h3>
+        <button id="toggle-source" class="toggle-btn">
+          <span class="toggle-indicator"></span>
+          View Source
+        </button>
+      </div>
+    </div>
+    <div id="main">
+      <div id="editor-panel"></div>
+      <div id="canvas-wrap">
+        <canvas id="canvas"></canvas>
+        <div id="error-display"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

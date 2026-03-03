@@ -1,0 +1,118 @@
+// Org Chart — hierarchical tree layout
+// Demonstrates nested data and tree rendering
+
+fn mouseOver(rect) {
+    let mx = mouse_x()
+    let my = mouse_y()
+    mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
+}
+
+// Tree structure: each person has name, title, and child indices
+let people = [
+    {name: "Alice Chen",    title: "CEO",           children: [1, 2, 3]},
+    {name: "Bob Park",      title: "CTO",           children: [4, 5]},
+    {name: "Carol Diaz",    title: "CFO",           children: [6]},
+    {name: "Dan Kim",       title: "VP Product",    children: [7, 8]},
+    {name: "Eve Lin",       title: "Engineering",   children: []},
+    {name: "Frank Ito",     title: "Infrastructure", children: []},
+    {name: "Grace Wu",      title: "Finance",       children: []},
+    {name: "Hank Patel",    title: "Design",        children: []},
+    {name: "Ivy Moore",     title: "Research",      children: []}
+]
+
+// Pre-computed positions (x, y) for a balanced layout
+let positions = [
+    {x: 380, y: 30},
+    {x: 140, y: 150},
+    {x: 380, y: 150},
+    {x: 620, y: 150},
+    {x: 60,  y: 280},
+    {x: 220, y: 280},
+    {x: 380, y: 280},
+    {x: 540, y: 280},
+    {x: 700, y: 280}
+]
+
+let node_w = 150
+let node_h = 55
+
+clear(25, 28, 38)
+
+draw_text("Organization Chart", 20, 10, 18, 160, 160, 200)
+
+// Draw connection lines
+for i in range(0, len(people)) {
+    let person = people[i]
+    let pos = positions[i]
+    let px = pos.x + node_w / 2
+    let py = pos.y + node_h
+
+    for ci in person.children {
+        let cpos = positions[ci]
+        let cx = cpos.x + node_w / 2
+        let cy = cpos.y
+
+        // Draw vertical-then-horizontal connector
+        let mid_y = (py + cy) / 2
+        draw_line(px, py, px, mid_y, 80, 80, 110)
+        draw_line(px, mid_y, cx, mid_y, 80, 80, 110)
+        draw_line(cx, mid_y, cx, cy, 80, 80, 110)
+    }
+}
+
+// Draw nodes
+for i in range(0, len(people)) {
+    let person = people[i]
+    let pos = positions[i]
+    let x = pos.x
+    let y = pos.y
+
+    let node_rect = { x: x, y: y, w: node_w, h: node_h }
+    let hover = mouseOver(node_rect)
+
+    // Color by level
+    let bg_r = 50
+    let bg_g = 55
+    let bg_b = 75
+    let border_r = 90
+    let border_g = 95
+    let border_b = 130
+
+    if y < 100 {
+        // CEO level — accent color
+        bg_r = 70
+        bg_g = 50
+        bg_b = 100
+        border_r = 120
+        border_g = 80
+        border_b = 180
+    } else if y < 200 {
+        // VP level
+        bg_r = 50
+        bg_g = 65
+        bg_b = 85
+        border_r = 80
+        border_g = 110
+        border_b = 150
+    }
+
+    if hover {
+        bg_r = bg_r + 30
+        bg_g = bg_g + 30
+        bg_b = bg_b + 30
+        border_r = 150
+        border_g = 180
+        border_b = 255
+    }
+
+    // Shadow
+    draw_rect(x + 2, y + 2, node_w, node_h, 15, 15, 25)
+    // Background
+    draw_rect(x, y, node_w, node_h, bg_r, bg_g, bg_b)
+    draw_rect_outline(x, y, node_w, node_h, border_r, border_g, border_b)
+
+    // Name (bold-ish: slightly larger)
+    draw_text(person.name, x + 10, y + 10, 15, 230, 230, 245)
+    // Title
+    draw_text(person.title, x + 10, y + 30, 13, 140, 150, 180)
+}

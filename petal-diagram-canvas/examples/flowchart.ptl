@@ -1,0 +1,82 @@
+// Flowchart Diagram
+// Boxes connected by lines with hover highlighting
+
+fn mouseOver(rect) {
+    let mx = mouse_x()
+    let my = mouse_y()
+    mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
+}
+
+let sw = screen_width()
+let sh = screen_height()
+
+// Define nodes: {label, x, y, w, h}
+let nodes = [
+    {label: "Start",        x: 350, y: 40,  w: 120, h: 40},
+    {label: "Input Data",   x: 350, y: 130, w: 120, h: 40},
+    {label: "Validate?",    x: 350, y: 220, w: 120, h: 40},
+    {label: "Process",      x: 200, y: 310, w: 120, h: 40},
+    {label: "Show Error",   x: 500, y: 310, w: 120, h: 40},
+    {label: "Save Result",  x: 200, y: 400, w: 120, h: 40},
+    {label: "End",          x: 350, y: 490, w: 120, h: 40}
+]
+
+// Define edges: {from, to, label}
+let edges = [
+    {from: 0, to: 1, label: ""},
+    {from: 1, to: 2, label: ""},
+    {from: 2, to: 3, label: "Yes"},
+    {from: 2, to: 4, label: "No"},
+    {from: 3, to: 5, label: ""},
+    {from: 4, to: 1, label: "retry"},
+    {from: 5, to: 6, label: ""}
+]
+
+// Background
+clear(30, 30, 45)
+
+// Title
+draw_text("Flowchart — hover over nodes", 20, 10, 18, 160, 160, 200)
+
+// Draw edges first (behind nodes)
+for e in edges {
+    let a = nodes[e.from]
+    let b = nodes[e.to]
+    let ax = a.x + a.w / 2
+    let ay = a.y + a.h
+    let bx = b.x + b.w / 2
+    let by = b.y
+
+    draw_line(ax, ay, bx, by, 100, 100, 140)
+
+    // Edge label
+    if len(e.label) > 0 {
+        let lx = (ax + bx) / 2 + 6
+        let ly = (ay + by) / 2 - 8
+        draw_text(e.label, lx, ly, 13, 180, 180, 100)
+    }
+}
+
+// Draw nodes
+for n in nodes {
+    let node_rect = { x: n.x, y: n.y, w: n.w, h: n.h }
+    if mouseOver(node_rect) {
+        // Highlight
+        draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, 80, 140, 220)
+        draw_rect(n.x, n.y, n.w, n.h, 50, 90, 160)
+        draw_text(n.label, n.x + 10, n.y + 12, 16, 255, 255, 255)
+    } else {
+        draw_rect(n.x, n.y, n.w, n.h, 60, 60, 85)
+        draw_rect_outline(n.x, n.y, n.w, n.h, 100, 100, 140)
+        draw_text(n.label, n.x + 10, n.y + 12, 16, 200, 200, 220)
+    }
+}
+
+// Small arrowheads (simple triangles drawn as lines)
+for e in edges {
+    let b = nodes[e.to]
+    let bx = b.x + b.w / 2
+    let by = b.y
+    draw_line(bx - 5, by - 8, bx, by, 100, 100, 140)
+    draw_line(bx + 5, by - 8, bx, by, 100, 100, 140)
+}

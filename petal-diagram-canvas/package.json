@@ -1,0 +1,21 @@
+{
+  "name": "petal-diagram-canvas",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "./build-wasm.sh",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6",
+    "vite-plugin-wasm": "^3"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "codemirror": "^6.0.2"
+  }
+}

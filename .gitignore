@@ -17,3 +17,5 @@ temp
 
 # WASM build output
 rust/pkg/
+petal-diagram-canvas/pkg/
+petal-diagram-canvas/dist/

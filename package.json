@@ -15,9 +15,10 @@
     "vitest": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.13.2",
     "chokidar": "4.0.3",
     "source-map-support": "0.5.21",
-    "@modelcontextprotocol/sdk": "1.13.2",
+    "ws": "^8.19.0",
     "yargs": "17.7.2"
   },
   "devDependencies": {

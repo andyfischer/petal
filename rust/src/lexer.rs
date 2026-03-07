@@ -73,6 +73,9 @@ pub enum Token {
     JsxCloseStart,      // `</`
     JsxText(String),    // text content between tags
 
+    // Color literal (#rgb, #rgba, #rrggbb, #rrggbbaa)
+    Color(String),
+
     // Special
     Newline,
     Eof,
@@ -360,6 +363,7 @@ impl Lexer {
                     return Err(format!("Unexpected character '|' [line {}, column {}]", self.line, self.col));
                 }
             }
+            '#' => self.read_color()?,
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
             ';' => {
@@ -492,6 +496,26 @@ impl Lexer {
             self.push_token(Token::Int(n), start_pos);
         }
         Ok(())
+    }
+
+    fn read_color(&mut self) -> Result<(), String> {
+        let start = self.current_pos();
+        self.advance_char(); // skip '#'
+        let hex_start = self.pos;
+        while self.pos < self.input.len() && self.input[self.pos].is_ascii_hexdigit() {
+            self.advance_char();
+        }
+        let hex: String = self.input[hex_start..self.pos].iter().collect();
+        match hex.len() {
+            3 | 4 | 6 | 8 => {
+                self.push_token(Token::Color(hex), start);
+                Ok(())
+            }
+            _ => Err(format!(
+                "Invalid color literal: #{} (expected 3, 4, 6, or 8 hex digits) [line {}, column {}]",
+                hex, start.line, start.column
+            )),
+        }
     }
 
     /// Tokenize an expression inside braces (already past the opening `{`).

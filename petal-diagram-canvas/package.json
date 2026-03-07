@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "vite": "^6",
-    "vite-plugin-wasm": "^3"
+    "vite-plugin-wasm": "^3",
+    "ws": "^8.19.0"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",

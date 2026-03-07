@@ -18,6 +18,17 @@ let pressed = mouse_pressed(1)
 let down = mouse_down(1)
 let node_r = 35
 
+// Color palette
+let bg = #161823
+let title_color = #8c8caa
+let conn_inactive = #3c3c50
+let conn_active = #50b478
+let active_outer = #32a050
+let active_inner = #3cbe64
+let inactive_outer = #463c41
+let inactive_inner = #554b50
+let label_color = #dcdceb
+
 // Connections between nodes (indices)
 let connections = [
     [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
@@ -66,9 +77,9 @@ if down && dragging >= 0 {
 }
 
 // === DRAW ===
-clear(22, 24, 35)
+clear(bg.r, bg.g, bg.b)
 
-draw_text("Interactive Nodes — drag to move, click to toggle", 20, 10, 16, 140, 140, 170)
+draw_text("Interactive Nodes — drag to move, click to toggle", 20, 10, 16, title_color.r, title_color.g, title_color.b)
 
 // Draw connections
 for conn in connections {
@@ -76,17 +87,9 @@ for conn in connections {
     let b = nodes[conn[1]]
 
     let both_active = a.active && b.active
-    let cr = 60
-    let cg = 60
-    let cb = 80
+    let c = if both_active { conn_active } else { conn_inactive }
 
-    if both_active {
-        cr = 80
-        cg = 180
-        cb = 120
-    }
-
-    draw_line(a.x, a.y, b.x, b.y, cr, cg, cb)
+    draw_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b)
 }
 
 // Draw nodes
@@ -101,20 +104,20 @@ for i in range(0, len(nodes)) {
         if hover {
             draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
         }
-        draw_circle(n.x, n.y, node_r, 50, 160, 80)
-        draw_circle(n.x, n.y, node_r - 4, 60, 190, 100)
+        draw_circle(n.x, n.y, node_r, active_outer.r, active_outer.g, active_outer.b)
+        draw_circle(n.x, n.y, node_r - 4, active_inner.r, active_inner.g, active_inner.b)
     } else {
         // Inactive: dim
         if hover {
             draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
         }
-        draw_circle(n.x, n.y, node_r, 70, 60, 65)
-        draw_circle(n.x, n.y, node_r - 4, 85, 75, 80)
+        draw_circle(n.x, n.y, node_r, inactive_outer.r, inactive_outer.g, inactive_outer.b)
+        draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
     }
 
     // Label
     let tw = len(n.label) * 7
-    draw_text(n.label, n.x - tw / 2, n.y - 7, 14, 220, 220, 235)
+    draw_text(n.label, n.x - tw / 2, n.y - 7, 14, label_color.r, label_color.g, label_color.b)
 }
 
 // Status bar

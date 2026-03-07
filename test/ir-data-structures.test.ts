@@ -116,3 +116,61 @@ describe("concat operator (++)", () => {
     expect(runPetal('print("count: " ++ 42)')).toBe("count: 42");
   });
 });
+
+describe("color literals", () => {
+  it("emits AllocMap with 3 fields for #rgb", () => {
+    const ir = showIrJson("let c = #f80");
+    const allocs = termsByOp(ir, "AllocMap");
+    expect(allocs.length).toBeGreaterThanOrEqual(1);
+    expect(allocs[0].op.AllocMap.fields).toHaveLength(3);
+  });
+
+  it("emits AllocMap with 4 fields for #rgba", () => {
+    const ir = showIrJson("let c = #f80a");
+    const allocs = termsByOp(ir, "AllocMap");
+    expect(allocs.length).toBeGreaterThanOrEqual(1);
+    expect(allocs[0].op.AllocMap.fields).toHaveLength(4);
+  });
+
+  it("emits AllocMap with 3 fields for #rrggbb", () => {
+    const ir = showIrJson("let c = #ff8800");
+    const allocs = termsByOp(ir, "AllocMap");
+    expect(allocs.length).toBeGreaterThanOrEqual(1);
+    expect(allocs[0].op.AllocMap.fields).toHaveLength(3);
+  });
+
+  it("emits AllocMap with 4 fields for #rrggbbaa", () => {
+    const ir = showIrJson("let c = #ff8800aa");
+    const allocs = termsByOp(ir, "AllocMap");
+    expect(allocs.length).toBeGreaterThanOrEqual(1);
+    expect(allocs[0].op.AllocMap.fields).toHaveLength(4);
+  });
+
+  it("#rgb produces correct r, g, b values", () => {
+    expect(runPetal("let c = #f80\nprint(c.r, c.g, c.b)")).toBe("255 136 0");
+  });
+
+  it("#rgba produces correct r, g, b, a values", () => {
+    expect(runPetal("let c = #f80a\nprint(c.r, c.g, c.b, c.a)")).toBe("255 136 0 170");
+  });
+
+  it("#rrggbb produces correct values", () => {
+    expect(runPetal("let c = #ff8800\nprint(c.r, c.g, c.b)")).toBe("255 136 0");
+  });
+
+  it("#rrggbbaa produces correct values", () => {
+    expect(runPetal("let c = #ff8800aa\nprint(c.r, c.g, c.b, c.a)")).toBe("255 136 0 170");
+  });
+
+  it("#000000 produces all zeros", () => {
+    expect(runPetal("let c = #000000\nprint(c.r, c.g, c.b)")).toBe("0 0 0");
+  });
+
+  it("#ffffff produces all 255s", () => {
+    expect(runPetal("let c = #ffffff\nprint(c.r, c.g, c.b)")).toBe("255 255 255");
+  });
+
+  it("case insensitive hex digits", () => {
+    expect(runPetal("let c = #FF8800\nprint(c.r, c.g, c.b)")).toBe("255 136 0");
+  });
+});

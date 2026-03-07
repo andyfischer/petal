@@ -45,12 +45,12 @@ if !initialized {
 
 // --- Neon brick colors by row ---
 fn brick_color(row) {
-    if row == 0 { { r: 255, g: 40, b: 80 } }
-    else if row == 1 { { r: 255, g: 120, b: 20 } }
-    else if row == 2 { { r: 255, g: 220, b: 20 } }
-    else if row == 3 { { r: 20, g: 255, b: 100 } }
-    else if row == 4 { { r: 20, g: 160, b: 255 } }
-    else { { r: 180, g: 60, b: 255 } }
+    if row == 0 { #ff2850 }
+    else if row == 1 { #ff7814 }
+    else if row == 2 { #ffdc14 }
+    else if row == 3 { #14ff64 }
+    else if row == 4 { #14a0ff }
+    else { #b43cff }
 }
 
 let delta = dt()

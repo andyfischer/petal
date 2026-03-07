@@ -10,6 +10,17 @@ fn mouseOver(rect) {
 let sw = screen_width()
 let sh = screen_height()
 
+// Color palette
+let bg = #1e1e2d
+let line_color = #64648c
+let node_bg = #3c3c55
+let node_border = #64648c
+let text_color = #c8c8dc
+let title_color = #a0a0c8
+let label_color = #b4b464
+let highlight_border = #508cdc
+let highlight_bg = #325aa0
+
 // Define nodes: {label, x, y, w, h}
 let nodes = [
     {label: "Start",        x: 350, y: 40,  w: 120, h: 40},
@@ -33,10 +44,10 @@ let edges = [
 ]
 
 // Background
-clear(30, 30, 45)
+clear(bg.r, bg.g, bg.b)
 
 // Title
-draw_text("Flowchart — hover over nodes", 20, 10, 18, 160, 160, 200)
+draw_text("Flowchart — hover over nodes", 20, 10, 18, title_color.r, title_color.g, title_color.b)
 
 // Draw edges first (behind nodes)
 for e in edges {
@@ -47,13 +58,13 @@ for e in edges {
     let bx = b.x + b.w / 2
     let by = b.y
 
-    draw_line(ax, ay, bx, by, 100, 100, 140)
+    draw_line(ax, ay, bx, by, line_color.r, line_color.g, line_color.b)
 
     // Edge label
     if len(e.label) > 0 {
         let lx = (ax + bx) / 2 + 6
         let ly = (ay + by) / 2 - 8
-        draw_text(e.label, lx, ly, 13, 180, 180, 100)
+        draw_text(e.label, lx, ly, 13, label_color.r, label_color.g, label_color.b)
     }
 }
 
@@ -62,13 +73,13 @@ for n in nodes {
     let node_rect = { x: n.x, y: n.y, w: n.w, h: n.h }
     if mouseOver(node_rect) {
         // Highlight
-        draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, 80, 140, 220)
-        draw_rect(n.x, n.y, n.w, n.h, 50, 90, 160)
+        draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, highlight_border.r, highlight_border.g, highlight_border.b)
+        draw_rect(n.x, n.y, n.w, n.h, highlight_bg.r, highlight_bg.g, highlight_bg.b)
         draw_text(n.label, n.x + 10, n.y + 12, 16, 255, 255, 255)
     } else {
-        draw_rect(n.x, n.y, n.w, n.h, 60, 60, 85)
-        draw_rect_outline(n.x, n.y, n.w, n.h, 100, 100, 140)
-        draw_text(n.label, n.x + 10, n.y + 12, 16, 200, 200, 220)
+        draw_rect(n.x, n.y, n.w, n.h, node_bg.r, node_bg.g, node_bg.b)
+        draw_rect_outline(n.x, n.y, n.w, n.h, node_border.r, node_border.g, node_border.b)
+        draw_text(n.label, n.x + 10, n.y + 12, 16, text_color.r, text_color.g, text_color.b)
     }
 }
 
@@ -77,6 +88,6 @@ for e in edges {
     let b = nodes[e.to]
     let bx = b.x + b.w / 2
     let by = b.y
-    draw_line(bx - 5, by - 8, bx, by, 100, 100, 140)
-    draw_line(bx + 5, by - 8, bx, by, 100, 100, 140)
+    draw_line(bx - 5, by - 8, bx, by, line_color.r, line_color.g, line_color.b)
+    draw_line(bx + 5, by - 8, bx, by, line_color.r, line_color.g, line_color.b)
 }

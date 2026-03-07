@@ -65,38 +65,38 @@ let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
 // Colors for each piece type (index 1-7 in grid, 0 = empty)
 // I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
 fn piece_color(t) {
-    if t == 1 { {r: 0, g: 240, b: 240} }
-    else if t == 2 { {r: 240, g: 240, b: 0} }
-    else if t == 3 { {r: 180, g: 50, b: 255} }
-    else if t == 4 { {r: 50, g: 240, b: 50} }
-    else if t == 5 { {r: 240, g: 50, b: 50} }
-    else if t == 6 { {r: 50, g: 100, b: 240} }
-    else if t == 7 { {r: 240, g: 160, b: 30} }
-    else { {r: 40, g: 40, b: 40} }
+    if t == 1 { #00f0f0 }
+    else if t == 2 { #f0f000 }
+    else if t == 3 { #b432ff }
+    else if t == 4 { #32f032 }
+    else if t == 5 { #f03232 }
+    else if t == 6 { #3264f0 }
+    else if t == 7 { #f0a01e }
+    else { #282828 }
 }
 
 // Lighter highlight color for 3D top/left edge
 fn piece_highlight(t) {
-    if t == 1 { {r: 150, g: 255, b: 255} }
-    else if t == 2 { {r: 255, g: 255, b: 150} }
-    else if t == 3 { {r: 220, g: 150, b: 255} }
-    else if t == 4 { {r: 150, g: 255, b: 150} }
-    else if t == 5 { {r: 255, g: 150, b: 150} }
-    else if t == 6 { {r: 150, g: 170, b: 255} }
-    else if t == 7 { {r: 255, g: 210, b: 140} }
-    else { {r: 60, g: 60, b: 60} }
+    if t == 1 { #96ffff }
+    else if t == 2 { #ffff96 }
+    else if t == 3 { #dc96ff }
+    else if t == 4 { #96ff96 }
+    else if t == 5 { #ff9696 }
+    else if t == 6 { #96aaff }
+    else if t == 7 { #ffd28c }
+    else { #3c3c3c }
 }
 
 // Darker shadow color for 3D bottom/right edge
 fn piece_shadow(t) {
-    if t == 1 { {r: 0, g: 140, b: 140} }
-    else if t == 2 { {r: 150, g: 150, b: 0} }
-    else if t == 3 { {r: 100, g: 20, b: 150} }
-    else if t == 4 { {r: 20, g: 140, b: 20} }
-    else if t == 5 { {r: 150, g: 20, b: 20} }
-    else if t == 6 { {r: 20, g: 50, b: 150} }
-    else if t == 7 { {r: 150, g: 90, b: 10} }
-    else { {r: 20, g: 20, b: 20} }
+    if t == 1 { #008c8c }
+    else if t == 2 { #969600 }
+    else if t == 3 { #641496 }
+    else if t == 4 { #148c14 }
+    else if t == 5 { #961414 }
+    else if t == 6 { #143296 }
+    else if t == 7 { #965a0a }
+    else { #141414 }
 }
 
 // Draw a single cell with 3D beveled look

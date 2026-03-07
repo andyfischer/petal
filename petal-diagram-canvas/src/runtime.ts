@@ -3,17 +3,25 @@
 import init, { PetalRuntime } from "../pkg/petal.js";
 import { renderCommands, type DrawCommand } from "./canvas-renderer.js";
 import { InputTracker } from "./input.js";
+import { DebugController } from "./debug.js";
 
 export class PetalCanvas {
-  private runtime: PetalRuntime | null = null;
+  runtime: PetalRuntime | null = null;
   private stackId: number | null = null;
-  private canvas: HTMLCanvasElement | null = null;
+  canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
   private input = new InputTracker();
   private animId: number | null = null;
-  private frameCount = 0;
+  frameCount = 0;
   private lastTime = 0;
   private errorEl: HTMLElement | null = null;
+  private currentSource = "";
+  private errored = false;
+
+  /** Debug controller — manages pause/step/resume. */
+  debug = new DebugController();
+  /** Called after each frame completes (used by debug panel). */
+  onFrameComplete: (() => void) | null = null;
 
   async init(): Promise<void> {
     await init();
@@ -23,16 +31,25 @@ export class PetalCanvas {
 
   load(source: string): void {
     if (!this.runtime) throw new Error("Runtime not initialized");
-    this.stop();
+    this.currentSource = source;
+
+    try {
+      const programId = this.runtime.load_program(source);
+      this.stackId = this.runtime.create_stack(programId);
+    } catch (err: any) {
+      this.showError(String(err));
+      return;
+    }
+
+    this.errored = false;
     this.frameCount = 0;
     this.lastTime = performance.now();
-
-    const programId = this.runtime.load_program(source);
-    this.stackId = this.runtime.create_stack(programId);
     this.clearError();
 
-    // Restart the frame loop
-    this.loop();
+    // Restart the frame loop if not already running
+    if (this.animId === null) {
+      this.loop();
+    }
   }
 
   start(canvas: HTMLCanvasElement, errorEl?: HTMLElement): void {
@@ -60,6 +77,32 @@ export class PetalCanvas {
     this.resizeCanvas();
   }
 
+  /** Run a single frame with given dt. Returns draw commands JSON. Used by debug step(). */
+  runOneFrame(dt: number): string {
+    if (!this.runtime || this.stackId === null || !this.ctx || !this.canvas) {
+      return "[]";
+    }
+
+    try {
+      this.runtime.begin_frame();
+      this.input.feedToRuntime(this.runtime);
+      this.runtime.set_frame_info(dt, this.frameCount, this.canvas.width, this.canvas.height);
+      this.runtime.reset_and_run(this.stackId);
+      this.frameCount++;
+
+      const cmdsJson = this.runtime.take_draw_commands();
+      const commands: DrawCommand[] = JSON.parse(cmdsJson);
+      renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
+
+      this.clearError();
+      this.onFrameComplete?.();
+      return cmdsJson;
+    } catch (err: any) {
+      this.showError(String(err));
+      return "[]";
+    }
+  }
+
   private resizeCanvas(): void {
     if (!this.canvas) return;
     const wrap = this.canvas.parentElement;
@@ -76,49 +119,67 @@ export class PetalCanvas {
     this.animId = requestAnimationFrame(this.loop);
 
     if (!this.runtime || this.stackId === null || !this.ctx || !this.canvas) return;
+    if (this.errored) return;
 
     const now = performance.now();
-    const dt = (now - this.lastTime) / 1000;
+    const realDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
-    this.frameCount++;
+
+    // Check with debug controller whether we should run this frame
+    const dt = this.debug.shouldRunFrame(realDt);
+    if (dt === null) return; // paused, skip frame body but keep rAF alive
 
     try {
-      // 1. Begin frame (snapshot prev input for edge detection)
       this.runtime.begin_frame();
-
-      // 2. Feed input state
       this.input.feedToRuntime(this.runtime);
-
-      // 3. Set frame info
-      this.runtime.set_frame_info(
-        dt,
-        this.frameCount,
-        this.canvas.width,
-        this.canvas.height,
-      );
-
-      // 4. Reset and run the program
+      this.runtime.set_frame_info(dt, this.frameCount, this.canvas.width, this.canvas.height);
       this.runtime.reset_and_run(this.stackId);
+      this.frameCount++;
 
-      // 5. Take draw commands
       const cmdsJson = this.runtime.take_draw_commands();
       const commands: DrawCommand[] = JSON.parse(cmdsJson);
-
-      // 6. Render to canvas
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 
       this.clearError();
+      this.onFrameComplete?.();
     } catch (err: any) {
       this.showError(String(err));
-      this.stop();
+      this.errored = true;
     }
   };
 
   private showError(msg: string): void {
-    if (this.errorEl) {
+    if (!this.errorEl) return;
+
+    const match = msg.match(/\[line (\d+)(?:, column (\d+))?\]/);
+    const line = match ? parseInt(match[1], 10) : null;
+
+    if (line !== null && this.currentSource) {
+      const lines = this.currentSource.split("\n");
+      const start = Math.max(0, line - 4);
+      const end = Math.min(lines.length, line + 3);
+
+      let snippetHtml = "";
+      for (let i = start; i < end; i++) {
+        const lineNum = i + 1;
+        const escaped = lines[i]
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        const cls = lineNum === line ? ' class="error-line"' : "";
+        snippetHtml += `<div${cls}><span class="line-num">${String(lineNum).padStart(3)}</span> ${escaped}</div>`;
+      }
+
+      // Strip the [line N, column M] suffix for the header
+      const cleanMsg = msg.replace(/\s*\[line \d+(?:, column \d+)?\]/, "");
+      this.errorEl.innerHTML =
+        `<div class="error-header">${cleanMsg.replace(/</g, "&lt;")} <span class="error-loc">line ${line}</span></div>` +
+        `<div class="error-source">${snippetHtml}</div>`;
+    } else {
       this.errorEl.textContent = msg;
-      this.errorEl.style.display = "block";
     }
+
+    this.errorEl.style.display = "block";
   }
 
   private clearError(): void {

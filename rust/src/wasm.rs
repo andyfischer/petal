@@ -271,6 +271,8 @@ fn native_screen_height(state: &mut PetalCxt) -> NativeResult {
 #[wasm_bindgen]
 pub struct PetalRuntime {
     env: Env,
+    active_program: Option<ProgramId>,
+    active_stack: Option<StackKey>,
 }
 
 #[wasm_bindgen]
@@ -305,7 +307,11 @@ impl PetalRuntime {
         env.register_native("screen_width", native_screen_width);
         env.register_native("screen_height", native_screen_height);
 
-        PetalRuntime { env }
+        PetalRuntime {
+            env,
+            active_program: None,
+            active_stack: None,
+        }
     }
 
     /// Set which element ID was clicked (call before re-running).
@@ -317,6 +323,7 @@ impl PetalRuntime {
     /// Compile source code and return a program ID.
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
         let pid = self.env.load_program(source).map_err(|e| JsValue::from_str(&e))?;
+        self.active_program = Some(pid);
         Ok(pid.0)
     }
 
@@ -326,6 +333,7 @@ impl PetalRuntime {
             .env
             .create_stack(ProgramId(program_id))
             .map_err(|e| JsValue::from_str(&e))?;
+        self.active_stack = Some(sid);
         Ok(sid.0)
     }
 
@@ -420,5 +428,38 @@ impl PetalRuntime {
     /// Call at the start of each frame to snapshot prev input for edge detection.
     pub fn begin_frame(&self) {
         INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
+    }
+
+    // --- Debug protocol methods ---
+
+    /// Return all state variables as a JSON object string.
+    pub fn get_state_json(&self) -> Result<String, JsValue> {
+        let pid = self.active_program.ok_or_else(|| JsValue::from_str("No active program"))?;
+        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        let map = self.env.get_state_json(pid, sid);
+        Ok(serde_json::Value::Object(map).to_string())
+    }
+
+    /// Set a state variable by name from a JSON value string.
+    pub fn set_state_json(&mut self, name: &str, json_value: &str) -> Result<(), JsValue> {
+        let pid = self.active_program.ok_or_else(|| JsValue::from_str("No active program"))?;
+        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        let val: serde_json::Value =
+            serde_json::from_str(json_value).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.env
+            .set_state_from_json(pid, sid, name, &val)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Run one speculative frame (no state change), return draw commands as JSON.
+    pub fn run_speculative(&mut self) -> Result<String, JsValue> {
+        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        NEXT_EID.with(|c| *c.borrow_mut() = 1);
+        self.env
+            .run_speculative(sid)
+            .map_err(|e| JsValue::from_str(&e))?;
+        // Drain the draw commands produced by the speculative run
+        let cmds: Vec<DrawCommand> = DRAW_COMMANDS.with(|c| c.borrow_mut().drain(..).collect());
+        Ok(serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string()))
     }
 }

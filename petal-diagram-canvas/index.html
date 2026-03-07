@@ -118,14 +118,41 @@
       left: 12px;
       right: 12px;
       z-index: 10;
-      background: rgba(200, 50, 50, 0.9);
-      color: white;
-      padding: 10px 14px;
+      background: rgba(30, 20, 20, 0.95);
+      color: #e0e0e0;
+      padding: 0;
       border-radius: 6px;
+      border: 1px solid #c44;
       font-family: monospace;
       font-size: 13px;
       white-space: pre-wrap;
       display: none;
+      overflow: hidden;
+    }
+    #error-display .error-header {
+      background: rgba(200, 50, 50, 0.9);
+      color: white;
+      padding: 8px 12px;
+      font-weight: 600;
+    }
+    #error-display .error-loc {
+      opacity: 0.7;
+      font-weight: 400;
+    }
+    #error-display .error-source {
+      padding: 8px 0;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    #error-display .error-source div {
+      padding: 0 12px;
+    }
+    #error-display .error-source .error-line {
+      background: rgba(200, 50, 50, 0.3);
+    }
+    #error-display .error-source .line-num {
+      color: #666;
+      user-select: none;
     }
   </style>
 </head>
@@ -144,6 +171,10 @@
           <span class="toggle-indicator"></span>
           View Source
         </button>
+        <button id="toggle-debug" class="toggle-btn">
+          <span class="toggle-indicator"></span>
+          Debug
+        </button>
       </div>
     </div>
     <div id="main">
@@ -152,6 +183,7 @@
         <canvas id="canvas"></canvas>
         <div id="error-display"></div>
       </div>
+      <div id="debug-panel"></div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

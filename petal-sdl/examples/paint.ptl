@@ -25,18 +25,18 @@ state demo_frame = 0
 
 // ── Color palette (12 colors) ──
 let palette = [
-    {r: 255, g: 255, b: 255, name: "White"},
-    {r: 255, g: 60, b: 80, name: "Red"},
-    {r: 255, g: 140, b: 50, name: "Orange"},
-    {r: 255, g: 220, b: 50, name: "Yellow"},
-    {r: 80, g: 220, b: 80, name: "Green"},
-    {r: 50, g: 200, b: 180, name: "Teal"},
-    {r: 60, g: 140, b: 255, name: "Blue"},
-    {r: 140, g: 80, b: 255, name: "Purple"},
-    {r: 255, g: 100, b: 200, name: "Pink"},
-    {r: 180, g: 130, b: 80, name: "Brown"},
-    {r: 160, g: 160, b: 160, name: "Gray"},
-    {r: 20, g: 20, b: 20, name: "Black"}
+    {color: #ffffff, name: "White"},
+    {color: #ff3c50, name: "Red"},
+    {color: #ff8c32, name: "Orange"},
+    {color: #ffdc32, name: "Yellow"},
+    {color: #50dc50, name: "Green"},
+    {color: #32c8b4, name: "Teal"},
+    {color: #3c8cff, name: "Blue"},
+    {color: #8c50ff, name: "Purple"},
+    {color: #ff64c8, name: "Pink"},
+    {color: #b48250, name: "Brown"},
+    {color: #a0a0a0, name: "Gray"},
+    {color: #141414, name: "Black"}
 ]
 
 state selected_color = 0
@@ -164,9 +164,9 @@ if key_pressed("9") { selected_color = 8 }
 
 // Apply selected color
 let sel = palette[selected_color]
-brush_r = sel.r
-brush_g = sel.g
-brush_b = sel.b
+brush_r = sel.color.r
+brush_g = sel.color.g
+brush_b = sel.color.b
 
 // Brush size controls
 if key_pressed("=") {
@@ -254,7 +254,7 @@ for ci in range(0, len(palette)) {
     }
 
     // Swatch
-    draw_rect(sx, sy, 20, 20, c.r, c.g, c.b)
+    draw_rect(sx, sy, 20, 20, c.color.r, c.color.g, c.color.b)
 }
 
 // Separator

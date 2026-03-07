@@ -32,6 +32,7 @@ Petal has the following value types:
 | `nil` | `nil` |
 | `list` | `[1, 2, 3]` |
 | `record` | `{name: "Alice", age: 30}` |
+| `color` | `#ff8800`, `#f80` (desugars to record) |
 | `enum` | `Some(42)`, `None` |
 
 Use `type(value)` to get the type name as a string at runtime.
@@ -296,6 +297,28 @@ print(user.address.city)  // "Portland"
 keys({a: 1, b: 2})     // ["a", "b"]
 values({a: 1, b: 2})   // [1, 2]
 ```
+
+## Color Literals
+
+CSS-style hex color literals desugar into records with `r`, `g`, `b` (and `a`) fields.
+Values are integers 0–255.
+
+```petal
+let red = #ff0000        // {r: 255, g: 0, b: 0}
+let coral = #ff7f50      // {r: 255, g: 127, b: 80}
+print(coral.r)           // 255
+```
+
+Four formats are supported:
+
+| Format | Example | Expansion |
+|--------|---------|-----------|
+| `#rgb` | `#f80` | `{r: 255, g: 136, b: 0}` |
+| `#rgba` | `#f80a` | `{r: 255, g: 136, b: 0, a: 170}` |
+| `#rrggbb` | `#ff8800` | `{r: 255, g: 136, b: 0}` |
+| `#rrggbbaa` | `#ff8800aa` | `{r: 255, g: 136, b: 0, a: 170}` |
+
+In the short 3/4-digit forms, each digit is doubled (e.g. `f` → `ff` = 255).
 
 ## Enums
 

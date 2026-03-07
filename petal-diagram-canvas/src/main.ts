@@ -1,5 +1,8 @@
 import { PetalCanvas } from "./runtime.js";
 import { SourceEditor } from "./editor.js";
+import { PetalDebugAPI } from "./debug.js";
+import { DebugPanel, injectDebugStyles } from "./debug-panel.js";
+import { connectDebugWebSocket } from "./debug-ws.js";
 
 const EXAMPLES = [
   { name: "Flowchart", path: "/examples/flowchart.ptl" },
@@ -12,7 +15,9 @@ async function main() {
   const errorEl = document.getElementById("error-display") as HTMLElement;
   const picker = document.getElementById("example-picker") as HTMLSelectElement;
   const toggleBtn = document.getElementById("toggle-source") as HTMLButtonElement;
+  const toggleDebugBtn = document.getElementById("toggle-debug") as HTMLButtonElement;
   const editorPanel = document.getElementById("editor-panel") as HTMLElement;
+  const debugPanelEl = document.getElementById("debug-panel") as HTMLElement;
 
   // Populate example picker
   for (const ex of EXAMPLES) {
@@ -26,6 +31,39 @@ async function main() {
   const petal = new PetalCanvas();
   await petal.init();
   petal.start(canvas, errorEl);
+
+  // --- Debug API ---
+  const debugApi = new PetalDebugAPI({
+    runOneFrame: (dt) => petal.runOneFrame(dt),
+    getCanvas: () => petal.canvas,
+    getRuntime: () => petal.runtime,
+    getController: () => petal.debug,
+    getFrameCount: () => petal.frameCount,
+  });
+
+  // Expose on window for console access
+  (window as any).petalDebug = debugApi;
+
+  // --- Debug panel ---
+  injectDebugStyles();
+  const debugPanel = new DebugPanel(debugPanelEl, debugApi);
+  let debugVisible = false;
+
+  // Refresh debug panel after each frame
+  petal.onFrameComplete = () => {
+    if (debugVisible) debugPanel.refresh();
+  };
+
+  toggleDebugBtn.addEventListener("click", () => {
+    debugVisible = !debugVisible;
+    toggleDebugBtn.classList.toggle("active", debugVisible);
+    debugPanelEl.classList.toggle("visible", debugVisible);
+    if (debugVisible) debugPanel.refresh();
+    requestAnimationFrame(() => petal.resize());
+  });
+
+  // --- WebSocket bridge ---
+  connectDebugWebSocket(debugApi, 4012);
 
   // Current source tracking
   let currentSource = "";

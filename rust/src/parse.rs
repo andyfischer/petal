@@ -700,6 +700,20 @@ impl Parser {
             Token::If => self.parse_if_expr(),
             Token::Match => self.parse_match_expr(),
             Token::Fn => self.parse_lambda(),
+            Token::Color(hex) => {
+                self.advance();
+                let fields = parse_color_hex(&hex);
+                let record_fields = fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        (name.to_string(), Expr {
+                            kind: ExprKind::Literal(Literal::Int(value)),
+                            span: self.span_from(start),
+                        })
+                    })
+                    .collect();
+                Ok(self.mk_expr(ExprKind::Record(record_fields), start))
+            }
             Token::JsxOpenStart => self.parse_jsx_element(),
             other => Err(self.error_at_current(format!("Unexpected token: {:?}", other))),
         }
@@ -1144,6 +1158,28 @@ impl Parser {
             }
         }
         Ok(args)
+    }
+}
+
+/// Parse a hex color string (without '#') into (field_name, value) pairs.
+/// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
+fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
+    let expand = |c: u8| -> i64 {
+        let v = if c.is_ascii_digit() { c - b'0' } else { (c.to_ascii_lowercase() - b'a') + 10 };
+        (v as i64) * 17 // e.g. 0xf -> 255, 0x8 -> 136
+    };
+    let parse2 = |hi: u8, lo: u8| -> i64 {
+        let h = if hi.is_ascii_digit() { hi - b'0' } else { (hi.to_ascii_lowercase() - b'a') + 10 };
+        let l = if lo.is_ascii_digit() { lo - b'0' } else { (lo.to_ascii_lowercase() - b'a') + 10 };
+        (h as i64) * 16 + (l as i64)
+    };
+    let b = hex.as_bytes();
+    match b.len() {
+        3 => vec![("r", expand(b[0])), ("g", expand(b[1])), ("b", expand(b[2]))],
+        4 => vec![("r", expand(b[0])), ("g", expand(b[1])), ("b", expand(b[2])), ("a", expand(b[3]))],
+        6 => vec![("r", parse2(b[0], b[1])), ("g", parse2(b[2], b[3])), ("b", parse2(b[4], b[5]))],
+        8 => vec![("r", parse2(b[0], b[1])), ("g", parse2(b[2], b[3])), ("b", parse2(b[4], b[5])), ("a", parse2(b[6], b[7]))],
+        _ => unreachable!("lexer validates hex length"),
     }
 }
 

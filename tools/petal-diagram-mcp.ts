@@ -10,6 +10,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import WebSocket from "ws";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const WS_URL = process.env.PETAL_DEBUG_URL ?? "ws://localhost:4012/debug";
 
@@ -102,7 +104,7 @@ server.registerTool("DiagramStep", {
   title: "Step Diagram",
   description: "Advance exactly N frames with fixed dt=1/60s. Returns draw commands for the stepped frames.",
   inputSchema: {
-    n: z.number().int().min(1).default(1).describe("Number of frames to advance"),
+    n: z.coerce.number().int().min(1).default(1).describe("Number of frames to advance"),
   },
 }, ({ n }) => debugTool({ cmd: "step", n }));
 
@@ -142,9 +144,27 @@ server.registerTool("DiagramInput", {
 
 server.registerTool("DiagramScreenshot", {
   title: "Screenshot Diagram",
-  description: "Capture the canvas as a base64 PNG data URL.",
+  description: "Capture the canvas as a PNG and save it to ./temp/. Returns the file path.",
   inputSchema: {},
-}, () => debugTool({ cmd: "screenshot" }));
+}, async () => {
+  try {
+    const resp = await sendCommand({ cmd: "screenshot" });
+    if (!resp.ok || !resp.screenshot) {
+      return { content: [{ type: "text" as const, text: `Error: ${resp.error ?? "No screenshot data"}` }], isError: true };
+    }
+    // Strip data URL prefix and decode
+    const base64 = resp.screenshot.replace(/^data:image\/png;base64,/, "");
+    const buf = Buffer.from(base64, "base64");
+    const tempDir = resolve(import.meta.dirname!, "..", "temp");
+    mkdirSync(tempDir, { recursive: true });
+    const filename = `screenshot-${Date.now()}.png`;
+    const filePath = resolve(tempDir, filename);
+    writeFileSync(filePath, buf);
+    return { content: [{ type: "text" as const, text: JSON.stringify({ ok: true, paused: resp.paused, frame: resp.frame, file: filePath }, null, 2) }] };
+  } catch (e: any) {
+    return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
+  }
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -2,8 +2,11 @@
   "mcpServers": {
     "petal-tools": {
       "command": "node",
-      "args": ["--experimental-strip-types", "tools/petal-mcp.ts"],
-      "cwd": "/Users/andy.fischer/petal"
+      "args": ["tools/petal-mcp.ts"]
+    },
+    "petal-diagram-canvas": {
+      "command": "node",
+      "args": ["tools/petal-diagram-mcp.ts"]
     }
   }
 }

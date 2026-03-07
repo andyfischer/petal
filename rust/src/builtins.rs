@@ -57,6 +57,11 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("slice", native_slice);
     table.register("flat", native_flat);
     table.register("includes", native_contains); // JS-style alias for contains
+    table.register("sin", native_sin);
+    table.register("cos", native_cos);
+    table.register("tan", native_tan);
+    table.register("atan2", native_atan2);
+    table.register("pi", native_pi);
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
@@ -598,6 +603,73 @@ fn native_flat(state: &mut PetalCxt) -> Result<u32, String> {
         }
         _ => Err("flat() expects a list".into()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Trigonometry
+// ---------------------------------------------------------------------------
+
+fn native_sin(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "sin");
+    match state.get_value(1)? {
+        Value::Dual { value, derivative } => {
+            // d/dx sin(x) = cos(x) * dx
+            state.push_value(Value::Dual { value: value.sin(), derivative: value.cos() * derivative });
+            Ok(1)
+        }
+        _ => {
+            let n = state.get_float(1)?;
+            state.push_float(n.sin());
+            Ok(1)
+        }
+    }
+}
+
+fn native_cos(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "cos");
+    match state.get_value(1)? {
+        Value::Dual { value, derivative } => {
+            // d/dx cos(x) = -sin(x) * dx
+            state.push_value(Value::Dual { value: value.cos(), derivative: -value.sin() * derivative });
+            Ok(1)
+        }
+        _ => {
+            let n = state.get_float(1)?;
+            state.push_float(n.cos());
+            Ok(1)
+        }
+    }
+}
+
+fn native_tan(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "tan");
+    match state.get_value(1)? {
+        Value::Dual { value, derivative } => {
+            // d/dx tan(x) = sec^2(x) * dx = dx / cos^2(x)
+            let cos_val = value.cos();
+            state.push_value(Value::Dual { value: value.tan(), derivative: derivative / (cos_val * cos_val) });
+            Ok(1)
+        }
+        _ => {
+            let n = state.get_float(1)?;
+            state.push_float(n.tan());
+            Ok(1)
+        }
+    }
+}
+
+fn native_atan2(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "atan2");
+    let y = state.get_float(1)?;
+    let x = state.get_float(2)?;
+    state.push_float(y.atan2(x));
+    Ok(1)
+}
+
+fn native_pi(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 0, "pi");
+    state.push_float(std::f64::consts::PI);
+    Ok(1)
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,19 @@
 
 A custom programming language: Lexer → Parser → AST → Compiler → IR → Step Evaluator.
 
+## Directory Overview
+
+- `rust/` — Main Rust source code (lexer, parser, AST, compiler, IR, evaluator)
+- `petal-sdl/` — SDL-based native app for running Petal programs with graphics
+- `petal-diagram-canvas/` — Diagram canvas app with sidebar editor and mouseOver helper (WASM + Vite)
+- `petal-web/` — Web-based Petal runner (WASM + Vite)
+- `playground/` — Interactive web app for exploring the compiler pipeline (Prism API + React)
+- `tools/` — MCP server and dev tooling
+- `test/` — Vitest integration tests
+- `examples/` — Example `.ptl` programs
+- `bin/` — Shell scripts
+- `docs/` — Documentation
+
 Source: `rust/src/`
 
 ## Testing
@@ -40,11 +53,13 @@ npx vitest -t "emits Add"
 
 ### Example-based tests
 
-```bash
-./bin/test-each.sh          # Run all 16 examples with timeout
-```
+`test/test-samples.test.ts` runs every `examples/*.ptl` file through the `petal` binary
+and asserts it exits without error (3 s timeout per file). These are included in the
+normal vitest run:
 
-Example programs live in `examples/*.ptl`.
+```bash
+npx vitest test/test-samples.test.ts   # Run just the sample tests
+```
 
 ## Playground
 

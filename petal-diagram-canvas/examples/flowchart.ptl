@@ -49,21 +49,29 @@ clear(bg.r, bg.g, bg.b)
 // Title
 draw_text("Flowchart — hover over nodes", 20, 10, 18, title_color.r, title_color.g, title_color.b)
 
+// Helper: compute edge endpoints (center-bottom of source, center-top of target)
+// For upward edges, use side ports instead
+fn edgePoints(a, b) {
+    if b.y < a.y {
+        // Upward edge — use right side of source, right side of target
+        {ax: a.x + a.w, ay: a.y + a.h / 2, bx: b.x + b.w, by: b.y + b.h / 2}
+    } else {
+        {ax: a.x + a.w / 2, ay: a.y + a.h, bx: b.x + b.w / 2, by: b.y}
+    }
+}
+
 // Draw edges first (behind nodes)
 for e in edges {
     let a = nodes[e.from]
     let b = nodes[e.to]
-    let ax = a.x + a.w / 2
-    let ay = a.y + a.h
-    let bx = b.x + b.w / 2
-    let by = b.y
+    let pts = edgePoints(a, b)
 
-    draw_line(ax, ay, bx, by, line_color.r, line_color.g, line_color.b)
+    draw_line(pts.ax, pts.ay, pts.bx, pts.by, line_color.r, line_color.g, line_color.b)
 
     // Edge label
     if len(e.label) > 0 {
-        let lx = (ax + bx) / 2 + 6
-        let ly = (ay + by) / 2 - 8
+        let lx = (pts.ax + pts.bx) / 2 + 6
+        let ly = (pts.ay + pts.by) / 2 - 8
         draw_text(e.label, lx, ly, 13, label_color.r, label_color.g, label_color.b)
     }
 }
@@ -83,11 +91,22 @@ for n in nodes {
     }
 }
 
-// Small arrowheads (simple triangles drawn as lines)
+// Arrowheads — point along the line direction
+let arrow_len = 10.0
+let arrow_spread = pi() / 7.0
 for e in edges {
-    let b = nodes[e.to]
-    let bx = b.x + b.w / 2
-    let by = b.y
-    draw_line(bx - 5, by - 8, bx, by, line_color.r, line_color.g, line_color.b)
-    draw_line(bx + 5, by - 8, bx, by, line_color.r, line_color.g, line_color.b)
+    let pts = edgePoints(nodes[e.from], nodes[e.to])
+    let fax = float(pts.ax)
+    let fay = float(pts.ay)
+    let fbx = float(pts.bx)
+    let fby = float(pts.by)
+
+    let angle = atan2(fby - fay, fbx - fax)
+    let lx = fbx - arrow_len * cos(angle - arrow_spread)
+    let ly = fby - arrow_len * sin(angle - arrow_spread)
+    let rx = fbx - arrow_len * cos(angle + arrow_spread)
+    let ry = fby - arrow_len * sin(angle + arrow_spread)
+
+    draw_line(int(lx), int(ly), int(fbx), int(fby), line_color.r, line_color.g, line_color.b)
+    draw_line(int(rx), int(ry), int(fbx), int(fby), line_color.r, line_color.g, line_color.b)
 }

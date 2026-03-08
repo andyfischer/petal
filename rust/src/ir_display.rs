@@ -134,6 +134,7 @@ fn format_op(op: &TermOp) -> String {
         TermOp::Continue => "Continue".into(),
         TermOp::Return => "Return".into(),
         TermOp::MakeClosure(fid) => format!("MakeClosure(fn{})", fid.0),
+        TermOp::MakeOverloadSet => "MakeOverloadSet".into(),
         TermOp::Call => "Call".into(),
         TermOp::StateInit => "StateInit".into(),
         TermOp::StateRead => "StateRead".into(),

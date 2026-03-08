@@ -51,6 +51,10 @@ pub struct FunctionId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ClosureId(pub u32);
 
+/// Identifier for a runtime overload set (multi-arity function dispatch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub struct OverloadSetId(pub u32);
+
 // ---------------------------------------------------------------------------
 // TermOp
 // ---------------------------------------------------------------------------
@@ -112,6 +116,9 @@ pub enum TermOp {
     // Functions
     /// Create a closure: inputs=[captured values]
     MakeClosure(FunctionId),
+    /// Create an overload set from multiple closures: inputs=[closure0, closure1, ...]
+    /// Each closure handles a different arity.
+    MakeOverloadSet,
     /// Dynamic call: inputs=[callable, arg0, arg1, ...]
     Call,
     /// Method call: inputs=[object, arg0, arg1, ...], method name as constant
@@ -219,6 +226,18 @@ pub struct FunctionDef {
     /// Which body register gets the self-reference for recursion
     pub self_ref_register: Option<RegisterIndex>,
     pub register_count: u16,
+}
+
+// ---------------------------------------------------------------------------
+// OverloadSet
+// ---------------------------------------------------------------------------
+
+/// A set of function closures dispatched by argument count.
+/// Created at runtime by MakeOverloadSet terms.
+#[derive(Debug, Clone)]
+pub struct OverloadEntry {
+    pub arity: usize,
+    pub closure_id: ClosureId,
 }
 
 // ---------------------------------------------------------------------------

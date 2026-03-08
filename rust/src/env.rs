@@ -11,7 +11,7 @@ use crate::heap::Heap;
 use crate::lexer::Lexer;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
-use crate::program::{Program, ProgramId, StateKey};
+use crate::program::{Program, ProgramId, OverloadEntry, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
 use crate::value::Value;
 
@@ -21,6 +21,7 @@ pub struct Env {
     heap: Heap,
     native_fns: NativeFnTable,
     closures: Vec<RuntimeClosure>,
+    overload_sets: Vec<Vec<OverloadEntry>>,
     output: Vec<String>,
     next_program_id: u32,
     next_stack_id: u32,
@@ -37,6 +38,7 @@ impl Env {
             heap: Heap::new(),
             native_fns,
             closures: Vec::new(),
+            overload_sets: Vec::new(),
             output: Vec::new(),
             next_program_id: 1,
             next_stack_id: 1,
@@ -109,6 +111,7 @@ impl Env {
             stack,
             &mut self.heap,
             &mut self.closures,
+            &mut self.overload_sets,
             &self.native_fns,
             &mut self.output,
         );
@@ -275,9 +278,10 @@ impl Env {
         self.programs.insert(id, program);
     }
 
-    /// Clear all runtime closures.
+    /// Clear all runtime closures and overload sets.
     pub(crate) fn clear_closures(&mut self) {
         self.closures.clear();
+        self.overload_sets.clear();
     }
 
     /// Push the root frame for a stack's program.

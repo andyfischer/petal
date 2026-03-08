@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   ensureBuild,
   showIrJson,
+  runPetal,
+  runPetalError,
   termsByOp,
 } from "./helpers";
 
@@ -91,5 +93,84 @@ describe("function calls", () => {
     // callable + 2 args = 3 inputs
     const call = calls[calls.length - 1];
     expect(call.inputs).toHaveLength(3);
+  });
+});
+
+describe("overloaded functions (multi-arity)", () => {
+  it("compiles overloaded fns with internal name#arity names", () => {
+    const ir = showIrJson("fn f(a) { a }\nfn f(a, b) { a + b }");
+    const f1 = ir.functions.find((f: any) => f.name === "f#1");
+    const f2 = ir.functions.find((f: any) => f.name === "f#2");
+    expect(f1).toBeDefined();
+    expect(f2).toBeDefined();
+    expect(f1.params).toEqual(["a"]);
+    expect(f2.params).toEqual(["a", "b"]);
+  });
+
+  it("emits MakeOverloadSet term", () => {
+    const ir = showIrJson("fn f(a) { a }\nfn f(a, b) { a + b }");
+    const sets = termsByOp(ir, "MakeOverloadSet");
+    expect(sets).toHaveLength(1);
+    expect(sets[0].name).toBe("f");
+    // inputs are the two MakeClosure terms
+    expect(sets[0].inputs).toHaveLength(2);
+  });
+
+  it("dispatches to correct arity at runtime", () => {
+    const out = runPetal(`
+      fn greet() { print("hi") }
+      fn greet(name) { print("hi", name) }
+      fn greet(a, b) { print("hi", a, b) }
+      greet()
+      greet("world")
+      greet("a", "b")
+    `);
+    expect(out.trim()).toBe("hi\nhi world\nhi a b");
+  });
+
+  it("supports recursion across overloads", () => {
+    const out = runPetal(`
+      fn count(n) { count(n, 0) }
+      fn count(n, acc) {
+        if n <= 0 { acc }
+        else { count(n - 1, acc + 1) }
+      }
+      print(count(5))
+      print(count(3, 10))
+    `);
+    expect(out.trim()).toBe("5\n13");
+  });
+
+  it("supports closures over outer variables", () => {
+    const out = runPetal(`
+      let prefix = "Dr."
+      fn title(name) { title(prefix, name) }
+      fn title(pre, name) { print(pre, name) }
+      title("Smith")
+      title("Mr.", "Jones")
+    `);
+    expect(out.trim()).toBe("Dr. Smith\nMr. Jones");
+  });
+
+  it("gives good error for wrong arity", () => {
+    const err = runPetalError(`
+      fn add(a, b) { a + b }
+      fn add(a, b, c) { a + b + c }
+      add(1)
+    `);
+    expect(err).toContain("add()");
+    expect(err).toContain("2 or 3");
+    expect(err).toContain("got 1");
+  });
+
+  it("non-overloaded functions still work normally", () => {
+    const out = runPetal(`
+      fn fib(n) {
+        if n < 2 { n }
+        else { fib(n - 1) + fib(n - 2) }
+      }
+      print(fib(10))
+    `);
+    expect(out.trim()).toBe("55");
   });
 });

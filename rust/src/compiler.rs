@@ -49,6 +49,11 @@ pub struct Compiler {
 
     // Track loop nesting depth so state terms know if they're inside a loop
     loop_depth: u32,
+
+    // Overloaded function tracking: name → set of arities declared in prescan
+    overloaded_names: HashMap<String, Vec<usize>>,
+    // Compiled overload variants: name → vec of (arity, closure_term_id)
+    overload_variants: HashMap<String, Vec<(usize, TermId)>>,
 }
 
 impl Compiler {
@@ -69,6 +74,8 @@ impl Compiler {
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
             loop_depth: 0,
+            overloaded_names: HashMap::new(),
+            overload_variants: HashMap::new(),
         }
     }
 
@@ -374,11 +381,31 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     fn prescan_declarations(&mut self, stmts: &[Stmt]) {
+        // First pass: collect all arities per function name to detect overloads
+        let mut fn_arities: HashMap<String, Vec<usize>> = HashMap::new();
+        for stmt in stmts {
+            if let StmtKind::FnDecl { name, params, .. } = &stmt.kind {
+                fn_arities.entry(name.clone()).or_default().push(params.len());
+            }
+        }
+        // Record which names are overloaded (more than one unique arity)
+        for (name, arities) in &fn_arities {
+            let mut unique: Vec<usize> = arities.clone();
+            unique.sort();
+            unique.dedup();
+            if unique.len() > 1 {
+                self.overloaded_names.insert(name.clone(), unique);
+            }
+        }
+
         for stmt in stmts {
             match &stmt.kind {
                 StmtKind::FnDecl { name, .. } => {
-                    let tid = self.emit_phantom_term(name.clone());
-                    self.scope_bind(name.clone(), tid);
+                    // Only create one phantom per name (even if overloaded)
+                    if self.scope_lookup(name).is_none() {
+                        let tid = self.emit_phantom_term(name.clone());
+                        self.scope_bind(name.clone(), tid);
+                    }
                 }
                 StmtKind::EnumDecl { variants, .. } => {
                     for variant in variants {
@@ -414,9 +441,48 @@ impl Compiler {
             }
 
             StmtKind::FnDecl { name, params, body } => {
-                let closure_tid = self.compile_function(Some(name.clone()), params, body);
-                // Overwrite the placeholder binding
-                self.scope_bind(name.clone(), closure_tid);
+                if self.overloaded_names.contains_key(name) {
+                    // Overloaded function: compile with internal name "name#arity"
+                    let internal_name = format!("{}#{}", name, params.len());
+                    let closure_tid =
+                        self.compile_function(Some(internal_name), params, body);
+
+                    // Track this variant
+                    self.overload_variants
+                        .entry(name.clone())
+                        .or_default()
+                        .push((params.len(), closure_tid));
+
+                    // Check if all variants for this name are now compiled
+                    let expected = self.overloaded_names.get(name).unwrap().clone();
+                    let compiled: Vec<usize> = self.overload_variants
+                        .get(name).unwrap()
+                        .iter().map(|(arity, _)| *arity)
+                        .collect();
+                    let mut compiled_unique = compiled.clone();
+                    compiled_unique.sort();
+                    compiled_unique.dedup();
+
+                    if compiled_unique.len() == expected.len() {
+                        // All variants compiled — emit MakeOverloadSet
+                        let variants: Vec<(usize, TermId)> = self.overload_variants
+                            .get(name).unwrap().clone();
+                        let inputs: SmallVec<[TermId; 4]> = variants.iter()
+                            .map(|(_, tid)| *tid)
+                            .collect();
+                        let set_tid = self.emit_term(
+                            TermOp::MakeOverloadSet,
+                            inputs,
+                            Some(name.clone()),
+                        );
+                        self.scope_bind(name.clone(), set_tid);
+                    }
+                } else {
+                    // Non-overloaded: compile normally
+                    let closure_tid =
+                        self.compile_function(Some(name.clone()), params, body);
+                    self.scope_bind(name.clone(), closure_tid);
+                }
             }
 
             StmtKind::EnumDecl { name: _, variants } => {

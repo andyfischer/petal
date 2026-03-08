@@ -101,6 +101,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> StepResult {
@@ -141,6 +142,7 @@ impl Evaluator {
             stack,
             heap,
             closures,
+            overload_sets,
             native_fns,
             output,
         );
@@ -387,6 +389,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
@@ -569,12 +572,52 @@ impl Evaluator {
                 ControlFlow::Return(val)
             }
 
+            TermOp::MakeOverloadSet => {
+                // inputs are the closure values for each arity variant
+                let mut entries = Vec::with_capacity(inputs.len());
+                for &input in inputs {
+                    if let Value::Closure(cid) = input {
+                        let func = &program.functions[closures[cid.0 as usize].function_id.0 as usize];
+                        entries.push(OverloadEntry {
+                            arity: func.params.len(),
+                            closure_id: cid,
+                        });
+                    }
+                }
+                let set_id = OverloadSetId(overload_sets.len() as u32);
+                let overload_val = Value::OverloadSet(set_id);
+
+                // Patch captures: each closure in the set may capture the base
+                // function name (for recursion). At MakeClosure time that capture
+                // was Nil because the overload set didn't exist yet. Fix it now.
+                // Derive base name from internal name (e.g. "count#1" → "count").
+                let base_name = entries.first().and_then(|e| {
+                    let func = &program.functions[closures[e.closure_id.0 as usize].function_id.0 as usize];
+                    func.name.as_ref().and_then(|n| n.rfind('#').map(|pos| n[..pos].to_string()))
+                });
+                if let Some(ref base) = base_name {
+                    for entry in &entries {
+                        let closure = &mut closures[entry.closure_id.0 as usize];
+                        let func = &program.functions[closure.function_id.0 as usize];
+                        for (i, cap_name) in func.capture_names.iter().enumerate() {
+                            if cap_name == base {
+                                closure.captures[i] = overload_val;
+                            }
+                        }
+                    }
+                }
+
+                overload_sets.push(entries);
+                Self::write_register(stack, term, overload_val);
+                ControlFlow::Advance
+            }
+
             TermOp::Call => {
-                Self::exec_call(term, inputs, program, stack, heap, closures, native_fns, output)
+                Self::exec_call(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
             }
 
             TermOp::MethodCall(method_cid) => {
-                Self::exec_method_call(*method_cid, term, inputs, program, stack, heap, closures, native_fns, output)
+                Self::exec_method_call(*method_cid, term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
             }
 
             TermOp::MakeClosure(fn_id) => {
@@ -816,7 +859,7 @@ impl Evaluator {
             }
 
             TermOp::Match => {
-                Self::exec_match(term, inputs, program, stack, heap, closures, native_fns, output)
+                Self::exec_match(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
             }
         }
     }
@@ -1015,6 +1058,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
@@ -1038,9 +1082,31 @@ impl Evaluator {
                 }
             }
 
+            Value::OverloadSet(set_id) => {
+                let entries = &overload_sets[set_id.0 as usize];
+                match Self::resolve_overload(entries, args.len(), closures, program) {
+                    Ok(closure_id) => {
+                        let resolved = Value::Closure(closure_id);
+                        match Self::build_closure_frame(
+                            resolved, args, program, closures, Some(term.id),
+                        ) {
+                            Ok(frame) => {
+                                if let Some(caller_frame) = stack.frames.last_mut() {
+                                    caller_frame.current_term = term.block_next;
+                                }
+                                stack.push_frame(frame);
+                                ControlFlow::FramePushed
+                            }
+                            Err(e) => ControlFlow::Error(e),
+                        }
+                    }
+                    Err(e) => ControlFlow::Error(e),
+                }
+            }
+
             Value::NativeFunction(native_id) => {
                 Self::call_native_or_intrinsic(
-                    native_id, args, term, program, stack, heap, closures, native_fns, output,
+                    native_id, args, term, program, stack, heap, closures, overload_sets, native_fns, output,
                 )
             }
 
@@ -1054,6 +1120,34 @@ impl Evaluator {
         }
     }
 
+    /// Resolve an overload set to the correct closure based on argument count.
+    fn resolve_overload(
+        entries: &[OverloadEntry],
+        arg_count: usize,
+        closures: &[RuntimeClosure],
+        program: &Program,
+    ) -> Result<ClosureId, String> {
+        for entry in entries {
+            if entry.arity == arg_count {
+                return Ok(entry.closure_id);
+            }
+        }
+        // Derive the base function name from the first entry's internal name (e.g. "foo#2" → "foo")
+        let base_name = entries.first()
+            .and_then(|e| {
+                let func = &program.functions[closures[e.closure_id.0 as usize].function_id.0 as usize];
+                func.name.as_ref().and_then(|n| n.split('#').next().map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| "<anonymous>".to_string());
+        let arities: Vec<String> = entries.iter().map(|e| e.arity.to_string()).collect();
+        Err(format!(
+            "{}() expects {} arguments, got {}",
+            base_name,
+            arities.join(" or "),
+            arg_count,
+        ))
+    }
+
     fn exec_method_call(
         method_cid: ConstantId,
         term: &Term,
@@ -1062,6 +1156,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
@@ -1091,6 +1186,27 @@ impl Evaluator {
                             Err(e) => return ControlFlow::Error(e),
                         }
                     }
+                    Value::OverloadSet(set_id) => {
+                        let entries = &overload_sets[set_id.0 as usize];
+                        match Self::resolve_overload(entries, args.len(), closures, program) {
+                            Ok(closure_id) => {
+                                let resolved = Value::Closure(closure_id);
+                                match Self::build_closure_frame(
+                                    resolved, args, program, closures, Some(term.id),
+                                ) {
+                                    Ok(frame) => {
+                                        if let Some(caller_frame) = stack.frames.last_mut() {
+                                            caller_frame.current_term = term.block_next;
+                                        }
+                                        stack.push_frame(frame);
+                                        return ControlFlow::FramePushed;
+                                    }
+                                    Err(e) => return ControlFlow::Error(e),
+                                }
+                            }
+                            Err(e) => return ControlFlow::Error(e),
+                        }
+                    }
                     Value::NativeFunction(native_id) => {
                         match Self::call_native_fn(native_id, args, native_fns, heap, output) {
                             Ok(val) => {
@@ -1110,7 +1226,7 @@ impl Evaluator {
             let mut full_args = vec![obj];
             full_args.extend_from_slice(args);
             Self::call_native_or_intrinsic(
-                native_id, &full_args, term, program, stack, heap, closures, native_fns, output,
+                native_id, &full_args, term, program, stack, heap, closures, overload_sets, native_fns, output,
             )
         } else {
             let hint = match method_name.as_str() {
@@ -1136,6 +1252,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
@@ -1175,7 +1292,7 @@ impl Evaluator {
                             }
                             break;
                         }
-                        match Self::step(program, stack, heap, closures, native_fns, output) {
+                        match Self::step(program, stack, heap, closures, overload_sets, native_fns, output) {
                             StepResult::Continue => {}
                             StepResult::Complete(v) => { guard_result = v; break; }
                             StepResult::Error(e) => return ControlFlow::Error(e),
@@ -1381,15 +1498,16 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> ControlFlow {
         let result = if native_fns.intrinsic_map == Some(native_id) {
-            Self::builtin_map(args, program, stack, heap, closures, native_fns, output)
+            Self::builtin_map(args, program, stack, heap, closures, overload_sets, native_fns, output)
         } else if native_fns.intrinsic_filter == Some(native_id) {
-            Self::builtin_filter(args, program, stack, heap, closures, native_fns, output)
+            Self::builtin_filter(args, program, stack, heap, closures, overload_sets, native_fns, output)
         } else if native_fns.intrinsic_reduce == Some(native_id) {
-            Self::builtin_reduce(args, program, stack, heap, closures, native_fns, output)
+            Self::builtin_reduce(args, program, stack, heap, closures, overload_sets, native_fns, output)
         } else if native_fns.intrinsic_for_each == Some(native_id) {
             Self::builtin_for_each(args, program, stack, heap, closures, native_fns, output)
         } else {
@@ -1471,7 +1589,14 @@ impl Evaluator {
             body_block, block.entry, 0, return_term, None,
         );
         frame.registers = registers;
-        frame.fn_name = func.name.clone();
+        // Strip internal "#arity" suffix from overloaded function names for display
+        frame.fn_name = func.name.as_ref().map(|n| {
+            if let Some(pos) = n.rfind('#') {
+                n[..pos].to_string()
+            } else {
+                n.clone()
+            }
+        });
         Ok(frame)
     }
 
@@ -1487,6 +1612,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
@@ -1502,7 +1628,7 @@ impl Evaluator {
                 return Ok(stack.last_pop_result.take().unwrap_or(Value::Nil));
             }
 
-            let step = Self::step(program, stack, heap, closures, native_fns, output);
+            let step = Self::step(program, stack, heap, closures, overload_sets, native_fns, output);
             match step {
                 StepResult::Continue => {}
                 StepResult::Complete(v) => return Ok(v),
@@ -1517,6 +1643,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
@@ -1533,7 +1660,7 @@ impl Evaluator {
         let mut results = Vec::with_capacity(elements.len());
         for elem in elements {
             let result = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
             )?;
             results.push(result);
         }
@@ -1548,6 +1675,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
@@ -1564,7 +1692,7 @@ impl Evaluator {
         let mut results = Vec::new();
         for elem in elements {
             let keep = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
             )?;
             if keep.is_truthy() {
                 results.push(elem);
@@ -1581,6 +1709,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
@@ -1597,7 +1726,7 @@ impl Evaluator {
 
         for elem in elements {
             acc = Self::call_closure_sync(
-                func, &[acc, elem], program, stack, heap, closures, native_fns, output,
+                func, &[acc, elem], program, stack, heap, closures, overload_sets, native_fns, output,
             )?;
         }
 

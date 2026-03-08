@@ -1051,6 +1051,49 @@ impl Evaluator {
         }
     }
 
+    /// Resolve a callable to a ClosureId. Handles both plain closures and overload sets.
+    fn resolve_callable(
+        callable: Value,
+        arg_count: usize,
+        overload_sets: &[Vec<OverloadEntry>],
+        closures: &[RuntimeClosure],
+        program: &Program,
+    ) -> Result<ClosureId, String> {
+        match callable {
+            Value::Closure(id) => Ok(id),
+            Value::OverloadSet(set_id) => {
+                Self::resolve_overload(&overload_sets[set_id.0 as usize], arg_count, closures, program)
+            }
+            _ => Err(format!("Expected a function, got {}", callable.type_name())),
+        }
+    }
+
+    /// Build a closure frame and push it onto the stack, advancing the caller.
+    fn push_closure_call(
+        callable: Value,
+        args: &[Value],
+        term: &Term,
+        program: &Program,
+        stack: &mut Stack,
+        closures: &[RuntimeClosure],
+        overload_sets: &[Vec<OverloadEntry>],
+    ) -> ControlFlow {
+        let closure_id = match Self::resolve_callable(callable, args.len(), overload_sets, closures, program) {
+            Ok(id) => id,
+            Err(e) => return ControlFlow::Error(e),
+        };
+        match Self::build_closure_frame(Value::Closure(closure_id), args, program, closures, Some(term.id)) {
+            Ok(frame) => {
+                if let Some(caller_frame) = stack.frames.last_mut() {
+                    caller_frame.current_term = term.block_next;
+                }
+                stack.push_frame(frame);
+                ControlFlow::FramePushed
+            }
+            Err(e) => ControlFlow::Error(e),
+        }
+    }
+
     fn exec_call(
         term: &Term,
         inputs: &[Value],
@@ -1066,42 +1109,8 @@ impl Evaluator {
         let args = &inputs[1..];
 
         match callable {
-            Value::Closure(_) => {
-                match Self::build_closure_frame(
-                    callable, args, program, closures, Some(term.id),
-                ) {
-                    Ok(frame) => {
-                        // Advance caller past the Call term before pushing
-                        if let Some(caller_frame) = stack.frames.last_mut() {
-                            caller_frame.current_term = term.block_next;
-                        }
-                        stack.push_frame(frame);
-                        ControlFlow::FramePushed
-                    }
-                    Err(e) => ControlFlow::Error(e),
-                }
-            }
-
-            Value::OverloadSet(set_id) => {
-                let entries = &overload_sets[set_id.0 as usize];
-                match Self::resolve_overload(entries, args.len(), closures, program) {
-                    Ok(closure_id) => {
-                        let resolved = Value::Closure(closure_id);
-                        match Self::build_closure_frame(
-                            resolved, args, program, closures, Some(term.id),
-                        ) {
-                            Ok(frame) => {
-                                if let Some(caller_frame) = stack.frames.last_mut() {
-                                    caller_frame.current_term = term.block_next;
-                                }
-                                stack.push_frame(frame);
-                                ControlFlow::FramePushed
-                            }
-                            Err(e) => ControlFlow::Error(e),
-                        }
-                    }
-                    Err(e) => ControlFlow::Error(e),
-                }
+            Value::Closure(_) | Value::OverloadSet(_) => {
+                Self::push_closure_call(callable, args, term, program, stack, closures, overload_sets)
             }
 
             Value::NativeFunction(native_id) => {
@@ -1111,7 +1120,6 @@ impl Evaluator {
             }
 
             Value::EnumVariant { .. } if args.is_empty() => {
-                // Calling a fieldless variant returns itself
                 Self::write_register(stack, term, callable);
                 ControlFlow::Advance
             }
@@ -1172,40 +1180,10 @@ impl Evaluator {
             let map = heap.get_map(map_id);
             if let Some(&field_val) = map.get(&method_name) {
                 match field_val {
-                    Value::Closure(_) => {
-                        match Self::build_closure_frame(
-                            field_val, args, program, closures, Some(term.id),
-                        ) {
-                            Ok(frame) => {
-                                if let Some(caller_frame) = stack.frames.last_mut() {
-                                    caller_frame.current_term = term.block_next;
-                                }
-                                stack.push_frame(frame);
-                                return ControlFlow::FramePushed;
-                            }
-                            Err(e) => return ControlFlow::Error(e),
-                        }
-                    }
-                    Value::OverloadSet(set_id) => {
-                        let entries = &overload_sets[set_id.0 as usize];
-                        match Self::resolve_overload(entries, args.len(), closures, program) {
-                            Ok(closure_id) => {
-                                let resolved = Value::Closure(closure_id);
-                                match Self::build_closure_frame(
-                                    resolved, args, program, closures, Some(term.id),
-                                ) {
-                                    Ok(frame) => {
-                                        if let Some(caller_frame) = stack.frames.last_mut() {
-                                            caller_frame.current_term = term.block_next;
-                                        }
-                                        stack.push_frame(frame);
-                                        return ControlFlow::FramePushed;
-                                    }
-                                    Err(e) => return ControlFlow::Error(e),
-                                }
-                            }
-                            Err(e) => return ControlFlow::Error(e),
-                        }
+                    Value::Closure(_) | Value::OverloadSet(_) => {
+                        return Self::push_closure_call(
+                            field_val, args, term, program, stack, closures, overload_sets,
+                        );
                     }
                     Value::NativeFunction(native_id) => {
                         match Self::call_native_fn(native_id, args, native_fns, heap, output) {

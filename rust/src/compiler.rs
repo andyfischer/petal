@@ -658,6 +658,11 @@ impl Compiler {
                         "elif" | "elseif" | "elsif" => Some("use 'else if' in Petal"),
                         "switch" | "case" => Some("use 'match' for pattern matching in Petal"),
                         "lambda" => Some("use 'fn' for anonymous functions, e.g. fn(x) { x + 1 }"),
+                        "null" | "undefined" | "None" => Some("use 'nil' for null/empty values in Petal"),
+                        "console" => Some("use 'print()' for output in Petal"),
+                        "typeof" => Some("use 'type()' to get the type of a value in Petal"),
+                        "Math" => Some("math functions are top-level in Petal: abs(), sqrt(), floor(), ceil(), round()"),
+                        "require" | "import" => Some("Petal does not have a module system yet"),
                         _ => None,
                     };
                     let msg = if let Some(hint) = hint {

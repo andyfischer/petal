@@ -319,19 +319,24 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 
 ## Builtin Phantom Terms
 
-Every program starts with 21 phantom terms (t0–t20) in the root block, one per builtin function. These are `Copy` terms with empty inputs and their `name` set to the builtin name:
+Every program starts with 35 phantom terms (t0–t34) in the root block, one per builtin function. These are `Copy` terms with empty inputs and their `name` set to the builtin name:
 
 | ID | Name | ID | Name | ID | Name |
 |----|------|----|------|----|------|
-| 0 | `print` | 7 | `floor` | 14 | `pop` |
-| 1 | `range` | 8 | `ceil` | 15 | `keys` |
-| 2 | `len` | 9 | `float` | 16 | `values` |
-| 3 | `push` | 10 | `int` | 17 | `contains` |
-| 4 | `str` | 11 | `random` | 18 | `min` |
-| 5 | `abs` | 12 | `type` | 19 | `max` |
-| 6 | `sqrt` | 13 | `append` | 20 | `round` |
+| 0 | `print` | 12 | `type` | 24 | `sort` |
+| 1 | `range` | 13 | `append` | 25 | `reverse` |
+| 2 | `len` | 14 | `pop` | 26 | `join` |
+| 3 | `push` | 15 | `keys` | 27 | `split` |
+| 4 | `str` | 16 | `values` | 28 | `enumerate` |
+| 5 | `abs` | 17 | `contains` | 29 | `zip` |
+| 6 | `sqrt` | 18 | `min` | 30 | `slice` |
+| 7 | `floor` | 19 | `max` | 31 | `flat` |
+| 8 | `ceil` | 20 | `round` | 32 | `map` |
+| 9 | `float` | 21 | `dual` | 33 | `filter` |
+| 10 | `int` | 22 | `value_of` | 34 | `reduce` |
+| 11 | `random` | 23 | `deriv_of` | | |
 
-User-defined terms start at t21. Builtin phantom terms are not connected to the block's linked list (`block_next`/`block_prev` are null, and the block's `entry` points to the first user term).
+User-defined terms start at t35. Builtin phantom terms are not connected to the block's linked list (`block_next`/`block_prev` are null, and the block's `entry` points to the first user term).
 
 ## Traversing the IR
 

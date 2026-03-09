@@ -33,14 +33,14 @@ let evens = filter(nums, fn(x) { x % 2 == 0 })
 
 // Enums and pattern matching
 enum Shape {
-    Circle(radius),
+    Circle(radius)
     Rect(w, h)
 }
 
 fn area(shape) {
     match shape {
-        Shape.Circle(r) => 3.14159 * r * r,
-        Shape.Rect(w, h) => w * h
+        Circle(r) -> 3.14159 * r * r
+        Rect(w, h) -> w * h
     }
 }
 

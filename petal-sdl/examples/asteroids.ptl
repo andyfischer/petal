@@ -21,6 +21,13 @@ state stars = []
 state screen_shake = 0.0
 state stars_initialized = false
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 let delta = dt()
 let sw = screen_width()
 let sh = screen_height()
@@ -449,15 +456,15 @@ if !game_over {
 
 // Score background bar
 draw_rect(0, 0, sw, 40, 10, 10, 30)
-draw_line(0, 40, sw, 40, 0, 80, 160)
+draw_line({x: 0, y: 40}, {x: sw, y: 40}, {r: 0, g: 80, b: 160})
 
 // Score text
-draw_text("SCORE", 20, 8, 14, 0, 150, 255)
-draw_text(str(score), 20, 22, 22, 255, 255, 255)
+draw_text("SCORE", {x: 20, y: 8}, 14, {r: 0, g: 150, b: 255})
+draw_text(str(score), {x: 20, y: 22}, 22, #ffffff)
 
 // Asteroid count
 let acount = len(asteroids)
-draw_text("ASTEROIDS: " ++ str(acount), sw - 180, 12, 16, 180, 180, 200)
+draw_text("ASTEROIDS: " ++ str(acount), {x: sw - 180, y: 12}, 16, {r: 180, g: 180, b: 200})
 
 // Controls hint (fades out after a few seconds)
 if frame < 300 {
@@ -471,14 +478,15 @@ if frame < 300 {
 if game_over {
     // Dark overlay
     draw_rect(0, sh / 2 - 60, sw, 120, 20, 0, 0)
-    draw_line(0, sh / 2 - 60, sw, sh / 2 - 60, 255, 0, 0)
-    draw_line(0, sh / 2 + 60, sw, sh / 2 + 60, 255, 0, 0)
+    let red = #ff0000
+    draw_line({x: 0, y: sh / 2 - 60}, {x: sw, y: sh / 2 - 60}, red)
+    draw_line({x: 0, y: sh / 2 + 60}, {x: sw, y: sh / 2 + 60}, red)
 
-    draw_text("GAME OVER", sw / 2 - 110, sh / 2 - 40, 40, 255, 40, 40)
-    draw_text("Final Score: " ++ str(score), sw / 2 - 80, sh / 2, 22, 255, 200, 100)
+    draw_text("GAME OVER", {x: sw / 2 - 110, y: sh / 2 - 40}, 40, {r: 255, g: 40, b: 40})
+    draw_text("Final Score: " ++ str(score), {x: sw / 2 - 80, y: sh / 2}, 22, {r: 255, g: 200, b: 100})
 
     // Blink restart prompt
     if frame % 60 < 40 {
-        draw_text("Press SPACE to restart", sw / 2 - 110, sh / 2 + 35, 18, 200, 200, 200)
+        draw_text("Press SPACE to restart", {x: sw / 2 - 110, y: sh / 2 + 35}, 18, {r: 200, g: 200, b: 200})
     }
 }

@@ -54,6 +54,13 @@ let bullet_h = 12.0
 let bullet_speed = 400.0
 let enemy_bullet_speed = 200.0
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 let delta = dt()
 frame += 1
 
@@ -307,12 +314,12 @@ for s in stars {
 }
 
 // --- Ground line ---
-draw_line(0, 585, 800, 585, 0, 100, 0)
-draw_line(0, 586, 800, 586, 0, 60, 0)
+draw_line({x: 0, y: 585}, {x: 800, y: 585}, {r: 0, g: 100, b: 0})
+draw_line({x: 0, y: 586}, {x: 800, y: 586}, {r: 0, g: 60, b: 0})
 // Small hash marks on the ground
 for i in range(0, 40) {
     let gx = i * 20
-    draw_line(gx, 587, gx + 6, 587, 0, 50, 0)
+    draw_line({x: gx, y: 587}, {x: gx + 6, y: 587}, {r: 0, g: 50, b: 0})
 }
 
 // --- Draw shields ---
@@ -445,12 +452,12 @@ for b in enemy_bullets {
 // Score panel
 draw_rect(10, 6, 180, 28, 20, 20, 50)
 draw_rect_outline(10, 6, 180, 28, 60, 60, 150)
-draw_text("SCORE: " ++ str(score), 20, 10, 24, 0, 255, 100)
+draw_text("SCORE: " ++ str(score), {x: 20, y: 10}, 24, {r: 0, g: 255, b: 100})
 
 // Lives display
 draw_rect(610, 6, 180, 28, 20, 20, 50)
 draw_rect_outline(610, 6, 180, 28, 60, 60, 150)
-draw_text("LIVES: ", 620, 10, 24, 200, 200, 255)
+draw_text("LIVES: ", {x: 620, y: 10}, 24, {r: 200, g: 200, b: 255})
 // Draw small ships for lives
 for i in range(0, lives) {
     let lx = 730 + i * 20
@@ -471,10 +478,10 @@ if game_over {
     draw_rect(200, 220, 400, 160, 30, 5, 5)
     draw_rect_outline(200, 220, 400, 160, 200, 30, 30)
     draw_rect_outline(202, 222, 396, 156, 100, 15, 15)
-    draw_text("GAME OVER", 275, 245, 44, 255, 50, 50)
-    draw_text("Score: " ++ str(score), 325, 305, 28, 220, 220, 255)
+    draw_text("GAME OVER", {x: 275, y: 245}, 44, {r: 255, g: 50, b: 50})
+    draw_text("Score: " ++ str(score), {x: 325, y: 305}, 28, {r: 220, g: 220, b: 255})
     // Blinking restart text
     if frame % 60 < 40 {
-        draw_text("Press R to restart", 290, 350, 20, 180, 180, 180)
+        draw_text("Press R to restart", {x: 290, y: 350}, 20, {r: 180, g: 180, b: 180})
     }
 }

@@ -4,10 +4,10 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
 
 ## Directory Overview
 
-- `rust/` — Main Rust source code (lexer, parser, AST, compiler, IR, evaluator)
-- `petal-sdl/` — SDL-based native app for running Petal programs with graphics
-- `petal-diagram-canvas/` — Diagram canvas app with sidebar editor and mouseOver helper (WASM + Vite)
-- `petal-web/` — Web-based Petal runner (WASM + Vite)
+- `rust/` — Main implementation for the core language (lexer, parser, AST, compiler, IR, evaluator)
+- `petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
+- `petal-diagram-canvas/` — Another integration, web-based diagram renderer
+- `petal-web/` — Integration that uses Petal as a React-like page rendering layer.
 - `playground/` — Interactive web app for exploring the compiler pipeline (Prism API + React)
 - `tools/` — MCP server and dev tooling
 - `test/` — Vitest integration tests

@@ -7,6 +7,28 @@ let PLAYER_RADIUS = 10
 let ENEMY_MIN_RADIUS = 8
 let ENEMY_MAX_RADIUS = 20
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
+// Shared colors
+let white = {r: 255, g: 255, b: 255}
+let gold = {r: 255, g: 220, b: 80}
+let purple = {r: 180, g: 100, b: 255}
+let red_accent = {r: 255, g: 50, b: 80}
+let hud_blue = {r: 100, g: 160, b: 220}
+let hud_border = {r: 40, g: 80, b: 140}
+let subtle_grid = {r: 15, g: 15, b: 35}
+let player_trail = {r: 100, g: 200, b: 255}
+let game_over_red = {r: 255, g: 50, b: 70}
+let light_text = {r: 220, g: 220, b: 240}
+let hint_text = {r: 180, g: 200, b: 220}
+let threat_text = {r: 80, g: 80, b: 120}
+let best_label = {r: 200, g: 180, b: 50}
+
 // Game state
 state enemies = []
 state spawn_timer = 0.0
@@ -238,7 +260,7 @@ for gx in range(0, SW / grid_spacing + 1) {
 }
 for gy in range(0, SH / grid_spacing + 2) {
     let line_y = gy * grid_spacing - grid_offset
-    draw_line(0, line_y, SW, line_y, 15, 15, 35)
+    draw_line({x: 0, y: line_y}, {x: SW, y: line_y}, subtle_grid)
 }
 
 // Draw trail
@@ -305,28 +327,28 @@ if pspeed > 3.0 {
     let nx = pvx / pspeed
     let ny = pvy / pspeed
     draw_line(
-        player_x, player_y,
-        player_x + int(nx * dir_len), player_y + int(ny * dir_len),
-        100, 200, 255
+        {x: player_x, y: player_y},
+        {x: player_x + int(nx * dir_len), y: player_y + int(ny * dir_len)},
+        player_trail
     )
 }
 
 // === HUD ===
 // Score bar background
 draw_rect(0, 0, SW, 45, 10, 10, 30)
-draw_line(0, 45, SW, 45, 40, 80, 140)
+draw_line({x: 0, y: 45}, {x: SW, y: 45}, hud_border)
 
 let score_int = int(score)
-draw_text("SCORE", 20, 5, 14, 100, 160, 220)
-draw_text(str(score_int), 20, 20, 24, 255, 255, 255)
+draw_text("SCORE", {x: 20, y: 5}, 14, hud_blue)
+draw_text(str(score_int), {x: 20, y: 20}, 24, white)
 
 let hs_int = int(high_score)
-draw_text("BEST", SW - 120, 5, 14, 200, 180, 50)
-draw_text(str(hs_int), SW - 120, 20, 24, 255, 220, 80)
+draw_text("BEST", {x: SW - 120, y: 5}, 14, best_label)
+draw_text(str(hs_int), {x: SW - 120, y: 20}, 24, gold)
 
 // Difficulty indicator
 let diff_display = min(int(difficulty) + 1, 10)
-draw_text("LV " ++ str(diff_display), SW / 2 - 20, 12, 20, 180, 100, 255)
+draw_text("LV " ++ str(diff_display), {x: SW / 2 - 20, y: 12}, 20, purple)
 
 // Combo display
 if combo > 1 {
@@ -336,7 +358,7 @@ if combo > 1 {
 
 // Enemy count
 let enemy_count = len(enemies)
-draw_text(str(enemy_count) ++ " threats", SW / 2 - 40, SH - 30, 16, 80, 80, 120)
+draw_text(str(enemy_count) ++ " threats", {x: SW / 2 - 40, y: SH - 30}, 16, threat_text)
 
 // Game over overlay
 if game_over {
@@ -344,16 +366,16 @@ if game_over {
     draw_rect(0, 0, SW, SH, 5, 0, 10)
 
     // Decorative lines
-    draw_line(SW / 2 - 180, SH / 2 - 80, SW / 2 + 180, SH / 2 - 80, 255, 50, 80)
-    draw_line(SW / 2 - 180, SH / 2 + 130, SW / 2 + 180, SH / 2 + 130, 255, 50, 80)
+    draw_line({x: SW / 2 - 180, y: SH / 2 - 80}, {x: SW / 2 + 180, y: SH / 2 - 80}, red_accent)
+    draw_line({x: SW / 2 - 180, y: SH / 2 + 130}, {x: SW / 2 + 180, y: SH / 2 + 130}, red_accent)
 
-    draw_text("GAME OVER", SW / 2 - 120, SH / 2 - 60, 48, 255, 50, 70)
-    draw_text("Survived " ++ str(score_int) ++ " seconds", SW / 2 - 110, SH / 2 + 5, 24, 220, 220, 240)
-    draw_text("Best: " ++ str(hs_int) ++ "s", SW / 2 - 50, SH / 2 + 40, 22, 255, 220, 80)
-    draw_text("Level reached: " ++ str(diff_display), SW / 2 - 90, SH / 2 + 72, 20, 180, 100, 255)
+    draw_text("GAME OVER", {x: SW / 2 - 120, y: SH / 2 - 60}, 48, game_over_red)
+    draw_text("Survived " ++ str(score_int) ++ " seconds", {x: SW / 2 - 110, y: SH / 2 + 5}, 24, light_text)
+    draw_text("Best: " ++ str(hs_int) ++ "s", {x: SW / 2 - 50, y: SH / 2 + 40}, 22, gold)
+    draw_text("Level reached: " ++ str(diff_display), {x: SW / 2 - 90, y: SH / 2 + 72}, 20, purple)
 
     if frame % 70 < 45 {
-        draw_text("[ SPACE to retry ]", SW / 2 - 110, SH / 2 + 110, 22, 180, 200, 220)
+        draw_text("[ SPACE to retry ]", {x: SW / 2 - 110, y: SH / 2 + 110}, 22, hint_text)
     }
 
     // Draw particles on top

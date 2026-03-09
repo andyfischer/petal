@@ -9,6 +9,14 @@ state time = 0.0
 state spawn_timer = 0.0
 
 let delta = dt()
+
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 let gravity = 400.0
 let max_particles = 800
 let sw = float(screen_width())
@@ -320,7 +328,8 @@ for s in stars {
 }
 
 // Draw subtle ground line
-draw_line(0, 585, 800, 585, 30, 25, 50)
+let ground_color = {r: 30, g: 25, b: 50}
+draw_line({x: 0, y: 585}, {x: 800, y: 585}, ground_color)
 
 // Draw particles with glow effect (larger dim circle behind, then bright circle)
 for p in particles {
@@ -368,5 +377,7 @@ if len(electrics) > 1 {
 }
 
 // HUD
-draw_text("Particles: " ++ str(len(particles)), 10, 10, 20, 200, 200, 220)
-draw_text("Click or press SPACE to spawn", 10, 36, 16, 100, 100, 140)
+let hud_color = {r: 200, g: 200, b: 220}
+let hud_dim_color = {r: 100, g: 100, b: 140}
+draw_text("Particles: " ++ str(len(particles)), {x: 10, y: 10}, 20, hud_color)
+draw_text("Click or press SPACE to spawn", {x: 10, y: 36}, 16, hud_dim_color)

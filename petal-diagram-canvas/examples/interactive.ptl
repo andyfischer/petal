@@ -76,10 +76,18 @@ if down && dragging >= 0 {
     dragging = -1
 }
 
+// Overloaded draw functions: accept point/color records
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 // === DRAW ===
 clear(bg.r, bg.g, bg.b)
 
-draw_text("Interactive Nodes — drag to move, click to toggle", 20, 10, 16, title_color.r, title_color.g, title_color.b)
+draw_text("Interactive Nodes — drag to move, click to toggle", {x: 20, y: 10}, 16, title_color)
 
 // Draw connections
 for conn in connections {
@@ -89,7 +97,7 @@ for conn in connections {
     let both_active = a.active && b.active
     let c = if both_active { conn_active } else { conn_inactive }
 
-    draw_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b)
+    draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
 }
 
 // Draw nodes
@@ -117,9 +125,9 @@ for i in range(0, len(nodes)) {
 
     // Label
     let tw = len(n.label) * 7
-    draw_text(n.label, n.x - tw / 2, n.y - 7, 14, label_color.r, label_color.g, label_color.b)
+    draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
 }
 
 // Status bar
 let active_count = len(filter(nodes, fn(n) { n.active }))
-draw_text("Active: " ++ str(active_count) ++ " / " ++ str(len(nodes)), 20, 560, 14, 120, 120, 150)
+draw_text("Active: " ++ str(active_count) ++ " / " ++ str(len(nodes)), {x: 20, y: 560}, 14, {r: 120, g: 120, b: 150})

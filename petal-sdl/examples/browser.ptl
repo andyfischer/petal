@@ -11,6 +11,14 @@ let mx = mouse_x()
 let my = mouse_y()
 let count = example_count()
 
+// Overloaded draw functions
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 // Layout constants
 let header_h = 80
 let item_h = 50
@@ -76,10 +84,10 @@ draw_rect(0, 0, sw, header_h, 8, 8, 24)
 draw_rect(0, header_h - 2, sw, 2, 60, 100, 220)
 
 // Title
-draw_text("PETAL GAMES", sw / 2 - 100, 18, 36, 100, 180, 255)
+draw_text("PETAL GAMES", {x: sw / 2 - 100, y: 18}, 36, {r: 100, g: 180, b: 255})
 
 // Subtitle
-draw_text("Select a game to play  |  ESC to quit", sw / 2 - 140, 52, 14, 60, 80, 120)
+draw_text("Select a game to play  |  ESC to quit", {x: sw / 2 - 140, y: 52}, 14, {r: 60, g: 80, b: 120})
 
 // Item list
 for i in range(0, count) {
@@ -101,17 +109,17 @@ for i in range(0, count) {
             draw_rect(list_x + 8, iy + 12, 4, item_h - 24, 80, 180, 255)
 
             // Name text (bright)
-            draw_text(name, list_x + 24, iy + 14, 22, 200, 230, 255)
+            draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 200, g: 230, b: 255})
 
             // Arrow indicator
-            draw_text(">", list_x + list_w - 30, iy + 14, 22, 80, 180, 255)
+            draw_text(">", {x: list_x + list_w - 30, y: iy + 14}, 22, {r: 80, g: 180, b: 255})
         } else {
             // Normal item
             draw_rect(list_x, iy, list_w, item_h, 18, 20, 40)
             draw_rect_outline(list_x, iy, list_w, item_h, 35, 40, 70)
 
             // Name text (dim)
-            draw_text(name, list_x + 24, iy + 14, 22, 120, 140, 170)
+            draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 120, g: 140, b: 170})
         }
     }
 }
@@ -122,4 +130,4 @@ draw_rect(0, sh - 20, sw, 20, 12, 12, 30)
 
 // Footer
 let footer_text = str(count) ++ " games available"
-draw_text(footer_text, sw / 2 - 50, sh - 16, 12, 50, 60, 90)
+draw_text(footer_text, {x: sw / 2 - 50, y: sh - 16}, 12, {r: 50, g: 60, b: 90})

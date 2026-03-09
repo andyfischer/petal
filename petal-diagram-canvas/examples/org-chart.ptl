@@ -52,9 +52,17 @@ let vp_border = #506e96
 let default_bg = #32374b
 let default_border = #5a5f82
 
+// Overloaded draw functions: accept point/color records
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 clear(bg.r, bg.g, bg.b)
 
-draw_text("Organization Chart", 20, 10, 18, title_color.r, title_color.g, title_color.b)
+draw_text("Organization Chart", {x: 20, y: 10}, 18, title_color)
 
 // Draw connection lines
 for i in range(0, len(people)) {
@@ -70,9 +78,9 @@ for i in range(0, len(people)) {
 
         // Draw vertical-then-horizontal connector
         let mid_y = (py + cy) / 2
-        draw_line(px, py, px, mid_y, conn_color.r, conn_color.g, conn_color.b)
-        draw_line(px, mid_y, cx, mid_y, conn_color.r, conn_color.g, conn_color.b)
-        draw_line(cx, mid_y, cx, cy, conn_color.r, conn_color.g, conn_color.b)
+        draw_line({x: px, y: py}, {x: px, y: mid_y}, conn_color)
+        draw_line({x: px, y: mid_y}, {x: cx, y: mid_y}, conn_color)
+        draw_line({x: cx, y: mid_y}, {x: cx, y: cy}, conn_color)
     }
 }
 
@@ -123,7 +131,7 @@ for i in range(0, len(people)) {
     draw_rect_outline(x, y, node_w, node_h, border_r, border_g, border_b)
 
     // Name (bold-ish: slightly larger)
-    draw_text(person.name, x + 10, y + 10, 15, name_color.r, name_color.g, name_color.b)
+    draw_text(person.name, {x: x + 10, y: y + 10}, 15, name_color)
     // Title
-    draw_text(person.title, x + 10, y + 30, 13, role_color.r, role_color.g, role_color.b)
+    draw_text(person.title, {x: x + 10, y: y + 30}, 13, role_color)
 }

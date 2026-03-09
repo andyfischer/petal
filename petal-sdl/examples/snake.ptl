@@ -20,6 +20,15 @@ state frame = 0
 
 let move_interval = 0.1
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
+let score_color = {r: 200, g: 255, b: 220}
+
 // Input handling — buffer direction so we don't reverse into ourselves
 if key_pressed("up") && dir_y != 1 {
     next_dir_x = 0
@@ -235,7 +244,7 @@ for i in range(0, snake_len) {
 // ---- Score display with background panel ----
 draw_rect(10, 8, 160, 32, 20, 15, 40)
 draw_rect_outline(10, 8, 160, 32, 80, 60, 160)
-draw_text("Score: " ++ str(score), 18, 12, 24, 200, 255, 220)
+draw_text("Score: " ++ str(score), {x: 18, y: 12}, 24, score_color)
 
 // ---- Game over screen ----
 if game_over {
@@ -248,11 +257,11 @@ if game_over {
     draw_rect(panel_x, panel_y, 320, 120, 30, 20, 50)
     draw_rect_outline(panel_x, panel_y, 320, 120, 120, 80, 200)
 
-    draw_text("GAME OVER", screen_width() / 2 - 100, screen_height() / 2 - 40, 40, 255, 80, 100)
-    draw_text("Score: " ++ str(score), screen_width() / 2 - 50, screen_height() / 2, 24, 200, 255, 220)
+    draw_text("GAME OVER", {x: screen_width() / 2 - 100, y: screen_height() / 2 - 40}, 40, {r: 255, g: 80, b: 100})
+    draw_text("Score: " ++ str(score), {x: screen_width() / 2 - 50, y: screen_height() / 2}, 24, score_color)
 
     // Blinking restart prompt
     if frame % 60 < 40 {
-        draw_text("Press SPACE to restart", screen_width() / 2 - 130, screen_height() / 2 + 35, 22, 180, 160, 220)
+        draw_text("Press SPACE to restart", {x: screen_width() / 2 - 130, y: screen_height() / 2 + 35}, 22, {r: 180, g: 160, b: 220})
     }
 }

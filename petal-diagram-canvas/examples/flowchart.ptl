@@ -21,6 +21,14 @@ let label_color = #b4b464
 let highlight_border = #508cdc
 let highlight_bg = #325aa0
 
+// Overloaded draw functions: accept point/color records
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 // Define nodes: {label, x, y, w, h}
 let nodes = [
     {label: "Start",        x: 350, y: 40,  w: 120, h: 40},
@@ -47,7 +55,7 @@ let edges = [
 clear(bg.r, bg.g, bg.b)
 
 // Title
-draw_text("Flowchart — hover over nodes", 20, 10, 18, title_color.r, title_color.g, title_color.b)
+draw_text("Flowchart — hover over nodes", {x: 20, y: 10}, 18, title_color)
 
 // Helper: compute edge endpoints (center-bottom of source, center-top of target)
 // For upward edges, use side ports instead
@@ -66,13 +74,13 @@ for e in edges {
     let b = nodes[e.to]
     let pts = edgePoints(a, b)
 
-    draw_line(pts.ax, pts.ay, pts.bx, pts.by, line_color.r, line_color.g, line_color.b)
+    draw_line({x: pts.ax, y: pts.ay}, {x: pts.bx, y: pts.by}, line_color)
 
     // Edge label
     if len(e.label) > 0 {
         let lx = (pts.ax + pts.bx) / 2 + 6
         let ly = (pts.ay + pts.by) / 2 - 8
-        draw_text(e.label, lx, ly, 13, label_color.r, label_color.g, label_color.b)
+        draw_text(e.label, {x: lx, y: ly}, 13, label_color)
     }
 }
 
@@ -83,11 +91,11 @@ for n in nodes {
         // Highlight
         draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, highlight_border.r, highlight_border.g, highlight_border.b)
         draw_rect(n.x, n.y, n.w, n.h, highlight_bg.r, highlight_bg.g, highlight_bg.b)
-        draw_text(n.label, n.x + 10, n.y + 12, 16, 255, 255, 255)
+        draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, #ffffff)
     } else {
         draw_rect(n.x, n.y, n.w, n.h, node_bg.r, node_bg.g, node_bg.b)
         draw_rect_outline(n.x, n.y, n.w, n.h, node_border.r, node_border.g, node_border.b)
-        draw_text(n.label, n.x + 10, n.y + 12, 16, text_color.r, text_color.g, text_color.b)
+        draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, text_color)
     }
 }
 
@@ -107,6 +115,6 @@ for e in edges {
     let rx = fbx - arrow_len * cos(angle + arrow_spread)
     let ry = fby - arrow_len * sin(angle + arrow_spread)
 
-    draw_line(int(lx), int(ly), int(fbx), int(fby), line_color.r, line_color.g, line_color.b)
-    draw_line(int(rx), int(ry), int(fbx), int(fby), line_color.r, line_color.g, line_color.b)
+    draw_line({x: int(lx), y: int(ly)}, {x: int(fbx), y: int(fby)}, line_color)
+    draw_line({x: int(rx), y: int(ry)}, {x: int(fbx), y: int(fby)}, line_color)
 }

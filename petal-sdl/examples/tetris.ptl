@@ -8,6 +8,17 @@ let cell_size = 28
 let board_x = 240
 let board_y = 18
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
+let grid_line_color = {r: 22, g: 22, b: 35}
+let label_color = {r: 120, g: 140, b: 200}
+let controls_color = {r: 160, g: 160, b: 180}
+
 // --- Piece definitions ---
 // Each piece has 4 rotations, each rotation is a list of 8 ints (4 x,y pairs)
 // I piece
@@ -357,12 +368,12 @@ draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 8, 8, 16)
 // Draw subtle grid lines
 let lx = 0
 while lx <= grid_w {
-    draw_line(board_x + lx * cell_size, board_y, board_x + lx * cell_size, board_y + grid_h * cell_size, 22, 22, 35)
+    draw_line({x: board_x + lx * cell_size, y: board_y}, {x: board_x + lx * cell_size, y: board_y + grid_h * cell_size}, grid_line_color)
     lx += 1
 }
 let ly = 0
 while ly <= grid_h {
-    draw_line(board_x, board_y + ly * cell_size, board_x + grid_w * cell_size, board_y + ly * cell_size, 22, 22, 35)
+    draw_line({x: board_x, y: board_y + ly * cell_size}, {x: board_x + grid_w * cell_size, y: board_y + ly * cell_size}, grid_line_color)
     ly += 1
 }
 
@@ -430,7 +441,7 @@ let sidebar_x = board_x + grid_w * cell_size + 24
 // NEXT piece panel
 draw_rect(sidebar_x, board_y, 130, 110, 20, 22, 38)
 draw_rect_outline(sidebar_x, board_y, 130, 110, 60, 70, 110)
-draw_text("NEXT", sidebar_x + 38, board_y + 8, 20, 120, 140, 200)
+draw_text("NEXT", {x: sidebar_x + 38, y: board_y + 8}, 20, label_color)
 // Draw next piece centered in panel
 let next_blocks = get_blocks(next_type, 0)
 let ni = 0
@@ -444,20 +455,20 @@ while ni < 4 {
 // SCORE panel
 draw_rect(sidebar_x, board_y + 124, 130, 80, 20, 22, 38)
 draw_rect_outline(sidebar_x, board_y + 124, 130, 80, 60, 70, 110)
-draw_text("SCORE", sidebar_x + 32, board_y + 132, 18, 120, 140, 200)
-draw_text(str(score), sidebar_x + 14, board_y + 160, 28, 255, 255, 255)
+draw_text("SCORE", {x: sidebar_x + 32, y: board_y + 132}, 18, label_color)
+draw_text(str(score), {x: sidebar_x + 14, y: board_y + 160}, 28, #ffffff)
 
 // LEVEL panel
 draw_rect(sidebar_x, board_y + 218, 130, 80, 20, 22, 38)
 draw_rect_outline(sidebar_x, board_y + 218, 130, 80, 60, 70, 110)
-draw_text("LEVEL", sidebar_x + 34, board_y + 226, 18, 120, 140, 200)
-draw_text(str(level), sidebar_x + 14, board_y + 254, 28, 100, 255, 180)
+draw_text("LEVEL", {x: sidebar_x + 34, y: board_y + 226}, 18, label_color)
+draw_text(str(level), {x: sidebar_x + 14, y: board_y + 254}, 28, {r: 100, g: 255, b: 180})
 
 // LINES panel
 draw_rect(sidebar_x, board_y + 312, 130, 80, 20, 22, 38)
 draw_rect_outline(sidebar_x, board_y + 312, 130, 80, 60, 70, 110)
-draw_text("LINES", sidebar_x + 36, board_y + 320, 18, 120, 140, 200)
-draw_text(str(lines_cleared), sidebar_x + 14, board_y + 348, 28, 255, 220, 100)
+draw_text("LINES", {x: sidebar_x + 36, y: board_y + 320}, 18, label_color)
+draw_text(str(lines_cleared), {x: sidebar_x + 14, y: board_y + 348}, 28, {r: 255, g: 220, b: 100})
 
 // ---- Left sidebar ----
 let left_x = board_x - 160
@@ -465,19 +476,19 @@ let left_x = board_x - 160
 // Controls info
 draw_rect(left_x, board_y, 140, 200, 20, 22, 38)
 draw_rect_outline(left_x, board_y, 140, 200, 50, 55, 85)
-draw_text("CONTROLS", left_x + 16, board_y + 10, 16, 120, 140, 200)
-draw_text("< > Move", left_x + 14, board_y + 42, 14, 160, 160, 180)
-draw_text("Up  Rotate", left_x + 14, board_y + 66, 14, 160, 160, 180)
-draw_text("Dn  Soft drop", left_x + 14, board_y + 90, 14, 160, 160, 180)
-draw_text("Spc Hard drop", left_x + 14, board_y + 114, 14, 160, 160, 180)
+draw_text("CONTROLS", {x: left_x + 16, y: board_y + 10}, 16, label_color)
+draw_text("< > Move", {x: left_x + 14, y: board_y + 42}, 14, controls_color)
+draw_text("Up  Rotate", {x: left_x + 14, y: board_y + 66}, 14, controls_color)
+draw_text("Dn  Soft drop", {x: left_x + 14, y: board_y + 90}, 14, controls_color)
+draw_text("Spc Hard drop", {x: left_x + 14, y: board_y + 114}, 14, controls_color)
 
 // Title
-draw_text("T", left_x + 14, board_y + 240, 36, 0, 240, 240)
-draw_text("E", left_x + 38, board_y + 240, 36, 240, 240, 0)
-draw_text("T", left_x + 62, board_y + 240, 36, 180, 50, 255)
-draw_text("R", left_x + 86, board_y + 240, 36, 50, 240, 50)
-draw_text("I", left_x + 112, board_y + 240, 36, 240, 50, 50)
-draw_text("S", left_x + 126, board_y + 240, 36, 240, 160, 30)
+draw_text("T", {x: left_x + 14, y: board_y + 240}, 36, {r: 0, g: 240, b: 240})
+draw_text("E", {x: left_x + 38, y: board_y + 240}, 36, {r: 240, g: 240, b: 0})
+draw_text("T", {x: left_x + 62, y: board_y + 240}, 36, {r: 180, g: 50, b: 255})
+draw_text("R", {x: left_x + 86, y: board_y + 240}, 36, {r: 50, g: 240, b: 50})
+draw_text("I", {x: left_x + 112, y: board_y + 240}, 36, {r: 240, g: 50, b: 50})
+draw_text("S", {x: left_x + 126, y: board_y + 240}, 36, {r: 240, g: 160, b: 30})
 
 // Decorative blocks on left side
 let deco = 0
@@ -494,10 +505,10 @@ if game_over {
     // Redraw locked pieces dimmed (just draw dark overlay)
     draw_rect(board_x + 10, board_y + grid_h * cell_size / 2 - 50, grid_w * cell_size - 20, 100, 20, 10, 30)
     draw_rect_outline(board_x + 10, board_y + grid_h * cell_size / 2 - 50, grid_w * cell_size - 20, 100, 200, 50, 80)
-    draw_text("GAME OVER", board_x + 42, board_y + grid_h * cell_size / 2 - 35, 30, 255, 60, 80)
-    draw_text("Score: " ++ str(score), board_x + 65, board_y + grid_h * cell_size / 2, 22, 255, 255, 255)
+    draw_text("GAME OVER", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 - 35}, 30, {r: 255, g: 60, b: 80})
+    draw_text("Score: " ++ str(score), {x: board_x + 65, y: board_y + grid_h * cell_size / 2}, 22, #ffffff)
     // Blinking restart text
     if frame_count() % 60 < 40 {
-        draw_text("ENTER to restart", board_x + 42, board_y + grid_h * cell_size / 2 + 30, 16, 200, 200, 220)
+        draw_text("ENTER to restart", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 + 30}, 16, {r: 200, g: 200, b: 220})
     }
 }

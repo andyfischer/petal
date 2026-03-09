@@ -15,6 +15,13 @@ let brick_offset_x = 30
 let brick_offset_y = 60
 let ball_speed = 350.0
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
 // --- State ---
 state ball_x = 400.0
 state ball_y = 400.0
@@ -288,7 +295,7 @@ draw_circle(int(ball_x), int(ball_y), ball_radius - 2, 240, 250, 255)
 // Score panel background
 draw_rect(10, 6, 180, 28, 20, 15, 40)
 draw_rect_outline(10, 6, 180, 28, 80, 40, 160)
-draw_text("SCORE  " ++ str(score), 20, 10, 22, 180, 220, 255)
+draw_text("SCORE  " ++ str(score), {x: 20, y: 10}, 22, {r: 180, g: 220, b: 255})
 
 // Lives panel background
 draw_rect(610, 6, 180, 28, 20, 15, 40)
@@ -304,20 +311,20 @@ while li < lives {
 }
 
 // Score label on right side
-draw_text("LIVES", 620, 10, 22, 255, 140, 160)
+draw_text("LIVES", {x: 620, y: 10}, 22, {r: 255, g: 140, b: 160})
 
 // Win message
 if all_dead && initialized {
     draw_rect(250, 270, 300, 70, 10, 8, 20)
     draw_rect_outline(250, 270, 300, 70, 20, 255, 100)
-    draw_text("YOU WIN!", 310, 280, 40, 20, 255, 100)
-    draw_text("Score: " ++ str(score), 335, 320, 22, 180, 255, 200)
+    draw_text("YOU WIN!", {x: 310, y: 280}, 40, {r: 20, g: 255, b: 100})
+    draw_text("Score: " ++ str(score), {x: 335, y: 320}, 22, {r: 180, g: 255, b: 200})
 }
 
 // Game over message
 if lives <= 0 {
     draw_rect(250, 270, 300, 80, 10, 8, 20)
     draw_rect_outline(250, 270, 300, 80, 255, 40, 60)
-    draw_text("GAME OVER", 295, 280, 40, 255, 40, 60)
-    draw_text("Score: " ++ str(score), 335, 325, 24, 255, 180, 200)
+    draw_text("GAME OVER", {x: 295, y: 280}, 40, {r: 255, g: 40, b: 60})
+    draw_text("Score: " ++ str(score), {x: 335, y: 325}, 24, {r: 255, g: 180, b: 200})
 }

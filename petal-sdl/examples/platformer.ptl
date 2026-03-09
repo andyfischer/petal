@@ -66,6 +66,21 @@ let pw = 24
 let ph = 32
 let fc = frame_count()
 
+let _draw_line = draw_line
+let _draw_text = draw_text
+fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
+fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
+fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
+fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+
+let grass_green = {r: 50, g: 170, b: 45}
+let grass_green2 = {r: 60, g: 185, b: 50}
+let grass_green3 = {r: 55, g: 175, b: 50}
+let plat_edge_brown = {r: 90, g: 58, b: 32}
+let sparkle_yellow = {r: 255, g: 255, b: 200}
+let white = {r: 255, g: 255, b: 255}
+let hint_color = {r: 180, g: 180, b: 200}
+
 // Input
 vx = 0.0
 if key_down("left") {
@@ -239,8 +254,8 @@ let blade = 0
 while blade < 30 {
     let bx = blade * 27 + 5
     let bh = 6 + (blade % 3) * 3
-    draw_line(bx, 548, bx - 2, 548 - bh, 50, 170, 45)
-    draw_line(bx + 8, 548, bx + 10, 548 - bh - 1, 60, 185, 50)
+    draw_line({x: bx, y: 548}, {x: bx - 2, y: 548 - bh}, grass_green)
+    draw_line({x: bx + 8, y: 548}, {x: bx + 10, y: 548 - bh - 1}, grass_green2)
     blade += 1
 }
 
@@ -259,12 +274,12 @@ for plat in platforms {
         let pb = 0
         while pb < plat.w / 15 {
             let pbx = plat.x + pb * 15 + 4
-            draw_line(pbx, plat.y, pbx - 1, plat.y - 4, 55, 175, 50)
+            draw_line({x: pbx, y: plat.y}, {x: pbx - 1, y: plat.y - 4}, grass_green3)
             pb += 1
         }
         // Side edges
-        draw_line(plat.x, plat.y, plat.x, plat.y + plat.h, 90, 58, 32)
-        draw_line(plat.x + plat.w - 1, plat.y, plat.x + plat.w - 1, plat.y + plat.h, 90, 58, 32)
+        draw_line({x: plat.x, y: plat.y}, {x: plat.x, y: plat.y + plat.h}, plat_edge_brown)
+        draw_line({x: plat.x + plat.w - 1, y: plat.y}, {x: plat.x + plat.w - 1, y: plat.y + plat.h}, plat_edge_brown)
     }
 }
 
@@ -300,8 +315,8 @@ for c in coins {
         if sparkle_phase < 10 {
             let sx = c.x + 8
             let sy_off = cy - 8
-            draw_line(sx - 3, sy_off, sx + 3, sy_off, 255, 255, 200)
-            draw_line(sx, sy_off - 3, sx, sy_off + 3, 255, 255, 200)
+            draw_line({x: sx - 3, y: sy_off}, {x: sx + 3, y: sy_off}, sparkle_yellow)
+            draw_line({x: sx, y: sy_off - 3}, {x: sx, y: sy_off + 3}, sparkle_yellow)
         }
     }
 }
@@ -384,8 +399,8 @@ draw_rect(11, 11, 158, 34, 30, 30, 60)
 draw_circle(30, 28, 8, 255, 210, 40)
 draw_circle(28, 26, 4, 255, 240, 120)
 // Score text
-draw_text("x " ++ str(score), 45, 18, 24, 255, 255, 255)
+draw_text("x " ++ str(score), {x: 45, y: 18}, 24, white)
 
 // Controls hint
 draw_rect(220, 572, 360, 22, 0, 0, 0)
-draw_text("Arrows: Move  Space: Jump", 240, 574, 16, 180, 180, 200)
+draw_text("Arrows: Move  Space: Jump", {x: 240, y: 574}, 16, hint_color)

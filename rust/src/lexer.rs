@@ -363,10 +363,9 @@ impl Lexer {
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
             ';' => {
-                return Err(format!(
-                    "Unexpected ';' at position {} — Petal uses newlines instead of semicolons to separate statements",
-                    self.pos
-                ));
+                let start = self.current_pos();
+                self.advance_char();
+                self.push_token(Token::Newline, start);
             }
             _ => {
                 return Err(format!("Unexpected character '{}' at position {}", ch, self.pos));

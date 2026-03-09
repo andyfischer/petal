@@ -63,6 +63,40 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("atan2", native_atan2);
     table.register("pi", native_pi);
 
+    // --- Creative coding math builtins ---
+    table.register("clamp", native_clamp);
+    table.register("lerp", native_lerp);
+    table.register("map_range", native_map_range);
+    table.register("distance", native_distance);
+    table.register("mag", native_mag);
+    table.register("pow", native_pow);
+    table.register("sign", native_sign);
+    table.register("fract", native_fract);
+    table.register("smoothstep", native_smoothstep);
+    table.register("radians", native_radians);
+    table.register("degrees", native_degrees);
+    table.register("exp", native_exp);
+    table.register("log", native_log);
+
+    // --- Noise ---
+    table.register("noise", native_noise);
+    table.register("noise_seed", native_noise_seed);
+
+    // --- Randomness ---
+    table.register("random_int", native_random_int);
+    table.register("choose", native_choose);
+
+    // --- Color ---
+    table.register("hsv", native_hsv);
+    table.register("hsl", native_hsl);
+    table.register("color_lerp", native_color_lerp);
+
+    // --- Vec2 ---
+    table.register("vec2", native_vec2);
+    table.register("normalize", native_normalize);
+    table.register("dot", native_dot);
+    table.register("limit", native_limit);
+
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
     let map_id = table.register("map", native_intrinsic_placeholder);
@@ -670,6 +704,537 @@ fn native_pi(state: &mut PetalCxt) -> Result<u32, String> {
     require_args!(state, 0, "pi");
     state.push_float(std::f64::consts::PI);
     Ok(1)
+}
+
+// ---------------------------------------------------------------------------
+// Creative coding math
+// ---------------------------------------------------------------------------
+
+fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "clamp");
+    let v = state.get_float(1)?;
+    let lo = state.get_float(2)?;
+    let hi = state.get_float(3)?;
+    state.push_float(v.max(lo).min(hi));
+    Ok(1)
+}
+
+fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "lerp");
+    let a = state.get_float(1)?;
+    let b = state.get_float(2)?;
+    let t = state.get_float(3)?;
+    state.push_float(a + (b - a) * t);
+    Ok(1)
+}
+
+fn native_map_range(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 5, "map_range");
+    let v = state.get_float(1)?;
+    let in_lo = state.get_float(2)?;
+    let in_hi = state.get_float(3)?;
+    let out_lo = state.get_float(4)?;
+    let out_hi = state.get_float(5)?;
+    let t = if (in_hi - in_lo).abs() < f64::EPSILON {
+        0.0
+    } else {
+        (v - in_lo) / (in_hi - in_lo)
+    };
+    state.push_float(out_lo + (out_hi - out_lo) * t);
+    Ok(1)
+}
+
+fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
+    let argc = state.arg_count();
+    match argc {
+        2 => {
+            // distance(vec2, vec2)
+            let a = state.get_value(1)?;
+            let b = state.get_value(2)?;
+            match (a, b) {
+                (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+                    let dx = bx - ax;
+                    let dy = by - ay;
+                    state.push_float((dx * dx + dy * dy).sqrt());
+                    Ok(1)
+                }
+                _ => Err("distance(a, b) expects two vec2 values".into()),
+            }
+        }
+        4 => {
+            let x1 = state.get_float(1)?;
+            let y1 = state.get_float(2)?;
+            let x2 = state.get_float(3)?;
+            let y2 = state.get_float(4)?;
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            state.push_float((dx * dx + dy * dy).sqrt());
+            Ok(1)
+        }
+        _ => Err("distance() expects 2 (vec2, vec2) or 4 (x1, y1, x2, y2) arguments".into()),
+    }
+}
+
+fn native_mag(state: &mut PetalCxt) -> Result<u32, String> {
+    let argc = state.arg_count();
+    match argc {
+        1 => {
+            // mag(vec2)
+            match state.get_value(1)? {
+                Value::Vec2(x, y) => {
+                    state.push_float((x * x + y * y).sqrt());
+                    Ok(1)
+                }
+                _ => {
+                    let x = state.get_float(1)?;
+                    state.push_float(x.abs());
+                    Ok(1)
+                }
+            }
+        }
+        2 => {
+            let x = state.get_float(1)?;
+            let y = state.get_float(2)?;
+            state.push_float((x * x + y * y).sqrt());
+            Ok(1)
+        }
+        3 => {
+            let x = state.get_float(1)?;
+            let y = state.get_float(2)?;
+            let z = state.get_float(3)?;
+            state.push_float((x * x + y * y + z * z).sqrt());
+            Ok(1)
+        }
+        _ => Err("mag() expects 1-3 arguments".into()),
+    }
+}
+
+fn native_pow(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "pow");
+    let base = state.get_float(1)?;
+    let exp = state.get_float(2)?;
+    state.push_float(base.powf(exp));
+    Ok(1)
+}
+
+fn native_sign(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "sign");
+    match state.get_value(1)? {
+        Value::Int(n) => {
+            state.push_int(if n > 0 { 1 } else if n < 0 { -1 } else { 0 });
+            Ok(1)
+        }
+        Value::Float(f) => {
+            state.push_float(if f > 0.0 { 1.0 } else if f < 0.0 { -1.0 } else { 0.0 });
+            Ok(1)
+        }
+        _ => Err("sign() expects a number".into()),
+    }
+}
+
+fn native_fract(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "fract");
+    let f = state.get_float(1)?;
+    state.push_float(f - f.floor());
+    Ok(1)
+}
+
+fn native_smoothstep(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "smoothstep");
+    let edge0 = state.get_float(1)?;
+    let edge1 = state.get_float(2)?;
+    let x = state.get_float(3)?;
+    let t = ((x - edge0) / (edge1 - edge0)).max(0.0).min(1.0);
+    state.push_float(t * t * (3.0 - 2.0 * t));
+    Ok(1)
+}
+
+fn native_radians(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "radians");
+    let deg = state.get_float(1)?;
+    state.push_float(deg.to_radians());
+    Ok(1)
+}
+
+fn native_degrees(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "degrees");
+    let rad = state.get_float(1)?;
+    state.push_float(rad.to_degrees());
+    Ok(1)
+}
+
+fn native_exp(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "exp");
+    let x = state.get_float(1)?;
+    state.push_float(x.exp());
+    Ok(1)
+}
+
+fn native_log(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "log");
+    let x = state.get_float(1)?;
+    state.push_float(x.ln());
+    Ok(1)
+}
+
+// ---------------------------------------------------------------------------
+// Perlin noise (simplex-like implementation)
+// ---------------------------------------------------------------------------
+
+/// Global noise seed, set via noise_seed().
+static NOISE_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Permutation table for noise, derived from seed.
+fn noise_perm(seed: u64) -> [u8; 512] {
+    let mut perm = [0u8; 512];
+    let mut p = [0u8; 256];
+    for i in 0..256 {
+        p[i] = i as u8;
+    }
+    // Fisher-Yates shuffle with seed
+    let mut rng = seed.wrapping_add(0x9E3779B97F4A7C15);
+    for i in (1..256).rev() {
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let j = (rng >> 33) as usize % (i + 1);
+        p.swap(i, j);
+    }
+    for i in 0..512 {
+        perm[i] = p[i & 255];
+    }
+    perm
+}
+
+fn grad1(hash: u8, x: f64) -> f64 {
+    if hash & 1 == 0 { x } else { -x }
+}
+
+fn grad2(hash: u8, x: f64, y: f64) -> f64 {
+    let h = hash & 3;
+    match h {
+        0 => x + y,
+        1 => -x + y,
+        2 => x - y,
+        _ => -x - y,
+    }
+}
+
+fn grad3(hash: u8, x: f64, y: f64, z: f64) -> f64 {
+    let h = hash & 15;
+    let u = if h < 8 { x } else { y };
+    let v = if h < 4 { y } else if h == 12 || h == 14 { x } else { z };
+    (if h & 1 == 0 { u } else { -u }) + (if h & 2 == 0 { v } else { -v })
+}
+
+fn fade(t: f64) -> f64 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+fn perlin_1d(x: f64, perm: &[u8; 512]) -> f64 {
+    let xi = x.floor() as i32 & 255;
+    let xf = x - x.floor();
+    let u = fade(xf);
+    let a = perm[xi as usize];
+    let b = perm[(xi + 1) as usize & 255];
+    let g0 = grad1(a, xf);
+    let g1 = grad1(b, xf - 1.0);
+    g0 + u * (g1 - g0)
+}
+
+fn perlin_2d(x: f64, y: f64, perm: &[u8; 512]) -> f64 {
+    let xi = x.floor() as i32 & 255;
+    let yi = y.floor() as i32 & 255;
+    let xf = x - x.floor();
+    let yf = y - y.floor();
+    let u = fade(xf);
+    let v = fade(yf);
+
+    let aa = perm[perm[xi as usize] as usize + yi as usize] as usize;
+    let ab = perm[perm[xi as usize] as usize + (yi + 1) as usize & 255] as usize;
+    let ba = perm[perm[(xi + 1) as usize & 255] as usize + yi as usize] as usize;
+    let bb = perm[perm[(xi + 1) as usize & 255] as usize + (yi + 1) as usize & 255] as usize;
+
+    let x1 = grad2(perm[aa], xf, yf);
+    let x2 = grad2(perm[ba], xf - 1.0, yf);
+    let y1 = grad2(perm[ab], xf, yf - 1.0);
+    let y2 = grad2(perm[bb], xf - 1.0, yf - 1.0);
+
+    let lerp_x1 = x1 + u * (x2 - x1);
+    let lerp_x2 = y1 + u * (y2 - y1);
+    lerp_x1 + v * (lerp_x2 - lerp_x1)
+}
+
+fn perlin_3d(x: f64, y: f64, z: f64, perm: &[u8; 512]) -> f64 {
+    let xi = x.floor() as i32 & 255;
+    let yi = y.floor() as i32 & 255;
+    let zi = z.floor() as i32 & 255;
+    let xf = x - x.floor();
+    let yf = y - y.floor();
+    let zf = z - z.floor();
+    let u = fade(xf);
+    let v = fade(yf);
+    let w = fade(zf);
+
+    let a  = perm[xi as usize] as usize + yi as usize;
+    let aa = perm[a & 255] as usize + zi as usize;
+    let ab = perm[(a + 1) & 255] as usize + zi as usize;
+    let b  = perm[((xi + 1) & 255) as usize] as usize + yi as usize;
+    let ba = perm[b & 255] as usize + zi as usize;
+    let bb = perm[(b + 1) & 255] as usize + zi as usize;
+
+    let l1 = grad3(perm[aa & 511], xf, yf, zf);
+    let l2 = grad3(perm[(ba) & 511], xf - 1.0, yf, zf);
+    let l3 = grad3(perm[(ab) & 511], xf, yf - 1.0, zf);
+    let l4 = grad3(perm[(bb) & 511], xf - 1.0, yf - 1.0, zf);
+    let l5 = grad3(perm[(aa + 1) & 511], xf, yf, zf - 1.0);
+    let l6 = grad3(perm[(ba + 1) & 511], xf - 1.0, yf, zf - 1.0);
+    let l7 = grad3(perm[(ab + 1) & 511], xf, yf - 1.0, zf - 1.0);
+    let l8 = grad3(perm[(bb + 1) & 511], xf - 1.0, yf - 1.0, zf - 1.0);
+
+    let x1 = l1 + u * (l2 - l1);
+    let x2 = l3 + u * (l4 - l3);
+    let x3 = l5 + u * (l6 - l5);
+    let x4 = l7 + u * (l8 - l7);
+    let y1 = x1 + v * (x2 - x1);
+    let y2 = x3 + v * (x4 - x3);
+    y1 + w * (y2 - y1)
+}
+
+fn native_noise(state: &mut PetalCxt) -> Result<u32, String> {
+    let argc = state.arg_count();
+    let seed = NOISE_SEED.load(std::sync::atomic::Ordering::Relaxed);
+    let perm = noise_perm(seed);
+    match argc {
+        1 => {
+            let x = state.get_float(1)?;
+            state.push_float(perlin_1d(x, &perm));
+            Ok(1)
+        }
+        2 => {
+            let x = state.get_float(1)?;
+            let y = state.get_float(2)?;
+            state.push_float(perlin_2d(x, y, &perm));
+            Ok(1)
+        }
+        3 => {
+            let x = state.get_float(1)?;
+            let y = state.get_float(2)?;
+            let z = state.get_float(3)?;
+            state.push_float(perlin_3d(x, y, z, &perm));
+            Ok(1)
+        }
+        _ => Err("noise() expects 1-3 arguments".into()),
+    }
+}
+
+fn native_noise_seed(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "noise_seed");
+    let seed = state.get_int(1)? as u64;
+    NOISE_SEED.store(seed, std::sync::atomic::Ordering::Relaxed);
+    state.push_nil();
+    Ok(1)
+}
+
+// ---------------------------------------------------------------------------
+// Extended randomness
+// ---------------------------------------------------------------------------
+
+fn native_random_int(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "random_int");
+    let min = state.get_int(1)?;
+    let max = state.get_int(2)?;
+    if min >= max {
+        state.push_int(min);
+        return Ok(1);
+    }
+    let pseudo = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let range = (max - min) as u64;
+    let val = min + (pseudo as u64 % range) as i64;
+    state.push_int(val);
+    Ok(1)
+}
+
+fn native_choose(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "choose");
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let list = state.heap().get_list(id);
+            if list.is_empty() {
+                state.push_nil();
+            } else {
+                let pseudo = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos();
+                let idx = pseudo as usize % list.len();
+                let val = list[idx];
+                state.push_value(val);
+            }
+            Ok(1)
+        }
+        _ => Err("choose() expects a list".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Color
+// ---------------------------------------------------------------------------
+
+/// HSV to RGB conversion. h: 0-360, s: 0-1, v: 0-1. Returns (r, g, b) 0-255.
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
+    let h = ((h % 360.0) + 360.0) % 360.0;
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = if h < 60.0 {
+        (c, x, 0.0)
+    } else if h < 120.0 {
+        (x, c, 0.0)
+    } else if h < 180.0 {
+        (0.0, c, x)
+    } else if h < 240.0 {
+        (0.0, x, c)
+    } else if h < 300.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    ((r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0)
+}
+
+/// HSL to RGB conversion. h: 0-360, s: 0-1, l: 0-1. Returns (r, g, b) 0-255.
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
+    let h = ((h % 360.0) + 360.0) % 360.0;
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+    let (r, g, b) = if h < 60.0 {
+        (c, x, 0.0)
+    } else if h < 120.0 {
+        (x, c, 0.0)
+    } else if h < 180.0 {
+        (0.0, c, x)
+    } else if h < 240.0 {
+        (0.0, x, c)
+    } else if h < 300.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    ((r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0)
+}
+
+fn push_color_map(state: &mut PetalCxt, r: f64, g: f64, b: f64) {
+    let mut map = indexmap::IndexMap::new();
+    map.insert("r".to_string(), Value::Int(r.round() as i64));
+    map.insert("g".to_string(), Value::Int(g.round() as i64));
+    map.insert("b".to_string(), Value::Int(b.round() as i64));
+    let map_id = state.heap_mut().alloc_map(map);
+    state.push_value(Value::Map(map_id));
+}
+
+fn native_hsv(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "hsv");
+    let h = state.get_float(1)?;
+    let s = state.get_float(2)?;
+    let v = state.get_float(3)?;
+    let (r, g, b) = hsv_to_rgb(h, s, v);
+    push_color_map(state, r, g, b);
+    Ok(1)
+}
+
+fn native_hsl(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "hsl");
+    let h = state.get_float(1)?;
+    let s = state.get_float(2)?;
+    let l = state.get_float(3)?;
+    let (r, g, b) = hsl_to_rgb(h, s, l);
+    push_color_map(state, r, g, b);
+    Ok(1)
+}
+
+fn native_color_lerp(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 3, "color_lerp");
+    let c1 = state.get_value(1)?;
+    let c2 = state.get_value(2)?;
+    let t = state.get_float(3)?;
+    match (c1, c2) {
+        (Value::Map(id1), Value::Map(id2)) => {
+            let m1 = state.heap().get_map(id1);
+            let r1 = m1.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let g1 = m1.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let b1 = m1.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let m2 = state.heap().get_map(id2);
+            let r2 = m2.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let g2 = m2.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let b2 = m2.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let r = r1 + (r2 - r1) * t;
+            let g = g1 + (g2 - g1) * t;
+            let b = b1 + (b2 - b1) * t;
+            push_color_map(state, r, g, b);
+            Ok(1)
+        }
+        _ => Err("color_lerp() expects two color records {r, g, b}".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Vec2
+// ---------------------------------------------------------------------------
+
+fn native_vec2(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "vec2");
+    let x = state.get_float(1)?;
+    let y = state.get_float(2)?;
+    state.push_value(Value::Vec2(x, y));
+    Ok(1)
+}
+
+fn native_normalize(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 1, "normalize");
+    match state.get_value(1)? {
+        Value::Vec2(x, y) => {
+            let m = (x * x + y * y).sqrt();
+            if m < f64::EPSILON {
+                state.push_value(Value::Vec2(0.0, 0.0));
+            } else {
+                state.push_value(Value::Vec2(x / m, y / m));
+            }
+            Ok(1)
+        }
+        _ => Err("normalize() expects a vec2".into()),
+    }
+}
+
+fn native_dot(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "dot");
+    match (state.get_value(1)?, state.get_value(2)?) {
+        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+            state.push_float(ax * bx + ay * by);
+            Ok(1)
+        }
+        _ => Err("dot() expects two vec2 values".into()),
+    }
+}
+
+fn native_limit(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args!(state, 2, "limit");
+    match state.get_value(1)? {
+        Value::Vec2(x, y) => {
+            let max_mag = state.get_float(2)?;
+            let m = (x * x + y * y).sqrt();
+            if m > max_mag && m > f64::EPSILON {
+                let scale = max_mag / m;
+                state.push_value(Value::Vec2(x * scale, y * scale));
+            } else {
+                state.push_value(Value::Vec2(x, y));
+            }
+            Ok(1)
+        }
+        _ => Err("limit() expects a vec2 as first argument".into()),
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -124,9 +124,11 @@ impl<'a> PetalCxt<'a> {
     }
 
     /// Get an integer argument at 1-indexed position.
+    /// Also accepts floats (truncated to int) for ergonomic creative coding.
     pub fn get_int(&self, index: usize) -> Result<i64, String> {
         match self.get_value(index)? {
             Value::Int(n) => Ok(n),
+            Value::Float(f) => Ok(f as i64),
             other => Err(format!("Expected int at arg {}, got {}", index, other.type_name())),
         }
     }

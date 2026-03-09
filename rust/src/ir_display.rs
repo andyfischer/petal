@@ -3,7 +3,7 @@
 use std::fmt::Write;
 
 use crate::constant_table::ConstantValue;
-use crate::program::{Program, TermOp};
+use crate::program::{MapSpreadEntry, Program, TermOp};
 
 pub fn display_program(program: &Program) -> String {
     let mut out = String::new();
@@ -143,6 +143,13 @@ fn format_op(op: &TermOp) -> String {
         TermOp::AllocMap { fields } => {
             let ids: Vec<String> = fields.iter().map(|c| format!("c{}", c.0)).collect();
             format!("AllocMap({})", ids.join(", "))
+        }
+        TermOp::AllocMapSpread { entries } => {
+            let parts: Vec<String> = entries.iter().map(|e| match e {
+                MapSpreadEntry::Spread(idx) => format!("...#{}", idx),
+                MapSpreadEntry::Named(cid, idx) => format!("c{}=#{}", cid.0, idx),
+            }).collect();
+            format!("AllocMapSpread({})", parts.join(", "))
         }
         TermOp::GetField(cid) => format!("GetField(c{})", cid.0),
         TermOp::SetField(cid) => format!("SetField(c{})", cid.0),

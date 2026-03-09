@@ -69,7 +69,7 @@ pub enum ExprKind {
         arms: Vec<MatchArm>,
     },
     List(Vec<Expr>),
-    Record(Vec<(String, Expr)>),
+    Record(Vec<RecordField>),
     FieldAccess {
         object: Box<Expr>,
         field: String,
@@ -95,6 +95,15 @@ pub enum ExprKind {
         props: Vec<(String, Expr)>,
         children: Vec<JsxChild>,
     },
+}
+
+/// A field in a record literal: either a named field or a spread expression.
+#[derive(Debug, Clone, Serialize)]
+pub enum RecordField {
+    /// Named field: `key: value`
+    Named(String, Expr),
+    /// Spread: `...expr` — copies all fields from another record
+    Spread(Expr),
 }
 
 #[derive(Debug, Clone, Serialize)]

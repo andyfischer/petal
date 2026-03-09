@@ -27,6 +27,8 @@ pub enum Value {
     /// Dual number for forward-mode automatic differentiation.
     /// Carries a primal value and its derivative (tangent).
     Dual { value: f64, derivative: f64 },
+    /// 2D vector for creative coding (positions, velocities, forces).
+    Vec2(f64, f64),
 }
 
 impl Value {
@@ -37,6 +39,7 @@ impl Value {
             Value::Int(n) => *n != 0,
             Value::Float(f) => *f != 0.0,
             Value::Dual { value, .. } => *value != 0.0,
+            Value::Vec2(x, y) => *x != 0.0 || *y != 0.0,
             _ => true,
         }
     }
@@ -56,6 +59,7 @@ impl Value {
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
             Value::Dual { .. } => "dual",
+            Value::Vec2(_, _) => "vec2",
         }
     }
 
@@ -105,6 +109,9 @@ impl fmt::Debug for Value {
             Value::Element(id) => write!(f, "Element({:?})", id),
             Value::Dual { value, derivative } => {
                 write!(f, "Dual({}, {})", format_float(*value), format_float(*derivative))
+            }
+            Value::Vec2(x, y) => {
+                write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
             }
         }
     }
@@ -156,6 +163,9 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Dual { value, derivative } => {
             format!("dual({}, {})", format_float(*value), format_float(*derivative))
+        }
+        Value::Vec2(x, y) => {
+            format!("vec2({}, {})", format_float(*x), format_float(*y))
         }
     }
 }
@@ -248,6 +258,9 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
         Value::Dual { value, derivative } => {
             serde_json::json!({ "type": "dual", "value": *value, "derivative": *derivative })
         }
+        Value::Vec2(x, y) => {
+            serde_json::json!({ "type": "vec2", "x": *x, "y": *y })
+        }
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag).to_string();
             let fields = heap.get_list(*data);
@@ -300,6 +313,11 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
             for elem in elems {
                 hash_value(elem, heap).hash(&mut hasher);
             }
+        }
+        Value::Vec2(x, y) => {
+            7u8.hash(&mut hasher);
+            x.to_bits().hash(&mut hasher);
+            y.to_bits().hash(&mut hasher);
         }
         // For other types, hash the debug representation
         other => { 6u8.hash(&mut hasher); format!("{:?}", other).hash(&mut hasher); }
@@ -355,6 +373,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         (Value::Dual { value, .. }, Value::Int(n)) | (Value::Int(n), Value::Dual { value, .. }) => {
             *value == *n as f64
         }
+        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

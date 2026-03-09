@@ -473,6 +473,7 @@ impl Evaluator {
                     Some(Value::Dual { value, derivative }) => {
                         Value::Dual { value: -value, derivative: -derivative }
                     }
+                    Some(Value::Vec2(x, y)) => Value::Vec2(-x, -y),
                     Some(v) => return ControlFlow::Error(format!("Cannot negate {}", v.type_name())),
                     None => return ControlFlow::Error("Neg: missing input".into()),
                 };
@@ -676,6 +677,44 @@ impl Evaluator {
                 ControlFlow::Advance
             }
 
+            TermOp::AllocMapSpread { entries } => {
+                let mut map = IndexMap::new();
+                for entry in entries {
+                    match entry {
+                        MapSpreadEntry::Spread(idx) => {
+                            let src = inputs.get(*idx).copied().unwrap_or(Value::Nil);
+                            match src {
+                                Value::Map(src_id) => {
+                                    let src_map = heap.get_map(src_id);
+                                    // Clone all fields from the source map
+                                    let pairs: Vec<(String, Value)> = src_map
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), *v))
+                                        .collect();
+                                    for (k, v) in pairs {
+                                        map.insert(k, v);
+                                    }
+                                }
+                                Value::Nil => {} // Spreading nil is a no-op
+                                _ => return ControlFlow::Error(format!(
+                                    "Cannot spread {} into record (expected record)",
+                                    src.type_name()
+                                )),
+                            }
+                        }
+                        MapSpreadEntry::Named(cid, idx) => {
+                            if let Some(key) = program.get_string_constant(*cid) {
+                                let val = inputs.get(*idx).copied().unwrap_or(Value::Nil);
+                                map.insert(key.to_string(), val);
+                            }
+                        }
+                    }
+                }
+                let map_id = heap.alloc_map(map);
+                Self::write_register(stack, term, Value::Map(map_id));
+                ControlFlow::Advance
+            }
+
             TermOp::AllocElement { tag, prop_keys } => {
                 let tag_str = match program.get_string_constant(*tag) {
                     Some(s) => s.to_string(),
@@ -747,6 +786,17 @@ impl Evaluator {
                     Value::String(str_id) if field_name == "length" => {
                         let len = heap.get_string(str_id).len() as i64;
                         Self::write_register(stack, term, Value::Int(len));
+                        ControlFlow::Advance
+                    }
+                    Value::Vec2(x, y) => {
+                        let val = match field_name {
+                            "x" => Value::Float(x),
+                            "y" => Value::Float(y),
+                            _ => return ControlFlow::Error(format!(
+                                "No field '{}' on vec2 (available: x, y)", field_name
+                            )),
+                        };
+                        Self::write_register(stack, term, val);
                         ControlFlow::Advance
                     }
                     _ => ControlFlow::Error(format!(
@@ -1348,6 +1398,10 @@ impl Evaluator {
             (Value::Float(a), Value::Float(b)) => float_op(*a, *b),
             (Value::Int(a), Value::Float(b)) => float_op(*a as f64, *b),
             (Value::Float(a), Value::Int(b)) => float_op(*a, *b as f64),
+            // Vec2 arithmetic
+            (Value::Vec2(..), _) | (_, Value::Vec2(..)) => {
+                return Self::vec2_binop(term, inputs, stack);
+            }
             _ => {
                 return ControlFlow::Error(format!(
                     "Cannot perform arithmetic on {} and {}",
@@ -1402,6 +1456,68 @@ impl Evaluator {
         };
 
         Self::write_register(stack, term, Value::Dual { value, derivative });
+        ControlFlow::Advance
+    }
+
+    /// Vec2 arithmetic: component-wise add/sub, scalar multiply/divide, component-wise mul.
+    fn vec2_binop(
+        term: &Term,
+        inputs: &[Value],
+        stack: &mut Stack,
+    ) -> ControlFlow {
+        let val = match (&inputs[0], &inputs[1]) {
+            // vec2 op vec2
+            (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => match &term.op {
+                TermOp::Add => Value::Vec2(ax + bx, ay + by),
+                TermOp::Sub => Value::Vec2(ax - bx, ay - by),
+                TermOp::Mul => Value::Vec2(ax * bx, ay * by),
+                TermOp::Div => {
+                    if *bx == 0.0 || *by == 0.0 {
+                        return ControlFlow::Error("Division by zero in vec2".into());
+                    }
+                    Value::Vec2(ax / bx, ay / by)
+                }
+                _ => return ControlFlow::Error("Unsupported vec2 operation".into()),
+            },
+            // vec2 op scalar
+            (Value::Vec2(x, y), other) => {
+                let s = match other.as_f64() {
+                    Some(v) => v,
+                    None => return ControlFlow::Error(format!(
+                        "Cannot perform arithmetic on vec2 and {}", other.type_name()
+                    )),
+                };
+                match &term.op {
+                    TermOp::Mul => Value::Vec2(x * s, y * s),
+                    TermOp::Div => {
+                        if s == 0.0 {
+                            return ControlFlow::Error("Division by zero".into());
+                        }
+                        Value::Vec2(x / s, y / s)
+                    }
+                    TermOp::Add => Value::Vec2(x + s, y + s),
+                    TermOp::Sub => Value::Vec2(x - s, y - s),
+                    _ => return ControlFlow::Error("Unsupported vec2 operation".into()),
+                }
+            }
+            // scalar op vec2
+            (other, Value::Vec2(x, y)) => {
+                let s = match other.as_f64() {
+                    Some(v) => v,
+                    None => return ControlFlow::Error(format!(
+                        "Cannot perform arithmetic on {} and vec2", other.type_name()
+                    )),
+                };
+                match &term.op {
+                    TermOp::Mul => Value::Vec2(s * x, s * y),
+                    TermOp::Add => Value::Vec2(s + x, s + y),
+                    TermOp::Sub => Value::Vec2(s - x, s - y),
+                    _ => return ControlFlow::Error("Unsupported vec2 operation".into()),
+                }
+            }
+            _ => return ControlFlow::Error("Unsupported vec2 operation".into()),
+        };
+        Self::write_register(stack, term, val);
         ControlFlow::Advance
     }
 
@@ -1487,7 +1603,7 @@ impl Evaluator {
         } else if native_fns.intrinsic_reduce == Some(native_id) {
             Self::builtin_reduce(args, program, stack, heap, closures, overload_sets, native_fns, output)
         } else if native_fns.intrinsic_for_each == Some(native_id) {
-            Self::builtin_for_each(args, program, stack, heap, closures, native_fns, output)
+            Self::builtin_for_each(args, program, stack, heap, closures, overload_sets, native_fns, output)
         } else {
             Self::call_native_fn(native_id, args, native_fns, heap, output)
         };
@@ -1717,6 +1833,7 @@ impl Evaluator {
         stack: &mut Stack,
         heap: &mut Heap,
         closures: &mut Vec<RuntimeClosure>,
+        overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
     ) -> Result<Value, String> {
@@ -1732,7 +1849,7 @@ impl Evaluator {
 
         for elem in elements {
             Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
             )?;
         }
 

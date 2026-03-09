@@ -5,7 +5,6 @@ import {
   userTerms,
   termByName,
   termsByOp,
-  BUILTIN_COUNT,
 } from "./helpers";
 
 beforeAll(() => ensureBuild());
@@ -111,11 +110,8 @@ describe("variables and registers", () => {
   it("root block register_count covers all terms", () => {
     const ir = showIrJson("let a = 1\nlet b = 2");
     const rootBlock = ir.blocks.find((b: any) => b.id === ir.root_block);
-    // Must be at least BUILTIN_COUNT + number of user terms
-    const ut = userTerms(ir);
-    expect(rootBlock.register_count).toBeGreaterThanOrEqual(
-      BUILTIN_COUNT + ut.length
-    );
+    // register_count must cover all terms in the block
+    expect(rootBlock.register_count).toBeGreaterThanOrEqual(ir.terms.length);
   });
 });
 

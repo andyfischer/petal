@@ -362,6 +362,12 @@ impl Lexer {
             }
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
+            ';' => {
+                return Err(format!(
+                    "Unexpected ';' at position {} — Petal uses newlines instead of semicolons to separate statements",
+                    self.pos
+                ));
+            }
             _ => {
                 return Err(format!("Unexpected character '{}' at position {}", ch, self.pos));
             }
@@ -451,7 +457,7 @@ impl Lexer {
             s.push(ch);
             self.advance_char();
         }
-        Err("Unterminated string".to_string())
+        Err(format!("Unterminated string starting at line {}, column {}", start.line, start.column))
     }
 
     fn read_number(&mut self) -> Result<(), String> {

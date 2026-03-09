@@ -652,9 +652,20 @@ impl Compiler {
                         self.emit_term(TermOp::Copy, smallvec![tid], None)
                     }
                 } else {
-                    let msg_cid = self
-                        .constants
-                        .intern(ConstantValue::String(format!("Undefined variable: {}", name)));
+                    let hint = match name.as_str() {
+                        "var" | "const" => Some("use 'let' to declare variables in Petal"),
+                        "def" | "func" | "function" => Some("use 'fn' to define functions in Petal"),
+                        "elif" | "elseif" | "elsif" => Some("use 'else if' in Petal"),
+                        "switch" | "case" => Some("use 'match' for pattern matching in Petal"),
+                        "lambda" => Some("use 'fn' for anonymous functions, e.g. fn(x) { x + 1 }"),
+                        _ => None,
+                    };
+                    let msg = if let Some(hint) = hint {
+                        format!("Undefined variable: {} — {}", name, hint)
+                    } else {
+                        format!("Undefined variable: {}", name)
+                    };
+                    let msg_cid = self.constants.intern(ConstantValue::String(msg));
                     self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
                 }
             }

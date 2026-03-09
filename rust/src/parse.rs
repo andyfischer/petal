@@ -58,11 +58,25 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(format!(
-                "Expected {:?}, got {:?}",
-                expected,
-                self.peek()
-            ))
+            let got = self.peek().clone();
+            let msg = match (expected, &got) {
+                (Token::Arrow, Token::Assign) => {
+                    "Expected '->' but got '=' — use '->' for match arms, not '=>'".to_string()
+                }
+                (Token::RBrace, Token::Eof) => {
+                    "Missing closing '}'".to_string()
+                }
+                (Token::RParen, Token::Eof) => {
+                    "Missing closing ')'".to_string()
+                }
+                (Token::RBracket, Token::Eof) => {
+                    "Missing closing ']'".to_string()
+                }
+                _ => {
+                    format!("Expected {:?}, got {:?}", expected, got)
+                }
+            };
+            Err(msg)
         }
     }
 

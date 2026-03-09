@@ -1,0 +1,157 @@
+// Nature of Code - Fractal Tree
+// Inspired by Chapter 8: Fractals
+// A recursive tree that sways in the wind
+
+state branches = []
+state leaves = []
+state wind_angle = 0.0
+state time = 0.0
+state needs_rebuild = true
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let PI = pi()
+time += delta
+
+// Wind oscillation
+wind_angle = sin(time * 0.5) * 0.15 + sin(time * 1.3) * 0.05
+
+// Build tree structure (iteratively using a stack)
+if needs_rebuild {
+    needs_rebuild = false
+    branches = []
+    leaves = []
+
+    // Stack-based tree generation
+    // Each entry: {x, y, angle, length, depth}
+    let stack = [{ x: sw / 2.0, y: sh - 20.0, angle: -PI / 2.0, len: 120.0, depth: 0 }]
+
+    let max_depth = 9
+
+    while len(stack) > 0 {
+        let current = pop(stack)
+        let cx = current.x
+        let cy = current.y
+        let ca = current.angle
+        let cl = current.len
+        let cd = current.depth
+
+        // End point of this branch
+        let ex = cx + cos(ca) * cl
+        let ey = cy + sin(ca) * cl
+
+        // Store branch
+        let thickness = max(1, int(float(max_depth - cd) * 1.2))
+        let brown = max(40, 140 - cd * 12)
+        push(branches, {
+            x1: cx, y1: cy, x2: ex, y2: ey,
+            depth: cd, thickness: thickness,
+            r: brown, g: int(float(brown) * 0.6), b: int(float(brown) * 0.3)
+        })
+
+        if cd < max_depth {
+            // Branch into two (or three for early branches)
+            let shrink = 0.67 + random(0.0, 0.08)
+            let spread = 0.4 + random(0.0, 0.15)
+
+            // Right branch
+            push(stack, {
+                x: ex, y: ey,
+                angle: ca + spread,
+                len: cl * shrink,
+                depth: cd + 1
+            })
+
+            // Left branch
+            push(stack, {
+                x: ex, y: ey,
+                angle: ca - spread,
+                len: cl * (shrink - 0.02),
+                depth: cd + 1
+            })
+
+            // Extra middle branch for first few levels
+            if cd < 3 && random(0.0, 1.0) < 0.4 {
+                push(stack, {
+                    x: ex, y: ey,
+                    angle: ca + random(-0.1, 0.1),
+                    len: cl * shrink * 0.8,
+                    depth: cd + 1
+                })
+            }
+        } else {
+            // Leaf at tip
+            push(leaves, {
+                x: ex, y: ey,
+                size: random(3.0, 7.0),
+                hue: random(0.0, 1.0)
+            })
+        }
+    }
+}
+
+// === Drawing ===
+
+// Sky gradient
+for i in range(0, 12) {
+    let gy = i * int(sh) / 12
+    let sky_r = 15 + i * 2
+    let sky_g = 20 + i * 4
+    let sky_b = 50 + i * 8
+    draw_rect(0, gy, int(sw), int(sh) / 12 + 1, sky_r, sky_g, sky_b)
+}
+
+// Ground
+draw_rect(0, int(sh) - 20, int(sw), 20, 30, 50, 25)
+draw_rect(0, int(sh) - 22, int(sw), 4, 45, 70, 35)
+
+// Draw branches with wind displacement
+for b in branches {
+    // Wind affects higher branches more
+    let wind_factor = float(b.depth) * float(b.depth) * 0.003
+    let wx = wind_angle * wind_factor * 30.0
+
+    let x1 = int(b.x1 + wx * float(b.depth) * 0.3)
+    let y1 = int(b.y1)
+    let x2 = int(b.x2 + wx * float(b.depth + 1) * 0.3)
+    let y2 = int(b.y2)
+
+    // Draw branch (multiple lines for thickness)
+    let half_t = b.thickness / 2
+    for t in range(0, b.thickness) {
+        let offset = t - half_t
+        draw_line(x1 + offset, y1, x2 + offset, y2, b.r, b.g, b.b)
+    }
+}
+
+// Draw leaves
+for leaf in leaves {
+    let wind_factor = 81.0 * 0.003
+    let wx = wind_angle * wind_factor * 30.0 * 3.0
+    let lx = int(leaf.x + wx)
+    let ly = int(leaf.y)
+    let ls = int(leaf.size)
+
+    // Leaf color based on hue (greens to autumn)
+    let season = sin(time * 0.1) * 0.5 + 0.5
+    let lr = int(30.0 + leaf.hue * 80.0 + season * 180.0 * leaf.hue)
+    let lg = int(180.0 - season * 100.0 * leaf.hue)
+    let lb = int(30.0 + (1.0 - leaf.hue) * 40.0)
+
+    // Leaf glow
+    draw_circle(lx, ly, ls + 2, lr / 4, lg / 4, lb / 4)
+    draw_circle(lx, ly, ls, min(255, lr), min(255, lg), min(255, lb))
+}
+
+// Stars in sky (subtle)
+for i in range(0, 20) {
+    let sx = int(float(i) * sw / 20.0 + sin(float(i) * 7.3) * 30.0)
+    let sy = int(30.0 + sin(float(i) * 3.7) * 60.0)
+    let bright = int(abs(sin(time + float(i))) * 80.0) + 30
+    draw_circle(sx, sy, 1, bright, bright, min(255, bright + 30))
+}
+
+draw_text("Fractal Tree", 10, 10, 16, 100, 100, 120)
+draw_text("Swaying in the wind", 10, 30, 12, 60, 60, 80)
+draw_text("Branches: " ++ str(len(branches)) ++ "  Leaves: " ++ str(len(leaves)), 10, 46, 10, 50, 50, 70)

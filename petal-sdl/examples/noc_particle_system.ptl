@@ -1,0 +1,196 @@
+// Nature of Code - Particle System
+// Inspired by Chapter 4: Particle Systems
+// Multiple emitters with different behaviors: fountain, fire, snow
+
+state fountain = []
+state fire = []
+state snow = []
+state sparks = []
+state time = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let PI = pi()
+time += delta
+
+let max_per_system = 200
+
+// --- Fountain emitter (center) ---
+let fountain_x = sw / 2.0
+let fountain_y = sh - 60.0
+
+// Spawn fountain particles
+if len(fountain) < max_per_system {
+    for i in range(0, 3) {
+        let angle = -PI / 2.0 + random(-0.4, 0.4)
+        let speed = random(200.0, 350.0)
+        push(fountain, {
+            x: fountain_x + random(-3.0, 3.0),
+            y: fountain_y,
+            vx: cos(angle) * speed,
+            vy: sin(angle) * speed,
+            life: 1.0,
+            size: random(2.0, 5.0)
+        })
+    }
+}
+
+// Update fountain
+let new_fountain = []
+for p in fountain {
+    let nx = p.x + p.vx * delta
+    let ny = p.y + p.vy * delta
+    let nvy = p.vy + 300.0 * delta
+    let nl = p.life - delta * 0.5
+    if nl > 0.0 {
+        push(new_fountain, { x: nx, y: ny, vx: p.vx * 0.999, vy: nvy, life: nl, size: p.size })
+    }
+}
+fountain = new_fountain
+
+// --- Fire emitter (left) ---
+let fire_x = 120.0
+let fire_y = sh - 50.0
+
+if len(fire) < max_per_system {
+    for i in range(0, 5) {
+        push(fire, {
+            x: fire_x + random(-20.0, 20.0),
+            y: fire_y + random(-5.0, 5.0),
+            vx: random(-30.0, 30.0),
+            vy: random(-150.0, -50.0),
+            life: 1.0,
+            size: random(3.0, 8.0)
+        })
+    }
+}
+
+let new_fire = []
+for p in fire {
+    let nx = p.x + p.vx * delta
+    let ny = p.y + p.vy * delta
+    // Fire rises and wobbles
+    let nvx = p.vx + sin(time * 5.0 + p.x * 0.1) * 50.0 * delta
+    let nvy = p.vy - 20.0 * delta
+    let nl = p.life - delta * 0.8
+    if nl > 0.0 {
+        push(new_fire, { x: nx, y: ny, vx: nvx, vy: nvy, life: nl, size: p.size * 0.99 })
+    }
+}
+fire = new_fire
+
+// --- Snow emitter (across top) ---
+if len(snow) < max_per_system && frame_count() % 3 == 0 {
+    push(snow, {
+        x: random(0.0, sw),
+        y: random(-20.0, 0.0),
+        vx: random(-20.0, 20.0),
+        vy: random(30.0, 80.0),
+        life: 1.0,
+        size: random(2.0, 5.0),
+        wobble: random(0.0, PI * 2.0)
+    })
+}
+
+let new_snow = []
+for p in snow {
+    let nx = p.x + (p.vx + sin(time * 2.0 + p.wobble) * 30.0) * delta
+    let ny = p.y + p.vy * delta
+    let nl = p.life
+    if ny > sh { nl = 0.0 }
+    if nl > 0.0 {
+        push(new_snow, { x: nx, y: ny, vx: p.vx, vy: p.vy, life: nl, size: p.size, wobble: p.wobble })
+    }
+}
+snow = new_snow
+
+// --- Mouse sparks ---
+if mouse_down(1) {
+    let mx = float(mouse_x())
+    let my = float(mouse_y())
+    for i in range(0, 8) {
+        let angle = random(0.0, PI * 2.0)
+        let speed = random(50.0, 200.0)
+        if len(sparks) < 300 {
+            push(sparks, {
+                x: mx, y: my,
+                vx: cos(angle) * speed,
+                vy: sin(angle) * speed,
+                life: 1.0,
+                size: random(1.0, 4.0)
+            })
+        }
+    }
+}
+
+let new_sparks = []
+for p in sparks {
+    let nx = p.x + p.vx * delta
+    let ny = p.y + p.vy * delta
+    let nl = p.life - delta * 1.5
+    if nl > 0.0 {
+        push(new_sparks, { x: nx, y: ny, vx: p.vx * 0.98, vy: p.vy * 0.98 + 100.0 * delta, life: nl, size: p.size })
+    }
+}
+sparks = new_sparks
+
+// === Drawing ===
+clear(8, 8, 15)
+
+// Ground
+draw_rect(0, int(sh) - 40, int(sw), 40, 20, 22, 18)
+
+// Draw snow (behind everything)
+for p in snow {
+    let alpha = min(1.0, p.life)
+    let bright = int(200.0 * alpha)
+    draw_circle(int(p.x), int(p.y), int(p.size), bright, bright, min(255, bright + 30))
+}
+
+// Draw fire
+for p in fire {
+    let alpha = p.life
+    // Fire color: white -> yellow -> orange -> red -> dark
+    let fr = int(255.0 * min(1.0, alpha * 2.0))
+    let fg = int(255.0 * min(1.0, alpha * 1.5) * alpha)
+    let fb = int(100.0 * alpha * alpha)
+    draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), fr, fg, fb)
+}
+
+// Fire base glow
+draw_circle(int(fire_x), int(fire_y) - 10, 30, 60, 20, 5)
+draw_circle(int(fire_x), int(fire_y) - 5, 20, 100, 40, 5)
+
+// Draw fountain
+for p in fountain {
+    let alpha = p.life
+    let fr = int(50.0 * alpha)
+    let fg = int(150.0 * alpha + 50.0)
+    let fb = int(255.0 * alpha)
+    draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), fr, fg, fb)
+}
+
+// Fountain base
+draw_rect(int(fountain_x) - 20, int(fountain_y), 40, 10, 50, 60, 80)
+draw_rect(int(fountain_x) - 30, int(fountain_y) + 10, 60, 5, 40, 50, 70)
+
+// Draw sparks
+for p in sparks {
+    let alpha = p.life
+    let sr = int(255.0 * alpha)
+    let sg = int(200.0 * alpha * alpha)
+    let sb = int(50.0 * alpha)
+    draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), sr, sg, sb)
+}
+
+// Labels
+draw_text("Particle Systems", 10, 10, 16, 100, 100, 120)
+draw_text("Fire", int(fire_x) - 10, int(fire_y) + 20, 12, 200, 100, 50)
+draw_text("Fountain", int(fountain_x) - 25, int(fountain_y) + 20, 12, 80, 150, 255)
+draw_text("Snow", int(sw) / 2 + 100, 30, 12, 180, 180, 200)
+draw_text("Click to spawn sparks", 10, 30, 12, 60, 60, 80)
+
+// Particle counts
+let total = len(fountain) + len(fire) + len(snow) + len(sparks)
+draw_text("Particles: " ++ str(total), int(sw) - 150, 10, 12, 60, 60, 80)

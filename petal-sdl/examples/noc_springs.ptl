@@ -1,0 +1,195 @@
+// Nature of Code - Springs
+// Inspired by Chapter 3: Oscillation - Spring Forces
+// A soft-body mesh connected by springs, with mouse interaction
+
+state nodes = []
+state springs = []
+state dragging = -1
+state time = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+time += delta
+
+let grid_w = 12
+let grid_h = 8
+let spacing = 45.0
+let stiffness = 800.0
+let damping = 5.0
+
+// Initialize grid of nodes connected by springs
+if len(nodes) == 0 {
+    let offset_x = (sw - float(grid_w - 1) * spacing) / 2.0
+    let offset_y = 80.0
+
+    for y in range(0, grid_h) {
+        for x in range(0, grid_w) {
+            let pinned = y == 0 && (x == 0 || x == grid_w / 2 || x == grid_w - 1)
+            push(nodes, {
+                x: offset_x + float(x) * spacing,
+                y: offset_y + float(y) * spacing,
+                vx: 0.0,
+                vy: 0.0,
+                pinned: pinned
+            })
+        }
+    }
+
+    // Horizontal springs
+    for y in range(0, grid_h) {
+        for x in range(0, grid_w - 1) {
+            let a = y * grid_w + x
+            let b = a + 1
+            push(springs, { a: a, b: b, rest_len: spacing })
+        }
+    }
+
+    // Vertical springs
+    for y in range(0, grid_h - 1) {
+        for x in range(0, grid_w) {
+            let a = y * grid_w + x
+            let b = a + grid_w
+            push(springs, { a: a, b: b, rest_len: spacing })
+        }
+    }
+
+    // Diagonal springs (structural stability)
+    for y in range(0, grid_h - 1) {
+        for x in range(0, grid_w - 1) {
+            let a = y * grid_w + x
+            push(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
+            push(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
+        }
+    }
+}
+
+// Mouse interaction - drag nodes
+let mx = float(mouse_x())
+let my = float(mouse_y())
+
+if mouse_pressed(1) {
+    let best = -1
+    let best_dist = 30.0
+    for i in range(0, len(nodes)) {
+        let n = nodes[i]
+        let dx = n.x - mx
+        let dy = n.y - my
+        let d = sqrt(dx * dx + dy * dy)
+        if d < best_dist {
+            best_dist = d
+            best = i
+        }
+    }
+    dragging = best
+}
+
+if !mouse_down(1) {
+    dragging = -1
+}
+
+if dragging >= 0 {
+    nodes[dragging] = {
+        x: mx, y: my, vx: 0.0, vy: 0.0,
+        pinned: nodes[dragging].pinned
+    }
+}
+
+// Physics: apply spring forces
+for s in springs {
+    let na = nodes[s.a]
+    let nb = nodes[s.b]
+
+    let dx = nb.x - na.x
+    let dy = nb.y - na.y
+    let dist = sqrt(dx * dx + dy * dy) + 0.001
+    let stretch = dist - s.rest_len
+    let force = stiffness * stretch
+
+    let fx = force * dx / dist
+    let fy = force * dy / dist
+
+    if !na.pinned {
+        nodes[s.a] = {
+            x: na.x, y: na.y,
+            vx: na.vx + fx * delta,
+            vy: na.vy + fy * delta,
+            pinned: false
+        }
+    }
+    if !nb.pinned {
+        nodes[s.b] = {
+            x: nb.x, y: nb.y,
+            vx: nb.vx - fx * delta,
+            vy: nb.vy - fy * delta,
+            pinned: false
+        }
+    }
+}
+
+// Update positions
+for i in range(0, len(nodes)) {
+    let n = nodes[i]
+    if !n.pinned && i != dragging {
+        // Gravity
+        let grav = 200.0
+        // Damping
+        let dvx = n.vx * (1.0 - damping * delta)
+        let dvy = (n.vy + grav * delta) * (1.0 - damping * delta)
+        let nx = n.x + dvx * delta
+        let ny = n.y + dvy * delta
+
+        // Floor
+        if ny > sh - 20.0 {
+            ny = sh - 20.0
+            dvy = -abs(dvy) * 0.3
+        }
+
+        nodes[i] = { x: nx, y: ny, vx: dvx, vy: dvy, pinned: false }
+    }
+}
+
+// === Drawing ===
+clear(12, 15, 25)
+
+// Draw springs
+for s in springs {
+    let na = nodes[s.a]
+    let nb = nodes[s.b]
+    let dx = nb.x - na.x
+    let dy = nb.y - na.y
+    let dist = sqrt(dx * dx + dy * dy)
+    let stretch = abs(dist - s.rest_len) / s.rest_len
+
+    // Color based on stretch: green = relaxed, red = stretched
+    let cr = int(min(255.0, stretch * 500.0))
+    let cg = int(max(0.0, 80.0 - stretch * 200.0))
+    let cb = int(max(0.0, 120.0 - stretch * 300.0))
+
+    draw_line(int(na.x), int(na.y), int(nb.x), int(nb.y), max(20, cr), max(20, cg), max(20, cb))
+}
+
+// Draw nodes
+for i in range(0, len(nodes)) {
+    let n = nodes[i]
+    if n.pinned {
+        // Pinned nodes are gold
+        draw_circle(int(n.x), int(n.y), 6, 200, 180, 50)
+        draw_circle(int(n.x), int(n.y), 4, 255, 220, 80)
+    } else if i == dragging {
+        // Dragged node
+        draw_circle(int(n.x), int(n.y), 8, 255, 100, 100)
+    } else {
+        // Regular nodes
+        let speed = sqrt(n.vx * n.vx + n.vy * n.vy)
+        let bright = int(min(255.0, 80.0 + speed * 0.5))
+        draw_circle(int(n.x), int(n.y), 4, bright, bright, min(255, bright + 40))
+    }
+}
+
+// Floor
+draw_line(0, int(sh) - 20, int(sw), int(sh) - 20, 40, 50, 60)
+
+draw_text("Spring Mesh", 10, 10, 16, 100, 100, 120)
+draw_text("Click and drag nodes", 10, 30, 12, 60, 60, 80)
+draw_text("Gold pins are fixed points", 10, 46, 12, 60, 60, 80)

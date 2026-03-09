@@ -1,0 +1,180 @@
+// Nature of Code - Forces
+// Inspired by Chapter 2: Forces
+// Objects with gravity, wind, and friction - click to add wind
+
+state objects = []
+state wind_x = 0.0
+state wind_timer = 0.0
+state time = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let ground_y = sh - 40.0
+time += delta
+
+// Initialize objects with different masses
+if len(objects) == 0 {
+    for i in range(0, 15) {
+        let mass = 0.5 + random(0.0, 4.0)
+        push(objects, {
+            x: random(50.0, sw - 50.0),
+            y: random(50.0, ground_y - 100.0),
+            vx: 0.0,
+            vy: 0.0,
+            mass: mass,
+            hue: int(random(0.0, 360.0))
+        })
+    }
+}
+
+// Wind from mouse click
+if mouse_down(1) {
+    // Wind blows toward mouse
+    let mx = float(mouse_x())
+    if mx < sw / 2.0 {
+        wind_x = -200.0
+    } else {
+        wind_x = 200.0
+    }
+    wind_timer = 0.3
+}
+
+wind_timer -= delta
+if wind_timer < 0.0 {
+    wind_x = wind_x * 0.95
+}
+
+// Apply forces and update
+let new_objects = []
+for obj in objects {
+    // Gravity (F = m * g, but a = F/m = g, same for all)
+    let gravity = 400.0
+
+    // Wind (same force for all, so lighter objects affected more: a = F/m)
+    let wind_ax = wind_x / obj.mass
+
+    // Friction (when on ground)
+    let friction_x = 0.0
+    if obj.y >= ground_y - obj.mass * 12.0 {
+        let friction_coeff = 0.3
+        if abs(obj.vx) > 0.1 {
+            if obj.vx > 0.0 { friction_x = -friction_coeff * obj.mass * gravity / obj.mass }
+            else { friction_x = friction_coeff * obj.mass * gravity / obj.mass }
+        }
+    }
+
+    // Air drag (proportional to velocity squared)
+    let speed = sqrt(obj.vx * obj.vx + obj.vy * obj.vy)
+    let drag_coeff = 0.01 / obj.mass
+    let drag_x = 0.0
+    let drag_y = 0.0
+    if speed > 0.1 {
+        drag_x = -drag_coeff * obj.vx * speed
+        drag_y = -drag_coeff * obj.vy * speed
+    }
+
+    // Sum accelerations
+    let ax = wind_ax + friction_x + drag_x
+    let ay = gravity + drag_y
+
+    let nvx = obj.vx + ax * delta
+    let nvy = obj.vy + ay * delta
+    let nx = obj.x + nvx * delta
+    let ny = obj.y + nvy * delta
+
+    // Ground collision
+    let radius = obj.mass * 12.0
+    if ny > ground_y - radius {
+        ny = ground_y - radius
+        nvy = -nvy * 0.6
+        if abs(nvy) < 20.0 { nvy = 0.0 }
+    }
+
+    // Wall bounce
+    if nx < radius { nx = radius; nvx = abs(nvx) * 0.7 }
+    if nx > sw - radius { nx = sw - radius; nvx = -abs(nvx) * 0.7 }
+
+    // Ceiling
+    if ny < radius { ny = radius; nvy = abs(nvy) * 0.5 }
+
+    push(new_objects, {
+        x: nx, y: ny, vx: nvx, vy: nvy,
+        mass: obj.mass, hue: obj.hue
+    })
+}
+objects = new_objects
+
+// === Drawing ===
+clear(20, 20, 30)
+
+// Sky gradient
+for i in range(0, 8) {
+    let gy = i * int(sh) / 8
+    let gb = 30 + i * 3
+    draw_rect(0, gy, int(sw), int(sh) / 8 + 1, 20, 20, gb)
+}
+
+// Wind indicator
+if abs(wind_x) > 5.0 {
+    let arrow_len = int(min(100.0, abs(wind_x) * 0.5))
+    let arrow_y = 50
+    let arrow_x = int(sw) / 2
+    let dir = 1
+    if wind_x < 0.0 { dir = -1 }
+    draw_line(arrow_x, arrow_y, arrow_x + arrow_len * dir, arrow_y, 200, 200, 100)
+    draw_line(arrow_x + arrow_len * dir, arrow_y,
+              arrow_x + arrow_len * dir - 10 * dir, arrow_y - 5, 200, 200, 100)
+    draw_line(arrow_x + arrow_len * dir, arrow_y,
+              arrow_x + arrow_len * dir - 10 * dir, arrow_y + 5, 200, 200, 100)
+    draw_text("WIND", arrow_x - 15, arrow_y - 20, 12, 200, 200, 100)
+}
+
+// Ground
+draw_rect(0, int(ground_y), int(sw), int(sh) - int(ground_y), 40, 50, 35)
+draw_line(0, int(ground_y), int(sw), int(ground_y), 70, 90, 50)
+
+// Draw objects
+for obj in objects {
+    let radius = int(obj.mass * 12.0)
+
+    // Color from hue (simplified HSV)
+    let h = obj.hue % 360
+    let cr = 0
+    let cg = 0
+    let cb = 0
+    if h < 60 { cr = 255; cg = h * 4; cb = 0 }
+    else if h < 120 { cr = (120 - h) * 4; cg = 255; cb = 0 }
+    else if h < 180 { cr = 0; cg = 255; cb = (h - 120) * 4 }
+    else if h < 240 { cr = 0; cg = (240 - h) * 4; cb = 255 }
+    else if h < 300 { cr = (h - 240) * 4; cg = 0; cb = 255 }
+    else { cr = 255; cg = 0; cb = (360 - h) * 4 }
+    cr = min(255, cr)
+    cg = min(255, cg)
+    cb = min(255, cb)
+
+    // Shadow
+    draw_circle(int(obj.x) + 3, int(ground_y) - 2, max(3, radius / 2), 20, 25, 15)
+
+    // Object glow
+    draw_circle(int(obj.x), int(obj.y), radius + 3, cr / 4, cg / 4, cb / 4)
+    // Object body
+    draw_circle(int(obj.x), int(obj.y), radius, cr, cg, cb)
+    // Highlight
+    draw_circle(int(obj.x) - radius / 3, int(obj.y) - radius / 3,
+                max(2, radius / 3), min(255, cr + 80), min(255, cg + 80), min(255, cb + 80))
+
+    // Velocity vector
+    let vlen = min(30.0, sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * 0.08)
+    if vlen > 2.0 {
+        let vd = sqrt(obj.vx * obj.vx + obj.vy * obj.vy) + 0.1
+        draw_line(int(obj.x), int(obj.y),
+                  int(obj.x + obj.vx / vd * vlen),
+                  int(obj.y + obj.vy / vd * vlen),
+                  200, 200, 200)
+    }
+}
+
+draw_text("Forces: Gravity, Wind & Friction", 10, 10, 16, 100, 100, 120)
+draw_text("Click left/right to apply wind", 10, 30, 12, 60, 60, 80)
+draw_text("Larger objects = more mass", 10, 46, 12, 60, 60, 80)

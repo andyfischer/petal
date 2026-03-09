@@ -34,7 +34,7 @@ npx vitest -t "emits Add"
 - `showAstJson(code)` — returns parsed AST JSON (`petal show-ast --json -e '...'`)
 - `showTokensJson(code)` — returns parsed token list (`petal show-tokens --json -e '...'`)
 - `runPetal(code)` — executes code, returns stdout (`petal run -e '...'`)
-- `userTerms(ir)` — filters out builtin phantom terms (first 21)
+- `userTerms(ir)` — filters out builtin phantom terms
 - `termsByOp(ir, op)` — finds terms by operation name
 - `termByName(ir, name)` / `termById(ir, id)` — term lookup helpers
 

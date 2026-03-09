@@ -43,6 +43,10 @@ pub fn parse_args() -> CliArgs {
     let first = &args[0];
 
     match first.as_str() {
+        "help" | "--help" | "-h" => {
+            print_usage();
+            process::exit(0);
+        }
         "run" => parse_run_args(&args[1..]),
         "show-ir" => parse_show_args(&args[1..], |json| Command::ShowIr { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
@@ -230,24 +234,26 @@ fn parse_slice_args(args: &[String]) -> CliArgs {
 }
 
 fn print_usage() {
-    eprintln!("Usage: petal <command> [options] <file>");
-    eprintln!();
-    eprintln!("Commands:");
-    eprintln!("  run <file>                     Execute a program");
-    eprintln!("  run -e <code>                  Execute inline code");
-    eprintln!("  show-ir [--json] <file>        Display compiled IR");
-    eprintln!("  show-ast [--json] <file>       Display parsed AST");
-    eprintln!("  show-tokens [--json] <file>    Display lexer tokens");
-    eprintln!("  show-provenance [--json] --term <name> <file>");
-    eprintln!("                                 Trace provenance (backward slice) of a term");
-    eprintln!("  show-dependents [--json] --term <name> <file>");
-    eprintln!("                                 Trace dependents (forward slice) of a term");
-    eprintln!("  show-slice [--json] --term <name> [--term <name2>] <file>");
-    eprintln!("                                 Compute minimal dataflow slice for targets");
-    eprintln!("  show-graph <file>              Output DOT-format dataflow graph");
-    eprintln!();
-    eprintln!("  petal <file>                   Shorthand for 'run'");
-    eprintln!("  petal -e <code>                Shorthand for 'run -e'");
+    let out = "\
+Usage: petal <command> [options] <file>
+
+Commands:
+  run <file>                     Execute a program
+  run -e <code>                  Execute inline code
+  show-ir [--json] <file>        Display compiled IR
+  show-ast [--json] <file>       Display parsed AST
+  show-tokens [--json] <file>    Display lexer tokens
+  show-provenance [--json] --term <name> <file>
+                                 Trace provenance (backward slice) of a term
+  show-dependents [--json] --term <name> <file>
+                                 Trace dependents (forward slice) of a term
+  show-slice [--json] --term <name> [--term <name2>] <file>
+                                 Compute minimal dataflow slice for targets
+  show-graph <file>              Output DOT-format dataflow graph
+
+  petal <file>                   Shorthand for 'run'
+  petal -e <code>                Shorthand for 'run -e'";
+    eprintln!("{}", out);
 }
 
 fn read_source(input: &SourceInput) -> String {

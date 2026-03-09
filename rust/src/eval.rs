@@ -656,8 +656,19 @@ impl Evaluator {
                         Self::write_register(stack, term, val);
                         ControlFlow::Advance
                     }
+                    Value::List(list_id) if field_name == "length" => {
+                        let len = heap.list_len(list_id) as i64;
+                        Self::write_register(stack, term, Value::Int(len));
+                        ControlFlow::Advance
+                    }
+                    Value::String(str_id) if field_name == "length" => {
+                        let len = heap.get_string(str_id).len() as i64;
+                        Self::write_register(stack, term, Value::Int(len));
+                        ControlFlow::Advance
+                    }
                     _ => ControlFlow::Error(format!(
-                        "Cannot access field on {}",
+                        "Cannot access field '{}' on {}",
+                        field_name,
                         obj.type_name()
                     )),
                 }
@@ -1062,11 +1073,19 @@ impl Evaluator {
                 native_id, &full_args, term, program, stack, heap, closures, native_fns, output,
             )
         } else {
-            ControlFlow::Error(format!(
-                "No method '{}' on type {}",
-                method_name,
-                obj.type_name()
-            ))
+            let hint = match method_name.as_str() {
+                "toString" => Some("use str() or the str() method instead"),
+                "log" => Some("use print() instead of console.log()"),
+                "indexOf" => Some("use contains() to check membership"),
+                "concat" => Some("use the ++ operator to concatenate lists or strings"),
+                _ => None,
+            };
+            let msg = if let Some(hint) = hint {
+                format!("No method '{}' on type {} — {}", method_name, obj.type_name(), hint)
+            } else {
+                format!("No method '{}' on type {}", method_name, obj.type_name())
+            };
+            ControlFlow::Error(msg)
         }
     }
 
@@ -1331,6 +1350,8 @@ impl Evaluator {
             Self::builtin_filter(args, program, stack, heap, closures, native_fns, output)
         } else if native_fns.intrinsic_reduce == Some(native_id) {
             Self::builtin_reduce(args, program, stack, heap, closures, native_fns, output)
+        } else if native_fns.intrinsic_for_each == Some(native_id) {
+            Self::builtin_for_each(args, program, stack, heap, closures, native_fns, output)
         } else {
             Self::call_native_fn(native_id, args, native_fns, heap, output)
         };
@@ -1537,6 +1558,34 @@ impl Evaluator {
         }
 
         Ok(acc)
+    }
+
+    fn builtin_for_each(
+        args: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+        heap: &mut Heap,
+        closures: &mut Vec<RuntimeClosure>,
+        native_fns: &NativeFnTable,
+        output: &mut Vec<String>,
+    ) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("forEach() expects 2 arguments (list, function)".into());
+        }
+        let list_id = match args[0] {
+            Value::List(id) => id,
+            _ => return Err("forEach() expects a list as first argument".into()),
+        };
+        let func = args[1];
+        let elements = heap.get_list(list_id).to_vec();
+
+        for elem in elements {
+            Self::call_closure_sync(
+                func, &[elem], program, stack, heap, closures, native_fns, output,
+            )?;
+        }
+
+        Ok(Value::Nil)
     }
 
     // -----------------------------------------------------------------------

@@ -51,12 +51,13 @@ function shellEscape(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
-/** Number of builtin phantom terms (t0..t{N-1}) in the root block. */
-export const BUILTIN_COUNT = 35;
-
-/** Get only the "user" terms (after builtins) from IR JSON */
+/** Get only the "user" terms (after builtins) from IR JSON.
+ *  Builtin phantom terms are Copy ops with no inputs and a name. */
 export function userTerms(ir: any): any[] {
-  return ir.terms.filter((t: any) => t.id >= BUILTIN_COUNT);
+  return ir.terms.filter(
+    (t: any) =>
+      !(t.op === "Copy" && t.inputs.length === 0 && t.name != null)
+  );
 }
 
 /** Find a term by name */

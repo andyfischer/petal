@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, showIrJson, BUILTIN_COUNT } from "./helpers";
+import { ensureBuild, showIrJson, userTerms } from "./helpers";
 import { execSync } from "child_process";
 import { resolve } from "path";
 
@@ -36,7 +36,10 @@ describe("provenance queries", () => {
   it("traces a simple variable to its constant", () => {
     const prov = showProvenance("let x = 42", "x");
     expect(prov.root.name).toBe("x");
-    expect(prov.root.id).toBeGreaterThanOrEqual(BUILTIN_COUNT);
+    // root term should be a user term, not a builtin
+    const ut = userTerms(showIrJson("let x = 42"));
+    const xTerm = ut.find((t: any) => t.name === "x");
+    expect(prov.root.id).toBe(xTerm.id);
   });
 
   it("traces arithmetic through operands", () => {
@@ -64,8 +67,9 @@ describe("provenance queries", () => {
   it("returns empty ancestors for a leaf constant", () => {
     const ir = showIrJson("let x = 42");
     // Find the first user constant term
-    const constTerm = ir.terms.find(
-      (t: any) => typeof t.op === "object" && "Constant" in t.op && t.id >= BUILTIN_COUNT
+    const ut = userTerms(ir);
+    const constTerm = ut.find(
+      (t: any) => typeof t.op === "object" && "Constant" in t.op
     );
     if (constTerm) {
       const prov = showProvenance("let x = 42", `t${constTerm.id}`);

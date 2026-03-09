@@ -56,16 +56,19 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("zip", native_zip);
     table.register("slice", native_slice);
     table.register("flat", native_flat);
+    table.register("includes", native_contains); // JS-style alias for contains
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
     let map_id = table.register("map", native_intrinsic_placeholder);
     let filter_id = table.register("filter", native_intrinsic_placeholder);
     let reduce_id = table.register("reduce", native_intrinsic_placeholder);
+    let for_each_id = table.register("forEach", native_intrinsic_placeholder);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);
+    table.intrinsic_for_each = Some(for_each_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -94,9 +97,21 @@ fn native_print(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args!(state, 2, "range");
-    let start = state.get_int(1)?;
-    let end = state.get_int(2)?;
+    let argc = state.arg_count();
+    let (start, end) = match argc {
+        1 => {
+            let end = state.get_int(1)?;
+            (0, end)
+        }
+        2 => {
+            let start = state.get_int(1)?;
+            let end = state.get_int(2)?;
+            (start, end)
+        }
+        _ => {
+            return Err("range() expects 1 or 2 arguments".to_string());
+        }
+    };
     let items: Vec<Value> = (start..end).map(Value::Int).collect();
     state.push_list(items);
     Ok(1)

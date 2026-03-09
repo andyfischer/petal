@@ -303,14 +303,14 @@ Enums define named variants, optionally with associated data:
 
 ```petal
 enum Color {
-    Red,
-    Green,
-    Blue,
+    Red
+    Green
+    Blue
     Custom(r, g, b)
 }
 
-let c = Color.Red
-let pink = Color.Custom(255, 192, 203)
+let c = Red
+let pink = Custom(255, 192, 203)
 ```
 
 ## Pattern Matching
@@ -320,9 +320,9 @@ The `match` expression tests a value against patterns:
 ```petal
 fn describe(x) {
     match x {
-        0 => "zero",
-        1 => "one",
-        n => "other: {n}"
+        0 -> "zero"
+        1 -> "one"
+        n -> "other: {n}"
     }
 }
 ```
@@ -331,14 +331,14 @@ fn describe(x) {
 
 ```petal
 enum Shape {
-    Circle(radius),
+    Circle(radius)
     Rect(w, h)
 }
 
 fn area(shape) {
     match shape {
-        Shape.Circle(r) => 3.14159 * r * r,
-        Shape.Rect(w, h) => w * h
+        Circle(r) -> 3.14159 * r * r
+        Rect(w, h) -> w * h
     }
 }
 ```
@@ -348,8 +348,8 @@ fn area(shape) {
 ```petal
 fn first(list) {
     match list {
-        [head, ...tail] => head,
-        [] => nil
+        [head, ...tail] -> head
+        [] -> nil
     }
 }
 ```
@@ -361,10 +361,10 @@ Guards add conditions to match arms:
 ```petal
 fn classify(n) {
     match n {
-        x if x < 0 => "negative",
-        0 => "zero",
-        x if x > 100 => "big",
-        x => "small positive"
+        x if x < 0 -> "negative"
+        0 -> "zero"
+        x if x > 100 -> "big"
+        x -> "small positive"
     }
 }
 ```

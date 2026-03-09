@@ -31,6 +31,7 @@ pub struct NativeFnTable {
     pub intrinsic_map: Option<NativeFnId>,
     pub intrinsic_filter: Option<NativeFnId>,
     pub intrinsic_reduce: Option<NativeFnId>,
+    pub intrinsic_for_each: Option<NativeFnId>,
 }
 
 impl NativeFnTable {
@@ -40,6 +41,7 @@ impl NativeFnTable {
             intrinsic_map: None,
             intrinsic_filter: None,
             intrinsic_reduce: None,
+            intrinsic_for_each: None,
         }
     }
 

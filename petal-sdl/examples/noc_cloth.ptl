@@ -1,0 +1,222 @@
+// Nature of Code - Cloth Simulation
+// Inspired by Chapter 3 & 5: Springs + Physics Libraries
+// Verlet integration cloth that responds to mouse and wind
+
+state points = []
+state cols = 0
+state rows_count = 0
+state time = 0.0
+state tearing = false
+
+let delta = min(0.02, dt())
+let sw = float(screen_width())
+let sh = float(screen_height())
+let PI = pi()
+time += delta
+
+let cloth_w = 30
+let cloth_h = 20
+let rest_dist = 15.0
+let gravity = 600.0
+let stiffness = 0.8
+let tear_dist = rest_dist * 5.0
+
+// Initialize cloth points with Verlet (store current and previous position)
+if cols == 0 {
+    cols = cloth_w
+    rows_count = cloth_h
+
+    let start_x = (sw - float(cloth_w) * rest_dist) / 2.0
+    let start_y = 40.0
+
+    for y in range(0, cloth_h) {
+        for x in range(0, cloth_w) {
+            let px = start_x + float(x) * rest_dist
+            let py = start_y + float(y) * rest_dist
+            let pinned = y == 0 && x % 4 == 0
+            push(points, {
+                x: px, y: py,
+                old_x: px, old_y: py,
+                pinned: pinned,
+                conn_right: x < cloth_w - 1,
+                conn_down: y < cloth_h - 1
+            })
+        }
+    }
+}
+
+// Toggle tearing mode with space
+if key_pressed("space") {
+    tearing = !tearing
+}
+
+// Mouse interaction - push cloth
+let mx = float(mouse_x())
+let my = float(mouse_y())
+let mouse_radius = 40.0
+let mouse_strength = 300.0
+
+// Verlet integration
+for i in range(0, len(points)) {
+    let p = points[i]
+    if !p.pinned {
+        let vx = (p.x - p.old_x) * 0.99
+        let vy = (p.y - p.old_y) * 0.99
+
+        // Wind
+        let wind = sin(time * 2.0 + p.x * 0.02) * 50.0 + sin(time * 3.5) * 30.0
+
+        // Mouse push
+        let dx = p.x - mx
+        let dy = p.y - my
+        let dist = sqrt(dx * dx + dy * dy)
+        let push_x = 0.0
+        let push_y = 0.0
+        if dist < mouse_radius && dist > 0.1 && mouse_down(1) {
+            push_x = dx / dist * mouse_strength * delta
+            push_y = dy / dist * mouse_strength * delta
+        }
+
+        let nx = p.x + vx + (wind + push_x) * delta * delta
+        let ny = p.y + vy + (gravity + push_y) * delta * delta
+
+        // Floor constraint
+        if ny > sh - 10.0 {
+            ny = sh - 10.0
+        }
+
+        points[i] = {
+            x: nx, y: ny,
+            old_x: p.x, old_y: p.y,
+            pinned: false,
+            conn_right: p.conn_right,
+            conn_down: p.conn_down
+        }
+    }
+}
+
+// Constraint satisfaction (multiple iterations for stability)
+for iter in range(0, 3) {
+    for y in range(0, rows_count) {
+        for x in range(0, cols) {
+            let idx = y * cols + x
+
+            // Right connection
+            if points[idx].conn_right {
+                let a = points[idx]
+                let b = points[idx + 1]
+                let dx = b.x - a.x
+                let dy = b.y - a.y
+                let dist = sqrt(dx * dx + dy * dy) + 0.001
+
+                if tearing && dist > tear_dist {
+                    points[idx] = {
+                        x: a.x, y: a.y, old_x: a.old_x, old_y: a.old_y,
+                        pinned: a.pinned, conn_right: false, conn_down: a.conn_down
+                    }
+                } else {
+                    let diff = (dist - rest_dist) / dist * stiffness
+                    let ox = dx * diff * 0.5
+                    let oy = dy * diff * 0.5
+
+                    if !a.pinned {
+                        points[idx] = {
+                            x: a.x + ox, y: a.y + oy, old_x: a.old_x, old_y: a.old_y,
+                            pinned: false, conn_right: a.conn_right, conn_down: a.conn_down
+                        }
+                    }
+                    if !b.pinned {
+                        points[idx + 1] = {
+                            x: b.x - ox, y: b.y - oy, old_x: b.old_x, old_y: b.old_y,
+                            pinned: false, conn_right: b.conn_right, conn_down: b.conn_down
+                        }
+                    }
+                }
+            }
+
+            // Down connection
+            if points[idx].conn_down {
+                let a = points[idx]
+                let b = points[idx + cols]
+                let dx = b.x - a.x
+                let dy = b.y - a.y
+                let dist = sqrt(dx * dx + dy * dy) + 0.001
+
+                if tearing && dist > tear_dist {
+                    points[idx] = {
+                        x: a.x, y: a.y, old_x: a.old_x, old_y: a.old_y,
+                        pinned: a.pinned, conn_right: a.conn_right, conn_down: false
+                    }
+                } else {
+                    let diff = (dist - rest_dist) / dist * stiffness
+                    let ox = dx * diff * 0.5
+                    let oy = dy * diff * 0.5
+
+                    if !a.pinned {
+                        points[idx] = {
+                            x: a.x + ox, y: a.y + oy, old_x: a.old_x, old_y: a.old_y,
+                            pinned: a.pinned, conn_right: a.conn_right, conn_down: a.conn_down
+                        }
+                    }
+                    if !b.pinned {
+                        points[idx + cols] = {
+                            x: b.x - ox, y: b.y - oy, old_x: b.old_x, old_y: b.old_y,
+                            pinned: b.pinned, conn_right: b.conn_right, conn_down: b.conn_down
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// === Drawing ===
+clear(10, 10, 20)
+
+// Draw cloth as connected lines
+for y in range(0, rows_count) {
+    for x in range(0, cols) {
+        let idx = y * cols + x
+        let p = points[idx]
+
+        // Horizontal line
+        if p.conn_right {
+            let q = points[idx + 1]
+            let dist = sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y))
+            let stretch = min(1.0, dist / (rest_dist * 2.0))
+            let cr = int(80.0 + stretch * 175.0)
+            let cg = int(120.0 + float(y) * 5.0 - stretch * 80.0)
+            let cb = int(180.0 - stretch * 80.0)
+            draw_line(int(p.x), int(p.y), int(q.x), int(q.y), cr, min(255, cg), cb)
+        }
+
+        // Vertical line
+        if p.conn_down {
+            let q = points[idx + cols]
+            let dist = sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y))
+            let stretch = min(1.0, dist / (rest_dist * 2.0))
+            let cr = int(80.0 + stretch * 175.0)
+            let cg = int(120.0 + float(y) * 5.0 - stretch * 80.0)
+            let cb = int(180.0 - stretch * 80.0)
+            draw_line(int(p.x), int(p.y), int(q.x), int(q.y), cr, min(255, cg), cb)
+        }
+
+        // Pinned points
+        if p.pinned {
+            draw_circle(int(p.x), int(p.y), 4, 255, 200, 50)
+        }
+    }
+}
+
+// Mouse indicator
+if mouse_down(1) {
+    draw_circle(int(mx), int(my), int(mouse_radius), 30, 15, 15)
+}
+
+draw_text("Cloth Simulation", 10, 10, 16, 100, 100, 120)
+draw_text("Click and drag to push", 10, 30, 12, 60, 60, 80)
+if tearing {
+    draw_text("Tearing: ON (Space to toggle)", 10, 46, 12, 255, 100, 100)
+} else {
+    draw_text("Space to enable tearing", 10, 46, 12, 60, 60, 80)
+}

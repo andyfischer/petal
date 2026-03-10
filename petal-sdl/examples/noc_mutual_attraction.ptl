@@ -1,0 +1,162 @@
+// Nature of Code - Mutual Attraction
+// Inspired by Chapter 2: Forces - Gravitational Attraction
+// N-body simulation where every object attracts every other
+
+state bodies = []
+state trails = []
+state time = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let PI = pi()
+time += delta
+
+let G = 5000.0
+
+// Initialize bodies in orbital configurations
+if len(bodies) == 0 {
+    // Central massive body
+    push(bodies, {
+        x: sw / 2.0, y: sh / 2.0,
+        vx: 0.0, vy: 0.0,
+        mass: 30.0,
+        r: 255, g: 220, b: 100
+    })
+
+    // Orbiting bodies
+    for i in range(0, 12) {
+        let angle = float(i) / 12.0 * PI * 2.0
+        let radius = 100.0 + random(30.0, 120.0)
+        let orbital_speed = sqrt(G * 30.0 / radius) * 0.4
+
+        push(bodies, {
+            x: sw / 2.0 + cos(angle) * radius,
+            y: sh / 2.0 + sin(angle) * radius,
+            vx: -sin(angle) * orbital_speed,
+            vy: cos(angle) * orbital_speed,
+            mass: 2.0 + random(0.0, 6.0),
+            r: int(random(100.0, 255.0)),
+            g: int(random(100.0, 255.0)),
+            b: int(random(150.0, 255.0))
+        })
+    }
+}
+
+// Calculate gravitational forces between all pairs
+let forces = []
+for i in range(0, len(bodies)) {
+    push(forces, { fx: 0.0, fy: 0.0 })
+}
+
+for i in range(0, len(bodies)) {
+    for j in range(i + 1, len(bodies)) {
+        let a = bodies[i]
+        let b = bodies[j]
+
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let dist = sqrt(dx * dx + dy * dy)
+        let min_dist = (a.mass + b.mass) * 2.0
+        let d = max(min_dist, dist)
+
+        // F = G * m1 * m2 / r^2
+        let force = G * a.mass * b.mass / (d * d)
+
+        let fx = force * dx / (dist + 0.1)
+        let fy = force * dy / (dist + 0.1)
+
+        // Apply to both bodies (Newton's third law)
+        forces[i] = { fx: forces[i].fx + fx, fy: forces[i].fy + fy }
+        forces[j] = { fx: forces[j].fx - fx, fy: forces[j].fy - fy }
+    }
+}
+
+// Update bodies
+let new_bodies = []
+for i in range(0, len(bodies)) {
+    let b = bodies[i]
+    let f = forces[i]
+
+    // a = F / m
+    let ax = f.fx / b.mass
+    let ay = f.fy / b.mass
+
+    let nvx = b.vx + ax * delta
+    let nvy = b.vy + ay * delta
+    let nx = b.x + nvx * delta
+    let ny = b.y + nvy * delta
+
+    // Soft boundary (push back toward center)
+    let margin = 50.0
+    if nx < margin { nvx += 200.0 * delta }
+    if nx > sw - margin { nvx -= 200.0 * delta }
+    if ny < margin { nvy += 200.0 * delta }
+    if ny > sh - margin { nvy -= 200.0 * delta }
+
+    // Record trail
+    if frame_count() % 2 == 0 {
+        push(trails, { x: nx, y: ny, r: b.r, g: b.g, b: b.b, life: 1.0 })
+    }
+
+    push(new_bodies, {
+        x: nx, y: ny, vx: nvx, vy: nvy,
+        mass: b.mass, r: b.r, g: b.g, b: b.b
+    })
+}
+bodies = new_bodies
+
+// Age trails
+let new_trails = []
+for t in trails {
+    let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.3 }
+    if nt.life > 0.0 { push(new_trails, nt) }
+}
+trails = new_trails
+if len(trails) > 4000 {
+    trails = slice(trails, len(trails) - 3000, len(trails))
+}
+
+// === Drawing ===
+clear(5, 5, 12)
+
+// Draw gravitational field lines between bodies (subtle)
+for i in range(0, len(bodies)) {
+    for j in range(i + 1, len(bodies)) {
+        let a = bodies[i]
+        let b = bodies[j]
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        let dist = sqrt(dx * dx + dy * dy)
+        if dist < 200.0 {
+            let alpha = int((1.0 - dist / 200.0) * 25.0 * (a.mass + b.mass) * 0.1)
+            let al = min(40, max(5, alpha))
+            draw_line(int(a.x), int(a.y), int(b.x), int(b.y), al, al, al + 10)
+        }
+    }
+}
+
+// Draw trails
+for t in trails {
+    let alpha = t.life * 0.4
+    draw_circle(int(t.x), int(t.y), 1,
+                int(float(t.r) * alpha), int(float(t.g) * alpha), int(float(t.b) * alpha))
+}
+
+// Draw bodies
+for b in bodies {
+    let radius = int(b.mass * 1.5) + 2
+
+    // Glow
+    draw_circle(int(b.x), int(b.y), radius + 6, b.r / 6, b.g / 6, b.b / 6)
+    draw_circle(int(b.x), int(b.y), radius + 3, b.r / 3, b.g / 3, b.b / 3)
+    // Body
+    draw_circle(int(b.x), int(b.y), radius, b.r, b.g, b.b)
+    // Core highlight
+    draw_circle(int(b.x) - radius / 3, int(b.y) - radius / 3, max(1, radius / 3),
+                min(255, b.r + 80), min(255, b.g + 80), min(255, b.b + 80))
+}
+
+draw_text("Mutual Attraction (N-body)", 10, 10, 16, 100, 100, 120)
+draw_text("Every body attracts every other", 10, 30, 12, 60, 60, 80)
+draw_text("Bodies: " ++ str(len(bodies)), 10, 46, 10, 50, 50, 70)

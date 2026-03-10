@@ -902,22 +902,54 @@ impl Compiler {
             }
 
             ExprKind::Record(fields) => {
-                let mut field_names = Vec::new();
-                let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
-                for (key, value) in fields {
-                    field_names.push(
-                        self.constants
-                            .intern(ConstantValue::String(key.clone())),
-                    );
-                    inputs.push(self.compile_expr(value));
+                use crate::ast::RecordField;
+                let has_spread = fields.iter().any(|f| matches!(f, RecordField::Spread(_)));
+                if !has_spread {
+                    // Simple case: no spread, use AllocMap
+                    let mut field_names = Vec::new();
+                    let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
+                    for field in fields {
+                        if let RecordField::Named(key, value) = field {
+                            field_names.push(
+                                self.constants
+                                    .intern(ConstantValue::String(key.clone())),
+                            );
+                            inputs.push(self.compile_expr(value));
+                        }
+                    }
+                    self.emit_term(
+                        TermOp::AllocMap {
+                            fields: field_names,
+                        },
+                        inputs,
+                        None,
+                    )
+                } else {
+                    // Spread case: compile all inputs and build entry list
+                    let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
+                    let mut entries = Vec::new();
+                    for field in fields {
+                        match field {
+                            RecordField::Spread(expr) => {
+                                let idx = inputs.len();
+                                inputs.push(self.compile_expr(expr));
+                                entries.push(MapSpreadEntry::Spread(idx));
+                            }
+                            RecordField::Named(key, value) => {
+                                let cid = self.constants
+                                    .intern(ConstantValue::String(key.clone()));
+                                let idx = inputs.len();
+                                inputs.push(self.compile_expr(value));
+                                entries.push(MapSpreadEntry::Named(cid, idx));
+                            }
+                        }
+                    }
+                    self.emit_term(
+                        TermOp::AllocMapSpread { entries },
+                        inputs,
+                        None,
+                    )
                 }
-                self.emit_term(
-                    TermOp::AllocMap {
-                        fields: field_names,
-                    },
-                    inputs,
-                    None,
-                )
             }
 
             ExprKind::FieldAccess { object, field } => {

@@ -55,6 +55,15 @@ pub struct ClosureId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct OverloadSetId(pub u32);
 
+/// Entry in a map-with-spread allocation.
+#[derive(Debug, Clone, Serialize)]
+pub enum MapSpreadEntry {
+    /// Spread all fields from the input at the given index
+    Spread(usize),
+    /// Set a named field from the input at the given index
+    Named(ConstantId, usize),
+}
+
 // ---------------------------------------------------------------------------
 // TermOp
 // ---------------------------------------------------------------------------
@@ -138,6 +147,11 @@ pub enum TermOp {
     AllocList,
     /// Allocate a map/record: inputs=[val0, val1, ...], field names stored here
     AllocMap { fields: Vec<ConstantId> },
+    /// Allocate a map with spread: entries describe the order of spreads and named fields.
+    /// inputs = [spread_source_0, ..., named_value_0, ...]
+    /// Each entry is either Spread (index into inputs for the spread source map)
+    /// or Named (field name constant + index into inputs for the value).
+    AllocMapSpread { entries: Vec<MapSpreadEntry> },
     /// Read a field: inputs=[object], field name as constant
     GetField(ConstantId),
     /// Write a field: inputs=[object, value]

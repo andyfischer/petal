@@ -706,7 +706,7 @@ impl Parser {
                 let record_fields = fields
                     .into_iter()
                     .map(|(name, value)| {
-                        (name.to_string(), Expr {
+                        RecordField::Named(name.to_string(), Expr {
                             kind: ExprKind::Literal(Literal::Int(value)),
                             span: self.span_from(start),
                         })
@@ -751,6 +751,10 @@ impl Parser {
         while matches!(self.peek_ahead(offset), Token::Newline) {
             offset += 1;
         }
+        // { ...expr } is a record with spread
+        if matches!(self.peek_ahead(offset), Token::DotDotDot) {
+            return true;
+        }
         if let Token::Ident(_) = self.peek_ahead(offset) {
             offset += 1;
             while matches!(self.peek_ahead(offset), Token::Newline) {
@@ -768,10 +772,16 @@ impl Parser {
         let mut fields = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
-            let key = self.expect_ident()?;
-            self.expect(&Token::Colon)?;
-            let value = self.parse_expr()?;
-            fields.push((key, value));
+            if matches!(self.peek(), Token::DotDotDot) {
+                self.advance(); // consume '...'
+                let expr = self.parse_expr()?;
+                fields.push(RecordField::Spread(expr));
+            } else {
+                let key = self.expect_ident()?;
+                self.expect(&Token::Colon)?;
+                let value = self.parse_expr()?;
+                fields.push(RecordField::Named(key, value));
+            }
             self.skip_separator();
         }
         self.expect(&Token::RBrace)?;

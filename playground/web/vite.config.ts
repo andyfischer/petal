@@ -5,7 +5,10 @@ import path from 'path';
 
 config({ path: path.resolve(__dirname, '../.env') });
 
-const API_PORT = process.env.PRISM_API_PORT || '4006';
+if (!process.env.PRISM_API_PORT) {
+  throw new Error('PRISM_API_PORT environment variable is required (set it in playground/.env)');
+}
+const API_PORT = process.env.PRISM_API_PORT;
 const WEB_PORT = parseInt(process.env.VITE_PORT || '4007', 10);
 
 export default defineConfig({
@@ -13,8 +16,7 @@ export default defineConfig({
   server: {
     port: WEB_PORT,
     proxy: {
-      '/analyze': `http://localhost:${API_PORT}`,
-      '/examples': `http://localhost:${API_PORT}`,
+      '/api': `http://localhost:${API_PORT}`,
     },
   },
 });

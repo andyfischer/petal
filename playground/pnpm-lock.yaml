@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@facetlayer/prism-framework-api':
-        specifier: '*'
-        version: 0.3.0
+      '@facetlayer/prism-framework':
+        specifier: file:../../node-libraries/prism-framework
+        version: file:../../node-libraries/prism-framework(zod@4.3.6)
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -32,15 +32,25 @@ packages:
     peerDependencies:
       zod: ^4.0.0
 
-  '@facetlayer/doc-files-helper@0.1.1':
-    resolution: {integrity: sha512-T7MXxXxYYDhhNfGt0NGws/7/Y4IgG5dwT0eQHh5S7KHzORaY2v00kCKPSjEV4ab8GdC5VnXIGqQKXyPuSGXWlw==}
+  '@facetlayer/doc-files-helper@0.1.2':
+    resolution: {integrity: sha512-GbIblmIHF9epp3s/PXYqa3Nq5kiAdUHMRHScy9CWnUBU/xEvy9UHqgZPM82kCJQ6U43VAxFJVRr3rNTyER1lCw==}
     hasBin: true
 
   '@facetlayer/generic-lexer@1.0.0':
     resolution: {integrity: sha512-H5/MBfg5PZO0t1iX2WL+/dwdqjGaE39HgzQU6FrWAmTbX7ysbHrDlIYiLmymzfQDoVRfOebUoXlfxWh8SIiY+Q==}
 
-  '@facetlayer/prism-framework-api@0.3.0':
-    resolution: {integrity: sha512-61H4xVCMl5m3wRlMHZSrXMMs2bOLT1OzmBHlW7Q/S8FUWGryW9Kn0Y2KjKt5Kt1eM5BbiMikRb/vd3sPkK3aSg==}
+  '@facetlayer/prism-framework@file:../../node-libraries/prism-framework':
+    resolution: {directory: ../../node-libraries/prism-framework, type: directory}
+    hasBin: true
+    peerDependencies:
+      vite: ^6.0.0
+      zod: ^4.0.5
+    peerDependenciesMeta:
+      vite:
+        optional: true
+
+  '@facetlayer/qc@0.1.0':
+    resolution: {integrity: sha512-zJ7dfWepReatNzwaTizhzeD5l5xsjmr8YU19cPEq6rTylrZOKSm+fAUGVC+0CVpNDmf/jdP4kwfnConDwmKsvw==}
     hasBin: true
 
   '@facetlayer/sqlite-wrapper@1.2.1':
@@ -369,6 +379,7 @@ packages:
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
+    deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
     hasBin: true
 
   prom-client@15.1.3:
@@ -556,16 +567,17 @@ snapshots:
       openapi3-ts: 4.5.0
       zod: 4.3.6
 
-  '@facetlayer/doc-files-helper@0.1.1':
+  '@facetlayer/doc-files-helper@0.1.2':
     dependencies:
       yargs: 18.0.0
 
   '@facetlayer/generic-lexer@1.0.0': {}
 
-  '@facetlayer/prism-framework-api@0.3.0':
+  '@facetlayer/prism-framework@file:../../node-libraries/prism-framework(zod@4.3.6)':
     dependencies:
       '@asteasolutions/zod-to-openapi': 8.4.0(zod@4.3.6)
-      '@facetlayer/doc-files-helper': 0.1.1
+      '@facetlayer/doc-files-helper': 0.1.2
+      '@facetlayer/qc': 0.1.0
       '@facetlayer/sqlite-wrapper': 1.2.1
       '@facetlayer/streams': 1.0.1
       cookie-parser: 1.4.7
@@ -579,6 +591,8 @@ snapshots:
       zod: 4.3.6
     transitivePeerDependencies:
       - supports-color
+
+  '@facetlayer/qc@0.1.0': {}
 
   '@facetlayer/sqlite-wrapper@1.2.1':
     dependencies:

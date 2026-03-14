@@ -50,8 +50,8 @@ export function App() {
     setAnalyzing(true);
     try {
       const [jsonResult, textRes] = await Promise.all([
-        webFetch('POST /analyze', { params: { code: source } }),
-        webFetch('POST /analyze-text', { params: { code: source } }),
+        webFetch('POST /api/analyze', { params: { code: source } }),
+        webFetch('POST /api/analyze-text', { params: { code: source } }),
       ]);
       setAnalysis(jsonResult as AnalysisResult);
       setTextResult(textRes as TextResult);
@@ -80,7 +80,7 @@ export function App() {
 
   // Fetch example list on mount
   useEffect(() => {
-    webFetch('GET /examples').then((result: unknown) => {
+    webFetch('GET /api/examples').then((result: unknown) => {
       setExamples(result as Example[]);
     }).catch(() => {});
   }, []);

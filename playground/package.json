@@ -7,7 +7,7 @@
     "dev": "node --watch src/api.ts"
   },
   "dependencies": {
-    "@facetlayer/prism-framework-api": "*",
+    "@facetlayer/prism-framework": "file:../../node-libraries/prism-framework",
     "dotenv": "^16.4.7",
     "zod": "^4.1.12"
   },

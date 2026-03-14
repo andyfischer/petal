@@ -1,10 +1,13 @@
 import { config } from 'dotenv';
 config({ path: new URL('../.env', import.meta.url).pathname });
 
-import { App, startServer } from '@facetlayer/prism-framework-api';
+import { App, startServer } from '@facetlayer/prism-framework';
 import { petalService } from './services/petal-service.ts';
 
-const PORT = parseInt(process.env.PRISM_API_PORT || '4810', 10);
+if (!process.env.PRISM_API_PORT) {
+  throw new Error('PRISM_API_PORT environment variable is required (set it in .env)');
+}
+const PORT = parseInt(process.env.PRISM_API_PORT, 10);
 
 async function main() {
   const app = new App({

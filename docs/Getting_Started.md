@@ -24,16 +24,21 @@ Create a file called `hello.ptl`:
 print("hello, world!")
 ```
 
-Run it:
+The recommended way to run Petal locally is the `bin/run-petal.ts` wrapper.
+It rebuilds the binary if any Rust source is newer than it, then forwards all
+arguments to `petal`:
+
+```bash
+./bin/run-petal.ts run hello.ptl
+./bin/run-petal.ts run -e 'print(1 + 2)'
+```
+
+Use this script for day-to-day development and testing — it keeps the binary
+in sync with your source changes without paying for a full `cargo build` on
+every invocation. You can also call the binary directly if you prefer:
 
 ```bash
 rust/target/debug/petal run hello.ptl
-```
-
-Or run an inline expression with `-e`:
-
-```bash
-rust/target/debug/petal run -e 'print(1 + 2)'
 ```
 
 ## Running the Examples
@@ -52,24 +57,26 @@ See [examples/README.md](../examples/README.md) for a description of each exampl
 
 ## CLI Commands
 
-The `petal` binary has several commands for inspecting the compilation pipeline:
+The `petal` binary has several commands for inspecting the compilation pipeline.
+Examples below use `./bin/run-petal.ts` (the recommended wrapper); substitute
+`rust/target/debug/petal` if you want to skip the staleness check.
 
 ```bash
 # Run a program
-petal run examples/hello.ptl
-petal run -e 'print("hi")'
+./bin/run-petal.ts run examples/hello.ptl
+./bin/run-petal.ts run -e 'print("hi")'
 
 # Show lexer tokens
-petal show-tokens -e 'let x = 1'
-petal show-tokens --json -e 'let x = 1'
+./bin/run-petal.ts show-tokens -e 'let x = 1'
+./bin/run-petal.ts show-tokens --json -e 'let x = 1'
 
 # Show the parsed AST
-petal show-ast -e 'let x = 1 + 2'
-petal show-ast --json -e 'let x = 1 + 2'
+./bin/run-petal.ts show-ast -e 'let x = 1 + 2'
+./bin/run-petal.ts show-ast --json -e 'let x = 1 + 2'
 
 # Show compiled IR (term graph)
-petal show-ir -e 'let x = 1 + 2'
-petal show-ir --json -e 'let x = 1 + 2'
+./bin/run-petal.ts show-ir -e 'let x = 1 + 2'
+./bin/run-petal.ts show-ir --json -e 'let x = 1 + 2'
 ```
 
 All inspection commands support `--json` for machine-readable output. See

@@ -3,8 +3,12 @@
 Example programs demonstrating Petal language features. Run any example with:
 
 ```bash
-rust/target/debug/petal run examples/<name>.ptl
+./bin/run-petal.ts run examples/<name>.ptl
 ```
+
+`run-petal.ts` rebuilds the compiler if any Rust source is newer than the
+binary, then forwards its arguments to `petal`. It's the recommended way to
+test Petal locally.
 
 Or run all examples with pass/fail reporting:
 
@@ -27,6 +31,7 @@ Or run all examples with pass/fail reporting:
 | `pattern_matching.ptl` | Match expressions | Guards, list destructuring, nested patterns |
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |
 | `state.ptl` | Persistent state | `state` keyword, counters, accumulators |
+| `particles.ptl` | Multi-object simulation | Per-iteration keyed `state`, bounce physics |
 | `state_machine.ptl` | Traffic light controller | Enums + state, tick-based transitions |
 | `fibonacci.ptl` | Recursive and iterative Fibonacci | Recursion, iteration, string interpolation |
 | `reactive_ui.ptl` | React-like component model | State, records, event-driven render |

@@ -17,6 +17,21 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
 
 Source: `rust/src/`
 
+## Running Petal locally
+
+Use `./bin/run-petal.ts` as the default way to invoke the compiler during
+development. It rebuilds the binary if any Rust source is newer than it, then
+forwards all arguments to `petal`:
+
+```bash
+./bin/run-petal.ts run examples/hello.ptl
+./bin/run-petal.ts run -e 'print(1 + 2)'
+./bin/run-petal.ts show-ir -e 'let x = 1 + 2'
+```
+
+You can still invoke `rust/target/debug/petal` directly if you want to skip
+the staleness check.
+
 ## Testing
 
 ### Integration tests (vitest)

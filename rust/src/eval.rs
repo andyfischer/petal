@@ -396,6 +396,35 @@ impl Evaluator {
 
     /// Pop the current frame and handle the result.
     fn pop_frame(program: &Program, stack: &mut Stack) -> StepResult {
+        // Process phi carry-outs before popping. Each slot copies a source
+        // register (walked from the current child frame via read_register) to
+        // a destination register in the parent frame. Done before the pop so
+        // src reads can walk parent_frame links from the current top.
+        if let Some(top) = stack.frames.last() {
+            let child_block_id = top.block_id;
+            let child_block = program.get_block(child_block_id);
+            if !child_block.phi_outs.is_empty() {
+                let slots: Vec<(TermId, TermId)> = child_block
+                    .phi_outs
+                    .iter()
+                    .map(|p| (p.src_term, p.dest_term))
+                    .collect();
+                for (src, dest) in slots {
+                    let val = Self::read_register(program, stack, src);
+                    let dest_term = program.get_term(dest);
+                    let dest_reg = dest_term.register.0 as usize;
+                    if stack.frames.len() >= 2 {
+                        let parent_idx = stack.frames.len() - 2;
+                        let pf = &mut stack.frames[parent_idx];
+                        if dest_reg >= pf.registers.len() {
+                            pf.registers.resize(dest_reg + 1, Value::Nil);
+                        }
+                        pf.registers[dest_reg] = val;
+                    }
+                }
+            }
+        }
+
         let frame = match stack.pop_frame() {
             Some(f) => f,
             None => return StepResult::Complete(Value::Nil),
@@ -517,29 +546,19 @@ impl Evaluator {
                 ControlFlow::Advance
             }
 
-            TermOp::Assign(target_tid) => {
-                // Write value to the target term's register in its frame
-                let val = inputs.first().copied().unwrap_or(Value::Nil);
-                let target_term = program.get_term(*target_tid);
-                let target_block = target_term.block_id;
-                let target_reg = target_term.register.0 as usize;
+            TermOp::Phi => {
+                // No-op. The phi's register is written by the popping child
+                // frame via Block::phi_outs (see pop_frame). Advance without
+                // touching our own register.
+                ControlFlow::Advance
+            }
 
-                // Walk parent_frame links to find the frame holding the target block
-                let mut frame_idx = stack.frames.len() - 1;
-                loop {
-                    if stack.frames[frame_idx].block_id == target_block {
-                        if target_reg < stack.frames[frame_idx].registers.len() {
-                            stack.frames[frame_idx].registers[target_reg] = val;
-                        }
-                        break;
-                    }
-                    match stack.frames[frame_idx].parent_frame {
-                        Some(parent) => frame_idx = parent,
-                        None => break,
-                    }
-                }
-
-                Self::write_register(stack, term, val);
+            TermOp::CarryPhi => {
+                // Loop carry holder. Initialize register from inputs[0]
+                // (the pre-loop value). Subsequent writes from each
+                // iteration's body-pop phi_outs override this.
+                let init = inputs.first().copied().unwrap_or(Value::Nil);
+                Self::write_register(stack, term, init);
                 ControlFlow::Advance
             }
 

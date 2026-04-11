@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use smallvec::SmallVec;
 
 use crate::heap::Heap;
-use crate::program::{Program, TermId, TermOp};
+use crate::program::{Program, TermId};
 use crate::value::{self, Value};
 
 /// Default ring buffer capacity. ~100 bytes/event × 200k = ~20 MB worst case.
@@ -102,80 +102,6 @@ impl TraceBuffer {
         self.events.iter().filter(move |e| e.term_id == term_id)
     }
 
-    /// Return every recorded write to the variable bound at `target`.
-    /// This handles the common case where a name like `total` is reassigned
-    /// in a loop: the language compiles those reassignments into `Assign(target)`
-    /// terms that write to the original term's register, and this method
-    /// walks the trace in order collecting every such write (plus the
-    /// initialization itself). Returns an empty vec if there were no
-    /// reassignments — callers can fall back to `explain` in that case.
-    pub fn history(
-        &self,
-        program: &Program,
-        heap: &Heap,
-        target: TermId,
-    ) -> Vec<HistoryEntry> {
-        // Collect all terms that write to `target`'s value: the target itself
-        // (initial assignment) plus every `Assign(target)` term.
-        let mut writers: Vec<TermId> = vec![target];
-        for term in &program.terms {
-            if let TermOp::Assign(t) = &term.op {
-                if *t == target {
-                    writers.push(term.id);
-                }
-            }
-        }
-        let assigns_count = writers.len() - 1;
-
-        // Walk trace events in sequence order, collecting writes.
-        let mut entries = Vec::new();
-        for event in self.events.iter() {
-            if !writers.contains(&event.term_id) {
-                continue;
-            }
-            let term = program.get_term(event.term_id);
-            let (value, kind) = match &term.op {
-                TermOp::Assign(_) => (
-                    event.inputs.first().copied().unwrap_or(Value::Nil),
-                    HistoryKind::Reassign,
-                ),
-                _ => (event.result, HistoryKind::Initial),
-            };
-            // Prefer the term's own source span; fall back to its first input
-            // (e.g. an Assign term inside a loop body has no span of its own,
-            // but its RHS expression term carries the assignment's location).
-            let mut span = program.source_map.get(event.term_id);
-            if span.map(|s| s.start.line == 0).unwrap_or(true) {
-                if let Some(&input_id) = term.inputs.first() {
-                    if let Some(s) = program.source_map.get(input_id) {
-                        if s.start.line > 0 {
-                            span = Some(s);
-                        }
-                    }
-                }
-            }
-            let (line, column) = match span {
-                Some(s) if s.start.line > 0 => (Some(s.start.line), Some(s.start.column)),
-                _ => (None, None),
-            };
-            entries.push(HistoryEntry {
-                sequence: event.sequence,
-                term_id: event.term_id,
-                kind,
-                value: value::value_to_display_string(&value, heap),
-                line,
-                column,
-            });
-        }
-
-        // If there were no `Assign` writers, history is the same as just the
-        // initial term — let callers decide whether that's worth showing.
-        if assigns_count == 0 {
-            return Vec::new();
-        }
-        entries
-    }
-
     /// Walk backward through provenance from `target` and return each
     /// ancestor's most recent recorded value alongside its source location.
     /// Answers "why does this term have this value?"
@@ -224,44 +150,6 @@ impl TraceBuffer {
 impl Default for TraceBuffer {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HistoryKind {
-    Initial,
-    Reassign,
-}
-
-impl HistoryKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            HistoryKind::Initial => "init",
-            HistoryKind::Reassign => "set",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct HistoryEntry {
-    pub sequence: u64,
-    pub term_id: TermId,
-    pub kind: HistoryKind,
-    pub value: String,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
-}
-
-impl HistoryEntry {
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "seq": self.sequence,
-            "term_id": self.term_id.0,
-            "kind": self.kind.as_str(),
-            "value": self.value,
-            "line": self.line,
-            "column": self.column,
-        })
     }
 }
 

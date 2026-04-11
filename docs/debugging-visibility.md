@@ -6,6 +6,22 @@ Petal has **three parallel observability stacks** — CLI (Rust), MCP tools, and
 test helpers — all converging on the same IR / draw-command / protocol outputs.
 Pick based on execution context (local CLI, running diagram server, vitest).
 
+## Philosophy: values, not state
+
+Petal is a pure dataflow language. Programs are DAGs of terms; each term has
+fixed inputs, an operation, and a result that never changes once computed.
+Variable names are labels attached to terms — "reassigning" `x` in source
+creates a new term and reattaches the label. There is no mutation.
+
+Debugging questions therefore reduce to graph questions. "Why does `total`
+have this value?" means "walk provenance backward from the term currently
+labelled `total`." `petal explain`, `show-provenance`, `show-dependents`, and
+the trace buffer all work off this model.
+
+Rebindings inside a child block lower to pure-dataflow joins: `Phi` terms
+for `if`/`match` branches, and `CarryPhi` + body phi-outs for loop carries.
+The IR has no register-mutation primitive — see `docs/MutabilityPlan.md`.
+
 ---
 
 ## 1. Core CLI (`rust/src/cli.rs`)

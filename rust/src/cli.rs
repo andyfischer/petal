@@ -436,7 +436,6 @@ pub fn execute(cli: CliArgs) {
                 None => term_not_found(program, &term_query),
             };
 
-            let history = env.trace().history(program, env.heap(), target_id);
             let entries = env.trace().explain(program, env.heap(), target_id, 16);
 
             // Pretty header — use the resolved term name if available so an
@@ -454,35 +453,15 @@ pub fn execute(cli: CliArgs) {
                 });
 
             if json {
-                let history_json: Vec<_> = history.iter().map(|h| h.to_json()).collect();
                 let entries_json: Vec<_> = entries.iter().map(|e| e.to_json()).collect();
                 let out = serde_json::json!({
                     "term_id": target_id.0,
                     "name": header_name,
-                    "history": history_json,
                     "chain": entries_json,
                 });
                 println!("{}", serde_json::to_string_pretty(&out).unwrap());
             } else {
                 println!("Explain t{} ({}):", target_id.0, header_name);
-                if !history.is_empty() {
-                    println!("  History ({} writes):", history.len());
-                    for h in &history {
-                        let loc = match (h.line, h.column) {
-                            (Some(l), Some(c)) => format!("[line {}, column {}]", l, c),
-                            _ => "[no location]".to_string(),
-                        };
-                        println!(
-                            "    [{}] {:5} t{} {} = {}",
-                            h.sequence,
-                            h.kind.as_str(),
-                            h.term_id.0,
-                            loc,
-                            h.value,
-                        );
-                    }
-                    println!();
-                }
                 println!("  Provenance chain:");
                 for (i, e) in entries.iter().enumerate() {
                     let loc = match (e.line, e.column) {

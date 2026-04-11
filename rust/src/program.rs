@@ -107,8 +107,19 @@ pub enum TermOp {
     // Binding & identity
     /// Variable reference / identity copy: inputs=[source_term]
     Copy,
-    /// Write to an outer scope's register: inputs=[value], target term specified
-    Assign(TermId),
+    /// Pure-dataflow join point for values rebound inside conditional branches
+    /// (if/else, match arms). Inputs are the candidate source terms — one per
+    /// branch. At runtime the phi's register is written by the popping child
+    /// frame via `Block.phi_outs`; the phi's own exec is a no-op. Provenance
+    /// walkers follow `inputs` to see every candidate value.
+    Phi,
+    /// Loop carry holder. Sits in the parent block before a `ForLoop` /
+    /// `WhileLoop` term. On exec it writes `inputs[0]` (the pre-loop initial
+    /// value) to its register. Each iteration of the loop body then writes
+    /// the iteration's carry-out to this register via `Block.phi_outs` from
+    /// the body block. After the loop exits, the register holds the final
+    /// carry value, which the post-loop code reads via the carry-phi's name.
+    CarryPhi,
 
     // Control flow
     /// if/else: inputs=[cond], child_blocks=[then_block, else_block]
@@ -221,6 +232,20 @@ pub struct Block {
     pub param_names: Vec<String>,
     /// Total registers needed for this block's frame
     pub register_count: u16,
+    /// Phi carry-outs: when this block's frame pops, copy each `src_term`'s
+    /// register value to the parent frame at each `dest_term`'s register.
+    /// Emitted when a conditional branch rebinds a name that was bound in
+    /// an outer scope — see `docs/MutabilityPlan.md`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub phi_outs: Vec<PhiOut>,
+}
+
+/// One phi-slot copy: read `src_term`'s value and write to `dest_term`'s
+/// register in the parent frame when a child frame pops.
+#[derive(Debug, Clone, Serialize)]
+pub struct PhiOut {
+    pub src_term: TermId,
+    pub dest_term: TermId,
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +497,7 @@ mod tests {
             entry: terms.first().map(|t| t.id),
             param_names: vec![],
             register_count: terms.len() as u16,
+            phi_outs: vec![],
         }];
         Program {
             id: ProgramId(0),

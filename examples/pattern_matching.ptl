@@ -21,16 +21,16 @@ fn temperature_label(temp) {
         _ -> "extreme"
     }
 }
-print("20 degrees is", temperature_label(20))
-print("-5 degrees is", temperature_label(-5))
+print("20 degrees is {temperature_label(20)}")
+print("-5 degrees is {temperature_label(-5)}")
 
 // List destructuring
 fn describe_list(list) {
     match list {
         [] -> "empty list"
-        [x] -> "single element: " ++ str(x)
-        [a, b] -> "pair: " ++ str(a) ++ " and " ++ str(b)
-        [head, ...tail] -> "starts with " ++ str(head) ++ ", " ++ str(len(tail)) ++ " more"
+        [x] -> "single element: {x}"
+        [a, b] -> "pair: {a} and {b}"
+        [head, ...tail] -> "starts with {head}, {len(tail)} more"
     }
 }
 print(describe_list([]))
@@ -55,4 +55,4 @@ fn eval(expr) {
 
 // (2 + 3) * 4 = 20
 let expression = Mul(Add(Num(2), Num(3)), Num(4))
-print("(2 + 3) * 4 =", eval(expression))
+print("(2 + 3) * 4 = {eval(expression)}")

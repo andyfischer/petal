@@ -14,7 +14,9 @@ Every command takes `-e <code>` or a file path. Most support `--json`.
 
 | Command | Purpose |
 |---------|---------|
-| `run [file\|-e code]` | Execute, capture stdout/stderr |
+| `run [--json] [--trace] [--record-trace <path>] [file\|-e code]` | Execute; `--json` = structured errors; `--trace` = per-term stderr events; `--record-trace` writes a JSON trace file |
+| `check [--json] [file\|-e code]` | Lex+parse+compile only, exit 0/1 |
+| `explain --term <name\|id> [--json] [file\|-e code]` | Run with trace, show value chain (target + ancestors + recorded values). Accepts either a variable name (`total`), a bare numeric term id (`72`), or the `t`-prefixed form (`t72`). |
 | `show-tokens [--json]` | Lexer output |
 | `show-ast [--json]` | Parser output |
 | `show-ir [--json]` | Compiled IR (terms, ops, inputs, blocks) |
@@ -139,13 +141,39 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
 
 - `print(...)` — space-joined, to stdout
 - `str(x)` / `type(x)` — value inspection
-- Runtime errors carry `"<msg> [line N, column M]"` + stack traces (see
-  `rust/src/eval.rs` `build_stack_trace`)
+- `assert(cond, msg?)` — aborts with `assertion failed: <msg>` + source location
+- `assert_eq(a, b)` — aborts with `assert_eq: left=X right=Y`
+- Runtime errors carry `"<msg> [line N, column M]"`, a `Caused by:` block of
+  nearest named ancestors from the dataflow graph, and stack traces (see
+  `rust/src/eval.rs` `build_stack_trace` / `format_provenance`). In JSON mode
+  (`petal run --json`) these surface as `{message, line, column, caused_by[], stack[]}`.
+- Structured trace buffer (`rust/src/trace.rs`): records every term execution
+  (inputs + result) into a ring buffer (default capacity 200,000 events — oldest
+  events are dropped once full). Enable via `--record-trace`, `--trace`, or
+  `PETAL_DEBUG=1`. Queryable post-run via `Env::trace().explain(...)` or the
+  `petal explain` CLI.
 - petal-diagram-canvas parses error line info to highlight source
   (`petal-diagram-canvas/src/runtime.ts`)
 
-**Gaps:** no built-in `assert`, no `PETAL_DEBUG` env var / verbose flag,
-no tracing hooks.
+### Trace JSON schema (`--record-trace <path>`)
+
+```json
+{
+  "capacity": 200000,
+  "count": 42,
+  "events": [
+    { "seq": 0, "term_id": 68, "name": "x", "op": "Constant(ConstantId(0))",
+      "line": 1, "column": 9, "inputs": [], "result": "10" },
+    { "seq": 1, "term_id": 70, "name": null, "op": "Add",
+      "line": 2, "column": 9, "inputs": ["10", "2"], "result": "12" }
+  ]
+}
+```
+
+`inputs` and `result` are pretty-printed strings (via
+`value::value_to_display_string`), not raw values. `name` is the user-visible
+variable name when a term's result was bound to one, or `null` otherwise.
+`line`/`column` come from the source map; they're `null` for synthetic terms.
 
 ---
 
@@ -161,3 +189,6 @@ no tracing hooks.
 | Understand data dependencies | `show-provenance` / `show-dependents` / `show-slice` |
 | Web-based exploration | Playground `POST /analyze` |
 | Unit-test IR shape | `showIrJson` + `termByName` / `termsByOp` |
+| Validate without running | `petal check` |
+| "Why does this variable have this value?" | `petal explain --term <name>` |
+| Post-mortem analysis / offline trace review | `petal run --record-trace trace.json` |

@@ -43,13 +43,15 @@ pub(super) fn native_assert(state: &mut PetalCxt) -> Result<u32, String> {
         _ => true,
     };
     if !ok {
-        let msg = if n == 2 {
+        return Err(if n == 2 {
             let m = state.get_value(2)?;
-            value::value_to_display_string(&m, state.heap())
+            format!(
+                "assertion failed: {}",
+                value::value_to_display_string(&m, state.heap())
+            )
         } else {
             "assertion failed".to_string()
-        };
-        return Err(format!("assertion failed: {}", msg));
+        });
     }
     state.push_nil();
     Ok(1)

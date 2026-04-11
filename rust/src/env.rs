@@ -13,6 +13,7 @@ use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId, OverloadEntry, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
+use crate::trace::TraceBuffer;
 use crate::value::Value;
 
 pub struct Env {
@@ -23,6 +24,7 @@ pub struct Env {
     closures: Vec<RuntimeClosure>,
     overload_sets: Vec<Vec<OverloadEntry>>,
     output: Vec<String>,
+    trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
 }
@@ -40,6 +42,7 @@ impl Env {
             closures: Vec::new(),
             overload_sets: Vec::new(),
             output: Vec::new(),
+            trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
         }
@@ -114,9 +117,20 @@ impl Env {
             &mut self.overload_sets,
             &self.native_fns,
             &mut self.output,
+            &mut self.trace,
         );
 
         Ok(result)
+    }
+
+    /// Access the shared trace buffer (for recording/queries).
+    pub fn trace(&self) -> &TraceBuffer {
+        &self.trace
+    }
+
+    /// Mutable access to the trace buffer (to enable/clear/configure).
+    pub fn trace_mut(&mut self) -> &mut TraceBuffer {
+        &mut self.trace
     }
 
     /// Run a program to completion

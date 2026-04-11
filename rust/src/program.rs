@@ -319,6 +319,12 @@ impl Program {
                 }
             }
         }
+        // Try a bare numeric ID (e.g. `--term 72`)
+        if let Ok(id) = query.parse::<u32>() {
+            if (id as usize) < self.terms.len() {
+                return Some(TermId(id));
+            }
+        }
         // Search by name (last match wins — like variable shadowing)
         let mut found = None;
         for term in &self.terms {
@@ -327,6 +333,24 @@ impl Program {
             }
         }
         found
+    }
+
+    /// Return the list of distinct user-visible names bound to terms in this
+    /// program. Filters out phantom builtin terms by requiring a real source
+    /// span (line > 0). Used for "did you mean?" hints on `--term` misses.
+    pub fn named_terms(&self) -> Vec<String> {
+        use std::collections::BTreeSet;
+        let mut set = BTreeSet::new();
+        for term in &self.terms {
+            let Some(name) = &term.name else { continue };
+            match self.source_map.get(term.id) {
+                Some(span) if span.start.line > 0 => {
+                    set.insert(name.clone());
+                }
+                _ => {}
+            }
+        }
+        set.into_iter().collect()
     }
 
     /// Trace provenance: collect all transitive input ancestors of a term.

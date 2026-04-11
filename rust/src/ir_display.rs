@@ -3,9 +3,27 @@
 use std::fmt::Write;
 
 use crate::constant_table::ConstantValue;
-use crate::program::{MapSpreadEntry, Program, TermOp};
+use crate::program::{MapSpreadEntry, Program, Term, TermOp};
+
+/// Returns true for synthetic builtin terms that have no source location.
+/// These flood the output of `show-ir` / `show-graph` on small programs (the
+/// builtin function table alone is ~70 phantom Copy terms), so display
+/// helpers hide them by default.
+pub fn is_phantom(program: &Program, term: &Term) -> bool {
+    if !matches!(term.op, TermOp::Copy) || !term.inputs.is_empty() || term.name.is_none() {
+        return false;
+    }
+    match program.source_map.get(term.id) {
+        Some(span) => span.start.line == 0,
+        None => true,
+    }
+}
 
 pub fn display_program(program: &Program) -> String {
+    display_program_with(program, true)
+}
+
+pub fn display_program_with(program: &Program, hide_phantoms: bool) -> String {
     let mut out = String::new();
 
     // === Constants ===
@@ -65,6 +83,10 @@ pub fn display_program(program: &Program) -> String {
         let mut tid = block.entry;
         while let Some(t) = tid {
             let term = program.get_term(t);
+            if hide_phantoms && is_phantom(program, term) {
+                tid = term.block_next;
+                continue;
+            }
             let op_str = format_op(&term.op);
             let inputs: Vec<String> = term.inputs.iter().map(|i| format!("t{}", i.0)).collect();
             let blocks: Vec<String> = term

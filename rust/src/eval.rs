@@ -13,6 +13,7 @@ use crate::heap::Heap;
 use crate::native_fn::{NativeFnTable, PetalCxt};
 use crate::program::*;
 use crate::stack::{Frame, LoopKeyPart, LoopState, RuntimeStateKey, Stack};
+use crate::trace::TraceBuffer;
 use crate::value::{self, Value};
 
 /// Result of a single evaluation step.
@@ -104,6 +105,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> StepResult {
         let frame_idx = match stack.frames.len().checked_sub(1) {
             Some(idx) => idx,
@@ -145,12 +147,24 @@ impl Evaluator {
             overload_sets,
             native_fns,
             output,
+            trace,
         );
 
         match result {
             ControlFlow::Advance => {
                 // Store result and advance
                 Self::advance(stack, term);
+                // Record the executed term into the trace buffer (no-op when
+                // disabled) and optionally print a line via the legacy
+                // PETAL_TRACE eprintln path.
+                if trace.enabled {
+                    let result_val = stack
+                        .frames
+                        .last()
+                        .and_then(|f| f.registers.get(term.register.0 as usize).copied())
+                        .unwrap_or(Value::Nil);
+                    trace.push(term.id, &input_values, result_val);
+                }
                 Self::trace_term(program, stack, heap, term, &input_values);
                 StepResult::Continue
             }
@@ -188,6 +202,15 @@ impl Evaluator {
                 } else {
                     msg
                 };
+
+                // Append provenance: up to 5 nearest named ancestors with spans
+                let provenance = Self::format_provenance(program, current_term_id, 5);
+                if !provenance.is_empty() {
+                    error_msg.push_str("\nCaused by:");
+                    for entry in &provenance {
+                        error_msg.push_str(&format!("\n  {}", entry));
+                    }
+                }
 
                 // Build stack trace from call frames
                 let trace = Self::build_stack_trace(program, stack);
@@ -311,6 +334,35 @@ impl Evaluator {
             input_strs.join(", "),
             result_str,
         );
+    }
+
+    /// Walk provenance of the failing term and format up to `max` nearest
+    /// ancestors that have both a name and a source span. This surfaces the
+    /// user-visible variables that fed into the failure so error messages
+    /// point at causes, not just the failing operation.
+    fn format_provenance(program: &Program, failing: TermId, max: usize) -> Vec<String> {
+        let (ancestors, _edges) = program.trace_provenance(failing);
+        let mut out = Vec::new();
+        for aid in ancestors {
+            if out.len() >= max {
+                break;
+            }
+            let term = program.get_term(aid);
+            let Some(name) = term.name.as_deref() else {
+                continue;
+            };
+            let Some(span) = program.source_map.get(aid) else {
+                continue;
+            };
+            if span.start.line == 0 {
+                continue;
+            }
+            out.push(format!(
+                "{} [line {}, column {}]",
+                name, span.start.line, span.start.column
+            ));
+        }
+        out
     }
 
     /// Build a stack trace from the current call frames.
@@ -442,6 +494,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> ControlFlow {
         match &term.op {
             TermOp::Constant(cid) => {
@@ -664,11 +717,11 @@ impl Evaluator {
             }
 
             TermOp::Call => {
-                Self::exec_call(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
+                Self::exec_call(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output, trace)
             }
 
             TermOp::MethodCall(method_cid) => {
-                Self::exec_method_call(*method_cid, term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
+                Self::exec_method_call(*method_cid, term, inputs, program, stack, heap, closures, overload_sets, native_fns, output, trace)
             }
 
             TermOp::MakeClosure(fn_id) => {
@@ -959,7 +1012,7 @@ impl Evaluator {
             }
 
             TermOp::Match => {
-                Self::exec_match(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output)
+                Self::exec_match(term, inputs, program, stack, heap, closures, overload_sets, native_fns, output, trace)
             }
         }
     }
@@ -1204,6 +1257,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> ControlFlow {
         let callable = inputs[0];
         let args = &inputs[1..];
@@ -1215,7 +1269,7 @@ impl Evaluator {
 
             Value::NativeFunction(native_id) => {
                 Self::call_native_or_intrinsic(
-                    native_id, args, term, program, stack, heap, closures, overload_sets, native_fns, output,
+                    native_id, args, term, program, stack, heap, closures, overload_sets, native_fns, output, trace,
                 )
             }
 
@@ -1267,6 +1321,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> ControlFlow {
         let obj = inputs[0];
         let args = &inputs[1..];
@@ -1304,7 +1359,7 @@ impl Evaluator {
             let mut full_args = vec![obj];
             full_args.extend_from_slice(args);
             Self::call_native_or_intrinsic(
-                native_id, &full_args, term, program, stack, heap, closures, overload_sets, native_fns, output,
+                native_id, &full_args, term, program, stack, heap, closures, overload_sets, native_fns, output, trace,
             )
         } else {
             let hint = match method_name.as_str() {
@@ -1333,6 +1388,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> ControlFlow {
         let subject = inputs[0];
         let arm_metas = match program.match_arms.get(&term.id) {
@@ -1370,7 +1426,7 @@ impl Evaluator {
                             }
                             break;
                         }
-                        match Self::step(program, stack, heap, closures, overload_sets, native_fns, output) {
+                        match Self::step(program, stack, heap, closures, overload_sets, native_fns, output, trace) {
                             StepResult::Continue => {}
                             StepResult::Complete(v) => { guard_result = v; break; }
                             StepResult::Error(e) => return ControlFlow::Error(e),
@@ -1645,15 +1701,16 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> ControlFlow {
         let result = if native_fns.intrinsic_map == Some(native_id) {
-            Self::builtin_map(args, program, stack, heap, closures, overload_sets, native_fns, output)
+            Self::builtin_map(args, program, stack, heap, closures, overload_sets, native_fns, output, trace)
         } else if native_fns.intrinsic_filter == Some(native_id) {
-            Self::builtin_filter(args, program, stack, heap, closures, overload_sets, native_fns, output)
+            Self::builtin_filter(args, program, stack, heap, closures, overload_sets, native_fns, output, trace)
         } else if native_fns.intrinsic_reduce == Some(native_id) {
-            Self::builtin_reduce(args, program, stack, heap, closures, overload_sets, native_fns, output)
+            Self::builtin_reduce(args, program, stack, heap, closures, overload_sets, native_fns, output, trace)
         } else if native_fns.intrinsic_for_each == Some(native_id) {
-            Self::builtin_for_each(args, program, stack, heap, closures, overload_sets, native_fns, output)
+            Self::builtin_for_each(args, program, stack, heap, closures, overload_sets, native_fns, output, trace)
         } else {
             Self::call_native_fn(native_id, args, native_fns, heap, output)
         };
@@ -1759,6 +1816,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> Result<Value, String> {
         let frame = Self::build_closure_frame(callable, call_args, program, closures, None)?;
         let target_depth = stack.frames.len();
@@ -1772,7 +1830,7 @@ impl Evaluator {
                 return Ok(stack.last_pop_result.take().unwrap_or(Value::Nil));
             }
 
-            let step = Self::step(program, stack, heap, closures, overload_sets, native_fns, output);
+            let step = Self::step(program, stack, heap, closures, overload_sets, native_fns, output, trace);
             match step {
                 StepResult::Continue => {}
                 StepResult::Complete(v) => return Ok(v),
@@ -1790,6 +1848,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("map() expects 2 arguments (list, function)".into());
@@ -1804,7 +1863,7 @@ impl Evaluator {
         let mut results = Vec::with_capacity(elements.len());
         for elem in elements {
             let result = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output, trace,
             )?;
             results.push(result);
         }
@@ -1822,6 +1881,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("filter() expects 2 arguments (list, function)".into());
@@ -1836,7 +1896,7 @@ impl Evaluator {
         let mut results = Vec::new();
         for elem in elements {
             let keep = Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output, trace,
             )?;
             if keep.is_truthy() {
                 results.push(elem);
@@ -1856,6 +1916,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> Result<Value, String> {
         if args.len() != 3 {
             return Err("reduce() expects 3 arguments (list, initial, function)".into());
@@ -1870,7 +1931,7 @@ impl Evaluator {
 
         for elem in elements {
             acc = Self::call_closure_sync(
-                func, &[acc, elem], program, stack, heap, closures, overload_sets, native_fns, output,
+                func, &[acc, elem], program, stack, heap, closures, overload_sets, native_fns, output, trace,
             )?;
         }
 
@@ -1886,6 +1947,7 @@ impl Evaluator {
         overload_sets: &mut Vec<Vec<OverloadEntry>>,
         native_fns: &NativeFnTable,
         output: &mut Vec<String>,
+        trace: &mut TraceBuffer,
     ) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("forEach() expects 2 arguments (list, function)".into());
@@ -1899,7 +1961,7 @@ impl Evaluator {
 
         for elem in elements {
             Self::call_closure_sync(
-                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output,
+                func, &[elem], program, stack, heap, closures, overload_sets, native_fns, output, trace,
             )?;
         }
 

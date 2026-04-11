@@ -5,21 +5,23 @@ use std::process;
 
 use crate::compiler::Compiler;
 use crate::env::Env;
-use crate::ir_display::display_program;
+use crate::ir_display::{display_program_with, is_phantom};
 use crate::lexer::Lexer;
 use crate::native_fn::NativeFnTable;
 use crate::parse::Parser;
 use crate::program::ProgramId;
 
 pub enum Command {
-    Run { json: bool, trace: bool },
-    ShowIr { json: bool },
+    Run { json: bool, trace: bool, record_trace: Option<String> },
+    Check { json: bool },
+    Explain { json: bool, term: String },
+    ShowIr { json: bool, all: bool },
     ShowAst { json: bool },
     ShowTokens { json: bool },
     ShowProvenance { json: bool, term: String },
     ShowDependents { json: bool, term: String },
     ShowSlice { json: bool, terms: Vec<String> },
-    ShowGraph,
+    ShowGraph { all: bool },
 }
 
 pub enum SourceInput {
@@ -48,13 +50,15 @@ pub fn parse_args() -> CliArgs {
             process::exit(0);
         }
         "run" => parse_run_args(&args[1..]),
-        "show-ir" => parse_show_args(&args[1..], |json| Command::ShowIr { json }),
+        "check" => parse_show_args(&args[1..], |json| Command::Check { json }),
+        "explain" => parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term }),
+        "show-ir" => parse_show_with_all(&args[1..], |json, all| Command::ShowIr { json, all }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "show-provenance" => parse_provenance_args(&args[1..]),
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
         "show-slice" => parse_slice_args(&args[1..]),
-        "show-graph" => parse_show_args(&args[1..], |_json| Command::ShowGraph),
+        "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
         // Backward compat: petal -e <code> or petal <file>
         "-e" => {
             if args.len() < 2 {
@@ -62,14 +66,14 @@ pub fn parse_args() -> CliArgs {
                 process::exit(1);
             }
             CliArgs {
-                command: Command::Run { json: false, trace: false },
+                command: Command::Run { json: false, trace: false, record_trace: None },
                 source: SourceInput::Inline(args[1].clone()),
             }
         }
         _ => {
             // Treat as file path
             CliArgs {
-                command: Command::Run { json: false, trace: false },
+                command: Command::Run { json: false, trace: false, record_trace: None },
                 source: SourceInput::File(first.clone()),
             }
         }
@@ -79,6 +83,7 @@ pub fn parse_args() -> CliArgs {
 fn parse_run_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut trace = false;
+    let mut record_trace: Option<String> = None;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -86,6 +91,14 @@ fn parse_run_args(args: &[String]) -> CliArgs {
         match args[i].as_str() {
             "--json" => json = true,
             "--trace" => trace = true,
+            "--record-trace" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected path after --record-trace");
+                    process::exit(1);
+                }
+                record_trace = Some(args[i].clone());
+            }
             "-e" => {
                 i += 1;
                 if i >= args.len() {
@@ -102,12 +115,12 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] <file>");
         process::exit(1);
     });
 
     CliArgs {
-        command: Command::Run { json, trace },
+        command: Command::Run { json, trace, record_trace },
         source,
     }
 }
@@ -142,6 +155,44 @@ fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliAr
 
     CliArgs {
         command: make_cmd(json),
+        source,
+    }
+}
+
+/// Like `parse_show_args` but also accepts `--all` to include phantom builtin
+/// terms in the output. Used by `show-ir` / `show-graph`.
+fn parse_show_with_all(args: &[String], make_cmd: impl Fn(bool, bool) -> Command) -> CliArgs {
+    let mut json = false;
+    let mut all = false;
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--all" => all = true,
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Expected a file path or -e <code>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: make_cmd(json, all),
         source,
     }
 }
@@ -252,12 +303,16 @@ fn print_usage() {
 Usage: petal <command> [options] <file>
 
 Commands:
-  run [--json] [--trace] <file>  Execute a program
+  check [--json] <file>          Lex+parse+compile without executing (exit 0/1)
+  run [--json] [--trace] [--record-trace <path>] <file>
+                                 Execute a program
+  explain [--json] --term <name> <file>
+                                 Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
                                  --trace: emit per-term events to stderr
                                  (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
-  show-ir [--json] <file>        Display compiled IR
+  show-ir [--json] [--all] <file> Display compiled IR (--all to include builtin phantoms)
   show-ast [--json] <file>       Display parsed AST
   show-tokens [--json] <file>    Display lexer tokens
   show-provenance [--json] --term <name> <file>
@@ -266,7 +321,7 @@ Commands:
                                  Trace dependents (forward slice) of a term
   show-slice [--json] --term <name> [--term <name2>] <file>
                                  Compute minimal dataflow slice for targets
-  show-graph <file>              Output DOT-format dataflow graph
+  show-graph [--all] <file>      Output DOT-format dataflow graph (--all to include builtins)
 
   petal <file>                   Shorthand for 'run'
   petal -e <code>                Shorthand for 'run -e'";
@@ -311,20 +366,19 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
     match cli.command {
-        Command::Run { json, trace } => {
+        Command::Run { json, trace, record_trace } => {
             if trace || std::env::var("PETAL_DEBUG").is_ok() {
                 unsafe { std::env::set_var("PETAL_TRACE", "1"); }
             }
             let mut env = Env::new();
+            if record_trace.is_some() {
+                env.trace_mut().enable();
+            }
             let load_result = env.load_program(&source);
             let pid = match load_result {
                 Ok(pid) => pid,
                 Err(e) => {
-                    let phase = if e.contains("Expected") || e.contains("parse") {
-                        "parse"
-                    } else {
-                        "lex"
-                    };
+                    let phase = classify_load_error(&e);
                     if json {
                         println!("{}", error_to_json(&e, phase));
                     } else {
@@ -344,13 +398,129 @@ pub fn execute(cli: CliArgs) {
                     process::exit(1);
                 }
             };
-            if let Err(e) = env.run(sid) {
+            let run_result = env.run(sid);
+
+            if let Some(path) = &record_trace {
+                write_trace_to_file(&env, pid, path);
+            }
+
+            if let Err(e) = run_result {
                 if json {
                     println!("{}", error_to_json(&e, "runtime"));
                 } else {
                     eprintln!("Error: {}", e);
                 }
                 process::exit(1);
+            }
+        }
+        Command::Explain { json, term: term_query } => {
+            let mut env = Env::new();
+            env.trace_mut().enable();
+            let pid = match env.load_program(&source) {
+                Ok(pid) => pid,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    process::exit(1);
+                }
+            };
+            let sid = env.create_stack(pid).unwrap_or_else(|e| {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            });
+            // Run to completion (ignore errors — we still want the partial trace)
+            let _ = env.run(sid);
+
+            let program = env.get_program(pid).expect("program");
+            let target_id = match program.find_term(&term_query) {
+                Some(id) => id,
+                None => term_not_found(program, &term_query),
+            };
+
+            let history = env.trace().history(program, env.heap(), target_id);
+            let entries = env.trace().explain(program, env.heap(), target_id, 16);
+
+            // Pretty header — use the resolved term name if available so an
+            // `--term 72` query still shows `(total)` instead of `(72)`.
+            let header_name = program
+                .get_term(target_id)
+                .name
+                .clone()
+                .unwrap_or_else(|| {
+                    if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
+                        "unnamed".to_string()
+                    } else {
+                        term_query.clone()
+                    }
+                });
+
+            if json {
+                let history_json: Vec<_> = history.iter().map(|h| h.to_json()).collect();
+                let entries_json: Vec<_> = entries.iter().map(|e| e.to_json()).collect();
+                let out = serde_json::json!({
+                    "term_id": target_id.0,
+                    "name": header_name,
+                    "history": history_json,
+                    "chain": entries_json,
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                println!("Explain t{} ({}):", target_id.0, header_name);
+                if !history.is_empty() {
+                    println!("  History ({} writes):", history.len());
+                    for h in &history {
+                        let loc = match (h.line, h.column) {
+                            (Some(l), Some(c)) => format!("[line {}, column {}]", l, c),
+                            _ => "[no location]".to_string(),
+                        };
+                        println!(
+                            "    [{}] {:5} t{} {} = {}",
+                            h.sequence,
+                            h.kind.as_str(),
+                            h.term_id.0,
+                            loc,
+                            h.value,
+                        );
+                    }
+                    println!();
+                }
+                println!("  Provenance chain:");
+                for (i, e) in entries.iter().enumerate() {
+                    let loc = match (e.line, e.column) {
+                        (Some(l), Some(c)) => format!("[line {}, column {}]", l, c),
+                        _ => "[no location]".to_string(),
+                    };
+                    let name = e.name.as_deref().unwrap_or("-");
+                    let value = e.value.as_deref().unwrap_or("<not executed>");
+                    let arrow = if i == 0 { "=>" } else { " ." };
+                    println!("    {} t{} {} {} = {}", arrow, e.term_id.0, name, loc, value);
+                }
+            }
+        }
+        Command::Check { json } => {
+            let mut env = Env::new();
+            let is_empty = source.trim().is_empty();
+            match env.load_program(&source) {
+                Ok(_) => {
+                    if json {
+                        if is_empty {
+                            println!("{{\"ok\": true, \"warning\": \"empty program\"}}");
+                        } else {
+                            println!("{{\"ok\": true}}");
+                        }
+                    } else if is_empty {
+                        eprintln!("warning: empty program");
+                    }
+                    // Otherwise silent on success, like most linters
+                }
+                Err(e) => {
+                    let phase = classify_load_error(&e);
+                    if json {
+                        println!("{}", error_to_json(&e, phase));
+                    } else {
+                        eprintln!("Error: {}", e);
+                    }
+                    process::exit(1);
+                }
             }
         }
         Command::ShowTokens { json } => {
@@ -397,12 +567,12 @@ pub fn execute(cli: CliArgs) {
                 }
             }
         }
-        Command::ShowIr { json } => {
+        Command::ShowIr { json, all } => {
             let program = compile_source(&source);
             if json {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {
-                print!("{}", display_program(&program));
+                print!("{}", display_program_with(&program, !all));
             }
         }
         Command::ShowProvenance { json, term: term_query } => {
@@ -410,10 +580,7 @@ pub fn execute(cli: CliArgs) {
 
             let root_id = match program.find_term(&term_query) {
                 Some(id) => id,
-                None => {
-                    eprintln!("Term '{}' not found", term_query);
-                    process::exit(1);
-                }
+                None => term_not_found(&program, &term_query),
             };
 
             let root_term = program.get_term(root_id);
@@ -461,10 +628,7 @@ pub fn execute(cli: CliArgs) {
 
             let root_id = match program.find_term(&term_query) {
                 Some(id) => id,
-                None => {
-                    eprintln!("Term '{}' not found", term_query);
-                    process::exit(1);
-                }
+                None => term_not_found(&program, &term_query),
             };
 
             let root_term = program.get_term(root_id);
@@ -513,10 +677,7 @@ pub fn execute(cli: CliArgs) {
             for query in &term_queries {
                 match program.find_term(query) {
                     Some(id) => target_ids.push(id),
-                    None => {
-                        eprintln!("Term '{}' not found", query);
-                        process::exit(1);
-                    }
+                    None => term_not_found(&program, query),
                 }
             }
 
@@ -546,15 +707,15 @@ pub fn execute(cli: CliArgs) {
                 }
             }
         }
-        Command::ShowGraph => {
+        Command::ShowGraph { all } => {
             let program = compile_source(&source);
-            println!("{}", program_to_dot(&program));
+            println!("{}", program_to_dot(&program, !all));
         }
     }
 }
 
 /// Generate a DOT-format graph representation of the program's dataflow.
-fn program_to_dot(program: &crate::program::Program) -> String {
+fn program_to_dot(program: &crate::program::Program, hide_phantoms: bool) -> String {
     use std::fmt::Write;
     let mut dot = String::new();
     writeln!(dot, "digraph dataflow {{").unwrap();
@@ -563,6 +724,9 @@ fn program_to_dot(program: &crate::program::Program) -> String {
     writeln!(dot, "  edge [fontname=\"monospace\", fontsize=8];").unwrap();
 
     for term in &program.terms {
+        if hide_phantoms && is_phantom(program, term) {
+            continue;
+        }
         let label = if let Some(ref name) = term.name {
             format!("t{}: {} ({:?})", term.id.0, name, term.op)
         } else {
@@ -585,8 +749,12 @@ fn program_to_dot(program: &crate::program::Program) -> String {
         writeln!(dot, "  t{} [label=\"{}\", style=filled, fillcolor={}];",
             term.id.0, label, color).unwrap();
 
-        // Dataflow edges (input -> term)
+        // Dataflow edges (input -> term). Skip edges referencing phantom
+        // builtins so the rendered graph matches the visible nodes.
         for input_id in &term.inputs {
+            if hide_phantoms && is_phantom(program, program.get_term(*input_id)) {
+                continue;
+            }
             writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap();
         }
 
@@ -604,24 +772,71 @@ fn program_to_dot(program: &crate::program::Program) -> String {
     dot
 }
 
-/// Parse an error string into a structured JSON object.
-/// Extracts `[line N, column M]` and any `Stack trace:` suffix produced by
-/// the evaluator, lexer, and parser.
-fn error_to_json(err: &str, phase: &str) -> String {
-    // Split off stack trace suffix if present
-    let (head, stack) = match err.split_once("\nStack trace:") {
-        Some((h, rest)) => {
-            let frames: Vec<String> = rest
-                .lines()
-                .map(|l| l.trim_start().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-            (h.to_string(), frames)
+/// Classify a load_program error into "lex" or "parse" based on the message
+/// shape. The lexer's error messages mention specific characters; parser
+/// errors mention tokens and grammar expectations.
+fn classify_load_error(e: &str) -> &'static str {
+    if e.contains("Unexpected character")
+        || e.contains("Unterminated")
+        || e.contains("braced expression")
+    {
+        "lex"
+    } else {
+        "parse"
+    }
+}
+
+/// Print a "not found" error for a `--term` lookup with a did-you-mean hint
+/// listing up to 10 available named terms, then exit.
+fn term_not_found(program: &crate::program::Program, query: &str) -> ! {
+    eprintln!("Term '{}' not found", query);
+    let names = program.named_terms();
+    if !names.is_empty() {
+        let shown: Vec<_> = names.iter().take(10).cloned().collect();
+        let suffix = if names.len() > 10 {
+            format!(", ... ({} more)", names.len() - 10)
+        } else {
+            String::new()
+        };
+        eprintln!("Available named terms: {}{}", shown.join(", "), suffix);
+    }
+    process::exit(1);
+}
+
+/// Write the Env's trace buffer to `path` as pretty-printed JSON.
+fn write_trace_to_file(env: &Env, pid: crate::program::ProgramId, path: &str) {
+    let Some(program) = env.get_program(pid) else {
+        eprintln!("write_trace: program {} not found", pid.0);
+        return;
+    };
+    let json = env.trace().to_json(program, env.heap());
+    match serde_json::to_string_pretty(&json) {
+        Ok(s) => {
+            if let Err(e) = fs::write(path, s) {
+                eprintln!("Failed to write trace to {}: {}", path, e);
+            }
         }
+        Err(e) => eprintln!("Failed to serialize trace: {}", e),
+    }
+}
+
+/// Parse an error string into a structured JSON object.
+/// Extracts `[line N, column M]`, `Caused by:` (provenance), and
+/// `Stack trace:` suffixes produced by the evaluator, lexer, and parser.
+fn error_to_json(err: &str, phase: &str) -> String {
+    // Split off stack trace first (always last)
+    let (head, stack) = match err.split_once("\nStack trace:") {
+        Some((h, rest)) => (h.to_string(), split_indented_lines(rest)),
         None => (err.to_string(), Vec::new()),
     };
 
-    // Extract [line N, column M] if present
+    // Split off provenance ("Caused by:") next
+    let (head, caused_by) = match head.split_once("\nCaused by:") {
+        Some((h, rest)) => (h.to_string(), split_indented_lines(rest)),
+        None => (head, Vec::new()),
+    };
+
+    // Extract [line N, column M] from the primary message line
     let (message, line, column) = parse_line_column(&head);
 
     let obj = serde_json::json!({
@@ -630,9 +845,17 @@ fn error_to_json(err: &str, phase: &str) -> String {
         "message": message,
         "line": line,
         "column": column,
+        "caused_by": caused_by,
         "stack": stack,
     });
     serde_json::to_string_pretty(&obj).unwrap()
+}
+
+fn split_indented_lines(s: &str) -> Vec<String> {
+    s.lines()
+        .map(|l| l.trim_start().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// Extract `[line N, column M]` suffix from an error message.

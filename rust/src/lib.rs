@@ -19,6 +19,7 @@ pub mod parse;
 pub mod program;
 pub mod source_map;
 pub mod stack;
+pub mod trace;
 pub mod value;
 
 #[cfg(feature = "wasm")]

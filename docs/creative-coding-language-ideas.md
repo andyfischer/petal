@@ -74,25 +74,14 @@ for usage in context.
 
 - **Record spread**: `{ ...obj, field: val }` — eliminates the "rewrite every
   field" pattern that motivated this proposal.
+- **Record field mutation**: `obj.x = val`, `list[i].x = val`, and nested
+  `obj.inner.field = val`. Maps are heap-backed and mutated in place.
 
 ---
 
 ## Open — still worth doing
 
 Ranked roughly by impact-per-effort.
-
-### Record field mutation
-
-The largest remaining pain point. Allow mutating individual fields in place
-without reconstructing the record:
-
-```petal
-points[i].x = nx
-points[i].y = ny
-```
-
-Even with record spread shipped, in-place field assignment would shorten cloth
-and spring simulations significantly. #1 open item.
 
 ### Drawing functions accept float
 

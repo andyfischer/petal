@@ -60,6 +60,36 @@ describe("field access", () => {
     const sets = termsByOp(ir, "SetField");
     expect(sets.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("field mutation persists", () => {
+    expect(runPetal('let r = { x: 1, y: 2 }\nr.x = 99\nprint(r.x, r.y)')).toBe("99 2");
+  });
+
+  it("field mutation preserves other fields", () => {
+    expect(
+      runPetal('let r = { a: 1, b: 2, c: 3 }\nr.b = 20\nprint(r)'),
+    ).toBe("{ a: 1, b: 20, c: 3 }");
+  });
+
+  it("field mutation on record inside a list", () => {
+    expect(
+      runPetal(
+        'let pts = [{x: 1}, {x: 2}, {x: 3}]\npts[1].x = 99\nprint(pts[0].x, pts[1].x, pts[2].x)',
+      ),
+    ).toBe("1 99 3");
+  });
+
+  it("nested field mutation", () => {
+    expect(
+      runPetal('let r = { inner: { a: 1, b: 2 } }\nr.inner.a = 42\nprint(r.inner.a, r.inner.b)'),
+    ).toBe("42 2");
+  });
+
+  it("field mutation uses right-hand expression", () => {
+    expect(
+      runPetal('let r = { count: 5 }\nr.count = r.count + 1\nprint(r.count)'),
+    ).toBe("6");
+  });
 });
 
 describe("index access", () => {
@@ -75,6 +105,10 @@ describe("index access", () => {
     const ir = showIrJson("let xs = [1,2,3]\nxs[0] = 99");
     const sets = termsByOp(ir, "SetIndex");
     expect(sets.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("index mutation persists", () => {
+    expect(runPetal("let xs = [1, 2, 3]\nxs[1] = 99\nprint(xs)")).toBe("[1, 99, 3]");
   });
 });
 

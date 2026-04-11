@@ -291,6 +291,37 @@ let user = {
 print(user.address.city)  // "Portland"
 ```
 
+### Mutation
+
+Records are mutable. You can assign to a field directly, including nested
+fields and fields of records stored inside lists.
+
+```petal
+let p = {x: 1, y: 2}
+p.x = 10                     // direct field mutation
+p.y = p.y + 1
+
+let pts = [{x: 0, y: 0}, {x: 0, y: 0}]
+pts[0].x = 100               // mutation inside a list
+
+let user = {name: "Bob", address: {city: "Portland"}}
+user.address.city = "Seattle" // nested field mutation
+```
+
+### Spread
+
+Use `...expr` inside a record literal to copy all fields from another record.
+Fields that follow the spread override the copied values.
+
+```petal
+let defaults = {x: 0, y: 0, color: "gray"}
+let moved = {...defaults, x: 100}    // {x: 100, y: 0, color: "gray"}
+```
+
+Spread creates a new record; mutation modifies in place. Use whichever fits
+the call site — spread for values you want to keep immutable, mutation for
+loops that update the same object each iteration.
+
 ### Record Builtins
 
 ```petal

@@ -12,7 +12,7 @@ use crate::parse::Parser;
 use crate::program::ProgramId;
 
 pub enum Command {
-    Run,
+    Run { json: bool, trace: bool },
     ShowIr { json: bool },
     ShowAst { json: bool },
     ShowTokens { json: bool },
@@ -62,14 +62,14 @@ pub fn parse_args() -> CliArgs {
                 process::exit(1);
             }
             CliArgs {
-                command: Command::Run,
+                command: Command::Run { json: false, trace: false },
                 source: SourceInput::Inline(args[1].clone()),
             }
         }
         _ => {
             // Treat as file path
             CliArgs {
-                command: Command::Run,
+                command: Command::Run { json: false, trace: false },
                 source: SourceInput::File(first.clone()),
             }
         }
@@ -77,24 +77,38 @@ pub fn parse_args() -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    if args.is_empty() {
-        eprintln!("Usage: petal run <file>");
-        process::exit(1);
+    let mut json = false;
+    let mut trace = false;
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--trace" => trace = true,
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Usage: petal run -e <code>");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
     }
-    if args[0] == "-e" {
-        if args.len() < 2 {
-            eprintln!("Usage: petal run -e <code>");
-            process::exit(1);
-        }
-        CliArgs {
-            command: Command::Run,
-            source: SourceInput::Inline(args[1].clone()),
-        }
-    } else {
-        CliArgs {
-            command: Command::Run,
-            source: SourceInput::File(args[0].clone()),
-        }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Usage: petal run [--json] [--trace] <file>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::Run { json, trace },
+        source,
     }
 }
 
@@ -238,7 +252,10 @@ fn print_usage() {
 Usage: petal <command> [options] <file>
 
 Commands:
-  run <file>                     Execute a program
+  run [--json] [--trace] <file>  Execute a program
+                                 --json: emit errors as structured JSON
+                                 --trace: emit per-term events to stderr
+                                 (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
   show-ir [--json] <file>        Display compiled IR
   show-ast [--json] <file>       Display parsed AST
@@ -294,10 +311,45 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
     match cli.command {
-        Command::Run => {
+        Command::Run { json, trace } => {
+            if trace || std::env::var("PETAL_DEBUG").is_ok() {
+                unsafe { std::env::set_var("PETAL_TRACE", "1"); }
+            }
             let mut env = Env::new();
-            if let Err(e) = env.run_source(&source) {
-                eprintln!("Error: {}", e);
+            let load_result = env.load_program(&source);
+            let pid = match load_result {
+                Ok(pid) => pid,
+                Err(e) => {
+                    let phase = if e.contains("Expected") || e.contains("parse") {
+                        "parse"
+                    } else {
+                        "lex"
+                    };
+                    if json {
+                        println!("{}", error_to_json(&e, phase));
+                    } else {
+                        eprintln!("Error: {}", e);
+                    }
+                    process::exit(1);
+                }
+            };
+            let sid = match env.create_stack(pid) {
+                Ok(sid) => sid,
+                Err(e) => {
+                    if json {
+                        println!("{}", error_to_json(&e, "compile"));
+                    } else {
+                        eprintln!("Error: {}", e);
+                    }
+                    process::exit(1);
+                }
+            };
+            if let Err(e) = env.run(sid) {
+                if json {
+                    println!("{}", error_to_json(&e, "runtime"));
+                } else {
+                    eprintln!("Error: {}", e);
+                }
                 process::exit(1);
             }
         }
@@ -550,6 +602,54 @@ fn program_to_dot(program: &crate::program::Program) -> String {
 
     writeln!(dot, "}}").unwrap();
     dot
+}
+
+/// Parse an error string into a structured JSON object.
+/// Extracts `[line N, column M]` and any `Stack trace:` suffix produced by
+/// the evaluator, lexer, and parser.
+fn error_to_json(err: &str, phase: &str) -> String {
+    // Split off stack trace suffix if present
+    let (head, stack) = match err.split_once("\nStack trace:") {
+        Some((h, rest)) => {
+            let frames: Vec<String> = rest
+                .lines()
+                .map(|l| l.trim_start().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            (h.to_string(), frames)
+        }
+        None => (err.to_string(), Vec::new()),
+    };
+
+    // Extract [line N, column M] if present
+    let (message, line, column) = parse_line_column(&head);
+
+    let obj = serde_json::json!({
+        "error": true,
+        "phase": phase,
+        "message": message,
+        "line": line,
+        "column": column,
+        "stack": stack,
+    });
+    serde_json::to_string_pretty(&obj).unwrap()
+}
+
+/// Extract `[line N, column M]` suffix from an error message.
+fn parse_line_column(s: &str) -> (String, Option<u32>, Option<u32>) {
+    if let Some(open) = s.rfind(" [line ") {
+        let rest = &s[open + 7..];
+        if let Some(close) = rest.find(']') {
+            let inner = &rest[..close];
+            // inner = "N, column M"
+            if let Some((l, c)) = inner.split_once(", column ") {
+                if let (Ok(line), Ok(col)) = (l.trim().parse::<u32>(), c.trim().parse::<u32>()) {
+                    return (s[..open].to_string(), Some(line), Some(col));
+                }
+            }
+        }
+    }
+    (s.to_string(), None, None)
 }
 
 fn term_to_json(term: &crate::program::Term) -> serde_json::Value {

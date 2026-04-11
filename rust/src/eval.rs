@@ -151,6 +151,7 @@ impl Evaluator {
             ControlFlow::Advance => {
                 // Store result and advance
                 Self::advance(stack, term);
+                Self::trace_term(program, stack, heap, term, &input_values);
                 StepResult::Continue
             }
             ControlFlow::FramePushed => {
@@ -261,6 +262,55 @@ impl Evaluator {
             }
             frame.registers[reg] = value;
         }
+    }
+
+    /// Emit a one-line trace event to stderr when PETAL_TRACE=1.
+    /// Reads the result value from the term's register post-advance.
+    fn trace_term(
+        program: &Program,
+        stack: &Stack,
+        heap: &Heap,
+        term: &Term,
+        inputs: &[Value],
+    ) {
+        use std::sync::OnceLock;
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        let enabled = *ENABLED.get_or_init(|| {
+            std::env::var("PETAL_TRACE").is_ok() || std::env::var("PETAL_DEBUG").is_ok()
+        });
+        if !enabled {
+            return;
+        }
+
+        // Read result from the current frame's register for this term
+        let result = stack
+            .frames
+            .last()
+            .and_then(|f| f.registers.get(term.register.0 as usize).copied())
+            .unwrap_or(Value::Nil);
+
+        let input_strs: Vec<String> = inputs
+            .iter()
+            .map(|v| value::value_to_display_string(v, heap))
+            .collect();
+        let result_str = value::value_to_display_string(&result, heap);
+
+        let span = program.source_map.get(term.id);
+        let loc = match span {
+            Some(s) if s.start.line > 0 => format!("{}:{}", s.start.line, s.start.column),
+            _ => "-".to_string(),
+        };
+
+        let name = term.name.as_deref().unwrap_or("");
+        eprintln!(
+            "[trace] t{:<3} {:<4} {:<20} {:?} inputs=[{}] -> {}",
+            term.id.0,
+            loc,
+            name,
+            term.op,
+            input_strs.join(", "),
+            result_str,
+        );
     }
 
     /// Build a stack trace from the current call frames.

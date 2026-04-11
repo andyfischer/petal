@@ -119,6 +119,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let reduce_id = table.register("reduce", native_intrinsic_placeholder);
     let for_each_id = table.register("forEach", native_intrinsic_placeholder);
 
+    // --- Assertions (append-only to preserve phantom term indices) ---
+    table.register("assert", io::native_assert);
+    table.register("assert_eq", io::native_assert_eq);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);

@@ -533,7 +533,7 @@ fn handle_command(
             }
         }
         Command::Input { keys_down, mouse } => {
-            protocol::apply_input(&keys_down, mouse);
+            protocol::apply_input(&keys_down, mouse.as_ref());
             protocol::send_response(&Response::ok());
         }
         Command::SetState { name, value } => {

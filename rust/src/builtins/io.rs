@@ -1,4 +1,4 @@
-//! I/O and type-name builtins: print, str, type.
+//! I/O and type-name builtins: print, str, type, assert, assert_eq.
 
 use crate::native_fn::PetalCxt;
 use crate::value;
@@ -28,5 +28,45 @@ pub(super) fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 1, "type")?;
     let v = state.get_value(1)?;
     state.push_string(v.type_name().to_string());
+    Ok(1)
+}
+
+pub(super) fn native_assert(state: &mut PetalCxt) -> Result<u32, String> {
+    let n = state.arg_count();
+    if n != 1 && n != 2 {
+        return Err("assert() expects 1 or 2 arguments".into());
+    }
+    let cond = state.get_value(1)?;
+    let ok = match cond {
+        crate::value::Value::Bool(b) => b,
+        crate::value::Value::Nil => false,
+        _ => true,
+    };
+    if !ok {
+        let msg = if n == 2 {
+            let m = state.get_value(2)?;
+            value::value_to_display_string(&m, state.heap())
+        } else {
+            "assertion failed".to_string()
+        };
+        return Err(format!("assertion failed: {}", msg));
+    }
+    state.push_nil();
+    Ok(1)
+}
+
+pub(super) fn native_assert_eq(state: &mut PetalCxt) -> Result<u32, String> {
+    super::require_args(state, 2, "assert_eq")?;
+    let a = state.get_value(1)?;
+    let b = state.get_value(2)?;
+    if !value::values_equal(&a, &b, state.heap()) {
+        let a_str = value::value_to_display_string(&a, state.heap());
+        let b_str = value::value_to_display_string(&b, state.heap());
+        return Err(format!(
+            "assertion failed: assert_eq: left={} right={}",
+            a_str, b_str
+        ));
+    }
+    state.push_nil();
     Ok(1)
 }

@@ -29,7 +29,7 @@ pub enum Command {
         #[serde(default)]
         keys_down: Vec<String>,
         #[serde(default)]
-        mouse: Option<(i32, i32)>,
+        mouse: Option<MouseInput>,
     },
     SetState {
         name: String,
@@ -40,6 +40,37 @@ pub enum Command {
 
 fn default_step_count() -> u32 {
     1
+}
+
+/// Mouse input accepts both the legacy tuple form `[x, y]` and the canonical
+/// object form `{x, y, buttons?}`. The object form matches
+/// petal-diagram-canvas so agents can use a single payload across transports.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum MouseInput {
+    Tuple(i32, i32),
+    Object {
+        x: i32,
+        y: i32,
+        #[serde(default)]
+        buttons: Vec<u8>,
+    },
+}
+
+impl MouseInput {
+    pub fn position(&self) -> (i32, i32) {
+        match *self {
+            MouseInput::Tuple(x, y) => (x, y),
+            MouseInput::Object { x, y, .. } => (x, y),
+        }
+    }
+
+    pub fn buttons(&self) -> &[u8] {
+        match self {
+            MouseInput::Tuple(..) => &[],
+            MouseInput::Object { buttons, .. } => buttons,
+        }
+    }
 }
 
 // --- Responses (engine → stdout) ---
@@ -172,7 +203,7 @@ pub fn run_one_frame(env: &mut Env, stack_id: StackKey) -> Result<i64, String> {
     Ok(frame_count)
 }
 
-pub fn apply_input(keys_down: &[String], mouse: Option<(i32, i32)>) {
+pub fn apply_input(keys_down: &[String], mouse: Option<&MouseInput>) {
     INPUT_STATE.with(|s| {
         let mut state = s.borrow_mut();
         state.begin_frame();
@@ -180,9 +211,16 @@ pub fn apply_input(keys_down: &[String], mouse: Option<(i32, i32)>) {
         for key in keys_down {
             state.keys_down.insert(key.clone());
         }
-        if let Some((x, y)) = mouse {
+        if let Some(m) = mouse {
+            let (x, y) = m.position();
             state.mouse_x = x;
             state.mouse_y = y;
+            // Button state passes through the existing buttons_down set.
+            // Agents that need precise button events should use the dedicated
+            // input state APIs; this field mirrors the diagram-canvas shape.
+            for btn in m.buttons() {
+                state.mouse_buttons.insert(*btn);
+            }
         }
     });
 }

@@ -1,0 +1,35 @@
+// Automatic Differentiation + Gradient Descent
+// Petal supports forward-mode automatic differentiation with dual numbers.
+// `dual(v, d)` carries a value and its derivative together; arithmetic on
+// dual numbers automatically propagates derivatives. `deriv_of` then pulls
+// out df/dx for whichever input was "seeded" with derivative 1.
+
+// f(x) = (x - 3)^2 — minimum at x = 3, minimum value 0.
+fn f(x) {
+    (x - 3.0) * (x - 3.0)
+}
+
+// --- Part 1: verify the derivative at a point -----------------------------
+// At x = 5, f'(x) = 2*(x-3) = 4.
+let x0 = dual(5.0, 1.0)
+let y0 = f(x0)
+print("f(5)  = {value_of(y0)}")
+print("f'(5) = {deriv_of(y0)}   (expected 4.0)")
+print("")
+
+// --- Part 2: gradient descent using the derivative ------------------------
+let x = 10.0
+let lr = 0.1
+print("Gradient descent on f(x) = (x - 3)^2, start x=10")
+print("=================================================")
+for step in range(0, 12) {
+    // Seed with derivative 1 so deriv_of(y) gives df/dx.
+    let xd = dual(x, 1.0)
+    let yd = f(xd)
+    let grad = deriv_of(yd)
+    let fx = value_of(yd)
+    print("step {step}: x={x}  f(x)={fx}  f'(x)={grad}")
+    x = x - lr * grad
+}
+print("")
+print("converged x = {x}  (expected ~3.0)")

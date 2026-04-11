@@ -1,5 +1,5 @@
 // Fibonacci Sequence
-// Multiple approaches to computing Fibonacci numbers.
+// Two approaches to computing Fibonacci numbers.
 
 // Recursive (simple but slow for large n)
 fn fib_recursive(n) {
@@ -22,33 +22,15 @@ fn fib_iterative(n) {
     b
 }
 
-// Using state (memoized across calls)
-fn fib_stateful() {
-    state a = 0
-    state b = 1
-    let result = a
-    let temp = b
-    b = a + b
-    a = temp
-    result
-}
-
 print("Fibonacci - Recursive")
 print("=====================")
 for i in range(0, 12) {
-    print("fib(" ++ str(i) ++ ") =", fib_recursive(i))
+    print("fib({i}) = {fib_recursive(i)}")
 }
 
 print("")
 print("Fibonacci - Iterative")
 print("=====================")
 for i in range(0, 20) {
-    print("fib(" ++ str(i) ++ ") =", fib_iterative(i))
-}
-
-print("")
-print("Fibonacci - Stateful Generator")
-print("==============================")
-for i in range(0, 15) {
-    print("next:", fib_stateful())
+    print("fib({i}) = {fib_iterative(i)}")
 }

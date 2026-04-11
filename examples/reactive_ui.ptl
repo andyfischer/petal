@@ -1,50 +1,50 @@
 // Reactive UI Sketch
 // Demonstrates how inline state enables a React-like component model.
-// Each component is a function. State is co-located with the view logic.
+// Each component is a function. State is co-located with the view logic, and
+// persists across render frames.
 
-fn button(label) {
+enum Event {
+    None()
+    Add(text)
+    Clear()
+}
+
+fn button(label, clicked) {
     state click_count = 0
-    state hovered = false
-
-    // In a real UI runtime, events would be injected per frame.
-    // Here we simulate a click every 3rd call.
-    state call_num = 0
-    call_num = call_num + 1
-    if call_num % 3 == 0 {
+    if clicked {
         click_count = click_count + 1
     }
-
     {
         type: "button"
-        label: label ++ " (" ++ str(click_count) ++ ")"
+        label: "{label} ({click_count})"
         clicks: click_count
     }
 }
 
-fn text_input(placeholder) {
-    state value = ""
-    state focused = false
-
-    {
-        type: "input"
-        placeholder: placeholder
-        value: value
-    }
-}
-
-fn todo_app() {
+fn todo_app(event) {
     state items = ["Buy groceries", "Write code", "Read a book"]
 
-    let add_btn = button("Add")
-    let input = text_input("New todo...")
+    // Handle events (a real UI runtime would feed these per frame).
+    let was_add = match event {
+        Add(text) -> {
+            push(items, text)
+            true
+        }
+        Clear() -> {
+            items = []
+            false
+        }
+        None() -> false
+    }
 
-    // Render
-    print("  Todo App")
+    let add_btn = button("Add", was_add)
+
+    print("  Todo App ({len(items)} items)")
     print("  --------")
     for i in range(0, len(items)) {
-        print("  [ ]", items[i])
+        print("  [ ] {items[i]}")
     }
-    print("  ", input.placeholder, "  ", add_btn.label)
+    print("  [{add_btn.label}]")
     print("")
 }
 
@@ -52,8 +52,15 @@ print("Reactive UI Demo")
 print("=================")
 print("")
 
-// Simulate 3 render frames
-for frame in range(1, 4) {
-    print("Frame", frame, ":")
-    todo_app()
+// Simulate 4 render frames with different events.
+let events = [
+    None(),
+    Add("Water plants"),
+    Add("Call Alex"),
+    None()
+]
+
+for frame in range(0, len(events)) {
+    print("Frame {frame + 1}:")
+    todo_app(events[frame])
 }

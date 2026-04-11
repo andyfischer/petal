@@ -9,7 +9,7 @@ rust/target/debug/petal run examples/<name>.ptl
 Or run all examples with pass/fail reporting:
 
 ```bash
-./bin/test-each.sh
+./bin/test-examples.sh
 ```
 
 ## Programs
@@ -28,7 +28,12 @@ Or run all examples with pass/fail reporting:
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |
 | `state.ptl` | Persistent state | `state` keyword, counters, accumulators |
 | `state_machine.ptl` | Traffic light controller | Enums + state, tick-based transitions |
-| `fibonacci.ptl` | Three Fibonacci implementations | Recursion, iteration, stateful generator |
-| `calculator.ptl` | Multi-op calculator | Enums, pattern matching, error handling |
-| `reactive_ui.ptl` | React-like component model | State, records, simulated rendering |
+| `fibonacci.ptl` | Recursive and iterative Fibonacci | Recursion, iteration, string interpolation |
+| `reactive_ui.ptl` | React-like component model | State, records, event-driven render |
 | `game_of_life.ptl` | Conway's Game of Life | Nested loops, 2D lists, complex logic |
+| `string_interp.ptl` | String interpolation | `"text {expr}"` syntax |
+| `noise_field.ptl` | 2D Perlin noise | `noise`, `map_range` |
+| `vec2_demo.ptl` | 2D vectors and physics | `vec2`, `normalize`, `limit`, operator overloads |
+| `color_gradient.ptl` | HSV + color interpolation | `hsv`, `color_lerp`, `lerp` |
+| `map_range_demo.ptl` | Remapping values | `map_range`, `clamp` |
+| `differentiation.ptl` | Gradient descent with dual numbers | `dual`, `value_of`, `deriv_of` |

@@ -1,0 +1,26 @@
+// 2D Perlin Noise Field
+// Samples Perlin noise on a grid and renders it as ASCII. `map_range` turns
+// the raw [-1, 1] noise values into indices into a density ramp.
+
+noise_seed(42)
+
+let width = 48
+let height = 16
+let ramp = [" ", ".", ":", "-", "=", "+", "*", "#", "@"]
+let levels = len(ramp)
+
+print("Perlin noise field")
+print("==================")
+
+for y in range(0, height) {
+    let row = ""
+    for x in range(0, width) {
+        // Scale coordinates so neighboring cells sample nearby points
+        let n = noise(float(x) * 0.12, float(y) * 0.18)
+        // noise() returns roughly -1..1; map into 0..levels
+        let idx = int(map_range(n, -1.0, 1.0, 0.0, float(levels)))
+        let clamped = clamp(float(idx), 0.0, float(levels - 1))
+        row = row ++ ramp[int(clamped)]
+    }
+    print(row)
+}

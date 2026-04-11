@@ -45,7 +45,7 @@ The `examples/` directory contains 16 example programs:
 rust/target/debug/petal run examples/fizzbuzz.ptl
 
 # Run all examples with pass/fail reporting
-./bin/test-each.sh
+./bin/test-examples.sh
 ```
 
 See [examples/README.md](../examples/README.md) for a description of each example.
@@ -87,7 +87,7 @@ npx vitest -t "name" # Run tests matching a name
 ### Example tests
 
 ```bash
-./bin/test-each.sh   # Run all examples with timeout
+./bin/test-examples.sh   # Run all examples with timeout
 ```
 
 ## Using the Playground

@@ -1,0 +1,25 @@
+// String Interpolation
+// Petal string literals support `{expr}` interpolation. Any expression
+// inside the braces is evaluated and stringified. Use `\{` and `\}` to
+// include literal braces.
+
+let name = "Ada"
+let age = 36
+print("Hello, {name}! You are {age} years old.")
+
+// Expressions, not just variables
+let a = 7
+let b = 5
+print("{a} + {b} = {a + b}")
+print("max is {if a > b { a } else { b }}")
+
+// Records and lists stringify too
+let point = {x: 3, y: 4}
+print("point = {point}, distance = {mag(float(point.x), float(point.y))}")
+
+// Nested calls
+fn greet(who) { "Hi {who}" }
+print("{greet(name)} — welcome back")
+
+// Literal braces
+print("use \{expr\} to interpolate")

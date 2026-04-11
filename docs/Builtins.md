@@ -97,6 +97,255 @@ range(0, 5)    // [0, 1, 2, 3, 4]
 range(3, 7)    // [3, 4, 5, 6]
 ```
 
+### `pi()`
+
+Returns the mathematical constant π.
+
+```petal
+pi()    // 3.141592653589793
+```
+
+### `sin(x)` / `cos(x)` / `tan(x)`
+
+Standard trigonometric functions. Input is in radians.
+
+```petal
+sin(0.0)         // 0.0
+cos(pi())        // -1.0
+```
+
+### `atan2(y, x)`
+
+Two-argument arctangent. Returns the angle in radians between the positive x-axis
+and the point `(x, y)`.
+
+```petal
+atan2(1.0, 1.0)   // 0.7853981633974483 (π/4)
+```
+
+### `exp(x)` / `log(x)`
+
+Natural exponential and natural logarithm.
+
+```petal
+exp(1.0)   // 2.718281828459045
+log(exp(2.0))   // 2.0
+```
+
+### `pow(base, exp)`
+
+Exponentiation.
+
+```petal
+pow(2.0, 10.0)   // 1024.0
+pow(9.0, 0.5)    // 3.0
+```
+
+### `sign(x)`
+
+Returns `-1`, `0`, or `1` depending on the sign of the argument.
+
+```petal
+sign(-5)     // -1
+sign(0)      //  0
+sign(3.2)    //  1.0
+```
+
+### `fract(x)`
+
+Fractional part of a float (`x - floor(x)`).
+
+```petal
+fract(3.7)    // 0.7
+fract(-1.2)   // 0.8
+```
+
+### `radians(degrees)` / `degrees(radians)`
+
+Convert between degrees and radians.
+
+```petal
+radians(180.0)     // 3.141592653589793
+degrees(pi())      // 180.0
+```
+
+## Creative Coding Math
+
+These are the "Processing-style" utility builtins — the small vocabulary that
+keeps animation, layout, and generative code readable.
+
+### `clamp(value, lo, hi)`
+
+Constrain a value to the range `[lo, hi]`.
+
+```petal
+clamp(15.0, 0.0, 10.0)   // 10.0
+clamp(-3.0, 0.0, 10.0)   //  0.0
+clamp(5.0, 0.0, 10.0)    //  5.0
+```
+
+### `lerp(a, b, t)`
+
+Linear interpolation. `t=0` returns `a`, `t=1` returns `b`.
+
+```petal
+lerp(0.0, 100.0, 0.3)   // 30.0
+lerp(10.0, 20.0, 0.5)   // 15.0
+```
+
+### `map_range(value, in_lo, in_hi, out_lo, out_hi)`
+
+Remap a value from one range to another. The creative-coding workhorse — use it
+to turn "pixel coordinate in `[0, width]`" into "angle in `[0, 2π]`", and similar.
+
+```petal
+map_range(5.0, 0.0, 10.0, 100.0, 200.0)   // 150.0
+map_range(0.5, 0.0, 1.0, -1.0, 1.0)       //   0.0
+```
+
+### `distance(x1, y1, x2, y2)` / `distance(v1, v2)`
+
+Euclidean distance. Accepts either four scalars or two `vec2` values.
+
+```petal
+distance(0.0, 0.0, 3.0, 4.0)                // 5.0
+distance(vec2(0.0, 0.0), vec2(3.0, 4.0))    // 5.0
+```
+
+### `mag(x, y)` / `mag(x, y, z)` / `mag(v)`
+
+Vector magnitude. Accepts 2D or 3D scalars, or a single `vec2`.
+
+```petal
+mag(3.0, 4.0)          // 5.0
+mag(vec2(3.0, 4.0))    // 5.0
+```
+
+### `smoothstep(edge0, edge1, x)`
+
+Hermite interpolation between two edges — produces a smooth S-curve from 0 to 1.
+Equivalent to GLSL's `smoothstep`.
+
+```petal
+smoothstep(0.0, 1.0, 0.5)   // 0.5
+smoothstep(0.0, 1.0, 0.25)  // 0.15625
+```
+
+## Noise
+
+### `noise(x)` / `noise(x, y)` / `noise(x, y, z)`
+
+Perlin noise in 1D, 2D, or 3D. Returns a smooth value centered around 0. Ideal
+for organic motion, terrain, clouds, and flow fields.
+
+```petal
+noise(0.5)                  // smooth 1D value
+noise(0.3, 0.7)             // smooth 2D value
+noise(0.1, 0.2, 0.3)        // smooth 3D value
+```
+
+### `noise_seed(seed)`
+
+Sets the global noise seed for reproducibility. Takes an integer.
+
+```petal
+noise_seed(42)
+```
+
+## Extended Randomness
+
+### `random_int(lo, hi)`
+
+Random integer in the half-open range `[lo, hi)`.
+
+```petal
+random_int(0, 10)    // 0..9
+```
+
+### `choose(list)`
+
+Returns a random element from a list, or `nil` for an empty list.
+
+```petal
+choose([1, 2, 3])             // one of 1, 2, or 3
+choose(["red", "green"])      // "red" or "green"
+```
+
+## Color
+
+All color builtins return an RGB record `{r: int, g: int, b: int}` with channels
+in 0..255 — the same shape produced by the `#rrggbb` color literal.
+
+### `hsv(h, s, v)`
+
+Create an RGB color from Hue-Saturation-Value. `h` is in degrees (0–360),
+`s` and `v` in 0.0–1.0.
+
+```petal
+hsv(120.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }
+```
+
+### `hsl(h, s, l)`
+
+Create an RGB color from Hue-Saturation-Lightness. Same argument ranges as `hsv`.
+
+```petal
+hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
+```
+
+### `color_lerp(c1, c2, t)`
+
+Interpolate two RGB color records.
+
+```petal
+let red = hsv(0.0, 1.0, 1.0)
+let blue = hsv(240.0, 1.0, 1.0)
+color_lerp(red, blue, 0.5)   // a purple
+```
+
+## Vectors (2D)
+
+Petal has a built-in `vec2` type backed by two f64s. It works with the usual
+arithmetic operators (`+`, `-`, `*`, `/`) as well as the helpers below.
+
+### `vec2(x, y)`
+
+Construct a 2D vector.
+
+```petal
+let v = vec2(3.0, 4.0)
+print(mag(v))    // 5.0
+```
+
+### `normalize(v)`
+
+Return a vector pointing in the same direction as `v` with magnitude 1. The
+zero vector normalizes to `vec2(0, 0)`.
+
+```petal
+normalize(vec2(3.0, 4.0))    // vec2(0.6, 0.8)
+```
+
+### `dot(a, b)`
+
+Dot product of two `vec2` values.
+
+```petal
+dot(vec2(1.0, 0.0), vec2(0.0, 1.0))   // 0.0
+dot(vec2(2.0, 3.0), vec2(4.0, 5.0))   // 23.0
+```
+
+### `limit(v, max_mag)`
+
+Return `v` if its magnitude is at most `max_mag`, otherwise a vector in the same
+direction scaled to that magnitude. Used constantly in physics simulations to
+cap velocities and steering forces.
+
+```petal
+limit(vec2(6.0, 8.0), 5.0)    // vec2(3.0, 4.0)
+limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
+```
+
 ## Type Conversion
 
 ### `str(value)`

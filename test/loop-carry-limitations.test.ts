@@ -3,18 +3,16 @@ import { ensureBuild, runPetal } from "./helpers";
 
 beforeAll(() => ensureBuild());
 
-// These tests pin *current* behavior for two known limitations of the
-// pure-dataflow loop-carry lowering. They're here so that when either
-// limitation is addressed (see the archived mutability follow-ups), the
-// change is forced to be intentional and updates these expectations.
+// Pins behavior for edge cases in loop carries. The break-mid-body cases
+// verify that the shared carry-slot register allocation keeps the slot in
+// sync even when `break` skips rebinds that appear later in source order.
 
-describe("known limitation: carry leak on break-before-last-rebind", () => {
-  it("carry becomes nil when break fires before the body's final rebind", () => {
-    // The compile-time "latest binding" for `total` is `total + 100`.
-    // When `break` fires at x == 2, that term never executes in iter 2,
-    // so the phi_out reads an unwritten register and writes Nil.
-    // A future fix (shared-register allocation for carries) should make
-    // this print 103 — update this test when that lands.
+describe("carry values on break-before-last-rebind", () => {
+  it("break after a mid-body rebind preserves that rebind in the carry", () => {
+    // The compile-time "latest binding" for `total` is `total + 100`, but
+    // when `break` fires at x == 2 that term never runs. Shared carry-slot
+    // allocation makes every body-level rebind share one register, so the
+    // slot still holds `total + x` (103 in iter 2) when the frame pops.
     const out = runPetal(`let total = 0
 for x in [1, 2, 3] {
   total = total + x
@@ -22,7 +20,7 @@ for x in [1, 2, 3] {
   total = total + 100
 }
 print(total)`);
-    expect(out.trim()).toBe("nil");
+    expect(out.trim()).toBe("103");
   });
 
   it("carry behaves correctly when all rebinds execute before break", () => {
@@ -33,6 +31,33 @@ for x in [1, 2, 3] {
 }
 print(total)`);
     expect(out.trim()).toBe("3");
+  });
+
+  it("break from inside a nested if still sees the outer rebind in the slot", () => {
+    const out = runPetal(`let n = 0
+for x in [10, 20, 30] {
+  n = n + x
+  if x == 20 {
+    if true { break }
+  }
+}
+print(n)`);
+    expect(out.trim()).toBe("30");
+  });
+
+  it("break inside an inner loop exits only that loop and the outer carry is updated", () => {
+    // Inner break should not propagate to the outer loop. Expected sum:
+    //   i=1: j=10 -> 10, j=20 -> 30, break
+    //   i=2: j=10 -> 50, j=20 -> 90, break
+    const out = runPetal(`let t = 0
+for i in [1, 2] {
+  for j in [10, 20] {
+    t = t + i * j
+    if j == 20 { break }
+  }
+}
+print(t)`);
+    expect(out.trim()).toBe("90");
   });
 });
 

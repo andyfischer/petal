@@ -122,9 +122,15 @@ impl Evaluator {
 
         // If break_flag or continue_flag is set and the current frame is a direct loop body,
         // skip remaining terms and pop immediately so the parent loop term
-        // can handle the break/continue on its next execution.
+        // can handle the break/continue on its next execution. Exception:
+        // when the current term is itself a nested loop, let it execute —
+        // its exec will consume the flag (an inner loop that just broke
+        // returns control to its enclosing body via its own exec path).
         if (stack.break_flag || stack.continue_flag) && stack.frames[frame_idx].is_loop_body {
-            return Self::pop_frame(program, stack);
+            let cur = program.get_term(current_term_id);
+            if !matches!(cur.op, TermOp::ForLoop | TermOp::WhileLoop) {
+                return Self::pop_frame(program, stack);
+            }
         }
 
         let term = program.get_term(current_term_id);

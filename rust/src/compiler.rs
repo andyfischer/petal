@@ -57,9 +57,19 @@ pub struct Compiler {
 
     // Per-block rebinding log: block → (name → latest rebind term in that
     // block). Populated by `compile_assign` when a name bound in an outer
-    // block is reassigned inside a child block. Consumed by `emit_phi_joins`
+    // block is reassigned inside a child block. Consumed by `wire_phi_outs`
     // during if/match compilation to join each branch's candidate value.
     block_rebinds: HashMap<BlockId, HashMap<String, TermId>>,
+
+    // Loop-carry slot stack: one entry per currently-open loop body. Each
+    // entry maps a carry name to a shared register in that loop body block.
+    // When the inner rebinds (plain assigns or phis from nested conditionals)
+    // land in the body block, their registers are rewritten to the slot, so
+    // every rebind writes to the same register. This makes `break` mid-body
+    // leave the slot with whatever the most recent rebind stored — the
+    // loop's `phi_out` always reads the up-to-date value, even when the
+    // compile-time "latest" rebind term never ran in that iteration.
+    carry_slots: Vec<(BlockId, HashMap<String, RegisterIndex>)>,
 }
 
 impl Compiler {
@@ -83,6 +93,7 @@ impl Compiler {
             overloaded_fns: HashMap::new(),
             overload_variants: HashMap::new(),
             block_rebinds: HashMap::new(),
+            carry_slots: Vec::new(),
         }
     }
 
@@ -323,6 +334,13 @@ impl Compiler {
                 Some(name.clone()),
             );
             self.source_map.add(phi_tid, span);
+            // If this phi is landing in an enclosing loop's body block and
+            // joins an outer carry name, rewrite its register to the shared
+            // carry slot so nested-branch rebinds propagate through to the
+            // loop's own phi via a single register.
+            if let Some(slot) = self.carry_slot_for_current_block(name) {
+                self.terms[phi_tid.0 as usize].register = slot;
+            }
             self.rebind_parent(name.clone(), phi_tid, outer_tid);
             out.push((name.clone(), phi_tid));
         }
@@ -332,8 +350,14 @@ impl Compiler {
     /// Seed body-local read terms at the start of a loop body block for
     /// each phi. Each iteration re-runs these Copy terms to snapshot the
     /// current phi register value; subsequent body rebindings chain off
-    /// these as same-block SSA rebinds.
-    fn emit_body_phi_ins(&mut self, phis: &[(String, TermId)]) {
+    /// these as same-block SSA rebinds. Returns `(name, slot_register)`
+    /// pairs so the caller can install a carry-slot entry that rewrites
+    /// later body-block rebinds of each name to share this register.
+    fn emit_body_phi_ins(
+        &mut self,
+        phis: &[(String, TermId)],
+    ) -> HashMap<String, RegisterIndex> {
+        let mut slots = HashMap::new();
         for (name, phi_tid) in phis {
             let in_tid = self.emit_term(
                 TermOp::Copy,
@@ -341,7 +365,23 @@ impl Compiler {
                 Some(name.clone()),
             );
             self.scope_bind(name.clone(), in_tid);
+            let reg = self.terms[in_tid.0 as usize].register;
+            slots.insert(name.clone(), reg);
         }
+        slots
+    }
+
+    /// Look up the carry slot register for `name` in the innermost loop
+    /// body we're currently compiling, but only when the new term is being
+    /// emitted directly into that body block. Rebinds in nested sub-blocks
+    /// (conditional branches inside the body) keep their own registers and
+    /// flow back to the slot via `phi_outs` on child-frame pop.
+    fn carry_slot_for_current_block(&self, name: &str) -> Option<RegisterIndex> {
+        let (body_block, slots) = self.carry_slots.last()?;
+        if self.current_block != *body_block {
+            return None;
+        }
+        slots.get(name).copied()
     }
 
     /// Wire `phi_outs` for a child block: for each phi, if the body
@@ -786,13 +826,15 @@ impl Compiler {
                 let var_tid = self.emit_phantom_term(var.clone());
                 self.scope_bind(var.clone(), var_tid);
 
-                self.emit_body_phi_ins(&phis);
+                let slots = self.emit_body_phi_ins(&phis);
+                self.carry_slots.push((body_block, slots));
 
                 for s in body {
                     self.compile_stmt(s);
                 }
 
                 self.wire_phi_outs(body_block, &phis);
+                self.carry_slots.pop();
 
                 self.finalize_block(body_block);
                 self.pop_scope();
@@ -840,13 +882,15 @@ impl Compiler {
                 let saved = self.set_block(body_block);
                 self.push_scope(false);
 
-                self.emit_body_phi_ins(&phis);
+                let slots = self.emit_body_phi_ins(&phis);
+                self.carry_slots.push((body_block, slots));
 
                 for s in body {
                     self.compile_stmt(s);
                 }
 
                 self.wire_phi_outs(body_block, &phis);
+                self.carry_slots.pop();
 
                 self.finalize_block(body_block);
                 self.pop_scope();
@@ -930,6 +974,14 @@ impl Compiler {
                     smallvec![val_tid],
                     Some(name.clone()),
                 );
+                // Carry-slot share: when this assign is the body of a loop
+                // that carries `name`, rewrite its register to the shared
+                // slot so every body-level rebind writes to the same
+                // register (see `carry_slots`). This keeps the slot up to
+                // date even if `break` fires before a later rebind.
+                if let Some(slot) = self.carry_slot_for_current_block(name) {
+                    self.terms[assign_tid.0 as usize].register = slot;
+                }
                 if let Some(existing_tid) = self.scope_lookup(name) {
                     let existing_block = self.terms[existing_tid.0 as usize].block_id;
                     if existing_block == self.current_block {

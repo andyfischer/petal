@@ -31,4 +31,20 @@ let c = a / b`);
 let y = x - 1`);
     expect(err).toMatch(/line 2/);
   });
+
+  it("arithmetic errors name the operator and operand types", () => {
+    const err = runPetalError(`let x = 1 + "a"`);
+    expect(err).toMatch(/Cannot add/);
+    expect(err).toMatch(/int and string/);
+  });
+
+  it("errors include a source snippet with a caret under the failing span", () => {
+    const err = runPetalError(`let a = 1
+let b = 2
+let c = a - "bad"`);
+    // The snippet should echo the offending line with a gutter.
+    expect(err).toMatch(/3 \| let c = a - "bad"/);
+    // And a caret line under it.
+    expect(err).toMatch(/\^/);
+  });
 });

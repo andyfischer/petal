@@ -195,19 +195,25 @@ impl Evaluator {
                 StepResult::Continue
             }
             ControlFlow::Error(msg) => {
-                // Annotate error with source position from the term that failed
-                let mut error_msg = if let Some(span) = program.source_map.get(current_term_id) {
-                    if span.start.line > 0 {
-                        format!(
-                            "{} [line {}, column {}]",
-                            msg, span.start.line, span.start.column
-                        )
-                    } else {
-                        msg
+                // Annotate error with source position from the term that failed.
+                let span = program.source_map.get(current_term_id);
+                let mut error_msg = match span {
+                    Some(s) if s.start.line > 0 => {
+                        format!("{} [line {}, column {}]", msg, s.start.line, s.start.column)
                     }
-                } else {
-                    msg
+                    _ => msg,
                 };
+                // If we have a span AND the program carries its source, append
+                // a 3-line snippet with a caret so users can see exactly where
+                // the failing term is in their code.
+                if let Some(s) = span {
+                    if !program.source.is_empty() {
+                        if let Some(snippet) = format_source_snippet(&program.source, &s) {
+                            error_msg.push('\n');
+                            error_msg.push_str(&snippet);
+                        }
+                    }
+                }
 
                 // Append provenance: up to 5 nearest named ancestors with spans
                 let provenance = Self::format_provenance(program, current_term_id, 5);
@@ -1518,7 +1524,11 @@ impl Evaluator {
         float_op: impl Fn(f64, f64) -> Value,
     ) -> ControlFlow {
         if inputs.len() < 2 {
-            return ControlFlow::Error("Binary op: missing inputs".into());
+            return ControlFlow::Error(format!(
+                "{} expects 2 operands, got {}",
+                binop_verb(&term.op),
+                inputs.len()
+            ));
         }
         let val = match (&inputs[0], &inputs[1]) {
             // Dual number arithmetic (forward-mode AD)
@@ -1535,7 +1545,8 @@ impl Evaluator {
             }
             _ => {
                 return ControlFlow::Error(format!(
-                    "Cannot perform arithmetic on {} and {}",
+                    "Cannot {} {} and {}",
+                    binop_verb(&term.op),
                     inputs[0].type_name(),
                     inputs[1].type_name()
                 ))
@@ -2144,4 +2155,55 @@ impl Evaluator {
 pub struct RuntimeClosure {
     pub function_id: FunctionId,
     pub captures: Vec<Value>,
+}
+
+/// Human-readable verb for a binary op — used in error messages so the
+/// message says "Cannot add Int and String" instead of the vague
+/// "Cannot perform arithmetic on Int and String".
+fn binop_verb(op: &TermOp) -> &'static str {
+    match op {
+        TermOp::Add => "add",
+        TermOp::Sub => "subtract",
+        TermOp::Mul => "multiply",
+        TermOp::Div => "divide",
+        TermOp::Mod => "take the modulus of",
+        _ => "perform arithmetic on",
+    }
+}
+
+/// Render a 3-line source snippet for a given span: the source line it
+/// points at, prefixed with a gutter, followed by a caret line marking
+/// the column. Returns `None` if the span is a placeholder or the line
+/// is out of range. Kept ASCII-only and zero-dependency; callers append
+/// the snippet to error messages shown on stderr.
+pub fn format_source_snippet(source: &str, span: &crate::source_map::SourceSpan) -> Option<String> {
+    if span.start.line == 0 || source.is_empty() {
+        return None;
+    }
+    let line_num = span.start.line as usize;
+    let col = span.start.column.max(1) as usize;
+    let line = source.lines().nth(line_num - 1)?;
+    // Right-align the gutter width on the line number.
+    let gutter_width = line_num.to_string().len().max(1);
+    let blank_gutter = " ".repeat(gutter_width);
+    // Build the caret offset: 1-based column → col-1 spaces before the caret,
+    // preserving tab stops in the original line so the caret lines up visually.
+    let mut caret_pad = String::new();
+    for (i, ch) in line.chars().enumerate() {
+        if i + 1 >= col {
+            break;
+        }
+        caret_pad.push(if ch == '\t' { '\t' } else { ' ' });
+    }
+    // Clamp span length to what fits on this line for a multi-char underline.
+    let span_len: usize = if span.end.line == span.start.line && span.end.column > span.start.column {
+        (span.end.column - span.start.column) as usize
+    } else {
+        1
+    };
+    let underline: String = std::iter::repeat('^').take(span_len.max(1)).collect();
+    Some(format!(
+        "{} |\n{} | {}\n{} | {}{}",
+        blank_gutter, line_num, line, blank_gutter, caret_pad, underline,
+    ))
 }

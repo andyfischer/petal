@@ -232,7 +232,7 @@ impl Evaluator {
         let term_block = term.block_id;
         let reg_idx = term.register.0 as usize;
 
-        // Fast path: most reads are from the current frame's block
+        // Fast path: most reads are from the current frame's block.
         let top = stack.frames.last().unwrap();
         if top.block_id == term_block {
             return if reg_idx < top.registers.len() {
@@ -242,7 +242,12 @@ impl Evaluator {
             };
         }
 
-        // Slow path: walk parent_frame links for cross-block reads
+        // Slow path: walk parent_frame links for cross-block reads. Hit by
+        // (a) captures — closures reading outer-function locals through a
+        // phantom in the function body block, (b) loop-carry reads — bodies
+        // referencing a `Phi` term that lives in the parent block before the
+        // `ForLoop`/`WhileLoop`, and (c) ordinary reads from a child block
+        // of a variable bound in an enclosing block.
         let mut frame_idx = match top.parent_frame {
             Some(parent) => parent,
             None => return Value::Nil,
@@ -547,16 +552,11 @@ impl Evaluator {
             }
 
             TermOp::Phi => {
-                // No-op. The phi's register is written by the popping child
-                // frame via Block::phi_outs (see pop_frame). Advance without
-                // touching our own register.
-                ControlFlow::Advance
-            }
-
-            TermOp::CarryPhi => {
-                // Loop carry holder. Initialize register from inputs[0]
-                // (the pre-loop value). Subsequent writes from each
-                // iteration's body-pop phi_outs override this.
+                // Initialize the phi's register from inputs[0] — the
+                // pre-control-flow value of the name being joined. When a
+                // child frame later rebinds the name, its pop's phi_outs
+                // overwrite this register; branches that don't rebind leave
+                // the init value in place.
                 let init = inputs.first().copied().unwrap_or(Value::Nil);
                 Self::write_register(stack, term, init);
                 ControlFlow::Advance

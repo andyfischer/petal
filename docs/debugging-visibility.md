@@ -18,9 +18,12 @@ have this value?" means "walk provenance backward from the term currently
 labelled `total`." `petal explain`, `show-provenance`, `show-dependents`, and
 the trace buffer all work off this model.
 
-Rebindings inside a child block lower to pure-dataflow joins: `Phi` terms
-for `if`/`match` branches, and `CarryPhi` + body phi-outs for loop carries.
-The IR has no register-mutation primitive — see `docs/MutabilityPlan.md`.
+Rebindings inside a child block lower to pure-dataflow joins: a single
+`Phi` op, placed in the parent block *before* its associated control-flow
+term (`Branch`, `Match`, `ForLoop`, `WhileLoop`). Each phi initializes from
+its `inputs[0]` (the pre-control-flow value) and is updated on child-frame
+pops via `Block.phi_outs`. The IR has no register-mutation primitive — see
+`docs/MutabilityPlan.md`.
 
 ---
 

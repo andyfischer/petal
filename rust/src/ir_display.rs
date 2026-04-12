@@ -149,7 +149,6 @@ fn format_op(op: &TermOp) -> String {
         TermOp::Concat => "Concat".into(),
         TermOp::Copy => "Copy".into(),
         TermOp::Phi => "Phi".into(),
-        TermOp::CarryPhi => "CarryPhi".into(),
         TermOp::Branch => "Branch".into(),
         TermOp::ForLoop => "ForLoop".into(),
         TermOp::WhileLoop => "WhileLoop".into(),

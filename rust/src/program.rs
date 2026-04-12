@@ -107,19 +107,16 @@ pub enum TermOp {
     // Binding & identity
     /// Variable reference / identity copy: inputs=[source_term]
     Copy,
-    /// Pure-dataflow join point for values rebound inside conditional branches
-    /// (if/else, match arms). Inputs are the candidate source terms — one per
-    /// branch. At runtime the phi's register is written by the popping child
-    /// frame via `Block.phi_outs`; the phi's own exec is a no-op. Provenance
-    /// walkers follow `inputs` to see every candidate value.
+    /// Pure-dataflow join point for values rebound inside a child block
+    /// (conditional branches, loop bodies). Sits in the parent block *before*
+    /// its associated control-flow term (`Branch`, `Match`, `ForLoop`,
+    /// `WhileLoop`). On exec it initializes its register from `inputs[0]` —
+    /// the pre-control-flow value of the name being joined. Child frames
+    /// that rebind the name overwrite the phi's register on pop via
+    /// `Block.phi_outs`; branches that don't rebind leave the init value in
+    /// place. For loops, each iteration's pop updates the register, and
+    /// subsequent iterations read the updated value.
     Phi,
-    /// Loop carry holder. Sits in the parent block before a `ForLoop` /
-    /// `WhileLoop` term. On exec it writes `inputs[0]` (the pre-loop initial
-    /// value) to its register. Each iteration of the loop body then writes
-    /// the iteration's carry-out to this register via `Block.phi_outs` from
-    /// the body block. After the loop exits, the register holds the final
-    /// carry value, which the post-loop code reads via the carry-phi's name.
-    CarryPhi,
 
     // Control flow
     /// if/else: inputs=[cond], child_blocks=[then_block, else_block]
@@ -389,25 +386,50 @@ impl Program {
         let mut ancestors = Vec::new();
         let mut edges = Vec::new();
 
-        // Seed with the root's direct inputs
-        let root_term = self.get_term(root_id);
-        for &input_id in &root_term.inputs {
-            if visited.insert(input_id) {
-                queue.push_back(input_id);
+        // Collect all `src_term` entries from `phi_outs` blocks across the
+        // program that target a given phi term — these are the branch/loop
+        // rebind candidates that update the phi's register on child-frame
+        // pop, and must be treated as ancestors for provenance purposes.
+        let phi_sources = |dest: TermId| -> Vec<TermId> {
+            let mut out = Vec::new();
+            for block in &self.blocks {
+                for po in &block.phi_outs {
+                    if po.dest_term == dest {
+                        out.push(po.src_term);
+                    }
+                }
             }
-            edges.push((input_id, root_id));
-        }
+            out
+        };
 
-        // BFS backward through inputs
-        while let Some(term_id) = queue.pop_front() {
-            ancestors.push(term_id);
-            let term = self.get_term(term_id);
+        let push_term_inputs = |term_id: TermId,
+                                visited: &mut HashSet<TermId>,
+                                queue: &mut VecDeque<TermId>,
+                                edges: &mut Vec<(TermId, TermId)>,
+                                terms: &[Term]| {
+            let term = &terms[term_id.0 as usize];
             for &input_id in &term.inputs {
                 edges.push((input_id, term_id));
                 if visited.insert(input_id) {
                     queue.push_back(input_id);
                 }
             }
+            if matches!(term.op, TermOp::Phi) {
+                let srcs = phi_sources(term_id);
+                for src_id in srcs {
+                    edges.push((src_id, term_id));
+                    if visited.insert(src_id) {
+                        queue.push_back(src_id);
+                    }
+                }
+            }
+        };
+
+        push_term_inputs(root_id, &mut visited, &mut queue, &mut edges, &self.terms);
+
+        while let Some(term_id) = queue.pop_front() {
+            ancestors.push(term_id);
+            push_term_inputs(term_id, &mut visited, &mut queue, &mut edges, &self.terms);
         }
 
         (ancestors, edges)

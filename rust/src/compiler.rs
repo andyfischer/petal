@@ -56,10 +56,9 @@ pub struct Compiler {
     overload_variants: HashMap<String, Vec<TermId>>,
 
     // Per-block rebinding log: block → (name → latest rebind term in that
-    // block). Populated when a name bound in an outer block is reassigned
-    // inside a child block (currently: conditional branches only; loop bodies
-    // still use Assign until step 3). Consumed by if/match compilation to
-    // emit phi terms joining the candidate values after the branch.
+    // block). Populated by `compile_assign` when a name bound in an outer
+    // block is reassigned inside a child block. Consumed by `emit_phi_joins`
+    // during if/match compilation to join each branch's candidate value.
     block_rebinds: HashMap<BlockId, HashMap<String, TermId>>,
 }
 
@@ -255,6 +254,19 @@ impl Compiler {
             .insert(name, new_tid);
     }
 
+    /// Rebind `name` to `new_tid` in the current (parent-of-loop-or-branch)
+    /// scope, selecting between plain scope_bind and the cross-block rebind
+    /// log based on whether the prior outer binding lives in this block.
+    /// Shared between phi join emission and carry-phi emission.
+    fn rebind_parent(&mut self, name: String, new_tid: TermId, outer_tid: TermId) {
+        let outer_block = self.terms[outer_tid.0 as usize].block_id;
+        if outer_block == self.current_block {
+            self.scope_bind(name, new_tid);
+        } else {
+            self.rebind_name_in_current_block(name, new_tid);
+        }
+    }
+
     /// After a conditional's branch bodies compile, emit phi terms in the
     /// current (parent) block for any name that was rebound in one or more
     /// child branches. For each branch, add a `phi_out` entry so the popping
@@ -285,40 +297,32 @@ impl Compiler {
                 None => continue, // shouldn't happen; rebind implies prior binding
             };
 
-            // Build phi inputs: one per branch, in order.
-            let mut phi_inputs: SmallVec<[TermId; 4]> = SmallVec::new();
-            let mut per_branch_src: Vec<(BlockId, TermId)> = Vec::new();
-            for &b in branches {
-                let src = self
-                    .block_rebinds
-                    .get(&b)
-                    .and_then(|m| m.get(&name).copied())
-                    .unwrap_or(outer_tid);
-                phi_inputs.push(src);
-                per_branch_src.push((b, src));
-            }
+            // One source per branch: the branch's latest rebind if any,
+            // otherwise the outer term (carry-forward of the pre-if value).
+            let per_branch_src: SmallVec<[TermId; 4]> = branches
+                .iter()
+                .map(|b| {
+                    self.block_rebinds
+                        .get(b)
+                        .and_then(|m| m.get(&name).copied())
+                        .unwrap_or(outer_tid)
+                })
+                .collect();
 
-            // Emit the phi term in the parent block.
-            let phi_tid = self.emit_term(TermOp::Phi, phi_inputs, Some(name.clone()));
+            let phi_tid = self.emit_term(
+                TermOp::Phi,
+                per_branch_src.clone(),
+                Some(name.clone()),
+            );
 
-            // Wire phi_outs on each branch block.
-            for (b, src) in per_branch_src {
+            for (b, src) in branches.iter().zip(per_branch_src.iter()) {
                 self.blocks[b.0 as usize].phi_outs.push(PhiOut {
-                    src_term: src,
+                    src_term: *src,
                     dest_term: phi_tid,
                 });
             }
 
-            // Rebind the name in the parent scope. If the parent block itself
-            // is nested inside another conditional, this also records the
-            // rebind in the parent block's log so the outer phi picks it up.
-            let parent_block_existing_block =
-                self.terms[outer_tid.0 as usize].block_id;
-            if parent_block_existing_block == self.current_block {
-                self.scope_bind(name, phi_tid);
-            } else {
-                self.rebind_name_in_current_block(name, phi_tid);
-            }
+            self.rebind_parent(name, phi_tid, outer_tid);
         }
     }
 
@@ -341,6 +345,60 @@ impl Compiler {
             }
         }
         out
+    }
+
+    /// Emit a `CarryPhi` term in the current (parent) block for each carry
+    /// name, seed it with the outer binding, and rebind the name in scope.
+    /// Returns `(name, carry_phi_tid)` pairs so the loop body compiler can
+    /// set up per-iteration carry-in copies.
+    fn emit_carry_phis(&mut self, carries: &[String]) -> Vec<(String, TermId)> {
+        let mut out = Vec::with_capacity(carries.len());
+        for name in carries {
+            let outer_tid = self.scope_lookup(name).unwrap();
+            let phi_tid = self.emit_term(
+                TermOp::CarryPhi,
+                smallvec![outer_tid],
+                Some(name.clone()),
+            );
+            self.rebind_parent(name.clone(), phi_tid, outer_tid);
+            out.push((name.clone(), phi_tid));
+        }
+        out
+    }
+
+    /// Seed body-local carry-in terms at the start of a loop body block.
+    /// Each iteration re-runs these Copy terms to read the current CarryPhi
+    /// register; subsequent body rebindings chain off these as same-block
+    /// SSA rebinds.
+    fn emit_body_carry_ins(&mut self, carry_phis: &[(String, TermId)]) {
+        for (name, phi_tid) in carry_phis {
+            let in_tid = self.emit_term(
+                TermOp::Copy,
+                smallvec![*phi_tid],
+                Some(name.clone()),
+            );
+            self.scope_bind(name.clone(), in_tid);
+        }
+    }
+
+    /// After a loop body finishes compiling, wire phi_outs so each
+    /// iteration's pop copies the body's final term for each carry back
+    /// to the corresponding CarryPhi's register. Must be called while
+    /// the body's scope is still on the scope stack so scope_lookup
+    /// finds the latest binding.
+    fn wire_carry_phi_outs(
+        &mut self,
+        body_block: BlockId,
+        carry_phis: &[(String, TermId)],
+    ) {
+        for (name, phi_tid) in carry_phis {
+            if let Some(final_tid) = self.scope_lookup(name) {
+                self.blocks[body_block.0 as usize].phi_outs.push(PhiOut {
+                    src_term: final_tid,
+                    dest_term: *phi_tid,
+                });
+            }
+        }
     }
 
     fn collect_assigned_names_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
@@ -720,32 +778,8 @@ impl Compiler {
             StmtKind::For { var, iter, body } => {
                 let iter_tid = self.compile_expr(iter);
 
-                // Detect loop carries: names assigned anywhere inside the
-                // body that are bound in an outer scope. Each becomes a
-                // CarryPhi in the parent block; the body sees a body-local
-                // copy that gets rebound SSA-style.
                 let carries = self.detect_carries(body);
-
-                // Emit CarryPhi terms in the parent block, before the loop.
-                let mut carry_phis: Vec<(String, TermId)> = Vec::new();
-                for name in &carries {
-                    let outer_tid = self.scope_lookup(name).unwrap();
-                    let phi_tid = self.emit_term(
-                        TermOp::CarryPhi,
-                        smallvec![outer_tid],
-                        Some(name.clone()),
-                    );
-                    // Rebind the name in the current scope. If the parent
-                    // block is itself nested in a conditional, this also
-                    // records the rebind for the enclosing phi.
-                    let outer_block = self.terms[outer_tid.0 as usize].block_id;
-                    if outer_block == self.current_block {
-                        self.scope_bind(name.clone(), phi_tid);
-                    } else {
-                        self.rebind_name_in_current_block(name.clone(), phi_tid);
-                    }
-                    carry_phis.push((name.clone(), phi_tid));
-                }
+                let carry_phis = self.emit_carry_phis(&carries);
 
                 let body_block = self.new_block(None);
                 self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
@@ -758,8 +792,8 @@ impl Compiler {
                 );
                 self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-                // Compile body in body_block. Manual block management so we
-                // can capture the body's final scope bindings before pop.
+                // Compile body manually so we can capture final scope
+                // bindings for carries before the body scope pops.
                 self.loop_depth += 1;
                 let saved = self.set_block(body_block);
                 self.push_scope(false);
@@ -768,49 +802,23 @@ impl Compiler {
                 let var_tid = self.emit_phantom_term(var.clone());
                 self.scope_bind(var.clone(), var_tid);
 
-                // Body-local carry-in copies. Each iteration starts by
-                // reading the current CarryPhi register; subsequent body
-                // rebinds chain off this term as same-block SSA rebinds.
-                for (name, phi_tid) in &carry_phis {
-                    let in_tid = self.emit_term(
-                        TermOp::Copy,
-                        smallvec![*phi_tid],
-                        Some(name.clone()),
-                    );
-                    self.scope_bind(name.clone(), in_tid);
-                }
+                self.emit_body_carry_ins(&carry_phis);
 
                 for s in body {
                     self.compile_stmt(s);
                 }
 
-                // Capture final body bindings for each carry while the body
-                // scope is still alive.
-                let mut carry_finals: Vec<(TermId, TermId)> = Vec::new();
-                for (name, phi_tid) in &carry_phis {
-                    if let Some(final_tid) = self.scope_lookup(name) {
-                        carry_finals.push((final_tid, *phi_tid));
-                    }
-                }
+                self.wire_carry_phi_outs(body_block, &carry_phis);
 
                 self.finalize_block(body_block);
                 self.pop_scope();
                 self.set_block(saved);
                 self.loop_depth -= 1;
-
-                // Wire body block phi_outs: each iteration's pop copies the
-                // body's final carry term to its CarryPhi.
-                for (src, dest) in carry_finals {
-                    self.blocks[body_block.0 as usize].phi_outs.push(PhiOut {
-                        src_term: src,
-                        dest_term: dest,
-                    });
-                }
             }
 
             StmtKind::While { condition, body } => {
-                // Detect loop carries the same way as For. We must also
-                // consider names assigned in the condition (rare but legal).
+                // Carries come from body assignments plus any assignments
+                // that happen in the condition expression itself (rare).
                 let mut carries = self.detect_carries(body);
                 let mut cond_assigns: Vec<String> = Vec::new();
                 Self::collect_assigned_names_expr(condition, &mut cond_assigns);
@@ -819,23 +827,7 @@ impl Compiler {
                         carries.push(n);
                     }
                 }
-
-                let mut carry_phis: Vec<(String, TermId)> = Vec::new();
-                for name in &carries {
-                    let outer_tid = self.scope_lookup(name).unwrap();
-                    let phi_tid = self.emit_term(
-                        TermOp::CarryPhi,
-                        smallvec![outer_tid],
-                        Some(name.clone()),
-                    );
-                    let outer_block = self.terms[outer_tid.0 as usize].block_id;
-                    if outer_block == self.current_block {
-                        self.scope_bind(name.clone(), phi_tid);
-                    } else {
-                        self.rebind_name_in_current_block(name.clone(), phi_tid);
-                    }
-                    carry_phis.push((name.clone(), phi_tid));
-                }
+                let carry_phis = self.emit_carry_phis(&carries);
 
                 let cond_block = self.new_block(None);
                 let body_block = self.new_block(None);
@@ -849,48 +841,28 @@ impl Compiler {
                 self.blocks[cond_block.0 as usize].parent_term_id = Some(while_tid);
                 self.blocks[body_block.0 as usize].parent_term_id = Some(while_tid);
 
-                // Compile condition in cond_block. Reads of carry names
-                // resolve to the CarryPhi via parent_frame walk.
+                // Condition reads carry names via parent_frame walk to the
+                // CarryPhi's register; nothing carry-specific to set up here.
                 self.compile_in_block(cond_block, |c| {
                     c.compile_expr(condition);
                 });
 
-                // Compile body — same pattern as For.
                 self.loop_depth += 1;
                 let saved = self.set_block(body_block);
                 self.push_scope(false);
 
-                for (name, phi_tid) in &carry_phis {
-                    let in_tid = self.emit_term(
-                        TermOp::Copy,
-                        smallvec![*phi_tid],
-                        Some(name.clone()),
-                    );
-                    self.scope_bind(name.clone(), in_tid);
-                }
+                self.emit_body_carry_ins(&carry_phis);
 
                 for s in body {
                     self.compile_stmt(s);
                 }
 
-                let mut carry_finals: Vec<(TermId, TermId)> = Vec::new();
-                for (name, phi_tid) in &carry_phis {
-                    if let Some(final_tid) = self.scope_lookup(name) {
-                        carry_finals.push((final_tid, *phi_tid));
-                    }
-                }
+                self.wire_carry_phi_outs(body_block, &carry_phis);
 
                 self.finalize_block(body_block);
                 self.pop_scope();
                 self.set_block(saved);
                 self.loop_depth -= 1;
-
-                for (src, dest) in carry_finals {
-                    self.blocks[body_block.0 as usize].phi_outs.push(PhiOut {
-                        src_term: src,
-                        dest_term: dest,
-                    });
-                }
             }
 
             StmtKind::Return(expr) => {

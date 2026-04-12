@@ -384,6 +384,65 @@ impl Compiler {
         slots.get(name).copied()
     }
 
+    /// Compute the set of loop-carry names for a for/while body: outer-bound
+    /// names assigned anywhere in `body`, minus those shadowed by a top-level
+    /// `let` in the body, plus any outer-bound names assigned inside an
+    /// optional condition expression (for `while` loops).
+    fn detect_loop_carries(&self, body: &[Stmt], extra_cond: Option<&Expr>) -> Vec<String> {
+        let mut let_bound: Vec<String> = Vec::new();
+        Self::collect_let_names(body, &mut let_bound);
+        let mut carries: Vec<String> = self
+            .detect_rebinds_stmts(&[body])
+            .into_iter()
+            .filter(|n| !let_bound.contains(n))
+            .collect();
+        if let Some(cond) = extra_cond {
+            for n in self.detect_rebinds_exprs(&[cond]) {
+                if !carries.contains(&n) {
+                    carries.push(n);
+                }
+            }
+        }
+        carries
+    }
+
+    /// Compile the body of a for/while loop. Manages loop-depth tracking,
+    /// scope lifecycle, carry-slot bookkeeping, phi-out wiring, and block
+    /// finalization. Optionally binds a loop variable phantom at the start
+    /// of the body so `for` loops can name their iterator binding — pass
+    /// `None` for `while` bodies.
+    fn compile_loop_body(
+        &mut self,
+        body_block: BlockId,
+        body: &[Stmt],
+        phis: &[(String, TermId)],
+        loop_var: Option<&str>,
+    ) {
+        self.loop_depth += 1;
+        let saved = self.set_block(body_block);
+        self.push_scope(false);
+
+        if let Some(name) = loop_var {
+            let var_tid = self.emit_phantom_term(name.to_string());
+            self.scope_bind(name.to_string(), var_tid);
+        }
+
+        let slots = self.emit_body_phi_ins(phis);
+        self.carry_slots.push((body_block, slots));
+
+        for s in body {
+            self.compile_stmt(s);
+        }
+
+        self.wire_phi_outs(body_block, phis);
+        self.carry_slots.pop();
+
+        self.finalize_block(body_block);
+        self.pop_scope();
+        self.set_block(saved);
+        self.loop_depth -= 1;
+    }
+
     /// Wire `phi_outs` for a child block: for each phi, if the body
     /// rebound the name, its popping frame copies the final binding back
     /// to the phi's register. Handles both conditional-branch callers
@@ -792,17 +851,7 @@ impl Compiler {
             StmtKind::For { var, iter, body } => {
                 let iter_tid = self.compile_expr(iter);
 
-                // Detect loop-carry names: outer-bound names assigned in the
-                // body. Filter out names that `let`-shadow at the top level of
-                // the body — those are fresh locals per iteration, not carries.
-                let mut let_bound: Vec<String> = Vec::new();
-                Self::collect_let_names(body, &mut let_bound);
-                let carries: Vec<String> = self
-                    .detect_rebinds_stmts(&[body])
-                    .into_iter()
-                    .filter(|n| !let_bound.contains(n))
-                    .collect();
-
+                let carries = self.detect_loop_carries(body, None);
                 let phis = self.emit_phis(&carries, stmt_span);
 
                 let body_block = self.new_block(None);
@@ -816,48 +865,11 @@ impl Compiler {
                 );
                 self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-                // Compile body manually so we can capture the final scope
-                // binding for each phi'd name before the body scope pops.
-                self.loop_depth += 1;
-                let saved = self.set_block(body_block);
-                self.push_scope(false);
-
-                // Loop variable phantom — evaluator populates register 0.
-                let var_tid = self.emit_phantom_term(var.clone());
-                self.scope_bind(var.clone(), var_tid);
-
-                let slots = self.emit_body_phi_ins(&phis);
-                self.carry_slots.push((body_block, slots));
-
-                for s in body {
-                    self.compile_stmt(s);
-                }
-
-                self.wire_phi_outs(body_block, &phis);
-                self.carry_slots.pop();
-
-                self.finalize_block(body_block);
-                self.pop_scope();
-                self.set_block(saved);
-                self.loop_depth -= 1;
+                self.compile_loop_body(body_block, body, &phis, Some(var));
             }
 
             StmtKind::While { condition, body } => {
-                // Carry names: outer-bound names assigned in the body, plus
-                // any outer-bound names assigned inside the condition expr.
-                let mut let_bound: Vec<String> = Vec::new();
-                Self::collect_let_names(body, &mut let_bound);
-                let mut carries: Vec<String> = self
-                    .detect_rebinds_stmts(&[body])
-                    .into_iter()
-                    .filter(|n| !let_bound.contains(n))
-                    .collect();
-                for n in self.detect_rebinds_exprs(&[condition]) {
-                    if !carries.contains(&n) {
-                        carries.push(n);
-                    }
-                }
-
+                let carries = self.detect_loop_carries(body, Some(condition));
                 let phis = self.emit_phis(&carries, stmt_span);
 
                 let cond_block = self.new_block(None);
@@ -878,24 +890,7 @@ impl Compiler {
                     c.compile_expr(condition);
                 });
 
-                self.loop_depth += 1;
-                let saved = self.set_block(body_block);
-                self.push_scope(false);
-
-                let slots = self.emit_body_phi_ins(&phis);
-                self.carry_slots.push((body_block, slots));
-
-                for s in body {
-                    self.compile_stmt(s);
-                }
-
-                self.wire_phi_outs(body_block, &phis);
-                self.carry_slots.pop();
-
-                self.finalize_block(body_block);
-                self.pop_scope();
-                self.set_block(saved);
-                self.loop_depth -= 1;
+                self.compile_loop_body(body_block, body, &phis, None);
             }
 
             StmtKind::Return(expr) => {

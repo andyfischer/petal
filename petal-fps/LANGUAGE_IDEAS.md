@@ -155,3 +155,40 @@ verify whether this round-trips through hot reload.
 **Friction**: Native triangle_3d signatures take `f32`s for performance, so
 `get_float` truncates. For a CPU rasterizer this is the right tradeoff but
 worth surfacing.
+
+---
+
+## 16. Scientific notation numeric literals (`1e9`, `2.5e-3`)
+
+**Friction**: Wrote `let best_t = 1e9` as a sentinel "very large" value for a
+closest-hit raycast. Petal parses this as the token `1` followed by an
+identifier `e9`, so it produced `Undefined variable: e9` at runtime. I had
+to write `1000000.0` instead, which is visually harder to parse.
+
+**Proposed**: Lex `1e9`, `2.5e-3`, `6.02e23` as float literals — same rule as
+most languages. Should be a small lexer change.
+
+---
+
+## 17. `now()` / timer that agents can reset
+
+**Friction**: In `--screenshot` mode the scene is frozen at the first frame.
+No wall-clock is advancing so `dt()` yields 1/60 forever, but there's no
+`time_since_start()` that would let animations (muzzle flash, neon pulse)
+be reproducible. Today I keep `state muzzle = 4; if muzzle > 0 { muzzle -= 1 }`
+which works but would be cleaner as `time() mod cycle`.
+
+---
+
+## 18. `state` initialization expression is evaluated every frame
+
+**Friction**: I wrote `state enemies = [{...}, {...}, ...]` (a 8-element
+literal). The RHS is evaluated every frame — the "first time" check only
+decides whether to *use* the result, but allocates records+lists regardless.
+For a large level-geometry literal (the 12 buildings in fps_game.ptl), this
+is wasted work. 
+
+**Proposed**: Skip RHS evaluation entirely when the state key is already
+set. Would require the compiler to emit a conditional around the init
+expression, guarded by the StateInit presence check — the information is
+already there in the IR.

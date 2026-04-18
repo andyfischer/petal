@@ -1,0 +1,444 @@
+// === Petal FPS — Cyberpunk City ===
+//
+// A playable first-person shooter. Almost all gameplay logic runs in Petal;
+// the Rust host provides window, input, software z-buffered rasterizer,
+// and a few native helpers.
+//
+// Scene:
+//   - city grid with neon ground strips
+//   - procedurally placed skyscrapers (fixed seed for determinism)
+//   - patrolling robot enemies; shoot them with the crosshair
+//   - HUD: crosshair, health, ammo, enemy counter, FPS
+
+// =========================================================================
+// Persistent state (survives hot reload thanks to name-based state keys)
+// =========================================================================
+
+// Player
+state player_x = 0.0
+state player_y = 1.7
+state player_z = -6.0
+state yaw = 0.0
+state pitch = 0.0
+state hp = 100
+state ammo = 30
+state score = 0
+state want_grab = false
+state muzzle = 0      // frames remaining of muzzle flash
+
+// Enemy bots — seeded once; HP ticked per-frame.
+// Each bot: {x, z, phase, hp, alive}
+state enemies = [
+    {x:   6.0, z:   6.0, phase: 0.0, hp: 3, alive: true},
+    {x:  -5.0, z:   8.0, phase: 1.0, hp: 3, alive: true},
+    {x:  10.0, z:  14.0, phase: 2.0, hp: 3, alive: true},
+    {x:  -9.0, z:  18.0, phase: 0.5, hp: 3, alive: true},
+    {x:   3.0, z:  22.0, phase: 3.2, hp: 3, alive: true},
+    {x:  14.0, z:   0.0, phase: 1.8, hp: 3, alive: true},
+    {x: -12.0, z:   2.0, phase: 4.1, hp: 3, alive: true},
+    {x:   0.0, z:  26.0, phase: 2.5, hp: 3, alive: true}
+]
+
+// Buildings — placed once; purely geometric (no per-frame state).
+// Each: {x, z, w, d, h, r, g, b}
+state buildings = [
+    {x:  -8.0, z:   4.0, w: 4.0, d: 4.0, h: 10.0, r: 60,  g: 10,  b: 90},
+    {x:   8.0, z:   4.0, w: 4.0, d: 4.0, h:  7.0, r: 20,  g: 60,  b: 120},
+    {x: -12.0, z:  12.0, w: 5.0, d: 3.0, h: 14.0, r: 120, g: 20,  b: 60},
+    {x:  12.0, z:  12.0, w: 3.0, d: 4.0, h: 16.0, r: 30,  g: 90,  b: 140},
+    {x:  -6.0, z:  20.0, w: 4.0, d: 4.0, h:  9.0, r: 100, g: 40,  b: 150},
+    {x:   6.0, z:  20.0, w: 4.0, d: 5.0, h: 12.0, r: 40,  g: 120, b: 80},
+    {x: -18.0, z:   8.0, w: 5.0, d: 5.0, h: 20.0, r: 80,  g: 15,  b: 140},
+    {x:  18.0, z:   8.0, w: 4.0, d: 5.0, h: 11.0, r: 140, g: 30,  b: 80},
+    {x:  -4.0, z:  28.0, w: 3.0, d: 3.0, h:  6.0, r: 180, g: 60,  b: 40},
+    {x:   4.0, z:  28.0, w: 3.0, d: 3.0, h:  8.0, r: 30,  g: 170, b: 160},
+    {x: -16.0, z:  22.0, w: 5.0, d: 4.0, h: 18.0, r: 120, g: 40,  b: 170},
+    {x:  16.0, z:  22.0, w: 4.0, d: 4.0, h: 13.0, r: 60,  g: 140, b: 200}
+]
+
+// =========================================================================
+// Frame constants
+// =========================================================================
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let cx = sw / 2.0
+let cy = sh / 2.0
+let fov = 70.0 * pi() / 180.0
+let focal = cy / tan(fov / 2.0)
+let near = 0.2
+
+// =========================================================================
+// Initial mouse grab
+// =========================================================================
+if !want_grab {
+    grab_mouse()
+    want_grab = true
+}
+
+// =========================================================================
+// Input: mouse look + WASD movement
+// =========================================================================
+let look_sens = 0.0022
+yaw = yaw + float(mouse_dx()) * look_sens
+pitch = pitch - float(mouse_dy()) * look_sens
+if pitch > 1.4 { pitch = 1.4 }
+if pitch < -1.4 { pitch = -1.4 }
+
+let move_speed = 7.0
+let fwd_x = sin(yaw)
+let fwd_z = cos(yaw)
+let right_x = cos(yaw)
+let right_z = 0.0 - sin(yaw)
+
+let mx = 0.0
+let mz = 0.0
+if key_down("w") { mx = mx + fwd_x; mz = mz + fwd_z }
+if key_down("s") { mx = mx - fwd_x; mz = mz - fwd_z }
+if key_down("d") { mx = mx + right_x; mz = mz + right_z }
+if key_down("a") { mx = mx - right_x; mz = mz - right_z }
+let mag_m = sqrt(mx * mx + mz * mz)
+if mag_m > 0.01 {
+    player_x = player_x + (mx / mag_m) * move_speed * delta
+    player_z = player_z + (mz / mag_m) * move_speed * delta
+}
+
+// Keep player above ground & clamped to the street area.
+if player_x > 22.0 { player_x = 22.0 }
+if player_x < -22.0 { player_x = -22.0 }
+if player_z > 32.0 { player_z = 32.0 }
+if player_z < -12.0 { player_z = -12.0 }
+
+// =========================================================================
+// Shooting: left mouse or SPACE
+// =========================================================================
+let fired = false
+if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 {
+    fired = true
+    ammo = ammo - 1
+    muzzle = 4
+    // Ray from camera along view direction
+    let rx = sin(yaw) * cos(pitch)
+    let ry = 0.0 - sin(pitch)
+    let rz = cos(yaw) * cos(pitch)
+    // Test against every alive enemy (spherical, r=1.1). Closest hit wins.
+    let best_t = 1000000.0
+    let best_i = -1
+    let i = 0
+    while i < len(enemies) {
+        let e = enemies[i]
+        if e.alive {
+            // Enemy center ~1m off ground
+            let dx = e.x - player_x
+            let dy = 1.0 - player_y
+            let dz = e.z - player_z
+            // t = dot(d, r), then check perpendicular distance
+            let t = dx * rx + dy * ry + dz * rz
+            if t > 0.2 && t < best_t {
+                let px = rx * t - dx
+                let py = ry * t - dy
+                let pz = rz * t - dz
+                let d2 = px*px + py*py + pz*pz
+                if d2 < 1.4 {
+                    best_t = t
+                    best_i = i
+                }
+            }
+        }
+        i = i + 1
+    }
+    if best_i >= 0 {
+        enemies[best_i].hp = enemies[best_i].hp - 1
+        if enemies[best_i].hp <= 0 {
+            enemies[best_i].alive = false
+            score = score + 10
+        }
+    }
+}
+
+if muzzle > 0 { muzzle = muzzle - 1 }
+
+// Reload
+if key_pressed("r") { ammo = 30 }
+
+// =========================================================================
+// Enemy AI: slow circular patrol around spawn. Damage on proximity.
+// =========================================================================
+let ei = 0
+while ei < len(enemies) {
+    let e = enemies[ei]
+    if e.alive {
+        let new_phase = e.phase + delta * 0.8
+        let ox = sin(new_phase) * 2.0
+        let oz = cos(new_phase) * 2.0
+        enemies[ei].phase = new_phase
+        // Damage player if close
+        let dx = (e.x + ox) - player_x
+        let dz = (e.z + oz) - player_z
+        if dx*dx + dz*dz < 1.5 {
+            hp = hp - 1
+            if hp < 0 { hp = 0 }
+        }
+    }
+    ei = ei + 1
+}
+
+// =========================================================================
+// Projection helpers
+// =========================================================================
+let cos_y = cos(0.0 - yaw)
+let sin_y = sin(0.0 - yaw)
+let cos_p = cos(0.0 - pitch)
+let sin_p = sin(0.0 - pitch)
+
+fn project(x, y, z) {
+    let dx = x - player_x
+    let dy = y - player_y
+    let dz = z - player_z
+    let rx = dx * cos_y + dz * sin_y
+    let rz = 0.0 - dx * sin_y + dz * cos_y
+    let ry = dy * cos_p - rz * sin_p
+    let rz2 = dy * sin_p + rz * cos_p
+    if rz2 < near {
+        { sx: 0.0, sy: 0.0, z: rz2, ok: false }
+    } else {
+        { sx: cx + rx / rz2 * focal, sy: cy - ry / rz2 * focal, z: rz2, ok: true }
+    }
+}
+
+fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b) {
+    let p1 = project(x1, y1, z1)
+    let p2 = project(x2, y2, z2)
+    let p3 = project(x3, y3, z3)
+    if p1.ok && p2.ok && p3.ok {
+        triangle3d(p1.sx, p1.sy, p1.z, p2.sx, p2.sy, p2.z, p3.sx, p3.sy, p3.z, r, g, b)
+    }
+}
+
+fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b) {
+    tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
+    tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
+}
+
+fn neon_line(x1, y1, z1, x2, y2, z2, r, g, b) {
+    let p1 = project(x1, y1, z1)
+    let p2 = project(x2, y2, z2)
+    if p1.ok && p2.ok {
+        line3d(x1, y1, z1, x2, y2, z2, r, g, b)
+    }
+}
+
+fn box_(x, y, z, w, h, d, r, g, b) {
+    let hw = w / 2.0
+    let hh = h / 2.0
+    let hd = d / 2.0
+    let x0 = x - hw
+    let x1 = x + hw
+    let y0 = y - hh
+    let y1 = y + hh
+    let z0 = z - hd
+    let z1 = z + hd
+    quad(x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1, r, g, b)
+    quad(x1,y0,z0, x0,y0,z0, x0,y1,z0, x1,y1,z0,
+        int(float(r) * 0.55), int(float(g) * 0.55), int(float(b) * 0.55))
+    quad(x1,y0,z1, x1,y0,z0, x1,y1,z0, x1,y1,z1,
+        int(float(r) * 0.8),  int(float(g) * 0.8),  int(float(b) * 0.8))
+    quad(x0,y0,z0, x0,y0,z1, x0,y1,z1, x0,y1,z0,
+        int(float(r) * 0.65), int(float(g) * 0.65), int(float(b) * 0.65))
+    quad(x0,y1,z1, x1,y1,z1, x1,y1,z0, x0,y1,z0,
+        int(min(255.0, float(r) * 1.2)),
+        int(min(255.0, float(g) * 1.2)),
+        int(min(255.0, float(b) * 1.2)))
+}
+
+// =========================================================================
+// Draw: sky + ground + streets
+// =========================================================================
+sky_gradient(40, 8, 90, 240, 70, 150)
+
+// Ground — a view-aligned patch under the camera so there's always floor
+// right up to the near plane. Each frame we build a rectangle that sits
+// directly below the player, rotated to follow yaw, with its near edge
+// safely past near-plane. This eliminates the "sky leaks through the
+// floor" artifact caused by any vertex with rz2 < near being clipped.
+let ground_half = 50.0
+let gp_near = 0.4       // meters ahead of the camera to start the quad
+let gp_far  = 60.0      // meters ahead to extend
+let gp_left  = 0.0 - ground_half
+let gp_right = ground_half
+
+// Four corners in world space: two strips, one in front of camera, one behind.
+// Each strip is safe (all 4 corners have rz2 >= gp_near after projection).
+// Forward strip:
+fn gstrip(near_d, far_d, shade) {
+    let ax = player_x + fwd_x * near_d + right_x * gp_left
+    let az = player_z + fwd_z * near_d + right_z * gp_left
+    let bx = player_x + fwd_x * near_d + right_x * gp_right
+    let bz = player_z + fwd_z * near_d + right_z * gp_right
+    let cx2 = player_x + fwd_x * far_d + right_x * gp_right
+    let cz2 = player_z + fwd_z * far_d + right_z * gp_right
+    let dx2 = player_x + fwd_x * far_d + right_x * gp_left
+    let dz2 = player_z + fwd_z * far_d + right_z * gp_left
+    quad(ax, 0.0, az,  bx, 0.0, bz,  cx2, 0.0, cz2,  dx2, 0.0, dz2,
+         shade, shade / 2, shade + 20)
+}
+
+// Layer bands of alternating shade from near to far for visual depth.
+let gi = 0
+while gi < 10 {
+    let n = gp_near + float(gi) * 6.0
+    let f = gp_near + float(gi + 1) * 6.0
+    gstrip(n, f, 12 + (gi % 2) * 10)
+    gi = gi + 1
+}
+// Behind the camera — single darker strip (only visible if you turn around).
+gstrip(0.0 - gp_far, 0.0 - gp_near, 10)
+
+// Neon street lines: cyan cross-strips every 6 m in world Z + fixed magenta
+// center stripe. These are in world coordinates so they anchor the scene.
+let neon_i = -8
+while neon_i < 12 {
+    let z = float(neon_i) * 6.0
+    neon_line(0.0 - ground_half, 0.05, z, ground_half, 0.05, z, 0, 220, 200)
+    neon_i = neon_i + 1
+}
+neon_line(-1.0, 0.05, -48.0, -1.0, 0.05, 72.0, 255, 50, 180)
+neon_line( 1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
+
+// =========================================================================
+// Draw: buildings with neon rooftop outline
+// =========================================================================
+let bi = 0
+while bi < len(buildings) {
+    let b = buildings[bi]
+    box_(b.x, b.h / 2.0, b.z, b.w, b.h, b.d, b.r, b.g, b.b)
+    // Rooftop neon rim
+    let hx = b.w / 2.0
+    let hz = b.d / 2.0
+    let rt = b.h + 0.02
+    neon_line(b.x - hx, rt, b.z - hz, b.x + hx, rt, b.z - hz, 255, 180, 40)
+    neon_line(b.x + hx, rt, b.z - hz, b.x + hx, rt, b.z + hz, 255, 180, 40)
+    neon_line(b.x + hx, rt, b.z + hz, b.x - hx, rt, b.z + hz, 255, 180, 40)
+    neon_line(b.x - hx, rt, b.z + hz, b.x - hx, rt, b.z - hz, 255, 180, 40)
+    bi = bi + 1
+}
+
+// =========================================================================
+// Draw: enemies — colored cubes that bob on their patrol path.
+// =========================================================================
+let di = 0
+while di < len(enemies) {
+    let e = enemies[di]
+    if e.alive {
+        let ex = e.x + sin(e.phase) * 2.0
+        let ez = e.z + cos(e.phase) * 2.0
+        // Body
+        box_(ex, 0.8, ez, 0.9, 1.4, 0.9, 230, 40, 60)
+        // Head (glowing cyan)
+        box_(ex, 1.7, ez, 0.55, 0.55, 0.55, 60, 240, 230)
+        // HP dot — small white box on top that shrinks as HP drops
+        let hb = 0.15 * float(e.hp)
+        box_(ex, 2.1, ez, hb, 0.1, hb, 255, 255, 255)
+    }
+    di = di + 1
+}
+
+// =========================================================================
+// HUD
+// =========================================================================
+let cxh = int(cx)
+let cyh = int(cy)
+
+// Crosshair (slightly wider when firing)
+let ch_col_r = 200
+let ch_col_g = 255
+let ch_col_b = 220
+if muzzle > 0 {
+    ch_col_r = 255; ch_col_g = 220; ch_col_b = 60
+}
+rect2d(cxh - 1, cyh - 9, 2, 7, ch_col_r, ch_col_g, ch_col_b)
+rect2d(cxh - 1, cyh + 2, 2, 7, ch_col_r, ch_col_g, ch_col_b)
+rect2d(cxh - 9, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
+rect2d(cxh + 2, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
+
+// Muzzle flash bloom
+if muzzle > 0 {
+    let flash = muzzle * 4
+    rect2d(cxh - flash, cyh - flash, flash * 2, flash * 2, 255, 200, 40)
+}
+
+// Health bar (bottom-left)
+let hp_max_w = 200
+let hp_w = hp_max_w * hp / 100
+rect2d(16, int(sh) - 40, hp_max_w, 16, 30, 10, 30)
+rect2d(16, int(sh) - 40, hp_w, 16, 255, 60, 90)
+text2d("HP " ++ str(hp), 20, int(sh) - 38, 2, 255, 255, 255)
+
+// Ammo (bottom-right)
+text2d("AMMO " ++ str(ammo) ++ "/30", int(sw) - 200, int(sh) - 38, 3, 255, 220, 60)
+
+// Score + enemies left
+let alive_count = 0
+let ci = 0
+while ci < len(enemies) {
+    if enemies[ci].alive { alive_count = alive_count + 1 }
+    ci = ci + 1
+}
+text2d("SCORE " ++ str(score), int(sw) - 200, 10, 3, 60, 240, 230)
+text2d("ENEMIES " ++ str(alive_count), int(sw) - 200, 40, 2, 200, 200, 200)
+
+// Debug readouts
+text2d("POS " ++ str(int(player_x)) ++ " " ++ str(int(player_z)), 10, 10, 2, 180, 255, 220)
+text2d("FPS " ++ str(int(1.0 / (delta + 0.0001))), 10, 30, 2, 140, 200, 180)
+
+// -------- Minimap (top-right, under SCORE) --------
+let mm_size = 140
+let mm_x = int(sw) - mm_size - 20
+let mm_y = 80
+let mm_scale = 0.5  // world units per pixel (140 px → 70 m radius)
+rect2d(mm_x - 2, mm_y - 2, mm_size + 4, mm_size + 4, 200, 220, 240)
+rect2d(mm_x, mm_y, mm_size, mm_size, 10, 10, 25)
+// Player
+let mpx = mm_x + mm_size / 2
+let mpy = mm_y + mm_size / 2
+rect2d(mpx - 2, mpy - 2, 4, 4, 60, 255, 230)
+// Direction ticker
+let tx = mpx + int(sin(yaw) * 6.0)
+let ty = mpy - int(cos(yaw) * 6.0)
+line2d(mpx, mpy, tx, ty, 60, 255, 230)
+// Buildings as dim rects
+let mmi = 0
+while mmi < len(buildings) {
+    let b = buildings[mmi]
+    let bx = mpx + int((b.x - player_x) / mm_scale)
+    let by = mpy - int((b.z - player_z) / mm_scale)
+    let bw = int(b.w / mm_scale) + 1
+    let bd = int(b.d / mm_scale) + 1
+    if bx > mm_x && bx < mm_x + mm_size && by > mm_y && by < mm_y + mm_size {
+        rect2d(bx - bw / 2, by - bd / 2, bw, bd, 80, 40, 100)
+    }
+    mmi = mmi + 1
+}
+// Enemies as red dots
+let mme = 0
+while mme < len(enemies) {
+    let e = enemies[mme]
+    if e.alive {
+        let ex = mpx + int((e.x - player_x) / mm_scale)
+        let ey = mpy - int((e.z - player_z) / mm_scale)
+        if ex > mm_x && ex < mm_x + mm_size && ey > mm_y && ey < mm_y + mm_size {
+            rect2d(ex - 2, ey - 2, 4, 4, 255, 60, 80)
+        }
+    }
+    mme = mme + 1
+}
+
+// Game over overlay
+if hp <= 0 {
+    rect2d(0, 0, int(sw), int(sh), 60, 0, 20)
+    text2d("YOU DIED", int(cx) - 80, int(cy) - 20, 6, 255, 60, 60)
+    text2d("press R to reload (restart)", int(cx) - 120, int(cy) + 30, 2, 255, 200, 200)
+}
+if alive_count == 0 {
+    text2d("CITY CLEARED", int(cx) - 120, int(cy) - 20, 5, 60, 255, 200)
+}

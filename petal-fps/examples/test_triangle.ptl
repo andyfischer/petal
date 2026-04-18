@@ -1,0 +1,32 @@
+// Minimal test: one coloured triangle + a floor quad on a cyan→pink gradient
+// sky. No camera movement — just verifies the 3D pipeline.
+
+sky_gradient(20, 10, 60, 240, 100, 200)
+
+let w = float(screen_width())
+let h = float(screen_height())
+let cx = w / 2.0
+let cy = h / 2.0
+
+// A floor: two screen-space triangles at increasing depth.
+triangle3d(
+    0.0, cy + 40.0, 50.0,
+    w, cy + 40.0, 50.0,
+    w, h, 2.0,
+    40, 30, 60)
+triangle3d(
+    0.0, cy + 40.0, 50.0,
+    w, h, 2.0,
+    0.0, h, 2.0,
+    40, 30, 60)
+
+// One neon triangle mid-screen.
+triangle3d(
+    cx - 80.0, cy - 80.0, 5.0,
+    cx + 80.0, cy - 80.0, 5.0,
+    cx, cy + 80.0, 5.0,
+    0, 255, 180)
+
+// HUD text
+text2d("PETAL-FPS HELLO", 20, 20, 3, 255, 240, 200)
+text2d("PIPELINE OK", 20, 60, 2, 160, 255, 220)

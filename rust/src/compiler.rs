@@ -605,6 +605,24 @@ impl Compiler {
         None
     }
 
+    /// Walk through `Phi` terms (following `inputs[0]`, which points to the
+    /// pre-control-flow binding) to find an underlying `StateInit` term, if
+    /// any. Used by `compile_assign` so that assignments to a state variable
+    /// inside an `if` / loop body still emit a `StateWrite` — the scope
+    /// lookup returns the phi that was installed by the enclosing control
+    /// flow, not the original `StateInit`.
+    fn find_state_init(&self, tid: TermId) -> Option<TermId> {
+        let term = &self.terms[tid.0 as usize];
+        match &term.op {
+            TermOp::StateInit => Some(tid),
+            TermOp::Phi => {
+                let input = *term.inputs.first()?;
+                self.find_state_init(input)
+            }
+            _ => None,
+        }
+    }
+
     /// Check if a name's binding is from an outer function scope (needs capture).
     fn needs_capture(&self, name: &str) -> bool {
         if self.function_boundaries.is_empty() {
@@ -939,16 +957,18 @@ impl Compiler {
             AssignTarget::Name(name) => {
                 let val_tid = self.compile_expr(value);
 
-                // Check if this is a state variable — if so, emit StateWrite
+                // Check if this is a state variable — if so, emit StateWrite.
+                // Walk through Phi nodes so an assignment inside an `if` /
+                // loop body still finds the underlying StateInit.
                 if let Some(existing_tid) = self.scope_lookup(name) {
-                    if let TermOp::StateInit = &self.terms[existing_tid.0 as usize].op {
-                        let state_key = self.terms[existing_tid.0 as usize].state_key;
-                        let in_loop = self.terms[existing_tid.0 as usize].in_loop;
+                    if let Some(init_tid) = self.find_state_init(existing_tid) {
+                        let state_key = self.terms[init_tid.0 as usize].state_key;
+                        let in_loop = self.terms[init_tid.0 as usize].in_loop;
                         // If StateInit has an explicit key (2nd input), pass it to StateWrite too
-                        let has_explicit_key = self.terms[existing_tid.0 as usize].inputs.len() > 1;
+                        let has_explicit_key = self.terms[init_tid.0 as usize].inputs.len() > 1;
                         let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
                         if has_explicit_key {
-                            let key_input = self.terms[existing_tid.0 as usize].inputs[1];
+                            let key_input = self.terms[init_tid.0 as usize].inputs[1];
                             write_inputs.push(key_input);
                         }
                         let write_tid = self.emit_term(

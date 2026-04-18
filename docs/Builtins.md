@@ -384,7 +384,7 @@ type(42)          // "int"
 type(3.14)        // "float"
 type("hello")     // "string"
 type([1, 2])      // "list"
-type({a: 1})      // "map"
+type({a: 1})      // "record"
 type(true)        // "bool"
 type(nil)         // "nil"
 ```
@@ -447,6 +447,15 @@ Checks if a list contains a value or a string contains a substring.
 contains([1, 2, 3], 2)       // true
 contains("hello", "ell")     // true
 contains([1, 2, 3], 5)       // false
+```
+
+### `includes(collection, needle)`
+
+JavaScript-style alias for `contains`. Same behavior.
+
+```petal
+[1, 2, 3].includes(2)        // true
+"hello".includes("ell")      // true
 ```
 
 ### `sort(list)`
@@ -548,6 +557,42 @@ Folds over a list, accumulating a result.
 ```petal
 reduce([1, 2, 3], 0, fn(acc, x) { acc + x })   // 6
 reduce([1, 2, 3], 1, fn(acc, x) { acc * x })   // 6
+```
+
+### `forEach(list, fn)`
+
+Runs a function once for each element and returns `nil`. Use when you
+want the side effects (logging, drawing, mutations) but don't need a
+new list.
+
+```petal
+forEach([1, 2, 3], fn(x) { print(x) })
+```
+
+## Assertions
+
+Runtime assertions abort the program with a message and source location
+when their condition fails. Useful for defensive programming and tests.
+
+### `assert(condition, message?)`
+
+Aborts with `assertion failed: <message>` (or a default message) when
+`condition` is falsy.
+
+```petal
+assert(x > 0, "x must be positive")
+assert(len(items) == 3)
+```
+
+### `assert_eq(actual, expected)`
+
+Aborts with `assert_eq: left=<actual> right=<expected>` when the two
+values are not equal. Prefer over `assert(a == b)` because the failure
+message shows both operands.
+
+```petal
+assert_eq(2 + 2, 4)
+assert_eq(sort([3, 1, 2]), [1, 2, 3])
 ```
 
 ## Automatic Differentiation

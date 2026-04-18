@@ -89,13 +89,18 @@ All color values are integers 0-255.
 | Function | Description |
 |----------|-------------|
 | `key_down(name)` | `true` if a key is currently held down |
-| `key_pressed(name)` | `true` if a key was pressed this frame |
+| `key_pressed(name)` | `true` if a key was pressed this frame (edge-triggered) |
 | `mouse_x()` | Current mouse X position |
 | `mouse_y()` | Current mouse Y position |
-| `mouse_down(button)` | `true` if a mouse button is down |
+| `mouse_down(button)` | `true` if a mouse button is currently held |
+| `mouse_pressed(button)` | `true` if a mouse button was pressed this frame |
 
-Key names are lowercase strings: `"left"`, `"right"`, `"up"`, `"down"`, `"space"`,
-`"return"`, `"a"`-`"z"`, `"0"`-`"9"`, etc.
+Key names are lowercase strings. The supported set is: `a`–`z`, `0`–`9`,
+`up`, `down`, `left`, `right`, `space`, `return`, `escape`, `tab`,
+`backspace`, `shift`, `ctrl`, `alt`. Any other key name returns `false`
+(there's no "unknown key" error).
+
+Mouse `button` is `1` (left), `2` (middle), or `3` (right).
 
 ### Timing
 
@@ -122,10 +127,11 @@ Disable with `--no-hot-reload`.
 
 ## Example Games
 
-The `petal-sdl/examples/` directory contains playable games:
+The `petal-sdl/examples/` directory contains a mix of playable games and
+sketches from *The Nature of Code* (the `noc_*.ptl` set):
 
-| Game | Description |
-|------|-------------|
+| Game / Sketch | Description |
+|---------------|-------------|
 | `snake.ptl` | Classic snake game with gradient rendering |
 | `pong.ptl` | Two-paddle pong |
 | `breakout.ptl` | Brick breaker |
@@ -137,9 +143,31 @@ The `petal-sdl/examples/` directory contains playable games:
 | `dodge.ptl` | Dodge falling objects |
 | `particles.ptl` | Particle system demo |
 | `paint.ptl` | Drawing application |
+| `browser.ptl` | UI/browser mockup (uses the example-launcher natives) |
+| `noc_*.ptl` | *Nature of Code* reproductions — random walkers, flocking, flow fields, springs, cloth, fractal trees, elementary CA, etc. |
+
+### Example launcher natives
+
+The `browser.ptl` example uses four host functions for building a menu that
+launches other examples:
+
+| Function | Description |
+|----------|-------------|
+| `example_count()` | Number of bundled examples |
+| `example_name(i)` | Display name of example `i` |
+| `example_path(i)` | Absolute `.ptl` path of example `i` |
+| `launch_script(path)` | Replace the running program with the one at `path` |
+
+These are petal-sdl-specific; they are not part of the core language and
+are only available when running under `petal-sdl`.
 
 ## Agent Protocol
 
 The `--agent` flag enables a JSON-based debugging protocol over stdin/stdout, designed
 for AI assistants to interact with running games programmatically. The `--headless` flag
 combines this with no-window mode for automated testing and screenshot capture.
+
+See [`docs/debug-protocol.md`](debug-protocol.md) for the command/response
+schema — the same protocol is used by `petal-diagram-canvas` over
+WebSocket, so tooling written against one transport works against the
+other.

@@ -1,6 +1,6 @@
 //! Heap - Garbage-collected storage for strings, lists, and maps.
 //!
-//! See docs/tech_outline/topics/Heap.md
+//! See docs/Architecture.md for the surrounding runtime design.
 
 use std::collections::HashMap;
 

@@ -65,9 +65,10 @@ print("hello, {name}!")
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Build instructions, running examples, CLI usage |
 | [Language Guide](docs/Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
-| [Builtins Reference](docs/Builtins.md) | All 35 built-in functions with signatures and examples |
+| [Builtins Reference](docs/Builtins.md) | All ~65 built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
-| [Design Goals](docs/Petal_Goals.md) | Language philosophy and the four foundational pillars |
+| [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
+| [Design Goals](docs/PETAL_GOALS.md) | Language philosophy and the four foundational pillars |
 
 ## Tools
 
@@ -75,11 +76,11 @@ print("hello, {name}!")
 |------|-------------|
 | [Playground](docs/Playground.md) | Interactive web app for exploring the compiler pipeline (tokens, AST, IR, output) |
 | [Game Framework](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload |
-| MCP Server | AI assistant integration — `TestSnippet`, `ShowIR`, `ShowAST`, `ShowTokens` tools |
+| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools |
 
 ## Examples
 
-The [`examples/`](examples/) directory contains 16 programs covering all language features,
+The [`examples/`](examples/) directory contains 22 programs covering all language features,
 from hello world to Conway's Game of Life. See [examples/README.md](examples/README.md)
 for the full list.
 
@@ -97,12 +98,12 @@ edges — each term represents an operation and references its inputs by ID. Blo
 terms into control flow regions. The step evaluator walks the graph one term at a time,
 enabling live editing and state preservation across hot reloads.
 
-See [docs/tech_outline/](docs/tech_outline/Outline.md) for detailed architecture
+See [docs/Architecture.md](docs/Architecture.md) for detailed architecture
 documentation.
 
 ## Testing
 
 ```bash
-npx vitest           # Integration tests (250+ tests)
-./bin/test-each.sh   # Run all example programs
+npx vitest               # Integration tests (330+ tests)
+./bin/test-examples.sh   # Run all example programs
 ```

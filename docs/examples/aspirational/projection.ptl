@@ -1,6 +1,6 @@
 // Projection (Program Slicing)
 // Extract the subset of code relevant to a particular value.
-// See tech_outline/topics/Metaprogramming.md for the full Projection API.
+// See ../../PETAL_GOALS.md for the motivation behind this API.
 //
 // Key methods used here:
 //   program.slice(target)                -- backward slice: what influences target?

@@ -1,6 +1,6 @@
 //! ConstantTable - Stores literal values for a program with deduplication.
 //!
-//! See docs/tech_outline/data_structures/ConstantTable.md
+//! See docs/Architecture.md for the surrounding compiler design.
 
 use std::collections::HashMap;
 

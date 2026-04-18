@@ -60,6 +60,7 @@ key_pressed("space")   // true only on the frame the key was first pressed
 mouse_x()              // mouse X position (pixels)
 mouse_y()              // mouse Y position (pixels)
 mouse_down(1)          // mouse button held (1=left, 2=middle, 3=right)
+mouse_pressed(1)       // true only on the frame the button was first pressed
 ```
 
 ### Timing

@@ -49,12 +49,21 @@ npx vitest test/ir-basics.test.ts
 npx vitest -t "emits Add"
 ```
 
-**Test files** (`test/*.test.ts`):
+**Test files** (`test/*.test.ts`) — 26 files, 330+ tests:
 - `ir-basics.test.ts` — constants, arithmetic, variables, registers, comparisons, unary ops
-- `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return
+- `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return, continue
 - `ir-data-structures.test.ts` — lists, records, enums, field/index access, concat
 - `ir-functions.test.ts` — function defs, closures, captures, recursion, lambdas, calls
+- `ir-higher-order.test.ts` — map, filter, reduce
+- `ir-jsx.test.ts` — JSX-like element syntax
 - `ir-state.test.ts` — state init, read, write, state keys
+- `autodiff.test.ts` — dual numbers and chain-rule propagation
+- `provenance.test.ts` / `slicing.test.ts` / `graph.test.ts` — dataflow query commands
+- `compound-assign.test.ts` / `pipe-operator.test.ts` / `method-syntax.test.ts` — operators and sugar
+- `string-interp.test.ts` / `string-intern.test.ts` / `list-string-builtins.test.ts` / `collection-builtins.test.ts`
+- `gc.test.ts` / `loop-state.test.ts` / `loop-carry-limitations.test.ts` / `is-callable.test.ts`
+- `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
+- `test-samples.test.ts` — every `examples/*.ptl` file runs without error
 
 **Helpers** (`test/helpers.ts`):
 - `ensureBuild()` — runs `cargo build` once per test session (called in `beforeAll`)
@@ -82,8 +91,14 @@ An interactive web app (`playground/`) for exploring Petal's compiler pipeline. 
 Prism Framework (API + React frontend).
 
 ```bash
-cd playground && npm run dev    # Starts API (port 4027) + Vite dev server (port 4028)
+# First-time setup: create playground/.env with a port
+echo "PRISM_API_PORT=4027" > playground/.env
+
+cd playground && npm run dev           # Starts the API server
+cd playground/web && npm run dev       # Starts the Vite dev server (separate terminal)
 ```
+
+`PRISM_API_PORT` is required; `VITE_PORT` is optional and defaults to 4007.
 
 **Features:**
 - Source code editor with live analysis (tokens, AST, IR, and program output)
@@ -96,14 +111,25 @@ cd playground && npm run dev    # Starts API (port 4027) + Vite dev server (port
 
 **Frontend** (`playground/web/`): React + Vite, proxied to the API via `vite.config.ts`.
 
-## MCP Tool: TestSnippet
+## MCP Server
 
-An MCP server (`tools/petal-mcp.ts`) provides a `TestSnippet` tool that compiles and runs
-Petal code directly. It automatically builds the Rust binary before running. Use this to
+An MCP server (`tools/petal-mcp.ts`) exposes six tools that compile and run Petal code
+directly. It automatically builds the Rust binary before running. Use these to
 quickly test Petal snippets without shelling out manually.
+
+| Tool | Purpose |
+|------|---------|
+| `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. `trace: true` adds a per-term execution trace. |
+| `CheckSnippet({code})` | Lex+parse+compile without running. Cheaper than `TestSnippet` for syntax validation. |
+| `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
+| `ShowIR({code})` | Return the compiled IR as JSON. |
+| `ShowAST({code})` | Return the parsed AST as JSON. |
+| `ShowTokens({code})` | Return the token stream as JSON. |
 
 ```
 TestSnippet({ code: 'print("hello")' })
 ```
 
-Returns stdout, stderr, and exit code.
+petal-diagram-canvas exposes a separate MCP server (`tools/petal-diagram-mcp.ts`) with
+`Diagram*` tools that speak the debug protocol over WebSocket — see
+`docs/debug-protocol.md`.

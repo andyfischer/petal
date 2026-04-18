@@ -1,6 +1,6 @@
 //! Stack - Runtime evaluation context.
 //!
-//! See docs/tech_outline/data_structures/Stack.md
+//! See docs/Architecture.md for the surrounding runtime design.
 
 use std::collections::HashMap;
 

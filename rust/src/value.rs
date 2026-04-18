@@ -1,6 +1,6 @@
 //! Value - Runtime representation of data.
 //!
-//! See docs/tech_outline/data_structures/Value.md
+//! See docs/Architecture.md for the surrounding runtime design.
 
 use std::fmt;
 

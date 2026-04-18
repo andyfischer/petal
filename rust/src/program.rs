@@ -1,6 +1,6 @@
 //! Program - A block of code represented as a collection of terms and blocks.
 //!
-//! See docs/tech_outline/data_structures/Program.md
+//! See docs/Architecture.md for the surrounding compiler design.
 
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ pub enum MapSpreadEntry {
 /// The operation a term performs.
 #[derive(Debug, Clone, Serialize)]
 pub enum TermOp {
-    // --- Core (from docs/tech_outline/data_structures/Term.md) ---
+    // --- Core ---
 
     /// Load a constant from the constant table
     Constant(ConstantId),

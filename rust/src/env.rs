@@ -1,7 +1,7 @@
 //! Env - The foundational data structure for the Petal runtime.
 //!
 //! Owns all programs and stacks. Most operations require an Env as context.
-//! See docs/tech_outline/data_structures/Env.md
+//! See docs/Architecture.md for the surrounding runtime design.
 
 use std::collections::HashMap;
 

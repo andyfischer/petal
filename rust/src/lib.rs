@@ -1,6 +1,6 @@
 // Petal language runtime - Rust implementation
 //
-// Module structure follows docs/tech_outline/Outline.md
+// See docs/Architecture.md for the module layout and the term-graph IR design.
 
 pub mod ast;
 pub mod builtins;

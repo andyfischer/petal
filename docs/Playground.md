@@ -3,17 +3,35 @@
 The Petal Playground is an interactive web app for exploring the compiler pipeline.
 Write Petal code in the editor and see live tokens, AST, IR, and program output.
 
-## Running
+## Setup
+
+The playground requires a `.env` file with a port for the API server. Create one
+the first time you set up the project:
 
 ```bash
-cd playground && npm run dev
+echo "PRISM_API_PORT=4027" > playground/.env
 ```
 
-This starts:
-- An Express API server (port 4810 by default)
-- A Vite dev server for the React frontend
+`PRISM_API_PORT` is required (the API refuses to start without it). `VITE_PORT`
+is optional and defaults to 4007.
 
-Open the URL printed in the terminal to access the playground.
+## Running
+
+The API server and the Vite dev server are separate npm scripts — run them in
+two terminals:
+
+```bash
+cd playground && npm run dev            # API server (Prism Framework)
+cd playground/web && npm run dev         # React + Vite dev server
+```
+
+Open the Vite URL (default `http://localhost:4007`) to access the playground.
+The frontend proxies `/api/*` to the API server via `vite.config.ts`.
+
+## Stack
+
+- API server: [Prism Framework](https://github.com/facetlayer/prism-framework) — shells out to `rust/target/debug/petal`
+- Frontend: React 19 + Vite
 
 ## Features
 
@@ -39,7 +57,7 @@ The playground API can also be used directly:
 ### Example: Analyze code
 
 ```bash
-curl -X POST http://localhost:4810/analyze \
+curl -X POST "http://localhost:${PRISM_API_PORT}/analyze" \
   -H "Content-Type: application/json" \
   -d '{"code": "print(1 + 2)"}'
 ```

@@ -150,13 +150,15 @@ while x < 10 {
 
 ### Break and Continue
 
+`break` exits the loop; `continue` skips to the next iteration.
+
 ```petal
 for i in range(0, 100) {
     if i == 5 {
-        break
+        break       // exit the loop
     }
     if i % 2 == 0 {
-        continue
+        continue    // skip to next iteration
     }
     print(i)
 }
@@ -454,6 +456,53 @@ fn running_average(value) {
 
 State is preserved during hot reload — if you edit and save a file while it's running,
 existing state values carry over to the new code.
+
+## JSX-like Elements
+
+Petal supports a JSX-style element syntax for building tree-shaped data —
+useful for DOM-like UIs in `petal-web` and diagram trees in `petal-diagram-canvas`.
+
+```petal
+let page = <div class="root">
+    <h1>Hello, {name}</h1>
+    <ul>
+        <li>one</li>
+        <li>two</li>
+    </ul>
+</div>
+```
+
+- Attributes are `name={expr}` or `name="literal"`.
+- Text between tags is treated as a string child.
+- Self-closing tags use `<Tag />`.
+- `{expr}` embeds a Petal expression as a child.
+
+Elements are runtime values; host embeddings (petal-web's renderer,
+petal-diagram-canvas) walk the tree and produce DOM / canvas output.
+
+## Function Overloading
+
+Petal supports defining multiple functions with the same name but different
+numbers of parameters. Dispatch happens at runtime by argument count:
+
+```petal
+fn greet() { print("hi") }
+fn greet(name) { print("hi", name) }
+fn greet(a, b) { print("hi", a, b) }
+```
+
+See [Function_Overloading.md](Function_Overloading.md) for the full rules.
+
+## Assertions
+
+```petal
+assert(x > 0, "x must be positive")
+assert_eq(total, expected)
+```
+
+`assert` aborts with `assertion failed: <msg>` plus the source location when
+its condition is false. `assert_eq` reports both operand values on failure.
+Both are built-ins — no import needed.
 
 ## Automatic Differentiation
 

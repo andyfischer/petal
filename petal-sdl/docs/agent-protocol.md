@@ -123,19 +123,38 @@ Draw command types: `clear`, `rect`, `rect_outline`, `line`, `circle`, `text`.
 ### input
 
 Set input state. Keys are sticky — they stay down until the next `input` command.
-Mouse position persists similarly.
+Mouse position and buttons persist similarly.
 
 ```json
-{"cmd": "input", "keys_down": ["up", "space"], "mouse": [400, 300]}
+{"cmd": "input", "keys_down": ["up", "space"], "mouse": {"x": 400, "y": 300, "buttons": [1]}}
 ```
 ```json
 {"ok": true}
 ```
 
 Key names: `a`-`z`, `0`-`9`, `up`, `down`, `left`, `right`, `space`, `return`,
-`escape`, `tab`, `shift`, `ctrl`, `alt`, `backspace`.
+`escape`, `tab`, `shift`, `ctrl`, `alt`, `backspace`. Unrecognized names are
+silently ignored.
 
-Mouse button state is not yet exposed via the input command.
+`mouse` accepts two forms:
+
+- Object (preferred): `{"x": int, "y": int, "buttons": [int, ...]}` where
+  `buttons` is a list of SDL mouse button codes (1 = left, 2 = middle, 3 = right).
+- Legacy tuple: `[x, y]` — sets position only, clears all button state.
+
+### screenshot
+
+Render the current frame (speculatively — state is not advanced) into a PNG
+and return it as a base64-encoded data URL. Useful for visual diffs in CI.
+
+```json
+{"cmd": "screenshot"}
+```
+```json
+{"ok": true, "screenshot": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA..."}
+```
+
+The same PNG encoder is used by the `--screenshot out.png --frames N` CLI flag.
 
 ### set_state
 

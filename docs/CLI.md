@@ -1,6 +1,6 @@
 # Petal CLI Reference
 
-The `petal` binary provides commands for running programs and inspecting the intermediate representations produced by each compiler stage: tokens, AST, and IR.
+The `petal` binary provides commands for running programs, validating syntax, inspecting each compiler stage (tokens, AST, IR), and querying the dataflow graph.
 
 ## Usage
 
@@ -16,16 +16,78 @@ petal <file>           # same as: petal run <file>
 petal -e <code>        # same as: petal run -e <code>
 ```
 
+### Commands at a glance
+
+| Command | Purpose |
+|---------|---------|
+| `run` | Execute a program |
+| `check` | Lex + parse + compile only (no execution) |
+| `explain` | Run with trace, walk back from a term to its ancestors |
+| `show-tokens` | Lexer output |
+| `show-ast` | Parser output |
+| `show-ir` | Compiled IR (term graph) |
+| `show-provenance` | Backward dataflow slice from a term |
+| `show-dependents` | Forward dataflow slice from a term |
+| `show-slice` | Minimal dataflow subgraph for one or more targets |
+| `show-graph` | Graphviz DOT-format dataflow graph |
+
+All inspection commands support `--json` for machine-readable output. `run`
+additionally supports `--trace` and `--record-trace <path>` to capture a
+per-term execution trace.
+
 ## Commands
 
 ### `run` — Execute a program
 
 ```
-petal run <file.ptl>
-petal run -e '<code>'
+petal run [--json] [--trace] [--record-trace <path>] <file.ptl>
+petal run [--json] [--trace] [--record-trace <path>] -e '<code>'
 ```
 
 Runs the program and prints any output to stdout. Exits with code 1 on error.
+
+Flags:
+
+- `--json` — emit runtime/parse errors as structured JSON instead of a
+  human-readable message. Shape: `{message, line, column, caused_by[], stack[], phase}`.
+- `--trace` — write per-term execution events to stderr (inputs + result
+  + source location) as they happen.
+- `--record-trace <path>` — write the full trace buffer to `<path>` as JSON
+  after the run completes. Useful for offline analysis and for feeding
+  `petal explain`. Environment variable `PETAL_DEBUG=1` enables tracing
+  without the flag.
+
+### `check` — Validate without running
+
+```
+petal check [--json] <file.ptl>
+petal check [--json] -e '<code>'
+```
+
+Lex, parse, and compile the program but do not execute it. Exits 0 if
+compilation succeeds, 1 otherwise. With `--json`, emits either
+`{"ok": true}` on success or `{message, line, column, phase, ...}` on
+failure (`phase` is `"parse"` or `"compile"`).
+
+Faster than `run` when you only care about syntactic validity.
+
+### `explain` — Walk the dataflow graph backward from a term
+
+```
+petal explain [--json] --term <name|id> <file.ptl>
+petal explain [--json] --term <name|id> -e '<code>'
+```
+
+Runs the program with tracing enabled, then walks the dataflow graph
+backward from the target term, reporting every recorded value along the
+chain of ancestors. Answers the question "why does `x` have this value?".
+
+`--term` accepts:
+- A variable name: `--term total`
+- A bare numeric term id: `--term 72`
+- The `t`-prefixed form: `--term t72`
+
+With `--json`, returns `{name, term_id, chain: [{term_id, op, name, value, line, column}, ...]}`.
 
 ### `show-tokens` — Lexer token stream
 
@@ -156,13 +218,15 @@ All AST types use serde's externally-tagged enum representation.
 ### `show-ir` — Compiled IR (term graph)
 
 ```
-petal show-ir <file.ptl>
-petal show-ir -e '<code>'
-petal show-ir --json <file.ptl>
-petal show-ir --json -e '<code>'
+petal show-ir [--json] [--all] <file.ptl>
+petal show-ir [--json] [--all] -e '<code>'
 ```
 
 Outputs the compiled intermediate representation — the term graph that the evaluator executes. This is the primary command for GUI playground integration.
+
+By default, builtin "phantom" terms (one per registered native function, see
+below) are **hidden** so output starts with user code. Pass `--all` to
+include them.
 
 **Text output** (default):
 
@@ -317,26 +381,98 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 
 **SourcePosition**: `{"line": number, "column": number, "offset": number}`
 
+## Dataflow query commands
+
+The remaining commands query the compiled dataflow graph without running
+the program (except `explain`, which needs execution for values). They
+all accept `--term <name|id>` with the same resolution rules as `explain`.
+
+### `show-provenance` — Backward slice
+
+```
+petal show-provenance [--json] --term <name|id> <file.ptl>
+```
+
+Returns the set of terms that feed into the target term, along with the
+edges connecting them. "What does this value depend on?"
+
+JSON shape: `{root: Term, ancestors: Term[], edges: [{from, to}, ...]}`.
+
+### `show-dependents` — Forward slice
+
+```
+petal show-dependents [--json] --term <name|id> <file.ptl>
+```
+
+Symmetric to `show-provenance`, but walks forward through the reverse
+`inputs` index. "What downstream values does this term influence?".
+
+### `show-slice` — Minimal subgraph for multiple targets
+
+```
+petal show-slice [--json] --term <a> [--term <b> ...] <file.ptl>
+```
+
+Returns the smallest subgraph that connects one or more target terms back
+to their common ancestors. Useful for focused visualizations and for
+extracting the "interesting" part of a larger program.
+
+### `show-graph` — Graphviz DOT export
+
+```
+petal show-graph [--all] <file.ptl>
+petal show-graph [--all] -e '<code>'
+```
+
+Emits the dataflow graph in DOT format, ready to pipe into `dot -Tpng`.
+By default hides phantom builtin terms; `--all` includes them.
+
+Nodes are colored by role (constants = light blue, state = pink, user
+bindings = white) so the output stays readable even on mid-sized programs.
+
 ## Builtin Phantom Terms
 
-Every program starts with 35 phantom terms (t0–t34) in the root block, one per builtin function. These are `Copy` terms with empty inputs and their `name` set to the builtin name:
+Every program starts with **68 phantom terms (t0–t67)** in the root block,
+one per registered built-in function. These are `Copy` terms with empty
+inputs; their `name` field holds the builtin name. The table below reflects
+the registration order from `rust/src/builtins/mod.rs`. Registration order
+is load-bearing: reordering it would renumber every IR snapshot, so
+built-ins can only be appended.
 
-| ID | Name | ID | Name | ID | Name |
-|----|------|----|------|----|------|
-| 0 | `print` | 12 | `type` | 24 | `sort` |
-| 1 | `range` | 13 | `append` | 25 | `reverse` |
-| 2 | `len` | 14 | `pop` | 26 | `join` |
-| 3 | `push` | 15 | `keys` | 27 | `split` |
-| 4 | `str` | 16 | `values` | 28 | `enumerate` |
-| 5 | `abs` | 17 | `contains` | 29 | `zip` |
-| 6 | `sqrt` | 18 | `min` | 30 | `slice` |
-| 7 | `floor` | 19 | `max` | 31 | `flat` |
-| 8 | `ceil` | 20 | `round` | 32 | `map` |
-| 9 | `float` | 21 | `dual` | 33 | `filter` |
-| 10 | `int` | 22 | `value_of` | 34 | `reduce` |
-| 11 | `random` | 23 | `deriv_of` | | |
+| ID | Name | ID | Name | ID | Name | ID | Name |
+|----|------|----|------|----|------|----|------|
+| 0  | `print`      | 17 | `contains`  | 34 | `cos`        | 51 | `noise`      |
+| 1  | `range`      | 18 | `min`       | 35 | `tan`        | 52 | `noise_seed` |
+| 2  | `len`        | 19 | `max`       | 36 | `atan2`      | 53 | `random_int` |
+| 3  | `push`       | 20 | `round`     | 37 | `pi`         | 54 | `choose`     |
+| 4  | `str`        | 21 | `dual`      | 38 | `clamp`      | 55 | `hsv`        |
+| 5  | `abs`        | 22 | `value_of`  | 39 | `lerp`       | 56 | `hsl`        |
+| 6  | `sqrt`       | 23 | `deriv_of`  | 40 | `map_range`  | 57 | `color_lerp` |
+| 7  | `floor`      | 24 | `sort`      | 41 | `distance`   | 58 | `vec2`       |
+| 8  | `ceil`       | 25 | `reverse`   | 42 | `mag`        | 59 | `normalize`  |
+| 9  | `float`      | 26 | `join`      | 43 | `pow`        | 60 | `dot`        |
+| 10 | `int`        | 27 | `split`     | 44 | `sign`       | 61 | `limit`      |
+| 11 | `random`     | 28 | `enumerate` | 45 | `fract`      | 62 | `map`        |
+| 12 | `type`       | 29 | `zip`       | 46 | `smoothstep` | 63 | `filter`     |
+| 13 | `append`     | 30 | `slice`     | 47 | `radians`    | 64 | `reduce`     |
+| 14 | `pop`        | 31 | `flat`      | 48 | `degrees`    | 65 | `forEach`    |
+| 15 | `keys`       | 32 | `includes`  | 49 | `exp`        | 66 | `assert`     |
+| 16 | `values`     | 33 | `sin`       | 50 | `log`        | 67 | `assert_eq`  |
 
-User-defined terms start at t35. Builtin phantom terms are not connected to the block's linked list (`block_next`/`block_prev` are null, and the block's `entry` points to the first user term).
+`includes` is a JS-compat alias for `contains`. `map`, `filter`, `reduce`,
+and `forEach` are declared as natives so name resolution finds them, but
+the evaluator dispatches them as intrinsics (they need access to the
+evaluator to call their function argument).
+
+User-defined terms start at t68. Phantom terms are **not connected to
+the block's linked list** (`block_next`/`block_prev` are `null`, and the
+block's `entry` points to the first user term).
+
+Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) register
+additional natives before compiling programs. Those natives add more
+phantom terms, so the starting ID of user code shifts accordingly. In
+show-ir output, everything before the first non-phantom term is
+host-provided.
 
 ## Traversing the IR
 

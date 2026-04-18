@@ -1,6 +1,6 @@
 //! SourceMap - Maps terms to source locations for error reporting and live editing.
 //!
-//! See docs/tech_outline/data_structures/SourceMap.md
+//! See docs/Architecture.md for the surrounding compiler design.
 
 use std::collections::HashMap;
 

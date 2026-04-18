@@ -1,6 +1,6 @@
 // Metaprogramming
 // Programs as first-class values: inspect, build, transform, and compose.
-// See tech_outline/topics/Metaprogramming.md for the full API.
+// See ../../PETAL_GOALS.md for the motivation behind this API.
 
 // --- Example 1: Self-inspection ---
 

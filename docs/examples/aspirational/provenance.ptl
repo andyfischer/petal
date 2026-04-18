@@ -1,6 +1,6 @@
 // Provenance Tracking
 // Trace what inputs influenced each computed value.
-// See tech_outline/topics/Metaprogramming.md for the full Trace API.
+// See ../../PETAL_GOALS.md for the motivation behind this API.
 //
 // Key methods used here:
 //   program.trace(args...)         -- run with tracing, returns Trace

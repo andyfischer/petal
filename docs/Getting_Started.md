@@ -43,7 +43,7 @@ rust/target/debug/petal run hello.ptl
 
 ## Running the Examples
 
-The `examples/` directory contains 16 example programs:
+The `examples/` directory contains 22 example programs:
 
 ```bash
 # Run a single example
@@ -99,19 +99,23 @@ npx vitest -t "name" # Run tests matching a name
 
 ## Using the Playground
 
-The playground is an interactive web app for exploring the compiler pipeline:
+The playground is an interactive web app for exploring the compiler pipeline.
+First-time setup requires a port in `playground/.env`:
 
 ```bash
-cd playground && npm run dev
+echo "PRISM_API_PORT=4027" > playground/.env
+cd playground && npm run dev               # starts the API server
+cd playground/web && npm run dev            # starts the Vite dev server (separate terminal)
 ```
 
-This starts the API server and a Vite dev server. Open the URL printed in the terminal
-to access the editor, where you can write Petal code and see live tokens, AST, IR,
-and program output. See [docs/Playground.md](Playground.md) for more details.
+Open the Vite URL (default `http://localhost:4007`) to access the editor, where you can
+write Petal code and see live tokens, AST, IR, and program output. See
+[docs/Playground.md](Playground.md) for more details.
 
 ## Using the MCP Tools
 
 If you're using an AI assistant that supports MCP (like Claude Code), the project includes
-an MCP server that provides `TestSnippet`, `ShowIR`, `ShowAST`, and `ShowTokens` tools.
-These let you compile and run Petal code directly from your assistant without shelling out
+an MCP server at `tools/petal-mcp.ts` that provides six tools — `TestSnippet`,
+`CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens`. These let you compile,
+run, inspect, and debug Petal code directly from your assistant without shelling out
 manually.

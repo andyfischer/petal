@@ -1,0 +1,180 @@
+// === Petal FPS — Step 1: camera, projection, one cube on a floor. ===
+//
+// Verifies the core pipeline end-to-end:
+//  - Input (mouse look, WASD) updates camera state
+//  - Petal does world → camera → screen projection
+//  - Rust rasterizes z-buffered triangles
+//
+// Next steps will add the cyberpunk city, enemies, shooting, HUD.
+
+// ---------- persistent state ----------
+state player_x = 0.0
+state player_y = 1.7
+state player_z = -8.0
+state yaw = 0.0          // rotation around Y axis (left/right look)
+state pitch = 0.0        // rotation around X axis (up/down look)
+state want_grab = false
+
+// ---------- frame constants ----------
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+let cx = sw / 2.0
+let cy = sh / 2.0
+
+let fov_deg = 70.0
+let fov = fov_deg * pi() / 180.0
+let focal = cy / tan(fov / 2.0)
+let near = 0.2
+
+// ---------- mouse grab on first frame ----------
+if !want_grab {
+    grab_mouse()
+    want_grab = true
+}
+
+// ---------- input: mouse look ----------
+let look_sens = 0.0022
+yaw = yaw + float(mouse_dx()) * look_sens
+pitch = pitch - float(mouse_dy()) * look_sens
+if pitch > 1.4 { pitch = 1.4 }
+if pitch < -1.4 { pitch = -1.4 }
+
+// ---------- input: WASD movement in XZ plane ----------
+let move_speed = 6.0
+let fwd_x = sin(yaw)
+let fwd_z = cos(yaw)
+let right_x = cos(yaw)
+let right_z = 0.0 - sin(yaw)
+
+let mx = 0.0
+let mz = 0.0
+if key_down("w") { mx = mx + fwd_x; mz = mz + fwd_z }
+if key_down("s") { mx = mx - fwd_x; mz = mz - fwd_z }
+if key_down("d") { mx = mx + right_x; mz = mz + right_z }
+if key_down("a") { mx = mx - right_x; mz = mz - right_z }
+let mag_m = sqrt(mx * mx + mz * mz)
+if mag_m > 0.01 {
+    player_x = player_x + (mx / mag_m) * move_speed * delta
+    player_z = player_z + (mz / mag_m) * move_speed * delta
+}
+
+// ---------- rendering constants ----------
+let cos_y = cos(0.0 - yaw)
+let sin_y = sin(0.0 - yaw)
+let cos_p = cos(0.0 - pitch)
+let sin_p = sin(0.0 - pitch)
+
+// Transform a world-space point to screen space. Returns a record:
+//   {sx, sy, z, ok}  — ok=false means behind the near plane.
+fn project(x, y, z) {
+    let dx = x - player_x
+    let dy = y - player_y
+    let dz = z - player_z
+    // rotate by -yaw around Y: (dx, dz) -> (rx, rz)
+    let rx = dx * cos_y + dz * sin_y
+    let rz = 0.0 - dx * sin_y + dz * cos_y
+    // rotate by -pitch around X: (dy, rz) -> (ry, rz2)
+    let ry = dy * cos_p - rz * sin_p
+    let rz2 = dy * sin_p + rz * cos_p
+    if rz2 < near {
+        { sx: 0.0, sy: 0.0, z: rz2, ok: false }
+    } else {
+        {
+            sx: cx + rx / rz2 * focal,
+            sy: cy - ry / rz2 * focal,
+            z: rz2,
+            ok: true
+        }
+    }
+}
+
+// Submit a world-space triangle. If any vertex is behind near, skip.
+fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b) {
+    let p1 = project(x1, y1, z1)
+    let p2 = project(x2, y2, z2)
+    let p3 = project(x3, y3, z3)
+    if p1.ok && p2.ok && p3.ok {
+        triangle3d(
+            p1.sx, p1.sy, p1.z,
+            p2.sx, p2.sy, p2.z,
+            p3.sx, p3.sy, p3.z,
+            r, g, b)
+    }
+}
+
+// Submit a world-space axis-aligned quad (4 corners, 2 triangles).
+fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b) {
+    tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
+    tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
+}
+
+// Submit an axis-aligned box (cube). x,y,z is the center; w,h,d are extents.
+fn box_(x, y, z, w, h, d, r, g, b) {
+    let hw = w / 2.0
+    let hh = h / 2.0
+    let hd = d / 2.0
+    let x0 = x - hw; let x1 = x + hw
+    let y0 = y - hh; let y1 = y + hh
+    let z0 = z - hd; let z1 = z + hd
+    // Faces (lit differently for fake shading)
+    // +Z face (front)
+    quad(x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,  r, g, b)
+    // -Z face (back)
+    quad(x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0,
+         int(float(r) * 0.55), int(float(g) * 0.55), int(float(b) * 0.55))
+    // +X face (right)
+    quad(x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1,
+         int(float(r) * 0.8), int(float(g) * 0.8), int(float(b) * 0.8))
+    // -X face (left)
+    quad(x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0,
+         int(float(r) * 0.65), int(float(g) * 0.65), int(float(b) * 0.65))
+    // +Y face (top)
+    quad(x0, y1, z1,  x1, y1, z1,  x1, y1, z0,  x0, y1, z0,
+         int(min(255.0, float(r) * 1.15)),
+         int(min(255.0, float(g) * 1.15)),
+         int(min(255.0, float(b) * 1.15)))
+}
+
+// ---------- draw: cyberpunk sky + ground + one neon cube ----------
+sky_gradient(40, 8, 90, 240, 70, 150)
+
+// Ground: a large quad at y=0, subdivided into a few strips for visibility.
+let ground_color_r = 25
+let ground_color_g = 15
+let ground_color_b = 45
+
+let ground_half = 30.0
+let grid = 0
+while grid < 10 {
+    let z0 = float(grid) * 6.0 - ground_half
+    let z1 = z0 + 6.0
+    // alternating bands for visual depth
+    let shade = 20 + (grid % 2) * 15
+    quad(0.0 - ground_half, 0.0, z0,
+         ground_half, 0.0, z0,
+         ground_half, 0.0, z1,
+         0.0 - ground_half, 0.0, z1,
+         shade, shade / 2, shade + 20)
+    grid = grid + 1
+}
+
+// One neon box in front of spawn.
+box_(0.0, 1.5, 0.0, 3.0, 3.0, 3.0, 200, 40, 180)
+
+// ---------- HUD ----------
+// Crosshair
+let cxh = int(cx)
+let cyh = int(cy)
+rect2d(cxh - 1, cyh - 8, 2, 6, 200, 255, 220)
+rect2d(cxh - 1, cyh + 2, 2, 6, 200, 255, 220)
+rect2d(cxh - 8, cyh - 1, 6, 2, 200, 255, 220)
+rect2d(cxh + 2, cyh - 1, 6, 2, 200, 255, 220)
+
+// Debug pos
+text2d("POS " ++ str(int(player_x)) ++ " " ++ str(int(player_y)) ++ " " ++ str(int(player_z)),
+       10, 10, 2, 180, 255, 220)
+text2d("YAW " ++ str(int(yaw * 57.3)) ++ " PIT " ++ str(int(pitch * 57.3)),
+       10, 30, 2, 180, 255, 220)
+text2d("FRAME " ++ str(frame_count()),
+       10, 50, 2, 140, 200, 180)

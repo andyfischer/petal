@@ -1,0 +1,14 @@
+state counter = 0
+state marker = false
+
+log("frame start: counter=" ++ str(counter) ++ " marker=" ++ str(marker) ++ " key_w=" ++ str(key_down("w")))
+
+counter = counter + 1
+if key_down("w") {
+    marker = true
+}
+
+log("frame end: counter=" ++ str(counter) ++ " marker=" ++ str(marker))
+
+sky_gradient(0, 0, 0, 30, 30, 30)
+text2d("C=" ++ str(counter), 10, 10, 3, 255, 255, 255)

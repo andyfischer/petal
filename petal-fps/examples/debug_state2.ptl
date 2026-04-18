@@ -1,0 +1,20 @@
+state a = 0
+state b = 0
+state c = 0
+
+// unconditional
+a = a + 1
+
+// conditional — always true
+if true {
+    b = b + 1
+}
+
+// conditional on input
+if key_down("w") {
+    c = c + 1
+}
+
+log("a=" ++ str(a) ++ " b=" ++ str(b) ++ " c=" ++ str(c))
+
+sky_gradient(0, 0, 0, 0, 0, 0)

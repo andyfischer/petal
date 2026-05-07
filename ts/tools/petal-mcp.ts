@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 
-const projectRoot = resolve(import.meta.dirname, "..");
+const projectRoot = resolve(import.meta.dirname, "..", "..");
 const petalBin = join(projectRoot, "rust/target/debug/petal");
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };

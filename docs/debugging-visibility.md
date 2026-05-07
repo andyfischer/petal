@@ -44,13 +44,13 @@ Every command takes `-e <code>` or a file path. Most support `--json`.
 | `show-slice --term <a> [--term <b>...] [--json]` | Minimal subgraph for multiple targets |
 | `show-graph` | Graphviz DOT output for visualization |
 
-Use `./bin/run-petal.ts` to auto-rebuild the binary before invocation.
+Use `./ts/bin/run-petal.ts` to auto-rebuild the binary before invocation.
 
 ---
 
 ## 2. MCP Tools
 
-### `petal-tools` (`tools/petal-mcp.ts`)
+### `petal-tools` (`ts/tools/petal-mcp.ts`)
 
 Auto-rebuilds the Rust binary on first use. 10s timeout per call.
 
@@ -127,7 +127,7 @@ Supports hot reload (`--no-hot-reload` to disable).
 
 ---
 
-## 4. Test Infrastructure (`test/helpers.ts`)
+## 4. Test Infrastructure (`ts/test/helpers.ts`)
 
 Vitest-based. Helpers shell out to the compiled `petal` binary.
 
@@ -142,7 +142,7 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
 | `termByName(ir, name)` / `termById(ir, id)` | Lookup |
 | `termsByOp(ir, op)` | Filter by op |
 
-`test/test-samples.test.ts` sanity-runs every `examples/*.ptl` (3s timeout per file).
+`ts/test/test-samples.test.ts` sanity-runs every `examples/*.ptl` (3s timeout per file).
 
 ---
 

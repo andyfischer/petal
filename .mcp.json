@@ -2,11 +2,11 @@
   "mcpServers": {
     "petal-tools": {
       "command": "node",
-      "args": ["tools/petal-mcp.ts"]
+      "args": ["ts/tools/petal-mcp.ts"]
     },
     "petal-diagram-canvas": {
       "command": "node",
-      "args": ["tools/petal-diagram-mcp.ts"]
+      "args": ["ts/tools/petal-diagram-mcp.ts"]
     }
   }
 }

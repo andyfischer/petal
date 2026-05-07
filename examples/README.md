@@ -3,7 +3,7 @@
 Example programs demonstrating Petal language features. Run any example with:
 
 ```bash
-./bin/run-petal.ts run examples/<name>.ptl
+./ts/bin/run-petal.ts run examples/<name>.ptl
 ```
 
 `run-petal.ts` rebuilds the compiler if any Rust source is newer than the
@@ -13,7 +13,7 @@ test Petal locally.
 Or run all examples with pass/fail reporting:
 
 ```bash
-./bin/test-examples.sh
+./ts/bin/test-examples.ts
 ```
 
 ## Programs

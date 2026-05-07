@@ -3,8 +3,8 @@ import { execSync } from "child_process";
 import { resolve, basename } from "path";
 import { readdirSync } from "fs";
 
-const PETAL = resolve(__dirname, "../rust/target/debug/petal");
-const EXAMPLES_DIR = resolve(__dirname, "../examples");
+const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
+const EXAMPLES_DIR = resolve(__dirname, "../../examples");
 const TIMEOUT = 3000;
 
 import { ensureBuild } from "./helpers";

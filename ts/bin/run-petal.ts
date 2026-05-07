@@ -9,7 +9,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const rustDir = join(repoRoot, 'rust');
 const binary = join(rustDir, 'target', 'debug', 'petal');
 const srcDir = join(rustDir, 'src');

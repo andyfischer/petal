@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { resolve } from "path";
 
-const PETAL = resolve(__dirname, "../rust/target/debug/petal");
+const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 /**
  * No-op. Build now happens once in globalSetup (test/global-setup.ts)
  * before any test workers start, eliminating the race condition where

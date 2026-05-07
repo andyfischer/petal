@@ -457,7 +457,7 @@ existing code Just Works.
 - `rust/src/trace.rs` — delete `history()`, `HistoryEntry`, `HistoryKind`.
 - `rust/src/cli.rs::Command::Explain` execute branch — delete the History
   section in both text and JSON output.
-- `tools/petal-mcp.ts::ExplainTerm` — no change needed; the JSON shape
+- `ts/tools/petal-mcp.ts::ExplainTerm` — no change needed; the JSON shape
   shrinks but the tool description still applies.
 - `docs/debugging-visibility.md` — remove any mention of "history of writes."
 
@@ -534,7 +534,7 @@ After all five steps:
 $ grep -rn 'TermOp::Assign' rust/src/
 # (no results)
 
-$ ./bin/run-petal.ts explain --term total -e 'let total = 0
+$ ./ts/bin/run-petal.ts explain --term total -e 'let total = 0
 for x in [1, 2, 3] {
   total = total + x
 }

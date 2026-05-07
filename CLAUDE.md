@@ -9,24 +9,25 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
 - `petal-diagram-canvas/` — Another integration, web-based diagram renderer
 - `petal-web/` — Integration that uses Petal as a React-like page rendering layer.
 - `playground/` — Interactive web app for exploring the compiler pipeline (Prism API + React)
-- `tools/` — MCP server and dev tooling
-- `test/` — Vitest integration tests
+- `ts/` — All TypeScript code (Node project with its own `package.json`/`tsconfig.json`):
+  - `ts/bin/` — Dev wrappers (`run-petal.ts`, `test-examples.ts`)
+  - `ts/tools/` — MCP servers
+  - `ts/test/` — Vitest integration tests
 - `examples/` — Example `.ptl` programs
-- `bin/` — Shell scripts
 - `docs/` — Documentation
 
 Source: `rust/src/`
 
 ## Running Petal locally
 
-Use `./bin/run-petal.ts` as the default way to invoke the compiler during
+Use `./ts/bin/run-petal.ts` as the default way to invoke the compiler during
 development. It rebuilds the binary if any Rust source is newer than it, then
 forwards all arguments to `petal`:
 
 ```bash
-./bin/run-petal.ts run examples/hello.ptl
-./bin/run-petal.ts run -e 'print(1 + 2)'
-./bin/run-petal.ts show-ir -e 'let x = 1 + 2'
+./ts/bin/run-petal.ts run examples/hello.ptl
+./ts/bin/run-petal.ts run -e 'print(1 + 2)'
+./ts/bin/run-petal.ts show-ir -e 'let x = 1 + 2'
 ```
 
 You can still invoke `rust/target/debug/petal` directly if you want to skip
@@ -36,9 +37,11 @@ the staleness check.
 
 ### Integration tests (vitest)
 
-Uses Vitest. Tests shell out to the compiled `petal` CLI binary and assert on JSON output.
+Uses Vitest. Tests shell out to the compiled `petal` CLI binary and assert on JSON output. Run from the `ts/` directory:
 
 ```bash
+cd ts
+
 # Run all tests
 npx vitest
 
@@ -49,7 +52,7 @@ npx vitest test/ir-basics.test.ts
 npx vitest -t "emits Add"
 ```
 
-**Test files** (`test/*.test.ts`) — 26 files, 330+ tests:
+**Test files** (`ts/test/*.test.ts`) — 26 files, 330+ tests:
 - `ir-basics.test.ts` — constants, arithmetic, variables, registers, comparisons, unary ops
 - `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return, continue
 - `ir-data-structures.test.ts` — lists, records, enums, field/index access, concat
@@ -65,7 +68,7 @@ npx vitest -t "emits Add"
 - `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
 - `test-samples.test.ts` — every `examples/*.ptl` file runs without error
 
-**Helpers** (`test/helpers.ts`):
+**Helpers** (`ts/test/helpers.ts`):
 - `ensureBuild()` — runs `cargo build` once per test session (called in `beforeAll`)
 - `showIrJson(code)` — compiles Petal code, returns parsed IR JSON (`petal show-ir --json -e '...'`)
 - `showAstJson(code)` — returns parsed AST JSON (`petal show-ast --json -e '...'`)
@@ -77,13 +80,17 @@ npx vitest -t "emits Add"
 
 ### Example-based tests
 
-`test/test-samples.test.ts` runs every `examples/*.ptl` file through the `petal` binary
+`ts/test/test-samples.test.ts` runs every `examples/*.ptl` file through the `petal` binary
 and asserts it exits without error (3 s timeout per file). These are included in the
 normal vitest run:
 
 ```bash
+cd ts
 npx vitest test/test-samples.test.ts   # Run just the sample tests
 ```
+
+For a quick eyeball-check that prints the first few lines of each example's
+output, run `./ts/bin/test-examples.ts` (add `--full` for full output).
 
 ## Playground
 
@@ -113,7 +120,7 @@ cd playground/web && npm run dev       # Starts the Vite dev server (separate te
 
 ## MCP Server
 
-An MCP server (`tools/petal-mcp.ts`) exposes six tools that compile and run Petal code
+An MCP server (`ts/tools/petal-mcp.ts`) exposes six tools that compile and run Petal code
 directly. It automatically builds the Rust binary before running. Use these to
 quickly test Petal snippets without shelling out manually.
 
@@ -130,6 +137,6 @@ quickly test Petal snippets without shelling out manually.
 TestSnippet({ code: 'print("hello")' })
 ```
 
-petal-diagram-canvas exposes a separate MCP server (`tools/petal-diagram-mcp.ts`) with
+petal-diagram-canvas exposes a separate MCP server (`ts/tools/petal-diagram-mcp.ts`) with
 `Diagram*` tools that speak the debug protocol over WebSocket — see
 `docs/debug-protocol.md`.

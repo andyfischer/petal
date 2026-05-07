@@ -104,6 +104,6 @@ documentation.
 ## Testing
 
 ```bash
-npx vitest               # Integration tests (330+ tests)
-./bin/test-examples.sh   # Run all example programs
+cd ts && npx vitest          # Integration tests (330+ tests)
+./ts/bin/test-examples.ts    # Run all example programs
 ```

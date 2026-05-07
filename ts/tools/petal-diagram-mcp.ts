@@ -155,7 +155,7 @@ server.registerTool("DiagramScreenshot", {
     // Strip data URL prefix and decode
     const base64 = resp.screenshot.replace(/^data:image\/png;base64,/, "");
     const buf = Buffer.from(base64, "base64");
-    const tempDir = resolve(import.meta.dirname!, "..", "temp");
+    const tempDir = resolve(import.meta.dirname!, "..", "..", "temp");
     mkdirSync(tempDir, { recursive: true });
     const filename = `screenshot-${Date.now()}.png`;
     const filePath = resolve(tempDir, filename);

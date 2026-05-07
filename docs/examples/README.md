@@ -2,7 +2,7 @@
 
 This directory is **not** the main examples folder. Runnable, tested examples
 live in [`/examples/`](../../examples/) at the repo root and are exercised by
-`test/test-samples.test.ts`.
+`ts/test/test-samples.test.ts`.
 
 ## [`aspirational/`](aspirational/)
 

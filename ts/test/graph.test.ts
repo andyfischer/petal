@@ -3,7 +3,7 @@ import { ensureBuild } from "./helpers";
 import { execSync } from "child_process";
 import { resolve } from "path";
 
-const PETAL = resolve(__dirname, "../rust/target/debug/petal");
+const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 
 beforeAll(() => {
   ensureBuild();

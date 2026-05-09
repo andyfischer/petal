@@ -142,7 +142,10 @@ describe("per-iteration loop state", () => {
       expect(output).toBe("y 2\nx 2");
     });
 
-    it("StateInit with explicit key has 2 inputs in IR", () => {
+    it("StateInit with explicit key has 1 input (the key) and a child init block", () => {
+      // Lazy init: the init value lives in StateInit.child_blocks[0]; only
+      // the explicit key value is an `inputs` (it's evaluated eagerly each
+      // visit so the runtime can decide whether to enter the init block).
       const ir = showIrJson(`
         for x in [1] {
           state(x) count = 0
@@ -150,7 +153,8 @@ describe("per-iteration loop state", () => {
       `);
       const inits = termsByOp(ir, "StateInit");
       expect(inits.length).toBeGreaterThanOrEqual(1);
-      expect(inits[0].inputs).toHaveLength(2);
+      expect(inits[0].inputs).toHaveLength(1);
+      expect(inits[0].child_blocks).toHaveLength(1);
     });
   });
 });

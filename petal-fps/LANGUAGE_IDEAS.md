@@ -74,10 +74,19 @@ avoid that, or `range` could return an iterator, not a list.
 
 ---
 
-## 6. Per-iteration state in loops (already on Goals_03_2026 roadmap)
+## 6. Per-iteration state in loops  *(SHIPPED)*
 
-**Friction**: Want `for enemy in enemies { state hp_anim = enemy.hp ... }`
-keyed by enemy ID. This is exactly the "Phase 2" item in the goals doc.
+**Status**: The explicit-key form `state(enemy.id) hp_anim = enemy.hp`
+keys per-iteration state by a domain identifier — survives reordering and
+item removal. Lazy init (§18) means the init RHS only fires on first
+encounter of each key, and the run-completion sweep drops state for
+keys whose item was removed from the list. See
+`docs/Architecture.md` (the "State" section), `ts/test/loop-state.test.ts`
+and `ts/test/state-lazy-init.test.ts` for the contract.
+
+The default form `for x in items { state n = ... }` (no explicit key) is
+still index-keyed and silently breaks under reorder; the explicit-key form
+is the right choice for any list whose contents are dynamic.
 
 ---
 
@@ -180,15 +189,23 @@ which works but would be cleaner as `time() mod cycle`.
 
 ---
 
-## 18. `state` initialization expression is evaluated every frame
+## 18. `state` initialization expression is evaluated every frame  *(SHIPPED)*
 
 **Friction**: I wrote `state enemies = [{...}, {...}, ...]` (a 8-element
 literal). The RHS is evaluated every frame — the "first time" check only
 decides whether to *use* the result, but allocates records+lists regardless.
 For a large level-geometry literal (the 12 buildings in fps_game.ptl), this
-is wasted work. 
+is wasted work.
 
-**Proposed**: Skip RHS evaluation entirely when the state key is already
+**Status**: Fixed. `StateInit` is now a control-flow term whose init
+expression lives in `child_blocks[0]`. The runtime checks the persistent
+store first and only pushes the init block on a cache miss, so the RHS
+never re-evaluates after the first frame. See
+`docs/Architecture.md` (the "State" section) and the regression coverage
+in `ts/test/state-lazy-init.test.ts` and
+`rust/tests/state_lifecycle.rs`.
+
+**Proposed (original)**: Skip RHS evaluation entirely when the state key is already
 set. Would require the compiler to emit a conditional around the init
 expression, guarded by the StateInit presence check — the information is
 already there in the IR.

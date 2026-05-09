@@ -20,10 +20,17 @@ describe("state keyword", () => {
     expect(init.state_key).not.toBeNull();
   });
 
-  it("StateInit has init value as input", () => {
+  it("StateInit has its init expression in a child block (lazy init)", () => {
+    // The init expression is compiled into a child block so it only runs
+    // on the first encounter of the runtime state key. StateInit's `inputs`
+    // hold only the explicit key (if any), not the init value.
     const ir = showIrJson("state count = 0");
     const init = termsByOp(ir, "StateInit")[0];
-    expect(init.inputs).toHaveLength(1);
+    expect(init.inputs).toHaveLength(0);
+    expect(init.child_blocks).toHaveLength(1);
+    const initBlock = ir.blocks.find((b: any) => b.id === init.child_blocks[0]);
+    expect(initBlock).toBeDefined();
+    expect(initBlock.entry).not.toBeNull();
   });
 
   it("state assignment emits StateWrite", () => {

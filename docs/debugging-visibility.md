@@ -56,7 +56,9 @@ Auto-rebuilds the Rust binary on first use. 10s timeout per call.
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `TestSnippet` | `{code}` | `{stdout, stderr, exit_code}` |
+| `TestSnippet` | `{code, trace?}` | `{stdout, stderr, exit_code}`; `trace: true` adds per-term execution events |
+| `CheckSnippet` | `{code}` | `{ok}` or `{error}` — lex+parse+compile only, no run |
+| `ExplainTerm` | `{code, term}` | Provenance chain with recorded values for the target term |
 | `ShowAST` | `{code}` | JSON AST |
 | `ShowIR` | `{code}` | JSON IR (terms, ops, inputs, names) |
 | `ShowTokens` | `{code}` | JSON token array |

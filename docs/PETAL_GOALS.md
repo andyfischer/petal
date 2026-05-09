@@ -334,9 +334,11 @@ These goals have concrete implications for the language design:
 
 ### Syntax
 
-- The `@` dataflow operator makes data flow visually explicit
+- The pipe operator (`|>`) and method-call sugar (`x.f(y)`) make dataflow
+  visually explicit at the call site
 - Expression-oriented design (everything returns a value)
-- Immutability by default to preserve traceability
+- Immutability of the IR (rebindings lower to pure-dataflow `Phi` joins —
+  see [MutabilityPlan.md](MutabilityPlan.md)) preserves traceability
 
 ### Semantics
 
@@ -374,7 +376,17 @@ Together, these goals position Petal as a language where programs are not opaque
 
 ## Further Reading
 
-Concepts and research areas related to Petal's design goals:
+### Inside this repo
+
+- [Architecture.md](Architecture.md) — how the IR term graph implements these
+  goals today (Phi terms, state keys, source map, native FFI)
+- [creative-coding-language-ideas.md](creative-coding-language-ideas.md) —
+  shipped + open items for creative-coding ergonomics
+- [examples/aspirational/](examples/aspirational/) — design sketches for
+  not-yet-implemented APIs (`grad()`, `program.slice()`, etc.) that target
+  these goals
+
+### Concepts and research
 
 - **Dataflow Programming**: Lucid, Lustre, synchronous languages
 - **Automatic Differentiation**: Forward-mode AD, reverse-mode AD, dual numbers

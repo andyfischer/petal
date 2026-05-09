@@ -52,7 +52,7 @@ npx vitest test/ir-basics.test.ts
 npx vitest -t "emits Add"
 ```
 
-**Test files** (`ts/test/*.test.ts`) — 26 files, 330+ tests:
+**Test files** (`ts/test/*.test.ts`) — 27 files, 320 tests:
 - `ir-basics.test.ts` — constants, arithmetic, variables, registers, comparisons, unary ops
 - `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return, continue
 - `ir-data-structures.test.ts` — lists, records, enums, field/index access, concat
@@ -60,6 +60,7 @@ npx vitest -t "emits Add"
 - `ir-higher-order.test.ts` — map, filter, reduce
 - `ir-jsx.test.ts` — JSX-like element syntax
 - `ir-state.test.ts` — state init, read, write, state keys
+- `bug-state-in-if.test.ts` — regression coverage for state inside conditional branches
 - `autodiff.test.ts` — dual numbers and chain-rule propagation
 - `provenance.test.ts` / `slicing.test.ts` / `graph.test.ts` — dataflow query commands
 - `compound-assign.test.ts` / `pipe-operator.test.ts` / `method-syntax.test.ts` — operators and sugar

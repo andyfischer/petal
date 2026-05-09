@@ -67,17 +67,19 @@ impl Evaluator {
 
     /// Build the RuntimeStateKey for a state term, taking into account loop context
     /// and explicit keys.
+    ///
+    /// `explicit_key` is the runtime value the source-level `state(expr) name`
+    /// resolved to, or `None` for the default "key by loop index" form. When
+    /// it's `Some`, the value is hashed and used instead of the loop index;
+    /// this is what makes per-iteration state survive list reordering.
     fn resolve_runtime_state_key(
         term: &Term,
-        inputs: &[Value],
+        explicit_key: Option<&Value>,
         stack: &Stack,
         heap: &Heap,
     ) -> RuntimeStateKey {
         let base = term.state_key.unwrap();
-        if term.inputs.len() > 1 && inputs.len() > 1 {
-            // Explicit key (Phase 2): use hashed value instead of loop indices.
-            // The key value is the last input (index 1 for StateInit, index 1 for StateWrite).
-            let key_val = inputs.last().unwrap();
+        if let Some(key_val) = explicit_key {
             let hash = value::hash_value(key_val, heap);
             RuntimeStateKey {
                 base,
@@ -116,7 +118,7 @@ impl Evaluator {
             Some(tid) => tid,
             None => {
                 // Block is done — pop frame
-                return Self::pop_frame(program, stack);
+                return Self::pop_frame(program, stack, heap);
             }
         };
 
@@ -129,7 +131,7 @@ impl Evaluator {
         if (stack.break_flag || stack.continue_flag) && stack.frames[frame_idx].is_loop_body {
             let cur = program.get_term(current_term_id);
             if !matches!(cur.op, TermOp::ForLoop | TermOp::WhileLoop) {
-                return Self::pop_frame(program, stack);
+                return Self::pop_frame(program, stack, heap);
             }
         }
 
@@ -412,7 +414,7 @@ impl Evaluator {
     }
 
     /// Pop the current frame and handle the result.
-    fn pop_frame(program: &Program, stack: &mut Stack) -> StepResult {
+    fn pop_frame(program: &Program, stack: &mut Stack, heap: &Heap) -> StepResult {
         // Process phi carry-outs before popping. Each slot copies a source
         // register (walked from the current child frame via read_register) to
         // a destination register in the parent frame. Done before the pop so
@@ -474,6 +476,25 @@ impl Evaluator {
                     parent_frame.registers.resize(reg + 1, Value::Nil);
                 }
                 parent_frame.registers[reg] = result;
+            }
+
+            // Lazy-init bookkeeping: if we just popped a StateInit's init
+            // block, the popped frame's last value (now in the parent's
+            // register) is the value to bind into the persistent state map.
+            // Compute the runtime key here (the explicit-key input lives in
+            // the parent frame's registers) and insert.
+            if matches!(parent_term.op, TermOp::StateInit) {
+                let explicit_key = parent_term.inputs.first().map(|&tid| {
+                    Self::read_register(program, stack, tid)
+                });
+                let runtime_key = Self::resolve_runtime_state_key(
+                    parent_term,
+                    explicit_key.as_ref(),
+                    stack,
+                    heap,
+                );
+                stack.touched_state_keys.insert(runtime_key.clone());
+                stack.state.insert(runtime_key, result);
             }
         }
 
@@ -767,26 +788,48 @@ impl Evaluator {
             }
 
             TermOp::StateInit => {
-                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
-                if !stack.state.contains_key(&runtime_key) {
-                    let init_val = inputs.first().copied().unwrap_or(Value::Nil);
-                    stack.state.insert(runtime_key.clone(), init_val);
+                // Explicit key (if any) is the only input; the init value
+                // lives in child_blocks[0] and is computed lazily.
+                let explicit_key = inputs.first();
+                let runtime_key =
+                    Self::resolve_runtime_state_key(term, explicit_key, stack, heap);
+                stack.touched_state_keys.insert(runtime_key.clone());
+
+                if let Some(&existing) = stack.state.get(&runtime_key) {
+                    // Cache hit: skip init expression entirely.
+                    Self::write_register(stack, term, existing);
+                    ControlFlow::Advance
+                } else if let Some(&init_block) = term.child_blocks.first() {
+                    // Cache miss: push a frame for the init block. On pop,
+                    // its last term value is written into this StateInit's
+                    // register (via return_term), and pop_frame inserts the
+                    // value into the persistent state map.
+                    Self::push_child_frame(program, stack, init_block, term);
+                    ControlFlow::FramePushed
+                } else {
+                    // No init block (legacy / synthetic StateInit): seed nil.
+                    stack.state.insert(runtime_key, Value::Nil);
+                    Self::write_register(stack, term, Value::Nil);
+                    ControlFlow::Advance
                 }
-                let val = stack.state[&runtime_key];
-                Self::write_register(stack, term, val);
-                ControlFlow::Advance
             }
 
             TermOp::StateRead => {
-                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
+                let runtime_key = Self::resolve_runtime_state_key(term, None, stack, heap);
+                stack.touched_state_keys.insert(runtime_key.clone());
                 let val = stack.state.get(&runtime_key).copied().unwrap_or(Value::Nil);
                 Self::write_register(stack, term, val);
                 ControlFlow::Advance
             }
 
             TermOp::StateWrite => {
-                let runtime_key = Self::resolve_runtime_state_key(term, inputs, stack, heap);
+                // Inputs: [value] or [value, explicit_key]. The explicit key
+                // (if present) is always the last input.
                 let val = inputs.first().copied().unwrap_or(Value::Nil);
+                let explicit_key = if inputs.len() > 1 { inputs.last() } else { None };
+                let runtime_key =
+                    Self::resolve_runtime_state_key(term, explicit_key, stack, heap);
+                stack.touched_state_keys.insert(runtime_key.clone());
                 stack.state.insert(runtime_key, val);
                 Self::write_register(stack, term, val);
                 ControlFlow::Advance

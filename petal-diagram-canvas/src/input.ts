@@ -1,6 +1,6 @@
 /** Track mouse and keyboard input, feed state to the WASM runtime each frame. */
 
-import type { PetalRuntime } from "../pkg/petal.js";
+import type { PetalRuntime } from "../pkg/petal_diagram_canvas.js";
 
 // Map DOM key names to petal-sdl key names
 const KEY_MAP: Record<string, string> = {

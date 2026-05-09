@@ -1,12 +1,24 @@
 # Eliminating Mutability from Petal
 
+> **Status: IMPLEMENTED.** All five steps below have shipped. `TermOp::Assign`
+> no longer exists in the IR; rebindings inside child blocks lower to a
+> pure-dataflow `TermOp::Phi` join (see `rust/src/program.rs:119` and the
+> `phi_outs` field on `Block`). The `history()` API has been removed and
+> `petal explain` now walks pure provenance for every name.
+>
+> This document is preserved as design context — it explains *why* Petal's IR
+> is purely immutable, what the migration looked like, and what the
+> alternative (`Assign`-based) mental model would have cost. The "current
+> state" and "the plan" sections describe the pre-migration codebase.
+>
+> See [Architecture.md](Architecture.md) (the "Phi terms" section) for the
+> shipping documentation, and [CLI.md](CLI.md) for the `Phi` op's IR JSON
+> shape.
+
 A plan to make Petal's IR match its true philosophy: there are no mutable
 variables. There is a dataflow graph of terms; names are labels that point at
 terms; rebinding a name in source code creates a new term and reattaches the
 label.
-
-This document is the design + execution plan. Read it cold before starting any
-of the steps below.
 
 ---
 

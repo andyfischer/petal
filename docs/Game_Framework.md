@@ -3,6 +3,13 @@
 Petal-SDL is an SDL2-based game framework for writing 2D games in Petal. It provides
 a game loop, rendering primitives, input handling, and hot reload.
 
+This page is the high-level overview. For deeper material:
+
+- [`petal-sdl/docs/game-dev-guide.md`](../petal-sdl/docs/game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
+- [`petal-sdl/docs/agent-protocol.md`](../petal-sdl/docs/agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
+- [`docs/debug-protocol.md`](debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and petal-diagram-canvas (WebSocket)
+- [`petal-fps/README.md`](../petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
+
 ## Prerequisites
 
 - SDL2, SDL2_image, and SDL2_ttf development libraries

@@ -171,7 +171,7 @@ impl Compiler {
     /// Compute a stable hash for a state variable name. This ensures state
     /// keys are based on name, not declaration order, so reordering state
     /// declarations doesn't break hot reload.
-    fn hash_state_name(name: &str) -> u64 {
+    pub fn hash_state_name(name: &str) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut hasher);
@@ -944,21 +944,39 @@ impl Compiler {
             }
 
             StmtKind::State { name, init, id: _, key } => {
-                let init_tid = self.compile_expr(init);
-                let state_key = StateKey(Self::hash_state_name(name));
-                let mut inputs: SmallVec<[TermId; 4]> = smallvec![init_tid];
-                if let Some(key_expr) = key {
-                    let key_tid = self.compile_expr(key_expr);
-                    inputs.push(key_tid);
+                // Lazy initialization: the init expression lives in a child
+                // block that is only entered the first time the (state_key,
+                // loop_indices) tuple is encountered. The explicit key (if
+                // any) is computed eagerly in the parent block — its value
+                // determines which slot to consult.
+                let state_key_const = StateKey(Self::hash_state_name(name));
+                let key_tid = key.as_ref().map(|key_expr| self.compile_expr(key_expr));
+
+                // StateInit term sits in the current block. Inputs hold only
+                // the (optional) explicit key. The init value is delivered
+                // via the child block's last term value (see eval.rs).
+                let mut inputs: SmallVec<[TermId; 4]> = smallvec![];
+                if let Some(k) = key_tid {
+                    inputs.push(k);
                 }
                 let state_tid = self.emit_term(
                     TermOp::StateInit,
                     inputs,
                     Some(name.clone()),
                 );
-                self.terms[state_tid.0 as usize].state_key = Some(state_key);
+                self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
                 self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
-                self.state_inits.insert(state_key, state_tid);
+                self.state_inits.insert(state_key_const, state_tid);
+
+                // Compile the init expression into a fresh child block. The
+                // init block's last term register is read on pop and copied
+                // to StateInit's register (return_term mechanism).
+                let init_block = self.new_block(Some(state_tid));
+                self.terms[state_tid.0 as usize].child_blocks = smallvec![init_block];
+                self.compile_in_block(init_block, |c| {
+                    c.compile_expr(init);
+                });
+
                 self.scope_bind(name.clone(), state_tid);
             }
         }
@@ -982,11 +1000,14 @@ impl Compiler {
                     if let Some(init_tid) = self.find_state_init(existing_tid) {
                         let state_key = self.terms[init_tid.0 as usize].state_key;
                         let in_loop = self.terms[init_tid.0 as usize].in_loop;
-                        // If StateInit has an explicit key (2nd input), pass it to StateWrite too
-                        let has_explicit_key = self.terms[init_tid.0 as usize].inputs.len() > 1;
+                        // StateInit's inputs are now [explicit_key]? (the
+                        // init value moved to a child block for lazy
+                        // evaluation). Forward the key to StateWrite so the
+                        // runtime resolves to the same RuntimeStateKey.
+                        let has_explicit_key = !self.terms[init_tid.0 as usize].inputs.is_empty();
                         let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
                         if has_explicit_key {
-                            let key_input = self.terms[init_tid.0 as usize].inputs[1];
+                            let key_input = self.terms[init_tid.0 as usize].inputs[0];
                             write_inputs.push(key_input);
                         }
                         let write_tid = self.emit_term(

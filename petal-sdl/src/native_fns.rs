@@ -53,6 +53,9 @@ pub fn register_all(env: &mut Env) {
     env.register_native("example_name", native_example_name);
     env.register_native("example_path", native_example_path);
     env.register_native("launch_script", native_launch_script);
+    env.register_native("load_text_file", native_load_text_file);
+    env.register_native("save_text_file", native_save_text_file);
+    env.register_native("file_exists", native_file_exists);
 }
 
 // --- Drawing ---
@@ -244,5 +247,60 @@ fn native_launch_script(state: &mut PetalCxt) -> NativeResult {
         b.borrow_mut().pending_launch = Some(path);
     });
     state.push_nil();
+    Ok(1)
+}
+
+// --- File I/O ---
+//
+// Reads/writes are restricted to files under the working directory so Petal
+// scripts can't escape out to arbitrary paths. Returns empty string on miss.
+
+fn safe_path(path: &str) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        return None;
+    }
+    // Reject traversal. A single `..` component is enough to escape.
+    for comp in p.components() {
+        if matches!(comp, std::path::Component::ParentDir) {
+            return None;
+        }
+    }
+    Some(std::env::current_dir().ok()?.join(p))
+}
+
+fn native_load_text_file(state: &mut PetalCxt) -> NativeResult {
+    let path = state.get_string(1)?;
+    let text = match safe_path(&path) {
+        Some(p) => std::fs::read_to_string(&p).unwrap_or_default(),
+        None => String::new(),
+    };
+    state.push_string(text);
+    Ok(1)
+}
+
+fn native_save_text_file(state: &mut PetalCxt) -> NativeResult {
+    let path = state.get_string(1)?;
+    let content = state.get_string(2)?;
+    let ok = match safe_path(&path) {
+        Some(p) => {
+            if let Some(parent) = p.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::write(&p, content).is_ok()
+        }
+        None => false,
+    };
+    state.push_bool(ok);
+    Ok(1)
+}
+
+fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
+    let path = state.get_string(1)?;
+    let exists = match safe_path(&path) {
+        Some(p) => p.exists(),
+        None => false,
+    };
+    state.push_bool(exists);
     Ok(1)
 }

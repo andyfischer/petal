@@ -1,0 +1,494 @@
+// =====================================================================
+// LEVEL EDITOR  -  Petal + petal-sdl
+// =====================================================================
+// Run:
+//     ./petal-sdl/target/debug/petal-sdl side-scroller/editor.ptl --width 960 --height 600
+//
+// CONTROLS
+//   1..9         choose tool (1 plat, 2 oneway, 3 coin, 4 spike,
+//                              5 goomba, 6 jumper, 7 check,
+//                              8 start,  9 goal)
+//   left-click   place / drag-resize for plat & oneway
+//   right-click  delete object under cursor
+//   arrows       pan camera   (hold shift = fast)
+//   G            toggle grid snap
+//   [ / ]        cycle level slot 1..3
+//   S            save level to its slot file
+//   L            (re)load level from disk
+//   N            new empty level
+//   T            test play - launches game (close window to come back)
+//   ESC          quit
+//
+// The editor reuses the same level format and parse/serialize routines
+// as the game; this script is intentionally self-contained because Petal
+// has no module system.
+// =====================================================================
+
+let SCREEN_W = 960
+let SCREEN_H = 600
+
+state cam_x       = 0.0
+state grid_snap   = true
+state grid_size   = 20
+state tool        = 1
+state slot        = 0
+state slot_files  = [
+    "side-scroller/levels/01_first_steps.lvl",
+    "side-scroller/levels/02_cavern.lvl",
+    "side-scroller/levels/03_sky_ruins.lvl"
+]
+state slot_titles = ["First Steps", "Cavern Dive", "Sky Ruins"]
+state level       = nil
+state loaded_slot = -1
+state msg         = ""
+state msg_t       = 0.0
+state drag_start  = nil          // {x,y} when dragging to size a plat/oneway
+state hover_world = {x: 0, y: 0}
+
+// ----------------------------- HELPERS --------------------------------
+
+fn clamp(v, lo, hi) { max(lo, min(v, hi)) }
+
+fn snap(n) {
+    if grid_snap {
+        (n / grid_size) * grid_size
+    } else {
+        n
+    }
+}
+
+fn say(s) { msg = s; msg_t = 2.0 }
+
+fn aabb(ax, ay, aw, ah, bx, by, bw, bh) {
+    ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+}
+
+// ----------------------------- LEVEL FORMAT ---------------------------
+// Same parse and serialize logic as game.ptl; duplicated because Petal
+// has no imports.
+
+fn empty_level() {
+    {
+        name: "Untitled",
+        width: 2400,
+        bg_r: 110, bg_g: 180, bg_b: 240,
+        start: {x: 100.0, y: 400.0},
+        goal:  {x: 2200.0, y: 400.0},
+        plats: [],
+        oneways: [],
+        coins: [],
+        spikes: [],
+        enemies: [],
+        checks: []
+    }
+}
+
+fn parse_level(src) {
+    let L = empty_level()
+    let lines = split(src, "\n")
+    for raw in lines {
+        let toks = split(raw, " ")
+        if len(toks) == 0 { continue }
+        let tag = toks[0]
+        if tag == "" { continue }
+        if tag == "name" {
+            L.name = join(slice(toks, 1, len(toks)), " ")
+        } else if tag == "width" {
+            L.width = int(toks[1])
+        } else if tag == "bg" {
+            L.bg_r = int(toks[1]); L.bg_g = int(toks[2]); L.bg_b = int(toks[3])
+        } else if tag == "start" {
+            L.start = {x: float(toks[1]), y: float(toks[2])}
+        } else if tag == "goal" {
+            L.goal = {x: float(toks[1]), y: float(toks[2])}
+        } else if tag == "plat" {
+            push(L.plats, {
+                x: int(toks[1]), y: int(toks[2]),
+                w: int(toks[3]), h: int(toks[4])
+            })
+        } else if tag == "oneway" {
+            push(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
+        } else if tag == "coin" {
+            push(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
+        } else if tag == "spike" {
+            push(L.spikes, {x: int(toks[1]), y: int(toks[2])})
+        } else if tag == "goomba" {
+            push(L.enemies, {
+                kind: "goomba",
+                x: float(toks[1]), y: float(toks[2]),
+                origin_y: float(toks[2]),
+                patrol: float(toks[3])
+            })
+        } else if tag == "jumper" {
+            push(L.enemies, {
+                kind: "jumper",
+                x: float(toks[1]), y: float(toks[2]),
+                origin_y: float(toks[2]),
+                patrol: 0.0
+            })
+        } else if tag == "check" {
+            push(L.checks, {x: int(toks[1]), y: int(toks[2])})
+        }
+    }
+    L
+}
+
+fn serialize_level(L) {
+    let lines = []
+    push(lines, "name {L.name}")
+    push(lines, "width {L.width}")
+    push(lines, "bg {L.bg_r} {L.bg_g} {L.bg_b}")
+    push(lines, "start {L.start.x} {L.start.y}")
+    push(lines, "goal {L.goal.x} {L.goal.y}")
+    for p in L.plats {
+        push(lines, "plat {p.x} {p.y} {p.w} {p.h}")
+    }
+    for o in L.oneways {
+        push(lines, "oneway {o.x} {o.y} {o.w}")
+    }
+    for c in L.coins {
+        push(lines, "coin {c.x} {c.y}")
+    }
+    for s in L.spikes {
+        push(lines, "spike {s.x} {s.y}")
+    }
+    for e in L.enemies {
+        if e.kind == "goomba" {
+            push(lines, "goomba {int(e.x)} {int(e.origin_y)} {int(e.patrol)}")
+        } else {
+            push(lines, "jumper {int(e.x)} {int(e.origin_y)} 0")
+        }
+    }
+    for ck in L.checks {
+        push(lines, "check {ck.x} {ck.y}")
+    }
+    join(lines, "\n")
+}
+
+// ----------------------------- LOAD / SAVE ----------------------------
+
+fn load_slot(idx) {
+    let path = slot_files[idx]
+    let src  = load_text_file(path)
+    if len(src) == 0 {
+        let L = empty_level()
+        L.name = slot_titles[idx]
+        say("New empty level (file not found)")
+        L
+    } else {
+        say("Loaded {path}")
+        parse_level(src)
+    }
+}
+
+fn save_slot(idx) {
+    let path = slot_files[idx]
+    let txt  = serialize_level(level)
+    let ok   = save_text_file(path, txt)
+    if ok { say("Saved {path}") } else { say("Save failed!") }
+}
+
+if level == nil { level = load_slot(slot); loaded_slot = slot }
+if loaded_slot != slot { level = load_slot(slot); loaded_slot = slot }
+
+// ----------------------------- INPUT ----------------------------------
+
+let dts = dt()
+msg_t = max(0.0, msg_t - dts)
+
+// pan
+let pan_speed = if key_down("lshift") || key_down("rshift") || key_down("shift") { 900.0 } else { 350.0 }
+if key_down("left")  { cam_x = cam_x - pan_speed * dts }
+if key_down("right") { cam_x = cam_x + pan_speed * dts }
+cam_x = clamp(cam_x, 0.0, float(level.width) - float(SCREEN_W))
+
+// tools
+if key_pressed("1") { tool = 1 }
+if key_pressed("2") { tool = 2 }
+if key_pressed("3") { tool = 3 }
+if key_pressed("4") { tool = 4 }
+if key_pressed("5") { tool = 5 }
+if key_pressed("6") { tool = 6 }
+if key_pressed("7") { tool = 7 }
+if key_pressed("8") { tool = 8 }
+if key_pressed("9") { tool = 9 }
+if key_pressed("g") { grid_snap = !grid_snap; say(if grid_snap { "Grid ON" } else { "Grid OFF" }) }
+
+// slot switching
+if key_pressed("[") { slot = (slot + len(slot_files) - 1) % len(slot_files) }
+if key_pressed("]") { slot = (slot + 1) % len(slot_files) }
+
+if key_pressed("s") { save_slot(slot) }
+if key_pressed("l") { level = load_slot(slot); loaded_slot = slot }
+if key_pressed("n") {
+    let L = empty_level()
+    L.name = slot_titles[slot]
+    level = L
+    say("Cleared")
+}
+
+// mouse position in world coords
+let mwx = mouse_x() + int(cam_x)
+let mwy = mouse_y()
+hover_world = {x: snap(mwx), y: snap(mwy)}
+
+// ----------------------------- TOOL ACTIONS ---------------------------
+
+fn delete_at(wx, wy) {
+    // attempt to delete topmost item at (wx,wy)
+    // search from "front" (last list pushed first): try plats, oneways, coins,
+    // spikes, enemies, checks.
+    let i = len(level.plats) - 1
+    while i >= 0 {
+        let p = level.plats[i]
+        if wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h {
+            level.plats = filter_index(level.plats, i)
+            return true
+        }
+        i = i - 1
+    }
+    let j = len(level.oneways) - 1
+    while j >= 0 {
+        let o = level.oneways[j]
+        if wx >= o.x && wx <= o.x + o.w && wy >= o.y - 4 && wy <= o.y + 10 {
+            level.oneways = filter_index(level.oneways, j)
+            return true
+        }
+        j = j - 1
+    }
+    let k = len(level.coins) - 1
+    while k >= 0 {
+        let c = level.coins[k]
+        if abs(wx - c.x) < 14 && abs(wy - c.y) < 14 {
+            level.coins = filter_index(level.coins, k)
+            return true
+        }
+        k = k - 1
+    }
+    let m = len(level.spikes) - 1
+    while m >= 0 {
+        let s = level.spikes[m]
+        if wx >= s.x && wx <= s.x + 24 && wy >= s.y && wy <= s.y + 16 {
+            level.spikes = filter_index(level.spikes, m)
+            return true
+        }
+        m = m - 1
+    }
+    let n = len(level.enemies) - 1
+    while n >= 0 {
+        let e = level.enemies[n]
+        if abs(wx - int(e.x) - 12) < 16 && abs(wy - int(e.origin_y) - 11) < 16 {
+            level.enemies = filter_index(level.enemies, n)
+            return true
+        }
+        n = n - 1
+    }
+    let cc = len(level.checks) - 1
+    while cc >= 0 {
+        let ck = level.checks[cc]
+        if abs(wx - ck.x - 12) < 14 && wy > ck.y - 36 && wy < ck.y {
+            level.checks = filter_index(level.checks, cc)
+            return true
+        }
+        cc = cc - 1
+    }
+    false
+}
+
+fn filter_index(list, idx) {
+    let out = []
+    let i = 0
+    while i < len(list) {
+        if i != idx { push(out, list[i]) }
+        i = i + 1
+    }
+    out
+}
+
+// place
+if mouse_pressed(1) {
+    let wx = hover_world.x
+    let wy = hover_world.y
+    if tool == 1 {
+        drag_start = {x: wx, y: wy}
+    } else if tool == 2 {
+        drag_start = {x: wx, y: wy}
+    } else if tool == 3 {
+        push(level.coins, {x: wx, y: wy, collected: false})
+    } else if tool == 4 {
+        push(level.spikes, {x: wx, y: wy})
+    } else if tool == 5 {
+        push(level.enemies, {
+            kind: "goomba", x: float(wx), y: float(wy) - 22.0,
+            origin_y: float(wy) - 22.0, patrol: 100.0
+        })
+    } else if tool == 6 {
+        push(level.enemies, {
+            kind: "jumper", x: float(wx), y: float(wy) - 24.0,
+            origin_y: float(wy) - 24.0, patrol: 0.0
+        })
+    } else if tool == 7 {
+        push(level.checks, {x: wx, y: wy})
+    } else if tool == 8 {
+        level.start = {x: float(wx), y: float(wy)}
+    } else if tool == 9 {
+        level.goal = {x: float(wx), y: float(wy)}
+    }
+}
+
+// release: finalise plat/oneway drag
+if mouse_down(1) == false && drag_start != nil {
+    let wx = hover_world.x
+    let wy = hover_world.y
+    let x0 = min(drag_start.x, wx)
+    let y0 = min(drag_start.y, wy)
+    let x1 = max(drag_start.x, wx)
+    let y1 = max(drag_start.y, wy)
+    let w  = max(grid_size, x1 - x0)
+    let h  = max(grid_size, y1 - y0)
+    if tool == 1 {
+        push(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
+    } else if tool == 2 {
+        push(level.oneways, {x: x0, y: y0, w: w})
+    }
+    drag_start = nil
+}
+
+if mouse_pressed(3) { delete_at(mwx, mwy) }
+
+// ----------------------------- DRAW -----------------------------------
+
+fn world_x(wx) { wx - int(cam_x) }
+
+clear(level.bg_r, level.bg_g, level.bg_b)
+
+// grid
+if grid_snap {
+    let gx = -int(cam_x) % grid_size
+    let i = 0
+    while i < SCREEN_W / grid_size + 2 {
+        let x = gx + i * grid_size
+        draw_line(x, 36, x, SCREEN_H, 50, 50, 70)
+        i = i + 1
+    }
+    let j = 0
+    while j < SCREEN_H / grid_size {
+        let y = j * grid_size
+        draw_line(0, y, SCREEN_W, y, 50, 50, 70)
+        j = j + 1
+    }
+}
+
+// level boundary
+let bx_end = world_x(level.width)
+draw_line(bx_end, 0, bx_end, SCREEN_H, 200, 80, 80)
+
+// platforms
+for p in level.plats {
+    draw_rect(world_x(p.x), p.y, p.w, p.h, 110, 70, 40)
+    draw_rect(world_x(p.x), p.y, p.w, 5, 60, 170, 55)
+}
+for o in level.oneways {
+    draw_rect(world_x(o.x), o.y, o.w, 6, 200, 160, 90)
+}
+for c in level.coins {
+    draw_circle(world_x(c.x), c.y, 8, 255, 210, 40)
+    draw_circle(world_x(c.x) - 2, c.y - 2, 4, 255, 240, 130)
+}
+for s in level.spikes {
+    draw_line(world_x(s.x) + 2, s.y + 16, world_x(s.x) + 8, s.y, 220, 220, 230)
+    draw_line(world_x(s.x) + 8, s.y, world_x(s.x) + 14, s.y + 16, 220, 220, 230)
+    draw_line(world_x(s.x) + 12, s.y + 16, world_x(s.x) + 18, s.y + 4, 200, 200, 210)
+    draw_line(world_x(s.x) + 18, s.y + 4, world_x(s.x) + 22, s.y + 16, 200, 200, 210)
+}
+for e in level.enemies {
+    let ex = world_x(int(e.x))
+    let ey = int(e.origin_y)
+    if e.kind == "goomba" {
+        draw_rect(ex, ey, 24, 22, 120, 70, 30)
+        draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
+        draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
+    } else {
+        draw_rect(ex, ey, 24, 24, 60, 170, 80)
+        draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
+        draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
+    }
+}
+for ck in level.checks {
+    draw_rect(world_x(ck.x) + 6, ck.y - 32, 3, 32, 200, 200, 220)
+    draw_rect(world_x(ck.x) + 9, ck.y - 30, 14, 9, 240, 80, 90)
+}
+
+// start
+draw_rect(world_x(int(level.start.x)) - 4, int(level.start.y) - 4, 28, 36, 100, 200, 100)
+draw_text("S", world_x(int(level.start.x)) + 4, int(level.start.y) + 4, 20, 20, 60, 20)
+
+// goal
+draw_rect(world_x(int(level.goal.x)) + 8, int(level.goal.y) - 80, 4, 80, 230, 230, 230)
+draw_rect(world_x(int(level.goal.x)) + 12, int(level.goal.y) - 76, 24, 16, 230, 60, 60)
+draw_text("G", world_x(int(level.goal.x)) + 18, int(level.goal.y) - 76, 16, 255, 255, 255)
+
+// drag preview
+if drag_start != nil {
+    let wx = hover_world.x
+    let wy = hover_world.y
+    let x0 = min(drag_start.x, wx)
+    let y0 = min(drag_start.y, wy)
+    let w  = max(grid_size, abs(wx - drag_start.x))
+    let h  = max(grid_size, abs(wy - drag_start.y))
+    if tool == 1 {
+        draw_rect_outline(world_x(x0), y0, w, h, 220, 220, 100)
+    } else if tool == 2 {
+        draw_rect_outline(world_x(x0), y0, w, 6, 200, 160, 90)
+    }
+}
+
+// cursor crosshair (in screen coords)
+let mx = mouse_x()
+let my = mouse_y()
+draw_line(mx - 8, my, mx + 8, my, 220, 220, 240)
+draw_line(mx, my - 8, mx, my + 8, 220, 220, 240)
+
+// ----------------------------- HUD ------------------------------------
+
+draw_rect(0, 0, SCREEN_W, 36, 0, 0, 0)
+draw_rect(0, 0, SCREEN_W, 34, 25, 30, 50)
+draw_text("EDITOR  -  slot {slot + 1}/3  -  {level.name}", 8, 8, 18, 230, 230, 250)
+
+let tools_row = [
+    {n: 1, label: "plat"},
+    {n: 2, label: "oneway"},
+    {n: 3, label: "coin"},
+    {n: 4, label: "spike"},
+    {n: 5, label: "goomba"},
+    {n: 6, label: "jumper"},
+    {n: 7, label: "check"},
+    {n: 8, label: "start"},
+    {n: 9, label: "goal"}
+]
+let tx = 8
+for t in tools_row {
+    let sel = t.n == tool
+    let bg_r = if sel { 230 } else { 50 }
+    let bg_g = if sel { 200 } else { 60 }
+    let bg_b = if sel { 80 }  else { 80 }
+    draw_rect(tx, SCREEN_H - 30, 96, 26, bg_r, bg_g, bg_b)
+    draw_text("{t.n} {t.label}", tx + 6, SCREEN_H - 26, 16,
+              if sel { 30 } else { 230 },
+              if sel { 30 } else { 230 },
+              if sel { 30 } else { 250 })
+    tx = tx + 100
+}
+
+// status
+let stats = "plats {len(level.plats)}  ow {len(level.oneways)}  coins {len(level.coins)}  spikes {len(level.spikes)}  enemies {len(level.enemies)}  checks {len(level.checks)}"
+draw_rect(0, SCREEN_H - 56, SCREEN_W, 22, 0, 0, 0)
+draw_text(stats, 8, SCREEN_H - 52, 16, 200, 200, 230)
+
+// hover read
+draw_text("@ {hover_world.x},{hover_world.y}", SCREEN_W - 200, 8, 16, 200, 200, 230)
+
+if msg_t > 0.0 {
+    draw_rect(SCREEN_W/2 - 200, 44, 400, 26, 0, 0, 0)
+    draw_text(msg, SCREEN_W/2 - 190, 48, 18, 255, 230, 120)
+}

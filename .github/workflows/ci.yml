@@ -178,6 +178,13 @@ jobs:
         with:
           version: 9
 
+      - name: Configure npm auth for @facetlayer packages
+        run: |
+          echo "@facetlayer:registry=https://npm.pkg.github.com" >> ~/.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.FACETLAYER_PACKAGES_TOKEN }}
+
       - name: playground/web — install deps
         working-directory: playground/web
         run: pnpm install --frozen-lockfile

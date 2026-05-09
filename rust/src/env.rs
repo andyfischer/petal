@@ -133,8 +133,15 @@ impl Env {
         &mut self.trace
     }
 
-    /// Run a program to completion
+    /// Run a program to completion. Tracks which `RuntimeStateKey`s are
+    /// touched and sweeps untouched entries from the persistent state map
+    /// when the program completes — so per-iteration state for a removed
+    /// list item, or a top-level state declaration deleted on hot reload,
+    /// is reclaimed instead of leaking.
     pub fn run(&mut self, stack_id: StackKey) -> Result<Value, String> {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.start_run_tracking();
+        }
         loop {
             match self.step(stack_id)? {
                 StepResult::Continue => {
@@ -142,7 +149,12 @@ impl Env {
                         self.collect_garbage();
                     }
                 }
-                StepResult::Complete(val) => return Ok(val),
+                StepResult::Complete(val) => {
+                    if let Some(stack) = self.stacks.get_mut(&stack_id) {
+                        stack.sweep_untouched_state();
+                    }
+                    return Ok(val);
+                }
                 StepResult::Error(e) => return Err(e),
             }
         }

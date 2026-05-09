@@ -347,9 +347,9 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [Function_Overloading.md](Function_Overloading.md). |
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
 | MethodCall | `{"MethodCall": cid}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then scope/builtin lookup with `object` prepended. |
-| StateInit | `"StateInit"` | [init_value] | none | `state_key` set |
+| StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
-| StateWrite | `"StateWrite"` | [value] | none | `state_key` set |
+| StateWrite | `"StateWrite"` | [value] or [value, explicit_key] | none | `state_key` set. Forwards the same `explicit_key` from the matching `StateInit` so the runtime resolves to the same `RuntimeStateKey`. |
 | AllocList | `"AllocList"` | [elem0, elem1, ...] | none | |
 | AllocMap | `{"AllocMap": {"fields": [cid, ...]}}` | [val0, val1, ...] | none | Field names as ConstantIds |
 | AllocMapSpread | `{"AllocMapSpread": {"entries": [...]}}` | [spread_src..., named_value...] | none | Record literal with `...spread`. Each entry is `Spread(idx)` or `Named{key, idx}` referencing positions in `inputs`. |

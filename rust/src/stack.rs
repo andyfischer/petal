@@ -2,7 +2,7 @@
 //!
 //! See docs/Architecture.md for the surrounding runtime design.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
@@ -57,6 +57,13 @@ pub struct Stack {
     /// Temporary storage for the result of the last popped frame.
     /// Used by synchronous closure calls (map/filter/reduce) to capture return values.
     pub last_pop_result: Option<Value>,
+    /// RuntimeStateKeys touched (read or written) since the last call to
+    /// `start_run_tracking`. Used to garbage-collect persistent state entries
+    /// whose source-level declaration was not visited this run — for example
+    /// per-iteration state for an item that was removed from the iterated
+    /// list, or a top-level `state` declaration that was deleted on hot
+    /// reload. Cleared at the start of each top-level `run`.
+    pub touched_state_keys: HashSet<RuntimeStateKey>,
 }
 
 /// A single activation frame on the stack.
@@ -160,7 +167,25 @@ impl Stack {
             break_flag: false,
             continue_flag: false,
             last_pop_result: None,
+            touched_state_keys: HashSet::new(),
         }
+    }
+
+    /// Reset the touched-keys set. Called at the start of a top-level run
+    /// so that `sweep_untouched_state` can drop entries no longer reachable
+    /// from current source.
+    pub fn start_run_tracking(&mut self) {
+        self.touched_state_keys.clear();
+    }
+
+    /// Drop persistent state entries that were not touched (read or written)
+    /// since the last `start_run_tracking`. Returns the number of entries
+    /// removed. Called once per top-level run after the program completes.
+    pub fn sweep_untouched_state(&mut self) -> usize {
+        let before = self.state.len();
+        self.state
+            .retain(|key, _| self.touched_state_keys.contains(key));
+        before - self.state.len()
     }
 
     pub fn push_frame(&mut self, frame: Frame) {

@@ -305,23 +305,55 @@ result, source line/column) into a ring buffer. Default capacity is
 
 ## State
 
-`state` declarations compile to three terms:
-- `StateInit` — runs once per stack; seeds the persistent store from the
-  initializer expression
-- `StateRead` — reads the current value on each access
-- `StateWrite` — writes a new value (used for `+=`, direct assignment, etc.)
+`state` declarations compile to three op kinds:
 
-Each state variable gets a `StateKey` derived from its source-level **name
-path** (e.g. `counter::count`), not its `TermId`. That means:
+- `StateInit` — control-flow term whose `child_blocks[0]` holds the init
+  expression. On each visit the evaluator resolves a `RuntimeStateKey`,
+  checks the persistent store, and **only pushes the init block on a cache
+  miss**. On a cache hit the existing value is written straight into the
+  term's register; the init RHS is not evaluated. This makes
+  `state buildings = [{...12 records...}]` allocate once and never again,
+  even though the term sits in the root block that re-runs every frame.
+- `StateRead` — reads the current value for the resolved runtime key.
+- `StateWrite` — writes a new value (used for `+=`, direct assignment).
+  Forwards the same explicit-key input as the matching `StateInit` so the
+  resolved `RuntimeStateKey` agrees.
+
+### Keying
+
+Each declaration gets a static `StateKey` hashed from its source-level
+name. The runtime composes a `RuntimeStateKey` per access:
+
+- Top-level `state x`: `RuntimeStateKey { base, loop_indices: [] }`
+- Inside a loop, default form `state x`: `loop_indices` filled from each
+  active loop's iteration index. Stable as long as the iterated list
+  doesn't reorder or shrink.
+- Explicit-key form `state(expr) x`: the computed `expr` is hashed into
+  `loop_indices: [Explicit(hash)]`. This is the recommended form when an
+  iterated collection has a domain identifier (entity id, slot name) —
+  state survives reordering and item removal, since the key follows the
+  data.
+
+That means:
 
 - Reordering code doesn't reshuffle state across hot reloads.
 - Renaming or deleting a state variable drops the old slot cleanly.
 - Adding a new state variable falls through to `StateInit` on the next tick.
 
+### Lifecycle
+
+`Env::run` brackets each top-level run with `start_run_tracking` /
+`sweep_untouched_state`. Every `StateInit`/`StateRead`/`StateWrite`
+records the `RuntimeStateKey` it touched; on completion, entries that
+weren't touched this run are dropped. This is what reclaims state for
+removed list items and for `state` declarations deleted on hot reload —
+without it, the persistent store would grow unboundedly.
+
 `reset_stack` preserves the state store while rewinding execution — that's
 what makes `petal-sdl`'s hot reload work. `snapshot_state` /
 `restore_state` give host code explicit access to the persistent store
-(used by petal-sdl's agent protocol `state` and `set_state` commands).
+(used by petal-sdl's agent protocol `state` and `set_state` commands, and
+by `run_speculative` to checkpoint+restore around a non-committing run).
 
 ---
 

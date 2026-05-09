@@ -353,8 +353,9 @@ Petal has built-in forward-mode automatic differentiation via `Value::Dual
 derivatives through the chain rule. See `examples/differentiation.ptl`.
 
 Reverse-mode (back-propagation through the dataflow graph) is a design
-goal but not yet implemented — see `docs/creative-coding-language-ideas.md`
-and `Goals_03_2026.md`.
+goal but not yet implemented — see [creative-coding-language-ideas.md](creative-coding-language-ideas.md)
+for the open-items roadmap and [PETAL_GOALS.md](PETAL_GOALS.md) for the
+motivating philosophy.
 
 ---
 

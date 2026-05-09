@@ -124,8 +124,8 @@ Tokens use serde's externally-tagged enum representation:
 
 | Category | Examples |
 |----------|---------|
-| Unit keywords/operators | `"Let"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"State"`, `"Enum"`, `"True"`, `"False"`, `"Nil"` |
-| Unit operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"` |
+| Unit keywords/operators | `"Let"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"True"`, `"False"`, `"Nil"` |
+| Unit operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"Pipe"` |
 | Unit delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"` |
 | Unit special | `"Newline"`, `"Eof"` |
 | Value-carrying | `{"Int": 42}`, `{"Float": 3.14}`, `{"String": "hello"}`, `{"Ident": "myVar"}` |
@@ -164,9 +164,13 @@ Outputs the parsed abstract syntax tree — an array of `Stmt` nodes. Useful for
 
 #### AST JSON Schema
 
-All AST types use serde's externally-tagged enum representation.
+All AST enum types use serde's externally-tagged representation. `Stmt` and
+`Expr` are serialized as `{kind: <variant>, span: SourceSpan}` — the
+`<variant>` shapes are listed in the `StmtKind` and `ExprKind` tables below.
+The canonical definitions live in `rust/src/ast.rs`; the tables below cover
+the common variants but are not exhaustive.
 
-**Stmt** (top-level statements):
+**StmtKind** (top-level statements):
 
 | Variant | Shape |
 |---------|-------|
@@ -179,9 +183,10 @@ All AST types use serde's externally-tagged enum representation.
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
-| `State` | `{"State": {"name": string, "init": Expr, "id": number}}` |
+| `Continue` | `"Continue"` |
+| `State` | `{"State": {"name": string, "init": Expr, "id": number, "key": Expr \| null}}` — `key` set when the source uses the `state(expr) name = init` per-iteration form |
 
-**Expr** (expressions):
+**ExprKind** (expressions):
 
 | Variant | Shape |
 |---------|-------|
@@ -193,11 +198,17 @@ All AST types use serde's externally-tagged enum representation.
 | `If` | `{"If": {"condition": Expr, "then_body": Stmt[], "else_body": ElseBranch \| null}}` |
 | `Match` | `{"Match": {"subject": Expr, "arms": MatchArm[]}}` |
 | `List` | `{"List": Expr[]}` |
-| `Record` | `{"Record": [string, Expr][]}` |
+| `Record` | `{"Record": RecordField[]}` |
 | `FieldAccess` | `{"FieldAccess": {"object": Expr, "field": string}}` |
 | `IndexAccess` | `{"IndexAccess": {"object": Expr, "index": Expr}}` |
 | `Block` | `{"Block": Stmt[]}` |
 | `Lambda` | `{"Lambda": {"params": string[], "body": Stmt[]}}` |
+| `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
+| `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
+
+**RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
+
+**JsxChild**: `{"Text": string}` or `{"Expr": Expr}`.
 
 **Literal**: `"Nil"`, `{"Bool": bool}`, `{"Int": number}`, `{"Float": number}`, `{"String": string}`
 
@@ -300,6 +311,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | `register` | `number` | Register index for evaluation |
 | `state_key` | `number \| null` | State key for StateInit/StateRead/StateWrite |
 | `child_blocks` | `number[]` | BlockIds of child blocks (for control flow) |
+| `in_loop` | `boolean` | Omitted when `false`. Marks state terms inside a loop body for per-iteration state. |
 
 **TermOp** — serde's externally-tagged encoding:
 
@@ -324,23 +336,28 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Or | `"Or"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
 | Concat | `"Concat"` | [left, right] | none | String concatenation (`++`) |
 | Copy | `"Copy"` | [source] or [] | none | Variable reference. Empty inputs = phantom (builtin/param) |
-| Assign | `{"Assign": tid}` | [value] | none | Write to outer scope register; tid = target TermId |
+| Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. See [MutabilityPlan.md](MutabilityPlan.md). |
 | Branch | `"Branch"` | [condition] | [then_block, else_block] | if/else |
 | ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop |
 | WhileLoop | `"WhileLoop"` | none | [cond_block, body_block] | while loop |
 | Break | `"Break"` | none | none | |
+| Continue | `"Continue"` | none | none | |
 | Return | `"Return"` | [value] or [] | none | |
 | MakeClosure | `{"MakeClosure": fid}` | [captured_values...] | none | Create closure for FunctionId |
+| MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [Function_Overloading.md](Function_Overloading.md). |
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
+| MethodCall | `{"MethodCall": cid}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then scope/builtin lookup with `object` prepended. |
 | StateInit | `"StateInit"` | [init_value] | none | `state_key` set |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
 | StateWrite | `"StateWrite"` | [value] | none | `state_key` set |
 | AllocList | `"AllocList"` | [elem0, elem1, ...] | none | |
 | AllocMap | `{"AllocMap": {"fields": [cid, ...]}}` | [val0, val1, ...] | none | Field names as ConstantIds |
+| AllocMapSpread | `{"AllocMapSpread": {"entries": [...]}}` | [spread_src..., named_value...] | none | Record literal with `...spread`. Each entry is `Spread(idx)` or `Named{key, idx}` referencing positions in `inputs`. |
 | GetField | `{"GetField": cid}` | [object] | none | |
 | SetField | `{"SetField": cid}` | [object, value] | none | |
 | GetIndex | `"GetIndex"` | [object, index] | none | |
 | SetIndex | `"SetIndex"` | [object, index, value] | none | |
+| AllocElement | `{"AllocElement": {"tag": cid, "prop_keys": [cid, ...]}}` | [prop_val0, ..., child0, ...] | none | JSX-like element. `prop_keys.len()` separates prop values from children in `inputs`. |
 | MakeEnumVariant | `{"MakeEnumVariant": cid}` | [field_values...] | none | Variant name as ConstantId |
 | Match | `"Match"` | [subject] | [arm_body_blocks...] | Arm metadata in `match_arms` |
 
@@ -353,6 +370,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | `entry` | `number \| null` | TermId of first term in this block's linked list |
 | `param_names` | `string[]` | Parameter names (function params, for-loop variable) |
 | `register_count` | `number` | Total registers needed for this block's frame |
+| `phi_outs` | `PhiOut[]` | Carry-outs: when this block's frame pops, copy each `src_term`'s register into the parent block's `Phi` term register. Drives the rebinding-as-pure-dataflow model. |
 
 **FunctionDef**:
 

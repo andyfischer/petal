@@ -65,18 +65,26 @@ print("hello, {name}!")
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Build instructions, running examples, CLI usage |
 | [Language Guide](docs/Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
-| [Builtins Reference](docs/Builtins.md) | All ~65 built-in functions with signatures and examples |
+| [Builtins Reference](docs/Builtins.md) | All 68 built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
 | [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Design Goals](docs/PETAL_GOALS.md) | Language philosophy and the four foundational pillars |
+| [Function Overloading](docs/Function_Overloading.md) | Multi-arity dispatch rules |
+| [Mutability Plan](docs/MutabilityPlan.md) | Why the IR is purely immutable (design context) |
+| [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
+| [Debug Protocol](docs/debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |
+| [Creative Coding Roadmap](docs/creative-coding-language-ideas.md) | Shipped + open items for creative-coding ergonomics |
 
-## Tools
+## Integrations & Tools
 
-| Tool | Description |
-|------|-------------|
+| Integration | Description |
+|-------------|-------------|
 | [Playground](docs/Playground.md) | Interactive web app for exploring the compiler pipeline (tokens, AST, IR, output) |
-| [Game Framework](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload |
-| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools |
+| [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [petal-sdl/docs/game-dev-guide.md](petal-sdl/docs/game-dev-guide.md) and [petal-sdl/docs/agent-protocol.md](petal-sdl/docs/agent-protocol.md) |
+| [petal-web](petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
+| [petal-diagram-canvas](petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
+| [petal-fps](petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
+| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
 
 ## Examples
 

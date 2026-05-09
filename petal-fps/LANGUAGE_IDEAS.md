@@ -74,10 +74,13 @@ avoid that, or `range` could return an iterator, not a list.
 
 ---
 
-## 6. Per-iteration state in loops (already on Goals_03_2026 roadmap)
+## 6. Per-iteration state in loops
 
 **Friction**: Want `for enemy in enemies { state hp_anim = enemy.hp ... }`
-keyed by enemy ID. This is exactly the "Phase 2" item in the goals doc.
+keyed by enemy ID. Per-iteration `state` is partially in place (see
+`examples/particles.ptl` and `ts/test/loop-state.test.ts`) but doesn't yet
+key cleanly off a domain identifier — it keys off the loop iteration index,
+which breaks if the list reorders or items are removed.
 
 ---
 

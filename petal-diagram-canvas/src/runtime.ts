@@ -1,6 +1,6 @@
 /** PetalCanvas — wraps PetalRuntime for canvas-based frame-loop execution. */
 
-import init, { PetalRuntime } from "../pkg/petal.js";
+import init, { PetalRuntime } from "../pkg/petal_diagram_canvas.js";
 import { renderCommands, type DrawCommand } from "./canvas-renderer.js";
 import { InputTracker } from "./input.js";
 import { DebugController } from "./debug.js";

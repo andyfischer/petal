@@ -7,9 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  rust-core:
+    name: Rust core (build + test)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -23,14 +23,36 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
+          key: cargo-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-core-${{ runner.os }}-
 
       - name: Build Rust
         run: cargo build --manifest-path rust/Cargo.toml
 
       - name: Run Rust tests
         run: cargo test --manifest-path rust/Cargo.toml
+
+  ts-tests:
+    name: TypeScript (tsc + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-core-${{ runner.os }}-
+
+      - name: Build petal binary (used by vitest)
+        run: cargo build --manifest-path rust/Cargo.toml
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -43,6 +65,125 @@ jobs:
         working-directory: ts
         run: npm ci
 
+      - name: Type-check TypeScript
+        working-directory: ts
+        run: npx tsc --noEmit
+
       - name: Run Vitest tests
         working-directory: ts
         run: npx vitest run
+
+  rust-subprojects:
+    name: Rust subprojects (petal-sdl, petal-fps, petal-diagram-canvas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install SDL2 system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+
+      - name: Cache Cargo registry & build (subprojects)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            petal-sdl/target
+            petal-fps/target
+            petal-diagram-canvas/rust/target
+          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('petal-sdl/Cargo.lock', 'petal-fps/Cargo.lock', 'petal-diagram-canvas/rust/Cargo.lock') }}
+          restore-keys: cargo-subprojects-${{ runner.os }}-
+
+      - name: Build petal-sdl
+        run: cargo build --manifest-path petal-sdl/Cargo.toml
+
+      - name: Build petal-fps
+        run: cargo build --manifest-path petal-fps/Cargo.toml
+
+      - name: Check petal-diagram-canvas (Rust crate)
+        run: cargo check --manifest-path petal-diagram-canvas/rust/Cargo.toml
+
+  web-builds:
+    name: Web builds (wasm + vite + playground)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install binaryen (provides wasm-opt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binaryen
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Cache Cargo registry & build (wasm)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+            petal-diagram-canvas/rust/target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'petal-diagram-canvas/rust/Cargo.lock') }}
+          restore-keys: cargo-wasm-${{ runner.os }}-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ----- petal-web -----
+      - name: petal-web — install deps
+        working-directory: petal-web
+        run: npm ci --no-audit --no-fund
+
+      - name: petal-web — build wasm
+        working-directory: petal-web
+        run: bash build-wasm.sh
+
+      - name: petal-web — vite build
+        working-directory: petal-web
+        run: npx vite build
+
+      # ----- petal-diagram-canvas -----
+      - name: petal-diagram-canvas — install deps
+        working-directory: petal-diagram-canvas
+        run: npm ci --no-audit --no-fund
+
+      - name: petal-diagram-canvas — build wasm
+        working-directory: petal-diagram-canvas
+        run: bash build-wasm.sh
+
+      - name: petal-diagram-canvas — vite build
+        working-directory: petal-diagram-canvas
+        run: npx vite build
+
+      # ----- playground/web -----
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: playground/web — install deps
+        working-directory: playground/web
+        run: pnpm install --frozen-lockfile
+
+      - name: playground/web — vite build
+        working-directory: playground/web
+        env:
+          PRISM_API_PORT: "4027"
+        run: pnpm exec vite build

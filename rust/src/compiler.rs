@@ -70,6 +70,12 @@ pub struct Compiler {
     // loop's `phi_out` always reads the up-to-date value, even when the
     // compile-time "latest" rebind term never ran in that iteration.
     carry_slots: Vec<(BlockId, HashMap<String, RegisterIndex>)>,
+
+    // Map from a state variable's StateKey back to its `StateInit` term. Used
+    // by `compile_assign` to emit a `StateWrite` even after the state name has
+    // been rebound (which replaces its scope binding with a `Copy` term, so a
+    // simple scope_lookup chain can no longer reach the StateInit).
+    state_inits: HashMap<StateKey, TermId>,
 }
 
 impl Compiler {
@@ -94,6 +100,7 @@ impl Compiler {
             overload_variants: HashMap::new(),
             block_rebinds: HashMap::new(),
             carry_slots: Vec::new(),
+            state_inits: HashMap::new(),
         }
     }
 
@@ -619,6 +626,14 @@ impl Compiler {
                 let input = *term.inputs.first()?;
                 self.find_state_init(input)
             }
+            // A `Copy` produced by reassignment of a state variable carries
+            // the same `state_key` as the original `StateInit`. Use it to
+            // jump back to the init term — walking `inputs[0]` would lead
+            // to the assigned value, not the previous binding.
+            TermOp::Copy => {
+                let key = term.state_key?;
+                self.state_inits.get(&key).copied()
+            }
             _ => None,
         }
     }
@@ -943,6 +958,7 @@ impl Compiler {
                 );
                 self.terms[state_tid.0 as usize].state_key = Some(state_key);
                 self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
+                self.state_inits.insert(state_key, state_tid);
                 self.scope_bind(name.clone(), state_tid);
             }
         }
@@ -958,8 +974,10 @@ impl Compiler {
                 let val_tid = self.compile_expr(value);
 
                 // Check if this is a state variable — if so, emit StateWrite.
-                // Walk through Phi nodes so an assignment inside an `if` /
-                // loop body still finds the underlying StateInit.
+                // Walk through Phi/Copy nodes so an assignment inside an
+                // `if` / loop body, or a chain of repeat reassignments at
+                // the top level, still finds the underlying StateInit.
+                let mut state_init_for_copy: Option<StateKey> = None;
                 if let Some(existing_tid) = self.scope_lookup(name) {
                     if let Some(init_tid) = self.find_state_init(existing_tid) {
                         let state_key = self.terms[init_tid.0 as usize].state_key;
@@ -978,6 +996,10 @@ impl Compiler {
                         );
                         self.terms[write_tid.0 as usize].state_key = state_key;
                         self.terms[write_tid.0 as usize].in_loop = in_loop;
+                        // Propagate the state key onto the Copy below so the
+                        // next reassignment can still resolve to the StateInit
+                        // (the Copy replaces the existing scope binding).
+                        state_init_for_copy = state_key;
                     }
                 }
 
@@ -989,6 +1011,9 @@ impl Compiler {
                     smallvec![val_tid],
                     Some(name.clone()),
                 );
+                if let Some(key) = state_init_for_copy {
+                    self.terms[assign_tid.0 as usize].state_key = Some(key);
+                }
                 // Carry-slot share: when this assign is the body of a loop
                 // that carries `name`, rewrite its register to the shared
                 // slot so every body-level rebind writes to the same

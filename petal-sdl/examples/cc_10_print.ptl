@@ -1,0 +1,147 @@
+// 10 PRINT — the famous Commodore 64 one-liner generative pattern.
+//
+//     10 PRINT CHR$(205.5+RND(1)); : GOTO 10
+//
+// Each cell randomly picks a forward-slash (/) or back-slash (\). The
+// resulting maze-like weave is one of the canonical generative art pieces.
+//
+// We extend it with:
+//   - cells "fall" into place from above (animated reveal)
+//   - colour drift by row + slow time
+//   - palette shift on key press
+//   - mutations: every few seconds a few cells flip
+//
+// Controls:
+//   space   regenerate
+//   1-4     palette
+//   m       toggle mutations
+
+state grid = []
+state cols = 0
+state rows = 0
+state cell = 22
+state reveal = 0      // how many rows are revealed so far
+state reveal_t = 0.0
+state palette_id = 0
+state mutate = true
+state mutate_t = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+
+if cols == 0 {
+    cols = int(sw) / cell
+    rows = int(sh) / cell
+}
+
+fn make_grid(cols, rows) {
+    let g = []
+    for j in range(0, rows) {
+        for i in range(0, cols) {
+            push(g, random(0.0, 1.0) < 0.5)
+        }
+    }
+    g
+}
+
+if len(grid) == 0 {
+    grid = make_grid(cols, rows)
+    reveal = 0
+}
+
+if key_pressed("space") {
+    grid = make_grid(cols, rows)
+    reveal = 0
+    reveal_t = 0.0
+}
+if key_pressed("1") { palette_id = 0 }
+if key_pressed("2") { palette_id = 1 }
+if key_pressed("3") { palette_id = 2 }
+if key_pressed("4") { palette_id = 3 }
+if key_pressed("m") { mutate = !mutate }
+
+// Reveal one new row every ~30ms
+reveal_t += delta
+while reveal_t > 0.03 && reveal < rows {
+    reveal += 1
+    reveal_t -= 0.03
+}
+
+// Mutations: flip a handful of cells per second after reveal completes
+mutate_t += delta
+if mutate && reveal == rows && mutate_t > 0.08 {
+    mutate_t = 0.0
+    for n in range(0, 3) {
+        let i = int(random(0.0, float(cols)))
+        let j = int(random(0.0, float(rows)))
+        let idx = j * cols + i
+        grid[idx] = !grid[idx]
+    }
+}
+
+// Palettes (bg, fg_a, fg_b)
+fn palette(id, j, t, rows_f) {
+    let p = float(j) / rows_f
+    if id == 0 {
+        // Mint on indigo
+        let bg = { r: 14, g: 12, b: 32 }
+        let h_a = (160.0 + p * 40.0 + t * 12.0) % 360.0
+        let h_b = (180.0 + p * 60.0 + t * 12.0) % 360.0
+        { bg: bg, a: hsv(h_a, 0.7, 0.95), b: hsv(h_b, 0.5, 0.85) }
+    } else if id == 1 {
+        // Warm sunset
+        let bg = { r: 28, g: 12, b: 18 }
+        let h_a = (15.0 + p * 35.0 + t * 8.0) % 360.0
+        let h_b = (340.0 + p * 25.0 + t * 8.0) % 360.0
+        { bg: bg, a: hsv(h_a, 0.85, 0.95), b: hsv(h_b, 0.7, 0.9) }
+    } else if id == 2 {
+        // Mono ink on parchment
+        let bg = { r: 232, g: 224, b: 200 }
+        let shade = int(40.0 + p * 60.0)
+        { bg: bg, a: { r: shade, g: shade, b: shade }, b: { r: shade, g: shade, b: shade } }
+    } else {
+        // Neon rainbow
+        let h = (p * 360.0 + t * 30.0) % 360.0
+        { bg: { r: 0, g: 0, b: 0 }, a: hsv(h, 0.9, 1.0), b: hsv((h + 60.0) % 360.0, 0.9, 1.0) }
+    }
+}
+
+let t_now = float(frame_count()) * delta
+
+// Background
+let pal0 = palette(palette_id, 0, t_now, float(rows))
+clear(pal0.bg.r, pal0.bg.g, pal0.bg.b)
+
+// Draw revealed rows
+for j in range(0, reveal) {
+    let pal = palette(palette_id, j, t_now, float(rows))
+    let cy = j * cell
+    for i in range(0, cols) {
+        let cx = i * cell
+        let slash = grid[j * cols + i]
+        // Pick color: a if slash, b if backslash
+        let col = pal.a
+        if !slash { col = pal.b }
+        // Antialiased slashes by drawing 2 lines + outer thinner one
+        if slash {
+            // bottom-left to top-right
+            draw_line(cx, cy + cell - 1, cx + cell - 1, cy, col.r, col.g, col.b)
+            draw_line(cx + 1, cy + cell - 1, cx + cell - 1, cy + 1, col.r, col.g, col.b)
+            draw_line(cx, cy + cell - 2, cx + cell - 2, cy, col.r, col.g, col.b)
+        } else {
+            // top-left to bottom-right
+            draw_line(cx, cy, cx + cell - 1, cy + cell - 1, col.r, col.g, col.b)
+            draw_line(cx + 1, cy, cx + cell - 1, cy + cell - 2, col.r, col.g, col.b)
+            draw_line(cx, cy + 1, cx + cell - 2, cy + cell - 1, col.r, col.g, col.b)
+        }
+    }
+}
+
+// HUD
+draw_rect(8, 8, 240, 60, 0, 0, 0)
+draw_text("10 PRINT", 14, 12, 16, 220, 220, 240)
+let mut_label = "mutations: off"
+if mutate { mut_label = "mutations: on" }
+draw_text(mut_label, 14, 32, 11, 160, 200, 220)
+draw_text("space regen   1-4 palette   m mutate", 14, 50, 10, 120, 140, 180)

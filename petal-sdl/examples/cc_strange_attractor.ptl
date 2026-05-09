@@ -1,0 +1,130 @@
+// Strange Attractor — Clifford / De Jong
+//
+// Two of the most beautiful chaotic maps in 2D. Each frame iterates the map
+// thousands of times from a single seed point, plotting every position.
+// Different parameter sets give very different shapes.
+//
+// Controls:
+//   1 / 2 / 3 / 4   choose Clifford preset
+//   5 / 6 / 7 / 8   choose De Jong preset
+//   r               re-seed origin
+//   mouse           live-tune parameters (a = mouse_x, b = mouse_y)
+//   space           toggle live-tune mode
+
+state preset = 0
+state mouse_tune = false
+state seed_x = 0.1
+state seed_y = 0.0
+state hue_shift = 0.0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+hue_shift += delta * 0.05
+
+// Preset table: [a, b, c, d, label, kind]
+// kind: 0 = Clifford, 1 = De Jong
+let presets = [
+    { a: -1.4, b:  1.6, c:  1.0, d:  0.7, name: "Clifford 1", kind: 0 },
+    { a: -1.7, b:  1.8, c: -1.9, d: -0.4, name: "Clifford 2", kind: 0 },
+    { a: -1.8, b: -2.0, c: -0.5, d: -0.9, name: "Clifford 3", kind: 0 },
+    { a:  1.7, b:  1.7, c:  0.6, d:  1.2, name: "Clifford 4", kind: 0 },
+    { a:  1.4, b: -2.3, c:  2.4, d: -2.1, name: "De Jong 1",  kind: 1 },
+    { a: -2.7, b: -0.09, c: -0.86, d: -2.2, name: "De Jong 2", kind: 1 },
+    { a: -2.0, b: -2.0, c: -1.2, d:  2.0, name: "De Jong 3",  kind: 1 },
+    { a:  1.641, b:  1.902, c:  0.316, d:  1.525, name: "De Jong 4", kind: 1 }
+]
+
+if key_pressed("1") { preset = 0 }
+if key_pressed("2") { preset = 1 }
+if key_pressed("3") { preset = 2 }
+if key_pressed("4") { preset = 3 }
+if key_pressed("5") { preset = 4 }
+if key_pressed("6") { preset = 5 }
+if key_pressed("7") { preset = 6 }
+if key_pressed("8") { preset = 7 }
+if key_pressed("r") {
+    seed_x = random(-0.5, 0.5)
+    seed_y = random(-0.5, 0.5)
+}
+if key_pressed("space") { mouse_tune = !mouse_tune }
+
+let p = presets[preset]
+let a = p.a
+let b = p.b
+let c = p.c
+let d = p.d
+
+if mouse_tune {
+    // Map mouse position into a useful parameter range
+    a = (float(mouse_x()) / sw) * 4.0 - 2.0
+    b = (float(mouse_y()) / sh) * 4.0 - 2.0
+}
+
+clear(6, 6, 14)
+
+// World bounds for both attractor families: roughly [-2.5, 2.5]
+let cx = sw * 0.5
+let cy = sh * 0.5
+let scale = min(sw, sh) * 0.18
+
+// Iterate. Tune down for debug builds; ~3000 keeps it fluid in release.
+let iters = 3000
+let x = seed_x
+let y = seed_y
+
+// Burn-in a few iterations so we land on the attractor before plotting
+for i in range(0, 30) {
+    let nx = 0.0
+    let ny = 0.0
+    if p.kind == 0 {
+        nx = sin(a * y) + c * cos(a * x)
+        ny = sin(b * x) + d * cos(b * y)
+    } else {
+        nx = sin(a * y) - cos(b * x)
+        ny = sin(c * x) - cos(d * y)
+    }
+    x = nx
+    y = ny
+}
+
+for i in range(0, iters) {
+    let nx = 0.0
+    let ny = 0.0
+    if p.kind == 0 {
+        nx = sin(a * y) + c * cos(a * x)
+        ny = sin(b * x) + d * cos(b * y)
+    } else {
+        nx = sin(a * y) - cos(b * x)
+        ny = sin(c * x) - cos(d * y)
+    }
+    x = nx
+    y = ny
+
+    let px = int(cx + x * scale)
+    let py = int(cy + y * scale)
+
+    if px >= 0 && px < int(sw) && py >= 0 && py < int(sh) {
+        // Hue from radius + slow drift. Note: hsv() in Petal takes hue in
+        // 0..360 (degrees), not 0..1 like p5.js.
+        let r = sqrt(x * x + y * y)
+        let h = ((r * 65.0 + hue_shift * 360.0) % 360.0 + 360.0) % 360.0
+        let col = hsv(h, 0.7, 0.95)
+        // 1-pixel point as a 1x1 rect (no draw_pixel primitive)
+        draw_rect(px, py, 1, 1, col.r, col.g, col.b)
+    }
+}
+
+// HUD with a faint backdrop
+draw_rect(8, 8, 280, 78, 0, 0, 0)
+draw_text("Strange Attractor", 14, 12, 16, 200, 200, 230)
+draw_text(p.name, 14, 32, 12, 140, 180, 220)
+let mode_label = "fixed params"
+if mouse_tune { mode_label = "live: a=mouse_x b=mouse_y" }
+draw_text(mode_label, 14, 48, 10, 100, 140, 180)
+draw_text("1-8 preset  r reseed  space tune", 14, 64, 10, 80, 100, 140)
+
+// Param readout
+let pa = "a=" ++ str(floor(a * 100.0) / 100.0)
+let pb = "  b=" ++ str(floor(b * 100.0) / 100.0)
+draw_text(pa ++ pb, 14, 78, 10, 80, 100, 140)

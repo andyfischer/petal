@@ -40,4 +40,20 @@ describe("state assignment inside if block", () => {
     const writes = termsByOp(ir, "StateWrite");
     expect(writes.length).toBe(2);
   });
+
+  // Repeat reassignments to the same state variable each emit a StateWrite —
+  // the second `x = ...` was previously dropped because scope_lookup returned
+  // the first assignment's Copy term, which find_state_init couldn't trace
+  // back to the StateInit. See compiler.rs::find_state_init / state_inits.
+  it("multiple top-level reassignments each emit StateWrite", () => {
+    const ir = showIrJson("state x = 0\nx = 5\nx = 10");
+    const writes = termsByOp(ir, "StateWrite");
+    expect(writes.length).toBe(2);
+  });
+
+  it("three reassignments emit three StateWrites", () => {
+    const ir = showIrJson("state z = 0\nz = 1\nz = 2\nz = 3");
+    const writes = termsByOp(ir, "StateWrite");
+    expect(writes.length).toBe(3);
+  });
 });

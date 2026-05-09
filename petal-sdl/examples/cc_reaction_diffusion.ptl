@@ -1,0 +1,176 @@
+// Reaction-Diffusion — Gray-Scott model.
+//
+// Two chemicals A and B on a grid. Each cell evolves by:
+//
+//   dA/dt = Da * laplacian(A) - A*B^2 + f*(1 - A)
+//   dB/dt = Db * laplacian(B) + A*B^2 - (k + f)*B
+//
+// Tiny tweaks to (f, k) produce wildly different organic patterns:
+// spots, stripes, mazes, branching coral, holes.
+//
+// We run on a coarse grid (50x37) because the inner loop is interpreted —
+// finer than this and frame time blows up.
+//
+// Controls:
+//   click         drop a seed of B at the cursor
+//   1 / 2 / 3 / 4 preset (spots / stripes / coral / mazes)
+//   r             reset to a single central seed
+//   space         pause / resume
+
+state grid_a = []
+state grid_b = []
+state cols = 0
+state rows = 0
+state cell = 0
+state preset = 2
+state paused = false
+state generation = 0
+
+let delta = dt()
+let sw = float(screen_width())
+let sh = float(screen_height())
+
+if cols == 0 {
+    cell = 16
+    cols = int(sw) / cell
+    rows = int(sh) / cell
+}
+
+fn seed_grid(cols, rows) {
+    let a = []
+    let b = []
+    for j in range(0, rows) {
+        for i in range(0, cols) {
+            push(a, 1.0)
+            push(b, 0.0)
+        }
+    }
+    // Square seed of B at the center
+    let cx = cols / 2
+    let cy = rows / 2
+    for dy in range(-3, 4) {
+        for dx in range(-3, 4) {
+            let i = cx + dx
+            let j = cy + dy
+            if i >= 0 && i < cols && j >= 0 && j < rows {
+                b[j * cols + i] = 1.0
+                a[j * cols + i] = 0.0
+            }
+        }
+    }
+    { a: a, b: b }
+}
+
+if len(grid_a) == 0 || key_pressed("r") {
+    let g = seed_grid(cols, rows)
+    grid_a = g.a
+    grid_b = g.b
+    generation = 0
+}
+
+if key_pressed("1") { preset = 0 }
+if key_pressed("2") { preset = 1 }
+if key_pressed("3") { preset = 2 }
+if key_pressed("4") { preset = 3 }
+if key_pressed("space") { paused = !paused }
+
+if mouse_down(1) {
+    let mi = mouse_x() / cell
+    let mj = mouse_y() / cell
+    for dy in range(-1, 2) {
+        for dx in range(-1, 2) {
+            let i = mi + dx
+            let j = mj + dy
+            if i >= 0 && i < cols && j >= 0 && j < rows {
+                grid_b[j * cols + i] = 1.0
+            }
+        }
+    }
+}
+
+// Preset table (f, k, name) — drawn from the well-known Gray-Scott parameter
+// space chart. Tiny shifts in (f, k) move you between regimes.
+let presets = [
+    { f: 0.0367, k: 0.0649, name: "spots" },
+    { f: 0.014,  k: 0.054,  name: "solitons" },
+    { f: 0.062,  k: 0.061,  name: "coral"  },
+    { f: 0.029,  k: 0.057,  name: "mazes"  }
+]
+let p = presets[preset]
+let f_rate = p.f
+let k_rate = p.k
+let da = 1.0
+let db = 0.5
+let dt_step = 1.0
+
+let n = cols * rows
+
+// === Update step ===
+// Run multiple sub-iterations per frame to speed up pattern formation.
+// More sub-steps = faster evolution but lower frame rate.
+let sub_steps = 3
+if !paused {
+    for s in range(0, sub_steps) {
+        let new_a = []
+        let new_b = []
+        for j in range(0, rows) {
+            for i in range(0, cols) {
+                let idx = j * cols + i
+                let a_c = grid_a[idx]
+                let b_c = grid_b[idx]
+
+                // Wrap-around neighbour indices
+                let i_l = (i + cols - 1) % cols
+                let i_r = (i + 1) % cols
+                let j_u = (j + rows - 1) % rows
+                let j_d = (j + 1) % rows
+
+                let a_l = grid_a[j * cols + i_l]
+                let a_r = grid_a[j * cols + i_r]
+                let a_u = grid_a[j_u * cols + i]
+                let a_d = grid_a[j_d * cols + i]
+                let b_l = grid_b[j * cols + i_l]
+                let b_r = grid_b[j * cols + i_r]
+                let b_u = grid_b[j_u * cols + i]
+                let b_d = grid_b[j_d * cols + i]
+
+                let lap_a = a_l + a_r + a_u + a_d - 4.0 * a_c
+                let lap_b = b_l + b_r + b_u + b_d - 4.0 * b_c
+
+                let reaction = a_c * b_c * b_c
+                let na = a_c + dt_step * (da * lap_a - reaction + f_rate * (1.0 - a_c))
+                let nb = b_c + dt_step * (db * lap_b + reaction - (k_rate + f_rate) * b_c)
+                push(new_a, clamp(na, 0.0, 1.0))
+                push(new_b, clamp(nb, 0.0, 1.0))
+            }
+        }
+        grid_a = new_a
+        grid_b = new_b
+    }
+    generation += sub_steps
+}
+
+// === Draw ===
+clear(4, 6, 14)
+
+// Map B concentration to colour. The activator A washes out where B is high.
+for j in range(0, rows) {
+    for i in range(0, cols) {
+        let idx = j * cols + i
+        let b_v = grid_b[idx]
+        if b_v > 0.04 {
+            // Hue swings with B; brightness is also B-driven
+            let h = (200.0 + b_v * 160.0 + float(generation) * 0.05) % 360.0
+            let s = 0.7
+            let v = clamp(0.25 + b_v * 1.4, 0.05, 1.0)
+            let col = hsv(h, s, v)
+            draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
+        }
+    }
+}
+
+draw_rect(8, 8, 280, 78, 0, 0, 0)
+draw_text("Reaction-Diffusion", 14, 12, 16, 220, 200, 230)
+draw_text("preset: " ++ p.name ++ "  (f=" ++ str(f_rate) ++ ", k=" ++ str(k_rate) ++ ")", 14, 32, 11, 150, 130, 200)
+draw_text("gen: " ++ str(generation) ++ "    grid: " ++ str(cols) ++ "x" ++ str(rows), 14, 50, 10, 110, 110, 160)
+draw_text("click: seed   1-4 preset   r reset   space pause", 14, 66, 10, 110, 110, 160)

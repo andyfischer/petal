@@ -55,6 +55,11 @@ cargo run -- examples/pong.ptl
 | `particles.ptl` | Particle effects demo |
 | `paint.ptl` | Drawing app with color palette |
 | `browser.ptl` | UI/browser mockup |
+| `cc_strange_attractor.ptl` | Clifford & De Jong attractors with live param tuning |
+| `cc_metaballs.ptl` | Implicit-surface blobs sampled on a coarse grid |
+| `cc_10_print.ptl` | The Commodore 64 `10 PRINT` weave with palettes & mutation |
+| `cc_differential_growth.ptl` | Self-avoiding curve that buds into flower-like lobes |
+| `cc_reaction_diffusion.ptl` | Gray-Scott model — spots, stripes, mazes, coral |
 
 Run any example:
 

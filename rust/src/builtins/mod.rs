@@ -21,6 +21,33 @@ mod math;
 mod noise;
 mod vec2;
 
+// xorshift64* PRNG, seeded from system time on first use. Replaces an earlier
+// implementation that used `subsec_nanos()` per call — that aliased multiple
+// random() calls within the same frame to nearly identical values.
+use std::sync::atomic::{AtomicU64, Ordering};
+static RNG_STATE: AtomicU64 = AtomicU64::new(0);
+
+fn rng_next_u64() -> u64 {
+    let mut x = RNG_STATE.load(Ordering::Relaxed);
+    if x == 0 {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0x9E3779B97F4A7C15);
+        x = seed | 1; // xorshift requires non-zero state
+    }
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    RNG_STATE.store(x, Ordering::Relaxed);
+    x.wrapping_mul(0x2545F4914F6CDD1D)
+}
+
+pub(super) fn rng_next_f64() -> f64 {
+    // 53-bit mantissa, uniform in [0, 1)
+    (rng_next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+}
+
 /// Validate that a native function received exactly `n` arguments.
 pub(super) fn require_args(state: &PetalCxt, n: usize, name: &str) -> Result<(), String> {
     if state.arg_count() != n {

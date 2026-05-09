@@ -182,12 +182,8 @@ pub(super) fn native_random_int(state: &mut PetalCxt) -> Result<u32, String> {
         state.push_int(min);
         return Ok(1);
     }
-    let pseudo = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let range = (max - min) as u64;
-    let val = min + (pseudo as u64 % range) as i64;
+    let range = (max - min) as f64;
+    let val = min + (super::rng_next_f64() * range) as i64;
     state.push_int(val);
     Ok(1)
 }
@@ -200,12 +196,8 @@ pub(super) fn native_choose(state: &mut PetalCxt) -> Result<u32, String> {
             if list.is_empty() {
                 state.push_nil();
             } else {
-                let pseudo = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .subsec_nanos();
-                let idx = pseudo as usize % list.len();
-                let val = list[idx];
+                let idx = (super::rng_next_f64() * list.len() as f64) as usize;
+                let val = list[idx.min(list.len() - 1)];
                 state.push_value(val);
             }
             Ok(1)

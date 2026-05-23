@@ -19,3 +19,6 @@ temp
 rust/pkg/
 petal-diagram-canvas/pkg/
 petal-diagram-canvas/dist/
+
+# Playwright CLI session artifacts
+.playwright-cli/

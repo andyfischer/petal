@@ -1,0 +1,95 @@
+// Bouncing Balls — click to add more balls.
+// Demonstrates state, frame timing, mouse input, and the drawing API.
+
+state balls = []
+
+let sw = float(screen_width())
+let sh = float(screen_height())
+let delta = dt()
+
+// Seed with a few balls on first frame
+if len(balls) == 0 {
+    for i in range(0, 12) {
+        let f = float(i)
+        push(balls, {
+            x: 50.0 + f * 60.0,
+            y: 80.0 + f * 20.0,
+            vx: 80.0 + f * 15.0,
+            vy: 40.0 - f * 8.0,
+            r: 12.0 + f * 1.5,
+            cr: 80 + (i * 23) % 175,
+            cg: 120 + (i * 47) % 135,
+            cb: 200 - (i * 31) % 150
+        })
+    }
+}
+
+// Add a ball on click
+if mouse_pressed(1) {
+    let mx = float(mouse_x())
+    let my = float(mouse_y())
+    push(balls, {
+        x: mx, y: my,
+        vx: random(-200.0, 200.0),
+        vy: random(-200.0, 0.0),
+        r: random(8.0, 28.0),
+        cr: int(random(80.0, 255.0)),
+        cg: int(random(80.0, 255.0)),
+        cb: int(random(80.0, 255.0))
+    })
+}
+
+let gravity = 600.0
+
+// Physics step
+let new_balls = []
+for b in balls {
+    let nvy = b.vy + gravity * delta
+    let nx = b.x + b.vx * delta
+    let ny = b.y + nvy * delta
+    let nvx = b.vx
+
+    // Wall collisions
+    let final_vx = nvx
+    let final_x = nx
+    if nx - b.r < 0.0 {
+        final_x = b.r
+        final_vx = -nvx * 0.85
+    }
+    if nx + b.r > sw {
+        final_x = sw - b.r
+        final_vx = -nvx * 0.85
+    }
+
+    let final_vy = nvy
+    let final_y = ny
+    if ny + b.r > sh {
+        final_y = sh - b.r
+        final_vy = -nvy * 0.85
+    }
+    if ny - b.r < 0.0 {
+        final_y = b.r
+        final_vy = -nvy * 0.85
+    }
+
+    push(new_balls, {
+        x: final_x, y: final_y,
+        vx: final_vx, vy: final_vy,
+        r: b.r, cr: b.cr, cg: b.cg, cb: b.cb
+    })
+}
+balls = new_balls
+
+// === Drawing ===
+clear(14, 16, 28)
+
+for b in balls {
+    // soft outer halo
+    draw_circle(int(b.x), int(b.y), int(b.r + 3.0), b.cr / 4, b.cg / 4, b.cb / 4)
+    draw_circle(int(b.x), int(b.y), int(b.r), b.cr, b.cg, b.cb)
+    draw_circle(int(b.x - b.r * 0.3), int(b.y - b.r * 0.3), int(b.r * 0.35),
+                min(255, b.cr + 60), min(255, b.cg + 60), min(255, b.cb + 60))
+}
+
+draw_text("Bouncing Balls — click to add", 16, 12, 14, 200, 200, 220)
+draw_text("count: " ++ str(len(balls)), 16, 32, 12, 150, 150, 180)

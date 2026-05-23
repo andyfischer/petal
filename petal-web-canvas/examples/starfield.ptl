@@ -1,0 +1,64 @@
+// Starfield — warp drive.
+// 3D star projection with motion trails.
+
+state stars = []
+state initialized = false
+
+let cx = float(screen_width()) / 2.0
+let cy = float(screen_height()) / 2.0
+let delta = dt()
+let depth = 1000.0
+let fov = 400.0
+
+fn clip(v) {
+    if v > 30000.0 { 30000.0 } else { if v < -30000.0 { -30000.0 } else { v } }
+}
+
+if !initialized {
+    let temp = []
+    for i in range(0, 200) {
+        push(temp, {
+            x: random(-400.0, 400.0),
+            y: random(-300.0, 300.0),
+            z: random(50.0, depth),
+            pz: depth
+        })
+    }
+    stars = temp
+    initialized = true
+}
+
+let speed = 300.0
+let new_stars = []
+for s in stars {
+    let pz = s.z
+    let nz = s.z - speed * delta
+
+    if nz < 30.0 {
+        push(new_stars, {
+            x: random(-400.0, 400.0),
+            y: random(-300.0, 300.0),
+            z: depth,
+            pz: depth
+        })
+    } else {
+        push(new_stars, { x: s.x, y: s.y, z: nz, pz: pz })
+    }
+}
+stars = new_stars
+
+// === Draw ===
+clear(0, 0, 8)
+
+for s in stars {
+    let sx = clip(s.x / s.z * fov + cx)
+    let sy = clip(s.y / s.z * fov + cy)
+    let psx = clip(s.x / s.pz * fov + cx)
+    let psy = clip(s.y / s.pz * fov + cy)
+
+    let brightness = int((1.0 - s.z / depth) * 255.0)
+    let b = min(255, max(40, brightness))
+    draw_line(int(psx), int(psy), int(sx), int(sy), b, b, b)
+}
+
+draw_text("Starfield", 16, 12, 14, 180, 180, 220)

@@ -27,14 +27,28 @@ mod vec2;
 use std::sync::atomic::{AtomicU64, Ordering};
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(not(target_arch = "wasm32"))]
+fn initial_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E3779B97F4A7C15)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn initial_seed() -> u64 {
+    // `SystemTime::now()` traps on `wasm32-unknown-unknown` (no system clock).
+    // Use a monotonically-bumped counter mixed with a constant so that repeated
+    // process lifetimes still get distinct seeds.
+    static SEED_BUMP: AtomicU64 = AtomicU64::new(0);
+    let n = SEED_BUMP.fetch_add(1, Ordering::Relaxed);
+    0x9E3779B97F4A7C15u64.wrapping_add(n.wrapping_mul(0x100000001B3))
+}
+
 fn rng_next_u64() -> u64 {
     let mut x = RNG_STATE.load(Ordering::Relaxed);
     if x == 0 {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x9E3779B97F4A7C15);
-        x = seed | 1; // xorshift requires non-zero state
+        x = initial_seed() | 1; // xorshift requires non-zero state
     }
     x ^= x << 13;
     x ^= x >> 7;

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Petal Web Canvas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0e0e18;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+    #app {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+    #sidebar {
+      width: 200px;
+      min-width: 200px;
+      background: #16162a;
+      border-right: 1px solid #2a2a44;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      gap: 16px;
+    }
+    #sidebar h1 {
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      color: #cfcfe6;
+    }
+    #sidebar h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    .example-btn {
+      display: block;
+      width: 100%;
+      padding: 6px 8px;
+      margin-bottom: 4px;
+      border-radius: 4px;
+      border: 1px solid #2a2a44;
+      background: #1d1d36;
+      color: #d0d0e0;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+    }
+    .example-btn:hover { background: #2a2a4a; border-color: #4a4a6e; }
+    .example-btn.active { background: #34345e; border-color: #6c6cff; color: #fff; }
+    #hint {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.5;
+      margin-top: auto;
+    }
+    #canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-width: 0;
+    }
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+    #error-display {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      background: rgba(30, 20, 20, 0.95);
+      color: #e0e0e0;
+      border-radius: 6px;
+      border: 1px solid #c44;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      display: none;
+      overflow: hidden;
+    }
+    #error-display .error-header {
+      background: rgba(200, 50, 50, 0.9);
+      color: white;
+      padding: 8px 12px;
+      font-weight: 600;
+    }
+    #error-display .error-loc { opacity: 0.7; font-weight: 400; }
+    #error-display .error-source { padding: 8px 0; font-size: 12px; line-height: 1.5; }
+    #error-display .error-source div { padding: 0 12px; }
+    #error-display .error-source .error-line { background: rgba(200, 50, 50, 0.3); }
+    #error-display .error-source .line-num { color: #666; user-select: none; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <h1>Petal Web Canvas</h1>
+      <div>
+        <h3>Examples</h3>
+        <div id="example-list"></div>
+      </div>
+      <div id="hint">
+        Click an example to load it. Scripts run at 60fps and have full access to mouse, keyboard, and the petal-sdl drawing API.
+      </div>
+    </div>
+    <div id="canvas-wrap">
+      <canvas id="canvas" tabindex="0"></canvas>
+      <div id="error-display"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

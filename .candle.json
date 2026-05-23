@@ -19,6 +19,11 @@
       "name": "diagram-canvas",
       "shell": "npx vite --port 4012",
       "root": "petal-diagram-canvas"
+    },
+    {
+      "name": "web-canvas",
+      "shell": "npx vite --port 4017",
+      "root": "petal-web-canvas"
     }
   ]
 }

@@ -18,65 +18,65 @@ let sw = screen_width()
 let sh = screen_height()
 
 // Initialize grid
-if cols == 0 {
+if cols == 0 then
     cols = sw / cell_size
     rows = sh / cell_size
 
-    for y in range(0, rows) {
+    for y in range(0, rows) do
         let row = []
         let color_row = []
-        for x in range(0, cols) {
-            if random(0.0, 1.0) < 0.3 {
+        for x in range(0, cols) do
+            if random(0.0, 1.0) < 0.3 then
                 push(row, 1)
                 push(color_row, { r: int(random(100.0, 255.0)), g: int(random(100.0, 255.0)), b: int(random(150.0, 255.0)), age: 0 })
-            } else {
+            else
                 push(row, 0)
                 push(color_row, { r: 0, g: 0, b: 0, age: 0 })
-            }
-        }
+            end
+        end
         push(grid, row)
         push(cell_colors, color_row)
-    }
-}
+    end
+end
 
 // Toggle pause with space
-if key_pressed("space") {
+if key_pressed("space") then
     paused = !paused
-}
+end
 
 // Click to toggle cells
-if mouse_down(1) {
+if mouse_down(1) then
     let mx = mouse_x() / cell_size
     let my = mouse_y() / cell_size
-    if mx >= 0 && mx < cols && my >= 0 && my < rows {
+    if mx >= 0 && mx < cols && my >= 0 && my < rows then
         grid[my][mx] = 1
         cell_colors[my][mx] = { r: 255, g: 255, b: 100, age: 0 }
-    }
-}
+    end
+end
 
 // Right click to clear cells
-if mouse_down(3) {
+if mouse_down(3) then
     let mx = mouse_x() / cell_size
     let my = mouse_y() / cell_size
-    if mx >= 0 && mx < cols && my >= 0 && my < rows {
+    if mx >= 0 && mx < cols && my >= 0 && my < rows then
         grid[my][mx] = 0
-    }
-}
+    end
+end
 
 // Update simulation
-if !paused {
+if !paused then
     tick_timer += delta
-    if tick_timer >= tick_rate {
+    if tick_timer >= tick_rate then
         tick_timer = 0.0
         generation += 1
 
         // Build next generation
         next_grid = []
         let new_colors = []
-        for y in range(0, rows) {
+        for y in range(0, rows) do
             let row = []
             let color_row = []
-            for x in range(0, cols) {
+            for x in range(0, cols) do
                 // Count neighbors (wrapping)
                 let neighbors = 0
                 let avg_r = 0
@@ -84,62 +84,62 @@ if !paused {
                 let avg_b = 0
                 let alive_neighbors = 0
 
-                for dy in range(-1, 2) {
-                    for dx in range(-1, 2) {
-                        if dx != 0 || dy != 0 {
+                for dy in range(-1, 2) do
+                    for dx in range(-1, 2) do
+                        if dx != 0 || dy != 0 then
                             let nx = (x + dx + cols) % cols
                             let ny = (y + dy + rows) % rows
-                            if grid[ny][nx] == 1 {
+                            if grid[ny][nx] == 1 then
                                 neighbors += 1
                                 avg_r += cell_colors[ny][nx].r
                                 avg_g += cell_colors[ny][nx].g
                                 avg_b += cell_colors[ny][nx].b
                                 alive_neighbors += 1
-                            }
-                        }
-                    }
-                }
+                            end
+                        end
+                    end
+                end
 
                 let cell = grid[y][x]
                 let new_cell = 0
                 let new_color = cell_colors[y][x]
 
-                if cell == 1 {
+                if cell == 1 then
                     // Alive: survive with 2-3 neighbors
-                    if neighbors == 2 || neighbors == 3 {
+                    if neighbors == 2 || neighbors == 3 then
                         new_cell = 1
                         new_color = { r: new_color.r, g: new_color.g, b: new_color.b, age: new_color.age + 1 }
-                    }
-                } else {
+                    end
+                else
                     // Dead: birth with exactly 3 neighbors
-                    if neighbors == 3 {
+                    if neighbors == 3 then
                         new_cell = 1
                         // New cell gets average color of parents with mutation
                         let nr = min(255, avg_r / alive_neighbors + int(random(-20.0, 20.0)))
                         let ng = min(255, avg_g / alive_neighbors + int(random(-20.0, 20.0)))
                         let nb = min(255, avg_b / alive_neighbors + int(random(-20.0, 20.0)))
                         new_color = { r: max(50, nr), g: max(50, ng), b: max(80, nb), age: 0 }
-                    }
-                }
+                    end
+                end
 
                 push(row, new_cell)
                 push(color_row, new_color)
-            }
+            end
             push(next_grid, row)
             push(new_colors, color_row)
-        }
+        end
         grid = next_grid
         cell_colors = new_colors
-    }
-}
+    end
+end
 
 // === Drawing ===
 clear(5, 5, 10)
 
 // Draw cells
-for y in range(0, rows) {
-    for x in range(0, cols) {
-        if grid[y][x] == 1 {
+for y in range(0, rows) do
+    for x in range(0, cols) do
+        if grid[y][x] == 1 then
             let c = cell_colors[y][x]
             // Older cells get slightly dimmer
             let age_fade = max(0.5, 1.0 - float(c.age) * 0.01)
@@ -147,15 +147,15 @@ for y in range(0, rows) {
             let cg = int(float(c.g) * age_fade)
             let cb = int(float(c.b) * age_fade)
             draw_rect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1, cr, cg, cb)
-        }
-    }
-}
+        end
+    end
+end
 
 // HUD
 draw_rect(0, 0, 250, 55, 0, 0, 0)
 draw_text("Game of Life", 10, 5, 16, 100, 100, 120)
 draw_text("Gen: " ++ str(generation), 10, 25, 12, 60, 60, 80)
-if paused {
+if paused then
     draw_text("PAUSED", 100, 25, 12, 255, 100, 100)
-}
+end
 draw_text("Space=pause  Click=draw  RClick=erase", 10, 40, 10, 50, 50, 70)

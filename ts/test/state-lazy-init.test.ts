@@ -43,9 +43,9 @@ describe("lazy state init — IR shape", () => {
 
   it("StateInit with explicit key has [key] inputs (init moved to child block)", () => {
     const ir = showIrJson(`
-      for x in [1] {
+      for x in [1] do
         state(x) count = 0
-      }
+      end
     `);
     const inits = termsByOp(ir, "StateInit");
     expect(inits.length).toBe(1);
@@ -71,7 +71,10 @@ describe("lazy state init — runtime", () => {
 
   it("init expression with a side effect runs only once at top level", () => {
     const out = runPetal(`
-      state x = { print("init x"); 99 }
+      state x = fn()
+        print("init x")
+        99
+      end()
       state y = x + 1
       print(x, y)
     `);
@@ -80,7 +83,10 @@ describe("lazy state init — runtime", () => {
 
   it("init runs only once across multiple top-level state reads", () => {
     const out = runPetal(`
-      state value = { print("init value"); 7 }
+      state value = fn()
+        print("init value")
+        7
+      end()
       print(value)
       print(value)
     `);
@@ -89,10 +95,13 @@ describe("lazy state init — runtime", () => {
 
   it("per-iteration init runs once per iteration index", () => {
     const out = runPetal(`
-      for i in [1, 2, 3] {
-        state x = { print("init"); i * 10 }
+      for i in [1, 2, 3] do
+        state x = fn()
+          print("init")
+          i * 10
+        end()
         print(x)
-      }
+      end
     `);
     // Three iterations, three first-time inits per iteration key.
     expect(out).toBe("init\n10\ninit\n20\ninit\n30");
@@ -101,9 +110,12 @@ describe("lazy state init — runtime", () => {
   it("explicit-key init runs once per unique key, not per visit", () => {
     const out = runPetal(`
       let visits = ["a", "b", "a", "c", "b", "a"]
-      for v in visits {
-        state(v) seen = { print("init", v); 0 }
-      }
+      for v in visits do
+        state(v) seen = fn()
+          print("init", v)
+          0
+        end()
+      end
     `);
     // Only "a", "b", "c" are unique → 3 inits despite 6 visits.
     expect(out).toBe("init a\ninit b\ninit c");
@@ -146,11 +158,11 @@ describe("lazy state init — preserves existing semantics", () => {
 
   it("per-iteration state still gets fresh value per iteration", () => {
     const out = runPetal(`
-      for item in [10, 20, 30] {
+      for item in [10, 20, 30] do
         state count = 0
         count += 1
         print(count)
-      }
+      end
     `);
     expect(out).toBe("1\n1\n1");
   });
@@ -158,11 +170,11 @@ describe("lazy state init — preserves existing semantics", () => {
   it("explicit-key state preserves value across re-encounters", () => {
     const out = runPetal(`
       let items = [{id: 1}, {id: 2}, {id: 1}]
-      for item in items {
+      for item in items do
         state(item.id) clicks = 0
         clicks += 1
         print(clicks)
-      }
+      end
     `);
     expect(out).toBe("1\n1\n2");
   });

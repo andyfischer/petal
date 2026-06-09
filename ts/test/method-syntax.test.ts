@@ -17,17 +17,17 @@ describe('method syntax', () => {
   });
 
   it('calls map() as a method', () => {
-    const out = runPetal('print([1,2,3].map(fn(x) { x * 2 }))');
+    const out = runPetal('print([1,2,3].map(fn(x) -> x * 2))');
     expect(out.trim()).toBe('[2, 4, 6]');
   });
 
   it('calls filter() as a method', () => {
-    const out = runPetal('print([1,2,3].filter(fn(x) { x > 1 }))');
+    const out = runPetal('print([1,2,3].filter(fn(x) -> x > 1))');
     expect(out.trim()).toBe('[2, 3]');
   });
 
   it('calls a callable record field', () => {
-    const out = runPetal('let r = {greet: fn(x) { x }}\nprint(r.greet("hi"))');
+    const out = runPetal('let r = {greet: fn(x) -> x}\nprint(r.greet("hi"))');
     expect(out.trim()).toBe('hi');
   });
 
@@ -37,12 +37,12 @@ describe('method syntax', () => {
   });
 
   it('chains method calls', () => {
-    const out = runPetal('print([1,2,3].map(fn(x) { x * 2 }).filter(fn(x) { x > 2 }))');
+    const out = runPetal('print([1,2,3].map(fn(x) -> x * 2).filter(fn(x) -> x > 2))');
     expect(out.trim()).toBe('[4, 6]');
   });
 
   it('combines method syntax with pipe operator', () => {
-    const out = runPetal('[1,2,3].map(fn(x) { x * 2 }) |> print');
+    const out = runPetal('[1,2,3].map(fn(x) -> x * 2) |> print');
     expect(out.trim()).toBe('[2, 4, 6]');
   });
 

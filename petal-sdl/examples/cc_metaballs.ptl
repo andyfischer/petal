@@ -20,46 +20,46 @@ state t = 0.0
 let delta = dt()
 let sw = float(screen_width())
 let sh = float(screen_height())
-if !paused { t += delta }
+if !paused then t += delta end
 
-if key_pressed("space") { paused = !paused }
-if key_pressed("c") { extras = [] }
-if mouse_pressed(1) {
-    push(extras, {
-        x: float(mouse_x()),
-        y: float(mouse_y()),
-        r: random(40.0, 80.0)
-    })
-}
+if key_pressed("space") then paused = !paused end
+if key_pressed("c") then extras = [] end
+if mouse_pressed(1) then
+  push(extras, {
+    x: float(mouse_x()),
+    y: float(mouse_y()),
+    r: random(40.0, 80.0)
+  })
+end
 
 // Initialize moving balls
-if len(balls) == 0 {
-    for i in range(0, 5) {
-        let angle = random(0.0, pi() * 2.0)
-        let speed = random(50.0, 130.0)
-        push(balls, {
-            cx: random(sw * 0.25, sw * 0.75),
-            cy: random(sh * 0.25, sh * 0.75),
-            vx: cos(angle) * speed,
-            vy: sin(angle) * speed,
-            r: random(50.0, 90.0)
-        })
-    }
-}
+if len(balls) == 0 then
+  for i in range(0, 5) do
+    let angle = random(0.0, pi() * 2.0)
+    let speed = random(50.0, 130.0)
+    push(balls, {
+      cx: random(sw * 0.25, sw * 0.75),
+      cy: random(sh * 0.25, sh * 0.75),
+      vx: cos(angle) * speed,
+      vy: sin(angle) * speed,
+      r: random(50.0, 90.0)
+    })
+  end
+end
 
 // Update moving balls (bounce off walls)
 let new_balls = []
-for b in balls {
-    let nx = b.cx + b.vx * delta
-    let ny = b.cy + b.vy * delta
-    let nvx = b.vx
-    let nvy = b.vy
-    if nx < b.r { nx = b.r;       nvx = abs(nvx) }
-    if nx > sw - b.r { nx = sw - b.r; nvx = -abs(nvx) }
-    if ny < b.r { ny = b.r;       nvy = abs(nvy) }
-    if ny > sh - b.r { ny = sh - b.r; nvy = -abs(nvy) }
-    push(new_balls, { cx: nx, cy: ny, vx: nvx, vy: nvy, r: b.r })
-}
+for b in balls do
+  let nx = b.cx + b.vx * delta
+  let ny = b.cy + b.vy * delta
+  let nvx = b.vx
+  let nvy = b.vy
+  if nx < b.r then nx = b.r;       nvx = abs(nvx) end
+  if nx > sw - b.r then nx = sw - b.r; nvx = -abs(nvx) end
+  if ny < b.r then ny = b.r;       nvy = abs(nvy) end
+  if ny > sh - b.r then ny = sh - b.r; nvy = -abs(nvy) end
+  push(new_balls, { cx: nx, cy: ny, vx: nvx, vy: nvy, r: b.r })
+end
 balls = new_balls
 
 // Sample the field on a coarse grid. Larger cells = chunkier + much faster.
@@ -73,57 +73,57 @@ clear(8, 6, 18)
 let bx = []
 let by = []
 let br2 = []
-for b in balls {
-    push(bx, b.cx)
-    push(by, b.cy)
-    push(br2, b.r * b.r)
-}
-for e in extras {
-    push(bx, e.x)
-    push(by, e.y)
-    push(br2, e.r * e.r)
-}
+for b in balls do
+  push(bx, b.cx)
+  push(by, b.cy)
+  push(br2, b.r * b.r)
+end
+for e in extras do
+  push(bx, e.x)
+  push(by, e.y)
+  push(br2, e.r * e.r)
+end
 let n_balls = len(bx)
 
-for j in range(0, rows) {
-    let py = float(j * cell + cell / 2)
-    for i in range(0, cols) {
-        let px = float(i * cell + cell / 2)
-        let f = 0.0
-        for k in range(0, n_balls) {
-            let dx = px - bx[k]
-            let dy = py - by[k]
-            let d2 = dx * dx + dy * dy + 1.0
-            f += br2[k] / d2
-        }
+for j in range(0, rows) do
+  let py = float(j * cell + cell / 2)
+  for i in range(0, cols) do
+    let px = float(i * cell + cell / 2)
+    let f = 0.0
+    for k in range(0, n_balls) do
+      let dx = px - bx[k]
+      let dy = py - by[k]
+      let d2 = dx * dx + dy * dy + 1.0
+      f += br2[k] / d2
+    end
 
-        // Ignore weak field — keeps background dark
-        if f > 0.4 {
-            // Iso-surface highlight near f ~= 1.
-            // hsv() takes h in 0..360 (degrees), not 0..1.
-            let iso = abs(f - 1.0)
-            let h = (220.0 - clamp(f * 50.0, 0.0, 180.0) + t * 18.0) % 360.0
-            let s = 0.85
-            let v = clamp(0.35 + f * 0.25, 0.0, 1.0)
+    // Ignore weak field — keeps background dark
+    if f > 0.4 then
+      // Iso-surface highlight near f ~= 1.
+      // hsv() takes h in 0..360 (degrees), not 0..1.
+      let iso = abs(f - 1.0)
+      let h = (220.0 - clamp(f * 50.0, 0.0, 180.0) + t * 18.0) % 360.0
+      let s = 0.85
+      let v = clamp(0.35 + f * 0.25, 0.0, 1.0)
 
-            if iso < 0.05 {
-                let col = hsv(h, 0.4, 1.0)
-                draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
-            } else {
-                let col = hsv(h, s, v)
-                draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
-            }
-        }
-    }
-}
+      if iso < 0.05 then
+        let col = hsv(h, 0.4, 1.0)
+        draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
+      else
+        let col = hsv(h, s, v)
+        draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
+      end
+    end
+  end
+end
 
 // Tiny markers at ball centers
-for b in balls {
-    draw_circle(int(b.cx), int(b.cy), 2, 255, 240, 230)
-}
-for e in extras {
-    draw_circle(int(e.x), int(e.y), 2, 255, 220, 180)
-}
+for b in balls do
+  draw_circle(int(b.cx), int(b.cy), 2, 255, 240, 230)
+end
+for e in extras do
+  draw_circle(int(e.x), int(e.y), 2, 255, 220, 180)
+end
 
 draw_rect(8, 8, 280, 60, 0, 0, 0)
 draw_text("Metaballs", 14, 12, 16, 220, 200, 230)

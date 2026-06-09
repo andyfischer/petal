@@ -2,9 +2,9 @@
 // Identifier-keyed objects with field access.
 
 let user = {
-    name: "Alice"
-    age: 30
-    city: "Portland"
+  name: "Alice"
+  age: 30
+  city: "Portland"
 }
 
 print("Name:", user.name)
@@ -13,33 +13,37 @@ print("City:", user.city)
 
 // Nested records
 let company = {
-    name: "Acme"
-    ceo: {
-        name: "Bob"
-        title: "CEO"
-    }
-    founded: 2020
+  name: "Acme"
+  ceo: {
+    name: "Bob"
+    title: "CEO"
+  }
+  founded: 2020
 }
 print("Company:", company.name)
 print("CEO:", company.ceo.name)
 
 // Records with enum values
-enum Role { Admin, Editor, Viewer }
+enum Role
+  Admin
+  Editor
+  Viewer
+end
 
 let account = {
-    user: user
-    role: Admin
-    active: true
+  user: user
+  role: Admin
+  active: true
 }
 print(account.user.name, "is an", account.role)
 
 // Pattern matching on records
-fn describe(person) {
-    match person {
-        { name: n, age: a } if a >= 18 -> print(n, "is an adult")
-        { name: n } -> print(n, "is a minor")
-    }
-}
+fn describe(person)
+  match person
+    when { name: n, age: a } if a >= 18 -> print(n, "is an adult")
+    when { name: n } -> print(n, "is a minor")
+  end
+end
 
 describe({ name: "Alice", age: 30 })
 describe({ name: "Charlie", age: 12 })

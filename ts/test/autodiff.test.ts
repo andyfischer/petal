@@ -96,13 +96,13 @@ describe("forward-mode automatic differentiation", () => {
 
   describe("dual with functions", () => {
     it("works through function calls", () => {
-      const code = `fn square(x) { x * x }\nlet x = dual(3, 1)\nlet y = square(x)\nprint(value_of(y), deriv_of(y))`;
+      const code = `fn square(x)\n  x * x\nend\nlet x = dual(3, 1)\nlet y = square(x)\nprint(value_of(y), deriv_of(y))`;
       expect(runPetal(code)).toBe("9.0 6.0");
     });
 
     it("works with higher-order functions", () => {
       // Apply f(x) = x*x through a function that calls its argument
-      const code = `fn apply(f, x) { f(x) }\nlet x = dual(3, 1)\nlet y = apply(fn(a) { a * a }, x)\nprint(value_of(y), deriv_of(y))`;
+      const code = `fn apply(f, x)\n  f(x)\nend\nlet x = dual(3, 1)\nlet y = apply(fn(a) -> a * a, x)\nprint(value_of(y), deriv_of(y))`;
       expect(runPetal(code)).toBe("9.0 6.0");
     });
   });

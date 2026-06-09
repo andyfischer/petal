@@ -29,12 +29,12 @@ print(a == b)`;
   it("interning survives GC cycles", () => {
     // Allocate same string many times with GC pressure
     const code = `let results = []
-for i in range(0, 2000) {
+for i in range(0, 2000) do
   let s = "constant_string"
-  if i == 1999 {
+  if i == 1999 then
     push(results, s)
-  }
-}
+  end
+end
 print(results[0])`;
     expect(runPetal(code)).toBe("constant_string");
   });
@@ -42,12 +42,12 @@ print(results[0])`;
   it("interning works with map keys", () => {
     // Map field access uses strings — interning helps here
     const code = `let data = []
-for i in range(0, 100) {
+for i in range(0, 100) do
   let r = { name: "test", value: i }
-  if i == 99 {
+  if i == 99 then
     push(data, r.name)
-  }
-}
+  end
+end
 print(data[0])`;
     expect(runPetal(code)).toBe("test");
   });

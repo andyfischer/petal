@@ -28,14 +28,14 @@ describe("state assignment inside if block", () => {
   });
 
   it("state assignment inside `if true` block ALSO emits StateWrite", () => {
-    const ir = showIrJson("state y = 0\nif true { y = y + 1 }");
+    const ir = showIrJson("state y = 0\nif true then\n  y = y + 1\nend");
     const writes = termsByOp(ir, "StateWrite");
     expect(writes.length).toBe(1);
   });
 
   it("state assignment inside `if/else` emits StateWrite in both arms", () => {
     const ir = showIrJson(
-      "state y = 0\nif true { y = y + 1 } else { y = y + 2 }"
+      "state y = 0\nif true then\n  y = y + 1\nelse\n  y = y + 2\nend"
     );
     const writes = termsByOp(ir, "StateWrite");
     expect(writes.length).toBe(2);

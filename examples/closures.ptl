@@ -2,12 +2,12 @@
 // Functions that capture their environment and accept functions as arguments.
 
 // A function that returns a function (closure)
-fn make_adder(n) {
-    fn adder(x) {
-        x + n
-    }
-    adder
-}
+fn make_adder(n)
+  fn adder(x)
+    x + n
+  end
+  adder
+end
 
 let add5 = make_adder(5)
 let add10 = make_adder(10)
@@ -15,49 +15,49 @@ print("add5(3) =", add5(3))
 print("add10(3) =", add10(3))
 
 // Lambda (anonymous function)
-let double = fn(x) { x * 2 }
+let double = fn(x) -> x * 2
 print("double(7) =", double(7))
 
 // Higher-order function: apply a function to each element
-fn map(list, f) {
-    let result = []
-    for item in list {
-        push(result, f(item))
-    }
-    result
-}
+fn map(list, f)
+  let result = []
+  for item in list do
+    push(result, f(item))
+  end
+  result
+end
 
 let numbers = [1, 2, 3, 4, 5]
-let doubled = map(numbers, fn(x) { x * 2 })
-let squared = map(numbers, fn(x) { x * x })
+let doubled = map(numbers, fn(x) -> x * 2)
+let squared = map(numbers, fn(x) -> x * x)
 print("numbers:", numbers)
 print("doubled:", doubled)
 print("squared:", squared)
 
 // Filter
-fn filter(list, pred) {
-    let result = []
-    for item in list {
-        if pred(item) {
-            push(result, item)
-        }
-    }
-    result
-}
+fn filter(list, pred)
+  let result = []
+  for item in list do
+    if pred(item) then
+      push(result, item)
+    end
+  end
+  result
+end
 
-let evens = filter(numbers, fn(x) { x % 2 == 0 })
+let evens = filter(numbers, fn(x) -> x % 2 == 0)
 print("evens:", evens)
 
 // Reduce
-fn reduce(list, init, f) {
-    let acc = init
-    for item in list {
-        acc = f(acc, item)
-    }
-    acc
-}
+fn reduce(list, init, f)
+  let acc = init
+  for item in list do
+    acc = f(acc, item)
+  end
+  acc
+end
 
-let sum = reduce(numbers, 0, fn(a, b) { a + b })
-let product = reduce(numbers, 1, fn(a, b) { a * b })
+let sum = reduce(numbers, 0, fn(a, b) -> a + b)
+let product = reduce(numbers, 1, fn(a, b) -> a * b)
 print("sum:", sum)
 print("product:", product)

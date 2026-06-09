@@ -7,8 +7,12 @@
 let cos_tab = [1000, 981, 924, 831, 707, 556, 383, 195, 0, -195, -383, -556, -707, -831, -924, -981, -1000, -981, -924, -831, -707, -556, -383, -195, 0, 195, 383, 556, 707, 831, 924, 981]
 let sin_tab = [0, 195, 383, 556, 707, 831, 924, 981, 1000, 981, 924, 831, 707, 556, 383, 195, 0, -195, -383, -556, -707, -831, -924, -981, -1000, -981, -924, -831, -707, -556, -383, -195]
 
-fn tcos(angle_idx) { cos_tab[angle_idx % 32] }
-fn tsin(angle_idx) { sin_tab[angle_idx % 32] }
+fn tcos(angle_idx)
+    cos_tab[angle_idx % 32]
+end
+fn tsin(angle_idx)
+    sin_tab[angle_idx % 32]
+end
 
 // ── Brush state ──
 state brush_r = 255
@@ -48,10 +52,18 @@ let canvas_top = toolbar_h + 2
 // ── Overloaded draw functions ──
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+    _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+    _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 // ── Common UI colors ──
 let ui_dim = {r: 140, g: 140, b: 160}
@@ -61,7 +73,7 @@ let ui_medium = {r: 200, g: 200, b: 220}
 let ui_subtle = {r: 90, g: 90, b: 110}
 
 // ── Generate demo art on first frame ──
-if !demo_drawn {
+if !demo_drawn then
     demo_drawn = true
 
     // --- Mandala-style pattern ---
@@ -69,10 +81,10 @@ if !demo_drawn {
     let cy = 340
 
     // Draw concentric ring patterns
-    for ring in range(0, 8) {
+    for ring in range(0, 8) do
         let radius = 30 + ring * 28
         let num_dots = 8 + ring * 4
-        for d in range(0, num_dots) {
+        for d in range(0, num_dots) do
             let angle_idx = int(float(d * 32) / float(num_dots)) % 32
             let px = cx + int(float(tcos(angle_idx) * radius) / 1000.0)
             let py = cy + int(float(tsin(angle_idx) * radius) / 1000.0)
@@ -86,19 +98,19 @@ if !demo_drawn {
             push(points, {x: px, y: py, r: cr, g: cg, b: cb, size: dot_size})
 
             // Add connecting petal shapes between dots
-            if d % 2 == 0 {
+            if d % 2 == 0 then
                 let inner_r = radius - 15
                 let ipx = cx + int(float(tcos(angle_idx) * inner_r) / 1000.0)
                 let ipy = cy + int(float(tsin(angle_idx) * inner_r) / 1000.0)
                 push(points, {x: ipx, y: ipy, r: min(cr + 60, 255), g: min(cg + 40, 255), b: min(cb + 60, 255), size: dot_size + 2})
-            }
-        }
-    }
+            end
+        end
+    end
 
     // --- Spiral arms radiating outward ---
-    for arm in range(0, 6) {
+    for arm in range(0, 6) do
         let base_angle = arm * 5  // spread across 32 directions
-        for step in range(0, 20) {
+        for step in range(0, 20) do
             let angle_idx = (base_angle + step) % 32
             let dist = 40 + step * 12
             let px = cx + int(float(tcos(angle_idx) * dist) / 1000.0)
@@ -109,73 +121,73 @@ if !demo_drawn {
             let cb = min(180 + arm * 15, 255)
 
             push(points, {x: px, y: py, r: cr, g: cg, b: cb, size: max(2, 6 - int(float(step) / 5.0))})
-        }
-    }
+        end
+    end
 
     // --- Corner decorations ---
     // Top-left burst
-    for i in range(0, 16) {
+    for i in range(0, 16) do
         let angle_idx = i * 2
-        for d in range(1, 6) {
+        for d in range(1, 6) do
             let dist = d * 12
             let px = 80 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
             push(points, {x: px, y: py, r: 255, g: min(100 + d * 30, 255), b: 80, size: max(2, 5 - d)})
-        }
-    }
+        end
+    end
 
     // Top-right burst
-    for i in range(0, 16) {
+    for i in range(0, 16) do
         let angle_idx = i * 2
-        for d in range(1, 6) {
+        for d in range(1, 6) do
             let dist = d * 12
             let px = 720 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
             push(points, {x: px, y: py, r: 80, g: min(150 + d * 20, 255), b: 255, size: max(2, 5 - d)})
-        }
-    }
+        end
+    end
 
     // Bottom-left burst
-    for i in range(0, 16) {
+    for i in range(0, 16) do
         let angle_idx = i * 2
-        for d in range(1, 5) {
+        for d in range(1, 5) do
             let dist = d * 14
             let px = 100 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
             push(points, {x: px, y: py, r: min(200 + d * 15, 255), g: 80, b: min(180 + d * 20, 255), size: max(2, 5 - d)})
-        }
-    }
+        end
+    end
 
     // Bottom-right burst
-    for i in range(0, 16) {
+    for i in range(0, 16) do
         let angle_idx = i * 2
-        for d in range(1, 5) {
+        for d in range(1, 5) do
             let dist = d * 14
             let px = 700 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
             push(points, {x: px, y: py, r: 50, g: min(200 + d * 15, 255), b: min(130 + d * 30, 255), size: max(2, 5 - d)})
-        }
-    }
+        end
+    end
 
     // --- Diamond lattice pattern around the mandala ---
-    for i in range(0, 12) {
+    for i in range(0, 12) do
         let offset = i * 22
         // Top edge diamonds
         push(points, {x: 200 + offset * 2, y: 90, r: 255, g: 200, b: 100, size: 3})
         push(points, {x: 200 + offset * 2, y: 580, r: 100, g: 200, b: 255, size: 3})
-    }
-}
+    end
+end
 
 // ── Color selection via number keys ──
-if key_pressed("1") { selected_color = 0 }
-if key_pressed("2") { selected_color = 1 }
-if key_pressed("3") { selected_color = 2 }
-if key_pressed("4") { selected_color = 3 }
-if key_pressed("5") { selected_color = 4 }
-if key_pressed("6") { selected_color = 5 }
-if key_pressed("7") { selected_color = 6 }
-if key_pressed("8") { selected_color = 7 }
-if key_pressed("9") { selected_color = 8 }
+if key_pressed("1") then selected_color = 0 end
+if key_pressed("2") then selected_color = 1 end
+if key_pressed("3") then selected_color = 2 end
+if key_pressed("4") then selected_color = 3 end
+if key_pressed("5") then selected_color = 4 end
+if key_pressed("6") then selected_color = 5 end
+if key_pressed("7") then selected_color = 6 end
+if key_pressed("8") then selected_color = 7 end
+if key_pressed("9") then selected_color = 8 end
 
 // Apply selected color
 let sel = palette[selected_color]
@@ -184,22 +196,22 @@ brush_g = sel.color.g
 brush_b = sel.color.b
 
 // Brush size controls
-if key_pressed("=") {
+if key_pressed("=") then
     brush_size = min(brush_size + 2, 40)
-}
-if key_pressed("-") {
+end
+if key_pressed("-") then
     brush_size = max(brush_size - 2, 2)
-}
+end
 
 // Clear canvas
-if key_pressed("c") {
+if key_pressed("c") then
     points = []
-}
+end
 
 // Draw when mouse is held (only below toolbar)
-if mouse_down(1) {
-    if mouse_y() > toolbar_h {
-        if len(points) < 3000 {
+if mouse_down(1) then
+    if mouse_y() > toolbar_h then
+        if len(points) < 3000 then
             push(points, {
                 x: mouse_x(),
                 y: mouse_y(),
@@ -208,9 +220,9 @@ if mouse_down(1) {
                 b: brush_b,
                 size: brush_size
             })
-        }
-    }
-}
+        end
+    end
+end
 
 // ── Render ──
 
@@ -221,29 +233,29 @@ clear(25, 25, 35)
 draw_rect(0, toolbar_h + 1, 800, 600 - toolbar_h - 1, 28, 28, 38)
 
 // Very subtle grid dots for visual texture
-for gx in range(0, 20) {
-    for gy in range(0, 14) {
+for gx in range(0, 20) do
+    for gy in range(0, 14) do
         let dotx = 20 + gx * 40
         let doty = toolbar_h + 10 + gy * 40
-        if doty > toolbar_h {
+        if doty > toolbar_h then
             draw_circle(dotx, doty, 1, 35, 35, 45)
-        }
-    }
-}
+        end
+    end
+end
 
 // Draw all stored points
-for i in range(0, len(points)) {
+for i in range(0, len(points)) do
     let p = points[i]
     draw_circle(p.x, p.y, p.size, p.r, p.g, p.b)
-}
+end
 
 // Draw cursor preview (only below toolbar)
-if mouse_y() > toolbar_h {
+if mouse_y() > toolbar_h then
     // Outer ring
     draw_circle(mouse_x(), mouse_y(), brush_size + 2, min(brush_r + 30, 255), min(brush_g + 30, 255), min(brush_b + 30, 255))
     // Inner brush
     draw_circle(mouse_x(), mouse_y(), brush_size, brush_r, brush_g, brush_b)
-}
+end
 
 // ── Toolbar ──
 
@@ -258,19 +270,19 @@ draw_text("Paint", {x: 12, y: 4}, 22, ui_bright)
 draw_rect(75, 6, 2, 38, 50, 50, 70)
 
 // ── Color swatches in toolbar ──
-for ci in range(0, len(palette)) {
+for ci in range(0, len(palette)) do
     let c = palette[ci]
     let sx = 88 + ci * 28
     let sy = 6
 
     // Selection highlight
-    if ci == selected_color {
+    if ci == selected_color then
         draw_rect(sx - 2, sy - 2, 24, 24, 220, 220, 255)
-    }
+    end
 
     // Swatch
     draw_rect(sx, sy, 20, 20, c.color.r, c.color.g, c.color.b)
-}
+end
 
 // Separator
 draw_rect(430, 6, 2, 38, 50, 50, 70)

@@ -4,9 +4,9 @@ state marker = false
 log("frame start: counter=" ++ str(counter) ++ " marker=" ++ str(marker) ++ " key_w=" ++ str(key_down("w")))
 
 counter = counter + 1
-if key_down("w") {
+if key_down("w") then
     marker = true
-}
+end
 
 log("frame end: counter=" ++ str(counter) ++ " marker=" ++ str(marker))
 

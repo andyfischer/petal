@@ -56,246 +56,248 @@ let enemy_bullet_speed = 200.0
 
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+  _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+  _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+  _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 let delta = dt()
 frame += 1
 
 // --- Init stars ---
-if !stars_inited {
-    stars_inited = true
-    for i in range(0, 80) {
-        push(stars, {
-            x: random(0.0, 800.0),
-            y: random(0.0, 600.0),
-            brightness: random(80.0, 255.0),
-            speed: random(5.0, 30.0),
-            size: int(random(1.0, 3.0))
-        })
-    }
-}
+if !stars_inited then
+  stars_inited = true
+  for i in range(0, 80) do
+    push(stars, {
+      x: random(0.0, 800.0),
+      y: random(0.0, 600.0),
+      brightness: random(80.0, 255.0),
+      speed: random(5.0, 30.0),
+      size: int(random(1.0, 3.0))
+    })
+  end
+end
 
 // --- Init shields ---
-if !shields_inited {
-    shields_inited = true
-    for s in range(0, 4) {
-        let sx = 130.0 + float(s) * 160.0
-        let sy = 470.0
-        for row in range(0, 4) {
-            for col in range(0, 6) {
-                // Skip corners for arch shape
-                let skip = false
-                if row == 0 && (col == 0 || col == 5) { skip = true }
-                if row == 3 && (col == 2 || col == 3) { skip = true }
-                if !skip {
-                    push(shields, {
-                        x: sx + float(col) * 8.0,
-                        y: sy + float(row) * 8.0,
-                        health: 3
-                    })
-                }
-            }
-        }
-    }
-}
+if !shields_inited then
+  shields_inited = true
+  for s in range(0, 4) do
+    let sx = 130.0 + float(s) * 160.0
+    let sy = 470.0
+    for row in range(0, 4) do
+      for col in range(0, 6) do
+        // Skip corners for arch shape
+        let skip = false
+        if row == 0 && (col == 0 || col == 5) then skip = true end
+        if row == 3 && (col == 2 || col == 3) then skip = true end
+        if !skip then
+          push(shields, {
+            x: sx + float(col) * 8.0,
+            y: sy + float(row) * 8.0,
+            health: 3
+          })
+        end
+      end
+    end
+  end
+end
 
 // --- Init aliens ---
-if !aliens_inited {
-    aliens_inited = true
-    for row in range(0, 5) {
-        for col in range(0, 8) {
-            let ax = alien_start_x + float(col) * alien_gap_x
-            let ay = alien_start_y + float(row) * alien_gap_y
-            push(aliens, { x: ax, y: ay, alive: true, row: row })
-        }
-    }
-}
+if !aliens_inited then
+  aliens_inited = true
+  for row in range(0, 5) do
+    for col in range(0, 8) do
+      let ax = alien_start_x + float(col) * alien_gap_x
+      let ay = alien_start_y + float(row) * alien_gap_y
+      push(aliens, { x: ax, y: ay, alive: true, row: row })
+    end
+  end
+end
 
 // --- Collision helper ---
-fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2) {
-    x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
-}
+fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2)
+  x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
+end
 
 // --- Update stars ---
-stars = map(stars, fn(s) {
-    let ny = s.y + s.speed * delta
-    if ny > 600.0 { ny = 0.0 }
-    { x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size }
-})
+stars = map(stars, fn(s)
+  let ny = s.y + s.speed * delta
+  if ny > 600.0 then ny = 0.0 end
+  { x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size }
+end)
 
 // --- Update explosions ---
-explosions = map(explosions, fn(e) {
-    { x: e.x, y: e.y, timer: e.timer - delta, r: e.r, g: e.g, b: e.b }
-})
-explosions = filter(explosions, fn(e) { e.timer > 0.0 })
+explosions = map(explosions, fn(e) -> { x: e.x, y: e.y, timer: e.timer - delta, r: e.r, g: e.g, b: e.b })
+explosions = filter(explosions, fn(e) -> e.timer > 0.0)
 
-if !game_over {
-    // --- Player input ---
-    if key_down("left") {
-        player_x -= player_speed * delta
-    }
-    if key_down("right") {
-        player_x += player_speed * delta
-    }
-    player_x = max(0.0, min(player_x, 800.0 - player_w))
+if !game_over then
+  // --- Player input ---
+  if key_down("left") then
+    player_x -= player_speed * delta
+  end
+  if key_down("right") then
+    player_x += player_speed * delta
+  end
+  player_x = max(0.0, min(player_x, 800.0 - player_w))
 
-    // --- Shooting ---
-    shoot_cooldown -= delta
-    if key_pressed("space") && shoot_cooldown <= 0.0 {
-        shoot_cooldown = 0.3
-        push(bullets, { x: player_x + player_w / 2.0 - 2.0, y: player_y - bullet_h })
-    }
+  // --- Shooting ---
+  shoot_cooldown -= delta
+  if key_pressed("space") && shoot_cooldown <= 0.0 then
+    shoot_cooldown = 0.3
+    push(bullets, { x: player_x + player_w / 2.0 - 2.0, y: player_y - bullet_h })
+  end
 
-    // --- Move bullets ---
-    bullets = map(bullets, fn(b) {
-        { x: b.x, y: b.y - bullet_speed * delta }
-    })
-    bullets = filter(bullets, fn(b) { b.y > -10.0 })
+  // --- Move bullets ---
+  bullets = map(bullets, fn(b) -> { x: b.x, y: b.y - bullet_speed * delta })
+  bullets = filter(bullets, fn(b) -> b.y > -10.0)
 
-    // --- Move enemy bullets ---
-    enemy_bullets = map(enemy_bullets, fn(b) {
-        { x: b.x, y: b.y + enemy_bullet_speed * delta }
-    })
-    enemy_bullets = filter(enemy_bullets, fn(b) { b.y < 620.0 })
+  // --- Move enemy bullets ---
+  enemy_bullets = map(enemy_bullets, fn(b) -> { x: b.x, y: b.y + enemy_bullet_speed * delta })
+  enemy_bullets = filter(enemy_bullets, fn(b) -> b.y < 620.0)
 
-    // --- Move aliens ---
-    let should_drop = false
-    for a in aliens {
-        if a.alive {
-            if a.x + alien_w > 780.0 && alien_dir > 0.0 {
-                should_drop = true
-            }
-            if a.x < 20.0 && alien_dir < 0.0 {
-                should_drop = true
-            }
-        }
-    }
+  // --- Move aliens ---
+  let should_drop = false
+  for a in aliens do
+    if a.alive then
+      if a.x + alien_w > 780.0 && alien_dir > 0.0 then
+        should_drop = true
+      end
+      if a.x < 20.0 && alien_dir < 0.0 then
+        should_drop = true
+      end
+    end
+  end
 
-    if should_drop {
-        alien_dir = -alien_dir
-        alien_drop = alien_gap_y / 2.0
-    }
+  if should_drop then
+    alien_dir = -alien_dir
+    alien_drop = alien_gap_y / 2.0
+  end
 
-    aliens = map(aliens, fn(a) {
-        if a.alive {
-            let new_x = a.x + alien_dir * alien_speed * delta
-            let new_y = a.y + alien_drop
-            { x: new_x, y: new_y, alive: true, row: a.row }
-        } else {
-            a
-        }
-    })
-    alien_drop = 0.0
+  aliens = map(aliens, fn(a)
+    if a.alive then
+      let new_x = a.x + alien_dir * alien_speed * delta
+      let new_y = a.y + alien_drop
+      { x: new_x, y: new_y, alive: true, row: a.row }
+    else
+      a
+    end
+  end)
+  alien_drop = 0.0
 
-    // --- Bullet-alien collision ---
-    let new_bullets = []
-    for b in bullets {
-        let hit = false
-        aliens = map(aliens, fn(a) {
-            if a.alive && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) {
-                hit = true
-                score += 10
-                // Spawn explosion
-                let er = 255
-                let eg = 200
-                let eb = 50
-                if a.row == 0 { er = 255  eg = 80  eb = 80 }
-                if a.row == 1 || a.row == 2 { er = 255  eg = 200  eb = 50 }
-                if a.row == 3 || a.row == 4 { er = 80  eg = 255  eb = 80 }
-                push(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
-                { x: a.x, y: a.y, alive: false, row: a.row }
-            } else {
-                a
-            }
-        })
-        if !hit {
-            push(new_bullets, b)
-        }
-    }
-    bullets = new_bullets
+  // --- Bullet-alien collision ---
+  let new_bullets = []
+  for b in bullets do
+    let hit = false
+    aliens = map(aliens, fn(a)
+      if a.alive && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) then
+        hit = true
+        score += 10
+        // Spawn explosion
+        let er = 255
+        let eg = 200
+        let eb = 50
+        if a.row == 0 then er = 255  eg = 80  eb = 80 end
+        if a.row == 1 || a.row == 2 then er = 255  eg = 200  eb = 50 end
+        if a.row == 3 || a.row == 4 then er = 80  eg = 255  eb = 80 end
+        push(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
+        { x: a.x, y: a.y, alive: false, row: a.row }
+      else
+        a
+      end
+    end)
+    if !hit then
+      push(new_bullets, b)
+    end
+  end
+  bullets = new_bullets
 
-    // --- Bullet-shield collision (player bullets) ---
-    let new_bullets2 = []
-    for b in bullets {
-        let hit = false
-        shields = map(shields, fn(s) {
-            if s.health > 0 && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, s.x, s.y, 8.0, 8.0) {
-                hit = true
-                { x: s.x, y: s.y, health: s.health - 1 }
-            } else {
-                s
-            }
-        })
-        if !hit {
-            push(new_bullets2, b)
-        }
-    }
-    bullets = new_bullets2
+  // --- Bullet-shield collision (player bullets) ---
+  let new_bullets2 = []
+  for b in bullets do
+    let hit = false
+    shields = map(shields, fn(s)
+      if s.health > 0 && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, s.x, s.y, 8.0, 8.0) then
+        hit = true
+        { x: s.x, y: s.y, health: s.health - 1 }
+      else
+        s
+      end
+    end)
+    if !hit then
+      push(new_bullets2, b)
+    end
+  end
+  bullets = new_bullets2
 
-    // --- Enemy bullet-shield collision ---
-    let new_enemy_bullets = []
-    for b in enemy_bullets {
-        let hit = false
-        shields = map(shields, fn(s) {
-            if s.health > 0 && !hit && rects_collide(b.x, b.y, 4.0, 12.0, s.x, s.y, 8.0, 8.0) {
-                hit = true
-                { x: s.x, y: s.y, health: s.health - 1 }
-            } else {
-                s
-            }
-        })
-        if !hit {
-            push(new_enemy_bullets, b)
-        }
-    }
-    enemy_bullets = new_enemy_bullets
+  // --- Enemy bullet-shield collision ---
+  let new_enemy_bullets = []
+  for b in enemy_bullets do
+    let hit = false
+    shields = map(shields, fn(s)
+      if s.health > 0 && !hit && rects_collide(b.x, b.y, 4.0, 12.0, s.x, s.y, 8.0, 8.0) then
+        hit = true
+        { x: s.x, y: s.y, health: s.health - 1 }
+      else
+        s
+      end
+    end)
+    if !hit then
+      push(new_enemy_bullets, b)
+    end
+  end
+  enemy_bullets = new_enemy_bullets
 
-    // --- Enemy shooting ---
-    enemy_shoot_timer -= delta
-    if enemy_shoot_timer <= 0.0 {
-        enemy_shoot_timer = 0.8
-        let shooters = filter(aliens, fn(a) { a.alive })
-        if len(shooters) > 0 {
-            let idx = int(random(0.0, float(len(shooters))))
-            if idx >= len(shooters) {
-                idx = len(shooters) - 1
-            }
-            let shooter = shooters[idx]
-            push(enemy_bullets, { x: shooter.x + alien_w / 2.0 - 2.0, y: shooter.y + alien_h })
-        }
-    }
+  // --- Enemy shooting ---
+  enemy_shoot_timer -= delta
+  if enemy_shoot_timer <= 0.0 then
+    enemy_shoot_timer = 0.8
+    let shooters = filter(aliens, fn(a) -> a.alive)
+    if len(shooters) > 0 then
+      let idx = int(random(0.0, float(len(shooters))))
+      if idx >= len(shooters) then
+        idx = len(shooters) - 1
+      end
+      let shooter = shooters[idx]
+      push(enemy_bullets, { x: shooter.x + alien_w / 2.0 - 2.0, y: shooter.y + alien_h })
+    end
+  end
 
-    // --- Enemy bullet-player collision ---
-    enemy_bullets = filter(enemy_bullets, fn(b) {
-        if rects_collide(b.x, b.y, bullet_w, bullet_h, player_x, player_y, player_w, player_h) {
-            lives -= 1
-            if lives <= 0 {
-                game_over = true
-            }
-            false
-        } else {
-            true
-        }
-    })
+  // --- Enemy bullet-player collision ---
+  enemy_bullets = filter(enemy_bullets, fn(b)
+    if rects_collide(b.x, b.y, bullet_w, bullet_h, player_x, player_y, player_w, player_h) then
+      lives -= 1
+      if lives <= 0 then
+        game_over = true
+      end
+      false
+    else
+      true
+    end
+  end)
 
-    // --- Aliens reach bottom ---
-    for a in aliens {
-        if a.alive && a.y + alien_h > player_y {
-            game_over = true
-        }
-    }
+  // --- Aliens reach bottom ---
+  for a in aliens do
+    if a.alive && a.y + alien_h > player_y then
+      game_over = true
+    end
+  end
 
-    // --- All aliens dead: win / reset wave ---
-    let alive_count = len(filter(aliens, fn(a) { a.alive }))
-    if alive_count == 0 {
-        aliens = []
-        aliens_inited = false
-        alien_speed += 10.0
-    }
-}
+  // --- All aliens dead: win / reset wave ---
+  let alive_count = len(filter(aliens, fn(a) -> a.alive))
+  if alive_count == 0 then
+    aliens = []
+    aliens_inited = false
+    alien_speed += 10.0
+  end
+end
 
 // =====================
 // --- Drawing ---
@@ -303,37 +305,37 @@ if !game_over {
 clear(5, 5, 20)
 
 // --- Starfield ---
-for s in stars {
-    let bright = int(s.brightness)
-    // Slight blue tint for smaller stars
-    if s.size == 1 {
-        draw_rect(int(s.x), int(s.y), 1, 1, bright - 30, bright - 20, bright)
-    } else {
-        draw_rect(int(s.x), int(s.y), s.size, s.size, bright, bright, bright - 10)
-    }
-}
+for s in stars do
+  let bright = int(s.brightness)
+  // Slight blue tint for smaller stars
+  if s.size == 1 then
+    draw_rect(int(s.x), int(s.y), 1, 1, bright - 30, bright - 20, bright)
+  else
+    draw_rect(int(s.x), int(s.y), s.size, s.size, bright, bright, bright - 10)
+  end
+end
 
 // --- Ground line ---
 draw_line({x: 0, y: 585}, {x: 800, y: 585}, {r: 0, g: 100, b: 0})
 draw_line({x: 0, y: 586}, {x: 800, y: 586}, {r: 0, g: 60, b: 0})
 // Small hash marks on the ground
-for i in range(0, 40) {
-    let gx = i * 20
-    draw_line({x: gx, y: 587}, {x: gx + 6, y: 587}, {r: 0, g: 50, b: 0})
-}
+for i in range(0, 40) do
+  let gx = i * 20
+  draw_line({x: gx, y: 587}, {x: gx + 6, y: 587}, {r: 0, g: 50, b: 0})
+end
 
 // --- Draw shields ---
-for s in shields {
-    if s.health > 0 {
-        let sr = 0
-        let sg = 0
-        let sb = 0
-        if s.health == 3 { sr = 40  sg = 200  sb = 40 }
-        if s.health == 2 { sr = 180  sg = 180  sb = 30 }
-        if s.health == 1 { sr = 150  sg = 80  sb = 30 }
-        draw_rect(int(s.x), int(s.y), 8, 8, sr, sg, sb)
-    }
-}
+for s in shields do
+  if s.health > 0 then
+    let sr = 0
+    let sg = 0
+    let sb = 0
+    if s.health == 3 then sr = 40  sg = 200  sb = 40 end
+    if s.health == 2 then sr = 180  sg = 180  sb = 30 end
+    if s.health == 1 then sr = 150  sg = 80  sb = 30 end
+    draw_rect(int(s.x), int(s.y), 8, 8, sr, sg, sb)
+  end
+end
 
 // --- Draw player ship ---
 // Main body
@@ -347,106 +349,106 @@ draw_rect(px + 18, py - 8, 4, 4, 120, 255, 120)
 draw_rect(px, py + 8, 6, 8, 20, 150, 20)
 draw_rect(px + 34, py + 8, 6, 8, 20, 150, 20)
 // Engine glow (flicker)
-if frame % 4 < 2 {
-    draw_rect(px + 14, py + 16, 4, 4, 255, 200, 50)
-    draw_rect(px + 22, py + 16, 4, 4, 255, 200, 50)
-} else {
-    draw_rect(px + 14, py + 16, 4, 3, 255, 150, 30)
-    draw_rect(px + 22, py + 16, 4, 3, 255, 150, 30)
-}
+if frame % 4 < 2 then
+  draw_rect(px + 14, py + 16, 4, 4, 255, 200, 50)
+  draw_rect(px + 22, py + 16, 4, 4, 255, 200, 50)
+else
+  draw_rect(px + 14, py + 16, 4, 3, 255, 150, 30)
+  draw_rect(px + 22, py + 16, 4, 3, 255, 150, 30)
+end
 // Highlight on cockpit
 draw_rect(px + 18, py - 2, 2, 2, 200, 255, 200)
 
 // --- Draw aliens ---
 let anim_frame = (frame / 30) % 2
-for a in aliens {
-    if a.alive {
-        let r = 255
-        let g = 100
-        let b = 100
-        if a.row == 0 {
-            r = 255  g = 60  b = 60
-        } else if a.row == 1 || a.row == 2 {
-            r = 255  g = 180  b = 50
-        } else {
-            r = 80  g = 255  b = 80
-        }
+for a in aliens do
+  if a.alive then
+    let r = 255
+    let g = 100
+    let b = 100
+    if a.row == 0 then
+      r = 255  g = 60  b = 60
+    elsif a.row == 1 || a.row == 2 then
+      r = 255  g = 180  b = 50
+    else
+      r = 80  g = 255  b = 80
+    end
 
-        let ax = int(a.x)
-        let ay = int(a.y)
+    let ax = int(a.x)
+    let ay = int(a.y)
 
-        // Body
-        draw_rect(ax + 4, ay + 2, 22, 14, r, g, b)
-        // Head bumps
-        draw_rect(ax + 6, ay, 6, 4, r, g, b)
-        draw_rect(ax + 18, ay, 6, 4, r, g, b)
-        // Eyes (white with dark pupil)
-        draw_rect(ax + 8, ay + 5, 5, 5, 220, 220, 255)
-        draw_rect(ax + 17, ay + 5, 5, 5, 220, 220, 255)
-        draw_rect(ax + 10, ay + 6, 2, 3, 20, 20, 60)
-        draw_rect(ax + 19, ay + 6, 2, 3, 20, 20, 60)
-        // Mouth
-        draw_rect(ax + 10, ay + 12, 10, 2, r - 60, g - 40, b - 40)
-        // Legs/tentacles (animate)
-        if anim_frame == 0 {
-            draw_rect(ax + 2, ay + 16, 4, 4, r - 30, g - 20, b - 20)
-            draw_rect(ax + 24, ay + 16, 4, 4, r - 30, g - 20, b - 20)
-            draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-            draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-        } else {
-            draw_rect(ax, ay + 14, 4, 4, r - 30, g - 20, b - 20)
-            draw_rect(ax + 26, ay + 14, 4, 4, r - 30, g - 20, b - 20)
-            draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-            draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-        }
-    }
-}
+    // Body
+    draw_rect(ax + 4, ay + 2, 22, 14, r, g, b)
+    // Head bumps
+    draw_rect(ax + 6, ay, 6, 4, r, g, b)
+    draw_rect(ax + 18, ay, 6, 4, r, g, b)
+    // Eyes (white with dark pupil)
+    draw_rect(ax + 8, ay + 5, 5, 5, 220, 220, 255)
+    draw_rect(ax + 17, ay + 5, 5, 5, 220, 220, 255)
+    draw_rect(ax + 10, ay + 6, 2, 3, 20, 20, 60)
+    draw_rect(ax + 19, ay + 6, 2, 3, 20, 20, 60)
+    // Mouth
+    draw_rect(ax + 10, ay + 12, 10, 2, r - 60, g - 40, b - 40)
+    // Legs/tentacles (animate)
+    if anim_frame == 0 then
+      draw_rect(ax + 2, ay + 16, 4, 4, r - 30, g - 20, b - 20)
+      draw_rect(ax + 24, ay + 16, 4, 4, r - 30, g - 20, b - 20)
+      draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+      draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+    else
+      draw_rect(ax, ay + 14, 4, 4, r - 30, g - 20, b - 20)
+      draw_rect(ax + 26, ay + 14, 4, 4, r - 30, g - 20, b - 20)
+      draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+      draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+    end
+  end
+end
 
 // --- Draw explosions ---
-for e in explosions {
-    let t = e.timer
-    let ex = int(e.x)
-    let ey = int(e.y)
-    let sz = int((0.4 - t) * 50.0)
-    let alpha_mult = t / 0.4
-    let er = int(float(e.r) * alpha_mult)
-    let eg = int(float(e.g) * alpha_mult)
-    let eb = int(float(e.b) * alpha_mult)
-    // Center flash
-    draw_rect(ex + 8 - sz / 4, ey + 4 - sz / 4, 14 + sz / 2, 12 + sz / 2, er, eg, eb)
-    // Particles flying out
-    let spread = int((0.4 - t) * 40.0)
-    draw_rect(ex + 2 - spread, ey + 4 - spread, 4, 4, er, eg, 0)
-    draw_rect(ex + 24 + spread, ey + 4 - spread, 4, 4, er, eg, 0)
-    draw_rect(ex + 2 - spread, ey + 12 + spread, 4, 4, er, 0, eb)
-    draw_rect(ex + 24 + spread, ey + 12 + spread, 4, 4, er, 0, eb)
-    draw_rect(ex + 12, ey - spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
-    draw_rect(ex + 12, ey + 16 + spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
-}
+for e in explosions do
+  let t = e.timer
+  let ex = int(e.x)
+  let ey = int(e.y)
+  let sz = int((0.4 - t) * 50.0)
+  let alpha_mult = t / 0.4
+  let er = int(float(e.r) * alpha_mult)
+  let eg = int(float(e.g) * alpha_mult)
+  let eb = int(float(e.b) * alpha_mult)
+  // Center flash
+  draw_rect(ex + 8 - sz / 4, ey + 4 - sz / 4, 14 + sz / 2, 12 + sz / 2, er, eg, eb)
+  // Particles flying out
+  let spread = int((0.4 - t) * 40.0)
+  draw_rect(ex + 2 - spread, ey + 4 - spread, 4, 4, er, eg, 0)
+  draw_rect(ex + 24 + spread, ey + 4 - spread, 4, 4, er, eg, 0)
+  draw_rect(ex + 2 - spread, ey + 12 + spread, 4, 4, er, 0, eb)
+  draw_rect(ex + 24 + spread, ey + 12 + spread, 4, 4, er, 0, eb)
+  draw_rect(ex + 12, ey - spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
+  draw_rect(ex + 12, ey + 16 + spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
+end
 
 // --- Draw player bullets (glowing) ---
-for b in bullets {
-    let bx = int(b.x)
-    let by = int(b.y)
-    // Glow
-    draw_rect(bx - 1, by - 1, 6, 14, 100, 100, 40)
-    // Core
-    draw_rect(bx, by, 4, 12, 255, 255, 120)
-    // Bright tip
-    draw_rect(bx + 1, by, 2, 3, 255, 255, 255)
-}
+for b in bullets do
+  let bx = int(b.x)
+  let by = int(b.y)
+  // Glow
+  draw_rect(bx - 1, by - 1, 6, 14, 100, 100, 40)
+  // Core
+  draw_rect(bx, by, 4, 12, 255, 255, 120)
+  // Bright tip
+  draw_rect(bx + 1, by, 2, 3, 255, 255, 255)
+end
 
 // --- Draw enemy bullets (zigzag style) ---
-for b in enemy_bullets {
-    let bx = int(b.x)
-    let by = int(b.y)
-    // Lightning bolt shape
-    draw_rect(bx + 1, by, 3, 4, 255, 100, 100)
-    draw_rect(bx, by + 4, 3, 4, 255, 60, 60)
-    draw_rect(bx + 2, by + 8, 3, 4, 255, 100, 100)
-    // Hot core
-    draw_rect(bx + 1, by + 4, 2, 4, 255, 200, 200)
-}
+for b in enemy_bullets do
+  let bx = int(b.x)
+  let by = int(b.y)
+  // Lightning bolt shape
+  draw_rect(bx + 1, by, 3, 4, 255, 100, 100)
+  draw_rect(bx, by + 4, 3, 4, 255, 60, 60)
+  draw_rect(bx + 2, by + 8, 3, 4, 255, 100, 100)
+  // Hot core
+  draw_rect(bx + 1, by + 4, 2, 4, 255, 200, 200)
+end
 
 // --- HUD ---
 // Score panel
@@ -459,29 +461,29 @@ draw_rect(610, 6, 180, 28, 20, 20, 50)
 draw_rect_outline(610, 6, 180, 28, 60, 60, 150)
 draw_text("LIVES: ", {x: 620, y: 10}, 24, {r: 200, g: 200, b: 255})
 // Draw small ships for lives
-for i in range(0, lives) {
-    let lx = 730 + i * 20
-    draw_rect(lx + 3, lx - lx + 16, 8, 6, 30, 180, 30)
-    draw_rect(lx + 5, lx - lx + 12, 4, 4, 60, 255, 60)
-}
+for i in range(0, lives) do
+  let lx = 730 + i * 20
+  draw_rect(lx + 3, lx - lx + 16, 8, 6, 30, 180, 30)
+  draw_rect(lx + 5, lx - lx + 12, 4, 4, 60, 255, 60)
+end
 
 // --- Game over screen ---
-if game_over {
-    // Darkened overlay
-    draw_rect(0, 0, 800, 600, 0, 0, 0)
-    // Redraw stars dimly
-    for s in stars {
-        let dim = int(s.brightness * 0.3)
-        draw_rect(int(s.x), int(s.y), 1, 1, dim, dim, dim)
-    }
-    // Panel
-    draw_rect(200, 220, 400, 160, 30, 5, 5)
-    draw_rect_outline(200, 220, 400, 160, 200, 30, 30)
-    draw_rect_outline(202, 222, 396, 156, 100, 15, 15)
-    draw_text("GAME OVER", {x: 275, y: 245}, 44, {r: 255, g: 50, b: 50})
-    draw_text("Score: " ++ str(score), {x: 325, y: 305}, 28, {r: 220, g: 220, b: 255})
-    // Blinking restart text
-    if frame % 60 < 40 {
-        draw_text("Press R to restart", {x: 290, y: 350}, 20, {r: 180, g: 180, b: 180})
-    }
-}
+if game_over then
+  // Darkened overlay
+  draw_rect(0, 0, 800, 600, 0, 0, 0)
+  // Redraw stars dimly
+  for s in stars do
+    let dim = int(s.brightness * 0.3)
+    draw_rect(int(s.x), int(s.y), 1, 1, dim, dim, dim)
+  end
+  // Panel
+  draw_rect(200, 220, 400, 160, 30, 5, 5)
+  draw_rect_outline(200, 220, 400, 160, 200, 30, 30)
+  draw_rect_outline(202, 222, 396, 156, 100, 15, 15)
+  draw_text("GAME OVER", {x: 275, y: 245}, 44, {r: 255, g: 50, b: 50})
+  draw_text("Score: " ++ str(score), {x: 325, y: 305}, 28, {r: 220, g: 220, b: 255})
+  // Blinking restart text
+  if frame % 60 < 40 then
+    draw_text("Press R to restart", {x: 290, y: 350}, 20, {r: 180, g: 180, b: 180})
+  end
+end

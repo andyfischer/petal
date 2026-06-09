@@ -71,10 +71,10 @@ let near = 0.2
 // =========================================================================
 // Initial mouse grab
 // =========================================================================
-if !want_grab {
+if !want_grab then
     grab_mouse()
     want_grab = true
-}
+end
 
 // =========================================================================
 // Input: mouse look + WASD movement
@@ -82,8 +82,8 @@ if !want_grab {
 let look_sens = 0.0022
 yaw = yaw + float(mouse_dx()) * look_sens
 pitch = pitch - float(mouse_dy()) * look_sens
-if pitch > 1.4 { pitch = 1.4 }
-if pitch < -1.4 { pitch = -1.4 }
+if pitch > 1.4 then pitch = 1.4 end
+if pitch < -1.4 then pitch = -1.4 end
 
 let move_speed = 7.0
 let fwd_x = sin(yaw)
@@ -93,27 +93,27 @@ let right_z = 0.0 - sin(yaw)
 
 let mx = 0.0
 let mz = 0.0
-if key_down("w") { mx = mx + fwd_x; mz = mz + fwd_z }
-if key_down("s") { mx = mx - fwd_x; mz = mz - fwd_z }
-if key_down("d") { mx = mx + right_x; mz = mz + right_z }
-if key_down("a") { mx = mx - right_x; mz = mz - right_z }
+if key_down("w") then mx = mx + fwd_x; mz = mz + fwd_z end
+if key_down("s") then mx = mx - fwd_x; mz = mz - fwd_z end
+if key_down("d") then mx = mx + right_x; mz = mz + right_z end
+if key_down("a") then mx = mx - right_x; mz = mz - right_z end
 let mag_m = sqrt(mx * mx + mz * mz)
-if mag_m > 0.01 {
+if mag_m > 0.01 then
     player_x = player_x + (mx / mag_m) * move_speed * delta
     player_z = player_z + (mz / mag_m) * move_speed * delta
-}
+end
 
 // Keep player above ground & clamped to the street area.
-if player_x > 22.0 { player_x = 22.0 }
-if player_x < -22.0 { player_x = -22.0 }
-if player_z > 32.0 { player_z = 32.0 }
-if player_z < -12.0 { player_z = -12.0 }
+if player_x > 22.0 then player_x = 22.0 end
+if player_x < -22.0 then player_x = -22.0 end
+if player_z > 32.0 then player_z = 32.0 end
+if player_z < -12.0 then player_z = -12.0 end
 
 // =========================================================================
 // Shooting: left mouse or SPACE
 // =========================================================================
 let fired = false
-if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 {
+if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 then
     fired = true
     ammo = ammo - 1
     muzzle = 4
@@ -125,49 +125,49 @@ if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 {
     let best_t = 1000000.0
     let best_i = -1
     let i = 0
-    while i < len(enemies) {
+    while i < len(enemies) do
         let e = enemies[i]
-        if e.alive {
+        if e.alive then
             // Enemy center ~1m off ground
             let dx = e.x - player_x
             let dy = 1.0 - player_y
             let dz = e.z - player_z
             // t = dot(d, r), then check perpendicular distance
             let t = dx * rx + dy * ry + dz * rz
-            if t > 0.2 && t < best_t {
+            if t > 0.2 && t < best_t then
                 let px = rx * t - dx
                 let py = ry * t - dy
                 let pz = rz * t - dz
                 let d2 = px*px + py*py + pz*pz
-                if d2 < 1.4 {
+                if d2 < 1.4 then
                     best_t = t
                     best_i = i
-                }
-            }
-        }
+                end
+            end
+        end
         i = i + 1
-    }
-    if best_i >= 0 {
+    end
+    if best_i >= 0 then
         enemies[best_i].hp = enemies[best_i].hp - 1
-        if enemies[best_i].hp <= 0 {
+        if enemies[best_i].hp <= 0 then
             enemies[best_i].alive = false
             score = score + 10
-        }
-    }
-}
+        end
+    end
+end
 
-if muzzle > 0 { muzzle = muzzle - 1 }
+if muzzle > 0 then muzzle = muzzle - 1 end
 
 // Reload
-if key_pressed("r") { ammo = 30 }
+if key_pressed("r") then ammo = 30 end
 
 // =========================================================================
 // Enemy AI: slow circular patrol around spawn. Damage on proximity.
 // =========================================================================
 let ei = 0
-while ei < len(enemies) {
+while ei < len(enemies) do
     let e = enemies[ei]
-    if e.alive {
+    if e.alive then
         let new_phase = e.phase + delta * 0.8
         let ox = sin(new_phase) * 2.0
         let oz = cos(new_phase) * 2.0
@@ -175,13 +175,13 @@ while ei < len(enemies) {
         // Damage player if close
         let dx = (e.x + ox) - player_x
         let dz = (e.z + oz) - player_z
-        if dx*dx + dz*dz < 1.5 {
+        if dx*dx + dz*dz < 1.5 then
             hp = hp - 1
-            if hp < 0 { hp = 0 }
-        }
-    }
+            if hp < 0 then hp = 0 end
+        end
+    end
     ei = ei + 1
-}
+end
 
 // =========================================================================
 // Projection helpers
@@ -191,7 +191,7 @@ let sin_y = sin(0.0 - yaw)
 let cos_p = cos(0.0 - pitch)
 let sin_p = sin(0.0 - pitch)
 
-fn project(x, y, z) {
+fn project(x, y, z)
     let dx = x - player_x
     let dy = y - player_y
     let dz = z - player_z
@@ -199,36 +199,36 @@ fn project(x, y, z) {
     let rz = 0.0 - dx * sin_y + dz * cos_y
     let ry = dy * cos_p - rz * sin_p
     let rz2 = dy * sin_p + rz * cos_p
-    if rz2 < near {
+    if rz2 < near then
         { sx: 0.0, sy: 0.0, z: rz2, ok: false }
-    } else {
+    else
         { sx: cx + rx / rz2 * focal, sy: cy - ry / rz2 * focal, z: rz2, ok: true }
-    }
-}
+    end
+end
 
-fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b) {
+fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
     let p1 = project(x1, y1, z1)
     let p2 = project(x2, y2, z2)
     let p3 = project(x3, y3, z3)
-    if p1.ok && p2.ok && p3.ok {
+    if p1.ok && p2.ok && p3.ok then
         triangle3d(p1.sx, p1.sy, p1.z, p2.sx, p2.sy, p2.z, p3.sx, p3.sy, p3.z, r, g, b)
-    }
-}
+    end
+end
 
-fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b) {
+fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b)
     tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
     tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
-}
+end
 
-fn neon_line(x1, y1, z1, x2, y2, z2, r, g, b) {
+fn neon_line(x1, y1, z1, x2, y2, z2, r, g, b)
     let p1 = project(x1, y1, z1)
     let p2 = project(x2, y2, z2)
-    if p1.ok && p2.ok {
+    if p1.ok && p2.ok then
         line3d(x1, y1, z1, x2, y2, z2, r, g, b)
-    }
-}
+    end
+end
 
-fn box_(x, y, z, w, h, d, r, g, b) {
+fn box_(x, y, z, w, h, d, r, g, b)
     let hw = w / 2.0
     let hh = h / 2.0
     let hd = d / 2.0
@@ -249,7 +249,7 @@ fn box_(x, y, z, w, h, d, r, g, b) {
         int(min(255.0, float(r) * 1.2)),
         int(min(255.0, float(g) * 1.2)),
         int(min(255.0, float(b) * 1.2)))
-}
+end
 
 // =========================================================================
 // Draw: sky + ground + streets
@@ -270,7 +270,7 @@ let gp_right = ground_half
 // Four corners in world space: two strips, one in front of camera, one behind.
 // Each strip is safe (all 4 corners have rz2 >= gp_near after projection).
 // Forward strip:
-fn gstrip(near_d, far_d, shade) {
+fn gstrip(near_d, far_d, shade)
     let ax = player_x + fwd_x * near_d + right_x * gp_left
     let az = player_z + fwd_z * near_d + right_z * gp_left
     let bx = player_x + fwd_x * near_d + right_x * gp_right
@@ -281,27 +281,27 @@ fn gstrip(near_d, far_d, shade) {
     let dz2 = player_z + fwd_z * far_d + right_z * gp_left
     quad(ax, 0.0, az,  bx, 0.0, bz,  cx2, 0.0, cz2,  dx2, 0.0, dz2,
          shade, shade / 2, shade + 20)
-}
+end
 
 // Layer bands of alternating shade from near to far for visual depth.
 let gi = 0
-while gi < 10 {
+while gi < 10 do
     let n = gp_near + float(gi) * 6.0
     let f = gp_near + float(gi + 1) * 6.0
     gstrip(n, f, 12 + (gi % 2) * 10)
     gi = gi + 1
-}
+end
 // Behind the camera — single darker strip (only visible if you turn around).
 gstrip(0.0 - gp_far, 0.0 - gp_near, 10)
 
 // Neon street lines: cyan cross-strips every 6 m in world Z + fixed magenta
 // center stripe. These are in world coordinates so they anchor the scene.
 let neon_i = -8
-while neon_i < 12 {
+while neon_i < 12 do
     let z = float(neon_i) * 6.0
     neon_line(0.0 - ground_half, 0.05, z, ground_half, 0.05, z, 0, 220, 200)
     neon_i = neon_i + 1
-}
+end
 neon_line(-1.0, 0.05, -48.0, -1.0, 0.05, 72.0, 255, 50, 180)
 neon_line( 1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
 
@@ -309,7 +309,7 @@ neon_line( 1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
 // Draw: buildings with neon rooftop outline
 // =========================================================================
 let bi = 0
-while bi < len(buildings) {
+while bi < len(buildings) do
     let b = buildings[bi]
     box_(b.x, b.h / 2.0, b.z, b.w, b.h, b.d, b.r, b.g, b.b)
     // Rooftop neon rim
@@ -321,15 +321,15 @@ while bi < len(buildings) {
     neon_line(b.x + hx, rt, b.z + hz, b.x - hx, rt, b.z + hz, 255, 180, 40)
     neon_line(b.x - hx, rt, b.z + hz, b.x - hx, rt, b.z - hz, 255, 180, 40)
     bi = bi + 1
-}
+end
 
 // =========================================================================
 // Draw: enemies — colored cubes that bob on their patrol path.
 // =========================================================================
 let di = 0
-while di < len(enemies) {
+while di < len(enemies) do
     let e = enemies[di]
-    if e.alive {
+    if e.alive then
         let ex = e.x + sin(e.phase) * 2.0
         let ez = e.z + cos(e.phase) * 2.0
         // Body
@@ -339,9 +339,9 @@ while di < len(enemies) {
         // HP dot — small white box on top that shrinks as HP drops
         let hb = 0.15 * float(e.hp)
         box_(ex, 2.1, ez, hb, 0.1, hb, 255, 255, 255)
-    }
+    end
     di = di + 1
-}
+end
 
 // =========================================================================
 // HUD
@@ -353,19 +353,19 @@ let cyh = int(cy)
 let ch_col_r = 200
 let ch_col_g = 255
 let ch_col_b = 220
-if muzzle > 0 {
+if muzzle > 0 then
     ch_col_r = 255; ch_col_g = 220; ch_col_b = 60
-}
+end
 rect2d(cxh - 1, cyh - 9, 2, 7, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh - 1, cyh + 2, 2, 7, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh - 9, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh + 2, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
 
 // Muzzle flash bloom
-if muzzle > 0 {
+if muzzle > 0 then
     let flash = muzzle * 4
     rect2d(cxh - flash, cyh - flash, flash * 2, flash * 2, 255, 200, 40)
-}
+end
 
 // Health bar (bottom-left)
 let hp_max_w = 200
@@ -380,10 +380,10 @@ text2d("AMMO " ++ str(ammo) ++ "/30", int(sw) - 200, int(sh) - 38, 3, 255, 220, 
 // Score + enemies left
 let alive_count = 0
 let ci = 0
-while ci < len(enemies) {
-    if enemies[ci].alive { alive_count = alive_count + 1 }
+while ci < len(enemies) do
+    if enemies[ci].alive then alive_count = alive_count + 1 end
     ci = ci + 1
-}
+end
 text2d("SCORE " ++ str(score), int(sw) - 200, 10, 3, 60, 240, 230)
 text2d("ENEMIES " ++ str(alive_count), int(sw) - 200, 40, 2, 200, 200, 200)
 
@@ -408,37 +408,37 @@ let ty = mpy - int(cos(yaw) * 6.0)
 line2d(mpx, mpy, tx, ty, 60, 255, 230)
 // Buildings as dim rects
 let mmi = 0
-while mmi < len(buildings) {
+while mmi < len(buildings) do
     let b = buildings[mmi]
     let bx = mpx + int((b.x - player_x) / mm_scale)
     let by = mpy - int((b.z - player_z) / mm_scale)
     let bw = int(b.w / mm_scale) + 1
     let bd = int(b.d / mm_scale) + 1
-    if bx > mm_x && bx < mm_x + mm_size && by > mm_y && by < mm_y + mm_size {
+    if bx > mm_x && bx < mm_x + mm_size && by > mm_y && by < mm_y + mm_size then
         rect2d(bx - bw / 2, by - bd / 2, bw, bd, 80, 40, 100)
-    }
+    end
     mmi = mmi + 1
-}
+end
 // Enemies as red dots
 let mme = 0
-while mme < len(enemies) {
+while mme < len(enemies) do
     let e = enemies[mme]
-    if e.alive {
+    if e.alive then
         let ex = mpx + int((e.x - player_x) / mm_scale)
         let ey = mpy - int((e.z - player_z) / mm_scale)
-        if ex > mm_x && ex < mm_x + mm_size && ey > mm_y && ey < mm_y + mm_size {
+        if ex > mm_x && ex < mm_x + mm_size && ey > mm_y && ey < mm_y + mm_size then
             rect2d(ex - 2, ey - 2, 4, 4, 255, 60, 80)
-        }
-    }
+        end
+    end
     mme = mme + 1
-}
+end
 
 // Game over overlay
-if hp <= 0 {
+if hp <= 0 then
     rect2d(0, 0, int(sw), int(sh), 60, 0, 20)
     text2d("YOU DIED", int(cx) - 80, int(cy) - 20, 6, 255, 60, 60)
     text2d("press R to reload (restart)", int(cx) - 120, int(cy) + 30, 2, 255, 200, 200)
-}
-if alive_count == 0 {
+end
+if alive_count == 0 then
     text2d("CITY CLEARED", int(cx) - 120, int(cy) - 20, 5, 60, 255, 200)
-}
+end

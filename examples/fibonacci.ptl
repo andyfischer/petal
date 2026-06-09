@@ -2,35 +2,36 @@
 // Two approaches to computing Fibonacci numbers.
 
 // Recursive (simple but slow for large n)
-fn fib_recursive(n) {
-    if n <= 0 { 0 }
-    else if n == 1 { 1 }
-    else { fib_recursive(n - 1) + fib_recursive(n - 2) }
-}
+fn fib_recursive(n)
+  if n <= 0 then 0
+  elsif n == 1 then 1
+  else fib_recursive(n - 1) + fib_recursive(n - 2)
+  end
+end
 
 // Iterative (fast)
-fn fib_iterative(n) {
-    if n <= 0 { return 0 }
-    if n == 1 { return 1 }
-    let a = 0
-    let b = 1
-    for _ in range(2, n + 1) {
-        let temp = b
-        b = a + b
-        a = temp
-    }
-    b
-}
+fn fib_iterative(n)
+  if n <= 0 then return 0 end
+  if n == 1 then return 1 end
+  let a = 0
+  let b = 1
+  for _ in range(2, n + 1) do
+    let temp = b
+    b = a + b
+    a = temp
+  end
+  b
+end
 
 print("Fibonacci - Recursive")
 print("=====================")
-for i in range(0, 12) {
-    print("fib({i}) = {fib_recursive(i)}")
-}
+for i in range(0, 12) do
+  print("fib({i}) = {fib_recursive(i)}")
+end
 
 print("")
 print("Fibonacci - Iterative")
 print("=====================")
-for i in range(0, 20) {
-    print("fib({i}) = {fib_iterative(i)}")
-}
+for i in range(0, 20) do
+  print("fib({i}) = {fib_iterative(i)}")
+end

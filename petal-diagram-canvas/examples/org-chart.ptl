@@ -1,11 +1,11 @@
 // Org Chart — hierarchical tree layout
 // Demonstrates nested data and tree rendering
 
-fn mouseOver(rect) {
+fn mouseOver(rect)
     let mx = mouse_x()
     let my = mouse_y()
     mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
-}
+end
 
 // Tree structure: each person has name, title, and child indices
 let people = [
@@ -55,23 +55,31 @@ let default_border = #5a5f82
 // Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+    _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+    _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 clear(bg.r, bg.g, bg.b)
 
 draw_text("Organization Chart", {x: 20, y: 10}, 18, title_color)
 
 // Draw connection lines
-for i in range(0, len(people)) {
+for i in range(0, len(people)) do
     let person = people[i]
     let pos = positions[i]
     let px = pos.x + node_w / 2
     let py = pos.y + node_h
 
-    for ci in person.children {
+    for ci in person.children do
         let cpos = positions[ci]
         let cx = cpos.x + node_w / 2
         let cy = cpos.y
@@ -81,11 +89,11 @@ for i in range(0, len(people)) {
         draw_line({x: px, y: py}, {x: px, y: mid_y}, conn_color)
         draw_line({x: px, y: mid_y}, {x: cx, y: mid_y}, conn_color)
         draw_line({x: cx, y: mid_y}, {x: cx, y: cy}, conn_color)
-    }
-}
+    end
+end
 
 // Draw nodes
-for i in range(0, len(people)) {
+for i in range(0, len(people)) do
     let person = people[i]
     let pos = positions[i]
     let x = pos.x
@@ -98,15 +106,15 @@ for i in range(0, len(people)) {
     let node_color = default_bg
     let border_color = default_border
 
-    if y < 100 {
+    if y < 100 then
         // CEO level — accent color
         node_color = ceo_bg
         border_color = ceo_border
-    } else if y < 200 {
+    elsif y < 200 then
         // VP level
         node_color = vp_bg
         border_color = vp_border
-    }
+    end
 
     let bg_r = node_color.r
     let bg_g = node_color.g
@@ -115,14 +123,14 @@ for i in range(0, len(people)) {
     let border_g = border_color.g
     let border_b = border_color.b
 
-    if hover {
+    if hover then
         bg_r = bg_r + 30
         bg_g = bg_g + 30
         bg_b = bg_b + 30
         border_r = 150
         border_g = 180
         border_b = 255
-    }
+    end
 
     // Shadow
     draw_rect(x + 2, y + 2, node_w, node_h, shadow_color.r, shadow_color.g, shadow_color.b)
@@ -134,4 +142,4 @@ for i in range(0, len(people)) {
     draw_text(person.name, {x: x + 10, y: y + 10}, 15, name_color)
     // Title
     draw_text(person.title, {x: x + 10, y: y + 30}, 13, role_color)
-}
+end

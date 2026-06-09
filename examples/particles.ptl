@@ -1,38 +1,38 @@
 // Particle System
 // Demonstrates per-iteration state for simulating multiple independent objects.
 
-fn update_particle(id) {
-    // Each particle gets its own position and velocity state,
-    // keyed by the enclosing loop iteration (the particle id).
-    state x = 0.0
-    state y = 0.0
-    state vx = float(id + 1) * 1.5
-    state vy = float(id + 1) * 0.8
+fn update_particle(id)
+  // Each particle gets its own position and velocity state,
+  // keyed by the enclosing loop iteration (the particle id).
+  state x = 0.0
+  state y = 0.0
+  state vx = float(id + 1) * 1.5
+  state vy = float(id + 1) * 0.8
 
-    // Update position
+  // Update position
+  x = x + vx
+  y = y + vy
+
+  // Bounce off boundaries
+  if x > 50.0 || x < 0.0 then
+    vx = -vx
     x = x + vx
+  end
+  if y > 30.0 || y < 0.0 then
+    vy = -vy
     y = y + vy
+  end
 
-    // Bounce off boundaries
-    if x > 50.0 || x < 0.0 {
-        vx = -vx
-        x = x + vx
-    }
-    if y > 30.0 || y < 0.0 {
-        vy = -vy
-        y = y + vy
-    }
-
-    print("  Particle", id, "-> x:", floor(x), "y:", floor(y))
-}
+  print("  Particle", id, "-> x:", floor(x), "y:", floor(y))
+end
 
 print("Particle Simulation")
 print("====================")
 
-for frame in range(1, 8) {
-    print("Frame", frame)
-    for p in range(0, 4) {
-        update_particle(p)
-    }
-    print("")
-}
+for frame in range(1, 8) do
+  print("Frame", frame)
+  for p in range(0, 4) do
+    update_particle(p)
+  end
+  print("")
+end

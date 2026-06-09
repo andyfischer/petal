@@ -1,17 +1,17 @@
 // Color Gradient
 // Steps HSV hue and interpolates between color stops.
 
-fn format_color(c) {
-    "rgb({c.r},{c.g},{c.b})"
-}
+fn format_color(c)
+  "rgb({c.r},{c.g},{c.b})"
+end
 
 print("Hue sweep (HSV, every 30 degrees)")
 print("=================================")
-for i in range(0, 13) {
-    let h = float(i) * 30.0
-    let c = hsv(h, 0.85, 1.0)
-    print("  h={h}  {format_color(c)}")
-}
+for i in range(0, 13) do
+  let h = float(i) * 30.0
+  let c = hsv(h, 0.85, 1.0)
+  print("  h={h}  {format_color(c)}")
+end
 print("")
 
 print("Linear color lerp (warm -> cool)")
@@ -19,17 +19,17 @@ print("================================")
 let warm = hsv(30.0, 0.9, 1.0)
 let cool = hsv(220.0, 0.9, 1.0)
 let steps = 9
-for i in range(0, steps) {
-    let t = float(i) / float(steps - 1)
-    let c = color_lerp(warm, cool, t)
-    print("  t={t}  {format_color(c)}")
-}
+for i in range(0, steps) do
+  let t = float(i) / float(steps - 1)
+  let c = color_lerp(warm, cool, t)
+  print("  t={t}  {format_color(c)}")
+end
 print("")
 
 print("HSL sweep at varying lightness")
 print("==============================")
-for l_step in range(1, 5) {
-    let l = float(l_step) * 0.2
-    let c = hsl(0.0, 1.0, l)
-    print("  l={l}  {format_color(c)}")
-}
+for l_step in range(1, 5) do
+  let l = float(l_step) * 0.2
+  let c = hsl(0.0, 1.0, l)
+  print("  l={l}  {format_color(c)}")
+end

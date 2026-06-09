@@ -19,12 +19,12 @@ let stiffness = 800.0
 let damping = 5.0
 
 // Initialize grid of nodes connected by springs
-if len(nodes) == 0 {
+if len(nodes) == 0 then
     let offset_x = (sw - float(grid_w - 1) * spacing) / 2.0
     let offset_y = 80.0
 
-    for y in range(0, grid_h) {
-        for x in range(0, grid_w) {
+    for y in range(0, grid_h) do
+        for x in range(0, grid_w) do
             let pinned = y == 0 && (x == 0 || x == grid_w / 2 || x == grid_w - 1)
             push(nodes, {
                 x: offset_x + float(x) * spacing,
@@ -33,70 +33,70 @@ if len(nodes) == 0 {
                 vy: 0.0,
                 pinned: pinned
             })
-        }
-    }
+        end
+    end
 
     // Horizontal springs
-    for y in range(0, grid_h) {
-        for x in range(0, grid_w - 1) {
+    for y in range(0, grid_h) do
+        for x in range(0, grid_w - 1) do
             let a = y * grid_w + x
             let b = a + 1
             push(springs, { a: a, b: b, rest_len: spacing })
-        }
-    }
+        end
+    end
 
     // Vertical springs
-    for y in range(0, grid_h - 1) {
-        for x in range(0, grid_w) {
+    for y in range(0, grid_h - 1) do
+        for x in range(0, grid_w) do
             let a = y * grid_w + x
             let b = a + grid_w
             push(springs, { a: a, b: b, rest_len: spacing })
-        }
-    }
+        end
+    end
 
     // Diagonal springs (structural stability)
-    for y in range(0, grid_h - 1) {
-        for x in range(0, grid_w - 1) {
+    for y in range(0, grid_h - 1) do
+        for x in range(0, grid_w - 1) do
             let a = y * grid_w + x
             push(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
             push(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
-        }
-    }
-}
+        end
+    end
+end
 
 // Mouse interaction - drag nodes
 let mx = float(mouse_x())
 let my = float(mouse_y())
 
-if mouse_pressed(1) {
+if mouse_pressed(1) then
     let best = -1
     let best_dist = 30.0
-    for i in range(0, len(nodes)) {
+    for i in range(0, len(nodes)) do
         let n = nodes[i]
         let dx = n.x - mx
         let dy = n.y - my
         let d = sqrt(dx * dx + dy * dy)
-        if d < best_dist {
+        if d < best_dist then
             best_dist = d
             best = i
-        }
-    }
+        end
+    end
     dragging = best
-}
+end
 
-if !mouse_down(1) {
+if !mouse_down(1) then
     dragging = -1
-}
+end
 
-if dragging >= 0 {
+if dragging >= 0 then
     nodes[dragging] = {
         x: mx, y: my, vx: 0.0, vy: 0.0,
         pinned: nodes[dragging].pinned
     }
-}
+end
 
 // Physics: apply spring forces
-for s in springs {
+for s in springs do
     let na = nodes[s.a]
     let nb = nodes[s.b]
 
@@ -109,28 +109,28 @@ for s in springs {
     let fx = force * dx / dist
     let fy = force * dy / dist
 
-    if !na.pinned {
+    if !na.pinned then
         nodes[s.a] = {
             x: na.x, y: na.y,
             vx: na.vx + fx * delta,
             vy: na.vy + fy * delta,
             pinned: false
         }
-    }
-    if !nb.pinned {
+    end
+    if !nb.pinned then
         nodes[s.b] = {
             x: nb.x, y: nb.y,
             vx: nb.vx - fx * delta,
             vy: nb.vy - fy * delta,
             pinned: false
         }
-    }
-}
+    end
+end
 
 // Update positions
-for i in range(0, len(nodes)) {
+for i in range(0, len(nodes)) do
     let n = nodes[i]
-    if !n.pinned && i != dragging {
+    if !n.pinned && i != dragging then
         // Gravity
         let grav = 200.0
         // Damping
@@ -140,20 +140,20 @@ for i in range(0, len(nodes)) {
         let ny = n.y + dvy * delta
 
         // Floor
-        if ny > sh - 20.0 {
+        if ny > sh - 20.0 then
             ny = sh - 20.0
             dvy = -abs(dvy) * 0.3
-        }
+        end
 
         nodes[i] = { x: nx, y: ny, vx: dvx, vy: dvy, pinned: false }
-    }
-}
+    end
+end
 
 // === Drawing ===
 clear(12, 15, 25)
 
 // Draw springs
-for s in springs {
+for s in springs do
     let na = nodes[s.a]
     let nb = nodes[s.b]
     let dx = nb.x - na.x
@@ -167,25 +167,25 @@ for s in springs {
     let cb = int(max(0.0, 120.0 - stretch * 300.0))
 
     draw_line(int(na.x), int(na.y), int(nb.x), int(nb.y), max(20, cr), max(20, cg), max(20, cb))
-}
+end
 
 // Draw nodes
-for i in range(0, len(nodes)) {
+for i in range(0, len(nodes)) do
     let n = nodes[i]
-    if n.pinned {
+    if n.pinned then
         // Pinned nodes are gold
         draw_circle(int(n.x), int(n.y), 6, 200, 180, 50)
         draw_circle(int(n.x), int(n.y), 4, 255, 220, 80)
-    } else if i == dragging {
+    elsif i == dragging then
         // Dragged node
         draw_circle(int(n.x), int(n.y), 8, 255, 100, 100)
-    } else {
+    else
         // Regular nodes
         let speed = sqrt(n.vx * n.vx + n.vy * n.vy)
         let bright = int(min(255.0, 80.0 + speed * 0.5))
         draw_circle(int(n.x), int(n.y), 4, bright, bright, min(255, bright + 40))
-    }
-}
+    end
+end
 
 // Floor
 draw_line(0, int(sh) - 20, int(sw), int(sh) - 20, 40, 50, 60)

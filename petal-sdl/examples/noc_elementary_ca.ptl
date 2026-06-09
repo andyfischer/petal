@@ -16,78 +16,78 @@ let max_rows = sh / cell_size
 let delta = dt()
 
 // Initialize
-if len(cells) == 0 {
-    for i in range(0, num_cells) {
-        push(cells, 0)
-    }
-    // Single cell in the middle
-    cells[num_cells / 2] = 1
-    next_row = 0
-    history = []
-}
+if len(cells) == 0 then
+  for i in range(0, num_cells) do
+    push(cells, 0)
+  end
+  // Single cell in the middle
+  cells[num_cells / 2] = 1
+  next_row = 0
+  history = []
+end
 
 // Decode rule number into 8-bit lookup
-fn apply_rule(left, center, right, rule) {
-    let index = left * 4 + center * 2 + right
-    // Check if the bit at position 'index' is set in rule
-    let r = rule
-    let result = 0
-    for i in range(0, index) {
-        r = r / 2
-    }
-    r % 2
-}
+fn apply_rule(left, center, right, rule)
+  let index = left * 4 + center * 2 + right
+  // Check if the bit at position 'index' is set in rule
+  let r = rule
+  let result = 0
+  for i in range(0, index) do
+    r = r / 2
+  end
+  r % 2
+end
 
 // Generate rows at speed
 let rows_per_frame = 3
-for step in range(0, rows_per_frame) {
-    if next_row < max_rows {
-        // Store current row in history
-        let row_copy = []
-        for c in cells {
-            push(row_copy, c)
-        }
-        push(history, row_copy)
+for step in range(0, rows_per_frame) do
+  if next_row < max_rows then
+    // Store current row in history
+    let row_copy = []
+    for c in cells do
+      push(row_copy, c)
+    end
+    push(history, row_copy)
 
-        // Generate next row
-        let new_cells = []
-        for i in range(0, num_cells) {
-            let left = cells[(i - 1 + num_cells) % num_cells]
-            let center = cells[i]
-            let right = cells[(i + 1) % num_cells]
-            push(new_cells, apply_rule(left, center, right, rule_num))
-        }
-        cells = new_cells
-        next_row += 1
-    }
-}
+    // Generate next row
+    let new_cells = []
+    for i in range(0, num_cells) do
+      let left = cells[(i - 1 + num_cells) % num_cells]
+      let center = cells[i]
+      let right = cells[(i + 1) % num_cells]
+      push(new_cells, apply_rule(left, center, right, rule_num))
+    end
+    cells = new_cells
+    next_row += 1
+  end
+end
 
 // When we fill the screen, move to next rule
-if next_row >= max_rows {
-    rule_timer += delta
-    if rule_timer > 3.0 {
-        rule_timer = 0.0
-        // Advance to next interesting rule
-        let interesting_rules = [30, 90, 110, 184, 54, 60, 62, 150, 182, 225, 73, 105, 45, 75, 86, 135]
-        let current_idx = 0
-        for i in range(0, len(interesting_rules)) {
-            if interesting_rules[i] == rule_num {
-                current_idx = i
-            }
-        }
-        let next_idx = (current_idx + 1) % len(interesting_rules)
-        rule_num = interesting_rules[next_idx]
+if next_row >= max_rows then
+  rule_timer += delta
+  if rule_timer > 3.0 then
+    rule_timer = 0.0
+    // Advance to next interesting rule
+    let interesting_rules = [30, 90, 110, 184, 54, 60, 62, 150, 182, 225, 73, 105, 45, 75, 86, 135]
+    let current_idx = 0
+    for i in range(0, len(interesting_rules)) do
+      if interesting_rules[i] == rule_num then
+        current_idx = i
+      end
+    end
+    let next_idx = (current_idx + 1) % len(interesting_rules)
+    rule_num = interesting_rules[next_idx]
 
-        // Reset
-        cells = []
-        for i in range(0, num_cells) {
-            push(cells, 0)
-        }
-        cells[num_cells / 2] = 1
-        history = []
-        next_row = 0
-    }
-}
+    // Reset
+    cells = []
+    for i in range(0, num_cells) do
+      push(cells, 0)
+    end
+    cells[num_cells / 2] = 1
+    history = []
+    next_row = 0
+  end
+end
 
 // === Drawing ===
 clear(5, 5, 10)
@@ -98,18 +98,18 @@ let cg = 80 + (rule_num * 13) % 175
 let cb = 150 + (rule_num * 3) % 105
 
 // Draw history
-for y in range(0, len(history)) {
-    let row = history[y]
-    for x in range(0, len(row)) {
-        if row[x] == 1 {
-            // Color varies slightly by position for visual interest
-            let pr = min(255, cr + (x * 3) % 30)
-            let pg = min(255, cg + (y * 2) % 20)
-            let pb = min(255, cb)
-            draw_rect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1, pr, pg, pb)
-        }
-    }
-}
+for y in range(0, len(history)) do
+  let row = history[y]
+  for x in range(0, len(row)) do
+    if row[x] == 1 then
+      // Color varies slightly by position for visual interest
+      let pr = min(255, cr + (x * 3) % 30)
+      let pg = min(255, cg + (y * 2) % 20)
+      let pb = min(255, cb)
+      draw_rect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1, pr, pg, pb)
+    end
+  end
+end
 
 // HUD
 draw_rect(0, 0, 200, 35, 0, 0, 0)
@@ -119,25 +119,25 @@ draw_text("Elementary CA", 10, 22, 10, 60, 60, 80)
 // Rule visualization (8 cells showing the rule)
 let rule_x = sw - 180
 draw_rect(rule_x - 5, 5, 175, 30, 0, 0, 0)
-for bit in range(0, 8) {
-    let r = rule_num
-    for i in range(0, bit) { r = r / 2 }
-    let active = r % 2
+for bit in range(0, 8) do
+  let r = rule_num
+  for i in range(0, bit) do r = r / 2 end
+  let active = r % 2
 
-    // Show the 3-cell input pattern
-    let bx = rule_x + bit * 20
-    let input_l = (bit / 4) % 2
-    let input_c = (bit / 2) % 2
-    let input_r = bit % 2
+  // Show the 3-cell input pattern
+  let bx = rule_x + bit * 20
+  let input_l = (bit / 4) % 2
+  let input_c = (bit / 2) % 2
+  let input_r = bit % 2
 
-    if input_l == 1 { draw_rect(bx, 8, 5, 5, 80, 80, 80) }
-    if input_c == 1 { draw_rect(bx + 5, 8, 5, 5, 80, 80, 80) }
-    if input_r == 1 { draw_rect(bx + 10, 8, 5, 5, 80, 80, 80) }
+  if input_l == 1 then draw_rect(bx, 8, 5, 5, 80, 80, 80) end
+  if input_c == 1 then draw_rect(bx + 5, 8, 5, 5, 80, 80, 80) end
+  if input_r == 1 then draw_rect(bx + 10, 8, 5, 5, 80, 80, 80) end
 
-    // Show result
-    if active == 1 {
-        draw_rect(bx + 5, 18, 5, 5, cr, cg, cb)
-    } else {
-        draw_rect(bx + 5, 18, 5, 5, 20, 20, 20)
-    }
-}
+  // Show result
+  if active == 1 then
+    draw_rect(bx + 5, 18, 5, 5, cr, cg, cb)
+  else
+    draw_rect(bx + 5, 18, 5, 5, 20, 20, 20)
+  end
+end

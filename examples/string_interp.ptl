@@ -11,14 +11,14 @@ print("Hello, {name}! You are {age} years old.")
 let a = 7
 let b = 5
 print("{a} + {b} = {a + b}")
-print("max is {if a > b { a } else { b }}")
+print("max is {if a > b then a else b end}")
 
 // Records and lists stringify too
 let point = {x: 3, y: 4}
 print("point = {point}, distance = {mag(float(point.x), float(point.y))}")
 
 // Nested calls
-fn greet(who) { "Hi {who}" }
+fn greet(who) "Hi {who}" end
 print("{greet(name)} — welcome back")
 
 // Literal braces

@@ -44,7 +44,7 @@ describe("show-graph", () => {
   });
 
   it("colors branch terms differently", () => {
-    const dot = showGraph("if true { 1 } else { 2 }");
+    const dot = showGraph("if true then 1 else 2 end");
     expect(dot).toContain("lightsalmon");
   });
 });

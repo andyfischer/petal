@@ -43,7 +43,7 @@ describe("is_callable validation", () => {
 
   describe("allows callable expressions", () => {
     it("allows identifier calls", () => {
-      const result = runPetal("fn f(x) { x + 1 }\nprint(f(5))");
+      const result = runPetal("fn f(x)\n  x + 1\nend\nprint(f(5))");
       expect(result).toBe("6");
     });
 
@@ -54,19 +54,19 @@ describe("is_callable validation", () => {
 
     it("allows chained calls (call result called)", () => {
       const result = runPetal(
-        "fn make(x) {\n  let inner = fn(y) { x + y }\n  inner\n}\nprint(make(10)(5))"
+        "fn make(x)\n  let inner = fn(y) -> x + y\n  inner\nend\nprint(make(10)(5))"
       );
       expect(result).toBe("15");
     });
 
     it("allows lambda IIFE", () => {
-      const result = runPetal("print(fn(x) { x * 2 }(21))");
+      const result = runPetal("print((fn(x) -> x * 2)(21))");
       expect(result).toBe("42");
     });
 
     it("allows index access calls", () => {
       const result = runPetal(
-        "fn add1(x) { x + 1 }\nfn double(x) { x * 2 }\nlet fns = [add1, double]\nprint(fns[1](5))"
+        "fn add1(x)\n  x + 1\nend\nfn double(x)\n  x * 2\nend\nlet fns = [add1, double]\nprint(fns[1](5))"
       );
       expect(result).toBe("10");
     });

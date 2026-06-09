@@ -45,7 +45,7 @@ describe("compound assignment operators", () => {
   });
 
   it("handles += in a loop", () => {
-    const out = runPetal("let sum = 0\nfor i in range(1, 5) {\n  sum += i\n}\nprint(sum)");
+    const out = runPetal("let sum = 0\nfor i in range(1, 5) do\n  sum += i\nend\nprint(sum)");
     expect(out).toBe("10");
   });
 

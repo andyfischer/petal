@@ -33,7 +33,15 @@ let SCREEN_H       = 600
 
 // ----------------------------- PHASES ---------------------------------
 
-enum Phase { Title, Playing, Paused, Dying, Complete, GameOver, AllDone }
+enum Phase
+    Title
+    Playing
+    Paused
+    Dying
+    Complete
+    GameOver
+    AllDone
+end
 
 // ----------------------------- STATE ----------------------------------
 
@@ -85,27 +93,35 @@ state toast_t       = 0.0
 
 // ----------------------------- HELPERS --------------------------------
 
-fn clamp(v, lo, hi) { max(lo, min(v, hi)) }
-fn sign(v) { if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 } }
-fn approach(cur, target, step) {
-    if cur < target {
+fn clamp(v, lo, hi)
+    max(lo, min(v, hi))
+end
+fn sign(v)
+    if v > 0.0 then 1.0 elsif v < 0.0 then -1.0 else 0.0 end
+end
+fn approach(cur, target, step)
+    if cur < target then
         min(cur + step, target)
-    } else {
+    else
         max(cur - step, target)
-    }
-}
-fn aabb(ax, ay, aw, ah, bx, by, bw, bh) {
+    end
+end
+fn aabb(ax, ay, aw, ah, bx, by, bw, bh)
     ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
-}
+end
 
 // String -> float / int parse helpers used by the level loader.
 // Petal's int()/float() work on numeric strings, so we just delegate.
-fn parse_int(s) { int(s) }
-fn parse_float(s) { float(s) }
+fn parse_int(s)
+    int(s)
+end
+fn parse_float(s)
+    float(s)
+end
 
 // ----------------------------- LEVEL I/O ------------------------------
 
-fn empty_level() {
+fn empty_level()
     {
         name: "Untitled",
         width: 2400,
@@ -119,47 +135,47 @@ fn empty_level() {
         enemies: [],
         checks: []
     }
-}
+end
 
-fn parse_level(src) {
+fn parse_level(src)
     let L = empty_level()
     let lines = split(src, "\n")
-    for raw in lines {
+    for raw in lines do
         let toks = split(raw, " ")
-        if len(toks) == 0 { continue }
+        if len(toks) == 0 then continue end
         let tag = toks[0]
-        if tag == "" { continue }
-        if tag == "name" {
+        if tag == "" then continue end
+        if tag == "name" then
             // join everything after the tag so multi-word names work
             L.name = join(slice(toks, 1, len(toks)), " ")
-        } else if tag == "width" {
+        elsif tag == "width" then
             L.width = parse_int(toks[1])
-        } else if tag == "bg" {
+        elsif tag == "bg" then
             L.bg_r = parse_int(toks[1])
             L.bg_g = parse_int(toks[2])
             L.bg_b = parse_int(toks[3])
-        } else if tag == "start" {
+        elsif tag == "start" then
             L.start = {x: parse_float(toks[1]), y: parse_float(toks[2])}
-        } else if tag == "goal" {
+        elsif tag == "goal" then
             L.goal = {x: parse_float(toks[1]), y: parse_float(toks[2])}
-        } else if tag == "plat" {
+        elsif tag == "plat" then
             push(L.plats, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 w: parse_int(toks[3]), h: parse_int(toks[4])
             })
-        } else if tag == "oneway" {
+        elsif tag == "oneway" then
             push(L.oneways, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 w: parse_int(toks[3])
             })
-        } else if tag == "coin" {
+        elsif tag == "coin" then
             push(L.coins, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 collected: false
             })
-        } else if tag == "spike" {
+        elsif tag == "spike" then
             push(L.spikes, {x: parse_int(toks[1]), y: parse_int(toks[2])})
-        } else if tag == "goomba" {
+        elsif tag == "goomba" then
             // y here is the surface y (plat top); enemy stands on it
             let sx = parse_float(toks[1])
             let sy = parse_float(toks[2])
@@ -171,7 +187,7 @@ fn parse_level(src) {
                 origin: sx, origin_y: sy - 22.0, patrol: pat,
                 alive: true, squash: 0.0, anim: 0.0
             })
-        } else if tag == "jumper" {
+        elsif tag == "jumper" then
             let sx = parse_float(toks[1])
             let sy = parse_float(toks[2])
             push(L.enemies, {
@@ -181,33 +197,33 @@ fn parse_level(src) {
                 origin: sx, origin_y: sy - 24.0, patrol: 0.0,
                 alive: true, squash: 0.0, anim: 0.0
             })
-        } else if tag == "check" {
+        elsif tag == "check" then
             push(L.checks, {x: parse_int(toks[1]), y: parse_int(toks[2])})
-        } else {
+        else
             // unknown tag, ignore
-        }
-    }
+        end
+    end
     L
-}
+end
 
-fn load_level(idx) {
+fn load_level(idx)
     let path = level_files[idx]
     let src = load_text_file(path)
-    if len(src) == 0 {
+    if len(src) == 0 then
         // file missing — fall back to a tiny default
         let L = empty_level()
         L.name = "Missing: {path}"
         L
-    } else {
+    else
         parse_level(src)
-    }
-}
+    end
+end
 
 // ----------------------------- RESET ----------------------------------
 
-fn respawn_player() {
+fn respawn_player()
     let spawn = level.start
-    if checkpoint != nil { spawn = checkpoint }
+    if checkpoint != nil then spawn = checkpoint end
     px = spawn.x
     py = spawn.y
     vx = 0.0
@@ -219,9 +235,9 @@ fn respawn_player() {
     invul = INVUL_MAX
     squash = 1.0
     stretch = 1.0
-}
+end
 
-fn restart_level() {
+fn restart_level()
     level = load_level(level_idx)
     level_loaded = level_idx
     checkpoint = nil
@@ -232,12 +248,12 @@ fn restart_level() {
     cam_x = 0.0
     shake = 0.0
     respawn_player()
-}
+end
 
-fn say(msg) {
+fn say(msg)
     toast = msg
     toast_t = 1.6
-}
+end
 
 // ----------------------------- INPUT FRAME ----------------------------
 
@@ -247,26 +263,26 @@ title_t += dts
 toast_t = max(0.0, toast_t - dts)
 
 // Lazy-load level when entering Playing if needed.
-if phase == Playing && level_loaded != level_idx {
+if phase == Playing && level_loaded != level_idx then
     restart_level()
-}
+end
 
 // ===================== TITLE SCREEN ==================================
 
-if phase == Title {
-    if key_pressed("up")    { menu_idx = max(0, menu_idx - 1) }
-    if key_pressed("down")  { menu_idx = min(len(level_files) - 1, menu_idx + 1) }
-    if key_pressed("return") || key_pressed("space") {
+if phase == Title then
+    if key_pressed("up")    then menu_idx = max(0, menu_idx - 1) end
+    if key_pressed("down")  then menu_idx = min(len(level_files) - 1, menu_idx + 1) end
+    if key_pressed("return") || key_pressed("space") then
         level_idx = menu_idx
         phase = Playing
         phase_t = 0.0
         restart_level()
-    }
-}
+    end
+end
 
 // ===================== PLAYING =======================================
 
-if phase == Playing {
+if phase == Playing then
     level_timer += dts
 
     // --- input ---
@@ -275,25 +291,25 @@ if phase == Playing {
     let want_jump  = key_pressed("space") || key_pressed("up") || key_pressed("w")
     let jump_held  = key_down("space") || key_down("up") || key_down("w")
 
-    if want_jump { jump_buf = JUMP_BUF_MAX }
+    if want_jump then jump_buf = JUMP_BUF_MAX end
     jump_buf = max(0.0, jump_buf - dts)
 
     let target_vx = 0.0
-    if want_left  { target_vx = target_vx - MOVE_SPEED; facing = -1 }
-    if want_right { target_vx = target_vx + MOVE_SPEED; facing = 1 }
+    if want_left  then target_vx = target_vx - MOVE_SPEED; facing = -1 end
+    if want_right then target_vx = target_vx + MOVE_SPEED; facing = 1 end
 
     // accelerate towards target velocity
-    let accel = if on_ground { GROUND_ACCEL } else { AIR_ACCEL }
-    if target_vx == 0.0 {
+    let accel = if on_ground then GROUND_ACCEL else AIR_ACCEL end
+    if target_vx == 0.0 then
         // friction
-        let fr = if on_ground { FRICTION } else { AIR_ACCEL * 0.4 }
+        let fr = if on_ground then FRICTION else AIR_ACCEL * 0.4 end
         vx = approach(vx, 0.0, fr * dts)
-    } else {
+    else
         vx = approach(vx, target_vx, accel * dts)
-    }
+    end
 
     // jump
-    if jump_buf > 0.0 && (on_ground || coyote > 0.0) {
+    if jump_buf > 0.0 && (on_ground || coyote > 0.0) then
         vy = JUMP_VY
         on_ground = false
         coyote = 0.0
@@ -302,7 +318,7 @@ if phase == Playing {
         stretch = 1.25
         // dust puff
         let i = 0
-        while i < 8 {
+        while i < 8 do
             push(particles, {
                 kind: "dust",
                 x: px + float(PLAYER_W)/2.0 + random(-6.0, 6.0),
@@ -313,11 +329,11 @@ if phase == Playing {
                 size: random(2.0, 5.0)
             })
             i = i + 1
-        }
-    }
+        end
+    end
 
     // variable jump height
-    if !jump_held && vy < 0.0 { vy = vy * JUMP_CUT }
+    if !jump_held && vy < 0.0 then vy = vy * JUMP_CUT end
 
     // gravity
     vy = min(MAX_FALL, vy + GRAVITY * dts)
@@ -326,29 +342,29 @@ if phase == Playing {
     let new_px = px + vx * dts
     let pw = float(PLAYER_W)
     let ph = float(PLAYER_H)
-    for p in level.plats {
+    for p in level.plats do
         let plx = float(p.x); let ply = float(p.y)
         let plw = float(p.w); let plh = float(p.h)
-        if aabb(new_px, py, pw, ph, plx, ply, plw, plh) {
-            if vx > 0.0 { new_px = plx - pw } else if vx < 0.0 { new_px = plx + plw }
+        if aabb(new_px, py, pw, ph, plx, ply, plw, plh) then
+            if vx > 0.0 then new_px = plx - pw elsif vx < 0.0 then new_px = plx + plw end
             vx = 0.0
-        }
-    }
+        end
+    end
     px = new_px
 
     // --- vertical move + collision ---
     let new_py = py + vy * dts
     on_ground = false
-    for p in level.plats {
+    for p in level.plats do
         let plx = float(p.x); let ply = float(p.y)
         let plw = float(p.w); let plh = float(p.h)
-        if aabb(px, new_py, pw, ph, plx, ply, plw, plh) {
-            if vy > 0.0 {
+        if aabb(px, new_py, pw, ph, plx, ply, plw, plh) then
+            if vy > 0.0 then
                 new_py = ply - ph
-                if !on_ground {
+                if !on_ground then
                     // landing dust
                     let i = 0
-                    while i < int(min(8.0, vy / 80.0)) {
+                    while i < int(min(8.0, vy / 80.0)) do
                         push(particles, {
                             kind: "dust",
                             x: px + random(0.0, pw),
@@ -359,47 +375,47 @@ if phase == Playing {
                             size: random(2.0, 4.0)
                         })
                         i = i + 1
-                    }
-                    if vy > 500.0 { shake = max(shake, 6.0) }
+                    end
+                    if vy > 500.0 then shake = max(shake, 6.0) end
                     squash = 0.75
                     stretch = 1.15
-                }
+                end
                 on_ground = true
                 vy = 0.0
-            } else if vy < 0.0 {
+            elsif vy < 0.0 then
                 new_py = ply + plh
                 vy = 0.0
-            }
-        }
-    }
+            end
+        end
+    end
     // one-way platforms — only collide when falling and previously above
-    for o in level.oneways {
+    for o in level.oneways do
         let ox = float(o.x); let oy = float(o.y); let ow = float(o.w)
-        if vy > 0.0 && py + ph <= oy + 1.0 {
-            if aabb(px, new_py, pw, ph, ox, oy, ow, 8.0) {
+        if vy > 0.0 && py + ph <= oy + 1.0 then
+            if aabb(px, new_py, pw, ph, ox, oy, ow, 8.0) then
                 new_py = oy - ph
                 vy = 0.0
                 on_ground = true
                 squash = 0.85
                 stretch = 1.07
-            }
-        }
-    }
+            end
+        end
+    end
     py = new_py
 
     // coyote time
-    if on_ground { coyote = COYOTE_MAX } else { coyote = max(0.0, coyote - dts) }
+    if on_ground then coyote = COYOTE_MAX else coyote = max(0.0, coyote - dts) end
 
     // --- coin pickup ---
-    for c in level.coins {
-        if !c.collected {
+    for c in level.coins do
+        if !c.collected then
             let cx = float(c.x); let cy = float(c.y)
-            if abs(px + pw/2.0 - cx) < 18.0 && abs(py + ph/2.0 - cy) < 22.0 {
+            if abs(px + pw/2.0 - cx) < 18.0 && abs(py + ph/2.0 - cy) < 22.0 then
                 c.collected = true
                 coins_got = coins_got + 1
                 push(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
                 let i = 0
-                while i < 10 {
+                while i < 10 do
                     push(particles, {
                         kind: "spark",
                         x: cx, y: cy,
@@ -409,32 +425,32 @@ if phase == Playing {
                         size: random(2.0, 4.0)
                     })
                     i = i + 1
-                }
-            }
-        }
-    }
+                end
+            end
+        end
+    end
 
     // --- enemies update ---
-    for e in level.enemies {
-        if !e.alive { continue }
+    for e in level.enemies do
+        if !e.alive then continue end
         e.anim = e.anim + dts
-        if e.kind == "goomba" {
+        if e.kind == "goomba" then
             // patrol: bounce at patrol distance
             e.x = e.x + e.vx * dts
-            if e.patrol > 0.0 && abs(e.x - e.origin) > e.patrol {
+            if e.patrol > 0.0 && abs(e.x - e.origin) > e.patrol then
                 e.vx = -e.vx
                 e.x = e.x + e.vx * dts
-            }
+            end
             // collision with player
-            if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) {
-                if vy > 50.0 && py + ph - 14.0 < e.y {
+            if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) then
+                if vy > 50.0 && py + ph - 14.0 < e.y then
                     e.alive = false
                     e.squash = 1.0
                     vy = JUMP_VY * 0.6
                     coins_got = coins_got + 0   // no coin reward, just defeat
                     push(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
                     let i = 0
-                    while i < 8 {
+                    while i < 8 do
                         push(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
@@ -444,28 +460,28 @@ if phase == Playing {
                             size: random(3.0, 6.0)
                         })
                         i = i + 1
-                    }
-                } else {
+                    end
+                else
                     // got hit
                     invul = INVUL_MAX
                     lives = lives - 1
                     shake = 14.0
                     vx = float(-facing) * 220.0
                     vy = -260.0
-                }
-            }
-        } else if e.kind == "jumper" {
+                end
+            end
+        elsif e.kind == "jumper" then
             // sinusoidal bounce around its origin_y
             let bounce = abs(sin(e.anim * 4.0)) * 60.0
             e.y = e.origin_y - bounce
             // collision with player
-            if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) {
-                if vy > 50.0 && py + ph - 14.0 < e.y {
+            if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) then
+                if vy > 50.0 && py + ph - 14.0 < e.y then
                     e.alive = false
                     vy = JUMP_VY * 0.6
                     push(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "BONK"})
                     let i = 0
-                    while i < 8 {
+                    while i < 8 do
                         push(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
@@ -475,80 +491,80 @@ if phase == Playing {
                             size: random(3.0, 6.0)
                         })
                         i = i + 1
-                    }
-                } else {
+                    end
+                else
                     invul = INVUL_MAX
                     lives = lives - 1
                     shake = 14.0
                     vx = float(-facing) * 220.0
                     vy = -260.0
-                }
-            }
-        }
-    }
+                end
+            end
+        end
+    end
 
     // --- spikes ---
-    for s in level.spikes {
-        if invul <= 0.0 {
-            if aabb(px, py, pw, ph, float(s.x), float(s.y), 24.0, 16.0) {
+    for s in level.spikes do
+        if invul <= 0.0 then
+            if aabb(px, py, pw, ph, float(s.x), float(s.y), 24.0, 16.0) then
                 invul = INVUL_MAX
                 lives = lives - 1
                 shake = 16.0
                 vy = -360.0
                 vx = float(-facing) * 200.0
                 push(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
-            }
-        }
-    }
+            end
+        end
+    end
 
     // --- checkpoints ---
-    for ck in level.checks {
-        if aabb(px, py, pw, ph, float(ck.x) - 8.0, float(ck.y) - 30.0, 32.0, 50.0) {
-            if checkpoint == nil || float(ck.x) > checkpoint.x {
+    for ck in level.checks do
+        if aabb(px, py, pw, ph, float(ck.x) - 8.0, float(ck.y) - 30.0, 32.0, 50.0) then
+            if checkpoint == nil || float(ck.x) > checkpoint.x then
                 checkpoint = {x: float(ck.x), y: float(ck.y) - float(PLAYER_H)}
                 say("Checkpoint!")
-            }
-        }
-    }
+            end
+        end
+    end
 
     // --- goal ---
     let gx = level.goal.x
     let gy = level.goal.y
-    if aabb(px, py, pw, ph, gx - 6.0, gy - 60.0, 24.0, 80.0) {
+    if aabb(px, py, pw, ph, gx - 6.0, gy - 60.0, 24.0, 80.0) then
         phase = Complete
         phase_t = 0.0
-        if level_timer < best_times[level_idx] {
+        if level_timer < best_times[level_idx] then
             best_times[level_idx] = level_timer
-        }
-        if coins_got > best_coins[level_idx] {
+        end
+        if coins_got > best_coins[level_idx] then
             best_coins[level_idx] = coins_got
-        }
-    }
+        end
+    end
 
     // --- fall off world ---
-    if py > 700.0 && phase == Playing {
+    if py > 700.0 && phase == Playing then
         invul = INVUL_MAX
         lives = lives - 1
         shake = 14.0
         respawn_player()
-    }
+    end
 
     // --- check death ---
-    if lives <= 0 && phase == Playing {
+    if lives <= 0 && phase == Playing then
         phase = GameOver
         phase_t = 0.0
-    }
+    end
 
     invul = max(0.0, invul - dts)
 
     // --- restart ---
-    if key_pressed("r") {
+    if key_pressed("r") then
         restart_level()
-    }
-    if key_pressed("escape") || key_pressed("p") {
+    end
+    if key_pressed("escape") || key_pressed("p") then
         phase = Paused
         phase_t = 0.0
-    }
+    end
 
     // --- camera follow ---
     let target = px + pw/2.0 - float(SCREEN_W)/2.0
@@ -559,64 +575,64 @@ if phase == Playing {
     // squash/stretch decay
     squash = approach(squash, 1.0, 4.0 * dts)
     stretch = approach(stretch, 1.0, 4.0 * dts)
-}
+end
 
 // ===================== PAUSE / COMPLETE / OVER =======================
 
-if phase == Paused {
-    if key_pressed("escape") || key_pressed("p") {
+if phase == Paused then
+    if key_pressed("escape") || key_pressed("p") then
         phase = Playing
         phase_t = 0.0
-    }
-    if key_pressed("r") { phase = Playing; restart_level() }
-    if key_pressed("q") { phase = Title; phase_t = 0.0 }
-}
+    end
+    if key_pressed("r") then phase = Playing; restart_level() end
+    if key_pressed("q") then phase = Title; phase_t = 0.0 end
+end
 
-if phase == Complete {
-    if phase_t > 0.6 {
-        if key_pressed("return") || key_pressed("space") {
-            if level_idx + 1 < len(level_files) {
+if phase == Complete then
+    if phase_t > 0.6 then
+        if key_pressed("return") || key_pressed("space") then
+            if level_idx + 1 < len(level_files) then
                 level_idx = level_idx + 1
                 phase = Playing
                 phase_t = 0.0
                 restart_level()
-            } else {
+            else
                 phase = AllDone
                 phase_t = 0.0
-            }
-        }
-        if key_pressed("q") { phase = Title; phase_t = 0.0 }
-    }
-}
+            end
+        end
+        if key_pressed("q") then phase = Title; phase_t = 0.0 end
+    end
+end
 
-if phase == GameOver {
-    if phase_t > 0.6 {
-        if key_pressed("return") || key_pressed("space") {
+if phase == GameOver then
+    if phase_t > 0.6 then
+        if key_pressed("return") || key_pressed("space") then
             lives = 3
             phase = Playing
             phase_t = 0.0
             checkpoint = nil
             restart_level()
-        }
-        if key_pressed("q") {
+        end
+        if key_pressed("q") then
             lives = 3
             phase = Title
             phase_t = 0.0
-        }
-    }
-}
+        end
+    end
+end
 
-if phase == AllDone {
-    if key_pressed("return") || key_pressed("q") {
+if phase == AllDone then
+    if key_pressed("return") || key_pressed("q") then
         phase = Title
         lives = 3
         phase_t = 0.0
-    }
-}
+    end
+end
 
 // ===================== UPDATE: PARTICLES, FLOATS, SHAKE ==============
 
-particles = map(particles, fn(p) {
+particles = map(particles, fn(p)
     {
         kind: p.kind,
         x: p.x + p.vx * dts,
@@ -626,48 +642,52 @@ particles = map(particles, fn(p) {
         life: p.life - dts,
         size: p.size
     }
-})
-particles = filter(particles, fn(p) { p.life > 0.0 })
+end)
+particles = filter(particles, fn(p) -> p.life > 0.0)
 
-floats = map(floats, fn(f) {
+floats = map(floats, fn(f)
     {x: f.x, y: f.y + f.vy * dts, vy: f.vy * 0.92, life: f.life - dts, text: f.text}
-})
-floats = filter(floats, fn(f) { f.life > 0.0 })
+end)
+floats = filter(floats, fn(f) -> f.life > 0.0)
 
-if shake > 0.0 {
+if shake > 0.0 then
     shake = max(0.0, shake - 40.0 * dts)
     shake_dx = random(-shake, shake)
     shake_dy = random(-shake, shake)
-} else {
+else
     shake_dx = 0.0
     shake_dy = 0.0
-}
+end
 
 // =====================================================================
 //                              DRAWING
 // =====================================================================
 
-fn cam_offset_x() { int(cam_x - shake_dx) }
-fn cam_offset_y() { int(0.0 - shake_dy) }
+fn cam_offset_x()
+    int(cam_x - shake_dx)
+end
+fn cam_offset_y()
+    int(0.0 - shake_dy)
+end
 
-fn draw_at(x, y, w, h, r, g, b) {
+fn draw_at(x, y, w, h, r, g, b)
     draw_rect(x - cam_offset_x(), y - cam_offset_y(), w, h, r, g, b)
-}
-fn circ_at(x, y, rad, r, g, b) {
+end
+fn circ_at(x, y, rad, r, g, b)
     draw_circle(x - cam_offset_x(), y - cam_offset_y(), rad, r, g, b)
-}
-fn line_at(x1, y1, x2, y2, r, g, b) {
+end
+fn line_at(x1, y1, x2, y2, r, g, b)
     draw_line(x1 - cam_offset_x(), y1 - cam_offset_y(),
               x2 - cam_offset_x(), y2 - cam_offset_y(), r, g, b)
-}
-fn text_at(t, x, y, sz, r, g, b) {
+end
+fn text_at(t, x, y, sz, r, g, b)
     draw_text(t, x - cam_offset_x(), y - cam_offset_y(), sz, r, g, b)
-}
+end
 
-fn draw_sky() {
+fn draw_sky()
     // gradient
     let row = 0
-    while row < 12 {
+    while row < 12 do
         let sy = row * 50
         let t = float(row) / 11.0
         let r = int(float(level.bg_r) * (1.0 - t) + 240.0 * t)
@@ -675,14 +695,14 @@ fn draw_sky() {
         let b = int(float(level.bg_b) * (1.0 - t) + 200.0 * t)
         draw_rect(0, sy, SCREEN_W, 55, r, g, b)
         row = row + 1
-    }
-}
+    end
+end
 
-fn draw_parallax_mountains() {
+fn draw_parallax_mountains()
     // 2 layers at different parallax speeds
     let off1 = int(cam_x * 0.2)
     let m = 0
-    while m < 10 {
+    while m < 10 do
         let mx = m * 220 - (off1 % 220) - 60
         let mh = 90 + (m % 4) * 25
         let my = 480 - mh
@@ -690,22 +710,22 @@ fn draw_parallax_mountains() {
         let r = 60; let g = 80; let b = 110
         draw_circle(mx + 110, my + mh + 30, mh + 30, r, g, b)
         m = m + 1
-    }
+    end
     let off2 = int(cam_x * 0.4)
     let n = 0
-    while n < 12 {
+    while n < 12 do
         let nx = n * 180 - (off2 % 180) - 40
         let nh = 70 + (n % 3) * 20
         let ny = 510 - nh
         draw_circle(nx + 90, ny + nh + 25, nh + 25, 90, 110, 140)
         n = n + 1
-    }
-}
+    end
+end
 
-fn draw_clouds() {
+fn draw_clouds()
     let off = int(cam_x * 0.1) + frame_count() / 4
     let c = 0
-    while c < 8 {
+    while c < 8 do
         let cx = (c * 240 - (off % 240)) % (SCREEN_W + 240) - 120
         let cy = 60 + (c % 3) * 30
         let cw = 70 + (c % 2) * 20
@@ -713,11 +733,11 @@ fn draw_clouds() {
         draw_circle(cx + cw*2/3, cy + 8, cw/4, 235, 240, 250)
         draw_circle(cx + cw/2, cy, cw/3, 245, 248, 252)
         c = c + 1
-    }
-}
+    end
+end
 
-fn draw_platforms() {
-    for p in level.plats {
+fn draw_platforms()
+    for p in level.plats do
         // dirt body
         draw_at(p.x, p.y + 4, p.w, p.h - 4, 110, 70, 40)
         draw_at(p.x, p.y + p.h - 3, p.w, 3, 80, 50, 28)
@@ -726,26 +746,26 @@ fn draw_platforms() {
         draw_at(p.x, p.y, p.w, 2, 90, 210, 70)
         // blades
         let i = 0
-        while i < p.w / 24 {
+        while i < p.w / 24 do
             let bx = p.x + i * 24 + 4
             line_at(bx, p.y, bx - 1, p.y - 4, 70, 200, 70)
             i = i + 1
-        }
-    }
-    for o in level.oneways {
+        end
+    end
+    for o in level.oneways do
         // wooden plank
         draw_at(o.x, o.y, o.w, 6, 200, 160, 90)
         draw_at(o.x, o.y + 3, o.w, 3, 160, 120, 70)
         let i = 0
-        while i < o.w / 30 {
+        while i < o.w / 30 do
             line_at(o.x + i * 30 + 10, o.y, o.x + i * 30 + 10, o.y + 6, 130, 90, 50)
             i = i + 1
-        }
-    }
-}
+        end
+    end
+end
 
-fn draw_spikes() {
-    for s in level.spikes {
+fn draw_spikes()
+    for s in level.spikes do
         let bx = s.x
         let by = s.y
         // 2 triangle spikes per tile (24 wide)
@@ -754,49 +774,49 @@ fn draw_spikes() {
         line_at(bx + 2, by + 16, bx + 14, by + 16, 220, 220, 230)
         line_at(bx + 12, by + 16, bx + 18, by + 4, 200, 200, 210)
         line_at(bx + 18, by + 4, bx + 22, by + 16, 200, 200, 210)
-    }
-}
+    end
+end
 
-fn draw_coins() {
+fn draw_coins()
     let fc = frame_count()
-    for c in level.coins {
-        if !c.collected {
+    for c in level.coins do
+        if !c.collected then
             let bob = ((fc + c.x * 3) % 40)
-            let off = if bob < 20 { bob/5 - 2 } else { 2 - (bob-20)/5 }
+            let off = if bob < 20 then bob/5 - 2 else 2 - (bob-20)/5 end
             let cy = c.y + off
             circ_at(c.x, cy, 11, 180, 140, 20)
             circ_at(c.x, cy, 8, 255, 210, 40)
             circ_at(c.x - 2, cy - 2, 4, 255, 240, 130)
             let sp = (fc + c.x * 7) % 30
-            if sp < 10 {
+            if sp < 10 then
                 line_at(c.x + 7, cy - 7, c.x + 13, cy - 7, 255, 255, 200)
                 line_at(c.x + 10, cy - 10, c.x + 10, cy - 4, 255, 255, 200)
-            }
-        }
-    }
-}
+            end
+        end
+    end
+end
 
-fn draw_checks() {
-    for ck in level.checks {
+fn draw_checks()
+    for ck in level.checks do
         let lit = checkpoint != nil && abs(checkpoint.x - float(ck.x)) < 4.0
-        let pole_r = if lit { 230 } else { 110 }
-        let pole_g = if lit { 230 } else { 110 }
-        let pole_b = if lit { 240 } else { 130 }
+        let pole_r = if lit then 230 else 110 end
+        let pole_g = if lit then 230 else 110 end
+        let pole_b = if lit then 240 else 130 end
         draw_at(ck.x + 6, ck.y - 32, 3, 32, pole_r, pole_g, pole_b)
-        let flag_r = if lit { 240 } else { 100 }
-        let flag_g = if lit { 80 }  else { 100 }
-        let flag_b = if lit { 90 }  else { 100 }
+        let flag_r = if lit then 240 else 100 end
+        let flag_g = if lit then 80  else 100 end
+        let flag_b = if lit then 90  else 100 end
         draw_at(ck.x + 9, ck.y - 30, 14, 9, flag_r, flag_g, flag_b)
-    }
-}
+    end
+end
 
-fn draw_enemies() {
+fn draw_enemies()
     let fc = frame_count()
-    for e in level.enemies {
-        if !e.alive { continue }
-        if e.kind == "goomba" {
+    for e in level.enemies do
+        if !e.alive then continue end
+        if e.kind == "goomba" then
             let walk = (fc + int(e.x)) % 16
-            let foot_off = if walk < 8 { 0 } else { 2 }
+            let foot_off = if walk < 8 then 0 else 2 end
             // body
             draw_at(int(e.x) + 2, int(e.y) + 4, 20, 18, 120, 70, 30)
             // belly
@@ -804,18 +824,18 @@ fn draw_enemies() {
             // eyes
             draw_at(int(e.x) + 6, int(e.y) + 6, 4, 5, 255, 255, 255)
             draw_at(int(e.x) + 14, int(e.y) + 6, 4, 5, 255, 255, 255)
-            let pup = if e.vx < 0.0 { 0 } else { 2 }
+            let pup = if e.vx < 0.0 then 0 else 2 end
             draw_at(int(e.x) + 7 + pup, int(e.y) + 8, 2, 3, 30, 30, 30)
             draw_at(int(e.x) + 15 + pup, int(e.y) + 8, 2, 3, 30, 30, 30)
             // feet
             draw_at(int(e.x) + 2, int(e.y) + 22 - foot_off, 8, 4, 60, 30, 10)
             draw_at(int(e.x) + 14, int(e.y) + 22 + foot_off, 8, 4, 60, 30, 10)
-        } else if e.kind == "jumper" {
+        elsif e.kind == "jumper" then
             // e.y is already bouncing via the update loop
             let by = int(e.y)
             // small squash when near apex
             let bphase = (e.anim * 4.0) % 3.14159
-            let stretchy = if bphase < 1.5 && bphase > 0.5 { 1 } else { 0 }
+            let stretchy = if bphase < 1.5 && bphase > 0.5 then 1 else 0 end
             // body (slime-y green)
             draw_at(int(e.x), by + 4 - stretchy, 24, 20 + stretchy, 60, 170, 80)
             draw_at(int(e.x) + 4, by + 8, 16, 10, 100, 220, 120)
@@ -824,11 +844,11 @@ fn draw_enemies() {
             draw_at(int(e.x) + 14, by + 8, 4, 5, 255, 255, 255)
             draw_at(int(e.x) + 7, by + 10, 2, 3, 30, 30, 30)
             draw_at(int(e.x) + 15, by + 10, 2, 3, 30, 30, 30)
-        }
-    }
-}
+        end
+    end
+end
 
-fn draw_goal() {
+fn draw_goal()
     let gx = int(level.goal.x)
     let gy = int(level.goal.y)
     let pulse = (frame_count() % 60)
@@ -839,20 +859,20 @@ fn draw_goal() {
     // flag waves
     let wave = sin(float(frame_count()) * 0.15) * 4.0
     let f = 0
-    while f < 24 {
+    while f < 24 do
         let fx = gx + 12 + f
         let fy = gy - 76 + int(sin(float(frame_count()) * 0.1 + float(f) * 0.3) * 1.5)
         draw_at(fx, fy, 1, 16, r, 60, 60)
         f = f + 1
-    }
-}
+    end
+end
 
-fn draw_player() {
+fn draw_player()
     let bx = int(px) - cam_offset_x()
     let by = int(py) - cam_offset_y()
     // flicker if invul
     let show = invul <= 0.0 || (frame_count() % 6) < 3
-    if !show { return }
+    if !show then return end
     let sw = int(float(PLAYER_W) * stretch)
     let sh = int(float(PLAYER_H) * squash)
     let dx = (PLAYER_W - sw) / 2
@@ -866,72 +886,72 @@ fn draw_player() {
     draw_rect(bx + dx, by + dy - 2, sw, 5, 200, 60, 60)
     draw_rect(bx + dx - 2, by + dy + 2, sw + 4, 3, 180, 50, 50)
     // eyes
-    let eo = if facing > 0 { sw - 9 } else { 3 }
+    let eo = if facing > 0 then sw - 9 else 3 end
     draw_rect(bx + dx + eo, by + dy + 6, 4, 4, 255, 255, 255)
     draw_rect(bx + dx + eo - 5, by + dy + 6, 4, 4, 255, 255, 255)
     draw_rect(bx + dx + eo + 1, by + dy + 7, 2, 3, 20, 20, 50)
     draw_rect(bx + dx + eo - 4, by + dy + 7, 2, 3, 20, 20, 50)
     // legs
     let leg = (frame_count() * 3) % 12
-    if abs(vx) > 20.0 && on_ground {
-        if leg < 6 {
+    if abs(vx) > 20.0 && on_ground then
+        if leg < 6 then
             draw_rect(bx + dx + 3, by + dy + sh - 6, 6, 6, 60, 60, 130)
             draw_rect(bx + dx + sw - 9, by + dy + sh - 8, 6, 8, 60, 60, 130)
-        } else {
+        else
             draw_rect(bx + dx + 3, by + dy + sh - 8, 6, 8, 60, 60, 130)
             draw_rect(bx + dx + sw - 9, by + dy + sh - 6, 6, 6, 60, 60, 130)
-        }
-    } else {
+        end
+    else
         draw_rect(bx + dx + 3, by + dy + sh - 6, 6, 6, 60, 60, 130)
         draw_rect(bx + dx + sw - 9, by + dy + sh - 6, 6, 6, 60, 60, 130)
-    }
+    end
     // shoes
     draw_rect(bx + dx + 2, by + dy + sh - 1, 8, 3, 160, 50, 40)
     draw_rect(bx + dx + sw - 10, by + dy + sh - 1, 8, 3, 160, 50, 40)
-}
+end
 
-fn draw_particles() {
-    for p in particles {
+fn draw_particles()
+    for p in particles do
         let r = 220
         let g = 200
         let b = 160
-        if p.kind == "spark" { r = 255; g = 230; b = 80 }
-        if p.kind == "puff"  { r = 200; g = 200; b = 220 }
+        if p.kind == "spark" then r = 255; g = 230; b = 80 end
+        if p.kind == "puff"  then r = 200; g = 200; b = 220 end
         let life_t = p.life
         circ_at(int(p.x), int(p.y), max(1, int(p.size * min(1.0, life_t * 2.0))), r, g, b)
-    }
-}
+    end
+end
 
-fn draw_floats() {
-    for f in floats {
+fn draw_floats()
+    for f in floats do
         let alpha = clamp(f.life, 0.0, 1.0)
         let r = int(255.0 * alpha)
         let g = int(240.0 * alpha)
         let b = int(120.0 * alpha)
         text_at(f.text, int(f.x), int(f.y), 18, r + 30, g, b)
-    }
-}
+    end
+end
 
-fn draw_hud() {
+fn draw_hud()
     // top bar
     draw_rect(0, 0, SCREEN_W, 36, 0, 0, 0)
     draw_rect(0, 0, SCREEN_W, 34, 25, 30, 50)
     // hearts
     let h = 0
-    while h < 3 {
+    while h < 3 do
         let hx = 12 + h * 24
-        if h < lives {
+        if h < lives then
             draw_circle(hx + 4, 18, 6, 220, 60, 70)
             draw_circle(hx + 12, 18, 6, 220, 60, 70)
             draw_rect(hx + 1, 17, 16, 8, 220, 60, 70)
             draw_rect(hx + 4, 22, 10, 4, 220, 60, 70)
-        } else {
+        else
             draw_circle(hx + 4, 18, 6, 60, 25, 30)
             draw_circle(hx + 12, 18, 6, 60, 25, 30)
             draw_rect(hx + 1, 17, 16, 8, 60, 25, 30)
-        }
+        end
         h = h + 1
-    }
+    end
     // coin count
     draw_circle(110, 18, 8, 255, 210, 40)
     draw_circle(108, 16, 4, 255, 240, 130)
@@ -945,26 +965,26 @@ fn draw_hud() {
     // level name
     draw_text(level.name, SCREEN_W - 240, 8, 22, 230, 230, 250)
     // toast
-    if toast_t > 0.0 {
+    if toast_t > 0.0 then
         draw_rect(SCREEN_W/2 - 100, 50, 200, 28, 0, 0, 0)
         draw_text(toast, SCREEN_W/2 - 90, 54, 20, 255, 230, 120)
-    }
-}
+    end
+end
 
 // ================ TITLE / OVERLAYS ====================================
 
-fn draw_title() {
+fn draw_title()
     clear(20, 25, 50)
     // animated stars
     let s = 0
-    while s < 80 {
+    while s < 80 do
         let sx = (s * 137) % SCREEN_W
         let sy = (s * 73) % 400
         let tw = (frame_count() + s * 3) % 60
-        let bright = if tw < 30 { 100 + tw * 4 } else { 220 - (tw - 30) * 4 }
+        let bright = if tw < 30 then 100 + tw * 4 else 220 - (tw - 30) * 4 end
         draw_rect(sx, sy, 2, 2, bright, bright, bright + 20)
         s = s + 1
-    }
+    end
     // title text wobble
     let bob = int(sin(title_t * 2.0) * 4.0)
     draw_text("PETAL  RUNNER", SCREEN_W/2 - 130, 100 + bob, 48, 255, 230, 120)
@@ -972,32 +992,32 @@ fn draw_title() {
     // level select
     draw_text("Select a level:", SCREEN_W/2 - 80, 220, 22, 230, 230, 250)
     let i = 0
-    while i < len(level_titles) {
+    while i < len(level_titles) do
         let y = 260 + i * 36
         let sel = i == menu_idx
-        let bg_col = if sel { 80 } else { 30 }
+        let bg_col = if sel then 80 else 30 end
         draw_rect(SCREEN_W/2 - 200, y - 4, 400, 30, bg_col, bg_col + 10, bg_col + 30)
-        let mark = if sel { ">" } else { " " }
+        let mark = if sel then ">" else " " end
         draw_text("{mark} {i + 1}. {level_titles[i]}", SCREEN_W/2 - 190, y, 22, 240, 240, 255)
         let bt = best_times[i]
-        if bt < 9000.0 {
+        if bt < 9000.0 then
             let mins = int(bt) / 60
             let secs = int(bt) % 60
             draw_text("best {mins}:{secs}  *{best_coins[i]}", SCREEN_W/2 + 60, y, 18, 220, 200, 100)
-        }
+        end
         i = i + 1
-    }
+    end
     draw_text("up/down to choose, ENTER to play", SCREEN_W/2 - 130, 480, 18, 180, 180, 220)
     draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", SCREEN_W/2 - 220, 510, 16, 150, 160, 200)
-}
+end
 
-fn draw_pause_overlay() {
+fn draw_pause_overlay()
     draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
     draw_text("PAUSED", SCREEN_W/2 - 60, SCREEN_H/2 - 60, 36, 240, 240, 255)
     draw_text("ESC resume   R restart   Q quit", SCREEN_W/2 - 140, SCREEN_H/2, 20, 200, 200, 230)
-}
+end
 
-fn draw_complete_overlay() {
+fn draw_complete_overlay()
     let alpha = min(1.0, phase_t * 2.0)
     let dim = int(180.0 * alpha)
     draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
@@ -1009,20 +1029,20 @@ fn draw_complete_overlay() {
     draw_text("time  {mins}:{secs}.{cents}", SCREEN_W/2 - 70, 280, 22, 220, 220, 240)
     draw_text("coins {coins_got}", SCREEN_W/2 - 50, 310, 22, 255, 220, 120)
     draw_text("ENTER to continue   Q for menu", SCREEN_W/2 - 140, 380, 18, 180, 180, 220)
-}
+end
 
-fn draw_gameover_overlay() {
+fn draw_gameover_overlay()
     draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
     draw_text("GAME OVER", SCREEN_W/2 - 110, 200, 40, 220, 80, 80)
     draw_text("ENTER to retry   Q for menu", SCREEN_W/2 - 130, 280, 20, 220, 220, 240)
-}
+end
 
-fn draw_alldone_overlay() {
+fn draw_alldone_overlay()
     clear(20, 30, 50)
     draw_text("YOU FINISHED THE GAME", SCREEN_W/2 - 220, 200, 36, 240, 230, 120)
     draw_text("thanks for playing!", SCREEN_W/2 - 110, 250, 22, 220, 220, 240)
     let i = 0
-    while i < len(level_titles) {
+    while i < len(level_titles) do
         let y = 320 + i * 30
         let bt = best_times[i]
         let mins = int(bt) / 60
@@ -1030,19 +1050,19 @@ fn draw_alldone_overlay() {
         draw_text("{level_titles[i]}  -  {mins}:{secs}  *{best_coins[i]}",
                   SCREEN_W/2 - 180, y, 20, 220, 220, 250)
         i = i + 1
-    }
+    end
     draw_text("ENTER for title", SCREEN_W/2 - 70, 480, 18, 200, 200, 230)
-}
+end
 
 // =====================================================================
 //                              FRAME OUTPUT
 // =====================================================================
 
-if phase == Title {
+if phase == Title then
     draw_title()
-} else if phase == AllDone {
+elsif phase == AllDone then
     draw_alldone_overlay()
-} else {
+else
     // gameplay layered render
     clear(level.bg_r, level.bg_g, level.bg_b)
     draw_sky()
@@ -1058,7 +1078,7 @@ if phase == Title {
     draw_particles()
     draw_floats()
     draw_hud()
-    if phase == Paused { draw_pause_overlay() }
-    if phase == Complete { draw_complete_overlay() }
-    if phase == GameOver { draw_gameover_overlay() }
-}
+    if phase == Paused then draw_pause_overlay() end
+    if phase == Complete then draw_complete_overlay() end
+    if phase == GameOver then draw_gameover_overlay() end
+end

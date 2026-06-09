@@ -10,10 +10,18 @@ let board_y = 18
 
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+    _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+    _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 let grid_line_color = {r: 22, g: 22, b: 35}
 let label_color = {r: 120, g: 140, b: 200}
@@ -75,43 +83,46 @@ let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
 
 // Colors for each piece type (index 1-7 in grid, 0 = empty)
 // I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
-fn piece_color(t) {
-    if t == 1 { #00f0f0 }
-    else if t == 2 { #f0f000 }
-    else if t == 3 { #b432ff }
-    else if t == 4 { #32f032 }
-    else if t == 5 { #f03232 }
-    else if t == 6 { #3264f0 }
-    else if t == 7 { #f0a01e }
-    else { #282828 }
-}
+fn piece_color(t)
+    if t == 1 then #00f0f0
+    elsif t == 2 then #f0f000
+    elsif t == 3 then #b432ff
+    elsif t == 4 then #32f032
+    elsif t == 5 then #f03232
+    elsif t == 6 then #3264f0
+    elsif t == 7 then #f0a01e
+    else #282828
+    end
+end
 
 // Lighter highlight color for 3D top/left edge
-fn piece_highlight(t) {
-    if t == 1 { #96ffff }
-    else if t == 2 { #ffff96 }
-    else if t == 3 { #dc96ff }
-    else if t == 4 { #96ff96 }
-    else if t == 5 { #ff9696 }
-    else if t == 6 { #96aaff }
-    else if t == 7 { #ffd28c }
-    else { #3c3c3c }
-}
+fn piece_highlight(t)
+    if t == 1 then #96ffff
+    elsif t == 2 then #ffff96
+    elsif t == 3 then #dc96ff
+    elsif t == 4 then #96ff96
+    elsif t == 5 then #ff9696
+    elsif t == 6 then #96aaff
+    elsif t == 7 then #ffd28c
+    else #3c3c3c
+    end
+end
 
 // Darker shadow color for 3D bottom/right edge
-fn piece_shadow(t) {
-    if t == 1 { #008c8c }
-    else if t == 2 { #969600 }
-    else if t == 3 { #641496 }
-    else if t == 4 { #148c14 }
-    else if t == 5 { #961414 }
-    else if t == 6 { #143296 }
-    else if t == 7 { #965a0a }
-    else { #141414 }
-}
+fn piece_shadow(t)
+    if t == 1 then #008c8c
+    elsif t == 2 then #969600
+    elsif t == 3 then #641496
+    elsif t == 4 then #148c14
+    elsif t == 5 then #961414
+    elsif t == 6 then #143296
+    elsif t == 7 then #965a0a
+    else #141414
+    end
+end
 
 // Draw a single cell with 3D beveled look
-fn draw_cell(px, py, sz, color_type) {
+fn draw_cell(px, py, sz, color_type)
     let c = piece_color(color_type)
     let hi = piece_highlight(color_type)
     let sh = piece_shadow(color_type)
@@ -129,7 +140,7 @@ fn draw_cell(px, py, sz, color_type) {
     // Inner face (slightly brighter center)
     let inset = bevel
     draw_rect(px + inset, py + inset, sz - 1 - inset * 2, sz - 1 - inset * 2, c.r, c.g, c.b)
-}
+end
 
 // --- State ---
 state grid = []
@@ -149,213 +160,214 @@ state level = 1
 let fall_interval = max(0.1, 0.5 - float(level - 1) * 0.04)
 
 // --- Helper functions ---
-fn get_cell(grd, gx, gy) {
+fn get_cell(grd, gx, gy)
     grd[gy * 10 + gx]
-}
+end
 
-fn set_cell(grd, gx, gy, val) {
+fn set_cell(grd, gx, gy, val)
     grd[gy * 10 + gx] = val
-}
+end
 
-fn get_blocks(piece_type, rot) {
+fn get_blocks(piece_type, rot)
     let shapes = all_pieces[piece_type]
     shapes[rot]
-}
+end
 
-fn check_collision(grd, piece_type, rot, px, py) {
+fn check_collision(grd, piece_type, rot, px, py)
     let blocks = get_blocks(piece_type, rot)
     let collides = false
     let i = 0
-    while i < 4 {
+    while i < 4 do
         let bx = px + blocks[i * 2]
         let by = py + blocks[i * 2 + 1]
-        if bx < 0 || bx >= 10 || by >= 20 {
+        if bx < 0 || bx >= 10 || by >= 20 then
             collides = true
-        }
-        if !collides && by >= 0 {
-            if get_cell(grd, bx, by) != 0 {
+        end
+        if !collides && by >= 0 then
+            if get_cell(grd, bx, by) != 0 then
                 collides = true
-            }
-        }
+            end
+        end
         i += 1
-    }
+    end
     collides
-}
+end
 
 // Compute ghost piece Y (hard drop preview)
-fn ghost_y(grd, piece_type, rot, px, py) {
+fn ghost_y(grd, piece_type, rot, px, py)
     let gy = py
-    while !check_collision(grd, piece_type, rot, px, gy + 1) {
+    while !check_collision(grd, piece_type, rot, px, gy + 1) do
         gy += 1
-    }
+    end
     gy
-}
+end
 
-fn spawn_piece() {
+fn spawn_piece()
     cur_type = next_type
     next_type = int(random(0.0, 7.0))
     cur_rot = 0
     cur_x = 3
     cur_y = 0
-    if check_collision(grid, cur_type, cur_rot, cur_x, cur_y) {
+    if check_collision(grid, cur_type, cur_rot, cur_x, cur_y) then
         game_over = true
-    }
-}
+    end
+end
 
-fn lock_piece() {
+fn lock_piece()
     let blocks = get_blocks(cur_type, cur_rot)
     let i = 0
-    while i < 4 {
+    while i < 4 do
         let bx = cur_x + blocks[i * 2]
         let by = cur_y + blocks[i * 2 + 1]
-        if by >= 0 && by < 20 && bx >= 0 && bx < 10 {
+        if by >= 0 && by < 20 && bx >= 0 && bx < 10 then
             set_cell(grid, bx, by, cur_type + 1)
-        }
+        end
         i += 1
-    }
-}
+    end
+end
 
-fn clear_lines() {
+fn clear_lines()
     let cleared = 0
     let y = 19
-    while y >= 0 {
+    while y >= 0 do
         let full = true
         let x = 0
-        while x < 10 {
-            if get_cell(grid, x, y) == 0 {
+        while x < 10 do
+            if get_cell(grid, x, y) == 0 then
                 full = false
-            }
+            end
             x += 1
-        }
-        if full {
+        end
+        if full then
             cleared += 1
             // Shift everything above down by one
             let row = y
-            while row > 0 {
+            while row > 0 do
                 let col = 0
-                while col < 10 {
+                while col < 10 do
                     set_cell(grid, col, row, get_cell(grid, col, row - 1))
                     col += 1
-                }
+                end
                 row -= 1
-            }
+            end
             // Clear top row
             let col = 0
-            while col < 10 {
+            while col < 10 do
                 set_cell(grid, col, 0, 0)
                 col += 1
-            }
+            end
             // Don't decrement y - check same row again since rows shifted
-        } else {
+        else
             y -= 1
-        }
-    }
-    if cleared == 1 { score += 100 }
-    else if cleared == 2 { score += 300 }
-    else if cleared == 3 { score += 500 }
-    else if cleared == 4 { score += 800 }
-    if cleared > 0 {
+        end
+    end
+    if cleared == 1 then score += 100
+    elsif cleared == 2 then score += 300
+    elsif cleared == 3 then score += 500
+    elsif cleared == 4 then score += 800
+    end
+    if cleared > 0 then
         flash_timer = 0.3
-    }
+    end
     lines_cleared += cleared
     level = 1 + lines_cleared / 10
-}
+end
 
 // --- Initialization ---
-if !initialized {
+if !initialized then
     initialized = true
     let i = 0
-    while i < 200 {
+    while i < 200 do
         push(grid, 0)
         i += 1
-    }
+    end
     next_type = int(random(0.0, 7.0))
     spawn_piece()
-}
+end
 
 // --- Input ---
-if !game_over {
-    if key_pressed("left") {
-        if !check_collision(grid, cur_type, cur_rot, cur_x - 1, cur_y) {
+if !game_over then
+    if key_pressed("left") then
+        if !check_collision(grid, cur_type, cur_rot, cur_x - 1, cur_y) then
             cur_x -= 1
-        }
-    }
-    if key_pressed("right") {
-        if !check_collision(grid, cur_type, cur_rot, cur_x + 1, cur_y) {
+        end
+    end
+    if key_pressed("right") then
+        if !check_collision(grid, cur_type, cur_rot, cur_x + 1, cur_y) then
             cur_x += 1
-        }
-    }
-    if key_pressed("up") {
+        end
+    end
+    if key_pressed("up") then
         let new_rot = (cur_rot + 1) % 4
-        if !check_collision(grid, cur_type, new_rot, cur_x, cur_y) {
+        if !check_collision(grid, cur_type, new_rot, cur_x, cur_y) then
             cur_rot = new_rot
-        }
-    }
+        end
+    end
 
     // Hard drop
-    if key_pressed("space") {
+    if key_pressed("space") then
         let gy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
         cur_y = gy
         lock_piece()
         clear_lines()
         spawn_piece()
         fall_timer = 0.0
-    }
+    end
 
     // Soft drop
     let effective_interval = fall_interval
-    if key_down("down") {
+    if key_down("down") then
         effective_interval = 0.05
-    }
+    end
 
     // Fall timer
     fall_timer += dt()
-    if fall_timer >= effective_interval {
+    if fall_timer >= effective_interval then
         fall_timer = 0.0
-        if !check_collision(grid, cur_type, cur_rot, cur_x, cur_y + 1) {
+        if !check_collision(grid, cur_type, cur_rot, cur_x, cur_y + 1) then
             cur_y += 1
-        } else {
+        else
             lock_piece()
             clear_lines()
             spawn_piece()
-        }
-    }
-}
+        end
+    end
+end
 
 // Flash timer countdown
-if flash_timer > 0.0 {
+if flash_timer > 0.0 then
     flash_timer -= dt()
-    if flash_timer < 0.0 { flash_timer = 0.0 }
-}
+    if flash_timer < 0.0 then flash_timer = 0.0 end
+end
 
 // Restart
-if game_over && key_pressed("return") {
+if game_over && key_pressed("return") then
     game_over = false
     score = 0
     lines_cleared = 0
     level = 1
     let i = 0
-    while i < 200 {
+    while i < 200 do
         grid[i] = 0
         i += 1
-    }
+    end
     next_type = int(random(0.0, 7.0))
     spawn_piece()
-}
+end
 
 // --- Drawing ---
 clear(15, 15, 25)
 
 // Background decorative side stripes
 let stripe = 0
-while stripe < 20 {
+while stripe < 20 do
     let sy = stripe * 30
     let alpha_factor = stripe % 2
-    if alpha_factor == 0 {
+    if alpha_factor == 0 then
         draw_rect(0, sy, board_x - 20, 30, 18, 18, 28)
-    }
+    end
     stripe += 1
-}
+end
 
 // Board outer glow/border (layered rectangles for glow effect)
 draw_rect(board_x - 6, board_y - 6, grid_w * cell_size + 12, grid_h * cell_size + 12, 40, 60, 100)
@@ -367,70 +379,70 @@ draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 8, 8, 16)
 
 // Draw subtle grid lines
 let lx = 0
-while lx <= grid_w {
+while lx <= grid_w do
     draw_line({x: board_x + lx * cell_size, y: board_y}, {x: board_x + lx * cell_size, y: board_y + grid_h * cell_size}, grid_line_color)
     lx += 1
-}
+end
 let ly = 0
-while ly <= grid_h {
+while ly <= grid_h do
     draw_line({x: board_x, y: board_y + ly * cell_size}, {x: board_x + grid_w * cell_size, y: board_y + ly * cell_size}, grid_line_color)
     ly += 1
-}
+end
 
 // Flash effect overlay when lines cleared
-if flash_timer > 0.0 {
+if flash_timer > 0.0 then
     let flash_intensity = int(flash_timer * 400.0)
-    if flash_intensity > 120 { flash_intensity = 120 }
+    if flash_intensity > 120 then flash_intensity = 120 end
     draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, flash_intensity, flash_intensity, flash_intensity)
     // Redraw grid on top after flash
     draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 8, 8, 16)
-}
+end
 
 // Draw grid cells (locked pieces) with 3D effect
 let gy = 0
-while gy < grid_h {
+while gy < grid_h do
     let gx = 0
-    while gx < grid_w {
+    while gx < grid_w do
         let val = get_cell(grid, gx, gy)
-        if val != 0 {
+        if val != 0 then
             draw_cell(board_x + gx * cell_size, board_y + gy * cell_size, cell_size, val)
-        }
+        end
         gx += 1
-    }
+    end
     gy += 1
-}
+end
 
 // Draw ghost piece (drop preview)
-if !game_over {
+if !game_over then
     let gpy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
-    if gpy != cur_y {
+    if gpy != cur_y then
         let blocks = get_blocks(cur_type, cur_rot)
         let c = piece_color(cur_type + 1)
         let i = 0
-        while i < 4 {
+        while i < 4 do
             let bx = cur_x + blocks[i * 2]
             let by = gpy + blocks[i * 2 + 1]
-            if by >= 0 {
+            if by >= 0 then
                 draw_rect_outline(board_x + bx * cell_size + 1, board_y + by * cell_size + 1, cell_size - 3, cell_size - 3, c.r / 2, c.g / 2, c.b / 2)
-            }
+            end
             i += 1
-        }
-    }
-}
+        end
+    end
+end
 
 // Draw current piece with 3D effect
-if !game_over {
+if !game_over then
     let blocks = get_blocks(cur_type, cur_rot)
     let i = 0
-    while i < 4 {
+    while i < 4 do
         let bx = cur_x + blocks[i * 2]
         let by = cur_y + blocks[i * 2 + 1]
-        if by >= 0 {
+        if by >= 0 then
             draw_cell(board_x + bx * cell_size, board_y + by * cell_size, cell_size, cur_type + 1)
-        }
+        end
         i += 1
-    }
-}
+    end
+end
 
 // Board outline (crisp border)
 draw_rect_outline(board_x - 1, board_y - 1, grid_w * cell_size + 2, grid_h * cell_size + 2, 80, 100, 150)
@@ -445,12 +457,12 @@ draw_text("NEXT", {x: sidebar_x + 38, y: board_y + 8}, 20, label_color)
 // Draw next piece centered in panel
 let next_blocks = get_blocks(next_type, 0)
 let ni = 0
-while ni < 4 {
+while ni < 4 do
     let nx = next_blocks[ni * 2]
     let ny = next_blocks[ni * 2 + 1]
     draw_cell(sidebar_x + 20 + nx * 22, board_y + 38 + ny * 22, 22, next_type + 1)
     ni += 1
-}
+end
 
 // SCORE panel
 draw_rect(sidebar_x, board_y + 124, 130, 80, 20, 22, 38)
@@ -492,14 +504,14 @@ draw_text("S", {x: left_x + 126, y: board_y + 240}, 36, {r: 240, g: 160, b: 30})
 
 // Decorative blocks on left side
 let deco = 0
-while deco < 6 {
+while deco < 6 do
     let deco_type = (deco % 7) + 1
     draw_cell(left_x + 10 + deco * 22, board_y + 290, 20, deco_type)
     deco += 1
-}
+end
 
 // Game over overlay
-if game_over {
+if game_over then
     // Darken the board
     draw_rect(board_x, board_y, grid_w * cell_size, grid_h * cell_size, 0, 0, 0)
     // Redraw locked pieces dimmed (just draw dark overlay)
@@ -508,7 +520,7 @@ if game_over {
     draw_text("GAME OVER", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 - 35}, 30, {r: 255, g: 60, b: 80})
     draw_text("Score: " ++ str(score), {x: board_x + 65, y: board_y + grid_h * cell_size / 2}, 22, #ffffff)
     // Blinking restart text
-    if frame_count() % 60 < 40 {
+    if frame_count() % 60 < 40 then
         draw_text("ENTER to restart", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 + 30}, 16, {r: 200, g: 200, b: 220})
-    }
-}
+    end
+end

@@ -119,14 +119,14 @@ a || b    // true if either true
 
 ```petal
 let x = 10
-if x > 5 {
+if x > 5 then
     print("big")
-} else {
+else
     print("small")
-}
+end
 
 // As an expression
-let label = if x > 5 { "big" } else { "small" }
+let label = if x > 5 then "big" else "small" end
 ```
 
 ### For Loops
@@ -134,23 +134,23 @@ let label = if x > 5 { "big" } else { "small" }
 Iterate over lists or ranges:
 
 ```petal
-for item in [1, 2, 3] {
+for item in [1, 2, 3] do
     print(item)
-}
+end
 
-for i in range(0, 5) {
+for i in range(0, 5) do
     print(i)
-}
+end
 ```
 
 ### While Loops
 
 ```petal
 let x = 0
-while x < 10 {
+while x < 10 do
     print(x)
     x += 1
-}
+end
 ```
 
 ### Break and Continue
@@ -158,15 +158,15 @@ while x < 10 {
 `break` exits the loop; `continue` skips to the next iteration.
 
 ```petal
-for i in range(0, 100) {
-    if i == 5 {
+for i in range(0, 100) do
+    if i == 5 then
         break       // exit the loop
-    }
-    if i % 2 == 0 {
+    end
+    if i % 2 == 0 then
         continue    // skip to next iteration
-    }
+    end
     print(i)
-}
+end
 ```
 
 ## Functions
@@ -174,9 +174,9 @@ for i in range(0, 100) {
 Functions are declared with `fn`. The last expression is the implicit return value:
 
 ```petal
-fn add(a, b) {
+fn add(a, b)
     a + b
-}
+end
 
 print(add(2, 3))  // 5
 ```
@@ -184,21 +184,22 @@ print(add(2, 3))  // 5
 Use `return` for early exit:
 
 ```petal
-fn abs(x) {
-    if x < 0 {
+fn abs(x)
+    if x < 0 then
         return -x
-    }
+    end
     x
-}
+end
 ```
 
 ### Recursion
 
 ```petal
-fn factorial(n) {
-    if n <= 1 { 1 }
-    else { n * factorial(n - 1) }
-}
+fn factorial(n)
+    if n <= 1 then 1
+    else n * factorial(n - 1)
+    end
+end
 ```
 
 ### Lambdas
@@ -206,7 +207,7 @@ fn factorial(n) {
 Anonymous functions use `fn` without a name:
 
 ```petal
-let double = fn(x) { x * 2 }
+let double = fn(x) -> x * 2
 print(double(5))  // 10
 ```
 
@@ -215,9 +216,9 @@ print(double(5))  // 10
 Functions capture variables from their enclosing scope:
 
 ```petal
-fn make_adder(n) {
-    fn(x) { x + n }
-}
+fn make_adder(n)
+    fn(x) -> x + n
+end
 
 let add5 = make_adder(5)
 print(add5(10))  // 15
@@ -237,9 +238,9 @@ print(result)  // [3, 2, 1]
 Dot notation desugars to a function call with the receiver as the first argument:
 
 ```petal
-fn greet(person) {
+fn greet(person)
     print("hello, {person.name}!")
-}
+end
 
 let alice = {name: "Alice"}
 alice.greet()  // same as greet(alice)
@@ -270,9 +271,9 @@ zip([1, 2], ["a", "b"])        // [[1, "a"], [2, "b"]]
 ### Higher-Order Functions
 
 ```petal
-map([1, 2, 3], fn(x) { x * 2 })             // [2, 4, 6]
-filter([1, 2, 3, 4], fn(x) { x > 2 })       // [3, 4]
-reduce([1, 2, 3], 0, fn(acc, x) { acc + x }) // 6
+map([1, 2, 3], fn(x) -> x * 2)              // [2, 4, 6]
+filter([1, 2, 3, 4], fn(x) -> x > 2)        // [3, 4]
+reduce([1, 2, 3], 0, fn(acc, x) -> acc + x) // 6
 ```
 
 ## Records
@@ -363,12 +364,12 @@ In the short 3/4-digit forms, each digit is doubled (e.g. `f` → `ff` = 255).
 Enums define named variants, optionally with associated data:
 
 ```petal
-enum Color {
+enum Color
     Red
     Green
     Blue
     Custom(r, g, b)
-}
+end
 
 let c = Red
 let pink = Custom(255, 192, 203)
@@ -379,40 +380,40 @@ let pink = Custom(255, 192, 203)
 The `match` expression tests a value against patterns:
 
 ```petal
-fn describe(x) {
-    match x {
-        0 -> "zero"
-        1 -> "one"
-        n -> "other: {n}"
-    }
-}
+fn describe(x)
+    match x
+        when 0 -> "zero"
+        when 1 -> "one"
+        when n -> "other: {n}"
+    end
+end
 ```
 
 ### Enum Patterns
 
 ```petal
-enum Shape {
+enum Shape
     Circle(radius)
     Rect(w, h)
-}
+end
 
-fn area(shape) {
-    match shape {
-        Circle(r) -> 3.14159 * r * r
-        Rect(w, h) -> w * h
-    }
-}
+fn area(shape)
+    match shape
+        when Circle(r)  -> 3.14159 * r * r
+        when Rect(w, h) -> w * h
+    end
+end
 ```
 
 ### List Destructuring
 
 ```petal
-fn first(list) {
-    match list {
-        [head, ...tail] -> head
-        [] -> nil
-    }
-}
+fn first(list)
+    match list
+        when [head, ...tail] -> head
+        when []              -> nil
+    end
+end
 ```
 
 ### Guards
@@ -420,14 +421,14 @@ fn first(list) {
 Guards add conditions to match arms:
 
 ```petal
-fn classify(n) {
-    match n {
-        x if x < 0 -> "negative"
-        0 -> "zero"
-        x if x > 100 -> "big"
-        x -> "small positive"
-    }
-}
+fn classify(n)
+    match n
+        when x if x < 0   -> "negative"
+        when 0             -> "zero"
+        when x if x > 100 -> "big"
+        when x             -> "small positive"
+    end
+end
 ```
 
 ## State
@@ -436,11 +437,11 @@ The `state` keyword declares persistent variables that survive across function c
 State is initialized once and retains its value on subsequent calls:
 
 ```petal
-fn counter() {
+fn counter()
     state count = 0
     count += 1
     count
-}
+end
 
 print(counter())  // 1
 print(counter())  // 2
@@ -450,13 +451,13 @@ print(counter())  // 3
 State enables patterns like accumulators, caches, and reactive components:
 
 ```petal
-fn running_average(value) {
+fn running_average(value)
     state total = 0
     state count = 0
     total += value
     count += 1
     total / count
-}
+end
 ```
 
 State is preserved during hot reload — if you edit and save a file while it's running,
@@ -491,9 +492,9 @@ Petal supports defining multiple functions with the same name but different
 numbers of parameters. Dispatch happens at runtime by argument count:
 
 ```petal
-fn greet() { print("hi") }
-fn greet(name) { print("hi", name) }
-fn greet(a, b) { print("hi", a, b) }
+fn greet()       print("hi") end
+fn greet(name)   print("hi", name) end
+fn greet(a, b)   print("hi", a, b) end
 ```
 
 See [Function_Overloading.md](Function_Overloading.md) for the full rules.

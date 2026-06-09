@@ -11,11 +11,11 @@
 
 // --- Example 1: Simple trace ---
 
-fn compute(a, b) {
-    let sum = a + b
-    let doubled = sum * 2
-    doubled
-}
+fn compute(a, b)
+  let sum = a + b
+  let doubled = sum * 2
+  doubled
+end
 
 let prog = Program.parse("
     fn compute(a, b) {
@@ -56,9 +56,9 @@ let t2 = weighted_prog.trace()
 let chain = t2.influences("result")
 print("=== Provenance ===")
 print("What influenced 'result' in weighted(3, 4, 5)?")
-for item in chain {
-    print("  ", item.name, "(", item.op, ")")
-}
+for item in chain do
+  print("  ", item.name, "(", item.op, ")")
+end
 // Shows: x -> temp -> result, y -> result
 // Does NOT include z or unused
 
@@ -107,7 +107,7 @@ let path = t4.path("raw", "formatted")
 print("")
 print("=== Dataflow Path ===")
 print("Path from 'raw' to 'formatted':")
-for step in path {
-    print("  ", step.name, "=", step.output)
-}
+for step in path do
+  print("  ", step.name, "=", step.output)
+end
 // raw=100 -> parsed=200 -> validated=201 -> formatted="201"

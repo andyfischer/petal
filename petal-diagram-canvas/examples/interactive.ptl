@@ -35,22 +35,22 @@ let connections = [
 ]
 
 // Handle mouse press: start drag or toggle
-if pressed {
-    for i in range(0, len(nodes)) {
+if pressed then
+    for i in range(0, len(nodes)) do
         let n = nodes[i]
         let dx = float(mx - n.x)
         let dy = float(my - n.y)
         let dist = dx * dx + dy * dy
-        if dist < float(node_r * node_r) {
+        if dist < float(node_r * node_r) then
             dragging = i
             drag_offset_x = n.x - mx
             drag_offset_y = n.y - my
-        }
-    }
-}
+        end
+    end
+end
 
 // Handle drag
-if down && dragging >= 0 {
+if down && dragging >= 0 then
     let n = nodes[dragging]
     nodes[dragging] = {
         x: mx + drag_offset_x,
@@ -58,31 +58,39 @@ if down && dragging >= 0 {
         label: n.label,
         active: n.active
     }
-} else {
+else
     // Release: if we were dragging and didn't move much, toggle
-    if !down && dragging >= 0 {
+    if !down && dragging >= 0 then
         let n = nodes[dragging]
         let dx = float(mx - n.x + drag_offset_x)
         let dy = float(my - n.y + drag_offset_y)
         let moved = dx * dx + dy * dy
-        if moved < 25.0 {
+        if moved < 25.0 then
             nodes[dragging] = {
                 x: n.x, y: n.y,
                 label: n.label,
                 active: !n.active
             }
-        }
-    }
+        end
+    end
     dragging = -1
-}
+end
 
 // Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+    _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+    _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 // === DRAW ===
 clear(bg.r, bg.g, bg.b)
@@ -90,44 +98,44 @@ clear(bg.r, bg.g, bg.b)
 draw_text("Interactive Nodes — drag to move, click to toggle", {x: 20, y: 10}, 16, title_color)
 
 // Draw connections
-for conn in connections {
+for conn in connections do
     let a = nodes[conn[0]]
     let b = nodes[conn[1]]
 
     let both_active = a.active && b.active
-    let c = if both_active { conn_active } else { conn_inactive }
+    let c = if both_active then conn_active else conn_inactive end
 
     draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
-}
+end
 
 // Draw nodes
-for i in range(0, len(nodes)) {
+for i in range(0, len(nodes)) do
     let n = nodes[i]
     let hover_dx = float(mx - n.x)
     let hover_dy = float(my - n.y)
     let hover = (hover_dx * hover_dx + hover_dy * hover_dy) < float(node_r * node_r)
 
-    if n.active {
+    if n.active then
         // Active: green glow
-        if hover {
+        if hover then
             draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
-        }
+        end
         draw_circle(n.x, n.y, node_r, active_outer.r, active_outer.g, active_outer.b)
         draw_circle(n.x, n.y, node_r - 4, active_inner.r, active_inner.g, active_inner.b)
-    } else {
+    else
         // Inactive: dim
-        if hover {
+        if hover then
             draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
-        }
+        end
         draw_circle(n.x, n.y, node_r, inactive_outer.r, inactive_outer.g, inactive_outer.b)
         draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
-    }
+    end
 
     // Label
     let tw = len(n.label) * 7
     draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
-}
+end
 
 // Status bar
-let active_count = len(filter(nodes, fn(n) { n.active }))
+let active_count = len(filter(nodes, fn(n) -> n.active))
 draw_text("Active: " ++ str(active_count) ++ " / " ++ str(len(nodes)), {x: 20, y: 560}, 14, {r: 120, g: 120, b: 150})

@@ -28,17 +28,17 @@ let focal = cy / tan(fov / 2.0)
 let near = 0.2
 
 // ---------- mouse grab on first frame ----------
-if !want_grab {
+if !want_grab then
     grab_mouse()
     want_grab = true
-}
+end
 
 // ---------- input: mouse look ----------
 let look_sens = 0.0022
 yaw = yaw + float(mouse_dx()) * look_sens
 pitch = pitch - float(mouse_dy()) * look_sens
-if pitch > 1.4 { pitch = 1.4 }
-if pitch < -1.4 { pitch = -1.4 }
+if pitch > 1.4 then pitch = 1.4 end
+if pitch < -1.4 then pitch = -1.4 end
 
 // ---------- input: WASD movement in XZ plane ----------
 let move_speed = 6.0
@@ -49,15 +49,15 @@ let right_z = 0.0 - sin(yaw)
 
 let mx = 0.0
 let mz = 0.0
-if key_down("w") { mx = mx + fwd_x; mz = mz + fwd_z }
-if key_down("s") { mx = mx - fwd_x; mz = mz - fwd_z }
-if key_down("d") { mx = mx + right_x; mz = mz + right_z }
-if key_down("a") { mx = mx - right_x; mz = mz - right_z }
+if key_down("w") then mx = mx + fwd_x; mz = mz + fwd_z end
+if key_down("s") then mx = mx - fwd_x; mz = mz - fwd_z end
+if key_down("d") then mx = mx + right_x; mz = mz + right_z end
+if key_down("a") then mx = mx - right_x; mz = mz - right_z end
 let mag_m = sqrt(mx * mx + mz * mz)
-if mag_m > 0.01 {
+if mag_m > 0.01 then
     player_x = player_x + (mx / mag_m) * move_speed * delta
     player_z = player_z + (mz / mag_m) * move_speed * delta
-}
+end
 
 // ---------- rendering constants ----------
 let cos_y = cos(0.0 - yaw)
@@ -67,7 +67,7 @@ let sin_p = sin(0.0 - pitch)
 
 // Transform a world-space point to screen space. Returns a record:
 //   {sx, sy, z, ok}  — ok=false means behind the near plane.
-fn project(x, y, z) {
+fn project(x, y, z)
     let dx = x - player_x
     let dy = y - player_y
     let dz = z - player_z
@@ -77,40 +77,40 @@ fn project(x, y, z) {
     // rotate by -pitch around X: (dy, rz) -> (ry, rz2)
     let ry = dy * cos_p - rz * sin_p
     let rz2 = dy * sin_p + rz * cos_p
-    if rz2 < near {
+    if rz2 < near then
         { sx: 0.0, sy: 0.0, z: rz2, ok: false }
-    } else {
+    else
         {
             sx: cx + rx / rz2 * focal,
             sy: cy - ry / rz2 * focal,
             z: rz2,
             ok: true
         }
-    }
-}
+    end
+end
 
 // Submit a world-space triangle. If any vertex is behind near, skip.
-fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b) {
+fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
     let p1 = project(x1, y1, z1)
     let p2 = project(x2, y2, z2)
     let p3 = project(x3, y3, z3)
-    if p1.ok && p2.ok && p3.ok {
+    if p1.ok && p2.ok && p3.ok then
         triangle3d(
             p1.sx, p1.sy, p1.z,
             p2.sx, p2.sy, p2.z,
             p3.sx, p3.sy, p3.z,
             r, g, b)
-    }
-}
+    end
+end
 
 // Submit a world-space axis-aligned quad (4 corners, 2 triangles).
-fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b) {
+fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b)
     tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
     tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
-}
+end
 
 // Submit an axis-aligned box (cube). x,y,z is the center; w,h,d are extents.
-fn box_(x, y, z, w, h, d, r, g, b) {
+fn box_(x, y, z, w, h, d, r, g, b)
     let hw = w / 2.0
     let hh = h / 2.0
     let hd = d / 2.0
@@ -134,7 +134,7 @@ fn box_(x, y, z, w, h, d, r, g, b) {
          int(min(255.0, float(r) * 1.15)),
          int(min(255.0, float(g) * 1.15)),
          int(min(255.0, float(b) * 1.15)))
-}
+end
 
 // ---------- draw: cyberpunk sky + ground + one neon cube ----------
 sky_gradient(40, 8, 90, 240, 70, 150)
@@ -146,7 +146,7 @@ let ground_color_b = 45
 
 let ground_half = 30.0
 let grid = 0
-while grid < 10 {
+while grid < 10 do
     let z0 = float(grid) * 6.0 - ground_half
     let z1 = z0 + 6.0
     // alternating bands for visual depth
@@ -157,7 +157,7 @@ while grid < 10 {
          0.0 - ground_half, 0.0, z1,
          shade, shade / 2, shade + 20)
     grid = grid + 1
-}
+end
 
 // One neon box in front of spawn.
 box_(0.0, 1.5, 0.0, 3.0, 3.0, 3.0, 200, 40, 180)

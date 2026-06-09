@@ -27,7 +27,7 @@ describe("semicolons", () => {
   });
 
   it("semicolons work inside function bodies", () => {
-    const out = runPetal('fn add(a, b) { let sum = a + b; sum }; print(add(3, 4))');
+    const out = runPetal('fn add(a, b)\n  let sum = a + b; sum\nend\nprint(add(3, 4))');
     expect(out.trim()).toBe("7");
   });
 });

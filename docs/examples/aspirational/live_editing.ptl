@@ -25,9 +25,9 @@ print("Original program:")
 print(prog.source())
 
 // Run three times to build up state
-for i in range(1, 4) {
-    print("Call", i, ":", prog.run())
-}
+for i in range(1, 4) do
+  print("Call", i, ":", prog.run())
+end
 
 // Now edit: change "count + 1" to "count + 10"
 print("")
@@ -43,9 +43,9 @@ print("  Removed:", recon.removed)
 print("")
 
 // Continue running -- state picks up where it left off
-for i in range(4, 7) {
-    print("Call", i, ":", prog.run())
-}
+for i in range(4, 7) do
+  print("Call", i, ":", prog.run())
+end
 print("")
 print("The count continued from 3, now incrementing by 10!")
 print("")

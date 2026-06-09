@@ -21,9 +21,9 @@ describe("range() single argument", () => {
 
   it("range(n) works in for loops", () => {
     const out = runPetal(`
-      for x in range(3) {
+      for x in range(3) do
         print(x)
-      }
+      end
     `);
     expect(out.trim()).toBe("0\n1\n2");
   });
@@ -70,12 +70,12 @@ describe(".includes() method", () => {
 
 describe(".forEach() method", () => {
   it("calls function for each element", () => {
-    const out = runPetal("[10, 20, 30].forEach(fn(x) { print(x) })");
+    const out = runPetal("[10, 20, 30].forEach(fn(x) -> print(x))");
     expect(out.trim()).toBe("10\n20\n30");
   });
 
   it("returns nil", () => {
-    const out = runPetal("let result = [1].forEach(fn(x) { x }); print(result)");
+    const out = runPetal("let result = [1].forEach(fn(x) -> x)\nprint(result)");
     expect(out.trim()).toBe("nil");
   });
 });

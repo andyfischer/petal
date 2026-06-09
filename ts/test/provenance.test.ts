@@ -56,7 +56,7 @@ describe("provenance queries", () => {
 
   it("traces through function calls", () => {
     const prov = showProvenance(
-      "fn double(x) { x * 2 }\nlet result = double(5)",
+      "fn double(x)\n  x * 2\nend\nlet result = double(5)",
       "result"
     );
     expect(prov.root.name).toBe("result");

@@ -14,10 +14,18 @@ let count = example_count()
 // Overloaded draw functions
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+  _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+  _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+  _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 // Layout constants
 let header_h = 80
@@ -28,39 +36,39 @@ let list_w = sw - 120
 let list_top = header_h + 20
 
 // Keyboard navigation
-if key_pressed("down") {
-    selected = min(selected + 1, count - 1)
-}
-if key_pressed("up") {
-    selected = max(selected - 1, 0)
-}
-if key_pressed("return") && count > 0 {
-    launch_script(example_path(selected))
-}
+if key_pressed("down") then
+  selected = min(selected + 1, count - 1)
+end
+if key_pressed("up") then
+  selected = max(selected - 1, 0)
+end
+if key_pressed("return") && count > 0 then
+  launch_script(example_path(selected))
+end
 
 // Mouse hover detection
 let visible_items = (sh - list_top - 20) / (item_h + item_pad)
-for i in range(0, count) {
-    let iy = list_top + i * (item_h + item_pad) - int(scroll_y)
-    if iy > list_top - item_h && iy < sh {
-        if mx > list_x && mx < list_x + list_w && my > iy && my < iy + item_h {
-            selected = i
-            if mouse_pressed(1) {
-                launch_script(example_path(i))
-            }
-        }
-    }
-}
+for i in range(0, count) do
+  let iy = list_top + i * (item_h + item_pad) - int(scroll_y)
+  if iy > list_top - item_h && iy < sh then
+    if mx > list_x && mx < list_x + list_w && my > iy && my < iy + item_h then
+      selected = i
+      if mouse_pressed(1) then
+        launch_script(example_path(i))
+      end
+    end
+  end
+end
 
 // Smooth scroll to keep selected item visible
 let sel_y = float(list_top + selected * (item_h + item_pad)) - scroll_y
 let view_bottom = float(sh - 40)
-if sel_y < float(list_top) {
-    scroll_y = scroll_y - (float(list_top) - sel_y) * 8.0 * delta
-}
-if sel_y + float(item_h) > view_bottom {
-    scroll_y = scroll_y + (sel_y + float(item_h) - view_bottom) * 8.0 * delta
-}
+if sel_y < float(list_top) then
+  scroll_y = scroll_y - (float(list_top) - sel_y) * 8.0 * delta
+end
+if sel_y + float(item_h) > view_bottom then
+  scroll_y = scroll_y + (sel_y + float(item_h) - view_bottom) * 8.0 * delta
+end
 scroll_y = max(0.0, scroll_y)
 
 // === DRAWING ===
@@ -69,15 +77,15 @@ scroll_y = max(0.0, scroll_y)
 clear(12, 12, 30)
 
 // Animated background dots
-for dx in range(0, 20) {
-    for dy in range(0, 15) {
-        let bx = dx * 42 + (fc / 3 + dx * 7) % 6 - 3
-        let by = dy * 42 + (fc / 4 + dy * 5) % 6 - 3
-        let pulse = abs((fc + dx * 13 + dy * 17) % 60 - 30)
-        let brightness = 18 + pulse / 2
-        draw_rect(bx, by, 2, 2, brightness, brightness, brightness + 10)
-    }
-}
+for dx in range(0, 20) do
+  for dy in range(0, 15) do
+    let bx = dx * 42 + (fc / 3 + dx * 7) % 6 - 3
+    let by = dy * 42 + (fc / 4 + dy * 5) % 6 - 3
+    let pulse = abs((fc + dx * 13 + dy * 17) % 60 - 30)
+    let brightness = 18 + pulse / 2
+    draw_rect(bx, by, 2, 2, brightness, brightness, brightness + 10)
+  end
+end
 
 // Header background
 draw_rect(0, 0, sw, header_h, 8, 8, 24)
@@ -90,39 +98,39 @@ draw_text("PETAL GAMES", {x: sw / 2 - 100, y: 18}, 36, {r: 100, g: 180, b: 255})
 draw_text("Select a game to play  |  ESC to quit", {x: sw / 2 - 140, y: 52}, 14, {r: 60, g: 80, b: 120})
 
 // Item list
-for i in range(0, count) {
-    let iy = list_top + i * (item_h + item_pad) - int(scroll_y)
+for i in range(0, count) do
+  let iy = list_top + i * (item_h + item_pad) - int(scroll_y)
 
-    // Skip items outside view
-    if iy > -item_h && iy < sh + item_h {
-        let is_selected = i == selected
-        let name = example_name(i)
+  // Skip items outside view
+  if iy > -item_h && iy < sh + item_h then
+    let is_selected = i == selected
+    let name = example_name(i)
 
-        if is_selected {
-            // Highlighted item
-            let glow = abs(fc % 40 - 20)
-            draw_rect(list_x - 4, iy - 2, list_w + 8, item_h + 4, 20 + glow, 30 + glow, 70 + glow)
-            draw_rect(list_x, iy, list_w, item_h, 30, 45, 100)
-            draw_rect_outline(list_x, iy, list_w, item_h, 80, 140, 255)
+    if is_selected then
+      // Highlighted item
+      let glow = abs(fc % 40 - 20)
+      draw_rect(list_x - 4, iy - 2, list_w + 8, item_h + 4, 20 + glow, 30 + glow, 70 + glow)
+      draw_rect(list_x, iy, list_w, item_h, 30, 45, 100)
+      draw_rect_outline(list_x, iy, list_w, item_h, 80, 140, 255)
 
-            // Selection indicator
-            draw_rect(list_x + 8, iy + 12, 4, item_h - 24, 80, 180, 255)
+      // Selection indicator
+      draw_rect(list_x + 8, iy + 12, 4, item_h - 24, 80, 180, 255)
 
-            // Name text (bright)
-            draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 200, g: 230, b: 255})
+      // Name text (bright)
+      draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 200, g: 230, b: 255})
 
-            // Arrow indicator
-            draw_text(">", {x: list_x + list_w - 30, y: iy + 14}, 22, {r: 80, g: 180, b: 255})
-        } else {
-            // Normal item
-            draw_rect(list_x, iy, list_w, item_h, 18, 20, 40)
-            draw_rect_outline(list_x, iy, list_w, item_h, 35, 40, 70)
+      // Arrow indicator
+      draw_text(">", {x: list_x + list_w - 30, y: iy + 14}, 22, {r: 80, g: 180, b: 255})
+    else
+      // Normal item
+      draw_rect(list_x, iy, list_w, item_h, 18, 20, 40)
+      draw_rect_outline(list_x, iy, list_w, item_h, 35, 40, 70)
 
-            // Name text (dim)
-            draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 120, g: 140, b: 170})
-        }
-    }
-}
+      // Name text (dim)
+      draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 120, g: 140, b: 170})
+    end
+  end
+end
 
 // Top/bottom fade bars (cover scrolled items near edges)
 draw_rect(0, header_h, sw, 20, 12, 12, 30)

@@ -2,56 +2,56 @@
 // Match expressions with destructuring, guards, and nested patterns.
 
 // Basic matching
-fn classify(n) {
-    match n {
-        0 -> "zero"
-        1 -> "one"
-        _ -> "other"
-    }
-}
+fn classify(n)
+  match n
+    when 0 -> "zero"
+    when 1 -> "one"
+    when _ -> "other"
+  end
+end
 print(classify(0), classify(1), classify(42))
 
 // Guards
-fn temperature_label(temp) {
-    match temp {
-        t if t < 0 -> "freezing"
-        t if t < 15 -> "cold"
-        t if t < 25 -> "comfortable"
-        t if t < 35 -> "hot"
-        _ -> "extreme"
-    }
-}
+fn temperature_label(temp)
+  match temp
+    when t if t < 0 -> "freezing"
+    when t if t < 15 -> "cold"
+    when t if t < 25 -> "comfortable"
+    when t if t < 35 -> "hot"
+    when _ -> "extreme"
+  end
+end
 print("20 degrees is {temperature_label(20)}")
 print("-5 degrees is {temperature_label(-5)}")
 
 // List destructuring
-fn describe_list(list) {
-    match list {
-        [] -> "empty list"
-        [x] -> "single element: {x}"
-        [a, b] -> "pair: {a} and {b}"
-        [head, ...tail] -> "starts with {head}, {len(tail)} more"
-    }
-}
+fn describe_list(list)
+  match list
+    when [] -> "empty list"
+    when [x] -> "single element: {x}"
+    when [a, b] -> "pair: {a} and {b}"
+    when [head, ...tail] -> "starts with {head}, {len(tail)} more"
+  end
+end
 print(describe_list([]))
 print(describe_list([42]))
 print(describe_list([1, 2]))
 print(describe_list([1, 2, 3, 4, 5]))
 
 // Nested destructuring
-enum Expr {
-    Num(value)
-    Add(left, right)
-    Mul(left, right)
-}
+enum Expr
+  Num(value)
+  Add(left, right)
+  Mul(left, right)
+end
 
-fn eval(expr) {
-    match expr {
-        Num(v) -> v
-        Add(l, r) -> eval(l) + eval(r)
-        Mul(l, r) -> eval(l) * eval(r)
-    }
-}
+fn eval(expr)
+  match expr
+    when Num(v) -> v
+    when Add(l, r) -> eval(l) + eval(r)
+    when Mul(l, r) -> eval(l) * eval(r)
+  end
+end
 
 // (2 + 3) * 4 = 20
 let expression = Mul(Add(Num(2), Num(3)), Num(4))

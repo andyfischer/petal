@@ -172,7 +172,7 @@ print(el)`;
     });
 
     it("comparison with space still works", () => {
-      const code = `let x = 5\nif x < 10 { print("small") }`;
+      const code = `let x = 5\nif x < 10 then print("small") end`;
       expect(runPetal(code)).toBe("small");
     });
 

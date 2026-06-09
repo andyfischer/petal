@@ -23,6 +23,11 @@ pub enum Token {
     Continue,
     State,
     Enum,
+    End,
+    Then,
+    Do,
+    Elsif,
+    When,
 
     // Operators
     Plus,
@@ -692,6 +697,11 @@ impl Lexer {
             "continue" => Token::Continue,
             "state" => Token::State,
             "enum" => Token::Enum,
+            "end" => Token::End,
+            "then" => Token::Then,
+            "do" => Token::Do,
+            "elsif" => Token::Elsif,
+            "when" => Token::When,
             "true" => Token::True,
             "false" => Token::False,
             "nil" => Token::Nil,
@@ -749,12 +759,13 @@ mod tests {
 
     #[test]
     fn lex_keywords() {
-        let tokens = tokenize("let fn if else for in while match return break continue state enum");
+        let tokens = tokenize("let fn if else for in while match return break continue state enum end then do elsif when");
         assert_eq!(tokens, vec![
             Token::Let, Token::Fn, Token::If, Token::Else,
             Token::For, Token::In, Token::While, Token::Match,
             Token::Return, Token::Break, Token::Continue,
             Token::State, Token::Enum,
+            Token::End, Token::Then, Token::Do, Token::Elsif, Token::When,
         ]);
     }
 

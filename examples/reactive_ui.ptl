@@ -3,50 +3,50 @@
 // Each component is a function. State is co-located with the view logic, and
 // persists across render frames.
 
-enum Event {
-    None()
-    Add(text)
-    Clear()
-}
+enum Event
+  None()
+  Add(text)
+  Clear()
+end
 
-fn button(label, clicked) {
-    state click_count = 0
-    if clicked {
-        click_count = click_count + 1
-    }
-    {
-        type: "button"
-        label: "{label} ({click_count})"
-        clicks: click_count
-    }
-}
+fn button(label, clicked)
+  state click_count = 0
+  if clicked then
+    click_count = click_count + 1
+  end
+  {
+    type: "button"
+    label: "{label} ({click_count})"
+    clicks: click_count
+  }
+end
 
-fn todo_app(event) {
-    state items = ["Buy groceries", "Write code", "Read a book"]
+fn todo_app(event)
+  state items = ["Buy groceries", "Write code", "Read a book"]
 
-    // Handle events (a real UI runtime would feed these per frame).
-    let was_add = match event {
-        Add(text) -> {
-            push(items, text)
-            true
-        }
-        Clear() -> {
-            items = []
-            false
-        }
-        None() -> false
-    }
+  // Handle events (a real UI runtime would feed these per frame).
+  let was_add = match event
+    when Add(text) do
+      push(items, text)
+      true
+    end
+    when Clear() do
+      items = []
+      false
+    end
+    when None() -> false
+  end
 
-    let add_btn = button("Add", was_add)
+  let add_btn = button("Add", was_add)
 
-    print("  Todo App ({len(items)} items)")
-    print("  --------")
-    for i in range(0, len(items)) {
-        print("  [ ] {items[i]}")
-    }
-    print("  [{add_btn.label}]")
-    print("")
-}
+  print("  Todo App ({len(items)} items)")
+  print("  --------")
+  for i in range(0, len(items)) do
+    print("  [ ] {items[i]}")
+  end
+  print("  [{add_btn.label}]")
+  print("")
+end
 
 print("Reactive UI Demo")
 print("=================")
@@ -54,13 +54,13 @@ print("")
 
 // Simulate 4 render frames with different events.
 let events = [
-    None(),
-    Add("Water plants"),
-    Add("Call Alex"),
-    None()
+  None(),
+  Add("Water plants"),
+  Add("Call Alex"),
+  None()
 ]
 
-for frame in range(0, len(events)) {
-    print("Frame {frame + 1}:")
-    todo_app(events[frame])
-}
+for frame in range(0, len(events)) do
+  print("Frame {frame + 1}:")
+  todo_app(events[frame])
+end

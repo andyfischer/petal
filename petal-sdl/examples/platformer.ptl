@@ -68,10 +68,18 @@ let fc = frame_count()
 
 let _draw_line = draw_line
 let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b) { _draw_line(x1, y1, x2, y2, r, g, b) }
-fn draw_line(a, b, color) { _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b) }
-fn draw_text(text, x, y, size, r, g, b) { _draw_text(text, x, y, size, r, g, b) }
-fn draw_text(text, pos, size, color) { _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b) }
+fn draw_line(x1, y1, x2, y2, r, g, b)
+    _draw_line(x1, y1, x2, y2, r, g, b)
+end
+fn draw_line(a, b, color)
+    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+end
+fn draw_text(text, x, y, size, r, g, b)
+    _draw_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, pos, size, color)
+    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+end
 
 let grass_green = {r: 50, g: 170, b: 45}
 let grass_green2 = {r: 60, g: 185, b: 50}
@@ -83,21 +91,21 @@ let hint_color = {r: 180, g: 180, b: 200}
 
 // Input
 vx = 0.0
-if key_down("left") {
+if key_down("left") then
     vx = -move_speed
     facing_right = false
-}
-if key_down("right") {
+end
+if key_down("right") then
     vx = move_speed
     facing_right = true
-}
-if key_pressed("space") && on_ground {
+end
+if key_pressed("space") && on_ground then
     vy = jump_force
     on_ground = false
     jump_timer = 0.3
     // Spawn dust particles
     let i = 0
-    while i < 6 {
+    while i < 6 do
         push(particles, {
             x: px + float(pw) / 2.0 + random(-8.0, 8.0),
             y: py + float(ph),
@@ -107,15 +115,15 @@ if key_pressed("space") && on_ground {
             size: random(2.0, 5.0)
         })
         i += 1
-    }
-}
+    end
+end
 
-if jump_timer > 0.0 {
+if jump_timer > 0.0 then
     jump_timer -= delta
-}
+end
 
 // Update particles
-particles = map(particles, fn(p) {
+particles = map(particles, fn(p)
     {
         x: p.x + p.vx * delta,
         y: p.y + p.vy * delta,
@@ -124,8 +132,8 @@ particles = map(particles, fn(p) {
         life: p.life - delta,
         size: p.size * 0.97
     }
-})
-particles = filter(particles, fn(p) { p.life > 0.0 })
+end)
+particles = filter(particles, fn(p) -> p.life > 0.0)
 
 // Apply gravity
 vy += gravity * delta
@@ -134,71 +142,71 @@ vy += gravity * delta
 px += vx * delta
 
 // Wrap horizontally
-if px > 800.0 { px = px - 824.0 }
-if px < -24.0 { px = px + 824.0 }
+if px > 800.0 then px = px - 824.0 end
+if px < -24.0 then px = px + 824.0 end
 
 // Move vertically
 py += vy * delta
 
 // Platform collision
 on_ground = false
-for plat in platforms {
+for plat in platforms do
     let plat_x = float(plat.x)
     let plat_y = float(plat.y)
     let plat_w = float(plat.w)
     let plat_h = float(plat.h)
 
     // Check if player overlaps platform horizontally
-    if px + float(pw) > plat_x && px < plat_x + plat_w {
+    if px + float(pw) > plat_x && px < plat_x + plat_w then
         // Falling onto platform (feet at py + ph)
-        if vy >= 0.0 && py + float(ph) > plat_y && py + float(ph) < plat_y + plat_h + vy * delta {
+        if vy >= 0.0 && py + float(ph) > plat_y && py + float(ph) < plat_y + plat_h + vy * delta then
             py = plat_y - float(ph)
             vy = 0.0
             on_ground = true
-        }
-    }
-}
+        end
+    end
+end
 
 // Coin collision
-coins = map(coins, fn(c) {
-    if c.collected {
+coins = map(coins, fn(c)
+    if c.collected then
         c
-    } else {
+    else
         let cx = float(c.x)
         let cy = float(c.y)
         let dist_x = px + float(pw) / 2.0 - cx
         let dist_y = py + float(ph) / 2.0 - cy
-        if abs(dist_x) < 20.0 && abs(dist_y) < 20.0 {
+        if abs(dist_x) < 20.0 && abs(dist_y) < 20.0 then
             score += 1
             {x: c.x, y: c.y, collected: true}
-        } else {
+        else
             c
-        }
-    }
-})
+        end
+    end
+end)
 
 // Keep player on screen vertically
-if py > 560.0 {
+if py > 560.0 then
     py = 400.0
     vy = 0.0
-}
+end
 
 // === DRAWING ===
 
 // --- Sky gradient background ---
 // Dark blue at top, lighter blue-purple toward horizon
 let sky_row = 0
-while sky_row < 11 {
+while sky_row < 11 do
     let sy = sky_row * 50
     let sr = 25 + sky_row * 4
     let sg = 25 + sky_row * 6
     let sb = 80 + sky_row * 8
     draw_rect(0, sy, 800, 55, sr, sg, sb)
     sky_row += 1
-}
+end
 
 // --- Clouds ---
-for cloud in clouds {
+for cloud in clouds do
     let cx = cloud.x
     let cy = cloud.y
     let cw = cloud.w
@@ -209,21 +217,21 @@ for cloud in clouds {
     draw_circle(cloud_x + cw / 3, cy + 8, cw / 4, 220, 225, 240)
     draw_circle(cloud_x + cw * 2 / 3, cy + 8, cw / 4, 220, 225, 240)
     draw_circle(cloud_x + cw / 2, cy, cw / 3, 230, 235, 248)
-}
+end
 
 // --- Background hills (distant, darker) ---
 let hill = 0
-while hill < 8 {
+while hill < 8 do
     let hx = hill * 120 - 40
     let hw = 160
     let hh = 40 + (hill % 3) * 15
     let hy = 550 - hh
     draw_circle(hx + hw / 2, hy + hh + 10, hw / 2, 35 + hill * 2, 55 + hill * 3, 30 + hill * 2)
     hill += 1
-}
+end
 
 // --- Background trees ---
-for tree in trees {
+for tree in trees do
     let tx = tree.x
     let th = tree.h
     let ty = 550 - th
@@ -233,7 +241,7 @@ for tree in trees {
     draw_circle(tx + 12, ty + th / 3, 18, 30, 85, 30)
     draw_circle(tx + 12, ty + th / 6, 14, 40, 100, 35)
     draw_circle(tx + 12, ty + 4, 10, 50, 115, 40)
-}
+end
 
 // --- Ground (main platform) bottom fill ---
 draw_rect(0, 550, 800, 50, 80, 50, 30)
@@ -243,25 +251,25 @@ draw_rect(0, 548, 800, 6, 60, 160, 50)
 draw_rect(0, 548, 800, 2, 80, 190, 60)
 // Dirt texture spots
 let dirt = 0
-while dirt < 12 {
+while dirt < 12 do
     let dx = dirt * 70 + 15
     draw_rect(dx, 565, 12, 5, 70, 42, 22)
     draw_rect(dx + 30, 575, 8, 4, 65, 38, 20)
     dirt += 1
-}
+end
 // Grass blades on ground
 let blade = 0
-while blade < 30 {
+while blade < 30 do
     let bx = blade * 27 + 5
     let bh = 6 + (blade % 3) * 3
     draw_line({x: bx, y: 548}, {x: bx - 2, y: 548 - bh}, grass_green)
     draw_line({x: bx + 8, y: 548}, {x: bx + 10, y: 548 - bh - 1}, grass_green2)
     blade += 1
-}
+end
 
 // --- Draw floating platforms (with grass/dirt detail) ---
-for plat in platforms {
-    if plat.y < 540 {
+for plat in platforms do
+    if plat.y < 540 then
         // Dirt body
         draw_rect(plat.x, plat.y + 3, plat.w, plat.h - 3, 110, 70, 40)
         // Darker bottom edge
@@ -272,36 +280,36 @@ for plat in platforms {
         draw_rect(plat.x, plat.y, plat.w, 2, 80, 200, 65)
         // Grass blade details on platforms
         let pb = 0
-        while pb < plat.w / 15 {
+        while pb < plat.w / 15 do
             let pbx = plat.x + pb * 15 + 4
             draw_line({x: pbx, y: plat.y}, {x: pbx - 1, y: plat.y - 4}, grass_green3)
             pb += 1
-        }
+        end
         // Side edges
         draw_line({x: plat.x, y: plat.y}, {x: plat.x, y: plat.y + plat.h}, plat_edge_brown)
         draw_line({x: plat.x + plat.w - 1, y: plat.y}, {x: plat.x + plat.w - 1, y: plat.y + plat.h}, plat_edge_brown)
-    }
-}
+    end
+end
 
 // --- Draw particles (jump dust) ---
-for p in particles {
+for p in particles do
     let alpha_ratio = p.life / 0.5
     let pr = int(200.0 * alpha_ratio)
     let pg = int(180.0 * alpha_ratio)
     let pb = int(140.0 * alpha_ratio)
     draw_circle(int(p.x), int(p.y), int(p.size), 140 + pr / 3, 120 + pg / 3, 90 + pb / 3)
-}
+end
 
 // --- Draw coins (with sparkle animation) ---
-for c in coins {
-    if !c.collected {
+for c in coins do
+    if !c.collected then
         let coin_bob = (fc + c.x * 3) % 40
         let bob_offset = 0
-        if coin_bob < 20 {
+        if coin_bob < 20 then
             bob_offset = coin_bob / 5 - 2
-        } else {
+        else
             bob_offset = 2 - (coin_bob - 20) / 5
-        }
+        end
         let cy = c.y + bob_offset
 
         // Coin glow (outer ring)
@@ -312,14 +320,14 @@ for c in coins {
         draw_circle(c.x - 2, cy - 2, 4, 255, 240, 120)
         // Sparkle effect
         let sparkle_phase = (fc + c.x * 7) % 30
-        if sparkle_phase < 10 {
+        if sparkle_phase < 10 then
             let sx = c.x + 8
             let sy_off = cy - 8
             draw_line({x: sx - 3, y: sy_off}, {x: sx + 3, y: sy_off}, sparkle_yellow)
             draw_line({x: sx, y: sy_off - 3}, {x: sx, y: sy_off + 3}, sparkle_yellow)
-        }
-    }
-}
+        end
+    end
+end
 
 // --- Draw player character ---
 let player_x = int(px)
@@ -338,58 +346,58 @@ draw_rect(player_x, player_y - 2, 24, 6, 200, 60, 60)
 draw_rect(player_x - 2, player_y + 3, 28, 3, 180, 50, 50)
 
 // Eyes (direction-aware)
-if facing_right {
+if facing_right then
     // Right-facing eyes
     draw_rect(player_x + 12, player_y + 6, 4, 5, 255, 255, 255)
     draw_rect(player_x + 17, player_y + 6, 4, 5, 255, 255, 255)
     // Pupils
     draw_rect(player_x + 14, player_y + 8, 2, 3, 30, 30, 60)
     draw_rect(player_x + 19, player_y + 8, 2, 3, 30, 30, 60)
-} else {
+else
     // Left-facing eyes
     draw_rect(player_x + 3, player_y + 6, 4, 5, 255, 255, 255)
     draw_rect(player_x + 8, player_y + 6, 4, 5, 255, 255, 255)
     // Pupils
     draw_rect(player_x + 3, player_y + 8, 2, 3, 30, 30, 60)
     draw_rect(player_x + 8, player_y + 8, 2, 3, 30, 30, 60)
-}
+end
 
 // Mouth (small)
-if facing_right {
+if facing_right then
     draw_rect(player_x + 14, player_y + 13, 4, 2, 200, 100, 100)
-} else {
+else
     draw_rect(player_x + 6, player_y + 13, 4, 2, 200, 100, 100)
-}
+end
 
 // Legs (animated when moving)
 let leg_phase = (fc * 3) % 12
-if abs(vx) > 10.0 {
-    if leg_phase < 6 {
+if abs(vx) > 10.0 then
+    if leg_phase < 6 then
         draw_rect(player_x + 4, player_y + 28, 6, 6, 50, 50, 120)
         draw_rect(player_x + 14, player_y + 26, 6, 8, 50, 50, 120)
-    } else {
+    else
         draw_rect(player_x + 4, player_y + 26, 6, 8, 50, 50, 120)
         draw_rect(player_x + 14, player_y + 28, 6, 6, 50, 50, 120)
-    }
-} else {
+    end
+else
     // Standing
     draw_rect(player_x + 4, player_y + 28, 6, 6, 50, 50, 120)
     draw_rect(player_x + 14, player_y + 28, 6, 6, 50, 50, 120)
-}
+end
 
 // Shoes
-if abs(vx) > 10.0 {
-    if leg_phase < 6 {
+if abs(vx) > 10.0 then
+    if leg_phase < 6 then
         draw_rect(player_x + 3, player_y + 33, 8, 3, 160, 50, 40)
         draw_rect(player_x + 13, player_y + 33, 8, 3, 160, 50, 40)
-    } else {
+    else
         draw_rect(player_x + 3, player_y + 33, 8, 3, 160, 50, 40)
         draw_rect(player_x + 13, player_y + 33, 8, 3, 160, 50, 40)
-    }
-} else {
+    end
+else
     draw_rect(player_x + 3, player_y + 33, 8, 3, 160, 50, 40)
     draw_rect(player_x + 13, player_y + 33, 8, 3, 160, 50, 40)
-}
+end
 
 // --- HUD ---
 // Score background

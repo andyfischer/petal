@@ -17,8 +17,8 @@ let num_particles = 500
 let field_scale = 0.008
 
 // Initialize particles
-if len(particles) == 0 {
-    for i in range(0, num_particles) {
+if len(particles) == 0 then
+    for i in range(0, num_particles) do
         push(particles, {
             x: random(0.0, sw),
             y: random(0.0, sh),
@@ -27,20 +27,20 @@ if len(particles) == 0 {
             speed: random(40.0, 100.0),
             hue: random(0.0, 1.0)
         })
-    }
-}
+    end
+end
 
 // Flow field function - returns angle at position
-fn field_angle(px, py, t) {
+fn field_angle(px, py, t)
     let n = sin(px * field_scale + t) * cos(py * field_scale * 0.7 + t * 0.5)
     n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
     n += cos(px * field_scale * 1.5 - py * field_scale + t * 0.3) * 0.3
     n * PI * 2.0
-}
+end
 
 // Update particles
 let new_particles = []
-for p in particles {
+for p in particles do
     let angle = field_angle(p.x, p.y, field_time)
 
     let vx = cos(angle) * p.speed
@@ -51,10 +51,10 @@ for p in particles {
 
     let alive = true
     // Respawn if off screen
-    if nx < 0.0 || nx > sw || ny < 0.0 || ny > sh {
+    if nx < 0.0 || nx > sw || ny < 0.0 || ny > sh then
         nx = random(0.0, sw)
         ny = random(0.0, sh)
-    }
+    end
 
     push(new_particles, {
         x: nx, y: ny,
@@ -62,7 +62,7 @@ for p in particles {
         speed: p.speed,
         hue: p.hue
     })
-}
+end
 particles = new_particles
 
 // === Drawing ===
@@ -72,7 +72,7 @@ particles = new_particles
 draw_rect(0, 0, int(sw), int(sh), 5, 5, 12)
 
 // Draw particles as short lines (from previous to current position)
-for p in particles {
+for p in particles do
     // Color based on hue + position
     let h = p.hue + field_angle(p.x, p.y, field_time) * 0.05
     let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
@@ -80,16 +80,17 @@ for p in particles {
     let cg = 0
     let cb = 0
 
-    if hmod < 1.0 { cr = 255; cg = int(hmod * 255.0); cb = 50 }
-    else if hmod < 2.0 { cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 50 }
-    else if hmod < 3.0 { cr = 50; cg = 255; cb = int((hmod - 2.0) * 255.0) }
-    else if hmod < 4.0 { cr = 50; cg = int((4.0 - hmod) * 255.0); cb = 255 }
-    else if hmod < 5.0 { cr = int((hmod - 4.0) * 200.0) + 50; cg = 50; cb = 255 }
-    else { cr = 255; cg = 50; cb = int((6.0 - hmod) * 200.0) + 50 }
+    if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 50
+    elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 50
+    elsif hmod < 3.0 then cr = 50; cg = 255; cb = int((hmod - 2.0) * 255.0)
+    elsif hmod < 4.0 then cr = 50; cg = int((4.0 - hmod) * 255.0); cb = 255
+    elsif hmod < 5.0 then cr = int((hmod - 4.0) * 200.0) + 50; cg = 50; cb = 255
+    else cr = 255; cg = 50; cb = int((6.0 - hmod) * 200.0) + 50
+    end
 
     draw_line(int(p.prev_x), int(p.prev_y), int(p.x), int(p.y), cr, cg, cb)
     draw_circle(int(p.x), int(p.y), 1, min(255, cr + 50), min(255, cg + 50), min(255, cb + 50))
-}
+end
 
 // Title (with background for readability)
 draw_rect(5, 5, 200, 50, 0, 0, 0)

@@ -13,8 +13,8 @@ let PI = pi()
 time += delta
 
 // Initialize pendulums
-if len(pendulums) == 0 {
-    for i in range(0, 5) {
+if len(pendulums) == 0 then
+    for i in range(0, 5) do
         let t = float(i)
         push(pendulums, {
             origin_x: 100.0 + t * 140.0,
@@ -27,12 +27,12 @@ if len(pendulums) == 0 {
             g: int(200.0 - t * 20.0),
             b: int(220.0 + t * 7.0)
         })
-    }
-}
+    end
+end
 
 // Update pendulums
 let new_pendulums = []
-for p in pendulums {
+for p in pendulums do
     let gravity = 1.5
     let angular_acc = -gravity / p.length * sin(p.angle) * 60.0
     let nav = (p.angular_vel + angular_acc * delta) * p.damping
@@ -43,7 +43,7 @@ for p in pendulums {
         length: p.length, angle: na, angular_vel: nav,
         damping: p.damping, r: p.r, g: p.g, b: p.b
     })
-}
+end
 pendulums = new_pendulums
 
 // Wave offset
@@ -55,7 +55,7 @@ clear(10, 12, 25)
 // --- Sine wave at bottom ---
 let wave_y_base = sh - 120.0
 let wave_points = 80
-for i in range(0, wave_points - 1) {
+for i in range(0, wave_points - 1) do
     let x1 = float(i) / float(wave_points) * sw
     let x2 = float(i + 1) / float(wave_points) * sw
     let y1 = wave_y_base + sin(float(i) * 0.15 + wave_offset) * 30.0
@@ -73,11 +73,11 @@ for i in range(0, wave_points - 1) {
     let wy5 = wave_y_base + sin(float(i) * 0.2 + wave_offset * 1.3 + 2.0) * 20.0 + 40.0
     let wy6 = wave_y_base + sin(float(i + 1) * 0.2 + wave_offset * 1.3 + 2.0) * 20.0 + 40.0
     draw_line(int(x1), int(wy5), int(x2), int(wy6), 30, 50, 120)
-}
+end
 
 // --- Standing wave (middle) ---
 let standing_y = sh / 2.0 + 30.0
-for i in range(0, wave_points - 1) {
+for i in range(0, wave_points - 1) do
     let x1 = float(i) / float(wave_points) * sw
     let x2 = float(i + 1) / float(wave_points) * sw
 
@@ -92,14 +92,14 @@ for i in range(0, wave_points - 1) {
     let intensity = int(abs(amp1 + amp2) * 3.0)
     draw_line(int(x1), int(y1), int(x2), int(y2),
               min(255, 100 + intensity), 60, min(255, 150 + intensity))
-}
+end
 draw_text("Standing Wave", 10, int(standing_y) - 50, 12, 80, 60, 120)
 
 // --- Circular motion (Lissajous pattern) ---
 let liss_cx = sw - 100.0
 let liss_cy = 180.0
 let liss_points = 200
-for i in range(0, liss_points - 1) {
+for i in range(0, liss_points - 1) do
     let t1 = float(i) * 0.05 + time * 0.5
     let t2 = float(i + 1) * 0.05 + time * 0.5
     let x1 = liss_cx + sin(t1 * 3.0) * 50.0
@@ -109,7 +109,7 @@ for i in range(0, liss_points - 1) {
     let fade = float(i) / float(liss_points)
     draw_line(int(x1), int(y1), int(x2), int(y2),
               int(fade * 200.0), int(fade * 150.0), int(100.0 + fade * 155.0))
-}
+end
 // Current point
 let liss_px = liss_cx + sin(time * 0.5 * 3.0) * 50.0
 let liss_py = liss_cy + sin(time * 0.5 * 2.0) * 50.0
@@ -117,7 +117,7 @@ draw_circle(int(liss_px), int(liss_py), 5, 255, 200, 255)
 draw_text("Lissajous", int(liss_cx) - 30, int(liss_cy) + 60, 12, 80, 80, 120)
 
 // --- Draw pendulums ---
-for p in pendulums {
+for p in pendulums do
     let bob_x = p.origin_x + sin(p.angle) * p.length
     let bob_y = p.origin_y + cos(p.angle) * p.length
 
@@ -134,7 +134,7 @@ for p in pendulums {
     // Highlight
     draw_circle(int(bob_x) - 3, int(bob_y) - 3, 4,
                 min(255, p.r + 80), min(255, p.g + 80), min(255, p.b + 80))
-}
+end
 
 draw_text("Oscillation: Pendulums & Waves", 10, 10, 16, 100, 100, 120)
 draw_text("Sine Waves", 10, int(wave_y_base) - 50, 12, 60, 100, 160)

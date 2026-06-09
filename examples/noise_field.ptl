@@ -12,15 +12,15 @@ let levels = len(ramp)
 print("Perlin noise field")
 print("==================")
 
-for y in range(0, height) {
-    let row = ""
-    for x in range(0, width) {
-        // Scale coordinates so neighboring cells sample nearby points
-        let n = noise(float(x) * 0.12, float(y) * 0.18)
-        // noise() returns roughly -1..1; map into 0..levels
-        let idx = int(map_range(n, -1.0, 1.0, 0.0, float(levels)))
-        let clamped = clamp(float(idx), 0.0, float(levels - 1))
-        row = row ++ ramp[int(clamped)]
-    }
-    print(row)
-}
+for y in range(0, height) do
+  let row = ""
+  for x in range(0, width) do
+    // Scale coordinates so neighboring cells sample nearby points
+    let n = noise(float(x) * 0.12, float(y) * 0.18)
+    // noise() returns roughly -1..1; map into 0..levels
+    let idx = int(map_range(n, -1.0, 1.0, 0.0, float(levels)))
+    let clamped = clamp(float(idx), 0.0, float(levels - 1))
+    row = row ++ ramp[int(clamped)]
+  end
+  print(row)
+end

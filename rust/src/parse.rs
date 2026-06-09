@@ -38,15 +38,6 @@ impl Parser {
         }
     }
 
-    fn peek_ahead(&self, offset: usize) -> &Token {
-        let idx = self.pos + offset;
-        if idx < self.tokens.len() {
-            &self.tokens[idx]
-        } else {
-            &Token::Eof
-        }
-    }
-
     fn advance(&mut self) -> Token {
         let tok = self.tokens[self.pos].clone();
         self.pos += 1;
@@ -188,20 +179,17 @@ impl Parser {
         let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
         self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        let body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
+        let body = self.parse_block_until(&[Token::End])?;
+        self.expect(&Token::End)?;
         Ok(self.mk_stmt(StmtKind::FnDecl { name, params, body }, start))
     }
 
     fn parse_enum_decl(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
-        self.expect(&Token::LBrace)?;
         self.skip_newlines();
-
         let mut variants = Vec::new();
-        while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+        while !matches!(self.peek(), Token::End | Token::Eof) {
             let variant_name = self.expect_ident()?;
             let fields = if matches!(self.peek(), Token::LParen) {
                 self.advance(); // consume '('
@@ -211,13 +199,10 @@ impl Parser {
             } else {
                 Vec::new()
             };
-            variants.push(EnumVariant {
-                name: variant_name,
-                fields,
-            });
+            variants.push(EnumVariant { name: variant_name, fields });
             self.skip_separator();
         }
-        self.expect(&Token::RBrace)?;
+        self.expect(&Token::End)?;
         Ok(self.mk_stmt(StmtKind::EnumDecl { name, variants }, start))
     }
 
@@ -227,9 +212,9 @@ impl Parser {
         self.expect(&Token::In)?;
         let iter = self.parse_expr()?;
         self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        let body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
+        self.expect(&Token::Do)?;
+        let body = self.parse_block_until(&[Token::End])?;
+        self.expect(&Token::End)?;
         Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
     }
 
@@ -237,16 +222,15 @@ impl Parser {
         self.advance(); // consume 'while'
         let condition = self.parse_expr()?;
         self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        let body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
+        self.expect(&Token::Do)?;
+        let body = self.parse_block_until(&[Token::End])?;
+        self.expect(&Token::End)?;
         Ok(self.mk_stmt(StmtKind::While { condition, body }, start))
     }
 
     fn parse_return(&mut self, start: usize) -> Result<Stmt, String> {
         self.advance(); // consume 'return'
-        // Check if there's an expression following (not a newline or closing brace)
-        if matches!(self.peek(), Token::Newline | Token::RBrace | Token::Eof) {
+        if matches!(self.peek(), Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof) {
             Ok(self.mk_stmt(StmtKind::Return(None), start))
         } else {
             let expr = self.parse_expr()?;
@@ -292,10 +276,12 @@ impl Parser {
         }
     }
 
-    fn parse_block_body(&mut self) -> Result<Vec<Stmt>, String> {
+    /// Parse statements until the next significant token is one of `stops`
+    /// (or Eof). Does NOT consume the stop token.
+    fn parse_block_until(&mut self, stops: &[Token]) -> Result<Vec<Stmt>, String> {
         let mut stmts = Vec::new();
         self.skip_newlines();
-        while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+        while !matches!(self.peek(), Token::Eof) && !stops.contains(self.peek()) {
             let stmt = self.parse_stmt()?;
             stmts.push(stmt);
             self.skip_newlines();
@@ -696,7 +682,7 @@ impl Parser {
                 Ok(expr)
             }
             Token::LBracket => self.parse_list_literal(),
-            Token::LBrace => self.parse_record_or_block(),
+            Token::LBrace => self.parse_record_literal(),
             Token::If => self.parse_if_expr(),
             Token::Match => self.parse_match_expr(),
             Token::Fn => self.parse_lambda(),
@@ -737,35 +723,6 @@ impl Parser {
         Ok(self.mk_expr(ExprKind::List(elements), start))
     }
 
-    fn parse_record_or_block(&mut self) -> Result<Expr, String> {
-        let is_record = self.is_record_start();
-        if is_record {
-            self.parse_record_literal()
-        } else {
-            self.parse_block_expr()
-        }
-    }
-
-    fn is_record_start(&self) -> bool {
-        let mut offset = 1;
-        while matches!(self.peek_ahead(offset), Token::Newline) {
-            offset += 1;
-        }
-        // { ...expr } is a record with spread
-        if matches!(self.peek_ahead(offset), Token::DotDotDot) {
-            return true;
-        }
-        if let Token::Ident(_) = self.peek_ahead(offset) {
-            offset += 1;
-            while matches!(self.peek_ahead(offset), Token::Newline) {
-                offset += 1;
-            }
-            matches!(self.peek_ahead(offset), Token::Colon)
-        } else {
-            false
-        }
-    }
-
     fn parse_record_literal(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         self.advance(); // consume '{'
@@ -788,40 +745,14 @@ impl Parser {
         Ok(self.mk_expr(ExprKind::Record(fields), start))
     }
 
-    fn parse_block_expr(&mut self) -> Result<Expr, String> {
-        let start = self.pos;
-        self.advance(); // consume '{'
-        let body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
-        Ok(self.mk_expr(ExprKind::Block(body), start))
-    }
-
     fn parse_if_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         self.advance(); // consume 'if'
         let condition = self.parse_expr()?;
         self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        let then_body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
-        self.skip_newlines();
-
-        let else_body = if matches!(self.peek(), Token::Else) {
-            self.advance(); // consume 'else'
-            self.skip_newlines();
-            if matches!(self.peek(), Token::If) {
-                let else_if = self.parse_if_expr()?;
-                Some(ElseBranch::ElseIf(Box::new(else_if)))
-            } else {
-                self.expect(&Token::LBrace)?;
-                let else_stmts = self.parse_block_body()?;
-                self.expect(&Token::RBrace)?;
-                Some(ElseBranch::Block(else_stmts))
-            }
-        } else {
-            None
-        };
-
+        self.expect(&Token::Then)?;
+        let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
+        let else_body = self.parse_else_chain()?;
         Ok(self.mk_expr(ExprKind::If {
             condition: Box::new(condition),
             then_body,
@@ -829,29 +760,56 @@ impl Parser {
         }, start))
     }
 
+    /// Parse the tail of an if-expression after the then-body. Consumes the
+    /// single closing `end` for the whole if/elsif/else chain. Precondition:
+    /// peek is Elsif, Else, or End.
+    fn parse_else_chain(&mut self) -> Result<Option<ElseBranch>, String> {
+        match self.peek() {
+            Token::Elsif => {
+                let start = self.pos;
+                self.advance(); // consume 'elsif'
+                let condition = self.parse_expr()?;
+                self.skip_newlines();
+                self.expect(&Token::Then)?;
+                let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
+                let else_body = self.parse_else_chain()?; // consumes the final 'end'
+                let inner = self.mk_expr(ExprKind::If {
+                    condition: Box::new(condition),
+                    then_body,
+                    else_body,
+                }, start);
+                Ok(Some(ElseBranch::ElseIf(Box::new(inner))))
+            }
+            Token::Else => {
+                self.advance(); // consume 'else'
+                let body = self.parse_block_until(&[Token::End])?;
+                self.expect(&Token::End)?;
+                Ok(Some(ElseBranch::Block(body)))
+            }
+            _ => {
+                self.expect(&Token::End)?;
+                Ok(None)
+            }
+        }
+    }
+
     fn parse_match_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         self.advance(); // consume 'match'
         let subject = self.parse_expr()?;
         self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        self.skip_newlines();
-
         let mut arms = Vec::new();
-        while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+        while !matches!(self.peek(), Token::End | Token::Eof) {
             let arm = self.parse_match_arm()?;
             arms.push(arm);
             self.skip_newlines();
         }
-        self.expect(&Token::RBrace)?;
-
-        Ok(self.mk_expr(ExprKind::Match {
-            subject: Box::new(subject),
-            arms,
-        }, start))
+        self.expect(&Token::End)?;
+        Ok(self.mk_expr(ExprKind::Match { subject: Box::new(subject), arms }, start))
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
+        self.expect(&Token::When)?;
         let pattern = self.parse_pattern()?;
         let guard = if matches!(self.peek(), Token::If) {
             self.advance();
@@ -859,15 +817,19 @@ impl Parser {
         } else {
             None
         };
-        self.expect(&Token::Arrow)?;
+        let body = if matches!(self.peek(), Token::Do) {
+            let start = self.pos;
+            self.advance(); // consume 'do'
+            let stmts = self.parse_block_until(&[Token::End])?;
+            self.expect(&Token::End)?;
+            self.mk_expr(ExprKind::Block(stmts), start)
+        } else {
+            self.expect(&Token::Arrow)?;
+            self.skip_newlines();
+            self.parse_expr()?
+        };
         self.skip_newlines();
-        let body = self.parse_expr()?;
-        self.skip_newlines();
-        Ok(MatchArm {
-            pattern,
-            guard,
-            body,
-        })
+        Ok(MatchArm { pattern, guard, body })
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, String> {
@@ -994,11 +956,18 @@ impl Parser {
         self.expect(&Token::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
-        self.skip_newlines();
-        self.expect(&Token::LBrace)?;
-        let body = self.parse_block_body()?;
-        self.expect(&Token::RBrace)?;
-        Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
+        if matches!(self.peek(), Token::Arrow) {
+            self.advance(); // consume '->'
+            self.skip_newlines();
+            let expr = self.parse_expr()?;
+            let body = vec![self.mk_stmt(StmtKind::Expr(expr), start)];
+            Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
+        } else {
+            self.skip_newlines();
+            let body = self.parse_block_until(&[Token::End])?;
+            self.expect(&Token::End)?;
+            Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
+        }
     }
 
     fn parse_string_interp(&mut self) -> Result<Expr, String> {

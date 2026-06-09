@@ -9,30 +9,28 @@
 
 // ── Dropdown (stateless) ────────────────────────────────
 
-fn dropdown(label, items, open, btn_id, backdrop_id) {
-  let menu_items = map(items, fn(item) {
-    <div class="dropdown-item">{item}</div>
-  })
+fn dropdown(label, items, open, btn_id, backdrop_id)
+  let menu_items = map(items, fn(item) -> <div class="dropdown-item">{item}</div>)
 
-  let menu = if open {
+  let menu = if open then
     <span>
       <div class="dropdown-backdrop" eid={backdrop_id}></div>
       <div class="dropdown-menu">{menu_items}</div>
     </span>
-  } else {
+  else
     <span></span>
-  }
+  end
 
   <div class="dropdown">
     <button class="dropdown-button" eid={btn_id}>{label}</button>
     {menu}
   </div>
-}
+end
 
 // ── Modal (stateless) ───────────────────────────────────
 
-fn modal_view(title, body, visible, open_id, close_id) {
-  let dialog = if visible {
+fn modal_view(title, body, visible, open_id, close_id)
+  let dialog = if visible then
     <div class="modal-backdrop">
       <div class="modal">
         <h2>{title}</h2>
@@ -40,19 +38,19 @@ fn modal_view(title, body, visible, open_id, close_id) {
         <button class="btn btn-secondary" eid={close_id}>Close</button>
       </div>
     </div>
-  } else {
+  else
     <span></span>
-  }
+  end
 
   <div>
     <button class="btn btn-primary" eid={open_id}>{"Open " ++ title}</button>
     {dialog}
   </div>
-}
+end
 
 // ── App (owns all state) ────────────────────────────────
 
-fn app() {
+fn app()
   // Allocate stable element IDs
   let file_btn_id = next_id()
   let file_backdrop_id = next_id()
@@ -66,24 +64,24 @@ fn app() {
   state edit_open = false
   state modal_visible = false
 
-  if clicked(file_btn_id) {
+  if clicked(file_btn_id) then
     file_open = !file_open
-  }
-  if clicked(file_backdrop_id) {
+  end
+  if clicked(file_backdrop_id) then
     file_open = false
-  }
-  if clicked(edit_btn_id) {
+  end
+  if clicked(edit_btn_id) then
     edit_open = !edit_open
-  }
-  if clicked(edit_backdrop_id) {
+  end
+  if clicked(edit_backdrop_id) then
     edit_open = false
-  }
-  if clicked(modal_open_id) {
+  end
+  if clicked(modal_open_id) then
     modal_visible = true
-  }
-  if clicked(modal_close_id) {
+  end
+  if clicked(modal_close_id) then
     modal_visible = false
-  }
+  end
 
   let file_dropdown = dropdown("File", ["New", "Open", "Save", "Export"], file_open, file_btn_id, file_backdrop_id)
   let edit_dropdown = dropdown("Edit", ["Undo", "Redo", "Cut", "Copy", "Paste"], edit_open, edit_btn_id, edit_backdrop_id)
@@ -98,6 +96,6 @@ fn app() {
       {info_modal}
     </div>
   </div>
-}
+end
 
 app()

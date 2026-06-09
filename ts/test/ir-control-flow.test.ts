@@ -10,20 +10,20 @@ beforeAll(() => ensureBuild());
 
 describe("if/else (Branch)", () => {
   it("emits Branch with 2 child_blocks for if/else", () => {
-    const ir = showIrJson("let x = if true { 1 } else { 2 }");
+    const ir = showIrJson("let x = if true then 1 else 2 end");
     const branches = termsByOp(ir, "Branch");
     expect(branches.length).toBeGreaterThanOrEqual(1);
     expect(branches[0].child_blocks).toHaveLength(2);
   });
 
   it("Branch inputs include condition", () => {
-    const ir = showIrJson("let x = if true { 1 } else { 2 }");
+    const ir = showIrJson("let x = if true then 1 else 2 end");
     const branch = termsByOp(ir, "Branch")[0];
     expect(branch.inputs).toHaveLength(1);
   });
 
   it("child blocks have parent_term_id pointing to Branch", () => {
-    const ir = showIrJson("let x = if true { 1 } else { 2 }");
+    const ir = showIrJson("let x = if true then 1 else 2 end");
     const branch = termsByOp(ir, "Branch")[0];
     for (const blockId of branch.child_blocks) {
       const block = ir.blocks.find((b: any) => b.id === blockId);
@@ -35,14 +35,14 @@ describe("if/else (Branch)", () => {
 
 describe("for loops", () => {
   it("emits ForLoop with 1 child_block", () => {
-    const ir = showIrJson("for i in [1, 2, 3] { i }");
+    const ir = showIrJson("for i in [1, 2, 3] do\n  i\nend");
     const loops = termsByOp(ir, "ForLoop");
     expect(loops.length).toBeGreaterThanOrEqual(1);
     expect(loops[0].child_blocks).toHaveLength(1);
   });
 
   it("ForLoop body block has loop variable as param", () => {
-    const ir = showIrJson("for i in [1, 2, 3] { i }");
+    const ir = showIrJson("for i in [1, 2, 3] do\n  i\nend");
     const loop_ = termsByOp(ir, "ForLoop")[0];
     const bodyBlock = ir.blocks.find(
       (b: any) => b.id === loop_.child_blocks[0]
@@ -52,7 +52,7 @@ describe("for loops", () => {
   });
 
   it("ForLoop inputs include iterable", () => {
-    const ir = showIrJson("for i in [1, 2, 3] { i }");
+    const ir = showIrJson("for i in [1, 2, 3] do\n  i\nend");
     const loop_ = termsByOp(ir, "ForLoop")[0];
     expect(loop_.inputs).toHaveLength(1);
   });
@@ -60,7 +60,7 @@ describe("for loops", () => {
 
 describe("while loops", () => {
   it("emits WhileLoop with 2 child_blocks", () => {
-    const ir = showIrJson("let x = 0\nwhile x < 5 { x = x + 1 }");
+    const ir = showIrJson("let x = 0\nwhile x < 5 do\n  x = x + 1\nend");
     const loops = termsByOp(ir, "WhileLoop");
     expect(loops.length).toBeGreaterThanOrEqual(1);
     expect(loops[0].child_blocks).toHaveLength(2);
@@ -69,33 +69,37 @@ describe("while loops", () => {
 
 describe("match", () => {
   it("emits Match term", () => {
-    const ir = showIrJson('let x = 1\nmatch x {\n  1 -> "one"\n  _ -> "other"\n}');
+    const ir = showIrJson('let x = 1\nmatch x\n  when 1 -> "one"\n  when _ -> "other"\nend');
     const matches = termsByOp(ir, "Match");
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("Match has child_blocks for each arm", () => {
-    const ir = showIrJson('let x = 1\nmatch x {\n  1 -> "one"\n  2 -> "two"\n  _ -> "other"\n}');
+    const ir = showIrJson('let x = 1\nmatch x\n  when 1 -> "one"\n  when 2 -> "two"\n  when _ -> "other"\nend');
     const match_ = termsByOp(ir, "Match")[0];
     // At least 3 child blocks for 3 arms
     expect(match_.child_blocks.length).toBeGreaterThanOrEqual(3);
   });
 
   it("Match inputs include subject", () => {
-    const ir = showIrJson('let x = 1\nmatch x {\n  1 -> "one"\n  _ -> "other"\n}');
+    const ir = showIrJson('let x = 1\nmatch x\n  when 1 -> "one"\n  when _ -> "other"\nend');
     const match_ = termsByOp(ir, "Match")[0];
     expect(match_.inputs).toHaveLength(1);
   });
 
   it("enum variant pattern only matches the variant, not any value", () => {
     const result = runPetal(`
-      enum Color { Red, Blue, Green }
+      enum Color
+        Red
+        Blue
+        Green
+      end
       let v = "hello"
-      let result = match v {
-        Red -> "matched Red"
-        Blue -> "matched Blue"
-        x -> "other: " ++ x
-      }
+      let result = match v
+        when Red -> "matched Red"
+        when Blue -> "matched Blue"
+        when x -> "other: " ++ x
+      end
       print(result)
     `);
     expect(result).toBe("other: hello");
@@ -103,13 +107,17 @@ describe("match", () => {
 
   it("enum variant pattern matches the correct variant", () => {
     const result = runPetal(`
-      enum Color { Red, Blue, Green }
+      enum Color
+        Red
+        Blue
+        Green
+      end
       let v = Blue
-      let result = match v {
-        Red -> "red"
-        Blue -> "blue"
-        Green -> "green"
-      }
+      let result = match v
+        when Red -> "red"
+        when Blue -> "blue"
+        when Green -> "green"
+      end
       print(result)
     `);
     expect(result).toBe("blue");
@@ -118,10 +126,10 @@ describe("match", () => {
   it("variable binding still works in match when not an enum variant", () => {
     const result = runPetal(`
       let v = 42
-      let result = match v {
-        0 -> "zero"
-        n -> "number: " ++ str(n)
-      }
+      let result = match v
+        when 0 -> "zero"
+        when n -> "number: " ++ str(n)
+      end
       print(result)
     `);
     expect(result).toBe("number: 42");
@@ -146,13 +154,13 @@ describe("short-circuit operators", () => {
 
 describe("break and return", () => {
   it("emits Break inside loop", () => {
-    const ir = showIrJson("for i in [1,2,3] { if i == 2 { break } }");
+    const ir = showIrJson("for i in [1,2,3] do\n  if i == 2 then break end\nend");
     const breaks = termsByOp(ir, "Break");
     expect(breaks.length).toBeGreaterThanOrEqual(1);
   });
 
   it("emits Return inside function", () => {
-    const ir = showIrJson("fn f() { return 1 }");
+    const ir = showIrJson("fn f()\n  return 1\nend");
     const returns = termsByOp(ir, "Return");
     expect(returns.length).toBeGreaterThanOrEqual(1);
   });
@@ -160,7 +168,7 @@ describe("break and return", () => {
 
 describe("continue", () => {
   it("emits Continue inside for loop", () => {
-    const ir = showIrJson("for i in [1,2,3] { if i == 2 { continue } }");
+    const ir = showIrJson("for i in [1,2,3] do\n  if i == 2 then continue end\nend");
     const continues = termsByOp(ir, "Continue");
     expect(continues.length).toBeGreaterThanOrEqual(1);
   });
@@ -168,10 +176,10 @@ describe("continue", () => {
   it("continue skips rest of for-loop iteration", () => {
     const result = runPetal(`
       let result = []
-      for i in [1, 2, 3, 4, 5] {
-        if i == 3 { continue }
+      for i in [1, 2, 3, 4, 5] do
+        if i == 3 then continue end
         push(result, i)
-      }
+      end
       print(result)
     `);
     expect(result).toBe("[1, 2, 4, 5]");
@@ -181,11 +189,11 @@ describe("continue", () => {
     const result = runPetal(`
       let i = 0
       let result = []
-      while i < 5 {
+      while i < 5 do
         i = i + 1
-        if i == 3 { continue }
+        if i == 3 then continue end
         push(result, i)
-      }
+      end
       print(result)
     `);
     expect(result).toBe("[1, 2, 4, 5]");
@@ -194,12 +202,12 @@ describe("continue", () => {
   it("continue in nested loops only affects inner loop", () => {
     const result = runPetal(`
       let result = []
-      for i in [1, 2] {
-        for j in [10, 20, 30] {
-          if j == 20 { continue }
+      for i in [1, 2] do
+        for j in [10, 20, 30] do
+          if j == 20 then continue end
           push(result, i * 100 + j)
-        }
-      }
+        end
+      end
       print(result)
     `);
     expect(result).toBe("[110, 130, 210, 230]");

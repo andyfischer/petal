@@ -11,14 +11,14 @@ beforeAll(() => ensureBuild());
 
 describe("function definitions", () => {
   it("creates a FunctionDef for fn declarations", () => {
-    const ir = showIrJson("fn add(a, b) { a + b }");
+    const ir = showIrJson("fn add(a, b)\n  a + b\nend");
     expect(ir.functions).toHaveLength(1);
     expect(ir.functions[0].name).toBe("add");
     expect(ir.functions[0].params).toEqual(["a", "b"]);
   });
 
   it("assigns a body_block to the function", () => {
-    const ir = showIrJson("fn greet() { 1 }");
+    const ir = showIrJson("fn greet()\n  1\nend");
     const func = ir.functions[0];
     expect(func.body_block).toBeGreaterThan(0);
     const bodyBlock = ir.blocks.find((b: any) => b.id === func.body_block);
@@ -26,7 +26,7 @@ describe("function definitions", () => {
   });
 
   it("emits MakeClosure in root block", () => {
-    const ir = showIrJson("fn f() { 1 }");
+    const ir = showIrJson("fn f()\n  1\nend");
     const closures = termsByOp(ir, "MakeClosure");
     expect(closures.length).toBeGreaterThanOrEqual(1);
     const mc = closures[0];
@@ -35,7 +35,7 @@ describe("function definitions", () => {
   });
 
   it("sets self_ref_register for recursive functions", () => {
-    const ir = showIrJson("fn fib(n) { if n < 2 { n } else { fib(n-1) + fib(n-2) } }");
+    const ir = showIrJson("fn fib(n)\n  if n < 2 then n else fib(n-1) + fib(n-2) end\nend");
     const func = ir.functions[0];
     expect(func.self_ref_register).not.toBeNull();
   });
@@ -43,20 +43,20 @@ describe("function definitions", () => {
 
 describe("closures and captures", () => {
   it("populates capture_names for closures", () => {
-    const ir = showIrJson("let x = 10\nfn get_x() { x }");
+    const ir = showIrJson("let x = 10\nfn get_x()\n  x\nend");
     const func = ir.functions.find((f: any) => f.name === "get_x");
     expect(func).toBeDefined();
     expect(func.capture_names).toContain("x");
   });
 
   it("has capture_registers matching capture_names length", () => {
-    const ir = showIrJson("let a = 1\nlet b = 2\nfn f() { a + b }");
+    const ir = showIrJson("let a = 1\nlet b = 2\nfn f()\n  a + b\nend");
     const func = ir.functions.find((f: any) => f.name === "f");
     expect(func.capture_registers).toHaveLength(func.capture_names.length);
   });
 
   it("MakeClosure inputs correspond to captured values", () => {
-    const ir = showIrJson("let x = 10\nfn get_x() { x }");
+    const ir = showIrJson("let x = 10\nfn get_x()\n  x\nend");
     const closures = termsByOp(ir, "MakeClosure");
     const mc = closures.find((t: any) => {
       const fid = t.op.MakeClosure;
@@ -70,7 +70,7 @@ describe("closures and captures", () => {
 
 describe("lambdas", () => {
   it("creates a FunctionDef with null name for lambdas", () => {
-    const ir = showIrJson("let f = fn(x) { x + 1 }");
+    const ir = showIrJson("let f = fn(x) -> x + 1");
     const lambda = ir.functions.find((f: any) => f.name === null);
     expect(lambda).toBeDefined();
     expect(lambda.params).toEqual(["x"]);
@@ -79,7 +79,7 @@ describe("lambdas", () => {
 
 describe("function calls", () => {
   it("emits Call term", () => {
-    const ir = showIrJson("fn f() { 1 }\nf()");
+    const ir = showIrJson("fn f()\n  1\nend\nf()");
     const calls = termsByOp(ir, "Call");
     expect(calls.length).toBeGreaterThanOrEqual(1);
     // Call inputs: [callable, ...args]
@@ -87,7 +87,7 @@ describe("function calls", () => {
   });
 
   it("Call with arguments has correct input count", () => {
-    const ir = showIrJson("fn add(a, b) { a + b }\nadd(1, 2)");
+    const ir = showIrJson("fn add(a, b)\n  a + b\nend\nadd(1, 2)");
     const calls = termsByOp(ir, "Call");
     expect(calls.length).toBeGreaterThanOrEqual(1);
     // callable + 2 args = 3 inputs
@@ -98,7 +98,7 @@ describe("function calls", () => {
 
 describe("overloaded functions (multi-arity)", () => {
   it("compiles overloaded fns with internal name#arity names", () => {
-    const ir = showIrJson("fn f(a) { a }\nfn f(a, b) { a + b }");
+    const ir = showIrJson("fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend");
     const f1 = ir.functions.find((f: any) => f.name === "f#1");
     const f2 = ir.functions.find((f: any) => f.name === "f#2");
     expect(f1).toBeDefined();
@@ -108,7 +108,7 @@ describe("overloaded functions (multi-arity)", () => {
   });
 
   it("emits MakeOverloadSet term", () => {
-    const ir = showIrJson("fn f(a) { a }\nfn f(a, b) { a + b }");
+    const ir = showIrJson("fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend");
     const sets = termsByOp(ir, "MakeOverloadSet");
     expect(sets).toHaveLength(1);
     expect(sets[0].name).toBe("f");
@@ -118,9 +118,15 @@ describe("overloaded functions (multi-arity)", () => {
 
   it("dispatches to correct arity at runtime", () => {
     const out = runPetal(`
-      fn greet() { print("hi") }
-      fn greet(name) { print("hi", name) }
-      fn greet(a, b) { print("hi", a, b) }
+      fn greet()
+        print("hi")
+      end
+      fn greet(name)
+        print("hi", name)
+      end
+      fn greet(a, b)
+        print("hi", a, b)
+      end
       greet()
       greet("world")
       greet("a", "b")
@@ -130,11 +136,14 @@ describe("overloaded functions (multi-arity)", () => {
 
   it("supports recursion across overloads", () => {
     const out = runPetal(`
-      fn count(n) { count(n, 0) }
-      fn count(n, acc) {
-        if n <= 0 { acc }
-        else { count(n - 1, acc + 1) }
-      }
+      fn count(n)
+        count(n, 0)
+      end
+      fn count(n, acc)
+        if n <= 0 then acc
+        else count(n - 1, acc + 1)
+        end
+      end
       print(count(5))
       print(count(3, 10))
     `);
@@ -144,8 +153,12 @@ describe("overloaded functions (multi-arity)", () => {
   it("supports closures over outer variables", () => {
     const out = runPetal(`
       let prefix = "Dr."
-      fn title(name) { title(prefix, name) }
-      fn title(pre, name) { print(pre, name) }
+      fn title(name)
+        title(prefix, name)
+      end
+      fn title(pre, name)
+        print(pre, name)
+      end
       title("Smith")
       title("Mr.", "Jones")
     `);
@@ -154,8 +167,12 @@ describe("overloaded functions (multi-arity)", () => {
 
   it("gives good error for wrong arity", () => {
     const err = runPetalError(`
-      fn add(a, b) { a + b }
-      fn add(a, b, c) { a + b + c }
+      fn add(a, b)
+        a + b
+      end
+      fn add(a, b, c)
+        a + b + c
+      end
       add(1)
     `);
     expect(err).toContain("add()");
@@ -165,10 +182,11 @@ describe("overloaded functions (multi-arity)", () => {
 
   it("non-overloaded functions still work normally", () => {
     const out = runPetal(`
-      fn fib(n) {
-        if n < 2 { n }
-        else { fib(n - 1) + fib(n - 2) }
-      }
+      fn fib(n)
+        if n < 2 then n
+        else fib(n - 1) + fib(n - 2)
+        end
+      end
       print(fib(10))
     `);
     expect(out.trim()).toBe("55");

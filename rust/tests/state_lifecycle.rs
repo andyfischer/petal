@@ -37,7 +37,7 @@ fn explicit_key_state_survives_reset_and_rerun() {
     let mut env = Env::new();
     let pid = env
         .load_program(
-            "for v in [\"a\", \"b\"] {\n  state(v) hits = 0\n  hits += 1\n}",
+            "for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend",
         )
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
@@ -62,7 +62,7 @@ fn untouched_state_keys_are_swept_after_run() {
     // First program touches both "a" and "b".
     let pid1 = env
         .load_program(
-            "for v in [\"a\", \"b\"] {\n  state(v) hits = 0\n  hits += 1\n}",
+            "for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend",
         )
         .unwrap();
     let sid = env.create_stack(pid1).unwrap();
@@ -73,7 +73,7 @@ fn untouched_state_keys_are_swept_after_run() {
     // should be swept.
     let pid2 = env
         .load_program(
-            "for v in [\"a\"] {\n  state(v) hits = 0\n  hits += 1\n}",
+            "for v in [\"a\"] do\n  state(v) hits = 0\n  hits += 1\nend",
         )
         .unwrap();
     // Reuse the same Stack with a fresh program: snapshot the state, build

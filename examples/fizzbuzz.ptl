@@ -1,14 +1,14 @@
 // FizzBuzz
 // The classic programming exercise.
 
-for i in range(1, 31) {
-    if i % 15 == 0 {
-        print("FizzBuzz")
-    } else if i % 3 == 0 {
-        print("Fizz")
-    } else if i % 5 == 0 {
-        print("Buzz")
-    } else {
-        print(i)
-    }
-}
+for i in range(1, 31) do
+  if i % 15 == 0 then
+    print("FizzBuzz")
+  elsif i % 3 == 0 then
+    print("Fizz")
+  elsif i % 5 == 0 then
+    print("Buzz")
+  else
+    print(i)
+  end
+end

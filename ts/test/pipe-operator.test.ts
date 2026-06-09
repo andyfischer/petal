@@ -36,7 +36,7 @@ describe("pipe operator |>", () => {
   });
 
   it("chains multiple pipes", () => {
-    const output = runPetal('[1, 2, 3, 4, 5] |> filter(fn(x) { x > 2 }) |> map(fn(x) { x * 10 }) |> print');
+    const output = runPetal('[1, 2, 3, 4, 5] |> filter(fn(x) -> x > 2) |> map(fn(x) -> x * 10) |> print');
     expect(output).toBe("[30, 40, 50]");
   });
 
@@ -46,7 +46,7 @@ describe("pipe operator |>", () => {
   });
 
   it("pipes into a function with extra args", () => {
-    const output = runPetal('[1, 2, 3] |> map(fn(x) { x + 10 }) |> print');
+    const output = runPetal('[1, 2, 3] |> map(fn(x) -> x + 10) |> print');
     expect(output).toBe("[11, 12, 13]");
   });
 
@@ -56,7 +56,7 @@ describe("pipe operator |>", () => {
   });
 
   it("works with lambda expressions", () => {
-    const output = runPetal('5 |> fn(x) { x * 2 } |> print');
+    const output = runPetal('5 |> fn(x) -> x * 2 |> print');
     expect(output).toBe("10");
   });
 });

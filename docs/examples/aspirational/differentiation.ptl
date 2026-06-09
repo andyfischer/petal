@@ -14,9 +14,9 @@
 // f(x) = x^2 + 2x
 // f'(x) = 2x + 2
 
-fn f(x) {
-    x * x + 2 * x
-}
+fn f(x)
+  x * x + 2 * x
+end
 
 // grad(f) returns the derivative function
 let f_prime = grad(f)
@@ -32,9 +32,9 @@ print("")
 // dg/da = b + 2a
 // dg/db = a
 
-fn g(a, b) {
-    a * b + a * a
-}
+fn g(a, b)
+  a * b + a * a
+end
 
 let result = gradients(g, 3.0, 4.0)
 print("g(a, b) = a*b + a^2")
@@ -46,9 +46,9 @@ print("")
 // --- Example 3: Composition ---
 // The chain rule works automatically through function calls.
 
-fn circle_area(r) {
-    3.14159 * r * r
-}
+fn circle_area(r)
+  3.14159 * r * r
+end
 
 let area_prime = grad(circle_area)
 
@@ -60,9 +60,9 @@ print("")
 // --- Example 4: Sensitivity analysis ---
 // Which input matters more for the output?
 
-fn weighted_sum(x, y, z) {
-    2.0 * x + 5.0 * y + 0.1 * z
-}
+fn weighted_sum(x, y, z)
+  2.0 * x + 5.0 * y + 0.1 * z
+end
 
 let sensitivity = gradients(weighted_sum, 1.0, 1.0, 1.0)
 print("weighted_sum(x, y, z) = 2x + 5y + 0.1z")

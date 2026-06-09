@@ -3,7 +3,7 @@
 
 // If/else as expressions (they return values)
 let n = 42
-let parity = if n % 2 == 0 { "even" } else { "odd" }
+let parity = if n % 2 == 0 then "even" else "odd" end
 print(n, "is", parity)
 
 // Comparisons
@@ -21,22 +21,22 @@ print("!sunny:", !sunny)
 
 // For loops with range
 print("Counting 1 to 5:")
-for i in range(1, 6) {
-    print(" ", i)
-}
+for i in range(1, 6) do
+  print(" ", i)
+end
 
 // While loops
 let count = 1
 let total = 0
-while count <= 10 {
-    total = total + count
-    count = count + 1
-}
+while count <= 10 do
+  total = total + count
+  count = count + 1
+end
 print("Sum of 1..10 =", total)
 
 // Nested loops
-for row in range(0, 3) {
-    for col in range(0, 3) {
-        print("(", row, ",", col, ")")
-    }
-}
+for row in range(0, 3) do
+  for col in range(0, 3) do
+    print("(", row, ",", col, ")")
+  end
+end

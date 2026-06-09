@@ -11,8 +11,8 @@ let sh = float(screen_height())
 time += delta
 
 // Initialize movers
-if len(movers) == 0 {
-    for i in range(0, 20) {
+if len(movers) == 0 then
+    for i in range(0, 20) do
         let mass = 1.0 + random(0.0, 3.0)
         push(movers, {
             x: random(0.0, sw),
@@ -24,15 +24,15 @@ if len(movers) == 0 {
             g: int(random(100.0, 255.0)),
             b: int(random(150.0, 255.0))
         })
-    }
-}
+    end
+end
 
 let mx = float(mouse_x())
 let my = float(mouse_y())
 
 // Update movers
 let new_movers = []
-for m in movers {
+for m in movers do
     // Acceleration toward mouse
     let dx = mx - m.x
     let dy = my - m.y
@@ -49,46 +49,46 @@ for m in movers {
     // Limit speed
     let speed = sqrt(nvx * nvx + nvy * nvy)
     let max_speed = 400.0 / m.mass
-    if speed > max_speed {
+    if speed > max_speed then
         nvx = nvx / speed * max_speed
         nvy = nvy / speed * max_speed
-    }
+    end
 
     // Update position
     let nx = m.x + nvx * delta
     let ny = m.y + nvy * delta
 
     // Bounce off edges
-    if nx < 0.0 || nx > sw { nvx = -nvx * 0.8; nx = max(0.0, min(sw, nx)) }
-    if ny < 0.0 || ny > sh { nvy = -nvy * 0.8; ny = max(0.0, min(sh, ny)) }
+    if nx < 0.0 || nx > sw then nvx = -nvx * 0.8; nx = max(0.0, min(sw, nx)) end
+    if ny < 0.0 || ny > sh then nvy = -nvy * 0.8; ny = max(0.0, min(sh, ny)) end
 
     push(new_movers, {
         x: nx, y: ny, vx: nvx, vy: nvy,
         mass: m.mass, r: m.r, g: m.g, b: m.b
     })
-}
+end
 movers = new_movers
 
 // === Drawing ===
 clear(15, 15, 25)
 
 // Draw connection lines between nearby movers
-for i in range(0, len(movers)) {
-    for j in range(i + 1, len(movers)) {
+for i in range(0, len(movers)) do
+    for j in range(i + 1, len(movers)) do
         let a = movers[i]
         let b = movers[j]
         let dx = a.x - b.x
         let dy = a.y - b.y
         let dist = sqrt(dx * dx + dy * dy)
-        if dist < 120.0 {
+        if dist < 120.0 then
             let alpha = int((1.0 - dist / 120.0) * 60.0)
             draw_line(int(a.x), int(a.y), int(b.x), int(b.y), alpha, alpha, alpha + 20)
-        }
-    }
-}
+        end
+    end
+end
 
 // Draw movers
-for m in movers {
+for m in movers do
     let radius = int(m.mass * 6.0)
     let speed = sqrt(m.vx * m.vx + m.vy * m.vy)
 
@@ -107,7 +107,7 @@ for m in movers {
     // Highlight
     draw_circle(int(m.x) - radius / 3, int(m.y) - radius / 3, max(2, radius / 3),
                 min(255, m.r + 80), min(255, m.g + 80), min(255, m.b + 80))
-}
+end
 
 // Mouse indicator
 draw_circle(int(mx), int(my), 6, 255, 255, 100)

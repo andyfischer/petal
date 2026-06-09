@@ -10,14 +10,14 @@ let max_speed = 0.8
 print("Seeking target at {target}")
 print("=====================================")
 
-for step in range(0, 20) {
-    // Desired velocity = direction to target, scaled to max speed
-    let desired = normalize(target - pos) * max_speed
-    // Steering force = difference between desired and current velocity
-    let steer = limit(desired - vel, 0.2)
-    vel = vel + steer
-    pos = pos + vel
+for step in range(0, 20) do
+  // Desired velocity = direction to target, scaled to max speed
+  let desired = normalize(target - pos) * max_speed
+  // Steering force = difference between desired and current velocity
+  let steer = limit(desired - vel, 0.2)
+  vel = vel + steer
+  pos = pos + vel
 
-    let d = distance(pos, target)
-    print("step {step}: pos={pos}  dist={d}")
-}
+  let d = distance(pos, target)
+  print("step {step}: pos={pos}  dist={d}")
+end

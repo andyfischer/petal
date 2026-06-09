@@ -17,14 +17,14 @@ fn compute(a, b)
   doubled
 end
 
-let prog = Program.parse("
-    fn compute(a, b) {
+let prog = Program.parse("""
+    fn compute(a, b)
         let sum = a + b
         let doubled = sum * 2
         doubled
-    }
+    end
     compute(10, 20)
-")
+""")
 
 let t = prog.trace()
 print("=== Execution Trace ===")
@@ -42,15 +42,15 @@ print("")
 // --- Example 2: Provenance query ---
 // "What inputs influenced the final result?"
 
-let weighted_prog = Program.parse("
-    fn weighted(x, y, z) {
+let weighted_prog = Program.parse("""
+    fn weighted(x, y, z)
         let temp = x * 2
         let unused = z + 1
         let result = temp + y
         result
-    }
+    end
     weighted(3, 4, 5)
-")
+""")
 
 let t2 = weighted_prog.trace()
 let chain = t2.influences("result")
@@ -68,14 +68,14 @@ print("")
 
 // --- Example 3: Tracing through a stack ---
 
-let counter_prog = Program.parse("
-    fn counter() {
+let counter_prog = Program.parse("""
+    fn counter()
         state count = 0
         count = count + 1
         count
-    }
+    end
     counter()
-")
+""")
 
 let stack = counter_prog.create_stack()
 stack.enable_tracing()
@@ -94,13 +94,13 @@ print("Final result:", t3.result)
 
 // --- Example 4: Dataflow path ---
 
-let pipeline_prog = Program.parse("
+let pipeline_prog = Program.parse("""
     let raw = 100
     let parsed = raw * 2
     let validated = parsed + 1
     let formatted = str(validated)
     formatted
-")
+""")
 
 let t4 = pipeline_prog.trace()
 let path = t4.path("raw", "formatted")

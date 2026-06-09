@@ -10,14 +10,14 @@
 
 // --- Example 1: Edit a counter's increment ---
 
-let prog = Program.parse("
-    fn counter() {
+let prog = Program.parse("""
+    fn counter()
         state count = 0
         count = count + 1
         count
-    }
+    end
     counter()
-")
+""")
 
 print("=== Live Edit Demo ===")
 print("")
@@ -52,11 +52,11 @@ print("")
 
 // --- Example 2: Adding new state to a running program ---
 
-let anim = Program.parse("
+let anim = Program.parse("""
     state x = 0
     x = x + 1
-    print(\"x =\", x)
-")
+    print("x =", x)
+""")
 
 print("=== Adding State ===")
 anim.run()

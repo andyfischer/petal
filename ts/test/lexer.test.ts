@@ -65,3 +65,44 @@ describe("DotDotDot token", () => {
     ]);
   });
 });
+
+describe("triple-quoted raw strings", () => {
+  it("lexes a triple-quoted string as a single String token", () => {
+    const tokens = showTokensJson('"""hello"""');
+    expect(tokens).toEqual([{ String: "hello" }, "Eof"]);
+  });
+
+  it("captures raw newlines verbatim", () => {
+    const out = runPetal('print("""line one\nline two""")');
+    expect(out.trim()).toBe("line one\nline two");
+  });
+
+  it("treats braces as literal (no interpolation)", () => {
+    // Inside a raw string, `{` does not start an interpolation hole.
+    const out = runPetal('print("""fn c() { 1 }""")');
+    expect(out.trim()).toBe("fn c() { 1 }");
+  });
+
+  it("does not process backslash escapes", () => {
+    const out = runPetal('print("""a\\nb""")');
+    expect(out.trim()).toBe("a\\nb");
+  });
+
+  it("allows embedded double quotes", () => {
+    const out = runPetal('print("""say "hi" now""")');
+    expect(out.trim()).toBe('say "hi" now');
+  });
+
+  it("supports embedding multi-line source code with braces and quotes", () => {
+    const out = runPetal(
+      'let src = """\n  fn step(input) {\n    str(input) ++ "!"\n  }\n"""\nprint(src)'
+    );
+    expect(out).toContain("fn step(input) {");
+    expect(out).toContain('str(input) ++ "!"');
+  });
+
+  it("lexes an empty triple-quoted string", () => {
+    const tokens = showTokensJson('""""""');
+    expect(tokens).toEqual([{ String: "" }, "Eof"]);
+  });
+});

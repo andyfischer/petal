@@ -69,12 +69,12 @@ print("")
 // --- Example 4: Program transformation ---
 // Swap all additions for multiplications.
 
-let original = Program.parse("
+let original = Program.parse("""
     let a = 2
     let b = 3
     let c = a + b
     c
-")
+""")
 print("=== Program Transform ===")
 print("Original:", original.run())  // 5
 
@@ -91,14 +91,18 @@ print("")
 // --- Example 5: Program composition ---
 // Pipe one program's output into another.
 
-let parse_step = Program.parse("
-    fn step(input) { input * 2 }
+let parse_step = Program.parse("""
+    fn step(input)
+        input * 2
+    end
     step
-")
-let format_step = Program.parse("
-    fn step(input) { str(input) ++ \"!\" }
+""")
+let format_step = Program.parse("""
+    fn step(input)
+        str(input) ++ "!"
+    end
     step
-")
+""")
 
 let pipeline = parse_step.pipe(format_step)
 print("=== Composition ===")
@@ -107,15 +111,15 @@ print("")
 
 // --- Example 6: Inspecting a term's dataflow ---
 
-let prog = Program.parse("
-    fn f(x, y) {
+let prog = Program.parse("""
+    fn f(x, y)
         let a = x + 1
         let b = y * 2
         let c = a + b
         c
-    }
+    end
     f(3, 4)
-")
+""")
 
 let c_term = prog.find("c")
 print("=== Term Inspection ===")

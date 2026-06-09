@@ -86,6 +86,26 @@ print("hello, {name}!")
 print("2 + 2 = {2 + 2}")
 ```
 
+### Raw (triple-quoted) strings
+
+Use `"""..."""` for a raw, multi-line string. The contents are captured
+verbatim: `{` and `}` are literal (no interpolation), backslashes are not
+treated as escapes, and raw newlines are allowed. This is handy for embedding
+source code or any text full of braces and quotes:
+
+```petal
+let src = """
+    fn step(input)
+        str(input) ++ "!"
+    end
+    step
+"""
+```
+
+Ordinary double-quoted strings may also span multiple lines, but a `{` inside
+them starts an interpolation hole — use a raw string when you want braces to be
+literal.
+
 ### String Builtins
 
 ```petal

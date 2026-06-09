@@ -212,7 +212,17 @@ impl Lexer {
         let ch = self.input[self.pos];
         let start = self.current_pos();
         match ch {
-            '"' => self.read_string()?,
+            '"' => {
+                // `"""` opens a triple-quoted raw string (verbatim, no interpolation).
+                if self.peek_next() == Some('"')
+                    && self.pos + 2 < self.input.len()
+                    && self.input[self.pos + 2] == '"'
+                {
+                    self.read_raw_string()?
+                } else {
+                    self.read_string()?
+                }
+            }
             '(' => { self.advance_char(); self.push_token(Token::LParen, start); }
             ')' => { self.advance_char(); self.push_token(Token::RParen, start); }
             '{' => { self.advance_char(); self.push_token(Token::LBrace, start); }
@@ -466,6 +476,31 @@ impl Lexer {
             self.advance_char();
         }
         Err(format!("Unterminated string [line {}, column {}]", start.line, start.column))
+    }
+
+    /// Read a triple-quoted raw string: `"""..."""`. Everything between the
+    /// delimiters is captured verbatim — `{`/`}` are literal (no interpolation),
+    /// backslashes are not treated as escapes, and raw newlines are allowed.
+    /// Useful for embedding source code, e.g. `Program.parse("""...""")`.
+    fn read_raw_string(&mut self) -> Result<(), String> {
+        let start = self.current_pos();
+        self.advance_n(3); // skip opening """
+        let mut s = String::new();
+
+        while self.pos < self.input.len() {
+            if self.input[self.pos] == '"'
+                && self.pos + 2 < self.input.len()
+                && self.input[self.pos + 1] == '"'
+                && self.input[self.pos + 2] == '"'
+            {
+                self.advance_n(3); // skip closing """
+                self.push_token(Token::String(s), start);
+                return Ok(());
+            }
+            s.push(self.input[self.pos]);
+            self.advance_char();
+        }
+        Err(format!("Unterminated raw string [line {}, column {}]", start.line, start.column))
     }
 
     fn read_number(&mut self) -> Result<(), String> {

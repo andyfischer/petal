@@ -55,22 +55,22 @@ fn classify(n)
   end
 end
 
-let classify_prog = Program.parse("
-    fn classify(n) {
+let classify_prog = Program.parse("""
+    fn classify(n)
         let abs_n = abs(n)
-        if n > 0 {
-            let positive_label = \"positive\"
+        if n > 0 then
+            let positive_label = "positive"
             positive_label
-        } else if n == 0 {
-            let zero_label = \"zero\"
+        elsif n == 0 then
+            let zero_label = "zero"
             zero_label
-        } else {
-            let negative_label = \"negative\"
+        else
+            let negative_label = "negative"
             negative_label
-        }
-    }
+        end
+    end
     classify(5)
-")
+""")
 let stack = classify_prog.create_stack()
 stack.run()
 let dyn = classify_prog.dynamic_slice(stack, "return")

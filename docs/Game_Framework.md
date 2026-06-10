@@ -76,17 +76,46 @@ draw_rect(x - 10, y - 10, 20, 20, 255, 100, 100)
 draw_text("Use arrow keys", 10, 10, 20, 255, 255, 255)
 ```
 
+### Persistent canvas (accumulative drawing)
+
+The framebuffer **persists between frames**: it is only wiped when your program
+calls `clear()`. Game-style sketches call `clear(...)` at the top of every frame
+and so always start from a blank screen — the usual case shown above.
+
+For generative art where the *accumulated trace* is the art — attractors,
+Lissajous figures, particle trails, brush strokes — simply **don't call
+`clear()`**. Every primitive you draw stays on screen, and the image builds up
+over time. Clear once on the first frame (guarded by a `state` flag) to set the
+background, then let it accumulate:
+
+```petal
+state started = false
+if !started then
+  clear(0, 0, 0)   // paint the background once
+  started = true
+end
+
+// Each frame draws a few more dots that persist forever.
+draw_circle(int(x), int(y), 2, 255, 200, 80)
+```
+
+This replaces the old workaround of stashing every past point in `state` and
+redrawing the whole history each frame (which grows O(n) per frame). See
+`examples/cc_lissajous_trails.ptl`.
+
 ## Native Functions
 
 ### Drawing
 
 | Function | Description |
 |----------|-------------|
-| `clear(r, g, b)` | Clear the screen with an RGB color |
+| `clear(r, g, b)` | Clear the screen with an RGB color. If a frame never calls `clear()`, the previous frame's pixels persist (see [Persistent canvas](#persistent-canvas-accumulative-drawing)) |
 | `draw_rect(x, y, w, h, r, g, b)` | Draw a filled rectangle |
 | `draw_rect_outline(x, y, w, h, r, g, b)` | Draw a rectangle outline |
 | `draw_line(x1, y1, x2, y2, r, g, b)` | Draw a line |
 | `draw_circle(cx, cy, radius, r, g, b)` | Draw a filled circle |
+| `fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)` | Draw a filled triangle |
+| `fill_poly(points, r, g, b)` | Draw a filled polygon; `points` is a list of `vec2` or `[x, y]` pairs (≥ 3) |
 | `draw_text(text, x, y, size, r, g, b)` | Draw text at a position |
 
 All color values are integers 0-255.

@@ -40,6 +40,10 @@ export function renderCommands(
   canvasWidth: number,
   canvasHeight: number,
 ): void {
+  // The canvas persists between frames: we only paint over it on an explicit
+  // "clear" command. A sketch that never calls clear() therefore accumulates
+  // its drawing (particle trails, attractors), matching petal-sdl's persistent
+  // framebuffer. Game-style sketches clear() at the top of every frame.
   for (const cmd of commands) {
     switch (cmd.op) {
       case "clear":

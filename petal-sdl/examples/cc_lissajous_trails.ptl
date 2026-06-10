@@ -1,0 +1,43 @@
+// Lissajous Trails — demonstrates the persistent (no-clear) framebuffer.
+//
+// This sketch calls clear() exactly ONCE, on the first frame. After that it
+// never clears, so every dot it draws stays on screen and the Lissajous curve
+// paints itself in over time. This is the "accumulated trace is the art"
+// model: no need to keep past points in state and redraw them every frame.
+//
+// Contrast with a game-style sketch, which clears at the top of every frame.
+
+state started = false
+state t = 0.0
+
+let sw = float(screen_width())
+let sh = float(screen_height())
+
+// Paint the background once; afterwards the framebuffer persists.
+if !started then
+  clear(0, 0, 0)
+  started = true
+end
+
+let cx = sw * 0.5
+let cy = sh * 0.5
+let rx = sw * 0.42
+let ry = sh * 0.42
+
+// Plot several points per frame along the advancing curve so the trail
+// grows quickly. Each point persists because we never clear() again.
+for i in range(0, 60) do
+  let tt = t + float(i) * 0.0015
+  let x = cx + rx * sin(tt * 3.0)
+  let y = cy + ry * sin(tt * 2.0)
+
+  // Slowly cycling colour, computed by hand to stay independent of the
+  // colour API.
+  let r = int(128.0 + 127.0 * sin(tt * 0.7))
+  let g = int(128.0 + 127.0 * sin(tt * 0.9 + 2.0))
+  let b = int(128.0 + 127.0 * sin(tt * 1.1 + 4.0))
+
+  draw_circle(int(x), int(y), 2, r, g, b)
+end
+
+t += dt() * 2.0

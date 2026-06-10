@@ -16,6 +16,10 @@ pub struct StringId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ListId(pub u32);
 
+/// Opaque handle to a heap-allocated flat f64 array.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct F64ArrayId(pub u32);
+
 /// Opaque handle to a heap-allocated map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MapId(pub u32);
@@ -32,6 +36,12 @@ struct HeapString {
 
 struct HeapList {
     elements: Vec<Value>,
+    gc_mark: bool,
+    alive: bool,
+}
+
+struct HeapF64Array {
+    data: Vec<f64>,
     gc_mark: bool,
     alive: bool,
 }
@@ -53,11 +63,13 @@ struct HeapElement {
 pub struct Heap {
     strings: Vec<HeapString>,
     lists: Vec<HeapList>,
+    f64_arrays: Vec<HeapF64Array>,
     maps: Vec<HeapMap>,
     elements: Vec<HeapElement>,
     /// Free slot indices for reuse
     free_strings: Vec<u32>,
     free_lists: Vec<u32>,
+    free_f64_arrays: Vec<u32>,
     free_maps: Vec<u32>,
     free_elements: Vec<u32>,
     /// String intern table: content → existing StringId
@@ -74,10 +86,12 @@ impl Heap {
         Self {
             strings: Vec::new(),
             lists: Vec::new(),
+            f64_arrays: Vec::new(),
             maps: Vec::new(),
             elements: Vec::new(),
             free_strings: Vec::new(),
             free_lists: Vec::new(),
+            free_f64_arrays: Vec::new(),
             free_maps: Vec::new(),
             free_elements: Vec::new(),
             intern_table: HashMap::new(),
@@ -164,6 +178,39 @@ impl Heap {
         self.lists[id.0 as usize].elements.len()
     }
 
+    // --- F64 array allocation ---
+
+    pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
+        self.tick_alloc();
+        if let Some(idx) = self.free_f64_arrays.pop() {
+            let slot = &mut self.f64_arrays[idx as usize];
+            slot.data = data;
+            slot.gc_mark = false;
+            slot.alive = true;
+            F64ArrayId(idx)
+        } else {
+            let id = F64ArrayId(self.f64_arrays.len() as u32);
+            self.f64_arrays.push(HeapF64Array {
+                data,
+                gc_mark: false,
+                alive: true,
+            });
+            id
+        }
+    }
+
+    pub fn get_f64_array(&self, id: F64ArrayId) -> &[f64] {
+        &self.f64_arrays[id.0 as usize].data
+    }
+
+    pub fn get_f64_array_mut(&mut self, id: F64ArrayId) -> &mut Vec<f64> {
+        &mut self.f64_arrays[id.0 as usize].data
+    }
+
+    pub fn f64_array_len(&self, id: F64ArrayId) -> usize {
+        self.f64_arrays[id.0 as usize].data.len()
+    }
+
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
@@ -239,6 +286,7 @@ impl Heap {
         match val {
             Value::String(id) => self.mark_string(id),
             Value::List(id) => self.mark_list(id),
+            Value::F64Array(id) => self.mark_f64_array(id),
             Value::Map(id) => self.mark_map(id),
             Value::Element(id) => self.mark_element(id),
             Value::EnumVariant { tag, data } => {
@@ -268,6 +316,14 @@ impl Heap {
             for val in elements {
                 self.mark_value(val);
             }
+        }
+    }
+
+    fn mark_f64_array(&mut self, id: F64ArrayId) {
+        let slot = &mut self.f64_arrays[id.0 as usize];
+        if slot.alive && !slot.gc_mark {
+            slot.gc_mark = true;
+            // f64s are primitives — nothing recursive to mark.
         }
     }
 
@@ -322,6 +378,19 @@ impl Heap {
                     slot.alive = false;
                     slot.elements.clear();
                     self.free_lists.push(i as u32);
+                }
+            }
+        }
+
+        self.free_f64_arrays.clear();
+        for (i, slot) in self.f64_arrays.iter_mut().enumerate() {
+            if slot.alive {
+                if slot.gc_mark {
+                    slot.gc_mark = false;
+                } else {
+                    slot.alive = false;
+                    slot.data.clear();
+                    self.free_f64_arrays.push(i as u32);
                 }
             }
         }

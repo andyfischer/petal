@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use crate::heap::{ElementId, ListId, MapId, StringId};
+use crate::heap::{ElementId, F64ArrayId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId};
 
@@ -17,6 +17,8 @@ pub enum Value {
     Float(f64),
     String(StringId),
     List(ListId),
+    /// Flat, unboxed contiguous array of f64 values.
+    F64Array(F64ArrayId),
     Map(MapId),
     Closure(ClosureId),
     /// Multi-arity function: dispatches to the right closure based on arg count.
@@ -52,6 +54,7 @@ impl Value {
             Value::Float(_) => "float",
             Value::String(_) => "string",
             Value::List(_) => "list",
+            Value::F64Array(_) => "f64_array",
             Value::Map(_) => "record",
             Value::Closure(_) => "function",
             Value::OverloadSet(_) => "function",
@@ -99,6 +102,7 @@ impl fmt::Debug for Value {
             Value::Float(v) => write!(f, "Float({v})"),
             Value::String(id) => write!(f, "String({:?})", id),
             Value::List(id) => write!(f, "List({:?})", id),
+            Value::F64Array(id) => write!(f, "F64Array({})", id.0),
             Value::Map(id) => write!(f, "Map({:?})", id),
             Value::Closure(id) => write!(f, "Closure({:?})", id),
             Value::OverloadSet(id) => write!(f, "OverloadSet({:?})", id),
@@ -134,6 +138,11 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                 .iter()
                 .map(|v| value_to_debug_string(v, heap))
                 .collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Value::F64Array(id) => {
+            let data = heap.get_f64_array(*id);
+            let parts: Vec<String> = data.iter().map(|f| format_float(*f)).collect();
             format!("[{}]", parts.join(", "))
         }
         Value::Map(id) => {
@@ -247,6 +256,11 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
             let arr: Vec<serde_json::Value> = elems.iter().map(|v| value_to_json(v, heap)).collect();
             serde_json::Value::Array(arr)
         }
+        Value::F64Array(id) => {
+            let data = heap.get_f64_array(*id);
+            let arr: Vec<serde_json::Value> = data.iter().map(|f| serde_json::json!(*f)).collect();
+            serde_json::Value::Array(arr)
+        }
         Value::Map(id) => {
             let map = heap.get_map(*id);
             let obj: serde_json::Map<String, serde_json::Value> = map
@@ -319,6 +333,12 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
             x.to_bits().hash(&mut hasher);
             y.to_bits().hash(&mut hasher);
         }
+        Value::F64Array(id) => {
+            8u8.hash(&mut hasher);
+            for f in heap.get_f64_array(*id) {
+                f.to_bits().hash(&mut hasher);
+            }
+        }
         // For other types, hash the debug representation
         other => { 6u8.hash(&mut hasher); format!("{:?}", other).hash(&mut hasher); }
     }
@@ -361,6 +381,11 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                     .iter()
                     .zip(b_elems.iter())
                     .all(|(a, b)| values_equal(a, b, heap))
+        }
+        (Value::F64Array(a), Value::F64Array(b)) => {
+            let a_data = heap.get_f64_array(*a);
+            let b_data = heap.get_f64_array(*b);
+            a_data == b_data
         }
         (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
         (Value::Dual { value: av, derivative: ad }, Value::Dual { value: bv, derivative: bd }) => {

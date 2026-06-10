@@ -164,6 +164,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("assert", io::native_assert);
     table.register("assert_eq", io::native_assert_eq);
 
+    // --- Flat unboxed f64 arrays (append-only to preserve phantom term indices) ---
+    table.register("f64_array", collections::native_f64_array);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);

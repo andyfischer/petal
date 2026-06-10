@@ -35,12 +35,27 @@ pub(super) fn native_len(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_int(state.heap().list_len(id) as i64);
             Ok(1)
         }
+        Value::F64Array(id) => {
+            state.push_int(state.heap().f64_array_len(id) as i64);
+            Ok(1)
+        }
         Value::String(id) => {
             state.push_int(state.heap().get_string(id).len() as i64);
             Ok(1)
         }
         _ => Err(format!("Cannot get length of {}", v.type_name())),
     }
+}
+
+pub(super) fn native_f64_array(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "f64_array")?;
+    let n = state.get_int(1)?;
+    if n < 0 {
+        return Err("f64_array() expects a non-negative length".to_string());
+    }
+    let id = state.heap_mut().alloc_f64_array(vec![0.0_f64; n as usize]);
+    state.push_value(Value::F64Array(id));
+    Ok(1)
 }
 
 pub(super) fn native_push(state: &mut PetalCxt) -> Result<u32, String> {

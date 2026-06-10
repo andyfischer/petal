@@ -76,6 +76,7 @@ pub struct Compiler {
     // been rebound (which replaces its scope binding with a `Copy` term, so a
     // simple scope_lookup chain can no longer reach the StateInit).
     state_inits: HashMap<StateKey, TermId>,
+
 }
 
 impl Compiler {
@@ -690,6 +691,38 @@ impl Compiler {
     // Term emission
     // -----------------------------------------------------------------------
 
+    /// If `iter` is literally a call to `range(...)` with 1 or 2 arguments,
+    /// compile its bound expressions and return `(start_tid, end_tid)` for a
+    /// NumericForLoop. For `range(n)` the start is a synthesized `Constant(0)`.
+    /// Returns `None` for any other iterable (the caller falls back to the
+    /// generic ForLoop path). Only the for-loop-iterable position is special-
+    /// cased — `range` used anywhere else still goes through the builtin.
+    fn try_range_bounds(&mut self, iter: &Expr) -> Option<(TermId, TermId)> {
+        let ExprKind::Call { function, args } = &iter.kind else {
+            return None;
+        };
+        let ExprKind::Ident(name) = &function.kind else {
+            return None;
+        };
+        if name != "range" {
+            return None;
+        }
+        match args.len() {
+            1 => {
+                let end_tid = self.compile_expr(&args[0]);
+                let zero = self.constants.intern(ConstantValue::Int(0));
+                let start_tid = self.emit_term(TermOp::Constant(zero), smallvec![], None);
+                Some((start_tid, end_tid))
+            }
+            2 => {
+                let start_tid = self.compile_expr(&args[0]);
+                let end_tid = self.compile_expr(&args[1]);
+                Some((start_tid, end_tid))
+            }
+            _ => None,
+        }
+    }
+
     fn emit_term(
         &mut self,
         op: TermOp,
@@ -882,23 +915,49 @@ impl Compiler {
             }
 
             StmtKind::For { var, iter, body } => {
-                let iter_tid = self.compile_expr(iter);
+                // Fast path: `for i in range(a, b)` / `for i in range(n)` lowers
+                // to a NumericForLoop that iterates an integer counter with no
+                // list allocation. The bounds are evaluated once, before the
+                // loop, exactly like the generic path compiles `iter` first.
+                // Everything after the op emission (carries, phis, body block,
+                // compile_loop_body) is identical to the generic ForLoop path,
+                // so per-iteration state, loop-carried phis, break, and continue
+                // behave the same.
+                if let Some((start_tid, end_tid)) = self.try_range_bounds(iter) {
+                    let carries = self.detect_loop_carries(body, None);
+                    let phis = self.emit_phis(&carries, stmt_span);
 
-                let carries = self.detect_loop_carries(body, None);
-                let phis = self.emit_phis(&carries, stmt_span);
+                    let body_block = self.new_block(None);
+                    self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
 
-                let body_block = self.new_block(None);
-                self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
+                    let for_tid = self.emit_term_with_children(
+                        TermOp::NumericForLoop,
+                        smallvec![start_tid, end_tid],
+                        None,
+                        smallvec![body_block],
+                    );
+                    self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-                let for_tid = self.emit_term_with_children(
-                    TermOp::ForLoop,
-                    smallvec![iter_tid],
-                    None,
-                    smallvec![body_block],
-                );
-                self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
+                    self.compile_loop_body(body_block, body, &phis, Some(var));
+                } else {
+                    let iter_tid = self.compile_expr(iter);
 
-                self.compile_loop_body(body_block, body, &phis, Some(var));
+                    let carries = self.detect_loop_carries(body, None);
+                    let phis = self.emit_phis(&carries, stmt_span);
+
+                    let body_block = self.new_block(None);
+                    self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
+
+                    let for_tid = self.emit_term_with_children(
+                        TermOp::ForLoop,
+                        smallvec![iter_tid],
+                        None,
+                        smallvec![body_block],
+                    );
+                    self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
+
+                    self.compile_loop_body(body_block, body, &phis, Some(var));
+                }
             }
 
             StmtKind::While { condition, body } => {

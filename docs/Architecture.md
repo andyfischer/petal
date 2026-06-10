@@ -132,7 +132,7 @@ the important groups are:
 
 - **Loads** — `Constant`, `Error`, `Copy`
 - **Arithmetic / comparison / logical** — `Add`, `Sub`, `Eq`, `And`, …
-- **Control flow** — `Branch`, `ForLoop`, `WhileLoop`, `Break`, `Continue`, `Return`
+- **Control flow** — `Branch`, `ForLoop`, `NumericForLoop`, `WhileLoop`, `Break`, `Continue`, `Return`
 - **Data joins** — `Phi` (see below)
 - **State** — `StateInit`, `StateRead`, `StateWrite`
 - **Functions** — `MakeClosure`, `MakeOverloadSet`, `Call`, `MethodCall`
@@ -240,7 +240,7 @@ Dataflow lookup is just an array index.
 
 Control flow pushes and pops frames:
 - `Branch` / `Match` → push one frame for the chosen arm block
-- `ForLoop` / `WhileLoop` → push/pop a body frame per iteration
+- `ForLoop` / `NumericForLoop` / `WhileLoop` → push/pop a body frame per iteration
 - `Call` → push a frame for the function body block
 - `And` / `Or` → push the RHS block only if short-circuit demands it
 

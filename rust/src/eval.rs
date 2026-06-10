@@ -51,7 +51,8 @@ impl Evaluator {
         for frame in &stack.frames {
             for (_, loop_state) in &frame.loop_states {
                 match loop_state {
-                    LoopState::For { index, .. } => {
+                    LoopState::For { index, .. }
+                    | LoopState::NumericFor { index, .. } => {
                         // index is 1-past-current (already incremented), so current = index - 1
                         parts.push(LoopKeyPart::Index(index.saturating_sub(1)));
                     }
@@ -130,7 +131,10 @@ impl Evaluator {
         // returns control to its enclosing body via its own exec path).
         if (stack.break_flag || stack.continue_flag) && stack.frames[frame_idx].is_loop_body {
             let cur = program.get_term(current_term_id);
-            if !matches!(cur.op, TermOp::ForLoop | TermOp::WhileLoop) {
+            if !matches!(
+                cur.op,
+                TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop
+            ) {
                 return Self::pop_frame(program, stack, heap);
             }
         }
@@ -716,6 +720,10 @@ impl Evaluator {
                 Self::exec_for_loop(term, inputs, program, stack, heap)
             }
 
+            TermOp::NumericForLoop => {
+                Self::exec_numeric_for_loop(term, inputs, program, stack)
+            }
+
             TermOp::WhileLoop => {
                 Self::exec_while_loop(term, program, stack)
             }
@@ -1190,6 +1198,108 @@ impl Evaluator {
                         let elem = elements[*index];
                         *index += 1;
                         Some(elem)
+                    } else {
+                        frame.remove_loop_state(&term.id);
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        match maybe_elem {
+            Some(elem) => {
+                // Push body frame for this iteration.
+                let block = program.get_block(body_block);
+                let parent_frame_idx = stack.frames.len() - 1;
+                stack.push_frame(
+                    Frame::new(body_block, block.entry, block.register_count as usize,
+                        Some(term.id), Some(parent_frame_idx))
+                    .as_loop_body()
+                );
+                // Set the loop variable in the first register.
+                if let Some(frame) = stack.frames.last_mut() {
+                    if !frame.registers.is_empty() {
+                        frame.registers[0] = elem;
+                    }
+                }
+                ControlFlow::FramePushed
+            }
+            None => {
+                // All iterations complete.
+                Self::write_register(stack, term, Value::Nil);
+                ControlFlow::Advance
+            }
+        }
+    }
+
+    /// Numeric range loop (`for i in range(a, b)`). Identical control flow to
+    /// `exec_for_loop` — same break/continue handling, same body-frame push,
+    /// same loop-variable register assignment, same loop-state lifecycle — but
+    /// the next loop value is an integer counter rather than a list element, so
+    /// no list is materialized.
+    fn exec_numeric_for_loop(
+        term: &Term,
+        inputs: &[Value],
+        program: &Program,
+        stack: &mut Stack,
+    ) -> ControlFlow {
+        // Handle break from a completed iteration.
+        if stack.break_flag {
+            stack.break_flag = false;
+            if let Some(frame) = stack.frames.last_mut() {
+                frame.remove_loop_state(&term.id);
+            }
+            Self::write_register(stack, term, Value::Nil);
+            return ControlFlow::Advance;
+        }
+
+        // Handle continue — just clear the flag and proceed to next iteration.
+        if stack.continue_flag {
+            stack.continue_flag = false;
+        }
+
+        let body_block = term.child_blocks[0];
+
+        // Initialize loop state on the first visit: read the integer bounds.
+        let needs_init = stack.frames.last()
+            .map(|f| !f.has_loop_state(&term.id))
+            .unwrap_or(false);
+        if needs_init {
+            let start = match inputs[0] {
+                Value::Int(n) => n,
+                _ => {
+                    return ControlFlow::Error(
+                        "numeric for-loop bounds must be integers".to_string(),
+                    )
+                }
+            };
+            let end = match inputs[1] {
+                Value::Int(n) => n,
+                _ => {
+                    return ControlFlow::Error(
+                        "numeric for-loop bounds must be integers".to_string(),
+                    )
+                }
+            };
+            if let Some(frame) = stack.frames.last_mut() {
+                frame.set_loop_state(
+                    term.id,
+                    LoopState::NumericFor { current: start, end, index: 0 },
+                );
+            }
+        }
+
+        // Get the next counter value (or detect loop completion).
+        let maybe_elem: Option<Value> = {
+            let frame = stack.frames.last_mut().unwrap();
+            match frame.get_loop_state_mut(&term.id) {
+                Some(LoopState::NumericFor { current, end, index }) => {
+                    if *current < *end {
+                        let val = Value::Int(*current);
+                        *current += 1;
+                        *index += 1;
+                        Some(val)
                     } else {
                         frame.remove_loop_state(&term.id);
                         None

@@ -123,6 +123,11 @@ pub enum TermOp {
     Branch,
     /// for-in loop: inputs=[iterable], child_blocks=[body_block]
     ForLoop,
+    /// Numeric for-loop over an integer range (`for i in range(a, b)`):
+    /// inputs=[start, end] (both Int-producing terms), child_blocks=[body_block].
+    /// Iterates the half-open range [start, end) with no list allocation.
+    /// For single-arg `range(n)` the compiler supplies a constant 0 as start.
+    NumericForLoop,
     /// while loop: child_blocks=[cond_block, body_block]
     WhileLoop,
     Break,

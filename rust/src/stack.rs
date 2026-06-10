@@ -38,6 +38,12 @@ pub struct StackKey(pub u32);
 pub enum LoopState {
     /// For-each loop: elements copied from the list and the next index to process.
     For { elements: Vec<Value>, index: usize },
+    /// Numeric for-loop (`for i in range(a, b)`): iterates an integer counter
+    /// with no list allocation. `current` is the next integer value to yield,
+    /// `end` is the exclusive upper bound, and `index` tracks the iteration
+    /// count (1-past-current after increment) for per-iteration state keying,
+    /// mirroring `For`'s `index`.
+    NumericFor { current: i64, end: i64, index: usize },
     /// While loop: condition has been pushed and we're awaiting its result.
     /// `iteration` tracks the current iteration (0-based) for per-iteration state.
     WhileCondition { iteration: usize },

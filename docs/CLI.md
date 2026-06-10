@@ -339,6 +339,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. See [MutabilityPlan.md](MutabilityPlan.md). |
 | Branch | `"Branch"` | [condition] | [then_block, else_block] | if/else |
 | ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop |
+| NumericForLoop | `"NumericForLoop"` | [start, end] | [body_block] | non-allocating `for x in range(a, b)` integer loop |
 | WhileLoop | `"WhileLoop"` | none | [cond_block, body_block] | while loop |
 | Break | `"Break"` | none | none | |
 | Continue | `"Continue"` | none | none | |

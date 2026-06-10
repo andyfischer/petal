@@ -151,6 +151,7 @@ fn format_op(op: &TermOp) -> String {
         TermOp::Phi => "Phi".into(),
         TermOp::Branch => "Branch".into(),
         TermOp::ForLoop => "ForLoop".into(),
+        TermOp::NumericForLoop => "NumericForLoop".into(),
         TermOp::WhileLoop => "WhileLoop".into(),
         TermOp::Break => "Break".into(),
         TermOp::Continue => "Continue".into(),

@@ -738,7 +738,9 @@ fn program_to_dot(program: &crate::program::Program, hide_phantoms: bool) -> Str
             crate::program::TermOp::StateInit | crate::program::TermOp::StateRead | crate::program::TermOp::StateWrite => "lightyellow",
             crate::program::TermOp::Call | crate::program::TermOp::MethodCall(_) => "lightgreen",
             crate::program::TermOp::Branch | crate::program::TermOp::Match => "lightsalmon",
-            crate::program::TermOp::ForLoop | crate::program::TermOp::WhileLoop => "plum",
+            crate::program::TermOp::ForLoop
+            | crate::program::TermOp::NumericForLoop
+            | crate::program::TermOp::WhileLoop => "plum",
             crate::program::TermOp::MakeClosure(_) => "lightcoral",
             _ => "white",
         };

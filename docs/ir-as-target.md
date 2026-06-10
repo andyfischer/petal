@@ -195,6 +195,7 @@ exact shape Petal already emits; the only additions a *loader* introduces are a
 | `Phi` | 1 | 0 | — | join point; `inputs=[pre_control_flow_value]`. Must precede its control-flow term in the same block (see Phi rules) |
 | `Branch` | 1 | 2 | — | `inputs=[cond]`, `child_blocks=[then, else]` |
 | `ForLoop` | 1 | 1 | — | `inputs=[iterable]`, `child_blocks=[body]` |
+| `NumericForLoop` | 2 | 1 | — | non-allocating integer range loop; `inputs=[start, end]` (both Int-valued), `child_blocks=[body]`. Iterates `start..end` (step 1) binding the loop var per iteration without materializing a list. Compiler emits this for `for x in range(a, b)` |
 | `WhileLoop` | 0 | 2 | — | `child_blocks=[cond_block, body_block]` |
 | `Break` `Continue` | 0 | 0 | — | loop control |
 | `Return` | 0 or 1 | 0 | — | `inputs=[value]`, or empty for bare return |

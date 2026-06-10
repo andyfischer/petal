@@ -16,6 +16,11 @@ export interface DrawCommand {
   y1?: number;
   x2?: number;
   y2?: number;
+  // Triangle (also uses x1,y1,x2,y2 above)
+  x3?: number;
+  y3?: number;
+  // Poly — serde serializes Vec<(i32,i32)> as [[x,y],...]
+  points?: number[][];
   // Circle
   cx?: number;
   cy?: number;
@@ -68,6 +73,31 @@ export function renderCommands(
         ctx.arc(cmd.cx!, cmd.cy!, Math.abs(cmd.radius!), 0, Math.PI * 2);
         ctx.fill();
         break;
+
+      case "triangle":
+        ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+        ctx.beginPath();
+        ctx.moveTo(cmd.x1!, cmd.y1!);
+        ctx.lineTo(cmd.x2!, cmd.y2!);
+        ctx.lineTo(cmd.x3!, cmd.y3!);
+        ctx.closePath();
+        ctx.fill();
+        break;
+
+      case "poly": {
+        const points = cmd.points!;
+        if (points.length >= 3) {
+          ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+          ctx.beginPath();
+          ctx.moveTo(points[0][0], points[0][1]);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i][0], points[i][1]);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+      }
 
       case "text":
         ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);

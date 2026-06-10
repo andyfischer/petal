@@ -1,6 +1,6 @@
 # Builtins Reference
 
-All built-in functions available in Petal. There are 68 native functions
+All built-in functions available in Petal. There are 72 native functions
 registered in `rust/src/builtins/mod.rs`; see [CLI.md § Builtin Phantom
 Terms](CLI.md#builtin-phantom-terms) for the registration order and the
 phantom term IDs they occupy in compiled IR.
@@ -399,12 +399,13 @@ type(nil)         // "nil"
 
 ### `len(collection)`
 
-Returns the length of a list or string.
+Returns the length of a list, string, or `f64_array`.
 
 ```petal
-len([1, 2, 3])   // 3
-len("hello")     // 5
-len([])          // 0
+len([1, 2, 3])      // 3
+len("hello")        // 5
+len([])             // 0
+len(f64_array(4))   // 4
 ```
 
 ### `push(list, value)`
@@ -629,4 +630,51 @@ Extracts the derivative from a dual number. Returns `0.0` for regular numbers.
 ```petal
 deriv_of(dual(3.0, 1.0))   // 1.0
 deriv_of(42)                // 0.0
+```
+
+## Typed Numeric Arrays
+
+A flat, unboxed array of `f64` values stored in a contiguous buffer (not the
+boxed `Value` list). Use this for numeric inner loops — field evaluations,
+particle sims, reaction-diffusion grids — where the per-element boxing of a
+regular list dominates the actual math. Elements are plain floats, so reads and
+writes touch the buffer directly without re-tagging every element.
+
+### `f64_array(n)`
+
+Creates a zero-filled array of length `n`.
+
+```petal
+f64_array(3)   // [0.0, 0.0, 0.0]
+f64_array(0)   // []
+```
+
+### `get(a, i)` / `set(a, i, v)`
+
+`get` returns element `i` as a float. `set` stores `v` (an int or float) into
+slot `i`, mutating the array in place. Both error on an out-of-bounds or
+negative index.
+
+```petal
+let a = f64_array(3)
+set(a, 1, 5.5)
+get(a, 1)        // 5.5
+```
+
+Indexing sugar works too: `a[i]` reads and `a[i] = v` writes.
+
+```petal
+let a = f64_array(2)
+a[0] = 2.5
+a[0]             // 2.5
+```
+
+### `swap(a, i, j)`
+
+Exchanges the elements at `i` and `j` in place. Both indices are bounds-checked.
+
+```petal
+let a = f64_array(3)
+set(a, 0, 1.0)
+swap(a, 0, 2)    // a is now [0.0, 0.0, 1.0]
 ```

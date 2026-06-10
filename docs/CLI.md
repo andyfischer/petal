@@ -450,7 +450,7 @@ bindings = white) so the output stays readable even on mid-sized programs.
 
 ## Builtin Phantom Terms
 
-Every program starts with **68 phantom terms (t0–t67)** in the root block,
+Every program starts with **72 phantom terms (t0–t71)** in the root block,
 one per registered built-in function. These are `Copy` terms with empty
 inputs; their `name` field holds the builtin name. The table below reflects
 the registration order from `rust/src/builtins/mod.rs`. Registration order
@@ -477,12 +477,15 @@ built-ins can only be appended.
 | 15 | `keys`       | 32 | `includes`  | 49 | `exp`        | 66 | `assert`     |
 | 16 | `values`     | 33 | `sin`       | 50 | `log`        | 67 | `assert_eq`  |
 
+Appended after the originals: 68 `f64_array`, 69 `get`, 70 `set`, 71 `swap`
+(the typed numeric array builtins).
+
 `includes` is a JS-compat alias for `contains`. `map`, `filter`, `reduce`,
 and `forEach` are declared as natives so name resolution finds them, but
 the evaluator dispatches them as intrinsics (they need access to the
 evaluator to call their function argument).
 
-User-defined terms start at t68. Phantom terms are **not connected to
+User-defined terms start at t72. Phantom terms are **not connected to
 the block's linked list** (`block_next`/`block_prev` are `null`, and the
 block's `entry` points to the first user term).
 

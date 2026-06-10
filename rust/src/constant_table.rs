@@ -4,15 +4,15 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a constant value within a Program's constant table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ConstantId(pub u32);
 
 /// A literal value stored in the constant table.
 /// Float is stored as u64 bits for Eq/Hash (per docs spec).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConstantValue {
     Nil,
     Bool(bool),
@@ -34,7 +34,7 @@ impl ConstantValue {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ConstantTable {
     values: Vec<ConstantValue>,
     #[serde(skip)]
@@ -70,6 +70,16 @@ impl ConstantTable {
 
     pub fn values(&self) -> &[ConstantValue] {
         &self.values
+    }
+
+    /// Rebuild the value→id dedup map after deserialization (it is
+    /// `#[serde(skip)]` and so arrives empty). Keeps the first id for any
+    /// duplicate values, matching `intern`'s first-wins behavior.
+    pub fn rebuild_dedup(&mut self) {
+        self.dedup.clear();
+        for (i, value) in self.values.iter().enumerate() {
+            self.dedup.entry(value.clone()).or_insert(ConstantId(i as u32));
+        }
     }
 }
 

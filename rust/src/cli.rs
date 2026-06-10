@@ -12,7 +12,7 @@ use crate::parse::Parser;
 use crate::program::ProgramId;
 
 pub enum Command {
-    Run { json: bool, trace: bool, record_trace: Option<String> },
+    Run { json: bool, trace: bool, record_trace: Option<String>, ir: bool },
     Check { json: bool },
     Explain { json: bool, term: String },
     ShowIr { json: bool, all: bool },
@@ -66,14 +66,14 @@ pub fn parse_args() -> CliArgs {
                 process::exit(1);
             }
             CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None },
+                command: Command::Run { json: false, trace: false, record_trace: None, ir: false },
                 source: SourceInput::Inline(args[1].clone()),
             }
         }
         _ => {
             // Treat as file path
             CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None },
+                command: Command::Run { json: false, trace: false, record_trace: None, ir: false },
                 source: SourceInput::File(first.clone()),
             }
         }
@@ -84,6 +84,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut trace = false;
     let mut record_trace: Option<String> = None;
+    let mut ir = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -91,6 +92,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
         match args[i].as_str() {
             "--json" => json = true,
             "--trace" => trace = true,
+            "--ir" => ir = true,
             "--record-trace" => {
                 i += 1;
                 if i >= args.len() {
@@ -115,12 +117,12 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--ir] <file>");
         process::exit(1);
     });
 
     CliArgs {
-        command: Command::Run { json, trace, record_trace },
+        command: Command::Run { json, trace, record_trace, ir },
         source,
     }
 }
@@ -304,8 +306,10 @@ Usage: petal <command> [options] <file>
 
 Commands:
   check [--json] <file>          Lex+parse+compile without executing (exit 0/1)
-  run [--json] [--trace] [--record-trace <path>] <file>
+  run [--json] [--trace] [--record-trace <path>] [--ir] <file>
                                  Execute a program
+                                 --ir: load <file> as JSON IR (show-ir --json
+                                 output) instead of source; use '-' for stdin
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -330,6 +334,16 @@ Commands:
 
 fn read_source(input: &SourceInput) -> String {
     match input {
+        // "-" reads from stdin (e.g. `show-ir --json -e ... | petal run --ir -`).
+        SourceInput::File(path) if path == "-" => {
+            use std::io::Read;
+            let mut buf = String::new();
+            if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+                eprintln!("Error reading stdin: {}", e);
+                process::exit(1);
+            }
+            buf
+        }
         SourceInput::File(path) => match fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
@@ -366,7 +380,7 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
     match cli.command {
-        Command::Run { json, trace, record_trace } => {
+        Command::Run { json, trace, record_trace, ir } => {
             if trace || std::env::var("PETAL_DEBUG").is_ok() {
                 unsafe { std::env::set_var("PETAL_TRACE", "1"); }
             }
@@ -374,7 +388,11 @@ pub fn execute(cli: CliArgs) {
             if record_trace.is_some() {
                 env.trace_mut().enable();
             }
-            let load_result = env.load_program(&source);
+            let load_result = if ir {
+                env.load_program_ir(&source)
+            } else {
+                env.load_program(&source)
+            };
             let pid = match load_result {
                 Ok(pid) => pid,
                 Err(e) => {

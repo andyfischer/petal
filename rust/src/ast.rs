@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::source_map::SourceSpan;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Literal {
     Nil,
     Bool(bool),
@@ -125,7 +125,7 @@ pub struct MatchArm {
     pub body: Expr,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Pattern {
     Wildcard,
     Literal(Literal),

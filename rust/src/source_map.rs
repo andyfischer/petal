@@ -4,19 +4,19 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::ir_serialize::serialize_termid_map;
+use crate::ir_serialize::{deserialize_termid_map, serialize_termid_map};
 use crate::program::TermId;
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SourcePosition {
     pub line: u32,
     pub column: u32,
     pub offset: u32,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SourceSpan {
     pub start: SourcePosition,
     pub end: SourcePosition,
@@ -34,9 +34,13 @@ impl Default for SourceSpan {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SourceMap {
-    #[serde(serialize_with = "serialize_termid_map")]
+    #[serde(
+        default,
+        serialize_with = "serialize_termid_map",
+        deserialize_with = "deserialize_termid_map"
+    )]
     term_spans: HashMap<TermId, SourceSpan>,
 }
 

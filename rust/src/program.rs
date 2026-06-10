@@ -4,12 +4,12 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::ast::Pattern;
 use crate::constant_table::{ConstantId, ConstantTable, ConstantValue};
-use crate::ir_serialize::serialize_termid_map;
+use crate::ir_serialize::{deserialize_termid_map, serialize_termid_map};
 use crate::source_map::SourceMap;
 
 // ---------------------------------------------------------------------------
@@ -17,46 +17,46 @@ use crate::source_map::SourceMap;
 // ---------------------------------------------------------------------------
 
 /// Unique identifier for a program within an Env.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ProgramId(pub u32);
 
 /// Unique identifier for a term within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TermId(pub u32);
 
 /// Unique identifier for a block within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockId(pub u32);
 
 /// Global term identifier - unique within an Env.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GlobalTermId {
     pub program: ProgramId,
     pub term: TermId,
 }
 
 /// Register index within a Frame's register file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RegisterIndex(pub u16);
 
 /// Unique key for persistent state values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StateKey(pub u64);
 
 /// Identifier for a function definition within a Program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FunctionId(pub u32);
 
 /// Identifier for a runtime closure instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ClosureId(pub u32);
 
 /// Identifier for a runtime overload set (multi-arity function dispatch).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OverloadSetId(pub u32);
 
 /// Entry in a map-with-spread allocation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MapSpreadEntry {
     /// Spread all fields from the input at the given index
     Spread(usize),
@@ -69,7 +69,7 @@ pub enum MapSpreadEntry {
 // ---------------------------------------------------------------------------
 
 /// The operation a term performs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TermOp {
     // --- Core ---
 
@@ -189,7 +189,7 @@ pub enum TermOp {
 // ---------------------------------------------------------------------------
 
 /// A single expression/node in the program graph.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Term {
     pub id: TermId,
     pub op: TermOp,
@@ -209,7 +209,7 @@ pub struct Term {
     /// Child blocks for control flow terms (Branch, ForLoop, WhileLoop, Match, And, Or)
     pub child_blocks: SmallVec<[BlockId; 2]>,
     /// True if this state term is inside a loop body (for per-iteration state).
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub in_loop: bool,
 }
 
@@ -218,7 +218,7 @@ pub struct Term {
 // ---------------------------------------------------------------------------
 
 /// A control flow block within a Program.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Block {
     pub id: BlockId,
     /// The term that creates this block's scope. None for the root block.
@@ -233,13 +233,13 @@ pub struct Block {
     /// register value to the parent frame at each `dest_term`'s register.
     /// Emitted when a conditional branch rebinds a name that was bound in
     /// an outer scope — see `docs/MutabilityPlan.md`.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub phi_outs: Vec<PhiOut>,
 }
 
 /// One phi-slot copy: read `src_term`'s value and write to `dest_term`'s
 /// register in the parent frame when a child frame pops.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhiOut {
     pub src_term: TermId,
     pub dest_term: TermId,
@@ -250,7 +250,7 @@ pub struct PhiOut {
 // ---------------------------------------------------------------------------
 
 /// Compile-time function metadata.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct FunctionDef {
     pub id: FunctionId,
     pub name: Option<String>,
@@ -281,7 +281,7 @@ pub struct OverloadEntry {
 // ---------------------------------------------------------------------------
 
 /// Metadata for a compiled match arm.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MatchArmMeta {
     pub pattern: Pattern,
     pub guard_block: Option<BlockId>,
@@ -293,9 +293,11 @@ pub struct MatchArmMeta {
 // ---------------------------------------------------------------------------
 
 /// A compiled program ready for execution.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Program {
     pub id: ProgramId,
+    /// Original source text. Optional for imported IR (see docs/ir-as-target.md).
+    #[serde(default)]
     pub source: String,
 
     // IR data
@@ -303,10 +305,18 @@ pub struct Program {
     pub blocks: Vec<Block>,
     pub root_block: BlockId,
     pub constants: ConstantTable,
+    /// Source spans. Optional for imported IR.
+    #[serde(default)]
     pub source_map: SourceMap,
+    #[serde(default)]
     pub has_errors: bool,
+    #[serde(default)]
     pub functions: Vec<FunctionDef>,
-    #[serde(serialize_with = "serialize_termid_map")]
+    #[serde(
+        default,
+        serialize_with = "serialize_termid_map",
+        deserialize_with = "deserialize_termid_map"
+    )]
     pub match_arms: HashMap<TermId, Vec<MatchArmMeta>>,
     /// Index from block to all terms in that block (including phantoms).
     /// Built once at compile time to avoid O(N) scans over all terms.
@@ -321,6 +331,161 @@ impl Program {
 
     pub fn get_block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
+    }
+
+    /// Deserialize a Program from its JSON IR form (the shape emitted by
+    /// `show-ir --json`). Rebuilds the derived indexes (`block_terms`, the
+    /// constant-table dedup map) that are skipped during serialization, and
+    /// validates the graph's structural integrity. See `docs/ir-as-target.md`.
+    pub fn from_json(json: &str) -> Result<Program, String> {
+        let mut program: Program =
+            serde_json::from_str(json).map_err(|e| format!("invalid IR JSON: {}", e))?;
+        program.rebuild_indexes();
+        program.validate()?;
+        Ok(program)
+    }
+
+    /// Recompute the indexes that `#[serde(skip)]` drops on load, so a
+    /// deserialized Program matches a freshly-compiled one. Built in term-id
+    /// order, identical to the compiler (see `Compiler::compile`).
+    pub fn rebuild_indexes(&mut self) {
+        let mut block_terms: HashMap<BlockId, Vec<TermId>> = HashMap::new();
+        for term in &self.terms {
+            block_terms.entry(term.block_id).or_default().push(term.id);
+        }
+        self.block_terms = block_terms;
+        self.constants.rebuild_dedup();
+    }
+
+    /// Structural validation for an imported IR graph (the M3 contract in
+    /// `docs/ir-as-target.md`). Catches the malformations a hand-written or
+    /// third-party emitter is most likely to produce before they become
+    /// confusing runtime panics.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.has_errors {
+            return Err("program has has_errors=true".to_string());
+        }
+        let n_terms = self.terms.len() as u32;
+        let n_blocks = self.blocks.len() as u32;
+        let n_consts = self.constants.len() as u32;
+        let n_fns = self.functions.len() as u32;
+
+        // terms[i].id == i, and every reference resolves.
+        for (i, term) in self.terms.iter().enumerate() {
+            if term.id.0 as usize != i {
+                return Err(format!("terms[{}] has id {} (must equal index)", i, term.id.0));
+            }
+            if matches!(term.op, TermOp::Error(_)) {
+                return Err(format!("t{}: Error terms are not valid in an import", i));
+            }
+            for inp in &term.inputs {
+                if inp.0 >= n_terms {
+                    return Err(format!("t{}: input t{} out of range", i, inp.0));
+                }
+            }
+            for cb in &term.child_blocks {
+                if cb.0 >= n_blocks {
+                    return Err(format!("t{}: child_block b{} out of range", i, cb.0));
+                }
+            }
+            if term.block_id.0 >= n_blocks {
+                return Err(format!("t{}: block_id b{} out of range", i, term.block_id.0));
+            }
+            // Constant references inside ops.
+            let cids: Vec<u32> = match &term.op {
+                TermOp::Constant(c) | TermOp::Error(c) | TermOp::GetField(c)
+                | TermOp::SetField(c) | TermOp::MethodCall(c)
+                | TermOp::MakeEnumVariant(c) => vec![c.0],
+                TermOp::AllocMap { fields } => fields.iter().map(|c| c.0).collect(),
+                TermOp::AllocElement { tag, prop_keys } => {
+                    let mut v = vec![tag.0];
+                    v.extend(prop_keys.iter().map(|c| c.0));
+                    v
+                }
+                TermOp::AllocMapSpread { entries } => entries
+                    .iter()
+                    .filter_map(|e| match e {
+                        MapSpreadEntry::Named(c, _) => Some(c.0),
+                        MapSpreadEntry::Spread(_) => None,
+                    })
+                    .collect(),
+                _ => vec![],
+            };
+            for c in cids {
+                if c >= n_consts {
+                    return Err(format!("t{}: constant c{} out of range", i, c));
+                }
+            }
+            if let TermOp::MakeClosure(f) = &term.op {
+                if f.0 >= n_fns {
+                    return Err(format!("t{}: function f{} out of range", i, f.0));
+                }
+            }
+            // State ops require a state_key. Other ops *may* also carry one:
+            // a `Copy` produced by a state-tracking reassignment references its
+            // StateInit's key (see compile_assign / docs/creative-coding-evaluation.md).
+            let is_state = matches!(
+                term.op,
+                TermOp::StateInit | TermOp::StateRead | TermOp::StateWrite
+            );
+            if is_state && term.state_key.is_none() {
+                return Err(format!("t{}: state op missing state_key", i));
+            }
+        }
+
+        // Block back-references and phi_outs targets.
+        for (i, block) in self.blocks.iter().enumerate() {
+            if block.id.0 as usize != i {
+                return Err(format!("blocks[{}] has id {} (must equal index)", i, block.id.0));
+            }
+            if let Some(entry) = block.entry {
+                if entry.0 >= n_terms {
+                    return Err(format!("b{}: entry t{} out of range", i, entry.0));
+                }
+            }
+            if let Some(pt) = block.parent_term_id {
+                if pt.0 >= n_terms {
+                    return Err(format!("b{}: parent_term t{} out of range", i, pt.0));
+                }
+            }
+            for po in &block.phi_outs {
+                if po.src_term.0 >= n_terms || po.dest_term.0 >= n_terms {
+                    return Err(format!("b{}: phi_out references out-of-range term", i));
+                }
+                if !matches!(self.terms[po.dest_term.0 as usize].op, TermOp::Phi) {
+                    return Err(format!(
+                        "b{}: phi_out dest t{} is not a Phi term",
+                        i, po.dest_term.0
+                    ));
+                }
+            }
+        }
+
+        if self.root_block.0 >= n_blocks {
+            return Err(format!("root_block b{} out of range", self.root_block.0));
+        }
+
+        // Every StateRead/StateWrite key must have a matching StateInit.
+        use std::collections::HashSet;
+        let inits: HashSet<u64> = self
+            .terms
+            .iter()
+            .filter(|t| matches!(t.op, TermOp::StateInit))
+            .filter_map(|t| t.state_key.map(|k| k.0))
+            .collect();
+        for term in &self.terms {
+            if matches!(term.op, TermOp::StateRead | TermOp::StateWrite) {
+                if let Some(k) = term.state_key {
+                    if !inits.contains(&k.0) {
+                        return Err(format!(
+                            "t{}: state key {} has no StateInit",
+                            term.id.0, k.0
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Resolve a ConstantId that's expected to be a string. Returns None if not a string.

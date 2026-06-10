@@ -1,6 +1,11 @@
 # Petal Language Goals
 
-This document describes the high-level design philosophy and goals of the Petal programming language.
+This document describes the high-level design philosophy and goals of the Petal
+programming language. It is the **North Star** — the *why* and the *eventual
+where*. It intentionally does **not** track implementation status.
+
+> For what is actually built today, the known gaps, and the sequencing of
+> upcoming work, see **[goals-progress.md](goals-progress.md)**.
 
 ---
 
@@ -378,13 +383,14 @@ Together, these goals position Petal as a language where programs are not opaque
 
 ### Inside this repo
 
-- [Architecture.md](Architecture.md) — how the IR term graph implements these
-  goals today (Phi terms, state keys, source map, native FFI)
+- [goals-progress.md](goals-progress.md) — current status of each goal and the
+  sequencing of upcoming work
+- [Architecture.md](Architecture.md) — how the IR term graph realizes these
+  goals (Phi terms, state keys, source map, native FFI)
 - [creative-coding-language-ideas.md](creative-coding-language-ideas.md) —
-  shipped + open items for creative-coding ergonomics
-- [examples/aspirational/](examples/aspirational/) — design sketches for
-  not-yet-implemented APIs (`grad()`, `program.slice()`, etc.) that target
-  these goals
+  design notes for creative-coding ergonomics
+- [examples/aspirational/](examples/aspirational/) — design sketches for APIs
+  that target these goals (`grad()`, `program.slice()`, etc.)
 
 ### Concepts and research
 

@@ -79,6 +79,18 @@ impl Env {
         Ok(id)
     }
 
+    /// Load a program from its JSON IR form (the shape `show-ir --json` emits)
+    /// rather than from source. Validates the graph and assigns it a fresh
+    /// ProgramId. See `docs/ir-as-target.md`.
+    pub fn load_program_ir(&mut self, json: &str) -> Result<ProgramId, String> {
+        let mut program = Program::from_json(json)?;
+        let id = ProgramId(self.next_program_id);
+        self.next_program_id += 1;
+        program.id = id;
+        self.programs.insert(id, program);
+        Ok(id)
+    }
+
     /// Create a new execution stack for a program
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String> {
         let program = self

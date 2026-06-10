@@ -32,6 +32,40 @@ export function runPetal(code: string): string {
   return run(["run", "-e", shellEscape(code)]);
 }
 
+/** Raw `show-ir --json` output as a JSON string (not parsed). */
+export function showIrJsonRaw(code: string): string {
+  return run(["show-ir", "--json", "-e", shellEscape(code)]);
+}
+
+/** Run a JSON IR string through `petal run --ir -` (IR read from stdin). */
+export function runIr(irJson: string): string {
+  return execSync([PETAL, "run", "--ir", "-"].join(" "), {
+    encoding: "utf-8",
+    timeout: 10000,
+    input: irJson,
+  }).trim();
+}
+
+/** Run a JSON IR file through `petal run --ir <path>`. */
+export function runIrFile(path: string): string {
+  return run(["run", "--ir", path]);
+}
+
+/** Expect `petal run --ir -` to fail; return its stderr. */
+export function runIrError(irJson: string): string {
+  try {
+    execSync([PETAL, "run", "--ir", "-"].join(" "), {
+      encoding: "utf-8",
+      timeout: 10000,
+      input: irJson,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    throw new Error("Expected petal to fail but it succeeded");
+  } catch (e: any) {
+    return (e.stderr || "").trim();
+  }
+}
+
 /** Run petal code that's expected to fail, return stderr.
  *  Uses pipe stdio to prevent error messages from leaking into test output. */
 export function runPetalError(code: string): string {

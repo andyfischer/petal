@@ -1,0 +1,1400 @@
+{
+  "id": 0,
+  "source": "fn counter()\n  state c = 0\n  c = c + 1\n  c\nend\nprint(counter())\nprint(counter())\nprint(counter())",
+  "terms": [
+    {
+      "id": 0,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "print",
+      "register": 0,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 1,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "range",
+      "register": 1,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 2,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "len",
+      "register": 2,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 3,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "push",
+      "register": 3,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 4,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "str",
+      "register": 4,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 5,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "abs",
+      "register": 5,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 6,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "sqrt",
+      "register": 6,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 7,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "floor",
+      "register": 7,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 8,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "ceil",
+      "register": 8,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 9,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "float",
+      "register": 9,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 10,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "int",
+      "register": 10,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 11,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "random",
+      "register": 11,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 12,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "type",
+      "register": 12,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 13,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "append",
+      "register": 13,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 14,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "pop",
+      "register": 14,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 15,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "keys",
+      "register": 15,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 16,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "values",
+      "register": 16,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 17,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "contains",
+      "register": 17,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 18,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "min",
+      "register": 18,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 19,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "max",
+      "register": 19,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 20,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "round",
+      "register": 20,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 21,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "dual",
+      "register": 21,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 22,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "value_of",
+      "register": 22,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 23,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "deriv_of",
+      "register": 23,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 24,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "sort",
+      "register": 24,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 25,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "reverse",
+      "register": 25,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 26,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "join",
+      "register": 26,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 27,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "split",
+      "register": 27,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 28,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "enumerate",
+      "register": 28,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 29,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "zip",
+      "register": 29,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 30,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "slice",
+      "register": 30,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 31,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "flat",
+      "register": 31,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 32,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "includes",
+      "register": 32,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 33,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "sin",
+      "register": 33,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 34,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "cos",
+      "register": 34,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 35,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "tan",
+      "register": 35,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 36,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "atan2",
+      "register": 36,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 37,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "pi",
+      "register": 37,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 38,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "clamp",
+      "register": 38,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 39,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "lerp",
+      "register": 39,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 40,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "map_range",
+      "register": 40,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 41,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "distance",
+      "register": 41,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 42,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "mag",
+      "register": 42,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 43,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "pow",
+      "register": 43,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 44,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "sign",
+      "register": 44,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 45,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "fract",
+      "register": 45,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 46,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "smoothstep",
+      "register": 46,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 47,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "radians",
+      "register": 47,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 48,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "degrees",
+      "register": 48,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 49,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "exp",
+      "register": 49,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 50,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "log",
+      "register": 50,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 51,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "noise",
+      "register": 51,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 52,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "noise_seed",
+      "register": 52,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 53,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "random_int",
+      "register": 53,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 54,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "choose",
+      "register": 54,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 55,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "hsv",
+      "register": 55,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 56,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "hsl",
+      "register": 56,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 57,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "color_lerp",
+      "register": 57,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 58,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "vec2",
+      "register": 58,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 59,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "normalize",
+      "register": 59,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 60,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "dot",
+      "register": 60,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 61,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "limit",
+      "register": 61,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 62,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "map",
+      "register": 62,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 63,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "filter",
+      "register": 63,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 64,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "reduce",
+      "register": 64,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 65,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "forEach",
+      "register": 65,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 66,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "assert",
+      "register": 66,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 67,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "assert_eq",
+      "register": 67,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 68,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": null,
+      "name": "counter",
+      "register": 68,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 69,
+      "op": "Copy",
+      "inputs": [],
+      "block_id": 1,
+      "block_next": null,
+      "block_prev": null,
+      "name": "counter",
+      "register": 0,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 70,
+      "op": "StateInit",
+      "inputs": [],
+      "block_id": 1,
+      "block_next": 72,
+      "block_prev": null,
+      "name": "c",
+      "register": 1,
+      "state_key": 3102445089172487244,
+      "child_blocks": [
+        2
+      ]
+    },
+    {
+      "id": 71,
+      "op": {
+        "Constant": 0
+      },
+      "inputs": [],
+      "block_id": 2,
+      "block_next": null,
+      "block_prev": null,
+      "name": null,
+      "register": 0,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 72,
+      "op": "Copy",
+      "inputs": [
+        70
+      ],
+      "block_id": 1,
+      "block_next": 73,
+      "block_prev": 70,
+      "name": null,
+      "register": 2,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 73,
+      "op": {
+        "Constant": 1
+      },
+      "inputs": [],
+      "block_id": 1,
+      "block_next": 74,
+      "block_prev": 72,
+      "name": null,
+      "register": 3,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 74,
+      "op": "Add",
+      "inputs": [
+        72,
+        73
+      ],
+      "block_id": 1,
+      "block_next": 75,
+      "block_prev": 73,
+      "name": null,
+      "register": 4,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 75,
+      "op": "StateWrite",
+      "inputs": [
+        74
+      ],
+      "block_id": 1,
+      "block_next": 76,
+      "block_prev": 74,
+      "name": null,
+      "register": 5,
+      "state_key": 3102445089172487244,
+      "child_blocks": []
+    },
+    {
+      "id": 76,
+      "op": "Copy",
+      "inputs": [
+        74
+      ],
+      "block_id": 1,
+      "block_next": 77,
+      "block_prev": 75,
+      "name": "c",
+      "register": 6,
+      "state_key": 3102445089172487244,
+      "child_blocks": []
+    },
+    {
+      "id": 77,
+      "op": "Copy",
+      "inputs": [
+        76
+      ],
+      "block_id": 1,
+      "block_next": null,
+      "block_prev": 76,
+      "name": null,
+      "register": 7,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 78,
+      "op": {
+        "MakeClosure": 0
+      },
+      "inputs": [],
+      "block_id": 0,
+      "block_next": 79,
+      "block_prev": null,
+      "name": "counter",
+      "register": 69,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 79,
+      "op": "Copy",
+      "inputs": [
+        0
+      ],
+      "block_id": 0,
+      "block_next": 80,
+      "block_prev": 78,
+      "name": null,
+      "register": 70,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 80,
+      "op": "Copy",
+      "inputs": [
+        78
+      ],
+      "block_id": 0,
+      "block_next": 81,
+      "block_prev": 79,
+      "name": null,
+      "register": 71,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 81,
+      "op": "Call",
+      "inputs": [
+        80
+      ],
+      "block_id": 0,
+      "block_next": 82,
+      "block_prev": 80,
+      "name": null,
+      "register": 72,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 82,
+      "op": "Call",
+      "inputs": [
+        79,
+        81
+      ],
+      "block_id": 0,
+      "block_next": 83,
+      "block_prev": 81,
+      "name": null,
+      "register": 73,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 83,
+      "op": "Copy",
+      "inputs": [
+        0
+      ],
+      "block_id": 0,
+      "block_next": 84,
+      "block_prev": 82,
+      "name": null,
+      "register": 74,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 84,
+      "op": "Copy",
+      "inputs": [
+        78
+      ],
+      "block_id": 0,
+      "block_next": 85,
+      "block_prev": 83,
+      "name": null,
+      "register": 75,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 85,
+      "op": "Call",
+      "inputs": [
+        84
+      ],
+      "block_id": 0,
+      "block_next": 86,
+      "block_prev": 84,
+      "name": null,
+      "register": 76,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 86,
+      "op": "Call",
+      "inputs": [
+        83,
+        85
+      ],
+      "block_id": 0,
+      "block_next": 87,
+      "block_prev": 85,
+      "name": null,
+      "register": 77,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 87,
+      "op": "Copy",
+      "inputs": [
+        0
+      ],
+      "block_id": 0,
+      "block_next": 88,
+      "block_prev": 86,
+      "name": null,
+      "register": 78,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 88,
+      "op": "Copy",
+      "inputs": [
+        78
+      ],
+      "block_id": 0,
+      "block_next": 89,
+      "block_prev": 87,
+      "name": null,
+      "register": 79,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 89,
+      "op": "Call",
+      "inputs": [
+        88
+      ],
+      "block_id": 0,
+      "block_next": 90,
+      "block_prev": 88,
+      "name": null,
+      "register": 80,
+      "state_key": null,
+      "child_blocks": []
+    },
+    {
+      "id": 90,
+      "op": "Call",
+      "inputs": [
+        87,
+        89
+      ],
+      "block_id": 0,
+      "block_next": null,
+      "block_prev": 89,
+      "name": null,
+      "register": 81,
+      "state_key": null,
+      "child_blocks": []
+    }
+  ],
+  "blocks": [
+    {
+      "id": 0,
+      "parent_term_id": null,
+      "entry": 78,
+      "param_names": [],
+      "register_count": 82
+    },
+    {
+      "id": 1,
+      "parent_term_id": null,
+      "entry": 70,
+      "param_names": [],
+      "register_count": 8
+    },
+    {
+      "id": 2,
+      "parent_term_id": 70,
+      "entry": 71,
+      "param_names": [],
+      "register_count": 1
+    }
+  ],
+  "root_block": 0,
+  "constants": {
+    "values": [
+      {
+        "Int": 0
+      },
+      {
+        "Int": 1
+      }
+    ]
+  },
+  "source_map": {
+    "term_spans": {
+      "82": {
+        "start": {
+          "line": 6,
+          "column": 1,
+          "offset": 47
+        },
+        "end": {
+          "line": 6,
+          "column": 17,
+          "offset": 63
+        }
+      },
+      "83": {
+        "start": {
+          "line": 7,
+          "column": 1,
+          "offset": 64
+        },
+        "end": {
+          "line": 7,
+          "column": 6,
+          "offset": 69
+        }
+      },
+      "90": {
+        "start": {
+          "line": 8,
+          "column": 1,
+          "offset": 81
+        },
+        "end": {
+          "line": 8,
+          "column": 17,
+          "offset": 97
+        }
+      },
+      "84": {
+        "start": {
+          "line": 7,
+          "column": 7,
+          "offset": 70
+        },
+        "end": {
+          "line": 7,
+          "column": 14,
+          "offset": 77
+        }
+      },
+      "73": {
+        "start": {
+          "line": 3,
+          "column": 11,
+          "offset": 37
+        },
+        "end": {
+          "line": 3,
+          "column": 12,
+          "offset": 38
+        }
+      },
+      "88": {
+        "start": {
+          "line": 8,
+          "column": 7,
+          "offset": 87
+        },
+        "end": {
+          "line": 8,
+          "column": 14,
+          "offset": 94
+        }
+      },
+      "71": {
+        "start": {
+          "line": 2,
+          "column": 13,
+          "offset": 25
+        },
+        "end": {
+          "line": 2,
+          "column": 14,
+          "offset": 26
+        }
+      },
+      "72": {
+        "start": {
+          "line": 3,
+          "column": 7,
+          "offset": 33
+        },
+        "end": {
+          "line": 3,
+          "column": 8,
+          "offset": 34
+        }
+      },
+      "80": {
+        "start": {
+          "line": 6,
+          "column": 7,
+          "offset": 53
+        },
+        "end": {
+          "line": 6,
+          "column": 14,
+          "offset": 60
+        }
+      },
+      "81": {
+        "start": {
+          "line": 6,
+          "column": 7,
+          "offset": 53
+        },
+        "end": {
+          "line": 6,
+          "column": 16,
+          "offset": 62
+        }
+      },
+      "85": {
+        "start": {
+          "line": 7,
+          "column": 7,
+          "offset": 70
+        },
+        "end": {
+          "line": 7,
+          "column": 16,
+          "offset": 79
+        }
+      },
+      "89": {
+        "start": {
+          "line": 8,
+          "column": 7,
+          "offset": 87
+        },
+        "end": {
+          "line": 8,
+          "column": 16,
+          "offset": 96
+        }
+      },
+      "77": {
+        "start": {
+          "line": 4,
+          "column": 3,
+          "offset": 41
+        },
+        "end": {
+          "line": 4,
+          "column": 4,
+          "offset": 42
+        }
+      },
+      "86": {
+        "start": {
+          "line": 7,
+          "column": 1,
+          "offset": 64
+        },
+        "end": {
+          "line": 7,
+          "column": 17,
+          "offset": 80
+        }
+      },
+      "74": {
+        "start": {
+          "line": 3,
+          "column": 7,
+          "offset": 33
+        },
+        "end": {
+          "line": 3,
+          "column": 12,
+          "offset": 38
+        }
+      },
+      "79": {
+        "start": {
+          "line": 6,
+          "column": 1,
+          "offset": 47
+        },
+        "end": {
+          "line": 6,
+          "column": 6,
+          "offset": 52
+        }
+      },
+      "87": {
+        "start": {
+          "line": 8,
+          "column": 1,
+          "offset": 81
+        },
+        "end": {
+          "line": 8,
+          "column": 6,
+          "offset": 86
+        }
+      }
+    }
+  },
+  "has_errors": false,
+  "functions": [
+    {
+      "id": 0,
+      "name": "counter",
+      "params": [],
+      "body_block": 1,
+      "capture_names": [],
+      "capture_registers": [],
+      "self_ref_register": 0,
+      "register_count": 8
+    }
+  ],
+  "match_arms": {}
+}

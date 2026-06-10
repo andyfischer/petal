@@ -37,6 +37,16 @@ fn render_commands(commands: &[DrawCommand], width: u32, height: u32) -> RgbImag
             DrawCommand::Circle { cx, cy, radius, r, g, b } => {
                 fill_circle(&mut img, *cx, *cy, *radius, Rgb([*r, *g, *b]));
             }
+            DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b } => {
+                fill_polygon(
+                    &mut img,
+                    &[(*x1, *y1), (*x2, *y2), (*x3, *y3)],
+                    Rgb([*r, *g, *b]),
+                );
+            }
+            DrawCommand::Poly { points, r, g, b } => {
+                fill_polygon(&mut img, points, Rgb([*r, *g, *b]));
+            }
             DrawCommand::Text { text, x, y, size, r, g, b } => {
                 // Approximate text as a colored rectangle proportional to string length
                 let char_w = (*size as u32) * 3 / 5;
@@ -47,6 +57,44 @@ fn render_commands(commands: &[DrawCommand], width: u32, height: u32) -> RgbImag
         }
     }
     img
+}
+
+/// Fill a polygon into the image buffer using the even-odd scanline rule.
+fn fill_polygon(img: &mut RgbImage, points: &[(i32, i32)], color: Rgb<u8>) {
+    if points.len() < 3 {
+        return;
+    }
+    let min_y = points.iter().map(|p| p.1).min().unwrap();
+    let max_y = points.iter().map(|p| p.1).max().unwrap();
+    let n = points.len();
+    for y in min_y..=max_y {
+        let mut crossings: Vec<i32> = Vec::new();
+        for i in 0..n {
+            let (x1, y1) = points[i];
+            let (x2, y2) = points[(i + 1) % n];
+            if y1 == y2 {
+                continue;
+            }
+            let (ya, yb, xa, xb) = if y1 < y2 {
+                (y1, y2, x1, x2)
+            } else {
+                (y2, y1, x2, x1)
+            };
+            if y >= ya && y < yb {
+                let t = (y - ya) as f64 / (yb - ya) as f64;
+                let x = xa as f64 + t * (xb - xa) as f64;
+                crossings.push(x.round() as i32);
+            }
+        }
+        crossings.sort_unstable();
+        let mut i = 0;
+        while i + 1 < crossings.len() {
+            for px in crossings[i]..=crossings[i + 1] {
+                set_pixel(img, px, y, color);
+            }
+            i += 2;
+        }
+    }
 }
 
 fn set_pixel(img: &mut RgbImage, x: i32, y: i32, color: Rgb<u8>) {

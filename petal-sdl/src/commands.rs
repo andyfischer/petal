@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq, Debug)]
 #[serde(tag = "op", rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum DrawCommand {
@@ -49,6 +49,23 @@ pub enum DrawCommand {
         x: i32,
         y: i32,
         size: u16,
+        r: u8,
+        g: u8,
+        b: u8,
+    },
+    Triangle {
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        x3: i32,
+        y3: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+    },
+    Poly {
+        points: Vec<(i32, i32)>,
         r: u8,
         g: u8,
         b: u8,

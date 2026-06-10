@@ -29,9 +29,63 @@ pub fn render(canvas: &mut Canvas<Window>, commands: Vec<DrawCommand>, font: &Fo
                 canvas.set_draw_color(Color::RGB(r, g, b));
                 draw_filled_circle(canvas, cx, cy, radius);
             }
+            DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b } => {
+                canvas.set_draw_color(Color::RGB(r, g, b));
+                fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
+            }
+            DrawCommand::Poly { points, r, g, b } => {
+                canvas.set_draw_color(Color::RGB(r, g, b));
+                fill_polygon(canvas, &points);
+            }
             DrawCommand::Text { text, x, y, size: _, r, g, b } => {
                 render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
             }
+        }
+    }
+}
+
+/// Fill an arbitrary polygon using the even-odd scanline rule.
+/// Handles convex and concave polygons. The draw color must be set by the caller.
+fn fill_polygon(canvas: &mut Canvas<Window>, points: &[(i32, i32)]) {
+    if points.len() < 3 {
+        return;
+    }
+
+    let min_y = points.iter().map(|p| p.1).min().unwrap();
+    let max_y = points.iter().map(|p| p.1).max().unwrap();
+
+    for y in min_y..=max_y {
+        // Collect x-intersections of this scanline with every polygon edge.
+        let mut crossings: Vec<i32> = Vec::new();
+        let n = points.len();
+        for i in 0..n {
+            let (x1, y1) = points[i];
+            let (x2, y2) = points[(i + 1) % n];
+            // Skip horizontal edges; they contribute no crossing.
+            if y1 == y2 {
+                continue;
+            }
+            let (ya, yb, xa, xb) = if y1 < y2 {
+                (y1, y2, x1, x2)
+            } else {
+                (y2, y1, x2, x1)
+            };
+            // Half-open interval [ya, yb) avoids double-counting shared vertices.
+            if y >= ya && y < yb {
+                let t = (y - ya) as f64 / (yb - ya) as f64;
+                let x = xa as f64 + t * (xb - xa) as f64;
+                crossings.push(x.round() as i32);
+            }
+        }
+
+        crossings.sort_unstable();
+        // Fill spans between consecutive intersection pairs.
+        let mut i = 0;
+        while i + 1 < crossings.len() {
+            let x_start = crossings[i];
+            let x_end = crossings[i + 1];
+            let _ = canvas.draw_line((x_start, y), (x_end, y));
+            i += 2;
         }
     }
 }

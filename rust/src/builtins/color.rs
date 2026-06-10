@@ -62,6 +62,31 @@ fn push_color_map(state: &mut PetalCxt, r: f64, g: f64, b: f64) {
 
 pub(super) fn native_hsv(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "hsv")?;
+    // Hue is normalized to [0, 1) to match the rest of the color API (s, v,
+    // alpha) and p5.js / three.js / Processing defaults. Use hsv_deg() for
+    // degrees.
+    let h = state.get_float(1)?;
+    let s = state.get_float(2)?;
+    let v = state.get_float(3)?;
+    let (r, g, b) = hsv_to_rgb(h * 360.0, s, v);
+    push_color_map(state, r, g, b);
+    Ok(1)
+}
+
+pub(super) fn native_hsl(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "hsl")?;
+    // Hue is normalized to [0, 1); use hsl_deg() for degrees.
+    let h = state.get_float(1)?;
+    let s = state.get_float(2)?;
+    let l = state.get_float(3)?;
+    let (r, g, b) = hsl_to_rgb(h * 360.0, s, l);
+    push_color_map(state, r, g, b);
+    Ok(1)
+}
+
+/// `hsv_deg(h, s, v)` — like `hsv` but with hue in degrees [0, 360).
+pub(super) fn native_hsv_deg(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "hsv_deg")?;
     let h = state.get_float(1)?;
     let s = state.get_float(2)?;
     let v = state.get_float(3)?;
@@ -70,8 +95,9 @@ pub(super) fn native_hsv(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
-pub(super) fn native_hsl(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 3, "hsl")?;
+/// `hsl_deg(h, s, l)` — like `hsl` but with hue in degrees [0, 360).
+pub(super) fn native_hsl_deg(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "hsl_deg")?;
     let h = state.get_float(1)?;
     let s = state.get_float(2)?;
     let l = state.get_float(3)?;

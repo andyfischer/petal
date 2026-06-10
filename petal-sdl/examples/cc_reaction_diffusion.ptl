@@ -163,7 +163,7 @@ for j in range(0, rows) do
       let h = (200.0 + b_v * 160.0 + float(generation) * 0.05) % 360.0
       let s = 0.7
       let v = clamp(0.25 + b_v * 1.4, 0.05, 1.0)
-      let col = hsv(h, s, v)
+      let col = hsv_deg(h, s, v)
       draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
     end
   end

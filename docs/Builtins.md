@@ -1,6 +1,6 @@
 # Builtins Reference
 
-All built-in functions available in Petal. There are 72 native functions
+All built-in functions available in Petal. There are 74 native functions
 registered in `rust/src/builtins/mod.rs`; see [CLI.md § Builtin Phantom
 Terms](CLI.md#builtin-phantom-terms) for the registration order and the
 phantom term IDs they occupy in compiled IR.
@@ -284,19 +284,31 @@ in 0..255 — the same shape produced by the `#rrggbb` color literal.
 
 ### `hsv(h, s, v)`
 
-Create an RGB color from Hue-Saturation-Value. `h` is in degrees (0–360),
-`s` and `v` in 0.0–1.0.
+Create an RGB color from Hue-Saturation-Value. All channels are normalized:
+`h`, `s`, and `v` are in `[0, 1)` (hue wraps). This matches p5.js / three.js /
+Processing and the rest of the color API. For degrees, use `hsv_deg`.
 
 ```petal
-hsv(120.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }
+hsv(0.0, 1.0, 1.0)          // { r: 255, g: 0, b: 0 }   (red)
+hsv(1.0 / 3.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }   (green)
 ```
 
 ### `hsl(h, s, l)`
 
-Create an RGB color from Hue-Saturation-Lightness. Same argument ranges as `hsv`.
+Create an RGB color from Hue-Saturation-Lightness. Same normalized argument
+ranges as `hsv` (`h` in `[0, 1)`). For degrees, use `hsl_deg`.
 
 ```petal
 hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
+```
+
+### `hsv_deg(h, s, v)` / `hsl_deg(h, s, l)`
+
+Like `hsv` / `hsl` but with hue in **degrees** `[0, 360)`. Handy when porting
+code that thinks in degrees (e.g. `120` for green).
+
+```petal
+hsv_deg(120.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }
 ```
 
 ### `color_lerp(c1, c2, t)`

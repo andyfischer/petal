@@ -105,11 +105,11 @@ for i in range(0, iters) do
   let py = int(cy + y * scale)
 
   if px >= 0 && px < int(sw) && py >= 0 && py < int(sh) then
-    // Hue from radius + slow drift. Note: hsv() in Petal takes hue in
-    // 0..360 (degrees), not 0..1 like p5.js.
+    // Hue from radius + slow drift, in degrees. hsv() takes hue in 0..1;
+    // hsv_deg() takes degrees (0..360), which is handier here.
     let r = sqrt(x * x + y * y)
     let h = ((r * 65.0 + hue_shift * 360.0) % 360.0 + 360.0) % 360.0
-    let col = hsv(h, 0.7, 0.95)
+    let col = hsv_deg(h, 0.7, 0.95)
     // 1-pixel point as a 1x1 rect (no draw_pixel primitive)
     draw_rect(px, py, 1, 1, col.r, col.g, col.b)
   end

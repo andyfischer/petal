@@ -88,13 +88,13 @@ fn palette(id, j, t, rows_f)
     let bg = { r: 14, g: 12, b: 32 }
     let h_a = (160.0 + p * 40.0 + t * 12.0) % 360.0
     let h_b = (180.0 + p * 60.0 + t * 12.0) % 360.0
-    { bg: bg, a: hsv(h_a, 0.7, 0.95), b: hsv(h_b, 0.5, 0.85) }
+    { bg: bg, a: hsv_deg(h_a, 0.7, 0.95), b: hsv_deg(h_b, 0.5, 0.85) }
   elsif id == 1 then
     // Warm sunset
     let bg = { r: 28, g: 12, b: 18 }
     let h_a = (15.0 + p * 35.0 + t * 8.0) % 360.0
     let h_b = (340.0 + p * 25.0 + t * 8.0) % 360.0
-    { bg: bg, a: hsv(h_a, 0.85, 0.95), b: hsv(h_b, 0.7, 0.9) }
+    { bg: bg, a: hsv_deg(h_a, 0.85, 0.95), b: hsv_deg(h_b, 0.7, 0.9) }
   elsif id == 2 then
     // Mono ink on parchment
     let bg = { r: 232, g: 224, b: 200 }
@@ -103,7 +103,7 @@ fn palette(id, j, t, rows_f)
   else
     // Neon rainbow
     let h = (p * 360.0 + t * 30.0) % 360.0
-    { bg: { r: 0, g: 0, b: 0 }, a: hsv(h, 0.9, 1.0), b: hsv((h + 60.0) % 360.0, 0.9, 1.0) }
+    { bg: { r: 0, g: 0, b: 0 }, a: hsv_deg(h, 0.9, 1.0), b: hsv_deg((h + 60.0) % 360.0, 0.9, 1.0) }
   end
 end
 

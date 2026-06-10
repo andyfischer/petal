@@ -169,6 +169,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("get", collections::native_get);
     table.register("set", collections::native_set);
     table.register("swap", collections::native_swap);
+    table.register("hsv_deg", color::native_hsv_deg);
+    table.register("hsl_deg", color::native_hsl_deg);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

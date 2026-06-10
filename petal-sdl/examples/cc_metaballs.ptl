@@ -100,17 +100,17 @@ for j in range(0, rows) do
     // Ignore weak field — keeps background dark
     if f > 0.4 then
       // Iso-surface highlight near f ~= 1.
-      // hsv() takes h in 0..360 (degrees), not 0..1.
+      // hue here is in degrees, so use hsv_deg() (hsv() takes hue in 0..1).
       let iso = abs(f - 1.0)
       let h = (220.0 - clamp(f * 50.0, 0.0, 180.0) + t * 18.0) % 360.0
       let s = 0.85
       let v = clamp(0.35 + f * 0.25, 0.0, 1.0)
 
       if iso < 0.05 then
-        let col = hsv(h, 0.4, 1.0)
+        let col = hsv_deg(h, 0.4, 1.0)
         draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
       else
-        let col = hsv(h, s, v)
+        let col = hsv_deg(h, s, v)
         draw_rect(i * cell, j * cell, cell, cell, col.r, col.g, col.b)
       end
     end

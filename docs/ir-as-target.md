@@ -1,7 +1,7 @@
 # Petal IR as a Legible Emit Target
 
-**Status:** M1 (contract) + M2 (loader) + M3 (validation) implemented and
-tested; M4 (reference external emitter) outstanding. Tracked by
+**Status:** M1 (contract) + M2 (loader) + M3 (validation) + M4 (reference
+external emitter) implemented and tested. Tracked by
 `idea-34b8348d`. Sequenced as Phase 3 in [goals-progress.md](goals-progress.md).
 
 Try it:
@@ -101,19 +101,30 @@ messages: dangling `inputs`/`child_blocks`/constant/function references; raw
 [Validation invariants](#validation-invariants-the-m3-contract). Negative cases
 are covered in `ts/test/ir-roundtrip.test.ts`.
 
-### M4 — Reference external emitter — ⏳ outstanding
+### M4 — Reference external emitter — ✅ done
 
-The smallest thing that proves a non-Petal front-end can target the IR and get
-the payoffs for free. Options, smallest first:
+`ts/tools/calc-to-ir.ts` is a self-contained front-end for a toy "calc" language
+(`let`/`print` + integer arithmetic with precedence, parens, and unary minus).
+It shares **no** code with Petal's lexer/parser/compiler — its only contract is
+the v0 import format below — and emits Petal IR JSON straight from its own AST:
 
-- A tiny JSON expression DSL (or a ~100-line arithmetic/let language) whose
-  compiler emits Petal IR JSON.
-- Run its output through `run --ir`, then `show-provenance` / `explain` on it —
-  demonstrating that a foreign front-end inherits provenance and tracing it
-  never implemented.
+```bash
+echo 'print 1 + 2 * 3' | tsx ts/tools/calc-to-ir.ts | petal run --ir -   # => 7
+```
 
-Success: a program authored in *not-Petal*, executed and causally explained by
-Petal, with no Petal surface syntax involved.
+The emitter demonstrates the key conventions a foreign front-end must honour:
+constants go in the constant table and are referenced by `Constant` index;
+builtins (here `print`) are emitted as leading phantom `Copy` terms *before* the
+block's `entry`, where the evaluator binds them to their native functions; real
+terms form the block's `block_next`/`block_prev` linked list; `let` bindings emit
+a named `Copy` so the value stays legible in the dataflow graph.
+
+Because the loaded IR is byte-for-byte a normal `Program`, programs authored in
+*not-Petal* inherit provenance, slicing, `ExplainTerm`, and state-preserving
+live-reload for free. Covered by `ts/test/calc-emitter.test.ts`, which runs the
+emitted IR through `run --ir`, cross-checks its output against the real Petal
+compiler for the equivalent source, and confirms the M3 validator rejects a
+tampered graph.
 
 ## Schema (v0)
 

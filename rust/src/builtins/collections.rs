@@ -58,6 +58,87 @@ pub(super) fn native_f64_array(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
+pub(super) fn native_get(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "get")?;
+    let container = state.get_value(1)?;
+    match container {
+        Value::F64Array(id) => {
+            let i = state.get_int(2)?;
+            let data = state.heap().get_f64_array(id);
+            let len = data.len();
+            if i < 0 || i as usize >= len {
+                return Err(format!(
+                    "Index {} out of bounds for f64_array of length {}",
+                    i, len
+                ));
+            }
+            let v = data[i as usize];
+            state.push_float(v);
+            Ok(1)
+        }
+        _ => Err(format!("Cannot get() from {}", container.type_name())),
+    }
+}
+
+pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "set")?;
+    let container = state.get_value(1)?;
+    match container {
+        Value::F64Array(id) => {
+            let i = state.get_int(2)?;
+            let v = match state.get_value(3)? {
+                Value::Float(f) => f,
+                Value::Int(n) => n as f64,
+                other => {
+                    return Err(format!(
+                        "set() expects a number value, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            let len = state.heap().f64_array_len(id);
+            if i < 0 || i as usize >= len {
+                return Err(format!(
+                    "Index {} out of bounds for f64_array of length {}",
+                    i, len
+                ));
+            }
+            state.heap_mut().get_f64_array_mut(id)[i as usize] = v;
+            state.push_nil();
+            Ok(1)
+        }
+        _ => Err(format!("Cannot set() on {}", container.type_name())),
+    }
+}
+
+pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "swap")?;
+    let container = state.get_value(1)?;
+    match container {
+        Value::F64Array(id) => {
+            let i = state.get_int(2)?;
+            let j = state.get_int(3)?;
+            let len = state.heap().f64_array_len(id);
+            if i < 0 || i as usize >= len {
+                return Err(format!(
+                    "Index {} out of bounds for f64_array of length {}",
+                    i, len
+                ));
+            }
+            if j < 0 || j as usize >= len {
+                return Err(format!(
+                    "Index {} out of bounds for f64_array of length {}",
+                    j, len
+                ));
+            }
+            state.heap_mut().get_f64_array_mut(id).swap(i as usize, j as usize);
+            state.push_nil();
+            Ok(1)
+        }
+        _ => Err(format!("Cannot swap() on {}", container.type_name())),
+    }
+}
+
 pub(super) fn native_push(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "push")?;
     let list = state.get_value(1)?;

@@ -1027,6 +1027,20 @@ impl Evaluator {
                             )),
                         }
                     }
+                    (Value::F64Array(arr_id), Value::Int(i)) => {
+                        let data = heap.get_f64_array(arr_id);
+                        if i < 0 || i as usize >= data.len() {
+                            ControlFlow::Error(format!(
+                                "Index {} out of bounds (len {})",
+                                i,
+                                data.len()
+                            ))
+                        } else {
+                            let v = data[i as usize];
+                            Self::write_register(stack, term, Value::Float(v));
+                            ControlFlow::Advance
+                        }
+                    }
                     (Value::Map(map_id), Value::String(key_id)) => {
                         let key = heap.get_string(key_id).to_string();
                         let map = heap.get_map(map_id);
@@ -1063,6 +1077,30 @@ impl Evaluator {
                                 "Index {} out of bounds (len {})",
                                 i,
                                 list.len()
+                            ))
+                        }
+                    }
+                    (Value::F64Array(arr_id), Value::Int(i)) => {
+                        let v = match val {
+                            Value::Float(f) => f,
+                            Value::Int(n) => n as f64,
+                            other => {
+                                return ControlFlow::Error(format!(
+                                    "Cannot assign {} into f64_array",
+                                    other.type_name()
+                                ))
+                            }
+                        };
+                        let data = heap.get_f64_array_mut(arr_id);
+                        if i >= 0 && (i as usize) < data.len() {
+                            data[i as usize] = v;
+                            Self::write_register(stack, term, Value::Nil);
+                            ControlFlow::Advance
+                        } else {
+                            ControlFlow::Error(format!(
+                                "Index {} out of bounds (len {})",
+                                i,
+                                data.len()
                             ))
                         }
                     }

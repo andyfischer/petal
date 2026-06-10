@@ -24,3 +24,63 @@ describe("f64_array — construction and length", () => {
     expect(runPetal(`print(f64_array(3) == f64_array(3))`)).toBe("true");
   });
 });
+
+describe("f64_array — element access", () => {
+  it("set then get round-trips a value", () => {
+    expect(
+      runPetal(`let a = f64_array(3)
+set(a, 1, 5.5)
+print(get(a, 1))`),
+    ).toBe("5.5");
+  });
+
+  it("set mutates in place (visible through the same handle)", () => {
+    expect(
+      runPetal(`let a = f64_array(2)
+set(a, 0, 9.0)
+print(a)`),
+    ).toBe("[9.0, 0.0]");
+  });
+
+  it("set accepts an int and stores it as a float", () => {
+    expect(
+      runPetal(`let a = f64_array(1)
+set(a, 0, 7)
+print(get(a, 0))`),
+    ).toBe("7.0");
+  });
+
+  it("swap exchanges two elements", () => {
+    expect(
+      runPetal(`let a = f64_array(3)
+set(a, 0, 1.0)
+set(a, 2, 3.0)
+swap(a, 0, 2)
+print(a)`),
+    ).toBe("[3.0, 0.0, 1.0]");
+  });
+
+  it("index read a[i] returns the element", () => {
+    expect(
+      runPetal(`let a = f64_array(2)
+set(a, 1, 4.0)
+print(a[1])`),
+    ).toBe("4.0");
+  });
+
+  it("index write a[i] = v mutates the array", () => {
+    expect(
+      runPetal(`let a = f64_array(2)
+a[0] = 2.5
+print(a)`),
+    ).toBe("[2.5, 0.0]");
+  });
+
+  it("get out of bounds is an error", () => {
+    expect(runPetalError(`get(f64_array(2), 5)`)).toMatch(/bounds|range/i);
+  });
+
+  it("set out of bounds is an error", () => {
+    expect(runPetalError(`set(f64_array(2), 5, 1.0)`)).toMatch(/bounds|range/i);
+  });
+});

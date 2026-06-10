@@ -5,6 +5,13 @@ use std::time::Instant;
 use notify::{RecursiveMode, Watcher};
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
+use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::render::Canvas;
+use sdl2::surface::Surface;
+use sdl2::ttf::Font;
+use sdl2::video::Window;
+
+use crate::commands::DrawCommand;
 
 use petal::env::Env;
 use petal::program::ProgramId;
@@ -143,6 +150,11 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
     let mut event_pump = sdl.event_pump()?;
     let font = load_font(&ttf, 24)?;
 
+    // Persistent software framebuffer: pixels accumulate across frames unless a
+    // `clear()` (DrawCommand::Clear) wipes them. Sized to the drawable area.
+    let (fb_w, fb_h) = canvas.output_size()?;
+    let mut framebuffer = Some(new_framebuffer(fb_w, fb_h)?);
+
     let mut in_browser = source_path.is_none();
     let has_browser = config.examples_dir.is_some();
 
@@ -240,8 +252,8 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         }
 
         let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
-        renderer::render(&mut canvas, commands, &font);
-        canvas.present();
+        let surface = framebuffer.take().expect("framebuffer present");
+        framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
     }
 
     Ok(())
@@ -286,6 +298,11 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
 
     let mut event_pump = sdl.event_pump()?;
     let font = load_font(&ttf, 24)?;
+
+    // Persistent software framebuffer (see run_game): accumulates across frames
+    // unless `clear()` wipes it.
+    let (fb_w, fb_h) = canvas.output_size()?;
+    let mut framebuffer = Some(new_framebuffer(fb_w, fb_h)?);
 
     let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
 
@@ -355,12 +372,11 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
             drain_output(&mut env);
         }
 
-        // Always render (shows last frame when paused)
+        // Always render (shows last frame when paused). When paused, no new
+        // commands are produced, so present_frame re-blits the retained surface.
         let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
-        if !commands.is_empty() {
-            renderer::render(&mut canvas, commands, &font);
-        }
-        canvas.present();
+        let surface = framebuffer.take().expect("framebuffer present");
+        framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
     }
 
     Ok(())
@@ -561,6 +577,48 @@ fn handle_command(
             }
         }
     }
+}
+
+/// Create a persistent software framebuffer the size of the window, cleared to
+/// black. Pixels in this surface survive across frames; only a
+/// `DrawCommand::Clear` wipes it, which is what makes accumulative generative
+/// art work (a frame that never calls `clear()` keeps the previous frame).
+fn new_framebuffer(width: u32, height: u32) -> Result<Surface<'static>, String> {
+    let mut surface =
+        Surface::new(width, height, PixelFormatEnum::RGB888).map_err(|e| e.to_string())?;
+    surface
+        .fill_rect(None, Color::RGB(0, 0, 0))
+        .map_err(|e| e.to_string())?;
+    Ok(surface)
+}
+
+/// Render this frame's commands into the persistent `surface`, then blit the
+/// whole surface to the window and present. The surface is passed by value and
+/// returned so the caller threads the same (retained) framebuffer through the
+/// loop. Because the surface is software-backed, pixels persist unless a
+/// `Clear` command wipes them.
+fn present_frame(
+    canvas: &mut Canvas<Window>,
+    surface: Surface<'static>,
+    commands: Vec<DrawCommand>,
+    font: &Font,
+) -> Result<Surface<'static>, String> {
+    // Render into the persistent surface (software canvas).
+    let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
+    renderer::render(&mut sc, commands, font);
+    let surface = sc.into_surface();
+
+    // Upload the surface to the window as a texture and present. The full-surface
+    // blit overwrites the whole window, so no window clear is needed. `copy` with
+    // `None, None` scales the surface to the window if sizes differ (resizable).
+    let tc = canvas.texture_creator();
+    let tex = tc
+        .create_texture_from_surface(&surface)
+        .map_err(|e| e.to_string())?;
+    canvas.copy(&tex, None, None)?;
+    canvas.present();
+
+    Ok(surface)
 }
 
 fn drain_output(env: &mut Env) {

@@ -233,7 +233,7 @@ petal show-ir [--json] [--all] <file.ptl>
 petal show-ir [--json] [--all] -e '<code>'
 ```
 
-Outputs the compiled intermediate representation — the term graph that the evaluator executes. This is the primary command for GUI playground integration.
+Outputs the compiled intermediate representation — the term graph that the evaluator executes. This is the primary command for GUI and tooling integration.
 
 By default, builtin "phantom" terms (one per registered native function, see
 below) are **hidden** so output starts with user code. Pass `--all` to

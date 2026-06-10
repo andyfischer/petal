@@ -148,17 +148,7 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
 
 ---
 
-## 5. Playground HTTP API (`playground/`)
-
-| Endpoint | Body | Returns |
-|----------|------|---------|
-| `POST /analyze` | `{code}` | `{tokens, ast, ir, run}` each with `{json, error}` |
-| `POST /analyze-text` | `{code}` | Same but human-readable text |
-| `GET /examples` | — | `[{filename, name, content}]` |
-
----
-
-## 6. In-Language Observability
+## 5. In-Language Observability
 
 - `print(...)` — space-joined, to stdout
 - `str(x)` / `type(x)` — value inspection
@@ -208,7 +198,6 @@ variable name when a term's result was bound to one, or `null` otherwise.
 | Automate an SDL program | `petal-sdl --agent` JSON protocol |
 | CI visual regression | `petal-sdl --screenshot --frames N` |
 | Understand data dependencies | `show-provenance` / `show-dependents` / `show-slice` |
-| Web-based exploration | Playground `POST /analyze` |
 | Unit-test IR shape | `showIrJson` + `termByName` / `termsByOp` |
 | Validate without running | `petal check` |
 | "Why does this variable have this value?" | `petal explain --term <name>` |

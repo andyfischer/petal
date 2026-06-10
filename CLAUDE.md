@@ -8,7 +8,6 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
 - `petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
 - `petal-diagram-canvas/` — Another integration, web-based diagram renderer
 - `petal-web/` — Integration that uses Petal as a React-like page rendering layer.
-- `playground/` — Interactive web app for exploring the compiler pipeline (Prism API + React)
 - `ts/` — All TypeScript code (Node project with its own `package.json`/`tsconfig.json`):
   - `ts/bin/` — Dev wrappers (`run-petal.ts`, `test-examples.ts`)
   - `ts/tools/` — MCP servers
@@ -92,32 +91,6 @@ npx vitest test/test-samples.test.ts   # Run just the sample tests
 
 For a quick eyeball-check that prints the first few lines of each example's
 output, run `./ts/bin/test-examples.ts` (add `--full` for full output).
-
-## Playground
-
-An interactive web app (`playground/`) for exploring Petal's compiler pipeline. Built with
-Prism Framework (API + React frontend).
-
-```bash
-# First-time setup: create playground/.env with a port
-echo "PRISM_API_PORT=4027" > playground/.env
-
-cd playground && npm run dev           # Starts the API server
-cd playground/web && npm run dev       # Starts the Vite dev server (separate terminal)
-```
-
-`PRISM_API_PORT` is required; `VITE_PORT` is optional and defaults to 4007.
-
-**Features:**
-- Source code editor with live analysis (tokens, AST, IR, and program output)
-- Example file picker — loads examples from `examples/*.ptl` into the editor
-
-**API endpoints** (`playground/src/services/petal-service.ts`):
-- `POST /analyze` — returns JSON tokens, AST, IR, and run output
-- `POST /analyze-text` — returns human-readable text representations
-- `GET /examples` — lists all example files with their contents
-
-**Frontend** (`playground/web/`): React + Vite, proxied to the API via `vite.config.ts`.
 
 ## MCP Server
 

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- Node.js (for running tests and the playground)
+- Node.js (for running tests and the TypeScript tooling)
 
 ## Building
 
@@ -98,21 +98,6 @@ npx vitest -t "name" # Run tests matching a name
 ```bash
 ./ts/bin/test-examples.ts   # Run all examples with timeout
 ```
-
-## Using the Playground
-
-The playground is an interactive web app for exploring the compiler pipeline.
-First-time setup requires a port in `playground/.env`:
-
-```bash
-echo "PRISM_API_PORT=4027" > playground/.env
-cd playground && npm run dev               # starts the API server
-cd playground/web && npm run dev            # starts the Vite dev server (separate terminal)
-```
-
-Open the Vite URL (default `http://localhost:4007`) to access the editor, where you can
-write Petal code and see live tokens, AST, IR, and program output. See
-[docs/Playground.md](Playground.md) for more details.
 
 ## Using the MCP Tools
 

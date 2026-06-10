@@ -1,0 +1,33 @@
+# Gitleaks configuration for Petal.
+#
+# Extends the upstream default rule set (API keys, private keys, cloud
+# credentials, JWTs, etc.) and adds a few project-specific guards. Used by
+# both the local scanner (`scripts/scan-secrets.sh`) and the GitHub Action
+# (`.github/workflows/secret-scan.yml`), which scan the full commit history.
+
+[extend]
+useDefault = true
+
+# --- Project-specific rules -------------------------------------------------
+
+[[rules]]
+id = "petal-private-package-registry"
+description = "Hardcoded GitHub Packages auth token outside CI secrets"
+regex = '''//npm\.pkg\.github\.com/:_authToken=(?!\$\{)[A-Za-z0-9_\-]+'''
+tags = ["token", "registry"]
+
+# --- Allowlist --------------------------------------------------------------
+
+[allowlist]
+description = "Legitimate matches that are not secrets"
+regexes = [
+  # CI references the token via an env secret, which is the correct pattern.
+  '''_authToken=\$\{NODE_AUTH_TOKEN\}''',
+]
+paths = [
+  # Lockfiles contain integrity hashes that look high-entropy but are not secrets.
+  '''.*pnpm-lock\.yaml$''',
+  '''.*package-lock\.json$''',
+  '''.*Cargo\.lock$''',
+  '''.*yarn\.lock$''',
+]

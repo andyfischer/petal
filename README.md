@@ -79,7 +79,6 @@ print("hello, {name}!")
 
 | Integration | Description |
 |-------------|-------------|
-| [Playground](docs/Playground.md) | Interactive web app for exploring the compiler pipeline (tokens, AST, IR, output) |
 | [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [petal-sdl/docs/game-dev-guide.md](petal-sdl/docs/game-dev-guide.md) and [petal-sdl/docs/agent-protocol.md](petal-sdl/docs/agent-protocol.md) |
 | [petal-web](petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
 | [petal-diagram-canvas](petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
@@ -115,3 +114,7 @@ documentation.
 cd ts && npx vitest          # Integration tests (330+ tests)
 ./ts/bin/test-examples.ts    # Run all example programs
 ```
+
+## License
+
+Petal is released under the [MIT License](LICENSE).

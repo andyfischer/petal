@@ -171,26 +171,3 @@ jobs:
       - name: petal-diagram-canvas — vite build
         working-directory: petal-diagram-canvas
         run: npx vite build
-
-      # ----- playground/web -----
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Configure npm auth for @facetlayer packages
-        run: |
-          echo "@facetlayer:registry=https://npm.pkg.github.com" >> ~/.npmrc
-          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.FACETLAYER_PACKAGES_TOKEN }}
-
-      - name: playground/web — install deps
-        working-directory: playground/web
-        run: pnpm install --frozen-lockfile
-
-      - name: playground/web — vite build
-        working-directory: playground/web
-        env:
-          PRISM_API_PORT: "4027"
-        run: pnpm exec vite build

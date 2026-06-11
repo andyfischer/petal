@@ -520,6 +520,22 @@ impl Default for Env {
     }
 }
 
+impl std::fmt::Debug for Env {
+    /// Summary view: counts rather than full contents, so a host struct that
+    /// embeds an `Env` can `#[derive(Debug)]` (needed by `unwrap_err` /
+    /// `expect_err` in tests, and for logging). The heap, closures, and trace
+    /// buffer are intentionally elided via `finish_non_exhaustive`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("programs", &self.programs.len())
+            .field("stacks", &self.stacks.len())
+            .field("native_fns", &self.native_fns.count())
+            .field("closures", &self.closures.len())
+            .field("pending_output_lines", &self.output.len())
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod call_function_tests {
     use super::*;
@@ -600,6 +616,25 @@ mod call_function_tests {
             err.contains("argument") || err.contains("expects"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn env_implements_debug_and_can_be_embedded() {
+        // A host struct that embeds an Env should be able to derive Debug
+        // (the motivation: unwrap_err/expect_err and logging in embedders).
+        #[derive(Debug)]
+        #[allow(dead_code)]
+        struct Host {
+            env: Env,
+            label: &'static str,
+        }
+        let host = Host {
+            env: Env::new(),
+            label: "demo",
+        };
+        let rendered = format!("{:?}", host);
+        assert!(rendered.contains("Env"), "got: {rendered}");
+        assert!(rendered.contains("native_fns"), "got: {rendered}");
     }
 
     #[test]

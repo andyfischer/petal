@@ -70,4 +70,25 @@ pub enum DrawCommand {
         g: u8,
         b: u8,
     },
+    /// Allocate an offscreen canvas (PGraphics-style render target) of size
+    /// `w`x`h`, identified by `id`. Offscreen canvases are transparent until
+    /// drawn into and are recreated fresh each frame from the command stream,
+    /// which keeps them compatible with the per-frame re-run model.
+    CreateCanvas {
+        id: u32,
+        w: u32,
+        h: u32,
+    },
+    /// Redirect subsequent draw commands to a render target. `id == 0` targets
+    /// the main framebuffer; any other `id` targets the offscreen canvas with
+    /// that id. This is the explicit, ordered form of `draw_to(canvas)`.
+    SetTarget {
+        id: u32,
+    },
+    /// Blit an offscreen canvas onto the current render target at (`x`, `y`).
+    DrawCanvas {
+        id: u32,
+        x: i32,
+        y: i32,
+    },
 }

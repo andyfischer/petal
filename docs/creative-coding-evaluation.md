@@ -108,16 +108,21 @@ fading). Today the workaround is to keep a list of past particles in `state`
 and redraw them all every frame, which is O(n) per frame on top of n's
 growth and so blows up fast.
 
-Two practical paths:
+Two practical paths, **both now implemented**:
 
-1. **`begin_frame()` opt-in to skip clearing.** Cheapest possible change —
-   if a frame doesn't call `clear()`, just don't clear the back buffer.
-   Existing sketches already call `clear()` at the top, so it's
-   backward-compatible.
+1. **Opt-in to skip clearing.** Cheapest possible change — if a frame doesn't
+   call `clear()`, just don't clear the back buffer. Existing sketches already
+   call `clear()` at the top, so it's backward-compatible. *Shipped:* the
+   framebuffer persists across frames and is only wiped by `clear()`. See
+   [Persistent canvas](Game_Framework.md#persistent-canvas-accumulative-drawing).
 2. **Offscreen-canvas primitive.** `let canvas = create_canvas(w, h)`,
-   `draw_to(canvas) { ... }`, `draw_canvas(canvas, x, y)`. This is the
-   mechanism Processing's `PGraphics` uses for trails, masks, and
-   compositing.
+   `draw_to(canvas)` … `draw_to_screen()`, `draw_canvas(canvas, x, y)`. This is
+   the mechanism Processing's `PGraphics` uses for trails, masks, and
+   compositing. *Shipped:* offscreen canvases are a shared `DrawCommand`-stream
+   construct (`CreateCanvas` / `SetTarget` / `DrawCanvas`), implemented across
+   petal-sdl (target `Surface`) and the Canvas2D web renderers (offscreen
+   `<canvas>`). See
+   [Offscreen canvases](Game_Framework.md#offscreen-canvases-pgraphics-style-layers).
 
 (2) is the standard creative-coding move. (1) handles ~80% of the use case
 for almost no engineering.

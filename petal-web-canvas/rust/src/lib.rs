@@ -24,6 +24,9 @@ thread_local! {
     static DRAW_COMMANDS: RefCell<Vec<DrawCommand>> = RefCell::new(Vec::new());
     static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
+    /// Next offscreen-canvas id (1-based; 0 is the main framebuffer). Reset each
+    /// frame in `begin_frame` so ids are stable across the per-frame re-run.
+    static NEXT_CANVAS_ID: RefCell<u32> = RefCell::new(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +44,14 @@ enum DrawCommand {
     Triangle { x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, r: u8, g: u8, b: u8 },
     Poly { points: Vec<(i32, i32)>, r: u8, g: u8, b: u8 },
     Text { text: String, x: i32, y: i32, size: u16, r: u8, g: u8, b: u8 },
+    /// Allocate an offscreen canvas (PGraphics-style render target). Recreated
+    /// fresh each frame from the command stream.
+    CreateCanvas { id: u32, w: u32, h: u32 },
+    /// Redirect subsequent draw commands to a target. `id == 0` is the main
+    /// framebuffer; any other id is an offscreen canvas.
+    SetTarget { id: u32 },
+    /// Blit an offscreen canvas onto the current target at (`x`, `y`).
+    DrawCanvas { id: u32, x: i32, y: i32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +254,46 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
 }
 
 // ---------------------------------------------------------------------------
+// Native functions — offscreen canvases (PGraphics-style render targets)
+// ---------------------------------------------------------------------------
+
+fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
+    let w = state.get_int(1)? as u32;
+    let h = state.get_int(2)? as u32;
+    let id = NEXT_CANVAS_ID.with(|n| {
+        let mut next = n.borrow_mut();
+        let id = *next;
+        *next += 1;
+        id
+    });
+    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::CreateCanvas { id, w, h }));
+    state.push_int(id as i64);
+    Ok(1)
+}
+
+fn native_draw_to(state: &mut PetalCxt) -> NativeResult {
+    let id = state.get_int(1)? as u32;
+    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::SetTarget { id }));
+    state.push_nil();
+    Ok(1)
+}
+
+fn native_draw_to_screen(state: &mut PetalCxt) -> NativeResult {
+    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::SetTarget { id: 0 }));
+    state.push_nil();
+    Ok(1)
+}
+
+fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
+    let id = state.get_int(1)? as u32;
+    let x = state.get_int(2)? as i32;
+    let y = state.get_int(3)? as i32;
+    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::DrawCanvas { id, x, y }));
+    state.push_nil();
+    Ok(1)
+}
+
+// ---------------------------------------------------------------------------
 // Native functions — input
 // ---------------------------------------------------------------------------
 
@@ -327,6 +378,10 @@ fn register_graphics(env: &mut Env) {
     env.register_native("fill_triangle", native_fill_triangle);
     env.register_native("fill_poly", native_fill_poly);
     env.register_native("draw_text", native_draw_text);
+    env.register_native("create_canvas", native_create_canvas);
+    env.register_native("draw_to", native_draw_to);
+    env.register_native("draw_to_screen", native_draw_to_screen);
+    env.register_native("draw_canvas", native_draw_canvas);
 
     env.register_native("mouse_x", native_mouse_x);
     env.register_native("mouse_y", native_mouse_y);
@@ -454,6 +509,9 @@ impl PetalRuntime {
 
     pub fn begin_frame(&self) {
         INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
+        // Reset the offscreen-canvas id counter so `create_canvas` hands out
+        // stable ids across the per-frame re-run model.
+        NEXT_CANVAS_ID.with(|n| *n.borrow_mut() = 1);
     }
 
     // --- Debug ---
@@ -477,6 +535,9 @@ impl PetalRuntime {
 
     pub fn run_speculative(&mut self) -> Result<String, JsValue> {
         let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        // Reset canvas ids so a speculative run produces the same ids as the
+        // live frame loop.
+        NEXT_CANVAS_ID.with(|n| *n.borrow_mut() = 1);
         self.env
             .run_speculative(sid)
             .map_err(|e| JsValue::from_str(&e))?;

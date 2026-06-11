@@ -1,0 +1,44 @@
+// Offscreen Canvas Layers — demonstrates the PGraphics-style offscreen canvas
+// primitive: create_canvas / draw_to / draw_to_screen / draw_canvas.
+//
+// We draw a small "stamp" (a plus-shaped sprite) ONCE into an offscreen canvas,
+// then composite that same canvas onto the main framebuffer at many positions.
+// The offscreen canvas is transparent where nothing was drawn, so only the
+// stamp's pixels land — the background shows through everywhere else.
+//
+// This is the standard creative-coding move (Processing's PGraphics): build a
+// layer once, reuse it cheaply, and composite for trails / masks / sprites.
+
+state t = 0.0
+t += dt()
+
+let sw = screen_width()
+let sh = screen_height()
+
+// Repaint the background every frame (game-style clear).
+clear(12, 12, 24)
+
+// --- Build a reusable 24x24 stamp in an offscreen canvas ---
+// create_canvas(w, h) returns an integer handle. draw_to(handle) redirects all
+// subsequent draw commands into that canvas until draw_to_screen() is called.
+let stamp = create_canvas(24, 24)
+draw_to(stamp)
+// A plus sign. The rest of the 24x24 canvas stays transparent.
+draw_rect(9, 2, 6, 20, 240, 220, 120)
+draw_rect(2, 9, 20, 6, 240, 220, 120)
+draw_to_screen()
+
+// --- Composite the stamp across the screen ---
+// draw_canvas(handle, x, y) blits the offscreen canvas onto the main
+// framebuffer. We move the grid with time so the compositing is visible.
+let cols = 8
+let rows = 6
+for gy in range(0, rows) do
+  for gx in range(0, cols) do
+    let phase = t + float(gx + gy) * 0.3
+    let ox = int(8.0 * sin(phase))
+    let x = (gx * sw) / cols + ox
+    let y = (gy * sh) / rows + ox
+    draw_canvas(stamp, x, y)
+  end
+end

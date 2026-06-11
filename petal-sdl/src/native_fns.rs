@@ -31,6 +31,18 @@ thread_local! {
     pub static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     pub static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
     pub static BROWSER_STATE: RefCell<BrowserState> = RefCell::new(BrowserState::default());
+    /// Next offscreen-canvas id to hand out. Ids start at 1 (0 is reserved for
+    /// the main framebuffer) and are allocated by `create_canvas`. The counter
+    /// is reset at the top of every frame so ids are stable across the per-frame
+    /// re-run model.
+    pub static NEXT_CANVAS_ID: RefCell<u32> = RefCell::new(1);
+}
+
+/// Reset the per-frame offscreen-canvas id counter. Call this at the start of
+/// each frame, before the sketch runs, so `create_canvas` hands out the same
+/// ids every frame.
+pub fn reset_canvas_ids() {
+    NEXT_CANVAS_ID.with(|n| *n.borrow_mut() = 1);
 }
 
 pub fn register_all(env: &mut Env) {
@@ -42,6 +54,10 @@ pub fn register_all(env: &mut Env) {
     env.register_native("fill_triangle", native_fill_triangle);
     env.register_native("fill_poly", native_fill_poly);
     env.register_native("draw_text", native_draw_text);
+    env.register_native("create_canvas", native_create_canvas);
+    env.register_native("draw_to", native_draw_to);
+    env.register_native("draw_to_screen", native_draw_to_screen);
+    env.register_native("draw_canvas", native_draw_canvas);
     env.register_native("key_down", native_key_down);
     env.register_native("key_pressed", native_key_pressed);
     env.register_native("mouse_x", native_mouse_x);
@@ -220,6 +236,59 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let b = state.get_int(7)? as u8;
     DRAW_COMMANDS.with(|cmds| {
         cmds.borrow_mut().push(DrawCommand::Text { text, x, y, size, r, g, b });
+    });
+    state.push_nil();
+    Ok(1)
+}
+
+// --- Offscreen canvases (PGraphics-style render targets) ---
+
+/// Allocate an offscreen canvas of size `w`x`h` and return its integer id.
+/// The id is used with `draw_to`/`draw_canvas` to direct drawing into the
+/// canvas and later blit it onto the main framebuffer.
+fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
+    let w = state.get_int(1)? as u32;
+    let h = state.get_int(2)? as u32;
+    let id = NEXT_CANVAS_ID.with(|n| {
+        let mut next = n.borrow_mut();
+        let id = *next;
+        *next += 1;
+        id
+    });
+    DRAW_COMMANDS.with(|cmds| {
+        cmds.borrow_mut().push(DrawCommand::CreateCanvas { id, w, h });
+    });
+    state.push_int(id as i64);
+    Ok(1)
+}
+
+/// Redirect subsequent draw commands into the offscreen canvas with the given
+/// id. Pair with `draw_to_screen()` to return to the main framebuffer.
+fn native_draw_to(state: &mut PetalCxt) -> NativeResult {
+    let id = state.get_int(1)? as u32;
+    DRAW_COMMANDS.with(|cmds| {
+        cmds.borrow_mut().push(DrawCommand::SetTarget { id });
+    });
+    state.push_nil();
+    Ok(1)
+}
+
+/// Redirect subsequent draw commands back to the main framebuffer.
+fn native_draw_to_screen(state: &mut PetalCxt) -> NativeResult {
+    DRAW_COMMANDS.with(|cmds| {
+        cmds.borrow_mut().push(DrawCommand::SetTarget { id: 0 });
+    });
+    state.push_nil();
+    Ok(1)
+}
+
+/// Blit the offscreen canvas `id` onto the current render target at (`x`, `y`).
+fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
+    let id = state.get_int(1)? as u32;
+    let x = state.get_int(2)? as i32;
+    let y = state.get_int(3)? as i32;
+    DRAW_COMMANDS.with(|cmds| {
+        cmds.borrow_mut().push(DrawCommand::DrawCanvas { id, x, y });
     });
     state.push_nil();
     Ok(1)
@@ -449,5 +518,52 @@ mod tests {
         register_all(&mut env);
         let result = env.run_source("fill_poly([vec2(0,0), vec2(1,1)], 1,2,3)");
         assert!(result.is_err(), "expected Err for fewer than 3 points");
+    }
+
+    #[test]
+    fn offscreen_canvas_emits_stream_commands() {
+        let _ = drain_commands();
+        reset_canvas_ids();
+        let mut env = Env::new();
+        register_all(&mut env);
+        // create_canvas returns id 1; redirect to it, draw, then blit onto main.
+        env.run_source(
+            "let c = create_canvas(32, 32)\n\
+             draw_to(c)\n\
+             draw_rect(0, 0, 4, 4, 255, 255, 255)\n\
+             draw_to_screen()\n\
+             draw_canvas(c, 10, 10)",
+        )
+        .expect("run_source should succeed");
+
+        let cmds = drain_commands();
+        assert_eq!(
+            cmds,
+            vec![
+                DrawCommand::CreateCanvas { id: 1, w: 32, h: 32 },
+                DrawCommand::SetTarget { id: 1 },
+                DrawCommand::Rect { x: 0, y: 0, w: 4, h: 4, r: 255, g: 255, b: 255 },
+                DrawCommand::SetTarget { id: 0 },
+                DrawCommand::DrawCanvas { id: 1, x: 10, y: 10 },
+            ]
+        );
+    }
+
+    #[test]
+    fn canvas_ids_are_stable_after_reset() {
+        let _ = drain_commands();
+        let mut env = Env::new();
+        register_all(&mut env);
+
+        reset_canvas_ids();
+        let a = env.run_source("create_canvas(8, 8)").expect("run ok");
+        let _ = drain_commands();
+        reset_canvas_ids();
+        let b = env.run_source("create_canvas(8, 8)").expect("run ok");
+        let _ = drain_commands();
+
+        // After a per-frame reset, the same call site yields the same id.
+        assert_eq!(a, Value::Int(1));
+        assert_eq!(b, Value::Int(1));
     }
 }

@@ -103,6 +103,33 @@ This replaces the old workaround of stashing every past point in `state` and
 redrawing the whole history each frame (which grows O(n) per frame). See
 `examples/cc_lissajous_trails.ptl`.
 
+### Offscreen canvases (PGraphics-style layers)
+
+For layered compositing, masks, and per-layer trails, allocate an **offscreen
+canvas** — a separate render target you draw into and later blit onto the main
+framebuffer. This is the standard creative-coding move (Processing's
+`PGraphics`).
+
+```petal
+// Build a reusable stamp once, in a 24x24 offscreen canvas.
+let stamp = create_canvas(24, 24)   // returns a canvas handle (an int)
+draw_to(stamp)                       // redirect drawing into the canvas
+draw_rect(9, 2, 6, 20, 240, 220, 120)
+draw_rect(2, 9, 20, 6, 240, 220, 120)
+draw_to_screen()                     // redirect back to the main framebuffer
+
+// Composite the stamp wherever you like — transparent pixels show the
+// background through, only the drawn pixels land.
+draw_canvas(stamp, 100, 50)
+draw_canvas(stamp, 200, 80)
+```
+
+An offscreen canvas starts **fully transparent**, so blitting it composites
+only the pixels you painted. Canvases are recreated fresh from the draw stream
+every frame (handles are stable across the per-frame re-run), so call
+`create_canvas` each frame just like any other draw call. See
+`examples/cc_offscreen_layers.ptl`.
+
 ## Native Functions
 
 ### Drawing
@@ -117,6 +144,10 @@ redrawing the whole history each frame (which grows O(n) per frame). See
 | `fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)` | Draw a filled triangle |
 | `fill_poly(points, r, g, b)` | Draw a filled polygon; `points` is a list of `vec2` or `[x, y]` pairs (≥ 3) |
 | `draw_text(text, x, y, size, r, g, b)` | Draw text at a position |
+| `create_canvas(w, h)` | Allocate an offscreen canvas (PGraphics-style render target); returns a canvas handle (see [Offscreen canvases](#offscreen-canvases-pgraphics-style-layers)) |
+| `draw_to(canvas)` | Redirect subsequent draw commands into the given offscreen canvas |
+| `draw_to_screen()` | Redirect subsequent draw commands back to the main framebuffer |
+| `draw_canvas(canvas, x, y)` | Blit an offscreen canvas onto the current render target at `(x, y)`; transparent pixels show the destination through |
 
 All color values are integers 0-255.
 

@@ -27,6 +27,14 @@ All notable changes to Petal are recorded here.
   `f64` array type for numeric inner loops.
 - `fill_triangle(...)` and `fill_poly(points, r, g, b)` filled-polygon drawing
   primitives across the SDL and canvas integrations.
+- Offscreen canvases (PGraphics-style render targets) for layered compositing,
+  masks, and per-layer trails: `create_canvas(w, h)` returns a canvas handle,
+  `draw_to(canvas)` / `draw_to_screen()` redirect the draw stream, and
+  `draw_canvas(canvas, x, y)` blits a canvas onto the current target.
+  Implemented as a shared `DrawCommand`-stream construct across the SDL (target
+  `Surface`) and Canvas2D web (offscreen `<canvas>`) integrations. Canvases
+  start transparent so only painted pixels composite. See
+  `petal-sdl/examples/cc_offscreen_layers.ptl`.
 - Reference external IR emitter (`ts/tools/calc-to-ir.ts`): a toy language that
   compiles to Petal IR JSON and runs via `petal run --ir`.
 - MIT `LICENSE`.

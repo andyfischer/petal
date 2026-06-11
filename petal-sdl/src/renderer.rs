@@ -1,6 +1,8 @@
-use sdl2::pixels::Color;
+use std::collections::HashMap;
+
+use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
-use sdl2::render::{Canvas, RenderTarget};
+use sdl2::render::{BlendMode, Canvas, RenderTarget};
 use sdl2::surface::Surface;
 use sdl2::ttf::Font;
 use sdl2::video::Window;
@@ -14,6 +16,10 @@ use crate::commands::DrawCommand;
 /// texture-creator/context type internal.
 pub trait TextTarget: RenderTarget + Sized {
     fn render_text(canvas: &mut Canvas<Self>, font: &Font, text: &str, x: i32, y: i32, color: Color);
+    /// Blit `src` onto this canvas at (`x`, `y`). Used to composite an offscreen
+    /// canvas onto a render target. Defined per-target because the
+    /// `TextureCreator` context type is target-specific.
+    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32);
 }
 
 impl TextTarget for Window {
@@ -27,6 +33,11 @@ impl TextTarget for Window {
     ) {
         let creator = canvas.texture_creator();
         render_text_impl(canvas, &creator, font, text, x, y, color);
+    }
+
+    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32) {
+        let creator = canvas.texture_creator();
+        blit_surface_impl(canvas, &creator, src, x, y);
     }
 }
 
@@ -45,43 +56,110 @@ impl TextTarget for Surface<'_> {
         let creator = canvas.texture_creator();
         render_text_impl(canvas, &creator, font, text, x, y, color);
     }
+
+    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32) {
+        let creator = canvas.texture_creator();
+        blit_surface_impl(canvas, &creator, src, x, y);
+    }
 }
 
 pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>, font: &Font) {
+    // Offscreen canvases (PGraphics-style render targets), keyed by id. They are
+    // rebuilt fresh from the command stream every frame, so the per-frame re-run
+    // model needs no extra bookkeeping. Each is a software `Canvas<Surface>`
+    // with an alpha channel so unpainted regions stay transparent and only the
+    // drawn pixels composite onto the destination.
+    let mut offscreen: HashMap<u32, Canvas<Surface<'static>>> = HashMap::new();
+    // The active render target. `0` is the main framebuffer; any other value is
+    // an offscreen canvas id set via `SetTarget` (i.e. `draw_to`).
+    let mut target: u32 = 0;
+
     for cmd in commands {
         match cmd {
-            DrawCommand::Clear { r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                canvas.clear();
+            DrawCommand::CreateCanvas { id, w, h } => {
+                if let Ok(mut surface) = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888) {
+                    // Start fully transparent so only drawn pixels composite.
+                    let _ = surface.fill_rect(None, Color::RGBA(0, 0, 0, 0));
+                    if let Ok(mut sc) = surface.into_canvas() {
+                        // Drawing into the canvas should overwrite (set) alpha so
+                        // painted pixels become opaque; the blit later composites.
+                        sc.set_blend_mode(BlendMode::None);
+                        offscreen.insert(id, sc);
+                    }
+                }
             }
-            DrawCommand::Rect { x, y, w, h, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                let _ = canvas.fill_rect(Rect::new(x, y, w, h));
+            DrawCommand::SetTarget { id } => {
+                target = id;
             }
-            DrawCommand::RectOutline { x, y, w, h, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                let _ = canvas.draw_rect(Rect::new(x, y, w, h));
+            DrawCommand::DrawCanvas { id, x, y } => {
+                // Pull the source canvas out so we can borrow the destination
+                // (which may itself be another offscreen canvas) at the same time.
+                if let Some(src_canvas) = offscreen.remove(&id) {
+                    let src_surface = src_canvas.into_surface();
+                    if target == 0 {
+                        T::blit_surface(canvas, &src_surface, x, y);
+                    } else if let Some(dst) = offscreen.get_mut(&target) {
+                        // The destination is itself an offscreen canvas
+                        // (`Canvas<Surface>`), which also implements `TextTarget`.
+                        <Surface as TextTarget>::blit_surface(dst, &src_surface, x, y);
+                    }
+                    // Restore the source canvas so it can be reused/blitted again.
+                    if let Ok(sc) = src_surface.into_canvas() {
+                        offscreen.insert(id, sc);
+                    }
+                }
             }
-            DrawCommand::Line { x1, y1, x2, y2, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                let _ = canvas.draw_line((x1, y1), (x2, y2));
-            }
-            DrawCommand::Circle { cx, cy, radius, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                draw_filled_circle(canvas, cx, cy, radius);
-            }
-            DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
-            }
-            DrawCommand::Poly { points, r, g, b } => {
-                canvas.set_draw_color(Color::RGB(r, g, b));
-                fill_polygon(canvas, &points);
-            }
-            DrawCommand::Text { text, x, y, size: _, r, g, b } => {
-                T::render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
+            other => {
+                if target == 0 {
+                    render_one(canvas, other, font);
+                } else if let Some(dst) = offscreen.get_mut(&target) {
+                    render_one(dst, other, font);
+                }
+                // If the target id is unknown, the command is silently dropped.
             }
         }
+    }
+}
+
+/// Render a single primitive draw command onto a target canvas. `CreateCanvas`,
+/// `SetTarget`, and `DrawCanvas` are handled by `render` and never reach here.
+fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, font: &Font) {
+    match cmd {
+        DrawCommand::Clear { r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            canvas.clear();
+        }
+        DrawCommand::Rect { x, y, w, h, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            let _ = canvas.fill_rect(Rect::new(x, y, w, h));
+        }
+        DrawCommand::RectOutline { x, y, w, h, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            let _ = canvas.draw_rect(Rect::new(x, y, w, h));
+        }
+        DrawCommand::Line { x1, y1, x2, y2, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            let _ = canvas.draw_line((x1, y1), (x2, y2));
+        }
+        DrawCommand::Circle { cx, cy, radius, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            draw_filled_circle(canvas, cx, cy, radius);
+        }
+        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
+        }
+        DrawCommand::Poly { points, r, g, b } => {
+            canvas.set_draw_color(Color::RGB(r, g, b));
+            fill_polygon(canvas, &points);
+        }
+        DrawCommand::Text { text, x, y, size: _, r, g, b } => {
+            T::render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
+        }
+        // Handled in `render`; unreachable here.
+        DrawCommand::CreateCanvas { .. }
+        | DrawCommand::SetTarget { .. }
+        | DrawCommand::DrawCanvas { .. } => {}
     }
 }
 
@@ -181,6 +259,30 @@ fn render_text_impl<T, C>(
     };
     let query = texture.query();
     let target = Rect::new(x, y, query.width, query.height);
+    let _ = canvas.copy(&texture, None, Some(target));
+}
+
+/// Shared offscreen-canvas blit body. Uploads `src` as an alpha-blended texture
+/// and copies it onto `canvas` at (`x`, `y`). Generic over the canvas target and
+/// the texture-creator context so it serves both the window and software paths.
+fn blit_surface_impl<T, C>(
+    canvas: &mut Canvas<T>,
+    texture_creator: &sdl2::render::TextureCreator<C>,
+    src: &Surface,
+    x: i32,
+    y: i32,
+) where
+    T: RenderTarget,
+{
+    let mut texture = match texture_creator.create_texture_from_surface(src) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    // Composite: transparent regions of the offscreen canvas let the destination
+    // show through, only the painted pixels land.
+    texture.set_blend_mode(BlendMode::Blend);
+    let (w, h) = src.size();
+    let target = Rect::new(x, y, w, h);
     let _ = canvas.copy(&texture, None, Some(target));
 }
 
@@ -337,5 +439,43 @@ mod tests {
             }
         }
         assert!(any_lit, "text should draw at least one non-black pixel on the software surface");
+    }
+
+    #[test]
+    fn offscreen_canvas_composites_onto_main() {
+        // Draw a white rect into an offscreen canvas, then blit that canvas
+        // onto the main framebuffer at an offset. Only the painted region
+        // should appear; the rest of the framebuffer stays black (the canvas
+        // is transparent where nothing was drawn).
+        let ttf = sdl2::ttf::init().unwrap();
+        let font = load_test_font(&ttf).expect("a system font for tests");
+
+        let surface = render_frame(
+            new_black_surface(),
+            vec![
+                DrawCommand::CreateCanvas { id: 1, w: 16, h: 16 },
+                DrawCommand::SetTarget { id: 1 },
+                // Fill a 6x6 white block in the canvas's top-left.
+                DrawCommand::Rect { x: 0, y: 0, w: 6, h: 6, r: 255, g: 255, b: 255 },
+                DrawCommand::SetTarget { id: 0 },
+                // Blit the canvas onto the main framebuffer at (20, 20).
+                DrawCommand::DrawCanvas { id: 1, x: 20, y: 20 },
+            ],
+            &font,
+        );
+
+        // The blitted block should be white at (22, 22).
+        assert!(
+            is_white(pixel_rgb(&surface, 22, 22)),
+            "offscreen canvas content should composite onto the main framebuffer"
+        );
+        // A pixel just outside the 6x6 block (canvas was transparent there) must
+        // remain black — the offscreen canvas must not paint a full opaque rect.
+        assert!(
+            is_black(pixel_rgb(&surface, 30, 30)),
+            "transparent regions of the offscreen canvas should not overwrite the framebuffer"
+        );
+        // And the area the canvas did NOT cover at all stays black.
+        assert!(is_black(pixel_rgb(&surface, 2, 2)), "untouched framebuffer stays black");
     }
 }

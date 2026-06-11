@@ -18,7 +18,9 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::input::scancode_to_name;
-use crate::native_fns::{self, ExampleEntry, BROWSER_STATE, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
+use crate::native_fns::{
+    self, reset_canvas_ids, ExampleEntry, BROWSER_STATE, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE,
+};
 use crate::protocol::{self, Command, Response};
 use crate::renderer;
 use crate::screenshot;
@@ -215,6 +217,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         }
 
         DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+        reset_canvas_ids();
 
         env.reset_stack(stack_id)?;
         if let Err(e) = env.run(stack_id) {

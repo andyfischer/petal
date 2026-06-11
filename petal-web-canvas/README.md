@@ -20,6 +20,12 @@ draw_rect_outline(x, y, w, h, r, g, b)
 draw_line(x1, y1, x2, y2, r, g, b)
 draw_circle(cx, cy, radius, r, g, b)
 draw_text(text, x, y, size, r, g, b)
+
+# Offscreen canvases (PGraphics-style layers / compositing)
+let c = create_canvas(w, h)   # returns a canvas handle
+draw_to(c)                    # redirect drawing into the canvas
+draw_to_screen()              # redirect back to the main canvas
+draw_canvas(c, x, y)          # blit the offscreen canvas onto the current target
 ```
 
 ## Input

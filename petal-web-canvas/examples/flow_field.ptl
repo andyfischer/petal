@@ -1,36 +1,22 @@
-// Nature of Code - Flow Field
-// Inspired by Chapter 6: Autonomous Agents - Flow Fields
-// Particles follow a vector field defined by layered sine functions
+// Flow Field — particles drift along a field of layered sine waves.
+// Each particle is a soft dot trailing a few fading dots behind it, so the
+// motion reads as flowing strands of light. Trails are reset when a particle
+// wraps to a new spot, so a dot never streaks a line across the screen.
 
 state particles = []
-state time = 0.0
 state field_time = 0.0
 
 let delta = dt()
 let sw = float(screen_width())
 let sh = float(screen_height())
 let PI = pi()
-time += delta
 field_time += delta * 0.3
 
-let num_particles = 500
+let num_particles = 400
 let field_scale = 0.008
+let trail_len = 5
 
-// Initialize particles
-if len(particles) == 0 then
-    for i in range(0, num_particles) do
-        push(particles, {
-            x: random(0.0, sw),
-            y: random(0.0, sh),
-            prev_x: random(0.0, sw),
-            prev_y: random(0.0, sh),
-            speed: random(40.0, 100.0),
-            hue: random(0.0, 1.0)
-        })
-    end
-end
-
-// Flow field function - returns angle at position
+// Flow field — the angle a particle should travel at a given point + time.
 fn field_angle(px, py, t)
     let n = sin(px * field_scale + t) * cos(py * field_scale * 0.7 + t * 0.5)
     n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
@@ -38,61 +24,88 @@ fn field_angle(px, py, t)
     n * PI * 2.0
 end
 
-// Update particles
+// Hue (0..1) -> warm-to-cool rgb record, riding around the color wheel.
+fn hue_color(h)
+    let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
+    let cr = 0
+    let cg = 0
+    let cb = 0
+    if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 60
+    elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 60
+    elsif hmod < 3.0 then cr = 60; cg = 255; cb = int((hmod - 2.0) * 255.0)
+    elsif hmod < 4.0 then cr = 60; cg = int((4.0 - hmod) * 255.0); cb = 255
+    elsif hmod < 5.0 then cr = int((hmod - 4.0) * 195.0) + 60; cg = 60; cb = 255
+    else cr = 255; cg = 60; cb = int((6.0 - hmod) * 195.0) + 60
+    end
+    {r: cr, g: cg, b: cb}
+end
+
+// Seed particles on the first frame.
+if len(particles) == 0 then
+    for i in range(0, num_particles) do
+        push(particles, {
+            x: random(0.0, sw),
+            y: random(0.0, sh),
+            speed: random(28.0, 88.0),
+            hue: random(0.0, 1.0),
+            trail: []
+        })
+    end
+end
+
+// Advance every particle one step along the field.
 let new_particles = []
 for p in particles do
     let angle = field_angle(p.x, p.y, field_time)
+    let nx = p.x + cos(angle) * p.speed * delta
+    let ny = p.y + sin(angle) * p.speed * delta
 
-    let vx = cos(angle) * p.speed
-    let vy = sin(angle) * p.speed
-
-    let nx = p.x + vx * delta
-    let ny = p.y + vy * delta
-
-    let alive = true
-    // Respawn if off screen
-    if nx < 0.0 || nx > sw || ny < 0.0 || ny > sh then
+    // Build the new trail: current position first, then the old trail,
+    // capped at trail_len. Wrapping particles start a fresh trail so the
+    // jump to a new position is never connected to the old one.
+    let new_trail = []
+    let wrapped = nx < 0.0 || nx > sw || ny < 0.0 || ny > sh
+    if wrapped then
         nx = random(0.0, sw)
         ny = random(0.0, sh)
+    else
+        push(new_trail, {x: p.x, y: p.y})
+        for t in p.trail do
+            if len(new_trail) < trail_len then
+                push(new_trail, t)
+            end
+        end
     end
 
     push(new_particles, {
         x: nx, y: ny,
-        prev_x: p.x, prev_y: p.y,
         speed: p.speed,
-        hue: p.hue
+        hue: p.hue,
+        trail: new_trail
     })
 end
 particles = new_particles
 
 // === Drawing ===
+clear(8, 8, 16)
 
-// Semi-transparent background for trail effect (draw dark rect with low opacity)
-// Since we can't do alpha, we use a very dark rect each frame for fading trails
-draw_rect(0, 0, int(sw), int(sh), 5, 5, 12)
-
-// Draw particles as short lines (from previous to current position)
 for p in particles do
-    // Color based on hue + position
-    let h = p.hue + field_angle(p.x, p.y, field_time) * 0.05
-    let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
-    let cr = 0
-    let cg = 0
-    let cb = 0
+    let col = hue_color(p.hue + field_angle(p.x, p.y, field_time) * 0.05)
 
-    if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 50
-    elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 50
-    elsif hmod < 3.0 then cr = 50; cg = 255; cb = int((hmod - 2.0) * 255.0)
-    elsif hmod < 4.0 then cr = 50; cg = int((4.0 - hmod) * 255.0); cb = 255
-    elsif hmod < 5.0 then cr = int((hmod - 4.0) * 200.0) + 50; cg = 50; cb = 255
-    else cr = 255; cg = 50; cb = int((6.0 - hmod) * 200.0) + 50
+    // Trailing dots: older points are smaller and dimmer.
+    for k in range(0, len(p.trail)) do
+        let t = p.trail[k]
+        let fade = 1.0 - float(k + 1) / float(trail_len + 1)
+        draw_circle(int(t.x), int(t.y), 1,
+            int(float(col.r) * fade * 0.7),
+            int(float(col.g) * fade * 0.7),
+            int(float(col.b) * fade * 0.7))
     end
 
-    draw_line(int(p.prev_x), int(p.prev_y), int(p.x), int(p.y), cr, cg, cb)
-    draw_circle(int(p.x), int(p.y), 1, min(255, cr + 50), min(255, cg + 50), min(255, cb + 50))
+    // Head: a soft halo under a bright core.
+    draw_circle(int(p.x), int(p.y), 2, col.r / 4, col.g / 4, col.b / 4)
+    draw_circle(int(p.x), int(p.y), 1,
+        min(255, col.r + 40), min(255, col.g + 40), min(255, col.b + 40))
 end
 
-// Title (with background for readability)
-draw_rect(5, 5, 200, 50, 0, 0, 0)
-draw_text("Flow Field", 10, 10, 16, 100, 100, 120)
-draw_text("Particles follow a vector field", 10, 30, 12, 60, 60, 80)
+draw_text("Flow Field", 16, 12, 14, 120, 120, 150)

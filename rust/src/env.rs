@@ -180,6 +180,54 @@ impl Env {
         self.run(sid)
     }
 
+    /// Call a top-level Petal function by name on an already-run stack,
+    /// returning its result. The program must have been `run` at least once so
+    /// its top-level functions are defined; the captured function table is
+    /// refreshed on every run and dropped on `hot_reload`.
+    ///
+    /// This is the host-facing alternative to the "re-run the whole program
+    /// and capture a side effect in a thread-local" pattern: it invokes one
+    /// named function with `args` and hands back the return `Value` directly.
+    /// Any heap `Value` passed in `args` must already live on this Env's heap.
+    ///
+    /// Note on state: a top-level `state` variable referenced inside a function
+    /// is captured into its closure by value when the program runs, so a called
+    /// function observes that variable as of the last `run` and cannot write it
+    /// back into the persistent state map. To feed fresh state into a call, pass
+    /// it through `args`, or `run`/`hot_reload` again to recapture.
+    pub fn call_function(
+        &mut self,
+        stack_id: StackKey,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, String> {
+        let stack = self.stacks.get(&stack_id).ok_or("Stack not found")?;
+        let callable = stack.functions.get(name).copied().ok_or_else(|| {
+            format!(
+                "No top-level function named '{}' (define it and `run` the program before calling)",
+                name
+            )
+        })?;
+
+        let stack = self.stacks.get_mut(&stack_id).unwrap();
+        let program = self
+            .programs
+            .get(&stack.program_id)
+            .ok_or("Program not found")?;
+
+        Evaluator {
+            program,
+            stack,
+            heap: &mut self.heap,
+            closures: &mut self.closures,
+            overload_sets: &mut self.overload_sets,
+            native_fns: &self.native_fns,
+            output: &mut self.output,
+            trace: &mut self.trace,
+        }
+        .call_closure_sync(callable, args)
+    }
+
     /// Get a reference to a loaded program
     pub fn get_program(&self, id: ProgramId) -> Option<&Program> {
         self.programs.get(&id)
@@ -469,6 +517,105 @@ impl Env {
 impl Default for Env {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod call_function_tests {
+    use super::*;
+
+    /// Load+run a program and return (env, stack) ready for `call_function`.
+    fn run(source: &str) -> (Env, StackKey) {
+        let mut env = Env::new();
+        let pid = env.load_program(source).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        env.take_output();
+        (env, sid)
+    }
+
+    #[test]
+    fn calls_named_function_with_args() {
+        let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");
+        let result = env
+            .call_function(sid, "add", &[Value::Int(3), Value::Int(4)])
+            .unwrap();
+        assert_eq!(result, Value::Int(7));
+    }
+
+    #[test]
+    fn calls_named_lambda_binding() {
+        let (mut env, sid) = run("let double = fn(x) -> x * 2\n");
+        let result = env.call_function(sid, "double", &[Value::Int(21)]).unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[test]
+    fn resolves_overloaded_function_by_arity() {
+        let source = "fn greet(name)\n  name\nend\nfn greet(first, last)\n  first + last\nend\n";
+        let (mut env, sid) = run(source);
+        let one = env.call_function(sid, "greet", &[Value::Int(1)]).unwrap();
+        assert_eq!(one, Value::Int(1));
+        let two = env
+            .call_function(sid, "greet", &[Value::Int(2), Value::Int(3)])
+            .unwrap();
+        assert_eq!(two, Value::Int(5));
+    }
+
+    #[test]
+    fn sees_top_level_state_captured_at_run_time() {
+        // A function reads the value of a top-level `state` variable as it
+        // stood when the program ran; repeated calls return it consistently.
+        let source = "state base = 41\nfn next_val()\n  base + 1\nend\n";
+        let (mut env, sid) = run(source);
+        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
+        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
+    }
+
+    #[test]
+    fn returns_string_value_via_heap() {
+        let (mut env, sid) = run("fn shout(s)\n  s ++ \"!\"\nend\n");
+        let arg = Value::String(env.heap_mut().alloc_string("hi".to_string()));
+        let result = env.call_function(sid, "shout", &[arg]).unwrap();
+        match result {
+            Value::String(id) => assert_eq!(env.heap().get_string(id), "hi!"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unknown_function_is_an_error() {
+        let (mut env, sid) = run("fn known()\n  1\nend\n");
+        let err = env.call_function(sid, "missing", &[]).unwrap_err();
+        assert!(err.contains("missing"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn arity_mismatch_is_an_error() {
+        let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");
+        let err = env
+            .call_function(sid, "add", &[Value::Int(1)])
+            .unwrap_err();
+        assert!(
+            err.contains("argument") || err.contains("expects"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn functions_refreshed_after_hot_reload() {
+        let mut env = Env::new();
+        let pid = env.load_program("fn f()\n  1\nend\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(1));
+
+        let new_program = env.compile_program(pid, "fn f()\n  2\nend\n").unwrap();
+        env.hot_reload(sid, new_program).unwrap();
+        // Before re-running, the stale table was cleared.
+        assert!(env.call_function(sid, "f", &[]).is_err());
+        env.run(sid).unwrap();
+        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(2));
     }
 }
 

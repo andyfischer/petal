@@ -291,6 +291,12 @@ impl<'a> Evaluator<'a> {
         self.stack.last_pop_result = Some(result);
 
         if self.stack.frames.is_empty() {
+            // The top-level frame just popped. Capture top-level named
+            // functions so the host can invoke them via `Env::call_function`
+            // without re-running the program.
+            if frame.block_id == program.root_block {
+                self.capture_root_functions(&frame);
+            }
             // Program complete
             return StepResult::Complete(result);
         }
@@ -349,6 +355,32 @@ impl<'a> Evaluator<'a> {
                 }
                 return;
             }
+        }
+    }
+
+    /// Record top-level named functions from the just-popped root frame into
+    /// `stack.functions`, keyed by name. Only `Closure`/`OverloadSet` values
+    /// are captured (a user-defined function or a lambda bound to a name);
+    /// builtins and non-callable bindings are skipped. When a name has both a
+    /// capture phantom and a `MakeClosure` term, the later (callable) one wins,
+    /// matching normal name-resolution order.
+    fn capture_root_functions(&mut self, root_frame: &Frame) {
+        let root = self.program.root_block;
+        let Some(term_ids) = self.program.block_terms.get(&root) else {
+            return;
+        };
+        let captured: Vec<(String, Value)> = term_ids
+            .iter()
+            .filter_map(|&tid| {
+                let term = self.program.get_term(tid);
+                let name = term.name.as_ref()?;
+                let val = root_frame.get_register(term.register.0 as usize);
+                matches!(val, Value::Closure(_) | Value::OverloadSet(_))
+                    .then(|| (name.clone(), val))
+            })
+            .collect();
+        for (name, val) in captured {
+            self.stack.functions.insert(name, val);
         }
     }
 }

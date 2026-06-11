@@ -265,6 +265,7 @@ impl Env {
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String>;
     pub fn run(&mut self, stack: StackKey) -> Result<Value, String>;
     pub fn run_source(&mut self, source: &str) -> Result<Value, String>;
+    pub fn call_function(&mut self, stack: StackKey, name: &str, args: &[Value]) -> Result<Value, String>;
     pub fn step(&mut self, stack: StackKey) -> Result<StepResult, String>;
     pub fn reset_stack(&mut self, stack: StackKey) -> Result<(), String>;
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId;
@@ -279,6 +280,14 @@ impl Env {
 `step` runs one term; `run` loops `step` until the program completes.
 `reset_stack` rewinds execution to the entry point **without dropping
 persistent `state`**, which is the core of the live-editing story.
+
+`call_function` lets the host invoke a single top-level Petal function by
+name and get its return `Value` back, the event-callback counterpart to
+`run`. Each `run` captures the stack's top-level named functions (and
+lambdas bound to a name); `call_function` then invokes one synchronously
+without re-running the program. This replaces the older "re-run the whole
+program and stash a side effect in a thread-local" pattern. The captured
+table is cleared on `hot_reload` and refreshed on the next `run`.
 
 ### Native Functions
 

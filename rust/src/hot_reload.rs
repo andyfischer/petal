@@ -56,6 +56,9 @@ impl Env {
             stack.break_flag = false;
             stack.continue_flag = false;
             stack.last_pop_result = None;
+            // The old captured closures point into the now-cleared closures
+            // vec; they get recaptured on the next run.
+            stack.functions.clear();
         }
 
         self.push_root_frame_for(stack_id)?;

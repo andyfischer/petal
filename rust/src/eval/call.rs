@@ -334,9 +334,17 @@ impl<'a> Evaluator<'a> {
     // -----------------------------------------------------------------------
 
     /// Call a closure synchronously: push its frame, then run nested steps
-    /// until that frame pops, returning the closure's result.
-    fn call_closure_sync(&mut self, callable: Value, call_args: &[Value]) -> Result<Value, String> {
-        let frame = self.build_closure_frame(callable, call_args, None)?;
+    /// until that frame pops, returning the closure's result. Accepts a plain
+    /// `Closure` or an `OverloadSet` (resolved by argument count), so it backs
+    /// both the higher-order intrinsics and the host-facing
+    /// `Env::call_function`.
+    pub(crate) fn call_closure_sync(
+        &mut self,
+        callable: Value,
+        call_args: &[Value],
+    ) -> Result<Value, String> {
+        let closure_id = self.resolve_callable(callable, call_args.len())?;
+        let frame = self.build_closure_frame(Value::Closure(closure_id), call_args, None)?;
         let target_depth = self.stack.frames.len();
         self.stack.push_frame(frame);
 

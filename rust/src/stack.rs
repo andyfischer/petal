@@ -70,6 +70,12 @@ pub struct Stack {
     /// list, or a top-level `state` declaration that was deleted on hot
     /// reload. Cleared at the start of each top-level `run`.
     pub touched_state_keys: HashSet<RuntimeStateKey>,
+    /// Top-level named functions (and lambdas bound to a name) captured from
+    /// the root block when the program runs. Lets the host invoke a named
+    /// Petal function via `Env::call_function` without re-running the whole
+    /// program. Refreshed each time the root frame completes; cleared on hot
+    /// reload since the underlying closure IDs are invalidated.
+    pub functions: HashMap<String, Value>,
 }
 
 /// A single activation frame on the stack.
@@ -188,6 +194,7 @@ impl Stack {
             continue_flag: false,
             last_pop_result: None,
             touched_state_keys: HashSet::new(),
+            functions: HashMap::new(),
         }
     }
 

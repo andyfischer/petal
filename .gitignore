@@ -22,3 +22,5 @@ petal-diagram-canvas/dist/
 
 # Playwright CLI session artifacts
 .playwright-cli/
+
+.vite

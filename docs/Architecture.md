@@ -231,6 +231,13 @@ plus the string-intern table. Reclaimed slots go onto a free list.
 Strings are interned on creation — `"hello"` returns the same `StringId`
 regardless of how many times it's constructed.
 
+For pulling Rust data back out of a `Value`, `extract.rs` adds typed
+accessor methods on `Heap` (`field_str`, `field_int`, `field_list`,
+`opt_field_str`, `as_record`, …). They collapse the match-the-`Value`,
+`get_map`, match-the-field boilerplate an embedder would otherwise write
+into one call per field, with errors that name the field and the type
+actually found.
+
 ### Stack
 
 Runtime execution is register-based. A `Stack` owns a vector of `Frame`s;

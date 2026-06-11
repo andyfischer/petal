@@ -121,16 +121,17 @@ impl Env {
             .get(&stack.program_id)
             .ok_or("Program not found")?;
 
-        let result = Evaluator::step(
+        let result = Evaluator {
             program,
             stack,
-            &mut self.heap,
-            &mut self.closures,
-            &mut self.overload_sets,
-            &self.native_fns,
-            &mut self.output,
-            &mut self.trace,
-        );
+            heap: &mut self.heap,
+            closures: &mut self.closures,
+            overload_sets: &mut self.overload_sets,
+            native_fns: &self.native_fns,
+            output: &mut self.output,
+            trace: &mut self.trace,
+        }
+        .step();
 
         Ok(result)
     }

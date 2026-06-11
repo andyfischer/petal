@@ -1,0 +1,225 @@
+//! `match` execution and runtime pattern matching.
+
+use crate::ast::{Literal, Pattern};
+
+use super::*;
+
+impl<'a> Evaluator<'a> {
+    /// Try each arm in order: match the pattern, run the guard (if any),
+    /// then execute the first matching arm's body block with the pattern's
+    /// bindings applied.
+    pub(super) fn exec_match(&mut self, term: &Term, inputs: &[Value]) -> ControlFlow {
+        let program = self.program;
+        let subject = inputs[0];
+        let arm_metas = match program.match_arms.get(&term.id) {
+            Some(arms) => arms,
+            None => return ControlFlow::Error("Match: no arm metadata".into()),
+        };
+
+        for arm_meta in arm_metas {
+            let mut bindings = Vec::new();
+            if !self.match_pattern(&arm_meta.pattern, subject, &mut bindings) {
+                continue;
+            }
+
+            // Check guard if present (with pattern bindings available)
+            if let Some(guard_block) = arm_meta.guard_block {
+                match self.run_match_guard(term, guard_block, &bindings) {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(e) => return ControlFlow::Error(e),
+                }
+            }
+
+            // Advance the parent frame past the Match term, then execute the
+            // arm body with the pattern bindings applied.
+            if let Some(parent_frame) = self.stack.frames.last_mut() {
+                parent_frame.current_term = term.block_next;
+            }
+            let body_block = arm_meta.body_block;
+            let block = program.get_block(body_block);
+            let parent_frame_idx = self.stack.frames.len() - 1;
+            self.stack.push_frame(Frame::new(
+                body_block,
+                block.entry,
+                block.register_count as usize,
+                Some(term.id),
+                Some(parent_frame_idx),
+            ));
+            self.apply_pattern_bindings(body_block, &bindings);
+            return ControlFlow::FramePushed;
+        }
+
+        ControlFlow::Error(format!(
+            "No matching pattern for value: {}",
+            value::value_to_display_string(&subject, self.heap)
+        ))
+    }
+
+    /// Run a match arm's guard block to completion (nested stepping) and
+    /// return its truthiness. The guard's result lands in the Match term's
+    /// register in the parent frame via the return_term mechanism.
+    fn run_match_guard(
+        &mut self,
+        term: &Term,
+        guard_block: BlockId,
+        bindings: &[(String, Value)],
+    ) -> Result<bool, String> {
+        let gb = self.program.get_block(guard_block);
+        let parent_idx = self.stack.frames.len() - 1;
+        self.stack.push_frame(Frame::new(
+            guard_block,
+            gb.entry,
+            gb.register_count as usize,
+            Some(term.id),
+            Some(parent_idx),
+        ));
+        self.apply_pattern_bindings(guard_block, bindings);
+
+        let target_depth = parent_idx + 1;
+        loop {
+            if self.stack.frames.len() <= target_depth {
+                let result = self
+                    .stack
+                    .frames
+                    .last()
+                    .map(|f| f.get_register(term.register.0 as usize))
+                    .unwrap_or(Value::Bool(false));
+                return Ok(result.is_truthy());
+            }
+            match self.step() {
+                StepResult::Continue => {}
+                StepResult::Complete(v) => return Ok(v.is_truthy()),
+                StepResult::Error(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Match `value` against `pattern`, accumulating variable bindings.
+    /// Needs `&mut self` because rest-patterns allocate the remainder list.
+    fn match_pattern(
+        &mut self,
+        pattern: &Pattern,
+        value: Value,
+        bindings: &mut Vec<(String, Value)>,
+    ) -> bool {
+        match pattern {
+            Pattern::Wildcard => true,
+
+            Pattern::Literal(lit) => match (lit, value) {
+                (Literal::Nil, Value::Nil) => true,
+                (Literal::Bool(a), Value::Bool(b)) => *a == b,
+                (Literal::Int(a), Value::Int(b)) => *a == b,
+                (Literal::Float(a), Value::Float(b)) => *a == b,
+                (Literal::String(a), Value::String(sid)) => a == self.heap.get_string(sid),
+                _ => false,
+            },
+
+            Pattern::Variable(name) => {
+                // Pure variable binding — always matches and captures the value.
+                // (Known enum variant names are resolved to Pattern::Variant
+                // by the compiler.)
+                bindings.push((name.clone(), value));
+                true
+            }
+
+            Pattern::Variant { name, fields } => {
+                let Value::EnumVariant { tag, data } = value else {
+                    return false;
+                };
+                if self.heap.get_string(tag) != name {
+                    return false;
+                }
+                let data_fields = self.heap.get_list(data);
+                if data_fields.len() != fields.len() {
+                    return false;
+                }
+                let data_copy: Vec<Value> = data_fields.to_vec();
+                fields
+                    .iter()
+                    .zip(data_copy)
+                    .all(|(pat, val)| self.match_pattern(pat, val, bindings))
+            }
+
+            Pattern::List { elements, rest } => {
+                let Value::List(list_id) = value else {
+                    return false;
+                };
+                let list_copy: Vec<Value> = self.heap.get_list(list_id).to_vec();
+                match rest {
+                    Some(rest_name) => {
+                        if list_copy.len() < elements.len() {
+                            return false;
+                        }
+                        for (pat, val) in elements.iter().zip(list_copy.iter()) {
+                            if !self.match_pattern(pat, *val, bindings) {
+                                return false;
+                            }
+                        }
+                        let rest_vals: Vec<Value> = list_copy[elements.len()..].to_vec();
+                        let rest_list = Value::List(self.heap.alloc_list(rest_vals));
+                        bindings.push((rest_name.clone(), rest_list));
+                        true
+                    }
+                    None => {
+                        list_copy.len() == elements.len()
+                            && elements
+                                .iter()
+                                .zip(list_copy)
+                                .all(|(pat, val)| self.match_pattern(pat, val, bindings))
+                    }
+                }
+            }
+
+            Pattern::Record(fields) => {
+                let Value::Map(map_id) = value else {
+                    return false;
+                };
+                // Copy relevant entries out before recursive matching
+                let entries: Vec<(String, Value)> = {
+                    let map = self.heap.get_map(map_id);
+                    fields
+                        .iter()
+                        .filter_map(|(key, _)| map.get(key).map(|&val| (key.clone(), val)))
+                        .collect()
+                };
+                if entries.len() != fields.len() {
+                    return false; // Some fields missing
+                }
+                fields
+                    .iter()
+                    .zip(entries)
+                    .all(|((_, pat), (_, val))| self.match_pattern(pat, val, bindings))
+            }
+        }
+    }
+
+    /// Apply pattern bindings to the top frame's registers by matching names
+    /// to terms in the block (including phantom terms not in the linked
+    /// list). Uses the precomputed block_terms index for O(B) lookup instead
+    /// of O(N) where B is the number of terms in the block and N is total
+    /// program terms.
+    fn apply_pattern_bindings(&mut self, block_id: BlockId, bindings: &[(String, Value)]) {
+        let program = self.program;
+        let Some(frame) = self.stack.frames.last_mut() else {
+            return;
+        };
+        let Some(term_ids) = program.block_terms.get(&block_id) else {
+            return;
+        };
+        for tid in term_ids {
+            let term = program.get_term(*tid);
+            let Some(ref term_name) = term.name else {
+                continue;
+            };
+            for (bind_name, bind_val) in bindings {
+                if term_name == bind_name {
+                    let reg = term.register.0 as usize;
+                    if reg < frame.registers.len() {
+                        frame.registers[reg] = *bind_val;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -130,6 +130,20 @@ impl Frame {
         self
     }
 
+    /// Write `value` into register `reg`, growing the register file with
+    /// Nil if it isn't large enough yet.
+    pub fn set_register(&mut self, reg: usize, value: Value) {
+        if reg >= self.registers.len() {
+            self.registers.resize(reg + 1, Value::Nil);
+        }
+        self.registers[reg] = value;
+    }
+
+    /// Read register `reg`, returning Nil for never-written registers.
+    pub fn get_register(&self, reg: usize) -> Value {
+        self.registers.get(reg).copied().unwrap_or(Value::Nil)
+    }
+
     /// Check if a loop state exists for the given term.
     pub fn has_loop_state(&self, term_id: &TermId) -> bool {
         self.loop_states.iter().any(|(id, _)| id == term_id)

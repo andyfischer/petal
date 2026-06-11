@@ -25,6 +25,27 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// Static builtin call `name(args...)` produced by the compiler when a bare,
+    /// unshadowed builtin is called directly. `inputs` are the args (no callable).
+    /// Routed through the same path as a dynamic Call so intrinsics (map/filter/
+    /// reduce/forEach) still receive their closure arguments.
+    pub(super) fn exec_builtin_call(
+        &mut self,
+        name_cid: ConstantId,
+        term: &Term,
+        inputs: &[Value],
+    ) -> ControlFlow {
+        let name = match self.program.get_string_constant(name_cid) {
+            Some(s) => s.to_string(),
+            None => return ControlFlow::Error("BuiltinCall: invalid name constant".into()),
+        };
+        let native_id = match self.native_fns.lookup_name(&name) {
+            Some(id) => id,
+            None => return ControlFlow::Error(format!("Unknown builtin: {}", name)),
+        };
+        self.call_native_or_intrinsic(native_id, inputs, term)
+    }
+
     /// Method-call syntax `obj.method(args...)`. Resolution order:
     /// 1. a callable field on a record receiver,
     /// 2. a native function called with the receiver prepended to the args.

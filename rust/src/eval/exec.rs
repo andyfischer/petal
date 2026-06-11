@@ -98,6 +98,7 @@ impl<'a> Evaluator<'a> {
             TermOp::MakeOverloadSet => self.exec_make_overload_set(term, inputs),
             TermOp::Call => self.exec_call(term, inputs),
             TermOp::MethodCall(method_cid) => self.exec_method_call(*method_cid, term, inputs),
+            TermOp::BuiltinCall(name_cid) => self.exec_builtin_call(*name_cid, term, inputs),
 
             TermOp::MakeClosure(fn_id) => {
                 let closure_id = ClosureId(self.closures.len() as u32);

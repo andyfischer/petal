@@ -88,6 +88,11 @@ pub struct Compiler {
     // been rebound (which replaces its scope binding with a `Copy` term, so a
     // simple scope_lookup chain can no longer reach the StateInit).
     state_inits: HashMap<StateKey, TermId>,
+
+    // Builtin name → the phantom Copy TermId created for that builtin during
+    // `compile()`. Used at call sites to detect a bare, unshadowed builtin call
+    // and compile it to a static `BuiltinCall` instead of a dynamic `Call`.
+    builtin_phantoms: HashMap<String, TermId>,
 }
 
 impl Compiler {
@@ -113,6 +118,7 @@ impl Compiler {
             block_rebinds: HashMap::new(),
             carry_slots: Vec::new(),
             state_inits: HashMap::new(),
+            builtin_phantoms: HashMap::new(),
         }
     }
 
@@ -137,6 +143,7 @@ impl Compiler {
                 .get_name(crate::native_fn::NativeFnId(i as u32))
                 .to_string();
             let tid = self.emit_phantom_term(name.clone());
+            self.builtin_phantoms.insert(name.clone(), tid);
             self.scope_bind(name, tid);
         }
 

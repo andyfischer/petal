@@ -180,6 +180,7 @@ fn format_op(op: &TermOp) -> String {
         TermOp::SetIndex => "SetIndex".into(),
         TermOp::MakeEnumVariant(cid) => format!("MakeEnumVariant(c{})", cid.0),
         TermOp::MethodCall(cid) => format!("MethodCall(c{})", cid.0),
+        TermOp::BuiltinCall(cid) => format!("BuiltinCall(c{})", cid.0),
         TermOp::Match => "Match".into(),
         TermOp::AllocElement { tag, prop_keys } => {
             let keys: Vec<String> = prop_keys.iter().map(|c| format!("c{}", c.0)).collect();

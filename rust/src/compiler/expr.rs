@@ -77,12 +77,34 @@ impl Compiler {
                     let field_const = self.constants.intern(ConstantValue::String(field.clone()));
                     self.emit_term(TermOp::MethodCall(field_const), inputs, None)
                 } else {
-                    let func_tid = self.compile_expr(function);
-                    let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
-                    for arg in args {
-                        inputs.push(self.compile_expr(arg));
+                    // A bare identifier that currently resolves in scope to
+                    // exactly the builtin's phantom term (i.e. not shadowed by a
+                    // later user binding) compiles to a static BuiltinCall.
+                    let builtin_name: Option<String> = match &function.kind {
+                        ExprKind::Ident(name)
+                            if self.builtin_phantoms.get(name) == self.scope_lookup(name).as_ref() =>
+                        {
+                            Some(name.clone())
+                        }
+                        _ => None,
+                    };
+
+                    if let Some(name) = builtin_name {
+                        // Direct builtin call: inputs are just the args (no callable).
+                        let mut inputs: SmallVec<[TermId; 4]> = smallvec![];
+                        for arg in args {
+                            inputs.push(self.compile_expr(arg));
+                        }
+                        let name_cid = self.constants.intern(ConstantValue::String(name));
+                        self.emit_term(TermOp::BuiltinCall(name_cid), inputs, None)
+                    } else {
+                        let func_tid = self.compile_expr(function);
+                        let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
+                        for arg in args {
+                            inputs.push(self.compile_expr(arg));
+                        }
+                        self.emit_term(TermOp::Call, inputs, None)
                     }
-                    self.emit_term(TermOp::Call, inputs, None)
                 }
             }
 

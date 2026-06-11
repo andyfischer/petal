@@ -146,6 +146,10 @@ pub enum TermOp {
     /// Method call: inputs=[object, arg0, arg1, ...], method name as constant
     /// At runtime: tries record field first, then builtin/scope lookup with obj prepended
     MethodCall(ConstantId),
+    /// Static builtin call: inputs=[arg0, arg1, ...], builtin name as constant.
+    /// Emitted when a bare, unshadowed builtin (e.g. `print`) is called directly,
+    /// replacing the dynamic `Call` through a phantom `Copy` of the builtin.
+    BuiltinCall(ConstantId),
 
     // State
     /// Initialize state if not yet set: inputs=[init_value], state_key set
@@ -400,6 +404,7 @@ impl Program {
             let cids: Vec<u32> = match &term.op {
                 TermOp::Constant(c) | TermOp::Error(c) | TermOp::GetField(c)
                 | TermOp::SetField(c) | TermOp::MethodCall(c)
+                | TermOp::BuiltinCall(c)
                 | TermOp::MakeEnumVariant(c) => vec![c.0],
                 TermOp::AllocMap { fields } => fields.iter().map(|c| c.0).collect(),
                 TermOp::AllocElement { tag, prop_keys } => {
@@ -424,6 +429,13 @@ impl Program {
             if let TermOp::MakeClosure(f) = &term.op {
                 if f.0 >= n_fns {
                     return Err(format!("t{}: function f{} out of range", i, f.0));
+                }
+            }
+            // A BuiltinCall's name must resolve to a String constant (the constant
+            // was already range-checked above via `cids`).
+            if let TermOp::BuiltinCall(c) = &term.op {
+                if self.get_string_constant(*c).is_none() {
+                    return Err(format!("t{}: BuiltinCall name is not a string constant", i));
                 }
             }
             // State ops require a state_key. Other ops *may* also carry one:

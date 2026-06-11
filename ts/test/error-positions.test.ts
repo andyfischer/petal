@@ -38,6 +38,13 @@ let y = x - 1`);
     expect(err).toMatch(/int and string/);
   });
 
+  it("string + string suggests ++ and interpolation", () => {
+    const err = runPetalError(`let x = "a" + "b"`);
+    expect(err).toMatch(/Cannot add string and string/);
+    expect(err).toMatch(/\+\+/);
+    expect(err).toMatch(/interpolation/);
+  });
+
   it("errors include a source snippet with a caret under the failing span", () => {
     const err = runPetalError(`let a = 1
 let b = 2

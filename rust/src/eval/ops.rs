@@ -35,6 +35,16 @@ impl<'a> Evaluator<'a> {
             (Value::Float(a), Value::Float(b)) => Value::Float(float_arith(&term.op, *a, *b)),
             (Value::Int(a), Value::Float(b)) => Value::Float(float_arith(&term.op, *a as f64, *b)),
             (Value::Float(a), Value::Int(b)) => Value::Float(float_arith(&term.op, *a, *b as f64)),
+            // `+` on two strings is the mistake every JS/Python user makes
+            // first; point them at `++` / interpolation instead of the vague
+            // "Cannot add string and string".
+            (Value::String(_), Value::String(_)) if matches!(term.op, TermOp::Add) => {
+                return ControlFlow::Error(
+                    "Cannot add string and string — use ++ to concatenate strings, \
+                     or string interpolation: \"{a}{b}\""
+                        .into(),
+                )
+            }
             _ => {
                 return ControlFlow::Error(format!(
                     "Cannot {} {} and {}",

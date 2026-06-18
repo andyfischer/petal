@@ -31,7 +31,10 @@ impl<'a> Evaluator<'a> {
             (Value::Vec2(..), _) | (_, Value::Vec2(..)) => {
                 return self.vec2_binop(term, inputs)
             }
-            (Value::Int(a), Value::Int(b)) => Value::Int(int_arith(&term.op, *a, *b)),
+            (Value::Int(a), Value::Int(b)) => match int_arith(&term.op, *a, *b) {
+                Ok(v) => Value::Int(v),
+                Err(e) => return ControlFlow::Error(e),
+            },
             (Value::Float(a), Value::Float(b)) => Value::Float(float_arith(&term.op, *a, *b)),
             (Value::Int(a), Value::Float(b)) => Value::Float(float_arith(&term.op, *a as f64, *b)),
             (Value::Float(a), Value::Int(b)) => Value::Float(float_arith(&term.op, *a, *b as f64)),
@@ -176,15 +179,28 @@ impl<'a> Evaluator<'a> {
     }
 }
 
-fn int_arith(op: &TermOp, a: i64, b: i64) -> i64 {
-    match op {
-        TermOp::Add => a + b,
-        TermOp::Sub => a - b,
-        TermOp::Mul => a * b,
-        TermOp::Div => a / b,
-        TermOp::Mod => a % b,
+/// Integer arithmetic with checked operators. A raw `+`/`*`/`%` would panic on
+/// overflow or a zero divisor, which in WASM is an `unreachable` trap that
+/// poisons the whole module (only a page reload recovers). Returning a clean
+/// `Err` lets the evaluator surface a normal runtime error the user can fix.
+fn int_arith(op: &TermOp, a: i64, b: i64) -> Result<i64, String> {
+    let result = match op {
+        TermOp::Add => a.checked_add(b),
+        TermOp::Sub => a.checked_sub(b),
+        TermOp::Mul => a.checked_mul(b),
+        // checked_div / checked_rem return None for both a zero divisor and the
+        // i64::MIN / -1 overflow case.
+        TermOp::Div => a.checked_div(b),
+        TermOp::Mod => a.checked_rem(b),
         _ => unreachable!("non-arithmetic op in numeric_binop"),
-    }
+    };
+    result.ok_or_else(|| {
+        if b == 0 && matches!(op, TermOp::Div | TermOp::Mod) {
+            "Division by zero".to_string()
+        } else {
+            format!("Integer overflow when trying to {}", binop_verb(op))
+        }
+    })
 }
 
 fn float_arith(op: &TermOp, a: f64, b: f64) -> f64 {

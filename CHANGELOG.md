@@ -53,3 +53,10 @@ All notable changes to Petal are recorded here.
 
 - The web playground (`playground/`), which depended on a private, unpublished
   framework that external users could not build against.
+
+### Fixed
+
+- Integer overflow and modulo-by-zero now return clean runtime errors instead of
+  panicking. A panic compiles to a WASM `unreachable` trap that poisons the whole
+  module (e.g. the web playground had to reload to recover); `int_arith` now uses
+  checked arithmetic.

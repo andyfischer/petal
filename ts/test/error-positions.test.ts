@@ -45,6 +45,28 @@ let y = x - 1`);
     expect(err).toMatch(/interpolation/);
   });
 
+  // Integer arithmetic must never panic: a Rust panic compiles to a WASM
+  // `unreachable` trap that poisons the runtime for the whole page (the web
+  // playground can only recover with a reload). These must surface as clean,
+  // recoverable runtime errors instead.
+  it("modulo by zero is a clean error, not a panic", () => {
+    const err = runPetalError("let x = 5 % 0");
+    expect(err).toMatch(/Division by zero/);
+    expect(err).not.toMatch(/panic/i);
+  });
+
+  it("integer overflow is a clean error, not a panic", () => {
+    const err = runPetalError("let x = 9223372036854775807 + 1");
+    expect(err).toMatch(/overflow/i);
+    expect(err).not.toMatch(/panic/i);
+  });
+
+  it("integer multiply overflow is a clean error, not a panic", () => {
+    const err = runPetalError("let x = 9223372036854775807 * 2");
+    expect(err).toMatch(/overflow/i);
+    expect(err).not.toMatch(/panic/i);
+  });
+
   it("errors include a source snippet with a caret under the failing span", () => {
     const err = runPetalError(`let a = 1
 let b = 2

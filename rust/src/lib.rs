@@ -18,6 +18,7 @@ pub mod lexer;
 pub mod native_fn;
 pub mod parse;
 pub mod program;
+pub mod rewrite;
 pub mod source_map;
 pub mod stack;
 pub mod trace;

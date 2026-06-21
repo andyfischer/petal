@@ -28,6 +28,7 @@ point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
 | `program.rs` | `Program`, `Block`, `Term`, `TermOp` definitions |
 | `constant_table.rs` | Deduplicated literal storage |
 | `source_map.rs` | `TermId` → source span mapping |
+| `rewrite.rs` | Formatting-preserving source rewriting (find a top-level call by name, splice its span) |
 | `eval.rs` | Step evaluator (the runtime) |
 | `stack.rs` | `Stack` and `Frame` — execution context |
 | `value.rs` | `Value` enum (runtime values) |

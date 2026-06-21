@@ -37,6 +37,12 @@ All notable changes to Petal are recorded here.
   `petal-sdl/examples/cc_offscreen_layers.ptl`.
 - Reference external IR emitter (`ts/tools/calc-to-ir.ts`): a toy language that
   compiles to Petal IR JSON and runs via `petal run --ir`.
+- Standard-library doc extractor (`ts/tools/extract-stdlib.ts`, `npm run
+  stdlib:json`): generates a JSON manifest of every builtin — name, arity,
+  argument names/types, and source location — by parsing the `register_builtins`
+  and canvas `register_graphics` tables, so documentation can't drift from the
+  implementation. Drives the generated stdlib reference on petal-lang.org.
+  Guarded by `ts/test/stdlib-extract.test.ts`.
 - MIT `LICENSE`.
 - Automated secret scanning: a gitleaks CI workflow (full history) with a
   `scripts/scan-secrets.sh` local runner, plus a forbidden-terms guard driven by

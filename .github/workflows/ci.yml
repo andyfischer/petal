@@ -94,20 +94,20 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            petal-sdl/target
-            petal-fps/target
-            petal-diagram-canvas/rust/target
-          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('petal-sdl/Cargo.lock', 'petal-fps/Cargo.lock', 'petal-diagram-canvas/rust/Cargo.lock') }}
+            apps/petal-sdl/target
+            apps/petal-fps/target
+            apps/petal-diagram-canvas/rust/target
+          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('apps/petal-sdl/Cargo.lock', 'apps/petal-fps/Cargo.lock', 'apps/petal-diagram-canvas/rust/Cargo.lock') }}
           restore-keys: cargo-subprojects-${{ runner.os }}-
 
       - name: Build petal-sdl
-        run: cargo build --manifest-path petal-sdl/Cargo.toml
+        run: cargo build --manifest-path apps/petal-sdl/Cargo.toml
 
       - name: Build petal-fps
-        run: cargo build --manifest-path petal-fps/Cargo.toml
+        run: cargo build --manifest-path apps/petal-fps/Cargo.toml
 
       - name: Check petal-diagram-canvas (Rust crate)
-        run: cargo check --manifest-path petal-diagram-canvas/rust/Cargo.toml
+        run: cargo check --manifest-path apps/petal-diagram-canvas/rust/Cargo.toml
 
   web-builds:
     name: Web builds (wasm + vite + playground)
@@ -137,8 +137,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-            petal-diagram-canvas/rust/target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'petal-diagram-canvas/rust/Cargo.lock') }}
+            apps/petal-diagram-canvas/rust/target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'apps/petal-diagram-canvas/rust/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
 
       - name: Set up Node.js
@@ -148,26 +148,26 @@ jobs:
 
       # ----- petal-web -----
       - name: petal-web — install deps
-        working-directory: petal-web
+        working-directory: apps/petal-web
         run: npm ci --no-audit --no-fund
 
       - name: petal-web — build wasm
-        working-directory: petal-web
+        working-directory: apps/petal-web
         run: bash build-wasm.sh
 
       - name: petal-web — vite build
-        working-directory: petal-web
+        working-directory: apps/petal-web
         run: npx vite build
 
       # ----- petal-diagram-canvas -----
       - name: petal-diagram-canvas — install deps
-        working-directory: petal-diagram-canvas
+        working-directory: apps/petal-diagram-canvas
         run: npm ci --no-audit --no-fund
 
       - name: petal-diagram-canvas — build wasm
-        working-directory: petal-diagram-canvas
+        working-directory: apps/petal-diagram-canvas
         run: bash build-wasm.sh
 
       - name: petal-diagram-canvas — vite build
-        working-directory: petal-diagram-canvas
+        working-directory: apps/petal-diagram-canvas
         run: npx vite build

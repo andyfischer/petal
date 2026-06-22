@@ -79,10 +79,10 @@ print("hello, {name}!")
 
 | Integration | Description |
 |-------------|-------------|
-| [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [petal-sdl/docs/game-dev-guide.md](petal-sdl/docs/game-dev-guide.md) and [petal-sdl/docs/agent-protocol.md](petal-sdl/docs/agent-protocol.md) |
-| [petal-web](petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
-| [petal-diagram-canvas](petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
-| [petal-fps](petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
+| [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
+| [petal-web](apps/petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
+| [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
+| [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
 
 ## Examples
@@ -91,7 +91,7 @@ The [`examples/`](examples/) directory contains 22 programs covering all languag
 from hello world to Conway's Game of Life. See [examples/README.md](examples/README.md)
 for the full list.
 
-The [`petal-sdl/examples/`](petal-sdl/examples/) directory contains playable games:
+The [`apps/petal-sdl/examples/`](apps/petal-sdl/examples/) directory contains playable games:
 snake, pong, breakout, tetris, invaders, and more.
 
 ## Architecture

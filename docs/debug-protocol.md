@@ -7,8 +7,8 @@ shapes and produce the same response shape. Agents writing against one
 transport should work against the other.
 
 Implementations:
-- **petal-sdl:** `petal-sdl/src/protocol.rs`, dispatched in `game_loop.rs::handle_command`
-- **petal-diagram-canvas:** `petal-diagram-canvas/src/debug.ts`
+- **petal-sdl:** `apps/petal-sdl/src/protocol.rs`, dispatched in `game_loop.rs::handle_command`
+- **petal-diagram-canvas:** `apps/petal-diagram-canvas/src/debug.ts`
   (`PetalDebugAPI.handleCommand`)
 
 ---

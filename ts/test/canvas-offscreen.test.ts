@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   renderCommands,
   type DrawCommand,
-} from "../../petal-web-canvas/src/canvas-renderer.js";
+} from "../../apps/petal-web-canvas/src/canvas-renderer.js";
 
 /** A minimal Canvas2D context stub that records the calls we care about. */
 interface FakeCtx {

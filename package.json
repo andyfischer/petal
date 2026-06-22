@@ -6,6 +6,7 @@
   "scripts": {
     "test": "npm test --prefix ts",
     "test:watch": "npm run test:watch --prefix ts",
-    "test-examples": "npm run test-examples --prefix ts"
+    "test-examples": "npm run test-examples --prefix ts",
+    "scan-secrets": "npm run scan-secrets --prefix ts"
   }
 }

@@ -7,6 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test-examples": "tsx bin/test-examples.ts",
+    "scan-secrets": "tsx bin/scan-secrets.ts",
     "petal": "tsx bin/run-petal.ts",
     "stdlib:json": "tsx tools/extract-stdlib.ts",
     "tsc": "tsc --noEmit"

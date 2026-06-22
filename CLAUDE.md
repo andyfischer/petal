@@ -2,13 +2,14 @@
 
 A custom programming language: Lexer → Parser → AST → Compiler → IR → Step Evaluator.
 
-## Directory Overview
+## Repo Layout
 
 - `rust/` — Main implementation for the core language (lexer, parser, AST, compiler, IR, evaluator)
-- `petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
-- `petal-diagram-canvas/` — Another integration, web-based diagram renderer
-- `petal-web/` — Integration that uses Petal as a React-like page rendering layer.
-- `ts/` — All TypeScript code (Node project with its own `package.json`/`tsconfig.json`):
+- `apps/` — Native and web integrations that embed the language:
+  - `apps/petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
+  - `apps/petal-diagram-canvas/` — Experimental integration using Petal for a web based diagram tool.
+  - `apps/petal-web/` — Integration that uses Petal + WASM as a React-like rendering layer.
+- `ts/` — TypeScript tooling
   - `ts/bin/` — Dev wrappers (`run-petal.ts`, `test-examples.ts`)
   - `ts/tools/` — MCP servers
   - `ts/test/` — Vitest integration tests
@@ -17,100 +18,8 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
 
 Source: `rust/src/`
 
-## Running Petal locally
+## Documentation
 
-Use `./ts/bin/run-petal.ts` as the default way to invoke the compiler during
-development. It rebuilds the binary if any Rust source is newer than it, then
-forwards all arguments to `petal`:
+ * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)
+ * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
 
-```bash
-./ts/bin/run-petal.ts run examples/hello.ptl
-./ts/bin/run-petal.ts run -e 'print(1 + 2)'
-./ts/bin/run-petal.ts show-ir -e 'let x = 1 + 2'
-```
-
-You can still invoke `rust/target/debug/petal` directly if you want to skip
-the staleness check.
-
-## Testing
-
-### Integration tests (vitest)
-
-Uses Vitest. Tests shell out to the compiled `petal` CLI binary and assert on JSON output. Run from the `ts/` directory:
-
-```bash
-cd ts
-
-# Run all tests
-npx vitest
-
-# Run a specific test file
-npx vitest test/ir-basics.test.ts
-
-# Run tests matching a name
-npx vitest -t "emits Add"
-```
-
-**Test files** (`ts/test/*.test.ts`):
-- `ir-basics.test.ts` — constants, arithmetic, variables, registers, comparisons, unary ops
-- `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return, continue
-- `ir-data-structures.test.ts` — lists, records, enums, field/index access, concat
-- `ir-functions.test.ts` — function defs, closures, captures, recursion, lambdas, calls
-- `ir-higher-order.test.ts` — map, filter, reduce
-- `ir-jsx.test.ts` — JSX-like element syntax
-- `ir-state.test.ts` — state init, read, write, state keys
-- `bug-state-in-if.test.ts` — regression coverage for state inside conditional branches
-- `autodiff.test.ts` — dual numbers and chain-rule propagation
-- `provenance.test.ts` / `slicing.test.ts` / `graph.test.ts` — dataflow query commands
-- `compound-assign.test.ts` / `pipe-operator.test.ts` / `method-syntax.test.ts` — operators and sugar
-- `string-interp.test.ts` / `string-intern.test.ts` / `list-string-builtins.test.ts` / `collection-builtins.test.ts`
-- `gc.test.ts` / `loop-state.test.ts` / `loop-carry-limitations.test.ts` / `is-callable.test.ts`
-- `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
-- `test-samples.test.ts` — every `examples/*.ptl` file runs without error
-
-**Helpers** (`ts/test/helpers.ts`):
-- `ensureBuild()` — runs `cargo build` once per test session (called in `beforeAll`)
-- `showIrJson(code)` — compiles Petal code, returns parsed IR JSON (`petal show-ir --json -e '...'`)
-- `showAstJson(code)` — returns parsed AST JSON (`petal show-ast --json -e '...'`)
-- `showTokensJson(code)` — returns parsed token list (`petal show-tokens --json -e '...'`)
-- `runPetal(code)` — executes code, returns stdout (`petal run -e '...'`)
-- `userTerms(ir)` — filters out builtin phantom terms
-- `termsByOp(ir, op)` — finds terms by operation name
-- `termByName(ir, name)` / `termById(ir, id)` — term lookup helpers
-
-### Example-based tests
-
-`ts/test/test-samples.test.ts` runs every `examples/*.ptl` file through the `petal` binary
-and asserts it exits without error (3 s timeout per file). These are included in the
-normal vitest run:
-
-```bash
-cd ts
-npx vitest test/test-samples.test.ts   # Run just the sample tests
-```
-
-For a quick eyeball-check that prints the first few lines of each example's
-output, run `./ts/bin/test-examples.ts` (add `--full` for full output).
-
-## MCP Server
-
-An MCP server (`ts/tools/petal-mcp.ts`) exposes six tools that compile and run Petal code
-directly. It automatically builds the Rust binary before running. Use these to
-quickly test Petal snippets without shelling out manually.
-
-| Tool | Purpose |
-|------|---------|
-| `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. `trace: true` adds a per-term execution trace. |
-| `CheckSnippet({code})` | Lex+parse+compile without running. Cheaper than `TestSnippet` for syntax validation. |
-| `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
-| `ShowIR({code})` | Return the compiled IR as JSON. |
-| `ShowAST({code})` | Return the parsed AST as JSON. |
-| `ShowTokens({code})` | Return the token stream as JSON. |
-
-```
-TestSnippet({ code: 'print("hello")' })
-```
-
-petal-diagram-canvas exposes a separate MCP server (`ts/tools/petal-diagram-mcp.ts`) with
-`Diagram*` tools that speak the debug protocol over WebSocket — see
-`docs/debug-protocol.md`.

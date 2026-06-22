@@ -25,3 +25,4 @@ apps/petal-diagram-canvas/dist/
 .playwright-cli/
 
 .vite
+CLAUDE.local.md

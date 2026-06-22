@@ -3,6 +3,7 @@ build
 .vscode
 .cache
 *.log
+.DS_Store
 
 # Rust build output
 **/target/
@@ -17,8 +18,8 @@ temp
 
 # WASM build output
 rust/pkg/
-petal-diagram-canvas/pkg/
-petal-diagram-canvas/dist/
+apps/petal-diagram-canvas/pkg/
+apps/petal-diagram-canvas/dist/
 
 # Playwright CLI session artifacts
 .playwright-cli/

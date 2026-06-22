@@ -1,0 +1,11 @@
+{
+  "name": "petal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Petal: a custom programming language (Lexer → Parser → AST → Compiler → IR → Step Evaluator).",
+  "scripts": {
+    "test": "npm test --prefix ts",
+    "test:watch": "npm run test:watch --prefix ts",
+    "test-examples": "npm run test-examples --prefix ts"
+  }
+}

@@ -11,7 +11,7 @@ Autonomously pick and implement the highest-impact next task for this project.
 
 Read the project's goals and documentation to understand the vision and current priorities:
 
-1. Read `docs/PETAL_GOALS.md` (the primary goals document).
+1. Read `docs/goals.md` (the primary goals document — vision and remaining work).
 2. Read all `.md` files in the project root directory (e.g. any `Goals_` documents and etc).
 3. Read `CLAUDE.md` for project conventions, testing instructions, and build commands.
 

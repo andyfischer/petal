@@ -2,7 +2,7 @@
 
 **Status:** M1 (contract) + M2 (loader) + M3 (validation) + M4 (reference
 external emitter) implemented and tested. Tracked by
-`idea-34b8348d`. Sequenced as Phase 3 in [goals-progress.md](goals-progress.md).
+`idea-34b8348d`. Sequenced as Phase 3 in [goals.md](goals.md).
 
 Try it:
 
@@ -18,7 +18,7 @@ across the snippet matrix and the full `examples/*.ptl` corpus.
 
 ## The idea
 
-[PETAL_GOALS.md](PETAL_GOALS.md) Goal 3 imagines *cross-language abstract
+[goals.md](goals.md) Goal 3 imagines *cross-language abstract
 programming*: mounting foreign programs (JS, C, Python) through a projectional
 lens. Done in that direction — importing arbitrary foreign semantics — it is a
 multi-year research program competing with JetBrains MPS.
@@ -310,7 +310,7 @@ default the source metadata. Everything else is required.
 - Importing arbitrary existing languages (JS/C/Python). M4 deliberately uses a
   trivial emitter; real foreign front-ends are downstream and out of scope.
 - Bidirectional editing / mapping edits on a projection back to foreign source
-  (that remains North Star in PETAL_GOALS.md Goal 3).
+  (that remains North Star in goals.md Goal 3).
 - A binary/compact IR format. JSON first; optimize only if a real emitter needs
   it.
 

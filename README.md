@@ -68,12 +68,11 @@ print("hello, {name}!")
 | [Builtins Reference](docs/Builtins.md) | All 68 built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
 | [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
-| [Design Goals](docs/PETAL_GOALS.md) | Language philosophy and the four foundational pillars |
+| [Goals](docs/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [Function Overloading](docs/Function_Overloading.md) | Multi-arity dispatch rules |
 | [Mutability Plan](docs/MutabilityPlan.md) | Why the IR is purely immutable (design context) |
 | [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
 | [Debug Protocol](docs/debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |
-| [Creative Coding Roadmap](docs/creative-coding-language-ideas.md) | Shipped + open items for creative-coding ergonomics |
 
 ## Integrations & Tools
 

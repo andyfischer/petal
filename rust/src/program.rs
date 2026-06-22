@@ -440,7 +440,7 @@ impl Program {
             }
             // State ops require a state_key. Other ops *may* also carry one:
             // a `Copy` produced by a state-tracking reassignment references its
-            // StateInit's key (see compile_assign / docs/creative-coding-evaluation.md).
+            // StateInit's key (see compile_assign).
             let is_state = matches!(
                 term.op,
                 TermOp::StateInit | TermOp::StateRead | TermOp::StateWrite

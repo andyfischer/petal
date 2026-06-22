@@ -7,7 +7,7 @@ live in [`/examples/`](../../examples/) at the repo root and are exercised by
 ## [`aspirational/`](aspirational/)
 
 Design sketches for language features that are documented in
-[`PETAL_GOALS.md`](../PETAL_GOALS.md) but not yet implemented. These files
+[`goals.md`](../goals.md) but not yet implemented. These files
 **do not compile against the current compiler** — they exist to show what
 the eventual API is intended to look like, and they reference APIs
 (`Program.current()`, `program.slice()`, `grad(f)`, `.backpropagate()`, etc.)

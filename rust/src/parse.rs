@@ -7,6 +7,11 @@ pub struct Parser {
     token_spans: Vec<SourceSpan>,
     pos: usize,
     next_state_id: usize,
+    /// True while directly parsing an element of a comma-less juxtaposition
+    /// list (list literal or call-argument list). In this context a
+    /// `MinusPrefix` token starts a new negated element rather than binding as
+    /// subtraction. See docs/syntax/optional-commas.md.
+    in_juxta: bool,
 }
 
 impl Parser {
@@ -16,6 +21,7 @@ impl Parser {
             token_spans,
             pos: 0,
             next_state_id: 0,
+            in_juxta: false,
         }
     }
 
@@ -491,10 +497,15 @@ impl Parser {
 
     fn parse_additive(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_multiplicative()?;
-        while matches!(self.peek(), Token::Plus | Token::Minus) {
+        // A MinusPrefix (`1 -2`) binds as subtraction in normal contexts, but
+        // inside comma-less juxtaposition it begins a new negated element, so
+        // we stop here and let the enclosing list loop pick it up.
+        while matches!(self.peek(), Token::Plus | Token::Minus)
+            || (matches!(self.peek(), Token::MinusPrefix) && !self.in_juxta)
+        {
             let op = match self.advance() {
                 Token::Plus => BinOp::Add,
-                Token::Minus => BinOp::Sub,
+                Token::Minus | Token::MinusPrefix => BinOp::Sub,
                 _ => unreachable!(),
             };
             self.skip_newlines();
@@ -543,7 +554,7 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         match self.peek().clone() {
-            Token::Minus => {
+            Token::Minus | Token::MinusPrefix => {
                 self.advance();
                 let operand = self.parse_unary()?;
                 Ok(self.mk_expr(ExprKind::UnaryOp {
@@ -583,7 +594,12 @@ impl Parser {
                 }
                 Token::LBracket => {
                     self.advance();
+                    // The index is a single expression, not a juxtaposition
+                    // list, so `-` binds as subtraction here.
+                    let saved = self.in_juxta;
+                    self.in_juxta = false;
                     let index = self.parse_expr()?;
+                    self.in_juxta = saved;
                     self.expect(&Token::RBracket)?;
                     expr = Expr {
                         span: SourceSpan {
@@ -642,6 +658,18 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
+        // Sub-expressions opened by a primary (grouping parens, record / if /
+        // match / lambda bodies) are not juxtaposition contexts, so clear the
+        // flag while parsing them. parse_list_literal re-sets it for its own
+        // elements. See docs/syntax/optional-commas.md.
+        let saved = self.in_juxta;
+        self.in_juxta = false;
+        let result = self.parse_primary_inner();
+        self.in_juxta = saved;
+        result
+    }
+
+    fn parse_primary_inner(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         match self.peek().clone() {
             Token::Int(n) => {
@@ -710,6 +738,8 @@ impl Parser {
         self.advance(); // consume '['
         let mut elements = Vec::new();
         self.skip_newlines();
+        let saved_juxta = self.in_juxta;
+        self.in_juxta = true; // comma-less elements may be juxtaposed
         while !matches!(self.peek(), Token::RBracket | Token::Eof) {
             let elem = self.parse_expr()?;
             elements.push(elem);
@@ -719,6 +749,7 @@ impl Parser {
                 self.skip_newlines();
             }
         }
+        self.in_juxta = saved_juxta;
         self.expect(&Token::RBracket)?;
         Ok(self.mk_expr(ExprKind::List(elements), start))
     }
@@ -885,7 +916,7 @@ impl Parser {
             }
             Token::LBracket => self.parse_list_pattern(),
             Token::LBrace => self.parse_record_pattern(),
-            Token::Minus => {
+            Token::Minus | Token::MinusPrefix => {
                 self.advance();
                 match self.peek().clone() {
                     Token::Int(n) => {
@@ -1127,6 +1158,8 @@ impl Parser {
     fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {
         let mut args = Vec::new();
         self.skip_newlines();
+        let saved_juxta = self.in_juxta;
+        self.in_juxta = true; // comma-less args may be juxtaposed
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
             let arg = self.parse_expr()?;
             args.push(arg);
@@ -1136,6 +1169,7 @@ impl Parser {
                 self.skip_newlines();
             }
         }
+        self.in_juxta = saved_juxta;
         Ok(args)
     }
 }

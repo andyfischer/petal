@@ -13,6 +13,11 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR → 
   - `ts/bin/` — Dev wrappers (`run-petal.ts`, `test-examples.ts`)
   - `ts/tools/` — MCP servers
   - `ts/test/` — Vitest integration tests
+- `editor-support/` — Tooling for editors/IDEs:
+  - `editor-support/tree-sitter-petal/` — the reference tree-sitter grammar for
+    Petal (syntax highlighting). Ships `grammar.js`, a committed generated
+    parser, `queries/highlights.scm`, and a Rust crate (`LANGUAGE` +
+    `HIGHLIGHTS_QUERY`). Consumed by Garden (`~/garden`).
 - `examples/` — Example `.ptl` programs
 - `docs/` — Documentation
 

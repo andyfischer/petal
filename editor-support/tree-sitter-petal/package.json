@@ -1,0 +1,37 @@
+{
+  "name": "tree-sitter-petal",
+  "version": "0.1.0",
+  "description": "Petal grammar for tree-sitter",
+  "repository": "https://github.com/andyfischer/petal",
+  "license": "MIT",
+  "main": "bindings/node",
+  "keywords": [
+    "incremental",
+    "parsing",
+    "tree-sitter",
+    "petal"
+  ],
+  "files": [
+    "grammar.js",
+    "tree-sitter.json",
+    "queries/*",
+    "src/**"
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.25.0"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "parse": "tree-sitter parse",
+    "test": "tree-sitter test"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.petal",
+      "file-types": [
+        "ptl"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}

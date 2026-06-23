@@ -1,0 +1,35 @@
+{
+  "grammars": [
+    {
+      "name": "petal",
+      "camelcase": "Petal",
+      "scope": "source.petal",
+      "path": ".",
+      "file-types": [
+        "ptl"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Petal grammar for tree-sitter",
+    "authors": [
+      {
+        "name": "Petal"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/andyfischer/petal"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": true,
+    "python": false,
+    "rust": true,
+    "swift": false
+  }
+}

@@ -1,0 +1,101 @@
+==================
+Function declaration
+==================
+
+fn square(n)
+  n * n
+end
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list parameter: (identifier))
+    body: (block
+      (binary_expression
+        left: (identifier)
+        right: (identifier)))))
+
+==================
+Let, literals and interpolation
+==================
+
+let name = "Ada"
+let n = 42
+let msg = "hi {name}"
+
+---
+
+(source_file
+  (let_declaration name: (identifier) value: (string (string_content)))
+  (let_declaration name: (identifier) value: (integer))
+  (let_declaration
+    name: (identifier)
+    value: (string
+      (string_content)
+      (interpolation (identifier)))))
+
+==================
+Enum and match
+==================
+
+enum Shape
+  Circle(radius)
+  Square
+end
+
+match s
+  when Circle(r) -> r
+  when _ -> 0
+end
+
+---
+
+(source_file
+  (enum_declaration
+    name: (identifier)
+    (enum_variant name: (identifier) fields: (parameter_list parameter: (identifier)))
+    (enum_variant name: (identifier)))
+  (match_expression
+    subject: (identifier)
+    (match_arm
+      pattern: (variant_pattern name: (identifier) (identifier))
+      body: (identifier))
+    (match_arm
+      pattern: (identifier)
+      body: (integer))))
+
+==================
+Comma-less list juxtaposition
+==================
+
+let m = [1 2 3]
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (list
+      (integer)
+      (integer)
+      (integer))))
+
+==================
+JSX element
+==================
+
+let v = <div class="a">{item}</div>
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (jsx_element
+      (jsx_opening_element
+        name: (jsx_open_tag)
+        (jsx_attribute name: (identifier) value: (string (string_content))))
+      (jsx_expression (identifier))
+      (jsx_closing_element name: (jsx_close_tag)))))

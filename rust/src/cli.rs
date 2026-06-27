@@ -4,8 +4,9 @@ use std::fs;
 use std::process;
 
 use crate::compiler::Compiler;
+use crate::dot_graph::program_to_dot;
 use crate::env::Env;
-use crate::ir_display::{display_program_with, is_phantom};
+use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
 use crate::native_fn::NativeFnTable;
 use crate::parse::Parser;
@@ -697,66 +698,6 @@ pub fn execute(cli: CliArgs) {
             println!("{}", program_to_dot(&program, !all));
         }
     }
-}
-
-/// Generate a DOT-format graph representation of the program's dataflow.
-fn program_to_dot(program: &crate::program::Program, hide_phantoms: bool) -> String {
-    use std::fmt::Write;
-    let mut dot = String::new();
-    writeln!(dot, "digraph dataflow {{").unwrap();
-    writeln!(dot, "  rankdir=TB;").unwrap();
-    writeln!(dot, "  node [shape=box, fontname=\"monospace\", fontsize=10];").unwrap();
-    writeln!(dot, "  edge [fontname=\"monospace\", fontsize=8];").unwrap();
-
-    for term in &program.terms {
-        if hide_phantoms && is_phantom(program, term) {
-            continue;
-        }
-        let label = if let Some(ref name) = term.name {
-            format!("t{}: {} ({:?})", term.id.0, name, term.op)
-        } else {
-            format!("t{}: {:?}", term.id.0, term.op)
-        };
-        // Escape quotes in label
-        let label = label.replace('"', "\\\"");
-
-        // Color by operation type
-        let color = match &term.op {
-            crate::program::TermOp::Constant(_) => "lightblue",
-            crate::program::TermOp::StateInit | crate::program::TermOp::StateRead | crate::program::TermOp::StateWrite => "lightyellow",
-            crate::program::TermOp::Call | crate::program::TermOp::MethodCall(_) => "lightgreen",
-            crate::program::TermOp::Branch | crate::program::TermOp::Match => "lightsalmon",
-            crate::program::TermOp::ForLoop
-            | crate::program::TermOp::NumericForLoop
-            | crate::program::TermOp::WhileLoop => "plum",
-            crate::program::TermOp::MakeClosure(_) => "lightcoral",
-            _ => "white",
-        };
-
-        writeln!(dot, "  t{} [label=\"{}\", style=filled, fillcolor={}];",
-            term.id.0, label, color).unwrap();
-
-        // Dataflow edges (input -> term). Skip edges referencing phantom
-        // builtins so the rendered graph matches the visible nodes.
-        for input_id in &term.inputs {
-            if hide_phantoms && is_phantom(program, program.get_term(*input_id)) {
-                continue;
-            }
-            writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap();
-        }
-
-        // Control flow edges (term -> child blocks, dashed)
-        for child_block in &term.child_blocks {
-            let block = program.get_block(*child_block);
-            if let Some(entry) = block.entry {
-                writeln!(dot, "  t{} -> t{} [style=dashed, color=gray];",
-                    term.id.0, entry.0).unwrap();
-            }
-        }
-    }
-
-    writeln!(dot, "}}").unwrap();
-    dot
 }
 
 /// Classify a load_program error into "lex" or "parse" based on the message

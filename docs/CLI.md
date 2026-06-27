@@ -13,8 +13,9 @@ petal <command> [options] -e <code>
 
 ```
 petal <file>           # same as: petal run <file>
-petal -e <code>        # same as: petal run -e <code>
 ```
+
+To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <code>`.
 
 ### Commands at a glance
 

@@ -59,19 +59,8 @@ pub fn parse_args() -> CliArgs {
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
         "show-slice" => parse_slice_args(&args[1..]),
         "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
-        // Backward compat: petal -e <code> or petal <file>
-        "-e" => {
-            if args.len() < 2 {
-                eprintln!("Usage: petal -e <code>");
-                process::exit(1);
-            }
-            CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None, ir: false },
-                source: SourceInput::Inline(args[1].clone()),
-            }
-        }
         _ => {
-            // Treat as file path
+            // Shorthand: `petal <file>` runs the file (same as `petal run <file>`).
             CliArgs {
                 command: Command::Run { json: false, trace: false, record_trace: None, ir: false },
                 source: SourceInput::File(first.clone()),
@@ -327,8 +316,7 @@ Commands:
                                  Compute minimal dataflow slice for targets
   show-graph [--all] <file>      Output DOT-format dataflow graph (--all to include builtins)
 
-  petal <file>                   Shorthand for 'run'
-  petal -e <code>                Shorthand for 'run -e'";
+  petal <file>                   Shorthand for 'run'";
     eprintln!("{}", out);
 }
 

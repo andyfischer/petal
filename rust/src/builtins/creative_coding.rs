@@ -141,7 +141,7 @@ pub(super) fn native_smoothstep(state: &mut PetalCxt) -> Result<u32, String> {
     let edge0 = state.get_float(1)?;
     let edge1 = state.get_float(2)?;
     let x = state.get_float(3)?;
-    let t = ((x - edge0) / (edge1 - edge0)).max(0.0).min(1.0);
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     state.push_float(t * t * (3.0 - 2.0 * t));
     Ok(1)
 }

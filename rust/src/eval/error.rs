@@ -21,13 +21,12 @@ impl<'a> Evaluator<'a> {
         // If we have a span AND the program carries its source, append a
         // 3-line snippet with a caret so users can see exactly where the
         // failing term is in their code.
-        if let Some(s) = span {
-            if !program.source.is_empty() {
-                if let Some(snippet) = format_source_snippet(&program.source, &s) {
-                    error_msg.push('\n');
-                    error_msg.push_str(&snippet);
-                }
-            }
+        if let Some(s) = span
+            && !program.source.is_empty()
+            && let Some(snippet) = format_source_snippet(&program.source, s)
+        {
+            error_msg.push('\n');
+            error_msg.push_str(&snippet);
         }
 
         // Append provenance: up to 5 nearest named ancestors with spans
@@ -185,7 +184,7 @@ pub fn format_source_snippet(source: &str, span: &SourceSpan) -> Option<String> 
         } else {
             1
         };
-    let underline: String = std::iter::repeat('^').take(span_len.max(1)).collect();
+    let underline: String = std::iter::repeat_n('^', span_len.max(1)).collect();
     Some(format!(
         "{} |\n{} | {}\n{} | {}{}",
         blank_gutter, line_num, line, blank_gutter, caret_pad, underline,

@@ -45,12 +45,11 @@ impl<'a> Evaluator<'a> {
             )
             .as_loop_body(),
         );
-        if let Some(val) = loop_var {
-            if let Some(frame) = self.stack.frames.last_mut() {
-                if !frame.registers.is_empty() {
-                    frame.registers[0] = val;
-                }
-            }
+        if let Some(val) = loop_var
+            && let Some(frame) = self.stack.frames.last_mut()
+            && !frame.registers.is_empty()
+        {
+            frame.registers[0] = val;
         }
         ControlFlow::FramePushed
     }

@@ -426,17 +426,17 @@ impl Program {
                     return Err(format!("t{}: constant c{} out of range", i, c));
                 }
             }
-            if let TermOp::MakeClosure(f) = &term.op {
-                if f.0 >= n_fns {
-                    return Err(format!("t{}: function f{} out of range", i, f.0));
-                }
+            if let TermOp::MakeClosure(f) = &term.op
+                && f.0 >= n_fns
+            {
+                return Err(format!("t{}: function f{} out of range", i, f.0));
             }
             // A BuiltinCall's name must resolve to a String constant (the constant
             // was already range-checked above via `cids`).
-            if let TermOp::BuiltinCall(c) = &term.op {
-                if self.get_string_constant(*c).is_none() {
-                    return Err(format!("t{}: BuiltinCall name is not a string constant", i));
-                }
+            if let TermOp::BuiltinCall(c) = &term.op
+                && self.get_string_constant(*c).is_none()
+            {
+                return Err(format!("t{}: BuiltinCall name is not a string constant", i));
             }
             // State ops require a state_key. Other ops *may* also carry one:
             // a `Copy` produced by a state-tracking reassignment references its
@@ -455,15 +455,15 @@ impl Program {
             if block.id.0 as usize != i {
                 return Err(format!("blocks[{}] has id {} (must equal index)", i, block.id.0));
             }
-            if let Some(entry) = block.entry {
-                if entry.0 >= n_terms {
-                    return Err(format!("b{}: entry t{} out of range", i, entry.0));
-                }
+            if let Some(entry) = block.entry
+                && entry.0 >= n_terms
+            {
+                return Err(format!("b{}: entry t{} out of range", i, entry.0));
             }
-            if let Some(pt) = block.parent_term_id {
-                if pt.0 >= n_terms {
-                    return Err(format!("b{}: parent_term t{} out of range", i, pt.0));
-                }
+            if let Some(pt) = block.parent_term_id
+                && pt.0 >= n_terms
+            {
+                return Err(format!("b{}: parent_term t{} out of range", i, pt.0));
             }
             for po in &block.phi_outs {
                 if po.src_term.0 >= n_terms || po.dest_term.0 >= n_terms {
@@ -491,15 +491,14 @@ impl Program {
             .filter_map(|t| t.state_key.map(|k| k.0))
             .collect();
         for term in &self.terms {
-            if matches!(term.op, TermOp::StateRead | TermOp::StateWrite) {
-                if let Some(k) = term.state_key {
-                    if !inits.contains(&k.0) {
-                        return Err(format!(
-                            "t{}: state key {} has no StateInit",
-                            term.id.0, k.0
-                        ));
-                    }
-                }
+            if matches!(term.op, TermOp::StateRead | TermOp::StateWrite)
+                && let Some(k) = term.state_key
+                && !inits.contains(&k.0)
+            {
+                return Err(format!(
+                    "t{}: state key {} has no StateInit",
+                    term.id.0, k.0
+                ));
             }
         }
         Ok(())
@@ -516,18 +515,17 @@ impl Program {
     /// Find a term by name (e.g. variable name like "x") or by id string (e.g. "t24").
     pub fn find_term(&self, query: &str) -> Option<TermId> {
         // Try "tN" id format first
-        if let Some(id_str) = query.strip_prefix('t') {
-            if let Ok(id) = id_str.parse::<u32>() {
-                if (id as usize) < self.terms.len() {
-                    return Some(TermId(id));
-                }
-            }
+        if let Some(id_str) = query.strip_prefix('t')
+            && let Ok(id) = id_str.parse::<u32>()
+            && (id as usize) < self.terms.len()
+        {
+            return Some(TermId(id));
         }
         // Try a bare numeric ID (e.g. `--term 72`)
-        if let Ok(id) = query.parse::<u32>() {
-            if (id as usize) < self.terms.len() {
-                return Some(TermId(id));
-            }
+        if let Ok(id) = query.parse::<u32>()
+            && (id as usize) < self.terms.len()
+        {
+            return Some(TermId(id));
         }
         // Search by name (last match wins — like variable shadowing)
         let mut found = None;

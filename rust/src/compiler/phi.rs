@@ -23,7 +23,7 @@ impl Compiler {
         self.scope_bind(name.clone(), new_tid);
         self.block_rebinds
             .entry(self.current_block)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(name, new_tid);
     }
 
@@ -202,10 +202,10 @@ impl Compiler {
 
     fn collect_let_names(stmts: &[Stmt], out: &mut Vec<String>) {
         for s in stmts {
-            if let StmtKind::Let { name, .. } = &s.kind {
-                if !out.contains(name) {
-                    out.push(name.clone());
-                }
+            if let StmtKind::Let { name, .. } = &s.kind
+                && !out.contains(name)
+            {
+                out.push(name.clone());
             }
         }
     }

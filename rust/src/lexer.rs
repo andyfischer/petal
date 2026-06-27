@@ -342,7 +342,7 @@ impl Lexer {
                 if self.peek_next() == Some('=') {
                     self.advance_n(2);
                     self.push_token(Token::Le, start);
-                } else if self.peek_next().map_or(false, |c| c.is_ascii_alphabetic()) {
+                } else if self.peek_next().is_some_and(|c| c.is_ascii_alphabetic()) {
                     // JSX open tag: `<div`
                     self.advance_char();
                     self.push_token(Token::JsxOpenStart, start);
@@ -678,7 +678,7 @@ impl Lexer {
                         self.expect_char('>')?;
                         self.mode_stack.pop(); // pop JsxContent
                         return Ok(());
-                    } else if self.peek_next().map_or(false, |c| c.is_ascii_alphabetic()) {
+                    } else if self.peek_next().is_some_and(|c| c.is_ascii_alphabetic()) {
                         // Nested open tag
                         let start = self.current_pos();
                         self.advance_char();
@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn lex_float_literal() {
-        assert_eq!(tokenize("3.14"), vec![Token::Float(3.14)]);
+        assert_eq!(tokenize("3.25"), vec![Token::Float(3.25)]);
     }
 
     #[test]

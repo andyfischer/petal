@@ -224,26 +224,26 @@ impl Compiler {
         // `if` / loop body, or a chain of repeat reassignments at
         // the top level, still finds the underlying StateInit.
         let mut state_init_for_copy: Option<StateKey> = None;
-        if let Some(existing_tid) = self.scope_lookup(name) {
-            if let Some(init_tid) = self.find_state_init(existing_tid) {
-                let state_key = self.terms[init_tid.0 as usize].state_key;
-                let in_loop = self.terms[init_tid.0 as usize].in_loop;
-                // StateInit's inputs are [explicit_key]? (the init value
-                // lives in a child block for lazy evaluation). Forward the
-                // key to StateWrite so the runtime resolves to the same
-                // RuntimeStateKey.
-                let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
-                if let Some(&key_input) = self.terms[init_tid.0 as usize].inputs.first() {
-                    write_inputs.push(key_input);
-                }
-                let write_tid = self.emit_term(TermOp::StateWrite, write_inputs, None);
-                self.terms[write_tid.0 as usize].state_key = state_key;
-                self.terms[write_tid.0 as usize].in_loop = in_loop;
-                // Propagate the state key onto the Copy below so the
-                // next reassignment can still resolve to the StateInit
-                // (the Copy replaces the existing scope binding).
-                state_init_for_copy = state_key;
+        if let Some(existing_tid) = self.scope_lookup(name)
+            && let Some(init_tid) = self.find_state_init(existing_tid)
+        {
+            let state_key = self.terms[init_tid.0 as usize].state_key;
+            let in_loop = self.terms[init_tid.0 as usize].in_loop;
+            // StateInit's inputs are [explicit_key]? (the init value
+            // lives in a child block for lazy evaluation). Forward the
+            // key to StateWrite so the runtime resolves to the same
+            // RuntimeStateKey.
+            let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
+            if let Some(&key_input) = self.terms[init_tid.0 as usize].inputs.first() {
+                write_inputs.push(key_input);
             }
+            let write_tid = self.emit_term(TermOp::StateWrite, write_inputs, None);
+            self.terms[write_tid.0 as usize].state_key = state_key;
+            self.terms[write_tid.0 as usize].in_loop = in_loop;
+            // Propagate the state key onto the Copy below so the
+            // next reassignment can still resolve to the StateInit
+            // (the Copy replaces the existing scope binding).
+            state_init_for_copy = state_key;
         }
 
         // Always emit a fresh Copy term + rebind. If the name was

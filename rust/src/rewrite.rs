@@ -48,12 +48,11 @@ pub fn find_call(stmts: &[Stmt], name: &str) -> Option<SourceSpan> {
 /// The span of `expr` if it is a call whose callee is the bare identifier
 /// `name`, else `None`.
 fn call_span_if_named(expr: &Expr, name: &str) -> Option<SourceSpan> {
-    if let ExprKind::Call { function, .. } = &expr.kind {
-        if let ExprKind::Ident(ident) = &function.kind {
-            if ident == name {
-                return Some(expr.span);
-            }
-        }
+    if let ExprKind::Call { function, .. } = &expr.kind
+        && let ExprKind::Ident(ident) = &function.kind
+        && ident == name
+    {
+        return Some(expr.span);
     }
     None
 }

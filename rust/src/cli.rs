@@ -793,10 +793,10 @@ fn parse_line_column(s: &str) -> (String, Option<u32>, Option<u32>) {
         if let Some(close) = rest.find(']') {
             let inner = &rest[..close];
             // inner = "N, column M"
-            if let Some((l, c)) = inner.split_once(", column ") {
-                if let (Ok(line), Ok(col)) = (l.trim().parse::<u32>(), c.trim().parse::<u32>()) {
-                    return (s[..open].to_string(), Some(line), Some(col));
-                }
+            if let Some((l, c)) = inner.split_once(", column ")
+                && let (Ok(line), Ok(col)) = (l.trim().parse::<u32>(), c.trim().parse::<u32>())
+            {
+                return (s[..open].to_string(), Some(line), Some(col));
             }
         }
     }

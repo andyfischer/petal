@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn nonzero_float_is_truthy() {
-        assert!(Value::Float(3.14).is_truthy());
+        assert!(Value::Float(3.25).is_truthy());
     }
 
     #[test]
@@ -473,6 +473,6 @@ mod tests {
 
     #[test]
     fn format_float_fractional() {
-        assert_eq!(format_float(3.14), "3.14");
+        assert_eq!(format_float(3.25), "3.25");
     }
 }

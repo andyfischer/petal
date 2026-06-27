@@ -237,7 +237,7 @@ pub(super) fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 /// Sort key extracted from Values so sorting doesn't need heap access.
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq)]
 enum SortKey {
     Num(f64),
     Str(String),
@@ -246,9 +246,33 @@ enum SortKey {
 
 impl Eq for SortKey {}
 
+impl SortKey {
+    /// Rank for ordering keys of different kinds: numbers, then strings, then
+    /// everything else.
+    fn rank(&self) -> u8 {
+        match self {
+            SortKey::Num(_) => 0,
+            SortKey::Str(_) => 1,
+            SortKey::Other => 2,
+        }
+    }
+}
+
 impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+        use std::cmp::Ordering;
+        match (self, other) {
+            // NaN is incomparable; treat it as equal so the sort stays total.
+            (SortKey::Num(a), SortKey::Num(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (SortKey::Str(a), SortKey::Str(b)) => a.cmp(b),
+            _ => self.rank().cmp(&other.rank()),
+        }
+    }
+}
+
+impl PartialOrd for SortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

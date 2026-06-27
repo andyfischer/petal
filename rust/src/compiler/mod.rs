@@ -95,6 +95,12 @@ pub struct Compiler {
     builtin_phantoms: HashMap<String, TermId>,
 }
 
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -248,10 +254,10 @@ impl Compiler {
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
-        if let Some(&boundary) = self.function_boundaries.last() {
-            if boundary >= self.scopes.len() {
-                self.function_boundaries.pop();
-            }
+        if let Some(&boundary) = self.function_boundaries.last()
+            && boundary >= self.scopes.len()
+        {
+            self.function_boundaries.pop();
         }
     }
 
@@ -273,11 +279,11 @@ impl Compiler {
     /// Bind a name in the current function's scope (not the innermost scope).
     /// Used for captures so nested functions see the local phantom.
     fn bind_in_function_scope(&mut self, name: String, tid: TermId) {
-        if let Some(&boundary_idx) = self.function_boundaries.last() {
-            if boundary_idx < self.scopes.len() {
-                self.scopes[boundary_idx].insert(name, tid);
-                return;
-            }
+        if let Some(&boundary_idx) = self.function_boundaries.last()
+            && boundary_idx < self.scopes.len()
+        {
+            self.scopes[boundary_idx].insert(name, tid);
+            return;
         }
         // Fallback: bind in current scope
         self.scope_bind(name, tid);

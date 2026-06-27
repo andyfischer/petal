@@ -11,8 +11,8 @@ static NOISE_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 fn noise_perm(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 512];
     let mut p = [0u8; 256];
-    for i in 0..256 {
-        p[i] = i as u8;
+    for (i, slot) in p.iter_mut().enumerate() {
+        *slot = i as u8;
     }
     // Fisher-Yates shuffle with seed
     let mut rng = seed.wrapping_add(0x9E3779B97F4A7C15);
@@ -72,9 +72,9 @@ fn perlin_2d(x: f64, y: f64, perm: &[u8; 512]) -> f64 {
     let v = fade(yf);
 
     let aa = perm[perm[xi as usize] as usize + yi as usize] as usize;
-    let ab = perm[perm[xi as usize] as usize + (yi + 1) as usize & 255] as usize;
+    let ab = perm[(perm[xi as usize] as usize + (yi + 1) as usize) & 255] as usize;
     let ba = perm[perm[(xi + 1) as usize & 255] as usize + yi as usize] as usize;
-    let bb = perm[perm[(xi + 1) as usize & 255] as usize + (yi + 1) as usize & 255] as usize;
+    let bb = perm[(perm[(xi + 1) as usize & 255] as usize + (yi + 1) as usize) & 255] as usize;
 
     let x1 = grad2(perm[aa], xf, yf);
     let x2 = grad2(perm[ba], xf - 1.0, yf);

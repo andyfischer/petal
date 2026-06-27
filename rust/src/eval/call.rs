@@ -63,20 +63,20 @@ impl<'a> Evaluator<'a> {
         };
 
         // 1) If obj is a record, check for a callable field first
-        if let Value::Map(map_id) = obj {
-            if let Some(&field_val) = self.heap.get_map(map_id).get(&method_name) {
-                match field_val {
-                    Value::Closure(_) | Value::OverloadSet(_) => {
-                        return self.push_closure_call(field_val, args, term);
-                    }
-                    Value::NativeFunction(native_id) => {
-                        return match self.call_native_fn(native_id, args) {
-                            Ok(val) => self.produce(term, val),
-                            Err(e) => ControlFlow::Error(e),
-                        };
-                    }
-                    _ => {} // not callable, fall through to method lookup
+        if let Value::Map(map_id) = obj
+            && let Some(&field_val) = self.heap.get_map(map_id).get(&method_name)
+        {
+            match field_val {
+                Value::Closure(_) | Value::OverloadSet(_) => {
+                    return self.push_closure_call(field_val, args, term);
                 }
+                Value::NativeFunction(native_id) => {
+                    return match self.call_native_fn(native_id, args) {
+                        Ok(val) => self.produce(term, val),
+                        Err(e) => ControlFlow::Error(e),
+                    };
+                }
+                _ => {} // not callable, fall through to method lookup
             }
         }
 

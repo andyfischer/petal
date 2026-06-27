@@ -130,7 +130,6 @@ fn populate_browser_state(examples_dir: &Path) {
     });
 }
 
-/// Normal interactive game loop (no agent protocol).
 pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;

@@ -249,25 +249,23 @@ impl Env {
         stack.status = StackStatus::Ready;
         stack.break_flag = false;
 
-        Self::push_root_frame(&self.native_fns,stack, program);
+        Self::push_root_frame(&self.native_fns, stack, program);
 
         Ok(())
     }
 
     /// Register a native function that can be called from Petal code.
-    /// Must be called before `load_program` so the compiler knows about it.
+    /// Must be called before `load_program`.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
     }
 
     // ── Heap access ──────────────────────────────────────────────
 
-    /// Get a shared reference to the heap.
     pub fn heap(&self) -> &Heap {
         &self.heap
     }
 
-    /// Get a mutable reference to the heap.
     pub fn heap_mut(&mut self) -> &mut Heap {
         &mut self.heap
     }

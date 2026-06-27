@@ -1,12 +1,7 @@
 # Petal
 
 Petal is a programming language built around **dataflow graphs**, **first-class state**,
-and **live editing**.
-
-Every construct in Petal maps to a dataflow graph, making data flow through programs
-explicit and traceable. Inline `state` variables persist across function calls and
-survive hot reload. The step-based evaluator enables live editing — modify code while
-programs are running.
+and **live editing**. Every construct in Petal maps to a dataflow graph, making data flow through programs explicit and traceable.
 
 ## Quick Start
 
@@ -21,9 +16,12 @@ rust/target/debug/petal run -e 'print("hello, world!")'
 rust/target/debug/petal run examples/fizzbuzz.ptl
 ```
 
-## Language Highlights
+## Language Example
 
 ```petal
+
+(TODO: Change this to just a short example instead of a syntax tour)
+
 // Functions with implicit return
 fn square(x) { x * x }
 
@@ -78,39 +76,20 @@ print("hello, {name}!")
 
 | Integration | Description |
 |-------------|-------------|
+(TODO: Check if all of these are still active and relevant, clean up the list)
 | [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
 | [petal-web](apps/petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
 | [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
 | [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
 
-## Examples
-
-The [`examples/`](examples/) directory contains 22 programs covering all language features,
-from hello world to Conway's Game of Life. See [examples/README.md](examples/README.md)
-for the full list.
-
-The [`apps/petal-sdl/examples/`](apps/petal-sdl/examples/) directory contains playable games:
-snake, pong, breakout, tetris, invaders, and more.
-
-## Architecture
-
-```
-Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Step Evaluator
-```
-
-The compiler pipeline lives in `rust/src/`. The IR is a term graph with explicit dataflow
-edges — each term represents an operation and references its inputs by ID. Blocks organize
-terms into control flow regions. The step evaluator walks the graph one term at a time,
-enabling live editing and state preservation across hot reloads.
-
-See [docs/Architecture.md](docs/Architecture.md) for detailed architecture
-documentation.
-
 ## Testing
 
 ```bash
 cd ts && npx vitest          # Integration tests (330+ tests)
+
+(TODO: change how tests work, run all the test-examples.ts items inside of
+the main vitest, so that it's one command to run them all)
 ./ts/bin/test-examples.ts    # Run all example programs
 ```
 

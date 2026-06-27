@@ -6,7 +6,7 @@ and **live editing**. Every construct in Petal maps to a dataflow graph, making 
 ## Quick Start
 
 ```bash
-# Build the compiler
+# Build the compiler (or run `make build`)
 cd rust && cargo build && cd ..
 
 # Hello world
@@ -16,46 +16,30 @@ rust/target/debug/petal run -e 'print("hello, world!")'
 rust/target/debug/petal run examples/fizzbuzz.ptl
 ```
 
+Common commands are wrapped in the [Makefile](Makefile) — run `make` to list them
+(`make build`, `make test`, `make clean`).
+
 ## Language Example
 
 ```petal
-
-(TODO: Change this to just a short example instead of a syntax tour)
-
-// Functions with implicit return
-fn square(x) { x * x }
-
-// Lists and higher-order functions
-let nums = [1, 2, 3, 4, 5]
-let evens = filter(nums, fn(x) { x % 2 == 0 })
-
-// Enums and pattern matching
-enum Shape {
-    Circle(radius)
-    Rect(w, h)
-}
-
-fn area(shape) {
-    match shape {
-        Circle(r) -> 3.14159 * r * r
-        Rect(w, h) -> w * h
-    }
-}
+fn square(x)
+  x * x
+end
 
 // Persistent state across calls
-fn counter() {
-    state count = 0
-    count += 1
-    count
-}
+fn counter()
+  state count = 0
+  count += 1
+  count
+end
 
-// Pipe operator
-[3, 1, 2] |> sort |> reverse |> print
-
-// String interpolation
 let name = "Petal"
-print("hello, {name}!")
+print([1, 2, 3] |> map(square))   // [1, 4, 9]
+print("hello, {name}!")            // hello, Petal!
 ```
+
+See the [Language Guide](docs/Language_Guide.md) for the full tour: enums and
+pattern matching, higher-order functions, and more.
 
 ## Documentation
 
@@ -76,21 +60,26 @@ print("hello, {name}!")
 
 | Integration | Description |
 |-------------|-------------|
-(TODO: Check if all of these are still active and relevant, clean up the list)
-| [Game Framework (petal-sdl)](docs/Game_Framework.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
+| [petal-sdl](apps/petal-sdl/README.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
 | [petal-web](apps/petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
+| [petal-web-canvas](apps/petal-web-canvas/README.md) | Run Petal scripts that draw interactive graphics into an HTML canvas in the browser |
 | [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
 | [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
+| [side-scroller](apps/side-scroller/README.md) | 2D side-scrolling platformer written almost entirely in Petal |
 | MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
 
 ## Testing
 
 ```bash
-cd ts && npx vitest          # Integration tests (330+ tests)
+make test                    # Build, then run the full suite (or: cd ts && npx vitest run)
+```
 
-(TODO: change how tests work, run all the test-examples.ts items inside of
-the main vitest, so that it's one command to run them all)
-./ts/bin/test-examples.ts    # Run all example programs
+`npx vitest` (and `make test`) runs the integration tests **and** every program in
+`examples/` — `ts/test/test-samples.test.ts` executes each `.ptl` file and fails on
+any error, so one command covers everything.
+
+```bash
+./ts/bin/test-examples.ts    # Optional: print each example's output for manual inspection
 ```
 
 ## License

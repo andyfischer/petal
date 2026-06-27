@@ -80,6 +80,10 @@ pub struct Evaluator<'a> {
     pub symbols: &'a mut SymbolTable,
     /// Per-symbol buffered output channels (script pushes, host pulls).
     pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    /// Per-symbol host→script bindings (uniforms).
+    pub bindings: &'a mut HashMap<SymbolId, Value>,
+    /// Per-symbol monotonic counters.
+    pub counters: &'a mut HashMap<SymbolId, u64>,
 }
 
 impl<'a> Evaluator<'a> {

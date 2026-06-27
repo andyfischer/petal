@@ -13,7 +13,8 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
-use crate::native_fns::{FRAME_INFO, INPUT_STATE};
+use crate::input::InputState;
+use crate::native_fns::{bind_frame_info, bind_input};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -187,62 +188,64 @@ pub fn get_state_json(
 pub fn capture_draw_commands(
     env: &mut Env,
     stack_id: StackKey,
+    input: &InputState,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
     clear_draw_commands(env);
+    bind_input(env, input);
     env.run_speculative(stack_id)?;
     let commands = take_draw_commands(env);
     let output = env.take_output();
     Ok((commands, output))
 }
 
-pub fn run_one_frame(env: &mut Env, stack_id: StackKey) -> Result<i64, String> {
+pub fn run_one_frame(
+    env: &mut Env,
+    stack_id: StackKey,
+    input: &InputState,
+    frame_count: &mut i64,
+) -> Result<i64, String> {
     clear_draw_commands(env);
-    let frame_count = FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.frame_count += 1;
-        info.dt = 1.0 / 60.0;
-        info.frame_count
-    });
+    *frame_count += 1;
+    bind_frame_info(env, 1.0 / 60.0, *frame_count);
+    bind_input(env, input);
     env.reset_stack(stack_id)?;
     env.run(stack_id)?;
-    Ok(frame_count)
+    Ok(*frame_count)
 }
 
 pub fn apply_input(
+    input: &mut InputState,
     keys_down: &[String],
     mouse: Option<&MouseInput>,
     mouse_delta: Option<&MouseDelta>,
 ) {
-    INPUT_STATE.with(|s| {
-        let mut state = s.borrow_mut();
-        state.begin_frame();
-        // Keys: treat "newly seen" as pressed for the frame.
-        let old_keys = state.keys_down.clone();
-        state.keys_down.clear();
-        for key in keys_down {
-            if !old_keys.contains(key) {
-                state.keys_pressed.insert(key.clone());
+    input.begin_frame();
+    // Keys: treat "newly seen" as pressed for the frame.
+    let old_keys = input.keys_down.clone();
+    input.keys_down.clear();
+    for key in keys_down {
+        if !old_keys.contains(key) {
+            input.keys_pressed.insert(key.clone());
+        }
+        input.keys_down.insert(key.clone());
+    }
+    if let Some(m) = mouse {
+        let (x, y) = m.position();
+        input.mouse_x = x;
+        input.mouse_y = y;
+        let old_buttons = input.mouse_buttons.clone();
+        input.mouse_buttons.clear();
+        for btn in m.buttons() {
+            if !old_buttons.contains(btn) {
+                input.mouse_buttons_pressed.insert(*btn);
             }
-            state.keys_down.insert(key.clone());
+            input.mouse_buttons.insert(*btn);
         }
-        if let Some(m) = mouse {
-            let (x, y) = m.position();
-            state.mouse_x = x;
-            state.mouse_y = y;
-            let old_buttons = state.mouse_buttons.clone();
-            state.mouse_buttons.clear();
-            for btn in m.buttons() {
-                if !old_buttons.contains(btn) {
-                    state.mouse_buttons_pressed.insert(*btn);
-                }
-                state.mouse_buttons.insert(*btn);
-            }
-        }
-        if let Some(d) = mouse_delta {
-            state.mouse_dx = d.dx;
-            state.mouse_dy = d.dy;
-        }
-    });
+    }
+    if let Some(d) = mouse_delta {
+        input.mouse_dx = d.dx;
+        input.mouse_dy = d.dy;
+    }
 }
 
 pub fn set_state_from_json(

@@ -25,3 +25,13 @@ pub(super) fn native_push_output(state: &mut PetalCxt) -> Result<u32, String> {
     state.push_nil();
     Ok(1)
 }
+
+/// `binding(sym)` — read the host→script value bound to a symbol (a uniform),
+/// or nil if nothing is bound.
+pub(super) fn native_binding(state: &mut PetalCxt) -> Result<u32, String> {
+    super::require_args(state, 1, "binding")?;
+    let sym = state.get_symbol(1)?;
+    let value = state.binding(sym);
+    state.push_value(value);
+    Ok(1)
+}

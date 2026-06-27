@@ -3,7 +3,6 @@
 //! Wraps the core Petal `Env` with graphics-specific native functions
 //! (draw commands, input, timing) for canvas-based frame-loop execution.
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 
 use wasm_bindgen::prelude::*;
@@ -16,16 +15,24 @@ use petal::value::value_to_json;
 use petal::value::Value;
 
 // ---------------------------------------------------------------------------
-// Thread-local state
+// Env channel names (host↔script). Host→script input/timing state is bound as
+// uniforms (`set_binding`); script→host draw commands use an output buffer;
+// per-frame ids use a counter. These replace the old thread-locals.
 // ---------------------------------------------------------------------------
 
-thread_local! {
-    static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
-    static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
-    /// Next offscreen-canvas id (1-based; 0 is the main framebuffer). Reset each
-    /// frame in `begin_frame` so ids are stable across the per-frame re-run.
-    static NEXT_CANVAS_ID: RefCell<u32> = RefCell::new(1);
-}
+const SYM_DT: &str = "dt";
+const SYM_FRAME_COUNT: &str = "frame_count";
+const SYM_SCREEN_WIDTH: &str = "screen_width";
+const SYM_SCREEN_HEIGHT: &str = "screen_height";
+const SYM_MOUSE_X: &str = "mouse_x";
+const SYM_MOUSE_Y: &str = "mouse_y";
+const SYM_KEYS_DOWN: &str = "keys_down";
+const SYM_KEYS_PRESSED: &str = "keys_pressed";
+const SYM_BUTTONS_DOWN: &str = "mouse_buttons_down";
+const SYM_BUTTONS_PRESSED: &str = "mouse_buttons_pressed";
+/// Per-frame offscreen-canvas id counter (ids are 1-based; 0 is the main
+/// framebuffer). Reset to 1 before each run so ids are stable per frame.
+const CANVAS_ID_COUNTER: &str = "canvas_id";
 
 // ---------------------------------------------------------------------------
 // Draw commands
@@ -55,6 +62,9 @@ fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
 // Input state
 // ---------------------------------------------------------------------------
 
+/// Host-owned input bookkeeping (the host's copy; the script reads a snapshot
+/// of it via Env bindings, not this struct directly). `keys_prev` /
+/// `mouse_buttons_prev` retain last frame's state for pressed-edge detection.
 #[derive(Default)]
 struct InputState {
     keys_down: HashSet<String>,
@@ -66,34 +76,98 @@ struct InputState {
 }
 
 impl InputState {
-    fn key_down(&self, name: &str) -> bool {
-        self.keys_down.contains(name)
-    }
-    fn key_pressed(&self, name: &str) -> bool {
-        self.keys_down.contains(name) && !self.keys_prev.contains(name)
-    }
-    fn mouse_down(&self, button: u8) -> bool {
-        self.mouse_buttons.contains(&button)
-    }
-    fn mouse_pressed(&self, button: u8) -> bool {
-        self.mouse_buttons.contains(&button) && !self.mouse_buttons_prev.contains(&button)
-    }
+    /// Snapshot the current state into prev (call at frame start, before the
+    /// host applies this frame's input events) so `pressed` = down && !prev.
     fn begin_frame(&mut self) {
         self.keys_prev = self.keys_down.clone();
         self.mouse_buttons_prev = self.mouse_buttons.clone();
     }
+
+    /// Bind the current input snapshot into the Env as uniforms the script
+    /// reads via the input native fns. Down/pressed sets are bound as lists.
+    fn bind_into(&self, env: &mut Env) {
+        let bind_str_set = |env: &mut Env, name: &str, items: &[String]| {
+            let vals: Vec<Value> = items
+                .iter()
+                .map(|k| Value::String(env.heap_mut().alloc_string(k.clone())))
+                .collect();
+            let list = Value::List(env.heap_mut().alloc_list(vals));
+            let sym = env.intern_symbol(name);
+            env.set_binding(sym, list);
+        };
+        let bind_int_set = |env: &mut Env, name: &str, items: &[i64]| {
+            let vals: Vec<Value> = items.iter().map(|n| Value::Int(*n)).collect();
+            let list = Value::List(env.heap_mut().alloc_list(vals));
+            let sym = env.intern_symbol(name);
+            env.set_binding(sym, list);
+        };
+        let bind_int = |env: &mut Env, name: &str, n: i64| {
+            let sym = env.intern_symbol(name);
+            env.set_binding(sym, Value::Int(n));
+        };
+
+        let down: Vec<String> = self.keys_down.iter().cloned().collect();
+        bind_str_set(env, SYM_KEYS_DOWN, &down);
+        let pressed: Vec<String> = self.keys_down.difference(&self.keys_prev).cloned().collect();
+        bind_str_set(env, SYM_KEYS_PRESSED, &pressed);
+
+        let bdown: Vec<i64> = self.mouse_buttons.iter().map(|b| *b as i64).collect();
+        bind_int_set(env, SYM_BUTTONS_DOWN, &bdown);
+        let bpressed: Vec<i64> = self
+            .mouse_buttons
+            .difference(&self.mouse_buttons_prev)
+            .map(|b| *b as i64)
+            .collect();
+        bind_int_set(env, SYM_BUTTONS_PRESSED, &bpressed);
+
+        bind_int(env, SYM_MOUSE_X, self.mouse_x as i64);
+        bind_int(env, SYM_MOUSE_Y, self.mouse_y as i64);
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Frame info
+// Reading bound uniforms (native-fn side)
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
-struct FrameInfo {
-    dt: f64,
-    frame_count: i64,
-    screen_width: i32,
-    screen_height: i32,
+fn binding_float(state: &mut PetalCxt, name: &str) -> f64 {
+    match state.binding_named(name) {
+        Value::Float(f) => f,
+        Value::Int(n) => n as f64,
+        _ => 0.0,
+    }
+}
+
+fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {
+    match state.binding_named(name) {
+        Value::Int(n) => n,
+        Value::Float(f) => f as i64,
+        _ => 0,
+    }
+}
+
+/// Is `needle` present in the bound string list named `name`?
+fn binding_has_str(state: &mut PetalCxt, name: &str, needle: &str) -> bool {
+    let list_id = match state.binding_named(name) {
+        Value::List(id) => id,
+        _ => return false,
+    };
+    let items = state.heap().get_list(list_id).to_vec();
+    items
+        .iter()
+        .any(|v| matches!(v, Value::String(s) if state.heap().get_string(*s) == needle))
+}
+
+/// Is `needle` present in the bound int list named `name`?
+fn binding_has_int(state: &mut PetalCxt, name: &str, needle: i64) -> bool {
+    let list_id = match state.binding_named(name) {
+        Value::List(id) => id,
+        _ => return false,
+    };
+    state
+        .heap()
+        .get_list(list_id)
+        .iter()
+        .any(|v| matches!(v, Value::Int(n) if *n == needle))
 }
 
 // ---------------------------------------------------------------------------
@@ -220,18 +294,12 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
 // ---------------------------------------------------------------------------
 
 fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
-    let w = state.get_int(1)? as u32;
-    let h = state.get_int(2)? as u32;
-    let id = NEXT_CANVAS_ID.with(|n| {
-        let mut next = n.borrow_mut();
-        let id = *next;
-        *next += 1;
-        id
-    });
-    emit_draw(state, "create_canvas", vec![
-        Value::Int(id as i64), Value::Int(w as i64), Value::Int(h as i64),
-    ]);
-    state.push_int(id as i64);
+    let w = state.get_int(1)?;
+    let h = state.get_int(2)?;
+    let sym = state.intern_symbol(CANVAS_ID_COUNTER);
+    let id = state.next_counter(sym) as i64;
+    emit_draw(state, "create_canvas", vec![Value::Int(id), Value::Int(w), Value::Int(h)]);
+    state.push_int(id);
     Ok(1)
 }
 
@@ -260,41 +328,41 @@ fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
 // ---------------------------------------------------------------------------
 
 fn native_mouse_x(state: &mut PetalCxt) -> NativeResult {
-    let x = INPUT_STATE.with(|s| s.borrow().mouse_x);
-    state.push_int(x as i64);
+    let x = binding_int(state, SYM_MOUSE_X);
+    state.push_int(x);
     Ok(1)
 }
 
 fn native_mouse_y(state: &mut PetalCxt) -> NativeResult {
-    let y = INPUT_STATE.with(|s| s.borrow().mouse_y);
-    state.push_int(y as i64);
+    let y = binding_int(state, SYM_MOUSE_Y);
+    state.push_int(y);
     Ok(1)
 }
 
 fn native_mouse_down(state: &mut PetalCxt) -> NativeResult {
-    let button = state.get_int(1)? as u8;
-    let down = INPUT_STATE.with(|s| s.borrow().mouse_down(button));
+    let button = state.get_int(1)?;
+    let down = binding_has_int(state, SYM_BUTTONS_DOWN, button);
     state.push_bool(down);
     Ok(1)
 }
 
 fn native_mouse_pressed(state: &mut PetalCxt) -> NativeResult {
-    let button = state.get_int(1)? as u8;
-    let pressed = INPUT_STATE.with(|s| s.borrow().mouse_pressed(button));
+    let button = state.get_int(1)?;
+    let pressed = binding_has_int(state, SYM_BUTTONS_PRESSED, button);
     state.push_bool(pressed);
     Ok(1)
 }
 
 fn native_key_down(state: &mut PetalCxt) -> NativeResult {
     let name = state.get_string(1)?;
-    let down = INPUT_STATE.with(|s| s.borrow().key_down(&name));
+    let down = binding_has_str(state, SYM_KEYS_DOWN, &name);
     state.push_bool(down);
     Ok(1)
 }
 
 fn native_key_pressed(state: &mut PetalCxt) -> NativeResult {
     let name = state.get_string(1)?;
-    let pressed = INPUT_STATE.with(|s| s.borrow().key_pressed(&name));
+    let pressed = binding_has_str(state, SYM_KEYS_PRESSED, &name);
     state.push_bool(pressed);
     Ok(1)
 }
@@ -304,26 +372,26 @@ fn native_key_pressed(state: &mut PetalCxt) -> NativeResult {
 // ---------------------------------------------------------------------------
 
 fn native_dt(state: &mut PetalCxt) -> NativeResult {
-    let dt = FRAME_INFO.with(|f| f.borrow().dt);
+    let dt = binding_float(state, SYM_DT);
     state.push_float(dt);
     Ok(1)
 }
 
 fn native_frame_count(state: &mut PetalCxt) -> NativeResult {
-    let count = FRAME_INFO.with(|f| f.borrow().frame_count);
+    let count = binding_int(state, SYM_FRAME_COUNT);
     state.push_int(count);
     Ok(1)
 }
 
 fn native_screen_width(state: &mut PetalCxt) -> NativeResult {
-    let w = FRAME_INFO.with(|f| f.borrow().screen_width);
-    state.push_int(w as i64);
+    let w = binding_int(state, SYM_SCREEN_WIDTH);
+    state.push_int(w);
     Ok(1)
 }
 
 fn native_screen_height(state: &mut PetalCxt) -> NativeResult {
-    let h = FRAME_INFO.with(|f| f.borrow().screen_height);
-    state.push_int(h as i64);
+    let h = binding_int(state, SYM_SCREEN_HEIGHT);
+    state.push_int(h);
     Ok(1)
 }
 
@@ -378,6 +446,8 @@ pub struct PetalRuntime {
     env: Env,
     active_program: Option<ProgramId>,
     active_stack: Option<StackKey>,
+    /// Host-owned input bookkeeping; bound into `env` before each run.
+    input: InputState,
 }
 
 #[wasm_bindgen]
@@ -390,7 +460,16 @@ impl PetalRuntime {
             env,
             active_program: None,
             active_stack: None,
+            input: InputState::default(),
         }
+    }
+
+    /// Bind the current input snapshot and reset the per-frame canvas-id
+    /// counter, so a run sees up-to-date input and stable offscreen ids.
+    fn prepare_run(&mut self) {
+        self.input.bind_into(&mut self.env);
+        let c = self.env.intern_symbol(CANVAS_ID_COUNTER);
+        self.env.reset_counter(c, 1);
     }
 
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
@@ -409,6 +488,7 @@ impl PetalRuntime {
     }
 
     pub fn run(&mut self, stack_id: u32) -> Result<String, JsValue> {
+        self.prepare_run();
         let val = self
             .env
             .run(StackKey(stack_id))
@@ -435,51 +515,42 @@ impl PetalRuntime {
         take_draw_commands(&mut self.env)
     }
 
-    pub fn set_mouse_position(&self, x: i32, y: i32) {
-        INPUT_STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            st.mouse_x = x;
-            st.mouse_y = y;
-        });
+    pub fn set_mouse_position(&mut self, x: i32, y: i32) {
+        self.input.mouse_x = x;
+        self.input.mouse_y = y;
     }
 
-    pub fn set_mouse_button(&self, button: i32, down: bool) {
-        INPUT_STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            if down {
-                st.mouse_buttons.insert(button as u8);
-            } else {
-                st.mouse_buttons.remove(&(button as u8));
-            }
-        });
+    pub fn set_mouse_button(&mut self, button: i32, down: bool) {
+        if down {
+            self.input.mouse_buttons.insert(button as u8);
+        } else {
+            self.input.mouse_buttons.remove(&(button as u8));
+        }
     }
 
-    pub fn set_key_state(&self, key: &str, down: bool) {
-        INPUT_STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            if down {
-                st.keys_down.insert(key.to_string());
-            } else {
-                st.keys_down.remove(key);
-            }
-        });
+    pub fn set_key_state(&mut self, key: &str, down: bool) {
+        if down {
+            self.input.keys_down.insert(key.to_string());
+        } else {
+            self.input.keys_down.remove(key);
+        }
     }
 
-    pub fn set_frame_info(&self, dt: f64, frame_count: i32, width: i32, height: i32) {
-        FRAME_INFO.with(|f| {
-            let mut fi = f.borrow_mut();
-            fi.dt = dt;
-            fi.frame_count = frame_count as i64;
-            fi.screen_width = width;
-            fi.screen_height = height;
-        });
+    pub fn set_frame_info(&mut self, dt: f64, frame_count: i32, width: i32, height: i32) {
+        let dt_sym = self.env.intern_symbol(SYM_DT);
+        self.env.set_binding(dt_sym, Value::Float(dt));
+        let fc = self.env.intern_symbol(SYM_FRAME_COUNT);
+        self.env.set_binding(fc, Value::Int(frame_count as i64));
+        let w = self.env.intern_symbol(SYM_SCREEN_WIDTH);
+        self.env.set_binding(w, Value::Int(width as i64));
+        let h = self.env.intern_symbol(SYM_SCREEN_HEIGHT);
+        self.env.set_binding(h, Value::Int(height as i64));
     }
 
-    pub fn begin_frame(&self) {
-        INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
-        // Reset the offscreen-canvas id counter so `create_canvas` hands out
-        // stable ids across the per-frame re-run model.
-        NEXT_CANVAS_ID.with(|n| *n.borrow_mut() = 1);
+    pub fn begin_frame(&mut self) {
+        // Snapshot prev input for pressed-edge detection. The input snapshot is
+        // bound (and the canvas counter reset) at run time, in `prepare_run`.
+        self.input.begin_frame();
     }
 
     // --- Debug ---
@@ -503,9 +574,8 @@ impl PetalRuntime {
 
     pub fn run_speculative(&mut self) -> Result<String, JsValue> {
         let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
-        // Reset canvas ids so a speculative run produces the same ids as the
-        // live frame loop.
-        NEXT_CANVAS_ID.with(|n| *n.borrow_mut() = 1);
+        // Bind input + reset canvas ids so a speculative run matches the live frame.
+        self.prepare_run();
         self.env
             .run_speculative(sid)
             .map_err(|e| JsValue::from_str(&e))?;

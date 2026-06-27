@@ -32,6 +32,15 @@ pub struct Env {
     /// `take_output_buffer`. Replaces process-global thread-locals like the
     /// old `DRAW_COMMANDS`.
     output_buffers: HashMap<SymbolId, Vec<Value>>,
+    /// Per-symbol host→script bindings (GLSL-uniform style). The host binds a
+    /// `Value` to a symbol (`set_binding`); native fns/scripts read it back.
+    /// Replaces input-direction thread-locals like the old `FRAME_INFO` and
+    /// `INPUT_STATE`.
+    bindings: HashMap<SymbolId, Value>,
+    /// Per-symbol monotonic counters for per-run sequence allocation (e.g.
+    /// offscreen-canvas / element ids). Native fns bump them via
+    /// `PetalCxt::next_counter`; the host resets them each frame.
+    counters: HashMap<SymbolId, u64>,
     trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
@@ -52,6 +61,8 @@ impl Env {
             output: Vec::new(),
             symbols: SymbolTable::new(),
             output_buffers: HashMap::new(),
+            bindings: HashMap::new(),
+            counters: HashMap::new(),
             trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
@@ -142,6 +153,8 @@ impl Env {
             trace: &mut self.trace,
             symbols: &mut self.symbols,
             output_buffers: &mut self.output_buffers,
+            bindings: &mut self.bindings,
+            counters: &mut self.counters,
         }
         .step();
 
@@ -238,6 +251,8 @@ impl Env {
             trace: &mut self.trace,
             symbols: &mut self.symbols,
             output_buffers: &mut self.output_buffers,
+            bindings: &mut self.bindings,
+            counters: &mut self.counters,
         }
         .call_closure_sync(callable, args)
     }
@@ -524,6 +539,12 @@ impl Env {
             }
         }
 
+        // 4. Host→script bindings hold heap-backed Values (e.g. a bound list of
+        //    pressed keys), so they are GC roots too. Counters are plain u64s.
+        for val in self.bindings.values() {
+            self.heap.mark_value(*val);
+        }
+
         // Sweep phase
         self.heap.sweep();
     }
@@ -569,6 +590,41 @@ impl Env {
         if let Some(buf) = self.output_buffers.get_mut(&sym) {
             buf.clear();
         }
+    }
+
+    // ── Bindings (host→script uniforms) ──────────────────────────
+
+    /// Bind a `Value` to `sym`, readable by native fns/scripts (`binding`).
+    /// Any heap `Value` passed must already live on this Env's heap.
+    pub fn set_binding(&mut self, sym: SymbolId, value: Value) {
+        self.bindings.insert(sym, value);
+    }
+
+    /// Read the value bound to `sym`, if any.
+    pub fn binding(&self, sym: SymbolId) -> Option<Value> {
+        self.bindings.get(&sym).copied()
+    }
+
+    /// Remove the binding for `sym`.
+    pub fn clear_binding(&mut self, sym: SymbolId) {
+        self.bindings.remove(&sym);
+    }
+
+    // ── Counters (per-run sequence allocation) ───────────────────
+
+    /// Reset the counter for `sym` to `start` (call at frame start so
+    /// `next_counter` hands out stable ids across the per-frame re-run model).
+    pub fn reset_counter(&mut self, sym: SymbolId, start: u64) {
+        self.counters.insert(sym, start);
+    }
+
+    /// Return the current counter value for `sym`, then increment it.
+    /// An unset counter starts at 0.
+    pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
+        let c = self.counters.entry(sym).or_insert(0);
+        let v = *c;
+        *c += 1;
+        v
     }
 }
 
@@ -735,6 +791,53 @@ mod call_function_tests {
             Value::String(id) => assert_eq!(env.heap().get_string(id), "keep-me"),
             other => panic!("expected string, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn binding_is_readable_from_script() {
+        let mut env = Env::new();
+        let sym = env.intern_symbol("dt");
+        env.set_binding(sym, Value::Float(0.016));
+        let result = env.run_source("binding(symbol(\"dt\"))").unwrap();
+        assert_eq!(result, Value::Float(0.016));
+    }
+
+    #[test]
+    fn binding_values_survive_gc() {
+        // A heap-backed bound Value must survive a mid-run collection.
+        let mut env = Env::new();
+        let sym = env.intern_symbol("keys");
+        let space = Value::String(env.heap_mut().alloc_string("space".to_string()));
+        let list = Value::List(env.heap_mut().alloc_list(vec![space]));
+        env.set_binding(sym, list);
+        // Allocate enough to trip a GC, then read the binding back.
+        env.run_source(
+            "let acc = 0\n\
+             for i in range(0, 5000) do\n\
+               let tmp = \"g\" ++ str(i)\n\
+               acc = acc + len(tmp)\n\
+             end\n",
+        )
+        .unwrap();
+        match env.binding(sym) {
+            Some(Value::List(id)) => match env.heap().get_list(id)[0] {
+                Value::String(s) => assert_eq!(env.heap().get_string(s), "space"),
+                other => panic!("expected string, got {:?}", other),
+            },
+            other => panic!("expected list binding, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn counter_increments_and_resets() {
+        let mut env = Env::new();
+        let sym = env.intern_symbol("canvas_id");
+        env.reset_counter(sym, 1);
+        assert_eq!(env.next_counter(sym), 1);
+        assert_eq!(env.next_counter(sym), 2);
+        assert_eq!(env.next_counter(sym), 3);
+        env.reset_counter(sym, 1);
+        assert_eq!(env.next_counter(sym), 1);
     }
 
     #[test]

@@ -10,7 +10,8 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
-use crate::native_fns::{reset_canvas_ids, FRAME_INFO, INPUT_STATE};
+use crate::input::InputState;
+use crate::native_fns::{bind_frame_info, bind_input, reset_canvas_ids};
 
 // --- Commands (stdin → engine) ---
 
@@ -171,10 +172,12 @@ pub fn get_state_json(
 pub fn capture_draw_commands(
     env: &mut Env,
     stack_id: StackKey,
+    input: &InputState,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
-    // Clear the draw buffer before speculative run
+    // Clear the draw buffer and bind input before the speculative run
     clear_draw_commands(env);
-    reset_canvas_ids();
+    reset_canvas_ids(env);
+    bind_input(env, input);
 
     // Run speculatively (state is snapshot/restored internally)
     env.run_speculative(stack_id)?;
@@ -188,43 +191,40 @@ pub fn capture_draw_commands(
 
 /// Run one frame: reset_stack + run, update frame_count.
 /// Returns the new frame count.
-pub fn run_one_frame(env: &mut Env, stack_id: StackKey) -> Result<i64, String> {
+pub fn run_one_frame(
+    env: &mut Env,
+    stack_id: StackKey,
+    input: &InputState,
+    frame_count: &mut i64,
+) -> Result<i64, String> {
     clear_draw_commands(env);
-    reset_canvas_ids();
+    reset_canvas_ids(env);
 
-    let frame_count = FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.frame_count += 1;
-        info.dt = 1.0 / 60.0; // Fixed dt in agent mode
-        info.frame_count
-    });
+    *frame_count += 1;
+    bind_frame_info(env, 1.0 / 60.0, *frame_count); // Fixed dt in agent mode
+    bind_input(env, input);
 
     env.reset_stack(stack_id)?;
     env.run(stack_id)?;
 
-    Ok(frame_count)
+    Ok(*frame_count)
 }
 
-pub fn apply_input(keys_down: &[String], mouse: Option<&MouseInput>) {
-    INPUT_STATE.with(|s| {
-        let mut state = s.borrow_mut();
-        state.begin_frame();
-        state.keys_down.clear();
-        for key in keys_down {
-            state.keys_down.insert(key.clone());
+pub fn apply_input(input: &mut InputState, keys_down: &[String], mouse: Option<&MouseInput>) {
+    input.begin_frame();
+    input.keys_down.clear();
+    for key in keys_down {
+        input.keys_down.insert(key.clone());
+    }
+    if let Some(m) = mouse {
+        let (x, y) = m.position();
+        input.mouse_x = x;
+        input.mouse_y = y;
+        // Button state passes through the existing buttons_down set.
+        for btn in m.buttons() {
+            input.mouse_buttons.insert(*btn);
         }
-        if let Some(m) = mouse {
-            let (x, y) = m.position();
-            state.mouse_x = x;
-            state.mouse_y = y;
-            // Button state passes through the existing buttons_down set.
-            // Agents that need precise button events should use the dedicated
-            // input state APIs; this field mirrors the diagram-canvas shape.
-            for btn in m.buttons() {
-                state.mouse_buttons.insert(*btn);
-            }
-        }
-    });
+    }
 }
 
 pub fn set_state_from_json(

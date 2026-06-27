@@ -3,45 +3,40 @@
 //! Provides a `PetalRuntime` struct exposed via wasm-bindgen, wrapping
 //! the core `Env` with element-tree support for petal-web.
 
-use std::cell::RefCell;
-
 use wasm_bindgen::prelude::*;
 
 use crate::env::Env;
 use crate::native_fn::{NativeResult, PetalCxt};
 use crate::program::ProgramId;
 use crate::stack::StackKey;
-use crate::value::value_to_json;
+use crate::value::{value_to_json, Value};
 
 // ---------------------------------------------------------------------------
-// Thread-local state — element tree (petal-web)
+// Env channel names — element tree (petal-web)
 // ---------------------------------------------------------------------------
 
-thread_local! {
-    /// Auto-incrementing element ID counter, reset each render cycle.
-    static NEXT_EID: RefCell<i64> = RefCell::new(1);
-    /// The element ID that was clicked (0 = none).
-    static CLICKED_ID: RefCell<i64> = RefCell::new(0);
-}
+/// Per-render counter handing out element ids; reset to 1 each render cycle.
+const ELEMENT_ID_COUNTER: &str = "element_id";
+/// Host→script binding: the element id that was clicked (0 = none).
+const CLICKED_ID_BINDING: &str = "clicked_id";
 
 // ---------------------------------------------------------------------------
 // Native functions — element tree
 // ---------------------------------------------------------------------------
 
 fn native_next_id(state: &mut PetalCxt) -> NativeResult {
-    let id = NEXT_EID.with(|c| {
-        let mut val = c.borrow_mut();
-        let id = *val;
-        *val += 1;
-        id
-    });
-    state.push_int(id);
+    let sym = state.intern_symbol(ELEMENT_ID_COUNTER);
+    let id = state.next_counter(sym);
+    state.push_int(id as i64);
     Ok(1)
 }
 
 fn native_clicked(state: &mut PetalCxt) -> NativeResult {
     let query_id = state.get_int(1)?;
-    let clicked = CLICKED_ID.with(|c| *c.borrow());
+    let clicked = match state.binding_named(CLICKED_ID_BINDING) {
+        Value::Int(n) => n,
+        _ => 0,
+    };
     state.push_bool(clicked == query_id);
     Ok(1)
 }
@@ -75,8 +70,9 @@ impl PetalRuntime {
     }
 
     /// Set which element ID was clicked (call before re-running).
-    pub fn set_clicked_id(&self, id: i32) {
-        CLICKED_ID.with(|c| *c.borrow_mut() = id as i64);
+    pub fn set_clicked_id(&mut self, id: i32) {
+        let sym = self.env.intern_symbol(CLICKED_ID_BINDING);
+        self.env.set_binding(sym, Value::Int(id as i64));
     }
 
     /// Compile source code and return a program ID.
@@ -98,6 +94,10 @@ impl PetalRuntime {
 
     /// Run a stack to completion. Returns the result as JSON.
     pub fn run(&mut self, stack_id: u32) -> Result<String, JsValue> {
+        // Each render cycle hands out element ids starting from 1.
+        let eid = self.env.intern_symbol(ELEMENT_ID_COUNTER);
+        self.env.reset_counter(eid, 1);
+
         let val = self
             .env
             .run(StackKey(stack_id))
@@ -108,9 +108,6 @@ impl PetalRuntime {
 
     /// Reset a stack (preserving state) and re-run. Returns result as JSON.
     pub fn reset_and_run(&mut self, stack_id: u32) -> Result<String, JsValue> {
-        // Reset the EID counter each frame
-        NEXT_EID.with(|c| *c.borrow_mut() = 1);
-
         self.env
             .reset_stack(StackKey(stack_id))
             .map_err(|e| JsValue::from_str(&e))?;

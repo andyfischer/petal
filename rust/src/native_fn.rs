@@ -96,6 +96,8 @@ pub struct PetalCxt<'a> {
     output: &'a mut Vec<String>,
     symbols: &'a mut SymbolTable,
     output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    bindings: &'a mut HashMap<SymbolId, Value>,
+    counters: &'a mut HashMap<SymbolId, u64>,
     results: Vec<Value>,
 }
 
@@ -106,6 +108,8 @@ impl<'a> PetalCxt<'a> {
         output: &'a mut Vec<String>,
         symbols: &'a mut SymbolTable,
         output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+        bindings: &'a mut HashMap<SymbolId, Value>,
+        counters: &'a mut HashMap<SymbolId, u64>,
     ) -> Self {
         Self {
             args,
@@ -113,6 +117,8 @@ impl<'a> PetalCxt<'a> {
             output,
             symbols,
             output_buffers,
+            bindings,
+            counters,
             results: Vec::new(),
         }
     }
@@ -245,6 +251,28 @@ impl<'a> PetalCxt<'a> {
         let tag = self.heap.alloc_string(tag.to_string());
         let data = self.heap.alloc_list(data);
         self.push_output(sym, Value::EnumVariant { tag, data });
+    }
+
+    /// Read the host→script value bound to `sym` (a GLSL-uniform-style input),
+    /// or `Nil` if nothing is bound.
+    pub fn binding(&self, sym: SymbolId) -> Value {
+        self.bindings.get(&sym).copied().unwrap_or(Value::Nil)
+    }
+
+    /// Read the value bound to the symbol named `name`. Convenience for native
+    /// fns that address a well-known uniform by name.
+    pub fn binding_named(&mut self, name: &str) -> Value {
+        let sym = self.symbols.intern(name);
+        self.binding(sym)
+    }
+
+    /// Return the current value of the counter for `sym`, then increment it.
+    /// Used for per-run id allocation (offscreen canvases, element ids).
+    pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
+        let c = self.counters.entry(sym).or_insert(0);
+        let v = *c;
+        *c += 1;
+        v
     }
 
     // --- Heap access ---

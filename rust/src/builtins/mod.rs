@@ -176,6 +176,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // --- Symbols & buffered output (append-only to preserve phantom term indices) ---
     table.register("symbol", output::native_symbol);
     table.register("push_output", output::native_push_output);
+    table.register("binding", output::native_binding);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

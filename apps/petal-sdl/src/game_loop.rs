@@ -17,10 +17,11 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::input::scancode_to_name;
 use crate::commands::{clear_draw_commands, take_draw_commands};
+use crate::input::{scancode_to_name, InputState};
 use crate::native_fns::{
-    self, reset_canvas_ids, ExampleEntry, BROWSER_STATE, FRAME_INFO, INPUT_STATE,
+    self, bind_dimensions, bind_examples, bind_frame_info, bind_input, reset_canvas_ids,
+    take_pending_launch, ExampleEntry,
 };
 use crate::protocol::{self, Command, Response};
 use crate::renderer;
@@ -47,9 +48,9 @@ enum PollResult {
     Escape,
 }
 
-/// Poll SDL events, updating INPUT_STATE. Returns Quit/Escape signals.
-fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
-    INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
+/// Poll SDL events, updating the host's `InputState`. Returns Quit/Escape signals.
+fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> PollResult {
+    input.begin_frame();
     let mut result = PollResult::None;
     for event in event_pump.poll_iter() {
         match event {
@@ -59,34 +60,23 @@ fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
             }
             Event::KeyDown { scancode: Some(sc), .. } => {
                 if let Some(name) = scancode_to_name(sc) {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().keys_down.insert(name.to_string());
-                    });
+                    input.keys_down.insert(name.to_string());
                 }
             }
             Event::KeyUp { scancode: Some(sc), .. } => {
                 if let Some(name) = scancode_to_name(sc) {
-                    INPUT_STATE.with(|s| {
-                        s.borrow_mut().keys_down.remove(name);
-                    });
+                    input.keys_down.remove(name);
                 }
             }
             Event::MouseMotion { x, y, .. } => {
-                INPUT_STATE.with(|s| {
-                    let mut state = s.borrow_mut();
-                    state.mouse_x = x;
-                    state.mouse_y = y;
-                });
+                input.mouse_x = x;
+                input.mouse_y = y;
             }
             Event::MouseButtonDown { mouse_btn, .. } => {
-                INPUT_STATE.with(|s| {
-                    s.borrow_mut().mouse_buttons.insert(mouse_btn as u8);
-                });
+                input.mouse_buttons.insert(mouse_btn as u8);
             }
             Event::MouseButtonUp { mouse_btn, .. } => {
-                INPUT_STATE.with(|s| {
-                    s.borrow_mut().mouse_buttons.remove(&(mouse_btn as u8));
-                });
+                input.mouse_buttons.remove(&(mouse_btn as u8));
             }
             _ => {}
         }
@@ -94,7 +84,9 @@ fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
     result
 }
 
-fn populate_browser_state(examples_dir: &Path) {
+/// Scan a directory for example `.ptl` scripts (excluding the browser itself),
+/// returning display-name/path entries sorted by path.
+fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
     let mut entries: Vec<ExampleEntry> = Vec::new();
     if let Ok(mut dir_entries) = std::fs::read_dir(examples_dir) {
         let mut paths: Vec<PathBuf> = Vec::new();
@@ -124,11 +116,7 @@ fn populate_browser_state(examples_dir: &Path) {
             });
         }
     }
-    BROWSER_STATE.with(|b| {
-        let mut bs = b.borrow_mut();
-        bs.examples = entries;
-        bs.pending_launch = None;
-    });
+    entries
 }
 
 pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
@@ -177,9 +165,10 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
 
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
+    let mut input = InputState::default();
 
     'game: loop {
-        match poll_sdl_events(&mut event_pump) {
+        match poll_sdl_events(&mut event_pump, &mut input) {
             PollResult::Quit => break 'game,
             PollResult::Escape if in_browser || !has_browser => break 'game,
             PollResult::Escape => {
@@ -206,18 +195,15 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         last_frame = now;
         frame_count += 1;
 
-        FRAME_INFO.with(|f| {
-            let mut info = f.borrow_mut();
-            info.dt = dt;
-            info.frame_count = frame_count;
-        });
+        bind_frame_info(&mut env, dt, frame_count);
 
         if let Some(ref sp) = current_source_path {
             check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
         }
 
         clear_draw_commands(&mut env);
-        reset_canvas_ids();
+        reset_canvas_ids(&mut env);
+        bind_input(&mut env, &input);
 
         env.reset_stack(stack_id)?;
         if let Err(e) = env.run(stack_id) {
@@ -227,7 +213,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         drain_output(&mut env);
 
         // Check if browser wants to launch a script
-        let pending = BROWSER_STATE.with(|b| b.borrow_mut().pending_launch.take());
+        let pending = take_pending_launch(&mut env);
         if let Some(script_path) = pending {
             match std::fs::read_to_string(&script_path) {
                 Ok(source) => {
@@ -269,13 +255,8 @@ fn switch_script(
 ) -> Result<(ProgramId, StackKey), String> {
     let program_id = env.load_program(source)?;
     let stack_id = env.create_stack(program_id)?;
-    FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.screen_width = config.width as i32;
-        info.screen_height = config.height as i32;
-        info.frame_count = 0;
-        info.dt = 0.0;
-    });
+    bind_dimensions(env, config.width as i32, config.height as i32);
+    bind_frame_info(env, 0.0, 0);
     Ok((program_id, stack_id))
 }
 
@@ -323,6 +304,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
     let mut paused = false;
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
+    let mut input = InputState::default();
 
     // Signal ready
     protocol::send_response(&Response {
@@ -340,11 +322,13 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
                 program_id,
                 stack_id,
                 &mut paused,
+                &mut input,
+                &mut frame_count,
             );
         }
 
         // Poll SDL events (always, even when paused, to keep window responsive)
-        match poll_sdl_events(&mut event_pump) {
+        match poll_sdl_events(&mut event_pump, &mut input) {
             PollResult::Quit | PollResult::Escape => break 'game,
             PollResult::None => {}
         }
@@ -355,17 +339,15 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
             last_frame = now;
             frame_count += 1;
 
-            FRAME_INFO.with(|f| {
-                let mut info = f.borrow_mut();
-                info.dt = dt;
-                info.frame_count = frame_count;
-            });
+            bind_frame_info(&mut env, dt, frame_count);
 
             if let Some(sp) = source_path {
                 check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
             }
 
             clear_draw_commands(&mut env);
+            reset_canvas_ids(&mut env);
+            bind_input(&mut env, &input);
 
             env.reset_stack(stack_id)?;
             if let Err(e) = env.run(stack_id) {
@@ -401,6 +383,8 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = true; // Headless starts paused — LLM drives frames
+    let mut input = InputState::default();
+    let mut frame_count: i64 = 0;
 
     // Signal ready
     protocol::send_response(&Response {
@@ -426,6 +410,8 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
             program_id,
             stack_id,
             &mut paused,
+            &mut input,
+            &mut frame_count,
         );
     }
 
@@ -441,12 +427,14 @@ pub fn run_screenshot(
 ) -> Result<(), String> {
     let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
 
+    let input = InputState::default();
+    let mut frame_count: i64 = 0;
     for _ in 0..frames {
-        protocol::run_one_frame(&mut env, stack_id)?;
+        protocol::run_one_frame(&mut env, stack_id, &input, &mut frame_count)?;
     }
 
     // Capture draw commands from one more speculative frame
-    let commands = match protocol::capture_draw_commands(&mut env, stack_id) {
+    let commands = match protocol::capture_draw_commands(&mut env, stack_id, &input) {
         Ok((cmds, _)) => cmds,
         Err(e) => return Err(e),
     };
@@ -469,7 +457,8 @@ fn init_petal(
     native_fns::register_all(&mut env);
 
     if let Some(ref dir) = config.examples_dir {
-        populate_browser_state(dir);
+        let examples = load_examples(dir);
+        bind_examples(&mut env, &examples);
     }
 
     let source = match source_path {
@@ -481,11 +470,7 @@ fn init_petal(
     let program_id = env.load_program(&source)?;
     let stack_id = env.create_stack(program_id)?;
 
-    FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.screen_width = config.width as i32;
-        info.screen_height = config.height as i32;
-    });
+    bind_dimensions(&mut env, config.width as i32, config.height as i32);
 
     Ok((env, program_id, stack_id))
 }
@@ -496,6 +481,8 @@ fn handle_command(
     program_id: ProgramId,
     stack_id: StackKey,
     paused: &mut bool,
+    input: &mut InputState,
+    frame_count: &mut i64,
 ) {
     match cmd {
         Command::Pause => {
@@ -515,7 +502,7 @@ fn handle_command(
         Command::Step { n } => {
             let mut last_frame = 0i64;
             for _ in 0..n {
-                match protocol::run_one_frame(env, stack_id) {
+                match protocol::run_one_frame(env, stack_id, input, frame_count) {
                     Ok(fc) => last_frame = fc,
                     Err(e) => {
                         protocol::send_response(&Response::err(e));
@@ -538,7 +525,7 @@ fn handle_command(
             });
         }
         Command::CaptureDrawCommands => {
-            match protocol::capture_draw_commands(env, stack_id) {
+            match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, output)) => {
                     protocol::send_response(&Response {
                         draw_commands: Some(commands),
@@ -552,7 +539,7 @@ fn handle_command(
             }
         }
         Command::Input { keys_down, mouse } => {
-            protocol::apply_input(&keys_down, mouse.as_ref());
+            protocol::apply_input(input, &keys_down, mouse.as_ref());
             protocol::send_response(&Response::ok());
         }
         Command::SetState { name, value } => {
@@ -562,12 +549,9 @@ fn handle_command(
             }
         }
         Command::Screenshot => {
-            match protocol::capture_draw_commands(env, stack_id) {
+            match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, _output)) => {
-                    let (w, h) = FRAME_INFO.with(|f| {
-                        let info = f.borrow();
-                        (info.screen_width as u32, info.screen_height as u32)
-                    });
+                    let (w, h) = native_fns::dimensions(env);
                     let b64 = screenshot::render_to_png_base64(&commands, w, h);
                     protocol::send_response(&Response {
                         screenshot: Some(b64),

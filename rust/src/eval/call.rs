@@ -298,6 +298,8 @@ impl<'a> Evaluator<'a> {
             self.output,
             self.symbols,
             self.output_buffers,
+            self.bindings,
+            self.counters,
         );
         let count = func(&mut cxt)?;
         let results = cxt.take_results();

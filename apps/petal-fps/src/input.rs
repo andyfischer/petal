@@ -15,8 +15,6 @@ pub struct InputState {
     pub mouse_dy: i32,
     pub mouse_buttons: HashSet<u8>,
     pub mouse_buttons_pressed: HashSet<u8>,
-    /// External code sets this to request mouse lock for FPS look.
-    pub want_mouse_grab: bool,
 }
 
 impl InputState {
@@ -27,22 +25,6 @@ impl InputState {
         self.mouse_buttons_pressed.clear();
         self.mouse_dx = 0;
         self.mouse_dy = 0;
-    }
-
-    pub fn key_down(&self, name: &str) -> bool {
-        self.keys_down.contains(name)
-    }
-
-    pub fn key_pressed(&self, name: &str) -> bool {
-        self.keys_pressed.contains(name)
-    }
-
-    pub fn mouse_down(&self, button: u8) -> bool {
-        self.mouse_buttons.contains(&button)
-    }
-
-    pub fn mouse_pressed(&self, button: u8) -> bool {
-        self.mouse_buttons_pressed.contains(&button)
     }
 }
 

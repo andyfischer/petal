@@ -12,22 +12,9 @@ pub struct InputState {
 }
 
 impl InputState {
-    pub fn key_down(&self, name: &str) -> bool {
-        self.keys_down.contains(name)
-    }
-
-    pub fn key_pressed(&self, name: &str) -> bool {
-        self.keys_down.contains(name) && !self.keys_prev.contains(name)
-    }
-
-    pub fn mouse_down(&self, button: u8) -> bool {
-        self.mouse_buttons.contains(&button)
-    }
-
-    pub fn mouse_pressed(&self, button: u8) -> bool {
-        self.mouse_buttons.contains(&button) && !self.mouse_buttons_prev.contains(&button)
-    }
-
+    /// Snapshot current state into prev (call at frame start, before applying
+    /// this frame's events) so pressed-edge detection works when the host binds
+    /// the snapshot into the Env. See `native_fns::bind_input`.
     pub fn begin_frame(&mut self) {
         self.keys_prev = self.keys_down.clone();
         self.mouse_buttons_prev = self.mouse_buttons.clone();

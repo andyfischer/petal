@@ -11,10 +11,10 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::framebuffer::Framebuffer;
-use crate::input::scancode_to_name;
 use crate::commands::{clear_draw_commands, take_draw_commands};
-use crate::native_fns::{self, FRAME_INFO, INPUT_STATE};
+use crate::framebuffer::Framebuffer;
+use crate::input::{scancode_to_name, InputState};
+use crate::native_fns::{self, bind_dimensions, bind_frame_info, bind_input, take_mouse_grab};
 use crate::protocol::{self, Command, Response};
 use crate::renderer::Renderer;
 use crate::screenshot;
@@ -36,8 +36,8 @@ enum PollResult {
     Escape,
 }
 
-fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
-    INPUT_STATE.with(|s| s.borrow_mut().begin_frame());
+fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> PollResult {
+    input.begin_frame();
     let mut result = PollResult::None;
     for event in event_pump.poll_iter() {
         match event {
@@ -47,38 +47,29 @@ fn poll_sdl_events(event_pump: &mut sdl2::EventPump) -> PollResult {
             }
             Event::KeyDown { scancode: Some(sc), repeat: false, .. } => {
                 if let Some(name) = scancode_to_name(sc) {
-                    INPUT_STATE.with(|s| {
-                        let mut st = s.borrow_mut();
-                        st.keys_down.insert(name.to_string());
-                        st.keys_pressed.insert(name.to_string());
-                    });
+                    input.keys_down.insert(name.to_string());
+                    input.keys_pressed.insert(name.to_string());
                 }
             }
             Event::KeyUp { scancode: Some(sc), .. } => {
                 if let Some(name) = scancode_to_name(sc) {
-                    INPUT_STATE.with(|s| { s.borrow_mut().keys_down.remove(name); });
+                    input.keys_down.remove(name);
                 }
             }
             Event::MouseMotion { x, y, xrel, yrel, .. } => {
-                INPUT_STATE.with(|s| {
-                    let mut st = s.borrow_mut();
-                    st.mouse_x = x;
-                    st.mouse_y = y;
-                    st.mouse_dx += xrel;
-                    st.mouse_dy += yrel;
-                });
+                input.mouse_x = x;
+                input.mouse_y = y;
+                input.mouse_dx += xrel;
+                input.mouse_dy += yrel;
             }
             Event::MouseButtonDown { mouse_btn, .. } => {
                 let idx = button_index(mouse_btn);
-                INPUT_STATE.with(|s| {
-                    let mut st = s.borrow_mut();
-                    st.mouse_buttons.insert(idx);
-                    st.mouse_buttons_pressed.insert(idx);
-                });
+                input.mouse_buttons.insert(idx);
+                input.mouse_buttons_pressed.insert(idx);
             }
             Event::MouseButtonUp { mouse_btn, .. } => {
                 let idx = button_index(mouse_btn);
-                INPUT_STATE.with(|s| { s.borrow_mut().mouse_buttons.remove(&idx); });
+                input.mouse_buttons.remove(&idx);
             }
             _ => {}
         }
@@ -128,18 +119,12 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
     let mut mouse_grabbed = false;
+    let mut input = InputState::default();
 
     'game: loop {
-        match poll_sdl_events(&mut event_pump) {
+        match poll_sdl_events(&mut event_pump, &mut input) {
             PollResult::Quit | PollResult::Escape => break 'game,
             PollResult::None => {}
-        }
-
-        // Honour Petal's grab/release requests.
-        let want_grab = INPUT_STATE.with(|s| s.borrow().want_mouse_grab);
-        if want_grab != mouse_grabbed {
-            sdl.mouse().set_relative_mouse_mode(want_grab);
-            mouse_grabbed = want_grab;
         }
 
         let now = Instant::now();
@@ -147,20 +132,25 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
         last_frame = now;
         frame_count += 1;
 
-        FRAME_INFO.with(|f| {
-            let mut info = f.borrow_mut();
-            info.dt = dt;
-            info.frame_count = frame_count;
-        });
+        bind_frame_info(&mut env, dt, frame_count);
 
         check_hot_reload(&rx, source_path, &mut env, _program_id, stack_id);
 
         clear_draw_commands(&mut env);
+        bind_input(&mut env, &input);
         env.reset_stack(stack_id)?;
         if let Err(e) = env.run(stack_id) {
             eprintln!("[petal error] {}", e);
         }
         drain_output(&mut env);
+
+        // Honour the sketch's grab/release requests (emitted during the run).
+        if let Some(want_grab) = take_mouse_grab(&mut env) {
+            if want_grab != mouse_grabbed {
+                sdl.mouse().set_relative_mouse_mode(want_grab);
+                mouse_grabbed = want_grab;
+            }
+        }
 
         let commands = take_draw_commands(&mut env);
         fb.execute(&commands);
@@ -201,6 +191,7 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
     let mut paused = false;
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
+    let mut input = InputState::default();
 
     protocol::send_response(&Response {
         frame: Some(0),
@@ -210,10 +201,13 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
 
     'game: loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
-            handle_command(cmd, &mut env, program_id, stack_id, &mut paused, config.width, config.height);
+            handle_command(
+                cmd, &mut env, program_id, stack_id, &mut paused, config.width, config.height,
+                &mut input, &mut frame_count,
+            );
         }
 
-        match poll_sdl_events(&mut event_pump) {
+        match poll_sdl_events(&mut event_pump, &mut input) {
             PollResult::Quit | PollResult::Escape => break 'game,
             PollResult::None => {}
         }
@@ -224,15 +218,12 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
             last_frame = now;
             frame_count += 1;
 
-            FRAME_INFO.with(|f| {
-                let mut info = f.borrow_mut();
-                info.dt = dt;
-                info.frame_count = frame_count;
-            });
+            bind_frame_info(&mut env, dt, frame_count);
 
             check_hot_reload(&rx, source_path, &mut env, program_id, stack_id);
 
             clear_draw_commands(&mut env);
+            bind_input(&mut env, &input);
             env.reset_stack(stack_id)?;
             if let Err(e) = env.run(stack_id) {
                 eprintln!("[petal error] {}", e);
@@ -257,6 +248,8 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = true;
+    let mut input = InputState::default();
+    let mut frame_count: i64 = 0;
 
     protocol::send_response(&Response {
         frame: Some(0),
@@ -270,7 +263,10 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
             Err(_) => break,
         };
         check_hot_reload(&rx, source_path, &mut env, program_id, stack_id);
-        handle_command(cmd, &mut env, program_id, stack_id, &mut paused, config.width, config.height);
+        handle_command(
+            cmd, &mut env, program_id, stack_id, &mut paused, config.width, config.height,
+            &mut input, &mut frame_count,
+        );
     }
     Ok(())
 }
@@ -278,12 +274,14 @@ pub fn run_headless(source_path: &str, config: GameConfig) -> Result<(), String>
 pub fn run_screenshot(source_path: &str, config: GameConfig, output_path: &str, frames: u32) -> Result<(), String> {
     let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
 
+    let input = InputState::default();
+    let mut frame_count: i64 = 0;
     // Simulate some frames of fixed-dt time so gameplay can reach a steady state.
     for _ in 0..frames {
-        protocol::run_one_frame(&mut env, stack_id)?;
+        protocol::run_one_frame(&mut env, stack_id, &input, &mut frame_count)?;
     }
 
-    let (commands, output) = protocol::capture_draw_commands(&mut env, stack_id)?;
+    let (commands, output) = protocol::capture_draw_commands(&mut env, stack_id, &input)?;
     for line in output {
         eprintln!("{}", line);
     }
@@ -303,12 +301,14 @@ pub fn run_record(source_path: &str, config: GameConfig, out_dir: &str, frames: 
     std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
     let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
 
+    let input = InputState::default();
+    let mut frame_count: i64 = 0;
     for _ in 0..warmup {
-        protocol::run_one_frame(&mut env, stack_id)?;
+        protocol::run_one_frame(&mut env, stack_id, &input, &mut frame_count)?;
     }
     for i in 0..frames {
-        protocol::run_one_frame(&mut env, stack_id)?;
-        let (commands, _) = protocol::capture_draw_commands(&mut env, stack_id)?;
+        protocol::run_one_frame(&mut env, stack_id, &input, &mut frame_count)?;
+        let (commands, _) = protocol::capture_draw_commands(&mut env, stack_id, &input)?;
         let path = format!("{}/frame_{:04}.png", out_dir, i);
         screenshot::save_png(&commands, config.width, config.height, &path)?;
     }
@@ -326,15 +326,12 @@ fn init_petal(source_path: &str, config: &GameConfig) -> Result<(Env, ProgramId,
     let program_id = env.load_program(&source)?;
     let stack_id = env.create_stack(program_id)?;
 
-    FRAME_INFO.with(|f| {
-        let mut info = f.borrow_mut();
-        info.screen_width = config.width as i32;
-        info.screen_height = config.height as i32;
-    });
+    bind_dimensions(&mut env, config.width as i32, config.height as i32);
 
     Ok((env, program_id, stack_id))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_command(
     cmd: Command,
     env: &mut Env,
@@ -343,6 +340,8 @@ fn handle_command(
     paused: &mut bool,
     width: u32,
     height: u32,
+    input: &mut InputState,
+    frame_count: &mut i64,
 ) {
     match cmd {
         Command::Pause => {
@@ -356,7 +355,7 @@ fn handle_command(
         Command::Step { n } => {
             let mut last_frame = 0i64;
             for _ in 0..n {
-                match protocol::run_one_frame(env, stack_id) {
+                match protocol::run_one_frame(env, stack_id, input, frame_count) {
                     Ok(fc) => last_frame = fc,
                     Err(e) => {
                         protocol::send_response(&Response::err(e));
@@ -376,7 +375,7 @@ fn handle_command(
             protocol::send_response(&Response { state: Some(state), ..Response::ok() });
         }
         Command::CaptureDrawCommands => {
-            match protocol::capture_draw_commands(env, stack_id) {
+            match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, output)) => {
                     protocol::send_response(&Response {
                         draw_commands: Some(commands),
@@ -388,7 +387,7 @@ fn handle_command(
             }
         }
         Command::Input { keys_down, mouse, mouse_delta } => {
-            protocol::apply_input(&keys_down, mouse.as_ref(), mouse_delta.as_ref());
+            protocol::apply_input(input, &keys_down, mouse.as_ref(), mouse_delta.as_ref());
             protocol::send_response(&Response::ok());
         }
         Command::SetState { name, value } => {
@@ -398,7 +397,7 @@ fn handle_command(
             }
         }
         Command::Screenshot => {
-            match protocol::capture_draw_commands(env, stack_id) {
+            match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, _output)) => {
                     let b64 = screenshot::render_to_png_base64(&commands, width, height);
                     let stats = protocol::compute_stats(&commands);
@@ -412,7 +411,7 @@ fn handle_command(
             }
         }
         Command::DrawStats => {
-            match protocol::capture_draw_commands(env, stack_id) {
+            match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, _output)) => {
                     let stats = protocol::compute_stats(&commands);
                     protocol::send_response(&Response { stats: Some(stats), ..Response::ok() });

@@ -61,3 +61,62 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
     writeln!(dot, "}}").unwrap();
     dot
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::builtins::register_builtins;
+    use crate::compiler::Compiler;
+    use crate::lexer::Lexer;
+    use crate::native_fn::NativeFnTable;
+    use crate::parse::Parser;
+    use crate::program::ProgramId;
+
+    fn compile(source: &str) -> Program {
+        let mut lexer = Lexer::new(source);
+        lexer.tokenize().expect("tokenize");
+        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
+        let stmts = parser.parse_program().expect("parse");
+        let mut natives = NativeFnTable::new();
+        register_builtins(&mut natives);
+        Compiler::new().compile(&stmts, source.to_string(), ProgramId(0), &natives)
+    }
+
+    #[test]
+    fn wraps_output_in_digraph_block() {
+        let dot = program_to_dot(&compile("let x = 1"), true);
+        assert!(dot.starts_with("digraph dataflow {"));
+        assert!(dot.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn emits_term_nodes_and_dataflow_edges() {
+        let dot = program_to_dot(&compile("let a = 1\nlet b = a + 1"), true);
+        assert!(dot.contains("(Add)"), "expected an Add term node:\n{dot}");
+        // At least one dataflow edge "tN -> tM;" (not a dashed control edge).
+        assert!(
+            dot.lines().any(|l| l.contains("->") && !l.contains("dashed")),
+            "expected a dataflow edge:\n{dot}"
+        );
+    }
+
+    #[test]
+    fn colors_state_terms() {
+        let dot = program_to_dot(&compile("state x = 0"), true);
+        assert!(dot.contains("lightyellow"), "expected state color:\n{dot}");
+    }
+
+    #[test]
+    fn hide_phantoms_drops_phantom_nodes() {
+        let program = compile("let a = 1\nlet b = a + 1");
+        let with_phantoms = program_to_dot(&program, false);
+        let without_phantoms = program_to_dot(&program, true);
+        let count = |dot: &str| dot.lines().filter(|l| l.contains("[label=")).count();
+        assert!(
+            count(&with_phantoms) > count(&without_phantoms),
+            "hiding phantoms should remove nodes: {} vs {}",
+            count(&with_phantoms),
+            count(&without_phantoms)
+        );
+    }
+}

@@ -6,7 +6,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use petal::env::Env;
@@ -21,7 +20,6 @@ use petal::value::Value;
 // ---------------------------------------------------------------------------
 
 thread_local! {
-    static DRAW_COMMANDS: RefCell<Vec<DrawCommand>> = RefCell::new(Vec::new());
     static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
     /// Next offscreen-canvas id (1-based; 0 is the main framebuffer). Reset each
@@ -32,26 +30,25 @@ thread_local! {
 // ---------------------------------------------------------------------------
 // Draw commands
 // ---------------------------------------------------------------------------
+//
+// Draw commands are emitted into the `draw_commands` buffered-output channel on
+// the Env as `Value::EnumVariant { tag, data }` — a string opcode plus a flat
+// argument list — and pulled out as JSON for the canvas renderer (each command
+// serializes to `{ "type": "enum", "tag": "rect", "data": [...] }`).
 
-#[derive(Serialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-enum DrawCommand {
-    Clear { r: u8, g: u8, b: u8 },
-    Rect { x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8 },
-    RectOutline { x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8 },
-    Line { x1: i32, y1: i32, x2: i32, y2: i32, r: u8, g: u8, b: u8 },
-    Circle { cx: i32, cy: i32, radius: i32, r: u8, g: u8, b: u8 },
-    Triangle { x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, r: u8, g: u8, b: u8 },
-    Poly { points: Vec<(i32, i32)>, r: u8, g: u8, b: u8 },
-    Text { text: String, x: i32, y: i32, size: u16, r: u8, g: u8, b: u8 },
-    /// Allocate an offscreen canvas (PGraphics-style render target). Recreated
-    /// fresh each frame from the command stream.
-    CreateCanvas { id: u32, w: u32, h: u32 },
-    /// Redirect subsequent draw commands to a target. `id == 0` is the main
-    /// framebuffer; any other id is an offscreen canvas.
-    SetTarget { id: u32 },
-    /// Blit an offscreen canvas onto the current target at (`x`, `y`).
-    DrawCanvas { id: u32, x: i32, y: i32 },
+/// Name of the buffered-output channel carrying draw commands to the renderer.
+const DRAW_COMMANDS_SYMBOL: &str = "draw_commands";
+
+/// Emit a draw command into the `draw_commands` output buffer on the Env.
+fn emit_draw(state: &mut PetalCxt, tag: &str, data: Vec<Value>) {
+    let sym = state.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    state.emit(sym, tag, data);
+}
+
+/// Collect the first `n` arguments (1-indexed) as integer `Value`s — the common
+/// shape for draw commands whose arguments are all numbers.
+fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
+    (1..=n).map(|i| state.get_int(i).map(Value::Int)).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -104,79 +101,43 @@ struct FrameInfo {
 // ---------------------------------------------------------------------------
 
 fn native_clear(state: &mut PetalCxt) -> NativeResult {
-    let r = state.get_int(1)? as u8;
-    let g = state.get_int(2)? as u8;
-    let b = state.get_int(3)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Clear { r, g, b }));
+    let args = int_args(state, 3)?;
+    emit_draw(state, "clear", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_rect(state: &mut PetalCxt) -> NativeResult {
-    let x = state.get_int(1)? as i32;
-    let y = state.get_int(2)? as i32;
-    let w = state.get_int(3)? as u32;
-    let h = state.get_int(4)? as u32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Rect { x, y, w, h, r, g, b }));
+    let args = int_args(state, 7)?;
+    emit_draw(state, "rect", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_rect_outline(state: &mut PetalCxt) -> NativeResult {
-    let x = state.get_int(1)? as i32;
-    let y = state.get_int(2)? as i32;
-    let w = state.get_int(3)? as u32;
-    let h = state.get_int(4)? as u32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::RectOutline { x, y, w, h, r, g, b }));
+    let args = int_args(state, 7)?;
+    emit_draw(state, "rect_outline", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_line(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_int(1)? as i32;
-    let y1 = state.get_int(2)? as i32;
-    let x2 = state.get_int(3)? as i32;
-    let y2 = state.get_int(4)? as i32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Line { x1, y1, x2, y2, r, g, b }));
+    let args = int_args(state, 7)?;
+    emit_draw(state, "line", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_circle(state: &mut PetalCxt) -> NativeResult {
-    let cx = state.get_int(1)? as i32;
-    let cy = state.get_int(2)? as i32;
-    let radius = state.get_int(3)? as i32;
-    let r = state.get_int(4)? as u8;
-    let g = state.get_int(5)? as u8;
-    let b = state.get_int(6)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Circle { cx, cy, radius, r, g, b }));
+    let args = int_args(state, 6)?;
+    emit_draw(state, "circle", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_int(1)? as i32;
-    let y1 = state.get_int(2)? as i32;
-    let x2 = state.get_int(3)? as i32;
-    let y2 = state.get_int(4)? as i32;
-    let x3 = state.get_int(5)? as i32;
-    let y3 = state.get_int(6)? as i32;
-    let r = state.get_int(7)? as u8;
-    let g = state.get_int(8)? as u8;
-    let b = state.get_int(9)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut()
-            .push(DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b });
-    });
+    let args = int_args(state, 9)?;
+    emit_draw(state, "triangle", args);
     state.push_nil();
     Ok(1)
 }
@@ -190,7 +151,8 @@ fn coord_to_i32(v: &Value) -> Result<i32, String> {
 }
 
 fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
-    let list_id = match state.get_value(1)? {
+    let points_value = state.get_value(1)?;
+    let list_id = match points_value {
         Value::List(id) => id,
         other => {
             return Err(format!(
@@ -200,21 +162,20 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
         }
     };
 
-    let mut points: Vec<(i32, i32)> = Vec::new();
+    // Validate up front; the renderer re-reads the points list on decode.
     let elements: Vec<Value> = state.heap().get_list(list_id).to_vec();
-    for el in elements {
+    for el in &elements {
         match el {
-            Value::Vec2(x, y) => points.push((x as i32, y as i32)),
+            Value::Vec2(_, _) => {}
             Value::List(pid) => {
-                let coords = state.heap().get_list(pid);
+                let coords = state.heap().get_list(*pid);
                 if coords.len() != 2 {
                     return Err(
                         "fill_poly() list points must have exactly 2 coords [x, y]".to_string(),
                     );
                 }
-                let x = coord_to_i32(&coords[0])?;
-                let y = coord_to_i32(&coords[1])?;
-                points.push((x, y));
+                coord_to_i32(&coords[0])?;
+                coord_to_i32(&coords[1])?;
             }
             other => {
                 return Err(format!(
@@ -225,30 +186,31 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
         }
     }
 
-    if points.len() < 3 {
+    if elements.len() < 3 {
         return Err("fill_poly() needs at least 3 points".to_string());
     }
 
-    let r = state.get_int(2)? as u8;
-    let g = state.get_int(3)? as u8;
-    let b = state.get_int(4)? as u8;
+    let r = state.get_int(2)?;
+    let g = state.get_int(3)?;
+    let b = state.get_int(4)?;
 
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Poly { points, r, g, b });
-    });
+    emit_draw(
+        state,
+        "poly",
+        vec![points_value, Value::Int(r), Value::Int(g), Value::Int(b)],
+    );
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let x = state.get_int(2)? as i32;
-    let y = state.get_int(3)? as i32;
-    let size = state.get_int(4)? as u16;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Text { text, x, y, size, r, g, b }));
+    let args = vec![
+        Value::String(state.heap_mut().alloc_string(text)),
+        Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+    ];
+    emit_draw(state, "text", args);
     state.push_nil();
     Ok(1)
 }
@@ -266,29 +228,29 @@ fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
         *next += 1;
         id
     });
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::CreateCanvas { id, w, h }));
+    emit_draw(state, "create_canvas", vec![
+        Value::Int(id as i64), Value::Int(w as i64), Value::Int(h as i64),
+    ]);
     state.push_int(id as i64);
     Ok(1)
 }
 
 fn native_draw_to(state: &mut PetalCxt) -> NativeResult {
-    let id = state.get_int(1)? as u32;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::SetTarget { id }));
+    let id = state.get_int(1)?;
+    emit_draw(state, "set_target", vec![Value::Int(id)]);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_to_screen(state: &mut PetalCxt) -> NativeResult {
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::SetTarget { id: 0 }));
+    emit_draw(state, "set_target", vec![Value::Int(0)]);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
-    let id = state.get_int(1)? as u32;
-    let x = state.get_int(2)? as i32;
-    let y = state.get_int(3)? as i32;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::DrawCanvas { id, x, y }));
+    let args = int_args(state, 3)?;
+    emit_draw(state, "draw_canvas", args);
     state.push_nil();
     Ok(1)
 }
@@ -396,9 +358,15 @@ fn register_graphics(env: &mut Env) {
     env.register_native("screen_height", native_screen_height);
 }
 
-fn take_draw_commands() -> String {
-    let cmds: Vec<DrawCommand> = DRAW_COMMANDS.with(|c| c.borrow_mut().drain(..).collect());
-    serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string())
+/// Drain the `draw_commands` output buffer and serialize it to a JSON array.
+/// Each command is a `Value::EnumVariant`, so the JSON shape is
+/// `[{ "type": "enum", "tag": "rect", "data": [...] }, ...]` (see the renderer).
+fn take_draw_commands(env: &mut Env) -> String {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer(sym);
+    let arr: Vec<serde_json::Value> =
+        values.iter().map(|v| value_to_json(v, env.heap())).collect();
+    serde_json::Value::Array(arr).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -463,8 +431,8 @@ impl PetalRuntime {
 
     // --- Graphics ---
 
-    pub fn take_draw_commands(&self) -> String {
-        take_draw_commands()
+    pub fn take_draw_commands(&mut self) -> String {
+        take_draw_commands(&mut self.env)
     }
 
     pub fn set_mouse_position(&self, x: i32, y: i32) {
@@ -541,6 +509,6 @@ impl PetalRuntime {
         self.env
             .run_speculative(sid)
             .map_err(|e| JsValue::from_str(&e))?;
-        Ok(take_draw_commands())
+        Ok(take_draw_commands(&mut self.env))
     }
 }

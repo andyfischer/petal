@@ -7,6 +7,7 @@ use std::fmt;
 use crate::heap::{ElementId, F64ArrayId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId};
+use crate::symbol::SymbolId;
 
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
 #[derive(Clone, Copy, PartialEq)]
@@ -31,6 +32,9 @@ pub enum Value {
     Dual { value: f64, derivative: f64 },
     /// 2D vector for creative coding (positions, velocities, forces).
     Vec2(f64, f64),
+    /// An interned symbol — a binding key shared with the embedding host.
+    /// See `crate::symbol`.
+    Symbol(SymbolId),
 }
 
 impl Value {
@@ -63,6 +67,7 @@ impl Value {
             Value::Element(_) => "element",
             Value::Dual { .. } => "dual",
             Value::Vec2(_, _) => "vec2",
+            Value::Symbol(_) => "symbol",
         }
     }
 
@@ -117,6 +122,7 @@ impl fmt::Debug for Value {
             Value::Vec2(x, y) => {
                 write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
             }
+            Value::Symbol(id) => write!(f, "Symbol({})", id.0),
         }
     }
 }
@@ -176,6 +182,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         Value::Vec2(x, y) => {
             format!("vec2({}, {})", format_float(*x), format_float(*y))
         }
+        Value::Symbol(id) => format!("symbol#{}", id.0),
     }
 }
 
@@ -282,6 +289,7 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
         Value::Element(id) => element_to_json(*id, heap),
+        Value::Symbol(id) => serde_json::json!({ "type": "symbol", "id": id.0 }),
         // Closures, native functions → string representation
         other => serde_json::Value::String(value_to_display_string(other, heap)),
     }

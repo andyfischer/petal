@@ -21,6 +21,7 @@ pub mod program;
 pub mod rewrite;
 pub mod source_map;
 pub mod stack;
+pub mod symbol;
 pub mod trace;
 pub mod transfer_state;
 pub mod value;

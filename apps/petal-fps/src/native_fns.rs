@@ -2,9 +2,25 @@ use std::cell::RefCell;
 
 use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
+use petal::value::Value;
 
-use crate::commands::DrawCommand;
 use crate::input::InputState;
+
+/// Name of the buffered-output channel that carries draw commands from the
+/// sketch to the renderer. The host interns the same name to drain it.
+pub const DRAW_COMMANDS_SYMBOL: &str = "draw_commands";
+
+/// Emit a draw command into the `draw_commands` output buffer on the Env.
+fn emit_draw(state: &mut PetalCxt, tag: &str, data: Vec<Value>) {
+    let sym = state.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    state.emit(sym, tag, data);
+}
+
+/// Collect the first `n` arguments (1-indexed) as integer `Value`s — the common
+/// shape for draw commands whose arguments are all numbers.
+fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
+    (1..=n).map(|i| state.get_int(i).map(Value::Int)).collect()
+}
 
 #[derive(Default)]
 pub struct FrameInfo {
@@ -15,7 +31,6 @@ pub struct FrameInfo {
 }
 
 thread_local! {
-    pub static DRAW_COMMANDS: RefCell<Vec<DrawCommand>> = RefCell::new(Vec::new());
     pub static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     pub static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
 }
@@ -78,98 +93,52 @@ fn native_screen_height(state: &mut PetalCxt) -> NativeResult {
 // --- 3D drawing ---
 
 fn native_clear3d(state: &mut PetalCxt) -> NativeResult {
-    let r = state.get_int(1)? as u8;
-    let g = state.get_int(2)? as u8;
-    let b = state.get_int(3)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Clear3d { r, g, b }));
+    let args = int_args(state, 3)?;
+    emit_draw(state, "clear3d", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_sky_gradient(state: &mut PetalCxt) -> NativeResult {
-    let rt = state.get_int(1)? as u8;
-    let gt = state.get_int(2)? as u8;
-    let bt = state.get_int(3)? as u8;
-    let rb = state.get_int(4)? as u8;
-    let gb = state.get_int(5)? as u8;
-    let bb = state.get_int(6)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::SkyGradient {
-            r_top: rt, g_top: gt, b_top: bt,
-            r_bot: rb, g_bot: gb, b_bot: bb,
-        });
-    });
+    let args = int_args(state, 6)?;
+    emit_draw(state, "sky_gradient", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_triangle3d(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_float(1)? as f32;
-    let y1 = state.get_float(2)? as f32;
-    let z1 = state.get_float(3)? as f32;
-    let x2 = state.get_float(4)? as f32;
-    let y2 = state.get_float(5)? as f32;
-    let z2 = state.get_float(6)? as f32;
-    let x3 = state.get_float(7)? as f32;
-    let y3 = state.get_float(8)? as f32;
-    let z3 = state.get_float(9)? as f32;
-    let r = state.get_int(10)? as u8;
-    let g = state.get_int(11)? as u8;
-    let b = state.get_int(12)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Triangle3d {
-            x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b,
-        });
-    });
+    let args = vec![
+        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
+        Value::Float(state.get_float(4)?), Value::Float(state.get_float(5)?), Value::Float(state.get_float(6)?),
+        Value::Float(state.get_float(7)?), Value::Float(state.get_float(8)?), Value::Float(state.get_float(9)?),
+        Value::Int(state.get_int(10)?), Value::Int(state.get_int(11)?), Value::Int(state.get_int(12)?),
+    ];
+    emit_draw(state, "triangle3d", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_triangle3d_shaded(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_float(1)? as f32;
-    let y1 = state.get_float(2)? as f32;
-    let z1 = state.get_float(3)? as f32;
-    let r1 = state.get_int(4)? as u8;
-    let g1 = state.get_int(5)? as u8;
-    let b1 = state.get_int(6)? as u8;
-    let x2 = state.get_float(7)? as f32;
-    let y2 = state.get_float(8)? as f32;
-    let z2 = state.get_float(9)? as f32;
-    let r2 = state.get_int(10)? as u8;
-    let g2 = state.get_int(11)? as u8;
-    let b2 = state.get_int(12)? as u8;
-    let x3 = state.get_float(13)? as f32;
-    let y3 = state.get_float(14)? as f32;
-    let z3 = state.get_float(15)? as f32;
-    let r3 = state.get_int(16)? as u8;
-    let g3 = state.get_int(17)? as u8;
-    let b3 = state.get_int(18)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Triangle3dShaded {
-            x1, y1, z1, r1, g1, b1,
-            x2, y2, z2, r2, g2, b2,
-            x3, y3, z3, r3, g3, b3,
-        });
-    });
+    let args = vec![
+        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
+        Value::Int(state.get_int(4)?), Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?),
+        Value::Float(state.get_float(7)?), Value::Float(state.get_float(8)?), Value::Float(state.get_float(9)?),
+        Value::Int(state.get_int(10)?), Value::Int(state.get_int(11)?), Value::Int(state.get_int(12)?),
+        Value::Float(state.get_float(13)?), Value::Float(state.get_float(14)?), Value::Float(state.get_float(15)?),
+        Value::Int(state.get_int(16)?), Value::Int(state.get_int(17)?), Value::Int(state.get_int(18)?),
+    ];
+    emit_draw(state, "triangle3d_shaded", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_line3d(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_float(1)? as f32;
-    let y1 = state.get_float(2)? as f32;
-    let z1 = state.get_float(3)? as f32;
-    let x2 = state.get_float(4)? as f32;
-    let y2 = state.get_float(5)? as f32;
-    let z2 = state.get_float(6)? as f32;
-    let r = state.get_int(7)? as u8;
-    let g = state.get_int(8)? as u8;
-    let b = state.get_int(9)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Line3d {
-            x1, y1, z1, x2, y2, z2, r, g, b,
-        });
-    });
+    let args = vec![
+        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
+        Value::Float(state.get_float(4)?), Value::Float(state.get_float(5)?), Value::Float(state.get_float(6)?),
+        Value::Int(state.get_int(7)?), Value::Int(state.get_int(8)?), Value::Int(state.get_int(9)?),
+    ];
+    emit_draw(state, "line3d", args);
     state.push_nil();
     Ok(1)
 }
@@ -177,54 +146,34 @@ fn native_line3d(state: &mut PetalCxt) -> NativeResult {
 // --- 2D HUD drawing ---
 
 fn native_rect2d(state: &mut PetalCxt) -> NativeResult {
-    let x = state.get_int(1)? as i32;
-    let y = state.get_int(2)? as i32;
-    let w = state.get_int(3)? as u32;
-    let h = state.get_int(4)? as u32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Rect2d { x, y, w, h, r, g, b }));
+    let args = int_args(state, 7)?;
+    emit_draw(state, "rect2d", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_line2d(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_int(1)? as i32;
-    let y1 = state.get_int(2)? as i32;
-    let x2 = state.get_int(3)? as i32;
-    let y2 = state.get_int(4)? as i32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Line2d { x1, y1, x2, y2, r, g, b }));
+    let args = int_args(state, 7)?;
+    emit_draw(state, "line2d", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_circle2d(state: &mut PetalCxt) -> NativeResult {
-    let cx = state.get_int(1)? as i32;
-    let cy = state.get_int(2)? as i32;
-    let radius = state.get_int(3)? as i32;
-    let r = state.get_int(4)? as u8;
-    let g = state.get_int(5)? as u8;
-    let b = state.get_int(6)? as u8;
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().push(DrawCommand::Circle2d { cx, cy, radius, r, g, b }));
+    let args = int_args(state, 6)?;
+    emit_draw(state, "circle2d", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_text2d(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let x = state.get_int(2)? as i32;
-    let y = state.get_int(3)? as i32;
-    let size = state.get_int(4)? as u16;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Text2d { text, x, y, size, r, g, b });
-    });
+    let args = vec![
+        Value::String(state.heap_mut().alloc_string(text)),
+        Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+    ];
+    emit_draw(state, "text2d", args);
     state.push_nil();
     Ok(1)
 }

@@ -1,7 +1,7 @@
 /** PetalCanvas — wraps PetalRuntime for canvas-based frame-loop execution. */
 
 import init, { PetalRuntime } from "../pkg/petal_diagram_canvas.js";
-import { renderCommands, type DrawCommand } from "./canvas-renderer.js";
+import { renderCommands } from "./canvas-renderer.js";
 import { InputTracker } from "./input.js";
 import { DebugController } from "./debug.js";
 
@@ -91,7 +91,7 @@ export class PetalCanvas {
       this.frameCount++;
 
       const cmdsJson = this.runtime.take_draw_commands();
-      const commands: DrawCommand[] = JSON.parse(cmdsJson);
+      const commands = JSON.parse(cmdsJson);
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 
       this.clearError();
@@ -137,7 +137,7 @@ export class PetalCanvas {
       this.frameCount++;
 
       const cmdsJson = this.runtime.take_draw_commands();
-      const commands: DrawCommand[] = JSON.parse(cmdsJson);
+      const commands = JSON.parse(cmdsJson);
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 
       this.clearError();

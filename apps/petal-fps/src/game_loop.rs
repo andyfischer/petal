@@ -13,7 +13,8 @@ use petal::stack::StackKey;
 
 use crate::framebuffer::Framebuffer;
 use crate::input::scancode_to_name;
-use crate::native_fns::{self, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
+use crate::commands::{clear_draw_commands, take_draw_commands};
+use crate::native_fns::{self, FRAME_INFO, INPUT_STATE};
 use crate::protocol::{self, Command, Response};
 use crate::renderer::Renderer;
 use crate::screenshot;
@@ -154,14 +155,14 @@ pub fn run_game(source_path: &str, config: GameConfig) -> Result<(), String> {
 
         check_hot_reload(&rx, source_path, &mut env, _program_id, stack_id);
 
-        DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+        clear_draw_commands(&mut env);
         env.reset_stack(stack_id)?;
         if let Err(e) = env.run(stack_id) {
             eprintln!("[petal error] {}", e);
         }
         drain_output(&mut env);
 
-        let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+        let commands = take_draw_commands(&mut env);
         fb.execute(&commands);
         renderer.present(&fb)?;
     }
@@ -231,7 +232,7 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
 
             check_hot_reload(&rx, source_path, &mut env, program_id, stack_id);
 
-            DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+            clear_draw_commands(&mut env);
             env.reset_stack(stack_id)?;
             if let Err(e) = env.run(stack_id) {
                 eprintln!("[petal error] {}", e);
@@ -239,7 +240,7 @@ pub fn run_agent(source_path: &str, config: GameConfig) -> Result<(), String> {
             drain_output(&mut env);
         }
 
-        let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+        let commands = take_draw_commands(&mut env);
         if !commands.is_empty() {
             fb.execute(&commands);
         }

@@ -296,7 +296,7 @@ impl Heap {
             // Non-heap values: nothing to mark
             Value::Nil | Value::Bool(_) | Value::Int(_) | Value::Float(_)
             | Value::Closure(_) | Value::OverloadSet(_) | Value::NativeFunction(_)
-            | Value::Dual { .. } | Value::Vec2(_, _) => {}
+            | Value::Dual { .. } | Value::Vec2(_, _) | Value::Symbol(_) => {}
         }
     }
 

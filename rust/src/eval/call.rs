@@ -292,7 +292,13 @@ impl<'a> Evaluator<'a> {
     /// result value.
     fn call_native_fn(&mut self, native_id: NativeFnId, args: &[Value]) -> Result<Value, String> {
         let func = self.native_fns.get_func(native_id);
-        let mut cxt = PetalCxt::new(args, self.heap, self.output);
+        let mut cxt = PetalCxt::new(
+            args,
+            self.heap,
+            self.output,
+            self.symbols,
+            self.output_buffers,
+        );
         let count = func(&mut cxt)?;
         let results = cxt.take_results();
         Ok(if count > 0 && !results.is_empty() {

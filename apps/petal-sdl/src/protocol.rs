@@ -9,8 +9,8 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::DrawCommand;
-use crate::native_fns::{reset_canvas_ids, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
+use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
+use crate::native_fns::{reset_canvas_ids, FRAME_INFO, INPUT_STATE};
 
 // --- Commands (stdin → engine) ---
 
@@ -173,14 +173,14 @@ pub fn capture_draw_commands(
     stack_id: StackKey,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
     // Clear the draw buffer before speculative run
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+    clear_draw_commands(env);
     reset_canvas_ids();
 
     // Run speculatively (state is snapshot/restored internally)
     env.run_speculative(stack_id)?;
 
     // Collect results
-    let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+    let commands = take_draw_commands(env);
     let output = env.take_output();
 
     Ok((commands, output))
@@ -189,7 +189,7 @@ pub fn capture_draw_commands(
 /// Run one frame: reset_stack + run, update frame_count.
 /// Returns the new frame count.
 pub fn run_one_frame(env: &mut Env, stack_id: StackKey) -> Result<i64, String> {
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+    clear_draw_commands(env);
     reset_canvas_ids();
 
     let frame_count = FRAME_INFO.with(|f| {

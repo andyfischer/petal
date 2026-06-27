@@ -19,7 +19,7 @@ export interface DrawCommand {
   // Triangle (also uses x1,y1,x2,y2 above)
   x3?: number;
   y3?: number;
-  // Poly — serde serializes Vec<(i32,i32)> as [[x,y],...]
+  // Poly — decoded to [[x,y],...] from the buffered points list
   points?: number[][];
   // Circle
   cx?: number;
@@ -30,6 +30,53 @@ export interface DrawCommand {
   size?: number;
   // Offscreen canvas (create_canvas / draw_to / draw_canvas)
   id?: number;
+}
+
+/** Raw command as emitted by the WASM runtime: a `Value::EnumVariant`,
+ * serialized as `{ type: "enum", tag, data }` where `data` is the flat argument
+ * list. `decodeCommand` maps this into the named-field `DrawCommand` above. */
+interface RawCommand {
+  type: string;
+  tag: string;
+  data: any[];
+}
+
+/** Decode a point from the buffered list. Vec2 values serialize as
+ * `{ type: "vec2", x, y }`; `[x, y]` lists serialize as `[x, y]`. */
+function decodePoint(p: any): [number, number] {
+  return Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y];
+}
+
+/** Map a raw `{tag, data}` command to a named-field `DrawCommand`. Mirrors the
+ * argument order emitted by the native draw functions (see lib.rs). */
+function decodeCommand(raw: RawCommand): DrawCommand {
+  const d = raw.data ?? [];
+  switch (raw.tag) {
+    case "clear":
+      return { op: "clear", r: d[0], g: d[1], b: d[2] };
+    case "rect":
+      return { op: "rect", x: d[0], y: d[1], w: d[2], h: d[3], r: d[4], g: d[5], b: d[6] };
+    case "rect_outline":
+      return { op: "rect_outline", x: d[0], y: d[1], w: d[2], h: d[3], r: d[4], g: d[5], b: d[6] };
+    case "line":
+      return { op: "line", x1: d[0], y1: d[1], x2: d[2], y2: d[3], r: d[4], g: d[5], b: d[6] };
+    case "circle":
+      return { op: "circle", cx: d[0], cy: d[1], radius: d[2], r: d[3], g: d[4], b: d[5] };
+    case "triangle":
+      return { op: "triangle", x1: d[0], y1: d[1], x2: d[2], y2: d[3], x3: d[4], y3: d[5], r: d[6], g: d[7], b: d[8] };
+    case "poly":
+      return { op: "poly", points: (d[0] ?? []).map(decodePoint), r: d[1], g: d[2], b: d[3] };
+    case "text":
+      return { op: "text", text: d[0], x: d[1], y: d[2], size: d[3], r: d[4], g: d[5], b: d[6] };
+    case "create_canvas":
+      return { op: "create_canvas", id: d[0], w: d[1], h: d[2] };
+    case "set_target":
+      return { op: "set_target", id: d[0] };
+    case "draw_canvas":
+      return { op: "draw_canvas", id: d[0], x: d[1], y: d[2] };
+    default:
+      return { op: raw.tag };
+  }
 }
 
 function rgb(r: number, g: number, b: number): string {
@@ -122,10 +169,11 @@ function createOffscreen(w: number, h: number): CanvasRenderingContext2D {
 
 export function renderCommands(
   ctx: CanvasRenderingContext2D,
-  commands: DrawCommand[],
+  rawCommands: RawCommand[],
   canvasWidth: number,
   canvasHeight: number,
 ): void {
+  const commands = rawCommands.map(decodeCommand);
   // The main canvas persists between frames: we only paint over it on an
   // explicit "clear" command. A sketch that never calls clear() therefore
   // accumulates its drawing (particle trails, attractors), matching petal-sdl's

@@ -23,10 +23,13 @@ pub use error::format_source_snippet;
 
 use smallvec::SmallVec;
 
+use std::collections::HashMap;
+
 use crate::heap::Heap;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
 use crate::stack::{Frame, Stack};
+use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
 use crate::value::{self, Value};
 
@@ -73,6 +76,10 @@ pub struct Evaluator<'a> {
     pub native_fns: &'a NativeFnTable,
     pub output: &'a mut Vec<String>,
     pub trace: &'a mut TraceBuffer,
+    /// Symbol table for binding native/host state to interned names.
+    pub symbols: &'a mut SymbolTable,
+    /// Per-symbol buffered output channels (script pushes, host pulls).
+    pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
 }
 
 impl<'a> Evaluator<'a> {

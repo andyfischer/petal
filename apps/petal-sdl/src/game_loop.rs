@@ -18,8 +18,9 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::input::scancode_to_name;
+use crate::commands::{clear_draw_commands, take_draw_commands};
 use crate::native_fns::{
-    self, reset_canvas_ids, ExampleEntry, BROWSER_STATE, DRAW_COMMANDS, FRAME_INFO, INPUT_STATE,
+    self, reset_canvas_ids, ExampleEntry, BROWSER_STATE, FRAME_INFO, INPUT_STATE,
 };
 use crate::protocol::{self, Command, Response};
 use crate::renderer;
@@ -215,7 +216,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
             check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
         }
 
-        DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+        clear_draw_commands(&mut env);
         reset_canvas_ids();
 
         env.reset_stack(stack_id)?;
@@ -253,7 +254,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
             }
         }
 
-        let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+        let commands = take_draw_commands(&mut env);
         let surface = framebuffer.take().expect("framebuffer present");
         framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
     }
@@ -364,7 +365,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
                 check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
             }
 
-            DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+            clear_draw_commands(&mut env);
 
             env.reset_stack(stack_id)?;
             if let Err(e) = env.run(stack_id) {
@@ -376,7 +377,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
 
         // Always render (shows last frame when paused). When paused, no new
         // commands are produced, so present_frame re-blits the retained surface.
-        let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+        let commands = take_draw_commands(&mut env);
         let surface = framebuffer.take().expect("framebuffer present");
         framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
     }

@@ -19,6 +19,7 @@ mod creative_coding;
 mod io;
 mod math;
 mod noise;
+mod output;
 mod vec2;
 
 // xorshift64* PRNG, seeded from system time on first use. Replaces an earlier
@@ -171,6 +172,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("swap", collections::native_swap);
     table.register("hsv_deg", color::native_hsv_deg);
     table.register("hsl_deg", color::native_hsl_deg);
+
+    // --- Symbols & buffered output (append-only to preserve phantom term indices) ---
+    table.register("symbol", output::native_symbol);
+    table.register("push_output", output::native_push_output);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

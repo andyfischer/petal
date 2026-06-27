@@ -4,7 +4,6 @@ use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
 use petal::value::Value;
 
-use crate::commands::DrawCommand;
 use crate::input::InputState;
 
 #[derive(Default)]
@@ -26,8 +25,24 @@ pub struct BrowserState {
     pub pending_launch: Option<String>,
 }
 
+/// Name of the buffered-output channel that carries draw commands from the
+/// sketch to the renderer. The host interns the same name to drain it.
+pub const DRAW_COMMANDS_SYMBOL: &str = "draw_commands";
+
+/// Emit a draw command into the `draw_commands` output buffer on the Env.
+/// Replaces the old `DRAW_COMMANDS` thread-local push.
+fn emit_draw(state: &mut PetalCxt, tag: &str, data: Vec<Value>) {
+    let sym = state.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    state.emit(sym, tag, data);
+}
+
+/// Collect the first `n` arguments (1-indexed) as integer `Value`s — the common
+/// shape for draw commands whose arguments are all numbers.
+fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
+    (1..=n).map(|i| state.get_int(i).map(Value::Int)).collect()
+}
+
 thread_local! {
-    pub static DRAW_COMMANDS: RefCell<Vec<DrawCommand>> = RefCell::new(Vec::new());
     pub static INPUT_STATE: RefCell<InputState> = RefCell::new(InputState::default());
     pub static FRAME_INFO: RefCell<FrameInfo> = RefCell::new(FrameInfo::default());
     pub static BROWSER_STATE: RefCell<BrowserState> = RefCell::new(BrowserState::default());
@@ -80,89 +95,43 @@ pub fn register_all(env: &mut Env) {
 // --- Drawing ---
 
 fn native_clear(state: &mut PetalCxt) -> NativeResult {
-    let r = state.get_int(1)? as u8;
-    let g = state.get_int(2)? as u8;
-    let b = state.get_int(3)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Clear { r, g, b });
-    });
+    let args = int_args(state, 3)?;
+    emit_draw(state, "clear", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_rect(state: &mut PetalCxt) -> NativeResult {
-    let x = state.get_int(1)? as i32;
-    let y = state.get_int(2)? as i32;
-    let w = state.get_int(3)? as u32;
-    let h = state.get_int(4)? as u32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Rect { x, y, w, h, r, g, b });
-    });
+    let args = int_args(state, 7)?;
+    emit_draw(state, "rect", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_rect_outline(state: &mut PetalCxt) -> NativeResult {
-    let x = state.get_int(1)? as i32;
-    let y = state.get_int(2)? as i32;
-    let w = state.get_int(3)? as u32;
-    let h = state.get_int(4)? as u32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::RectOutline { x, y, w, h, r, g, b });
-    });
+    let args = int_args(state, 7)?;
+    emit_draw(state, "rect_outline", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_line(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_int(1)? as i32;
-    let y1 = state.get_int(2)? as i32;
-    let x2 = state.get_int(3)? as i32;
-    let y2 = state.get_int(4)? as i32;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Line { x1, y1, x2, y2, r, g, b });
-    });
+    let args = int_args(state, 7)?;
+    emit_draw(state, "line", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_circle(state: &mut PetalCxt) -> NativeResult {
-    let cx = state.get_int(1)? as i32;
-    let cy = state.get_int(2)? as i32;
-    let radius = state.get_int(3)? as i32;
-    let r = state.get_int(4)? as u8;
-    let g = state.get_int(5)? as u8;
-    let b = state.get_int(6)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Circle { cx, cy, radius, r, g, b });
-    });
+    let args = int_args(state, 6)?;
+    emit_draw(state, "circle", args);
     state.push_nil();
     Ok(1)
 }
 
 fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
-    let x1 = state.get_int(1)? as i32;
-    let y1 = state.get_int(2)? as i32;
-    let x2 = state.get_int(3)? as i32;
-    let y2 = state.get_int(4)? as i32;
-    let x3 = state.get_int(5)? as i32;
-    let y3 = state.get_int(6)? as i32;
-    let r = state.get_int(7)? as u8;
-    let g = state.get_int(8)? as u8;
-    let b = state.get_int(9)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut()
-            .push(DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b });
-    });
+    let args = int_args(state, 9)?;
+    emit_draw(state, "triangle", args);
     state.push_nil();
     Ok(1)
 }
@@ -176,7 +145,8 @@ fn coord_to_i32(v: &Value) -> Result<i32, String> {
 }
 
 fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
-    let list_id = match state.get_value(1)? {
+    let points_value = state.get_value(1)?;
+    let list_id = match points_value {
         Value::List(id) => id,
         other => {
             return Err(format!(
@@ -186,21 +156,20 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
         }
     };
 
-    let mut points: Vec<(i32, i32)> = Vec::new();
+    // Validate the points up front (the renderer re-reads the list on decode).
     let elements: Vec<Value> = state.heap().get_list(list_id).to_vec();
-    for el in elements {
+    for el in &elements {
         match el {
-            Value::Vec2(x, y) => points.push((x as i32, y as i32)),
+            Value::Vec2(_, _) => {}
             Value::List(pid) => {
-                let coords = state.heap().get_list(pid);
+                let coords = state.heap().get_list(*pid);
                 if coords.len() != 2 {
                     return Err(
                         "fill_poly() list points must have exactly 2 coords [x, y]".to_string(),
                     );
                 }
-                let x = coord_to_i32(&coords[0])?;
-                let y = coord_to_i32(&coords[1])?;
-                points.push((x, y));
+                coord_to_i32(&coords[0])?;
+                coord_to_i32(&coords[1])?;
             }
             other => {
                 return Err(format!(
@@ -211,32 +180,31 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
         }
     }
 
-    if points.len() < 3 {
+    if elements.len() < 3 {
         return Err("fill_poly() needs at least 3 points".to_string());
     }
 
-    let r = state.get_int(2)? as u8;
-    let g = state.get_int(3)? as u8;
-    let b = state.get_int(4)? as u8;
+    let r = state.get_int(2)?;
+    let g = state.get_int(3)?;
+    let b = state.get_int(4)?;
 
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Poly { points, r, g, b });
-    });
+    emit_draw(
+        state,
+        "poly",
+        vec![points_value, Value::Int(r), Value::Int(g), Value::Int(b)],
+    );
     state.push_nil();
     Ok(1)
 }
 
 fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let x = state.get_int(2)? as i32;
-    let y = state.get_int(3)? as i32;
-    let size = state.get_int(4)? as u16;
-    let r = state.get_int(5)? as u8;
-    let g = state.get_int(6)? as u8;
-    let b = state.get_int(7)? as u8;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::Text { text, x, y, size, r, g, b });
-    });
+    let args = vec![
+        Value::String(state.heap_mut().alloc_string(text)),
+        Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+    ];
+    emit_draw(state, "text", args);
     state.push_nil();
     Ok(1)
 }
@@ -255,9 +223,9 @@ fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
         *next += 1;
         id
     });
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::CreateCanvas { id, w, h });
-    });
+    emit_draw(state, "create_canvas", vec![
+        Value::Int(id as i64), Value::Int(w as i64), Value::Int(h as i64),
+    ]);
     state.push_int(id as i64);
     Ok(1)
 }
@@ -265,31 +233,23 @@ fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
 /// Redirect subsequent draw commands into the offscreen canvas with the given
 /// id. Pair with `draw_to_screen()` to return to the main framebuffer.
 fn native_draw_to(state: &mut PetalCxt) -> NativeResult {
-    let id = state.get_int(1)? as u32;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::SetTarget { id });
-    });
+    let id = state.get_int(1)?;
+    emit_draw(state, "set_target", vec![Value::Int(id)]);
     state.push_nil();
     Ok(1)
 }
 
 /// Redirect subsequent draw commands back to the main framebuffer.
 fn native_draw_to_screen(state: &mut PetalCxt) -> NativeResult {
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::SetTarget { id: 0 });
-    });
+    emit_draw(state, "set_target", vec![Value::Int(0)]);
     state.push_nil();
     Ok(1)
 }
 
 /// Blit the offscreen canvas `id` onto the current render target at (`x`, `y`).
 fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
-    let id = state.get_int(1)? as u32;
-    let x = state.get_int(2)? as i32;
-    let y = state.get_int(3)? as i32;
-    DRAW_COMMANDS.with(|cmds| {
-        cmds.borrow_mut().push(DrawCommand::DrawCanvas { id, x, y });
-    });
+    let args = int_args(state, 3)?;
+    emit_draw(state, "draw_canvas", args);
     state.push_nil();
     Ok(1)
 }
@@ -457,21 +417,26 @@ fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::DrawCommand;
     use petal::env::Env;
 
-    /// Drain the DRAW_COMMANDS thread-local and return its contents.
-    fn drain_commands() -> Vec<DrawCommand> {
-        DRAW_COMMANDS.with(|cmds| std::mem::take(&mut *cmds.borrow_mut()))
+    /// Drain the `draw_commands` output buffer and decode it into DrawCommands.
+    fn drain_commands(env: &mut Env) -> Vec<DrawCommand> {
+        let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+        let values = env.take_output_buffer(sym);
+        values
+            .iter()
+            .map(|v| DrawCommand::from_value(v, env.heap()).expect("decode draw command"))
+            .collect()
     }
 
     #[test]
     fn fill_triangle_emits_triangle_command() {
-        let _ = drain_commands(); // clear any cross-test contamination
         let mut env = Env::new();
         register_all(&mut env);
         env.run_source("fill_triangle(0, 0, 10, 0, 5, 8, 255, 128, 64)")
             .expect("run_source should succeed");
-        let cmds = drain_commands();
+        let cmds = drain_commands(&mut env);
         assert_eq!(cmds.len(), 1);
         assert_eq!(
             cmds[0],
@@ -491,14 +456,13 @@ mod tests {
 
     #[test]
     fn fill_poly_from_vec2_list() {
-        let _ = drain_commands();
         let mut env = Env::new();
         register_all(&mut env);
         env.run_source(
             "fill_poly([vec2(0,0), vec2(10,0), vec2(10,10), vec2(0,10)], 10, 20, 30)",
         )
         .expect("run_source should succeed");
-        let cmds = drain_commands();
+        let cmds = drain_commands(&mut env);
         assert_eq!(cmds.len(), 1);
         assert_eq!(
             cmds[0],
@@ -513,7 +477,6 @@ mod tests {
 
     #[test]
     fn fill_poly_too_few_points_errors() {
-        let _ = drain_commands();
         let mut env = Env::new();
         register_all(&mut env);
         let result = env.run_source("fill_poly([vec2(0,0), vec2(1,1)], 1,2,3)");
@@ -522,7 +485,6 @@ mod tests {
 
     #[test]
     fn offscreen_canvas_emits_stream_commands() {
-        let _ = drain_commands();
         reset_canvas_ids();
         let mut env = Env::new();
         register_all(&mut env);
@@ -536,7 +498,7 @@ mod tests {
         )
         .expect("run_source should succeed");
 
-        let cmds = drain_commands();
+        let cmds = drain_commands(&mut env);
         assert_eq!(
             cmds,
             vec![
@@ -551,16 +513,15 @@ mod tests {
 
     #[test]
     fn canvas_ids_are_stable_after_reset() {
-        let _ = drain_commands();
         let mut env = Env::new();
         register_all(&mut env);
 
         reset_canvas_ids();
         let a = env.run_source("create_canvas(8, 8)").expect("run ok");
-        let _ = drain_commands();
+        let _ = drain_commands(&mut env);
         reset_canvas_ids();
         let b = env.run_source("create_canvas(8, 8)").expect("run ok");
-        let _ = drain_commands();
+        let _ = drain_commands(&mut env);
 
         // After a per-frame reset, the same call site yields the same id.
         assert_eq!(a, Value::Int(1));

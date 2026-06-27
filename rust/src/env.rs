@@ -13,6 +13,7 @@ use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId, OverloadEntry, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
+use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
 use crate::value::Value;
 
@@ -24,6 +25,13 @@ pub struct Env {
     closures: Vec<RuntimeClosure>,
     overload_sets: Vec<Vec<OverloadEntry>>,
     output: Vec<String>,
+    /// Interned symbol names ↔ ordinals, shared with the embedding host.
+    symbols: SymbolTable,
+    /// Per-symbol buffered output channels. Native fns/scripts push values in
+    /// (see `PetalCxt::push_output`); the host drains them with
+    /// `take_output_buffer`. Replaces process-global thread-locals like the
+    /// old `DRAW_COMMANDS`.
+    output_buffers: HashMap<SymbolId, Vec<Value>>,
     trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
@@ -42,6 +50,8 @@ impl Env {
             closures: Vec::new(),
             overload_sets: Vec::new(),
             output: Vec::new(),
+            symbols: SymbolTable::new(),
+            output_buffers: HashMap::new(),
             trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
@@ -130,6 +140,8 @@ impl Env {
             native_fns: &self.native_fns,
             output: &mut self.output,
             trace: &mut self.trace,
+            symbols: &mut self.symbols,
+            output_buffers: &mut self.output_buffers,
         }
         .step();
 
@@ -224,6 +236,8 @@ impl Env {
             native_fns: &self.native_fns,
             output: &mut self.output,
             trace: &mut self.trace,
+            symbols: &mut self.symbols,
+            output_buffers: &mut self.output_buffers,
         }
         .call_closure_sync(callable, args)
     }
@@ -499,8 +513,16 @@ impl Env {
             }
         }
 
-        // 3. Output buffer (contains strings, but they're Rust Strings not heap-allocated)
-        // — no heap values to mark
+        // 3. Print output buffer holds Rust Strings, not heap values — nothing
+        //    to mark. The per-symbol output buffers, however, hold heap-backed
+        //    Values (e.g. draw-command enum variants with string tags + list
+        //    args), so they are GC roots: a frame can trip a collection mid-run
+        //    while commands are still buffered.
+        for buffer in self.output_buffers.values() {
+            for val in buffer {
+                self.heap.mark_value(*val);
+            }
+        }
 
         // Sweep phase
         self.heap.sweep();
@@ -509,6 +531,44 @@ impl Env {
     /// Get the output buffer contents and clear it.
     pub fn take_output(&mut self) -> Vec<String> {
         std::mem::take(&mut self.output)
+    }
+
+    // ── Symbols & buffered output (host side) ────────────────────
+
+    /// Intern a symbol name, returning its stable id. Idempotent — the host and
+    /// the script share an id by interning the same name. Use the returned id to
+    /// address an output buffer with `take_output_buffer`.
+    pub fn intern_symbol(&mut self, name: &str) -> SymbolId {
+        self.symbols.intern(name)
+    }
+
+    /// Resolve a symbol id back to its name.
+    pub fn symbol_name(&self, sym: SymbolId) -> Option<&str> {
+        self.symbols.name(sym)
+    }
+
+    /// Drain and return everything pushed into the buffer bound to `sym` since
+    /// the last drain. The buffer is left empty.
+    pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
+        self.output_buffers
+            .get_mut(&sym)
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    /// Peek at the buffer bound to `sym` without draining it.
+    pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
+        self.output_buffers
+            .get(&sym)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
+    pub fn clear_output_buffer(&mut self, sym: SymbolId) {
+        if let Some(buf) = self.output_buffers.get_mut(&sym) {
+            buf.clear();
+        }
     }
 }
 
@@ -633,6 +693,48 @@ mod call_function_tests {
         let rendered = format!("{:?}", host);
         assert!(rendered.contains("Env"), "got: {rendered}");
         assert!(rendered.contains("native_fns"), "got: {rendered}");
+    }
+
+    #[test]
+    fn push_output_buffer_round_trips_and_drains() {
+        let mut env = Env::new();
+        env.run_source(
+            "let s = symbol(\"draw\")\n\
+             push_output(s, 1)\n\
+             push_output(s, 2)\n\
+             push_output(s, 3)\n",
+        )
+        .unwrap();
+        let sym = env.intern_symbol("draw");
+        let drained = env.take_output_buffer(sym);
+        assert_eq!(drained, vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        // A second drain is empty — `take` leaves the buffer cleared.
+        assert!(env.take_output_buffer(sym).is_empty());
+    }
+
+    #[test]
+    fn output_buffer_values_survive_gc() {
+        // A heap-backed value pushed into a buffer must survive a collection
+        // triggered mid-run by other allocations. If buffers weren't GC roots,
+        // the string would be swept and its contents corrupted.
+        let mut env = Env::new();
+        env.run_source(
+            "let s = symbol(\"out\")\n\
+             push_output(s, \"keep-me\")\n\
+             let acc = 0\n\
+             for i in range(0, 5000) do\n\
+               let tmp = \"garbage\" ++ str(i)\n\
+               acc = acc + len(tmp)\n\
+             end\n",
+        )
+        .unwrap();
+        let sym = env.intern_symbol("out");
+        let drained = env.take_output_buffer(sym);
+        assert_eq!(drained.len(), 1);
+        match drained[0] {
+            Value::String(id) => assert_eq!(env.heap().get_string(id), "keep-me"),
+            other => panic!("expected string, got {:?}", other),
+        }
     }
 
     #[test]

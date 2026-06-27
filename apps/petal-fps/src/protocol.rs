@@ -12,8 +12,8 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::DrawCommand;
-use crate::native_fns::{DRAW_COMMANDS, FRAME_INFO, INPUT_STATE};
+use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
+use crate::native_fns::{FRAME_INFO, INPUT_STATE};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -188,15 +188,15 @@ pub fn capture_draw_commands(
     env: &mut Env,
     stack_id: StackKey,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+    clear_draw_commands(env);
     env.run_speculative(stack_id)?;
-    let commands = DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().drain(..).collect::<Vec<_>>());
+    let commands = take_draw_commands(env);
     let output = env.take_output();
     Ok((commands, output))
 }
 
 pub fn run_one_frame(env: &mut Env, stack_id: StackKey) -> Result<i64, String> {
-    DRAW_COMMANDS.with(|cmds| cmds.borrow_mut().clear());
+    clear_draw_commands(env);
     let frame_count = FRAME_INFO.with(|f| {
         let mut info = f.borrow_mut();
         info.frame_count += 1;

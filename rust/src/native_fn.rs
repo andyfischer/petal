@@ -3,9 +3,12 @@
 //! Allows Rust functions to be registered and called from Petal code
 //! via a stack-based API.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::heap::Heap;
+use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::Value;
 
 /// Identifier for a registered native function.
@@ -91,15 +94,25 @@ pub struct PetalCxt<'a> {
     args: &'a [Value],
     heap: &'a mut Heap,
     output: &'a mut Vec<String>,
+    symbols: &'a mut SymbolTable,
+    output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     results: Vec<Value>,
 }
 
 impl<'a> PetalCxt<'a> {
-    pub fn new(args: &'a [Value], heap: &'a mut Heap, output: &'a mut Vec<String>) -> Self {
+    pub fn new(
+        args: &'a [Value],
+        heap: &'a mut Heap,
+        output: &'a mut Vec<String>,
+        symbols: &'a mut SymbolTable,
+        output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    ) -> Self {
         Self {
             args,
             heap,
             output,
+            symbols,
+            output_buffers,
             results: Vec::new(),
         }
     }
@@ -197,6 +210,41 @@ impl<'a> PetalCxt<'a> {
     pub fn print(&mut self, line: String) {
         println!("{}", line);
         self.output.push(line);
+    }
+
+    // --- Symbols & buffered output ---
+
+    /// Intern a symbol name, returning its stable id. Idempotent.
+    pub fn intern_symbol(&mut self, name: &str) -> SymbolId {
+        self.symbols.intern(name)
+    }
+
+    /// Get a symbol argument at 1-indexed position.
+    pub fn get_symbol(&self, index: usize) -> Result<SymbolId, String> {
+        match self.get_value(index)? {
+            Value::Symbol(id) => Ok(id),
+            other => Err(format!(
+                "Expected symbol at arg {}, got {}",
+                index,
+                other.type_name()
+            )),
+        }
+    }
+
+    /// Push a value into the buffered-output channel bound to `sym`.
+    /// The host pulls it later via `Env::take_output_buffer`.
+    pub fn push_output(&mut self, sym: SymbolId, value: Value) {
+        self.output_buffers.entry(sym).or_default().push(value);
+    }
+
+    /// Convenience: build a `Value::EnumVariant { tag, data }` on the heap and
+    /// push it into the buffer bound to `sym`. This is the standard encoding for
+    /// host command streams (e.g. draw commands): a string tag plus a flat list
+    /// of argument values.
+    pub fn emit(&mut self, sym: SymbolId, tag: &str, data: Vec<Value>) {
+        let tag = self.heap.alloc_string(tag.to_string());
+        let data = self.heap.alloc_list(data);
+        self.push_output(sym, Value::EnumVariant { tag, data });
     }
 
     // --- Heap access ---

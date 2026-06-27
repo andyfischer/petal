@@ -17,7 +17,7 @@
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
 //
-//   2. Canvas builtins — `petal-web-canvas/rust/src/lib.rs`'s
+//   2. Canvas builtins — `apps/petal-web-canvas/rust/src/lib.rs`'s
 //      `register_graphics()`, the drawing + input/timing API that the WASM
 //      runtime exposes to browser sketches.
 //
@@ -43,7 +43,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
-const canvasLibRs = join(repoRoot, "petal-web-canvas/rust/src/lib.rs");
+const canvasLibRs = join(repoRoot, "apps/petal-web-canvas/rust/src/lib.rs");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -363,7 +363,7 @@ function extractCanvas(): {
       variadic: parsed.variadic,
       params: parsed.params,
       source: {
-        file: "petal-web-canvas/rust/src/lib.rs",
+        file: "apps/petal-web-canvas/rust/src/lib.rs",
         line: fn?.line ?? 0,
       },
     });
@@ -399,7 +399,7 @@ export function buildManifest(): StdlibManifest {
     generatedFrom: [
       "rust/src/builtins/mod.rs",
       "rust/src/builtins/*.rs",
-      "petal-web-canvas/rust/src/lib.rs",
+      "apps/petal-web-canvas/rust/src/lib.rs",
     ],
     categories,
     functions,

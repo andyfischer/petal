@@ -6,27 +6,19 @@
 
 use smallvec::SmallVec;
 
-use crate::stack::{LoopKeyPart, LoopState, RuntimeStateKey};
+use crate::stack::{LoopKeyPart, RuntimeStateKey};
 
 use super::*;
 
 impl<'a> Evaluator<'a> {
-    /// Walk the stack frames collecting iteration indices from active loops.
+    /// Walk the stack frames collecting the current iteration index of every
+    /// active loop, outermost first. All loop kinds share the same counter, so
+    /// no per-kind handling is needed here.
     fn loop_key_parts(&self) -> SmallVec<[LoopKeyPart; 2]> {
         let mut parts = SmallVec::new();
         for frame in &self.stack.frames {
             for (_, loop_state) in &frame.loop_states {
-                match loop_state {
-                    LoopState::For { index, .. } | LoopState::NumericFor { index, .. } => {
-                        // index is 1-past-current (already incremented), so
-                        // current = index - 1
-                        parts.push(LoopKeyPart::Index(index.saturating_sub(1)));
-                    }
-                    LoopState::WhileCondition { iteration }
-                    | LoopState::WhileBody { iteration } => {
-                        parts.push(LoopKeyPart::Index(*iteration));
-                    }
-                }
+                parts.push(LoopKeyPart::Index(loop_state.iteration));
             }
         }
         parts

@@ -30,25 +30,34 @@ pub struct RuntimeStateKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StackKey(pub u32);
 
-/// Per-loop state stored in the frame that owns the loop term.
+/// Per-loop progress stored in the frame that owns the loop term.
 ///
 /// Because this lives on the Frame, it is automatically discarded when the
 /// frame is popped (e.g. by an early `return`), which prevents stale state
 /// from leaking across function calls.
-pub enum LoopState {
-    /// For-each loop: elements copied from the list and the next index to process.
-    For { elements: Vec<Value>, index: usize },
-    /// Numeric for-loop (`for i in range(a, b)`): iterates an integer counter
-    /// with no list allocation. `current` is the next integer value to yield,
-    /// `end` is the exclusive upper bound, and `index` tracks the iteration
-    /// count (1-past-current after increment) for per-iteration state keying,
-    /// mirroring `For`'s `index`.
-    NumericFor { current: i64, end: i64, index: usize },
-    /// While loop: condition has been pushed and we're awaiting its result.
-    /// `iteration` tracks the current iteration (0-based) for per-iteration state.
-    WhileCondition { iteration: usize },
-    /// While loop: body is executing for this iteration.
-    WhileBody { iteration: usize },
+///
+/// Every loop kind tracks the same 0-based `iteration` counter, so
+/// per-iteration `state` keying treats them uniformly (see [`LoopKeyPart`]).
+/// The kind-specific data needed to produce the next value lives in [`kind`].
+pub struct LoopState {
+    /// 0-based index of the iteration currently executing.
+    pub iteration: usize,
+    /// What this loop iterates over, and any per-kind progress.
+    pub kind: LoopKind,
+}
+
+/// The source a loop draws its values from, plus any kind-specific phase.
+pub enum LoopKind {
+    /// `for x in list` — iterates a snapshot of the list's elements; the
+    /// current element is `elements[iteration]`.
+    ForEach { elements: Vec<Value> },
+    /// `for i in range(start, end)` — iterates integers with no list
+    /// allocation. Yields `start + iteration` while it stays below `end`.
+    Range { start: i64, end: i64 },
+    /// `while cond` — alternates between evaluating the condition block and
+    /// running the body. `running_body` is false while the condition is being
+    /// evaluated and true while the body executes.
+    While { running_body: bool },
 }
 
 /// Runtime execution state for a program.

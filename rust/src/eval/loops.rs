@@ -5,7 +5,7 @@
 //! progress lives in the owning frame's `loop_states`, so it is discarded
 //! automatically if the frame pops early (e.g. on `return`).
 
-use crate::stack::LoopState;
+use crate::stack::{LoopKind, LoopState};
 
 use super::*;
 
@@ -55,36 +55,61 @@ impl<'a> Evaluator<'a> {
         ControlFlow::FramePushed
     }
 
-    /// Yield the next element / counter value for a for-style loop, removing
-    /// the loop state when iteration is complete.
-    fn next_for_value(&mut self, term: &Term) -> Option<Value> {
+    /// Advance a for-style loop (for-each or numeric range) to the iteration
+    /// it should run next, returning that iteration's loop value — or `None`
+    /// when the loop is finished, in which case the loop state is removed.
+    ///
+    /// `first_visit` is true only on the loop term's initial execution, where
+    /// iteration 0 runs without advancing; every later visit steps the
+    /// iteration counter forward by one.
+    fn next_for_value(&mut self, term: &Term, first_visit: bool) -> Option<Value> {
         let frame = self.stack.frames.last_mut().unwrap();
-        let next = match frame.get_loop_state_mut(&term.id) {
-            Some(LoopState::For { elements, index }) => {
-                if *index < elements.len() {
-                    let elem = elements[*index];
-                    *index += 1;
-                    Some(elem)
-                } else {
-                    None
-                }
+        let state = frame.get_loop_state_mut(&term.id)?;
+        if !first_visit {
+            state.iteration += 1;
+        }
+        let i = state.iteration;
+        let next = match &state.kind {
+            LoopKind::ForEach { elements } => elements.get(i).copied(),
+            LoopKind::Range { start, end } => {
+                let value = *start + i as i64;
+                (value < *end).then_some(Value::Int(value))
             }
-            Some(LoopState::NumericFor { current, end, index }) => {
-                if *current < *end {
-                    let val = Value::Int(*current);
-                    *current += 1;
-                    *index += 1;
-                    Some(val)
-                } else {
-                    None
-                }
-            }
-            _ => return None,
+            LoopKind::While { .. } => None,
         };
         if next.is_none() {
             frame.remove_loop_state(&term.id);
         }
         next
+    }
+
+    /// True only on a loop term's first execution, before its loop state has
+    /// been initialized.
+    fn first_loop_visit(&self, term: &Term) -> bool {
+        self.stack
+            .frames
+            .last()
+            .map(|f| !f.has_loop_state(&term.id))
+            .unwrap_or(false)
+    }
+
+    /// Store a freshly initialized loop state (iteration 0) on the current
+    /// frame for `term`.
+    fn init_loop_state(&mut self, term: &Term, kind: LoopKind) {
+        if let Some(frame) = self.stack.frames.last_mut() {
+            frame.set_loop_state(term.id, LoopState { iteration: 0, kind });
+        }
+    }
+
+    /// Drive a for-style loop one step: advance to the next iteration's value
+    /// and push its body frame, or finish the loop once values run out. Shared
+    /// by the for-each and numeric-range handlers once their kind is set up.
+    fn advance_for_loop(&mut self, term: &Term, first_visit: bool) -> ControlFlow {
+        match self.next_for_value(term, first_visit) {
+            Some(val) => self.push_loop_body(term, term.child_blocks[0], Some(val)),
+            // All iterations complete.
+            None => self.produce(term, Value::Nil),
+        }
     }
 
     /// `for x in list { ... }` — snapshots the list on first visit, then
@@ -94,14 +119,8 @@ impl<'a> Evaluator<'a> {
             return done;
         }
 
-        // Initialize loop state on the first visit.
-        let needs_init = self
-            .stack
-            .frames
-            .last()
-            .map(|f| !f.has_loop_state(&term.id))
-            .unwrap_or(false);
-        if needs_init {
+        let first_visit = self.first_loop_visit(term);
+        if first_visit {
             let Value::List(list_id) = inputs[0] else {
                 return ControlFlow::Error(format!(
                     "Cannot iterate over {}",
@@ -109,16 +128,10 @@ impl<'a> Evaluator<'a> {
                 ));
             };
             let elements = self.heap.get_list(list_id).to_vec();
-            if let Some(frame) = self.stack.frames.last_mut() {
-                frame.set_loop_state(term.id, LoopState::For { elements, index: 0 });
-            }
+            self.init_loop_state(term, LoopKind::ForEach { elements });
         }
 
-        match self.next_for_value(term) {
-            Some(elem) => self.push_loop_body(term, term.child_blocks[0], Some(elem)),
-            // All iterations complete.
-            None => self.produce(term, Value::Nil),
-        }
+        self.advance_for_loop(term, first_visit)
     }
 
     /// `for i in range(a, b)` — identical control flow to `exec_for_loop`,
@@ -128,31 +141,17 @@ impl<'a> Evaluator<'a> {
             return done;
         }
 
-        // Initialize loop state on the first visit: read the integer bounds.
-        let needs_init = self
-            .stack
-            .frames
-            .last()
-            .map(|f| !f.has_loop_state(&term.id))
-            .unwrap_or(false);
-        if needs_init {
+        let first_visit = self.first_loop_visit(term);
+        if first_visit {
             let (Value::Int(start), Value::Int(end)) = (inputs[0], inputs[1]) else {
                 return ControlFlow::Error(
                     "numeric for-loop bounds must be integers".to_string(),
                 );
             };
-            if let Some(frame) = self.stack.frames.last_mut() {
-                frame.set_loop_state(
-                    term.id,
-                    LoopState::NumericFor { current: start, end, index: 0 },
-                );
-            }
+            self.init_loop_state(term, LoopKind::Range { start, end });
         }
 
-        match self.next_for_value(term) {
-            Some(val) => self.push_loop_body(term, term.child_blocks[0], Some(val)),
-            None => self.produce(term, Value::Nil),
-        }
+        self.advance_for_loop(term, first_visit)
     }
 
     /// `while cond { ... }` — alternates between running the condition block
@@ -165,22 +164,24 @@ impl<'a> Evaluator<'a> {
         let cond_block = term.child_blocks[0];
         let body_block = term.child_blocks[1];
 
-        // Which phase is this visit in? (condition just returned / body just
-        // returned / fresh start)
+        // Read the current phase: whether the body (rather than the condition)
+        // was the block that just returned, plus the iteration counter. Absent
+        // when this is a fresh start with no loop state yet.
         let phase = self
             .stack
             .frames
             .last()
             .and_then(|f| f.get_loop_state(&term.id))
-            .map(|ls| match ls {
-                LoopState::WhileCondition { iteration } => (true, *iteration),
-                LoopState::WhileBody { iteration } => (false, *iteration),
-                _ => (false, 0),
+            .map(|ls| {
+                let running_body = matches!(ls.kind, LoopKind::While { running_body: true });
+                (running_body, ls.iteration)
             });
 
         match phase {
-            Some((true, iteration)) => {
-                // Condition block just returned; check its result.
+            // Fresh start — run the condition for iteration 0.
+            None => self.push_while_condition(term, cond_block, 0),
+            // Condition block just returned; check its result.
+            Some((false, iteration)) => {
                 let cond_val = self.read_register(term.id);
                 if !cond_val.is_truthy() {
                     // Condition false — loop done.
@@ -189,24 +190,24 @@ impl<'a> Evaluator<'a> {
                     }
                     return self.produce(term, Value::Nil);
                 }
-                // Transition to WhileBody so state keys see the iteration.
+                // Enter the body phase so per-iteration state keys see this iteration.
                 if let Some(frame) = self.stack.frames.last_mut() {
-                    frame.set_loop_state(term.id, LoopState::WhileBody { iteration });
+                    frame.set_loop_state(
+                        term.id,
+                        LoopState { iteration, kind: LoopKind::While { running_body: true } },
+                    );
                 }
                 self.push_loop_body(term, body_block, None)
             }
-            Some((false, iteration)) => {
-                // Body just returned — run the condition for the next iteration.
+            // Body just returned — run the condition for the next iteration.
+            Some((true, iteration)) => {
                 self.push_while_condition(term, cond_block, iteration + 1)
-            }
-            None => {
-                // Fresh start — run the condition for iteration 0.
-                self.push_while_condition(term, cond_block, 0)
             }
         }
     }
 
-    /// Push the while-condition block and record the upcoming iteration.
+    /// Push the while-condition block and record that we are evaluating the
+    /// condition for `iteration`.
     fn push_while_condition(
         &mut self,
         term: &Term,
@@ -223,7 +224,10 @@ impl<'a> Evaluator<'a> {
             Some(parent_frame_idx),
         ));
         if let Some(frame) = self.stack.frames.get_mut(parent_frame_idx) {
-            frame.set_loop_state(term.id, LoopState::WhileCondition { iteration });
+            frame.set_loop_state(
+                term.id,
+                LoopState { iteration, kind: LoopKind::While { running_body: false } },
+            );
         }
         ControlFlow::FramePushed
     }

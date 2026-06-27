@@ -37,7 +37,7 @@ point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
 | `native_fn.rs` | Native function FFI (`NativeFnTable`, `PetalCxt`) |
 | `builtins/` | Built-in function implementations (io, math, collections, …) |
 | `trace.rs` | Ring-buffered per-term execution trace |
-| `hot_reload.rs` | Hot-reload state reconciliation (used by petal-sdl) |
+| `transfer_state.rs` | Transfer a stack's state onto a different program — reconciles state by StateKey (used for hot-reload in petal-sdl) |
 | `ir_display.rs` | Text pretty-printer for IR (for `show-ir` without `--json`) |
 | `ir_serialize.rs` | Custom serde helpers for IR JSON output |
 | `wasm.rs` | `wasm-bindgen` FFI used by petal-web and petal-diagram-canvas |
@@ -295,7 +295,7 @@ name and get its return `Value` back, the event-callback counterpart to
 lambdas bound to a name); `call_function` then invokes one synchronously
 without re-running the program. This replaces the older "re-run the whole
 program and stash a side effect in a thread-local" pattern. The captured
-table is cleared on `hot_reload` and refreshed on the next `run`.
+table is cleared on `transfer_state` and refreshed on the next `run`.
 
 ### Native Functions
 

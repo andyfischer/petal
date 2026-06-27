@@ -49,7 +49,7 @@ impl Env {
     }
 
     /// Compile source code into a Program without loading it.
-    /// Use this to prepare a program for `hot_reload`.
+    /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(
         &self,
         program_id: ProgramId,
@@ -183,7 +183,7 @@ impl Env {
     /// Call a top-level Petal function by name on an already-run stack,
     /// returning its result. The program must have been `run` at least once so
     /// its top-level functions are defined; the captured function table is
-    /// refreshed on every run and dropped on `hot_reload`.
+    /// refreshed on every run and dropped on `transfer_state`.
     ///
     /// This is the host-facing alternative to the "re-run the whole program
     /// and capture a side effect in a thread-local" pattern: it invokes one
@@ -194,7 +194,7 @@ impl Env {
     /// is captured into its closure by value when the program runs, so a called
     /// function observes that variable as of the last `run` and cannot write it
     /// back into the persistent state map. To feed fresh state into a call, pass
-    /// it through `args`, or `run`/`hot_reload` again to recapture.
+    /// it through `args`, or `run`/`transfer_state` again to recapture.
     pub fn call_function(
         &mut self,
         stack_id: StackKey,
@@ -346,7 +346,7 @@ impl Env {
         result
     }
 
-    // ── Internal accessors (used by hot_reload module) ─────────
+    // ── Internal accessors (used by transfer_state module) ─────────
 
     /// Get a shared reference to a stack.
     pub(crate) fn stack(&self, key: StackKey) -> Option<&Stack> {
@@ -636,7 +636,7 @@ mod call_function_tests {
     }
 
     #[test]
-    fn functions_refreshed_after_hot_reload() {
+    fn functions_refreshed_after_transfer_state() {
         let mut env = Env::new();
         let pid = env.load_program("fn f()\n  1\nend\n").unwrap();
         let sid = env.create_stack(pid).unwrap();
@@ -644,7 +644,7 @@ mod call_function_tests {
         assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(1));
 
         let new_program = env.compile_program(pid, "fn f()\n  2\nend\n").unwrap();
-        env.hot_reload(sid, new_program).unwrap();
+        env.transfer_state(sid, new_program).unwrap();
         // Before re-running, the stale table was cleared.
         assert!(env.call_function(sid, "f", &[]).is_err());
         env.run(sid).unwrap();

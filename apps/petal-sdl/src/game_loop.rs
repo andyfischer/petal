@@ -646,7 +646,7 @@ fn check_hot_reload(
                     return;
                 }
             };
-            match env.hot_reload(stack_id, new_program) {
+            match env.transfer_state(stack_id, new_program) {
                 Ok(result) => {
                     eprintln!(
                         "[hot-reload] preserved: {}, dropped: {}",

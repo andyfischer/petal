@@ -11,7 +11,6 @@ pub mod dot_graph;
 pub mod env;
 pub mod eval;
 pub mod extract;
-pub mod hot_reload;
 pub mod heap;
 pub mod ir_display;
 pub mod ir_serialize;
@@ -23,6 +22,7 @@ pub mod rewrite;
 pub mod source_map;
 pub mod stack;
 pub mod trace;
+pub mod transfer_state;
 pub mod value;
 
 #[cfg(feature = "wasm")]

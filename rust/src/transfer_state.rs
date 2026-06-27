@@ -1,29 +1,32 @@
-//! Hot-reload support for Petal programs.
+//! Transfer a running stack's state onto a different program.
 //!
-//! Replaces the program for a running stack with a new compiled program,
-//! preserving state values with matching StateKeys across the reload.
+//! Replaces the program backing a running stack with a new compiled program,
+//! preserving state values with matching StateKeys across the transfer.
+//! Hot-reloading is one use of this, but it can reshape a stack for any new
+//! program that shares the same StateKeys.
 
 use crate::env::Env;
 use crate::program::Program;
 use crate::stack::StackStatus;
 
-/// Result of a hot-reload operation.
-pub struct HotReloadResult {
-    /// Number of state values preserved across the reload.
+/// Result of transferring a stack's state onto a new program.
+pub struct TransferStateResult {
+    /// Number of state values preserved across the transfer.
     pub state_preserved: usize,
     /// Number of state values dropped (no matching key in new program).
     pub state_dropped: usize,
 }
 
 impl Env {
-    /// Hot-reload: replace the program for a running stack with a pre-compiled program.
-    /// State values with matching StateKeys are preserved across the reload.
-    /// The new program's ProgramId must match the stack's existing program.
-    pub fn hot_reload(
+    /// Transfer a running stack's state onto a pre-compiled program.
+    /// State values with matching StateKeys are preserved across the transfer;
+    /// the rest are dropped. The new program's ProgramId must match the
+    /// stack's existing program.
+    pub fn transfer_state(
         &mut self,
         stack_id: crate::stack::StackKey,
         new_program: Program,
-    ) -> Result<HotReloadResult, String> {
+    ) -> Result<TransferStateResult, String> {
         let stack = self
             .stack(stack_id)
             .ok_or("Stack not found")?;
@@ -63,7 +66,7 @@ impl Env {
 
         self.push_root_frame_for(stack_id)?;
 
-        Ok(HotReloadResult {
+        Ok(TransferStateResult {
             state_preserved: preserved,
             state_dropped: dropped,
         })
@@ -75,7 +78,7 @@ mod tests {
     use crate::env::Env;
 
     #[test]
-    fn hot_reload_preserves_state() {
+    fn transfer_state_preserves_state() {
         let mut env = Env::new();
 
         // Run initial program that sets state via StateWrite
@@ -90,25 +93,25 @@ print(counter)
         let output_v1 = env.take_output();
         assert_eq!(output_v1, vec!["5"]);
 
-        // Hot-reload with new source that reads the same state
+        // Transfer state onto new source that reads the same state
         let source_v2 = r#"
 state counter = 0
 counter += 10
 print(counter)
 "#;
         let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.hot_reload(sid, new_program).unwrap();
+        let result = env.transfer_state(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1);
         assert_eq!(result.state_dropped, 0);
 
-        // Run the reloaded program: counter=5 (preserved), +=10 -> 15
+        // Run the program after transfer: counter=5 (preserved), +=10 -> 15
         env.run(sid).unwrap();
         let output_v2 = env.take_output();
         assert_eq!(output_v2, vec!["15"]);
     }
 
     #[test]
-    fn hot_reload_drops_removed_state() {
+    fn transfer_state_drops_removed_state() {
         let mut env = Env::new();
 
         // Run with two state variables
@@ -123,13 +126,13 @@ print(a + b)
         let output = env.take_output();
         assert_eq!(output, vec!["3"]);
 
-        // Reload with only one state variable
+        // Transfer onto a program with only one state variable
         let source_v2 = r#"
 state a = 1
 print(a)
 "#;
         let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.hot_reload(sid, new_program).unwrap();
+        let result = env.transfer_state(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1); // 'a' preserved
         assert_eq!(result.state_dropped, 1);   // 'b' dropped
 
@@ -140,7 +143,7 @@ print(a)
     }
 
     #[test]
-    fn hot_reload_preserves_state_after_reordering() {
+    fn transfer_state_preserves_state_after_reordering() {
         let mut env = Env::new();
 
         // Run with a=1, b=2, modify both
@@ -157,14 +160,14 @@ print(a, b)
         let output = env.take_output();
         assert_eq!(output, vec!["10 20"]);
 
-        // Reload with state declarations in reversed order
+        // Transfer onto state declarations in reversed order
         let source_v2 = r#"
 state b = 0
 state a = 0
 print(a, b)
 "#;
         let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.hot_reload(sid, new_program).unwrap();
+        let result = env.transfer_state(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 2); // both preserved
         assert_eq!(result.state_dropped, 0);
 
@@ -175,7 +178,7 @@ print(a, b)
     }
 
     #[test]
-    fn hot_reload_fresh_state_gets_initialized() {
+    fn transfer_state_fresh_state_gets_initialized() {
         let mut env = Env::new();
 
         // Run with one state
@@ -188,14 +191,14 @@ print(x)
         env.run(sid).unwrap();
         env.take_output(); // discard
 
-        // Reload adding a new state variable
+        // Transfer onto a program that adds a new state variable
         let source_v2 = r#"
 state x = 10
 state y = 20
 print(x + y)
 "#;
         let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.hot_reload(sid, new_program).unwrap();
+        let result = env.transfer_state(sid, new_program).unwrap();
         assert_eq!(result.state_preserved, 1); // 'x' preserved
 
         env.run(sid).unwrap();

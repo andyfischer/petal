@@ -51,7 +51,7 @@ if !initialized then
     while col < brick_cols do
       let bx = brick_offset_x + col * (brick_w + brick_pad)
       let by = brick_offset_y + row * (brick_h + brick_pad)
-      push(bricks, { x: bx, y: by, alive: true, row: row })
+      bricks = append(bricks, { x: bx, y: by, alive: true, row: row })
       col += 1
     end
     row += 1
@@ -80,7 +80,7 @@ ball_x += ball_dx * delta
 ball_y += ball_dy * delta
 
 // --- Store ball trail ---
-push(ball_trail, { x: ball_x, y: ball_y })
+ball_trail = append(ball_trail, { x: ball_x, y: ball_y })
 if len(ball_trail) > 12 then
   ball_trail = slice(ball_trail, len(ball_trail) - 12, len(ball_trail))
 end
@@ -135,7 +135,7 @@ while i < len(bricks) do
         let py = float(b.y) + random(0.0, float(brick_h))
         let pvx = random(-120.0, 120.0)
         let pvy = random(-180.0, 20.0)
-        push(particles, { x: px, y: py, vx: pvx, vy: pvy, life: 1.0, r: c.r, g: c.g, b: c.b })
+        particles = append(particles, { x: px, y: py, vx: pvx, vy: pvy, life: 1.0, r: c.r, g: c.g, b: c.b })
         p += 1
       end
 

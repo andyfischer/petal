@@ -17,7 +17,7 @@ let G = 5000.0
 // Initialize bodies in orbital configurations
 if len(bodies) == 0 then
     // Central massive body
-    push(bodies, {
+    bodies = append(bodies, {
         x: sw / 2.0, y: sh / 2.0,
         vx: 0.0, vy: 0.0,
         mass: 30.0,
@@ -30,7 +30,7 @@ if len(bodies) == 0 then
         let radius = 100.0 + random(30.0, 120.0)
         let orbital_speed = sqrt(G * 30.0 / radius) * 0.4
 
-        push(bodies, {
+        bodies = append(bodies, {
             x: sw / 2.0 + cos(angle) * radius,
             y: sh / 2.0 + sin(angle) * radius,
             vx: -sin(angle) * orbital_speed,
@@ -46,7 +46,7 @@ end
 // Calculate gravitational forces between all pairs
 let forces = []
 for i in range(0, len(bodies)) do
-    push(forces, { fx: 0.0, fy: 0.0 })
+    forces = append(forces, { fx: 0.0, fy: 0.0 })
 end
 
 for i in range(0, len(bodies)) do
@@ -96,10 +96,10 @@ for i in range(0, len(bodies)) do
 
     // Record trail
     if frame_count() % 2 == 0 then
-        push(trails, { x: nx, y: ny, r: b.r, g: b.g, b: b.b, life: 1.0 })
+        trails = append(trails, { x: nx, y: ny, r: b.r, g: b.g, b: b.b, life: 1.0 })
     end
 
-    push(new_bodies, {
+    new_bodies = append(new_bodies, {
         x: nx, y: ny, vx: nvx, vy: nvy,
         mass: b.mass, r: b.r, g: b.g, b: b.b
     })
@@ -110,7 +110,7 @@ bodies = new_bodies
 let new_trails = []
 for t in trails do
     let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.3 }
-    if nt.life > 0.0 then push(new_trails, nt) end
+    if nt.life > 0.0 then new_trails = append(new_trails, nt) end
 end
 trails = new_trails
 if len(trails) > 4000 then

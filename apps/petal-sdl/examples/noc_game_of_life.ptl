@@ -27,15 +27,15 @@ if cols == 0 then
         let color_row = []
         for x in range(0, cols) do
             if random(0.0, 1.0) < 0.3 then
-                push(row, 1)
-                push(color_row, { r: int(random(100.0, 255.0)), g: int(random(100.0, 255.0)), b: int(random(150.0, 255.0)), age: 0 })
+                row = append(row, 1)
+                color_row = append(color_row, { r: int(random(100.0, 255.0)), g: int(random(100.0, 255.0)), b: int(random(150.0, 255.0)), age: 0 })
             else
-                push(row, 0)
-                push(color_row, { r: 0, g: 0, b: 0, age: 0 })
+                row = append(row, 0)
+                color_row = append(color_row, { r: 0, g: 0, b: 0, age: 0 })
             end
         end
-        push(grid, row)
-        push(cell_colors, color_row)
+        grid = append(grid, row)
+        cell_colors = append(cell_colors, color_row)
     end
 end
 
@@ -122,11 +122,11 @@ if !paused then
                     end
                 end
 
-                push(row, new_cell)
-                push(color_row, new_color)
+                row = append(row, new_cell)
+                color_row = append(color_row, new_color)
             end
-            push(next_grid, row)
-            push(new_colors, color_row)
+            next_grid = append(next_grid, row)
+            new_colors = append(new_colors, color_row)
         end
         grid = next_grid
         cell_colors = new_colors

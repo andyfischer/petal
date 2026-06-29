@@ -14,7 +14,7 @@ time += delta
 if len(movers) == 0 then
     for i in range(0, 20) do
         let mass = 1.0 + random(0.0, 3.0)
-        push(movers, {
+        movers = append(movers, {
             x: random(0.0, sw),
             y: random(0.0, sh),
             vx: random(-50.0, 50.0),
@@ -62,7 +62,7 @@ for m in movers do
     if nx < 0.0 || nx > sw then nvx = -nvx * 0.8; nx = max(0.0, min(sw, nx)) end
     if ny < 0.0 || ny > sh then nvy = -nvy * 0.8; ny = max(0.0, min(sh, ny)) end
 
-    push(new_movers, {
+    new_movers = append(new_movers, {
         x: nx, y: ny, vx: nvx, vy: nvy,
         mass: m.mass, r: m.r, g: m.g, b: m.b
     })

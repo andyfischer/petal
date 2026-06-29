@@ -106,7 +106,7 @@ if key_pressed("space") && on_ground then
     // Spawn dust particles
     let i = 0
     while i < 6 do
-        push(particles, {
+        particles = append(particles, {
             x: px + float(pw) / 2.0 + random(-8.0, 8.0),
             y: py + float(ph),
             vx: random(-40.0, 40.0),

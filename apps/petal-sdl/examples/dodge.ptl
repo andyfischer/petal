@@ -59,7 +59,7 @@ let delta = dt()
 // Initialize stars once
 if len(stars) == 0 then
   for i in range(0, 80) do
-    push(stars, {
+    stars = append(stars, {
       x: random(0.0, float(SW)),
       y: random(0.0, float(SH)),
       brightness: random(40.0, 140.0),
@@ -126,7 +126,7 @@ if !game_over then
 
   // Add trail particles when moving
   if pspeed > 2.0 then
-    push(trail, {
+    trail = append(trail, {
       x: float(player_x),
       y: float(player_y),
       life: 1.0,
@@ -165,7 +165,7 @@ if !game_over then
       eb = int(random(20.0, 80.0))
     end
     let erot = random(0.0, 6.28)
-    push(enemies, {
+    enemies = append(enemies, {
       x: ex, y: -20.0, speed: espeed, radius: eradius,
       r: er, g: eg, b: eb, etype: etype, rot: erot
     })
@@ -195,7 +195,7 @@ if !game_over then
       end
       // Spawn explosion particles
       for p in range(0, 20) do
-        push(particles, {
+        particles = append(particles, {
           x: float(player_x), y: float(player_y),
           vx: random(-200.0, 200.0), vy: random(-200.0, 200.0),
           life: 1.0, r: 255, g: int(random(100.0, 255.0)), b: 50

@@ -76,7 +76,7 @@ frame += 1
 if !stars_inited then
   stars_inited = true
   for i in range(0, 80) do
-    push(stars, {
+    stars = append(stars, {
       x: random(0.0, 800.0),
       y: random(0.0, 600.0),
       brightness: random(80.0, 255.0),
@@ -99,7 +99,7 @@ if !shields_inited then
         if row == 0 && (col == 0 || col == 5) then skip = true end
         if row == 3 && (col == 2 || col == 3) then skip = true end
         if !skip then
-          push(shields, {
+          shields = append(shields, {
             x: sx + float(col) * 8.0,
             y: sy + float(row) * 8.0,
             health: 3
@@ -117,7 +117,7 @@ if !aliens_inited then
     for col in range(0, 8) do
       let ax = alien_start_x + float(col) * alien_gap_x
       let ay = alien_start_y + float(row) * alien_gap_y
-      push(aliens, { x: ax, y: ay, alive: true, row: row })
+      aliens = append(aliens, { x: ax, y: ay, alive: true, row: row })
     end
   end
 end
@@ -152,7 +152,7 @@ if !game_over then
   shoot_cooldown -= delta
   if key_pressed("space") && shoot_cooldown <= 0.0 then
     shoot_cooldown = 0.3
-    push(bullets, { x: player_x + player_w / 2.0 - 2.0, y: player_y - bullet_h })
+    bullets = append(bullets, { x: player_x + player_w / 2.0 - 2.0, y: player_y - bullet_h })
   end
 
   // --- Move bullets ---
@@ -207,14 +207,14 @@ if !game_over then
         if a.row == 0 then er = 255  eg = 80  eb = 80 end
         if a.row == 1 || a.row == 2 then er = 255  eg = 200  eb = 50 end
         if a.row == 3 || a.row == 4 then er = 80  eg = 255  eb = 80 end
-        push(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
+        explosions = append(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
         { x: a.x, y: a.y, alive: false, row: a.row }
       else
         a
       end
     end)
     if !hit then
-      push(new_bullets, b)
+      new_bullets = append(new_bullets, b)
     end
   end
   bullets = new_bullets
@@ -232,7 +232,7 @@ if !game_over then
       end
     end)
     if !hit then
-      push(new_bullets2, b)
+      new_bullets2 = append(new_bullets2, b)
     end
   end
   bullets = new_bullets2
@@ -250,7 +250,7 @@ if !game_over then
       end
     end)
     if !hit then
-      push(new_enemy_bullets, b)
+      new_enemy_bullets = append(new_enemy_bullets, b)
     end
   end
   enemy_bullets = new_enemy_bullets
@@ -266,7 +266,7 @@ if !game_over then
         idx = len(shooters) - 1
       end
       let shooter = shooters[idx]
-      push(enemy_bullets, { x: shooter.x + alien_w / 2.0 - 2.0, y: shooter.y + alien_h })
+      enemy_bullets = append(enemy_bullets, { x: shooter.x + alien_w / 2.0 - 2.0, y: shooter.y + alien_h })
     end
   end
 

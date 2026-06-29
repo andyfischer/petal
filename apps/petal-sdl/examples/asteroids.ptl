@@ -47,7 +47,7 @@ let frame = frame_count()
 if !stars_initialized then
   stars_initialized = true
   for i in range(0, 80) do
-    push(stars, {
+    stars = append(stars, {
       x: random(0.0, swf),
       y: random(0.0, shf),
       brightness: random(40.0, 180.0),
@@ -96,7 +96,7 @@ if !game_over then
     for i in range(0, 2) do
       let ex_dx = -dir_x[ship_dir] * random(40.0, 120.0) + random(-30.0, 30.0)
       let ex_dy = -dir_y[ship_dir] * random(40.0, 120.0) + random(-30.0, 30.0)
-      push(particles, {
+      particles = append(particles, {
         x: ship_x - dir_x[ship_dir] * 12.0,
         y: ship_y - dir_y[ship_dir] * 12.0,
         dx: ex_dx,
@@ -121,7 +121,7 @@ if !game_over then
   if cooldown < 0.0 then cooldown = 0.0 end
   if key_pressed("space") && cooldown <= 0.0 then
     cooldown = 0.15
-    push(bullets, {
+    bullets = append(bullets, {
       x: ship_x + dir_x[ship_dir] * 14.0,
       y: ship_y + dir_y[ship_dir] * 14.0,
       dx: dir_x[ship_dir] * bullet_speed,
@@ -130,7 +130,7 @@ if !game_over then
     })
     // Muzzle flash particles
     for i in range(0, 4) do
-      push(particles, {
+      particles = append(particles, {
         x: ship_x + dir_x[ship_dir] * 16.0,
         y: ship_y + dir_y[ship_dir] * 16.0,
         dx: dir_x[ship_dir] * random(60.0, 150.0) + random(-40.0, 40.0),
@@ -187,7 +187,7 @@ if !game_over then
     end
     let asize = random(15.0, 40.0)
     let arot = random(0.0, 360.0)
-    push(asteroids, { x: ax, y: ay, dx: adx, dy: ady, size: asize, rot: arot })
+    asteroids = append(asteroids, { x: ax, y: ay, dx: adx, dy: ady, size: asize, rot: arot })
   end
 
   // Update asteroids
@@ -225,7 +225,7 @@ if !game_over then
           let px_dir = random(-1.0, 1.0)
           let py_dir = random(-1.0, 1.0)
           let plen = max(abs(px_dir) + abs(py_dir), 0.3)
-          push(particles, {
+          particles = append(particles, {
             x: a.x + random(-5.0, 5.0),
             y: a.y + random(-5.0, 5.0),
             dx: px_dir / plen * spd,
@@ -244,7 +244,7 @@ if !game_over then
           let py_dir = random(-1.0, 1.0)
           let plen = max(abs(px_dir) + abs(py_dir), 0.3)
           let spd = random(20.0, 100.0)
-          push(particles, {
+          particles = append(particles, {
             x: a.x + random(-3.0, 3.0),
             y: a.y + random(-3.0, 3.0),
             dx: px_dir / plen * spd,
@@ -260,12 +260,12 @@ if !game_over then
         // Screen shake on hit
         screen_shake = 0.15
       else
-        push(remaining, b)
+        remaining = append(remaining, b)
       end
     end
     new_bullets = remaining
     if !hit then
-      push(new_asteroids, a)
+      new_asteroids = append(new_asteroids, a)
     end
   end
   asteroids = new_asteroids
@@ -287,7 +287,7 @@ if !game_over then
         let py_dir = random(-1.0, 1.0)
         let plen = max(abs(px_dir) + abs(py_dir), 0.3)
         let spd = random(30.0, 200.0)
-        push(particles, {
+        particles = append(particles, {
           x: ship_x + random(-4.0, 4.0),
           y: ship_y + random(-4.0, 4.0),
           dx: px_dir / plen * spd,

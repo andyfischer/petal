@@ -14,7 +14,7 @@ time += delta
 // Initialize walkers
 if len(walkers) == 0 then
     for i in range(0, 5) do
-        push(walkers, {
+        walkers = append(walkers, {
             x: float(sw) / 2.0,
             y: float(sh) / 2.0,
             r: 50 + i * 40,
@@ -56,9 +56,9 @@ for w in walkers do
     let ny = min(float(sh) - 1.0, max(0.0, w.y + step_y))
 
     // Record trail point
-    push(trail, { x: nx, y: ny, r: w.r, g: w.g, b: w.b, age: 0.0 })
+    trail = append(trail, { x: nx, y: ny, r: w.r, g: w.g, b: w.b, age: 0.0 })
 
-    push(new_walkers, { x: nx, y: ny, r: w.r, g: w.g, b: w.b })
+    new_walkers = append(new_walkers, { x: nx, y: ny, r: w.r, g: w.g, b: w.b })
 end
 walkers = new_walkers
 
@@ -67,7 +67,7 @@ let new_trail = []
 for t in trail do
     let aged = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, age: t.age + delta }
     if aged.age < 8.0 then
-        push(new_trail, aged)
+        new_trail = append(new_trail, aged)
     end
 end
 trail = new_trail

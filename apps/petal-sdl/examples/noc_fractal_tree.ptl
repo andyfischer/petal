@@ -44,7 +44,7 @@ if needs_rebuild then
         // Store branch
         let thickness = max(1, int(float(max_depth - cd) * 1.2))
         let brown = max(40, 140 - cd * 12)
-        push(branches, {
+        branches = append(branches, {
             x1: cx, y1: cy, x2: ex, y2: ey,
             depth: cd, thickness: thickness,
             r: brown, g: int(float(brown) * 0.6), b: int(float(brown) * 0.3)
@@ -56,7 +56,7 @@ if needs_rebuild then
             let spread = 0.4 + random(0.0, 0.15)
 
             // Right branch
-            push(stack, {
+            stack = append(stack, {
                 x: ex, y: ey,
                 angle: ca + spread,
                 len: cl * shrink,
@@ -64,7 +64,7 @@ if needs_rebuild then
             })
 
             // Left branch
-            push(stack, {
+            stack = append(stack, {
                 x: ex, y: ey,
                 angle: ca - spread,
                 len: cl * (shrink - 0.02),
@@ -73,7 +73,7 @@ if needs_rebuild then
 
             // Extra middle branch for first few levels
             if cd < 3 && random(0.0, 1.0) < 0.4 then
-                push(stack, {
+                stack = append(stack, {
                     x: ex, y: ey,
                     angle: ca + random(-0.1, 0.1),
                     len: cl * shrink * 0.8,
@@ -82,7 +82,7 @@ if needs_rebuild then
             end
         else
             // Leaf at tip
-            push(leaves, {
+            leaves = append(leaves, {
                 x: ex, y: ey,
                 size: random(3.0, 7.0),
                 hue: random(0.0, 1.0)

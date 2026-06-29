@@ -85,7 +85,7 @@ random(min, max)    // random float in [min, max)
 int(x)  float(x)  str(x)  type(x)
 
 // Collections
-len(list)  push(list, val)  pop(list)  append(list, val)  // push/append mutate in place
+len(list)  append(list, val)  pop(list)   // append returns a NEW list: xs = append(xs, val)
 contains(list_or_str, val)  range(start, end)
 slice(list, start, end)  reverse(list)  sort(list)
 flat(list)  enumerate(list)  zip(a, b)
@@ -225,7 +225,7 @@ state spawn_timer = 0.0
 spawn_timer += dt()
 if spawn_timer > 1.0 {
     spawn_timer = 0.0
-    push(enemies, { x: random(0.0, 800.0), y: 0.0 })
+    enemies = append(enemies, { x: random(0.0, 800.0), y: 0.0 })
 }
 
 // Update all enemies
@@ -280,5 +280,6 @@ See [agent-protocol.md](agent-protocol.md) for the full command reference.
 - Use `state` for everything that needs to persist: positions, velocities,
   scores, entity lists, timers, game phase.
 - String concatenation uses `++`, not `+`.
-- `push(list, val)` and `append(list, val)` mutate in place (return nil).
-  `map()` / `filter()` return new lists.
+- Lists are immutable: `append(list, val)` (and the deprecated `push`) return a
+  **new** list rather than mutating — write `xs = append(xs, val)`. `map()` /
+  `filter()` also return new lists.

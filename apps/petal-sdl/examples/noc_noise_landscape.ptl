@@ -14,7 +14,7 @@ time += delta
 // Initialize stars
 if len(stars) == 0 then
     for i in range(0, 50) do
-        push(stars, {
+        stars = append(stars, {
             x: random(0.0, sw),
             y: random(10.0, sh * 0.4),
             bright: random(60.0, 200.0),

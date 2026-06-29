@@ -279,7 +279,7 @@ if !initialized then
     initialized = true
     let i = 0
     while i < 200 do
-        push(grid, 0)
+        grid = append(grid, 0)
         i += 1
     end
     next_type = int(random(0.0, 7.0))

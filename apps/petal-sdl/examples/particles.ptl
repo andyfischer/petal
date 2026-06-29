@@ -37,7 +37,7 @@ spawn_timer += delta
 if len(stars) == 0 then
     for i in range(0, 80) do
         let t = float(i)
-        push(stars, {
+        stars = append(stars, {
             x: t * 10.0 + random(0.0, 3.0),
             y: random(0.0, 600.0),
             size: 1 + i % 3,
@@ -61,7 +61,7 @@ fn spawn_burst(px, py, base_r, base_g, base_b, count, speed, spread_y)
         let pg = min(255, max(0, base_g - shift))
         let pb = min(255, max(0, base_b + int(t * 30.0)))
         let size = 2 + i % 4
-        push(spawned, {
+        spawned = append(spawned, {
             x: px, y: py,
             vx: vx, vy: vy,
             life: 0.8 + t * 0.7,
@@ -81,7 +81,7 @@ fn spawn_floaters(px, py, r, g, b, count)
         let vx = (t - 0.5) * 120.0
         let vy = -80.0 - t * 120.0
         let size = 2 + i % 5
-        push(spawned, {
+        spawned = append(spawned, {
             x: px + (t - 0.5) * 40.0, y: py,
             vx: vx, vy: vy,
             life: 1.5 + t * 1.0,
@@ -103,7 +103,7 @@ fn spawn_spiral(px, py, r, g, b, count)
         let vx = (t - 0.5) * 300.0
         let vy = -200.0 + t * 100.0
         let size = 3 + i % 3
-        push(spawned, {
+        spawned = append(spawned, {
             x: px, y: py,
             vx: vx, vy: vy,
             life: 1.2 + t * 0.8,
@@ -128,7 +128,7 @@ if frame_count() % 3 == 0 && len(particles) < max_particles - 20 then
         let rr = min(255, 200 + int(random(0.0, 55.0)))
         let gg = int(50.0 + t * 180.0 + random(0.0, 25.0))
         let bb = int(random(0.0, 30.0))
-        push(particles, {
+        particles = append(particles, {
             x: fx, y: 580.0,
             vx: vx, vy: vy,
             life: 0.6 + random(0.0, 0.8),
@@ -145,7 +145,7 @@ if frame_count() % 5 == 0 && len(particles) < max_particles - 15 then
         let t = float(i) / 4.0
         let vx = -100.0 + t * 60.0 + random(-40.0, 40.0)
         let vy = 50.0 + random(-30.0, 80.0)
-        push(particles, {
+        particles = append(particles, {
             x: 700.0 + random(-30.0, 30.0), y: 60.0 + random(-20.0, 20.0),
             vx: vx, vy: vy,
             life: 0.8 + random(0.0, 0.6),
@@ -177,7 +177,7 @@ if frame_count() % 7 == 0 && len(particles) < max_particles - 10 then
             gg = int(40.0 + random(0.0, 40.0))
             bb = int(200.0 + random(0.0, 55.0))
         end
-        push(particles, {
+        particles = append(particles, {
             x: 50.0 + random(-20.0, 20.0), y: 300.0 + random(-40.0, 40.0),
             vx: vx, vy: vy,
             life: 1.0 + random(0.0, 0.8),
@@ -226,7 +226,7 @@ if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
         end
         let vx = (t - 0.5) * 400.0
         let vy = -150.0 - random(0.0, 100.0)
-        push(particles, {
+        particles = append(particles, {
             x: bx, y: by,
             vx: vx, vy: vy,
             life: 1.0 + random(0.0, 0.6),
@@ -268,7 +268,7 @@ if spawn then
         let pr = min(255, max(0, base_r + color_shift))
         let pg = min(255, max(0, base_g - color_shift))
         let pb = min(255, max(0, base_b + int(t * 30.0)))
-        push(particles, {
+        particles = append(particles, {
             x: mx, y: my,
             vx: vx, vy: vy,
             life: 0.8 + t * 0.7,

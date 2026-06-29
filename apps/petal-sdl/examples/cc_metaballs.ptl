@@ -25,7 +25,7 @@ if !paused then t += delta end
 if key_pressed("space") then paused = !paused end
 if key_pressed("c") then extras = [] end
 if mouse_pressed(1) then
-  push(extras, {
+  extras = append(extras, {
     x: float(mouse_x()),
     y: float(mouse_y()),
     r: random(40.0, 80.0)
@@ -37,7 +37,7 @@ if len(balls) == 0 then
   for i in range(0, 5) do
     let angle = random(0.0, pi() * 2.0)
     let speed = random(50.0, 130.0)
-    push(balls, {
+    balls = append(balls, {
       cx: random(sw * 0.25, sw * 0.75),
       cy: random(sh * 0.25, sh * 0.75),
       vx: cos(angle) * speed,
@@ -58,7 +58,7 @@ for b in balls do
   if nx > sw - b.r then nx = sw - b.r; nvx = -abs(nvx) end
   if ny < b.r then ny = b.r;       nvy = abs(nvy) end
   if ny > sh - b.r then ny = sh - b.r; nvy = -abs(nvy) end
-  push(new_balls, { cx: nx, cy: ny, vx: nvx, vy: nvy, r: b.r })
+  new_balls = append(new_balls, { cx: nx, cy: ny, vx: nvx, vy: nvy, r: b.r })
 end
 balls = new_balls
 
@@ -74,14 +74,14 @@ let bx = []
 let by = []
 let br2 = []
 for b in balls do
-  push(bx, b.cx)
-  push(by, b.cy)
-  push(br2, b.r * b.r)
+  bx = append(bx, b.cx)
+  by = append(by, b.cy)
+  br2 = append(br2, b.r * b.r)
 end
 for e in extras do
-  push(bx, e.x)
-  push(by, e.y)
-  push(br2, e.r * e.r)
+  bx = append(bx, e.x)
+  by = append(by, e.y)
+  br2 = append(br2, e.r * e.r)
 end
 let n_balls = len(bx)
 

@@ -95,14 +95,14 @@ if !demo_drawn then
             let cb = int(abs(float((255 - ring * 30) % 256)))
 
             let dot_size = max(3, 8 - ring)
-            push(points, {x: px, y: py, r: cr, g: cg, b: cb, size: dot_size})
+            points = append(points, {x: px, y: py, r: cr, g: cg, b: cb, size: dot_size})
 
             // Add connecting petal shapes between dots
             if d % 2 == 0 then
                 let inner_r = radius - 15
                 let ipx = cx + int(float(tcos(angle_idx) * inner_r) / 1000.0)
                 let ipy = cy + int(float(tsin(angle_idx) * inner_r) / 1000.0)
-                push(points, {x: ipx, y: ipy, r: min(cr + 60, 255), g: min(cg + 40, 255), b: min(cb + 60, 255), size: dot_size + 2})
+                points = append(points, {x: ipx, y: ipy, r: min(cr + 60, 255), g: min(cg + 40, 255), b: min(cb + 60, 255), size: dot_size + 2})
             end
         end
     end
@@ -120,7 +120,7 @@ if !demo_drawn then
             let cg = min(80 + step * 8, 255)
             let cb = min(180 + arm * 15, 255)
 
-            push(points, {x: px, y: py, r: cr, g: cg, b: cb, size: max(2, 6 - int(float(step) / 5.0))})
+            points = append(points, {x: px, y: py, r: cr, g: cg, b: cb, size: max(2, 6 - int(float(step) / 5.0))})
         end
     end
 
@@ -132,7 +132,7 @@ if !demo_drawn then
             let dist = d * 12
             let px = 80 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
-            push(points, {x: px, y: py, r: 255, g: min(100 + d * 30, 255), b: 80, size: max(2, 5 - d)})
+            points = append(points, {x: px, y: py, r: 255, g: min(100 + d * 30, 255), b: 80, size: max(2, 5 - d)})
         end
     end
 
@@ -143,7 +143,7 @@ if !demo_drawn then
             let dist = d * 12
             let px = 720 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
-            push(points, {x: px, y: py, r: 80, g: min(150 + d * 20, 255), b: 255, size: max(2, 5 - d)})
+            points = append(points, {x: px, y: py, r: 80, g: min(150 + d * 20, 255), b: 255, size: max(2, 5 - d)})
         end
     end
 
@@ -154,7 +154,7 @@ if !demo_drawn then
             let dist = d * 14
             let px = 100 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
-            push(points, {x: px, y: py, r: min(200 + d * 15, 255), g: 80, b: min(180 + d * 20, 255), size: max(2, 5 - d)})
+            points = append(points, {x: px, y: py, r: min(200 + d * 15, 255), g: 80, b: min(180 + d * 20, 255), size: max(2, 5 - d)})
         end
     end
 
@@ -165,7 +165,7 @@ if !demo_drawn then
             let dist = d * 14
             let px = 700 + int(float(tcos(angle_idx) * dist) / 1000.0)
             let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
-            push(points, {x: px, y: py, r: 50, g: min(200 + d * 15, 255), b: min(130 + d * 30, 255), size: max(2, 5 - d)})
+            points = append(points, {x: px, y: py, r: 50, g: min(200 + d * 15, 255), b: min(130 + d * 30, 255), size: max(2, 5 - d)})
         end
     end
 
@@ -173,8 +173,8 @@ if !demo_drawn then
     for i in range(0, 12) do
         let offset = i * 22
         // Top edge diamonds
-        push(points, {x: 200 + offset * 2, y: 90, r: 255, g: 200, b: 100, size: 3})
-        push(points, {x: 200 + offset * 2, y: 580, r: 100, g: 200, b: 255, size: 3})
+        points = append(points, {x: 200 + offset * 2, y: 90, r: 255, g: 200, b: 100, size: 3})
+        points = append(points, {x: 200 + offset * 2, y: 580, r: 100, g: 200, b: 255, size: 3})
     end
 end
 
@@ -212,7 +212,7 @@ end
 if mouse_down(1) then
     if mouse_y() > toolbar_h then
         if len(points) < 3000 then
-            push(points, {
+            points = append(points, {
                 x: mouse_x(),
                 y: mouse_y(),
                 r: brush_r,

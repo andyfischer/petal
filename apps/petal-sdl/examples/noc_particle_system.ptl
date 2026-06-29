@@ -25,7 +25,7 @@ if len(fountain) < max_per_system then
     for i in range(0, 3) do
         let angle = -PI / 2.0 + random(-0.4, 0.4)
         let speed = random(200.0, 350.0)
-        push(fountain, {
+        fountain = append(fountain, {
             x: fountain_x + random(-3.0, 3.0),
             y: fountain_y,
             vx: cos(angle) * speed,
@@ -44,7 +44,7 @@ for p in fountain do
     let nvy = p.vy + 300.0 * delta
     let nl = p.life - delta * 0.5
     if nl > 0.0 then
-        push(new_fountain, { x: nx, y: ny, vx: p.vx * 0.999, vy: nvy, life: nl, size: p.size })
+        new_fountain = append(new_fountain, { x: nx, y: ny, vx: p.vx * 0.999, vy: nvy, life: nl, size: p.size })
     end
 end
 fountain = new_fountain
@@ -55,7 +55,7 @@ let fire_y = sh - 50.0
 
 if len(fire) < max_per_system then
     for i in range(0, 5) do
-        push(fire, {
+        fire = append(fire, {
             x: fire_x + random(-20.0, 20.0),
             y: fire_y + random(-5.0, 5.0),
             vx: random(-30.0, 30.0),
@@ -75,14 +75,14 @@ for p in fire do
     let nvy = p.vy - 20.0 * delta
     let nl = p.life - delta * 0.8
     if nl > 0.0 then
-        push(new_fire, { x: nx, y: ny, vx: nvx, vy: nvy, life: nl, size: p.size * 0.99 })
+        new_fire = append(new_fire, { x: nx, y: ny, vx: nvx, vy: nvy, life: nl, size: p.size * 0.99 })
     end
 end
 fire = new_fire
 
 // --- Snow emitter (across top) ---
 if len(snow) < max_per_system && frame_count() % 3 == 0 then
-    push(snow, {
+    snow = append(snow, {
         x: random(0.0, sw),
         y: random(-20.0, 0.0),
         vx: random(-20.0, 20.0),
@@ -100,7 +100,7 @@ for p in snow do
     let nl = p.life
     if ny > sh then nl = 0.0 end
     if nl > 0.0 then
-        push(new_snow, { x: nx, y: ny, vx: p.vx, vy: p.vy, life: nl, size: p.size, wobble: p.wobble })
+        new_snow = append(new_snow, { x: nx, y: ny, vx: p.vx, vy: p.vy, life: nl, size: p.size, wobble: p.wobble })
     end
 end
 snow = new_snow
@@ -113,7 +113,7 @@ if mouse_down(1) then
         let angle = random(0.0, PI * 2.0)
         let speed = random(50.0, 200.0)
         if len(sparks) < 300 then
-            push(sparks, {
+            sparks = append(sparks, {
                 x: mx, y: my,
                 vx: cos(angle) * speed,
                 vy: sin(angle) * speed,
@@ -130,7 +130,7 @@ for p in sparks do
     let ny = p.y + p.vy * delta
     let nl = p.life - delta * 1.5
     if nl > 0.0 then
-        push(new_sparks, { x: nx, y: ny, vx: p.vx * 0.98, vy: p.vy * 0.98 + 100.0 * delta, life: nl, size: p.size })
+        new_sparks = append(new_sparks, { x: nx, y: ny, vx: p.vx * 0.98, vy: p.vy * 0.98 + 100.0 * delta, life: nl, size: p.size })
     end
 end
 sparks = new_sparks

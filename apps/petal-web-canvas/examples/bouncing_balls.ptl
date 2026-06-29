@@ -11,7 +11,7 @@ let delta = dt()
 if len(balls) == 0 then
     for i in range(0, 12) do
         let f = float(i)
-        push(balls, {
+        balls = append(balls, {
             x: 50.0 + f * 60.0,
             y: 80.0 + f * 20.0,
             vx: 80.0 + f * 15.0,
@@ -28,7 +28,7 @@ end
 if mouse_pressed(1) then
     let mx = float(mouse_x())
     let my = float(mouse_y())
-    push(balls, {
+    balls = append(balls, {
         x: mx, y: my,
         vx: random(-200.0, 200.0),
         vy: random(-200.0, 0.0),
@@ -72,7 +72,7 @@ for b in balls do
         final_vy = -nvy * 0.85
     end
 
-    push(new_balls, {
+    new_balls = append(new_balls, {
         x: final_x, y: final_y,
         vx: final_vx, vy: final_vy,
         r: b.r, cr: b.cr, cg: b.cg, cb: b.cb

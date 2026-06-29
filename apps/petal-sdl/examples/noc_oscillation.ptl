@@ -16,7 +16,7 @@ time += delta
 if len(pendulums) == 0 then
     for i in range(0, 5) do
         let t = float(i)
-        push(pendulums, {
+        pendulums = append(pendulums, {
             origin_x: 100.0 + t * 140.0,
             origin_y: 80.0,
             length: 100.0 + t * 30.0,
@@ -38,7 +38,7 @@ for p in pendulums do
     let nav = (p.angular_vel + angular_acc * delta) * p.damping
     let na = p.angle + nav * delta
 
-    push(new_pendulums, {
+    new_pendulums = append(new_pendulums, {
         origin_x: p.origin_x, origin_y: p.origin_y,
         length: p.length, angle: na, angular_vel: nav,
         damping: p.damping, r: p.r, g: p.g, b: p.b

@@ -159,28 +159,28 @@ fn parse_level(src)
         elsif tag == "goal" then
             L.goal = {x: parse_float(toks[1]), y: parse_float(toks[2])}
         elsif tag == "plat" then
-            push(L.plats, {
+            L.plats = append(L.plats, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 w: parse_int(toks[3]), h: parse_int(toks[4])
             })
         elsif tag == "oneway" then
-            push(L.oneways, {
+            L.oneways = append(L.oneways, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 w: parse_int(toks[3])
             })
         elsif tag == "coin" then
-            push(L.coins, {
+            L.coins = append(L.coins, {
                 x: parse_int(toks[1]), y: parse_int(toks[2]),
                 collected: false
             })
         elsif tag == "spike" then
-            push(L.spikes, {x: parse_int(toks[1]), y: parse_int(toks[2])})
+            L.spikes = append(L.spikes, {x: parse_int(toks[1]), y: parse_int(toks[2])})
         elsif tag == "goomba" then
             // y here is the surface y (plat top); enemy stands on it
             let sx = parse_float(toks[1])
             let sy = parse_float(toks[2])
             let pat = parse_float(toks[3])
-            push(L.enemies, {
+            L.enemies = append(L.enemies, {
                 kind: "goomba",
                 x: sx, y: sy - 22.0,
                 vx: -55.0, vy: 0.0,
@@ -190,7 +190,7 @@ fn parse_level(src)
         elsif tag == "jumper" then
             let sx = parse_float(toks[1])
             let sy = parse_float(toks[2])
-            push(L.enemies, {
+            L.enemies = append(L.enemies, {
                 kind: "jumper",
                 x: sx, y: sy - 24.0,
                 vx: 0.0, vy: 0.0,
@@ -198,7 +198,7 @@ fn parse_level(src)
                 alive: true, squash: 0.0, anim: 0.0
             })
         elsif tag == "check" then
-            push(L.checks, {x: parse_int(toks[1]), y: parse_int(toks[2])})
+            L.checks = append(L.checks, {x: parse_int(toks[1]), y: parse_int(toks[2])})
         else
             // unknown tag, ignore
         end
@@ -319,7 +319,7 @@ if phase == Playing then
         // dust puff
         let i = 0
         while i < 8 do
-            push(particles, {
+            particles = append(particles, {
                 kind: "dust",
                 x: px + float(PLAYER_W)/2.0 + random(-6.0, 6.0),
                 y: py + float(PLAYER_H),
@@ -365,7 +365,7 @@ if phase == Playing then
                     // landing dust
                     let i = 0
                     while i < int(min(8.0, vy / 80.0)) do
-                        push(particles, {
+                        particles = append(particles, {
                             kind: "dust",
                             x: px + random(0.0, pw),
                             y: new_py + ph,
@@ -413,10 +413,10 @@ if phase == Playing then
             if abs(px + pw/2.0 - cx) < 18.0 && abs(py + ph/2.0 - cy) < 22.0 then
                 c.collected = true
                 coins_got = coins_got + 1
-                push(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
+                floats = append(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
                 let i = 0
                 while i < 10 do
-                    push(particles, {
+                    particles = append(particles, {
                         kind: "spark",
                         x: cx, y: cy,
                         vx: random(-180.0, 180.0),
@@ -448,10 +448,10 @@ if phase == Playing then
                     e.squash = 1.0
                     vy = JUMP_VY * 0.6
                     coins_got = coins_got + 0   // no coin reward, just defeat
-                    push(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
+                    floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
                     let i = 0
                     while i < 8 do
-                        push(particles, {
+                        particles = append(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
                             vx: random(-150.0, 150.0),
@@ -479,10 +479,10 @@ if phase == Playing then
                 if vy > 50.0 && py + ph - 14.0 < e.y then
                     e.alive = false
                     vy = JUMP_VY * 0.6
-                    push(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "BONK"})
+                    floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "BONK"})
                     let i = 0
                     while i < 8 do
-                        push(particles, {
+                        particles = append(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
                             vx: random(-150.0, 150.0),
@@ -512,7 +512,7 @@ if phase == Playing then
                 shake = 16.0
                 vy = -360.0
                 vx = float(-facing) * 200.0
-                push(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
+                floats = append(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
             end
         end
     end

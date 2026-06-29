@@ -71,7 +71,7 @@ hit_flash = max(0.0, hit_flash - delta * 3.0)
 shake_timer = max(0.0, shake_timer - delta)
 
 // Update trail
-push(trail, { x: ball_x, y: ball_y })
+trail = append(trail, { x: ball_x, y: ball_y })
 if len(trail) > 12 then
     trail = slice(trail, len(trail) - 12, len(trail))
 end

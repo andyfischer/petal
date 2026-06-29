@@ -18,7 +18,7 @@ let delta = dt()
 // Initialize
 if len(cells) == 0 then
   for i in range(0, num_cells) do
-    push(cells, 0)
+    cells = append(cells, 0)
   end
   // Single cell in the middle
   cells[num_cells / 2] = 1
@@ -45,9 +45,9 @@ for step in range(0, rows_per_frame) do
     // Store current row in history
     let row_copy = []
     for c in cells do
-      push(row_copy, c)
+      row_copy = append(row_copy, c)
     end
-    push(history, row_copy)
+    history = append(history, row_copy)
 
     // Generate next row
     let new_cells = []
@@ -55,7 +55,7 @@ for step in range(0, rows_per_frame) do
       let left = cells[(i - 1 + num_cells) % num_cells]
       let center = cells[i]
       let right = cells[(i + 1) % num_cells]
-      push(new_cells, apply_rule(left, center, right, rule_num))
+      new_cells = append(new_cells, apply_rule(left, center, right, rule_num))
     end
     cells = new_cells
     next_row += 1
@@ -81,7 +81,7 @@ if next_row >= max_rows then
     // Reset
     cells = []
     for i in range(0, num_cells) do
-      push(cells, 0)
+      cells = append(cells, 0)
     end
     cells[num_cells / 2] = 1
     history = []

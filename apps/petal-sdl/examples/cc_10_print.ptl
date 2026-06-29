@@ -39,7 +39,7 @@ fn make_grid(cols, rows)
   let g = []
   for j in range(0, rows) do
     for i in range(0, cols) do
-      push(g, random(0.0, 1.0) < 0.5)
+      g = append(g, random(0.0, 1.0) < 0.5)
     end
   end
   g

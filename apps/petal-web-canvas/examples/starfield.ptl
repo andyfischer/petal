@@ -17,7 +17,7 @@ end
 if !initialized then
     let temp = []
     for i in range(0, 200) do
-        push(temp, {
+        temp = append(temp, {
             x: random(-400.0, 400.0),
             y: random(-300.0, 300.0),
             z: random(50.0, depth),
@@ -35,14 +35,14 @@ for s in stars do
     let nz = s.z - speed * delta
 
     if nz < 30.0 then
-        push(new_stars, {
+        new_stars = append(new_stars, {
             x: random(-400.0, 400.0),
             y: random(-300.0, 300.0),
             z: depth,
             pz: depth
         })
     else
-        push(new_stars, { x: s.x, y: s.y, z: nz, pz: pz })
+        new_stars = append(new_stars, { x: s.x, y: s.y, z: nz, pz: pz })
     end
 end
 stars = new_stars

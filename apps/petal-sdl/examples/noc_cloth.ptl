@@ -34,7 +34,7 @@ if cols == 0 then
       let px = start_x + float(x) * rest_dist
       let py = start_y + float(y) * rest_dist
       let pinned = y == 0 && x % 4 == 0
-      push(points, {
+      points = append(points, {
         x: px, y: py,
         old_x: px, old_y: py,
         pinned: pinned,

@@ -21,7 +21,7 @@ if len(boids) == 0 then
   for i in range(0, num_boids) do
     let angle = random(0.0, PI * 2.0)
     let speed = random(80.0, max_speed)
-    push(boids, {
+    boids = append(boids, {
       x: random(0.0, sw),
       y: random(0.0, sh),
       vx: cos(angle) * speed,
@@ -152,7 +152,7 @@ for i in range(0, len(boids)) do
   if ny < 0.0 then ny += sh end
   if ny > sh then ny -= sh end
 
-  push(new_boids, { x: nx, y: ny, vx: nvx, vy: nvy })
+  new_boids = append(new_boids, { x: nx, y: ny, vx: nvx, vy: nvy })
 end
 boids = new_boids
 

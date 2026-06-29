@@ -41,8 +41,8 @@ fn seed_grid(cols, rows)
   let b = []
   for j in range(0, rows) do
     for i in range(0, cols) do
-      push(a, 1.0)
-      push(b, 0.0)
+      a = append(a, 1.0)
+      b = append(b, 0.0)
     end
   end
   // Square seed of B at the center
@@ -140,8 +140,8 @@ if !paused then
         let reaction = a_c * b_c * b_c
         let na = a_c + dt_step * (da * lap_a - reaction + f_rate * (1.0 - a_c))
         let nb = b_c + dt_step * (db * lap_b + reaction - (k_rate + f_rate) * b_c)
-        push(new_a, clamp(na, 0.0, 1.0))
-        push(new_b, clamp(nb, 0.0, 1.0))
+        new_a = append(new_a, clamp(na, 0.0, 1.0))
+        new_b = append(new_b, clamp(nb, 0.0, 1.0))
       end
     end
     grid_a = new_a

@@ -23,7 +23,7 @@ let sh = float(screen_height())
 if key_pressed("space") then paused = !paused end
 if key_pressed("c") then attractors = [] end
 if mouse_pressed(1) then
-  push(attractors, { x: float(mouse_x()), y: float(mouse_y()) })
+  attractors = append(attractors, { x: float(mouse_x()), y: float(mouse_y()) })
 end
 
 fn make_ring(cx, cy, r, n)
@@ -31,7 +31,7 @@ fn make_ring(cx, cy, r, n)
   let two_pi = pi() * 2.0
   for i in range(0, n) do
     let a = float(i) / float(n) * two_pi
-    push(out, { x: cx + cos(a) * r, y: cy + sin(a) * r })
+    out = append(out, { x: cx + cos(a) * r, y: cy + sin(a) * r })
   end
   out
 end
@@ -58,8 +58,8 @@ if !paused && len(nodes) > 0 then
   let dxs = []
   let dys = []
   for i in range(0, n) do
-    push(dxs, 0.0)
-    push(dys, 0.0)
+    dxs = append(dxs, 0.0)
+    dys = append(dys, 0.0)
   end
 
   // Spring between neighbours, restoring length = target_dist. Pulls when
@@ -138,7 +138,7 @@ if !paused && len(nodes) > 0 then
     if nx > sw - 8.0 then nx = sw - 8.0 end
     if ny < 8.0 then ny = 8.0 end
     if ny > sh - 8.0 then ny = sh - 8.0 end
-    push(new_nodes, { x: nx, y: ny })
+    new_nodes = append(new_nodes, { x: nx, y: ny })
   end
   nodes = new_nodes
 
@@ -148,14 +148,14 @@ if !paused && len(nodes) > 0 then
     let m = len(nodes)
     for i in range(0, m) do
       let here = nodes[i]
-      push(inserted, here)
+      inserted = append(inserted, here)
       let next_i = (i + 1) % m
       let next_node = nodes[next_i]
       let dx = next_node.x - here.x
       let dy = next_node.y - here.y
       let d = sqrt(dx * dx + dy * dy)
       if d > split_dist && len(inserted) < max_nodes then
-        push(inserted, {
+        inserted = append(inserted, {
           x: (here.x + next_node.x) * 0.5,
           y: (here.y + next_node.y) * 0.5
         })

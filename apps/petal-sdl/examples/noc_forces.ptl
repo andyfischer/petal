@@ -17,7 +17,7 @@ time += delta
 if len(objects) == 0 then
   for i in range(0, 15) do
     let mass = 0.5 + random(0.0, 4.0)
-    push(objects, {
+    objects = append(objects, {
       x: random(50.0, sw - 50.0),
       y: random(50.0, ground_y - 100.0),
       vx: 0.0,
@@ -99,7 +99,7 @@ for obj in objects do
   // Ceiling
   if ny < radius then ny = radius; nvy = abs(nvy) * 0.5 end
 
-  push(new_objects, {
+  new_objects = append(new_objects, {
     x: nx, y: ny, vx: nvx, vy: nvy,
     mass: obj.mass, hue: obj.hue
   })

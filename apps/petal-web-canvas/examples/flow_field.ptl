@@ -43,7 +43,7 @@ end
 // Seed particles on the first frame.
 if len(particles) == 0 then
     for i in range(0, num_particles) do
-        push(particles, {
+        particles = append(particles, {
             x: random(0.0, sw),
             y: random(0.0, sh),
             speed: random(28.0, 88.0),
@@ -69,15 +69,15 @@ for p in particles do
         nx = random(0.0, sw)
         ny = random(0.0, sh)
     else
-        push(new_trail, {x: p.x, y: p.y})
+        new_trail = append(new_trail, {x: p.x, y: p.y})
         for t in p.trail do
             if len(new_trail) < trail_len then
-                push(new_trail, t)
+                new_trail = append(new_trail, t)
             end
         end
     end
 
-    push(new_particles, {
+    new_particles = append(new_particles, {
         x: nx, y: ny,
         speed: p.speed,
         hue: p.hue,

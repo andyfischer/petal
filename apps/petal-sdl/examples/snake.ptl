@@ -111,7 +111,7 @@ if !game_over then
                 keep_count = len(snake) - 1
             end
             for i in range(0, keep_count) do
-                push(new_snake, snake[i])
+                new_snake = append(new_snake, snake[i])
             end
             snake = new_snake
 

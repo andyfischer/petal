@@ -19,7 +19,7 @@ let field_scale = 0.008
 // Initialize particles
 if len(particles) == 0 then
   for i in range(0, num_particles) do
-    push(particles, {
+    particles = append(particles, {
       x: random(0.0, sw),
       y: random(0.0, sh),
       prev_x: random(0.0, sw),
@@ -56,7 +56,7 @@ for p in particles do
     ny = random(0.0, sh)
   end
 
-  push(new_particles, {
+  new_particles = append(new_particles, {
     x: nx, y: ny,
     prev_x: p.x, prev_y: p.y,
     speed: p.speed,

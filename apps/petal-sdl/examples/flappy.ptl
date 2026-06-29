@@ -95,7 +95,7 @@ if !game_over then
     if pipe_timer > 1.6 then
       pipe_timer = 0.0
       let gap_y = int(random(120.0, float(SH - GROUND_H - 120 - PIPE_GAP)))
-      push(pipes, { x: float(SW), gap_y: gap_y, scored: false })
+      pipes = append(pipes, { x: float(SW), gap_y: gap_y, scored: false })
     end
 
     pipes = map(pipes, fn(p) -> { x: p.x - PIPE_SPEED * delta, gap_y: p.gap_y, scored: p.scored })

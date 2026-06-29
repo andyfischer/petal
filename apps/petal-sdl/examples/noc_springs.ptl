@@ -26,7 +26,7 @@ if len(nodes) == 0 then
     for y in range(0, grid_h) do
         for x in range(0, grid_w) do
             let pinned = y == 0 && (x == 0 || x == grid_w / 2 || x == grid_w - 1)
-            push(nodes, {
+            nodes = append(nodes, {
                 x: offset_x + float(x) * spacing,
                 y: offset_y + float(y) * spacing,
                 vx: 0.0,
@@ -41,7 +41,7 @@ if len(nodes) == 0 then
         for x in range(0, grid_w - 1) do
             let a = y * grid_w + x
             let b = a + 1
-            push(springs, { a: a, b: b, rest_len: spacing })
+            springs = append(springs, { a: a, b: b, rest_len: spacing })
         end
     end
 
@@ -50,7 +50,7 @@ if len(nodes) == 0 then
         for x in range(0, grid_w) do
             let a = y * grid_w + x
             let b = a + grid_w
-            push(springs, { a: a, b: b, rest_len: spacing })
+            springs = append(springs, { a: a, b: b, rest_len: spacing })
         end
     end
 
@@ -58,8 +58,8 @@ if len(nodes) == 0 then
     for y in range(0, grid_h - 1) do
         for x in range(0, grid_w - 1) do
             let a = y * grid_w + x
-            push(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
-            push(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
+            springs = append(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
+            springs = append(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
         end
     end
 end

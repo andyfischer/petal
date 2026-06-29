@@ -18,7 +18,7 @@ time += delta
 if len(vehicles) == 0 then
     for i in range(0, 12) do
         let t = float(i)
-        push(vehicles, {
+        vehicles = append(vehicles, {
             x: random(0.0, sw),
             y: random(0.0, sh),
             vx: random(-50.0, 50.0),
@@ -127,10 +127,10 @@ for v in vehicles do
 
     // Trail
     if frame_count() % 2 == 0 then
-        push(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
+        trails = append(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
     end
 
-    push(new_vehicles, {
+    new_vehicles = append(new_vehicles, {
         x: nx, y: ny, vx: nvx, vy: nvy,
         max_speed: v.max_speed, max_force: v.max_force,
         wander_angle: new_wander,
@@ -143,7 +143,7 @@ vehicles = new_vehicles
 let new_trails = []
 for t in trails do
     let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8 }
-    if nt.life > 0.0 then push(new_trails, nt) end
+    if nt.life > 0.0 then new_trails = append(new_trails, nt) end
 end
 trails = new_trails
 if len(trails) > 2000 then

@@ -106,32 +106,32 @@ fn parse_level(src)
         elsif tag == "goal" then
             L.goal = {x: float(toks[1]), y: float(toks[2])}
         elsif tag == "plat" then
-            push(L.plats, {
+            L.plats = append(L.plats, {
                 x: int(toks[1]), y: int(toks[2]),
                 w: int(toks[3]), h: int(toks[4])
             })
         elsif tag == "oneway" then
-            push(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
+            L.oneways = append(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
         elsif tag == "coin" then
-            push(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
+            L.coins = append(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
         elsif tag == "spike" then
-            push(L.spikes, {x: int(toks[1]), y: int(toks[2])})
+            L.spikes = append(L.spikes, {x: int(toks[1]), y: int(toks[2])})
         elsif tag == "goomba" then
-            push(L.enemies, {
+            L.enemies = append(L.enemies, {
                 kind: "goomba",
                 x: float(toks[1]), y: float(toks[2]),
                 origin_y: float(toks[2]),
                 patrol: float(toks[3])
             })
         elsif tag == "jumper" then
-            push(L.enemies, {
+            L.enemies = append(L.enemies, {
                 kind: "jumper",
                 x: float(toks[1]), y: float(toks[2]),
                 origin_y: float(toks[2]),
                 patrol: 0.0
             })
         elsif tag == "check" then
-            push(L.checks, {x: int(toks[1]), y: int(toks[2])})
+            L.checks = append(L.checks, {x: int(toks[1]), y: int(toks[2])})
         end
     end
     L
@@ -139,32 +139,32 @@ end
 
 fn serialize_level(L)
     let lines = []
-    push(lines, "name {L.name}")
-    push(lines, "width {L.width}")
-    push(lines, "bg {L.bg_r} {L.bg_g} {L.bg_b}")
-    push(lines, "start {L.start.x} {L.start.y}")
-    push(lines, "goal {L.goal.x} {L.goal.y}")
+    lines = append(lines, "name {L.name}")
+    lines = append(lines, "width {L.width}")
+    lines = append(lines, "bg {L.bg_r} {L.bg_g} {L.bg_b}")
+    lines = append(lines, "start {L.start.x} {L.start.y}")
+    lines = append(lines, "goal {L.goal.x} {L.goal.y}")
     for p in L.plats do
-        push(lines, "plat {p.x} {p.y} {p.w} {p.h}")
+        lines = append(lines, "plat {p.x} {p.y} {p.w} {p.h}")
     end
     for o in L.oneways do
-        push(lines, "oneway {o.x} {o.y} {o.w}")
+        lines = append(lines, "oneway {o.x} {o.y} {o.w}")
     end
     for c in L.coins do
-        push(lines, "coin {c.x} {c.y}")
+        lines = append(lines, "coin {c.x} {c.y}")
     end
     for s in L.spikes do
-        push(lines, "spike {s.x} {s.y}")
+        lines = append(lines, "spike {s.x} {s.y}")
     end
     for e in L.enemies do
         if e.kind == "goomba" then
-            push(lines, "goomba {int(e.x)} {int(e.origin_y)} {int(e.patrol)}")
+            lines = append(lines, "goomba {int(e.x)} {int(e.origin_y)} {int(e.patrol)}")
         else
-            push(lines, "jumper {int(e.x)} {int(e.origin_y)} 0")
+            lines = append(lines, "jumper {int(e.x)} {int(e.origin_y)} 0")
         end
     end
     for ck in L.checks do
-        push(lines, "check {ck.x} {ck.y}")
+        lines = append(lines, "check {ck.x} {ck.y}")
     end
     join(lines, "\n")
 end
@@ -303,7 +303,7 @@ fn filter_index(list, idx)
     let out = []
     let i = 0
     while i < len(list) do
-        if i != idx then push(out, list[i]) end
+        if i != idx then out = append(out, list[i]) end
         i = i + 1
     end
     out
@@ -318,21 +318,21 @@ if mouse_pressed(1) then
     elsif tool == 2 then
         drag_start = {x: wx, y: wy}
     elsif tool == 3 then
-        push(level.coins, {x: wx, y: wy, collected: false})
+        level.coins = append(level.coins, {x: wx, y: wy, collected: false})
     elsif tool == 4 then
-        push(level.spikes, {x: wx, y: wy})
+        level.spikes = append(level.spikes, {x: wx, y: wy})
     elsif tool == 5 then
-        push(level.enemies, {
+        level.enemies = append(level.enemies, {
             kind: "goomba", x: float(wx), y: float(wy) - 22.0,
             origin_y: float(wy) - 22.0, patrol: 100.0
         })
     elsif tool == 6 then
-        push(level.enemies, {
+        level.enemies = append(level.enemies, {
             kind: "jumper", x: float(wx), y: float(wy) - 24.0,
             origin_y: float(wy) - 24.0, patrol: 0.0
         })
     elsif tool == 7 then
-        push(level.checks, {x: wx, y: wy})
+        level.checks = append(level.checks, {x: wx, y: wy})
     elsif tool == 8 then
         level.start = {x: float(wx), y: float(wy)}
     elsif tool == 9 then
@@ -351,9 +351,9 @@ if mouse_down(1) == false && drag_start != nil then
     let w  = max(grid_size, x1 - x0)
     let h  = max(grid_size, y1 - y0)
     if tool == 1 then
-        push(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
+        level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
     elsif tool == 2 then
-        push(level.oneways, {x: x0, y: y0, w: w})
+        level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
     end
     drag_start = nil
 end

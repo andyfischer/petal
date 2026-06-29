@@ -21,7 +21,8 @@ use crate::value::Value;
 pub struct ContextKey(pub u32);
 
 /// One isolated execution's mutable bundle: the heap + the runtime registries
-/// that reference it. Does NOT own the Stack. (Forking added in a later chunk.)
+/// that reference it. Does NOT own the Stack. [`fork`](Self::fork) yields an
+/// isolated copy sharing no mutable state with the source.
 pub struct ExecutionContext {
     pub heap: Heap,
     pub closures: Vec<RuntimeClosure>,
@@ -44,9 +45,7 @@ impl ExecutionContext {
             counters: HashMap::new(),
         }
     }
-}
 
-impl ExecutionContext {
     /// Fork this context into an isolated copy. Heap + registries are deep-cloned
     /// (pre-fork ids resolve to equal objects in both); output sinks start fresh
     /// so the fork's output is captured separately from the source's.

@@ -18,25 +18,41 @@ semantics), so heap objects are never mutated and sharing between executions is
 safe. See [Decision: Option B](#decision-option-b) and the
 [incremental roadmap](#incremental-roadmap-toward-immutable-by-default).
 
-**⭐ Core goal ACHIEVED (Increments 1–3 + 5 accessor removal).** The heap is now
+**⭐ Core goal ACHIEVED (Increments 1–3 + 5 accessor removal).** The heap is
 immutable by construction, and the plan's root-cause isolation bug is fixed:
-`Env::run_speculative` snapshots/restores state ids, and because no heap object
-is ever mutated, a speculative frame that "mutates" a state collection cannot
-corrupt the object the committed state still points at. Proven by
+because no heap object is ever mutated, a speculative frame that "mutates" a
+state collection cannot corrupt the object the committed state still points at.
+Proven by
 `env.rs::speculative_tests::speculative_run_does_not_corrupt_committed_state_objects`.
 This delivers single-timeline speculative isolation *without* the Option-A
 copy-on-write/`Rc` slot machinery.
 
-**Decision (2026-06): stop here — goal met.** Increments 1–3, 5, 6 are done;
-Increment 4 (persistent backing) is deferred as profiling-gated perf; the
-`let`-alias follow-up is resolved; `Heap::fork()` is in place. The remaining
-`World`/`fork_execution` extraction (steps 3–8 of §Phased implementation) is
-**intentionally not pursued for now** — it is needed only for *two
-concurrently-live* executions (single-timeline speculation already works), it is
-a large ~120-call-site refactor, and it can't be verified end-to-end without the
-host apps (SDL/web), so it warrants host-driven exercise + human review before
-landing. It is fully scoped below; pick it up when concurrent side-by-side is an
-actual requirement.
+**⭐⭐ `ExecutionContext` system SHIPPED (2026-06, steps 3–6).** The
+two-concurrently-live machinery is now built and on `main`. Execution-local
+state (heap + the registries that reference it) lives in a standalone
+`ExecutionContext` struct (`rust/src/execution_context.rs`); `Env` holds a
+`contexts: HashMap<ContextKey, ExecutionContext>` map plus a `default_context`,
+and each `Stack` links to its context by a `ContextKey` (key, not pointer).
+`Env::fork_execution(src)` forks a stack into a fully isolated context+stack
+copy that shares no mutable heap state with the source, and `run_speculative` is
+now re-expressed on top of it (fork → run the fork → drop the fork), so a
+speculative frame leaves the source *entirely* untouched — state, heap objects,
+and even print output. Per-context GC, the fork, and the stronger speculative
+isolation are all unit-tested (`env.rs::fork_tests`, `speculative_tests`). What
+remains is only the host/CLI/WASM surface (step 7) and Increment 4 (perf).
+
+**Design as built — simpler than the pin (no threaded `StackContext` view).**
+The earlier pin called for a transient `StackContext` borrow view threaded
+through the evaluator to keep parameter counts down. In the event that proved
+unnecessary: the existing `Evaluator<'a>` struct (`eval/mod.rs`) *already*
+bundles exactly the seven execution-local borrows (`heap`, `closures`,
+`overload_sets`, `output`, `output_buffers`, `bindings`, `counters`), so it
+*is* the borrow view. Moving those fields into `ExecutionContext` meant
+`Env::step`/`call_function` simply borrow them out of the resolved
+`&mut ExecutionContext` (disjoint from the `&mut Stack` and `&Program`, since
+`stacks`/`contexts`/`programs` are distinct fields of `Env`) — and **all of
+`eval/*.rs` was left unchanged**. The "don't nest stacks inside the context"
+rule from the pin still held and is why the disjoint-field borrow works.
 
 **Shipped (Increment 1, on `main`):** lists are immutable. `Heap::list_append`
 returns a new list; the `append` builtin is immutable; `push` is a deprecated
@@ -117,9 +133,11 @@ test in `ts/test/loop-carry-limitations.test.ts`. Commit: `fix: persist every
 rebind of a loop-carried var inside a nested if-block`.
 
 **Next: optional/secondary work** — Increment 4 (persistent backing for
-performance), Increment 6 (garden re-check), and the `World`/`fork_execution`
-API for *two concurrently-live* side-by-side executions. The single-timeline
-speculative-isolation goal is already met (see ⭐ above).
+performance) and the host/CLI/WASM surface (step 7) that exposes
+`fork_execution` + per-fork output/diff to the SDL and web apps. The
+`ExecutionContext`/`fork_execution` core (steps 3–6) is now **shipped** — see
+the ⭐⭐ note in the handoff above. The single-timeline speculative-isolation
+goal was already met before that (see ⭐).
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:
@@ -317,55 +335,63 @@ Each increment is independently shippable and keeps the test suite green.
    reference host builtins like `editor(...)` that only exist inside the Garden
    app, so they're not runnable from the core `petal` CLI; that's unrelated.)
 
-The remaining sections below were written for the Option-A copy-on-write design.
-They are retained because the *fork / World / per-world-GC* machinery and the
-**hazards list** apply regardless of which option provides isolation — under
-Option B the heap becomes immutable so the "copy-on-write slot" mechanics are
-unnecessary, but the execution-context fork, side-effect, ID-reuse, symbol-table,
-and hot-reload concerns are all still live.
+The remaining sections describe the **`ExecutionContext` fork** machinery that
+delivers *two concurrently-live* executions. Under Option B the heap is immutable
+by construction, so the copy-on-write slot mechanics are unnecessary — but the
+execution-context fork, per-context GC, side-effect, ID-reuse, symbol-table, and
+hot-reload concerns are all still live and are addressed below.
 
 ## Recommended architecture
 
-### 1. Make heap slots copy-on-write
+### 1. Heap copy-on-write — NOT NEEDED under Option B (Rc is the deferred Increment 4)
 
-In `heap.rs`, change the payload fields to reference-counted:
+Under Option B the heap is immutable by construction (no `get_*_mut`), so there
+is no in-place write to make copy-on-write — the CoW-slot machinery the original
+Option-A design called for is **not needed** on the correctness path.
 
-```rust
-struct HeapList   { elements: Rc<Vec<Value>>, alive: bool, gc_mark: bool }
-struct HeapMap    { entries:  Rc<IndexMap<String, Value>>, .. }
-struct HeapF64Array { data:   Rc<Vec<f64>>, .. }
-// strings: Rc<str>; elements struct is already small/Copy-ish
-```
+The only thing left here is a *pure performance* optimization, **Increment 4
+(deferred, profiling-gated)**: wrap each heap slot's payload in `Rc`
+(`Rc<Vec<Value>>`, `Rc<IndexMap<..>>`, `Rc<str>`) so `fork()` (below) becomes
+O(live slots) pointer-clones instead of a deep copy. Semantics are already
+correct without it; pick it up only if a real workload shows the copies hurt.
 
-- `get_list(id) -> &[Value]`: `&self.lists[i].elements` (unchanged at call sites).
-- `get_list_mut(id) -> &mut Vec<Value>`: `Rc::make_mut(&mut self.lists[i].elements)`.
-  Every existing mutation site keeps compiling and gets CoW for free.
-- Allocation wraps payloads in `Rc::new`.
+### 2. `Heap::fork()` — DONE
 
-This step is internal to `heap.rs`; mutation call sites in `eval/exec.rs` and
-`builtins/collections.rs` are unchanged.
+`Heap::fork()` is in place as a plain deep clone (`Heap: Clone`): the child
+shares no mutable state, and pre-fork ids resolve to equal objects in both. The
+intern table is cloned too — interning across forks is fine: a string allocated
+post-fork in the child simply isn't visible to the parent, and pre-fork shared
+strings keep their IDs. (The Increment-4 `Rc` payloads above would later make
+this O(live slots) without changing the API.)
 
-### 2. Add `Heap::fork()`
+### 3. Bundle execution-local state into an `ExecutionContext`
 
-```rust
-impl Heap {
-    /// Cheap copy-on-write clone. Shares all live payloads via Rc; the first
-    /// write to any object in either heap copies just that object.
-    pub fn fork(&self) -> Heap { /* clone the Vecs of Rc + intern table */ }
-}
-```
+> **As built (2026-06):** this section is the original design rationale and is
+> accurate about *what* gets bundled and *why* the two-map disjoint borrow
+> works. One thing changed in implementation: the transient `StackContext`
+> borrow view and `with_stack_context` closure helper below were **not needed**
+> — the existing `Evaluator<'a>` struct already serves as the borrow view (it
+> bundles the same seven fields), so the registries are borrowed straight out of
+> the resolved `&mut ExecutionContext` and `eval/*.rs` was left untouched. Read
+> the rest for the ownership reasoning; treat the `StackContext` code blocks as
+> historical.
 
-The intern table is cloned too. Note: interning across forks is fine — each
-fork interns into its own table; a string allocated post-fork in the child
-simply isn't visible to the parent. (Pre-fork shared strings keep their IDs.)
+The `Stack` is *not* the whole execution. A `Stack` holds only the call-stack
+machinery (frames, registers, `state`, status/loop bookkeeping). The mutable
+state a run actually *grows* lives on `Env` today, shared by every stack:
+`heap`, `closures`, `overload_sets`, `output`, `output_buffers`, `counters`,
+`bindings`. Because immutability (Increments 1–3) means a clone can't *corrupt
+existing* heap objects, but two concurrently-live runs would still interleave
+allocations into one heap, share closure/overload ids, and mix output —
+isolating a run means isolating *this whole bundle*, not just cloning a `Stack`.
 
-### 3. Bundle execution-local state and fork it together
+So give each `Stack` an `ExecutionContext` that owns that bundle — a `Stack`
+belongs to exactly one context (many-to-one; a context may back more than one
+stack), and the fork boundary is the context. The fork clones:
 
-The heap is not the only shared mutable state. Move the execution-local
-registries off `Env` into a struct that forks as a unit (or fork them alongside
-the heap). The fork must clone:
-
-- `heap` (CoW, step 1–2)
+- `heap` — immutable by construction, so fork is a plain `Heap::fork()` deep
+  clone (already in place; a later `Rc`-payload optimization can make it
+  O(live slots), see Increment 4).
 - `closures: Vec<RuntimeClosure>` and `overload_sets` — their captures hold heap
   IDs; appending in a child must not perturb the parent, and IDs must stay
   stable. Clone on fork.
@@ -379,12 +405,12 @@ the heap). The fork must clone:
 Shared, read-only-after-build, NOT forked: `programs`, `native_fns`, and the
 `symbols` intern table (see hazard 5 for the symbol-table caveat).
 
-Concretely, introduce something like:
+Concretely, introduce:
 
 ```rust
-/// An isolated execution world: one heap + the runtime registries that
-/// reference it. Forking a World yields a fully isolated copy.
-struct World {
+/// One isolated execution's mutable bundle: the heap + the runtime registries
+/// that reference it. Does NOT own the Stack. Forking yields an isolated copy.
+struct ExecutionContext {
     heap: Heap,
     closures: Vec<RuntimeClosure>,
     overload_sets: Vec<Vec<OverloadEntry>>,
@@ -393,39 +419,92 @@ struct World {
     counters: HashMap<SymbolId, u64>,
     bindings: HashMap<SymbolId, Value>,
 }
-impl World { fn fork(&self) -> World { .. } }
+impl ExecutionContext { fn fork(&self) -> ExecutionContext { .. } }
 ```
 
-`Env` then holds the shared parts plus one-or-more `World`s and the `Stack`s,
-with each stack tagged by which world it runs in.
+**Pinned ownership & borrowing (Rust):**
+
+- `ExecutionContext` is a standalone struct owning the forkable bundle above. It
+  does **not** own the `Stack`. Keeping the stack separate lets `fork_execution`
+  clone the heap bundle and attach a *fresh or separately-cloned* stack, and lets
+  one context back more than one stack if ever wanted (today's "one heap, many
+  stacks" model, now scoped per context).
+- `Env` owns two maps plus the shared, read-only-after-build parts:
+
+  ```rust
+  struct Env {
+      programs: HashMap<ProgramId, Program>,   // shared, read-only-after-build
+      native_fns: NativeFnTable,               //   "
+      symbols: SymbolTable,                    //   "
+      contexts: HashMap<ContextKey, ExecutionContext>,
+      stacks: HashMap<StackKey, Stack>,
+  }
+  ```
+- Each `Stack` links to its context by **key, not pointer**: a
+  `context: ContextKey` field. Rust aliasing rules make a `Stack`→
+  `ExecutionContext` back-pointer impractical; an integer key sidesteps it and is
+  the idiomatic choice. Many stacks may share one `ContextKey` (many-to-one).
+- A transient borrow view bundles what the evaluator needs into one parameter, so
+  functions take a single `&mut StackContext` instead of five-plus args:
+
+  ```rust
+  struct StackContext<'a> {
+      stack: &'a mut Stack,
+      ctx: &'a mut ExecutionContext,
+      programs: &'a HashMap<ProgramId, Program>,
+      native_fns: &'a NativeFnTable,
+  }
+  ```
+  It is built once per step and threaded down — never stored. Because the `Stack`
+  and its `ExecutionContext` live in *separate* maps, both are mutably borrowable
+  at once (disjoint fields of `Env`). Hand the view out through a closure, not a
+  returned `StackContext<'_>` — a method returning the view would make the borrow
+  checker treat *all* of `self` as borrowed:
+
+  ```rust
+  fn with_stack_context<R>(
+      &mut self, sk: StackKey, f: impl FnOnce(StackContext) -> R,
+  ) -> Result<R, String> {
+      let ck = self.stacks.get(&sk).ok_or("no stack")?.context;   // Copy key
+      let stack = self.stacks.get_mut(&sk).unwrap();
+      let ctx = self.contexts.get_mut(&ck).ok_or("no context")?;
+      Ok(f(StackContext { stack, ctx,
+          programs: &self.programs, native_fns: &self.native_fns }))
+  }
+  ```
+  Inside the evaluator, `sc.stack` and `sc.ctx.heap` are disjoint fields and can
+  be sub-borrowed simultaneously; only a whole-`self` *method* on `StackContext`
+  would block that, so prefer field access in hot paths.
+- **Do not** nest the stacks map inside `ExecutionContext`: reaching a stack would
+  then borrow the whole context, killing the `&mut ctx` + `&mut stack` pair that
+  makes the view work.
 
 ### 4. New public API
 
 ```rust
 impl Env {
-    /// Fork an existing execution into a new, isolated stack+world.
+    /// Fork an existing execution into a new, isolated stack + ExecutionContext.
     /// The new stack shares no mutable heap state with the source.
     pub fn fork_execution(&mut self, src: StackKey) -> Result<StackKey, String>;
 }
 ```
 
 Re-express `run_speculative` in terms of a fork: fork → run the fork → read
-results / diff → drop the fork. Dropping a fork reclaims its uniquely-owned
-slots immediately (Rc drop); shared slots survive in the parent.
+results / diff → drop the fork. Dropping a fork drops its `ExecutionContext`,
+releasing its heap and registries.
 
-### 5. GC must be per-world
+### 5. GC must be per-context
 
 `collect_garbage` currently marks across all stacks and Env roots into the one
-heap. With multiple worlds:
-- Each `World` GCs its own heap, rooted by the stacks bound to that world plus
-  that world's closures/overload_sets/output_buffers/bindings.
-- Because payloads are `Rc`, a sweep in one world that drops its last reference
-  to a *shared* object must NOT free the slot the parent still references. With
-  `Rc`, "free" = drop the `Rc`; the payload's memory is reclaimed only when the
-  last world drops it. The free-list/`alive` bookkeeping becomes per-world (each
-  world's ID space is independent after fork — but IDs were equal at fork time,
-  so a world must only ever sweep its own slot vector). Keep marking logic; just
-  scope roots to one world.
+heap. With multiple contexts:
+- Each `ExecutionContext` GCs its own heap, rooted by its stack plus that
+  context's closures/overload_sets/output_buffers/bindings.
+- Each context owns its heap outright (the fork deep-clones it), so its ID space
+  is independent after fork — a context must only ever sweep its own slot
+  vector. Keep the marking logic; just scope roots to one context. (If Increment
+  4 later makes payloads `Rc`-shared across a fork, "free" becomes "drop the
+  `Rc`" and a slot's memory is reclaimed only when the last context drops it —
+  the per-context root scoping is unchanged.)
 
 ## Phased implementation
 
@@ -437,23 +516,45 @@ heap. With multiple worlds:
    pre-fork ids resolve to equal objects in both. Test:
    `heap.rs::tests::fork_yields_an_isolated_heap_sharing_pre_fork_objects`. A
    later `Rc`-payload optimization can make fork O(live slots) (see Increment 4).
-3. **`World` extraction — TODO (the remaining feature).** Move execution-local
-   registries off `Env` into a forkable `World` (`heap`, `closures`,
-   `overload_sets`, `output`, `output_buffers`, `counters`, `bindings`); thread
-   a `WorldId` (or fold world into the stack). Keep a single default world so
-   existing call sites are unaffected. This is needed only for *two
-   concurrently-live* executions — single-timeline speculation already works
-   via `run_speculative` + immutability.
-4. **`World::fork()` + `Env::fork_execution()`.** Fork heap + registries +
-   bindings; give the new world fresh output buffers.
-5. **Per-world GC.** Scope `collect_garbage` roots to a world's stacks.
-6. **Rebuild `run_speculative` on top of `fork_execution`**; keep the old
-   signature as a thin wrapper for compatibility.
-7. **Host/CLI/WASM surface.** Expose fork + per-fork output and a state/heap diff
-   so the SDL and web apps can drive side-by-side runs (out of scope for the core
-   but the API in step 4 should anticipate it).
-8. **Docs + examples.** Update `docs/dev` and add an example demonstrating a
-   forked run that leaves the original untouched.
+3. **`ExecutionContext` extraction — DONE.** Execution-local registries moved
+   off `Env` into a standalone forkable `ExecutionContext`
+   (`rust/src/execution_context.rs`: `heap`, `closures`, `overload_sets`,
+   `output`, `output_buffers`, `counters`, `bindings`); `Env` gained a
+   `contexts: HashMap<ContextKey, ExecutionContext>` map plus a
+   `default_context`, and each `Stack` got a `context: ContextKey`.
+   **No `StackContext` view was needed** — the existing `Evaluator<'a>` struct
+   already bundles those seven borrows, so `step`/`call_function` borrow them out
+   of the resolved `&mut ExecutionContext` and `eval/*.rs` was untouched (see the
+   "Design as built" note in the handoff). Existing behavior is unaffected by
+   defaulting every stack to a single context; the full cargo suite stayed green.
+4. **`ExecutionContext::fork()` + `Env::fork_execution()` — DONE.** `fork()`
+   deep-clones the heap (`Heap::fork()`) and the closures/overload_sets/
+   bindings/counters registries, and gives the fork *fresh* empty output +
+   output_buffers so the variant's output is captured separately.
+   `Env::fork_execution(src) -> Result<StackKey, String>` forks the source
+   context into a new `ContextKey` and clones the source stack into a new
+   `StackKey` rebound to it. Proven by
+   `env.rs::fork_tests::fork_runs_independently_and_leaves_source_untouched`.
+5. **Per-context GC — DONE.** `collect_garbage(ck)` marks roots only from stacks
+   bound to that context plus that context's own registries, and sweeps only
+   that context's heap; `run` collects the running stack's context. Each context
+   owns its heap outright, so cross-context isolation is structural — pinned by
+   `env.rs::fork_tests::gc_in_one_context_does_not_free_objects_live_in_another`.
+6. **Rebuilt `run_speculative` on `fork_execution` — DONE.** It now forks → runs
+   the fork → drops the fork (releasing its context+heap), keeping the same
+   public signature. The source is left *entirely* untouched, including its
+   print output (the old snapshot/restore leaked speculative prints into the
+   shared buffer). Pinned by
+   `env.rs::speculative_tests::speculative_run_does_not_leak_output_or_heap_into_source`.
+7. **Host/CLI/WASM surface — TODO.** Expose fork + per-fork output and a
+   state/heap diff so the SDL and web apps can drive side-by-side runs (out of
+   scope for the core; `fork_execution`'s `Result<StackKey, String>` signature
+   already anticipates it).
+8. **Docs + examples — DONE (this doc).** The handoff + steps above record the
+   shipped design. The "forked run leaves the original untouched" demonstration
+   lives as runtime tests (`env.rs::fork_tests`, `speculative_tests`) rather than
+   a `.ptl` example, since forking is a host-API capability with no script-level
+   syntax.
 
 ## Other hazards with parallel / speculative scripts
 
@@ -472,12 +573,12 @@ against shared state. Calling them out per the design ask:
    indexed by ID. *Even without speculation*, two stacks in one Env already
    share this Vec — a latent bug for side-by-side runs. Forking the registries
    (step 3) fixes it; ensure `ClosureId`/`OverloadSetId` values captured before
-   the fork still resolve in both worlds (they will, since the Vec is cloned).
+   the fork still resolve in both contexts (they will, since the Vec is cloned).
 
 3. **Heap ID reuse via free-lists.** A freed slot's `u32` is reused. If a stale
    `Value` (e.g. cached in host code, or in dropped-but-not-cleared state)
    outlives a GC, it can alias a *different* object after reuse. This is a
-   pre-existing footgun that gets worse with multiple worlds. Consider
+   pre-existing footgun that gets worse with multiple contexts. Consider
    generational IDs (`{index, generation}`) so a stale ID fails fast instead of
    silently aliasing.
 
@@ -490,15 +591,15 @@ against shared state. Calling them out per the design ask:
    `Env`. If two forks intern *new, different* symbols concurrently they could be
    assigned the same ordinal and diverge. Either (a) keep the symbol table shared
    and require interning to be monotonic/coordinated, or (b) snapshot it per
-   world. Simplest: treat the symbol table as shared+append-only and accept that
+   context. Simplest: treat the symbol table as shared+append-only and accept that
    a symbol interned in a child is globally visible (symbols are identity, not
    mutable state, so this is usually fine — but document it).
 
 6. **`transfer_state` (hot reload) interaction.** Hot reload clears closures and
-   retains state keyed by compile-time `StateKey`. With worlds, decide whether a
-   reload forks a fresh world or mutates in place. The state Values carry heap
+   retains state keyed by compile-time `StateKey`. With contexts, decide whether a
+   reload forks a fresh context or mutates in place. The state Values carry heap
    IDs, so a reload that swaps the program but keeps the heap must keep the same
-   world.
+   context.
 
 7. **`F64Array` / large buffers.** CoW copies a whole f64 array on first write.
    For big numeric buffers mutated element-by-element in a speculative run, that
@@ -507,8 +608,8 @@ against shared state. Calling them out per the design ask:
 
 8. **Memory growth from many forks.** Each live fork pins the objects it has
    copied. Long-lived side-by-side sessions that keep forking need a way to drop
-   old forks; make fork lifetime explicit and ensure dropping a `World` releases
-   its `Rc`s promptly.
+   old forks; make fork lifetime explicit and ensure dropping an
+   `ExecutionContext` releases its heap/`Rc`s promptly.
 
 ## Out of scope / explicit non-goals
 

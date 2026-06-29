@@ -291,8 +291,11 @@ Each increment is independently shippable and keeps the test suite green.
    together with the nested-`if` loop-carry fix above. Pinned by
    `env.rs::speculative_tests::let_alias_of_state_var_mutated_by_index_persists`.
    Reopen only with a concrete failing repro.
-6. **Garden migration.** Apply the same `push`→`append` and assignment changes
-   to `~/garden` and `~/.garden` scripts.
+6. **Garden migration — DONE (no-op).** Re-checked `~/garden` and `~/.garden`
+   (3 `.ptl` files total): none use list-mutation builtins, `push`, the changed
+   `set`/`swap`/`pop`, or index/field assignment — nothing to migrate. (They do
+   reference host builtins like `editor(...)` that only exist inside the Garden
+   app, so they're not runnable from the core `petal` CLI; that's unrelated.)
 
 The remaining sections below were written for the Option-A copy-on-write design.
 They are retained because the *fork / World / per-world-GC* machinery and the

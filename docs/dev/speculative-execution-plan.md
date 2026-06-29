@@ -18,6 +18,18 @@ semantics), so heap objects are never mutated and sharing between executions is
 safe. See [Decision: Option B](#decision-option-b) and the
 [incremental roadmap](#incremental-roadmap-toward-immutable-by-default).
 
+**⭐ Core goal ACHIEVED (Increments 1–3 + 5 accessor removal).** The heap is now
+immutable by construction, and the plan's root-cause isolation bug is fixed:
+`Env::run_speculative` snapshots/restores state ids, and because no heap object
+is ever mutated, a speculative frame that "mutates" a state collection cannot
+corrupt the object the committed state still points at. Proven by
+`env.rs::speculative_tests::speculative_run_does_not_corrupt_committed_state_objects`.
+This delivers single-timeline speculative isolation *without* the Option-A
+copy-on-write/`Rc` slot machinery. Remaining work is now optional/secondary:
+persistent backing for performance (Increment 4), the `let`-alias follow-up,
+garden re-check (Increment 6), and the `World`/`fork_execution` API needed only
+for *two concurrently-live* side-by-side executions (the §architecture hazards).
+
 **Shipped (Increment 1, on `main`):** lists are immutable. `Heap::list_append`
 returns a new list; the `append` builtin is immutable; `push` is a deprecated
 immutable alias. All `examples/` and `apps/` scripts migrated off in-place

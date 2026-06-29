@@ -31,12 +31,42 @@ variable inside a loop (`xs = append(xs, x)`) now persists across runs
 key). Without it, value-semantic accumulation into a state list silently
 vanished each frame.
 
-**Next: Increment 2 — immutable index/field assignment.** Recompile `xs[i] = v`
-and `obj.f = v` (`SetIndex`/`SetField`) into functional-update + rebind of the
-root variable. **Apply the same in-loop-state-persistence care as Increment 1** —
-when the root is a `state` var written inside a loop, the rebind must reach the
-base state slot. Relevant code: `compiler/stmt.rs` (`compile_assign` /
-`compile_assign_name`), `eval/exec.rs` (`exec_set_field` / `exec_set_index`).
+**Shipped (Increment 2):** index/field assignment is immutable. `xs[i] = v` and
+`obj.f = v` (incl. nested `grid[y][x] = v`, `obj.items[i].f = v`) recompile into a
+functional rebuild of the path + rebind of the root variable. `Heap::list_set` /
+`map_set` / `f64_array_set` return new collections; `SetIndex`/`SetField` now
+*produce* the updated collection instead of mutating + returning Nil. Both
+assignment forms route through a shared `compiler/stmt.rs::rebind_name`, so the
+Increment-1 in-loop-state-persistence machinery applies for free. Two companion
+fixes were required:
+- `compiler/phi.rs`: `collect_assigned_names_stmts` now treats the *root* of an
+  index/field assignment (via `assign_target_root`) as a reassignment, so an
+  in-loop `grid[i] = v` registers as a loop carry and its `StateWrite` reaches
+  the base state slot.
+- `eval/exec.rs::exec_set_index`: list index-assign now resolves negative
+  indices from the end, symmetric with `GetIndex` — required so a negative
+  index at a *non-leaf* level of a nested path (`grid[-1][0] = v`) rebuilds the
+  same slot it read.
+
+Non-variable-rooted assignment (`foo()[0] = v`) is a dead store under value
+semantics and now emits a compile-time `Error` term rather than silently
+dropping. All `examples/`/`apps/` scripts run headless; only `tetris.ptl` needed
+migrating — it routed grid writes through a `set_cell(grd, …)` helper and relied
+on by-reference mutation, so `set_cell`/`lock_piece`/`clear_lines` now take the
+grid and return the updated grid (`grid = lock_piece(grid)`).
+
+**Known limitation discovered (follow-up):** `let g = <state_var>` aliases the
+local `g` to the state var's `StateInit` term (a `let` renames+binds the value
+term rather than emitting a fresh Copy). Under value semantics, reassigning such
+a local by index (`g[i] = v`) is silently dropped — the rebind misroutes. Work
+around by threading state through a function parameter (as tetris now does).
+Worth a dedicated compiler fix (make `let` of a state-var read bind an
+independent Copy) before/with Increment 5.
+
+**Next: Increment 3 — immutable `pop` / f64-array `set` / `swap` / map remove.**
+These builtins still mutate via `get_*_mut` (`builtins/collections.rs`). Decide
+the `pop` shape (split into `last` + `drop_last`, or return a pair). `pop` is
+currently unused by any script, so this is low-risk.
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:
@@ -177,11 +207,17 @@ Each increment is independently shippable and keeps the test suite green.
    31 SDL examples run and their state lists accumulate. **Increment 2 will need
    the same care** — index/field assignment desugared to rebind must likewise
    persist when the root is an in-loop state variable.
-2. **Immutable index/field assignment.** Recompile `xs[i] = v` and `obj.f = v`
-   (the `SetIndex` / `SetField` term ops) into functional-update-and-rebind of
-   the root variable, so existing assignment *syntax* keeps working with value
-   semantics and scripts need no change. Two-level paths (`grid[y][x] = v`) nest
-   the rebuild. This is the main compiler change.
+2. **Immutable index/field assignment — DONE.** `xs[i] = v` and `obj.f = v`
+   (the `SetIndex` / `SetField` term ops) recompile into functional-update-and-
+   rebind of the root variable (`compiler/stmt.rs::compile_path_assign` +
+   `rebind_name`); `SetIndex`/`SetField` now produce a new collection via
+   `Heap::list_set`/`map_set`/`f64_array_set`. Nested paths (`grid[y][x] = v`)
+   nest the rebuild. Companion fixes: `phi.rs` registers the assignment root as
+   a loop carry (in-loop state persistence), and `exec_set_index` resolves
+   negative indices symmetric with `GetIndex`. Scripts needed no change except
+   `tetris.ptl` (routed grid writes through a helper that relied on by-reference
+   mutation). Known follow-up: `let g = <state_var>` then `g[i] = v` is dropped
+   (the `let` aliases the local to the state slot) — see handoff.
 3. **Immutable `pop` / f64-array `set` / `swap` / map field-set & remove.**
    Decide the `pop` shape (it returns both a value and a shorter list — likely
    split into `last` + `drop_last`, or return a pair). `pop` is currently unused

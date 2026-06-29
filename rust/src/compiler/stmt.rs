@@ -2,6 +2,19 @@
 
 use super::*;
 
+/// One step of an assignment-target path, borrowing from the AST.
+enum AssignStep<'a> {
+    Field(&'a str),
+    Index(&'a Expr),
+}
+
+/// A path step after compilation: a field name interned as a constant, or an
+/// index expression compiled to a term.
+enum CompiledStep {
+    Field(crate::constant_table::ConstantId),
+    Index(TermId),
+}
+
 impl Compiler {
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         let stmt_span = stmt.span;
@@ -194,31 +207,135 @@ impl Compiler {
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
             AssignTarget::Field(object, field) => {
-                let obj_tid = self.compile_expr(object);
-                let val_tid = self.compile_expr(value);
-                let field_const = self.constants.intern(ConstantValue::String(field.clone()));
-                self.emit_term(
-                    TermOp::SetField(field_const),
-                    smallvec![obj_tid, val_tid],
-                    None,
-                );
+                match Self::resolve_assign_target(object) {
+                    Some((root, mut steps)) => {
+                        steps.push(AssignStep::Field(field));
+                        self.compile_path_assign(root, steps, value);
+                    }
+                    None => self.emit_dead_store_error(),
+                }
             }
-            AssignTarget::Index(object, index) => {
-                let obj_tid = self.compile_expr(object);
-                let idx_tid = self.compile_expr(index);
-                let val_tid = self.compile_expr(value);
-                self.emit_term(
-                    TermOp::SetIndex,
-                    smallvec![obj_tid, idx_tid, val_tid],
-                    None,
-                );
+            AssignTarget::Index(object, index) => match Self::resolve_assign_target(object) {
+                Some((root, mut steps)) => {
+                    steps.push(AssignStep::Index(index));
+                    self.compile_path_assign(root, steps, value);
+                }
+                None => self.emit_dead_store_error(),
+            },
+        }
+    }
+
+    /// Walk an assignment-target object expression into a (root variable name,
+    /// steps) pair, where each step is a field or index applied left-to-right
+    /// from the root. Returns `None` if the chain is not rooted at a plain
+    /// variable (e.g. `foo()[0] = v`), which is a dead store under value
+    /// semantics.
+    fn resolve_assign_target(object: &Expr) -> Option<(&str, Vec<AssignStep<'_>>)> {
+        match &object.kind {
+            ExprKind::Ident(n) => Some((n, vec![])),
+            ExprKind::FieldAccess { object, field } => {
+                let (root, mut steps) = Self::resolve_assign_target(object)?;
+                steps.push(AssignStep::Field(field));
+                Some((root, steps))
+            }
+            ExprKind::IndexAccess { object, index } => {
+                let (root, mut steps) = Self::resolve_assign_target(object)?;
+                steps.push(AssignStep::Index(index));
+                Some((root, steps))
+            }
+            _ => None,
+        }
+    }
+
+    fn emit_dead_store_error(&mut self) {
+        let msg = "Assignment target must be rooted at a variable; assigning into a \
+                   temporary value (e.g. the result of a call) has no effect under \
+                   value semantics"
+            .to_string();
+        let msg_cid = self.constants.intern(ConstantValue::String(msg));
+        self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
+    }
+
+    /// Compile `root.<steps> = value` as a functional update + rebind of the
+    /// root variable (value semantics): rebuild each collection along the path
+    /// bottom-up, then rebind `root` to the new top-level collection.
+    fn compile_path_assign(&mut self, root: &str, steps: Vec<AssignStep>, value: &Expr) {
+        let n = steps.len();
+        debug_assert!(n >= 1);
+
+        let val_tid = self.compile_expr(value);
+
+        // Compile each step once: field name -> constant, index expr -> term.
+        let csteps: Vec<CompiledStep> = steps
+            .iter()
+            .map(|step| match step {
+                AssignStep::Field(name) => {
+                    CompiledStep::Field(self.constants.intern(ConstantValue::String((*name).to_string())))
+                }
+                AssignStep::Index(expr) => CompiledStep::Index(self.compile_expr(expr)),
+            })
+            .collect();
+
+        // Reads for the intermediate collections: read[0] is the root variable
+        // (resolved through scope, like an `Ident` reference), read[i] is the
+        // value obtained by applying step[i-1] to read[i-1]. We only need
+        // reads for levels 0..n-1 (the leaf level is overwritten, not read).
+        let mut reads: Vec<TermId> = Vec::with_capacity(n);
+        reads.push(self.compile_ident(root));
+        for i in 0..n - 1 {
+            let prev = reads[i];
+            let read = match &csteps[i] {
+                CompiledStep::Field(cid) => {
+                    self.emit_term(TermOp::GetField(*cid), smallvec![prev], None)
+                }
+                CompiledStep::Index(idx) => {
+                    self.emit_term(TermOp::GetIndex, smallvec![prev, *idx], None)
+                }
+            };
+            reads.push(read);
+        }
+
+        // Build the new collections bottom-up. The leaf write replaces the
+        // element at the deepest level; each enclosing level is rebuilt with
+        // the freshly-built inner collection.
+        let mut new_val = self.emit_set(&csteps[n - 1], reads[n - 1], val_tid);
+        for i in (0..n - 1).rev() {
+            new_val = self.emit_set(&csteps[i], reads[i], new_val);
+        }
+
+        // Rebind the root variable to the new top-level collection, routing
+        // through the same machinery as plain name assignment so state writes
+        // and loop-carry phis are handled identically.
+        self.rebind_name(root, new_val);
+    }
+
+    /// Emit a functional-update term for one path step: `SetField`/`SetIndex`
+    /// of `val` into `obj` at the step's field/index.
+    fn emit_set(&mut self, step: &CompiledStep, obj: TermId, val: TermId) -> TermId {
+        match step {
+            CompiledStep::Field(cid) => {
+                self.emit_term(TermOp::SetField(*cid), smallvec![obj, val], None)
+            }
+            CompiledStep::Index(idx) => {
+                self.emit_term(TermOp::SetIndex, smallvec![obj, *idx, val], None)
             }
         }
     }
 
     fn compile_assign_name(&mut self, name: &str, value: &Expr) {
         let val_tid = self.compile_expr(value);
+        self.rebind_name(name, val_tid);
+    }
 
+    /// Rebind variable `name` to the already-compiled value `val_tid`.
+    ///
+    /// Shared by plain name assignment (`x = v`) and index/field assignment
+    /// (`x[i] = v`, `x.f = v`), which under value semantics desugars to a
+    /// functional rebuild followed by a rebind of the root variable. Emits a
+    /// `StateWrite` when the root is a state variable so in-loop reassignment
+    /// persists across runs, shares the loop carry slot, and records the
+    /// rebind so an enclosing conditional / loop can emit a phi join.
+    pub(super) fn rebind_name(&mut self, name: &str, val_tid: TermId) {
         // Check if this is a state variable — if so, emit StateWrite.
         // Walk through Phi/Copy nodes so an assignment inside an
         // `if` / loop body, or a chain of repeat reassignments at

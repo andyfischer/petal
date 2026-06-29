@@ -165,8 +165,11 @@ fn get_cell(grd, gx, gy)
     grd[gy * 10 + gx]
 end
 
+// Value semantics: index-assign rebinds the local `grd`, so return the
+// updated grid and have callers rebind (`grid = set_cell(grid, ...)`).
 fn set_cell(grd, gx, gy, val)
     grd[gy * 10 + gx] = val
+    grd
 end
 
 fn get_blocks(piece_type, rot)
@@ -214,27 +217,33 @@ fn spawn_piece()
     end
 end
 
-fn lock_piece()
+// Value semantics: takes the grid and returns the updated grid; the caller
+// rebinds (`grid = lock_piece(grid)`). (A local `let g = grid` then mutating
+// `g` would not work: `let` binding a state-var read aliases the local to the
+// state slot, so route the grid through a parameter instead.)
+fn lock_piece(g)
     let blocks = get_blocks(cur_type, cur_rot)
     let i = 0
     while i < 4 do
         let bx = cur_x + blocks[i * 2]
         let by = cur_y + blocks[i * 2 + 1]
         if by >= 0 && by < 20 && bx >= 0 && bx < 10 then
-            set_cell(grid, bx, by, cur_type + 1)
+            g = set_cell(g, bx, by, cur_type + 1)
         end
         i += 1
     end
+    g
 end
 
-fn clear_lines()
+// Value semantics: takes the grid and returns the updated grid (see lock_piece).
+fn clear_lines(g)
     let cleared = 0
     let y = 19
     while y >= 0 do
         let full = true
         let x = 0
         while x < 10 do
-            if get_cell(grid, x, y) == 0 then
+            if get_cell(g, x, y) == 0 then
                 full = false
             end
             x += 1
@@ -246,7 +255,7 @@ fn clear_lines()
             while row > 0 do
                 let col = 0
                 while col < 10 do
-                    set_cell(grid, col, row, get_cell(grid, col, row - 1))
+                    g = set_cell(g, col, row, get_cell(g, col, row - 1))
                     col += 1
                 end
                 row -= 1
@@ -254,7 +263,7 @@ fn clear_lines()
             // Clear top row
             let col = 0
             while col < 10 do
-                set_cell(grid, col, 0, 0)
+                g = set_cell(g, col, 0, 0)
                 col += 1
             end
             // Don't decrement y - check same row again since rows shifted
@@ -272,6 +281,7 @@ fn clear_lines()
     end
     lines_cleared += cleared
     level = 1 + lines_cleared / 10
+    g
 end
 
 // --- Initialization ---
@@ -309,8 +319,8 @@ if !game_over then
     if key_pressed("space") then
         let gy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
         cur_y = gy
-        lock_piece()
-        clear_lines()
+        grid = lock_piece(grid)
+        grid = clear_lines(grid)
         spawn_piece()
         fall_timer = 0.0
     end
@@ -328,8 +338,8 @@ if !game_over then
         if !check_collision(grid, cur_type, cur_rot, cur_x, cur_y + 1) then
             cur_y += 1
         else
-            lock_piece()
-            clear_lines()
+            grid = lock_piece(grid)
+            grid = clear_lines(grid)
             spawn_piece()
         end
     end

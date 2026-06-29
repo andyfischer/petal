@@ -192,6 +192,15 @@ impl Heap {
         self.alloc_list(elements)
     }
 
+    /// Return a new list equal to `id` with `elements[index] = val`. `id` is
+    /// unchanged. The caller must ensure `index` is in bounds (eval already
+    /// bounds-checks before calling).
+    pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
+        let mut elements = self.lists[id.0 as usize].elements.clone();
+        elements[index] = val;
+        self.alloc_list(elements)
+    }
+
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
@@ -225,6 +234,14 @@ impl Heap {
         self.f64_arrays[id.0 as usize].data.len()
     }
 
+    /// Return a new f64 array equal to `id` with `data[index] = val`. `id` is
+    /// unchanged. The caller must ensure `index` is in bounds.
+    pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
+        let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        data[index] = val;
+        self.alloc_f64_array(data)
+    }
+
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
@@ -252,6 +269,14 @@ impl Heap {
 
     pub fn get_map_mut(&mut self, id: MapId) -> &mut IndexMap<String, Value> {
         &mut self.maps[id.0 as usize].entries
+    }
+
+    /// Return a new map equal to `id` with `key` set to `val`. `id` is
+    /// unchanged (value semantics).
+    pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
+        let mut entries = self.maps[id.0 as usize].entries.clone();
+        entries.insert(key, val);
+        self.alloc_map(entries)
     }
 
     // --- Element allocation ---
@@ -472,5 +497,72 @@ mod tests {
         let one = heap.list_append(empty, Value::Int(42));
         assert_eq!(heap.get_list(empty), &[] as &[Value]);
         assert_eq!(heap.get_list(one), &[Value::Int(42)]);
+    }
+
+    #[test]
+    fn list_set_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let original = heap.alloc_list(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+
+        let updated = heap.list_set(original, 0, Value::Int(99));
+
+        // A new, distinct list is returned with the element replaced…
+        assert_ne!(original.0, updated.0);
+        assert_eq!(
+            heap.get_list(updated),
+            &[Value::Int(99), Value::Int(2), Value::Int(3)]
+        );
+        // …and the original list is untouched (value semantics).
+        assert_eq!(
+            heap.get_list(original),
+            &[Value::Int(1), Value::Int(2), Value::Int(3)]
+        );
+    }
+
+    #[test]
+    fn map_set_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let mut entries = IndexMap::new();
+        entries.insert("a".to_string(), Value::Int(1));
+        entries.insert("b".to_string(), Value::Int(2));
+        let original = heap.alloc_map(entries);
+
+        let updated = heap.map_set(original, "a".to_string(), Value::Int(99));
+
+        // A new, distinct map is returned with the key updated…
+        assert_ne!(original.0, updated.0);
+        assert_eq!(heap.get_map(updated).get("a"), Some(&Value::Int(99)));
+        assert_eq!(heap.get_map(updated).get("b"), Some(&Value::Int(2)));
+        // …and the original map is untouched (value semantics).
+        assert_eq!(heap.get_map(original).get("a"), Some(&Value::Int(1)));
+        assert_eq!(heap.get_map(original).get("b"), Some(&Value::Int(2)));
+    }
+
+    #[test]
+    fn map_set_can_add_a_new_key() {
+        let mut heap = Heap::new();
+        let mut entries = IndexMap::new();
+        entries.insert("a".to_string(), Value::Int(1));
+        let original = heap.alloc_map(entries);
+
+        let updated = heap.map_set(original, "b".to_string(), Value::Int(2));
+
+        assert_eq!(heap.get_map(updated).get("b"), Some(&Value::Int(2)));
+        // Original is unchanged: the new key is not present.
+        assert_eq!(heap.get_map(original).get("b"), None);
+    }
+
+    #[test]
+    fn f64_array_set_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let original = heap.alloc_f64_array(vec![1.0, 2.0, 3.0]);
+
+        let updated = heap.f64_array_set(original, 1, 9.5);
+
+        // A new, distinct array is returned with the element replaced…
+        assert_ne!(original.0, updated.0);
+        assert_eq!(heap.get_f64_array(updated), &[1.0, 9.5, 3.0]);
+        // …and the original array is untouched (value semantics).
+        assert_eq!(heap.get_f64_array(original), &[1.0, 2.0, 3.0]);
     }
 }

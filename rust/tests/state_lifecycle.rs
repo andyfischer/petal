@@ -63,6 +63,42 @@ fn state_list_accumulated_in_loop_persists_across_runs() {
 }
 
 #[test]
+fn state_list_mutated_by_index_in_loop_persists_across_runs() {
+    // A `state` list updated by in-loop index assignment (`grid[i] = grid[i] + 1`)
+    // must persist across runs. Under value semantics the index assignment desugars
+    // to a functional rebuild + rebind of `grid`; routing the rebind through the
+    // same machinery as plain name assignment means the StateWrite to the base slot
+    // fires, so the per-iteration writes survive when the run ends.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "state grid = [0, 0, 0]\nfor i in range(0, 3) do\n  grid[i] = grid[i] + 1\nend",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    let grid_key = StateKey(petal::compiler::Compiler::hash_state_name("grid"));
+    let cell0 = |env: &Env| match env.get_state(sid, grid_key).unwrap() {
+        petal::value::Value::List(id) => env.heap().get_list(id)[0],
+        other => panic!("expected a list, got {:?}", other),
+    };
+
+    env.run(sid).unwrap();
+    // First run: each cell incremented once → grid == [1, 1, 1].
+    assert_eq!(format!("{:?}", cell0(&env)), "Int(1)", "first run should set cell 0 to 1");
+
+    // Second run: init is a cache hit (not reset to [0,0,0]), so cells accumulate
+    // → grid == [2, 2, 2]. Confirms the index-assign rebind wrote to the base slot.
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(
+        format!("{:?}", cell0(&env)),
+        "Int(2)",
+        "second run should accumulate onto the persisted list"
+    );
+}
+
+#[test]
 fn explicit_key_state_survives_reset_and_rerun() {
     let mut env = Env::new();
     let pid = env

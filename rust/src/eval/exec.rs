@@ -356,8 +356,9 @@ impl<'a> Evaluator<'a> {
                     Some(s) => s.to_string(),
                     None => return ControlFlow::Error("SetField: invalid field name".into()),
                 };
-                self.heap.get_map_mut(map_id).insert(field_name, val);
-                self.produce(term, Value::Nil)
+                // Value semantics: produce a new map rather than mutating in place.
+                let new_id = self.heap.map_set(map_id, field_name, val);
+                self.produce(term, Value::Map(new_id))
             }
             _ => ControlFlow::Error(format!("Cannot set field on {}", obj.type_name())),
         }
@@ -414,17 +415,18 @@ impl<'a> Evaluator<'a> {
         let val = inputs[2];
         match (obj, idx) {
             (Value::List(list_id), Value::Int(i)) => {
-                let list = self.heap.get_list_mut(list_id);
-                let index = i as usize;
-                if index < list.len() {
-                    list[index] = val;
-                    self.produce(term, Value::Nil)
+                let len = self.heap.list_len(list_id);
+                // Negative indices count from the end, symmetric with GetIndex
+                // (`exec_get_index`). Required so a negative index at a non-leaf
+                // level of a nested assignment (`grid[-1][0] = v`) rebuilds the
+                // same slot it read from.
+                let index = if i < 0 { len as i64 + i } else { i };
+                if index >= 0 && (index as usize) < len {
+                    // Value semantics: produce a new list rather than mutating in place.
+                    let new_id = self.heap.list_set(list_id, index as usize, val);
+                    self.produce(term, Value::List(new_id))
                 } else {
-                    ControlFlow::Error(format!(
-                        "Index {} out of bounds (len {})",
-                        i,
-                        self.heap.list_len(list_id)
-                    ))
+                    ControlFlow::Error(format!("Index {} out of bounds (len {})", i, len))
                 }
             }
             (Value::F64Array(arr_id), Value::Int(i)) => {
@@ -438,12 +440,16 @@ impl<'a> Evaluator<'a> {
                         ))
                     }
                 };
-                let data = self.heap.get_f64_array_mut(arr_id);
-                if i >= 0 && (i as usize) < data.len() {
-                    data[i as usize] = v;
-                    self.produce(term, Value::Nil)
+                if i >= 0 && (i as usize) < self.heap.f64_array_len(arr_id) {
+                    // Value semantics: produce a new array rather than mutating in place.
+                    let new_id = self.heap.f64_array_set(arr_id, i as usize, v);
+                    self.produce(term, Value::F64Array(new_id))
                 } else {
-                    ControlFlow::Error(format!("Index {} out of bounds (len {})", i, data.len()))
+                    ControlFlow::Error(format!(
+                        "Index {} out of bounds (len {})",
+                        i,
+                        self.heap.f64_array_len(arr_id)
+                    ))
                 }
             }
             _ => ControlFlow::Error(format!(

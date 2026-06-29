@@ -110,6 +110,36 @@ describe("index access", () => {
   it("index mutation persists", () => {
     expect(runPetal("let xs = [1, 2, 3]\nxs[1] = 99\nprint(xs)")).toBe("[1, 99, 3]");
   });
+
+  it("index assignment has value semantics (no aliasing)", () => {
+    // After `b = a`, mutating `a` by index must NOT be visible through `b`:
+    // collections are immutable and `a[0] = 99` rebinds `a` to a fresh list.
+    expect(
+      runPetal("let a = [1, 2, 3]\nlet b = a\na[0] = 99\nprint(a)\nprint(b)"),
+    ).toBe("[99, 2, 3]\n[1, 2, 3]");
+  });
+
+  it("field assignment has value semantics (no aliasing)", () => {
+    expect(
+      runPetal("let a = { x: 1 }\nlet b = a\na.x = 99\nprint(a.x)\nprint(b.x)"),
+    ).toBe("99\n1");
+  });
+
+  it("nested index assignment rebuilds the path", () => {
+    expect(
+      runPetal(
+        "let grid = [[1, 2], [3, 4]]\nlet old = grid\ngrid[1][0] = 99\nprint(grid)\nprint(old)",
+      ),
+    ).toBe("[[1, 2], [99, 4]]\n[[1, 2], [3, 4]]");
+  });
+
+  it("negative index at a non-leaf level of a nested assignment", () => {
+    // The outer `-1` is both read (GetIndex, counts from the end) and written
+    // back (SetIndex) when the path is rebuilt; the two must agree on negatives.
+    expect(
+      runPetal("let grid = [[1, 2], [3, 4]]\ngrid[-1][0] = 99\nprint(grid)"),
+    ).toBe("[[1, 2], [99, 4]]");
+  });
 });
 
 describe("enums", () => {

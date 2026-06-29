@@ -171,7 +171,7 @@ impl Compiler {
     /// phantom when the binding crosses a function boundary. Unresolved
     /// names compile to an `Error` term (with a hint for common slips from
     /// other languages) that only fires if actually executed.
-    fn compile_ident(&mut self, name: &str) -> TermId {
+    pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
         if let Some(tid) = self.scope_lookup(name) {
             // Check if this reference crosses a function boundary (needs capture)
             if self.needs_capture(name) {

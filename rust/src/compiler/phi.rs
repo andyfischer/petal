@@ -93,7 +93,20 @@ impl Compiler {
                     }
                     Self::collect_assigned_names_expr(value, out);
                 }
-                StmtKind::Assign { value, .. } => {
+                StmtKind::Assign {
+                    target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
+                    value,
+                } => {
+                    // Under value semantics, `obj.f = v` / `xs[i] = v` desugars
+                    // to a functional rebuild + rebind of the ROOT variable, so
+                    // the root is reassigned just like a plain `name = v`. It
+                    // must be detected as a loop carry / rebind, otherwise the
+                    // in-loop write never reaches the base (state) slot.
+                    if let Some(root) = Self::assign_target_root(object)
+                        && !out.contains(&root.to_string())
+                    {
+                        out.push(root.to_string());
+                    }
                     Self::collect_assigned_names_expr(value, out);
                 }
                 StmtKind::Let { value, .. } => {
@@ -117,6 +130,17 @@ impl Compiler {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Walk an index/field assignment-target object expression down to its
+    /// root variable name, if the chain is rooted at a plain variable.
+    fn assign_target_root(object: &Expr) -> Option<&str> {
+        match &object.kind {
+            ExprKind::Ident(n) => Some(n),
+            ExprKind::FieldAccess { object, .. } => Self::assign_target_root(object),
+            ExprKind::IndexAccess { object, .. } => Self::assign_target_root(object),
+            _ => None,
         }
     }
 

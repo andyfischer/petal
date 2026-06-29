@@ -31,7 +31,6 @@ pub struct Env {
     /// The context used by no-stack accessor methods and by newly created
     /// stacks.
     default_context: ContextKey,
-    #[allow(dead_code)]
     next_context_id: u32,
     trace: TraceBuffer,
     next_program_id: u32,
@@ -377,6 +376,36 @@ impl Env {
         let result = self.run(stack_id);
         self.restore_state(stack_id, snapshot);
         result
+    }
+
+    /// Fork an execution into a fully isolated side-by-side copy. The new stack
+    /// gets its own [`ExecutionContext`] (heap + registries deep-cloned, output
+    /// sinks fresh) and a clone of the source stack's frames/state, so the two
+    /// share no mutable heap state: the fork can advance freely without
+    /// disturbing the source, and vice versa. Pre-fork heap ids resolve to equal
+    /// objects in both contexts. This is the public API the host/CLI/WASM will
+    /// build speculative side-by-side runs on. See
+    /// docs/dev/speculative-execution-plan.md §3.
+    pub fn fork_execution(&mut self, src: StackKey) -> Result<StackKey, String> {
+        // Read the source's context key (and validate the stack exists).
+        let src_ck = self.stacks.get(&src).ok_or("Stack not found")?.context;
+
+        // Fork the source context into a fresh context key.
+        let new_ck = ContextKey(self.next_context_id);
+        self.next_context_id += 1;
+        let forked = self.contexts.get(&src_ck).ok_or("Context not found")?.fork();
+        self.contexts.insert(new_ck, forked);
+
+        // Clone the source stack into a fresh stack key, rebinding it to the new
+        // context.
+        let new_key = StackKey(self.next_stack_id);
+        self.next_stack_id += 1;
+        let mut new_stack = self.stacks.get(&src).ok_or("Stack not found")?.clone();
+        new_stack.id = new_key;
+        new_stack.context = new_ck;
+        self.stacks.insert(new_key, new_stack);
+
+        Ok(new_key)
     }
 
     // ── Internal accessors (used by transfer_state module) ─────────
@@ -972,6 +1001,101 @@ mod speculative_tests {
         assert_eq!(
             env.heap().get_list(state_list(&env, sid)),
             &[Value::Int(201), Value::Int(2), Value::Int(3)]
+        );
+    }
+}
+
+#[cfg(test)]
+mod fork_tests {
+    use super::*;
+    use crate::heap::ListId;
+
+    /// Pull the single state list out of a stack's committed state, resolved
+    /// against that stack's own execution context's heap.
+    fn state_list_in_ctx(env: &Env, sid: StackKey) -> (ContextKey, ListId) {
+        let stack = env.stacks.get(&sid).unwrap();
+        let id = match stack.state.values().next().copied().unwrap() {
+            Value::List(id) => id,
+            other => panic!("expected a list state value, got {other:?}"),
+        };
+        (stack.context, id)
+    }
+
+    /// Read a list's contents from a specific context's heap.
+    fn list_in(env: &Env, ck: ContextKey, id: ListId) -> Vec<Value> {
+        env.ctx(ck).heap.get_list(id).to_vec()
+    }
+
+    #[test]
+    fn fork_runs_independently_and_leaves_source_untouched() {
+        let mut env = Env::new();
+        let src_program = "state items = [1, 2, 3]\nitems = append(items, 4)\n";
+        let pid = env.load_program(src_program).unwrap();
+        let src = env.create_stack(pid).unwrap();
+
+        // Source committed frame: items -> [1, 2, 3, 4].
+        env.run(src).unwrap();
+        env.take_output();
+        let (src_ck, src_id0) = state_list_in_ctx(&env, src);
+        assert_eq!(
+            list_in(&env, src_ck, src_id0),
+            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
+        );
+
+        // Fork into an isolated side-by-side copy.
+        let fork = env.fork_execution(src).unwrap();
+        assert_ne!(fork.0, src.0, "fork should get a fresh stack key");
+        let fork_ck = env.stacks.get(&fork).unwrap().context;
+        assert_ne!(fork_ck.0, src_ck.0, "fork should get a fresh context key");
+
+        // The fork starts from the carried-over [1,2,3,4]. Running it appends
+        // 4 again, advancing it to [1,2,3,4,4].
+        env.reset_stack(fork).unwrap();
+        env.run(fork).unwrap();
+        let (fork_ck2, fork_id) = state_list_in_ctx(&env, fork);
+        assert_eq!(fork_ck2.0, fork_ck.0);
+        assert_eq!(
+            list_in(&env, fork_ck2, fork_id),
+            vec![
+                Value::Int(1),
+                Value::Int(2),
+                Value::Int(3),
+                Value::Int(4),
+                Value::Int(4)
+            ],
+            "fork's run should advance its own state",
+        );
+
+        // The SOURCE state list is unchanged by the fork's run.
+        let (src_ck_after, src_id_after) = state_list_in_ctx(&env, src);
+        assert_eq!(src_ck_after.0, src_ck.0);
+        assert_eq!(
+            list_in(&env, src_ck_after, src_id_after),
+            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
+            "fork's run leaked into the source state",
+        );
+
+        // Advance the fork further; the source remains untouched, proving the
+        // heaps are fully independent after the fork.
+        env.reset_stack(fork).unwrap();
+        env.run(fork).unwrap();
+        let (_, fork_id2) = state_list_in_ctx(&env, fork);
+        assert_eq!(
+            list_in(&env, fork_ck, fork_id2),
+            vec![
+                Value::Int(1),
+                Value::Int(2),
+                Value::Int(3),
+                Value::Int(4),
+                Value::Int(4),
+                Value::Int(4)
+            ],
+        );
+        let (_, src_id_final) = state_list_in_ctx(&env, src);
+        assert_eq!(
+            list_in(&env, src_ck, src_id_final),
+            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
+            "the source state must stay frozen while the fork advances",
         );
     }
 }

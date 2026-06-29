@@ -58,6 +58,7 @@ enum ControlFlow {
 }
 
 /// Runtime closure — captures + function reference.
+#[derive(Clone)]
 pub struct RuntimeClosure {
     pub function_id: FunctionId,
     pub captures: Vec<Value>,

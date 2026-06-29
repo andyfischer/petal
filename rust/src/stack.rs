@@ -40,6 +40,7 @@ pub struct StackKey(pub u32);
 /// Every loop kind tracks the same 0-based `iteration` counter, so
 /// per-iteration `state` keying treats them uniformly (see [`LoopKeyPart`]).
 /// The kind-specific data needed to produce the next value lives in [`kind`].
+#[derive(Clone)]
 pub struct LoopState {
     /// 0-based index of the iteration currently executing.
     pub iteration: usize,
@@ -48,6 +49,7 @@ pub struct LoopState {
 }
 
 /// The source a loop draws its values from, plus any kind-specific phase.
+#[derive(Clone)]
 pub enum LoopKind {
     /// `for x in list` — iterates a snapshot of the list's elements; the
     /// current element is `elements[iteration]`.
@@ -62,6 +64,7 @@ pub enum LoopKind {
 }
 
 /// Runtime execution state for a program.
+#[derive(Clone)]
 pub struct Stack {
     pub id: StackKey,
     pub program_id: ProgramId,
@@ -91,6 +94,7 @@ pub struct Stack {
 }
 
 /// A single activation frame on the stack.
+#[derive(Clone)]
 pub struct Frame {
     pub block_id: BlockId,
     pub current_term: Option<TermId>,

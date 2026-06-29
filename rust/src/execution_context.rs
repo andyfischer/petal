@@ -46,6 +46,23 @@ impl ExecutionContext {
     }
 }
 
+impl ExecutionContext {
+    /// Fork this context into an isolated copy. Heap + registries are deep-cloned
+    /// (pre-fork ids resolve to equal objects in both); output sinks start fresh
+    /// so the fork's output is captured separately from the source's.
+    pub fn fork(&self) -> ExecutionContext {
+        ExecutionContext {
+            heap: self.heap.fork(),
+            closures: self.closures.clone(),
+            overload_sets: self.overload_sets.clone(),
+            bindings: self.bindings.clone(),
+            counters: self.counters.clone(),
+            output: Vec::new(),
+            output_buffers: HashMap::new(),
+        }
+    }
+}
+
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self::new()

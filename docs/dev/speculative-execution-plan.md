@@ -126,8 +126,19 @@ Each increment is independently shippable and keeps the test suite green.
 1. **Immutable lists via `append` — DONE.** `Heap::list_append` returns a new
    list; the `append` builtin is immutable; `push` is a deprecated immutable
    alias. Migrated every statement-form `push(x, v)` → `x = append(x, v)` across
-   `examples/` and `apps/` and updated the embedded-snippet tests + docs.
-   (Garden scripts under `~/garden`/`~/.garden` still pending.)
+   `examples/` and `apps/` and updated the embedded-snippet tests + docs. Garden
+   scripts (`~/garden`, `~/.garden`) checked — they use no list-mutation builtins,
+   so nothing to migrate there.
+
+   Required a companion compiler fix: reassigning a `state` variable inside a
+   loop (`xs = append(xs, x)`) compiled to a plain Copy and never persisted, so
+   the value-semantic migration silently broke every per-frame "build a state
+   list in a loop" pattern. The loop body-entry carry Copy now inherits the
+   carried name's state key, so in-loop reassignment emits a `StateWrite` to the
+   base slot (see `compiler/phi.rs::emit_body_phi_ins`). Verified headless: all
+   31 SDL examples run and their state lists accumulate. **Increment 2 will need
+   the same care** — index/field assignment desugared to rebind must likewise
+   persist when the root is an in-loop state variable.
 2. **Immutable index/field assignment.** Recompile `xs[i] = v` and `obj.f = v`
    (the `SetIndex` / `SetField` term ops) into functional-update-and-rebind of
    the root variable, so existing assignment *syntax* keeps working with value

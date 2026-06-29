@@ -40,13 +40,13 @@ fn step(grid, width, height)
       let cell = grid[y][x]
       if cell == 1 then
         // Live cell: survives with 2-3 neighbors
-        push(row, if neighbors == 2 || neighbors == 3 then 1 else 0 end)
+        row = append(row, if neighbors == 2 || neighbors == 3 then 1 else 0 end)
       else
         // Dead cell: born with exactly 3 neighbors
-        push(row, if neighbors == 3 then 1 else 0 end)
+        row = append(row, if neighbors == 3 then 1 else 0 end)
       end
     end
-    push(next, row)
+    next = append(next, row)
   end
   next
 end

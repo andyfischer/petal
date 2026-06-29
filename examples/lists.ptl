@@ -13,10 +13,10 @@ for n in numbers do
   print(" ", n * 2)
 end
 
-// Building a list with push
+// Building a list with append
 let squares = []
 for i in range(1, 6) do
-  push(squares, i * i)
+  squares = append(squares, i * i)
 end
 print("squares:", squares)
 

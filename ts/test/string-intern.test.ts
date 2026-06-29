@@ -32,7 +32,7 @@ print(a == b)`;
 for i in range(0, 2000) do
   let s = "constant_string"
   if i == 1999 then
-    push(results, s)
+    results = append(results, s)
   end
 end
 print(results[0])`;
@@ -45,7 +45,7 @@ print(results[0])`;
 for i in range(0, 100) do
   let r = { name: "test", value: i }
   if i == 99 then
-    push(data, r.name)
+    data = append(data, r.name)
   end
 end
 print(data[0])`;

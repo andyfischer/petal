@@ -178,6 +178,20 @@ impl Heap {
         self.lists[id.0 as usize].elements.len()
     }
 
+    // --- Immutable list operations (value semantics) ---
+    //
+    // These never mutate the input list; they allocate and return a new list.
+    // Today they copy the backing `Vec`; once the backing becomes a persistent
+    // structure the copy becomes a cheap structural-sharing operation and these
+    // signatures stay the same.
+
+    /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
+    pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
+        let mut elements = self.lists[id.0 as usize].elements.clone();
+        elements.push(val);
+        self.alloc_list(elements)
+    }
+
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
@@ -427,5 +441,36 @@ impl Heap {
 impl Default for Heap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_append_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let original = heap.alloc_list(vec![Value::Int(1), Value::Int(2)]);
+
+        let grown = heap.list_append(original, Value::Int(3));
+
+        // A new, distinct list is returned with the extra element…
+        assert_ne!(original.0, grown.0);
+        assert_eq!(
+            heap.get_list(grown),
+            &[Value::Int(1), Value::Int(2), Value::Int(3)]
+        );
+        // …and the original list is untouched (value semantics).
+        assert_eq!(heap.get_list(original), &[Value::Int(1), Value::Int(2)]);
+    }
+
+    #[test]
+    fn list_append_to_empty_list() {
+        let mut heap = Heap::new();
+        let empty = heap.alloc_list(vec![]);
+        let one = heap.list_append(empty, Value::Int(42));
+        assert_eq!(heap.get_list(empty), &[] as &[Value]);
+        assert_eq!(heap.get_list(one), &[Value::Int(42)]);
     }
 }

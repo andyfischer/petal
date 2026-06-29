@@ -31,8 +31,8 @@ describe('method syntax', () => {
     expect(out.trim()).toBe('hi');
   });
 
-  it('calls push() as a method', () => {
-    const out = runPetal('let items = [1,2,3]\nitems.push(4)\nprint(items)');
+  it('calls append() as a method (value semantics)', () => {
+    const out = runPetal('let items = [1,2,3]\nitems = items.append(4)\nprint(items)');
     expect(out.trim()).toBe('[1, 2, 3, 4]');
   });
 

@@ -22,7 +22,7 @@ print("double(7) =", double(7))
 fn map(list, f)
   let result = []
   for item in list do
-    push(result, f(item))
+    result = append(result, f(item))
   end
   result
 end
@@ -39,7 +39,7 @@ fn filter(list, pred)
   let result = []
   for item in list do
     if pred(item) then
-      push(result, item)
+      result = append(result, item)
     end
   end
   result

@@ -139,32 +139,29 @@ pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-pub(super) fn native_push(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 2, "push")?;
-    let list = state.get_value(1)?;
-    let val = state.get_value(2)?;
-    match list {
-        Value::List(id) => {
-            state.heap_mut().get_list_mut(id).push(val);
-            state.push_nil();
-            Ok(1)
-        }
-        _ => Err("push() expects a list as first argument".into()),
-    }
-}
-
+/// `append(list, val)` returns a NEW list with `val` added to the end. The
+/// input list is never mutated (value semantics): `let b = append(a, x)` leaves
+/// `a` unchanged. Use it as `xs = append(xs, x)` to grow an accumulator.
 pub(super) fn native_append(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "append")?;
     let list = state.get_value(1)?;
     let val = state.get_value(2)?;
     match list {
         Value::List(id) => {
-            state.heap_mut().get_list_mut(id).push(val);
-            state.push_nil();
+            let new_id = state.heap_mut().list_append(id, val);
+            state.push_value(Value::List(new_id));
             Ok(1)
         }
         _ => Err("append() expects a list".into()),
     }
+}
+
+/// Deprecated alias for `append`. Kept temporarily so existing scripts keep
+/// compiling while they migrate to `xs = append(xs, x)`. Like `append`, it is
+/// immutable and returns a new list — statement-form `push(xs, x)` no longer
+/// mutates `xs`, so callers must capture the result.
+pub(super) fn native_push(state: &mut PetalCxt) -> Result<u32, String> {
+    native_append(state)
 }
 
 pub(super) fn native_pop(state: &mut PetalCxt) -> Result<u32, String> {

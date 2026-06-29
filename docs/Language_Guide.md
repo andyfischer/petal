@@ -271,10 +271,13 @@ alice.greet()  // same as greet(alice)
 ```petal
 let nums = [1, 2, 3]
 print(nums[0])        // 1 (zero-indexed)
-nums[0] = 10          // mutation
-push(nums, 4)         // append
+nums = append(nums, 4)   // append returns a new list — rebind to keep it
 print(len(nums))      // 4
 ```
+
+Lists are immutable values: `append` produces a new list rather than changing
+the original, so `let b = append(a, x)` leaves `a` untouched. Grow an
+accumulator by rebinding the variable (`xs = append(xs, x)`).
 
 ### List Builtins
 

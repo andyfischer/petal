@@ -178,7 +178,7 @@ describe("continue", () => {
       let result = []
       for i in [1, 2, 3, 4, 5] do
         if i == 3 then continue end
-        push(result, i)
+        result = append(result, i)
       end
       print(result)
     `);
@@ -192,7 +192,7 @@ describe("continue", () => {
       while i < 5 do
         i = i + 1
         if i == 3 then continue end
-        push(result, i)
+        result = append(result, i)
       end
       print(result)
     `);
@@ -205,7 +205,7 @@ describe("continue", () => {
       for i in [1, 2] do
         for j in [10, 20, 30] do
           if j == 20 then continue end
-          push(result, i * 100 + j)
+          result = append(result, i * 100 + j)
         end
       end
       print(result)

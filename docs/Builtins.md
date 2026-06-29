@@ -420,18 +420,22 @@ len([])             // 0
 len(f64_array(4))   // 4
 ```
 
-### `push(list, value)`
+### `append(list, value)`
 
-Appends a value to the end of a list. Mutates the list in place.
+Returns a **new** list with `value` added to the end. Lists are immutable
+values, so `append` never changes its input — capture the result to keep it:
 
 ```petal
 let items = [1, 2]
-push(items, 3)     // items is now [1, 2, 3]
+let more = append(items, 3)   // more is [1, 2, 3]; items is still [1, 2]
+items = append(items, 3)      // grow an accumulator by rebinding
 ```
 
-### `append(list, value)`
+### `push(list, value)`
 
-Same as `push` — appends a value to the end of a list.
+Deprecated alias for [`append`](#appendlist-value); prefer `append`. It is also
+immutable and returns a new list — `push(items, 3)` on its own does **not**
+change `items`. Use `items = append(items, 3)`.
 
 ### `pop(list)`
 

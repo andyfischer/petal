@@ -27,7 +27,7 @@ fn todo_app(event)
   // Handle events (a real UI runtime would feed these per frame).
   let was_add = match event
     when Add(text) do
-      push(items, text)
+      items = append(items, text)
       true
     end
     when Clear() do

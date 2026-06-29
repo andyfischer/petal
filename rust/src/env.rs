@@ -857,3 +857,70 @@ mod call_function_tests {
     }
 }
 
+#[cfg(test)]
+mod speculative_tests {
+    use super::*;
+    use crate::heap::ListId;
+
+    /// Pull the single state list out of a stack's committed state.
+    fn state_list(env: &Env, sid: StackKey) -> ListId {
+        let state = env.snapshot_state(sid).unwrap();
+        match state.values().next().copied().unwrap() {
+            Value::List(id) => id,
+            other => panic!("expected a list state value, got {other:?}"),
+        }
+    }
+
+    /// The core isolation guarantee of the speculative-execution plan: a
+    /// speculative frame that "mutates" a state list must NOT disturb the
+    /// object the committed state still points at. This now holds for free
+    /// because collections are immutable — `items[0] = …` allocates a new list
+    /// and rebinds rather than mutating the shared slot in place. Before the
+    /// immutable-collections work this test would fail: the in-place SetIndex
+    /// corrupted the committed list behind its id.
+    #[test]
+    fn speculative_run_does_not_corrupt_committed_state_objects() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state items = [1, 2, 3]\nitems[0] = items[0] + 100\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        // First committed frame: items -> [101, 2, 3].
+        env.run(sid).unwrap();
+        env.take_output();
+        let committed = state_list(&env, sid);
+        assert_eq!(
+            env.heap().get_list(committed),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)]
+        );
+
+        // A speculative frame advances items to [201, 2, 3] then rolls back.
+        env.run_speculative(sid).unwrap();
+        env.take_output();
+
+        // The committed list object is byte-for-byte intact…
+        assert_eq!(
+            env.heap().get_list(committed),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)],
+            "speculative mutation leaked into the committed state list"
+        );
+        // …and committed state still resolves to the pre-speculation value.
+        assert_eq!(
+            env.heap().get_list(state_list(&env, sid)),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)]
+        );
+
+        // A subsequent *real* frame continues from the committed value,
+        // proving the rollback restored state rather than dropping it. Driving
+        // a fresh frame means resetting the stack first (as a host's per-frame
+        // loop does), since `run_speculative` left it in a completed state.
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(
+            env.heap().get_list(state_list(&env, sid)),
+            &[Value::Int(201), Value::Int(2), Value::Int(3)]
+        );
+    }
+}
+

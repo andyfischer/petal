@@ -1,6 +1,13 @@
 //! Heap - Garbage-collected storage for strings, lists, and maps.
 //!
 //! See docs/Architecture.md for the surrounding runtime design.
+//!
+//! Heap objects are **immutable by construction**: there are no in-place
+//! mutators for collection payloads. "Mutations" (`list_append`, `list_set`,
+//! `list_drop_last`, `map_set`, `map_remove`, `f64_array_set`,
+//! `f64_array_swap`) allocate and return a *new* id, leaving the input
+//! untouched (value semantics). This is what makes sharing heap objects
+//! between executions safe — see docs/dev/speculative-execution-plan.md.
 
 use std::collections::HashMap;
 
@@ -170,10 +177,6 @@ impl Heap {
         &self.lists[id.0 as usize].elements
     }
 
-    pub fn get_list_mut(&mut self, id: ListId) -> &mut Vec<Value> {
-        &mut self.lists[id.0 as usize].elements
-    }
-
     pub fn list_len(&self, id: ListId) -> usize {
         self.lists[id.0 as usize].elements.len()
     }
@@ -234,10 +237,6 @@ impl Heap {
         &self.f64_arrays[id.0 as usize].data
     }
 
-    pub fn get_f64_array_mut(&mut self, id: F64ArrayId) -> &mut Vec<f64> {
-        &mut self.f64_arrays[id.0 as usize].data
-    }
-
     pub fn f64_array_len(&self, id: F64ArrayId) -> usize {
         self.f64_arrays[id.0 as usize].data.len()
     }
@@ -281,10 +280,6 @@ impl Heap {
 
     pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
         &self.maps[id.0 as usize].entries
-    }
-
-    pub fn get_map_mut(&mut self, id: MapId) -> &mut IndexMap<String, Value> {
-        &mut self.maps[id.0 as usize].entries
     }
 
     /// Return a new map equal to `id` with `key` set to `val`. `id` is

@@ -1098,5 +1098,39 @@ mod fork_tests {
             "the source state must stay frozen while the fork advances",
         );
     }
+
+    /// Each context owns its own heap (the fork deep-clones it), so a GC cycle
+    /// scoped to one context can never free an object that is live only in
+    /// another. Make a list unreachable in the source context, collect *that*
+    /// context's heap, and confirm the fork's copy is byte-for-byte intact.
+    #[test]
+    fn gc_in_one_context_does_not_free_objects_live_in_another() {
+        let mut env = Env::new();
+        let pid = env.load_program("state items = [10, 20, 30]\n").unwrap();
+        let src = env.create_stack(pid).unwrap();
+        env.run(src).unwrap();
+        let (src_ck, list_id) = state_list_in_ctx(&env, src);
+
+        // Fork — the fork's heap is an independent deep clone sharing the id.
+        let fork = env.fork_execution(src).unwrap();
+        let fork_ck = env.stacks.get(&fork).unwrap().context;
+        assert_eq!(
+            list_in(&env, fork_ck, list_id),
+            vec![Value::Int(10), Value::Int(20), Value::Int(30)],
+        );
+
+        // Drop the list's only root in the SOURCE context, then GC just that
+        // context. The slot becomes free in the source heap…
+        env.restore_state(src, HashMap::new());
+        env.collect_garbage(src_ck);
+
+        // …but the fork's heap is a separate slot vector, untouched by the
+        // source's sweep.
+        assert_eq!(
+            list_in(&env, fork_ck, list_id),
+            vec![Value::Int(10), Value::Int(20), Value::Int(30)],
+            "a GC scoped to the source context must not disturb the fork's heap",
+        );
+    }
 }
 

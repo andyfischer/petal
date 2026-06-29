@@ -35,30 +35,35 @@ pub struct MapId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementId(pub u32);
 
+#[derive(Clone)]
 struct HeapString {
     data: String,
     gc_mark: bool,
     alive: bool,
 }
 
+#[derive(Clone)]
 struct HeapList {
     elements: Vec<Value>,
     gc_mark: bool,
     alive: bool,
 }
 
+#[derive(Clone)]
 struct HeapF64Array {
     data: Vec<f64>,
     gc_mark: bool,
     alive: bool,
 }
 
+#[derive(Clone)]
 struct HeapMap {
     entries: IndexMap<String, Value>,
     gc_mark: bool,
     alive: bool,
 }
 
+#[derive(Clone)]
 struct HeapElement {
     tag: StringId,
     props: MapId,
@@ -67,6 +72,7 @@ struct HeapElement {
     alive: bool,
 }
 
+#[derive(Clone)]
 pub struct Heap {
     strings: Vec<HeapString>,
     lists: Vec<HeapList>,
@@ -109,6 +115,20 @@ impl Heap {
     /// Returns true if the allocation counter has exceeded the GC threshold.
     pub fn should_collect(&self) -> bool {
         self.alloc_count >= GC_THRESHOLD
+    }
+
+    /// Create an isolated clone of this heap for a forked execution. Because
+    /// heap objects are immutable by construction (no in-place mutators), the
+    /// fork shares no mutable state with its parent: each side allocates and
+    /// GCs independently, while any id that existed at fork time refers to an
+    /// equal object in both heaps. This is what makes two side-by-side
+    /// executions safe — the variant can "mutate" freely (allocating new ids)
+    /// without disturbing the original. Today this deep-copies the slot
+    /// vectors; a later optimization can wrap payloads in `Rc` so the fork is
+    /// O(live slots) pointer clones rather than a full copy (see
+    /// docs/dev/speculative-execution-plan.md, Increment 4).
+    pub fn fork(&self) -> Heap {
+        self.clone()
     }
 
     fn tick_alloc(&mut self) {
@@ -642,6 +662,41 @@ mod tests {
         // …and the original map is untouched (value semantics).
         assert_eq!(heap.get_map(original).get("a"), Some(&Value::Int(1)));
         assert_eq!(heap.get_map(original).get("b"), Some(&Value::Int(2)));
+    }
+
+    #[test]
+    fn fork_yields_an_isolated_heap_sharing_pre_fork_objects() {
+        let mut parent = Heap::new();
+        let shared = parent.alloc_list(vec![Value::Int(1), Value::Int(2)]);
+
+        let mut child = parent.fork();
+
+        // A pre-fork object is visible and equal in both heaps.
+        assert_eq!(
+            child.get_list(shared),
+            &[Value::Int(1), Value::Int(2)],
+            "fork should preserve pre-fork objects under their original ids"
+        );
+
+        // An immutable "mutation" in the child allocates a new id; the parent's
+        // pre-fork object is untouched.
+        let grown = child.list_append(shared, Value::Int(3));
+        assert_eq!(
+            child.get_list(grown),
+            &[Value::Int(1), Value::Int(2), Value::Int(3)]
+        );
+        assert_eq!(
+            parent.get_list(shared),
+            &[Value::Int(1), Value::Int(2)],
+            "child mutation leaked into the parent heap"
+        );
+
+        // Fresh allocations on each side are independent and land in their own
+        // heap only: the parent never sees the child's new object.
+        let child_only = child.alloc_list(vec![Value::Int(9)]);
+        let parent_only = parent.alloc_list(vec![Value::Int(8)]);
+        assert_eq!(child.get_list(child_only), &[Value::Int(9)]);
+        assert_eq!(parent.get_list(parent_only), &[Value::Int(8)]);
     }
 
     #[test]

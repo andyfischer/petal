@@ -364,18 +364,34 @@ impl Env {
 
     // ── Speculative execution ────────────────────────────────────
 
-    /// Run one frame without committing state changes.
-    /// Snapshots state → reset_stack → run → restore snapshot.
-    /// Side effects (print output) still occur. Heap allocations persist
-    /// but get GC'd naturally.
+    /// Run one frame without disturbing the source execution at all.
+    ///
+    /// Implemented on top of `fork_execution`: fork the stack into an isolated
+    /// context, run the fork, return its result, then drop the fork. Because the
+    /// fork owns its own heap and registries (including a *fresh* output sink),
+    /// nothing about the source is touched — not its state, not its heap
+    /// objects, and not its print output. (The previous snapshot/restore
+    /// implementation left the source stack reset and leaked the speculative
+    /// run's print output into the shared buffer; the fork-based version does
+    /// neither.) The fork's own side effects are discarded when it is dropped.
     pub fn run_speculative(&mut self, stack_id: StackKey) -> Result<Value, String> {
-        let snapshot = self
-            .snapshot_state(stack_id)
-            .ok_or("Stack not found")?;
-        self.reset_stack(stack_id)?;
-        let result = self.run(stack_id);
-        self.restore_state(stack_id, snapshot);
+        let fork = self.fork_execution(stack_id)?;
+        self.reset_stack(fork)?;
+        let result = self.run(fork);
+        self.drop_execution(fork);
         result
+    }
+
+    /// Drop a forked execution: remove its stack and, if no other stack still
+    /// references it, its (exclusively-owned, non-default) context — releasing
+    /// the forked heap and registries.
+    fn drop_execution(&mut self, stack_id: StackKey) {
+        if let Some(stack) = self.stacks.remove(&stack_id) {
+            let ck = stack.context;
+            if ck != self.default_context && !self.stacks.values().any(|s| s.context == ck) {
+                self.contexts.remove(&ck);
+            }
+        }
     }
 
     /// Fork an execution into a fully isolated side-by-side copy. The new stack
@@ -1001,6 +1017,53 @@ mod speculative_tests {
         assert_eq!(
             env.heap().get_list(state_list(&env, sid)),
             &[Value::Int(201), Value::Int(2), Value::Int(3)]
+        );
+    }
+
+    /// Now that `run_speculative` forks into its own context, a speculative
+    /// frame leaves the source *entirely* untouched — including its print
+    /// output. The old snapshot/restore implementation leaked the speculative
+    /// run's prints into the shared output buffer; the fork-based one captures
+    /// them in the fork's (discarded) context instead. This is strictly
+    /// stronger than the heap-isolation guarantee above.
+    #[test]
+    fn speculative_run_does_not_leak_output_or_heap_into_source() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program(
+                "state items = [1, 2, 3]\nitems[0] = items[0] + 100\nprint(\"spec\")\n",
+            )
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        // Real frame: items -> [101, 2, 3] and one "spec" line of output.
+        env.run(sid).unwrap();
+        let committed = state_list(&env, sid);
+        assert_eq!(env.take_output(), vec!["spec".to_string()]);
+        assert_eq!(
+            env.heap().get_list(committed),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)]
+        );
+
+        // A speculative frame advances to [201, 2, 3] and prints "spec" again —
+        // but inside the fork's own context.
+        env.run_speculative(sid).unwrap();
+
+        // The source's print output is NOT polluted by the speculative run.
+        assert!(
+            env.take_output().is_empty(),
+            "speculative print leaked into the source's output buffer"
+        );
+        // The source heap object is byte-for-byte intact, and committed state
+        // still resolves to the pre-speculation value.
+        assert_eq!(
+            env.heap().get_list(committed),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)],
+            "speculative run disturbed the source heap"
+        );
+        assert_eq!(
+            env.heap().get_list(state_list(&env, sid)),
+            &[Value::Int(101), Value::Int(2), Value::Int(3)]
         );
     }
 }

@@ -274,8 +274,20 @@ Each increment is independently shippable and keeps the test suite green.
    existing immutable ops. Only `noc_fractal_tree.ptl` used the value-returning
    `pop`; migrated to `last`+`drop_last`. Map field-set was already immutable
    (Increment 2's `SetField`).
-4. **Persistent backing.** Swap list/map/array storage to structural-sharing
-   structures (e.g. `im`) so the immutable ops stop copying whole containers.
+4. **Persistent backing — DEFERRED (optional, profiling-gated).** Swapping
+   list/map/array storage to structural-sharing structures (e.g. `im`) would
+   make the immutable ops stop copying whole containers — a *pure performance*
+   change; semantics are already correct with the clone-based copies. Deferred
+   deliberately: it is a high-churn, high-risk refactor (~110 call sites use
+   `get_list`/`get_map`/`get_f64_array`, many relying on contiguous
+   `&[Value]`/`&IndexMap` semantics — slice comparisons, indexing,
+   pattern-destructuring — which `im::Vector`/`im::OrdMap` can't provide by
+   borrow), and nothing currently profiles collection-copy cost as a
+   bottleneck. The plan's own guidance gates this on profiling ("revisit with a
+   chunked/persistent array if profiling shows it matters"). Pick it up only
+   when a real workload shows the copies hurt; the heap API
+   (`list_append`/`list_set`/…) is already shaped so the swap won't touch call
+   sites of the *mutators*, only the *readers*.
 5. **Remove `get_*_mut` from the heap — accessor removal DONE.** With no
    in-place mutation left after Increment 3, `get_list_mut`/`get_f64_array_mut`/
    `get_map_mut` were dead (verified: no callers in core or apps) and are
@@ -409,15 +421,21 @@ heap. With multiple worlds:
 
 ## Phased implementation
 
-1. **CoW slots (no behavior change).** Convert heap payloads to `Rc`, switch
-   `get_*_mut` to `make_mut`. All existing tests must still pass; this is a
-   pure internal refactor. (Measure: confirm no perf regression on the sample
-   apps — unique-ownership writes should stay in-place.)
-2. **`Heap::fork()` + unit test** that fork → mutate child → assert parent
-   object unchanged, and vice-versa.
-3. **`World` extraction.** Move execution-local registries off `Env` into
-   `World`; thread a `WorldId` (or fold world into the stack). Keep a single
-   default world so existing call sites are unaffected.
+1. **CoW slots (no behavior change). — NOT NEEDED under Option B.** The heap is
+   immutable by construction (no `get_*_mut`), so there is no in-place write to
+   make copy-on-write. Skipped.
+2. **`Heap::fork()` + unit test — DONE.** Because objects are immutable, fork is
+   a plain deep clone (`Heap: Clone`); the child shares no mutable state, and
+   pre-fork ids resolve to equal objects in both. Test:
+   `heap.rs::tests::fork_yields_an_isolated_heap_sharing_pre_fork_objects`. A
+   later `Rc`-payload optimization can make fork O(live slots) (see Increment 4).
+3. **`World` extraction — TODO (the remaining feature).** Move execution-local
+   registries off `Env` into a forkable `World` (`heap`, `closures`,
+   `overload_sets`, `output`, `output_buffers`, `counters`, `bindings`); thread
+   a `WorldId` (or fold world into the stack). Keep a single default world so
+   existing call sites are unaffected. This is needed only for *two
+   concurrently-live* executions — single-timeline speculation already works
+   via `run_speculative` + immutability.
 4. **`World::fork()` + `Env::fork_execution()`.** Fork heap + registries +
    bindings; give the new world fresh output buffers.
 5. **Per-world GC.** Scope `collect_garbage` roots to a world's stacks.

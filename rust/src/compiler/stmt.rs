@@ -279,7 +279,7 @@ impl Compiler {
     /// inside an `if` / loop body still emit a `StateWrite` — the scope
     /// lookup returns the phi that was installed by the enclosing control
     /// flow, not the original `StateInit`.
-    fn find_state_init(&self, tid: TermId) -> Option<TermId> {
+    pub(super) fn find_state_init(&self, tid: TermId) -> Option<TermId> {
         let term = &self.terms[tid.0 as usize];
         match &term.op {
             TermOp::StateInit => Some(tid),

@@ -316,6 +316,17 @@ impl Compiler {
         let mut slots = HashMap::new();
         for (name, phi_tid) in phis {
             let in_tid = self.emit_term(TermOp::Copy, smallvec![*phi_tid], Some(name.clone()));
+            // If this carried name is a `state` variable, tag the body-entry
+            // Copy with its state key. Without this, a reassignment inside the
+            // loop body (`s = append(s, x)`) resolves via `find_state_init` to
+            // a plain Copy and never emits a `StateWrite`, so the accumulated
+            // value lives only in loop registers and is lost when the run ends.
+            // Propagating the key makes in-loop reassignment persist to the
+            // base state slot, matching how `let` accumulators carry.
+            if let Some(init_tid) = self.find_state_init(*phi_tid) {
+                self.terms[in_tid.0 as usize].state_key =
+                    self.terms[init_tid.0 as usize].state_key;
+            }
             self.scope_bind(name.clone(), in_tid);
             let reg = self.terms[in_tid.0 as usize].register;
             slots.insert(name.clone(), reg);

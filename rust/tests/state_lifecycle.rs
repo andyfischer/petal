@@ -33,6 +33,36 @@ fn state_survives_reset_and_rerun() {
 }
 
 #[test]
+fn state_list_accumulated_in_loop_persists_across_runs() {
+    // A `state` list grown by in-loop reassignment (`xs = append(xs, i)`)
+    // must persist across runs, the same way `let` accumulators carry within
+    // a run. Under value semantics this only works if the in-loop reassignment
+    // emits a StateWrite to the base slot (see compiler/phi.rs) — otherwise the
+    // appended value lives only in loop registers and is lost when the run ends.
+    let mut env = Env::new();
+    let pid = env
+        .load_program("state items = []\nfor i in range(0, 3) do\n  items = append(items, i)\nend")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    let items_key = StateKey(petal::compiler::Compiler::hash_state_name("items"));
+    let list_len = |env: &Env| match env.get_state(sid, items_key).unwrap() {
+        petal::value::Value::List(id) => env.heap().list_len(id),
+        other => panic!("expected a list, got {:?}", other),
+    };
+
+    env.run(sid).unwrap();
+    assert_eq!(list_len(&env), 3, "first run should build [0, 1, 2]");
+
+    // Second run: init is a cache hit (not reset to []), so the loop appends
+    // three more → length 6. Confirms the base slot, not a per-iteration slot,
+    // received the writes.
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(list_len(&env), 6, "second run should accumulate onto the persisted list");
+}
+
+#[test]
 fn explicit_key_state_survives_reset_and_rerun() {
     let mut env = Env::new();
     let pid = env

@@ -80,6 +80,9 @@ pub(super) fn native_get(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `set(arr, i, v)` returns a NEW f64-array with index `i` set to `v`. The
+/// input array is never mutated (value semantics) — callers must rebind:
+/// `a = set(a, i, v)`. (Equivalent to the `a[i] = v` index-assign form.)
 pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "set")?;
     let container = state.get_value(1)?;
@@ -103,14 +106,17 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
                     i, len
                 ));
             }
-            state.heap_mut().get_f64_array_mut(id)[i as usize] = v;
-            state.push_nil();
+            let new_id = state.heap_mut().f64_array_set(id, i as usize, v);
+            state.push_value(Value::F64Array(new_id));
             Ok(1)
         }
         _ => Err(format!("Cannot set() on {}", container.type_name())),
     }
 }
 
+/// `swap(arr, i, j)` returns a NEW f64-array with elements `i` and `j` swapped.
+/// The input array is never mutated (value semantics) — callers must rebind:
+/// `a = swap(a, i, j)`.
 pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "swap")?;
     let container = state.get_value(1)?;
@@ -131,8 +137,8 @@ pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
                     j, len
                 ));
             }
-            state.heap_mut().get_f64_array_mut(id).swap(i as usize, j as usize);
-            state.push_nil();
+            let new_id = state.heap_mut().f64_array_swap(id, i as usize, j as usize);
+            state.push_value(Value::F64Array(new_id));
             Ok(1)
         }
         _ => Err(format!("Cannot swap() on {}", container.type_name())),
@@ -164,15 +170,66 @@ pub(super) fn native_push(state: &mut PetalCxt) -> Result<u32, String> {
     native_append(state)
 }
 
+/// Deprecated immutable alias for `drop_last`. Kept so existing scripts keep
+/// compiling while they migrate. Under value semantics `pop` no longer mutates
+/// the list nor returns the removed element — it returns a NEW list with the
+/// last element dropped. Use `last(xs)` to read the final element and
+/// `drop_last(xs)` (or `xs = drop_last(xs)`) to shorten the list.
 pub(super) fn native_pop(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 1, "pop")?;
+    native_drop_last(state)
+}
+
+/// `last(list)` returns the final element of `list` (or Nil if empty). Pure
+/// read — the list is never mutated.
+pub(super) fn native_last(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "last")?;
     match state.get_value(1)? {
         Value::List(id) => {
-            let v = state.heap_mut().get_list_mut(id).pop().unwrap_or(Value::Nil);
+            let v = state.heap().get_list(id).last().copied().unwrap_or(Value::Nil);
             state.push_value(v);
             Ok(1)
         }
-        _ => Err("pop() expects a list".into()),
+        _ => Err("last() expects a list".into()),
+    }
+}
+
+/// `drop_last(list)` returns a NEW list equal to `list` without its last
+/// element (value semantics). The input list is never mutated; an empty list
+/// yields a new empty list.
+pub(super) fn native_drop_last(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "drop_last")?;
+    match state.get_value(1)? {
+        Value::List(id) => {
+            let new_id = state.heap_mut().list_drop_last(id);
+            state.push_value(Value::List(new_id));
+            Ok(1)
+        }
+        _ => Err("drop_last() expects a list".into()),
+    }
+}
+
+/// `remove(map, key)` returns a NEW map equal to `map` without `key` (value
+/// semantics). The input map is never mutated; removing an absent key yields an
+/// equivalent new map.
+pub(super) fn native_remove(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "remove")?;
+    let container = state.get_value(1)?;
+    match container {
+        Value::Map(id) => {
+            let key = match state.get_value(2)? {
+                Value::String(sid) => state.heap().get_string(sid).to_string(),
+                other => {
+                    return Err(format!(
+                        "remove() expects a string key, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            let new_id = state.heap_mut().map_remove(id, &key);
+            state.push_value(Value::Map(new_id));
+            Ok(1)
+        }
+        _ => Err(format!("Cannot remove() from {}", container.type_name())),
     }
 }
 

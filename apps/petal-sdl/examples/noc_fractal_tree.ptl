@@ -30,7 +30,10 @@ if needs_rebuild then
     let max_depth = 9
 
     while len(stack) > 0 do
-        let current = pop(stack)
+        // Value semantics: read the top with `last`, then shorten with
+        // `drop_last` (the old in-place `pop` no longer mutates).
+        let current = last(stack)
+        stack = drop_last(stack)
         let cx = current.x
         let cy = current.y
         let ca = current.angle

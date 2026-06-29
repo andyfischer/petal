@@ -178,6 +178,11 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("push_output", output::native_push_output);
     table.register("binding", output::native_binding);
 
+    // --- Immutable collection ops (append-only to preserve phantom term indices) ---
+    table.register("last", collections::native_last);
+    table.register("drop_last", collections::native_drop_last);
+    table.register("remove", collections::native_remove);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);

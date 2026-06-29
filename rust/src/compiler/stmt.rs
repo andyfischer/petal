@@ -380,7 +380,17 @@ impl Compiler {
         }
         if let Some(existing_tid) = self.scope_lookup(name) {
             let existing_block = self.terms[existing_tid.0 as usize].block_id;
-            if existing_block == self.current_block {
+            // A name that already has a rebind logged in this block crossed a
+            // block boundary on its first reassignment here. Subsequent
+            // in-block reassignments must keep `block_rebinds` pointing at the
+            // *latest* binding, otherwise the enclosing conditional's phi-out
+            // wires from the first rebind and later writes are dropped (e.g.
+            // two `append`s to a loop-carried var inside an `if`).
+            let already_rebound_here = self
+                .block_rebinds
+                .get(&self.current_block)
+                .is_some_and(|m| m.contains_key(name));
+            if existing_block == self.current_block && !already_rebound_here {
                 self.scope_bind(name.to_string(), assign_tid);
             } else {
                 self.rebind_name_in_current_block(name.to_string(), assign_tid);

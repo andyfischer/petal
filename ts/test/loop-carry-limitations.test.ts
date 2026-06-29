@@ -61,6 +61,44 @@ print(t)`);
   });
 });
 
+describe("multiple rebinds of a carried var inside a nested if-block", () => {
+  it("propagates every rebind, not just the first, out of the if-block", () => {
+    // Regression: the if-block's phi-out used to capture only the FIRST
+    // rebind of `s` (block_rebinds was not updated on subsequent in-block
+    // reassignments), so the second `append` was silently dropped each
+    // iteration. Expected: each iteration appends both i and i*10.
+    const out = runPetal(`let s = [0]
+for i in range(0, 3) do
+  if true then
+    s = append(s, i)
+    s = append(s, i * 10)
+  end
+end
+print(s)`);
+    expect(out.trim()).toBe("[0, 0, 0, 1, 10, 2, 20]");
+  });
+
+  it("works through a stack-style last/drop_last pop loop", () => {
+    // The pattern noc_fractal_tree.ptl relies on: pop the top with
+    // last+drop_last, then push two children inside a conditional.
+    const out = runPetal(`let stack = [1]
+let visited = []
+while len(stack) > 0 do
+  let cur = last(stack)
+  stack = drop_last(stack)
+  visited = append(visited, cur)
+  if cur < 4 then
+    stack = append(stack, cur + 1)
+    stack = append(stack, cur + 10)
+  end
+end
+print(visited)`);
+    // DFS order: 1, 11, 2, 12, 3, 13, 4 (children pushed +1 then +10, so
+    // +10 is on top and popped first).
+    expect(out.trim()).toBe("[1, 11, 2, 12, 3, 13, 4]");
+  });
+});
+
 describe("known limitation: let shadow disables carry detection", () => {
   it("assignment to outer name is lost when body has a let shadow", () => {
     // `let x` anywhere at the top level of the body excludes `x` from

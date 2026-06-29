@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
+use crate::execution_context::ContextKey;
 use crate::program::{BlockId, ProgramId, StateKey, TermId};
 use crate::value::Value;
 
@@ -64,6 +65,8 @@ pub enum LoopKind {
 pub struct Stack {
     pub id: StackKey,
     pub program_id: ProgramId,
+    /// The ExecutionContext this stack draws its heap and registries from.
+    pub context: ContextKey,
     pub frames: Vec<Frame>,
     pub state: HashMap<RuntimeStateKey, Value>,
     pub status: StackStatus,
@@ -192,10 +195,11 @@ impl Frame {
 }
 
 impl Stack {
-    pub fn new(id: StackKey, program_id: ProgramId) -> Self {
+    pub fn new(id: StackKey, program_id: ProgramId, context: ContextKey) -> Self {
         Self {
             id,
             program_id,
+            context,
             frames: Vec::new(),
             state: HashMap::new(),
             status: StackStatus::Ready,

@@ -10,6 +10,7 @@ pub mod constant_table;
 pub mod dot_graph;
 pub mod env;
 pub mod eval;
+pub mod execution_context;
 pub mod extract;
 pub mod heap;
 pub mod ir_display;

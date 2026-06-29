@@ -6,12 +6,13 @@
 use std::collections::HashMap;
 
 use crate::compiler::Compiler;
-use crate::eval::{Evaluator, RuntimeClosure, StepResult};
+use crate::eval::{Evaluator, StepResult};
+use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::heap::Heap;
 use crate::lexer::Lexer;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
-use crate::program::{Program, ProgramId, OverloadEntry, StateKey};
+use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
@@ -20,27 +21,18 @@ use crate::value::Value;
 pub struct Env {
     programs: HashMap<ProgramId, Program>,
     stacks: HashMap<StackKey, Stack>,
-    heap: Heap,
     native_fns: NativeFnTable,
-    closures: Vec<RuntimeClosure>,
-    overload_sets: Vec<Vec<OverloadEntry>>,
-    output: Vec<String>,
     /// Interned symbol names ↔ ordinals, shared with the embedding host.
     symbols: SymbolTable,
-    /// Per-symbol buffered output channels. Native fns/scripts push values in
-    /// (see `PetalCxt::push_output`); the host drains them with
-    /// `take_output_buffer`. Replaces process-global thread-locals like the
-    /// old `DRAW_COMMANDS`.
-    output_buffers: HashMap<SymbolId, Vec<Value>>,
-    /// Per-symbol host→script bindings (GLSL-uniform style). The host binds a
-    /// `Value` to a symbol (`set_binding`); native fns/scripts read it back.
-    /// Replaces input-direction thread-locals like the old `FRAME_INFO` and
-    /// `INPUT_STATE`.
-    bindings: HashMap<SymbolId, Value>,
-    /// Per-symbol monotonic counters for per-run sequence allocation (e.g.
-    /// offscreen-canvas / element ids). Native fns bump them via
-    /// `PetalCxt::next_counter`; the host resets them each frame.
-    counters: HashMap<SymbolId, u64>,
+    /// Execution-local state bundles (heap + runtime registries), one per
+    /// isolated execution. Each `Stack` links to its context by key. See
+    /// `execution_context::ExecutionContext`.
+    contexts: HashMap<ContextKey, ExecutionContext>,
+    /// The context used by no-stack accessor methods and by newly created
+    /// stacks.
+    default_context: ContextKey,
+    #[allow(dead_code)]
+    next_context_id: u32,
     trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
@@ -51,22 +43,31 @@ impl Env {
     pub fn new() -> Self {
         let mut native_fns = NativeFnTable::new();
         crate::builtins::register_builtins(&mut native_fns);
+        let default_context = ContextKey(1);
+        let mut contexts = HashMap::new();
+        contexts.insert(default_context, ExecutionContext::new());
         Self {
             programs: HashMap::new(),
             stacks: HashMap::new(),
-            heap: Heap::new(),
             native_fns,
-            closures: Vec::new(),
-            overload_sets: Vec::new(),
-            output: Vec::new(),
             symbols: SymbolTable::new(),
-            output_buffers: HashMap::new(),
-            bindings: HashMap::new(),
-            counters: HashMap::new(),
+            contexts,
+            default_context,
+            next_context_id: 2,
             trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
         }
+    }
+
+    /// Shared access to one execution context.
+    fn ctx(&self, ck: ContextKey) -> &ExecutionContext {
+        self.contexts.get(&ck).expect("context exists")
+    }
+
+    /// Mutable access to one execution context.
+    fn ctx_mut(&mut self, ck: ContextKey) -> &mut ExecutionContext {
+        self.contexts.get_mut(&ck).expect("context exists")
     }
 
     /// Compile source code into a Program without loading it.
@@ -122,7 +123,7 @@ impl Env {
         let key = StackKey(self.next_stack_id);
         self.next_stack_id += 1;
 
-        let mut stack = Stack::new(key, program_id);
+        let mut stack = Stack::new(key, program_id, self.default_context);
 
         // Push initial frame for the root block
         Self::push_root_frame(&self.native_fns,&mut stack, program);
@@ -133,28 +134,27 @@ impl Env {
 
     /// Run one step of execution
     pub fn step(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
-        let stack = self
-            .stacks
-            .get_mut(&stack_id)
-            .ok_or("Stack not found")?;
+        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
+        let stack = self.stacks.get_mut(&stack_id).unwrap();
         let program = self
             .programs
             .get(&stack.program_id)
             .ok_or("Program not found")?;
+        let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
 
         let result = Evaluator {
             program,
             stack,
-            heap: &mut self.heap,
-            closures: &mut self.closures,
-            overload_sets: &mut self.overload_sets,
+            heap: &mut ctx.heap,
+            closures: &mut ctx.closures,
+            overload_sets: &mut ctx.overload_sets,
             native_fns: &self.native_fns,
-            output: &mut self.output,
+            output: &mut ctx.output,
             trace: &mut self.trace,
             symbols: &mut self.symbols,
-            output_buffers: &mut self.output_buffers,
-            bindings: &mut self.bindings,
-            counters: &mut self.counters,
+            output_buffers: &mut ctx.output_buffers,
+            bindings: &mut ctx.bindings,
+            counters: &mut ctx.counters,
         }
         .step();
 
@@ -177,14 +177,15 @@ impl Env {
     /// list item, or a top-level state declaration deleted on hot reload,
     /// is reclaimed instead of leaking.
     pub fn run(&mut self, stack_id: StackKey) -> Result<Value, String> {
+        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.start_run_tracking();
         }
         loop {
             match self.step(stack_id)? {
                 StepResult::Continue => {
-                    if self.heap.should_collect() {
-                        self.collect_garbage();
+                    if self.ctx(ck).heap.should_collect() {
+                        self.collect_garbage(ck);
                     }
                 }
                 StepResult::Complete(val) => {
@@ -234,25 +235,27 @@ impl Env {
             )
         })?;
 
+        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
         let program = self
             .programs
             .get(&stack.program_id)
             .ok_or("Program not found")?;
+        let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
 
         Evaluator {
             program,
             stack,
-            heap: &mut self.heap,
-            closures: &mut self.closures,
-            overload_sets: &mut self.overload_sets,
+            heap: &mut ctx.heap,
+            closures: &mut ctx.closures,
+            overload_sets: &mut ctx.overload_sets,
             native_fns: &self.native_fns,
-            output: &mut self.output,
+            output: &mut ctx.output,
             trace: &mut self.trace,
             symbols: &mut self.symbols,
-            output_buffers: &mut self.output_buffers,
-            bindings: &mut self.bindings,
-            counters: &mut self.counters,
+            output_buffers: &mut ctx.output_buffers,
+            bindings: &mut ctx.bindings,
+            counters: &mut ctx.counters,
         }
         .call_closure_sync(callable, args)
     }
@@ -292,11 +295,12 @@ impl Env {
     // ── Heap access ──────────────────────────────────────────────
 
     pub fn heap(&self) -> &Heap {
-        &self.heap
+        &self.ctx(self.default_context).heap
     }
 
     pub fn heap_mut(&mut self) -> &mut Heap {
-        &mut self.heap
+        let ck = self.default_context;
+        &mut self.ctx_mut(ck).heap
     }
 
     // ── State inspection ─────────────────────────────────────────
@@ -394,8 +398,10 @@ impl Env {
 
     /// Clear all runtime closures and overload sets.
     pub(crate) fn clear_closures(&mut self) {
-        self.closures.clear();
-        self.overload_sets.clear();
+        let ck = self.default_context;
+        let ctx = self.ctx_mut(ck);
+        ctx.closures.clear();
+        ctx.overload_sets.clear();
     }
 
     /// Push the root frame for a stack's program.
@@ -427,7 +433,7 @@ impl Env {
         stack_id: StackKey,
     ) -> serde_json::Map<String, serde_json::Value> {
         let names = self.state_key_names(program_id);
-        let heap = &self.heap;
+        let heap = &self.ctx(self.default_context).heap;
         let mut map = serde_json::Map::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
@@ -465,7 +471,8 @@ impl Env {
             .map(|(k, _)| *k)
             .ok_or_else(|| format!("No state variable named '{}'", name))?;
 
-        let val = crate::value::json_to_value(json_val, &mut self.heap)?;
+        let ck = self.default_context;
+        let val = crate::value::json_to_value(json_val, &mut self.ctx_mut(ck).heap)?;
         self.set_state(stack_id, state_key, val);
         Ok(())
     }
@@ -493,38 +500,44 @@ impl Env {
     /// Run a mark-and-sweep garbage collection cycle.
     /// Marks all values reachable from roots (stack registers, state, closures,
     /// loop state), then sweeps unmarked heap objects.
-    fn collect_garbage(&mut self) {
-        // Mark phase: trace all roots
+    fn collect_garbage(&mut self, ck: ContextKey) {
+        // Disjoint borrows: stacks (shared) + the one context (mut). Mark all
+        // roots into THAT context's heap, then sweep it.
+        let ctx = self.contexts.get_mut(&ck).expect("context exists");
+        let heap = &mut ctx.heap;
 
-        // 1. Stack frame registers and state
+        // 1. Stack frame registers and state — only stacks bound to this context.
         for stack in self.stacks.values() {
+            if stack.context != ck {
+                continue;
+            }
             for frame in &stack.frames {
                 for val in &frame.registers {
-                    self.heap.mark_value(*val);
+                    heap.mark_value(*val);
                 }
                 // Loop state elements (a for-each loop snapshots a Vec<Value>)
                 for (_, loop_state) in &frame.loop_states {
                     if let crate::stack::LoopKind::ForEach { elements } = &loop_state.kind {
                         for val in elements {
-                            self.heap.mark_value(*val);
+                            heap.mark_value(*val);
                         }
                     }
                 }
             }
             // Persistent state values
             for val in stack.state.values() {
-                self.heap.mark_value(*val);
+                heap.mark_value(*val);
             }
             // Last pop result (used by synchronous closure calls)
             if let Some(val) = stack.last_pop_result {
-                self.heap.mark_value(val);
+                heap.mark_value(val);
             }
         }
 
         // 2. Closure captures
-        for closure in &self.closures {
+        for closure in &ctx.closures {
             for val in &closure.captures {
-                self.heap.mark_value(*val);
+                heap.mark_value(*val);
             }
         }
 
@@ -533,25 +546,26 @@ impl Env {
         //    Values (e.g. draw-command enum variants with string tags + list
         //    args), so they are GC roots: a frame can trip a collection mid-run
         //    while commands are still buffered.
-        for buffer in self.output_buffers.values() {
+        for buffer in ctx.output_buffers.values() {
             for val in buffer {
-                self.heap.mark_value(*val);
+                heap.mark_value(*val);
             }
         }
 
         // 4. Host→script bindings hold heap-backed Values (e.g. a bound list of
         //    pressed keys), so they are GC roots too. Counters are plain u64s.
-        for val in self.bindings.values() {
-            self.heap.mark_value(*val);
+        for val in ctx.bindings.values() {
+            heap.mark_value(*val);
         }
 
         // Sweep phase
-        self.heap.sweep();
+        heap.sweep();
     }
 
     /// Get the output buffer contents and clear it.
     pub fn take_output(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.output)
+        let ck = self.default_context;
+        std::mem::take(&mut self.ctx_mut(ck).output)
     }
 
     // ── Symbols & buffered output (host side) ────────────────────
@@ -571,7 +585,9 @@ impl Env {
     /// Drain and return everything pushed into the buffer bound to `sym` since
     /// the last drain. The buffer is left empty.
     pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
-        self.output_buffers
+        let ck = self.default_context;
+        self.ctx_mut(ck)
+            .output_buffers
             .get_mut(&sym)
             .map(std::mem::take)
             .unwrap_or_default()
@@ -579,7 +595,8 @@ impl Env {
 
     /// Peek at the buffer bound to `sym` without draining it.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
-        self.output_buffers
+        self.ctx(self.default_context)
+            .output_buffers
             .get(&sym)
             .map(Vec::as_slice)
             .unwrap_or(&[])
@@ -587,7 +604,8 @@ impl Env {
 
     /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
     pub fn clear_output_buffer(&mut self, sym: SymbolId) {
-        if let Some(buf) = self.output_buffers.get_mut(&sym) {
+        let ck = self.default_context;
+        if let Some(buf) = self.ctx_mut(ck).output_buffers.get_mut(&sym) {
             buf.clear();
         }
     }
@@ -597,17 +615,19 @@ impl Env {
     /// Bind a `Value` to `sym`, readable by native fns/scripts (`binding`).
     /// Any heap `Value` passed must already live on this Env's heap.
     pub fn set_binding(&mut self, sym: SymbolId, value: Value) {
-        self.bindings.insert(sym, value);
+        let ck = self.default_context;
+        self.ctx_mut(ck).bindings.insert(sym, value);
     }
 
     /// Read the value bound to `sym`, if any.
     pub fn binding(&self, sym: SymbolId) -> Option<Value> {
-        self.bindings.get(&sym).copied()
+        self.ctx(self.default_context).bindings.get(&sym).copied()
     }
 
     /// Remove the binding for `sym`.
     pub fn clear_binding(&mut self, sym: SymbolId) {
-        self.bindings.remove(&sym);
+        let ck = self.default_context;
+        self.ctx_mut(ck).bindings.remove(&sym);
     }
 
     // ── Counters (per-run sequence allocation) ───────────────────
@@ -615,13 +635,15 @@ impl Env {
     /// Reset the counter for `sym` to `start` (call at frame start so
     /// `next_counter` hands out stable ids across the per-frame re-run model).
     pub fn reset_counter(&mut self, sym: SymbolId, start: u64) {
-        self.counters.insert(sym, start);
+        let ck = self.default_context;
+        self.ctx_mut(ck).counters.insert(sym, start);
     }
 
     /// Return the current counter value for `sym`, then increment it.
     /// An unset counter starts at 0.
     pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
-        let c = self.counters.entry(sym).or_insert(0);
+        let ck = self.default_context;
+        let c = self.ctx_mut(ck).counters.entry(sym).or_insert(0);
         let v = *c;
         *c += 1;
         v
@@ -640,12 +662,17 @@ impl std::fmt::Debug for Env {
     /// `expect_err` in tests, and for logging). The heap, closures, and trace
     /// buffer are intentionally elided via `finish_non_exhaustive`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let default_ctx = self.contexts.get(&self.default_context);
         f.debug_struct("Env")
             .field("programs", &self.programs.len())
             .field("stacks", &self.stacks.len())
             .field("native_fns", &self.native_fns.count())
-            .field("closures", &self.closures.len())
-            .field("pending_output_lines", &self.output.len())
+            .field("contexts", &self.contexts.len())
+            .field("closures", &default_ctx.map(|c| c.closures.len()).unwrap_or(0))
+            .field(
+                "pending_output_lines",
+                &default_ctx.map(|c| c.output.len()).unwrap_or(0),
+            )
             .finish_non_exhaustive()
     }
 }

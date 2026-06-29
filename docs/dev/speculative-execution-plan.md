@@ -11,16 +11,51 @@ objects the original still points at.
 
 This document analyzes the root cause and proposes an implementation.
 
+## Status / start here (handoff)
+
+**Approach chosen:** Option B — make collections immutable-by-default (value
+semantics), so heap objects are never mutated and sharing between executions is
+safe. See [Decision: Option B](#decision-option-b) and the
+[incremental roadmap](#incremental-roadmap-toward-immutable-by-default).
+
+**Shipped (Increment 1, on `main`):** lists are immutable. `Heap::list_append`
+returns a new list; the `append` builtin is immutable; `push` is a deprecated
+immutable alias. All `examples/` and `apps/` scripts migrated off in-place
+`push`; tests + docs updated; garden scripts checked (no list-mutation, nothing
+to migrate). Commits: `feat: make list append immutable …` → `refactor: migrate
+apps to immutable append`.
+
+A companion compiler fix was required and shipped: reassigning a `state`
+variable inside a loop (`xs = append(xs, x)`) now persists across runs
+(`compiler/phi.rs::emit_body_phi_ins` tags the loop carry Copy with the state
+key). Without it, value-semantic accumulation into a state list silently
+vanished each frame.
+
+**Next: Increment 2 — immutable index/field assignment.** Recompile `xs[i] = v`
+and `obj.f = v` (`SetIndex`/`SetField`) into functional-update + rebind of the
+root variable. **Apply the same in-loop-state-persistence care as Increment 1** —
+when the root is a `state` var written inside a loop, the rebind must reach the
+base state slot. Relevant code: `compiler/stmt.rs` (`compile_assign` /
+`compile_assign_name`), `eval/exec.rs` (`exec_set_field` / `exec_set_index`).
+
+**How to verify (live, not just `cargo test`):** the bug above only surfaced
+under multi-frame execution. Build `apps/petal-sdl` and run headless:
+`petal-sdl --headless <file.ptl>` then pipe `{"cmd":"step","n":50}` +
+`{"cmd":"state"}` to inspect state-list lengths; or `--screenshot out.png
+--frames N <file>` (no window; runs the program multiple times, so it exercises
+cross-frame state persistence). Sweep all `apps/petal-sdl/examples/*.ptl`.
+
 ## Current state (as of this writing)
 
 - One `Env` owns exactly one `Heap` (`env.rs`), shared by every `Stack`.
 - `Value` is `Copy`. Heap-backed variants (`String`, `List`, `F64Array`, `Map`,
   `Element`, `EnumVariant`) are just `u32` IDs indexing `Vec`s in the heap
   (`heap.rs`, `value.rs`).
-- Collections have **reference / in-place mutation** semantics. `push`, `append`,
-  `pop`, `swap`, `set`, `SetField`, `SetIndex` all go through `get_*_mut` and
-  mutate the object behind the ID; every alias observes the change
-  (`builtins/collections.rs`, `eval/exec.rs`).
+- Collections still have **reference / in-place mutation** semantics for the
+  ops not yet migrated: `pop`, `swap`, `set`, `SetField`, `SetIndex` go through
+  `get_*_mut` and mutate the object behind the ID; every alias observes the
+  change (`builtins/collections.rs`, `eval/exec.rs`). (As of Increment 1, list
+  `append`/`push` are immutable and return a new list — those no longer mutate.)
 - Persistent script state lives in `stack.state: HashMap<RuntimeStateKey, Value>`
   (`stack.rs`). These Values are often heap IDs.
 - `run_speculative` (`env.rs`) snapshots/restores **only `stack.state`** and
@@ -42,9 +77,12 @@ already breaks today:
 ```
 state items = [1, 2, 3]      # state var holds ListId(7)
 # speculative run:
-push(items, 4)               # mutates list slot 7 in place
-# restore_state puts ListId(7) back into state — but slot 7 is now [1,2,3,4]
+items[0] = 99                # SetIndex still mutates list slot 7 in place
+# restore_state puts ListId(7) back into state — but slot 7 is now [99,2,3]
 ```
+
+(`push`/`append` no longer mutate after Increment 1; the remaining in-place
+ops like `SetIndex` above are what Increment 2 addresses.)
 
 Two ways to make sharing safe:
 

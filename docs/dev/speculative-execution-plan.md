@@ -79,20 +79,24 @@ not carry the source's `state_key`, so `find_state_init` can't route the
 later rebind (cf. the existing `phi.rs::emit_body_phi_ins` fix that propagates
 the key for loop-carry Copies).
 
-**Known compiler bug discovered during Increment 3 (BLOCKER for correct value
-semantics):** multiple reassignments of a loop-carried variable inside a nested
-`if` block within a loop lose all but the *first* write per iteration. Minimal
-repro: `for i in range(0,3) do if true then s = append(s,i); s = append(s,i*10)
-end end` yields `[0,0,1,2]` instead of `[0,0,0,1,10,2,20]`. Double-reassignment
-works when *directly* in the loop body (not nested in an `if`), so the trigger
-is the conditional-block phi-out collecting the first rebind's TermId rather
-than the last. Pre-existing since Increment 1 (when `append` became immutable);
-exposed by `noc_fractal_tree.ptl`, which still renders degenerately (each node
-spawns one child instead of 2–3) until this is fixed.
+**Compiler bug found + fixed during Increment 3:** multiple reassignments of a
+loop-carried variable inside a nested `if` block within a loop used to lose all
+but the *first* write per iteration (`for i in range(0,3) do if true then s =
+append(s,i); s = append(s,i*10) end end` gave `[0,0,1,2]` instead of
+`[0,0,0,1,10,2,20]`). Cause: `rebind_name` only logged the *first* in-block
+rebind into `block_rebinds` (the phi-out source map); subsequent in-block
+reassignments took the `existing_block == current_block` fast path and updated
+only the scope, so the conditional's phi-out wired from the stale first binding.
+Fix (`compiler/stmt.rs::rebind_name`): also route through
+`rebind_name_in_current_block` when the name already has a rebind logged in the
+current block, keeping `block_rebinds` on the latest binding. Pre-existing since
+Increment 1; exposed by `noc_fractal_tree.ptl`, which now builds the full tree
+(1023 branches / 512 leaves at depth 9) instead of one child per node. Regression
+test in `ts/test/loop-carry-limitations.test.ts`. Commit: `fix: persist every
+rebind of a loop-carried var inside a nested if-block`.
 
-**Next: fix the nested-`if` loop-carry phi-out bug above**, then continue to
-Increment 4 (persistent backing) / Increment 5 (remove `get_*_mut`) — addressing
-the `let g = <state_var>` aliasing fix before/with Increment 5.
+**Next: Increment 4 (persistent backing) / Increment 5 (remove `get_*_mut`)** —
+addressing the `let g = <state_var>` aliasing fix before/with Increment 5.
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:

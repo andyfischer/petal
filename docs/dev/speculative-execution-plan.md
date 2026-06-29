@@ -25,10 +25,18 @@ is ever mutated, a speculative frame that "mutates" a state collection cannot
 corrupt the object the committed state still points at. Proven by
 `env.rs::speculative_tests::speculative_run_does_not_corrupt_committed_state_objects`.
 This delivers single-timeline speculative isolation *without* the Option-A
-copy-on-write/`Rc` slot machinery. Remaining work is now optional/secondary:
-persistent backing for performance (Increment 4), the `let`-alias follow-up,
-garden re-check (Increment 6), and the `World`/`fork_execution` API needed only
-for *two concurrently-live* side-by-side executions (the §architecture hazards).
+copy-on-write/`Rc` slot machinery.
+
+**Decision (2026-06): stop here — goal met.** Increments 1–3, 5, 6 are done;
+Increment 4 (persistent backing) is deferred as profiling-gated perf; the
+`let`-alias follow-up is resolved; `Heap::fork()` is in place. The remaining
+`World`/`fork_execution` extraction (steps 3–8 of §Phased implementation) is
+**intentionally not pursued for now** — it is needed only for *two
+concurrently-live* executions (single-timeline speculation already works), it is
+a large ~120-call-site refactor, and it can't be verified end-to-end without the
+host apps (SDL/web), so it warrants host-driven exercise + human review before
+landing. It is fully scoped below; pick it up when concurrent side-by-side is an
+actual requirement.
 
 **Shipped (Increment 1, on `main`):** lists are immutable. `Heap::list_append`
 returns a new list; the `append` builtin is immutable; `push` is a deprecated

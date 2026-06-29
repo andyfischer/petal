@@ -862,6 +862,31 @@ mod speculative_tests {
     use super::*;
     use crate::heap::ListId;
 
+    /// The `let g = <state_var>` aliasing limitation noted in the
+    /// speculative-execution plan no longer reproduces: a `let` alias of a
+    /// state collection, mutated by (possibly nested) index assignment — at top
+    /// level, inside an `if`, or written back into the state var across frames —
+    /// behaves with correct value semantics. Pins that it stays fixed.
+    #[test]
+    fn let_alias_of_state_var_mutated_by_index_persists() {
+        let mut env = Env::new();
+        // Each frame: alias state `count`, bump g[0], write the alias back.
+        let src = "state count = [0, 0, 0]\nlet g = count\ng[0] = g[0] + 1\ncount = g\n";
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        for expected in 1..=3 {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+            env.take_output();
+            let id = state_list(&env, sid);
+            assert_eq!(
+                env.heap().get_list(id),
+                &[Value::Int(expected), Value::Int(0), Value::Int(0)],
+                "let-alias index mutation did not persist across frames"
+            );
+        }
+    }
+
     /// Pull the single state list out of a stack's committed state.
     fn state_list(env: &Env, sid: StackKey) -> ListId {
         let state = env.snapshot_state(sid).unwrap();

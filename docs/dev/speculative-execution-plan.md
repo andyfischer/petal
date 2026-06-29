@@ -79,17 +79,18 @@ the existing immutable ops, each unit-tested for non-mutation. Only
 `last`+`drop_last`. Commits: `feat: add immutable heap ops …` → `feat: make
 pop/set/swap/remove immutable …`.
 
-**Known limitation discovered (follow-up):** `let g = <state_var>` aliases the
-local `g` to the state var's `StateInit` term (a `let` renames+binds the value
-term rather than emitting a fresh Copy). Under value semantics, reassigning such
-a local by index (`g[i] = v`) is silently dropped — the rebind misroutes. Work
-around by threading state through a function parameter (as tetris now does).
-Worth a dedicated compiler fix (make `let` of a state-var read bind an
-independent Copy) before/with Increment 5. Investigation points at
-`compiler/expr.rs::compile_ident`: the Copy it emits for a name reference does
-not carry the source's `state_key`, so `find_state_init` can't route the
-later rebind (cf. the existing `phi.rs::emit_body_phi_ins` fix that propagates
-the key for loop-carry Copies).
+**Former limitation `let g = <state_var>` — RESOLVED (could not reproduce).**
+Earlier this was flagged as: a `let` alias of a state var, reassigned by index
+(`g[i] = v`), is silently dropped. As of Increments 2–3 + the nested-`if`
+loop-carry fix below, it no longer reproduces under any tested pattern
+(single/multi-frame, write-back across frames, nested index, inside an `if`, via
+a function parameter). Pinned by
+`env.rs::speculative_tests::let_alias_of_state_var_mutated_by_index_persists`.
+Reopen only with a concrete failing repro. (The old lead —
+`compiler/expr.rs::compile_ident` not carrying the source `state_key` — was a
+red herring for these patterns; value semantics make `g` an independent local,
+which is the desired behavior, and the path-assign root registration from
+Increment 2 routes the rebind correctly.)
 
 **Compiler bug found + fixed during Increment 3:** multiple reassignments of a
 loop-carried variable inside a nested `if` block within a loop used to lose all
@@ -107,8 +108,10 @@ Increment 1; exposed by `noc_fractal_tree.ptl`, which now builds the full tree
 test in `ts/test/loop-carry-limitations.test.ts`. Commit: `fix: persist every
 rebind of a loop-carried var inside a nested if-block`.
 
-**Next: Increment 4 (persistent backing) / Increment 5 (remove `get_*_mut`)** —
-addressing the `let g = <state_var>` aliasing fix before/with Increment 5.
+**Next: optional/secondary work** — Increment 4 (persistent backing for
+performance), Increment 6 (garden re-check), and the `World`/`fork_execution`
+API for *two concurrently-live* side-by-side executions. The single-timeline
+speculative-isolation goal is already met (see ⭐ above).
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:
@@ -258,8 +261,8 @@ Each increment is independently shippable and keeps the test suite green.
    a loop carry (in-loop state persistence), and `exec_set_index` resolves
    negative indices symmetric with `GetIndex`. Scripts needed no change except
    `tetris.ptl` (routed grid writes through a helper that relied on by-reference
-   mutation). Known follow-up: `let g = <state_var>` then `g[i] = v` is dropped
-   (the `let` aliases the local to the state slot) — see handoff.
+   mutation). (The `let g = <state_var>` follow-up once flagged here is now
+   resolved / non-reproducing — see handoff.)
 3. **Immutable `pop` / f64-array `set` / `swap` / map field-set & remove —
    DONE.** f64-array `set`/`swap` now return a new array (callers rebind
    `a = set(a, i, v)`) instead of mutating + returning Nil. `pop` is a
@@ -278,13 +281,16 @@ Each increment is independently shippable and keeps the test suite green.
    `get_map_mut` were dead (verified: no callers in core or apps) and are
    deleted. Heap objects are now immutable by construction (documented on the
    `heap` module). This is the milestone that unlocks free speculative forking
-   (no shared object can be mutated behind an alias). **Still pending in this
-   increment:** the `let g = <state_var>` aliasing fix. It does *not* reproduce
-   in single-frame runs (`let g = count; g[0] = v` correctly updates `g` and
-   leaves `count` untouched); the "silently dropped" symptom is cross-frame, so
-   a fix needs a multi-frame (SDL-headless or state-transfer) reproduction
-   first. Lead remains `compiler/expr.rs::compile_ident` not propagating the
-   source `state_key`.
+   (no shared object can be mutated behind an alias). **`let`-alias limitation: RESOLVED / could
+   not reproduce.** The `let g = <state_var>` then `g[i] = v` "silently dropped"
+   symptom no longer reproduces under any tested pattern — single-frame,
+   multi-frame with write-back (`count = g` per frame), nested index
+   (`g[1][0] = v`), inside an `if`, or via a function parameter all behave with
+   correct value semantics. Most likely closed by the Increment 2 companion fix
+   (`assign_target_root` registering the path-assign root as a reassignment)
+   together with the nested-`if` loop-carry fix above. Pinned by
+   `env.rs::speculative_tests::let_alias_of_state_var_mutated_by_index_persists`.
+   Reopen only with a concrete failing repro.
 6. **Garden migration.** Apply the same `push`→`append` and assignment changes
    to `~/garden` and `~/.garden` scripts.
 

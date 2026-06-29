@@ -261,10 +261,18 @@ Each increment is independently shippable and keeps the test suite green.
    (Increment 2's `SetField`).
 4. **Persistent backing.** Swap list/map/array storage to structural-sharing
    structures (e.g. `im`) so the immutable ops stop copying whole containers.
-5. **Remove `get_*_mut` from the heap.** With no in-place mutation left, delete
-   the mutable accessors; heap objects become immutable by construction. This is
-   the milestone that unlocks free speculative forking (see Option A/§fork for
-   the now-trivial isolation).
+5. **Remove `get_*_mut` from the heap — accessor removal DONE.** With no
+   in-place mutation left after Increment 3, `get_list_mut`/`get_f64_array_mut`/
+   `get_map_mut` were dead (verified: no callers in core or apps) and are
+   deleted. Heap objects are now immutable by construction (documented on the
+   `heap` module). This is the milestone that unlocks free speculative forking
+   (no shared object can be mutated behind an alias). **Still pending in this
+   increment:** the `let g = <state_var>` aliasing fix. It does *not* reproduce
+   in single-frame runs (`let g = count; g[0] = v` correctly updates `g` and
+   leaves `count` untouched); the "silently dropped" symptom is cross-frame, so
+   a fix needs a multi-frame (SDL-headless or state-transfer) reproduction
+   first. Lead remains `compiler/expr.rs::compile_ident` not propagating the
+   source `state_key`.
 6. **Garden migration.** Apply the same `push`→`append` and assignment changes
    to `~/garden` and `~/.garden` scripts.
 

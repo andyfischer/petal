@@ -55,18 +55,44 @@ migrating — it routed grid writes through a `set_cell(grd, …)` helper and re
 on by-reference mutation, so `set_cell`/`lock_piece`/`clear_lines` now take the
 grid and return the updated grid (`grid = lock_piece(grid)`).
 
+**Shipped (Increment 3):** the remaining in-place collection builtins are
+immutable. f64-array `set`/`swap` return a new array (callers rebind
+`a = set(a, i, v)`); `pop` is a deprecated immutable alias of the new
+`drop_last` (returns the shortened list, not the removed element); new builtins
+`last` (read final element), `drop_last`, and `remove` (map key removal) were
+appended to the registration table (order is load-bearing — phantom term
+indices). Heap gained `list_drop_last`/`f64_array_swap`/`map_remove` mirroring
+the existing immutable ops, each unit-tested for non-mutation. Only
+`noc_fractal_tree.ptl` used the value-returning `pop`; migrated to
+`last`+`drop_last`. Commits: `feat: add immutable heap ops …` → `feat: make
+pop/set/swap/remove immutable …`.
+
 **Known limitation discovered (follow-up):** `let g = <state_var>` aliases the
 local `g` to the state var's `StateInit` term (a `let` renames+binds the value
 term rather than emitting a fresh Copy). Under value semantics, reassigning such
 a local by index (`g[i] = v`) is silently dropped — the rebind misroutes. Work
 around by threading state through a function parameter (as tetris now does).
 Worth a dedicated compiler fix (make `let` of a state-var read bind an
-independent Copy) before/with Increment 5.
+independent Copy) before/with Increment 5. Investigation points at
+`compiler/expr.rs::compile_ident`: the Copy it emits for a name reference does
+not carry the source's `state_key`, so `find_state_init` can't route the
+later rebind (cf. the existing `phi.rs::emit_body_phi_ins` fix that propagates
+the key for loop-carry Copies).
 
-**Next: Increment 3 — immutable `pop` / f64-array `set` / `swap` / map remove.**
-These builtins still mutate via `get_*_mut` (`builtins/collections.rs`). Decide
-the `pop` shape (split into `last` + `drop_last`, or return a pair). `pop` is
-currently unused by any script, so this is low-risk.
+**Known compiler bug discovered during Increment 3 (BLOCKER for correct value
+semantics):** multiple reassignments of a loop-carried variable inside a nested
+`if` block within a loop lose all but the *first* write per iteration. Minimal
+repro: `for i in range(0,3) do if true then s = append(s,i); s = append(s,i*10)
+end end` yields `[0,0,1,2]` instead of `[0,0,0,1,10,2,20]`. Double-reassignment
+works when *directly* in the loop body (not nested in an `if`), so the trigger
+is the conditional-block phi-out collecting the first rebind's TermId rather
+than the last. Pre-existing since Increment 1 (when `append` became immutable);
+exposed by `noc_fractal_tree.ptl`, which still renders degenerately (each node
+spawns one child instead of 2–3) until this is fixed.
+
+**Next: fix the nested-`if` loop-carry phi-out bug above**, then continue to
+Increment 4 (persistent backing) / Increment 5 (remove `get_*_mut`) — addressing
+the `let g = <state_var>` aliasing fix before/with Increment 5.
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:
@@ -218,10 +244,17 @@ Each increment is independently shippable and keeps the test suite green.
    `tetris.ptl` (routed grid writes through a helper that relied on by-reference
    mutation). Known follow-up: `let g = <state_var>` then `g[i] = v` is dropped
    (the `let` aliases the local to the state slot) — see handoff.
-3. **Immutable `pop` / f64-array `set` / `swap` / map field-set & remove.**
-   Decide the `pop` shape (it returns both a value and a shorter list — likely
-   split into `last` + `drop_last`, or return a pair). `pop` is currently unused
-   by any script, so this is low-risk.
+3. **Immutable `pop` / f64-array `set` / `swap` / map field-set & remove —
+   DONE.** f64-array `set`/`swap` now return a new array (callers rebind
+   `a = set(a, i, v)`) instead of mutating + returning Nil. `pop` is a
+   deprecated immutable alias of the new `drop_last` (returns the shortened
+   list, not the popped element); the `pop`-the-value pattern migrates to
+   `last(xs)` + `drop_last(xs)`. New builtins `last`/`drop_last`/`remove`
+   (map key removal) appended to the registration table (order is load-bearing).
+   Heap gained `list_drop_last`/`f64_array_swap`/`map_remove` mirroring the
+   existing immutable ops. Only `noc_fractal_tree.ptl` used the value-returning
+   `pop`; migrated to `last`+`drop_last`. Map field-set was already immutable
+   (Increment 2's `SetField`).
 4. **Persistent backing.** Swap list/map/array storage to structural-sharing
    structures (e.g. `im`) so the immutable ops stop copying whole containers.
 5. **Remove `get_*_mut` from the heap.** With no in-place mutation left, delete

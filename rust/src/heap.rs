@@ -201,6 +201,14 @@ impl Heap {
         self.alloc_list(elements)
     }
 
+    /// Return a new list equal to `id` with its last element removed. `id` is
+    /// unchanged. On an empty list, returns a new empty list.
+    pub fn list_drop_last(&mut self, id: ListId) -> ListId {
+        let mut elements = self.lists[id.0 as usize].elements.clone();
+        elements.pop();
+        self.alloc_list(elements)
+    }
+
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
@@ -242,6 +250,14 @@ impl Heap {
         self.alloc_f64_array(data)
     }
 
+    /// Return a new f64 array equal to `id` with elements `i` and `j` swapped.
+    /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
+    pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
+        let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        data.swap(i, j);
+        self.alloc_f64_array(data)
+    }
+
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
@@ -276,6 +292,15 @@ impl Heap {
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
         let mut entries = self.maps[id.0 as usize].entries.clone();
         entries.insert(key, val);
+        self.alloc_map(entries)
+    }
+
+    /// Return a new map equal to `id` with `key` removed. `id` is unchanged
+    /// (value semantics). Insertion order of the remaining keys is preserved.
+    /// Removing an absent key returns an equivalent new map.
+    pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
+        let mut entries = self.maps[id.0 as usize].entries.clone();
+        entries.shift_remove(key);
         self.alloc_map(entries)
     }
 
@@ -564,5 +589,76 @@ mod tests {
         assert_eq!(heap.get_f64_array(updated), &[1.0, 9.5, 3.0]);
         // …and the original array is untouched (value semantics).
         assert_eq!(heap.get_f64_array(original), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn list_drop_last_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let original = heap.alloc_list(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+
+        let shorter = heap.list_drop_last(original);
+
+        // A new, distinct list is returned without the last element…
+        assert_ne!(original.0, shorter.0);
+        assert_eq!(heap.get_list(shorter), &[Value::Int(1), Value::Int(2)]);
+        // …and the original list is untouched (value semantics).
+        assert_eq!(
+            heap.get_list(original),
+            &[Value::Int(1), Value::Int(2), Value::Int(3)]
+        );
+    }
+
+    #[test]
+    fn list_drop_last_on_empty_list() {
+        let mut heap = Heap::new();
+        let empty = heap.alloc_list(vec![]);
+        let still_empty = heap.list_drop_last(empty);
+        assert_eq!(heap.get_list(still_empty), &[] as &[Value]);
+    }
+
+    #[test]
+    fn f64_array_swap_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let original = heap.alloc_f64_array(vec![1.0, 2.0, 3.0]);
+
+        let swapped = heap.f64_array_swap(original, 0, 2);
+
+        // A new, distinct array is returned with the two elements swapped…
+        assert_ne!(original.0, swapped.0);
+        assert_eq!(heap.get_f64_array(swapped), &[3.0, 2.0, 1.0]);
+        // …and the original array is untouched (value semantics).
+        assert_eq!(heap.get_f64_array(original), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn map_remove_does_not_mutate_the_input() {
+        let mut heap = Heap::new();
+        let mut entries = IndexMap::new();
+        entries.insert("a".to_string(), Value::Int(1));
+        entries.insert("b".to_string(), Value::Int(2));
+        let original = heap.alloc_map(entries);
+
+        let removed = heap.map_remove(original, "a");
+
+        // A new, distinct map is returned without the key…
+        assert_ne!(original.0, removed.0);
+        assert_eq!(heap.get_map(removed).get("a"), None);
+        assert_eq!(heap.get_map(removed).get("b"), Some(&Value::Int(2)));
+        // …and the original map is untouched (value semantics).
+        assert_eq!(heap.get_map(original).get("a"), Some(&Value::Int(1)));
+        assert_eq!(heap.get_map(original).get("b"), Some(&Value::Int(2)));
+    }
+
+    #[test]
+    fn map_remove_absent_key_is_a_noop_copy() {
+        let mut heap = Heap::new();
+        let mut entries = IndexMap::new();
+        entries.insert("a".to_string(), Value::Int(1));
+        let original = heap.alloc_map(entries);
+
+        let removed = heap.map_remove(original, "missing");
+
+        assert_eq!(heap.get_map(removed).get("a"), Some(&Value::Int(1)));
+        assert_eq!(heap.get_map(removed).len(), 1);
     }
 }

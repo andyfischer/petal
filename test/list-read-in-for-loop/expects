@@ -1,0 +1,6 @@
+# Expected console output.
+out: 150
+
+# Read-only iteration must never duplicate anything.
+max dup.total.count: 0
+max dup.total.bytes: 0

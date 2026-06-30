@@ -1,0 +1,14 @@
+# Expected console output (one `out:` line per print(), in order).
+out: [1, 2, 3, 4, 5]
+out: 5
+
+# Performance ceilings: the run must not EXCEED these. Appending to a growing
+# list copies the backing store each time, so 5 iterations => 5 list dups today
+# (cloning lengths 0..4 => 0+24+48+72+96 = 240 bytes at 24 bytes/Value).
+# Drive these down as we start reusing live buffers instead of duplicating.
+max dup.list.count: 5
+max dup.total.bytes: 240
+# Nothing here should ever fork or touch maps / f64 arrays.
+max dup.map.count: 0
+max dup.f64array.count: 0
+max dup.fork.count: 0

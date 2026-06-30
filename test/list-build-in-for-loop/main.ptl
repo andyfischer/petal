@@ -1,0 +1,12 @@
+// Build a list by appending one element per iteration.
+//
+// Today each `append` copy-on-writes the whole backing store, so this records
+// one list duplication per iteration. The expects file pins those numbers as a
+// ceiling: when loop-carried appends learn to reuse the live buffer (escape
+// analysis / in-place when unshared), the counts should fall and we tighten it.
+let xs = []
+for i in range(1, 6) do
+  xs = xs.append(i)
+end
+print(xs)
+print(len(xs))

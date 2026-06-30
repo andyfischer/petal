@@ -12,3 +12,5 @@ max dup.total.bytes: 240
 max dup.map.count: 0
 max dup.f64array.count: 0
 max dup.fork.count: 0
+# New list objects created (initial [] plus one per append):
+max alloc.list.count: 6

@@ -24,10 +24,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use petal::env::Env;
-use petal::stats::{DupKind, DupStats, DUP_STATS_ENABLED};
+use petal::stats::{AllocStats, DupKind, DupStats, DUP_STATS_ENABLED};
 
-/// One `max dup.<kind>.<metric>` ceiling parsed from an `expects` file.
+/// One `max <family>.<kind>.<metric>` ceiling parsed from an `expects` file.
+/// `family` is `dup` (copy-on-write/fork) or `alloc` (new objects created).
 struct MetricCeiling {
+    family: String,
     kind: String,
     metric: String,
     max: u64,
@@ -60,9 +62,9 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
                 panic!("{case}/expects:{}: `max` line needs `key: value`: {line:?}", lineno + 1)
             });
             let parts: Vec<&str> = key.trim().split('.').collect();
-            if parts.len() != 3 || parts[0] != "dup" {
+            if parts.len() != 3 || (parts[0] != "dup" && parts[0] != "alloc") {
                 panic!(
-                    "{case}/expects:{}: metric key must be `dup.<kind>.<metric>`, got {:?}",
+                    "{case}/expects:{}: metric key must be `dup|alloc.<kind>.<metric>`, got {:?}",
                     lineno + 1,
                     key.trim()
                 );
@@ -71,6 +73,7 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
                 panic!("{case}/expects:{}: ceiling must be a number, got {:?}", lineno + 1, value.trim())
             });
             ceilings.push(MetricCeiling {
+                family: parts[0].to_string(),
                 kind: parts[1].to_string(),
                 metric: parts[2].to_string(),
                 max,
@@ -83,8 +86,8 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
     Expectations { output, ceilings }
 }
 
-/// Resolve `stats.<kind>.<metric>` to its actual value.
-fn actual_metric(stats: &DupStats, kind: &str, metric: &str, case: &str) -> u64 {
+/// Resolve a `dup.<kind>.<metric>` ceiling key to its actual measured value.
+fn actual_dup_metric(stats: &DupStats, kind: &str, metric: &str, case: &str) -> u64 {
     let counter = match kind {
         "list" => Some(stats.get(DupKind::List)),
         "map" => Some(stats.get(DupKind::Map)),
@@ -99,6 +102,24 @@ fn actual_metric(stats: &DupStats, kind: &str, metric: &str, case: &str) -> u64 
         (None, "count") => stats.total_count(),
         (None, "bytes") => stats.total_bytes(),
         (_, other) => panic!("{case}/expects: unknown dup metric {other:?}"),
+    }
+}
+
+/// Resolve an `alloc.<kind>.count` ceiling key to its actual measured value.
+/// Allocations only have a `count` metric.
+fn actual_alloc_metric(stats: &AllocStats, kind: &str, metric: &str, case: &str) -> u64 {
+    use petal::stats::AllocKind;
+    if metric != "count" {
+        panic!("{case}/expects: alloc metric must be `count`, got {metric:?}");
+    }
+    match kind {
+        "string" => stats.get(AllocKind::String),
+        "list" => stats.get(AllocKind::List),
+        "f64array" => stats.get(AllocKind::F64Array),
+        "map" => stats.get(AllocKind::Map),
+        "element" => stats.get(AllocKind::Element),
+        "total" => stats.total(),
+        other => panic!("{case}/expects: unknown alloc kind {other:?}"),
     }
 }
 
@@ -138,13 +159,18 @@ fn check_case(dir: &Path) -> Vec<String> {
 
     // ── Performance ceilings ─────────────────────────────────────
     if DUP_STATS_ENABLED {
-        let stats = env.dup_stats();
+        let dup = env.dup_stats();
+        let alloc = env.alloc_stats();
         for c in &expects.ceilings {
-            let actual = actual_metric(stats, &c.kind, &c.metric, &case);
+            let actual = match c.family.as_str() {
+                "dup" => actual_dup_metric(dup, &c.kind, &c.metric, &case),
+                "alloc" => actual_alloc_metric(alloc, &c.kind, &c.metric, &case),
+                other => panic!("{case}/expects: unknown metric family {other:?}"),
+            };
             if actual > c.max {
                 errors.push(format!(
-                    "{case}: dup.{}.{} regressed: {} exceeds ceiling {}",
-                    c.kind, c.metric, actual, c.max
+                    "{case}: {}.{}.{} regressed: {} exceeds ceiling {}",
+                    c.family, c.kind, c.metric, actual, c.max
                 ));
             }
         }

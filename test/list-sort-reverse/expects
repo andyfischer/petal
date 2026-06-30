@@ -7,3 +7,5 @@ out: [3, 1, 4, 1, 5, 9, 2, 6]
 # Performance ceilings (current measured values — drive these down):
 max dup.total.count: 0
 max dup.total.bytes: 0
+# input + sorted + reversed:
+max alloc.list.count: 3

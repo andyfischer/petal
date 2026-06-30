@@ -14,7 +14,7 @@ use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
-use crate::stats::DupStats;
+use crate::stats::{AllocStats, DupStats};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
 use crate::value::Value;
@@ -338,6 +338,18 @@ impl Env {
     /// own fork's heap, for a forked stack). `None` if the stack is unknown.
     pub fn dup_stats_for(&self, stack_id: StackKey) -> Option<&DupStats> {
         self.ctx_for(stack_id).map(|ck| self.ctx(ck).dup_stats())
+    }
+
+    /// Heap-allocation statistics (objects created per kind) for the default
+    /// execution context. See [`crate::stats`].
+    pub fn alloc_stats(&self) -> &AllocStats {
+        self.ctx(self.default_context).alloc_stats()
+    }
+
+    /// Allocation statistics for the context a specific stack is bound to.
+    /// `None` if the stack is unknown.
+    pub fn alloc_stats_for(&self, stack_id: StackKey) -> Option<&AllocStats> {
+        self.ctx_for(stack_id).map(|ck| self.ctx(ck).alloc_stats())
     }
 
     // ── State inspection ─────────────────────────────────────────

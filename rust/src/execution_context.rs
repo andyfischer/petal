@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::eval::RuntimeClosure;
 use crate::heap::Heap;
 use crate::program::OverloadEntry;
-use crate::stats::DupStats;
+use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolId;
 use crate::value::Value;
 
@@ -67,6 +67,12 @@ impl ExecutionContext {
     /// [`crate::stats`].
     pub fn dup_stats(&self) -> &DupStats {
         self.heap.dup_stats()
+    }
+
+    /// This context's heap-allocation statistics (objects created per kind).
+    /// See [`crate::stats`].
+    pub fn alloc_stats(&self) -> &AllocStats {
+        self.heap.alloc_stats()
     }
 
     // ── Data operations ──────────────────────────────────────────

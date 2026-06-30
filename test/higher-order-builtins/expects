@@ -7,3 +7,5 @@ out: 21
 # Performance ceilings (current measured values — drive these down):
 max dup.total.count: 0
 max dup.total.bytes: 0
+# nums + map result + filter result (reduce returns a scalar):
+max alloc.list.count: 3

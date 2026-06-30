@@ -5,3 +5,5 @@ out: 20
 # Performance ceilings (current measured values — drive these down):
 max dup.total.count: 0
 max dup.total.bytes: 0
+# 5 enum-variant payload lists; iteration/eval allocate nothing more:
+max alloc.list.count: 5

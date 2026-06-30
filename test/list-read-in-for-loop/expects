@@ -4,3 +4,5 @@ out: 150
 # Read-only iteration must never duplicate anything.
 max dup.total.count: 0
 max dup.total.bytes: 0
+# Only the literal list is allocated; iteration creates nothing:
+max alloc.list.count: 1

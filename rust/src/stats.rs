@@ -63,6 +63,114 @@ impl DupKind {
     }
 }
 
+/// The kind of heap object allocated. Unlike [`DupKind`] this enumerates every
+/// heap object type (a `Fork` copies existing objects, it does not allocate
+/// new ones, so it has no allocation kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllocKind {
+    String,
+    List,
+    F64Array,
+    Map,
+    Element,
+}
+
+impl AllocKind {
+    /// Number of distinct kinds — the width of the [`AllocStats`] backing array.
+    pub const COUNT: usize = 5;
+
+    /// Every kind, in display order. Indexes line up with [`AllocKind::index`].
+    pub const ALL: [AllocKind; Self::COUNT] = [
+        AllocKind::String,
+        AllocKind::List,
+        AllocKind::F64Array,
+        AllocKind::Map,
+        AllocKind::Element,
+    ];
+
+    const fn index(self) -> usize {
+        match self {
+            AllocKind::String => 0,
+            AllocKind::List => 1,
+            AllocKind::F64Array => 2,
+            AllocKind::Map => 3,
+            AllocKind::Element => 4,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            AllocKind::String => "string",
+            AllocKind::List => "list",
+            AllocKind::F64Array => "f64array",
+            AllocKind::Map => "map",
+            AllocKind::Element => "element",
+        }
+    }
+}
+
+/// How many new heap objects of each [`AllocKind`] were created during a run.
+///
+/// Counts *creations*, cumulative over the whole run — it is never decremented
+/// when an object is garbage-collected, so it measures total churn (including
+/// short-lived temporaries), not live-set size. Every copy-on-write that
+/// produces a new id also allocates, so this rises alongside [`DupStats`] and
+/// gives visibility into how many intermediate objects a program produces.
+///
+/// Collected under the same [`DUP_STATS_ENABLED`] gate as [`DupStats`].
+#[derive(Debug, Clone, Default)]
+pub struct AllocStats {
+    by_kind: [u64; AllocKind::COUNT],
+}
+
+impl AllocStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record one allocation of `kind`. Folds to nothing when stats are off.
+    #[inline]
+    pub fn record(&mut self, kind: AllocKind) {
+        if !DUP_STATS_ENABLED {
+            return;
+        }
+        self.by_kind[kind.index()] += 1;
+    }
+
+    /// Number of `kind` objects allocated.
+    pub fn get(&self, kind: AllocKind) -> u64 {
+        self.by_kind[kind.index()]
+    }
+
+    /// Total objects allocated across all kinds.
+    pub fn total(&self) -> u64 {
+        self.by_kind.iter().sum()
+    }
+
+    /// Iterate `(kind, count)` pairs in [`AllocKind::ALL`] order.
+    pub fn iter(&self) -> impl Iterator<Item = (AllocKind, u64)> + '_ {
+        AllocKind::ALL.iter().map(move |&k| (k, self.get(k)))
+    }
+
+    /// Clear all counters back to zero.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
+impl fmt::Display for AllocStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !DUP_STATS_ENABLED {
+            return write!(f, "heap allocation stats: disabled");
+        }
+        writeln!(f, "heap allocation stats (objects created):")?;
+        for (kind, count) in self.iter() {
+            writeln!(f, "  {:<9} count={}", kind.label(), count)?;
+        }
+        write!(f, "  {:<9} count={}", "total", self.total())
+    }
+}
+
 /// Count and total bytes for one kind of duplication.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DupCounter {

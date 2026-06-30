@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use crate::stats::{DupKind, DupStats};
+use crate::stats::{AllocKind, AllocStats, DupKind, DupStats};
 use crate::value::Value;
 
 /// Bytes copied when a `Vec<Value>`/map of `n` `Value`s is cloned. The `Value`
@@ -108,7 +108,11 @@ pub struct Heap {
     /// can track (and shrink) how much copying immutable values cost. Collected
     /// only in debug builds or with the `dup-stats` feature — see
     /// [`crate::stats`].
-    stats: DupStats,
+    dup_stats: DupStats,
+    /// Allocation statistics: how many new heap objects were created, per kind.
+    /// Cumulative over the run (never decremented by GC), so it surfaces
+    /// temporary-object churn. Same gate as `dup_stats`.
+    alloc_stats: AllocStats,
 }
 
 /// Number of allocations between GC cycles
@@ -129,7 +133,8 @@ impl Heap {
             free_elements: Vec::new(),
             intern_table: HashMap::new(),
             alloc_count: 0,
-            stats: DupStats::new(),
+            dup_stats: DupStats::new(),
+            alloc_stats: AllocStats::new(),
         }
     }
 
@@ -137,13 +142,24 @@ impl Heap {
     /// operations and forks. All zero in release builds unless the `dup-stats`
     /// feature is enabled — see [`crate::stats`].
     pub fn dup_stats(&self) -> &DupStats {
-        &self.stats
+        &self.dup_stats
     }
 
     /// Mutable access to the duplication stats, e.g. to [`DupStats::reset`] them
     /// between runs.
     pub fn dup_stats_mut(&mut self) -> &mut DupStats {
-        &mut self.stats
+        &mut self.dup_stats
+    }
+
+    /// Allocation statistics: how many new heap objects this heap created, per
+    /// kind. Cumulative over the run; same gate as [`dup_stats`](Self::dup_stats).
+    pub fn alloc_stats(&self) -> &AllocStats {
+        &self.alloc_stats
+    }
+
+    /// Mutable access to the allocation stats, e.g. to reset them between runs.
+    pub fn alloc_stats_mut(&mut self) -> &mut AllocStats {
+        &mut self.alloc_stats
     }
 
     /// Total bytes of live payload this heap holds — the rough cost of cloning
@@ -195,15 +211,19 @@ impl Heap {
         let mut child = self.clone();
         // The fork copied this whole heap. Attribute that copy to the child
         // (the execution that now owns the duplicate) with fresh counters, so
-        // each context measures the duplication done on its own behalf rather
-        // than re-counting its parent's history.
-        child.stats.reset();
-        child.stats.record(DupKind::Fork, || self.payload_bytes());
+        // each context measures the work done on its own behalf rather than
+        // re-counting its parent's history. Allocation counts reset too: the
+        // child's objects already exist, so it starts counting new allocations
+        // from the fork point.
+        child.dup_stats.reset();
+        child.alloc_stats.reset();
+        child.dup_stats.record(DupKind::Fork, || self.payload_bytes());
         child
     }
 
-    fn tick_alloc(&mut self) {
+    fn tick_alloc(&mut self, kind: AllocKind) {
         self.alloc_count += 1;
+        self.alloc_stats.record(kind);
     }
 
     // --- String allocation ---
@@ -218,7 +238,7 @@ impl Heap {
             // Stale entry — will be overwritten below
         }
 
-        self.tick_alloc();
+        self.tick_alloc(AllocKind::String);
         let id = if let Some(idx) = self.free_strings.pop() {
             let slot = &mut self.strings[idx as usize];
             slot.data = s.clone();
@@ -246,7 +266,7 @@ impl Heap {
     // --- List allocation ---
 
     pub fn alloc_list(&mut self, elements: Vec<Value>) -> ListId {
-        self.tick_alloc();
+        self.tick_alloc(AllocKind::List);
         if let Some(idx) = self.free_lists.pop() {
             let slot = &mut self.lists[idx as usize];
             slot.elements = elements;
@@ -282,7 +302,7 @@ impl Heap {
     /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
     pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
-        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.push(val);
         self.alloc_list(elements)
     }
@@ -292,7 +312,7 @@ impl Heap {
     /// bounds-checks before calling).
     pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
-        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements[index] = val;
         self.alloc_list(elements)
     }
@@ -301,7 +321,7 @@ impl Heap {
     /// unchanged. On an empty list, returns a new empty list.
     pub fn list_drop_last(&mut self, id: ListId) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
-        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.pop();
         self.alloc_list(elements)
     }
@@ -309,7 +329,7 @@ impl Heap {
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
-        self.tick_alloc();
+        self.tick_alloc(AllocKind::F64Array);
         if let Some(idx) = self.free_f64_arrays.pop() {
             let slot = &mut self.f64_arrays[idx as usize];
             slot.data = data;
@@ -339,7 +359,7 @@ impl Heap {
     /// unchanged. The caller must ensure `index` is in bounds.
     pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
         let mut data = self.f64_arrays[id.0 as usize].data.clone();
-        self.stats
+        self.dup_stats
             .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data[index] = val;
         self.alloc_f64_array(data)
@@ -349,7 +369,7 @@ impl Heap {
     /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
     pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
         let mut data = self.f64_arrays[id.0 as usize].data.clone();
-        self.stats
+        self.dup_stats
             .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data.swap(i, j);
         self.alloc_f64_array(data)
@@ -358,7 +378,7 @@ impl Heap {
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
-        self.tick_alloc();
+        self.tick_alloc(AllocKind::Map);
         if let Some(idx) = self.free_maps.pop() {
             let slot = &mut self.maps[idx as usize];
             slot.entries = entries;
@@ -384,7 +404,7 @@ impl Heap {
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
         let mut entries = self.maps[id.0 as usize].entries.clone();
-        self.stats.record(DupKind::Map, || map_entries_bytes(&entries));
+        self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
         self.alloc_map(entries)
     }
@@ -394,7 +414,7 @@ impl Heap {
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
         let mut entries = self.maps[id.0 as usize].entries.clone();
-        self.stats.record(DupKind::Map, || map_entries_bytes(&entries));
+        self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
         self.alloc_map(entries)
     }
@@ -402,7 +422,7 @@ impl Heap {
     // --- Element allocation ---
 
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
-        self.tick_alloc();
+        self.tick_alloc(AllocKind::Element);
         if let Some(idx) = self.free_elements.pop() {
             let slot = &mut self.elements[idx as usize];
             slot.tag = tag;
@@ -814,6 +834,40 @@ mod tests {
             2 * value_slice_bytes(3),
         );
         assert_eq!(stats.total_count(), 2);
+    }
+
+    #[test]
+    fn alloc_stats_count_new_objects_per_kind() {
+        if !crate::stats::DUP_STATS_ENABLED {
+            return;
+        }
+        use crate::stats::AllocKind;
+        let mut heap = Heap::new();
+
+        let list = heap.alloc_list(vec![Value::Int(1)]);
+        let _ = heap.alloc_list(vec![Value::Int(2)]);
+        let _ = heap.alloc_f64_array(vec![0.0; 3]);
+        // A copy-on-write also allocates a fresh list.
+        let _ = heap.list_append(list, Value::Int(9));
+
+        let allocs = heap.alloc_stats();
+        assert_eq!(allocs.get(AllocKind::List), 3); // two literals + the append's result
+        assert_eq!(allocs.get(AllocKind::F64Array), 1);
+        assert_eq!(allocs.get(AllocKind::Map), 0);
+        assert_eq!(allocs.total(), 4);
+    }
+
+    #[test]
+    fn interned_string_reuse_is_not_a_new_allocation() {
+        if !crate::stats::DUP_STATS_ENABLED {
+            return;
+        }
+        use crate::stats::AllocKind;
+        let mut heap = Heap::new();
+        let _ = heap.alloc_string("hello".to_string());
+        let _ = heap.alloc_string("hello".to_string()); // interned — reuses the slot
+
+        assert_eq!(heap.alloc_stats().get(AllocKind::String), 1);
     }
 
     #[test]

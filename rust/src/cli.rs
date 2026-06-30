@@ -302,9 +302,9 @@ Commands:
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
-                                 --dup-stats: print value-duplication stats to
-                                 stderr after the run (debug builds / dup-stats
-                                 feature)
+                                 --dup-stats: print value-duplication and heap
+                                 allocation stats to stderr after the run (debug
+                                 builds / dup-stats feature)
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -418,6 +418,7 @@ pub fn execute(cli: CliArgs) {
 
             if dup_stats {
                 eprintln!("{}", env.dup_stats());
+                eprintln!("{}", env.alloc_stats());
             }
 
             if let Err(e) = run_result {

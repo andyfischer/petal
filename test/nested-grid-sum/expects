@@ -5,3 +5,5 @@ out: 45
 # Performance ceilings (current measured values — drive these down):
 max dup.total.count: 0
 max dup.total.bytes: 0
+# outer grid + 3 row literals:
+max alloc.list.count: 4

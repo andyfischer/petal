@@ -8,3 +8,5 @@ max dup.f64array.count: 3
 max dup.f64array.bytes: 120
 max dup.total.count: 3
 max dup.total.bytes: 120
+# f64_array(5) plus 3 copy-on-write results:
+max alloc.f64array.count: 4

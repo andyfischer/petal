@@ -8,3 +8,6 @@ max dup.map.count: 6
 max dup.map.bytes: 336
 max dup.total.count: 6
 max dup.total.bytes: 336
+# initial map + 6 field-update copies; the loop list literal is the 1 list:
+max alloc.map.count: 7
+max alloc.list.count: 1

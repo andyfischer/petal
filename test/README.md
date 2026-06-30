@@ -18,16 +18,21 @@ Plain text, one directive per line. Lines starting with `#` are comments; blank
 lines are ignored.
 
 ```text
-out: <line>                    # expected console output, one per print(), in order
-max dup.<kind>.<metric>: <N>   # the run must NOT exceed N
+out: <line>                      # expected console output, one per print(), in order
+max dup.<kind>.<metric>: <N>     # copy-on-write ceiling: run must NOT exceed N
+max alloc.<kind>.count: <N>      # new-object ceiling: run must NOT exceed N
 ```
 
 - `out:` lines are matched **exactly and in order** against the program's
   console output (one entry per `print()` call). One optional space after the
   colon is dropped, so `out: 5` expects the line `5`.
-- `max dup.<kind>.<metric>:` sets a ceiling on a value-duplication metric.
+- `max dup.<kind>.<metric>:` caps a **value-duplication** metric (copy-on-write
+  + fork copies).
   - `<kind>` ∈ `list`, `map`, `f64array`, `fork`, `total`
   - `<metric>` ∈ `count`, `bytes`
+- `max alloc.<kind>.count:` caps **how many new heap objects** the run creates
+  (cumulative, including short-lived temporaries — visibility into churn).
+  - `<kind>` ∈ `string`, `list`, `f64array`, `map`, `element`, `total`
 
 ## What the metric ceilings are for
 
@@ -37,6 +42,11 @@ The ceilings pin how much copying a known scenario does **today**. As escape
 analysis and structural sharing teach the runtime to reuse live payloads instead
 of duplicating them, these numbers should fall — and we tighten the ceilings to
 lock the win in. A change that copies *more* than the ceiling fails the test.
+
+The `alloc.*` ceilings track a related but distinct cost: how many new heap
+objects a run creates (including temporaries the GC later reclaims). They give
+visibility into object churn — e.g. a loop that builds a list one `append` at a
+time allocates a fresh list per iteration.
 
 Metric ceilings are only enforced when duplication stats are compiled in — debug
 builds (which `cargo test` uses) and the `dup-stats` feature. The `out:` checks

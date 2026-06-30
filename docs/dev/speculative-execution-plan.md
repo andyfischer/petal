@@ -148,6 +148,15 @@ cross-frame state persistence). Sweep all `apps/petal-sdl/examples/*.ptl`.
 
 ## Current state (as of this writing)
 
+> **Historical baseline.** This section captures the runtime *before* the
+> immutable-collections work and the `ExecutionContext` extraction — it is the
+> problem statement the analysis below reasons from. Several bullets are now
+> outdated: collections are immutable (Increments 1–3), execution-local state
+> lives in per-`ExecutionContext` bundles rather than directly on `Env`,
+> `run_speculative` forks an isolated context (it no longer snapshots/restores
+> on the source stack), and GC is scoped per context. See the ⭐/⭐⭐ handoff
+> notes at the top for what actually shipped.
+
 - One `Env` owns exactly one `Heap` (`env.rs`), shared by every `Stack`.
 - `Value` is `Copy`. Heap-backed variants (`String`, `List`, `F64Array`, `Map`,
   `Element`, `EnumVariant`) are just `u32` IDs indexing `Vec`s in the heap

@@ -206,6 +206,70 @@ impl Env {
         }
     }
 
+    /// Run a program for at most `max_steps` evaluation steps.
+    ///
+    /// The bounded counterpart to [`run`](Self::run), for in-process hosts that
+    /// must keep control of the thread — e.g. an editor driving Petal-scripted
+    /// panels at ~60fps, where a runaway script (`while true`) would otherwise
+    /// hang the UI on the main thread. Returns [`RunOutcome::Done`] with the
+    /// program's value if it completes within the budget, or
+    /// [`RunOutcome::Yielded`] (carrying the number of steps actually consumed)
+    /// if the budget is exhausted first.
+    ///
+    /// A yielded stack is left runnable: call `run_bounded` again to resume it
+    /// from exactly where it stopped (e.g. on the next frame), or give up and
+    /// [`reset_stack`](Self::reset_stack) / report an error to the user. Because
+    /// resumption re-enters the same eval loop, splitting a run across many
+    /// `run_bounded` calls produces the same result as a single [`run`](Self::run).
+    ///
+    /// Run-state tracking (which drives the untouched-state sweep, see
+    /// [`run`](Self::run)) is started once when a fresh or `reset` stack first
+    /// enters here, and the sweep happens only on completion — so a resumed run
+    /// tracks the same key set a single uninterrupted run would.
+    pub fn run_bounded(
+        &mut self,
+        stack_id: StackKey,
+        max_steps: u64,
+    ) -> Result<RunOutcome, String> {
+        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
+
+        // Start run tracking only on a fresh entry, not when resuming a
+        // previously-yielded run (which would clear the touched-key set and
+        // defeat the sweep). reset_stack/create_stack leave the stack `Ready`.
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            if matches!(stack.status, StackStatus::Ready) {
+                stack.start_run_tracking();
+                stack.status = StackStatus::Running;
+            }
+        }
+
+        let mut steps = 0;
+        while steps < max_steps {
+            steps += 1;
+            match self.step(stack_id)? {
+                StepResult::Continue => {
+                    if self.ctx(ck).heap.should_collect() {
+                        self.collect_garbage(ck);
+                    }
+                }
+                StepResult::Complete(val) => {
+                    if let Some(stack) = self.stacks.get_mut(&stack_id) {
+                        stack.sweep_untouched_state();
+                        stack.status = StackStatus::Complete(val);
+                    }
+                    return Ok(RunOutcome::Done(val));
+                }
+                StepResult::Error(e) => {
+                    if let Some(stack) = self.stacks.get_mut(&stack_id) {
+                        stack.status = StackStatus::Error(e.clone());
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(RunOutcome::Yielded { steps })
+    }
+
     /// Run a program from source directly (convenience method)
     pub fn run_source(&mut self, source: &str) -> Result<Value, String> {
         let pid = self.load_program(source)?;
@@ -817,6 +881,17 @@ impl Env {
         let ck = self.default_context;
         self.ctx_mut(ck).next_counter(sym)
     }
+}
+
+/// Outcome of a bounded run (see [`Env::run_bounded`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum RunOutcome {
+    /// The program ran to completion within the step budget, producing `Value`.
+    Done(Value),
+    /// The step budget was exhausted before the program completed. `steps` is
+    /// how many steps were consumed (equal to the budget). The stack is left
+    /// runnable — call [`Env::run_bounded`] again to resume.
+    Yielded { steps: u64 },
 }
 
 /// One state variable that differs between two executions (see

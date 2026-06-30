@@ -272,6 +272,7 @@ impl Env {
     pub fn load_program(&mut self, source: &str) -> Result<ProgramId, String>;
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String>;
     pub fn run(&mut self, stack: StackKey) -> Result<Value, String>;
+    pub fn run_bounded(&mut self, stack: StackKey, max_steps: u64) -> Result<RunOutcome, String>;
     pub fn run_source(&mut self, source: &str) -> Result<Value, String>;
     pub fn call_function(&mut self, stack: StackKey, name: &str, args: &[Value]) -> Result<Value, String>;
     pub fn step(&mut self, stack: StackKey) -> Result<StepResult, String>;
@@ -286,6 +287,13 @@ impl Env {
 ```
 
 `step` runs one term; `run` loops `step` until the program completes.
+`run_bounded` is `run` with a step budget: it returns `RunOutcome::Done(val)`
+on completion or `RunOutcome::Yielded { steps }` once `max_steps` is reached,
+leaving the stack runnable so the host can resume next frame or abort. This
+lets an in-process host (e.g. an editor driving Petal panels at ~60fps) bound a
+single run and recover from a runaway script instead of hanging its main
+thread; resuming across many `run_bounded` calls yields the same result and
+state-sweep behavior as one `run`.
 `reset_stack` rewinds execution to the entry point **without dropping
 persistent `state`**, which is the core of the live-editing story.
 

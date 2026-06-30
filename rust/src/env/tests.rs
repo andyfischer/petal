@@ -629,3 +629,105 @@ mod host_surface_tests {
     }
 }
 
+/// `run_bounded` — bounding a single run with a step budget so an in-process
+/// host can stay in control of the thread (see idea-b4c98a38).
+mod run_bounded_tests {
+    use super::super::*;
+
+    /// A program that finishes within the budget reports `Done` with the same
+    /// value an unbounded `run` would produce.
+    #[test]
+    fn completes_within_budget() {
+        let src = "let total = 0\nfor i in range(0, 50) do\n  total = total + i\nend\ntotal\n";
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+
+        // Reference value from an ordinary unbounded run on its own stack.
+        let reference = env.create_stack(pid).unwrap();
+        let expected = env.run(reference).unwrap();
+
+        let sid = env.create_stack(pid).unwrap();
+        match env.run_bounded(sid, 1_000_000).unwrap() {
+            RunOutcome::Done(val) => assert_eq!(val, expected),
+            other => panic!("expected Done, got {:?}", other),
+        }
+    }
+
+    /// A runaway script yields control instead of hanging the host. The budget
+    /// is consumed exactly, and the host can keep re-entering (and keep getting
+    /// `Yielded`) without ever blocking.
+    #[test]
+    fn yields_on_runaway_loop_instead_of_hanging() {
+        let mut env = Env::new();
+        let pid = env.load_program("state x = 0\nwhile true do\n  x = x + 1\nend\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        assert_eq!(
+            env.run_bounded(sid, 100).unwrap(),
+            RunOutcome::Yielded { steps: 100 },
+        );
+        // Re-entering a yielded runaway loop yields again — the host stays in
+        // control across as many frames as it likes.
+        assert!(matches!(
+            env.run_bounded(sid, 100).unwrap(),
+            RunOutcome::Yielded { .. },
+        ));
+    }
+
+    /// Splitting a run across many tiny-budget `run_bounded` calls produces the
+    /// same result as one unbounded `run`, and genuinely yields along the way.
+    #[test]
+    fn resuming_in_small_steps_matches_a_single_run() {
+        let src = "let total = 0\nfor i in range(0, 50) do\n  total = total + i\nend\ntotal\n";
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+
+        let reference = env.create_stack(pid).unwrap();
+        let expected = env.run(reference).unwrap();
+
+        let sid = env.create_stack(pid).unwrap();
+        let mut yields = 0;
+        let final_val = loop {
+            match env.run_bounded(sid, 5).unwrap() {
+                RunOutcome::Yielded { steps } => {
+                    assert_eq!(steps, 5);
+                    yields += 1;
+                    assert!(yields < 10_000, "run never completed");
+                }
+                RunOutcome::Done(val) => break val,
+            }
+        };
+        assert_eq!(final_val, expected);
+        assert!(yields > 0, "a 5-step budget should have yielded at least once");
+    }
+
+    /// `state` accumulated across a resumed run is identical to a single run:
+    /// resumption does not restart the run (which would reset the loop) and the
+    /// untouched-state sweep, which fires only on completion, keeps the state.
+    #[test]
+    fn state_survives_resumption() {
+        let src = "state total = 0\nfor i in range(0, 20) do\n  total = total + 1\nend\n";
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+
+        let reference = env.create_stack(pid).unwrap();
+        env.run(reference).unwrap();
+        let names = env.state_key_names(pid);
+        let total_key = *names.iter().find(|(_, n)| n.as_str() == "total").unwrap().0;
+        let expected_total = env.get_state(reference, total_key).unwrap();
+
+        let sid = env.create_stack(pid).unwrap();
+        while let RunOutcome::Yielded { .. } = env.run_bounded(sid, 3).unwrap() {}
+        assert_eq!(env.get_state(sid, total_key).unwrap(), expected_total);
+    }
+
+    /// An error inside the budget surfaces as `Err`, exactly as `run` would.
+    #[test]
+    fn surfaces_errors_like_run() {
+        let mut env = Env::new();
+        let pid = env.load_program("let x = 1 / 0\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        assert!(env.run_bounded(sid, 1_000).is_err());
+    }
+}
+

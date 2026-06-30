@@ -60,6 +60,63 @@ impl ExecutionContext {
             output_buffers: HashMap::new(),
         }
     }
+
+    // ── Data operations ──────────────────────────────────────────
+    //
+    // The host-facing operations on this context's owned registries. `Env`
+    // routes its default-context and per-stack (`*_for`) accessors here so both
+    // share one implementation.
+
+    /// Drain and return the print output, leaving it empty.
+    pub fn take_output(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.output)
+    }
+
+    /// Drain and return the buffer bound to `sym`, leaving it empty.
+    pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
+        self.output_buffers.get_mut(&sym).map(std::mem::take).unwrap_or_default()
+    }
+
+    /// Peek at the buffer bound to `sym` without draining it.
+    pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
+        self.output_buffers.get(&sym).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
+    pub fn clear_output_buffer(&mut self, sym: SymbolId) {
+        if let Some(buf) = self.output_buffers.get_mut(&sym) {
+            buf.clear();
+        }
+    }
+
+    /// Bind `value` to `sym`.
+    pub fn set_binding(&mut self, sym: SymbolId, value: Value) {
+        self.bindings.insert(sym, value);
+    }
+
+    /// Read the value bound to `sym`, if any.
+    pub fn binding(&self, sym: SymbolId) -> Option<Value> {
+        self.bindings.get(&sym).copied()
+    }
+
+    /// Remove the binding for `sym`.
+    pub fn clear_binding(&mut self, sym: SymbolId) {
+        self.bindings.remove(&sym);
+    }
+
+    /// Reset the counter for `sym` to `start`.
+    pub fn reset_counter(&mut self, sym: SymbolId, start: u64) {
+        self.counters.insert(sym, start);
+    }
+
+    /// Return the current counter value for `sym`, then increment it.
+    /// An unset counter starts at 0.
+    pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
+        let c = self.counters.entry(sym).or_insert(0);
+        let v = *c;
+        *c += 1;
+        v
+    }
 }
 
 impl Default for ExecutionContext {

@@ -437,6 +437,22 @@ fn take_draw_commands(env: &mut Env) -> String {
     serde_json::Value::Array(arr).to_string()
 }
 
+/// [`take_draw_commands`] for a *forked* stack: drain and serialize the draw
+/// buffer of `stack_id`'s own context. A fork's draw commands — and the heap
+/// objects they reference — live in the fork's context, not the default one, so
+/// both the drain and the JSON encode must target `stack_id`'s heap.
+fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> String {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer_for(stack_id, sym);
+    let heap = match env.heap_for(stack_id) {
+        Some(h) => h,
+        None => return "[]".to_string(),
+    };
+    let arr: Vec<serde_json::Value> =
+        values.iter().map(|v| value_to_json(v, heap)).collect();
+    serde_json::Value::Array(arr).to_string()
+}
+
 // ---------------------------------------------------------------------------
 // PetalRuntime — WASM-exported struct
 // ---------------------------------------------------------------------------
@@ -574,11 +590,20 @@ impl PetalRuntime {
 
     pub fn run_speculative(&mut self) -> Result<String, JsValue> {
         let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
-        // Bind input + reset canvas ids so a speculative run matches the live frame.
+        // Bind input + reset canvas ids so a speculative run matches the live
+        // frame, then fork: the fork inherits those and runs with empty output
+        // sinks, so its draw commands accumulate in the fork's own context,
+        // isolated from the live state. We drive the fork by hand (rather than
+        // Env::run_speculative, which discards the fork's output before we could
+        // read it), drain the fork's own buffer, then release it.
         self.prepare_run();
-        self.env
-            .run_speculative(sid)
-            .map_err(|e| JsValue::from_str(&e))?;
-        Ok(take_draw_commands(&mut self.env))
+        let fork = self.env.fork_execution(sid).map_err(|e| JsValue::from_str(&e))?;
+        self.env.reset_stack(fork).map_err(|e| JsValue::from_str(&e))?;
+        let run = self.env.run(fork);
+        let result = run
+            .map(|_| take_draw_commands_for(&mut self.env, fork))
+            .map_err(|e| JsValue::from_str(&e));
+        self.env.drop_fork(fork);
+        result
     }
 }

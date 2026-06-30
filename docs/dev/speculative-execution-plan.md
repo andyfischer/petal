@@ -38,8 +38,19 @@ copy that shares no mutable heap state with the source, and `run_speculative` is
 now re-expressed on top of it (fork → run the fork → drop the fork), so a
 speculative frame leaves the source *entirely* untouched — state, heap objects,
 and even print output. Per-context GC, the fork, and the stronger speculative
-isolation are all unit-tested (`env.rs::fork_tests`, `speculative_tests`). What
-remains is only the host/CLI/WASM surface (step 7) and Increment 4 (perf).
+isolation are all unit-tested (`env.rs::fork_tests`, `speculative_tests`).
+
+**⭐⭐⭐ Step 7 (host/CLI/WASM surface) SHIPPED.** The core now exposes
+context-aware `*_for(StackKey)` accessors (`heap_for`, `take_output_for`,
+`take_output_buffer_for`/`output_buffer_for`, `set_binding_for`/`binding_for`),
+a `diff_state(pid, source, fork)` side-by-side comparison primitive (by value,
+not id), and a public `drop_fork(StackKey)`; `get_state_json`/`set_state_from_json`
+were made context-aware. This closed a real regression: the three host
+`capture_draw_commands` paths (petal-sdl, petal-fps, petal-diagram-canvas WASM)
+were draining the default context after a `run_speculative` that discards the
+fork's output — they now drive a fork by hand and drain it via the new
+accessors. Pinned by `env.rs::host_surface_tests`. **The only optional work left
+is Increment 4 (perf, profiling-gated).** See phased step 7 below.
 
 **Design as built — simpler than the pin (no threaded `StackContext` view).**
 The earlier pin called for a transient `StackContext` borrow view threaded
@@ -132,12 +143,11 @@ Increment 1; exposed by `noc_fractal_tree.ptl`, which now builds the full tree
 test in `ts/test/loop-carry-limitations.test.ts`. Commit: `fix: persist every
 rebind of a loop-carried var inside a nested if-block`.
 
-**Next: optional/secondary work** — Increment 4 (persistent backing for
-performance) and the host/CLI/WASM surface (step 7) that exposes
-`fork_execution` + per-fork output/diff to the SDL and web apps. The
-`ExecutionContext`/`fork_execution` core (steps 3–6) is now **shipped** — see
-the ⭐⭐ note in the handoff above. The single-timeline speculative-isolation
-goal was already met before that (see ⭐).
+**Next: only optional/secondary work remains** — Increment 4 (persistent
+backing for performance, profiling-gated). The host/CLI/WASM surface (step 7)
+is now **shipped** (see ⭐⭐⭐) on top of the `ExecutionContext`/`fork_execution`
+core (steps 3–6, ⭐⭐). The single-timeline speculative-isolation goal was met
+even before that (⭐).
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
 under multi-frame execution. Build `apps/petal-sdl` and run headless:
@@ -555,10 +565,35 @@ heap. With multiple contexts:
    print output (the old snapshot/restore leaked speculative prints into the
    shared buffer). Pinned by
    `env.rs::speculative_tests::speculative_run_does_not_leak_output_or_heap_into_source`.
-7. **Host/CLI/WASM surface — TODO.** Expose fork + per-fork output and a
-   state/heap diff so the SDL and web apps can drive side-by-side runs (out of
-   scope for the core; `fork_execution`'s `Result<StackKey, String>` signature
-   already anticipates it).
+7. **Host/CLI/WASM surface — DONE.** The core now exposes context-aware
+   accessors so a host can reach a *fork's* own (isolated) context rather than
+   only the default one: `heap_for`/`heap_for_mut`, `take_output_for`,
+   `take_output_buffer_for`/`output_buffer_for`, `set_binding_for`/`binding_for`
+   (all keyed by `StackKey`, resolving the stack's `ContextKey` internally), plus
+   the side-by-side comparison primitive `diff_state(program_id, source, fork) ->
+   Vec<StateDiff>` (compares committed state *by value*, each side rendered against
+   its own context heap — never by id, per hazard 4). `drop_execution` was promoted
+   to the public `drop_fork(StackKey)` so a host holding a fork open for comparison
+   can release it. `get_state_json`/`set_state_from_json` were made context-aware
+   (they used to resolve ids against the default heap — a latent fork bug).
+
+   **A real regression motivated and validated this.** Re-expressing
+   `run_speculative` on `fork_execution` (step 6) means a speculative run's print
+   output *and* its draw-command buffer now accumulate in the fork's context and
+   are *discarded on drop* — that is `run_speculative`'s defining property, pinned
+   by `speculative_run_does_not_leak_output_or_heap_into_source`. But the host
+   `capture_draw_commands` helpers (petal-sdl, petal-fps, petal-diagram-canvas
+   WASM) were still calling `run_speculative` and then draining the *default*
+   context — so after step 6 they silently captured nothing. The fix is the new
+   surface in action: each host now drives the fork itself (bind inputs on the
+   source → `fork_execution` → `reset_stack` → `run` → drain via
+   `take_draw_commands_for`/`take_output_for` against `heap_for` → `drop_fork`)
+   instead of `run_speculative`. End-to-end behavior is pinned at the core level by
+   `env.rs::host_surface_tests` (drain a fork's output + draw buffer and decode
+   against its own heap; confirm `run_speculative` discards them; `diff_state` of
+   two concurrently-live executions; per-fork bindings). The SDL/web apps could not
+   be run here (no SDL2 / wasm-pack in the env), so the live confirmation is those
+   core tests plus `cargo check` of all three hosts.
 8. **Docs + examples — DONE (this doc).** The handoff + steps above record the
    shipped design. The "forked run leaves the original untouched" demonstration
    lives as runtime tests (`env.rs::fork_tests`, `speculative_tests`) rather than

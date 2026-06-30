@@ -9,7 +9,7 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
+use crate::commands::{clear_draw_commands, take_draw_commands_for, DrawCommand};
 use crate::input::InputState;
 use crate::native_fns::{bind_frame_info, bind_input, reset_canvas_ids};
 
@@ -174,19 +174,31 @@ pub fn capture_draw_commands(
     stack_id: StackKey,
     input: &InputState,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
-    // Clear the draw buffer and bind input before the speculative run
-    clear_draw_commands(env);
+    // Capture must run the frame *speculatively* — produce its draw commands
+    // without advancing the live state. We do that by forking: bind this frame's
+    // inputs / reset the canvas counter on the source, then fork. The fork
+    // inherits those and starts with empty output sinks, so its draw commands and
+    // prints accumulate in the fork's own context, fully isolated from the source.
+    //
+    // (We drive the fork by hand rather than calling `run_speculative`, which
+    // forks → runs → drops and *discards* the fork's output before we could read
+    // it — exactly the side effects we need here.)
     reset_canvas_ids(env);
     bind_input(env, input);
 
-    // Run speculatively (state is snapshot/restored internally)
-    env.run_speculative(stack_id)?;
+    let fork = env.fork_execution(stack_id)?;
+    env.reset_stack(fork)?;
+    let run = env.run(fork);
 
-    // Collect results
-    let commands = take_draw_commands(env);
-    let output = env.take_output();
-
-    Ok((commands, output))
+    // Drain the fork's own draw buffer + print output (decoded against the
+    // fork's heap), then release the fork. Drop it whether or not the run erred.
+    let result = run.map(|_| {
+        let commands = take_draw_commands_for(env, fork);
+        let output = env.take_output_for(fork);
+        (commands, output)
+    });
+    env.drop_fork(fork);
+    result
 }
 
 /// Run one frame: reset_stack + run, update frame_count.

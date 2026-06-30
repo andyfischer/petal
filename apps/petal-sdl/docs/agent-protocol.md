@@ -96,8 +96,10 @@ values are serialized to JSON (numbers, strings, booleans, null, arrays, objects
 ### capture_draw_commands
 
 Run one frame **speculatively** — capture what would be drawn without advancing
-game state. Uses Petal's `run_speculative()` which snapshots state, runs the
-frame, then restores the snapshot.
+game state. It forks the live execution into an isolated `ExecutionContext`
+(heap + registries deep-cloned, fresh output sinks), runs the frame in the fork,
+drains the fork's *own* draw-command buffer + print output, then drops the fork —
+so the live state, heap, and output are left entirely untouched.
 
 This is the primary inspection tool for LLMs: see exactly what's on screen as
 structured data, not pixels.
@@ -207,10 +209,14 @@ push to a `thread_local!` `Vec<DrawCommand>`. The protocol drains this buffer
 to serialize draw commands. This means `capture_draw_commands` works by running
 the Petal program and collecting side effects, not by querying a scene graph.
 
-**Speculative execution**: `capture_draw_commands` uses `Env::run_speculative()`,
-which clones the state HashMap (cheap — `Value` is `Copy`), runs the frame,
-then restores the snapshot. Heap allocations from the speculative frame persist
-but are garbage-collected naturally.
+**Speculative execution**: `capture_draw_commands` drives a *fork* of the live
+execution (`Env::fork_execution` → `run` → drain via the context-aware
+`take_draw_commands_for`/`take_output_for` against `heap_for` → `drop_fork`).
+The fork owns an isolated heap + registries, so the frame's draw commands,
+prints, and heap allocations live and die in the fork — nothing leaks back into
+the live execution. (It does *not* use `Env::run_speculative()`, which discards
+the fork's output before the host could read it; that drop-on-completion is
+`run_speculative`'s point, which is why capture drives the fork itself.)
 
 **Fixed dt in headless**: When stepping, `dt()` returns 1/60s (0.01667) for
 deterministic behavior. The frame counter increments normally.

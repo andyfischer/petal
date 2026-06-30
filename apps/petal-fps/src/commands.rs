@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use petal::env::Env;
 use petal::heap::Heap;
+use petal::stack::StackKey;
 use petal::value::Value;
 
 use crate::native_fns::DRAW_COMMANDS_SYMBOL;
@@ -166,4 +167,25 @@ pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
 pub fn clear_draw_commands(env: &mut Env) {
     let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
     env.clear_output_buffer(sym);
+}
+
+/// [`take_draw_commands`] for a *forked* stack: drain and decode the draw buffer
+/// of `stack_id`'s own context. A fork's draw commands — and the heap objects
+/// they reference — live in the fork's context, not the default one, so both the
+/// drain and the decode must target `stack_id`'s heap.
+pub fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<DrawCommand> {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer_for(stack_id, sym);
+    let heap = match env.heap_for(stack_id) {
+        Some(h) => h,
+        None => return Vec::new(),
+    };
+    let mut out = Vec::with_capacity(values.len());
+    for v in &values {
+        match DrawCommand::from_value(v, heap) {
+            Ok(cmd) => out.push(cmd),
+            Err(e) => eprintln!("[petal draw] {}", e),
+        }
+    }
+    out
 }

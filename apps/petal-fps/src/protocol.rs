@@ -12,7 +12,7 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::{clear_draw_commands, take_draw_commands, DrawCommand};
+use crate::commands::{clear_draw_commands, take_draw_commands_for, DrawCommand};
 use crate::input::InputState;
 use crate::native_fns::{bind_frame_info, bind_input};
 
@@ -190,12 +190,25 @@ pub fn capture_draw_commands(
     stack_id: StackKey,
     input: &InputState,
 ) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
-    clear_draw_commands(env);
+    // Speculative capture: run this frame without advancing live state by
+    // forking. Bind inputs on the source, fork (the fork inherits them and
+    // starts with empty output sinks), run the fork, then drain the fork's own
+    // draw buffer + print output before releasing it. We drive the fork by hand
+    // because `run_speculative` discards the fork's output before we could read
+    // it.
     bind_input(env, input);
-    env.run_speculative(stack_id)?;
-    let commands = take_draw_commands(env);
-    let output = env.take_output();
-    Ok((commands, output))
+
+    let fork = env.fork_execution(stack_id)?;
+    env.reset_stack(fork)?;
+    let run = env.run(fork);
+
+    let result = run.map(|_| {
+        let commands = take_draw_commands_for(env, fork);
+        let output = env.take_output_for(fork);
+        (commands, output)
+    });
+    env.drop_fork(fork);
+    result
 }
 
 pub fn run_one_frame(

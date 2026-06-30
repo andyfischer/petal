@@ -69,6 +69,13 @@ impl Env {
         self.contexts.get_mut(&ck).expect("context exists")
     }
 
+    /// Resolve the context a stack is bound to. `None` if the stack is unknown.
+    /// The basis of the `*_for(stack)` accessors that reach a fork's own heap /
+    /// output / bindings rather than the default context.
+    fn ctx_for(&self, stack_id: StackKey) -> Option<ContextKey> {
+        self.stacks.get(&stack_id).map(|s| s.context)
+    }
+
     /// Compile source code into a Program without loading it.
     /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(
@@ -302,6 +309,21 @@ impl Env {
         &mut self.ctx_mut(ck).heap
     }
 
+    /// Heap of the context a specific stack is bound to. For a forked stack this
+    /// is the fork's own heap — the one its state `Value` ids resolve against —
+    /// not the default context's. Use this (not [`heap`](Self::heap)) to decode
+    /// or diff a fork's objects. `None` if the stack is unknown.
+    pub fn heap_for(&self, stack_id: StackKey) -> Option<&Heap> {
+        self.ctx_for(stack_id).map(|ck| &self.ctx(ck).heap)
+    }
+
+    /// Mutable [`heap_for`](Self::heap_for): the heap of a specific stack's
+    /// context, e.g. to allocate inputs directly into a fork before running it.
+    pub fn heap_for_mut(&mut self, stack_id: StackKey) -> Option<&mut Heap> {
+        let ck = self.ctx_for(stack_id)?;
+        Some(&mut self.ctx_mut(ck).heap)
+    }
+
     // ── State inspection ─────────────────────────────────────────
 
     /// Get the current value of a single top-level state variable.
@@ -378,14 +400,19 @@ impl Env {
         let fork = self.fork_execution(stack_id)?;
         self.reset_stack(fork)?;
         let result = self.run(fork);
-        self.drop_execution(fork);
+        self.drop_fork(fork);
         result
     }
 
     /// Drop a forked execution: remove its stack and, if no other stack still
     /// references it, its (exclusively-owned, non-default) context — releasing
     /// the forked heap and registries.
-    fn drop_execution(&mut self, stack_id: StackKey) {
+    ///
+    /// A host that holds a fork open for side-by-side comparison calls this to
+    /// release it once done (the source stack/context is left untouched). Safe
+    /// to call on the default context's stacks too: a stack bound to the default
+    /// context is removed but the shared default context is never dropped.
+    pub fn drop_fork(&mut self, stack_id: StackKey) {
         if let Some(stack) = self.stacks.remove(&stack_id) {
             let ck = stack.context;
             if ck != self.default_context && !self.stacks.values().any(|s| s.context == ck) {
@@ -478,7 +505,10 @@ impl Env {
         stack_id: StackKey,
     ) -> serde_json::Map<String, serde_json::Value> {
         let names = self.state_key_names(program_id);
-        let heap = &self.ctx(self.default_context).heap;
+        // Resolve the stack's *own* context heap: a fork's state ids index its
+        // forked heap, not the default context's.
+        let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
+        let heap = &self.ctx(ck).heap;
         let mut map = serde_json::Map::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
@@ -516,10 +546,48 @@ impl Env {
             .map(|(k, _)| *k)
             .ok_or_else(|| format!("No state variable named '{}'", name))?;
 
-        let ck = self.default_context;
+        // Allocate the value into the stack's own context heap so a fork's
+        // state stays self-consistent (its ids must index its forked heap).
+        let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
         let val = crate::value::json_to_value(json_val, &mut self.ctx_mut(ck).heap)?;
         self.set_state(stack_id, state_key, val);
         Ok(())
+    }
+
+    /// Diff two executions' committed state by *value* (never by heap id — see
+    /// hazard 4: ids are not comparable across contexts). Each stack's state is
+    /// rendered to JSON against its own context heap, then compared key-by-key;
+    /// only differing or one-sided variables are returned. This is the
+    /// side-by-side comparison primitive a host uses after running a fork:
+    /// `diff_state(pid, source, fork)`. `program_id` supplies the state-key →
+    /// name mapping (both stacks should share the same program).
+    pub fn diff_state(
+        &self,
+        program_id: ProgramId,
+        source: StackKey,
+        fork: StackKey,
+    ) -> Vec<StateDiff> {
+        let a = self.get_state_json(program_id, source);
+        let b = self.get_state_json(program_id, fork);
+        let mut names: Vec<&String> = a.keys().chain(b.keys()).collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+            .into_iter()
+            .filter_map(|name| {
+                let av = a.get(name);
+                let bv = b.get(name);
+                if av == bv {
+                    None
+                } else {
+                    Some(StateDiff {
+                        name: name.clone(),
+                        source: av.cloned(),
+                        fork: bv.cloned(),
+                    })
+                }
+            })
+            .collect()
     }
 
     /// Build and push the initial root frame for a program, with native function
@@ -610,7 +678,16 @@ impl Env {
     /// Get the output buffer contents and clear it.
     pub fn take_output(&mut self) -> Vec<String> {
         let ck = self.default_context;
-        std::mem::take(&mut self.ctx_mut(ck).output)
+        self.ctx_mut(ck).take_output()
+    }
+
+    /// Drain the print output of a specific stack's context. A fork accumulates
+    /// its `print` output in its own (fresh) sink; this is how a host reads it
+    /// before [`drop_fork`](Self::drop_fork). Empty `Vec` for an unknown stack.
+    pub fn take_output_for(&mut self, stack_id: StackKey) -> Vec<String> {
+        self.ctx_for(stack_id)
+            .map(|ck| self.ctx_mut(ck).take_output())
+            .unwrap_or_default()
     }
 
     // ── Symbols & buffered output (host side) ────────────────────
@@ -631,28 +708,35 @@ impl Env {
     /// the last drain. The buffer is left empty.
     pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
         let ck = self.default_context;
-        self.ctx_mut(ck)
-            .output_buffers
-            .get_mut(&sym)
-            .map(std::mem::take)
-            .unwrap_or_default()
+        self.ctx_mut(ck).take_output_buffer(sym)
     }
 
     /// Peek at the buffer bound to `sym` without draining it.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
-        self.ctx(self.default_context)
-            .output_buffers
-            .get(&sym)
-            .map(Vec::as_slice)
+        self.ctx(self.default_context).output_buffer(sym)
+    }
+
+    /// [`take_output_buffer`](Self::take_output_buffer) for a specific stack's
+    /// context. The drained `Value`s reference *that* context's heap — decode
+    /// them with [`heap_for`](Self::heap_for), not [`heap`](Self::heap). This is
+    /// how a host drains a fork's draw-command (or other) buffer.
+    pub fn take_output_buffer_for(&mut self, stack_id: StackKey, sym: SymbolId) -> Vec<Value> {
+        self.ctx_for(stack_id)
+            .map(|ck| self.ctx_mut(ck).take_output_buffer(sym))
+            .unwrap_or_default()
+    }
+
+    /// Peek at a specific stack's context buffer without draining it.
+    pub fn output_buffer_for(&self, stack_id: StackKey, sym: SymbolId) -> &[Value] {
+        self.ctx_for(stack_id)
+            .map(|ck| self.ctx(ck).output_buffer(sym))
             .unwrap_or(&[])
     }
 
     /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
     pub fn clear_output_buffer(&mut self, sym: SymbolId) {
         let ck = self.default_context;
-        if let Some(buf) = self.ctx_mut(ck).output_buffers.get_mut(&sym) {
-            buf.clear();
-        }
+        self.ctx_mut(ck).clear_output_buffer(sym);
     }
 
     // ── Bindings (host→script uniforms) ──────────────────────────
@@ -661,18 +745,33 @@ impl Env {
     /// Any heap `Value` passed must already live on this Env's heap.
     pub fn set_binding(&mut self, sym: SymbolId, value: Value) {
         let ck = self.default_context;
-        self.ctx_mut(ck).bindings.insert(sym, value);
+        self.ctx_mut(ck).set_binding(sym, value);
+    }
+
+    /// [`set_binding`](Self::set_binding) for a specific stack's context, e.g.
+    /// to feed a fork different host inputs than its source. Any heap `Value`
+    /// must already live on that stack's context heap
+    /// ([`heap_for_mut`](Self::heap_for_mut)). No-op for an unknown stack.
+    pub fn set_binding_for(&mut self, stack_id: StackKey, sym: SymbolId, value: Value) {
+        if let Some(ck) = self.ctx_for(stack_id) {
+            self.ctx_mut(ck).set_binding(sym, value);
+        }
     }
 
     /// Read the value bound to `sym`, if any.
     pub fn binding(&self, sym: SymbolId) -> Option<Value> {
-        self.ctx(self.default_context).bindings.get(&sym).copied()
+        self.ctx(self.default_context).binding(sym)
+    }
+
+    /// [`binding`](Self::binding) read from a specific stack's context.
+    pub fn binding_for(&self, stack_id: StackKey, sym: SymbolId) -> Option<Value> {
+        self.ctx_for(stack_id).and_then(|ck| self.ctx(ck).binding(sym))
     }
 
     /// Remove the binding for `sym`.
     pub fn clear_binding(&mut self, sym: SymbolId) {
         let ck = self.default_context;
-        self.ctx_mut(ck).bindings.remove(&sym);
+        self.ctx_mut(ck).clear_binding(sym);
     }
 
     // ── Counters (per-run sequence allocation) ───────────────────
@@ -681,18 +780,25 @@ impl Env {
     /// `next_counter` hands out stable ids across the per-frame re-run model).
     pub fn reset_counter(&mut self, sym: SymbolId, start: u64) {
         let ck = self.default_context;
-        self.ctx_mut(ck).counters.insert(sym, start);
+        self.ctx_mut(ck).reset_counter(sym, start);
     }
 
     /// Return the current counter value for `sym`, then increment it.
     /// An unset counter starts at 0.
     pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
         let ck = self.default_context;
-        let c = self.ctx_mut(ck).counters.entry(sym).or_insert(0);
-        let v = *c;
-        *c += 1;
-        v
+        self.ctx_mut(ck).next_counter(sym)
     }
+}
+
+/// One state variable that differs between two executions (see
+/// [`Env::diff_state`]). `source`/`fork` hold the variable's JSON value in each
+/// run, or `None` where that run has no such variable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateDiff {
+    pub name: String,
+    pub source: Option<serde_json::Value>,
+    pub fork: Option<serde_json::Value>,
 }
 
 impl Default for Env {
@@ -723,477 +829,4 @@ impl std::fmt::Debug for Env {
 }
 
 #[cfg(test)]
-mod call_function_tests {
-    use super::*;
-
-    /// Load+run a program and return (env, stack) ready for `call_function`.
-    fn run(source: &str) -> (Env, StackKey) {
-        let mut env = Env::new();
-        let pid = env.load_program(source).unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        env.take_output();
-        (env, sid)
-    }
-
-    #[test]
-    fn calls_named_function_with_args() {
-        let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");
-        let result = env
-            .call_function(sid, "add", &[Value::Int(3), Value::Int(4)])
-            .unwrap();
-        assert_eq!(result, Value::Int(7));
-    }
-
-    #[test]
-    fn calls_named_lambda_binding() {
-        let (mut env, sid) = run("let double = fn(x) -> x * 2\n");
-        let result = env.call_function(sid, "double", &[Value::Int(21)]).unwrap();
-        assert_eq!(result, Value::Int(42));
-    }
-
-    #[test]
-    fn resolves_overloaded_function_by_arity() {
-        let source = "fn greet(name)\n  name\nend\nfn greet(first, last)\n  first + last\nend\n";
-        let (mut env, sid) = run(source);
-        let one = env.call_function(sid, "greet", &[Value::Int(1)]).unwrap();
-        assert_eq!(one, Value::Int(1));
-        let two = env
-            .call_function(sid, "greet", &[Value::Int(2), Value::Int(3)])
-            .unwrap();
-        assert_eq!(two, Value::Int(5));
-    }
-
-    #[test]
-    fn sees_top_level_state_captured_at_run_time() {
-        // A function reads the value of a top-level `state` variable as it
-        // stood when the program ran; repeated calls return it consistently.
-        let source = "state base = 41\nfn next_val()\n  base + 1\nend\n";
-        let (mut env, sid) = run(source);
-        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
-        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
-    }
-
-    #[test]
-    fn returns_string_value_via_heap() {
-        let (mut env, sid) = run("fn shout(s)\n  s ++ \"!\"\nend\n");
-        let arg = Value::String(env.heap_mut().alloc_string("hi".to_string()));
-        let result = env.call_function(sid, "shout", &[arg]).unwrap();
-        match result {
-            Value::String(id) => assert_eq!(env.heap().get_string(id), "hi!"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn unknown_function_is_an_error() {
-        let (mut env, sid) = run("fn known()\n  1\nend\n");
-        let err = env.call_function(sid, "missing", &[]).unwrap_err();
-        assert!(err.contains("missing"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn arity_mismatch_is_an_error() {
-        let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");
-        let err = env
-            .call_function(sid, "add", &[Value::Int(1)])
-            .unwrap_err();
-        assert!(
-            err.contains("argument") || err.contains("expects"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn env_implements_debug_and_can_be_embedded() {
-        // A host struct that embeds an Env should be able to derive Debug
-        // (the motivation: unwrap_err/expect_err and logging in embedders).
-        #[derive(Debug)]
-        #[allow(dead_code)]
-        struct Host {
-            env: Env,
-            label: &'static str,
-        }
-        let host = Host {
-            env: Env::new(),
-            label: "demo",
-        };
-        let rendered = format!("{:?}", host);
-        assert!(rendered.contains("Env"), "got: {rendered}");
-        assert!(rendered.contains("native_fns"), "got: {rendered}");
-    }
-
-    #[test]
-    fn push_output_buffer_round_trips_and_drains() {
-        let mut env = Env::new();
-        env.run_source(
-            "let s = symbol(\"draw\")\n\
-             push_output(s, 1)\n\
-             push_output(s, 2)\n\
-             push_output(s, 3)\n",
-        )
-        .unwrap();
-        let sym = env.intern_symbol("draw");
-        let drained = env.take_output_buffer(sym);
-        assert_eq!(drained, vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
-        // A second drain is empty — `take` leaves the buffer cleared.
-        assert!(env.take_output_buffer(sym).is_empty());
-    }
-
-    #[test]
-    fn output_buffer_values_survive_gc() {
-        // A heap-backed value pushed into a buffer must survive a collection
-        // triggered mid-run by other allocations. If buffers weren't GC roots,
-        // the string would be swept and its contents corrupted.
-        let mut env = Env::new();
-        env.run_source(
-            "let s = symbol(\"out\")\n\
-             push_output(s, \"keep-me\")\n\
-             let acc = 0\n\
-             for i in range(0, 5000) do\n\
-               let tmp = \"garbage\" ++ str(i)\n\
-               acc = acc + len(tmp)\n\
-             end\n",
-        )
-        .unwrap();
-        let sym = env.intern_symbol("out");
-        let drained = env.take_output_buffer(sym);
-        assert_eq!(drained.len(), 1);
-        match drained[0] {
-            Value::String(id) => assert_eq!(env.heap().get_string(id), "keep-me"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn binding_is_readable_from_script() {
-        let mut env = Env::new();
-        let sym = env.intern_symbol("dt");
-        env.set_binding(sym, Value::Float(0.016));
-        let result = env.run_source("binding(symbol(\"dt\"))").unwrap();
-        assert_eq!(result, Value::Float(0.016));
-    }
-
-    #[test]
-    fn binding_values_survive_gc() {
-        // A heap-backed bound Value must survive a mid-run collection.
-        let mut env = Env::new();
-        let sym = env.intern_symbol("keys");
-        let space = Value::String(env.heap_mut().alloc_string("space".to_string()));
-        let list = Value::List(env.heap_mut().alloc_list(vec![space]));
-        env.set_binding(sym, list);
-        // Allocate enough to trip a GC, then read the binding back.
-        env.run_source(
-            "let acc = 0\n\
-             for i in range(0, 5000) do\n\
-               let tmp = \"g\" ++ str(i)\n\
-               acc = acc + len(tmp)\n\
-             end\n",
-        )
-        .unwrap();
-        match env.binding(sym) {
-            Some(Value::List(id)) => match env.heap().get_list(id)[0] {
-                Value::String(s) => assert_eq!(env.heap().get_string(s), "space"),
-                other => panic!("expected string, got {:?}", other),
-            },
-            other => panic!("expected list binding, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn counter_increments_and_resets() {
-        let mut env = Env::new();
-        let sym = env.intern_symbol("canvas_id");
-        env.reset_counter(sym, 1);
-        assert_eq!(env.next_counter(sym), 1);
-        assert_eq!(env.next_counter(sym), 2);
-        assert_eq!(env.next_counter(sym), 3);
-        env.reset_counter(sym, 1);
-        assert_eq!(env.next_counter(sym), 1);
-    }
-
-    #[test]
-    fn functions_refreshed_after_transfer_state() {
-        let mut env = Env::new();
-        let pid = env.load_program("fn f()\n  1\nend\n").unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(1));
-
-        let new_program = env.compile_program(pid, "fn f()\n  2\nend\n").unwrap();
-        env.transfer_state(sid, new_program).unwrap();
-        // Before re-running, the stale table was cleared.
-        assert!(env.call_function(sid, "f", &[]).is_err());
-        env.run(sid).unwrap();
-        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(2));
-    }
-}
-
-#[cfg(test)]
-mod speculative_tests {
-    use super::*;
-    use crate::heap::ListId;
-
-    /// The `let g = <state_var>` aliasing limitation noted in the
-    /// speculative-execution plan no longer reproduces: a `let` alias of a
-    /// state collection, mutated by (possibly nested) index assignment — at top
-    /// level, inside an `if`, or written back into the state var across frames —
-    /// behaves with correct value semantics. Pins that it stays fixed.
-    #[test]
-    fn let_alias_of_state_var_mutated_by_index_persists() {
-        let mut env = Env::new();
-        // Each frame: alias state `count`, bump g[0], write the alias back.
-        let src = "state count = [0, 0, 0]\nlet g = count\ng[0] = g[0] + 1\ncount = g\n";
-        let pid = env.load_program(src).unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        for expected in 1..=3 {
-            env.reset_stack(sid).unwrap();
-            env.run(sid).unwrap();
-            env.take_output();
-            let id = state_list(&env, sid);
-            assert_eq!(
-                env.heap().get_list(id),
-                &[Value::Int(expected), Value::Int(0), Value::Int(0)],
-                "let-alias index mutation did not persist across frames"
-            );
-        }
-    }
-
-    /// Pull the single state list out of a stack's committed state.
-    fn state_list(env: &Env, sid: StackKey) -> ListId {
-        let state = env.snapshot_state(sid).unwrap();
-        match state.values().next().copied().unwrap() {
-            Value::List(id) => id,
-            other => panic!("expected a list state value, got {other:?}"),
-        }
-    }
-
-    /// The core isolation guarantee of the speculative-execution plan: a
-    /// speculative frame that "mutates" a state list must NOT disturb the
-    /// object the committed state still points at. This now holds for free
-    /// because collections are immutable — `items[0] = …` allocates a new list
-    /// and rebinds rather than mutating the shared slot in place. Before the
-    /// immutable-collections work this test would fail: the in-place SetIndex
-    /// corrupted the committed list behind its id.
-    #[test]
-    fn speculative_run_does_not_corrupt_committed_state_objects() {
-        let mut env = Env::new();
-        let pid = env
-            .load_program("state items = [1, 2, 3]\nitems[0] = items[0] + 100\n")
-            .unwrap();
-        let sid = env.create_stack(pid).unwrap();
-
-        // First committed frame: items -> [101, 2, 3].
-        env.run(sid).unwrap();
-        env.take_output();
-        let committed = state_list(&env, sid);
-        assert_eq!(
-            env.heap().get_list(committed),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)]
-        );
-
-        // A speculative frame advances items to [201, 2, 3] then rolls back.
-        env.run_speculative(sid).unwrap();
-        env.take_output();
-
-        // The committed list object is byte-for-byte intact…
-        assert_eq!(
-            env.heap().get_list(committed),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)],
-            "speculative mutation leaked into the committed state list"
-        );
-        // …and committed state still resolves to the pre-speculation value.
-        assert_eq!(
-            env.heap().get_list(state_list(&env, sid)),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)]
-        );
-
-        // A subsequent *real* frame continues from the committed value,
-        // proving the rollback restored state rather than dropping it. Driving
-        // a fresh frame means resetting the stack first (as a host's per-frame
-        // loop does), since `run_speculative` left it in a completed state.
-        env.reset_stack(sid).unwrap();
-        env.run(sid).unwrap();
-        assert_eq!(
-            env.heap().get_list(state_list(&env, sid)),
-            &[Value::Int(201), Value::Int(2), Value::Int(3)]
-        );
-    }
-
-    /// Now that `run_speculative` forks into its own context, a speculative
-    /// frame leaves the source *entirely* untouched — including its print
-    /// output. The old snapshot/restore implementation leaked the speculative
-    /// run's prints into the shared output buffer; the fork-based one captures
-    /// them in the fork's (discarded) context instead. This is strictly
-    /// stronger than the heap-isolation guarantee above.
-    #[test]
-    fn speculative_run_does_not_leak_output_or_heap_into_source() {
-        let mut env = Env::new();
-        let pid = env
-            .load_program(
-                "state items = [1, 2, 3]\nitems[0] = items[0] + 100\nprint(\"spec\")\n",
-            )
-            .unwrap();
-        let sid = env.create_stack(pid).unwrap();
-
-        // Real frame: items -> [101, 2, 3] and one "spec" line of output.
-        env.run(sid).unwrap();
-        let committed = state_list(&env, sid);
-        assert_eq!(env.take_output(), vec!["spec".to_string()]);
-        assert_eq!(
-            env.heap().get_list(committed),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)]
-        );
-
-        // A speculative frame advances to [201, 2, 3] and prints "spec" again —
-        // but inside the fork's own context.
-        env.run_speculative(sid).unwrap();
-
-        // The source's print output is NOT polluted by the speculative run.
-        assert!(
-            env.take_output().is_empty(),
-            "speculative print leaked into the source's output buffer"
-        );
-        // The source heap object is byte-for-byte intact, and committed state
-        // still resolves to the pre-speculation value.
-        assert_eq!(
-            env.heap().get_list(committed),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)],
-            "speculative run disturbed the source heap"
-        );
-        assert_eq!(
-            env.heap().get_list(state_list(&env, sid)),
-            &[Value::Int(101), Value::Int(2), Value::Int(3)]
-        );
-    }
-}
-
-#[cfg(test)]
-mod fork_tests {
-    use super::*;
-    use crate::heap::ListId;
-
-    /// Pull the single state list out of a stack's committed state, resolved
-    /// against that stack's own execution context's heap.
-    fn state_list_in_ctx(env: &Env, sid: StackKey) -> (ContextKey, ListId) {
-        let stack = env.stacks.get(&sid).unwrap();
-        let id = match stack.state.values().next().copied().unwrap() {
-            Value::List(id) => id,
-            other => panic!("expected a list state value, got {other:?}"),
-        };
-        (stack.context, id)
-    }
-
-    /// Read a list's contents from a specific context's heap.
-    fn list_in(env: &Env, ck: ContextKey, id: ListId) -> Vec<Value> {
-        env.ctx(ck).heap.get_list(id).to_vec()
-    }
-
-    #[test]
-    fn fork_runs_independently_and_leaves_source_untouched() {
-        let mut env = Env::new();
-        let src_program = "state items = [1, 2, 3]\nitems = append(items, 4)\n";
-        let pid = env.load_program(src_program).unwrap();
-        let src = env.create_stack(pid).unwrap();
-
-        // Source committed frame: items -> [1, 2, 3, 4].
-        env.run(src).unwrap();
-        env.take_output();
-        let (src_ck, src_id0) = state_list_in_ctx(&env, src);
-        assert_eq!(
-            list_in(&env, src_ck, src_id0),
-            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
-        );
-
-        // Fork into an isolated side-by-side copy.
-        let fork = env.fork_execution(src).unwrap();
-        assert_ne!(fork.0, src.0, "fork should get a fresh stack key");
-        let fork_ck = env.stacks.get(&fork).unwrap().context;
-        assert_ne!(fork_ck.0, src_ck.0, "fork should get a fresh context key");
-
-        // The fork starts from the carried-over [1,2,3,4]. Running it appends
-        // 4 again, advancing it to [1,2,3,4,4].
-        env.reset_stack(fork).unwrap();
-        env.run(fork).unwrap();
-        let (fork_ck2, fork_id) = state_list_in_ctx(&env, fork);
-        assert_eq!(fork_ck2.0, fork_ck.0);
-        assert_eq!(
-            list_in(&env, fork_ck2, fork_id),
-            vec![
-                Value::Int(1),
-                Value::Int(2),
-                Value::Int(3),
-                Value::Int(4),
-                Value::Int(4)
-            ],
-            "fork's run should advance its own state",
-        );
-
-        // The SOURCE state list is unchanged by the fork's run.
-        let (src_ck_after, src_id_after) = state_list_in_ctx(&env, src);
-        assert_eq!(src_ck_after.0, src_ck.0);
-        assert_eq!(
-            list_in(&env, src_ck_after, src_id_after),
-            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
-            "fork's run leaked into the source state",
-        );
-
-        // Advance the fork further; the source remains untouched, proving the
-        // heaps are fully independent after the fork.
-        env.reset_stack(fork).unwrap();
-        env.run(fork).unwrap();
-        let (_, fork_id2) = state_list_in_ctx(&env, fork);
-        assert_eq!(
-            list_in(&env, fork_ck, fork_id2),
-            vec![
-                Value::Int(1),
-                Value::Int(2),
-                Value::Int(3),
-                Value::Int(4),
-                Value::Int(4),
-                Value::Int(4)
-            ],
-        );
-        let (_, src_id_final) = state_list_in_ctx(&env, src);
-        assert_eq!(
-            list_in(&env, src_ck, src_id_final),
-            vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)],
-            "the source state must stay frozen while the fork advances",
-        );
-    }
-
-    /// Each context owns its own heap (the fork deep-clones it), so a GC cycle
-    /// scoped to one context can never free an object that is live only in
-    /// another. Make a list unreachable in the source context, collect *that*
-    /// context's heap, and confirm the fork's copy is byte-for-byte intact.
-    #[test]
-    fn gc_in_one_context_does_not_free_objects_live_in_another() {
-        let mut env = Env::new();
-        let pid = env.load_program("state items = [10, 20, 30]\n").unwrap();
-        let src = env.create_stack(pid).unwrap();
-        env.run(src).unwrap();
-        let (src_ck, list_id) = state_list_in_ctx(&env, src);
-
-        // Fork — the fork's heap is an independent deep clone sharing the id.
-        let fork = env.fork_execution(src).unwrap();
-        let fork_ck = env.stacks.get(&fork).unwrap().context;
-        assert_eq!(
-            list_in(&env, fork_ck, list_id),
-            vec![Value::Int(10), Value::Int(20), Value::Int(30)],
-        );
-
-        // Drop the list's only root in the SOURCE context, then GC just that
-        // context. The slot becomes free in the source heap…
-        env.restore_state(src, HashMap::new());
-        env.collect_garbage(src_ck);
-
-        // …but the fork's heap is a separate slot vector, untouched by the
-        // source's sweep.
-        assert_eq!(
-            list_in(&env, fork_ck, list_id),
-            vec![Value::Int(10), Value::Int(20), Value::Int(30)],
-            "a GC scoped to the source context must not disturb the fork's heap",
-        );
-    }
-}
-
+mod tests;

@@ -1,0 +1,9 @@
+# Closures capturing environment — zero duplications.
+# Expected console output:
+out: 8
+out: 13
+out: 15
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

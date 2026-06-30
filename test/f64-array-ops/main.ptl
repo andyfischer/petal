@@ -1,0 +1,7 @@
+// f64 array set / swap, each copy-on-writing the backing store.
+let a = f64_array(5)
+let b = set(a, 0, 1.5)
+let c = set(b, 4, 9.5)
+let d = swap(c, 0, 4)
+print(get(d, 0))
+print(get(d, 4))

@@ -1,0 +1,10 @@
+# Each field assignment copy-on-writes the map: 3 iterations x 2 fields = 6 map dups today.
+# Expected console output:
+out: 60
+out: 3
+
+# Performance ceilings (current measured values — drive these down):
+max dup.map.count: 6
+max dup.map.bytes: 336
+max dup.total.count: 6
+max dup.total.bytes: 336

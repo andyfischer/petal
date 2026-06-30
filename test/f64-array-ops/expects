@@ -1,0 +1,10 @@
+# f64 set/swap each copy the 5-element backing store: 3 ops x 40 bytes = 120 today.
+# Expected console output:
+out: 9.5
+out: 1.5
+
+# Performance ceilings (current measured values — drive these down):
+max dup.f64array.count: 3
+max dup.f64array.bytes: 120
+max dup.total.count: 3
+max dup.total.bytes: 120

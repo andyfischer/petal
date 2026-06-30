@@ -1,0 +1,7 @@
+# Enum build + match destructuring — construction allocates but never copy-on-writes.
+# Expected console output:
+out: 20
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

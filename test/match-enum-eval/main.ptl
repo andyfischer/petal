@@ -1,0 +1,16 @@
+// Enum construction + match destructuring to evaluate an expression tree.
+enum Expr
+  Num(value)
+  Add(left, right)
+  Mul(left, right)
+end
+fn eval(e)
+  match e
+    when Num(v) -> v
+    when Add(a, b) -> eval(a) + eval(b)
+    when Mul(a, b) -> eval(a) * eval(b)
+  end
+end
+// (2 + 3) * 4 = 20
+let tree = Mul(Add(Num(2), Num(3)), Num(4))
+print(eval(tree))

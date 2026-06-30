@@ -1,0 +1,6 @@
+// Recursion via implicit return; purely scalar, nothing duplicated.
+fn factorial(n)
+  if n <= 1 then 1 else n * factorial(n - 1) end
+end
+print(factorial(5))
+print(factorial(10))

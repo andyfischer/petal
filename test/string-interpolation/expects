@@ -1,0 +1,9 @@
+# String interpolation — strings/records allocate but aren't duplicated.
+# Expected console output:
+out: Hello, Ada! You are 36.
+out: Ada in 10 years: 46
+out: point = { x: 3, y: 4 }
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

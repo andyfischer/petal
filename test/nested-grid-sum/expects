@@ -1,0 +1,7 @@
+# Read-only nested iteration over a 2D list — zero duplications.
+# Expected console output:
+out: 45
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

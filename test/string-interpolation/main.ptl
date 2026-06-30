@@ -1,0 +1,7 @@
+// String interpolation with embedded expressions (strings aren't dup-tracked).
+let name = "Ada"
+let age = 36
+print("Hello, {name}! You are {age}.")
+print("{name} in 10 years: {age + 10}")
+let pt = {x: 3, y: 4}
+print("point = {pt}")

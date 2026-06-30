@@ -1,0 +1,8 @@
+// Builtin map / filter / reduce with lambda arguments.
+let nums = [1, 2, 3, 4, 5, 6]
+let doubled = map(nums, fn(x) -> x * 2)
+let evens = filter(nums, fn(x) -> x % 2 == 0)
+let total = reduce(nums, 0, fn(a, b) -> a + b)
+print(doubled)
+print(evens)
+print(total)

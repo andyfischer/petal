@@ -1,0 +1,9 @@
+// Nested record construction + read-only field access.
+let company = {
+  name: "Acme"
+  ceo: { name: "Bob", title: "CEO" }
+  founded: 2020
+}
+print(company.name)
+print(company.ceo.name)
+print(company.founded)

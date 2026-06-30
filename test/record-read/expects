@@ -1,0 +1,9 @@
+# Read-only nested record access — zero duplications.
+# Expected console output:
+out: Acme
+out: Bob
+out: 2020
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

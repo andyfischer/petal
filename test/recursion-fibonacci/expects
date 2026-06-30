@@ -1,0 +1,8 @@
+# Tree recursion — zero duplications.
+# Expected console output:
+out: 55
+out: 610
+
+# Performance ceilings (current measured values — drive these down):
+max dup.total.count: 0
+max dup.total.bytes: 0

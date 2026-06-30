@@ -1,0 +1,14 @@
+// map / filter / reduce must treat their input as immutable: they read a
+// snapshot and allocate a fresh result list, never mutating in place.
+// `ys` aliases `xs`; after the higher-order calls both must still equal the
+// original. A regression to in-place mutation would change xs/ys here.
+let xs = [1, 2, 3, 4]
+let ys = xs
+let doubled = map(xs, fn(x) -> x * 2)
+let evens = filter(xs, fn(x) -> x % 2 == 0)
+let sum = reduce(xs, 0, fn(a, b) -> a + b)
+print(xs)
+print(ys)
+print(doubled)
+print(evens)
+print(sum)

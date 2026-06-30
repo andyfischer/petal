@@ -1,0 +1,16 @@
+# map/filter/reduce treat their input as immutable; xs and its alias ys are
+# unchanged afterward. doubled/evens/sum are fresh results.
+# Expected console output:
+out: [1, 2, 3, 4]
+out: [1, 2, 3, 4]
+out: [2, 4, 6, 8]
+out: [2, 4]
+out: 10
+
+# No copy-on-write at all (the input is never mutated):
+max dup.total.count: 0
+max dup.total.bytes: 0
+# Exactly three lists allocated: the literal + map result + filter result
+# (reduce returns a scalar, allocating nothing).
+max alloc.list.count: 3
+max alloc.total.count: 3

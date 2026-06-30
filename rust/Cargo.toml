@@ -6,6 +6,10 @@ edition = "2024"
 [features]
 default = []
 wasm = ["wasm-bindgen"]
+# Collect value-duplication statistics even in release builds. Stats are always
+# collected in debug builds; this feature forces them on for release. See
+# `src/stats.rs`.
+dup-stats = []
 
 [dependencies]
 indexmap = { version = "2", features = ["serde"] }

@@ -13,7 +13,22 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+use crate::stats::{DupKind, DupStats};
 use crate::value::Value;
+
+/// Bytes copied when a `Vec<Value>`/map of `n` `Value`s is cloned. The `Value`
+/// enum is `Copy`, so cloning the backing store copies `n * size_of::<Value>()`
+/// bytes (string/list/map payloads referenced by id are shared, not copied).
+fn value_slice_bytes(len: usize) -> u64 {
+    (len * std::mem::size_of::<Value>()) as u64
+}
+
+/// Bytes copied when a map's entry table is cloned: each key `String`'s content
+/// plus one `Copy` `Value` per entry.
+fn map_entries_bytes(entries: &IndexMap<String, Value>) -> u64 {
+    let keys: u64 = entries.keys().map(|k| k.len() as u64).sum();
+    keys + value_slice_bytes(entries.len())
+}
 
 /// Opaque handle to a heap-allocated string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,6 +104,11 @@ pub struct Heap {
     intern_table: HashMap<String, StringId>,
     /// Allocation counter — GC triggers after this many allocations
     alloc_count: u32,
+    /// Value-duplication statistics. Records every copy-on-write and fork so we
+    /// can track (and shrink) how much copying immutable values cost. Collected
+    /// only in debug builds or with the `dup-stats` feature — see
+    /// [`crate::stats`].
+    stats: DupStats,
 }
 
 /// Number of allocations between GC cycles
@@ -109,7 +129,51 @@ impl Heap {
             free_elements: Vec::new(),
             intern_table: HashMap::new(),
             alloc_count: 0,
+            stats: DupStats::new(),
         }
+    }
+
+    /// Value-duplication statistics accumulated by this heap's copy-on-write
+    /// operations and forks. All zero in release builds unless the `dup-stats`
+    /// feature is enabled — see [`crate::stats`].
+    pub fn dup_stats(&self) -> &DupStats {
+        &self.stats
+    }
+
+    /// Mutable access to the duplication stats, e.g. to [`DupStats::reset`] them
+    /// between runs.
+    pub fn dup_stats_mut(&mut self) -> &mut DupStats {
+        &mut self.stats
+    }
+
+    /// Total bytes of live payload this heap holds — the rough cost of cloning
+    /// it. Used to attribute a `Fork`'s byte count; also handy for diagnostics.
+    fn payload_bytes(&self) -> u64 {
+        let strings: u64 = self
+            .strings
+            .iter()
+            .filter(|s| s.alive)
+            .map(|s| s.data.len() as u64)
+            .sum();
+        let lists: u64 = self
+            .lists
+            .iter()
+            .filter(|l| l.alive)
+            .map(|l| value_slice_bytes(l.elements.len()))
+            .sum();
+        let f64s: u64 = self
+            .f64_arrays
+            .iter()
+            .filter(|a| a.alive)
+            .map(|a| (a.data.len() * std::mem::size_of::<f64>()) as u64)
+            .sum();
+        let maps: u64 = self
+            .maps
+            .iter()
+            .filter(|m| m.alive)
+            .map(|m| map_entries_bytes(&m.entries))
+            .sum();
+        strings + lists + f64s + maps
     }
 
     /// Returns true if the allocation counter has exceeded the GC threshold.
@@ -128,7 +192,14 @@ impl Heap {
     /// O(live slots) pointer clones rather than a full copy (see
     /// docs/dev/speculative-execution-plan.md, Increment 4).
     pub fn fork(&self) -> Heap {
-        self.clone()
+        let mut child = self.clone();
+        // The fork copied this whole heap. Attribute that copy to the child
+        // (the execution that now owns the duplicate) with fresh counters, so
+        // each context measures the duplication done on its own behalf rather
+        // than re-counting its parent's history.
+        child.stats.reset();
+        child.stats.record(DupKind::Fork, || self.payload_bytes());
+        child
     }
 
     fn tick_alloc(&mut self) {
@@ -211,6 +282,7 @@ impl Heap {
     /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
     pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
+        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.push(val);
         self.alloc_list(elements)
     }
@@ -220,6 +292,7 @@ impl Heap {
     /// bounds-checks before calling).
     pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
+        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements[index] = val;
         self.alloc_list(elements)
     }
@@ -228,6 +301,7 @@ impl Heap {
     /// unchanged. On an empty list, returns a new empty list.
     pub fn list_drop_last(&mut self, id: ListId) -> ListId {
         let mut elements = self.lists[id.0 as usize].elements.clone();
+        self.stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.pop();
         self.alloc_list(elements)
     }
@@ -265,6 +339,8 @@ impl Heap {
     /// unchanged. The caller must ensure `index` is in bounds.
     pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
         let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        self.stats
+            .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data[index] = val;
         self.alloc_f64_array(data)
     }
@@ -273,6 +349,8 @@ impl Heap {
     /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
     pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
         let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        self.stats
+            .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data.swap(i, j);
         self.alloc_f64_array(data)
     }
@@ -306,6 +384,7 @@ impl Heap {
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
         let mut entries = self.maps[id.0 as usize].entries.clone();
+        self.stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
         self.alloc_map(entries)
     }
@@ -315,6 +394,7 @@ impl Heap {
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
         let mut entries = self.maps[id.0 as usize].entries.clone();
+        self.stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
         self.alloc_map(entries)
     }
@@ -710,5 +790,52 @@ mod tests {
 
         assert_eq!(heap.get_map(removed).get("a"), Some(&Value::Int(1)));
         assert_eq!(heap.get_map(removed).len(), 1);
+    }
+
+    // The dup-stats assertions below only hold when collection is compiled in
+    // (debug builds, which `cargo test` is, or the `dup-stats` feature).
+    #[test]
+    fn dup_stats_count_cow_operations() {
+        if !crate::stats::DUP_STATS_ENABLED {
+            return;
+        }
+        use crate::stats::DupKind;
+        let mut heap = Heap::new();
+        let list = heap.alloc_list(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+
+        let _ = heap.list_append(list, Value::Int(4));
+        let _ = heap.list_set(list, 0, Value::Int(9));
+
+        let stats = heap.dup_stats();
+        assert_eq!(stats.get(DupKind::List).count, 2);
+        // Each clone copied the 3-element backing store.
+        assert_eq!(
+            stats.get(DupKind::List).bytes,
+            2 * value_slice_bytes(3),
+        );
+        assert_eq!(stats.total_count(), 2);
+    }
+
+    #[test]
+    fn fork_records_one_duplication_on_the_child() {
+        if !crate::stats::DUP_STATS_ENABLED {
+            return;
+        }
+        use crate::stats::DupKind;
+        let mut parent = Heap::new();
+        // Give the parent some COW history; the fork must not inherit it.
+        let list = parent.alloc_list(vec![Value::Int(1), Value::Int(2)]);
+        let _ = parent.list_append(list, Value::Int(3));
+        assert_eq!(parent.dup_stats().get(DupKind::List).count, 1);
+
+        let child = parent.fork();
+
+        // The child starts fresh and records exactly the fork that birthed it.
+        assert_eq!(child.dup_stats().get(DupKind::List).count, 0);
+        assert_eq!(child.dup_stats().get(DupKind::Fork).count, 1);
+        assert_eq!(child.dup_stats().total_count(), 1);
+        // The parent's own counters are untouched by the fork.
+        assert_eq!(parent.dup_stats().get(DupKind::Fork).count, 0);
+        assert_eq!(parent.dup_stats().get(DupKind::List).count, 1);
     }
 }

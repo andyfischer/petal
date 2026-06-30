@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::eval::RuntimeClosure;
 use crate::heap::Heap;
 use crate::program::OverloadEntry;
+use crate::stats::DupStats;
 use crate::symbol::SymbolId;
 use crate::value::Value;
 
@@ -59,6 +60,13 @@ impl ExecutionContext {
             output: Vec::new(),
             output_buffers: HashMap::new(),
         }
+    }
+
+    /// This context's value-duplication statistics, accumulated by its heap's
+    /// copy-on-write operations plus the fork (if any) that created it. See
+    /// [`crate::stats`].
+    pub fn dup_stats(&self) -> &DupStats {
+        self.heap.dup_stats()
     }
 
     // ── Data operations ──────────────────────────────────────────

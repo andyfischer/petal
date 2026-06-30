@@ -14,6 +14,7 @@ use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::parse::Parser;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
+use crate::stats::DupStats;
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
 use crate::value::Value;
@@ -322,6 +323,21 @@ impl Env {
     pub fn heap_for_mut(&mut self, stack_id: StackKey) -> Option<&mut Heap> {
         let ck = self.ctx_for(stack_id)?;
         Some(&mut self.ctx_mut(ck).heap)
+    }
+
+    // ── Duplication statistics ───────────────────────────────────
+
+    /// Value-duplication statistics for the default execution context. Counts
+    /// copy-on-write duplications and fork copies; all zero in release builds
+    /// unless the `dup-stats` feature is enabled. See [`crate::stats`].
+    pub fn dup_stats(&self) -> &DupStats {
+        self.ctx(self.default_context).dup_stats()
+    }
+
+    /// Duplication statistics for the context a specific stack is bound to (its
+    /// own fork's heap, for a forked stack). `None` if the stack is unknown.
+    pub fn dup_stats_for(&self, stack_id: StackKey) -> Option<&DupStats> {
+        self.ctx_for(stack_id).map(|ck| self.ctx(ck).dup_stats())
     }
 
     // ── State inspection ─────────────────────────────────────────

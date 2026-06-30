@@ -13,7 +13,7 @@ use crate::parse::Parser;
 use crate::program::ProgramId;
 
 pub enum Command {
-    Run { json: bool, trace: bool, record_trace: Option<String>, ir: bool },
+    Run { json: bool, trace: bool, record_trace: Option<String>, ir: bool, dup_stats: bool },
     Check { json: bool },
     Explain { json: bool, term: String },
     ShowIr { json: bool, all: bool },
@@ -63,7 +63,7 @@ pub fn parse_args() -> CliArgs {
         _ => {
             // Shorthand: `petal <file>` runs the file (same as `petal run <file>`).
             CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None, ir: false },
+                command: Command::Run { json: false, trace: false, record_trace: None, ir: false, dup_stats: false },
                 source: SourceInput::File(first.clone()),
             }
         }
@@ -75,6 +75,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut trace = false;
     let mut record_trace: Option<String> = None;
     let mut ir = false;
+    let mut dup_stats = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -83,6 +84,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--json" => json = true,
             "--trace" => trace = true,
             "--ir" => ir = true,
+            "--dup-stats" => dup_stats = true,
             "--record-trace" => {
                 i += 1;
                 if i >= args.len() {
@@ -107,12 +109,12 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--ir] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] <file>");
         process::exit(1);
     });
 
     CliArgs {
-        command: Command::Run { json, trace, record_trace, ir },
+        command: Command::Run { json, trace, record_trace, ir, dup_stats },
         source,
     }
 }
@@ -296,10 +298,13 @@ Usage: petal <command> [options] <file>
 
 Commands:
   check [--json] <file>          Lex+parse+compile without executing (exit 0/1)
-  run [--json] [--trace] [--record-trace <path>] [--ir] <file>
+  run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
+                                 --dup-stats: print value-duplication stats to
+                                 stderr after the run (debug builds / dup-stats
+                                 feature)
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -369,7 +374,7 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
     match cli.command {
-        Command::Run { json, trace, record_trace, ir } => {
+        Command::Run { json, trace, record_trace, ir, dup_stats } => {
             if trace || std::env::var("PETAL_DEBUG").is_ok() {
                 unsafe { std::env::set_var("PETAL_TRACE", "1"); }
             }
@@ -409,6 +414,10 @@ pub fn execute(cli: CliArgs) {
 
             if let Some(path) = &record_trace {
                 write_trace_to_file(&env, pid, path);
+            }
+
+            if dup_stats {
+                eprintln!("{}", env.dup_stats());
             }
 
             if let Err(e) = run_result {

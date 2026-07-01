@@ -105,21 +105,22 @@ impl<'a> Evaluator<'a> {
             }
         };
 
-        // If break_flag or continue_flag is set and the current frame is a
-        // direct loop body, skip remaining terms and pop immediately so the
-        // parent loop term can handle the break/continue on its next
-        // execution. Exception: when the current term is itself a nested
-        // loop, let it execute — its exec will consume the flag (an inner
-        // loop that just broke returns control to its enclosing body via its
-        // own exec path).
-        if (self.stack.break_flag || self.stack.continue_flag)
-            && self.stack.frames[frame_idx].is_loop_body
-        {
+        // If break_flag or continue_flag is set, skip the frame's remaining
+        // terms and pop immediately — `break`/`continue` transfer control at
+        // once; statements after them (in this block or any enclosing block
+        // up to the loop body) never execute. Frames pop until a loop term
+        // consumes the flag. Exception: when the current term is a loop that
+        // is mid-iteration (it has loop state in this frame), it is the loop
+        // the flag belongs to — let it execute and consume the flag. A loop
+        // term *without* state here is a not-yet-entered loop sitting after
+        // the break/continue; it must be skipped like any other dead term.
+        if self.stack.break_flag || self.stack.continue_flag {
             let cur = program.get_term(current_term_id);
-            if !matches!(
+            let is_running_loop = matches!(
                 cur.op,
                 TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop
-            ) {
+            ) && self.stack.frames[frame_idx].has_loop_state(&current_term_id);
+            if !is_running_loop {
                 return self.pop_frame();
             }
         }
@@ -265,6 +266,12 @@ impl<'a> Evaluator<'a> {
         // register (walked from the current child frame via read_register) to
         // a destination register in the parent frame. Done before the pop so
         // src reads can walk parent_frame links from the current top.
+        //
+        // Mid-block exits (break/continue) are safe here because every name a
+        // block may rebind has its carry slot initialized at block entry (the
+        // compiler's entry copies) and all rebinds share that slot — so the
+        // src register always holds the name's latest value, whether or not
+        // any rebind actually executed.
         if let Some(top) = self.stack.frames.last() {
             let child_block = program.get_block(top.block_id);
             if !child_block.phi_outs.is_empty() {

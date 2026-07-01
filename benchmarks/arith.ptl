@@ -1,0 +1,12 @@
+// Benchmark: straight-line arithmetic in a tight loop — the control for
+// calls.ptl (same work, no function call) and the baseline for raw
+// instruction-dispatch cost.
+
+let acc = 0
+for i in range(0, 300000) do
+  let a = i
+  let b = acc % 97
+  let c = i % 13
+  acc = acc + (a * 2 + b - c)
+end
+print("arith checksum:", acc % 1000000)

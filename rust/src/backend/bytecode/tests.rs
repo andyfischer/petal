@@ -287,6 +287,52 @@ fn break_carries_rebind_through_nested_if() {
 }
 
 #[test]
+fn break_continue_transfer_control_immediately() {
+    // `break`/`continue` transfer control at once — statements after them
+    // (in the same block or an enclosing arm, up to the loop body) must not
+    // execute. The graph engine originally ran that trailing dead code
+    // (flag-based exit at frame pop); found by the differential fuzzer
+    // (seed 431) and fixed for both engines. The dead rebind/division here
+    // would change the value / raise an error if trailing code ran.
+    let (_, out) = run(
+        "let m = 1\nfor i in range(0, 2) do\n  continue\n  m = 10\nend\nprint(m)",
+        Backend::Bytecode,
+    )
+    .unwrap();
+    assert_eq!(out, vec!["1"], "dead rebind after continue must not run");
+    assert_parity("let m = 1\nfor i in range(0, 2) do\n  continue\n  m = 10\nend\nprint(m)");
+    assert_parity("let m = 1\nfor i in range(0, 2) do\n  break\n  let x = 1 / 0\nend\nprint(m)");
+    // A not-yet-entered loop after a continue must be skipped, not treated
+    // as the continue's target.
+    assert_parity(
+        "let n = 0\nfor i in range(0, 3) do\n  continue\n  for j in range(0, 5) do\n    n = n + 1\n  end\nend\nprint(n)",
+    );
+}
+
+#[test]
+fn arm_carry_slots_survive_mid_block_exits() {
+    // Fuzzer seed 431 (minimized): a sibling loop reads `m` after a nested
+    // loop rebinds it; the reading loop contains a statically-present but
+    // never-executed rebind behind an always-taken continue. The carry-out
+    // for that dead rebind must deliver `m`'s live value (via the arm's
+    // seeded carry slot), not the dead rebind's uninitialized register.
+    let code = "let m = 1\nfor a in range(0, 3) do\n  for b in range(0, 2) do\n    m = 7\n  end\n  for c in range(0, 4) do\n    print(\"read:\", m)\n    if 1 == 1 then\n      if 1 == 1 then\n        continue\n      end\n      m = 10\n      break\n    end\n  end\nend\nprint(\"end\", m)";
+    let (_, out) = run(code, Backend::Bytecode).unwrap();
+    assert_eq!(out.last().map(String::as_str), Some("end 7"));
+    assert!(out.iter().all(|l| l != "read: nil"), "nil leak: {out:?}");
+    assert_parity(code);
+    // Partial execution: the first of two rebinds in an arm runs, then
+    // break — the carry must hold the executed rebind's value (103), not
+    // the dead second rebind's register or the pre-iteration value.
+    let (_, out) = run(
+        "let total = 0\nfor x in range(1, 4) do\n  total = total + x\n  if x == 2 then break end\n  total = total + 100\nend\nprint(total)",
+        Backend::Bytecode,
+    )
+    .unwrap();
+    assert_eq!(out, vec!["103"]);
+}
+
+#[test]
 fn iterative_algorithms() {
     assert_parity(
         "fn fib(n)\n  let a = 0\n  let b = 1\n  for i in range(n) do\n    let t = a + b\n    a = b\n    b = t\n  end\n  a\nend\nlet y = fib(10)",

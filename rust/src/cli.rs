@@ -72,11 +72,10 @@ pub fn parse_args() -> CliArgs {
         "show-slice" => parse_slice_args(&args[1..]),
         "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
         _ => {
-            // Shorthand: `petal <file>` runs the file (same as `petal run <file>`).
-            CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None, ir: false, dup_stats: false, backend: None, no_opt: false },
-                source: SourceInput::File(first.clone()),
-            }
+            // Shorthand: `petal <file> [flags]` runs the file (same as
+            // `petal run <file> [flags]`). Parse the full arg list so flags
+            // like `--backend=graph` are honored, not silently dropped.
+            parse_run_args(&args)
         }
     }
 }

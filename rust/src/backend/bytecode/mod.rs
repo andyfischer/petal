@@ -18,4 +18,6 @@ pub use lower::lower_program;
 pub use vm::{Vm, VmFrame};
 
 #[cfg(test)]
+mod fuzz;
+#[cfg(test)]
 mod tests;

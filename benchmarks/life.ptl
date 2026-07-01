@@ -1,0 +1,68 @@
+// Benchmark: Game of Life — nested loops, 2D lists rebuilt per generation via
+// loop-carried append, helper called per cell. Mirrors the hot shape of the
+// creative-coding sketches (per-frame grid rebuild).
+// Prints a checksum so backends can be diffed.
+
+fn count_neighbors(grid, x, y, width, height)
+  let count = 0
+  for dy in range(-1, 2) do
+    for dx in range(-1, 2) do
+      if dx == 0 && dy == 0 then
+        // skip self
+      else
+        let nx = x + dx
+        let ny = y + dy
+        if nx >= 0 && nx < width && ny >= 0 && ny < height then
+          if grid[ny][nx] == 1 then
+            count = count + 1
+          end
+        end
+      end
+    end
+  end
+  count
+end
+
+fn step(grid, width, height)
+  let next = []
+  for y in range(0, height) do
+    let row = []
+    for x in range(0, width) do
+      let neighbors = count_neighbors(grid, x, y, width, height)
+      let cell = grid[y][x]
+      if cell == 1 then
+        row = append(row, if neighbors == 2 || neighbors == 3 then 1 else 0 end)
+      else
+        row = append(row, if neighbors == 3 then 1 else 0 end)
+      end
+    end
+    next = append(next, row)
+  end
+  next
+end
+
+let width = 16
+let height = 16
+
+// Seed: deterministic ~1/3-density arithmetic fill (settles to a small
+// stable population by gen 40 — checksum must stay nonzero)
+let grid = []
+for y in range(0, height) do
+  let row = []
+  for x in range(0, width) do
+    row = append(row, if (x * x * 3 + y * 7 + x * y) % 3 == 0 then 1 else 0 end)
+  end
+  grid = append(grid, row)
+end
+
+for gen in range(0, 40) do
+  grid = step(grid, width, height)
+end
+
+let alive = 0
+for y in range(0, height) do
+  for x in range(0, width) do
+    alive += grid[y][x]
+  end
+end
+print("life checksum:", alive)

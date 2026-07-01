@@ -138,6 +138,32 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// Execute up to `budget` instructions, stopping early on completion,
+    /// error, or when the heap wants a garbage collection (the caller owns the
+    /// GC, so we yield `Continue` and let it collect between instructions —
+    /// exactly where the per-step run loop would have). Returns the final
+    /// [`StepResult`] and the number of instructions consumed.
+    ///
+    /// This is the VM's performance lever over per-instruction dispatch: `Env`
+    /// re-resolves the stack/program/context maps and rebuilds this struct on
+    /// every call, which costs more than executing a typical instruction. Run
+    /// in batches, that overhead amortizes to nothing.
+    pub fn run_batch(&mut self, budget: u64) -> (StepResult, u64) {
+        let mut consumed = 0;
+        while consumed < budget {
+            consumed += 1;
+            match self.step() {
+                StepResult::Continue => {
+                    if self.heap.should_collect() {
+                        return (StepResult::Continue, consumed);
+                    }
+                }
+                done => return (done, consumed),
+            }
+        }
+        (StepResult::Continue, consumed)
+    }
+
     /// Dress a raw runtime error with source position, snippet, provenance, and
     /// a stack trace built from the VM frames — identical formatting to the
     /// graph engine (see [`crate::backend::errors`]). Unannotated when the

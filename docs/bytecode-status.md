@@ -7,8 +7,10 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-01. **Status: M1–M3 complete — the bytecode VM is the
-default backend. M3.5 (benchmark checkpoint) is next; M4 not started.** The VM
+Last updated: 2026-07-01. **Status: M1–M3.5 complete — the bytecode VM is the
+default backend, batched dispatch makes it 3–6x faster than the graph engine
+on compute-bound code, and a differential fuzzer guards parity. M4 is next.**
+The VM
 runs the entire language — straight-line, calls, closures, all control flow,
 match, and persistent state — and matches the graph engine on value, print
 output, final state, and error text across the whole `examples/` corpus and the
@@ -278,31 +280,78 @@ phantom terms — expected.)
   example sweep, petal-sdl build + tests, both WASM packages built, and a Node
   smoke test driving `PetalRuntime` (`reset_and_run` state persistence) on the
   fresh WASM.
-- [ ] **M3.5 — Benchmark & profiling checkpoint (gates M4).** Half a day of
-  measurement before writing `escape.rs`:
-  1. **fps on the heavy creative-coding sketches under `--backend=bytecode`**
-     vs. the graph baseline. The 11–17 fps number predates the VM; if frame
-     churn was the dominant cost, the win may already be large — this sets
-     M4's urgency and the "before" number for its payoff claim.
-  2. **`DupStats`/`AllocStats` baselines** on the mutation-heavy examples
-     (`game_of_life.ptl`, `particles.ptl`, real sketches). Record which terms
-     dominate the copied bytes — expected: loop-carried appends, which is the
-     direct evidence for route B above.
-  3. **Per-call frame cost.** `VmFrame::new` heap-allocates and zeroes
-     `vec![Value::Nil; reg_count]` per call (`vm.rs`), and flat register
-     allocation sums *every* block's registers, so functions with many nested
-     blocks get wide frames. Sketch code calls small helpers in hot loops
-     (`count_neighbors` runs width×height times per `step`). If profiling
-     shows call overhead high, do the **Lua-style contiguous register stack**
-     (frames as `[base, base+n)` windows; calls become a pointer bump, no
-     alloc/zeroing) **before** M4 — it's simpler than escape analysis and
-     benefits every program.
-  4. **Differential fuzzer.** A small random-program generator that runs
-     graph vs. bytecode and diffs value/output/error. Two oracles exist and
-     only 22 hand-written examples exercise them; the subtlest lowering bugs
-     (break/continue through nested phis) live exactly where hand-written
-     examples don't. Near-mandatory before M4 introduces an opt-on/opt-off
-     split (then it becomes a *triple* differential fuzzer for free).
+- [x] **M3.5 — Benchmark & profiling checkpoint (gates M4). Shipped — and it
+  paid for itself several times over.** Substrate added: `benchmarks/*.ptl`
+  (life, particles, calls, arith, append — engine-bound workloads mirroring
+  sketch inner loops) + `ts/bin/bench-backends.ts` (release build, median of
+  N runs per backend, output-diff enforced). Findings, in discovery order:
+  1. **The VM was no faster than the graph engine** (arith: ~340ms both).
+     Cause: `Env` re-resolved four maps and rebuilt the `Vm` struct **per
+     instruction** (~190ns/inst of pure orchestration). Fixed with
+     **batched dispatch** — `Vm::run_batch(budget)` runs an inner loop
+     (yielding for GC/completion/error), `Env::step_n` hands it
+     `BYTECODE_BATCH` (65_536); `run`/`run_bounded` consume (result, count).
+     The public single-`step` API is unchanged. Result: **VM 340ms → 47ms.**
+  2. **A CLI bug made earlier CLI-level sweeps vacuous:** the bare shorthand
+     `petal <file> --backend=graph` silently dropped all flags after the
+     file and ran the default backend — so the "differential" example sweep
+     was comparing bytecode against bytecode (caught by sampling a
+     `--backend=graph` process and finding `Vm::run_batch` frames). Fixed:
+     the shorthand now goes through `parse_run_args`. (The Rust differential
+     tests and `PETAL_BACKEND` paths were always genuinely differential.)
+  3. **Speedups with batching (release, medians incl. ~10ms startup):**
+     arith **6.1x**, life **5.6x**, calls **4.8x**, particles **2.9x**,
+     append **1.25x**. Reading: dispatch-bound code enjoys the VM; COW-bound
+     code (append) barely moves — M4 is squarely the next payoff.
+  4. **`DupStats` baselines (debug build, `--dup-stats`):** `append.ptl`
+     60,000 list dups / **1.08 GB** copied (quadratic COW); `particles.ptl`
+     30,300 / **108.7 MB**; `life.ptl` 11,152 / **2.0 MB**. Every hot copy
+     is a loop-carried accumulator — direct evidence for route B.
+  5. **Per-call frame cost ≈ 13%** of a call-heavy microbenchmark
+     (`VmFrame` register-Vec malloc/free, measured by sampling a scaled
+     `calls.ptl`); plain interpreter dispatch is ~70%. The Lua-style
+     register stack is therefore an M5 item, **not** an M4 gate.
+  6. **Differential fuzzer** (`backend/bytecode/fuzz.rs`): seeded xorshift
+     grammar over always-terminating programs (nested loops with frozen
+     counters, break/continue behind ifs, match with guards, lists/records,
+     functions), exact-agreement runner including error text; 500 seeds per
+     `cargo test`, `PETAL_FUZZ_ITERS` to soak. **Found a real bug on its
+     first soak run (seed 431)** — see the semantics fix below. 50,000 seeds
+     green after the fix.
+- [x] **M3.5a — Semantics fix: `break`/`continue` transfer control
+  immediately (fuzzer seed 431).** The two engines disagreed on a real
+  language semantic. The graph engine set a flag and **kept executing the
+  rest of the current block** — dead statements after `break`/`continue`
+  ran, could rebind loop variables, and could even raise errors; only
+  loop-body frames were skipped, and a same-block `continue` followed by a
+  not-yet-entered loop was mis-consumed by that loop. This run-to-completion
+  quirk was also load-bearing: it kept per-block phi carry-outs coherent
+  (src registers were always written). The VM exits immediately
+  (conventional), so its exit-chain carry-outs could read a dead rebind's
+  never-written register → nil. **Resolution — conventional semantics in
+  both engines:**
+  - *Graph:* the skip-to-pop on a set flag now applies to **all** frames
+    (not just loop bodies); a loop term consumes the flag only when it is
+    mid-iteration (`has_loop_state`), so a fresh loop after a `continue` is
+    correctly skipped.
+  - *Compiler (the shared fix):* branch/match arm blocks are now **seeded
+    with carry-slot entry copies** (`seed_arm_entry_copies` in
+    `compiler/phi.rs`), mirroring what `emit_body_phi_ins` already did for
+    loop bodies: every phi'd name gets an entry `Copy` of the parent phi,
+    logged as the arm's initial rebind, and later in-arm rebinds share that
+    register. The phi-out src register therefore always holds the name's
+    latest value — whether zero, some, or all of the arm's rebinds executed
+    before a mid-block exit. Pattern-shadowed names are skipped (arm-local).
+  - *Rejected approach:* statically filtering exit-chain carry-outs to
+    "rebinds emitted before the exit" — it breaks the shared-slot design
+    (an *earlier executed* rebind writes the same register a later dead
+    rebind names; the vitest loop-carry tests pin exactly this).
+  - Pinned by `break_continue_transfer_control_immediately` and
+    `arm_carry_slots_survive_mid_block_exits` in `bytecode/tests.rs`; whole
+    suite + 22-example sweep + vitest (same 3 pre-existing failures) +
+    50k fuzz seeds green. **This is a user-visible semantics change** (dead
+    code after `break`/`continue` no longer executes in the graph backend);
+    no example or test relied on the old behavior.
 - [ ] **M4 — In-place mutation.** `escape.rs` implementing routes A + B and
   escape condition E above (last-use liveness on the lowered bytecode +
   phi-cycle rule on the graph), `Heap::*_in_place`, in-place opcodes,
@@ -324,20 +373,16 @@ phantom terms — expected.)
 
 ## Handoff — next actions
 
-M1–M3 are done and committed (one commit per chunk: M1a/M1b/M1c, M2a/M2b/M2c,
-M3-state+annotation, M3-flip). The VM is at full behavioral parity with the
-graph engine **and is the default backend**. The flip surfaced and fixed two
-hot-reload integration bugs (see the M3 milestone entry). Next: the M3.5
-measurement checkpoint, then M4.
+M1–M3.5 are done and committed (one commit per chunk: M1a/M1b/M1c,
+M2a/M2b/M2c, M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz). The VM is
+at full behavioral parity with the graph engine, is the default backend, runs
+3–6x faster on compute-bound code thanks to batched dispatch, and parity is
+now guarded by a 500-seed-per-test differential fuzzer (soaked to 50k). The
+checkpoint's outputs settled both open questions: the register stack defers
+to M5 (~13% of a call-heavy microbench), and M4's before-numbers are pinned
+(`append.ptl`: 1.08 GB copied; benchmark table in the M3.5 entry). Next: M4.
 
-### Next: M3.5 — measure before optimizing
-Do the four items in the **M3.5** milestone above (sketch fps under the VM,
-`DupStats` baselines, per-call frame cost, differential fuzzer). The outputs
-decide two things: whether the Lua-style register stack goes before M4, and the
-concrete `DupStats` "before" numbers M4's payoff is judged against. Don't start
-`escape.rs` until these numbers exist.
-
-### Then M4 — in-place mutation (the payoff)
+### Next: M4 — in-place mutation (the payoff)
 `escape.rs` is still a stub returning an empty set. Implement the **revised**
 uniqueness analysis (routes A + B and escape condition E in the **Escape /
 uniqueness analysis** section above). The critical point of the revision: route
@@ -361,7 +406,14 @@ place.
   first. Flat registers are correct regardless; don't assume registers start at 0.
 - Petal `if` uses `then … end`, not braces (`if x > 0 then x = 2 end`).
 - break/continue must run enclosing `phi_outs` (see the M2 notes above) — the
-  single subtlest correctness point in the whole lowering.
+  single subtlest correctness point in the whole lowering. The carry-outs are
+  only sound because **every carrying block initializes its carry slots at
+  entry** (loop bodies via `emit_body_phi_ins`, branch/match arms via
+  `seed_arm_entry_copies`) and all in-block rebinds share the slot register —
+  see the M3.5a milestone entry. Don't "optimize away" the seed copies.
+- `break`/`continue` transfer control immediately in **both** engines
+  (M3.5a). The graph engine's old behavior — trailing dead code executing
+  until the block ended — is gone; don't reintroduce flag-style semantics.
 - The graph **re-annotates** already-annotated errors that propagate back up
   through a synchronous intrinsic call (`call_closure_sync`); the VM matches this
   by annotating at every `step()` error. Don't "fix" the apparent
@@ -390,7 +442,14 @@ place.
 - `rust/src/backend/graph/{mod,exec,ops,call,state,loops,pattern,error}.rs` — the
   step evaluator, now delegating to the shared handlers.
 - `rust/src/backend/bytecode/{isa,lower,vm,disasm,tests}.rs` — the bytecode
-  backend (complete through M3); `escape.rs` is the M4 stub.
+  backend (complete through M3.5); `escape.rs` is the M4 stub.
+- `rust/src/backend/bytecode/fuzz.rs` — the differential fuzzer (seeded
+  generator + exact-agreement runner; `PETAL_FUZZ_ITERS` scales the soak).
+- `benchmarks/*.ptl` + `ts/bin/bench-backends.ts` — the backend benchmark
+  suite (release build, medians, output-diff enforced).
+- `rust/src/compiler/phi.rs` — phi emission, carry slots, and the entry-copy
+  seeding (`emit_body_phi_ins`, `seed_arm_entry_copies`) that keeps mid-block
+  exits sound.
 - `rust/src/heap.rs` + `rust/src/stats.rs` — COW mutators + free-list + `fork`
   (M4 in-place target + hazard surface); `DupStats` verification oracle.
 - `rust/src/env/mod.rs` — `run`/`run_bounded`/`RunOutcome` (backend dispatch goes here).

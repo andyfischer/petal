@@ -358,11 +358,50 @@ impl Compiler {
         slots
     }
 
-    /// Look up the carry slot register for `name` in the innermost loop
-    /// body we're currently compiling, but only when the new term is being
-    /// emitted directly into that body block. Rebinds in nested sub-blocks
-    /// (conditional branches inside the body) keep their own registers and
-    /// flow back to the slot via `phi_outs` on child-frame pop.
+    /// Seed a branch/match arm block with an entry `Copy` per phi'd name —
+    /// the arm-block counterpart of [`Self::emit_body_phi_ins`]. The copy
+    /// (a) initializes the name's carry slot in this block from the parent
+    /// phi, and (b) is logged as the block's initial rebind so
+    /// `wire_phi_outs` always wires a carry-out. Later in-arm rebinds share
+    /// the slot register (via `carry_slots`), so the phi-out src register
+    /// holds the name's latest value even on a mid-block exit
+    /// (break/continue) where trailing rebinds never executed.
+    ///
+    /// Names already bound in the innermost scope (match-pattern bindings
+    /// that shadow an outer name) are skipped: assignments to them are
+    /// arm-local and must not carry out.
+    ///
+    /// Pushes a `carry_slots` entry for `block`; the caller pops it after
+    /// compiling the arm body.
+    pub(super) fn seed_arm_entry_copies(&mut self, block: BlockId, phis: &[(String, TermId)]) {
+        let mut slots = HashMap::new();
+        for (name, phi_tid) in phis {
+            if self
+                .scopes
+                .last()
+                .is_some_and(|s| s.contains_key(name))
+            {
+                continue;
+            }
+            let in_tid = self.emit_term(TermOp::Copy, smallvec![*phi_tid], Some(name.clone()));
+            // Keep state-variable reassignment resolvable through the seed
+            // (same reasoning as the loop-body path above).
+            if let Some(init_tid) = self.find_state_init(*phi_tid) {
+                self.terms[in_tid.0 as usize].state_key =
+                    self.terms[init_tid.0 as usize].state_key;
+            }
+            self.rebind_name_in_current_block(name.clone(), in_tid);
+            slots.insert(name.clone(), self.terms[in_tid.0 as usize].register);
+        }
+        self.carry_slots.push((block, slots));
+    }
+
+    /// Look up the carry slot register for `name` in the innermost carrying
+    /// block (loop body or seeded branch/match arm) we're currently
+    /// compiling, but only when the new term is being emitted directly into
+    /// that block. Rebinds in nested sub-blocks get their own seeded slots
+    /// (see `seed_arm_entry_copies`) and flow back to this one via
+    /// `phi_outs` on child-frame pop / arm exit.
     pub(super) fn carry_slot_for_current_block(&self, name: &str) -> Option<RegisterIndex> {
         let (body_block, slots) = self.carry_slots.last()?;
         if self.current_block != *body_block {

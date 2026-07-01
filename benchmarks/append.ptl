@@ -1,0 +1,13 @@
+// Benchmark: pure list-accumulator — the COW worst case. Every append clones
+// the whole backing Vec, so cost is quadratic in list length until in-place
+// mutation (M4) lands. The DupStats before/after target.
+
+let total = 0
+for round in range(0, 40) do
+  let xs = []
+  for i in range(0, 1500) do
+    xs = append(xs, i)
+  end
+  total = total + xs[round] + len(xs)
+end
+print("append checksum:", total)

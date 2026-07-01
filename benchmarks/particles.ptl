@@ -1,0 +1,44 @@
+// Benchmark: particle system — a list of records rebuilt every frame via
+// loop-carried append, with per-particle record reads and conditional bounce.
+// The classic per-frame sketch workload (COW-heavy: every frame copies the
+// whole particle list and every updated record).
+
+fn update(p)
+  let x = p.x + p.vx
+  let y = p.y + p.vy
+  let vx = p.vx
+  let vy = p.vy
+  if x > 100.0 || x < 0.0 then
+    vx = -vx
+    x = x + vx
+  end
+  if y > 60.0 || y < 0.0 then
+    vy = -vy
+    y = y + vy
+  end
+  { x: x, y: y, vx: vx, vy: vy }
+end
+
+let particles = []
+for i in range(0, 300) do
+  particles = append(particles, {
+    x: float(i % 100),
+    y: float(i % 60),
+    vx: float(i % 7) * 0.5 + 0.25,
+    vy: float(i % 5) * 0.4 + 0.2,
+  })
+end
+
+for frame in range(0, 100) do
+  let next = []
+  for p in particles do
+    next = append(next, update(p))
+  end
+  particles = next
+end
+
+let sum = 0.0
+for p in particles do
+  sum = sum + p.x + p.y
+end
+print("particles checksum:", floor(sum))

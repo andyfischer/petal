@@ -259,15 +259,20 @@ impl Compiler {
         self.blocks[then_block.0 as usize].parent_term_id = Some(branch_tid);
         self.blocks[else_block.0 as usize].parent_term_id = Some(branch_tid);
 
-        // Compile then body
+        // Compile then body. Each arm is seeded with carry-slot entry copies
+        // for the phi'd names so a mid-arm exit (break/continue) still
+        // carries the names' latest values out (see `seed_arm_entry_copies`).
         self.compile_in_block(then_block, |c| {
+            c.seed_arm_entry_copies(then_block, &phis);
             for s in then_body {
                 c.compile_stmt(s);
             }
+            c.carry_slots.pop();
         });
 
         // Compile else body
         self.compile_in_block(else_block, |c| {
+            c.seed_arm_entry_copies(else_block, &phis);
             match else_body {
                 Some(ElseBranch::Block(stmts)) => {
                     for s in stmts {
@@ -283,6 +288,7 @@ impl Compiler {
                     c.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
                 }
             }
+            c.carry_slots.pop();
         });
 
         // Wire phi_outs from each branch's rebinds.
@@ -328,13 +334,17 @@ impl Compiler {
                 gb
             });
 
-            // Compile body with pattern variable bindings
+            // Compile body with pattern variable bindings. Seeding runs after
+            // the pattern bindings so pattern-shadowed names are skipped
+            // (assignments to them are arm-local and must not carry out).
             self.compile_in_block(body_block, |c| {
                 for var_name in &pattern_vars {
                     let phantom = c.emit_phantom_term(var_name.clone());
                     c.scope_bind(var_name.clone(), phantom);
                 }
+                c.seed_arm_entry_copies(body_block, &phis);
                 c.compile_expr(&arm.body);
+                c.carry_slots.pop();
             });
 
             arm_metas.push(MatchArmMeta {

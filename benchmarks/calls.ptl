@@ -1,0 +1,13 @@
+// Benchmark: call overhead — a tiny helper invoked in a tight loop.
+// Compare against arith.ptl (the same arithmetic inlined) to isolate the
+// per-call frame cost (activation-record allocation + call/return machinery).
+
+fn mix(a, b, c)
+  a * 2 + b - c
+end
+
+let acc = 0
+for i in range(0, 300000) do
+  acc = acc + mix(i, acc % 97, i % 13)
+end
+print("calls checksum:", acc % 1000000)

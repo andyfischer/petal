@@ -208,9 +208,30 @@ impl Env {
     /// backends return the same [`StepResult`], so the run loops
     /// ([`run`](Self::run) / [`run_bounded`](Self::run_bounded)) are shared.
     pub fn step(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
+        Ok(self.step_n(stack_id, 1)?.0)
+    }
+
+    /// How many bytecode instructions execute per `Env`-level dispatch. Each
+    /// dispatch pays several map lookups plus VM construction — more than a
+    /// typical instruction costs to execute — so the run loops hand the VM a
+    /// budget and it runs an inner loop, yielding early for GC, completion,
+    /// error, or budget exhaustion. The value only caps how stale the GC check
+    /// inside a batch can get relative to `run_bounded` budgets; the VM itself
+    /// polls `Heap::should_collect` after every instruction.
+    const BYTECODE_BATCH: u64 = 65_536;
+
+    /// Run up to `budget` steps, returning the final [`StepResult`] and the
+    /// number of steps consumed. The graph engine always consumes exactly one
+    /// (it is introspection-first; hosts step it term-by-term); the bytecode
+    /// VM consumes up to the whole budget in one dispatch.
+    fn step_n(
+        &mut self,
+        stack_id: StackKey,
+        budget: u64,
+    ) -> Result<(StepResult, u64), String> {
         match self.backend {
-            Backend::Graph => self.step_graph(stack_id),
-            Backend::Bytecode => self.step_bytecode(stack_id),
+            Backend::Graph => Ok((self.step_graph(stack_id)?, 1)),
+            Backend::Bytecode => self.step_bytecode(stack_id, budget),
         }
     }
 
@@ -243,9 +264,14 @@ impl Env {
         Ok(result)
     }
 
-    /// One step of the bytecode VM. Lowers the program on first use, pushes the
-    /// root frame on the first step of a run, then executes one instruction.
-    fn step_bytecode(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
+    /// Run the bytecode VM for up to `budget` instructions. Lowers the program
+    /// on first use, pushes the root frame on the first step of a run, then
+    /// executes the batch (see [`Vm::run_batch`]).
+    fn step_bytecode(
+        &mut self,
+        stack_id: StackKey,
+        budget: u64,
+    ) -> Result<(StepResult, u64), String> {
         let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         let pid = self.stacks.get(&stack_id).unwrap().program_id;
         self.ensure_bytecode(pid)?;
@@ -273,7 +299,7 @@ impl Env {
             vm.push_root_frame();
             vm.stack.vm_started = true;
         }
-        Ok(vm.step())
+        Ok(vm.run_batch(budget))
     }
 
     /// Access the shared trace buffer (for recording/queries).
@@ -297,7 +323,7 @@ impl Env {
             stack.start_run_tracking();
         }
         loop {
-            match self.step(stack_id)? {
+            match self.step_n(stack_id, Self::BYTECODE_BATCH)?.0 {
                 StepResult::Continue => {
                     if self.ctx(ck).heap.should_collect() {
                         self.collect_garbage(ck);
@@ -353,8 +379,10 @@ impl Env {
 
         let mut steps = 0;
         while steps < max_steps {
-            steps += 1;
-            match self.step(stack_id)? {
+            let budget = (max_steps - steps).min(Self::BYTECODE_BATCH);
+            let (result, consumed) = self.step_n(stack_id, budget)?;
+            steps += consumed;
+            match result {
                 StepResult::Continue => {
                     if self.ctx(ck).heap.should_collect() {
                         self.collect_garbage(ck);

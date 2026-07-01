@@ -75,6 +75,8 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
     use Inst::*;
     match inst {
         LoadConst { dst, k } => format!("r{} = const {}", dst, kconst(program, *k)),
+        LoadNil { dst } => format!("r{} = nil", dst),
+        LoadBool { dst, val } => format!("r{} = {}", dst, val),
         Move { dst, src } => format!("r{} = r{}", dst, src),
         Add { dst, a, b } => format!("r{} = r{} + r{}", dst, a, b),
         Sub { dst, a, b } => format!("r{} = r{} - r{}", dst, a, b),

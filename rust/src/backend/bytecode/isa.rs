@@ -37,6 +37,11 @@ pub enum Inst {
     // --- constants / moves ---
     /// `dst = constants[k]`
     LoadConst { dst: Reg, k: ConstantId },
+    /// `dst = nil` — a branch's default result before an arm overwrites it (so
+    /// an empty/untaken arm yields `nil`, matching the graph's `block_result`).
+    LoadNil { dst: Reg },
+    /// `dst = <bool>` — short-circuit results of `And` (`false`) / `Or` (`true`).
+    LoadBool { dst: Reg, val: bool },
     /// `dst = src` — lowered `Copy`, `Phi` init, `phi_out`, and arm-result joins.
     Move { dst: Reg, src: Reg },
 

@@ -88,13 +88,9 @@ impl<'p> FnLowerer<'p> {
         self.collect_blocks();
         self.assign_registers();
 
-        // M0: only the entry block's straight-line terms are emitted. Child
-        // blocks (control flow) are collected for register assignment but their
-        // lowering arrives in M2.
-        for tid in self.block_terms_in_order(self.entry_block) {
-            let term = self.program.get_term(tid);
-            self.lower_term(term)?;
-        }
+        // Emit the entry block; control-flow terms recurse into their child
+        // blocks inline (one flat instruction stream over one register file).
+        self.emit_block(self.entry_block)?;
 
         let (param_regs, capture_regs, self_ref_reg) = self.binding_regs();
         let result_reg = self.entry_result_reg();
@@ -164,9 +160,7 @@ impl<'p> FnLowerer<'p> {
     /// register (mirrors the graph engine's `block_result`). `None` for an
     /// empty entry block.
     fn entry_result_reg(&self) -> Option<Reg> {
-        self.block_terms_in_order(self.entry_block)
-            .last()
-            .map(|&tid| self.flat(tid))
+        self.block_result_reg(self.entry_block)
     }
 
     /// Terms in a block in execution order (entry → `block_next`).
@@ -194,13 +188,19 @@ impl<'p> FnLowerer<'p> {
         inputs.iter().map(|&t| self.flat(t)).collect()
     }
 
-    fn lower_term(&mut self, term: &Term) -> Result<(), String> {
+    /// Lower a single non-control-flow term to one instruction. Control-flow
+    /// terms (Branch/And/Or/loops/Match/Break/Continue) are handled by
+    /// [`emit_block`](Self::emit_block) and never reach here.
+    fn lower_term_inst(&self, term: &Term) -> Result<Inst, String> {
         let dst = self.flat(term.id);
         let ins = &term.inputs;
         let inst = match &term.op {
             TermOp::Constant(k) => Inst::LoadConst { dst, k: *k },
             TermOp::Error(msg) => Inst::Error { msg: *msg },
             TermOp::Copy => Inst::Move { dst, src: self.flat(ins[0]) },
+            // A Phi initializes its register from the pre-control-flow value;
+            // child regions overwrite it via phi_outs (also lowered to Move).
+            TermOp::Phi => Inst::Move { dst, src: self.flat(ins[0]) },
 
             TermOp::Add => Inst::Add { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
             TermOp::Sub => Inst::Sub { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
@@ -288,8 +288,144 @@ impl<'p> FnLowerer<'p> {
                 return Err(format!("unlowered op: {} (arrives in a later milestone)", op_name(other)));
             }
         };
-        self.code.push(inst);
+        Ok(inst)
+    }
+
+    // -- block emission ------------------------------------------------------
+
+    /// Emit a block's terms in order. Straight-line and call terms lower to one
+    /// instruction each; control-flow terms recurse into their child regions.
+    fn emit_block(&mut self, block: BlockId) -> Result<(), String> {
+        for tid in self.block_terms_in_order(block) {
+            let term = self.program.get_term(tid);
+            match &term.op {
+                TermOp::Branch => self.emit_branch(term)?,
+                TermOp::And => self.emit_short_circuit(term, true)?,
+                TermOp::Or => self.emit_short_circuit(term, false)?,
+                _ => {
+                    let inst = self.lower_term_inst(term)?;
+                    self.code.push(inst);
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// `if cond then A else B end` →
+    /// ```text
+    ///   dst = nil
+    ///   jump_if_false cond -> else
+    ///   <A>; <A.phi_outs>; dst = <A result>; jump -> end
+    /// else:
+    ///   <B>; <B.phi_outs>; dst = <B result>
+    /// end:
+    /// ```
+    /// `dst = nil` up front makes an empty/untaken arm yield `nil` (matching the
+    /// graph's `block_result`) and clears any stale value from a prior iteration
+    /// when the branch sits in a loop body.
+    fn emit_branch(&mut self, term: &Term) -> Result<(), String> {
+        let dst = self.flat(term.id);
+        let cond = self.flat(term.inputs[0]);
+        self.code.push(Inst::LoadNil { dst });
+        let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
+
+        self.emit_arm(term.child_blocks[0], dst)?;
+        let jend = self.emit_placeholder(Inst::Jump { to: 0 });
+
+        let else_label = self.here();
+        self.patch(jif, else_label);
+        if let Some(&else_block) = term.child_blocks.get(1) {
+            self.emit_arm(else_block, dst)?;
+        }
+        let end_label = self.here();
+        self.patch(jend, end_label);
+        Ok(())
+    }
+
+    /// `a && b` (`is_and` true) / `a || b` (false) →
+    /// ```text
+    ///   <short-circuit>: dst = false/true ; jump -> end
+    ///   <rhs>: <B>; <B.phi_outs>; dst = <B result>
+    /// end:
+    /// ```
+    /// `&&` runs the rhs when the left is truthy and short-circuits to `false`;
+    /// `||` runs the rhs when the left is falsy and short-circuits to `true`.
+    fn emit_short_circuit(&mut self, term: &Term, is_and: bool) -> Result<(), String> {
+        let dst = self.flat(term.id);
+        let left = self.flat(term.inputs[0]);
+        let to_rhs = if is_and {
+            self.emit_placeholder(Inst::JumpIfTrue { cond: left, to: 0 })
+        } else {
+            self.emit_placeholder(Inst::JumpIfFalse { cond: left, to: 0 })
+        };
+        self.code.push(Inst::LoadBool { dst, val: !is_and });
+        let jend = self.emit_placeholder(Inst::Jump { to: 0 });
+
+        let rhs_label = self.here();
+        self.patch(to_rhs, rhs_label);
+        self.emit_arm(term.child_blocks[0], dst)?;
+
+        let end_label = self.here();
+        self.patch(jend, end_label);
+        Ok(())
+    }
+
+    /// Emit a child region and join its result: the block's instructions, its
+    /// phi carry-outs, then `dst = <block result>` (the control term's value).
+    fn emit_arm(&mut self, block: BlockId, dst: Reg) -> Result<(), String> {
+        self.emit_block(block)?;
+        self.emit_phi_outs(block);
+        if let Some(src) = self.block_result_reg(block) {
+            self.code.push(Inst::Move { dst, src });
+        }
+        Ok(())
+    }
+
+    /// Emit a block's phi carry-outs as `Move dest <- src` at the region's exit
+    /// edge. In the flat register file, the child's `src` and the parent's
+    /// `dest` are distinct registers, so the graph's cross-frame copy becomes a
+    /// plain intra-file move.
+    fn emit_phi_outs(&mut self, block: BlockId) {
+        let outs: Vec<(TermId, TermId)> = self
+            .program
+            .get_block(block)
+            .phi_outs
+            .iter()
+            .map(|p| (p.src_term, p.dest_term))
+            .collect();
+        for (src, dest) in outs {
+            self.code.push(Inst::Move {
+                dst: self.flat(dest),
+                src: self.flat(src),
+            });
+        }
+    }
+
+    /// Flat register of a block's result (its last term), or `None` if empty.
+    fn block_result_reg(&self, block: BlockId) -> Option<Reg> {
+        self.block_terms_in_order(block).last().map(|&t| self.flat(t))
+    }
+
+    /// Push an instruction that carries a jump target, returning its index for
+    /// later [`patch`](Self::patch)ing once the target position is known.
+    fn emit_placeholder(&mut self, inst: Inst) -> usize {
+        self.code.push(inst);
+        self.code.len() - 1
+    }
+
+    /// The index of the next instruction to be emitted — a forward jump label.
+    fn here(&self) -> u32 {
+        self.code.len() as u32
+    }
+
+    /// Backpatch the jump target of the instruction at `at`.
+    fn patch(&mut self, at: usize, target: u32) {
+        match &mut self.code[at] {
+            Inst::Jump { to }
+            | Inst::JumpIfFalse { to, .. }
+            | Inst::JumpIfTrue { to, .. } => *to = target,
+            other => panic!("patch: not a jump instruction: {other:?}"),
+        }
     }
 }
 
@@ -373,11 +509,23 @@ mod tests {
     }
 
     #[test]
-    fn control_flow_is_unlowered_for_now() {
-        // A conditional emits Phi; M0 lowering reports it honestly rather than
-        // producing wrong code.
-        let err = lower_program(&compile("let x = 1\nif x > 0 then x = 2 end"))
-            .expect_err("control flow should be unlowered in M0");
+    fn conditionals_lower_to_jumps() {
+        // A conditional lowers to a JumpIfFalse over the arm(s).
+        let bc = lower_program(&compile("let x = 1\nif x > 0 then x = 2 end")).expect("lower");
+        assert!(
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::JumpIfFalse { .. })),
+            "expected a JumpIfFalse in the lowered conditional"
+        );
+    }
+
+    #[test]
+    fn loops_are_unlowered_for_now() {
+        // Loops still report honestly until M2b.
+        let err = lower_program(&compile("for i in range(3) do print(i) end"))
+            .expect_err("loops should be unlowered until M2b");
         assert!(err.contains("unlowered op"), "got: {err}");
     }
 }

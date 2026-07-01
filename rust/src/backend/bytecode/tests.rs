@@ -141,3 +141,47 @@ fn builtin_calls() {
 fn call_arity_error_parity() {
     assert_parity("fn add(a, b)\n  a + b\nend\nlet y = add(1)");
 }
+
+// -- M2a: conditionals ------------------------------------------------------
+
+#[test]
+fn if_else() {
+    assert_parity("let x = 5\nlet y = if x > 0 then 1 else -1 end");
+    assert_parity("let x = -5\nlet y = if x > 0 then 1 else -1 end");
+    // `if` with no else, untaken → nil result.
+    assert_parity("let y = if false then 10 end");
+    assert_parity("let y = if true then 10 end");
+}
+
+#[test]
+fn phi_joins() {
+    // Rebind inside the taken branch carries out.
+    assert_parity("let x = 1\nif x > 0 then x = 99 end\nlet y = x");
+    // Untaken branch leaves the pre-branch value in place.
+    assert_parity("let x = 5\nif x > 100 then x = 99 end\nlet y = x");
+    // Multiple rebinds in one branch.
+    assert_parity("let a = 1\nlet b = 2\nif a < b then\n  a = 10\n  b = 20\nend\nlet y = a + b");
+}
+
+#[test]
+fn nested_conditionals() {
+    assert_parity(
+        "fn sign(n)\n  if n > 0 then \"pos\" else if n < 0 then \"neg\" else \"zero\" end end\nend\n\
+         let y = sign(-3)",
+    );
+    assert_parity(
+        "fn absval(n)\n  let r = n\n  if n < 0 then r = -n end\n  r\nend\n\
+         let y = absval(-7)",
+    );
+}
+
+#[test]
+fn short_circuit() {
+    assert_parity("let y = true && false");
+    assert_parity("let y = true && 7");
+    assert_parity("let y = false && 7");
+    assert_parity("let y = false || 42");
+    assert_parity("let y = true || 42");
+    assert_parity("let a = 3\nlet y = a > 0 && a < 10");
+    assert_parity("let a = 3\nlet y = a < 0 || a > 100");
+}

@@ -220,9 +220,25 @@ impl<'a> Vm<'a> {
                 let v = ops::constant_to_value(self.program, self.heap, *k);
                 self.set(fi, *dst, v);
             }
+            Inst::LoadNil { dst } => self.set(fi, *dst, Value::Nil),
+            Inst::LoadBool { dst, val } => self.set(fi, *dst, Value::Bool(*val)),
             Inst::Move { dst, src } => {
                 let v = self.reg(fi, *src);
                 self.set(fi, *dst, v);
+            }
+
+            // Jumps rewrite the current frame's instruction pointer (which
+            // `step` already advanced past this instruction).
+            Inst::Jump { to } => self.stack.vm_frames[fi].ip = *to as usize,
+            Inst::JumpIfFalse { cond, to } => {
+                if !self.reg(fi, *cond).is_truthy() {
+                    self.stack.vm_frames[fi].ip = *to as usize;
+                }
+            }
+            Inst::JumpIfTrue { cond, to } => {
+                if self.reg(fi, *cond).is_truthy() {
+                    self.stack.vm_frames[fi].ip = *to as usize;
+                }
             }
 
             Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b)?,

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 petal = { path = "../../rust" }
+petal-ui = { path = "../../petal-ui" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
 notify = "7"
 serde = { version = "1", features = ["derive"] }

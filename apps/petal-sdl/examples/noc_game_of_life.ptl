@@ -45,7 +45,7 @@ if key_pressed("space") then
 end
 
 // Click to toggle cells
-if mouse_down(1) then
+if mouse_down(0) then
     let mx = mouse_x() / cell_size
     let my = mouse_y() / cell_size
     if mx >= 0 && mx < cols && my >= 0 && my < rows then
@@ -55,7 +55,7 @@ if mouse_down(1) then
 end
 
 // Right click to clear cells
-if mouse_down(3) then
+if mouse_down(1) then
     let mx = mouse_x() / cell_size
     let my = mouse_y() / cell_size
     if mx >= 0 && mx < cols && my >= 0 && my < rows then

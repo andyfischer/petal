@@ -120,7 +120,10 @@ structured data, not pixels.
 }
 ```
 
-Draw command types: `clear`, `rect`, `rect_outline`, `line`, `circle`, `text`.
+Draw command types are the petal-ui standard vocabulary: `clear`, `rect`,
+`rect_outline`, `line`, `circle`, `triangle`, `poly`, `text`, `clip`,
+`clip_none`, plus the canvas ops (`create_canvas`, `set_target`,
+`draw_canvas`).
 
 ### input
 
@@ -128,21 +131,25 @@ Set input state. Keys are sticky — they stay down until the next `input` comma
 Mouse position and buttons persist similarly.
 
 ```json
-{"cmd": "input", "keys_down": ["up", "space"], "mouse": {"x": 400, "y": 300, "buttons": [1]}}
+{"cmd": "input", "keys_down": ["up", "space"], "mouse": {"x": 400, "y": 300, "buttons": [0]}}
 ```
 ```json
 {"ok": true}
 ```
 
-Key names: `a`-`z`, `0`-`9`, `up`, `down`, `left`, `right`, `space`, `return`,
-`escape`, `tab`, `shift`, `ctrl`, `alt`, `backspace`. Unrecognized names are
-silently ignored.
+Key names are the petal-ui canonical set: `a`-`z`, `0`-`9`, `up`, `down`,
+`left`, `right`, `pageup`, `pagedown`, `home`, `end`, `space`, `return`,
+`escape`, `tab`, `shift`, `ctrl`, `alt`, `cmd`, `backspace`, `delete`.
+Unrecognized names are silently ignored. Press/release edges (`key_pressed`,
+`mouse_pressed`, …) are derived by diffing consecutive `input` snapshots and
+reach the next stepped frame.
 
 `mouse` accepts two forms:
 
 - Object (preferred): `{"x": int, "y": int, "buttons": [int, ...]}` where
-  `buttons` is a list of SDL mouse button codes (1 = left, 2 = middle, 3 = right).
-- Legacy tuple: `[x, y]` — sets position only, clears all button state.
+  `buttons` uses the petal-ui standard ids (0 = left, 1 = right, 2 = middle)
+  and is authoritative — an empty list releases all buttons.
+- Legacy tuple: `[x, y]` — sets position only; held buttons are untouched.
 
 ### screenshot
 

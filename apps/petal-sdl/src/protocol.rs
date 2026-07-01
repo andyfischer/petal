@@ -46,6 +46,7 @@ fn default_step_count() -> u32 {
 /// Mouse input accepts both the legacy tuple form `[x, y]` and the canonical
 /// object form `{x, y, buttons?}`. The object form matches
 /// petal-diagram-canvas so agents can use a single payload across transports.
+/// Button ids use the petal-ui standard: 0 = left, 1 = right, 2 = middle.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum MouseInput {
@@ -201,19 +202,20 @@ pub fn capture_draw_commands(
     result
 }
 
-/// Run one frame: reset_stack + run, update frame_count.
-/// Returns the new frame count.
+/// Run one frame under the standard contract: promote pending input edges,
+/// bind, reset_stack + run. Returns the new frame count.
 pub fn run_one_frame(
     env: &mut Env,
     stack_id: StackKey,
-    input: &InputState,
+    input: &mut InputState,
     frame_count: &mut i64,
 ) -> Result<i64, String> {
     clear_draw_commands(env);
     reset_canvas_ids(env);
 
     *frame_count += 1;
-    bind_frame_info(env, 1.0 / 60.0, *frame_count); // Fixed dt in agent mode
+    input.begin_frame(1.0 / 60.0); // Fixed dt in agent mode
+    bind_frame_info(env, 1.0 / 60.0, *frame_count);
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;
@@ -222,21 +224,18 @@ pub fn run_one_frame(
     Ok(*frame_count)
 }
 
+/// Apply an absolute input snapshot from the agent protocol ("these keys and
+/// buttons are down now"); press/release edges are derived by diffing and
+/// reach the next stepped frame.
 pub fn apply_input(input: &mut InputState, keys_down: &[String], mouse: Option<&MouseInput>) {
-    input.begin_frame();
-    input.keys_down.clear();
-    for key in keys_down {
-        input.keys_down.insert(key.clone());
-    }
-    if let Some(m) = mouse {
-        let (x, y) = m.position();
-        input.mouse_x = x;
-        input.mouse_y = y;
-        // Button state passes through the existing buttons_down set.
-        for btn in m.buttons() {
-            input.mouse_buttons.insert(*btn);
-        }
-    }
+    // Only the object form carries an authoritative buttons list; the tuple
+    // form (and a keys-only message) leaves held buttons untouched.
+    let (buttons, position) = match mouse {
+        Some(m @ MouseInput::Object { .. }) => (Some(m.buttons().to_vec()), Some(m.position())),
+        Some(m) => (None, Some(m.position())),
+        None => (None, None),
+    };
+    input.apply_absolute(keys_down, buttons.as_deref(), position);
 }
 
 pub fn set_state_from_json(

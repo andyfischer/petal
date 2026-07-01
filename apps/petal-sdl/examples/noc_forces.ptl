@@ -29,7 +29,7 @@ if len(objects) == 0 then
 end
 
 // Wind from mouse click
-if mouse_down(1) then
+if mouse_down(0) then
   // Wind blows toward mouse
   let mx = float(mouse_x())
   if mx < sw / 2.0 then

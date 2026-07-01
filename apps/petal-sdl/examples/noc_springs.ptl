@@ -68,7 +68,7 @@ end
 let mx = float(mouse_x())
 let my = float(mouse_y())
 
-if mouse_pressed(1) then
+if mouse_pressed(0) then
     let best = -1
     let best_dist = 30.0
     for i in range(0, len(nodes)) do
@@ -84,7 +84,7 @@ if mouse_pressed(1) then
     dragging = best
 end
 
-if !mouse_down(1) then
+if !mouse_down(0) then
     dragging = -1
 end
 

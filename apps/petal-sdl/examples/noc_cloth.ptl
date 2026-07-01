@@ -72,7 +72,7 @@ for i in range(0, len(points)) do
     let dist = sqrt(dx * dx + dy * dy)
     let push_x = 0.0
     let push_y = 0.0
-    if dist < mouse_radius && dist > 0.1 && mouse_down(1) then
+    if dist < mouse_radius && dist > 0.1 && mouse_down(0) then
       push_x = dx / dist * mouse_strength * delta
       push_y = dy / dist * mouse_strength * delta
     end
@@ -209,7 +209,7 @@ for y in range(0, rows_count) do
 end
 
 // Mouse indicator
-if mouse_down(1) then
+if mouse_down(0) then
   draw_circle(int(mx), int(my), int(mouse_radius), 30, 15, 15)
 end
 

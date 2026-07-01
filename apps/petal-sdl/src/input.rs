@@ -1,26 +1,13 @@
-use sdl2::keyboard::Scancode;
-use std::collections::HashSet;
+//! SDL → petal-ui translation. The input semantics (edge/level split, drag,
+//! click count, canonical key names) live in `petal_ui::input::InputState`;
+//! this module only maps SDL's vocabulary onto the standard one.
 
-#[derive(Default)]
-pub struct InputState {
-    pub keys_down: HashSet<String>,
-    pub keys_prev: HashSet<String>,
-    pub mouse_x: i32,
-    pub mouse_y: i32,
-    pub mouse_buttons: HashSet<u8>,
-    pub mouse_buttons_prev: HashSet<u8>,
-}
+use sdl2::keyboard::{Mod, Scancode};
+use sdl2::mouse::MouseButton;
 
-impl InputState {
-    /// Snapshot current state into prev (call at frame start, before applying
-    /// this frame's events) so pressed-edge detection works when the host binds
-    /// the snapshot into the Env. See `native_fns::bind_input`.
-    pub fn begin_frame(&mut self) {
-        self.keys_prev = self.keys_down.clone();
-        self.mouse_buttons_prev = self.mouse_buttons.clone();
-    }
-}
+pub use petal_ui::input::{InputEvent, InputState, Modifiers};
 
+/// Map an SDL scancode to the canonical petal-ui key name.
 pub fn scancode_to_name(code: Scancode) -> Option<&'static str> {
     Some(match code {
         Scancode::A => "a",
@@ -68,9 +55,37 @@ pub fn scancode_to_name(code: Scancode) -> Option<&'static str> {
         Scancode::Down => "down",
         Scancode::Left => "left",
         Scancode::Right => "right",
+        Scancode::PageUp => "pageup",
+        Scancode::PageDown => "pagedown",
+        Scancode::Home => "home",
+        Scancode::End => "end",
+        Scancode::Delete => "delete",
+        Scancode::Insert => "insert",
         Scancode::LShift | Scancode::RShift => "shift",
         Scancode::LCtrl | Scancode::RCtrl => "ctrl",
         Scancode::LAlt | Scancode::RAlt => "alt",
+        Scancode::LGui | Scancode::RGui => "cmd",
         _ => return None,
     })
+}
+
+/// Map an SDL mouse button to the standard petal-ui id (0 = left, 1 = right,
+/// 2 = middle).
+pub fn sdl_button_to_std(btn: MouseButton) -> Option<u8> {
+    Some(match btn {
+        MouseButton::Left => petal_ui::input::buttons::LEFT,
+        MouseButton::Right => petal_ui::input::buttons::RIGHT,
+        MouseButton::Middle => petal_ui::input::buttons::MIDDLE,
+        _ => return None,
+    })
+}
+
+/// Translate an SDL modifier chord into the standard modifier record.
+pub fn mods_from_sdl(m: Mod) -> Modifiers {
+    Modifiers {
+        shift: m.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD),
+        ctrl: m.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD),
+        alt: m.intersects(Mod::LALTMOD | Mod::RALTMOD),
+        cmd: m.intersects(Mod::LGUIMOD | Mod::RGUIMOD),
+    }
 }

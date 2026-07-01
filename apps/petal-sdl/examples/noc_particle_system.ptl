@@ -106,7 +106,7 @@ end
 snow = new_snow
 
 // --- Mouse sparks ---
-if mouse_down(1) then
+if mouse_down(0) then
     let mx = float(mouse_x())
     let my = float(mouse_y())
     for i in range(0, 8) do

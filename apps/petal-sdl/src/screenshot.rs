@@ -114,6 +114,11 @@ impl Target {
                     }
                 }
             }
+            // The screenshot raster approximates text as blocks and doesn't
+            // model clip regions; clip commands are ignored here (the real
+            // renderer honors them).
+            DrawCommand::Clip { .. } | DrawCommand::ClipNone => {}
+            DrawCommand::Host { .. } => {}
             DrawCommand::CreateCanvas { .. }
             | DrawCommand::SetTarget { .. }
             | DrawCommand::DrawCanvas { .. } => {}

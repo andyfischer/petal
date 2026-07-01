@@ -74,7 +74,7 @@ if key_pressed("3") then preset = 2 end
 if key_pressed("4") then preset = 3 end
 if key_pressed("space") then paused = !paused end
 
-if mouse_down(1) then
+if mouse_down(0) then
   let mi = mouse_x() / cell
   let mj = mouse_y() / cell
   for dy in range(-1, 2) do

@@ -1,4 +1,6 @@
 // === PETAL GAMES BROWSER ===
+// Record-arg draw overloads, rect(), point_in()/hovered() come from the
+// implicit `ui` module (the petal-ui prelude).
 
 state selected = 0
 state scroll_y = 0.0
@@ -7,25 +9,7 @@ let sw = screen_width()
 let sh = screen_height()
 let delta = dt()
 let fc = frame_count()
-let mx = mouse_x()
-let my = mouse_y()
 let count = example_count()
-
-// Overloaded draw functions
-let _draw_line = draw_line
-let _draw_text = draw_text
-fn draw_line(x1, y1, x2, y2, r, g, b)
-  _draw_line(x1, y1, x2, y2, r, g, b)
-end
-fn draw_line(a, b, color)
-  _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
-fn draw_text(text, x, y, size, r, g, b)
-  _draw_text(text, x, y, size, r, g, b)
-end
-fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
-end
 
 // Layout constants
 let header_h = 80
@@ -51,9 +35,9 @@ let visible_items = (sh - list_top - 20) / (item_h + item_pad)
 for i in range(0, count) do
   let iy = list_top + i * (item_h + item_pad) - int(scroll_y)
   if iy > list_top - item_h && iy < sh then
-    if mx > list_x && mx < list_x + list_w && my > iy && my < iy + item_h then
+    if hovered(rect(list_x, iy, list_w, item_h)) then
       selected = i
-      if mouse_pressed(1) then
+      if mouse_pressed(0) then
         launch_script(example_path(i))
       end
     end

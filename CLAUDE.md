@@ -5,6 +5,11 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR (ter
 ## Repo Layout
 
 - `rust/` — Main implementation for the core language (lexer, parser, AST, compiler, IR, evaluator)
+- `petal-ui/` — Standard interactivity layer for embedders: normalized input
+  events + edge/level semantics (`InputState`), the shared draw-command
+  vocabulary, the Petal-source `ui` prelude module (widgets: `button`,
+  `list_update`, …), and a headless test harness. Used by petal-sdl and by
+  Garden (`~/garden`).
 - `apps/` — Native and web integrations that embed the language:
   - `apps/petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
   - `apps/petal-diagram-canvas/` — Experimental integration using Petal for a web based diagram tool.
@@ -29,4 +34,5 @@ Source: `rust/src/`
  * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
  * Bytecode backend design/status/handoff: [docs/bytecode-status.md](./docs/bytecode-status.md)
  * Module / import system (`import`, resolution, hot reload): [docs/module-system.md](./docs/module-system.md)
+ * UI interactivity layer (`petal-ui`, the `ui` prelude): [docs/dev/ui-primitives-plan.md](./docs/dev/ui-primitives-plan.md)
 

@@ -238,7 +238,7 @@ if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
 end
 
 // Detect mouse click (pressed this frame) or space bar
-let clicking = mouse_down(1)
+let clicking = mouse_down(0)
 let just_clicked = clicking && !click_was_down
 click_was_down = clicking
 

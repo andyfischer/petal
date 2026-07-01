@@ -1,9 +1,11 @@
 # Plan: `petal-ui` — standard interactivity primitives for embedders
 
-Status: proposed (2026-07-01)
+Status: Phases 1–2 **landed** (2026-07-01) — the `petal-ui` crate exists with
+Layers 0–2, the `ui` prelude, and the headless harness, and petal-sdl runs on
+it. Phase 3 (Garden adoption) is next.
 Related: [../module-system.md](../module-system.md) (the import system that
-carries the Petal-source half of this library — **landed**, so the
-concatenation fallback below is no longer needed)
+carries the Petal-source half of this library — landed; the prelude ships as
+a real module via `register_prelude`)
 
 ## Problem
 
@@ -123,17 +125,12 @@ fn truncate_tail(s, max_chars) -> string   // "…" prefix when clipped
 Retained widget state (selection, scroll offsets) lives in `state` records, so
 it survives hot reload for free via `transfer_state`.
 
-Two pieces of engineering make concatenation a real product rather than a
-hack:
-
-1. **Error attribution.** `Env::load_program_with_prelude(prelude, user_src)`
-   tracks the prelude's line count so compile/runtime errors report against
-   the *user's* line numbers (not line 900 of a blob), tagging prelude-side
-   errors as such.
-2. **Naming discipline.** The prelude claims short names (`button`,
-   `clicked`, `list_update`); Petal's shadowing rules let user code override.
-   Prelude files are written module-shaped — one concern per file, no
-   cross-file globals — so they convert to importable modules unchanged.
+The module system handles error attribution (module-file-named spans) and
+delivery for free; what remains is **naming discipline**: the prelude claims
+short names (`button`, `clicked`, `list_update`) as *implicit* imports, which
+are weak like builtins — a script's own declarations shadow them silently,
+and `import ui` / `import ui: button` are available when a script wants to be
+explicit. `_`-prefixed helpers stay module-private.
 
 **Testing:** `petal-ui` ships a headless harness — a Rust helper that runs a
 script in a bare `Env` with synthetic input bindings and asserts on state /
@@ -166,12 +163,13 @@ natives, decode in `apps/petal-sdl/src/commands.rs` and Garden's
 
 ### Packaging
 
-- New crate **`petal-ui`** in the `~/petal/rust` workspace, depending on
-  `petal`. The core language crate stays UI-agnostic; embedders opt in with
-  one dependency line (Garden already path-depends on this workspace).
-- `petal-ui/prelude/*.ptl` in-tree, embedded with `include_str!`, versioned
-  together with the input contract. `UI_VERSION` constant + `ui_version()`
-  native.
+- New crate **`petal-ui`** at `~/petal/petal-ui`, depending on `petal`
+  (`path = "../rust"`, the same shape as petal-sdl). The core language crate
+  stays UI-agnostic; embedders opt in with one dependency line.
+- `petal-ui/prelude/*.ptl` in-tree, embedded with `include_str!` and
+  registered via `petal_ui::register_prelude(&mut env)` (module `ui` +
+  implicit import), versioned together with the input contract. `UI_VERSION`
+  constant + `ui_version()` native.
 - Scope decision: the library is **immediate-mode**. The `state`-record
   pattern already covers retention; a reducer/component framework (à la
   `examples/reactive_ui.ptl`) can layer on later without changing this
@@ -185,8 +183,8 @@ natives, decode in `apps/petal-sdl/src/commands.rs` and Garden's
 2. **Phase 2 (this repo):** Layer 1 prelude + headless test harness. Rewrite
    `browser.ptl`'s menu on `list_update`/`button` as the dogfood.
 3. **Phase 3 (Garden):** `PanelHost` switches to `petal_ui::register_input` +
-   `register_draw` + prelude concatenation, keeping Garden-specific extras
-   (`debug_state`, reserved-key policy). Rewrite `diff_panel.ptl` and
+   `register_draw` + `register_prelude` (implicit `ui` import), keeping
+   Garden-specific extras (`debug_state`, reserved-key policy). Rewrite `diff_panel.ptl` and
    `diff_detail_panel.ptl` on the prelude. Acceptance: the copy-pasted halves
    of the two scripts disappear and Garden's
    `scripts/panel-integration-test.sh` still passes.

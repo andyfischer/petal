@@ -18,7 +18,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use crate::commands::{clear_draw_commands, take_draw_commands};
-use crate::input::{scancode_to_name, InputState};
+use crate::input::{mods_from_sdl, scancode_to_name, sdl_button_to_std, InputEvent, InputState};
 use crate::native_fns::{
     self, bind_dimensions, bind_examples, bind_frame_info, bind_input, reset_canvas_ids,
     take_pending_launch, ExampleEntry,
@@ -48,9 +48,10 @@ enum PollResult {
     Escape,
 }
 
-/// Poll SDL events, updating the host's `InputState`. Returns Quit/Escape signals.
+/// Poll SDL events, translating them into standard `petal_ui` input events.
+/// Returns Quit/Escape signals. The caller starts the script frame afterwards
+/// with `input.begin_frame(dt)`.
 fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> PollResult {
-    input.begin_frame();
     let mut result = PollResult::None;
     for event in event_pump.poll_iter() {
         match event {
@@ -58,25 +59,43 @@ fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> 
             Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
                 result = PollResult::Escape;
             }
-            Event::KeyDown { scancode: Some(sc), .. } => {
+            // OS auto-repeats are dropped: `key_pressed` fires once per
+            // physical press, matching the pre-petal-ui behavior.
+            Event::KeyDown { scancode: Some(sc), keymod, repeat: false, .. } => {
+                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
                 if let Some(name) = scancode_to_name(sc) {
-                    input.keys_down.insert(name.to_string());
+                    input.event(InputEvent::KeyDown { key: name.to_string() });
                 }
             }
-            Event::KeyUp { scancode: Some(sc), .. } => {
+            Event::KeyUp { scancode: Some(sc), keymod, .. } => {
+                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
                 if let Some(name) = scancode_to_name(sc) {
-                    input.keys_down.remove(name);
+                    input.event(InputEvent::KeyUp { key: name.to_string() });
                 }
+            }
+            Event::TextInput { text, .. } => {
+                input.event(InputEvent::Text { text });
             }
             Event::MouseMotion { x, y, .. } => {
-                input.mouse_x = x;
-                input.mouse_y = y;
+                input.event(InputEvent::MouseMove { x, y });
             }
             Event::MouseButtonDown { mouse_btn, .. } => {
-                input.mouse_buttons.insert(mouse_btn as u8);
+                if let Some(button) = sdl_button_to_std(mouse_btn) {
+                    input.event(InputEvent::MouseDown { button });
+                }
             }
             Event::MouseButtonUp { mouse_btn, .. } => {
-                input.mouse_buttons.remove(&(mouse_btn as u8));
+                if let Some(button) = sdl_button_to_std(mouse_btn) {
+                    input.event(InputEvent::MouseUp { button });
+                }
+            }
+            Event::MouseWheel { precise_x, precise_y, .. } => {
+                // SDL y > 0 means "scrolled up"; the standard scroll_y() is
+                // positive scrolling down.
+                input.event(InputEvent::Scroll {
+                    dx: precise_x as f64,
+                    dy: -precise_y as f64,
+                });
             }
             _ => {}
         }
@@ -195,6 +214,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         last_frame = now;
         frame_count += 1;
 
+        input.begin_frame(dt);
         bind_frame_info(&mut env, dt, frame_count);
 
         if let Some(ref sp) = current_source_path {
@@ -346,6 +366,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
             last_frame = now;
             frame_count += 1;
 
+            input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);
 
             if let Some(sp) = source_path {
@@ -434,10 +455,10 @@ pub fn run_screenshot(
 ) -> Result<(), String> {
     let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
 
-    let input = InputState::default();
+    let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..frames {
-        protocol::run_one_frame(&mut env, stack_id, &input, &mut frame_count)?;
+        protocol::run_one_frame(&mut env, stack_id, &mut input, &mut frame_count)?;
     }
 
     // Capture draw commands from one more speculative frame

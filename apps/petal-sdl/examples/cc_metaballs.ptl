@@ -24,7 +24,7 @@ if !paused then t += delta end
 
 if key_pressed("space") then paused = !paused end
 if key_pressed("c") then extras = [] end
-if mouse_pressed(1) then
+if mouse_pressed(0) then
   extras = append(extras, {
     x: float(mouse_x()),
     y: float(mouse_y()),

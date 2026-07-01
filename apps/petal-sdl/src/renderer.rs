@@ -156,6 +156,14 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, font: &Fo
         DrawCommand::Text { text, x, y, size: _, r, g, b } => {
             T::render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
         }
+        DrawCommand::Clip { x, y, w, h } => {
+            canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
+        }
+        DrawCommand::ClipNone => {
+            canvas.set_clip_rect(None);
+        }
+        // Host-extension tags this app doesn't define; nothing to draw.
+        DrawCommand::Host { .. } => {}
         // Handled in `render`; unreachable here.
         DrawCommand::CreateCanvas { .. }
         | DrawCommand::SetTarget { .. }

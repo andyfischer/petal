@@ -769,7 +769,17 @@ dependencies = [
  "image",
  "notify",
  "petal",
+ "petal-ui",
  "sdl2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "petal-ui"
+version = "0.1.0"
+dependencies = [
+ "petal",
  "serde",
  "serde_json",
 ]

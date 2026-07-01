@@ -266,12 +266,29 @@ let alice = {name: "Alice"}
 alice.greet()  // same as greet(alice)
 ```
 
+### Rebind Operator
+
+Prefixing a call argument with `@` assigns the call's result back to that
+variable — shorthand for the common `x = f(x)` pattern that immutable values
+produce:
+
+```petal
+let nums = [1, 2, 3]
+append(@nums, 4)   // same as: nums = append(nums, 4)
+print(nums)        // [1, 2, 3, 4]
+```
+
+`@var` binds to the nearest enclosing call. See the
+[Rebind Operator](rebind-operator.md) doc for nesting, statement-level scope,
+and limits.
+
 ## Lists
 
 ```petal
 let nums = [1, 2, 3]
 print(nums[0])        // 1 (zero-indexed)
 nums = append(nums, 4)   // append returns a new list — rebind to keep it
+                         // (or use the @ rebind operator: append(@nums, 4))
 print(len(nums))      // 4
 ```
 

@@ -52,6 +52,7 @@ pattern matching, higher-order functions, and more.
 | [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Goals](docs/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [Function Overloading](docs/Function_Overloading.md) | Multi-arity dispatch rules |
+| [Rebind Operator](docs/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
 | [Mutability Plan](docs/MutabilityPlan.md) | Why the IR is purely immutable (design context) |
 | [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
 | [Debug Protocol](docs/debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |

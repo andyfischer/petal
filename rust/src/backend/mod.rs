@@ -16,6 +16,7 @@
 //! by [`Backend`] and [`OptFlags`].
 
 pub mod bytecode;
+pub mod calls;
 pub mod graph;
 pub mod ops;
 

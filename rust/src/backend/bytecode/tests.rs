@@ -84,3 +84,60 @@ fn error_parity() {
     assert_parity("let xs = [1, 2]\nlet y = xs[5]");
     assert_parity(r#"let x = 1 + "a""#);
 }
+
+#[test]
+fn print_output() {
+    assert_parity(r#"print("hello")"#);
+    assert_parity("print(1 + 2)");
+    assert_parity(r#"print("sum =", 3 + 4)"#);
+}
+
+#[test]
+fn function_calls() {
+    assert_parity("fn add(a, b)\n  a + b\nend\nlet y = add(3, 4)");
+    assert_parity("fn square(n)\n  n * n\nend\nprint(square(5))");
+    // Lambda bound to a name, then called.
+    assert_parity("let double = fn(x) -> x * 2\nlet y = double(7)");
+}
+
+#[test]
+fn closures_capture() {
+    assert_parity(
+        "fn make_adder(n)\n  fn adder(x)\n    x + n\n  end\n  adder\nend\n\
+         let add5 = make_adder(5)\nlet y = add5(3)",
+    );
+}
+
+#[test]
+fn overloaded_functions() {
+    // Same name, different arities — resolved by argument count.
+    assert_parity(
+        "fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend\nlet y = f(10)\nlet z = f(3, 4)",
+    );
+}
+
+#[test]
+fn higher_order_intrinsics() {
+    assert_parity("let ys = map([1, 2, 3], fn(x) -> x * 2)");
+    assert_parity("let ys = filter([1, 2, 3, 4], fn(x) -> x > 2)");
+    assert_parity("let s = reduce([1, 2, 3, 4], 0, fn(a, b) -> a + b)");
+    assert_parity("forEach([1, 2, 3], fn(x) -> print(x))");
+}
+
+#[test]
+fn method_call_syntax() {
+    assert_parity("let ys = [1, 2, 3].map(fn(x) -> x + 1)");
+    assert_parity("let s = [1, 2, 3, 4].filter(fn(x) -> x > 2)");
+}
+
+#[test]
+fn builtin_calls() {
+    assert_parity("let n = len([1, 2, 3])");
+    assert_parity(r#"let s = str(42)"#);
+    assert_parity("let xs = append([1, 2], 3)");
+}
+
+#[test]
+fn call_arity_error_parity() {
+    assert_parity("fn add(a, b)\n  a + b\nend\nlet y = add(1)");
+}

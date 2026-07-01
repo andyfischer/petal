@@ -7,21 +7,21 @@
 //! the graph engine's `Frame`s.
 //!
 //! ## Milestone status
-//! M1b executes the straight-line op set (constants, arithmetic/compare/logical,
-//! `Move`, the data-structure allocators, field/index access). Calls, control
-//! flow, state, and match return an error until M1c–M3 land — matching the
-//! lowering, which does not yet emit those instructions.
+//! M1 executes the straight-line op set plus calls, closures, overload sets,
+//! returns, native/builtin dispatch, and the synchronous higher-order
+//! intrinsics (map/filter/reduce/forEach). Control flow, state, and match
+//! return an error until M2–M3 — matching the lowering.
 
 use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
-use crate::backend::ops;
+use crate::backend::{calls, ops};
 use crate::backend::{RuntimeClosure, StepResult};
 use crate::heap::Heap;
-use crate::native_fn::NativeFnTable;
-use crate::program::{FunctionId, OverloadEntry, Program, TermOp};
+use crate::native_fn::{NativeFnId, NativeFnTable, PetalCxt};
+use crate::program::{ClosureId, FunctionId, OverloadEntry, Program, TermOp};
 use crate::stack::{LoopKeyPart, Stack};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::Value;
@@ -35,8 +35,10 @@ pub struct VmFrame {
     pub ip: usize,
     /// Flat register file (`Value` is `Copy`, so this is a plain `Vec`).
     pub regs: Vec<Value>,
-    /// Caller register that receives this frame's return value.
-    pub dst_in_caller: Reg,
+    /// Caller register that receives this frame's return value. `None` for the
+    /// root frame and for frames pushed by a synchronous intrinsic call (whose
+    /// result is read from `stack.last_pop_result`, not written to a register).
+    pub dst_in_caller: Option<Reg>,
     /// Active loop cursors, indexed by [`LoopSlot`].
     pub loops: SmallVec<[LoopCursor; 2]>,
     /// Active loop-index context, outermost-first, for state-key resolution.
@@ -45,7 +47,7 @@ pub struct VmFrame {
 
 impl VmFrame {
     /// A fresh frame for `func` with a zeroed register file of `reg_count`.
-    pub fn new(func: Option<FunctionId>, reg_count: u16, dst_in_caller: Reg) -> Self {
+    pub fn new(func: Option<FunctionId>, reg_count: u16, dst_in_caller: Option<Reg>) -> Self {
         VmFrame {
             func,
             ip: 0,
@@ -99,10 +101,10 @@ impl<'a> Vm<'a> {
     /// `push_root_frame` does (the compiler assigns builtin phantom terms to
     /// those registers).
     pub fn push_root_frame(&mut self) {
-        let mut frame = VmFrame::new(None, self.bc.root.reg_count, 0);
+        let mut frame = VmFrame::new(None, self.bc.root.reg_count, None);
         for i in 0..self.native_fns.count() {
             if i < frame.regs.len() {
-                frame.regs[i] = Value::NativeFunction(crate::native_fn::NativeFnId(i as u32));
+                frame.regs[i] = Value::NativeFunction(NativeFnId(i as u32));
             }
         }
         self.stack.vm_frames.push(frame);
@@ -125,7 +127,7 @@ impl<'a> Vm<'a> {
         // (later milestones) overwrite `ip` when they need to.
         self.stack.vm_frames[frame_idx].ip = ip + 1;
         match self.exec_inst(frame_idx, &func.code[ip]) {
-            Ok(()) => StepResult::Continue,
+            Ok(sr) => sr,
             Err(e) => StepResult::Error(e),
         }
     }
@@ -139,15 +141,53 @@ impl<'a> Vm<'a> {
             .result_reg
             .map(|r| self.reg(top, r))
             .unwrap_or(Value::Nil);
-        let frame = self.stack.vm_frames.pop().unwrap();
-        self.stack.last_pop_result = Some(result);
+        self.deliver_value(result)
+    }
 
+    /// Pop the current frame and deliver `value`: to the caller's `dst`
+    /// register, or up as `StepResult::Complete` when the root frame finishes.
+    fn deliver_value(&mut self, value: Value) -> StepResult {
+        let frame = self.stack.vm_frames.pop().unwrap();
+        self.stack.last_pop_result = Some(value);
         if self.stack.vm_frames.is_empty() {
-            return StepResult::Complete(result);
+            // The root frame just completed — capture top-level named functions
+            // so `Env::call_function` can invoke them without a re-run.
+            if frame.func.is_none() {
+                self.capture_root_functions(&frame);
+            }
+            return StepResult::Complete(value);
         }
-        let caller = self.stack.vm_frames.len() - 1;
-        self.set(caller, frame.dst_in_caller, result);
+        if let Some(dst) = frame.dst_in_caller {
+            let caller = self.stack.vm_frames.len() - 1;
+            self.set(caller, dst, value);
+        }
         StepResult::Continue
+    }
+
+    /// Record top-level named `Closure`/`OverloadSet` bindings from the root
+    /// frame into `stack.functions` (mirrors the graph engine).
+    fn capture_root_functions(&mut self, frame: &VmFrame) {
+        let root = self.program.root_block;
+        let Some(term_ids) = self.program.block_terms.get(&root) else {
+            return;
+        };
+        let mut captured = Vec::new();
+        for &tid in term_ids {
+            let term = self.program.get_term(tid);
+            if let Some(name) = term.name.as_ref() {
+                let val = frame
+                    .regs
+                    .get(term.register.0 as usize)
+                    .copied()
+                    .unwrap_or(Value::Nil);
+                if matches!(val, Value::Closure(_) | Value::OverloadSet(_)) {
+                    captured.push((name.clone(), val));
+                }
+            }
+        }
+        for (name, val) in captured {
+            self.stack.functions.insert(name, val);
+        }
     }
 
     // -- register access -----------------------------------------------------
@@ -174,7 +214,7 @@ impl<'a> Vm<'a> {
 
     // -- instruction dispatch ------------------------------------------------
 
-    fn exec_inst(&mut self, fi: usize, inst: &Inst) -> Result<(), String> {
+    fn exec_inst(&mut self, fi: usize, inst: &Inst) -> Result<StepResult, String> {
         match inst {
             Inst::LoadConst { dst, k } => {
                 let v = ops::constant_to_value(self.program, self.heap, *k);
@@ -271,6 +311,45 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, v);
             }
 
+            // --- calls / closures ---
+            Inst::MakeClosure { dst, func, caps } => {
+                let captures = self.regs(fi, caps);
+                let cid = ClosureId(self.closures.len() as u32);
+                self.closures.push(RuntimeClosure {
+                    function_id: *func,
+                    captures,
+                });
+                self.set(fi, *dst, Value::Closure(cid));
+            }
+            Inst::MakeOverloadSet { dst, closures } => {
+                let inputs = self.regs(fi, closures);
+                let v = calls::make_overload_set(
+                    self.program,
+                    self.closures,
+                    self.overload_sets,
+                    &inputs,
+                );
+                self.set(fi, *dst, v);
+            }
+            Inst::Call { dst, callee, args } => {
+                let callable = self.reg(fi, *callee);
+                let argv = self.regs(fi, args);
+                self.do_call(fi, *dst, callable, &argv)?;
+            }
+            Inst::MethodCall { dst, recv, name, args } => {
+                let receiver = self.reg(fi, *recv);
+                let argv = self.regs(fi, args);
+                self.do_method_call(fi, *dst, receiver, *name, &argv)?;
+            }
+            Inst::BuiltinCall { dst, name, args } => {
+                let argv = self.regs(fi, args);
+                self.do_builtin_call(fi, *dst, *name, &argv)?;
+            }
+            Inst::Return { val } => {
+                let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);
+                return Ok(self.deliver_value(value));
+            }
+
             Inst::Error { msg } => {
                 return Err(self
                     .program
@@ -286,7 +365,7 @@ impl<'a> Vm<'a> {
                 ));
             }
         }
-        Ok(())
+        Ok(StepResult::Continue)
     }
 
     fn binop(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg) -> Result<(), String> {
@@ -299,5 +378,291 @@ impl<'a> Vm<'a> {
         let v = ops::comparison(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
         self.set(fi, dst, v);
         Ok(())
+    }
+
+    // -- calls ---------------------------------------------------------------
+
+    /// Dispatch `callable(args...)`, writing the result into `dst` of frame `fi`
+    /// (closures push a frame that writes `dst` on return; native/enum results
+    /// are written immediately).
+    fn do_call(&mut self, fi: usize, dst: Reg, callable: Value, args: &[Value]) -> Result<(), String> {
+        match callable {
+            Value::Closure(_) | Value::OverloadSet(_) => {
+                let cid = calls::resolve_callable(
+                    self.program,
+                    self.closures,
+                    self.overload_sets,
+                    callable,
+                    args.len(),
+                )?;
+                self.push_closure_frame(cid, args, Some(dst))?;
+            }
+            Value::NativeFunction(nid) => {
+                let v = self.call_native_or_intrinsic(nid, args)?;
+                self.set(fi, dst, v);
+            }
+            // Calling a fieldless enum variant yields the variant itself.
+            Value::EnumVariant { .. } if args.is_empty() => self.set(fi, dst, callable),
+            _ => return Err(format!("Cannot call {}", callable.type_name())),
+        }
+        Ok(())
+    }
+
+    /// Method-call syntax `recv.name(args...)`: a callable field on a record
+    /// receiver, else a native function with `recv` prepended to the args.
+    fn do_method_call(
+        &mut self,
+        fi: usize,
+        dst: Reg,
+        recv: Value,
+        name_cid: crate::constant_table::ConstantId,
+        args: &[Value],
+    ) -> Result<(), String> {
+        let method_name = match self.program.get_string_constant(name_cid) {
+            Some(s) => s.to_string(),
+            None => return Err("Invalid method name".into()),
+        };
+
+        // 1) Callable field on a record receiver.
+        if let Value::Map(map_id) = recv {
+            let field_val = self.heap.get_map(map_id).get(&method_name).copied();
+            if let Some(field_val) = field_val {
+                match field_val {
+                    Value::Closure(_) | Value::OverloadSet(_) => {
+                        return self.do_call(fi, dst, field_val, args);
+                    }
+                    Value::NativeFunction(nid) => {
+                        let v = self.call_native_fn(nid, args)?;
+                        self.set(fi, dst, v);
+                        return Ok(());
+                    }
+                    _ => {} // not callable — fall through to method lookup
+                }
+            }
+        }
+
+        // 2) Native function with `recv` prepended.
+        if let Some(nid) = self.native_fns.lookup_name(&method_name) {
+            let mut full_args = vec![recv];
+            full_args.extend_from_slice(args);
+            let v = self.call_native_or_intrinsic(nid, &full_args)?;
+            self.set(fi, dst, v);
+            Ok(())
+        } else {
+            let hint = match method_name.as_str() {
+                "toString" => Some("use str() or the str() method instead"),
+                "log" => Some("use print() instead of console.log()"),
+                "indexOf" => Some("use contains() to check membership"),
+                "concat" => Some("use the ++ operator to concatenate lists or strings"),
+                _ => None,
+            };
+            Err(match hint {
+                Some(hint) => format!(
+                    "No method '{}' on type {} — {}",
+                    method_name,
+                    recv.type_name(),
+                    hint
+                ),
+                None => format!("No method '{}' on type {}", method_name, recv.type_name()),
+            })
+        }
+    }
+
+    /// Static builtin call `name(args...)` (unshadowed builtin called directly).
+    fn do_builtin_call(
+        &mut self,
+        fi: usize,
+        dst: Reg,
+        name_cid: crate::constant_table::ConstantId,
+        args: &[Value],
+    ) -> Result<(), String> {
+        let name = match self.program.get_string_constant(name_cid) {
+            Some(s) => s.to_string(),
+            None => return Err("BuiltinCall: invalid name constant".into()),
+        };
+        let nid = match self.native_fns.lookup_name(&name) {
+            Some(id) => id,
+            None => return Err(format!("Unknown builtin: {}", name)),
+        };
+        let v = self.call_native_or_intrinsic(nid, args)?;
+        self.set(fi, dst, v);
+        Ok(())
+    }
+
+    /// Push a closure activation record onto the frame stack. Mirrors the graph
+    /// engine's `build_closure_frame`, but sizes and populates the *flat*
+    /// register file using the lowered function's binding metadata.
+    fn push_closure_frame(
+        &mut self,
+        cid: ClosureId,
+        args: &[Value],
+        dst: Option<Reg>,
+    ) -> Result<(), String> {
+        let bc = self.bc;
+        let program = self.program;
+        let closure = &self.closures[cid.0 as usize];
+        let fn_id = closure.function_id;
+        let captures = closure.captures.clone();
+
+        let bcfn = bc.function(fn_id);
+        let func = &program.functions[fn_id.0 as usize];
+        if args.len() != func.params.len() {
+            let name = func.name.as_deref().unwrap_or("<anonymous>");
+            return Err(format!(
+                "{}() expected {} argument{}, got {}",
+                name,
+                func.params.len(),
+                if func.params.len() == 1 { "" } else { "s" },
+                args.len()
+            ));
+        }
+
+        let mut frame = VmFrame::new(Some(fn_id), bcfn.reg_count, dst);
+        for (i, &preg) in bcfn.param_regs.iter().enumerate() {
+            if let Some(slot) = frame.regs.get_mut(preg as usize) {
+                *slot = args[i];
+            }
+        }
+        for (i, &creg) in bcfn.capture_regs.iter().enumerate() {
+            if let (Some(slot), Some(cap)) = (frame.regs.get_mut(creg as usize), captures.get(i)) {
+                *slot = *cap;
+            }
+        }
+        if let Some(sreg) = bcfn.self_ref_reg {
+            if let Some(slot) = frame.regs.get_mut(sreg as usize) {
+                *slot = Value::Closure(cid);
+            }
+        }
+        self.stack.vm_frames.push(frame);
+        Ok(())
+    }
+
+    // -- native dispatch -----------------------------------------------------
+
+    /// Dispatch a native function, handling the higher-order intrinsics
+    /// specially (they call closures synchronously).
+    fn call_native_or_intrinsic(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+        let nf = self.native_fns;
+        if nf.intrinsic_map == Some(nid) {
+            self.builtin_map(args)
+        } else if nf.intrinsic_filter == Some(nid) {
+            self.builtin_filter(args)
+        } else if nf.intrinsic_reduce == Some(nid) {
+            self.builtin_reduce(args)
+        } else if nf.intrinsic_for_each == Some(nid) {
+            self.builtin_for_each(args)
+        } else {
+            self.call_native_fn(nid, args)
+        }
+    }
+
+    /// Call a non-intrinsic native function via `PetalCxt`.
+    fn call_native_fn(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+        let func = self.native_fns.get_func(nid);
+        let mut cxt = PetalCxt::new(
+            args,
+            self.heap,
+            self.output,
+            self.symbols,
+            self.output_buffers,
+            self.bindings,
+            self.counters,
+        );
+        let count = func(&mut cxt)?;
+        let results = cxt.take_results();
+        Ok(if count > 0 && !results.is_empty() {
+            results[0]
+        } else {
+            Value::Nil
+        })
+    }
+
+    // -- higher-order intrinsics ---------------------------------------------
+
+    /// Call a closure synchronously: push its frame, step until it pops, and
+    /// return its result. Mirrors the graph engine's `call_closure_sync`.
+    fn call_closure_sync(&mut self, callable: Value, call_args: &[Value]) -> Result<Value, String> {
+        let cid = calls::resolve_callable(
+            self.program,
+            self.closures,
+            self.overload_sets,
+            callable,
+            call_args.len(),
+        )?;
+        let target_depth = self.stack.vm_frames.len();
+        self.push_closure_frame(cid, call_args, None)?;
+        self.stack.last_pop_result = None;
+
+        loop {
+            if self.stack.vm_frames.len() <= target_depth {
+                return Ok(self.stack.last_pop_result.take().unwrap_or(Value::Nil));
+            }
+            match self.step() {
+                StepResult::Continue => {}
+                StepResult::Complete(v) => return Ok(v),
+                StepResult::Error(e) => return Err(e),
+            }
+        }
+    }
+
+    fn builtin_map(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [list, func] = args else {
+            return Err("map() expects 2 arguments (list, function)".into());
+        };
+        let Value::List(list_id) = *list else {
+            return Err("map() expects a list as first argument".into());
+        };
+        let elements = self.heap.get_list(list_id).to_vec();
+        let mut results = Vec::with_capacity(elements.len());
+        for elem in elements {
+            results.push(self.call_closure_sync(*func, &[elem])?);
+        }
+        Ok(Value::List(self.heap.alloc_list(results)))
+    }
+
+    fn builtin_filter(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [list, func] = args else {
+            return Err("filter() expects 2 arguments (list, function)".into());
+        };
+        let Value::List(list_id) = *list else {
+            return Err("filter() expects a list as first argument".into());
+        };
+        let elements = self.heap.get_list(list_id).to_vec();
+        let mut results = Vec::new();
+        for elem in elements {
+            if self.call_closure_sync(*func, &[elem])?.is_truthy() {
+                results.push(elem);
+            }
+        }
+        Ok(Value::List(self.heap.alloc_list(results)))
+    }
+
+    fn builtin_reduce(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [list, initial, func] = args else {
+            return Err("reduce() expects 3 arguments (list, initial, function)".into());
+        };
+        let Value::List(list_id) = *list else {
+            return Err("reduce() expects a list as first argument".into());
+        };
+        let elements = self.heap.get_list(list_id).to_vec();
+        let mut acc = *initial;
+        for elem in elements {
+            acc = self.call_closure_sync(*func, &[acc, elem])?;
+        }
+        Ok(acc)
+    }
+
+    fn builtin_for_each(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [list, func] = args else {
+            return Err("forEach() expects 2 arguments (list, function)".into());
+        };
+        let Value::List(list_id) = *list else {
+            return Err("forEach() expects a list as first argument".into());
+        };
+        let elements = self.heap.get_list(list_id).to_vec();
+        for elem in elements {
+            self.call_closure_sync(*func, &[elem])?;
+        }
+        Ok(Value::Nil)
     }
 }

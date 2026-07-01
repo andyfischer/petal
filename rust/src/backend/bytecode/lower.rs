@@ -252,6 +252,38 @@ impl<'p> FnLowerer<'p> {
                 val: self.flat(ins[2]),
             },
 
+            // --- calls / closures (M1c) ---
+            // A `Call` term is [callable, args...]; a `MethodCall` is
+            // [receiver, args...]; a `BuiltinCall` carries only args.
+            TermOp::Call => Inst::Call {
+                dst,
+                callee: self.flat(ins[0]),
+                args: self.regs(&ins[1..]),
+            },
+            TermOp::MethodCall(name) => Inst::MethodCall {
+                dst,
+                recv: self.flat(ins[0]),
+                name: *name,
+                args: self.regs(&ins[1..]),
+            },
+            TermOp::BuiltinCall(name) => Inst::BuiltinCall {
+                dst,
+                name: *name,
+                args: self.regs(ins),
+            },
+            TermOp::MakeClosure(fn_id) => Inst::MakeClosure {
+                dst,
+                func: *fn_id,
+                caps: self.regs(ins),
+            },
+            TermOp::MakeOverloadSet => Inst::MakeOverloadSet {
+                dst,
+                closures: self.regs(ins),
+            },
+            TermOp::Return => Inst::Return {
+                val: ins.first().map(|&t| self.flat(t)),
+            },
+
             other => {
                 return Err(format!("unlowered op: {} (arrives in a later milestone)", op_name(other)));
             }

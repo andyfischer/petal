@@ -2,6 +2,7 @@
 //! higher-order intrinsics (map / filter / reduce / forEach) that need the
 //! evaluator to call closures synchronously.
 
+use crate::backend::calls;
 use crate::constant_table::ConstantId;
 use crate::native_fn::{NativeFnId, PetalCxt};
 
@@ -110,44 +111,9 @@ impl<'a> Evaluator<'a> {
     /// closure's self-recursion capture (which was Nil at MakeClosure time
     /// because the set didn't exist yet).
     pub(super) fn exec_make_overload_set(&mut self, term: &Term, inputs: &[Value]) -> ControlFlow {
-        let program = self.program;
-        let mut entries = Vec::with_capacity(inputs.len());
-        for &input in inputs {
-            if let Value::Closure(cid) = input {
-                let func =
-                    &program.functions[self.closures[cid.0 as usize].function_id.0 as usize];
-                entries.push(OverloadEntry {
-                    arity: func.params.len(),
-                    closure_id: cid,
-                });
-            }
-        }
-        let set_id = OverloadSetId(self.overload_sets.len() as u32);
-        let overload_val = Value::OverloadSet(set_id);
-
-        // Derive the base name from an internal name (e.g. "count#1" → "count"),
-        // then patch every capture of that name to the overload set value.
-        let base_name = entries.first().and_then(|e| {
-            let func = &program.functions
-                [self.closures[e.closure_id.0 as usize].function_id.0 as usize];
-            func.name
-                .as_ref()
-                .and_then(|n| n.rfind('#').map(|pos| n[..pos].to_string()))
-        });
-        if let Some(ref base) = base_name {
-            for entry in &entries {
-                let closure = &mut self.closures[entry.closure_id.0 as usize];
-                let func = &program.functions[closure.function_id.0 as usize];
-                for (i, cap_name) in func.capture_names.iter().enumerate() {
-                    if cap_name == base {
-                        closure.captures[i] = overload_val;
-                    }
-                }
-            }
-        }
-
-        self.overload_sets.push(entries);
-        self.produce(term, overload_val)
+        let val =
+            calls::make_overload_set(self.program, self.closures, self.overload_sets, inputs);
+        self.produce(term, val)
     }
 
     // -----------------------------------------------------------------------
@@ -173,48 +139,15 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// Resolve a callable to a ClosureId. Handles both plain closures and
-    /// overload sets (picked by argument count).
+    /// Resolve a callable to a ClosureId (delegates to `calls::resolve_callable`).
     fn resolve_callable(&self, callable: Value, arg_count: usize) -> Result<ClosureId, String> {
-        match callable {
-            Value::Closure(id) => Ok(id),
-            Value::OverloadSet(set_id) => {
-                self.resolve_overload(&self.overload_sets[set_id.0 as usize], arg_count)
-            }
-            _ => Err(format!("Expected a function, got {}", callable.type_name())),
-        }
-    }
-
-    /// Resolve an overload set to the correct closure based on argument count.
-    fn resolve_overload(
-        &self,
-        entries: &[OverloadEntry],
-        arg_count: usize,
-    ) -> Result<ClosureId, String> {
-        for entry in entries {
-            if entry.arity == arg_count {
-                return Ok(entry.closure_id);
-            }
-        }
-        // Derive the base function name from the first entry's internal name
-        // (e.g. "foo#2" → "foo")
-        let base_name = entries
-            .first()
-            .and_then(|e| {
-                let func = &self.program.functions
-                    [self.closures[e.closure_id.0 as usize].function_id.0 as usize];
-                func.name
-                    .as_ref()
-                    .and_then(|n| n.split('#').next().map(|s| s.to_string()))
-            })
-            .unwrap_or_else(|| "<anonymous>".to_string());
-        let arities: Vec<String> = entries.iter().map(|e| e.arity.to_string()).collect();
-        Err(format!(
-            "{}() expects {} arguments, got {}",
-            base_name,
-            arities.join(" or "),
+        calls::resolve_callable(
+            self.program,
+            self.closures,
+            self.overload_sets,
+            callable,
             arg_count,
-        ))
+        )
     }
 
     /// Build a Frame for calling a closure with the given arguments.

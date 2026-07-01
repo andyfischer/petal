@@ -197,18 +197,24 @@ mod call_function_tests {
 
     #[test]
     fn functions_refreshed_after_transfer_state() {
-        let mut env = Env::new();
-        let pid = env.load_program("fn f()\n  1\nend\n").unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(1));
+        // Both backends: hot reload crosses the program-replacement seam,
+        // which each engine handles differently (the VM also invalidates its
+        // cached lowering).
+        for backend in [crate::backend::Backend::Graph, crate::backend::Backend::Bytecode] {
+            let mut env = Env::new();
+            env.set_backend(backend);
+            let pid = env.load_program("fn f()\n  1\nend\n").unwrap();
+            let sid = env.create_stack(pid).unwrap();
+            env.run(sid).unwrap();
+            assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(1));
 
-        let new_program = env.compile_program(pid, "fn f()\n  2\nend\n").unwrap();
-        env.transfer_state(sid, new_program).unwrap();
-        // Before re-running, the stale table was cleared.
-        assert!(env.call_function(sid, "f", &[]).is_err());
-        env.run(sid).unwrap();
-        assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(2));
+            let new_program = env.compile_program(pid, "fn f()\n  2\nend\n").unwrap();
+            env.transfer_state(sid, new_program).unwrap();
+            // Before re-running, the stale table was cleared.
+            assert!(env.call_function(sid, "f", &[]).is_err(), "[{backend:?}]");
+            env.run(sid).unwrap();
+            assert_eq!(env.call_function(sid, "f", &[]).unwrap(), Value::Int(2), "[{backend:?}]");
+        }
     }
 }
 

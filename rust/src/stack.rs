@@ -98,7 +98,7 @@ pub struct Stack {
     pub vm_frames: Vec<crate::backend::bytecode::VmFrame>,
     /// Whether the bytecode root frame has been pushed for the current run.
     /// Distinguishes "not started" (push root) from "completed" (`vm_frames`
-    /// empty again → done). Reset by `reset_stack`.
+    /// empty again → done). Reset by [`Stack::reset_execution`].
     pub vm_started: bool,
 }
 
@@ -224,6 +224,26 @@ impl Stack {
             vm_frames: Vec::new(),
             vm_started: false,
         }
+    }
+
+    /// Clear all per-run execution state — both backends' frames and the
+    /// control/result flags — leaving the stack `Ready` with no frames.
+    /// Persistent `state` and captured `functions` are kept (callers that
+    /// invalidate them, like hot reload, clear them separately). The caller
+    /// pushes a fresh graph root frame; the bytecode VM pushes its own on the
+    /// first step (`vm_started == false` signals it).
+    ///
+    /// This is the single reset point shared by `Env::reset_stack` and
+    /// `Env::transfer_state` — resetting fields by hand at each call site let
+    /// the two lists drift (the VM fields were missed on transfer).
+    pub fn reset_execution(&mut self) {
+        self.frames.clear();
+        self.vm_frames.clear();
+        self.vm_started = false;
+        self.status = StackStatus::Ready;
+        self.break_flag = false;
+        self.continue_flag = false;
+        self.last_pop_result = None;
     }
 
     /// Reset the touched-keys set. Called at the start of a top-level run

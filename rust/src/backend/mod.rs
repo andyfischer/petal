@@ -29,11 +29,13 @@ pub use graph::{Evaluator, RuntimeClosure, StepResult};
 /// Which execution engine `Env` uses to run a program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Backend {
-    /// The term-graph step evaluator (reference engine). Default until the
-    /// bytecode VM reaches parity (see `docs` / the bytecode plan).
-    #[default]
+    /// The term-graph step evaluator — the reference engine and correctness
+    /// oracle. Select with `--backend=graph` / `PETAL_BACKEND=graph`.
     Graph,
-    /// The linear register VM.
+    /// The linear register VM — the default engine. At full behavioral parity
+    /// with `Graph` (value, output, state, and error text; enforced by the
+    /// differential tests in `bytecode::tests` and the example sweep).
+    #[default]
     Bytecode,
 }
 

@@ -7,12 +7,26 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-01. **Status: M1, M2 complete; M3 substantially complete
-(state + full graph parity proven; default-flip + example-sweep pending); M4 not
-started.** The bytecode VM runs the entire language — straight-line, calls,
-closures, all control flow, match, and persistent state — and matches the graph
-engine on value, print output, final state, and error text across the whole
-`examples/` corpus and the vitest suite (both run under `PETAL_BACKEND=bytecode`).
+Last updated: 2026-07-01. **Status: M1–M3 complete — the bytecode VM is the
+default backend. M3.5 (benchmark checkpoint) is next; M4 not started.** The VM
+runs the entire language — straight-line, calls, closures, all control flow,
+match, and persistent state — and matches the graph engine on value, print
+output, final state, and error text across the whole `examples/` corpus and the
+vitest suite. `ts/bin/test-examples.ts` now runs every example under *both*
+backends and fails on any divergence. `Backend::default()` is `Bytecode`; the
+graph engine remains reachable via `--backend=graph` / `PETAL_BACKEND=graph`
+as the correctness oracle.
+
+**2026-07-01 plan revision (expert review).** Three changes to the plan below:
+(1) the M4 uniqueness analysis was re-specced — the original condition 3
+("not a loop-carry alias") *excluded* the loop-carried accumulator
+(`row = append(row, x)` inside a loop), which is the dominant mutation pattern
+in the corpus (`game_of_life.ptl`, `particles.ptl`) and in sketch code
+generally; the revised spec makes the phi cycle the centerpiece via a
+**phi-cycle uniqueness rule**. (2) A new **M3.5 benchmark/profiling
+checkpoint** gates M4 — the 11–17 fps number predates the VM, and per-call
+frame allocation may rival COW cost. (3) A **differential fuzzer** is added:
+two oracles exist and only 22 hand-written examples exercise them.
 
 ---
 
@@ -133,31 +147,72 @@ lowers its lazy-init child block inline, reached only on a cache miss.
 `stack.state`, `touched_state_keys`, `sweep_untouched_state` are
 backend-independent and reused as-is.
 
-### Escape / uniqueness analysis (M4)
-Runs over the term graph using `Program::trace_dependents` (reverse dataflow) and
-the phi-source set from `trace_provenance`. A mutation term `T` on container
-input `C` lowers to an **in-place** opcode (`SetIndexInPlace`/`SetFieldInPlace`,
-new `Heap::*_in_place` methods that mutate + reuse the id) iff **all** hold:
-1. **Single static consumer:** `users(C) == {T}`.
-2. **Last use:** implied by (1).
-3. **Not a `phi_outs` src / loop-carry alias.**
-4. **Does not escape:** `C` never feeds a `StateInit/Read/Write`, a
-   `MakeClosure`/`MakeOverloadSet` capture, a `Return`, another escaping
-   container, and never crosses a speculative fork boundary.
-5. **Fresh/unique producer:** `C` is an `Alloc*` in this function or an
-   in-place-eligible mutation chain; params/captures/state-reads are conservatively
-   *not* unique.
+### Escape / uniqueness analysis (M4) — revised 2026-07-01
+The original spec required "not a loop-carry alias", which excluded the pattern
+the optimization exists for: every accumulator in real Petal code is a
+loop-carried phi (`row = append(row, …)` in `game_of_life.ptl`; per-frame
+particle lists in sketches). The revised analysis proves uniqueness through the
+back edge instead of giving up at it.
+
+A mutation term `T` on container input `C` lowers to an **in-place** opcode
+(`SetIndexInPlace`/`SetFieldInPlace`, new `Heap::*_in_place` methods that
+mutate + reuse the id) iff `C` is **statically unique at T**, established by
+route A or B, **and** the shared escape condition E holds:
+
+**E. Does not escape:** `C` never feeds a `StateInit/Read/Write`, a
+`MakeClosure`/`MakeOverloadSet` capture, a `Return`, another escaping
+container, and never crosses a speculative fork boundary.
+
+**A. Straight-line uniqueness:**
+1. **Last use:** `T` is the last read of `C`. Compute this by **last-use
+   liveness on the lowered bytecode**, not `users(C) == {T}` on the graph —
+   the linear IR has a total instruction order, making last-use a classic,
+   easy liveness pass, and it is strictly more precise: it permits
+   *read-then-mutate* sequences (`len(xs)` then `append(xs, …)`) that a
+   single-static-consumer test forbids. (Graph-side `trace_dependents` remains
+   the tool for the escape condition E, which is about *edge kinds*, not order.)
+2. **Fresh/unique producer:** `C` is an `Alloc*` in this function, the result
+   of an in-place-eligible mutation chain, or a phi proven unique by route B.
+   Params, captures, and state-reads are conservatively *not* unique.
+
+**B. Phi-cycle uniqueness (loop-carried accumulators — the payoff case):**
+a loop-carried phi `P` is unique when its cycle is **linear**:
+1. the only consumer of `P` inside the loop is `T` (or a chain of
+   in-place-eligible mutations ending at `T`) — plus any number of pure
+   *reads* that occur before `T` in bytecode order (route A's last-use test,
+   applied within the iteration);
+2. the only back-edge source of `P` (its `phi_outs` src) is `T`'s result; and
+3. `P`'s loop-entry init value is itself fresh/unique per route A — or, if
+   not, **clone once at loop entry** (O(1) amortized over the loop; still a
+   categorical win vs. a clone per iteration).
+Then each iteration holds the container exclusively and `T` mutates in place.
+Nested accumulators (`next = append(next, row)` where `row` is itself a
+route-B accumulator) compose: each phi is judged independently.
 
 Uncertain ⇒ fall back to clone-and-alloc. Gated behind `OptFlags.in_place_mutation`.
 **Why sound:** the heap is immutable-by-construction, so a dataflow edge to `C`'s
-producing term is the *only* way any code observes it — (1),(3),(4) completely
+producing term is the *only* way any code observes it — A/B + E completely
 enumerate observers, a purely static graph property (same argument the codebase
-uses for `fork` safety). **Verify** via triple differential (graph / BC-noopt /
-BC-opt) + assert `DupStats::total_bytes()` strictly drops.
+uses for `fork` safety). Route B extends the enumeration around the back edge:
+if the cycle is linear, iteration *i+1*'s phi value has exactly one producer
+(iteration *i*'s `T`) and no other live observer.
+**Verify** via triple differential (graph / BC-noopt / BC-opt) + assert
+`DupStats::total_bytes()` strictly drops on `game_of_life.ptl` and
+`particles.ptl` specifically — these are the loop-accumulator workloads; if the
+byte counts don't fall there, route B isn't firing and the analysis has a bug.
 **Hazards:** heap free-list id reuse (in-place only fires while `C` is a live
 root; add `debug_assert!(alive)`); speculative fork sharing (add a per-heap
 `fork_watermark`; `*_in_place` refuses ids below it); state/closure-captured ids
-(forbidden by condition 4).
+(forbidden by condition E).
+
+**Fallback route if static analysis misses too much:** dynamic uniqueness
+(Swift-CoW `isKnownUniquelyReferenced` / Koka-Perceus style) — a refcount or
+unique-bit per heap element, checked in the mutator at runtime. It handles
+loop-carry, params, closures, and fork automatically with zero analysis, but is
+invasive here: `Value` is `Copy` and register files are plain `Vec<Value>`
+(no `Drop` hooks), so accurate counts would mean instrumenting every register
+write in both backends. Keep in the back pocket; a hybrid "owner-bit" (set from
+static last-use info, checked dynamically) is the cheaper bridge if needed.
 
 ---
 
@@ -202,51 +257,101 @@ phantom terms — expected.)
   all loops, Break/Continue (with enclosing-phi-chain emission), Match (shared
   `pattern.rs`). Recursive block emitter + jump backpatching in `lower.rs`. All
   18 non-state examples differential-green. **Shipped.**
-- [~] **M3 — State + parity + default flip.** *Done:* state opcodes + per-frame
+- [x] **M3 — State + parity + default flip.** State opcodes + per-frame
   `loop_idx`; `run_bounded` resumability (test); GC-between-steps (shared); sync
   intrinsics; shared error annotation (`backend/errors.rs`) → full value/output/
   state/**error** parity; entire vitest suite + all 22 examples green under
-  `PETAL_BACKEND=bytecode`. *Remaining:* (1) add a `--backend=bytecode` sweep to
-  `ts/bin/test-examples.ts`; (2) flip the default `Backend` to `Bytecode` (keep
-  `Graph` as oracle) — proven safe by full-suite parity, deferred only so the
-  broad-impact default change gets its own focused re-validation (apps, WASM).
-- [ ] **M4 — In-place mutation.** `escape.rs` (conditions above), `Heap::*_in_place`,
-  in-place opcodes, `fork_watermark` guard, behind `OptFlags.in_place_mutation`.
-  Verify via triple differential + `DupStats` byte-drop assertions.
+  `PETAL_BACKEND=bytecode`. `ts/bin/test-examples.ts` is now a differential
+  sweep (both backends, byte-identical stdout/stderr required; `--backend=<b>`
+  runs one). Default flipped to `Bytecode`. **The flip's focused re-validation
+  earned its keep: it caught two real integration bugs** outside the parity
+  suites, both in the hot-reload path (`transfer_state`): (a) `Env::insert_program`
+  replaced a program under the same `ProgramId` without invalidating the cached
+  bytecode lowering, so the VM ran stale code; (b) `transfer_state` reset the
+  graph engine's frames but not `vm_frames`/`vm_started`, so the VM treated the
+  post-transfer run as already complete and produced no output. Fixed by
+  invalidating the cache in `insert_program` and by a shared
+  `Stack::reset_execution()` used by both `reset_stack` and `transfer_state`
+  (the two hand-maintained reset lists had already drifted). The transfer tests
+  now run under both backends. Re-validated after the flip: full Rust suite,
+  vitest (same 3 pre-existing backend-independent failures), differential
+  example sweep, petal-sdl build + tests, both WASM packages built, and a Node
+  smoke test driving `PetalRuntime` (`reset_and_run` state persistence) on the
+  fresh WASM.
+- [ ] **M3.5 — Benchmark & profiling checkpoint (gates M4).** Half a day of
+  measurement before writing `escape.rs`:
+  1. **fps on the heavy creative-coding sketches under `--backend=bytecode`**
+     vs. the graph baseline. The 11–17 fps number predates the VM; if frame
+     churn was the dominant cost, the win may already be large — this sets
+     M4's urgency and the "before" number for its payoff claim.
+  2. **`DupStats`/`AllocStats` baselines** on the mutation-heavy examples
+     (`game_of_life.ptl`, `particles.ptl`, real sketches). Record which terms
+     dominate the copied bytes — expected: loop-carried appends, which is the
+     direct evidence for route B above.
+  3. **Per-call frame cost.** `VmFrame::new` heap-allocates and zeroes
+     `vec![Value::Nil; reg_count]` per call (`vm.rs`), and flat register
+     allocation sums *every* block's registers, so functions with many nested
+     blocks get wide frames. Sketch code calls small helpers in hot loops
+     (`count_neighbors` runs width×height times per `step`). If profiling
+     shows call overhead high, do the **Lua-style contiguous register stack**
+     (frames as `[base, base+n)` windows; calls become a pointer bump, no
+     alloc/zeroing) **before** M4 — it's simpler than escape analysis and
+     benefits every program.
+  4. **Differential fuzzer.** A small random-program generator that runs
+     graph vs. bytecode and diffs value/output/error. Two oracles exist and
+     only 22 hand-written examples exercise them; the subtlest lowering bugs
+     (break/continue through nested phis) live exactly where hand-written
+     examples don't. Near-mandatory before M4 introduces an opt-on/opt-off
+     split (then it becomes a *triple* differential fuzzer for free).
+- [ ] **M4 — In-place mutation.** `escape.rs` implementing routes A + B and
+  escape condition E above (last-use liveness on the lowered bytecode +
+  phi-cycle rule on the graph), `Heap::*_in_place`, in-place opcodes,
+  `fork_watermark` guard, behind `OptFlags.in_place_mutation`. Verify via
+  triple differential + `DupStats` byte-drop assertions on the loop-accumulator
+  examples named above.
 - [ ] **M5 (optional, profiling-gated).** Packed encoding, superinstructions,
-  pattern-tree micro-ops — behind the same `Inst`/flag APIs.
+  pattern-tree micro-ops (Maranget-style decision trees replacing the
+  `MatchArm` fat-op), register-file reuse/compaction (if not already handled
+  by the M3.5 register-stack work) — behind the same `Inst`/flag APIs.
+  **Structural sharing (RRB vectors / HAMTs)** also lives here as the
+  *complement* to M4, not its alternative: it caps the worst case (O(log n)
+  copy instead of O(n)) when the analysis can't prove uniqueness, at the price
+  of read-path constants, and preserves fork/speculation semantics with zero
+  hazards. Reach for it only if post-M4 `DupStats` shows a stubborn remainder
+  from params/state containers.
 
 ---
 
 ## Handoff — next actions
 
-M1, M2, and the substance of M3 are done and committed (one commit per
-chunk: M1a/M1b/M1c, M2a/M2b/M2c, M3-state+annotation). The VM is at full
-behavioral parity with the graph engine. Two small M3 tails, then M4.
+M1–M3 are done and committed (one commit per chunk: M1a/M1b/M1c, M2a/M2b/M2c,
+M3-state+annotation, M3-flip). The VM is at full behavioral parity with the
+graph engine **and is the default backend**. The flip surfaced and fixed two
+hot-reload integration bugs (see the M3 milestone entry). Next: the M3.5
+measurement checkpoint, then M4.
 
-### Finish M3
-1. **`--backend` sweep in `ts/bin/test-examples.ts`.** Run each `examples/*.ptl`
-   under both backends and diff stdout; fail on any divergence. (The Rust
-   `backend::bytecode::tests` already do this at the `Value`/output/state level;
-   this adds an end-to-end CLI sweep. Manual equivalent that currently passes:
-   loop over the examples running `petal run --backend=graph` vs
-   `--backend=bytecode` and compare — see the sweep used while building M2c/M3.)
-2. **Flip the default backend.** Change `Backend::default()` (`backend/mod.rs`)
-   from `Graph` to `Bytecode`. This is proven safe (the full vitest suite and all
-   22 examples already pass under `PETAL_BACKEND=bytecode` with only the 3
-   pre-existing, backend-independent failures — `stdlib-extract`, `canvas-offscreen`).
-   Deferred only because it changes the default for every embedder (CLI, apps,
-   WASM), so re-run those app/integration paths once after flipping. Keep `Graph`
-   reachable via `--backend=graph` / `PETAL_BACKEND=graph` as the oracle.
+### Next: M3.5 — measure before optimizing
+Do the four items in the **M3.5** milestone above (sketch fps under the VM,
+`DupStats` baselines, per-call frame cost, differential fuzzer). The outputs
+decide two things: whether the Lua-style register stack goes before M4, and the
+concrete `DupStats` "before" numbers M4's payoff is judged against. Don't start
+`escape.rs` until these numbers exist.
 
 ### Then M4 — in-place mutation (the payoff)
-`escape.rs` is still a stub returning an empty set. Implement the uniqueness/
-escape analysis (conditions enumerated in the **Escape / uniqueness analysis**
-section above), add `Heap::*_in_place` methods, emit `SetIndexInPlace`/
-`SetFieldInPlace` (already in the ISA) when the analysis proves safety, gate on
+`escape.rs` is still a stub returning an empty set. Implement the **revised**
+uniqueness analysis (routes A + B and escape condition E in the **Escape /
+uniqueness analysis** section above). The critical point of the revision: route
+B (phi-cycle uniqueness) is not optional polish — the loop-carried accumulator
+is the dominant mutation pattern in the corpus, and without route B the
+analysis fires on almost nothing that matters. Last-use runs as a liveness pass
+over the lowered bytecode; the escape and phi-cycle checks run on the term
+graph (`trace_dependents` + the phi-source set from `trace_provenance`). Then
+add `Heap::*_in_place` methods, emit `SetIndexInPlace`/`SetFieldInPlace`
+(already in the ISA) when the analysis proves safety, gate on
 `OptFlags.in_place_mutation`, and add the `fork_watermark` guard. **Verify** via
 triple differential (graph / BC-noopt / BC-opt agree) plus assert
-`DupStats::total_bytes()` strictly drops on a mutation-heavy sketch. The
+`DupStats::total_bytes()` strictly drops on `game_of_life.ptl` and
+`particles.ptl` (if it doesn't drop there, route B isn't firing). The
 `OptFlags` plumbing, `--no-opt` flag, and both correctness oracles are already in
 place.
 
@@ -259,9 +364,20 @@ place.
   single subtlest correctness point in the whole lowering.
 - The graph **re-annotates** already-annotated errors that propagate back up
   through a synchronous intrinsic call (`call_closure_sync`); the VM matches this
-  by annotating at every `step()` error. Don't "fix" the apparent double-annotation.
+  by annotating at every `step()` error. Don't "fix" the apparent
+  double-annotation while parity is the goal. Once bytecode is the default,
+  decide whether this is *the semantics* or a quirk — and if a quirk, fix it in
+  both engines at once via the shared `backend/errors.rs`, and write the
+  decision down here.
 - Loop-index keys use the 0-based *iteration count*, not the loop value (matters
   for `range(start, end)` with `start != 0` and for state-map key parity).
+- The VM adds *derived caches* the graph engine never had: `Env.bytecode`
+  (lowering per `ProgramId`) and per-stack VM run-state (`vm_frames`,
+  `vm_started`). Any operation that replaces a program in place or resets a
+  stack must account for them — `Env::insert_program` drops the cached lowering,
+  and `Stack::reset_execution()` is the single reset point for per-run state
+  (don't reset stack fields by hand; the hand-maintained lists drifted once
+  already and broke hot reload under the VM).
 
 ---
 

@@ -7,7 +7,6 @@
 
 use crate::env::Env;
 use crate::program::Program;
-use crate::stack::StackStatus;
 
 /// Result of transferring a stack's state onto a new program.
 pub struct TransferStateResult {
@@ -54,11 +53,7 @@ impl Env {
             let stack = self.stack_mut(stack_id).unwrap();
             // Remove state keys that no longer exist in the new program
             stack.state.retain(|k, _| new_state_keys.contains(&k.base));
-            stack.frames.clear();
-            stack.status = StackStatus::Ready;
-            stack.break_flag = false;
-            stack.continue_flag = false;
-            stack.last_pop_result = None;
+            stack.reset_execution();
             // The old captured closures point into the now-cleared closures
             // vec; they get recaptured on the next run.
             stack.functions.clear();
@@ -75,135 +70,119 @@ impl Env {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend::Backend;
     use crate::env::Env;
 
-    #[test]
-    fn transfer_state_preserves_state() {
+    /// Run a transfer scenario under one backend: run `source_v1`, assert its
+    /// output, transfer onto `source_v2` (asserting preserved/dropped counts),
+    /// re-run, and assert the post-transfer output. Each test runs under both
+    /// backends — hot reload crosses the program-replacement seam (bytecode
+    /// cache invalidation, VM run-state reset), which default-backend runs
+    /// alone would only cover for one engine.
+    fn check_transfer(
+        backend: Backend,
+        source_v1: &str,
+        expect_v1: &[&str],
+        source_v2: &str,
+        expect_preserved: usize,
+        expect_dropped: usize,
+        expect_v2: &[&str],
+    ) {
         let mut env = Env::new();
+        env.set_backend(backend);
 
-        // Run initial program that sets state via StateWrite
-        let source_v1 = r#"
-state counter = 0
-counter += 5
-print(counter)
-"#;
         let pid = env.load_program(source_v1).unwrap();
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
-        let output_v1 = env.take_output();
-        assert_eq!(output_v1, vec!["5"]);
+        assert_eq!(env.take_output(), expect_v1, "[{backend:?}] v1 output");
 
-        // Transfer state onto new source that reads the same state
-        let source_v2 = r#"
-state counter = 0
-counter += 10
-print(counter)
-"#;
         let new_program = env.compile_program(pid, source_v2).unwrap();
         let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, 1);
-        assert_eq!(result.state_dropped, 0);
+        assert_eq!(result.state_preserved, expect_preserved, "[{backend:?}] preserved");
+        assert_eq!(result.state_dropped, expect_dropped, "[{backend:?}] dropped");
 
-        // Run the program after transfer: counter=5 (preserved), +=10 -> 15
         env.run(sid).unwrap();
-        let output_v2 = env.take_output();
-        assert_eq!(output_v2, vec!["15"]);
+        assert_eq!(env.take_output(), expect_v2, "[{backend:?}] v2 output");
+    }
+
+    fn check_transfer_both_backends(
+        source_v1: &str,
+        expect_v1: &[&str],
+        source_v2: &str,
+        expect_preserved: usize,
+        expect_dropped: usize,
+        expect_v2: &[&str],
+    ) {
+        for backend in [Backend::Graph, Backend::Bytecode] {
+            check_transfer(
+                backend,
+                source_v1,
+                expect_v1,
+                source_v2,
+                expect_preserved,
+                expect_dropped,
+                expect_v2,
+            );
+        }
+    }
+
+    #[test]
+    fn transfer_state_preserves_state() {
+        check_transfer_both_backends(
+            // Run initial program that sets state via StateWrite
+            "state counter = 0\ncounter += 5\nprint(counter)",
+            &["5"],
+            // Transfer onto new source that reads the same state:
+            // counter=5 (preserved), +=10 -> 15
+            "state counter = 0\ncounter += 10\nprint(counter)",
+            1,
+            0,
+            &["15"],
+        );
     }
 
     #[test]
     fn transfer_state_drops_removed_state() {
-        let mut env = Env::new();
-
-        // Run with two state variables
-        let source_v1 = r#"
-state a = 1
-state b = 2
-print(a + b)
-"#;
-        let pid = env.load_program(source_v1).unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        let output = env.take_output();
-        assert_eq!(output, vec!["3"]);
-
-        // Transfer onto a program with only one state variable
-        let source_v2 = r#"
-state a = 1
-print(a)
-"#;
-        let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, 1); // 'a' preserved
-        assert_eq!(result.state_dropped, 1);   // 'b' dropped
-
-        env.run(sid).unwrap();
-        let output = env.take_output();
-        // a was 1 (from init, not modified), state init skips, prints 1
-        assert_eq!(output, vec!["1"]);
+        check_transfer_both_backends(
+            // Run with two state variables
+            "state a = 1\nstate b = 2\nprint(a + b)",
+            &["3"],
+            // Transfer onto a program with only one state variable:
+            // 'a' preserved (init skips, prints 1), 'b' dropped
+            "state a = 1\nprint(a)",
+            1,
+            1,
+            &["1"],
+        );
     }
 
     #[test]
     fn transfer_state_preserves_state_after_reordering() {
-        let mut env = Env::new();
-
-        // Run with a=1, b=2, modify both
-        let source_v1 = r#"
-state a = 0
-state b = 0
-a += 10
-b += 20
-print(a, b)
-"#;
-        let pid = env.load_program(source_v1).unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        let output = env.take_output();
-        assert_eq!(output, vec!["10 20"]);
-
-        // Transfer onto state declarations in reversed order
-        let source_v2 = r#"
-state b = 0
-state a = 0
-print(a, b)
-"#;
-        let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, 2); // both preserved
-        assert_eq!(result.state_dropped, 0);
-
-        env.run(sid).unwrap();
-        let output = env.take_output();
-        // Both values preserved despite reordering
-        assert_eq!(output, vec!["10 20"]);
+        check_transfer_both_backends(
+            // Run with a=0, b=0, modify both
+            "state a = 0\nstate b = 0\na += 10\nb += 20\nprint(a, b)",
+            &["10 20"],
+            // Transfer onto state declarations in reversed order:
+            // both values preserved despite reordering
+            "state b = 0\nstate a = 0\nprint(a, b)",
+            2,
+            0,
+            &["10 20"],
+        );
     }
 
     #[test]
     fn transfer_state_fresh_state_gets_initialized() {
-        let mut env = Env::new();
-
-        // Run with one state
-        let source_v1 = r#"
-state x = 10
-print(x)
-"#;
-        let pid = env.load_program(source_v1).unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        env.run(sid).unwrap();
-        env.take_output(); // discard
-
-        // Transfer onto a program that adds a new state variable
-        let source_v2 = r#"
-state x = 10
-state y = 20
-print(x + y)
-"#;
-        let new_program = env.compile_program(pid, source_v2).unwrap();
-        let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, 1); // 'x' preserved
-
-        env.run(sid).unwrap();
-        let output = env.take_output();
-        // x=10 (preserved), y=20 (newly initialized), sum=30
-        assert_eq!(output, vec!["30"]);
+        check_transfer_both_backends(
+            // Run with one state
+            "state x = 10\nprint(x)",
+            &["10"],
+            // Transfer onto a program that adds a new state variable:
+            // x=10 (preserved), y=20 (newly initialized), sum=30
+            "state x = 10\nstate y = 20\nprint(x + y)",
+            1,
+            0,
+            &["30"],
+        );
     }
 }

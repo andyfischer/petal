@@ -73,7 +73,7 @@ impl Env {
     }
 
     /// Default backend from the `PETAL_BACKEND` env var (`graph` / `bytecode`),
-    /// falling back to the compiled default (`Graph`).
+    /// falling back to the compiled default ([`Backend::default`]).
     fn backend_from_env() -> Backend {
         std::env::var("PETAL_BACKEND")
             .ok()
@@ -456,11 +456,7 @@ impl Env {
             .ok_or("Program not found")?;
 
         // Keep state, reset frames and any in-progress loop tracking
-        stack.frames.clear();
-        stack.vm_frames.clear();
-        stack.vm_started = false;
-        stack.status = StackStatus::Ready;
-        stack.break_flag = false;
+        stack.reset_execution();
 
         Self::push_root_frame(&self.native_fns, stack, program);
 
@@ -665,8 +661,11 @@ impl Env {
         self.stacks.get_mut(&key)
     }
 
-    /// Insert or replace a program.
+    /// Insert or replace a program. Replacing under the same id (hot reload /
+    /// `transfer_state`) drops the cached bytecode lowering, which is derived
+    /// from the program and would otherwise be served stale by `ensure_bytecode`.
     pub(crate) fn insert_program(&mut self, id: ProgramId, program: Program) {
+        self.bytecode.remove(&id);
         self.programs.insert(id, program);
     }
 

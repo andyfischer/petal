@@ -7,7 +7,12 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-01.
+Last updated: 2026-07-01. **Status: M1, M2 complete; M3 substantially complete
+(state + full graph parity proven; default-flip + example-sweep pending); M4 not
+started.** The bytecode VM runs the entire language — straight-line, calls,
+closures, all control flow, match, and persistent state — and matches the graph
+engine on value, print output, final state, and error text across the whole
+`examples/` corpus and the vitest suite (both run under `PETAL_BACKEND=bytecode`).
 
 ---
 
@@ -53,14 +58,24 @@ non-escaping containers in place.
 ```
 backend/
   mod.rs        # Backend enum, OptFlags, re-exports StepResult/RuntimeClosure/Evaluator
-  graph/        # the step evaluator (moved verbatim from rust/src/eval/)
+  ops.rs        # SHARED pure value ops (arithmetic/compare/alloc/field/index)  [DONE]
+  calls.rs      # SHARED call resolution (resolve_callable, make_overload_set)  [DONE]
+  pattern.rs    # SHARED match_pattern  [DONE]
+  errors.rs     # SHARED error annotation (position/snippet/provenance/trace)  [DONE]
+  graph/        # the step evaluator (delegates value/call/pattern/error to the shared modules)
   bytecode/
-    isa.rs      # Inst, Reg, Label, BytecodeFn, BytecodeProgram, LoopCursor  [DONE]
-    lower.rs    # Program -> BytecodeProgram (per-function flat-register linearization)  [straight-line DONE]
+    isa.rs      # Inst, Reg, Label, BytecodeFn (+origins/result_reg), BytecodeProgram (+match_binds)  [DONE]
+    lower.rs    # Program -> BytecodeProgram (recursive block emitter, jump backpatching)  [DONE thru M3]
     disasm.rs   # text + JSON rendering for show-bytecode / ShowBytecode  [DONE]
-    vm.rs       # Vm, VmFrame, step(), do_call/do_return, sync intrinsics  [STUB]
+    vm.rs       # Vm, VmFrame, step(), calls, all control flow, state, match, intrinsics  [DONE thru M3]
+    tests.rs    # differential + multi-run-state + resumability tests vs the graph oracle  [DONE]
     escape.rs   # uniqueness/escape analysis for in-place mutation  [STUB — returns empty set]
 ```
+
+**The parity lever landed.** Every value-producing op, call resolution,
+pattern match, and error-annotation path is a *shared* free function that both
+`graph::Evaluator` and `bytecode::Vm` call, so the two engines cannot diverge on
+semantics — only on the mechanical shape of their frames.
 
 ### Lowering model
 - **Unit = one function.** One `BytecodeFn` per `FunctionDef`, plus the root
@@ -78,7 +93,24 @@ backend/
   heterogeneous; the disassembler stays trivial; Rust compiles dispatch to a jump
   table. Packed encoding is a later, profiling-gated option behind the same type.
 
-### How control flow will lower (M2 — not yet implemented)
+### How control flow lowers (M2 — IMPLEMENTED; notes on what differs from the sketch below)
+- **New ops added beyond the original ISA:** `LoadNil`/`LoadBool` (branch default
+  + short-circuit results), `MatchFail` (no-arm-matched runtime error). `StateInit`'s
+  label field was renamed `init`→`after` (it's the cache-hit *skip* target, since
+  the init block is inlined right after the op).
+- **break/continue run enclosing phi carry-outs.** A break/continue emits the
+  `phi_outs` of every region from its point up to the loop body (innermost first)
+  *before* jumping — replicating the graph engine's per-frame phi propagation as
+  it pops enclosing frames. Without this, a rebinding inside an `if` that then
+  `break`s would not carry out. See `emit_break_or_continue` / `emit_exit_phi_chain`
+  in `lower.rs` and the `break_carries_rebind_through_nested_if` test.
+- **Match binding registers** are precomputed per arm for *both* the guard and
+  body blocks (each has its own registers) into `BytecodeProgram.match_binds`;
+  the `MatchArm` op runs the shared `match_pattern` then writes captures there.
+- **Loop-index context** is maintained on the `VmFrame` by the loop opcodes and
+  keys per-iteration `state`. Range keys by iteration count, not value.
+
+Original design sketch (still accurate for the shape):
 - `Phi` → `Move dst<-input0` at its parent-block position; `Block.phi_outs` →
   `Move dst<-src` at each exit edge of the child region (merge points / loop
   back-edges). Branches that don't rebind emit nothing, so the init value
@@ -136,9 +168,10 @@ petal show-bytecode <file>          # annotated text disassembly
 petal show-bytecode --json <file>   # one object per function, disassembled + reg metadata
 petal show-bytecode -e '<code>'     # inline source
 ```
-Plus the `ShowBytecode` MCP tool (`ts/tools/petal-mcp.ts`). Straight-line
-programs disassemble fully today; programs with control flow / calls / state
-currently error with `unlowered op: <Op>` (honest until M1–M3 land).
+Plus the `ShowBytecode` MCP tool (`ts/tools/petal-mcp.ts`). **Every program now
+lowers and disassembles** — calls, control flow, loops, match, and state all
+lower. Run any program on the VM with `petal run --backend=bytecode <file>` (or
+`PETAL_BACKEND=bytecode`), and force the graph oracle with `--backend=graph`.
 
 Example:
 ```
@@ -161,17 +194,22 @@ phantom terms — expected.)
   `backend/mod.rs` (`Backend`, `OptFlags`); `isa.rs`, `disasm.rs`, straight-line
   `lower.rs`; `show-bytecode` CLI + `ShowBytecode` MCP. No VM. **Shipped**, 137
   tests green.
-- [ ] **M1 — Core VM.** `vm.rs` executing M0 ops + `Call`/`MethodCall`/
+- [x] **M1 — Core VM.** `vm.rs` executing M0 ops + `Call`/`MethodCall`/
   `BuiltinCall`/`MakeClosure`/`MakeOverloadSet`/`Return`, CallFrame lifecycle,
-  native dispatch. Factor pure per-op handlers out of `backend/graph/` into shared
-  free functions (the parity lever). Differential-test on functional examples.
-- [ ] **M2 — Control flow.** Phi→Move, phi_outs→Move at exit edges, Branch/And/Or,
-  all loops, Break/Continue, Match. Extend `lower.rs`'s `lower_term` + add label
-  resolution. Differential-test on control-flow examples.
-- [ ] **M3 — State + parity + default flip.** State opcodes + per-frame `loop_idx`;
-  `run_bounded` instruction budgeting; sync intrinsics (map/filter/reduce);
-  GC-between-steps. Full `examples/` differential green with `OptFlags::none()`.
-  Flip default backend to `Bytecode`; keep `Graph` as oracle.
+  native dispatch, sync intrinsics. Shared handlers factored out
+  (`backend/{ops,calls}.rs`). Differential tests green. **Shipped.**
+- [x] **M2 — Control flow.** Phi→Move, phi_outs→Move at exit edges, Branch/And/Or,
+  all loops, Break/Continue (with enclosing-phi-chain emission), Match (shared
+  `pattern.rs`). Recursive block emitter + jump backpatching in `lower.rs`. All
+  18 non-state examples differential-green. **Shipped.**
+- [~] **M3 — State + parity + default flip.** *Done:* state opcodes + per-frame
+  `loop_idx`; `run_bounded` resumability (test); GC-between-steps (shared); sync
+  intrinsics; shared error annotation (`backend/errors.rs`) → full value/output/
+  state/**error** parity; entire vitest suite + all 22 examples green under
+  `PETAL_BACKEND=bytecode`. *Remaining:* (1) add a `--backend=bytecode` sweep to
+  `ts/bin/test-examples.ts`; (2) flip the default `Backend` to `Bytecode` (keep
+  `Graph` as oracle) — proven safe by full-suite parity, deferred only so the
+  broad-impact default change gets its own focused re-validation (apps, WASM).
 - [ ] **M4 — In-place mutation.** `escape.rs` (conditions above), `Heap::*_in_place`,
   in-place opcodes, `fork_watermark` guard, behind `OptFlags.in_place_mutation`.
   Verify via triple differential + `DupStats` byte-drop assertions.
@@ -180,63 +218,63 @@ phantom terms — expected.)
 
 ---
 
-## Handoff — next actions (M1)
+## Handoff — next actions
 
-**Goal:** make the VM run straight-line + calls, wired into `Env` behind
-`Backend::Bytecode`, and stand up differential testing.
+M1, M2, and the substance of M3 are done and committed (one commit per
+chunk: M1a/M1b/M1c, M2a/M2b/M2c, M3-state+annotation). The VM is at full
+behavioral parity with the graph engine. Two small M3 tails, then M4.
 
-1. **Backend dispatch in `Env`.** Add a `backend: Backend` + `opt_flags: OptFlags`
-   field (default `Graph` / `none()`), plumb `--backend` / `PETAL_BACKEND` and
-   `--no-opt` / `PETAL_OPT` through `cli.rs`. `Env::step`/`run`/`run_bounded`
-   dispatch on it. Both paths must return the *same* `StepResult`/`RunOutcome`, so
-   the outer loops in `env/mod.rs` stay shared. Lower a program to bytecode lazily
-   (cache the `BytecodeProgram` next to the `Program`).
-2. **Shared handlers (the parity lever).** Factor the pure per-op bodies out of
-   `backend/graph/{exec,ops,call}.rs` into free functions taking `&mut Heap` etc.
-   (e.g. `ops::add(a, b, heap)`, `heapops::alloc_map(...)`). Have *both* the graph
-   `Evaluator` and the bytecode `Vm` call them, so arithmetic/alloc/field/call
-   logic cannot diverge. This is the single most important step for correctness.
-3. **`Vm` + `VmFrame` execution loop** (`vm.rs`). Mirror `Evaluator<'a>`'s borrow
-   bundle (`heap`, `closures`, `overload_sets`, `native_fns`, `output`, `symbols`,
-   state maps). `step()` returns `StepResult`. Implement:
-   - straight-line ops (delegate to the shared handlers),
-   - `Call`/`MethodCall`/`BuiltinCall`: resolve callee → `ClosureId` (overload by
-     arg count), push a `VmFrame` mirroring `build_closure_frame`
-     (`backend/graph/call.rs`: args→`param_regs`, captures→`capture_regs`,
-     self→`self_ref_reg`), advance caller ip at call-issue time,
-   - `Return`: pop, write into caller's `dst_in_caller`,
-   - native (non-intrinsic) calls run inline via the existing `PetalCxt` path.
-4. **Resumability & GC.** A VM step = one instruction (or a budgeted N).
-   `run_bounded`/`RunOutcome::Yielded` should Just Work since all resumption state
-   is on the frame stack. VM register files are GC roots exactly as
-   `Frame.registers` are — fire `heap.should_collect()` between steps.
-5. **Sync higher-order intrinsics.** `map`/`filter`/`reduce`/`forEach` mirror
-   `call_closure_sync` (`backend/graph/call.rs`): push closure frame, run `step()`
-   until `frames.len()` drops back. Reuse the existing `builtin_map/filter/reduce`
-   bodies unchanged.
-6. **Differential tests** (`backend/bytecode/tests.rs`): for each snippet, run
-   `Backend::Graph` and `Backend::Bytecode` (opts off) and assert equal returned
-   `Value`, equal `output` buffer, equal final `stack.state`. Add a
-   `--backend=bytecode` sweep to `ts/bin/test-examples.ts` (skip examples whose
-   ops aren't lowered yet).
+### Finish M3
+1. **`--backend` sweep in `ts/bin/test-examples.ts`.** Run each `examples/*.ptl`
+   under both backends and diff stdout; fail on any divergence. (The Rust
+   `backend::bytecode::tests` already do this at the `Value`/output/state level;
+   this adds an end-to-end CLI sweep. Manual equivalent that currently passes:
+   loop over the examples running `petal run --backend=graph` vs
+   `--backend=bytecode` and compare — see the sweep used while building M2c/M3.)
+2. **Flip the default backend.** Change `Backend::default()` (`backend/mod.rs`)
+   from `Graph` to `Bytecode`. This is proven safe (the full vitest suite and all
+   22 examples already pass under `PETAL_BACKEND=bytecode` with only the 3
+   pre-existing, backend-independent failures — `stdlib-extract`, `canvas-offscreen`).
+   Deferred only because it changes the default for every embedder (CLI, apps,
+   WASM), so re-run those app/integration paths once after flipping. Keep `Graph`
+   reachable via `--backend=graph` / `PETAL_BACKEND=graph` as the oracle.
 
-**Gotchas already discovered.**
+### Then M4 — in-place mutation (the payoff)
+`escape.rs` is still a stub returning an empty set. Implement the uniqueness/
+escape analysis (conditions enumerated in the **Escape / uniqueness analysis**
+section above), add `Heap::*_in_place` methods, emit `SetIndexInPlace`/
+`SetFieldInPlace` (already in the ISA) when the analysis proves safety, gate on
+`OptFlags.in_place_mutation`, and add the `fork_watermark` guard. **Verify** via
+triple differential (graph / BC-noopt / BC-opt agree) plus assert
+`DupStats::total_bytes()` strictly drops on a mutation-heavy sketch. The
+`OptFlags` plumbing, `--no-opt` flag, and both correctness oracles are already in
+place.
+
+**Gotchas already discovered (still true).**
 - `let x = <expr>` names the result term directly — no trailing `Copy`/`Move`.
 - Root-block registers start ~80 because builtin phantom terms reserve registers
   first. Flat registers are correct regardless; don't assume registers start at 0.
-- `Match` pattern-binding registers must resolve through the same flat map; reuse
-  the graph engine's `apply_pattern_bindings` name→register logic, precomputed at
-  lower time.
 - Petal `if` uses `then … end`, not braces (`if x > 0 then x = 2 end`).
+- break/continue must run enclosing `phi_outs` (see the M2 notes above) — the
+  single subtlest correctness point in the whole lowering.
+- The graph **re-annotates** already-annotated errors that propagate back up
+  through a synchronous intrinsic call (`call_closure_sync`); the VM matches this
+  by annotating at every `step()` error. Don't "fix" the apparent double-annotation.
+- Loop-index keys use the 0-based *iteration count*, not the loop value (matters
+  for `range(start, end)` with `start != 0` and for state-map key parity).
 
 ---
 
 ## Key files
 - `rust/src/program.rs` — lowering source (`TermOp`, `Term`, `Block.phi_outs`,
   `FunctionDef`) + analysis substrate (`trace_dependents`, `trace_provenance`).
-- `rust/src/backend/graph/{mod,exec,ops,call,state,loops,pattern}.rs` — semantics
-  the VM must replicate; source of the shared handlers.
-- `rust/src/backend/bytecode/{isa,lower,vm,escape,disasm}.rs` — the new backend.
+- `rust/src/backend/{ops,calls,pattern,errors}.rs` — the **shared** handlers both
+  engines call (value ops, call resolution, pattern matching, error annotation).
+  These are the parity lever; change semantics here, not in one engine.
+- `rust/src/backend/graph/{mod,exec,ops,call,state,loops,pattern,error}.rs` — the
+  step evaluator, now delegating to the shared handlers.
+- `rust/src/backend/bytecode/{isa,lower,vm,disasm,tests}.rs` — the bytecode
+  backend (complete through M3); `escape.rs` is the M4 stub.
 - `rust/src/heap.rs` + `rust/src/stats.rs` — COW mutators + free-list + `fork`
   (M4 in-place target + hazard surface); `DupStats` verification oracle.
 - `rust/src/env/mod.rs` — `run`/`run_bounded`/`RunOutcome` (backend dispatch goes here).

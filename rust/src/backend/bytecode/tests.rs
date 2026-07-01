@@ -242,3 +242,59 @@ fn iterative_algorithms() {
         "fn fib(n)\n  let a = 0\n  let b = 1\n  for i in range(n) do\n    let t = a + b\n    a = b\n    b = t\n  end\n  a\nend\nlet y = fib(10)",
     );
 }
+
+// -- M2c: match -------------------------------------------------------------
+
+#[test]
+fn match_literals_and_wildcard() {
+    assert_parity(
+        "fn classify(n)\n  match n\n    when 0 -> \"zero\"\n    when 1 -> \"one\"\n    when _ -> \"other\"\n  end\nend\nlet y = classify(1)",
+    );
+    // No arm matches -> both engines error.
+    assert_parity("let r = match 7\n  when 1 -> \"a\"\n  when 2 -> \"b\"\nend");
+}
+
+#[test]
+fn match_guards_and_bindings() {
+    assert_parity(
+        "fn label(t)\n  match t\n    when x if x < 0 -> \"neg\"\n    when x if x < 15 -> \"cold\"\n    when _ -> \"warm\"\n  end\nend\nlet y = label(10)",
+    );
+    // Guard and body both reference the captured binding.
+    assert_parity(
+        "fn f(n)\n  match n\n    when x if x > 100 -> \"big: \" ++ str(x)\n    when x -> \"small: \" ++ str(x)\n  end\nend\nlet y = f(5)",
+    );
+}
+
+#[test]
+fn match_variants() {
+    assert_parity(
+        "enum Shape\n  Circle(r)\n  Rect(w, h)\nend\n\
+         fn area(s)\n  match s\n    when Circle(r) -> r * r * 3\n    when Rect(w, h) -> w * h\n  end\nend\n\
+         let y = area(Rect(3, 4))",
+    );
+}
+
+#[test]
+fn match_list_patterns() {
+    assert_parity(
+        "fn describe(xs)\n  match xs\n    when [] -> \"empty\"\n    when [x] -> \"one\"\n    when [a, b] -> \"two\"\n    when [head, ...rest] -> \"many: \" ++ str(head)\n  end\nend\n\
+         let y = describe([1, 2, 3, 4])",
+    );
+}
+
+#[test]
+fn match_record_patterns() {
+    assert_parity(
+        "fn f(p)\n  match p\n    when { x: 0, y: b } -> \"y \" ++ str(b)\n    when { x: a, y: 0 } -> \"x \" ++ str(a)\n    when _ -> \"other\"\n  end\nend\n\
+         let y = f({ x: 0, y: 5 })",
+    );
+}
+
+#[test]
+fn match_in_loop() {
+    // Match inside a loop that rebinds an outer variable — exercises arm phi
+    // carry-outs through the loop body.
+    assert_parity(
+        "let total = 0\nfor i in range(5) do\n  let d = match i % 3\n    when 0 -> 10\n    when 1 -> 1\n    when _ -> 0\n  end\n  total = total + d\nend\nlet y = total",
+    );
+}

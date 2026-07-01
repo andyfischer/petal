@@ -19,6 +19,7 @@ pub mod bytecode;
 pub mod calls;
 pub mod graph;
 pub mod ops;
+pub mod pattern;
 
 // The graph engine's public surface is re-exported here so callers depend on
 // `crate::backend::…` rather than a specific engine module.

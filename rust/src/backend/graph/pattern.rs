@@ -1,6 +1,6 @@
 //! `match` execution and runtime pattern matching.
 
-use crate::ast::{Literal, Pattern};
+use crate::backend::pattern::match_pattern;
 
 use super::*;
 
@@ -18,7 +18,7 @@ impl<'a> Evaluator<'a> {
 
         for arm_meta in arm_metas {
             let mut bindings = Vec::new();
-            if !self.match_pattern(&arm_meta.pattern, subject, &mut bindings) {
+            if !match_pattern(&arm_meta.pattern, subject, self.heap, &mut bindings) {
                 continue;
             }
 
@@ -91,105 +91,6 @@ impl<'a> Evaluator<'a> {
                 StepResult::Continue => {}
                 StepResult::Complete(v) => return Ok(v.is_truthy()),
                 StepResult::Error(e) => return Err(e),
-            }
-        }
-    }
-
-    /// Match `value` against `pattern`, accumulating variable bindings.
-    /// Needs `&mut self` because rest-patterns allocate the remainder list.
-    fn match_pattern(
-        &mut self,
-        pattern: &Pattern,
-        value: Value,
-        bindings: &mut Vec<(String, Value)>,
-    ) -> bool {
-        match pattern {
-            Pattern::Wildcard => true,
-
-            Pattern::Literal(lit) => match (lit, value) {
-                (Literal::Nil, Value::Nil) => true,
-                (Literal::Bool(a), Value::Bool(b)) => *a == b,
-                (Literal::Int(a), Value::Int(b)) => *a == b,
-                (Literal::Float(a), Value::Float(b)) => *a == b,
-                (Literal::String(a), Value::String(sid)) => a == self.heap.get_string(sid),
-                _ => false,
-            },
-
-            Pattern::Variable(name) => {
-                // Pure variable binding — always matches and captures the value.
-                // (Known enum variant names are resolved to Pattern::Variant
-                // by the compiler.)
-                bindings.push((name.clone(), value));
-                true
-            }
-
-            Pattern::Variant { name, fields } => {
-                let Value::EnumVariant { tag, data } = value else {
-                    return false;
-                };
-                if self.heap.get_string(tag) != name {
-                    return false;
-                }
-                let data_fields = self.heap.get_list(data);
-                if data_fields.len() != fields.len() {
-                    return false;
-                }
-                let data_copy: Vec<Value> = data_fields.to_vec();
-                fields
-                    .iter()
-                    .zip(data_copy)
-                    .all(|(pat, val)| self.match_pattern(pat, val, bindings))
-            }
-
-            Pattern::List { elements, rest } => {
-                let Value::List(list_id) = value else {
-                    return false;
-                };
-                let list_copy: Vec<Value> = self.heap.get_list(list_id).to_vec();
-                match rest {
-                    Some(rest_name) => {
-                        if list_copy.len() < elements.len() {
-                            return false;
-                        }
-                        for (pat, val) in elements.iter().zip(list_copy.iter()) {
-                            if !self.match_pattern(pat, *val, bindings) {
-                                return false;
-                            }
-                        }
-                        let rest_vals: Vec<Value> = list_copy[elements.len()..].to_vec();
-                        let rest_list = Value::List(self.heap.alloc_list(rest_vals));
-                        bindings.push((rest_name.clone(), rest_list));
-                        true
-                    }
-                    None => {
-                        list_copy.len() == elements.len()
-                            && elements
-                                .iter()
-                                .zip(list_copy)
-                                .all(|(pat, val)| self.match_pattern(pat, val, bindings))
-                    }
-                }
-            }
-
-            Pattern::Record(fields) => {
-                let Value::Map(map_id) = value else {
-                    return false;
-                };
-                // Copy relevant entries out before recursive matching
-                let entries: Vec<(String, Value)> = {
-                    let map = self.heap.get_map(map_id);
-                    fields
-                        .iter()
-                        .filter_map(|(key, _)| map.get(key).map(|&val| (key.clone(), val)))
-                        .collect()
-                };
-                if entries.len() != fields.len() {
-                    return false; // Some fields missing
-                }
-                fields
-                    .iter()
-                    .zip(entries)
-                    .all(|((_, pat), (_, val))| self.match_pattern(pat, val, bindings))
             }
         }
     }

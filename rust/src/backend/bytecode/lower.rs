@@ -41,12 +41,16 @@ struct LoopCtx {
 /// Lower a whole program to bytecode. Returns an error naming the first op that
 /// cannot yet be lowered (so `ShowBytecode` surfaces progress honestly).
 pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
-    let root = FnLowerer::new(program, None, program.root_block).lower()?;
+    let mut match_binds = HashMap::new();
+    let (root, root_binds) = FnLowerer::new(program, None, program.root_block).lower()?;
+    match_binds.extend(root_binds);
     let mut fns = Vec::with_capacity(program.functions.len());
     for func in &program.functions {
-        fns.push(FnLowerer::for_function(program, func).lower()?);
+        let (bf, binds) = FnLowerer::for_function(program, func).lower()?;
+        match_binds.extend(binds);
+        fns.push(bf);
     }
-    Ok(BytecodeProgram { root, fns })
+    Ok(BytecodeProgram { root, fns, match_binds })
 }
 
 /// Lowers one function (root block or a `FunctionDef` body) into a [`BytecodeFn`].
@@ -70,6 +74,9 @@ struct FnLowerer<'p> {
     loop_stack: Vec<LoopCtx>,
     /// Next free loop-cursor slot; also the loop-slot count for this function.
     next_slot: LoopSlot,
+    /// Per-arm pattern-binding registers accumulated while lowering `Match`
+    /// terms in this function; merged into the `BytecodeProgram`.
+    match_binds: HashMap<(TermId, u16), Vec<(String, Reg)>>,
 }
 
 impl<'p> FnLowerer<'p> {
@@ -85,6 +92,7 @@ impl<'p> FnLowerer<'p> {
             region_stack: Vec::new(),
             loop_stack: Vec::new(),
             next_slot: 0,
+            match_binds: HashMap::new(),
         }
     }
 
@@ -109,7 +117,7 @@ impl<'p> FnLowerer<'p> {
         self.base[&block] + reg
     }
 
-    fn lower(mut self) -> Result<BytecodeFn, String> {
+    fn lower(mut self) -> Result<(BytecodeFn, HashMap<(TermId, u16), Vec<(String, Reg)>>), String> {
         self.collect_blocks();
         self.assign_registers();
 
@@ -119,7 +127,7 @@ impl<'p> FnLowerer<'p> {
 
         let (param_regs, capture_regs, self_ref_reg) = self.binding_regs();
         let result_reg = self.entry_result_reg();
-        Ok(BytecodeFn {
+        let bf = BytecodeFn {
             func_id: self.func.map(|f| f.id),
             name: self.func.and_then(|f| f.name.clone()),
             code: self.code,
@@ -129,7 +137,8 @@ impl<'p> FnLowerer<'p> {
             self_ref_reg,
             loop_slots: self.next_slot,
             result_reg,
-        })
+        };
+        Ok((bf, self.match_binds))
     }
 
     /// Discover every block reachable from the entry via control-flow
@@ -144,8 +153,20 @@ impl<'p> FnLowerer<'p> {
             }
             self.blocks.push(b);
             for tid in self.all_block_terms(b) {
-                for &cb in &self.program.get_term(tid).child_blocks {
+                let term = self.program.get_term(tid);
+                for &cb in &term.child_blocks {
                     stack.push(cb);
+                }
+                // Match guard blocks live in `match_arms`, not `child_blocks`.
+                if matches!(term.op, TermOp::Match) {
+                    if let Some(arms) = self.program.match_arms.get(&tid) {
+                        for arm in arms {
+                            stack.push(arm.body_block);
+                            if let Some(g) = arm.guard_block {
+                                stack.push(g);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -333,6 +354,7 @@ impl<'p> FnLowerer<'p> {
                 TermOp::WhileLoop => self.emit_while(term)?,
                 TermOp::Break => self.emit_break_or_continue(true)?,
                 TermOp::Continue => self.emit_break_or_continue(false)?,
+                TermOp::Match => self.emit_match(term)?,
                 _ => {
                     let inst = self.lower_term_inst(term)?;
                     self.code.push(inst);
@@ -453,6 +475,100 @@ impl<'p> FnLowerer<'p> {
         }
         self.code.push(Inst::LoopPop { slot });
         Ok(())
+    }
+
+    /// `match subject when P1 -> B1 … end` →
+    /// ```text
+    /// arm0: match_arm subject, term, 0, next=arm1   // bind on match, else -> arm1
+    ///       [<guard0>; jump_if_false gres -> arm1]
+    ///       <B0>; <B0.phi_outs>; dst = <B0 result>; jump -> end
+    /// arm1: …
+    /// fail: match_fail subject                       // no arm matched
+    /// end:
+    /// ```
+    /// `MatchArm` runs the shared `match_pattern` and writes captures into the
+    /// precomputed flat registers; a present guard block is emitted inline and
+    /// its result drives a `JumpIfFalse` to the next arm.
+    fn emit_match(&mut self, term: &Term) -> Result<(), String> {
+        let subject = self.flat(term.inputs[0]);
+        let dst = self.flat(term.id);
+        let arms: Vec<(BlockId, Option<BlockId>)> = self
+            .program
+            .match_arms
+            .get(&term.id)
+            .ok_or("Match: no arm metadata")?
+            .iter()
+            .map(|a| (a.body_block, a.guard_block))
+            .collect();
+
+        // Jumps to the *next* arm (from a failed pattern test or guard) awaiting
+        // the next arm's label; and jumps to `end` from each taken arm.
+        let mut to_next: Vec<usize> = Vec::new();
+        let mut to_end: Vec<usize> = Vec::new();
+
+        for (k, (body_block, guard_block)) in arms.iter().enumerate() {
+            let arm_label = self.here();
+            for j in to_next.drain(..) {
+                self.patch(j, arm_label);
+            }
+            let ma = self.emit_placeholder(Inst::MatchArm {
+                subject,
+                term: term.id,
+                arm: k as u16,
+                next: 0,
+                dst,
+            });
+            to_next.push(ma);
+            // Bindings must reach both the guard block and the body block —
+            // each has its own registers for the captured names (the graph
+            // engine applies bindings to each block separately).
+            let mut binds = self.arm_bind_regs(*body_block);
+            if let Some(gb) = guard_block {
+                binds.extend(self.arm_bind_regs(*gb));
+            }
+            self.match_binds.insert((term.id, k as u16), binds);
+
+            if let Some(gb) = guard_block {
+                self.emit_block(*gb)?;
+                self.emit_phi_outs(*gb);
+                let gres = self
+                    .block_result_reg(*gb)
+                    .ok_or("match guard has an empty block")?;
+                let jf = self.emit_placeholder(Inst::JumpIfFalse { cond: gres, to: 0 });
+                to_next.push(jf);
+            }
+
+            self.emit_arm(*body_block, dst)?;
+            to_end.push(self.emit_placeholder(Inst::Jump { to: 0 }));
+        }
+
+        let fail_label = self.here();
+        for j in to_next.drain(..) {
+            self.patch(j, fail_label);
+        }
+        self.code.push(Inst::MatchFail { subject });
+
+        let end = self.here();
+        for j in to_end {
+            self.patch(j, end);
+        }
+        Ok(())
+    }
+
+    /// Precompute the flat registers a match arm's body binds pattern variables
+    /// into — the flat-register form of the graph engine's
+    /// `apply_pattern_bindings` name→register scan over the body block's terms.
+    fn arm_bind_regs(&self, body_block: BlockId) -> Vec<(String, Reg)> {
+        let mut out = Vec::new();
+        if let Some(tids) = self.program.block_terms.get(&body_block) {
+            for &tid in tids {
+                let term = self.program.get_term(tid);
+                if let Some(name) = &term.name {
+                    out.push((name.clone(), self.flat(tid)));
+                }
+            }
+        }
+        out
     }
 
     /// `break` / `continue`: emit the phi carry-outs of every region from the
@@ -613,7 +729,8 @@ impl<'p> FnLowerer<'p> {
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
             | Inst::ForEachNext { exit: to, .. }
-            | Inst::RangeNext { exit: to, .. } => *to = target,
+            | Inst::RangeNext { exit: to, .. }
+            | Inst::MatchArm { next: to, .. } => *to = target,
             other => panic!("patch: not a patchable instruction: {other:?}"),
         }
     }
@@ -725,12 +842,25 @@ mod tests {
     }
 
     #[test]
-    fn match_is_unlowered_for_now() {
-        // Match still reports honestly until M2c.
-        let err = lower_program(&compile(
+    fn match_lowers_to_arm_ops() {
+        let bc = lower_program(&compile(
             "let x = match 1\n  when 1 -> \"a\"\n  when _ -> \"b\"\nend",
         ))
-        .expect_err("match should be unlowered until M2c");
+        .expect("lower");
+        assert!(
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::MatchArm { .. })),
+            "expected MatchArm ops in the lowered match"
+        );
+    }
+
+    #[test]
+    fn state_is_unlowered_for_now() {
+        // State ops still report honestly until M3.
+        let err = lower_program(&compile("state n = 0\nn = n + 1"))
+            .expect_err("state should be unlowered until M3");
         assert!(err.contains("unlowered op"), "got: {err}");
     }
 }

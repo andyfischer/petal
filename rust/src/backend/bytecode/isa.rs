@@ -127,6 +127,10 @@ pub enum Inst {
     /// term's result register (written by the arm body's join `Move`).
     MatchArm { subject: Reg, term: TermId, arm: u16, next: Label, dst: Reg },
 
+    /// No match arm matched the subject — raise the same runtime error the graph
+    /// engine does (`No matching pattern for value: …`), formatting `subject`.
+    MatchFail { subject: Reg },
+
     /// A compile-time error term reached at runtime.
     Error { msg: ConstantId },
 }
@@ -164,6 +168,12 @@ pub struct BytecodeProgram {
     pub root: BytecodeFn,
     /// Lowered function bodies, indexed by `FunctionId`.
     pub fns: Vec<BytecodeFn>,
+    /// Precomputed pattern-binding targets for each match arm: `(match term,
+    /// arm index) -> [(binding name, flat register)]`. A `MatchArm` op runs the
+    /// shared `match_pattern`, then writes each captured value into these
+    /// registers (the flat-register equivalent of the graph engine's
+    /// `apply_pattern_bindings`).
+    pub match_binds: std::collections::HashMap<(TermId, u16), Vec<(String, Reg)>>,
 }
 
 impl BytecodeProgram {

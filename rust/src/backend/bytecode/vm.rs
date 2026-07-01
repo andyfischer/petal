@@ -471,6 +471,41 @@ impl<'a> Vm<'a> {
                 return Ok(self.deliver_value(value));
             }
 
+            // --- match ---
+            Inst::MatchArm { subject, term, arm, next, dst: _ } => {
+                let program = self.program;
+                let bc = self.bc;
+                let subj = self.reg(fi, *subject);
+                let arms = program
+                    .match_arms
+                    .get(term)
+                    .ok_or("Match: no arm metadata")?;
+                let meta = &arms[*arm as usize];
+                let mut binds = Vec::new();
+                let matched =
+                    crate::backend::pattern::match_pattern(&meta.pattern, subj, self.heap, &mut binds);
+                if !matched {
+                    self.stack.vm_frames[fi].ip = *next as usize;
+                } else if let Some(bind_regs) = bc.match_binds.get(&(*term, *arm)) {
+                    // Write each captured value into every register bound to
+                    // that name in the arm body (mirrors apply_pattern_bindings).
+                    for (name, val) in &binds {
+                        for (n, reg) in bind_regs {
+                            if n == name {
+                                self.set(fi, *reg, *val);
+                            }
+                        }
+                    }
+                }
+            }
+            Inst::MatchFail { subject } => {
+                let v = self.reg(fi, *subject);
+                return Err(format!(
+                    "No matching pattern for value: {}",
+                    crate::value::value_to_display_string(&v, self.heap)
+                ));
+            }
+
             Inst::Error { msg } => {
                 return Err(self
                     .program

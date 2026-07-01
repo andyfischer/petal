@@ -172,6 +172,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             "match_arm r{} t{} arm{} -> r{} else -> {}",
             subject, term.0, arm, dst, next
         ),
+        MatchFail { subject } => format!("match_fail r{}", subject),
         Error { msg } => format!("error {}", kconst(program, *msg)),
     }
 }

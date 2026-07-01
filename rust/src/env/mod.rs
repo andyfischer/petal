@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::compiler::Compiler;
-use crate::eval::{Evaluator, StepResult};
+use crate::backend::{Evaluator, StepResult};
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::heap::Heap;
 use crate::lexer::Lexer;

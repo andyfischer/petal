@@ -3,6 +3,7 @@
 // See docs/Architecture.md for the module layout and the term-graph IR design.
 
 pub mod ast;
+pub mod backend;
 pub mod builtins;
 pub mod cli;
 pub mod compiler;
@@ -10,7 +11,6 @@ pub mod constant_table;
 pub mod desugar;
 pub mod dot_graph;
 pub mod env;
-pub mod eval;
 pub mod execution_context;
 pub mod extract;
 pub mod heap;

@@ -11,6 +11,7 @@ quickly test Petal snippets without shelling out manually.
 | `CheckSnippet({code})` | Lex+parse+compile without running. Cheaper than `TestSnippet` for syntax validation. |
 | `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
 | `ShowIR({code})` | Return the compiled IR as JSON. |
+| `ShowBytecode({code})` | Return the bytecode lowering of the IR as JSON. |
 | `ShowAST({code})` | Return the parsed AST as JSON. |
 | `ShowTokens({code})` | Return the token stream as JSON. |
 

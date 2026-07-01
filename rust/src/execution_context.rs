@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use crate::eval::RuntimeClosure;
+use crate::backend::RuntimeClosure;
 use crate::heap::Heap;
 use crate::program::OverloadEntry;
 use crate::stats::{AllocStats, DupStats};

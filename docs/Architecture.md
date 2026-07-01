@@ -5,12 +5,24 @@ It's the internal counterpart to the [Language Guide](Language_Guide.md) — rea
 this if you're working on the compiler or debugging IR behavior.
 
 ```
-Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Step Evaluator
+Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Backend
+                                                                     ├─ Graph engine (step evaluator)
+                                                                     └─ Bytecode VM (register machine)
 ```
 
 All of the above lives in `rust/src/` as a single crate. The binary entry
 point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
 `cli.rs`.
+
+The term graph is the canonical, introspectable IR — provenance, slicing,
+autodiff, `explain`, hot-reload, and the IR-as-target contract all reason about
+it. Two execution **backends** consume it (`rust/src/backend/`): the original
+**graph** step evaluator (`backend/graph/`, the reference engine) and a
+**bytecode** register VM (`backend/bytecode/`), which runs a linear *lowering* of
+the same graph for speed and for escape-analysis-driven in-place mutation. The
+active backend and its optimization toggles are chosen by `backend::Backend` /
+`backend::OptFlags`. See [bytecode-status.md](bytecode-status.md) for the design,
+milestone status, and handoff notes.
 
 ---
 
@@ -29,7 +41,9 @@ point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
 | `constant_table.rs` | Deduplicated literal storage |
 | `source_map.rs` | `TermId` → source span mapping |
 | `rewrite.rs` | Formatting-preserving source rewriting (find a top-level call by name, splice its span) |
-| `eval.rs` | Step evaluator (the runtime) |
+| `backend/mod.rs` | `Backend` selector + `OptFlags` optimization toggles |
+| `backend/graph/` | Step evaluator (the reference runtime; walks the term graph) |
+| `backend/bytecode/` | Register VM: `isa` (instructions), `lower` (graph→bytecode), `vm`, `disasm` (`show-bytecode`), `escape` (in-place analysis) |
 | `stack.rs` | `Stack` and `Frame` — execution context |
 | `value.rs` | `Value` enum (runtime values) |
 | `heap.rs` | Mark-and-sweep GC for strings, lists, maps, vecs, elements |

@@ -17,6 +17,7 @@ pub enum Command {
     Check { json: bool },
     Explain { json: bool, term: String },
     ShowIr { json: bool, all: bool },
+    ShowBytecode { json: bool },
     ShowAst { json: bool },
     ShowTokens { json: bool },
     ShowProvenance { json: bool, term: String },
@@ -54,6 +55,7 @@ pub fn parse_args() -> CliArgs {
         "check" => parse_show_args(&args[1..], |json| Command::Check { json }),
         "explain" => parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term }),
         "show-ir" => parse_show_with_all(&args[1..], |json, all| Command::ShowIr { json, all }),
+        "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "show-provenance" => parse_provenance_args(&args[1..]),
@@ -312,6 +314,7 @@ Commands:
                                  (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
   show-ir [--json] [--all] <file> Display compiled IR (--all to include builtin phantoms)
+  show-bytecode [--json] <file>  Display the bytecode lowering of the compiled IR
   show-ast [--json] <file>       Display parsed AST
   show-tokens [--json] <file>    Display lexer tokens
   show-provenance [--json] --term <name> <file>
@@ -569,6 +572,27 @@ pub fn execute(cli: CliArgs) {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {
                 print!("{}", display_program_with(&program, !all));
+            }
+        }
+        Command::ShowBytecode { json } => {
+            use crate::backend::bytecode::{disasm, lower_program};
+            let program = compile_source(&source);
+            match lower_program(&program) {
+                Ok(bc) => {
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&disasm::render_json(&bc, &program))
+                                .unwrap()
+                        );
+                    } else {
+                        print!("{}", disasm::render_text(&bc, &program));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error lowering to bytecode: {}", e);
+                    process::exit(1);
+                }
             }
         }
         Command::ShowProvenance { json, term: term_query } => {

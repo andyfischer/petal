@@ -1,6 +1,6 @@
 # Petal
 
-A custom programming language: Lexer → Parser → AST → Compiler → IR → Step Evaluator.
+A custom programming language: Lexer → Parser → AST → Compiler → IR (term graph) → Backend. Two backends consume the IR: the **graph** step evaluator (reference) and a **bytecode** register VM (in progress — see [docs/bytecode-status.md](./docs/bytecode-status.md)).
 
 ## Repo Layout
 
@@ -27,4 +27,5 @@ Source: `rust/src/`
 
  * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)
  * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
+ * Bytecode backend design/status/handoff: [docs/bytecode-status.md](./docs/bytecode-status.md)
 

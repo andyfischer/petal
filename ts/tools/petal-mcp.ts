@@ -173,6 +173,14 @@ server.registerTool("ShowIR", {
   },
 }, ({ code }) => runPetalCommand(["show-ir", "--json", "-e", code]));
 
+server.registerTool("ShowBytecode", {
+  title: "Show Petal Bytecode",
+  description: "Compiles Petal code and returns the bytecode lowering of the IR as JSON (one object per function with disassembled instructions and register metadata).",
+  inputSchema: {
+    code: z.string().describe("The Petal source code to compile"),
+  },
+}, ({ code }) => runPetalCommand(["show-bytecode", "--json", "-e", code]));
+
 server.registerTool("ShowAST", {
   title: "Show Petal AST",
   description: "Parses Petal code and returns the abstract syntax tree (AST) as JSON.",

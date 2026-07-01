@@ -157,9 +157,9 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         SetIndexInPlace { dst, obj, idx, val } => {
             format!("r{} = set_in_place r{}[r{}] = r{}", dst, obj, idx, val)
         }
-        StateInit { dst, base, in_loop, init, key } => format!(
-            "r{} = state_init k{} in_loop={} init@{}{}",
-            dst, base.0, in_loop, init, opt_key(key)
+        StateInit { dst, base, in_loop, after, key } => format!(
+            "r{} = state_init k{} in_loop={} after@{}{}",
+            dst, base.0, in_loop, after, opt_key(key)
         ),
         StateRead { dst, base, in_loop } => {
             format!("r{} = state_read k{} in_loop={}", dst, base.0, in_loop)

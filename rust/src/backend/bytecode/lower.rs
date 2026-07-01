@@ -77,6 +77,12 @@ struct FnLowerer<'p> {
     /// Per-arm pattern-binding registers accumulated while lowering `Match`
     /// terms in this function; merged into the `BytecodeProgram`.
     match_binds: HashMap<(TermId, u16), Vec<(String, Reg)>>,
+    /// Source term of each emitted instruction, parallel to `code` (for error
+    /// annotation).
+    origins: Vec<Option<TermId>>,
+    /// The source term currently being lowered — recorded as the origin of each
+    /// instruction pushed. Set as `emit_block` walks the term list.
+    cur_origin: Option<TermId>,
 }
 
 impl<'p> FnLowerer<'p> {
@@ -93,7 +99,17 @@ impl<'p> FnLowerer<'p> {
             loop_stack: Vec::new(),
             next_slot: 0,
             match_binds: HashMap::new(),
+            origins: Vec::new(),
+            cur_origin: None,
         }
+    }
+
+    /// Push an instruction, recording the current source term as its origin.
+    /// Returns the instruction's index (for jump backpatching).
+    fn push(&mut self, inst: Inst) -> usize {
+        self.origins.push(self.cur_origin);
+        self.code.push(inst);
+        self.code.len() - 1
     }
 
     fn for_function(program: &'p Program, func: &'p FunctionDef) -> Self {
@@ -137,6 +153,7 @@ impl<'p> FnLowerer<'p> {
             self_ref_reg,
             loop_slots: self.next_slot,
             result_reg,
+            origins: self.origins,
         };
         Ok((bf, self.match_binds))
     }
@@ -248,6 +265,22 @@ impl<'p> FnLowerer<'p> {
             // child regions overwrite it via phi_outs (also lowered to Move).
             TermOp::Phi => Inst::Move { dst, src: self.flat(ins[0]) },
 
+            // State reads/writes are single instructions; StateInit is
+            // multi-instruction (inline init block) and handled in emit_block.
+            TermOp::StateRead => Inst::StateRead {
+                dst,
+                base: term.state_key.expect("StateRead without state_key"),
+                in_loop: term.in_loop,
+            },
+            TermOp::StateWrite => Inst::StateWrite {
+                dst,
+                base: term.state_key.expect("StateWrite without state_key"),
+                in_loop: term.in_loop,
+                val: self.flat(ins[0]),
+                // Inputs are [value] or [value, explicit_key]; the key is last.
+                key: (ins.len() > 1).then(|| self.flat(ins[ins.len() - 1])),
+            },
+
             TermOp::Add => Inst::Add { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
             TermOp::Sub => Inst::Sub { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
             TermOp::Mul => Inst::Mul { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
@@ -345,6 +378,10 @@ impl<'p> FnLowerer<'p> {
         self.region_stack.push(block);
         for tid in self.block_terms_in_order(block) {
             let term = self.program.get_term(tid);
+            // Record this term as the origin of the instructions it emits (used
+            // for runtime-error source annotation). Nested control-flow handlers
+            // update it as they recurse into child blocks.
+            self.cur_origin = Some(tid);
             match &term.op {
                 TermOp::Branch => self.emit_branch(term)?,
                 TermOp::And => self.emit_short_circuit(term, true)?,
@@ -355,9 +392,10 @@ impl<'p> FnLowerer<'p> {
                 TermOp::Break => self.emit_break_or_continue(true)?,
                 TermOp::Continue => self.emit_break_or_continue(false)?,
                 TermOp::Match => self.emit_match(term)?,
+                TermOp::StateInit => self.emit_state_init(term)?,
                 _ => {
                     let inst = self.lower_term_inst(term)?;
-                    self.code.push(inst);
+                    self.push(inst);
                 }
             }
         }
@@ -377,7 +415,7 @@ impl<'p> FnLowerer<'p> {
         let iter = self.flat(term.inputs[0]);
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
-        self.code.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
+        self.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next)
@@ -391,7 +429,7 @@ impl<'p> FnLowerer<'p> {
         let end = self.flat(term.inputs[1]);
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
-        self.code.push(Inst::RangeInit { start, end, slot, idx_ctx: true });
+        self.push(Inst::RangeInit { start, end, slot, idx_ctx: true });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next)
@@ -415,7 +453,7 @@ impl<'p> FnLowerer<'p> {
         });
         self.emit_block(body_block)?;
         self.emit_phi_outs(body_block); // normal-path carry-outs
-        self.code.push(Inst::Jump { to: cont }); // back-edge
+        self.push(Inst::Jump { to: cont }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
         let exit = self.here();
@@ -426,7 +464,7 @@ impl<'p> FnLowerer<'p> {
         for j in ctx.continue_jumps {
             self.patch(j, cont);
         }
-        self.code.push(Inst::LoopPop { slot });
+        self.push(Inst::LoopPop { slot });
         Ok(())
     }
 
@@ -444,7 +482,7 @@ impl<'p> FnLowerer<'p> {
         let slot = self.alloc_slot();
         let cond_block = term.child_blocks[0];
         let body_block = term.child_blocks[1];
-        self.code.push(Inst::WhileInit { slot });
+        self.push(Inst::WhileInit { slot });
         let top = self.here();
         self.emit_block(cond_block)?;
         self.emit_phi_outs(cond_block);
@@ -461,8 +499,8 @@ impl<'p> FnLowerer<'p> {
         self.emit_block(body_block)?;
         self.emit_phi_outs(body_block); // normal-path carry-outs
         let bump = self.here();
-        self.code.push(Inst::LoopBumpIdx { slot });
-        self.code.push(Inst::Jump { to: top }); // back-edge
+        self.push(Inst::LoopBumpIdx { slot });
+        self.push(Inst::Jump { to: top }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
         let exit = self.here();
@@ -473,7 +511,7 @@ impl<'p> FnLowerer<'p> {
         for j in ctx.continue_jumps {
             self.patch(j, bump);
         }
-        self.code.push(Inst::LoopPop { slot });
+        self.push(Inst::LoopPop { slot });
         Ok(())
     }
 
@@ -546,12 +584,54 @@ impl<'p> FnLowerer<'p> {
         for j in to_next.drain(..) {
             self.patch(j, fail_label);
         }
-        self.code.push(Inst::MatchFail { subject });
+        // Recursion into arm bodies moved cur_origin; restore it so a no-match
+        // error points at the match term.
+        self.cur_origin = Some(term.id);
+        self.push(Inst::MatchFail { subject });
 
         let end = self.here();
         for j in to_end {
             self.patch(j, end);
         }
+        Ok(())
+    }
+
+    /// `state name = <init>` (optionally `state(key) name`) →
+    /// ```text
+    ///   state_init dst, base, after=<after>, key   // cache hit: dst=slot; -> after
+    ///   <init block>; <init.phi_outs>              // cache miss: compute init
+    ///   state_write dst, base, val=<init result>, key   // commit slot + dst
+    /// after:
+    /// ```
+    /// The init block is inlined and reached only on a cache miss; on a hit the
+    /// `StateInit` op loads the slot and jumps past it.
+    fn emit_state_init(&mut self, term: &Term) -> Result<(), String> {
+        let dst = self.flat(term.id);
+        let base = term.state_key.expect("StateInit without state_key");
+        let in_loop = term.in_loop;
+        // The explicit `state(expr)` key, if any, is the only input.
+        let key = term.inputs.first().map(|&t| self.flat(t));
+
+        let si = self.emit_placeholder(Inst::StateInit { dst, base, in_loop, after: 0, key });
+        match term.child_blocks.first() {
+            Some(&init_block) => {
+                self.emit_block(init_block)?;
+                self.emit_phi_outs(init_block);
+                let init_res = self
+                    .block_result_reg(init_block)
+                    .ok_or("state init has an empty init block")?;
+                // Recursion moved cur_origin; restore it for the commit write.
+                self.cur_origin = Some(term.id);
+                self.push(Inst::StateWrite { dst, base, in_loop, val: init_res, key });
+            }
+            None => {
+                // No init block (synthetic StateInit): seed nil.
+                self.push(Inst::LoadNil { dst });
+                self.push(Inst::StateWrite { dst, base, in_loop, val: dst, key });
+            }
+        }
+        let after = self.here();
+        self.patch(si, after);
         Ok(())
     }
 
@@ -630,7 +710,7 @@ impl<'p> FnLowerer<'p> {
     fn emit_branch(&mut self, term: &Term) -> Result<(), String> {
         let dst = self.flat(term.id);
         let cond = self.flat(term.inputs[0]);
-        self.code.push(Inst::LoadNil { dst });
+        self.push(Inst::LoadNil { dst });
         let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.emit_arm(term.child_blocks[0], dst)?;
@@ -662,7 +742,7 @@ impl<'p> FnLowerer<'p> {
         } else {
             self.emit_placeholder(Inst::JumpIfFalse { cond: left, to: 0 })
         };
-        self.code.push(Inst::LoadBool { dst, val: !is_and });
+        self.push(Inst::LoadBool { dst, val: !is_and });
         let jend = self.emit_placeholder(Inst::Jump { to: 0 });
 
         let rhs_label = self.here();
@@ -680,7 +760,7 @@ impl<'p> FnLowerer<'p> {
         self.emit_block(block)?;
         self.emit_phi_outs(block);
         if let Some(src) = self.block_result_reg(block) {
-            self.code.push(Inst::Move { dst, src });
+            self.push(Inst::Move { dst, src });
         }
         Ok(())
     }
@@ -698,7 +778,7 @@ impl<'p> FnLowerer<'p> {
             .map(|p| (p.src_term, p.dest_term))
             .collect();
         for (src, dest) in outs {
-            self.code.push(Inst::Move {
+            self.push(Inst::Move {
                 dst: self.flat(dest),
                 src: self.flat(src),
             });
@@ -713,8 +793,7 @@ impl<'p> FnLowerer<'p> {
     /// Push an instruction that carries a jump target, returning its index for
     /// later [`patch`](Self::patch)ing once the target position is known.
     fn emit_placeholder(&mut self, inst: Inst) -> usize {
-        self.code.push(inst);
-        self.code.len() - 1
+        self.push(inst)
     }
 
     /// The index of the next instruction to be emitted — a forward jump label.
@@ -730,7 +809,8 @@ impl<'p> FnLowerer<'p> {
             | Inst::JumpIfTrue { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
-            | Inst::MatchArm { next: to, .. } => *to = target,
+            | Inst::MatchArm { next: to, .. }
+            | Inst::StateInit { after: to, .. } => *to = target,
             other => panic!("patch: not a patchable instruction: {other:?}"),
         }
     }
@@ -857,10 +937,33 @@ mod tests {
     }
 
     #[test]
-    fn state_is_unlowered_for_now() {
-        // State ops still report honestly until M3.
-        let err = lower_program(&compile("state n = 0\nn = n + 1"))
-            .expect_err("state should be unlowered until M3");
-        assert!(err.contains("unlowered op"), "got: {err}");
+    fn state_lowers_to_state_ops() {
+        let bc = lower_program(&compile("state n = 0\nn = n + 1")).expect("lower");
+        assert!(
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::StateInit { .. })),
+            "expected a StateInit op"
+        );
+        assert!(
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::StateWrite { .. })),
+            "expected a StateWrite op"
+        );
+    }
+
+    #[test]
+    fn whole_program_lowers_with_all_op_families() {
+        // A program mixing calls, control flow, loops, match, and state now
+        // lowers end-to-end (no unlowered ops remain).
+        let src = "\
+            state total = 0\n\
+            fn score(n)\n  match n\n    when 0 -> 0\n    when x if x > 10 -> 100\n    when x -> x\n  end\nend\n\
+            for i in range(5) do\n  if i > 0 then total = total + score(i * 3) end\nend\n\
+            print(total)";
+        lower_program(&compile(src)).expect("whole program should lower");
     }
 }

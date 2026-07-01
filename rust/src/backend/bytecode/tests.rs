@@ -18,6 +18,56 @@ fn run(code: &str, backend: Backend) -> Result<(String, Vec<String>), String> {
     Ok((rendered, env.take_output()))
 }
 
+/// Run `code` on `backend` for `runs` successive runs of one persistent stack
+/// (reset between runs, keeping state), returning the last rendered value, the
+/// concatenated output, and the final state map rendered to a sorted JSON
+/// string. Exercises state persistence and the untouched-key sweep.
+fn run_stateful(
+    code: &str,
+    backend: Backend,
+    runs: usize,
+) -> Result<(String, Vec<String>, String), String> {
+    let mut env = Env::new();
+    env.set_backend(backend);
+    let pid = env.load_program(code)?;
+    let sid = env.create_stack(pid)?;
+    let mut last = value::Value::Nil;
+    let mut output = Vec::new();
+    for i in 0..runs {
+        if i > 0 {
+            env.reset_stack(sid)?;
+        }
+        last = env.run(sid)?;
+        output.extend(env.take_output());
+    }
+    let rendered = value::value_to_display_string(&last, env.heap());
+    // get_state_json is a serde Map (unordered); serialize deterministically.
+    let state = env.get_state_json(pid, sid);
+    let mut pairs: Vec<String> = state
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    pairs.sort();
+    Ok((rendered, output, pairs.join(",")))
+}
+
+/// Assert the two backends agree across `runs` successive runs, including the
+/// final persistent state map.
+#[track_caller]
+fn assert_stateful_parity(code: &str, runs: usize) {
+    let graph = run_stateful(code, Backend::Graph, runs);
+    let bytecode = run_stateful(code, Backend::Bytecode, runs);
+    match (graph, bytecode) {
+        (Ok((gv, go, gs)), Ok((bv, bo, bs))) => {
+            assert_eq!(gv, bv, "value mismatch for:\n{code}");
+            assert_eq!(go, bo, "output mismatch for:\n{code}");
+            assert_eq!(gs, bs, "state mismatch for:\n{code}");
+        }
+        (Err(_), Err(_)) => {}
+        (g, b) => panic!("ok/err mismatch for:\n{code}\n  graph={g:?}\n  bytecode={b:?}"),
+    }
+}
+
 /// Assert the two backends agree: either both error, or both succeed with an
 /// equal rendered value and equal print output.
 #[track_caller]
@@ -287,6 +337,71 @@ fn match_record_patterns() {
     assert_parity(
         "fn f(p)\n  match p\n    when { x: 0, y: b } -> \"y \" ++ str(b)\n    when { x: a, y: 0 } -> \"x \" ++ str(a)\n    when _ -> \"other\"\n  end\nend\n\
          let y = f({ x: 0, y: 5 })",
+    );
+}
+
+// -- M3: resumability -------------------------------------------------------
+
+#[test]
+fn run_bounded_resumes_identically() {
+    use crate::env::RunOutcome;
+    // Driving a program one instruction at a time through run_bounded must
+    // produce the same result as a single run(), since all resumption state
+    // lives on the VM frame stack.
+    let code = "let s = 0\nfor i in range(20) do s = s + i end\nlet y = s";
+    let mut env = Env::new();
+    env.set_backend(Backend::Bytecode);
+    let pid = env.load_program(code).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let mut steps = 0;
+    let value = loop {
+        match env.run_bounded(sid, 1).unwrap() {
+            RunOutcome::Yielded { .. } => {
+                steps += 1;
+                assert!(steps < 100_000, "run_bounded did not converge");
+            }
+            RunOutcome::Done(v) => break v,
+        }
+    };
+    let rendered = value::value_to_display_string(&value, env.heap());
+
+    let single = run(code, Backend::Bytecode).unwrap().0;
+    assert_eq!(rendered, single, "bounded run diverged from single run");
+    assert_eq!(rendered, run(code, Backend::Graph).unwrap().0, "diverged from graph");
+}
+
+// -- M3: state --------------------------------------------------------------
+
+#[test]
+fn state_single_run() {
+    assert_parity("state n = 0\nn = n + 1\nlet y = n");
+    assert_parity("state xs = []\nxs = append(xs, 1)\nlet y = xs");
+}
+
+#[test]
+fn state_persists_across_runs() {
+    // A counter incremented once per run must reach the same value on both.
+    assert_stateful_parity("state n = 0\nn = n + 1\nprint(n)", 5);
+    // Accumulator list grows each run.
+    assert_stateful_parity("state xs = []\nxs = append(xs, 1)\nlet y = xs", 4);
+}
+
+#[test]
+fn per_iteration_state_persists() {
+    // Per-iteration state keyed by the loop index, accumulated across runs.
+    assert_stateful_parity(
+        "state total = 0\nfor i in range(3) do\n  state seen = 0\n  seen = seen + 1\n  total = total + seen\nend\nprint(total)",
+        3,
+    );
+}
+
+#[test]
+fn untouched_state_is_swept() {
+    // The number of iterations shrinks each run; per-iteration state for the
+    // dropped indices must be swept identically by both backends.
+    assert_stateful_parity(
+        "state n = 3\nfor i in range(n) do\n  state c = i\n  c = c + 1\nend\nn = n - 1\nprint(n)",
+        3,
     );
 }
 

@@ -19,7 +19,7 @@ mod ops;
 mod pattern;
 mod state;
 
-pub use error::format_source_snippet;
+pub use crate::backend::errors::format_source_snippet;
 
 use smallvec::SmallVec;
 

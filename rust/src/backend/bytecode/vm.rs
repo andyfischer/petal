@@ -21,8 +21,9 @@ use crate::backend::{calls, ops};
 use crate::backend::{RuntimeClosure, StepResult};
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable, PetalCxt};
-use crate::program::{ClosureId, FunctionId, OverloadEntry, Program, TermOp};
-use crate::stack::{LoopKeyPart, Stack};
+use crate::backend::errors::TraceFrame;
+use crate::program::{ClosureId, FunctionId, OverloadEntry, Program, StateKey, TermId, TermOp};
+use crate::stack::{LoopKeyPart, RuntimeStateKey, Stack};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::Value;
 
@@ -44,11 +45,19 @@ pub struct VmFrame {
     pub loops: Vec<Option<LoopCursor>>,
     /// Active loop-index context, outermost-first, for state-key resolution.
     pub loop_idx: SmallVec<[LoopKeyPart; 2]>,
+    /// The `Call` term that created this frame (for stack-trace annotation).
+    /// `None` for the root frame and synchronous-intrinsic frames.
+    pub call_site: Option<TermId>,
 }
 
 impl VmFrame {
     /// A fresh frame for `func` with a zeroed register file of `reg_count`.
-    pub fn new(func: Option<FunctionId>, reg_count: u16, dst_in_caller: Option<Reg>) -> Self {
+    pub fn new(
+        func: Option<FunctionId>,
+        reg_count: u16,
+        dst_in_caller: Option<Reg>,
+        call_site: Option<TermId>,
+    ) -> Self {
         VmFrame {
             func,
             ip: 0,
@@ -56,6 +65,7 @@ impl VmFrame {
             dst_in_caller,
             loops: Vec::new(),
             loop_idx: SmallVec::new(),
+            call_site,
         }
     }
 }
@@ -96,7 +106,7 @@ impl<'a> Vm<'a> {
     /// `push_root_frame` does (the compiler assigns builtin phantom terms to
     /// those registers).
     pub fn push_root_frame(&mut self) {
-        let mut frame = VmFrame::new(None, self.bc.root.reg_count, None);
+        let mut frame = VmFrame::new(None, self.bc.root.reg_count, None, None);
         for i in 0..self.native_fns.count() {
             if i < frame.regs.len() {
                 frame.regs[i] = Value::NativeFunction(NativeFnId(i as u32));
@@ -119,12 +129,45 @@ impl<'a> Vm<'a> {
             return self.finish_frame(func);
         }
         // Advance past this instruction before executing; call/jump handlers
-        // (later milestones) overwrite `ip` when they need to.
+        // overwrite `ip` when they need to.
         self.stack.vm_frames[frame_idx].ip = ip + 1;
-        match self.exec_inst(frame_idx, &func.code[ip]) {
+        let origin = func.origins.get(ip).copied().flatten();
+        match self.exec_inst(frame_idx, &func.code[ip], origin) {
             Ok(sr) => sr,
-            Err(e) => StepResult::Error(e),
+            Err(e) => StepResult::Error(self.annotate(e, origin)),
         }
+    }
+
+    /// Dress a raw runtime error with source position, snippet, provenance, and
+    /// a stack trace built from the VM frames — identical formatting to the
+    /// graph engine (see [`crate::backend::errors`]). Unannotated when the
+    /// instruction has no source origin.
+    fn annotate(&self, msg: String, origin: Option<TermId>) -> String {
+        let Some(failing) = origin else {
+            return msg;
+        };
+        let frames: Vec<TraceFrame> = self
+            .stack
+            .vm_frames
+            .iter()
+            .map(|f| TraceFrame {
+                name: f.func.and_then(|fid| self.fn_display_name(fid)),
+                call_site: f.call_site,
+            })
+            .collect();
+        crate::backend::errors::annotate_error(self.program, failing, msg, &frames)
+    }
+
+    /// The display name for a function frame in a stack trace — the source name
+    /// with any internal `#arity` overload suffix stripped (matching the graph).
+    fn fn_display_name(&self, fid: FunctionId) -> Option<String> {
+        self.program.functions[fid.0 as usize]
+            .name
+            .as_ref()
+            .map(|n| match n.rfind('#') {
+                Some(pos) => n[..pos].to_string(),
+                None => n.clone(),
+            })
     }
 
     /// A frame ran off the end of its code without an explicit `Return`: its
@@ -223,9 +266,37 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// Resolve a state term's runtime key. An explicit `state(expr)` key hashes
+    /// its value; otherwise a term inside a loop keys by the loop-index context
+    /// gathered across *all* active frames (outermost first), matching the graph
+    /// engine's `loop_key_parts`; a non-loop term keys by base alone.
+    fn state_key(&self, base: StateKey, in_loop: bool, explicit: Option<Value>) -> RuntimeStateKey {
+        let loop_indices = match explicit {
+            Some(kv) => {
+                let mut v = SmallVec::new();
+                v.push(LoopKeyPart::Explicit(crate::value::hash_value(&kv, self.heap)));
+                v
+            }
+            None if in_loop => {
+                let mut parts: SmallVec<[LoopKeyPart; 2]> = SmallVec::new();
+                for frame in &self.stack.vm_frames {
+                    parts.extend(frame.loop_idx.iter().cloned());
+                }
+                parts
+            }
+            None => SmallVec::new(),
+        };
+        RuntimeStateKey { base, loop_indices }
+    }
+
     // -- instruction dispatch ------------------------------------------------
 
-    fn exec_inst(&mut self, fi: usize, inst: &Inst) -> Result<StepResult, String> {
+    fn exec_inst(
+        &mut self,
+        fi: usize,
+        inst: &Inst,
+        origin: Option<TermId>,
+    ) -> Result<StepResult, String> {
         match inst {
             Inst::LoadConst { dst, k } => {
                 let v = ops::constant_to_value(self.program, self.heap, *k);
@@ -455,12 +526,12 @@ impl<'a> Vm<'a> {
             Inst::Call { dst, callee, args } => {
                 let callable = self.reg(fi, *callee);
                 let argv = self.regs(fi, args);
-                self.do_call(fi, *dst, callable, &argv)?;
+                self.do_call(fi, *dst, callable, &argv, origin)?;
             }
             Inst::MethodCall { dst, recv, name, args } => {
                 let receiver = self.reg(fi, *recv);
                 let argv = self.regs(fi, args);
-                self.do_method_call(fi, *dst, receiver, *name, &argv)?;
+                self.do_method_call(fi, *dst, receiver, *name, &argv, origin)?;
             }
             Inst::BuiltinCall { dst, name, args } => {
                 let argv = self.regs(fi, args);
@@ -469,6 +540,33 @@ impl<'a> Vm<'a> {
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);
                 return Ok(self.deliver_value(value));
+            }
+
+            // --- state ---
+            Inst::StateRead { dst, base, in_loop } => {
+                let key = self.state_key(*base, *in_loop, None);
+                self.stack.touched_state_keys.insert(key.clone());
+                let v = self.stack.state.get(&key).copied().unwrap_or(Value::Nil);
+                self.set(fi, *dst, v);
+            }
+            Inst::StateWrite { dst, base, in_loop, val, key } => {
+                let val_v = self.reg(fi, *val);
+                let explicit = key.map(|r| self.reg(fi, r));
+                let k = self.state_key(*base, *in_loop, explicit);
+                self.stack.touched_state_keys.insert(k.clone());
+                self.stack.state.insert(k, val_v);
+                self.set(fi, *dst, val_v);
+            }
+            Inst::StateInit { dst, base, in_loop, after, key } => {
+                let explicit = key.map(|r| self.reg(fi, r));
+                let k = self.state_key(*base, *in_loop, explicit);
+                self.stack.touched_state_keys.insert(k.clone());
+                // Cache hit: load the slot and skip the inline init block; miss:
+                // fall through to compute and commit the init value.
+                if let Some(existing) = self.stack.state.get(&k).copied() {
+                    self.set(fi, *dst, existing);
+                    self.stack.vm_frames[fi].ip = *after as usize;
+                }
             }
 
             // --- match ---
@@ -541,7 +639,14 @@ impl<'a> Vm<'a> {
     /// Dispatch `callable(args...)`, writing the result into `dst` of frame `fi`
     /// (closures push a frame that writes `dst` on return; native/enum results
     /// are written immediately).
-    fn do_call(&mut self, fi: usize, dst: Reg, callable: Value, args: &[Value]) -> Result<(), String> {
+    fn do_call(
+        &mut self,
+        fi: usize,
+        dst: Reg,
+        callable: Value,
+        args: &[Value],
+        call_site: Option<TermId>,
+    ) -> Result<(), String> {
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
                 let cid = calls::resolve_callable(
@@ -551,7 +656,7 @@ impl<'a> Vm<'a> {
                     callable,
                     args.len(),
                 )?;
-                self.push_closure_frame(cid, args, Some(dst))?;
+                self.push_closure_frame(cid, args, Some(dst), call_site)?;
             }
             Value::NativeFunction(nid) => {
                 let v = self.call_native_or_intrinsic(nid, args)?;
@@ -573,6 +678,7 @@ impl<'a> Vm<'a> {
         recv: Value,
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
+        call_site: Option<TermId>,
     ) -> Result<(), String> {
         let method_name = match self.program.get_string_constant(name_cid) {
             Some(s) => s.to_string(),
@@ -585,7 +691,7 @@ impl<'a> Vm<'a> {
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
-                        return self.do_call(fi, dst, field_val, args);
+                        return self.do_call(fi, dst, field_val, args, call_site);
                     }
                     Value::NativeFunction(nid) => {
                         let v = self.call_native_fn(nid, args)?;
@@ -653,6 +759,7 @@ impl<'a> Vm<'a> {
         cid: ClosureId,
         args: &[Value],
         dst: Option<Reg>,
+        call_site: Option<TermId>,
     ) -> Result<(), String> {
         let bc = self.bc;
         let program = self.program;
@@ -673,7 +780,7 @@ impl<'a> Vm<'a> {
             ));
         }
 
-        let mut frame = VmFrame::new(Some(fn_id), bcfn.reg_count, dst);
+        let mut frame = VmFrame::new(Some(fn_id), bcfn.reg_count, dst, call_site);
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];
@@ -746,7 +853,7 @@ impl<'a> Vm<'a> {
             call_args.len(),
         )?;
         let target_depth = self.stack.vm_frames.len();
-        self.push_closure_frame(cid, call_args, None)?;
+        self.push_closure_frame(cid, call_args, None, None)?;
         self.stack.last_pop_result = None;
 
         loop {

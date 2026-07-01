@@ -116,7 +116,12 @@ pub enum Inst {
     SetIndexInPlace { dst: Reg, obj: Reg, idx: Reg, val: Reg },
 
     // --- state (nested keys resolved from the frame's loop-index context) ---
-    StateInit { dst: Reg, base: StateKey, in_loop: bool, init: Label, key: Option<Reg> },
+    /// Lazy state init. The init expression's block is lowered *inline*
+    /// immediately after this op (followed by a `StateWrite` that commits it).
+    /// On a cache hit the slot's value is loaded into `dst` and control jumps to
+    /// `after` (past the inline init block); on a miss it falls through to run
+    /// the init block. `key` is the explicit `state(expr)` key register, if any.
+    StateInit { dst: Reg, base: StateKey, in_loop: bool, after: Label, key: Option<Reg> },
     StateRead { dst: Reg, base: StateKey, in_loop: bool },
     StateWrite { dst: Reg, base: StateKey, in_loop: bool, val: Reg, key: Option<Reg> },
 
@@ -159,6 +164,9 @@ pub struct BytecodeFn {
     /// `None` for an empty body (result is `Nil`). Read when a frame runs off
     /// the end of its code without an explicit `Return`.
     pub result_reg: Option<Reg>,
+    /// Source term each instruction was lowered from, parallel to `code`. Used
+    /// to annotate a runtime error with the failing term's source position.
+    pub origins: Vec<Option<TermId>>,
 }
 
 /// A whole program lowered to bytecode.

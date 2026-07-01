@@ -17,6 +17,7 @@
 
 pub mod bytecode;
 pub mod calls;
+pub mod errors;
 pub mod graph;
 pub mod ops;
 pub mod pattern;

@@ -82,6 +82,16 @@ impl Compiler {
             ExprKind::Call { function, args } => {
                 // Detect method syntax: obj.method(args...)
                 if let ExprKind::FieldAccess { object, field } = &function.kind {
+                    // `ui.button(...)` where `ui` is an unshadowed module
+                    // alias is not a method call: the callee resolves
+                    // statically in the module's exports.
+                    if let Some(func_tid) = self.try_module_member(object, field) {
+                        let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
+                        for arg in args {
+                            inputs.push(self.compile_expr(arg));
+                        }
+                        return self.emit_term(TermOp::Call, inputs, None);
+                    }
                     let obj_tid = self.compile_expr(object);
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
@@ -140,6 +150,11 @@ impl Compiler {
             ExprKind::Record(fields) => self.compile_record(fields),
 
             ExprKind::FieldAccess { object, field } => {
+                // `ui.palette` where `ui` is an unshadowed module alias
+                // resolves statically in the module's exports.
+                if let Some(tid) = self.try_module_member(object, field) {
+                    return tid;
+                }
                 let obj_tid = self.compile_expr(object);
                 let field_const = self.constants.intern(ConstantValue::String(field.clone()));
                 self.emit_term(TermOp::GetField(field_const), smallvec![obj_tid], None)
@@ -193,6 +208,15 @@ impl Compiler {
             } else {
                 self.emit_term(TermOp::Copy, smallvec![tid], None)
             }
+        } else if let Some(module) = self.module_aliases.get(name) {
+            // A module alias is not a runtime value.
+            let msg = format!(
+                "'{}' is a module, not a value — use {}.<name>, or `import {}: <name>` \
+                 to bind a member directly",
+                name, name, module
+            );
+            let msg_cid = self.constants.intern(ConstantValue::String(msg));
+            self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
         } else {
             let hint = match name {
                 "var" | "const" => Some("use 'let' to declare variables in Petal"),
@@ -208,7 +232,7 @@ impl Compiler {
                 "Math" => Some(
                     "math functions are top-level in Petal: abs(), sqrt(), floor(), ceil(), round()",
                 ),
-                "require" | "import" => Some("Petal does not have a module system yet"),
+                "require" => Some("use 'import <module>' at the top of the file"),
                 _ => None,
             };
             let msg = match hint {
@@ -218,6 +242,41 @@ impl Compiler {
             let msg_cid = self.constants.intern(ConstantValue::String(msg));
             self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
         }
+    }
+
+    /// Resolve `alias.member` when `alias` is a module alias that no term
+    /// binding shadows. Returns `None` when this isn't module member access
+    /// (the caller falls back to field-access / method-call compilation).
+    /// A hit compiles to an ordinary reference to the exported term — the
+    /// scope-lookup/capture machinery applies, since exports are bound in the
+    /// global scope under their qualified name — or to a deferred error term
+    /// for an unknown or private member.
+    fn try_module_member(&mut self, object: &Expr, member: &str) -> Option<TermId> {
+        let ExprKind::Ident(name) = &object.kind else {
+            return None;
+        };
+        // A term binding (local, param, capture, builtin) shadows the alias:
+        // `ui` is then an ordinary value and `.member` is field access.
+        if self.scope_lookup(name).is_some() {
+            return None;
+        }
+        let module = self.module_aliases.get(name)?.clone();
+
+        let qualified = format!("{module}::{member}");
+        if !member.starts_with('_') && self.scope_lookup(&qualified).is_some() {
+            return Some(self.compile_ident(&qualified));
+        }
+        let msg = if member.starts_with('_') {
+            format!(
+                "'{}' in module '{}' is private (names starting with '_' are \
+                 module-private)",
+                member, module
+            )
+        } else {
+            format!("module '{}' has no export '{}'", module, member)
+        };
+        let msg_cid = self.constants.intern(ConstantValue::String(msg));
+        Some(self.emit_term(TermOp::Error(msg_cid), smallvec![], None))
     }
 
     fn compile_if(

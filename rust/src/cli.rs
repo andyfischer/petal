@@ -1,15 +1,14 @@
 //! CLI argument parsing and subcommand dispatch.
 
 use std::fs;
+use std::path::PathBuf;
 use std::process;
 
 use crate::backend::{Backend, OptFlags};
-use crate::compiler::Compiler;
 use crate::dot_graph::program_to_dot;
 use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
-use crate::native_fn::NativeFnTable;
 use crate::parse::Parser;
 use crate::program::ProgramId;
 
@@ -43,16 +42,45 @@ pub enum SourceInput {
 pub struct CliArgs {
     pub command: Command,
     pub source: SourceInput,
+    /// Module search directories from `-I <dir>` (see docs/module-system.md).
+    pub include_dirs: Vec<PathBuf>,
 }
 
 pub fn parse_args() -> CliArgs {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+
+    // Extract `-I <dir>` / `-I<dir>` module search paths uniformly, wherever
+    // they appear; every subcommand that compiles accepts them.
+    let mut args: Vec<String> = Vec::new();
+    let mut include_dirs: Vec<PathBuf> = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == "-I" {
+            i += 1;
+            if i >= raw.len() {
+                eprintln!("Expected directory after -I");
+                process::exit(1);
+            }
+            include_dirs.push(PathBuf::from(&raw[i]));
+        } else if let Some(dir) = raw[i].strip_prefix("-I").filter(|d| !d.is_empty()) {
+            include_dirs.push(PathBuf::from(dir));
+        } else {
+            args.push(raw[i].clone());
+        }
+        i += 1;
+    }
 
     if args.is_empty() {
         print_usage();
         process::exit(1);
     }
 
+    let mut cli = dispatch_args(&args);
+    cli.include_dirs = include_dirs;
+    cli
+}
+
+fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
 
     match first.as_str() {
@@ -153,6 +181,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     CliArgs {
         command: Command::Run { json, trace, record_trace, ir, dup_stats, backend, no_opt },
         source,
+        include_dirs: Vec::new(),
     }
 }
 
@@ -187,6 +216,7 @@ fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliAr
     CliArgs {
         command: make_cmd(json),
         source,
+        include_dirs: Vec::new(),
     }
 }
 
@@ -225,6 +255,7 @@ fn parse_show_with_all(args: &[String], make_cmd: impl Fn(bool, bool) -> Command
     CliArgs {
         command: make_cmd(json, all),
         source,
+        include_dirs: Vec::new(),
     }
 }
 
@@ -278,6 +309,7 @@ fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Com
     CliArgs {
         command: make_cmd(json, term),
         source,
+        include_dirs: Vec::new(),
     }
 }
 
@@ -326,6 +358,7 @@ fn parse_slice_args(args: &[String]) -> CliArgs {
     CliArgs {
         command: Command::ShowSlice { json, terms },
         source,
+        include_dirs: Vec::new(),
     }
 }
 
@@ -360,7 +393,12 @@ Commands:
                                  Compute minimal dataflow slice for targets
   show-graph [--all] <file>      Output DOT-format dataflow graph (--all to include builtins)
 
-  petal <file>                   Shorthand for 'run'";
+  petal <file>                   Shorthand for 'run'
+
+Options accepted by every compiling command:
+  -I <dir>                       Add a module search directory (repeatable).
+                                 Imports also resolve from the importing
+                                 file's directory and PETAL_PATH.";
     eprintln!("{}", out);
 }
 
@@ -387,36 +425,64 @@ fn read_source(input: &SourceInput) -> String {
     }
 }
 
-/// Run the lexer, parser, and compiler pipeline. Returns the compiled Program.
-fn compile_source(source: &str) -> crate::program::Program {
-    let mut lexer = Lexer::new(source);
-    if let Err(e) = lexer.tokenize() {
-        eprintln!("Error: {}", e);
-        process::exit(1);
+/// The filesystem path a source input was read from, if any — the anchor for
+/// resolving that file's imports relative to its own directory.
+fn source_origin(input: &SourceInput) -> Option<PathBuf> {
+    match input {
+        SourceInput::File(path) if path != "-" => Some(PathBuf::from(path)),
+        _ => None,
     }
-    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-    let stmts = match parser.parse_program() {
-        Ok(s) => s,
+}
+
+/// Build an Env configured with the CLI's `-I` module search paths.
+fn make_env(include_dirs: &[PathBuf]) -> Env {
+    let mut env = Env::new();
+    for dir in include_dirs {
+        env.add_module_path(dir.clone());
+    }
+    env
+}
+
+/// Run the full front end (module resolution included). Returns the compiled
+/// Program.
+fn compile_source(
+    source: &str,
+    input: &SourceInput,
+    include_dirs: &[PathBuf],
+) -> crate::program::Program {
+    let env = make_env(include_dirs);
+    let result = match source_origin(input) {
+        Some(path) => env.compile_program_at(ProgramId(0), source, &path),
+        None => env.compile_program(ProgramId(0), source),
+    };
+    match result {
+        Ok(program) => program,
         Err(e) => {
             eprintln!("Error: {}", e);
             process::exit(1);
         }
-    };
-    let compiler = Compiler::new();
-    let mut natives = NativeFnTable::new();
-    crate::builtins::register_builtins(&mut natives);
-    compiler.compile(&stmts, source.to_string(), ProgramId(0), &natives)
+    }
+}
+
+/// Load `source` into `env`, resolving imports relative to the input's path
+/// when it has one.
+fn load_into(env: &mut Env, source: &str, input: &SourceInput) -> Result<ProgramId, String> {
+    match source_origin(input) {
+        Some(path) => env.load_program_at(source, &path),
+        None => env.load_program(source),
+    }
 }
 
 pub fn execute(cli: CliArgs) {
-    let source = read_source(&cli.source);
+    let CliArgs { command, source: source_input, include_dirs } = cli;
+    let source = read_source(&source_input);
 
-    match cli.command {
+    match command {
         Command::Run { json, trace, record_trace, ir, dup_stats, backend, no_opt } => {
             if trace || std::env::var("PETAL_DEBUG").is_ok() {
                 unsafe { std::env::set_var("PETAL_TRACE", "1"); }
             }
-            let mut env = Env::new();
+            let mut env = make_env(&include_dirs);
             if let Some(b) = backend {
                 env.set_backend(b);
             }
@@ -429,7 +495,7 @@ pub fn execute(cli: CliArgs) {
             let load_result = if ir {
                 env.load_program_ir(&source)
             } else {
-                env.load_program(&source)
+                load_into(&mut env, &source, &source_input)
             };
             let pid = match load_result {
                 Ok(pid) => pid,
@@ -475,9 +541,9 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::Explain { json, term: term_query } => {
-            let mut env = Env::new();
+            let mut env = make_env(&include_dirs);
             env.trace_mut().enable();
-            let pid = match env.load_program(&source) {
+            let pid = match load_into(&mut env, &source, &source_input) {
                 Ok(pid) => pid,
                 Err(e) => {
                     eprintln!("Error: {}", e);
@@ -537,9 +603,9 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::Check { json } => {
-            let mut env = Env::new();
+            let mut env = make_env(&include_dirs);
             let is_empty = source.trim().is_empty();
-            match env.load_program(&source) {
+            match load_into(&mut env, &source, &source_input) {
                 Ok(_) => {
                     if json {
                         if is_empty {
@@ -608,7 +674,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowIr { json, all } => {
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
             if json {
                 println!("{}", serde_json::to_string_pretty(&program).unwrap());
             } else {
@@ -617,7 +683,7 @@ pub fn execute(cli: CliArgs) {
         }
         Command::ShowBytecode { json } => {
             use crate::backend::bytecode::{disasm, lower_program};
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
             match lower_program(&program) {
                 Ok(bc) => {
                     if json {
@@ -637,7 +703,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowProvenance { json, term: term_query } => {
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
 
             let root_id = match program.find_term(&term_query) {
                 Some(id) => id,
@@ -685,7 +751,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowDependents { json, term: term_query } => {
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
 
             let root_id = match program.find_term(&term_query) {
                 Some(id) => id,
@@ -732,7 +798,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowSlice { json, terms: term_queries } => {
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
 
             let mut target_ids = Vec::new();
             for query in &term_queries {
@@ -769,7 +835,7 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowGraph { all } => {
-            let program = compile_source(&source);
+            let program = compile_source(&source, &source_input, &include_dirs);
             println!("{}", program_to_dot(&program, !all));
         }
     }
@@ -861,21 +927,33 @@ fn split_indented_lines(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Extract `[line N, column M]` suffix from an error message.
+/// Extract a `[line N, column M]` (entry file) or `[file.ptl line N, column M]`
+/// (imported module) suffix from an error message. Returns
+/// (message, line, column) — the file name, when present, is left in the
+/// message (a structured `file` field can follow in a later diagnostics pass).
 fn parse_line_column(s: &str) -> (String, Option<u32>, Option<u32>) {
     if let Some(open) = s.rfind(" [line ") {
         let rest = &s[open + 7..];
-        if let Some(close) = rest.find(']') {
-            let inner = &rest[..close];
-            // inner = "N, column M"
-            if let Some((l, c)) = inner.split_once(", column ")
-                && let (Ok(line), Ok(col)) = (l.trim().parse::<u32>(), c.trim().parse::<u32>())
-            {
-                return (s[..open].to_string(), Some(line), Some(col));
-            }
+        if let Some((line, col)) = parse_position_body(rest) {
+            return (s[..open].to_string(), Some(line), Some(col));
         }
     }
+    // Module-file variant: find the last "[...]" group whose body ends with
+    // "line N, column M" after a file name.
+    if let Some(open) = s.rfind(" [")
+        && let Some(rel_line) = s[open..].find(" line ")
+        && let Some((line, col)) = parse_position_body(&s[open + rel_line + 6..])
+    {
+        return (s[..open].to_string(), Some(line), Some(col));
+    }
     (s.to_string(), None, None)
+}
+
+/// Parse `N, column M]...` into (N, M).
+fn parse_position_body(rest: &str) -> Option<(u32, u32)> {
+    let close = rest.find(']')?;
+    let (l, c) = rest[..close].split_once(", column ")?;
+    Some((l.trim().parse().ok()?, c.trim().parse().ok()?))
 }
 
 fn term_to_json(term: &crate::program::Term) -> serde_json::Value {

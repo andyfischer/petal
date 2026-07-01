@@ -11,6 +11,11 @@ impl Compiler {
     pub(super) fn compile_fn_decl(&mut self, name: &str, params: &[String], body: &[Stmt]) {
         let Some(&expected_count) = self.overloaded_fns.get(name) else {
             let closure_tid = self.compile_function(Some(name.to_string()), params, body);
+            // Module functions carry a qualified display name ("ui::button")
+            // so root-frame harvesting exposes them to `Env::call_function`
+            // without colliding with the entry file's names. The scope
+            // binding stays bare — in-module references are unqualified.
+            self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
             self.scope_bind(name.to_string(), closure_tid);
             return;
         };
@@ -31,7 +36,7 @@ impl Compiler {
             let set_tid = self.emit_term(
                 TermOp::MakeOverloadSet,
                 inputs,
-                Some(name.to_string()),
+                Some(self.qualified_name(name)),
             );
             self.scope_bind(name.to_string(), set_tid);
         }

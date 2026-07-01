@@ -28,6 +28,7 @@ pub enum Token {
     Do,
     Elsif,
     When,
+    Import,
 
     // Operators
     Plus,
@@ -100,7 +101,7 @@ enum LexerMode {
     JsxContent, // Between `>` and `</` — lexing children
 }
 
-use crate::source_map::{SourcePosition, SourceSpan};
+use crate::source_map::{FileId, SourcePosition, SourceSpan, ENTRY_FILE};
 
 pub struct Lexer {
     input: Vec<char>,
@@ -111,10 +112,20 @@ pub struct Lexer {
     // Line/column tracking (1-based)
     line: u32,
     col: u32,
+    /// File id stamped onto every emitted span. Entry file by default;
+    /// the module loader lexes each imported module with its own id so
+    /// spans stay file-local. See source_map::FileId.
+    file: FileId,
 }
 
 impl Lexer {
     pub fn new(input: &str) -> Self {
+        Self::new_in_file(input, ENTRY_FILE)
+    }
+
+    /// A lexer whose spans are tagged with `file` (used when lexing an
+    /// imported module — line/column stay local to that module's source).
+    pub fn new_in_file(input: &str, file: FileId) -> Self {
         Self {
             input: input.chars().collect(),
             pos: 0,
@@ -123,6 +134,7 @@ impl Lexer {
             mode_stack: Vec::new(),
             line: 1,
             col: 1,
+            file,
         }
     }
 
@@ -143,7 +155,7 @@ impl Lexer {
     fn push_token(&mut self, token: Token, start: SourcePosition) {
         let end = self.current_pos();
         self.tokens.push(token);
-        self.token_spans.push(SourceSpan { start, end });
+        self.token_spans.push(SourceSpan { start, end, file: self.file });
     }
 
     /// Advance position by one character, updating line/column tracking.
@@ -756,6 +768,7 @@ impl Lexer {
             "do" => Token::Do,
             "elsif" => Token::Elsif,
             "when" => Token::When,
+            "import" => Token::Import,
             "true" => Token::True,
             "false" => Token::False,
             "nil" => Token::Nil,

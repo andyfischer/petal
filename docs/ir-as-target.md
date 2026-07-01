@@ -169,6 +169,19 @@ exact shape Petal already emits; the only additions a *loader* introduces are a
 }
 ```
 
+**Schema v0.1 (module system):** programs compiled from more than one file
+carry a file table and file-tagged spans (see docs/module-system.md):
+
+- `source_map.files`: `[{ "name": "main.ptl", "source": "...",
+  "origin": "/abs/path.ptl"? }, ...]` — entry file at index 0, imported
+  modules at 1..N. Omitted entirely for single-file programs, so their v0
+  shape is unchanged.
+- Every `SourceSpan` gains an optional `"file": <index>` field (omitted when
+  0/entry). Line/column stay local to that file's source — each module is
+  lexed independently.
+
+Both additions are `#[serde(default)]`, so v0 documents load unchanged.
+
 ### Term
 
 ```

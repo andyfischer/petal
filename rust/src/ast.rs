@@ -206,4 +206,21 @@ pub enum StmtKind {
         /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
         key: Option<Expr>,
     },
+    /// `import m` / `import m as u` / `import m: a, b`. Only allowed before
+    /// any other statement in a file (the parser enforces this); consumed by
+    /// the module loader (`crate::module`) before compilation — the compiler
+    /// itself receives imports pre-resolved.
+    Import(ImportDecl),
+}
+
+/// One parsed `import` statement.
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportDecl {
+    /// The module name as written (`import ui` → "ui").
+    pub module: String,
+    /// `import ui as u` → Some("u"). Defaults to the module name.
+    pub alias: Option<String>,
+    /// `import ui: button, clicked` → Some(["button", "clicked"]).
+    /// `None` means qualified-only (`ui.button(...)`).
+    pub names: Option<Vec<String>>,
 }

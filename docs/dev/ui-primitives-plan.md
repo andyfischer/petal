@@ -1,8 +1,9 @@
 # Plan: `petal-ui` — standard interactivity primitives for embedders
 
 Status: proposed (2026-07-01)
-Related: [module-system-plan.md](module-system-plan.md) (import system that will
-eventually carry the Petal-source half of this library)
+Related: [../module-system.md](../module-system.md) (the import system that
+carries the Petal-source half of this library — **landed**, so the
+concatenation fallback below is no longer needed)
 
 ## Problem
 
@@ -85,12 +86,11 @@ reserved-chord policy stays in Garden.
 ### Layer 1 — Petal-source prelude of interaction primitives
 
 A set of `.ptl` files in `petal-ui/prelude/`, embedded via `include_str!` and
-exposed as `petal_ui::prelude_source()`. Until the module system lands
-(see module-system-plan.md), delivery is **sanctioned concatenation**: the
-embedder prepends the prelude to the user script before `load_program` — the
-same pattern petal-sdl already uses for `browser.ptl`, made official. When
-imports exist, these same files become the first standard modules; the
-concatenation path remains as a fallback.
+exposed as `petal_ui::prelude_source()`. The module system has landed
+(../module-system.md), so delivery is real modules from day one:
+`env.register_module("ui", petal_ui::prelude_source())` +
+`env.set_implicit_imports(&["ui"])` — user scripts call `button(...)` with
+zero ceremony, with per-file error attribution and no source concatenation.
 
 Contents — everything the diff viewer and browser.ptl hand-roll, written once
 in pure Petal on top of Layer 0:
@@ -191,8 +191,8 @@ natives, decode in `apps/petal-sdl/src/commands.rs` and Garden's
    of the two scripts disappear and Garden's
    `scripts/panel-integration-test.sh` still passes.
 4. **Phase 4 (later):** per-widget focus helpers and text-input/IME once
-   Layer 0 carries text events; migrate the prelude to real modules when the
-   module system (module-system-plan.md) lands.
+   Layer 0 carries text events. (The module system has landed —
+   ../module-system.md — so the prelude ships as real modules from day one.)
 
 ## Non-goals
 

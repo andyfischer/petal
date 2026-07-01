@@ -130,6 +130,11 @@ impl Compiler {
             StmtKind::State { name, init, id: _, key } => {
                 self.compile_state_decl(name, init, key.as_ref());
             }
+
+            // Imports are extracted and resolved by the module loader before
+            // compilation (see `Compiler::bind_imports`); one reaching here
+            // (legacy single-file `compile`) has nothing left to do.
+            StmtKind::Import(_) => {}
         }
     }
 
@@ -140,7 +145,11 @@ impl Compiler {
     /// encountered. The explicit key (if any) is computed eagerly in the
     /// parent block — its value determines which slot to consult.
     fn compile_state_decl(&mut self, name: &str, init: &Expr, key: Option<&Expr>) {
-        let state_key_const = StateKey(Self::hash_state_name(name));
+        // Module state keys are module-qualified; the entry file keeps
+        // bare-name hashing (see `state_key_for`). The term's display name is
+        // qualified the same way so state JSON / diffs stay unambiguous when
+        // two modules declare the same state name.
+        let state_key_const = self.state_key_for(name);
         let key_tid = key.map(|key_expr| self.compile_expr(key_expr));
 
         // StateInit term sits in the current block. Inputs hold only
@@ -150,7 +159,7 @@ impl Compiler {
         if let Some(k) = key_tid {
             inputs.push(k);
         }
-        let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(name.to_string()));
+        let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
         self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
         self.state_inits.insert(state_key_const, state_tid);

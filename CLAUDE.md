@@ -28,4 +28,5 @@ Source: `rust/src/`
  * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)
  * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
  * Bytecode backend design/status/handoff: [docs/bytecode-status.md](./docs/bytecode-status.md)
+ * Module / import system (`import`, resolution, hot reload): [docs/module-system.md](./docs/module-system.md)
 

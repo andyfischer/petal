@@ -1,0 +1,9 @@
+import palette
+import palette: brighten
+
+print(palette.colors.fg)
+print(brighten(250))
+
+state scroll = 0
+scroll += 1
+print(scroll)

@@ -29,7 +29,19 @@ impl Parser {
         let mut stmts = Vec::new();
         self.skip_newlines();
         while !self.is_at_end() {
+            let stmt_pos = self.pos;
             let stmt = self.parse_stmt()?;
+            // Imports must come before any other statement: resolution runs
+            // strictly ahead of the declaration prescan, and execution order
+            // (modules first, importer after) stays obvious.
+            if matches!(stmt.kind, StmtKind::Import(_))
+                && stmts.iter().any(|s: &Stmt| !matches!(s.kind, StmtKind::Import(_)))
+            {
+                return Err(self.error_at(
+                    stmt_pos,
+                    "import statements must appear before any other statement".to_string(),
+                ));
+            }
             stmts.push(stmt);
             self.skip_newlines();
         }
@@ -105,13 +117,14 @@ impl Parser {
 
     /// Create a span from start_pos (token index) to the last consumed token.
     fn span_from(&self, start_pos: usize) -> SourceSpan {
-        let start = if start_pos < self.token_spans.len() {
-            self.token_spans[start_pos].start
+        let (start, file) = if start_pos < self.token_spans.len() {
+            let s = self.token_spans[start_pos];
+            (s.start, s.file)
         } else {
-            ZERO_SPAN.start
+            (ZERO_SPAN.start, ZERO_SPAN.file)
         };
         let end = self.prev_span().end;
-        SourceSpan { start, end }
+        SourceSpan { start, end, file }
     }
 
     /// Helper to create an Expr with a span from start_pos to the last consumed token.
@@ -145,6 +158,7 @@ impl Parser {
             }
             Token::State => self.parse_state(start),
             Token::Enum => self.parse_enum_decl(start),
+            Token::Import => self.parse_import(start),
             _ => self.parse_expr_or_assign(start),
         }
     }
@@ -176,6 +190,38 @@ impl Parser {
         let id = self.next_state_id;
         self.next_state_id += 1;
         Ok(self.mk_stmt(StmtKind::State { name, init, id, key }, start))
+    }
+
+    /// `import m` / `import m as u` / `import m: a, b`.
+    /// The name list ends at the newline; `as` is contextual (not a keyword).
+    fn parse_import(&mut self, start: usize) -> Result<Stmt, String> {
+        self.advance(); // consume 'import'
+        let module = self.expect_ident()?;
+
+        let mut alias = None;
+        let mut names = None;
+        match self.peek().clone() {
+            Token::Ident(kw) if kw == "as" => {
+                self.advance(); // consume 'as'
+                alias = Some(self.expect_ident()?);
+            }
+            Token::Colon => {
+                self.advance(); // consume ':'
+                let mut list = Vec::new();
+                loop {
+                    list.push(self.expect_ident()?);
+                    if matches!(self.peek(), Token::Comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                names = Some(list);
+            }
+            _ => {}
+        }
+
+        Ok(self.mk_stmt(StmtKind::Import(ImportDecl { module, alias, names }), start))
     }
 
     fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {
@@ -390,6 +436,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op: BinOp::Or,
@@ -411,6 +458,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op: BinOp::And,
@@ -436,6 +484,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op,
@@ -463,6 +512,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op,
@@ -484,6 +534,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op: BinOp::Concat,
@@ -514,6 +565,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op,
@@ -540,6 +592,7 @@ impl Parser {
                 span: SourceSpan {
                     start: left.span.start,
                     end: right.span.end,
+                    file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
                     op,
@@ -585,6 +638,7 @@ impl Parser {
                         span: SourceSpan {
                             start: expr.span.start,
                             end: self.prev_span().end,
+                            file: expr.span.file,
                         },
                         kind: ExprKind::FieldAccess {
                             object: Box::new(expr),
@@ -605,6 +659,7 @@ impl Parser {
                         span: SourceSpan {
                             start: expr.span.start,
                             end: self.prev_span().end,
+                            file: expr.span.file,
                         },
                         kind: ExprKind::IndexAccess {
                             object: Box::new(expr),
@@ -621,6 +676,7 @@ impl Parser {
                         span: SourceSpan {
                             start: expr.span.start,
                             end: self.prev_span().end,
+                            file: expr.span.file,
                         },
                         kind: ExprKind::Call {
                             function: Box::new(expr),

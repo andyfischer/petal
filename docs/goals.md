@@ -142,7 +142,7 @@ mounting are still aspirational.
 |---|---|---|
 | AI-legibility as a *named* goal | 🟡 | The pieces ship and de-facto differentiate (MCP tools, headless protocol, structured JSON traces, `ExplainTerm`). Remaining: consolidate them into a coherent, documented agent-facing surface (Phase 2). |
 | Types as a projection | 🔭 | Dynamically typed today (runtime tags only). Future: infer shapes from the dataflow graph and surface them to tooling/agents — never enforced (consistent with "low floor, forgiving types"). |
-| Modules / imports | 🔭 | A ceiling on the "high ceiling" promise; not yet scoped. |
+| Modules / imports | ✅ | v1 landed: `import` with qualified/selective/alias forms, pluggable resolution (in-memory, importer-relative, search paths), merge-at-compile-time, module-qualified state keys, hot reload across files. See [module-system.md](module-system.md). |
 | Performance | 🟡 | Introspection-first interpreter, not a fast VM. The Phase 0 enablers shipped; heavy sketches still run ~11–17fps with an inner-loop boxing tax. Profile and chip away as the wedge demands. |
 
 ---

@@ -29,18 +29,25 @@ pub fn annotate_error(
     let span = program.source_map.get(failing);
     let mut error_msg = match span {
         Some(s) if s.start.line > 0 => {
-            format!("{} [line {}, column {}]", msg, s.start.line, s.start.column)
+            format!("{} {}", msg, format_position(program, s))
         }
         _ => msg,
     };
 
     // A 3-line snippet with a caret, when we have both a span and the source.
-    if let Some(s) = span
-        && !program.source.is_empty()
-        && let Some(snippet) = format_source_snippet(&program.source, s)
-    {
-        error_msg.push('\n');
-        error_msg.push_str(&snippet);
+    // Module spans index the module's own source (each file is lexed
+    // independently), so pick the snippet source from the file table.
+    if let Some(s) = span {
+        let source = program
+            .source_map
+            .source_for_span(s)
+            .unwrap_or(&program.source);
+        if !source.is_empty()
+            && let Some(snippet) = format_source_snippet(source, s)
+        {
+            error_msg.push('\n');
+            error_msg.push_str(&snippet);
+        }
     }
 
     let provenance = format_provenance(program, failing, 5);
@@ -81,12 +88,22 @@ fn format_provenance(program: &Program, failing: TermId, max: usize) -> Vec<Stri
         if span.start.line == 0 {
             continue;
         }
-        out.push(format!(
-            "{} [line {}, column {}]",
-            name, span.start.line, span.start.column
-        ));
+        out.push(format!("{} {}", name, format_position(program, span)));
     }
     out
+}
+
+/// `[line N, column M]` for entry-file spans (today's format, kept so the
+/// CLI's positional error parsing and existing tooling don't break), or
+/// `[ui.ptl line N, column M]` for spans in an imported module.
+fn format_position(program: &Program, span: &SourceSpan) -> String {
+    match program.source_map.file_name_for_span(span) {
+        Some(file) => format!(
+            "[{} line {}, column {}]",
+            file, span.start.line, span.start.column
+        ),
+        None => format!("[line {}, column {}]", span.start.line, span.start.column),
+    }
 }
 
 /// Build a stack trace from call `frames` (bottom-to-top), walked top-first.
@@ -103,8 +120,9 @@ fn build_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
             .filter(|span| span.start.line > 0);
         match call_site {
             Some(span) => trace.push(format!(
-                "in {}() [line {}, column {}]",
-                name, span.start.line, span.start.column
+                "in {}() {}",
+                name,
+                format_position(program, span)
             )),
             None => trace.push(format!("in {}()", name)),
         }

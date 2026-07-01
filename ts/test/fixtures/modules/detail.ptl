@@ -1,0 +1,8 @@
+import palette as p
+
+fn frame(c)
+  "<" ++ p.brighten(c) ++ ">"
+end
+
+print(frame(1))
+print(p.colors.accent)

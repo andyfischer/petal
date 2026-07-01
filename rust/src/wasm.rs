@@ -75,6 +75,24 @@ impl PetalRuntime {
         self.env.set_binding(sym, Value::Int(id as i64));
     }
 
+    /// Register an in-memory module: subsequently loaded programs can
+    /// `import name`. This is the module path for wasm hosts, which have no
+    /// filesystem — see docs/module-system.md.
+    pub fn register_module(&mut self, name: &str, source: &str) {
+        self.env.register_module(name, source);
+    }
+
+    /// Declare modules every loaded program imports implicitly (a host
+    /// prelude). Pass a comma-separated list of registered module names.
+    pub fn set_implicit_imports(&mut self, names: &str) {
+        let list: Vec<&str> = names
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        self.env.set_implicit_imports(&list);
+    }
+
     /// Compile source code and return a program ID.
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
         let pid = self.env.load_program(source).map_err(|e| JsValue::from_str(&e))?;

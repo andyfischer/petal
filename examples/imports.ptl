@@ -1,0 +1,10 @@
+// Modules: import a sibling .ptl file (resolved relative to this file).
+// See docs/module-system.md for resolution order and semantics.
+
+import text_utils               // qualified access: text_utils.shout(...)
+import text_utils: truncate     // selective: bare truncate(...)
+import text_utils as t          // alias: t.ellipsis
+
+print(text_utils.shout("hello"))
+print(truncate("the quick brown fox", 9))
+print(t.ellipsis)

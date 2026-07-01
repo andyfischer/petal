@@ -159,7 +159,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
             let (tx, rx) = mpsc::channel();
             _reload_tx = tx.clone();
             reload_rx = rx;
-            _watcher = setup_watcher(sp, tx)?;
+            _watcher = setup_watcher(&env, program_id, sp, tx)?;
         }
     }
 
@@ -173,7 +173,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
             PollResult::Escape if in_browser || !has_browser => break 'game,
             PollResult::Escape => {
                 // In game mode with browser available, return to browser
-                match switch_script(&mut env, BROWSER_SCRIPT, &config) {
+                match switch_script(&mut env, BROWSER_SCRIPT, None, &config) {
                     Ok((pid, sid)) => {
                         program_id = pid;
                         stack_id = sid;
@@ -217,7 +217,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         if let Some(script_path) = pending {
             match std::fs::read_to_string(&script_path) {
                 Ok(source) => {
-                    match switch_script(&mut env, &source, &config) {
+                    match switch_script(&mut env, &source, Some(&script_path), &config) {
                         Ok((pid, sid)) => {
                             program_id = pid;
                             stack_id = sid;
@@ -230,7 +230,9 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
                                 let (tx, rx) = mpsc::channel();
                                 _reload_tx = tx.clone();
                                 reload_rx = rx;
-                                _watcher = setup_watcher(&script_path, tx).unwrap_or(None);
+                                _watcher =
+                                    setup_watcher(&env, program_id, &script_path, tx)
+                                        .unwrap_or(None);
                             }
                         }
                         Err(e) => eprintln!("[browser] failed to launch {}: {}", script_path, e),
@@ -251,9 +253,14 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
 fn switch_script(
     env: &mut Env,
     source: &str,
+    source_path: Option<&str>,
     config: &GameConfig,
 ) -> Result<(ProgramId, StackKey), String> {
-    let program_id = env.load_program(source)?;
+    // Loading with the script's path lets it `import` sibling .ptl files.
+    let program_id = match source_path {
+        Some(sp) => env.load_program_at(source, Path::new(sp))?,
+        None => env.load_program(source)?,
+    };
     let stack_id = env.create_stack(program_id)?;
     bind_dimensions(env, config.width as i32, config.height as i32);
     bind_frame_info(env, 0.0, 0);
@@ -293,7 +300,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
         match source_path {
-            Some(sp) => setup_watcher(sp, reload_tx)?,
+            Some(sp) => setup_watcher(&env, program_id, sp, reload_tx)?,
             None => None,
         }
     } else {
@@ -374,7 +381,7 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
         match source_path {
-            Some(sp) => setup_watcher(sp, reload_tx)?,
+            Some(sp) => setup_watcher(&env, program_id, sp, reload_tx)?,
             None => None,
         }
     } else {
@@ -467,7 +474,11 @@ fn init_petal(
         None => BROWSER_SCRIPT.to_string(),
     };
 
-    let program_id = env.load_program(&source)?;
+    // Loading with the script's path lets it `import` sibling .ptl files.
+    let program_id = match source_path {
+        Some(sp) => env.load_program_at(&source, Path::new(sp))?,
+        None => env.load_program(&source)?,
+    };
     let stack_id = env.create_stack(program_id)?;
 
     bind_dimensions(&mut env, config.width as i32, config.height as i32);
@@ -624,7 +635,11 @@ fn check_hot_reload(
 ) {
     if let Ok(()) = reload_rx.try_recv() {
         if let Ok(new_source) = std::fs::read_to_string(source_path) {
-            let new_program = match env.compile_program(program_id, &new_source) {
+            let new_program = match env.compile_program_at(
+                program_id,
+                &new_source,
+                Path::new(source_path),
+            ) {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("[hot-reload] compile error: {}", e);
@@ -646,7 +661,15 @@ fn check_hot_reload(
     }
 }
 
+/// Watch every directory the program's source files live in — the entry
+/// script's directory plus the directory of each imported module in the
+/// program's module manifest (`Env::module_manifest`). Editing an imported
+/// `palette.ptl` hot-reloads the scripts that import it, not just edits to
+/// the entry file. Directories are watched (non-recursively), matching the
+/// original entry-file behavior; any modify event triggers a reload check.
 fn setup_watcher(
+    env: &Env,
+    program_id: ProgramId,
     source_path: &str,
     tx: mpsc::Sender<()>,
 ) -> Result<Option<notify::RecommendedWatcher>, String> {
@@ -663,10 +686,23 @@ fn setup_watcher(
     })
     .map_err(|e| format!("Failed to create watcher: {}", e))?;
 
-    let parent = path.parent().unwrap_or(Path::new("."));
-    watcher
-        .watch(parent, RecursiveMode::NonRecursive)
-        .map_err(|e| format!("Failed to watch: {}", e))?;
+    let mut dirs: Vec<std::path::PathBuf> =
+        vec![path.parent().unwrap_or(Path::new(".")).to_path_buf()];
+    for entry in env.module_manifest(program_id) {
+        if let Some(origin) = entry.origin
+            && let Ok(canonical) = origin.canonicalize()
+            && let Some(parent) = canonical.parent()
+        {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    dirs.sort();
+    dirs.dedup();
+    for dir in &dirs {
+        watcher
+            .watch(dir, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch {}: {}", dir.display(), e))?;
+    }
 
     Ok(Some(watcher))
 }

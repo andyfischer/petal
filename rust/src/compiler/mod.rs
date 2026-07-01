@@ -20,9 +20,10 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::ast::*;
 use crate::constant_table::{ConstantTable, ConstantValue};
+use crate::module::LoadedModule;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
-use crate::source_map::{SourceMap, SourceSpan};
+use crate::source_map::{SourceFile, SourceMap, SourceSpan, ENTRY_FILE};
 
 /// Info about a captured variable in the current function being compiled.
 struct CaptureInfo {
@@ -93,6 +94,24 @@ pub struct Compiler {
     // `compile()`. Used at call sites to detect a bare, unshadowed builtin call
     // and compile it to a static `BuiltinCall` instead of a dynamic `Call`.
     builtin_phantoms: HashMap<String, TermId>,
+
+    // ── Module system state (see docs/module-system.md) ──────────────
+    //
+    // The module the statements currently being compiled belong to; `None`
+    // for the entry file. Drives state-key qualification and the qualified
+    // display names on module-level closures.
+    current_module: Option<String>,
+    // Module alias → module name, for the file currently being compiled
+    // (`import ui` binds "ui"→"ui", `import ui as u` binds "u"→"ui").
+    // Cleared at every module boundary — aliases are file-scoped. A module
+    // alias is a compile-time binding kind, not a runtime value; `ui.button`
+    // resolves through it statically (see `try_module_member`).
+    pub(super) module_aliases: HashMap<String, String>,
+    // Export names of every module compiled so far. The exported terms
+    // themselves are bound in the global scope under qualified names
+    // ("ui::button"), so references to them ride the ordinary scope-lookup /
+    // closure-capture machinery.
+    module_exports: HashMap<String, Vec<String>>,
 }
 
 impl Default for Compiler {
@@ -125,23 +144,53 @@ impl Compiler {
             carry_slots: Vec::new(),
             state_inits: HashMap::new(),
             builtin_phantoms: HashMap::new(),
+            current_module: None,
+            module_aliases: HashMap::new(),
+            module_exports: HashMap::new(),
         }
     }
 
-    /// Compile a list of statements into a Program.
+    /// Compile a list of statements into a Program (single-file form: no
+    /// imports). Kept as the simple entry point for tools that already hold
+    /// parsed statements; the module-aware pipeline is [`compile_modules`].
     pub fn compile(
-        mut self,
+        self,
         stmts: &[Stmt],
         source: String,
         program_id: ProgramId,
         native_fns: &NativeFnTable,
     ) -> Program {
-        // Rewrite `@`-arguments (`f(@x)` → `x = f(x)`) before anything else, so
-        // prescan and compilation only ever see the desugared form.
-        let mut stmts = stmts.to_vec();
-        crate::desugar::desugar(&mut stmts);
-        let stmts = &stmts;
+        let entry = LoadedModule {
+            name: None,
+            display_name: "<entry>".to_string(),
+            source,
+            origin: None,
+            stmts: stmts.to_vec(),
+            imports: Vec::new(),
+            file_id: ENTRY_FILE,
+        };
+        self.compile_modules(&[entry], program_id, native_fns)
+            .expect("import-free compilation cannot fail")
+    }
 
+    /// Compile a dependency-ordered module list (imports first, entry file
+    /// last — the shape [`crate::module::load_modules`] produces) into one
+    /// merged Program.
+    ///
+    /// Each module compiles inside its own scope frame: its top-level
+    /// bindings become its exports, qualified-bound in the global scope as
+    /// `"module::name"` so importer references ride the ordinary scope-lookup
+    /// and closure-capture machinery. Top-level statements of every module are
+    /// emitted into the single root block, in dependency order, ahead of the
+    /// entry file's — an imported module's body executes exactly once, before
+    /// its importers. Errors are import-binding problems (unknown export,
+    /// selective-import collisions, private names).
+    pub fn compile_modules(
+        mut self,
+        modules: &[LoadedModule],
+        program_id: ProgramId,
+        native_fns: &NativeFnTable,
+    ) -> Result<Program, String> {
         // Create root block
         let root_block = self.new_block(None);
         self.current_block = root_block;
@@ -150,6 +199,7 @@ impl Compiler {
         self.push_scope(false);
 
         // Register native functions (including builtins) as phantom terms.
+        // Natives are global: visible in every module scope.
         for i in 0..native_fns.count() {
             let name = native_fns
                 .get_name(crate::native_fn::NativeFnId(i as u32))
@@ -159,12 +209,8 @@ impl Compiler {
             self.scope_bind(name, tid);
         }
 
-        // Pre-scan for fn and enum declarations to allow forward references
-        self.prescan_declarations(stmts);
-
-        // Compile all statements
-        for stmt in stmts {
-            self.compile_stmt(stmt);
+        for module in modules {
+            self.compile_module(module)?;
         }
 
         // Finalize root block
@@ -178,9 +224,32 @@ impl Compiler {
             block_terms.entry(term.block_id).or_default().push(term.id);
         }
 
-        Program {
+        let entry = modules
+            .iter()
+            .find(|m| m.name.is_none())
+            .expect("module list contains the entry file");
+
+        // File table for multi-file programs, indexed by FileId (entry = 0,
+        // modules at their load-order ids). Single-file programs keep an
+        // empty table so their IR serialization stays in the v0 shape.
+        if modules.len() > 1 {
+            let mut files = vec![
+                SourceFile { name: String::new(), source: String::new(), origin: None };
+                modules.len()
+            ];
+            for m in modules {
+                files[m.file_id.0 as usize] = SourceFile {
+                    name: m.display_name.clone(),
+                    source: m.source.clone(),
+                    origin: m.origin.clone(),
+                };
+            }
+            self.source_map.files = files;
+        }
+
+        Ok(Program {
             id: program_id,
-            source,
+            source: entry.source.clone(),
             terms: self.terms,
             blocks: self.blocks,
             root_block,
@@ -190,7 +259,186 @@ impl Compiler {
             functions: self.functions,
             match_arms: self.match_arms,
             block_terms,
+        })
+    }
+
+    /// Compile one module's statements into the root block. For the entry
+    /// file (`module.name == None`) bindings land in the global scope frame,
+    /// exactly as single-file compilation always has; for an imported module
+    /// they land in a dedicated scope frame that is popped afterwards, its
+    /// surviving bindings becoming the module's exports.
+    fn compile_module(&mut self, module: &LoadedModule) -> Result<(), String> {
+        // Rewrite `@`-arguments (`f(@x)` → `x = f(x)`) before anything else, so
+        // prescan and compilation only ever see the desugared form.
+        let mut stmts = module.stmts.to_vec();
+        crate::desugar::desugar(&mut stmts);
+
+        let is_entry = module.name.is_none();
+        self.current_module = module.name.clone();
+        // Aliases are file-scoped; overload grouping is per-compile and must
+        // not leak across module boundaries (prescan counts a module's own
+        // declarations only).
+        self.module_aliases.clear();
+        self.overloaded_fns.clear();
+        self.overload_variants.clear();
+
+        if !is_entry {
+            self.push_scope(false); // module scope frame
         }
+
+        self.bind_imports(module, &stmts)?;
+        self.prescan_declarations(&stmts);
+        for stmt in &stmts {
+            self.compile_stmt(stmt);
+        }
+
+        if !is_entry {
+            let scope = self.scopes.pop().expect("module scope frame");
+            self.capture_exports(module, scope);
+        }
+        self.current_module = None;
+        Ok(())
+    }
+
+    /// Materialize a module's resolved imports into the current scope:
+    /// aliases become compile-time alias bindings, selective names become
+    /// direct term bindings (loud on collision), implicit imports bind every
+    /// export bare but weakly (the file's own bindings win, like builtins).
+    fn bind_imports(&mut self, module: &LoadedModule, stmts: &[Stmt]) -> Result<(), String> {
+        let declared = Self::declared_top_level_names(stmts);
+        // Selectively-imported name → module it came from, for collision
+        // provenance within this one file.
+        let mut selective: HashMap<String, String> = HashMap::new();
+
+        for import in &module.imports {
+            let m = &import.decl.module;
+            let Some(exports) = self.module_exports.get(m).cloned() else {
+                // load_modules compiles dependencies first; a miss is a bug.
+                return Err(format!(
+                    "internal error: module '{}' was not compiled before its importer",
+                    m
+                ));
+            };
+
+            if import.implicit {
+                // Bind every export bare, silently — the file's own imports
+                // and declarations land on top of these.
+                for name in &exports {
+                    let tid = self
+                        .scope_lookup(&format!("{m}::{name}"))
+                        .expect("export is bound under its qualified name");
+                    self.scope_bind(name.clone(), tid);
+                }
+                self.module_aliases.insert(m.clone(), m.clone());
+                continue;
+            }
+
+            // Alias binding (`import ui` / `import ui as u`).
+            let alias = import.decl.alias.clone().unwrap_or_else(|| m.clone());
+            if let Some(existing) = self.module_aliases.get(&alias)
+                && existing != m
+            {
+                return Err(format!(
+                    "{}: '{}' is already an alias for module '{}' and cannot also \
+                     alias '{}'",
+                    module.display_name, alias, existing, m
+                ));
+            }
+            self.module_aliases.insert(alias, m.clone());
+
+            // Selective bindings (`import ui: button, clicked`).
+            let Some(names) = &import.decl.names else { continue };
+            for name in names {
+                if name.starts_with('_') {
+                    return Err(format!(
+                        "{}: cannot import '{}' from '{}': names starting with '_' \
+                         are module-private",
+                        module.display_name, name, m
+                    ));
+                }
+                if !exports.contains(name) {
+                    return Err(format!(
+                        "{}: module '{}' has no export '{}' (exports: {})",
+                        module.display_name,
+                        m,
+                        name,
+                        if exports.is_empty() { "none".to_string() } else { exports.join(", ") }
+                    ));
+                }
+                if let Some(other) = selective.get(name) {
+                    return Err(format!(
+                        "{}: '{}' is imported from both '{}' and '{}'",
+                        module.display_name, name, other, m
+                    ));
+                }
+                if declared.contains(name) {
+                    return Err(format!(
+                        "{}: '{}' is imported from '{}' but is also declared in this \
+                         file",
+                        module.display_name, name, m
+                    ));
+                }
+                let tid = self
+                    .scope_lookup(&format!("{m}::{name}"))
+                    .expect("export is bound under its qualified name");
+                self.scope_bind(name.clone(), tid);
+                selective.insert(name.clone(), m.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// Record a finished module's exports: every top-level binding whose name
+    /// doesn't start with `_` (module-private) and that the module didn't
+    /// itself import (imports are not re-exported). Each export is also bound
+    /// in the global scope under its qualified name (`"ui::button"`), which is
+    /// how alias access, later importers, and `Env::call_function` reach it.
+    fn capture_exports(&mut self, module: &LoadedModule, scope: HashMap<String, TermId>) {
+        let module_name = module.name.as_deref().expect("not the entry file");
+        let imported: std::collections::HashSet<&str> = module
+            .imports
+            .iter()
+            .flat_map(|i| i.decl.names.iter().flatten())
+            .map(String::as_str)
+            .collect();
+
+        let mut names: Vec<String> = scope
+            .keys()
+            .filter(|n| !n.starts_with('_') && !imported.contains(n.as_str()))
+            .cloned()
+            .collect();
+        names.sort_unstable(); // deterministic export order for messages
+
+        for name in &names {
+            let tid = scope[name];
+            let qualified = format!("{module_name}::{name}");
+            if let Some(global) = self.scopes.first_mut() {
+                global.insert(qualified, tid);
+            }
+        }
+        self.module_exports.insert(module_name.to_string(), names);
+    }
+
+    /// Top-level names a module declares (fn, enum variants, let, state) —
+    /// the set a selective import may collide with.
+    fn declared_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        for stmt in stmts {
+            match &stmt.kind {
+                StmtKind::FnDecl { name, .. }
+                | StmtKind::Let { name, .. }
+                | StmtKind::State { name, .. } => {
+                    names.insert(name.clone());
+                }
+                StmtKind::EnumDecl { variants, .. } => {
+                    for v in variants {
+                        names.insert(v.name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        names
     }
 
     /// Compute a stable hash for a state variable name. This ensures state
@@ -201,6 +449,30 @@ impl Compiler {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// The state key for `name` declared in the current compilation context:
+    /// module state keys are qualified (`"ui::scroll"`) so two modules'
+    /// same-named `state` decls get distinct slots; the entry file keeps
+    /// bare-name hashing so existing programs' hot-reload state survives.
+    /// Consequence (documented in docs/module-system.md): moving a `state`
+    /// decl between files, or renaming a module, changes its key and drops
+    /// that state on reload — same class of event as renaming the variable.
+    pub(super) fn state_key_for(&self, name: &str) -> StateKey {
+        match &self.current_module {
+            Some(m) => StateKey(Self::hash_state_name(&format!("{m}::{name}"))),
+            None => StateKey(Self::hash_state_name(name)),
+        }
+    }
+
+    /// Display name for a term declared at module scope: qualified for module
+    /// code (`"ui::button"`) so host-facing surfaces (`Env::call_function`,
+    /// state JSON, `--term` lookup) can address it unambiguously.
+    pub(super) fn qualified_name(&self, name: &str) -> String {
+        match &self.current_module {
+            Some(m) => format!("{m}::{name}"),
+            None => name.to_string(),
+        }
     }
 
     // -----------------------------------------------------------------------

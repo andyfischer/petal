@@ -1,0 +1,20 @@
+// A small library module — see imports.ptl for a script that imports it.
+// Every top-level fn / let / state is exported; _underscore names are private.
+
+let ellipsis = "..."
+
+fn _cut(s, n)
+  slice(s, 0, n)
+end
+
+fn truncate(s, max)
+  if len(s) > max then
+    _cut(s, max) ++ ellipsis
+  else
+    s
+  end
+end
+
+fn shout(s)
+  s ++ "!"
+end

@@ -10,9 +10,8 @@ use crate::backend::bytecode::{BytecodeProgram, Vm};
 use crate::backend::{Backend, Evaluator, OptFlags, StepResult};
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::heap::Heap;
-use crate::lexer::Lexer;
+use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
-use crate::parse::Parser;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
 use crate::stats::{AllocStats, DupStats};
@@ -45,6 +44,9 @@ pub struct Env {
     /// first bytecode run of a program; an entry's presence means lowering
     /// succeeded.
     bytecode: HashMap<ProgramId, BytecodeProgram>,
+    /// Module resolution: in-memory registrations, search paths, and implicit
+    /// imports. See docs/module-system.md.
+    modules: ModuleRegistry,
 }
 
 impl Env {
@@ -69,6 +71,7 @@ impl Env {
             backend: Self::backend_from_env(),
             opt_flags: Self::opt_flags_from_env(),
             bytecode: HashMap::new(),
+            modules: ModuleRegistry::default(),
         }
     }
 
@@ -142,6 +145,51 @@ impl Env {
         self.stacks.get(&stack_id).map(|s| s.context)
     }
 
+    // ── Module registration & resolution ─────────────────────────
+
+    /// Register an in-memory module: `import name` resolves to `source`
+    /// without touching the filesystem. This is how an embedder ships a
+    /// Petal-source library (e.g. `env.register_module("ui", include_str!(
+    /// "ui.ptl"))`) and how wasm hosts with no filesystem provide modules.
+    /// Takes priority over file resolution. Call before `load_program`.
+    pub fn register_module(&mut self, name: &str, source: &str) {
+        self.modules.register(name, source);
+    }
+
+    /// Append a directory to the module search path (searched after the
+    /// importing file's own directory). The CLI's `-I <dir>` lands here;
+    /// `PETAL_PATH` directories are searched after these.
+    pub fn add_module_path(&mut self, dir: std::path::PathBuf) {
+        self.modules.add_path(dir);
+    }
+
+    /// Declare modules that every loaded program imports implicitly, as if by
+    /// a selective import of all their exports — a host prelude with zero
+    /// ceremony in user scripts. A script's own bindings still win, and an
+    /// explicit `import` of the same module is a no-op on top of this.
+    pub fn set_implicit_imports(&mut self, names: &[&str]) {
+        self.modules.implicit_imports = names.iter().map(|s| s.to_string()).collect();
+    }
+
+    /// Resolve imports and compile: the shared back half of
+    /// [`load_program`](Self::load_program) / [`compile_program`](Self::compile_program).
+    /// `origin` is the entry source's file path when it has one — the anchor
+    /// for resolving imports relative to the importing file.
+    fn compile_source(
+        &self,
+        program_id: ProgramId,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<Program, String> {
+        let modules = crate::module::load_modules(
+            source,
+            origin,
+            &self.modules,
+            &self.modules.implicit_imports,
+        )?;
+        Compiler::new().compile_modules(&modules, program_id, &self.native_fns)
+    }
+
     /// Compile source code into a Program without loading it.
     /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(
@@ -149,28 +197,77 @@ impl Env {
         program_id: ProgramId,
         source: &str,
     ) -> Result<Program, String> {
-        let mut lexer = Lexer::new(source);
-        lexer.tokenize()?;
-        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-        let stmts = parser.parse_program()?;
-        let compiler = Compiler::new();
-        Ok(compiler.compile(&stmts, source.to_string(), program_id, &self.native_fns))
+        self.compile_source(program_id, source, None)
+    }
+
+    /// [`compile_program`](Self::compile_program) for source that lives at a
+    /// filesystem path: imports resolve relative to `origin`'s directory
+    /// first. Hosts hot-reloading a script file should use this.
+    pub fn compile_program_at(
+        &self,
+        program_id: ProgramId,
+        source: &str,
+        origin: &std::path::Path,
+    ) -> Result<Program, String> {
+        self.compile_source(program_id, source, Some(origin))
     }
 
     /// Load a program from source code
     pub fn load_program(&mut self, source: &str) -> Result<ProgramId, String> {
-        let mut lexer = Lexer::new(source);
-        lexer.tokenize()?;
-        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-        let stmts = parser.parse_program()?;
-
         let id = ProgramId(self.next_program_id);
+        let program = self.compile_source(id, source, None)?;
         self.next_program_id += 1;
-
-        let compiler = Compiler::new();
-        let program = compiler.compile(&stmts, source.to_string(), id, &self.native_fns);
         self.programs.insert(id, program);
         Ok(id)
+    }
+
+    /// [`load_program`](Self::load_program) for source read from a file:
+    /// imports resolve relative to `origin`'s directory first.
+    pub fn load_program_at(
+        &mut self,
+        source: &str,
+        origin: &std::path::Path,
+    ) -> Result<ProgramId, String> {
+        let id = ProgramId(self.next_program_id);
+        let program = self.compile_source(id, source, Some(origin))?;
+        self.next_program_id += 1;
+        self.programs.insert(id, program);
+        Ok(id)
+    }
+
+    /// The module manifest of a loaded program: one entry per source file it
+    /// was compiled from (entry file first). Hosts use this to answer "does
+    /// editing file X invalidate program P?" and to watch every file a
+    /// program depends on, not just its entry (see petal-sdl's watcher).
+    /// Single-file programs get their one entry with `origin: None` — the
+    /// host already knows the entry path it loaded from.
+    pub fn module_manifest(&self, program_id: ProgramId) -> Vec<ModuleManifestEntry> {
+        let Some(program) = self.programs.get(&program_id) else {
+            return Vec::new();
+        };
+        let hash = |s: &str| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            s.hash(&mut h);
+            h.finish()
+        };
+        if program.source_map.files.is_empty() {
+            return vec![ModuleManifestEntry {
+                name: "<entry>".to_string(),
+                origin: None,
+                content_hash: hash(&program.source),
+            }];
+        }
+        program
+            .source_map
+            .files
+            .iter()
+            .map(|f| ModuleManifestEntry {
+                name: f.name.clone(),
+                origin: f.origin.clone(),
+                content_hash: hash(&f.source),
+            })
+            .collect()
     }
 
     /// Load a program from its JSON IR form (the shape `show-ir --json` emits)
@@ -1053,6 +1150,18 @@ pub struct StateDiff {
     pub name: String,
     pub source: Option<serde_json::Value>,
     pub fork: Option<serde_json::Value>,
+}
+
+/// One source file a program was compiled from (see
+/// [`Env::module_manifest`]). `origin` is the filesystem path when the module
+/// was resolved from disk (`None` for in-memory registrations and inline
+/// entry sources); `content_hash` is a stable hash of the source text so
+/// hosts can detect real changes without re-reading files.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleManifestEntry {
+    pub name: String,
+    pub origin: Option<std::path::PathBuf>,
+    pub content_hash: u64,
 }
 
 impl Default for Env {

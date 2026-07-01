@@ -97,6 +97,7 @@ impl<'p> FnLowerer<'p> {
         }
 
         let (param_regs, capture_regs, self_ref_reg) = self.binding_regs();
+        let result_reg = self.entry_result_reg();
         Ok(BytecodeFn {
             func_id: self.func.map(|f| f.id),
             name: self.func.and_then(|f| f.name.clone()),
@@ -106,6 +107,7 @@ impl<'p> FnLowerer<'p> {
             capture_regs,
             self_ref_reg,
             loop_slots: 0,
+            result_reg,
         })
     }
 
@@ -156,6 +158,15 @@ impl<'p> FnLowerer<'p> {
             .collect();
         let self_ref_reg = func.self_ref_register.map(|r| self.flat_reg(body, r.0));
         (param_regs, capture_regs, self_ref_reg)
+    }
+
+    /// Flat register of the entry block's last term — the function's result
+    /// register (mirrors the graph engine's `block_result`). `None` for an
+    /// empty entry block.
+    fn entry_result_reg(&self) -> Option<Reg> {
+        self.block_terms_in_order(self.entry_block)
+            .last()
+            .map(|&tid| self.flat(tid))
     }
 
     /// Terms in a block in execution order (entry → `block_next`).

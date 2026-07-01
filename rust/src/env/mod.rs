@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 
 use crate::compiler::Compiler;
-use crate::backend::{Evaluator, StepResult};
+use crate::backend::bytecode::{BytecodeProgram, Vm};
+use crate::backend::{Backend, Evaluator, OptFlags, StepResult};
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::heap::Heap;
 use crate::lexer::Lexer;
@@ -36,6 +37,14 @@ pub struct Env {
     trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
+    /// Which execution engine runs programs (graph step evaluator or bytecode VM).
+    backend: Backend,
+    /// Per-run optimization toggles for the bytecode backend.
+    opt_flags: OptFlags,
+    /// Lazily-lowered bytecode, cached next to each `Program`. Populated on the
+    /// first bytecode run of a program; an entry's presence means lowering
+    /// succeeded.
+    bytecode: HashMap<ProgramId, BytecodeProgram>,
 }
 
 impl Env {
@@ -57,7 +66,63 @@ impl Env {
             trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
+            backend: Self::backend_from_env(),
+            opt_flags: Self::opt_flags_from_env(),
+            bytecode: HashMap::new(),
         }
+    }
+
+    /// Default backend from the `PETAL_BACKEND` env var (`graph` / `bytecode`),
+    /// falling back to the compiled default (`Graph`).
+    fn backend_from_env() -> Backend {
+        std::env::var("PETAL_BACKEND")
+            .ok()
+            .and_then(|s| Backend::parse(&s))
+            .unwrap_or_default()
+    }
+
+    /// Default opt flags from the `PETAL_OPT` env var: `none`/`0`/`off` disables
+    /// all opts, `all`/`1` enables all; anything else uses the compiled default.
+    fn opt_flags_from_env() -> OptFlags {
+        match std::env::var("PETAL_OPT").ok().as_deref() {
+            Some("none") | Some("0") | Some("off") => OptFlags::none(),
+            Some("all") | Some("1") | Some("on") => OptFlags::all(),
+            _ => OptFlags::default(),
+        }
+    }
+
+    /// The active execution backend.
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
+
+    /// Select the execution backend for subsequent runs. `Env`'s run loops are
+    /// backend-agnostic; this only changes which engine `step` dispatches to.
+    pub fn set_backend(&mut self, backend: Backend) {
+        self.backend = backend;
+    }
+
+    /// Set the bytecode backend's optimization flags for subsequent runs.
+    pub fn set_opt_flags(&mut self, flags: OptFlags) {
+        self.opt_flags = flags;
+    }
+
+    /// The active optimization flags.
+    pub fn opt_flags(&self) -> OptFlags {
+        self.opt_flags
+    }
+
+    /// Ensure `pid`'s program is lowered to bytecode and cached. Returns the
+    /// lowering error (naming the first unlowered op) if it cannot be lowered.
+    fn ensure_bytecode(&mut self, pid: ProgramId) -> Result<(), String> {
+        if self.bytecode.contains_key(&pid) {
+            return Ok(());
+        }
+        let program = self.programs.get(&pid).ok_or("Program not found")?;
+        let bc = crate::backend::bytecode::lower_program(program)
+            .map_err(|e| format!("bytecode lowering failed: {e}"))?;
+        self.bytecode.insert(pid, bc);
+        Ok(())
     }
 
     /// Shared access to one execution context.
@@ -139,8 +204,18 @@ impl Env {
         Ok(key)
     }
 
-    /// Run one step of execution
+    /// Run one step of execution, dispatching to the active backend. Both
+    /// backends return the same [`StepResult`], so the run loops
+    /// ([`run`](Self::run) / [`run_bounded`](Self::run_bounded)) are shared.
     pub fn step(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
+        match self.backend {
+            Backend::Graph => self.step_graph(stack_id),
+            Backend::Bytecode => self.step_bytecode(stack_id),
+        }
+    }
+
+    /// One step of the graph (term-graph) step evaluator.
+    fn step_graph(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
         let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
         let program = self
@@ -166,6 +241,39 @@ impl Env {
         .step();
 
         Ok(result)
+    }
+
+    /// One step of the bytecode VM. Lowers the program on first use, pushes the
+    /// root frame on the first step of a run, then executes one instruction.
+    fn step_bytecode(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
+        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
+        let pid = self.stacks.get(&stack_id).unwrap().program_id;
+        self.ensure_bytecode(pid)?;
+
+        let bc = self.bytecode.get(&pid).unwrap();
+        let program = self.programs.get(&pid).ok_or("Program not found")?;
+        let stack = self.stacks.get_mut(&stack_id).unwrap();
+        let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
+
+        let mut vm = Vm {
+            program,
+            bc,
+            stack,
+            heap: &mut ctx.heap,
+            closures: &mut ctx.closures,
+            overload_sets: &mut ctx.overload_sets,
+            native_fns: &self.native_fns,
+            output: &mut ctx.output,
+            symbols: &mut self.symbols,
+            output_buffers: &mut ctx.output_buffers,
+            bindings: &mut ctx.bindings,
+            counters: &mut ctx.counters,
+        };
+        if !vm.stack.vm_started {
+            vm.push_root_frame();
+            vm.stack.vm_started = true;
+        }
+        Ok(vm.step())
     }
 
     /// Access the shared trace buffer (for recording/queries).
@@ -349,6 +457,8 @@ impl Env {
 
         // Keep state, reset frames and any in-progress loop tracking
         stack.frames.clear();
+        stack.vm_frames.clear();
+        stack.vm_started = false;
         stack.status = StackStatus::Ready;
         stack.break_flag = false;
 
@@ -724,6 +834,20 @@ impl Env {
                 for (_, loop_state) in &frame.loop_states {
                     if let crate::stack::LoopKind::ForEach { elements } = &loop_state.kind {
                         for val in elements {
+                            heap.mark_value(*val);
+                        }
+                    }
+                }
+            }
+            // Bytecode VM frames are GC roots exactly as graph frames are: their
+            // register files and any snapshotted for-each cursors hold live values.
+            for frame in &stack.vm_frames {
+                for val in &frame.regs {
+                    heap.mark_value(*val);
+                }
+                for cursor in &frame.loops {
+                    if let crate::backend::bytecode::vm::LoopCursor::ForEach { elems, .. } = cursor {
+                        for val in elems {
                             heap.mark_value(*val);
                         }
                     }

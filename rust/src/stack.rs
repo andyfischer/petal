@@ -91,6 +91,15 @@ pub struct Stack {
     /// program. Refreshed each time the root frame completes; cleared on hot
     /// reload since the underlying closure IDs are invalidated.
     pub functions: HashMap<String, Value>,
+    /// Activation records for the bytecode backend (`Backend::Bytecode`). Empty
+    /// and unused under the graph backend, which uses `frames`. Stored here (not
+    /// on the VM, which is rebuilt per step) so execution state survives across
+    /// steps and is reachable as GC roots, exactly like `frames`.
+    pub vm_frames: Vec<crate::backend::bytecode::VmFrame>,
+    /// Whether the bytecode root frame has been pushed for the current run.
+    /// Distinguishes "not started" (push root) from "completed" (`vm_frames`
+    /// empty again → done). Reset by `reset_stack`.
+    pub vm_started: bool,
 }
 
 /// A single activation frame on the stack.
@@ -212,6 +221,8 @@ impl Stack {
             last_pop_result: None,
             touched_state_keys: HashSet::new(),
             functions: HashMap::new(),
+            vm_frames: Vec::new(),
+            vm_started: false,
         }
     }
 

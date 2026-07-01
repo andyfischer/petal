@@ -15,3 +15,7 @@ pub mod vm;
 
 pub use isa::{BytecodeFn, BytecodeProgram, Inst};
 pub use lower::lower_program;
+pub use vm::{Vm, VmFrame};
+
+#[cfg(test)]
+mod tests;

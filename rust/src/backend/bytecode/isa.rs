@@ -145,6 +145,11 @@ pub struct BytecodeFn {
     pub self_ref_reg: Option<Reg>,
     /// Number of loop-cursor slots this function needs.
     pub loop_slots: u16,
+    /// Flat register holding this function's result — the register of the last
+    /// term in the entry block (mirrors the graph engine's `block_result`).
+    /// `None` for an empty body (result is `Nil`). Read when a frame runs off
+    /// the end of its code without an explicit `Return`.
+    pub result_reg: Option<Reg>,
 }
 
 /// A whole program lowered to bytecode.
@@ -160,5 +165,14 @@ impl BytecodeProgram {
     /// The `BytecodeFn` for a given `FunctionId`.
     pub fn function(&self, id: FunctionId) -> &BytecodeFn {
         &self.fns[id.0 as usize]
+    }
+
+    /// Resolve a frame's function reference: `None` is the implicit root
+    /// function, `Some(id)` a lowered `FunctionDef` body.
+    pub fn function_or_root(&self, id: Option<FunctionId>) -> &BytecodeFn {
+        match id {
+            None => &self.root,
+            Some(fid) => self.function(fid),
+        }
     }
 }

@@ -3,6 +3,7 @@
 use std::fs;
 use std::process;
 
+use crate::backend::{Backend, OptFlags};
 use crate::compiler::Compiler;
 use crate::dot_graph::program_to_dot;
 use crate::env::Env;
@@ -13,7 +14,15 @@ use crate::parse::Parser;
 use crate::program::ProgramId;
 
 pub enum Command {
-    Run { json: bool, trace: bool, record_trace: Option<String>, ir: bool, dup_stats: bool },
+    Run {
+        json: bool,
+        trace: bool,
+        record_trace: Option<String>,
+        ir: bool,
+        dup_stats: bool,
+        backend: Option<Backend>,
+        no_opt: bool,
+    },
     Check { json: bool },
     Explain { json: bool, term: String },
     ShowIr { json: bool, all: bool },
@@ -65,7 +74,7 @@ pub fn parse_args() -> CliArgs {
         _ => {
             // Shorthand: `petal <file>` runs the file (same as `petal run <file>`).
             CliArgs {
-                command: Command::Run { json: false, trace: false, record_trace: None, ir: false, dup_stats: false },
+                command: Command::Run { json: false, trace: false, record_trace: None, ir: false, dup_stats: false, backend: None, no_opt: false },
                 source: SourceInput::File(first.clone()),
             }
         }
@@ -78,6 +87,8 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut record_trace: Option<String> = None;
     let mut ir = false;
     let mut dup_stats = false;
+    let mut backend: Option<Backend> = None;
+    let mut no_opt = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -87,6 +98,31 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--trace" => trace = true,
             "--ir" => ir = true,
             "--dup-stats" => dup_stats = true,
+            "--no-opt" => no_opt = true,
+            "--backend" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected backend name after --backend (graph | bytecode)");
+                    process::exit(1);
+                }
+                match Backend::parse(&args[i]) {
+                    Some(b) => backend = Some(b),
+                    None => {
+                        eprintln!("Unknown backend '{}' (expected graph | bytecode)", args[i]);
+                        process::exit(1);
+                    }
+                }
+            }
+            s if s.starts_with("--backend=") => {
+                let name = &s["--backend=".len()..];
+                match Backend::parse(name) {
+                    Some(b) => backend = Some(b),
+                    None => {
+                        eprintln!("Unknown backend '{}' (expected graph | bytecode)", name);
+                        process::exit(1);
+                    }
+                }
+            }
             "--record-trace" => {
                 i += 1;
                 if i >= args.len() {
@@ -116,7 +152,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     });
 
     CliArgs {
-        command: Command::Run { json, trace, record_trace, ir, dup_stats },
+        command: Command::Run { json, trace, record_trace, ir, dup_stats, backend, no_opt },
         source,
     }
 }
@@ -377,11 +413,17 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&cli.source);
 
     match cli.command {
-        Command::Run { json, trace, record_trace, ir, dup_stats } => {
+        Command::Run { json, trace, record_trace, ir, dup_stats, backend, no_opt } => {
             if trace || std::env::var("PETAL_DEBUG").is_ok() {
                 unsafe { std::env::set_var("PETAL_TRACE", "1"); }
             }
             let mut env = Env::new();
+            if let Some(b) = backend {
+                env.set_backend(b);
+            }
+            if no_opt {
+                env.set_opt_flags(OptFlags::none());
+            }
             if record_trace.is_some() {
                 env.trace_mut().enable();
             }

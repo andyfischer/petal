@@ -46,6 +46,12 @@ pub struct Expr {
 pub enum ExprKind {
     Literal(Literal),
     Ident(String),
+    /// `@name` — an in-out argument marker. Only ever produced by the parser;
+    /// the [`crate::desugar`] pass rewrites `f(@x)` into `x = f(x)` and strips
+    /// every `AtVar` before compilation. Any `AtVar` that survives to the
+    /// compiler is an `@` used somewhere the desugar pass can't lift (e.g. not
+    /// inside a call at statement level) and compiles to a deferred error.
+    AtVar(String),
     BinaryOp {
         op: BinOp,
         left: Box<Expr>,

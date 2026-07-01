@@ -647,6 +647,7 @@ impl Parser {
             | ExprKind::Match { .. } => Ok(()),
 
             // Not callable: literals, operators, collections, etc.
+            ExprKind::AtVar(_) => Err(self.error_at_current("`@var` cannot be called as a function".to_string())),
             ExprKind::Literal(_) => Err(self.error_at_current("Literal value cannot be called as a function".to_string())),
             ExprKind::BinaryOp { .. } => Err(self.error_at_current("Binary operation result cannot be called as a function".to_string())),
             ExprKind::UnaryOp { .. } => Err(self.error_at_current("Unary operation result cannot be called as a function".to_string())),
@@ -698,6 +699,11 @@ impl Parser {
             Token::Nil => {
                 self.advance();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Nil), start))
+            }
+            Token::At => {
+                self.advance(); // consume '@'
+                let name = self.expect_ident()?;
+                Ok(self.mk_expr(ExprKind::AtVar(name), start))
             }
             Token::Ident(_) => {
                 let name = self.expect_ident()?;

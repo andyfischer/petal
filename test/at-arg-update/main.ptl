@@ -1,0 +1,26 @@
+// `@`-argument: `f(@x)` updates `x` in place with the call's result.
+// See rust/src/desugar.rs.
+fn double(x)
+  x * 2
+end
+fn inc(x)
+  x + 1
+end
+
+// Flat form: `double(@a)` ≡ `a = double(a)`.
+let a = 5
+double(@a)
+print(a) // 10
+
+// Nested form binds `@` to the nearest enclosing call:
+// `inc(double(@b))` ≡ `b = double(b)` then `inc(b)`.
+let b = 3
+let r = inc(double(@b))
+print(b) // 6  — only double ran back into b
+print(r) // 7  — inc applied to the updated b
+
+// Repeated updates accumulate as ordinary reassignments.
+let c = 4
+double(@c)
+double(@c)
+print(c) // 16

@@ -67,6 +67,7 @@ pub enum Token {
     Comma,
     Dot,
     Colon,
+    At, // @ — in-out argument marker (see ast::ExprKind::AtVar)
     Pipe,  // |>
     Arrow, // ->
     DotDot,    // ..
@@ -236,6 +237,7 @@ impl Lexer {
             ']' => { self.advance_char(); self.push_token(Token::RBracket, start); }
             ',' => { self.advance_char(); self.push_token(Token::Comma, start); }
             ':' => { self.advance_char(); self.push_token(Token::Colon, start); }
+            '@' => { self.advance_char(); self.push_token(Token::At, start); }
             '.' => {
                 if self.peek_next() == Some('.') {
                     if self.pos + 2 < self.input.len() && self.input[self.pos + 2] == '.' {

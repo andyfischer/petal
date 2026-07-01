@@ -136,6 +136,12 @@ impl Compiler {
         program_id: ProgramId,
         native_fns: &NativeFnTable,
     ) -> Program {
+        // Rewrite `@`-arguments (`f(@x)` → `x = f(x)`) before anything else, so
+        // prescan and compilation only ever see the desugared form.
+        let mut stmts = stmts.to_vec();
+        crate::desugar::desugar(&mut stmts);
+        let stmts = &stmts;
+
         // Create root block
         let root_block = self.new_block(None);
         self.current_block = root_block;

@@ -1,0 +1,9 @@
+# `@`-argument desugaring (rust/src/desugar.rs). All values are ints, so the
+# rewrite introduces no heap duplication or allocation.
+out: 10
+out: 6
+out: 7
+out: 16
+
+max dup.total.count: 0
+max alloc.total.count: 0

@@ -39,8 +39,9 @@ pub struct VmFrame {
     /// root frame and for frames pushed by a synchronous intrinsic call (whose
     /// result is read from `stack.last_pop_result`, not written to a register).
     pub dst_in_caller: Option<Reg>,
-    /// Active loop cursors, indexed by [`LoopSlot`].
-    pub loops: SmallVec<[LoopCursor; 2]>,
+    /// Loop cursors, indexed by [`LoopSlot`]. A slot is `Some` while its loop is
+    /// active (set by a `*Init` op, cleared by `LoopPop`); grown on demand.
+    pub loops: Vec<Option<LoopCursor>>,
     /// Active loop-index context, outermost-first, for state-key resolution.
     pub loop_idx: SmallVec<[LoopKeyPart; 2]>,
 }
@@ -53,7 +54,7 @@ impl VmFrame {
             ip: 0,
             regs: vec![Value::Nil; reg_count as usize],
             dst_in_caller,
-            loops: SmallVec::new(),
+            loops: Vec::new(),
             loop_idx: SmallVec::new(),
         }
     }
@@ -64,18 +65,12 @@ impl VmFrame {
 pub enum LoopCursor {
     /// `for x in <list>`: the snapshotted elements and the next index.
     ForEach { elems: Vec<Value>, i: usize },
-    /// `for i in range(a, b)`: the current value and exclusive end.
-    Range { cur: i64, end: i64 },
+    /// `for i in range(a, b)`: the current value, exclusive end, and 0-based
+    /// iteration count (the state-key index, which differs from the value when
+    /// the range does not start at 0).
+    Range { cur: i64, end: i64, iter: usize },
     /// A `while` loop tracks only its iteration counter (for state keying).
     While { iteration: usize },
-}
-
-impl LoopCursor {
-    /// The slot this cursor occupies is positional; this helper exists so future
-    /// code reads clearly at call sites.
-    pub fn slot_placeholder() -> LoopSlot {
-        0
-    }
 }
 
 /// The bytecode VM: a bundle of borrows over `Env`'s runtime data, rebuilt for
@@ -212,6 +207,22 @@ impl<'a> Vm<'a> {
         rs.iter().map(|&r| self.reg(fi, r)).collect()
     }
 
+    /// Grow frame `fi`'s loop-cursor vector so `slot` is addressable.
+    fn ensure_slot(&mut self, fi: usize, slot: LoopSlot) {
+        let loops = &mut self.stack.vm_frames[fi].loops;
+        if slot as usize >= loops.len() {
+            loops.resize_with(slot as usize + 1, || None);
+        }
+    }
+
+    /// Set the innermost active loop-index context entry to `idx` (the current
+    /// 0-based iteration), for per-iteration state keying.
+    fn set_loop_idx_top(&mut self, fi: usize, idx: usize) {
+        if let Some(last) = self.stack.vm_frames[fi].loop_idx.last_mut() {
+            *last = LoopKeyPart::Index(idx);
+        }
+    }
+
     // -- instruction dispatch ------------------------------------------------
 
     fn exec_inst(&mut self, fi: usize, inst: &Inst) -> Result<StepResult, String> {
@@ -239,6 +250,100 @@ impl<'a> Vm<'a> {
                 if self.reg(fi, *cond).is_truthy() {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
+            }
+
+            // --- loops ---
+            Inst::ForEachInit { iter, slot, idx_ctx } => {
+                let v = self.reg(fi, *iter);
+                let Value::List(list_id) = v else {
+                    return Err(format!("Cannot iterate over {}", v.type_name()));
+                };
+                let elems = self.heap.get_list(list_id).to_vec();
+                self.ensure_slot(fi, *slot);
+                self.stack.vm_frames[fi].loops[*slot as usize] =
+                    Some(LoopCursor::ForEach { elems, i: 0 });
+                if *idx_ctx {
+                    self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+                }
+            }
+            Inst::ForEachNext { slot, var, exit } => {
+                let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(LoopCursor::ForEach { elems, i })) => {
+                        if *i >= elems.len() {
+                            None
+                        } else {
+                            let e = elems[*i];
+                            let idx = *i;
+                            *i += 1;
+                            Some((e, idx))
+                        }
+                    }
+                    _ => return Err("foreach_next: no active cursor".into()),
+                };
+                match action {
+                    None => self.stack.vm_frames[fi].ip = *exit as usize,
+                    Some((e, idx)) => {
+                        self.set(fi, *var, e);
+                        self.set_loop_idx_top(fi, idx);
+                    }
+                }
+            }
+            Inst::RangeInit { start, end, slot, idx_ctx } => {
+                let (s, e) = (self.reg(fi, *start), self.reg(fi, *end));
+                let (Value::Int(s), Value::Int(e)) = (s, e) else {
+                    return Err("numeric for-loop bounds must be integers".into());
+                };
+                self.ensure_slot(fi, *slot);
+                self.stack.vm_frames[fi].loops[*slot as usize] =
+                    Some(LoopCursor::Range { cur: s, end: e, iter: 0 });
+                if *idx_ctx {
+                    self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+                }
+            }
+            Inst::RangeNext { slot, var, exit } => {
+                let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(LoopCursor::Range { cur, end, iter })) => {
+                        if *cur < *end {
+                            let v = *cur;
+                            let it = *iter;
+                            *cur += 1;
+                            *iter += 1;
+                            Some((v, it))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => return Err("range_next: no active cursor".into()),
+                };
+                match action {
+                    None => self.stack.vm_frames[fi].ip = *exit as usize,
+                    Some((v, it)) => {
+                        self.set(fi, *var, Value::Int(v));
+                        self.set_loop_idx_top(fi, it);
+                    }
+                }
+            }
+            Inst::WhileInit { slot } => {
+                self.ensure_slot(fi, *slot);
+                self.stack.vm_frames[fi].loops[*slot as usize] =
+                    Some(LoopCursor::While { iteration: 0 });
+                self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+            }
+            Inst::LoopBumpIdx { slot } => {
+                let it = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(LoopCursor::While { iteration })) => {
+                        *iteration += 1;
+                        *iteration
+                    }
+                    _ => return Err("loop_bump_idx: no active while cursor".into()),
+                };
+                self.set_loop_idx_top(fi, it);
+            }
+            Inst::LoopPop { slot } => {
+                if let Some(cell) = self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    *cell = None;
+                }
+                self.stack.vm_frames[fi].loop_idx.pop();
             }
 
             Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b)?,

@@ -21,8 +21,22 @@ use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
-use super::isa::{BytecodeFn, BytecodeProgram, Inst, Reg};
+use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
 use crate::program::{BlockId, FunctionDef, Program, Term, TermId, TermOp};
+
+/// Break/continue backpatch targets for one active loop during lowering.
+struct LoopCtx {
+    /// The loop's body block — the outermost region whose phi carry-outs a
+    /// break/continue must run before leaving the loop.
+    body_block: BlockId,
+    /// Indices of `Jump` placeholders emitted by `continue`, patched to the
+    /// loop's continue target (the `*Next` for counted loops, the index bump
+    /// for `while`).
+    continue_jumps: Vec<usize>,
+    /// Indices of `Jump` placeholders emitted by `break`, patched to the loop
+    /// exit (`LoopPop`).
+    break_jumps: Vec<usize>,
+}
 
 /// Lower a whole program to bytecode. Returns an error naming the first op that
 /// cannot yet be lowered (so `ShowBytecode` surfaces progress honestly).
@@ -48,6 +62,14 @@ struct FnLowerer<'p> {
     /// Total flat registers needed.
     reg_count: u16,
     code: Vec<Inst>,
+    /// The stack of blocks currently being emitted (outermost-last). A
+    /// break/continue walks this from the top down to its loop body to emit the
+    /// enclosing phi carry-outs it exits through.
+    region_stack: Vec<BlockId>,
+    /// Active loops, innermost last — supplies break/continue targets.
+    loop_stack: Vec<LoopCtx>,
+    /// Next free loop-cursor slot; also the loop-slot count for this function.
+    next_slot: LoopSlot,
 }
 
 impl<'p> FnLowerer<'p> {
@@ -60,6 +82,9 @@ impl<'p> FnLowerer<'p> {
             base: HashMap::new(),
             reg_count: 0,
             code: Vec::new(),
+            region_stack: Vec::new(),
+            loop_stack: Vec::new(),
+            next_slot: 0,
         }
     }
 
@@ -102,7 +127,7 @@ impl<'p> FnLowerer<'p> {
             param_regs,
             capture_regs,
             self_ref_reg,
-            loop_slots: 0,
+            loop_slots: self.next_slot,
             result_reg,
         })
     }
@@ -296,19 +321,182 @@ impl<'p> FnLowerer<'p> {
     /// Emit a block's terms in order. Straight-line and call terms lower to one
     /// instruction each; control-flow terms recurse into their child regions.
     fn emit_block(&mut self, block: BlockId) -> Result<(), String> {
+        self.region_stack.push(block);
         for tid in self.block_terms_in_order(block) {
             let term = self.program.get_term(tid);
             match &term.op {
                 TermOp::Branch => self.emit_branch(term)?,
                 TermOp::And => self.emit_short_circuit(term, true)?,
                 TermOp::Or => self.emit_short_circuit(term, false)?,
+                TermOp::ForLoop => self.emit_for_each(term)?,
+                TermOp::NumericForLoop => self.emit_range(term)?,
+                TermOp::WhileLoop => self.emit_while(term)?,
+                TermOp::Break => self.emit_break_or_continue(true)?,
+                TermOp::Continue => self.emit_break_or_continue(false)?,
                 _ => {
                     let inst = self.lower_term_inst(term)?;
                     self.code.push(inst);
                 }
             }
         }
+        self.region_stack.pop();
         Ok(())
+    }
+
+    /// `for x in <list> do <body> end` →
+    /// ```text
+    ///   foreach_init iter, slot
+    /// cont: foreach_next slot -> var else -> exit
+    ///   <body>; <body.phi_outs>; jump -> cont
+    /// exit: loop_pop slot
+    /// ```
+    fn emit_for_each(&mut self, term: &Term) -> Result<(), String> {
+        let slot = self.alloc_slot();
+        let iter = self.flat(term.inputs[0]);
+        let body_block = term.child_blocks[0];
+        let var = self.flat_reg(body_block, 0);
+        self.code.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
+        let cont = self.here();
+        let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
+        self.emit_counted_loop(body_block, slot, cont, next)
+    }
+
+    /// `for i in range(a, b) do <body> end` — like [`emit_for_each`](Self::emit_for_each)
+    /// but with an integer-range cursor and no list allocation.
+    fn emit_range(&mut self, term: &Term) -> Result<(), String> {
+        let slot = self.alloc_slot();
+        let start = self.flat(term.inputs[0]);
+        let end = self.flat(term.inputs[1]);
+        let body_block = term.child_blocks[0];
+        let var = self.flat_reg(body_block, 0);
+        self.code.push(Inst::RangeInit { start, end, slot, idx_ctx: true });
+        let cont = self.here();
+        let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
+        self.emit_counted_loop(body_block, slot, cont, next)
+    }
+
+    /// Shared tail of the counted loops (`for-each` / range): emit the body with
+    /// an active loop context, close the back-edge, and patch the exit and the
+    /// break/continue jumps. `next_idx` is the `*Next` placeholder whose exit is
+    /// patched to the loop's `LoopPop`.
+    fn emit_counted_loop(
+        &mut self,
+        body_block: BlockId,
+        slot: LoopSlot,
+        cont: u32,
+        next_idx: usize,
+    ) -> Result<(), String> {
+        self.loop_stack.push(LoopCtx {
+            body_block,
+            continue_jumps: Vec::new(),
+            break_jumps: Vec::new(),
+        });
+        self.emit_block(body_block)?;
+        self.emit_phi_outs(body_block); // normal-path carry-outs
+        self.code.push(Inst::Jump { to: cont }); // back-edge
+
+        let ctx = self.loop_stack.pop().unwrap();
+        let exit = self.here();
+        self.patch(next_idx, exit);
+        for j in ctx.break_jumps {
+            self.patch(j, exit);
+        }
+        for j in ctx.continue_jumps {
+            self.patch(j, cont);
+        }
+        self.code.push(Inst::LoopPop { slot });
+        Ok(())
+    }
+
+    /// `while <cond> do <body> end` →
+    /// ```text
+    ///   while_init slot
+    /// top: <cond>; <cond.phi_outs>; jump_if_false cond_result -> exit
+    ///   <body>; <body.phi_outs>
+    /// bump: loop_bump_idx slot; jump -> top
+    /// exit: loop_pop slot
+    /// ```
+    /// `continue` re-evaluates the condition for the next iteration (so it bumps
+    /// the index), matching the graph engine.
+    fn emit_while(&mut self, term: &Term) -> Result<(), String> {
+        let slot = self.alloc_slot();
+        let cond_block = term.child_blocks[0];
+        let body_block = term.child_blocks[1];
+        self.code.push(Inst::WhileInit { slot });
+        let top = self.here();
+        self.emit_block(cond_block)?;
+        self.emit_phi_outs(cond_block);
+        let cond = self
+            .block_result_reg(cond_block)
+            .ok_or("while loop has an empty condition block")?;
+        let jexit = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
+
+        self.loop_stack.push(LoopCtx {
+            body_block,
+            continue_jumps: Vec::new(),
+            break_jumps: Vec::new(),
+        });
+        self.emit_block(body_block)?;
+        self.emit_phi_outs(body_block); // normal-path carry-outs
+        let bump = self.here();
+        self.code.push(Inst::LoopBumpIdx { slot });
+        self.code.push(Inst::Jump { to: top }); // back-edge
+
+        let ctx = self.loop_stack.pop().unwrap();
+        let exit = self.here();
+        self.patch(jexit, exit);
+        for j in ctx.break_jumps {
+            self.patch(j, exit);
+        }
+        for j in ctx.continue_jumps {
+            self.patch(j, bump);
+        }
+        self.code.push(Inst::LoopPop { slot });
+        Ok(())
+    }
+
+    /// `break` / `continue`: emit the phi carry-outs of every region from the
+    /// current point up to (and including) the loop body — replicating the
+    /// per-block phi propagation the graph engine performs as it pops each
+    /// enclosing frame — then a placeholder `Jump` recorded for backpatching to
+    /// the loop exit (break) or continue target.
+    fn emit_break_or_continue(&mut self, is_break: bool) -> Result<(), String> {
+        let body_block = self
+            .loop_stack
+            .last()
+            .ok_or("break/continue outside a loop")?
+            .body_block;
+        self.emit_exit_phi_chain(body_block);
+        let j = self.emit_placeholder(Inst::Jump { to: 0 });
+        let ctx = self.loop_stack.last_mut().unwrap();
+        if is_break {
+            ctx.break_jumps.push(j);
+        } else {
+            ctx.continue_jumps.push(j);
+        }
+        Ok(())
+    }
+
+    /// Emit phi carry-outs for the active regions from the innermost down to
+    /// `body_block` (inclusive), innermost first — the order in which the graph
+    /// engine runs them as it pops frames on a break/continue.
+    fn emit_exit_phi_chain(&mut self, body_block: BlockId) {
+        let k = self
+            .region_stack
+            .iter()
+            .rposition(|&b| b == body_block)
+            .expect("loop body must be on the region stack");
+        let chain: Vec<BlockId> = self.region_stack[k..].iter().rev().copied().collect();
+        for blk in chain {
+            self.emit_phi_outs(blk);
+        }
+    }
+
+    /// Allocate a fresh loop-cursor slot for this function.
+    fn alloc_slot(&mut self) -> LoopSlot {
+        let s = self.next_slot;
+        self.next_slot += 1;
+        s
     }
 
     /// `if cond then A else B end` →
@@ -418,13 +606,15 @@ impl<'p> FnLowerer<'p> {
         self.code.len() as u32
     }
 
-    /// Backpatch the jump target of the instruction at `at`.
+    /// Backpatch the jump/exit target of the instruction at `at`.
     fn patch(&mut self, at: usize, target: u32) {
         match &mut self.code[at] {
             Inst::Jump { to }
             | Inst::JumpIfFalse { to, .. }
-            | Inst::JumpIfTrue { to, .. } => *to = target,
-            other => panic!("patch: not a jump instruction: {other:?}"),
+            | Inst::JumpIfTrue { to, .. }
+            | Inst::ForEachNext { exit: to, .. }
+            | Inst::RangeNext { exit: to, .. } => *to = target,
+            other => panic!("patch: not a patchable instruction: {other:?}"),
         }
     }
 }
@@ -522,10 +712,25 @@ mod tests {
     }
 
     #[test]
-    fn loops_are_unlowered_for_now() {
-        // Loops still report honestly until M2b.
-        let err = lower_program(&compile("for i in range(3) do print(i) end"))
-            .expect_err("loops should be unlowered until M2b");
+    fn loops_lower_to_cursor_ops() {
+        let bc = lower_program(&compile("for i in range(3) do print(i) end")).expect("lower");
+        assert!(
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::RangeInit { .. } | Inst::RangeNext { .. })),
+            "expected range cursor ops in the lowered loop"
+        );
+        assert_eq!(bc.root.loop_slots, 1, "one loop slot expected");
+    }
+
+    #[test]
+    fn match_is_unlowered_for_now() {
+        // Match still reports honestly until M2c.
+        let err = lower_program(&compile(
+            "let x = match 1\n  when 1 -> \"a\"\n  when _ -> \"b\"\nend",
+        ))
+        .expect_err("match should be unlowered until M2c");
         assert!(err.contains("unlowered op"), "got: {err}");
     }
 }

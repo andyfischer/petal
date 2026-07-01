@@ -185,3 +185,60 @@ fn short_circuit() {
     assert_parity("let a = 3\nlet y = a > 0 && a < 10");
     assert_parity("let a = 3\nlet y = a < 0 || a > 100");
 }
+
+// -- M2b: loops -------------------------------------------------------------
+
+#[test]
+fn for_loops() {
+    assert_parity("let s = 0\nfor i in range(5) do s = s + i end\nlet y = s");
+    assert_parity("let s = 0\nfor x in [10, 20, 30] do s = s + x end\nlet y = s");
+    assert_parity("let out = []\nfor i in range(4) do out = append(out, i * i) end\nlet y = out");
+    assert_parity("let s = 0\nfor i in range(0) do s = s + 1 end\nlet y = s"); // empty range
+}
+
+#[test]
+fn while_loops() {
+    assert_parity("let i = 0\nlet s = 0\nwhile i < 5 do\n  s = s + i\n  i = i + 1\nend\nlet y = s");
+    assert_parity(
+        "fn count_down(n)\n  let out = []\n  while n > 0 do\n    out = append(out, n)\n    n = n - 1\n  end\n  out\nend\nlet y = count_down(4)",
+    );
+}
+
+#[test]
+fn break_and_continue() {
+    // break before the loop-carried update.
+    assert_parity("let s = 0\nfor i in range(10) do\n  if i == 5 then break end\n  s = s + i\nend\nlet y = s");
+    // break after the update — the phi carry-out still propagates.
+    assert_parity("let s = 0\nfor i in range(10) do\n  s = s + i\n  if i == 2 then break end\nend\nlet y = s");
+    // continue skips the rest of the body.
+    assert_parity("let s = 0\nfor i in range(6) do\n  if i % 2 == 0 then continue end\n  s = s + i\nend\nlet y = s");
+    // continue in a while re-evaluates the condition.
+    assert_parity("let c = 0\nlet i = 0\nwhile i < 10 do\n  i = i + 1\n  if i % 2 == 0 then continue end\n  c = c + 1\nend\nlet y = c");
+}
+
+#[test]
+fn nested_loops_and_break() {
+    assert_parity(
+        "let total = 0\nfor i in range(3) do\n  for j in range(3) do\n    total = total + (i * 3 + j)\n  end\nend\nlet y = total",
+    );
+    // break exits only the inner loop.
+    assert_parity(
+        "let hits = []\nfor i in range(3) do\n  for j in range(3) do\n    if j == 1 then break end\n    hits = append(hits, i * 10 + j)\n  end\nend\nlet y = hits",
+    );
+}
+
+#[test]
+fn break_carries_rebind_through_nested_if() {
+    // A rebinding inside an `if` that then `break`s must carry out — exercises
+    // the enclosing-phi-chain emission on the break path.
+    assert_parity(
+        "let x = 0\nfor i in range(10) do\n  if i == 3 then\n    x = 99\n    break\n  end\nend\nlet y = x",
+    );
+}
+
+#[test]
+fn iterative_algorithms() {
+    assert_parity(
+        "fn fib(n)\n  let a = 0\n  let b = 1\n  for i in range(n) do\n    let t = a + b\n    a = b\n    b = t\n  end\n  a\nend\nlet y = fib(10)",
+    );
+}

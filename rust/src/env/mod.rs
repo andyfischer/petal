@@ -845,7 +845,7 @@ impl Env {
                 for val in &frame.regs {
                     heap.mark_value(*val);
                 }
-                for cursor in &frame.loops {
+                for cursor in frame.loops.iter().flatten() {
                     if let crate::backend::bytecode::vm::LoopCursor::ForEach { elems, .. } = cursor {
                         for val in elems {
                             heap.mark_value(*val);

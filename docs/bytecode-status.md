@@ -7,9 +7,17 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-01. **Status: M1–M3.5 complete — the bytecode VM is the
-default backend, batched dispatch makes it 3–6x faster than the graph engine
-on compute-bound code, and a differential fuzzer guards parity. M4 is next.**
+Last updated: 2026-07-02. **Status: M1–M4 (route B) complete — the bytecode VM
+is the default backend, batched dispatch makes it 3–6x faster than the graph
+engine on compute-bound code, and in-place mutation (escape-analysis-gated)
+eliminates the loop-accumulator COW cost: `append.ptl`'s 1.08 GB of copies →
+0, `particles.ptl` 108.7 MB → 0, `game_of_life.ptl` 2.0 MB → 0, all with
+byte-identical output. A triple differential (graph / BC-noopt / BC-opt) fuzzer
+guards it (soaked to 300k seeds). In-place stays behind
+`OptFlags::in_place_mutation` (default off); enable with `PETAL_OPT=all` or by
+flipping `OptFlags::default()`. Route A (straight-line uniqueness) is deferred —
+see the M4 entry. Next: optionally default-on M4 (an M3-style flip with
+sdl/wasm/vitest re-validation), then M5.**
 The VM
 runs the entire language — straight-line, calls, closures, all control flow,
 match, and persistent state — and matches the graph engine on value, print
@@ -85,7 +93,7 @@ backend/
     disasm.rs   # text + JSON rendering for show-bytecode / ShowBytecode  [DONE]
     vm.rs       # Vm, VmFrame, step(), calls, all control flow, state, match, intrinsics  [DONE thru M3]
     tests.rs    # differential + multi-run-state + resumability tests vs the graph oracle  [DONE]
-    escape.rs   # uniqueness/escape analysis for in-place mutation  [STUB — returns empty set]
+    escape.rs   # route-B uniqueness/escape analysis for in-place mutation  [DONE (route B); route A deferred]
 ```
 
 **The parity lever landed.** Every value-producing op, call resolution,
@@ -352,12 +360,58 @@ phantom terms — expected.)
     50k fuzz seeds green. **This is a user-visible semantics change** (dead
     code after `break`/`continue` no longer executes in the graph backend);
     no example or test relied on the old behavior.
-- [ ] **M4 — In-place mutation.** `escape.rs` implementing routes A + B and
-  escape condition E above (last-use liveness on the lowered bytecode +
-  phi-cycle rule on the graph), `Heap::*_in_place`, in-place opcodes,
-  `fork_watermark` guard, behind `OptFlags.in_place_mutation`. Verify via
-  triple differential + `DupStats` byte-drop assertions on the loop-accumulator
-  examples named above.
+- [x] **M4 — In-place mutation (route B — the loop-accumulator payoff).**
+  Shipped behind `OptFlags.in_place_mutation` (default off; the empty in-place
+  set reproduces the clone-and-alloc oracle byte-for-byte, so "opts off" stays a
+  clean third oracle). Delivered:
+  - **`escape.rs` route B** — a container **value-web** over `Copy`/`Phi`/
+    mutation carrier edges, proven unique by: (1) a single fresh-`Alloc*` root
+    whose only references are the accumulator spine; (2) one loop-carried phi
+    spine (found via a *backward* cone so post-loop escapes never merge in — the
+    fix that let `particles.ptl`'s `next` fire without dragging in the
+    `particles` it feeds); (3) the mutation is *on the spine* (its result flows
+    back into the loop phi's back edge — a bystander mutation on an alias of the
+    carried value is rejected); (4) all mutations in-region and every in-region
+    observer is a web carrier, *linear* (≤1, or in mutually-exclusive branch/
+    match arms — which is how `game_of_life.ptl`'s two-arm `if … append … else
+    … append` accumulator lowers). Reads of the *final* value after the loop are
+    unrestricted. Route B was chosen as the graph phi-cycle analysis the plan
+    called for; the "last-use liveness on lowered bytecode" precision for
+    read-then-mutate is folded into the conservative in-region-observer rule
+    (rejects an in-loop `len(xs)` — sound, slightly conservative).
+  - **`Heap::*_in_place`** (list append/set/drop_last, map set/remove, f64 set/
+    swap): mutate the backing store, reuse the id, record no `DupKind` copy,
+    `debug_assert!(alive)` (the container is always a live root, so id-reuse is a
+    non-hazard). **`ops::set_{field,index}_in_place`** for the `SetField`/
+    `SetIndex` opcodes; a `PetalCxt::in_place` flag routes the mutating builtins
+    (`append`/…) to the in-place heap methods — set only by the VM, never the
+    graph engine. **In-place opcodes** `SetFieldInPlace`/`SetIndexInPlace` and a
+    `BuiltinCall{in_place}` flag are chosen *at lowering time* from the analysis,
+    so there is zero per-op runtime lookup; the `Env` bytecode cache is keyed on
+    the active `OptFlags` and re-lowered when they change.
+  - **Verification.** Triple differential (graph / BC-noopt / BC-opt) across the
+    22 examples, the `tests.rs` M4 cases, and the fuzzer — now a *triple*-oracle
+    fuzzer that also generates list/record aliases (`let ys = xs`) and prints
+    every live list's `len`, so an in-place mutation of a shared alias surfaces
+    as a value divergence. `DupStats::total_bytes()` strictly drops (to 0) on
+    `append`/`particles`/`life`. **The fuzzer found two real unsoundnesses in
+    the first draft** (both now pinned by named regression tests + the checks
+    above): (a) a pre-loop alias `let ys = xs` of the fresh root — fixed by
+    requiring the root's only users be on the spine; (b) *seed 84619* — a
+    bystander mutation `let al = xs; al = append(al, v)` on an alias of an
+    **outer**-loop carried value, where the append result is discarded — fixed by
+    the spine-membership check. Soaked to 300k seeds green.
+  - **`fork_watermark` — not needed under the current fork.** `Heap::fork`
+    deep-copies the slot vectors, so a speculative child mutates its own copy;
+    in-place mutation cannot cross a fork boundary. The watermark becomes
+    necessary only if `fork` moves to `Rc`-shared payloads (speculative plan
+    Increment 4); a `debug_assert!(alive)` covers the free-list id-reuse hazard.
+- [ ] **M4 route A — straight-line last-use uniqueness (deferred).** `let xs =
+  […]; xs[0] = v` where `xs` is dead after. Lower payoff than the accumulator
+  (the plan itself calls route B "the payoff case"), and it wants the same
+  fuzzer rigor route B just earned before shipping. Until then those mutations
+  stay clone-and-alloc (always correct). The `escape.rs` machinery (web, region,
+  spine, linearity) is the substrate a route-A pass would extend.
 - [ ] **M5 (optional, profiling-gated).** Packed encoding, superinstructions,
   pattern-tree micro-ops (Maranget-style decision trees replacing the
   `MatchArm` fat-op), register-file reuse/compaction (if not already handled
@@ -373,32 +427,40 @@ phantom terms — expected.)
 
 ## Handoff — next actions
 
-M1–M3.5 are done and committed (one commit per chunk: M1a/M1b/M1c,
-M2a/M2b/M2c, M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz). The VM is
-at full behavioral parity with the graph engine, is the default backend, runs
-3–6x faster on compute-bound code thanks to batched dispatch, and parity is
-now guarded by a 500-seed-per-test differential fuzzer (soaked to 50k). The
-checkpoint's outputs settled both open questions: the register stack defers
-to M5 (~13% of a call-heavy microbench), and M4's before-numbers are pinned
-(`append.ptl`: 1.08 GB copied; benchmark table in the M3.5 entry). Next: M4.
+M1–M4 (route B) are done (M4 not yet committed at time of writing; earlier
+chunks: M1a/M1b/M1c, M2a/M2b/M2c, M3-state+annotation, M3-flip,
+M3.5-bench+batch+fuzz). The VM is at full behavioral parity with the graph
+engine, is the default backend, runs 3–6x faster on compute-bound code, and —
+with `PETAL_OPT=all` — mutates provably-unique loop accumulators in place,
+zeroing the COW cost on `append`/`particles`/`life` with byte-identical output.
 
-### Next: M4 — in-place mutation (the payoff)
-`escape.rs` is still a stub returning an empty set. Implement the **revised**
-uniqueness analysis (routes A + B and escape condition E in the **Escape /
-uniqueness analysis** section above). The critical point of the revision: route
-B (phi-cycle uniqueness) is not optional polish — the loop-carried accumulator
-is the dominant mutation pattern in the corpus, and without route B the
-analysis fires on almost nothing that matters. Last-use runs as a liveness pass
-over the lowered bytecode; the escape and phi-cycle checks run on the term
-graph (`trace_dependents` + the phi-source set from `trace_provenance`). Then
-add `Heap::*_in_place` methods, emit `SetIndexInPlace`/`SetFieldInPlace`
-(already in the ISA) when the analysis proves safety, gate on
-`OptFlags.in_place_mutation`, and add the `fork_watermark` guard. **Verify** via
-triple differential (graph / BC-noopt / BC-opt agree) plus assert
-`DupStats::total_bytes()` strictly drops on `game_of_life.ptl` and
-`particles.ptl` (if it doesn't drop there, route B isn't firing). The
-`OptFlags` plumbing, `--no-opt` flag, and both correctness oracles are already in
-place.
+### Next: default-on M4, then route A / M5
+1. **Decide whether to default-on M4** (flip `OptFlags::default()` to enable
+   `in_place_mutation`). It is currently gated off, so sketches don't yet see
+   the win. This is an M3-style flip: re-validate the full Rust suite, vitest,
+   the example sweep, petal-sdl build+tests, both WASM packages, and a Node
+   smoke test — because the mutating builtins and `ops::set_*` are shared with
+   embedders. The correctness net (300k-seed triple fuzzer + example
+   differential + `DupStats` drop) is already in place.
+2. **Route A** (straight-line uniqueness) — deferred; see its M4 checklist entry.
+3. **M5** — packed encoding / superinstructions / structural sharing.
+
+**M4 gotchas (learned the hard way — the fuzzer found both).**
+- **The mutation must be *on the spine*.** It is not enough that the container
+  strips back to a loop-carried phi: an alias of an *outer* accumulator
+  (`let al = xs; al = append(al, v)` in a nested loop, result discarded) strips
+  to the outer loop phi but is a bystander — mutating it in place corrupts `xs`.
+  `route_b_ok` requires the mutation's result to flow into the loop phi's back
+  edge (seed 84619). Don't relax this.
+- **The fresh root's only users must be the spine.** A pre-loop `let ys = xs`
+  aliases the initial container and observes every in-place mutation; the
+  "out-region reads are safe" rule is for reads of the *final* value only.
+- **Build the spine web with a *backward* cone**, not a bidirectional flood:
+  following the value forward past the loop merges the accumulator with whatever
+  consumes its final value (`next` → the `particles` it feeds), yielding a
+  two-root web that never fires. Confine the linearity web to the loop region.
+- In-place stats **must not** record a `DupKind` (the verification asserts bytes
+  *fall*); the `debug_assert!(alive)` in `Heap::*_in_place` is the id-reuse net.
 
 **Gotchas already discovered (still true).**
 - `let x = <expr>` names the result term directly — no trailing `Copy`/`Move`.
@@ -442,7 +504,7 @@ place.
 - `rust/src/backend/graph/{mod,exec,ops,call,state,loops,pattern,error}.rs` — the
   step evaluator, now delegating to the shared handlers.
 - `rust/src/backend/bytecode/{isa,lower,vm,disasm,tests}.rs` — the bytecode
-  backend (complete through M3.5); `escape.rs` is the M4 stub.
+  backend (complete through M4 route B); `escape.rs` is the route-B analysis.
 - `rust/src/backend/bytecode/fuzz.rs` — the differential fuzzer (seeded
   generator + exact-agreement runner; `PETAL_FUZZ_ITERS` scales the soak).
 - `benchmarks/*.ptl` + `ts/bin/bench-backends.ts` — the backend benchmark

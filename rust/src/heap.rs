@@ -326,6 +326,41 @@ impl Heap {
         self.alloc_list(elements)
     }
 
+    // --- In-place list operations (M4; escape-analysis-gated) ---
+    //
+    // These MUTATE the backing store of `id` and return the SAME id, breaking
+    // the immutable-by-construction contract the COW methods uphold. They are
+    // sound *only* when the caller has statically proven `id` is uniquely owned
+    // and non-escaping — see `backend/bytecode/escape.rs` and the
+    // `OptFlags::in_place_mutation` gate. Because no backing `Vec` is cloned,
+    // they record no `DupKind` copy: the whole point of M4 is that the byte
+    // counters fall. `id` must be a live heap root at the call (the analysis
+    // guarantees it stays in a register), which the `debug_assert!` pins.
+
+    /// In-place [`list_append`](Self::list_append): push `val` onto `id`'s
+    /// backing store and return `id` unchanged. Amortized O(1), no copy.
+    pub fn list_append_in_place(&mut self, id: ListId, val: Value) -> ListId {
+        debug_assert!(self.lists[id.0 as usize].alive, "in-place append on a dead list");
+        self.lists[id.0 as usize].elements.push(val);
+        id
+    }
+
+    /// In-place [`list_set`](Self::list_set): overwrite `elements[index]` and
+    /// return `id`. The caller must ensure `index` is in bounds.
+    pub fn list_set_in_place(&mut self, id: ListId, index: usize, val: Value) -> ListId {
+        debug_assert!(self.lists[id.0 as usize].alive, "in-place set on a dead list");
+        self.lists[id.0 as usize].elements[index] = val;
+        id
+    }
+
+    /// In-place [`list_drop_last`](Self::list_drop_last): pop `id`'s last
+    /// element and return `id`. A no-op on an empty list.
+    pub fn list_drop_last_in_place(&mut self, id: ListId) -> ListId {
+        debug_assert!(self.lists[id.0 as usize].alive, "in-place drop_last on a dead list");
+        self.lists[id.0 as usize].elements.pop();
+        id
+    }
+
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
@@ -375,6 +410,23 @@ impl Heap {
         self.alloc_f64_array(data)
     }
 
+    /// In-place [`f64_array_set`](Self::f64_array_set): overwrite `data[index]`
+    /// and return `id`. Caller must ensure `index` is in bounds. See the
+    /// in-place list methods for the soundness contract.
+    pub fn f64_array_set_in_place(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
+        debug_assert!(self.f64_arrays[id.0 as usize].alive, "in-place set on a dead f64 array");
+        self.f64_arrays[id.0 as usize].data[index] = val;
+        id
+    }
+
+    /// In-place [`f64_array_swap`](Self::f64_array_swap): swap elements `i` and
+    /// `j` and return `id`. Caller must ensure both are in bounds.
+    pub fn f64_array_swap_in_place(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
+        debug_assert!(self.f64_arrays[id.0 as usize].alive, "in-place swap on a dead f64 array");
+        self.f64_arrays[id.0 as usize].data.swap(i, j);
+        id
+    }
+
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
@@ -417,6 +469,23 @@ impl Heap {
         self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
         self.alloc_map(entries)
+    }
+
+    /// In-place [`map_set`](Self::map_set): insert/overwrite `key` in `id`'s
+    /// entry table and return `id`. See the in-place list methods for the
+    /// soundness contract.
+    pub fn map_set_in_place(&mut self, id: MapId, key: String, val: Value) -> MapId {
+        debug_assert!(self.maps[id.0 as usize].alive, "in-place set on a dead map");
+        self.maps[id.0 as usize].entries.insert(key, val);
+        id
+    }
+
+    /// In-place [`map_remove`](Self::map_remove): shift-remove `key` from `id`
+    /// (preserving order of the rest) and return `id`. A no-op for an absent key.
+    pub fn map_remove_in_place(&mut self, id: MapId, key: &str) -> MapId {
+        debug_assert!(self.maps[id.0 as usize].alive, "in-place remove on a dead map");
+        self.maps[id.0 as usize].entries.shift_remove(key);
+        id
     }
 
     // --- Element allocation ---

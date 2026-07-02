@@ -21,6 +21,7 @@ use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
+use super::escape::InPlaceSet;
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
 use crate::program::{BlockId, FunctionDef, Program, Term, TermId, TermOp};
 
@@ -38,15 +39,25 @@ struct LoopCtx {
     break_jumps: Vec<usize>,
 }
 
-/// Lower a whole program to bytecode. Returns an error naming the first op that
-/// cannot yet be lowered (so `ShowBytecode` surfaces progress honestly).
+/// Lower a whole program to bytecode with no optimizations (the correctness
+/// baseline / oracle). Equivalent to `lower_program_opt` with an empty
+/// in-place set.
 pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
+    lower_program_opt(program, &InPlaceSet::default())
+}
+
+/// Lower a whole program to bytecode, emitting in-place mutation opcodes for the
+/// terms `in_place` proved unique + non-escaping (M4). Returns an error naming
+/// the first op that cannot yet be lowered (so `ShowBytecode` surfaces progress
+/// honestly). With `InPlaceSet::default()` (empty) the output is identical to
+/// the un-optimized backend, so "bytecode with opts off" stays a clean oracle.
+pub fn lower_program_opt(program: &Program, in_place: &InPlaceSet) -> Result<BytecodeProgram, String> {
     let mut match_binds = HashMap::new();
-    let (root, root_binds) = FnLowerer::new(program, None, program.root_block).lower()?;
+    let (root, root_binds) = FnLowerer::new(program, None, program.root_block, in_place).lower()?;
     match_binds.extend(root_binds);
     let mut fns = Vec::with_capacity(program.functions.len());
     for func in &program.functions {
-        let (bf, binds) = FnLowerer::for_function(program, func).lower()?;
+        let (bf, binds) = FnLowerer::for_function(program, func, in_place).lower()?;
         match_binds.extend(binds);
         fns.push(bf);
     }
@@ -57,6 +68,8 @@ pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
 struct FnLowerer<'p> {
     program: &'p Program,
     func: Option<&'p FunctionDef>,
+    /// Mutation terms escape analysis proved safe to lower in place (M4).
+    in_place: &'p InPlaceSet,
     /// The function's entry block (root block, or the def's `body_block`).
     entry_block: BlockId,
     /// Blocks belonging to this function, in discovery order.
@@ -86,10 +99,16 @@ struct FnLowerer<'p> {
 }
 
 impl<'p> FnLowerer<'p> {
-    fn new(program: &'p Program, func: Option<&'p FunctionDef>, entry_block: BlockId) -> Self {
+    fn new(
+        program: &'p Program,
+        func: Option<&'p FunctionDef>,
+        entry_block: BlockId,
+        in_place: &'p InPlaceSet,
+    ) -> Self {
         FnLowerer {
             program,
             func,
+            in_place,
             entry_block,
             blocks: Vec::new(),
             base: HashMap::new(),
@@ -112,8 +131,8 @@ impl<'p> FnLowerer<'p> {
         self.code.len() - 1
     }
 
-    fn for_function(program: &'p Program, func: &'p FunctionDef) -> Self {
-        Self::new(program, Some(func), func.body_block)
+    fn for_function(program: &'p Program, func: &'p FunctionDef, in_place: &'p InPlaceSet) -> Self {
+        Self::new(program, Some(func), func.body_block, in_place)
     }
 
     /// Flat register for a term (in any block belonging to this function).
@@ -315,6 +334,12 @@ impl<'p> FnLowerer<'p> {
                 Inst::MakeEnumVariant { dst, name: *name, fields: self.regs(ins) }
             }
             TermOp::GetField(field) => Inst::GetField { dst, obj: self.flat(ins[0]), field: *field },
+            TermOp::SetField(field) if self.in_place.allows(term.id) => Inst::SetFieldInPlace {
+                dst,
+                obj: self.flat(ins[0]),
+                field: *field,
+                val: self.flat(ins[1]),
+            },
             TermOp::SetField(field) => Inst::SetField {
                 dst,
                 obj: self.flat(ins[0]),
@@ -324,6 +349,12 @@ impl<'p> FnLowerer<'p> {
             TermOp::GetIndex => {
                 Inst::GetIndex { dst, obj: self.flat(ins[0]), idx: self.flat(ins[1]) }
             }
+            TermOp::SetIndex if self.in_place.allows(term.id) => Inst::SetIndexInPlace {
+                dst,
+                obj: self.flat(ins[0]),
+                idx: self.flat(ins[1]),
+                val: self.flat(ins[2]),
+            },
             TermOp::SetIndex => Inst::SetIndex {
                 dst,
                 obj: self.flat(ins[0]),
@@ -349,6 +380,7 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 name: *name,
                 args: self.regs(ins),
+                in_place: self.in_place.allows(term.id),
             },
             TermOp::MakeClosure(fn_id) => Inst::MakeClosure {
                 dst,

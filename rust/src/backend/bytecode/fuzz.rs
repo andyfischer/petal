@@ -13,7 +13,7 @@
 //! iteration count keeps `cargo test` fast; scale up with
 //! `PETAL_FUZZ_ITERS=20000 cargo test fuzz -- --nocapture` for a soak run.
 
-use crate::backend::Backend;
+use crate::backend::{Backend, OptFlags};
 use crate::env::Env;
 use crate::value;
 
@@ -166,8 +166,11 @@ impl Gen {
             3 => {
                 let list = self.pick(Kind::List);
                 match list {
-                    // Reads use indices 0..3: initial literals are 3 long and
-                    // appends only grow, so this is always in bounds.
+                    // Reads use indices 0..3 (initial literals are 3 long and
+                    // appends only grow, so always in bounds) or `len` — the
+                    // latter is how an append that wrongly mutated a shared
+                    // alias in place becomes observable.
+                    Some(xs) if self.rng.chance(30) => format!("len({xs})"),
                     Some(xs) => format!("{xs}[{}]", self.rng.below(3)),
                     None => self.int_leaf(),
                 }
@@ -266,7 +269,26 @@ impl Gen {
 
     fn stmt(&mut self) {
         self.stmt_budget -= 1;
-        match self.rng.below(14) {
+        match self.rng.below(16) {
+            // Alias an existing list/record into a fresh name — the escape case
+            // that gates M4 in-place mutation: a live alias of a container that
+            // is later mutated must still observe value semantics. In-place must
+            // either decline or stay unobservable; either way the three oracles
+            // must agree.
+            14 => {
+                if let Some(xs) = self.pick(Kind::List) {
+                    let name = self.fresh("al");
+                    self.line(&format!("let {name} = {xs}"));
+                    self.vars.push(Var { name, kind: Kind::List, frozen: false });
+                }
+            }
+            15 => {
+                if let Some(r) = self.pick(Kind::Rec) {
+                    let name = self.fresh("ar");
+                    self.line(&format!("let {name} = {r}"));
+                    self.vars.push(Var { name, kind: Kind::Rec, frozen: false });
+                }
+            }
             0 | 1 => {
                 let name = self.fresh("v");
                 let e = self.int_expr(2);
@@ -450,29 +472,54 @@ impl Gen {
         if !live.is_empty() {
             self.line(&format!("print(\"end\", {})", live.join(", ")));
         }
+        // Force every live list's length through output too, so an in-place
+        // mutation that wrongly grew a shared alias (M4) shows up as a value
+        // divergence rather than hiding in an unread length.
+        let list_lens: Vec<String> = self
+            .vars
+            .iter()
+            .filter(|v| v.kind == Kind::List)
+            .map(|v| format!("len({})", v.name))
+            .collect();
+        if !list_lens.is_empty() {
+            self.line(&format!("print(\"lens\", {})", list_lens.join(", ")));
+        }
         self.src
     }
 }
 
 // ── Differential runner ─────────────────────────────────────────
 
-/// Run `code` on `backend`: rendered result value + print output, or the full
-/// annotated error text.
-fn run(code: &str, backend: Backend) -> Result<(String, Vec<String>), String> {
+/// Run `code` on `backend` with `opts`: rendered result value + print output,
+/// or the full annotated error text.
+fn run(code: &str, backend: Backend, opts: OptFlags) -> Result<(String, Vec<String>), String> {
     let mut env = Env::new();
     env.set_backend(backend);
+    env.set_opt_flags(opts);
     let v = env.run_source(code)?;
     let rendered = value::value_to_display_string(&v, env.heap());
     Ok((rendered, env.take_output()))
 }
 
-/// Require exact agreement, including error text (the M3 parity bar).
+/// Require exact agreement across all three oracles, including error text: the
+/// graph engine, the bytecode VM with optimizations off, and the bytecode VM
+/// with in-place mutation on (M4). The generator emits exactly the mutation
+/// shapes route B targets — `xs = append(xs, e)`, `xs[i] = e`, `r.a = e` inside
+/// loops, branches, and functions — so this is the primary net catching a
+/// mis-fired in-place mutation as a value divergence.
 fn assert_exact_parity(seed: u64, code: &str) {
-    let graph = run(code, Backend::Graph);
-    let bytecode = run(code, Backend::Bytecode);
+    let graph = run(code, Backend::Graph, OptFlags::none());
+    let bc_noopt = run(code, Backend::Bytecode, OptFlags::none());
+    let bc_opt = run(code, Backend::Bytecode, OptFlags::all());
     assert_eq!(
-        graph, bytecode,
-        "backend divergence at seed {seed}; reproduce with \
+        graph, bc_noopt,
+        "graph vs bytecode(no-opt) divergence at seed {seed}; reproduce with \
+         Gen::new({seed}).program()\n--- program ---\n{code}"
+    );
+    assert_eq!(
+        bc_noopt, bc_opt,
+        "in-place mutation (M4) divergence at seed {seed}; bytecode(no-opt) vs \
+         bytecode(in-place) disagree — reproduce with \
          Gen::new({seed}).program()\n--- program ---\n{code}"
     );
 }

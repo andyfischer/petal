@@ -99,6 +99,12 @@ pub struct PetalCxt<'a> {
     bindings: &'a mut HashMap<SymbolId, Value>,
     counters: &'a mut HashMap<SymbolId, u64>,
     results: Vec<Value>,
+    /// When true, the caller (the bytecode VM, under `OptFlags::in_place_mutation`)
+    /// has proven this call's container argument is uniquely owned and
+    /// non-escaping, so a mutating builtin (`append`, `drop_last`, `set`, …) may
+    /// mutate the backing store in place and reuse its id instead of cloning.
+    /// Always false from the graph engine (the clone-and-alloc oracle).
+    in_place: bool,
 }
 
 impl<'a> PetalCxt<'a> {
@@ -120,7 +126,21 @@ impl<'a> PetalCxt<'a> {
             bindings,
             counters,
             results: Vec::new(),
+            in_place: false,
         }
+    }
+
+    /// Mark this call as in-place-eligible (see [`in_place`](Self::in_place)).
+    /// The VM sets this before invoking a mutating builtin when its escape
+    /// analysis proved the container argument unique + non-escaping.
+    pub fn set_in_place(&mut self, in_place: bool) {
+        self.in_place = in_place;
+    }
+
+    /// Whether a mutating builtin may mutate its container argument in place
+    /// (and reuse its id) rather than cloning. See [`set_in_place`](Self::set_in_place).
+    pub fn in_place(&self) -> bool {
+        self.in_place
     }
 
     // --- Argument access (1-indexed, like Lua) ---

@@ -529,6 +529,27 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, v);
             }
 
+            // --- in-place mutation (M4; escape analysis proved unique) ---
+            Inst::SetFieldInPlace { dst, obj, field, val } => {
+                let v = ops::set_field_in_place(
+                    self.program,
+                    self.heap,
+                    *field,
+                    self.reg(fi, *obj),
+                    self.reg(fi, *val),
+                )?;
+                self.set(fi, *dst, v);
+            }
+            Inst::SetIndexInPlace { dst, obj, idx, val } => {
+                let v = ops::set_index_in_place(
+                    self.heap,
+                    self.reg(fi, *obj),
+                    self.reg(fi, *idx),
+                    self.reg(fi, *val),
+                )?;
+                self.set(fi, *dst, v);
+            }
+
             // --- calls / closures ---
             Inst::MakeClosure { dst, func, caps } => {
                 let captures = self.regs(fi, caps);
@@ -559,9 +580,9 @@ impl<'a> Vm<'a> {
                 let argv = self.regs(fi, args);
                 self.do_method_call(fi, *dst, receiver, *name, &argv, origin)?;
             }
-            Inst::BuiltinCall { dst, name, args } => {
+            Inst::BuiltinCall { dst, name, args, in_place } => {
                 let argv = self.regs(fi, args);
-                self.do_builtin_call(fi, *dst, *name, &argv)?;
+                self.do_builtin_call(fi, *dst, *name, &argv, *in_place)?;
             }
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);
@@ -637,13 +658,8 @@ impl<'a> Vm<'a> {
                     .unwrap_or("Unknown error")
                     .to_string());
             }
-
-            other => {
-                return Err(format!(
-                    "bytecode VM: unimplemented instruction {:?} (arrives in a later milestone)",
-                    std::mem::discriminant(other)
-                ));
-            }
+            // The instruction set is now fully implemented — no catch-all, so a
+            // future `Inst` variant is a compile error until the VM handles it.
         }
         Ok(StepResult::Continue)
     }
@@ -763,6 +779,7 @@ impl<'a> Vm<'a> {
         dst: Reg,
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
+        in_place: bool,
     ) -> Result<(), String> {
         let name = match self.program.get_string_constant(name_cid) {
             Some(s) => s.to_string(),
@@ -772,7 +789,13 @@ impl<'a> Vm<'a> {
             Some(id) => id,
             None => return Err(format!("Unknown builtin: {}", name)),
         };
-        let v = self.call_native_or_intrinsic(nid, args)?;
+        // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
+        // in-place flag only reaches `call_native_fn`.
+        let v = if in_place {
+            self.call_native_fn_in_place(nid, args)?
+        } else {
+            self.call_native_or_intrinsic(nid, args)?
+        };
         self.set(fi, dst, v);
         Ok(())
     }
@@ -845,8 +868,25 @@ impl<'a> Vm<'a> {
         }
     }
 
-    /// Call a non-intrinsic native function via `PetalCxt`.
+    /// Call a non-intrinsic native function via `PetalCxt` (clone-and-alloc).
     fn call_native_fn(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+        self.call_native_fn_flagged(nid, args, false)
+    }
+
+    /// Call a non-intrinsic native function marked in-place: a mutating builtin
+    /// (`append`/`set`/…) may reuse its container argument's backing store.
+    /// Only reached when escape analysis proved the container unique +
+    /// non-escaping (M4).
+    fn call_native_fn_in_place(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+        self.call_native_fn_flagged(nid, args, true)
+    }
+
+    fn call_native_fn_flagged(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        in_place: bool,
+    ) -> Result<Value, String> {
         let func = self.native_fns.get_func(nid);
         let mut cxt = PetalCxt::new(
             args,
@@ -857,6 +897,7 @@ impl<'a> Vm<'a> {
             self.bindings,
             self.counters,
         );
+        cxt.set_in_place(in_place);
         let count = func(&mut cxt)?;
         let results = cxt.take_results();
         Ok(if count > 0 && !results.is_empty() {

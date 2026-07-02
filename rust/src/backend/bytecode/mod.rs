@@ -13,8 +13,9 @@ pub mod isa;
 pub mod lower;
 pub mod vm;
 
+pub use escape::{analyze as analyze_escapes, InPlaceSet};
 pub use isa::{BytecodeFn, BytecodeProgram, Inst};
-pub use lower::lower_program;
+pub use lower::{lower_program, lower_program_opt};
 pub use vm::{Vm, VmFrame};
 
 #[cfg(test)]

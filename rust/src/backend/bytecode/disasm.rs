@@ -114,8 +114,9 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         MethodCall { dst, recv, name, args } => {
             format!("r{} = r{}.{}{}", dst, recv, kconst(program, *name), reglist(args))
         }
-        BuiltinCall { dst, name, args } => {
-            format!("r{} = builtin {}{}", dst, kconst(program, *name), reglist(args))
+        BuiltinCall { dst, name, args, in_place } => {
+            let tag = if *in_place { "builtin_in_place" } else { "builtin" };
+            format!("r{} = {} {}{}", dst, tag, kconst(program, *name), reglist(args))
         }
         MakeClosure { dst, func, caps } => {
             format!("r{} = closure f{} caps={}", dst, func.0, reglist(caps))

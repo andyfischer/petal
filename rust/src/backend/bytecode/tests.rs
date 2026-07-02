@@ -459,3 +459,160 @@ fn match_in_loop() {
         "let total = 0\nfor i in range(5) do\n  let d = match i % 3\n    when 0 -> 10\n    when 1 -> 1\n    when _ -> 0\n  end\n  total = total + d\nend\nlet y = total",
     );
 }
+
+// -- M4: in-place mutation (escape-analysis gated) --------------------------
+//
+// These assert the triple differential the plan requires: the graph engine,
+// the bytecode VM with in-place mutation off, and the bytecode VM with it on
+// must all agree on value + output. They also pin that the optimization
+// actually *fires* (via `DupStats` and the analysis directly) so the parity
+// checks aren't vacuously green on a disabled optimization.
+
+use crate::backend::bytecode::escape;
+use crate::backend::OptFlags;
+
+/// Run `code` on the bytecode VM with `opts`, returning value + output.
+fn run_opt(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
+    let mut env = Env::new();
+    env.set_backend(Backend::Bytecode);
+    env.set_opt_flags(opts);
+    let v = env.run_source(code)?;
+    Ok((value::value_to_display_string(&v, env.heap()), env.take_output()))
+}
+
+/// Graph == bytecode(no-opt) == bytecode(in-place): the M4 correctness bar.
+#[track_caller]
+fn assert_inplace_parity(code: &str) {
+    assert_parity(code); // graph vs bytecode(no-opt)
+    let noopt = run_opt(code, OptFlags::none());
+    let opt = run_opt(code, OptFlags::all());
+    match (noopt, opt) {
+        (Ok((nv, no)), Ok((ov, oo))) => {
+            assert_eq!(nv, ov, "in-place value mismatch for:\n{code}");
+            assert_eq!(no, oo, "in-place output mismatch for:\n{code}");
+        }
+        (Err(_), Err(_)) => {}
+        (n, o) => panic!("in-place ok/err mismatch for:\n{code}\n  noopt={n:?}\n  opt={o:?}"),
+    }
+}
+
+/// Count of in-place-eligible mutation terms the analysis finds in `code`.
+fn inplace_count(code: &str) -> usize {
+    use crate::compiler::Compiler;
+    use crate::lexer::Lexer;
+    use crate::native_fn::NativeFnTable;
+    use crate::parse::Parser;
+    use crate::program::ProgramId;
+    let mut lexer = Lexer::new(code);
+    lexer.tokenize().expect("tokenize");
+    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
+    let stmts = parser.parse_program().expect("parse");
+    let mut natives = NativeFnTable::new();
+    crate::builtins::register_builtins(&mut natives);
+    let program = Compiler::new().compile(&stmts, code.to_string(), ProgramId(0), &natives);
+    escape::analyze(&program).len()
+}
+
+#[test]
+fn inplace_append_accumulator_parity() {
+    assert_inplace_parity(
+        "let xs = []\nfor i in range(0, 20) do\n  xs = append(xs, i * i)\nend\nprint(len(xs), xs[0], xs[19])",
+    );
+}
+
+#[test]
+fn inplace_branchy_accumulator_parity() {
+    // The game_of_life shape: two appends in mutually-exclusive branch arms.
+    assert_inplace_parity(
+        "let row = []\nfor x in range(0, 12) do\n  if x % 2 == 0 then\n    row = append(row, 1)\n  else\n    row = append(row, 0)\n  end\nend\nprint(len(row), row[0], row[1])",
+    );
+}
+
+#[test]
+fn inplace_nested_accumulator_parity() {
+    // Nested accumulators: an inner `row` fed into an outer `grid` per iteration.
+    assert_inplace_parity(
+        "let grid = []\nfor y in range(0, 6) do\n  let row = []\n  for x in range(0, 6) do\n    row = append(row, x + y)\n  end\n  grid = append(grid, row)\nend\nprint(len(grid), grid[5][5])",
+    );
+}
+
+#[test]
+fn inplace_setindex_accumulator_parity() {
+    assert_inplace_parity(
+        "let xs = [0, 0, 0]\nfor i in range(0, 3) do\n  xs[i] = i * 10\nend\nprint(xs[0], xs[1], xs[2])",
+    );
+}
+
+#[test]
+fn inplace_setfield_accumulator_parity() {
+    assert_inplace_parity(
+        "let r = { a: 0, b: 0 }\nfor i in range(0, 5) do\n  r.a = r.a + i\nend\nprint(r.a)",
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_container_aliased() {
+    // `ys = xs` before the append means a live alias observes the old value —
+    // in-place must NOT fire, and the two engines must still agree that the
+    // append is value-semantic (ys unchanged).
+    let code =
+        "let xs = []\nlet ys = xs\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "aliased accumulator must not be in-place");
+}
+
+#[test]
+fn inplace_does_not_fire_on_bystander_alias_of_carried_value() {
+    // Regression (fuzzer seed 84619): `xs` is an outer-loop accumulator; inside
+    // a nested loop `al = xs` aliases the carried value and `al = append(al, …)`
+    // mutates the alias, but the append's result is discarded — it is NOT the
+    // spine mutation. Marking it in-place corrupted `xs` (its length grew). The
+    // spine check rejects it; all three engines must agree `len(xs)` stays 3.
+    let code = "let xs = [0, 0, 2]\nfor i in range(0, 2) do\n  xs[1] = 5\n  for j in range(1, 5) do\n    let al = xs\n    al = append(al, 13)\n  end\nend\nprint(len(xs))";
+    assert_inplace_parity(code);
+}
+
+#[test]
+fn inplace_does_not_fire_on_state_container() {
+    // A state-backed list is not a fresh unique alloc — never in-place.
+    let code =
+        "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    assert_eq!(inplace_count(code), 0, "state container must not be in-place");
+}
+
+#[test]
+fn inplace_analysis_fires_on_accumulators() {
+    // Guards against a refactor silently disabling the optimization: the
+    // canonical accumulator shapes must be recognized.
+    assert!(
+        inplace_count("let xs = []\nfor i in range(0, 5) do\n  xs = append(xs, i)\nend\nlet n = len(xs)") >= 1,
+        "simple accumulator should fire",
+    );
+    assert!(
+        inplace_count(
+            "let row = []\nfor x in range(0, 4) do\n  if x % 2 == 0 then\n    row = append(row, 1)\n  else\n    row = append(row, 0)\n  end\nend\nlet n = len(row)"
+        ) >= 2,
+        "branchy accumulator should fire on both arms",
+    );
+}
+
+#[test]
+fn inplace_dup_bytes_drop_on_accumulator() {
+    if !crate::stats::DUP_STATS_ENABLED {
+        return;
+    }
+    // The plan's verification: turning the optimization on must strictly drop
+    // the bytes copied for a loop-carried accumulator.
+    let code = "let xs = []\nfor i in range(0, 200) do\n  xs = append(xs, i)\nend\nlet n = len(xs)";
+    let bytes = |opts| {
+        let mut env = Env::new();
+        env.set_backend(Backend::Bytecode);
+        env.set_opt_flags(opts);
+        env.run_source(code).expect("run");
+        env.heap().dup_stats().total_bytes()
+    };
+    let off = bytes(OptFlags::none());
+    let on = bytes(OptFlags::all());
+    assert!(off > 0, "baseline should copy something");
+    assert!(on < off, "in-place should strictly reduce copied bytes ({on} !< {off})");
+}

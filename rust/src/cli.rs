@@ -682,9 +682,15 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowBytecode { json } => {
-            use crate::backend::bytecode::{disasm, lower_program};
+            use crate::backend::bytecode::{analyze_escapes, disasm, lower_program_opt, InPlaceSet};
             let program = compile_source(&source, &source_input, &include_dirs);
-            match lower_program(&program) {
+            // Honor `PETAL_OPT` so in-place opcodes (M4) are inspectable, e.g.
+            // `PETAL_OPT=all petal show-bytecode <file>`.
+            let in_place = match std::env::var("PETAL_OPT").ok().as_deref() {
+                Some("all") | Some("1") | Some("on") => analyze_escapes(&program),
+                _ => InPlaceSet::default(),
+            };
+            match lower_program_opt(&program, &in_place) {
                 Ok(bc) => {
                     if json {
                         println!(

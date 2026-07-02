@@ -42,8 +42,10 @@ pub struct Env {
     opt_flags: OptFlags,
     /// Lazily-lowered bytecode, cached next to each `Program`. Populated on the
     /// first bytecode run of a program; an entry's presence means lowering
-    /// succeeded.
-    bytecode: HashMap<ProgramId, BytecodeProgram>,
+    /// succeeded. The stored `OptFlags` is the flag set the lowering was built
+    /// with — when the active flags change (e.g. `--no-opt`), the cache is
+    /// re-lowered so in-place opcodes match the current optimization gate.
+    bytecode: HashMap<ProgramId, (OptFlags, BytecodeProgram)>,
     /// Module resolution: in-memory registrations, search paths, and implicit
     /// imports. See docs/module-system.md.
     modules: ModuleRegistry,
@@ -118,13 +120,22 @@ impl Env {
     /// Ensure `pid`'s program is lowered to bytecode and cached. Returns the
     /// lowering error (naming the first unlowered op) if it cannot be lowered.
     fn ensure_bytecode(&mut self, pid: ProgramId) -> Result<(), String> {
-        if self.bytecode.contains_key(&pid) {
+        // Serve the cache only if it was lowered with the flags in effect now.
+        if self.bytecode.get(&pid).map(|(f, _)| *f) == Some(self.opt_flags) {
             return Ok(());
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
-        let bc = crate::backend::bytecode::lower_program(program)
+        // Escape analysis (M4) is a pure function of the program; honoring its
+        // in-place set is gated on the flag, so "opts off" reproduces the
+        // clone-and-alloc oracle byte-for-byte.
+        let in_place = if self.opt_flags.in_place_mutation {
+            crate::backend::bytecode::analyze_escapes(program)
+        } else {
+            crate::backend::bytecode::InPlaceSet::default()
+        };
+        let bc = crate::backend::bytecode::lower_program_opt(program, &in_place)
             .map_err(|e| format!("bytecode lowering failed: {e}"))?;
-        self.bytecode.insert(pid, bc);
+        self.bytecode.insert(pid, (self.opt_flags, bc));
         Ok(())
     }
 
@@ -373,7 +384,7 @@ impl Env {
         let pid = self.stacks.get(&stack_id).unwrap().program_id;
         self.ensure_bytecode(pid)?;
 
-        let bc = self.bytecode.get(&pid).unwrap();
+        let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
         let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;

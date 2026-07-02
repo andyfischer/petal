@@ -452,13 +452,42 @@ pub fn set_field(
     obj: Value,
     val: Value,
 ) -> Result<Value, String> {
+    set_field_impl(program, heap, field_cid, obj, val, false)
+}
+
+/// In-place `obj.field = val`: mutates `obj`'s backing map and reuses its id.
+/// Sound only when the bytecode escape analysis has proven `obj` unique and
+/// non-escaping (see `backend/bytecode/escape.rs`); the VM emits this via
+/// `Inst::SetFieldInPlace`, the graph engine never does.
+pub fn set_field_in_place(
+    program: &Program,
+    heap: &mut Heap,
+    field_cid: ConstantId,
+    obj: Value,
+    val: Value,
+) -> Result<Value, String> {
+    set_field_impl(program, heap, field_cid, obj, val, true)
+}
+
+fn set_field_impl(
+    program: &Program,
+    heap: &mut Heap,
+    field_cid: ConstantId,
+    obj: Value,
+    val: Value,
+    in_place: bool,
+) -> Result<Value, String> {
     match obj {
         Value::Map(map_id) => {
             let field_name = match program.get_string_constant(field_cid) {
                 Some(s) => s.to_string(),
                 None => return Err("SetField: invalid field name".into()),
             };
-            let new_id = heap.map_set(map_id, field_name, val);
+            let new_id = if in_place {
+                heap.map_set_in_place(map_id, field_name, val)
+            } else {
+                heap.map_set(map_id, field_name, val)
+            };
             Ok(Value::Map(new_id))
         }
         _ => Err(format!("Cannot set field on {}", obj.type_name())),
@@ -510,6 +539,23 @@ pub fn get_index(heap: &Heap, obj: Value, idx: Value) -> Result<Value, String> {
 
 /// `obj[idx] = val` — value semantics: produces a *new* container.
 pub fn set_index(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<Value, String> {
+    set_index_impl(heap, obj, idx, val, false)
+}
+
+/// In-place `obj[idx] = val`: mutates `obj`'s backing store and reuses its id.
+/// Sound only under the escape-analysis gate; the VM emits this via
+/// `Inst::SetIndexInPlace`, the graph engine never does.
+pub fn set_index_in_place(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<Value, String> {
+    set_index_impl(heap, obj, idx, val, true)
+}
+
+fn set_index_impl(
+    heap: &mut Heap,
+    obj: Value,
+    idx: Value,
+    val: Value,
+    in_place: bool,
+) -> Result<Value, String> {
     match (obj, idx) {
         (Value::List(list_id), Value::Int(i)) => {
             let len = heap.list_len(list_id);
@@ -518,7 +564,12 @@ pub fn set_index(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<
             // assignment (`grid[-1][0] = v`) rebuilds the slot it read from.
             let index = if i < 0 { len as i64 + i } else { i };
             if index >= 0 && (index as usize) < len {
-                Ok(Value::List(heap.list_set(list_id, index as usize, val)))
+                let new_id = if in_place {
+                    heap.list_set_in_place(list_id, index as usize, val)
+                } else {
+                    heap.list_set(list_id, index as usize, val)
+                };
+                Ok(Value::List(new_id))
             } else {
                 Err(format!("Index {} out of bounds (len {})", i, len))
             }
@@ -535,7 +586,12 @@ pub fn set_index(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<
                 }
             };
             if i >= 0 && (i as usize) < heap.f64_array_len(arr_id) {
-                Ok(Value::F64Array(heap.f64_array_set(arr_id, i as usize, v)))
+                let new_id = if in_place {
+                    heap.f64_array_set_in_place(arr_id, i as usize, v)
+                } else {
+                    heap.f64_array_set(arr_id, i as usize, v)
+                };
+                Ok(Value::F64Array(new_id))
             } else {
                 Err(format!(
                     "Index {} out of bounds (len {})",

@@ -106,7 +106,11 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
                     i, len
                 ));
             }
-            let new_id = state.heap_mut().f64_array_set(id, i as usize, v);
+            let new_id = if state.in_place() {
+                state.heap_mut().f64_array_set_in_place(id, i as usize, v)
+            } else {
+                state.heap_mut().f64_array_set(id, i as usize, v)
+            };
             state.push_value(Value::F64Array(new_id));
             Ok(1)
         }
@@ -137,7 +141,11 @@ pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
                     j, len
                 ));
             }
-            let new_id = state.heap_mut().f64_array_swap(id, i as usize, j as usize);
+            let new_id = if state.in_place() {
+                state.heap_mut().f64_array_swap_in_place(id, i as usize, j as usize)
+            } else {
+                state.heap_mut().f64_array_swap(id, i as usize, j as usize)
+            };
             state.push_value(Value::F64Array(new_id));
             Ok(1)
         }
@@ -154,7 +162,11 @@ pub(super) fn native_append(state: &mut PetalCxt) -> Result<u32, String> {
     let val = state.get_value(2)?;
     match list {
         Value::List(id) => {
-            let new_id = state.heap_mut().list_append(id, val);
+            let new_id = if state.in_place() {
+                state.heap_mut().list_append_in_place(id, val)
+            } else {
+                state.heap_mut().list_append(id, val)
+            };
             state.push_value(Value::List(new_id));
             Ok(1)
         }
@@ -200,7 +212,11 @@ pub(super) fn native_drop_last(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "drop_last")?;
     match state.get_value(1)? {
         Value::List(id) => {
-            let new_id = state.heap_mut().list_drop_last(id);
+            let new_id = if state.in_place() {
+                state.heap_mut().list_drop_last_in_place(id)
+            } else {
+                state.heap_mut().list_drop_last(id)
+            };
             state.push_value(Value::List(new_id));
             Ok(1)
         }
@@ -225,7 +241,11 @@ pub(super) fn native_remove(state: &mut PetalCxt) -> Result<u32, String> {
                     ))
                 }
             };
-            let new_id = state.heap_mut().map_remove(id, &key);
+            let new_id = if state.in_place() {
+                state.heap_mut().map_remove_in_place(id, &key)
+            } else {
+                state.heap_mut().map_remove(id, &key)
+            };
             state.push_value(Value::Map(new_id));
             Ok(1)
         }

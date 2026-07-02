@@ -92,7 +92,12 @@ pub enum Inst {
     // --- calls ---
     Call { dst: Reg, callee: Reg, args: SmallVec<[Reg; 4]> },
     MethodCall { dst: Reg, recv: Reg, name: ConstantId, args: SmallVec<[Reg; 4]> },
-    BuiltinCall { dst: Reg, name: ConstantId, args: SmallVec<[Reg; 4]> },
+    /// `dst = name(args…)`. `in_place` is set by escape analysis (M4) when the
+    /// builtin is a mutation (`append`/`set`/…) whose container argument is
+    /// provably unique + non-escaping — the VM then lets it mutate + reuse the
+    /// backing store instead of cloning. Always false unless
+    /// `OptFlags::in_place_mutation` proved it.
+    BuiltinCall { dst: Reg, name: ConstantId, args: SmallVec<[Reg; 4]>, in_place: bool },
     MakeClosure { dst: Reg, func: FunctionId, caps: SmallVec<[Reg; 4]> },
     MakeOverloadSet { dst: Reg, closures: SmallVec<[Reg; 4]> },
     Return { val: Option<Reg> },

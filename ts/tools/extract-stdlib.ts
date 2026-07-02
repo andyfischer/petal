@@ -44,6 +44,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
 const canvasLibRs = join(repoRoot, "apps/petal-web-canvas/rust/src/lib.rs");
+const canvasRendererTs = join(
+  repoRoot,
+  "apps/petal-web-canvas/src/canvas-renderer.ts",
+);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -324,6 +328,66 @@ function extractCore(): {
 // ── Canvas builtins ──────────────────────────────────────────────────────────
 
 /**
+ * The buffered draw builtins (`draw_rect`, `draw_line`, …) no longer name their
+ * arguments in Rust: they forward a positional `int_args(state, N)` list to
+ * `emit_draw(state, "<tag>", …)`, so the generic `let <name> = state.get_int(…)`
+ * extraction finds nothing. The canonical positional→name mapping lives on the
+ * decode side — `canvas-renderer.ts`'s `decodeCommand`, which turns each
+ * `{tag, data}` command back into a named-field object `{ <name>: d[<i>], … }`.
+ * We read that mapping so the extracted signatures stay derived from source
+ * rather than hand-maintained here.
+ *
+ * Returns a map from draw-command tag (e.g. "rect") to argument names ordered by
+ * their data index (e.g. ["x","y","w","h","r","g","b"]).
+ */
+function loadDrawArgNames(): Map<string, string[]> {
+  const source = readFileSync(canvasRendererTs, "utf8");
+  const body = extractBlock(source, /function decodeCommand\s*\(/);
+  const out = new Map<string, string[]>();
+  // Each arm is `case "<tag>": return { … };`.
+  const caseRe = /case\s+"([^"]+)"\s*:\s*return\s*\{([^}]*)\}/g;
+  for (let m; (m = caseRe.exec(body)); ) {
+    const [, tag, obj] = m;
+    // Collect `<name>: d[<index>]` bindings; the `op:` discriminant and any
+    // computed field (e.g. poly's `points: (d[0] ?? []).map(…)`) don't match.
+    const byIndex: Array<[number, string]> = [];
+    const fieldRe = /(\w+)\s*:\s*d\[(\d+)\]/g;
+    for (let f; (f = fieldRe.exec(obj)); ) {
+      byIndex.push([Number(f[2]), f[1]]);
+    }
+    if (byIndex.length) {
+      out.set(
+        tag,
+        byIndex.sort((a, b) => a[0] - b[0]).map(([, name]) => name),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * If a canvas fn forwards a positional `int_args(state, N)` list straight to
+ * `emit_draw(state, "<tag>", …)`, recover its signature from the tag's argument
+ * names (all `int`). Returns null when the fn isn't of that shape, leaving the
+ * generic `let <name> = state.get_<type>(…)` extraction in charge.
+ */
+function bufferedDrawSignature(
+  body: string,
+  drawArgNames: Map<string, string[]>,
+): { arity: number | null; variadic: boolean; params: Param[] } | null {
+  const intArgs = /int_args\(\s*state\s*,\s*(\d+)\s*\)/.exec(body);
+  const emit = /emit_draw\(\s*state\s*,\s*"([^"]+)"/.exec(body);
+  if (!intArgs || !emit) return null;
+  const names = drawArgNames.get(emit[1]);
+  if (!names) return null;
+  return {
+    arity: Number(intArgs[1]),
+    variadic: false,
+    params: names.map((name) => ({ name, type: "int" as ParamType })),
+  };
+}
+
+/**
  * Parse `register_graphics()`. Its body groups registrations with blank lines:
  * the first group is the drawing API, the rest are input/timing. We use that
  * boundary to split the canvas builtins into two categories.
@@ -334,6 +398,7 @@ function extractCanvas(): {
 } {
   const libSource = readFileSync(canvasLibRs, "utf8");
   const block = extractBlock(libSource, /fn register_graphics\s*\(/);
+  const drawArgNames = loadDrawArgNames();
 
   const lines = block.split("\n");
   const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/;
@@ -353,7 +418,7 @@ function extractCanvas(): {
     const category = inDrawingGroup ? "drawing" : "input";
     const fn = findFn(libSource, fnName);
     const parsed = fn
-      ? parseFnBody(fn.body)
+      ? (bufferedDrawSignature(fn.body, drawArgNames) ?? parseFnBody(fn.body))
       : { arity: null, variadic: false, params: [] };
     functions.push({
       name,

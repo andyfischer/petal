@@ -10,8 +10,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   renderCommands,
-  type DrawCommand,
+  type RawCommand,
 } from "../../apps/petal-web-canvas/src/canvas-renderer.js";
+
+/**
+ * Build a raw enum-variant command as emitted by the WASM runtime. The renderer
+ * decodes these internally (see `decodeCommand`); `data` is the flat argument
+ * list in the order the native draw functions emit.
+ */
+function raw(tag: string, ...data: any[]): RawCommand {
+  return { type: "enum", tag, data };
+}
 
 /** A minimal Canvas2D context stub that records the calls we care about. */
 interface FakeCtx {
@@ -96,12 +105,12 @@ describe("offscreen canvas renderer", () => {
   it("routes drawing into an offscreen canvas and composites it onto main", () => {
     const main = makeCtx(100, 100);
 
-    const commands: DrawCommand[] = [
-      { op: "create_canvas", id: 1, w: 32, h: 32 },
-      { op: "set_target", id: 1 },
-      { op: "rect", x: 0, y: 0, w: 8, h: 8, r: 255, g: 255, b: 255 },
-      { op: "set_target", id: 0 },
-      { op: "draw_canvas", id: 1, x: 20, y: 20 },
+    const commands: RawCommand[] = [
+      raw("create_canvas", 1, 32, 32),
+      raw("set_target", 1),
+      raw("rect", 0, 0, 8, 8, 255, 255, 255),
+      raw("set_target", 0),
+      raw("draw_canvas", 1, 20, 20),
     ];
 
     renderCommands(main as any, commands, 100, 100);
@@ -127,7 +136,7 @@ describe("offscreen canvas renderer", () => {
     const main = makeCtx(100, 100);
     renderCommands(
       main as any,
-      [{ op: "rect", x: 1, y: 2, w: 3, h: 4, r: 10, g: 20, b: 30 }],
+      [raw("rect", 1, 2, 3, 4, 10, 20, 30)],
       100,
       100,
     );

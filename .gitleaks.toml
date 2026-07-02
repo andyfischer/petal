@@ -13,7 +13,10 @@ useDefault = true
 [[rules]]
 id = "petal-private-package-registry"
 description = "Hardcoded GitHub Packages auth token outside CI secrets"
-regex = '''//npm\.pkg\.github\.com/:_authToken=(?!\$\{)[A-Za-z0-9_\-]+'''
+# A literal `${...}` env reference can't match the token char class below, and
+# the CI `${NODE_AUTH_TOKEN}` form is allowlisted, so this needs no lookahead
+# (gitleaks' re2 engine rejects `(?!…)`).
+regex = '''//npm\.pkg\.github\.com/:_authToken=[A-Za-z0-9_\-]+'''
 tags = ["token", "registry"]
 
 # --- Allowlist --------------------------------------------------------------

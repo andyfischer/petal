@@ -35,7 +35,7 @@ export interface DrawCommand {
 /** Raw command as emitted by the WASM runtime: a `Value::EnumVariant`,
  * serialized as `{ type: "enum", tag, data }` where `data` is the flat argument
  * list. `decodeCommand` maps this into the named-field `DrawCommand` above. */
-interface RawCommand {
+export interface RawCommand {
   type: string;
   tag: string;
   data: any[];

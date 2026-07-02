@@ -28,6 +28,15 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR (ter
 
 Source: `rust/src/`
 
+## Build & test
+
+    cd rust && cargo build            # build the petal CLI binary
+    cd rust && cargo test             # Rust unit tests
+    cd ts && npx vitest               # integration tests (shell out to the compiled binary)
+    ts/bin/run-petal.ts <file.ptl>    # build (if needed) + run a Petal program
+
+Details: [docs/dev/testing.md](./docs/dev/testing.md)
+
 ## Documentation
 
  * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)

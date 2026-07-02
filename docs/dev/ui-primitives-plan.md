@@ -1,8 +1,10 @@
 # Plan: `petal-ui` — standard interactivity primitives for embedders
 
-Status: Phases 1–2 **landed** (2026-07-01) — the `petal-ui` crate exists with
-Layers 0–2, the `ui` prelude, and the headless harness, and petal-sdl runs on
-it. Phase 3 (Garden adoption) is next.
+Status: Phases 1–3 **landed** (Phases 1–2 2026-07-01, Phase 3 2026-07-02) — the
+`petal-ui` crate exists with Layers 0–2, the `ui` prelude, and the headless
+harness; both petal-sdl and Garden (`~/garden`) run on it. Phase 4 (end-to-end
+`InputState` adoption in embedders for drag/release/modifier/text edges, plus
+per-widget focus) is next.
 Related: [../module-system.md](../module-system.md) (the import system that
 carries the Petal-source half of this library — landed; the prelude ships as
 a real module via `register_prelude`)
@@ -182,12 +184,22 @@ natives, decode in `apps/petal-sdl/src/commands.rs` and Garden's
    its `input.rs` edge logic and the input half of `native_fns.rs`.
 2. **Phase 2 (this repo):** Layer 1 prelude + headless test harness. Rewrite
    `browser.ptl`'s menu on `list_update`/`button` as the dogfood.
-3. **Phase 3 (Garden):** `PanelHost` switches to `petal_ui::register_input` +
-   `register_draw` + `register_prelude` (implicit `ui` import), keeping
-   Garden-specific extras (`debug_state`, reserved-key policy). Rewrite `diff_panel.ptl` and
-   `diff_detail_panel.ptl` on the prelude. Acceptance: the copy-pasted halves
-   of the two scripts disappear and Garden's
-   `scripts/panel-integration-test.sh` still passes.
+3. **Phase 3 (Garden) — landed 2026-07-02.** `garden-script`'s `PanelHost` now
+   registers `petal_ui::input::register_input` + `draw::register_draw` +
+   `register_prelude` (implicit `ui` import) and drains
+   `draw::take_draw_commands`, projecting each `DrawCommand` onto Garden's own
+   `PanelCmd` render vocabulary (Garden keeps `PanelCmd`/`PanelInput` as its
+   `garden-render`-free boundary). The only host-specific native left is
+   `debug_state`; the monospace metric is bound via `bind_text_metrics(0.6)`.
+   Garden does not register the offscreen-canvas natives, so those commands
+   never appear. `diff_panel.ptl` / `diff_detail_panel.ptl` were rewritten on
+   the prelude — the copy-pasted `rect`/`text`/`hline`/`rtext` shims, the
+   `CW = 8.4` magic advance, the hand-rolled path truncation, and the
+   list-scroll clamping are gone (now `draw_*` record overloads,
+   `text_width`/`draw_text_right`, `truncate_tail`,
+   `point_in`/`ensure_visible`, `scroll_update`). Garden's
+   `scripts/panel-integration-test.sh` still passes and both panels render
+   correctly (headless screenshots).
 4. **Phase 4 (later):** per-widget focus helpers and text-input/IME once
    Layer 0 carries text events. (The module system has landed —
    ../module-system.md — so the prelude ships as real modules from day one.)

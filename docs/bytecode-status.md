@@ -3,7 +3,7 @@
 Tracking doc for the linear **bytecode VM** that runs alongside the term-graph
 step evaluator. Update the milestone checkboxes and the handoff note as work
 lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
-[speculative-execution-plan.md](dev/speculative-execution-plan.md) (why the heap
+[docs/dev/speculative-execution-plan.md](dev/speculative-execution-plan.md) (why the heap
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 

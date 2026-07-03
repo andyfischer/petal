@@ -2,9 +2,15 @@
 
 Status: Phases 1–3 **landed** (Phases 1–2 2026-07-01, Phase 3 2026-07-02) — the
 `petal-ui` crate exists with Layers 0–2, the `ui` prelude, and the headless
-harness; both petal-sdl and Garden (`~/garden`) run on it. Phase 4 (end-to-end
-`InputState` adoption in embedders for drag/release/modifier/text edges, plus
-per-widget focus) is next.
+harness; both petal-sdl and Garden (`~/garden`) run on it. Phase 4's **input
+half landed in Garden (2026-07-02):** its `PanelHost` now owns an `InputState`
+and its `garden-app` host feeds real `InputEvent`s end-to-end, so panels consume
+the whole Layer-0 contract — `mouse_released`, `key_released`, modifiers, the
+drag gesture, `click_count`, `scroll_x`, and `text_input`. What remains of Phase
+4 is the **per-widget focus story** (a Layer-1 prelude addition: focus a widget
+by id and route keys/text to it), and — for hosts whose native layer delivers
+key-up — genuine held-key tracking (Garden's frontends don't, so it feeds keys
+as paired down+up edges).
 Related: [../module-system.md](../module-system.md) (the import system that
 carries the Petal-source half of this library — landed; the prelude ships as
 a real module via `register_prelude`)
@@ -200,8 +206,19 @@ natives, decode in `apps/petal-sdl/src/commands.rs` and Garden's
    `point_in`/`ensure_visible`, `scroll_update`). Garden's
    `scripts/panel-integration-test.sh` still passes and both panels render
    correctly (headless screenshots).
-4. **Phase 4 (later):** per-widget focus helpers and text-input/IME once
-   Layer 0 carries text events. (The module system has landed —
+4. **Phase 4 — input half landed in Garden (2026-07-02).** Garden's `PanelHost`
+   owns a `petal_ui::input::InputState`; `garden-app` translates its
+   winit/debug-server events into `InputEvent`s (Garden re-exports
+   `InputEvent`/`Modifiers`/`buttons` across its `garden-app → garden-script`
+   boundary) and feeds them via `PanelView`, so panels consume the full Layer-0
+   contract: `mouse_released`, `key_released`, `mod_*`, `drag_active` /
+   `drag_start_*`, `click_count`, `scroll_x`, and `text_input`. A left press is
+   captured so drag-moves and the release route back to the pressing panel;
+   Garden's frontends don't deliver key-up, so a panel key is fed as a paired
+   down+up (edges fire; `key_down` is a within-frame pulse) with its typed
+   character as text. Still open: per-widget **focus helpers** in the Layer-1
+   `ui` prelude (focus a widget by id; route keys/text to it), and IME/composed
+   text once a host's native layer carries it. (The module system has landed —
    ../module-system.md — so the prelude ships as real modules from day one.)
 
 ## Non-goals

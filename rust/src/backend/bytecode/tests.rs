@@ -182,6 +182,24 @@ fn nested_closure_captures_top_level_fn() {
 }
 
 #[test]
+fn slice_string_snaps_to_char_boundaries() {
+    // '─' (U+2500) is 3 bytes. slice()/len() are byte-indexed; a byte index
+    // that lands mid-char must snap to a char boundary rather than panic.
+    // Snap the start up and the end down so only whole chars are returned.
+    let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, Backend::Graph).unwrap();
+    assert_eq!(out, vec!["a"], "end mid-char snaps down to a boundary");
+    let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, Backend::Graph).unwrap();
+    assert_eq!(out, vec!["b"], "start mid-char snaps up to a boundary");
+    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, Backend::Graph).unwrap();
+    assert_eq!(out, vec!["a─"], "index on a boundary is unchanged");
+    // Parity + no-panic across both backends, including out-of-range indices.
+    assert_parity(r#"print(slice("a─b", 0, 2))"#);
+    assert_parity(r#"print(slice("a─b", 2, 5))"#);
+    assert_parity(r#"print(slice("a─b", 0, 99))"#);
+    assert_parity(r#"print(slice("héllo wörld", 1, 6))"#);
+}
+
+#[test]
 fn overloaded_functions() {
     // Same name, different arities — resolved by argument count.
     assert_parity(

@@ -477,6 +477,25 @@ pub(super) fn native_zip(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// Largest char boundary `<= i` (clamped to the string length). Used to snap
+/// a byte index down onto a UTF-8 boundary so String slicing never panics.
+fn floor_char_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Smallest char boundary `>= i` (clamped to the string length).
+fn ceil_char_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
     if !(2..=3).contains(&state.arg_count()) {
         return Err("slice() expects 2-3 arguments".into());
@@ -512,6 +531,12 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
             } else {
                 len as usize
             };
+            // Indices are byte offsets (matching byte-indexed len()). A byte
+            // that lands inside a multi-byte char would panic String slicing,
+            // so snap to char boundaries: start up, end down, keeping only
+            // whole chars and never exceeding the requested range.
+            let start_idx = ceil_char_boundary(s, start_idx);
+            let end_idx = floor_char_boundary(s, end_idx);
             let sliced = if start_idx <= end_idx {
                 s[start_idx..end_idx].to_string()
             } else {

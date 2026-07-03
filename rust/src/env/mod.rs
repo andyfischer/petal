@@ -88,7 +88,8 @@ impl Env {
 
     /// Default opt flags from the `PETAL_OPT` env var: `none`/`0`/`off` disables
     /// all opts, `all`/`1` enables all; anything else uses the compiled default.
-    fn opt_flags_from_env() -> OptFlags {
+    /// Public so `show-bytecode` can mirror exactly what a run would execute.
+    pub fn opt_flags_from_env() -> OptFlags {
         match std::env::var("PETAL_OPT").ok().as_deref() {
             Some("none") | Some("0") | Some("off") => OptFlags::none(),
             Some("all") | Some("1") | Some("on") => OptFlags::all(),
@@ -133,8 +134,13 @@ impl Env {
         } else {
             crate::backend::bytecode::InPlaceSet::default()
         };
-        let bc = crate::backend::bytecode::lower_program_opt(program, &in_place)
+        let mut bc = crate::backend::bytecode::lower_program_opt(program, &in_place)
             .map_err(|e| format!("bytecode lowering failed: {e}"))?;
+        // Route A (M4): straight-line last-use rewriting runs on the lowered
+        // code, after route B's opcode selection.
+        if self.opt_flags.in_place_straight_line {
+            crate::backend::bytecode::apply_last_use(&mut bc, program);
+        }
         self.bytecode.insert(pid, (self.opt_flags, bc));
         Ok(())
     }

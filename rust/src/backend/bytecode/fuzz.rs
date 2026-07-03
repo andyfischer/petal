@@ -472,9 +472,10 @@ impl Gen {
         if !live.is_empty() {
             self.line(&format!("print(\"end\", {})", live.join(", ")));
         }
-        // Force every live list's length through output too, so an in-place
-        // mutation that wrongly grew a shared alias (M4) shows up as a value
-        // divergence rather than hiding in an unread length.
+        // Force every live list's length AND full contents through output, so
+        // an in-place mutation that wrongly grew a shared alias (M4 route B)
+        // or wrote through one (route A element corruption) shows up as a
+        // value divergence rather than hiding in an unread container.
         let list_lens: Vec<String> = self
             .vars
             .iter()
@@ -483,6 +484,15 @@ impl Gen {
             .collect();
         if !list_lens.is_empty() {
             self.line(&format!("print(\"lens\", {})", list_lens.join(", ")));
+        }
+        let containers: Vec<String> = self
+            .vars
+            .iter()
+            .filter(|v| v.kind == Kind::List || v.kind == Kind::Rec)
+            .map(|v| v.name.clone())
+            .collect();
+        if !containers.is_empty() {
+            self.line(&format!("print(\"containers\", {})", containers.join(", ")));
         }
         self.src
     }
@@ -501,15 +511,23 @@ fn run(code: &str, backend: Backend, opts: OptFlags) -> Result<(String, Vec<Stri
     Ok((rendered, env.take_output()))
 }
 
-/// Require exact agreement across all three oracles, including error text: the
-/// graph engine, the bytecode VM with optimizations off, and the bytecode VM
-/// with in-place mutation on (M4). The generator emits exactly the mutation
-/// shapes route B targets — `xs = append(xs, e)`, `xs[i] = e`, `r.a = e` inside
-/// loops, branches, and functions — so this is the primary net catching a
-/// mis-fired in-place mutation as a value divergence.
+/// Require exact agreement across all four oracles, including error text: the
+/// graph engine, the bytecode VM with optimizations off, the VM with only the
+/// route-A last-use pass, and the VM with everything on (M4 routes A+B). The
+/// generator emits exactly the mutation shapes both routes target —
+/// `xs = append(xs, e)`, `xs[i] = e`, `r.a = e` at top level and inside loops,
+/// branches, and functions, plus `let al = xs` aliases — so this is the
+/// primary net catching a mis-fired in-place mutation as a value divergence.
+/// The route-A-only oracle attributes a failure to one route and keeps a
+/// route-B interaction from masking a route-A bug.
 fn assert_exact_parity(seed: u64, code: &str) {
+    const ROUTE_A_ONLY: OptFlags = OptFlags {
+        in_place_mutation: false,
+        in_place_straight_line: true,
+    };
     let graph = run(code, Backend::Graph, OptFlags::none());
     let bc_noopt = run(code, Backend::Bytecode, OptFlags::none());
+    let bc_route_a = run(code, Backend::Bytecode, ROUTE_A_ONLY);
     let bc_opt = run(code, Backend::Bytecode, OptFlags::all());
     assert_eq!(
         graph, bc_noopt,
@@ -517,9 +535,15 @@ fn assert_exact_parity(seed: u64, code: &str) {
          Gen::new({seed}).program()\n--- program ---\n{code}"
     );
     assert_eq!(
+        bc_noopt, bc_route_a,
+        "route-A in-place mutation (M4) divergence at seed {seed}; \
+         bytecode(no-opt) vs bytecode(route A only) disagree — reproduce with \
+         Gen::new({seed}).program()\n--- program ---\n{code}"
+    );
+    assert_eq!(
         bc_noopt, bc_opt,
-        "in-place mutation (M4) divergence at seed {seed}; bytecode(no-opt) vs \
-         bytecode(in-place) disagree — reproduce with \
+        "in-place mutation (M4 A+B) divergence at seed {seed}; bytecode(no-opt) \
+         vs bytecode(all opts) disagree — reproduce with \
          Gen::new({seed}).program()\n--- program ---\n{code}"
     );
 }

@@ -682,17 +682,25 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowBytecode { json } => {
-            use crate::backend::bytecode::{analyze_escapes, disasm, lower_program_opt, InPlaceSet};
+            use crate::backend::bytecode::{
+                analyze_escapes, apply_last_use, disasm, lower_program_opt, InPlaceSet,
+            };
             let program = compile_source(&source, &source_input, &include_dirs);
-            // Mirror the runtime default (M4 default-on): the disassembly shows
-            // in-place opcodes so introspection matches what actually runs.
-            // `PETAL_OPT=off`/`none` shows the clone-and-alloc lowering instead.
-            let in_place = match std::env::var("PETAL_OPT").ok().as_deref() {
-                Some("none") | Some("0") | Some("off") => InPlaceSet::default(),
-                _ => analyze_escapes(&program),
+            // Mirror the runtime defaults: the disassembly shows the in-place
+            // opcodes a run would actually execute, for both M4 routes.
+            // `PETAL_OPT=off`/`none` shows the clone-and-alloc lowering;
+            // `PETAL_OPT=all` enables every opt.
+            let flags = crate::env::Env::opt_flags_from_env();
+            let in_place = if flags.in_place_mutation {
+                analyze_escapes(&program)
+            } else {
+                InPlaceSet::default()
             };
             match lower_program_opt(&program, &in_place) {
-                Ok(bc) => {
+                Ok(mut bc) => {
+                    if flags.in_place_straight_line {
+                        apply_last_use(&mut bc, &program);
+                    }
                     if json {
                         println!(
                             "{}",

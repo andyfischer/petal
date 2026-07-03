@@ -7,17 +7,21 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-02. **Status: M1–M4 (route B) complete and now
+Last updated: 2026-07-02. **Status: M1–M4 complete (routes A *and* B), both
 **default-on** — the bytecode VM is the default backend, batched dispatch makes
 it 3–6x faster than the graph engine on compute-bound code, and in-place
-mutation (escape-analysis-gated) eliminates the loop-accumulator COW cost:
-`append.ptl`'s 1.08 GB of copies → 0, `particles.ptl` 108.7 MB → 0,
-`game_of_life.ptl` 2.0 MB → 0, all with byte-identical output. A triple
-differential (graph / BC-noopt / BC-opt) fuzzer guards it (soaked to 300k
-seeds). `OptFlags::default()` now enables `in_place_mutation`, so sketches get
-the zero-copy win out of the box; recover the clone-and-alloc oracle per-run
-with `--no-opt` / `PETAL_OPT=off`. Route A (straight-line uniqueness) is
-deferred — see the M4 entry. Next: route A, then M5.**
+mutation eliminates the COW cost on both fronts: route B (graph-side
+escape analysis) zeroes the loop accumulators (`append.ptl`'s 1.08 GB of
+copies → 0, `particles.ptl` 108.7 MB → 0, `game_of_life.ptl` 2.0 MB → 0) and
+route A (a last-use liveness pass on the lowered bytecode, `lastuse.rs`)
+covers straight-line builders (`let xs = […]; xs[0] = v`), read-then-mutate
+(`len(xs)` then `append(xs, …)`), and per-iteration fresh containers — all
+with byte-identical output. A **four-oracle** differential fuzzer (graph /
+BC-noopt / BC-route-A-only / BC-all) guards them; both routes soaked to 300k
+seeds. `OptFlags::default()` enables both `in_place_mutation` (B) and
+`in_place_straight_line` (A); recover the clone-and-alloc oracle per-run with
+`--no-opt` / `PETAL_OPT=off`. Next: M5 (packed encoding / superinstructions /
+structural sharing), profiling-gated.**
 The VM
 runs the entire language — straight-line, calls, closures, all control flow,
 match, and persistent state — and matches the graph engine on value, print
@@ -93,7 +97,8 @@ backend/
     disasm.rs   # text + JSON rendering for show-bytecode / ShowBytecode  [DONE]
     vm.rs       # Vm, VmFrame, step(), calls, all control flow, state, match, intrinsics  [DONE thru M3]
     tests.rs    # differential + multi-run-state + resumability tests vs the graph oracle  [DONE]
-    escape.rs   # route-B uniqueness/escape analysis for in-place mutation  [DONE (route B); route A deferred]
+    escape.rs   # route-B uniqueness/escape analysis (graph-side, feeds lowering)  [DONE]
+    lastuse.rs  # route-A last-use in-place rewrite pass (bytecode-side, post-lowering)  [DONE]
 ```
 
 **The parity lever landed.** Every value-producing op, call resolution,
@@ -172,6 +177,11 @@ route A or B, **and** the shared escape condition E holds:
 **E. Does not escape:** `C` never feeds a `StateInit/Read/Write`, a
 `MakeClosure`/`MakeOverloadSet` capture, a `Return`, another escaping
 container, and never crosses a speculative fork boundary.
+
+*(Route A shipped as specced — a last-use liveness pass over the lowered
+bytecode in `lastuse.rs`, generalized to Move-closure alias groups because the
+lowering emits a `Move` per variable use. See the route-A milestone entry for
+what was learned in implementation.)*
 
 **A. Straight-line uniqueness:**
 1. **Last use:** `T` is the last read of `C`. Compute this by **last-use
@@ -424,12 +434,54 @@ phantom terms — expected.)
   bytes on `append`/`particles`/`life`; `--no-opt` restores the exact recorded
   baselines (1.08 GB / 108.7 MB / 2.0 MB), confirming the flip is what zeroes
   them.
-- [ ] **M4 route A — straight-line last-use uniqueness (deferred).** `let xs =
-  […]; xs[0] = v` where `xs` is dead after. Lower payoff than the accumulator
-  (the plan itself calls route B "the payoff case"), and it wants the same
-  fuzzer rigor route B just earned before shipping. Until then those mutations
-  stay clone-and-alloc (always correct). The `escape.rs` machinery (web, region,
-  spine, linearity) is the substrate a route-A pass would extend.
+- [x] **M4 route A — straight-line last-use uniqueness. Shipped and
+  default-on** behind its own flag (`OptFlags.in_place_straight_line`,
+  independent of route B's `in_place_mutation` so either can be disabled to
+  isolate a bug). Implemented as the plan's original spec demanded — **last-use
+  liveness on the lowered bytecode** (`lastuse.rs`), *not* a graph pass — the
+  linear instruction stream's total order makes "is the container dead after
+  the mutation" a reachability question, and it admits the read-then-mutate
+  sequences (`len(xs)` then `append(xs, …)`) that a single-static-consumer
+  graph test forbids. Runs in `Env::ensure_bytecode` after lowering (and after
+  route B's opcode selection), rewriting `SetIndex`/`SetField`/mutating
+  `BuiltinCall` to their in-place forms. A candidate fires iff:
+  (1) its container register chases back through single-def `Move`s to a
+  **fresh root** — an `Alloc*` or an already-in-place mutation (the chain rule:
+  `xs[0] = v; xs[1] = w` converts both); (2) the root's **Move-closure alias
+  group** is fully tracked (a `Move` into a multi-def register — a phi/carry
+  slot — rejects) and no member has a *retaining* reader (call args, closure
+  captures, `Return`, state writes, storage into another container, match
+  subjects); (3) every member is **dead after the mutation**: no read
+  reachable from the candidate before the member's single def re-executes
+  (the kill), and no member is the function's fall-off result register.
+  Key findings:
+  - **The lowering emits a `Move` per variable use** (each `Copy` term has its
+    own register), so tracking a single register is vacuous — the unit of
+    analysis has to be the Move-closure alias group. The first draft missed
+    this and never fired.
+  - **The kill in condition (3) is what lets the per-iteration builder fire**:
+    `for … do let t = [0, 0]; t[0] = i; grid = append(grid, t) end` re-executes
+    the alloc on the back edge before any re-read, so `t`'s mutation is
+    in-place even inside a loop — composing with route B on the outer `grid`.
+  - **Returning the *rebound* result is safe and fires** (`fn f() let xs =
+    [1,2]; xs[0] = 5; xs end`): only the final, value-identical container
+    escapes. Returning a *pre-mutation alias* is caught by the group walk.
+  - Phi registers (multiple defs) reject at condition (1), which is precisely
+    what keeps this pass out of route B's loop-phi territory — mutations in
+    branch arms decline (arm carry slots are multi-def), staying conservative.
+  - On the three loop benchmarks route A adds nothing (route B already zeroed
+    them) — its payoff is builder code: fresh-container field/index
+    initialization, pinned by `route_a_dup_bytes_drop_on_builder`.
+  - **Verification:** the differential fuzzer grew a fourth oracle
+    (BC-route-A-only) so a route-B interaction can't mask a route-A bug, and
+    now prints every live container's full contents (not just lengths) so
+    element-level corruption diverges; soaked to **300k seeds green** before
+    the default flip. The full M3-style re-validation ran green after it:
+    entire Rust suite (235), vitest 483/483 (default and `PETAL_OPT=all`),
+    24-example differential sweep (default and `PETAL_OPT=all`), petal-sdl
+    build + 7 tests, both WASM packages, and a Node `PetalRuntime` smoke test
+    (persistent `count` 1→2→3 across `reset_and_run` while route-A builder
+    chains and a declined alias stay value-correct each run).
 - [ ] **M5 (optional, profiling-gated).** Packed encoding, superinstructions,
   pattern-tree micro-ops (Maranget-style decision trees replacing the
   `MatchArm` fat-op), register-file reuse/compaction (if not already handled
@@ -445,23 +497,46 @@ phantom terms — expected.)
 
 ## Handoff — next actions
 
-M1–M4 (route B) are done and **default-on** (earlier chunks: M1a/M1b/M1c,
-M2a/M2b/M2c, M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz, M4, M4
-default-on flip). The VM is at full behavioral parity with the graph engine, is
-the default backend, runs 3–6x faster on compute-bound code, and — now by
-default — mutates provably-unique loop accumulators in place, zeroing the COW
-cost on `append`/`particles`/`life` with byte-identical output. `--no-opt` /
+M1–M4 are done and **default-on**, both routes (earlier chunks: M1a/M1b/M1c,
+M2a/M2b/M2c, M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz, M4 route B +
+flip, M4 route A + flip). The VM is at full behavioral parity with the graph
+engine, is the default backend, runs 3–6x faster on compute-bound code, and —
+by default — mutates in place both provably-unique loop accumulators (route B:
+zero COW bytes on `append`/`particles`/`life`) and straight-line
+fresh-container builders (route A), with byte-identical output. `--no-opt` /
 `PETAL_OPT=off` recover the clone-and-alloc oracle.
 
-### Next: route A, then M5
-1. ~~Default-on M4~~ — **done** (see the M4 default-on milestone entry; full
-   M3-style re-validation green: Rust suite, vitest 483/483, example sweep,
-   petal-sdl, both WASM packages, Node `PetalRuntime` smoke test).
-2. **Route A** (straight-line uniqueness) — deferred; see its M4 checklist entry.
-   Wants the same triple-fuzzer rigor route B earned before shipping.
-3. **M5** — packed encoding / superinstructions / structural sharing.
+### Next: M5
+1. ~~Default-on M4~~ — **done**. 2. ~~Route A~~ — **done** (see its milestone
+   entry; earned the same 300k-seed soak on a four-oracle fuzzer before its
+   flip).
+3. **M5** — packed encoding / superinstructions / pattern-tree micro-ops /
+   register-file reuse (the ~13% per-call frame cost measured in M3.5) /
+   structural sharing for the COW remainder the analyses can't prove (params,
+   state containers). All profiling-gated: re-run `ts/bin/bench-backends.ts`
+   and `--dup-stats` first to see whether anything still hurts.
 
-**M4 gotchas (learned the hard way — the fuzzer found both).**
+**M4 route A gotchas (learned in implementation).**
+- **Track Move-closure alias groups, not registers.** The lowering emits a
+  `Move` for every variable *use*, so the container id always lives in several
+  registers; a per-register analysis never fires. `Move` is the only
+  instruction that propagates an id unchanged (clone-mutations write new ids;
+  `GetIndex`/`GetField` extract element values), so the group is exactly the
+  Move-closure of the fresh root.
+- **Retention and ordering are separate axes.** A retaining read (alias into
+  another container/closure/state/call) rejects *wherever* it sits — the
+  reference outlives the mutation. A pure read is fine *before* the mutation
+  and fatal *after* it — that's the reachability walk. Conflating the two
+  either over-rejects (no read-then-mutate) or under-rejects (unsound).
+- **The kill node is load-bearing**: stopping the reachability walk at a group
+  member's single def is what lets per-iteration builders inside loops fire.
+  Removing it silently degrades route A to top-level-only with no test
+  failures — the DupStats builder test pins it.
+- The pass runs per `OptFlags` change (the `Env.bytecode` cache is keyed on
+  the flags), and `show-bytecode` mirrors runtime defaults via
+  `Env::opt_flags_from_env` — keep them in sync or introspection lies.
+
+**M4 route B gotchas (learned the hard way — the fuzzer found both).**
 - **The mutation must be *on the spine*.** It is not enough that the container
   strips back to a loop-carried phi: an alias of an *outer* accumulator
   (`let al = xs; al = append(al, v)` in a nested loop, result discarded) strips
@@ -520,9 +595,12 @@ cost on `append`/`particles`/`life` with byte-identical output. `--no-opt` /
 - `rust/src/backend/graph/{mod,exec,ops,call,state,loops,pattern,error}.rs` — the
   step evaluator, now delegating to the shared handlers.
 - `rust/src/backend/bytecode/{isa,lower,vm,disasm,tests}.rs` — the bytecode
-  backend (complete through M4 route B); `escape.rs` is the route-B analysis.
+  backend (complete through M4); `escape.rs` is the route-B analysis (graph-
+  side, feeds lowering), `lastuse.rs` the route-A pass (bytecode-side, runs
+  after lowering in `Env::ensure_bytecode`).
 - `rust/src/backend/bytecode/fuzz.rs` — the differential fuzzer (seeded
-  generator + exact-agreement runner; `PETAL_FUZZ_ITERS` scales the soak).
+  generator + four-oracle exact-agreement runner; `PETAL_FUZZ_ITERS` scales
+  the soak).
 - `benchmarks/*.ptl` + `ts/bin/bench-backends.ts` — the backend benchmark
   suite (release build, medians, output-diff enforced).
 - `rust/src/compiler/phi.rs` — phi emission, carry slots, and the entry-copy

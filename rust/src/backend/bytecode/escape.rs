@@ -49,11 +49,14 @@
 //! `Heap::fork` deep-copies the slot vectors, so a speculative child mutates its
 //! own copy (see `docs/dev/speculative-execution-plan.md`).
 //!
-//! ## Not yet: straight-line uniqueness (route A)
+//! ## Companion pass: straight-line uniqueness (route A)
 //! Straight-line last-use uniqueness (`let xs = […]; xs[0] = v` where `xs` is
-//! dead after) is a separate, lower-payoff case deferred to a follow-up; the
-//! accumulator is where the copying cost lives. Until then those mutations stay
-//! clone-and-alloc (always correct).
+//! dead after) is handled separately by [`super::lastuse`] — a rewrite pass
+//! over the *lowered bytecode* (gated by `OptFlags::in_place_straight_line`),
+//! where the linear instruction order makes last-use a reachability question.
+//! This graph-side analysis stays focused on the loop-carried phi cycle, which
+//! bytecode-level liveness cannot prove (the accumulator is live around the
+//! back edge by construction).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

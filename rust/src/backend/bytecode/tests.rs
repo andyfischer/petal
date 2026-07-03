@@ -496,8 +496,8 @@ fn assert_inplace_parity(code: &str) {
     }
 }
 
-/// Count of in-place-eligible mutation terms the analysis finds in `code`.
-fn inplace_count(code: &str) -> usize {
+/// Compile `code` to a `Program` (the front half of the run pipeline).
+fn compile_program(code: &str) -> crate::program::Program {
     use crate::compiler::Compiler;
     use crate::lexer::Lexer;
     use crate::native_fn::NativeFnTable;
@@ -509,8 +509,12 @@ fn inplace_count(code: &str) -> usize {
     let stmts = parser.parse_program().expect("parse");
     let mut natives = NativeFnTable::new();
     crate::builtins::register_builtins(&mut natives);
-    let program = Compiler::new().compile(&stmts, code.to_string(), ProgramId(0), &natives);
-    escape::analyze(&program).len()
+    Compiler::new().compile(&stmts, code.to_string(), ProgramId(0), &natives)
+}
+
+/// Count of in-place-eligible mutation terms the analysis finds in `code`.
+fn inplace_count(code: &str) -> usize {
+    escape::analyze(&compile_program(code)).len()
 }
 
 #[test]
@@ -594,6 +598,153 @@ fn inplace_analysis_fires_on_accumulators() {
         ) >= 2,
         "branchy accumulator should fire on both arms",
     );
+}
+
+// -- M4 route A: straight-line last-use in-place mutation -------------------
+//
+// Route A rewrites mutations of freshly-allocated, dead-after containers on
+// the *lowered bytecode* (see `lastuse.rs`). The same triple-differential bar
+// applies, plus a route-A-only oracle so a route-B interaction can't mask a
+// route-A bug (and vice versa).
+
+/// Route A alone — isolates the last-use pass from route B.
+const ROUTE_A_ONLY: OptFlags = OptFlags {
+    in_place_mutation: false,
+    in_place_straight_line: true,
+};
+
+/// Graph == bytecode(no-opt) == bytecode(route A only) == bytecode(all).
+#[track_caller]
+fn assert_route_a_parity(code: &str) {
+    assert_inplace_parity(code); // graph vs no-opt vs all
+    let noopt = run_opt(code, OptFlags::none());
+    let ra = run_opt(code, ROUTE_A_ONLY);
+    match (noopt, ra) {
+        (Ok((nv, no)), Ok((rv, ro))) => {
+            assert_eq!(nv, rv, "route-A value mismatch for:\n{code}");
+            assert_eq!(no, ro, "route-A output mismatch for:\n{code}");
+        }
+        (Err(_), Err(_)) => {}
+        (n, r) => panic!("route-A ok/err mismatch for:\n{code}\n  noopt={n:?}\n  routeA={r:?}"),
+    }
+}
+
+/// Number of instructions the route-A pass rewrites in `code`, measured on
+/// the same lowering a default-flags run would execute (route B applied
+/// first, so route A only counts what it adds).
+fn route_a_count(code: &str) -> usize {
+    let program = compile_program(code);
+    let in_place = escape::analyze(&program);
+    let mut bc = crate::backend::bytecode::lower_program_opt(&program, &in_place)
+        .expect("lower");
+    crate::backend::bytecode::lastuse::apply(&mut bc, &program)
+}
+
+#[test]
+fn route_a_fires_on_straight_line_builder() {
+    // The plan's canonical case: fresh alloc, then a mutation chain, dead
+    // register at each step.
+    let code = "let xs = [1, 2, 3]\nxs[0] = 9\nxs[1] = 8\nprint(xs)";
+    assert!(route_a_count(code) >= 2, "builder chain should fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_fires_on_read_then_mutate() {
+    // `len(xs)` before `append(xs, …)` — the precision case the plan calls
+    // out: a read *before* the mutation is fine; a single-static-consumer
+    // test would wrongly forbid it.
+    let code = "let xs = [1, 2, 3]\nlet n = len(xs)\nxs = append(xs, n)\nprint(xs)";
+    assert!(route_a_count(code) >= 1, "read-then-mutate should fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_fires_on_per_iteration_builder() {
+    // A fresh container allocated *inside* the loop body: the back edge
+    // re-executes the alloc (the kill) before any re-read, so each
+    // iteration's mutation is in-place even though the mutation sits in a
+    // loop. This composes with route B on the outer accumulator.
+    let code = "let grid = []\nfor y in range(0, 4) do\n  let t = [0, 0]\n  t[0] = y\n  grid = append(grid, t)\nend\nprint(len(grid), grid[3][0])";
+    assert!(route_a_count(code) >= 1, "per-iteration builder should fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_fires_on_record_builder() {
+    let code = "let p = { a: 0, b: 0 }\np.a = 1\np.b = 2\nprint(p.a, p.b)";
+    assert!(route_a_count(code) >= 2, "record field chain should fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_does_not_fire_on_alias() {
+    // `let ys = xs` retains the pre-mutation id — mutating in place would be
+    // observable through `ys`.
+    let code = "let xs = [1, 2, 3]\nlet ys = xs\nxs[0] = 9\nprint(xs[0], ys[0])";
+    assert_eq!(route_a_count(code), 0, "aliased container must not fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_does_not_fire_on_escapes() {
+    // Stored into another container before the mutation.
+    let code = "let xs = [1, 2]\nlet outer = [xs]\nxs[0] = 9\nprint(outer[0][0], xs[0])";
+    assert_eq!(route_a_count(code), 0, "stored-into-container must not fire");
+    assert_route_a_parity(code);
+    // Captured by a closure before the mutation.
+    let code = "let xs = [1, 2]\nlet get = fn() -> xs[0]\nxs[0] = 9\nprint(get(), xs[0])";
+    assert_eq!(route_a_count(code), 0, "closure-captured must not fire");
+    assert_route_a_parity(code);
+    // Passed to a user function before the mutation (arbitrary code could
+    // retain it).
+    let code = "fn probe(v)\n  v[0]\nend\nlet xs = [1, 2]\nlet a = probe(xs)\nxs[0] = 9\nprint(a, xs[0])";
+    assert_eq!(route_a_count(code), 0, "call argument must not fire");
+    assert_route_a_parity(code);
+    // Returning a pre-mutation alias out of a function.
+    let code = "fn f()\n  let xs = [1, 2]\n  let ys = xs\n  xs[0] = 5\n  ys\nend\nprint(f()[0])";
+    assert_eq!(route_a_count(code), 0, "escaping pre-mutation alias must not fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_fires_on_returned_mutation_result() {
+    // Returning the *rebound* (post-mutation) value is safe: only the final
+    // container escapes, which is value-identical to the clone. The
+    // pre-mutation id has no other observer.
+    let code = "fn f(v)\n  let xs = [1, 2]\n  xs[0] = v\n  xs\nend\nprint(f(5)[0], f(7)[0])";
+    assert!(route_a_count(code) >= 1, "returned mutation result should fire");
+    assert_route_a_parity(code);
+}
+
+#[test]
+fn route_a_does_not_fire_on_state_container() {
+    // A state-backed container is not a fresh alloc; and the value written
+    // to state escapes. Never in-place.
+    let code = "state xs = [0, 0]\nxs[0] = 1\nprint(xs[0])";
+    assert_eq!(route_a_count(code), 0, "state container must not fire");
+    assert_stateful_parity(code, 3);
+}
+
+#[test]
+fn route_a_dup_bytes_drop_on_builder() {
+    if !crate::stats::DUP_STATS_ENABLED {
+        return;
+    }
+    // Route A alone must strictly drop copied bytes on the per-iteration
+    // builder (route B is off, so the drop is attributable to route A).
+    let code = "let grid = []\nfor y in range(0, 50) do\n  let t = [0, 0, 0, 0]\n  t[0] = y\n  t[1] = y\n  grid = append(grid, t)\nend\nprint(len(grid))";
+    let bytes = |opts| {
+        let mut env = Env::new();
+        env.set_backend(Backend::Bytecode);
+        env.set_opt_flags(opts);
+        env.run_source(code).expect("run");
+        env.heap().dup_stats().total_bytes()
+    };
+    let off = bytes(OptFlags::none());
+    let on = bytes(ROUTE_A_ONLY);
+    assert!(off > 0, "baseline should copy something");
+    assert!(on < off, "route A should strictly reduce copied bytes ({on} !< {off})");
 }
 
 #[test]

@@ -7,27 +7,29 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-02. **Status: M1–M4 complete (routes A *and* B), both
-**default-on** — the bytecode VM is the default backend, batched dispatch makes
-it 3.4–14x faster than the graph engine on compute-bound code, and in-place
-mutation eliminates the COW cost on both fronts: route B (graph-side
-escape analysis) zeroes the loop accumulators (`append.ptl`'s 1.08 GB of
-copies → 0, `particles.ptl` 108.7 MB → 0, `game_of_life.ptl` 2.0 MB → 0) and
-route A (a last-use liveness pass on the lowered bytecode, `lastuse.rs`)
-covers straight-line builders (`let xs = […]; xs[0] = v`), read-then-mutate
-(`len(xs)` then `append(xs, …)`), and per-iteration fresh containers — all
-with byte-identical output. A **four-oracle** differential fuzzer (graph /
-BC-noopt / BC-route-A-only / BC-all) guards them; both routes soaked to 300k
-seeds. `OptFlags::default()` enables both `in_place_mutation` (B) and
-`in_place_straight_line` (A); recover the clone-and-alloc oracle per-run with
-`--no-opt` / `PETAL_OPT=off`. **M5a (call-path allocation elimination) is
-in:** the M3.5 re-profile showed ~20% of a call-heavy workload was frame
-malloc/free, so `VmFrame`s are now pooled on the `Stack` and the remaining
-per-call allocations (arg gathering, capture clone, builtin-name `String`)
-are gone — the steady-state call path allocates nothing, and the profile
-shows zero allocator frames. Remaining M5 items (packed encoding /
-superinstructions / structural sharing) stay profiling-gated; the current
-profile is pure dispatch.**
+Last updated: 2026-07-03. **Status: M1–M4 complete (routes A *and* B), both
+**default-on**, and the profiling-justified slice of **M5 shipped** — the
+bytecode VM is the default backend, batched dispatch makes it 3.4–14x faster
+than the graph engine on compute-bound code, and in-place mutation eliminates
+the COW cost on both fronts: route B (graph-side escape analysis) zeroes the
+loop accumulators (`append.ptl`'s 1.08 GB of copies → 0, `particles.ptl`
+108.7 MB → 0, `game_of_life.ptl` 2.0 MB → 0) and route A (a last-use liveness
+pass on the lowered bytecode, `lastuse.rs`) covers straight-line builders
+(`let xs = […]; xs[0] = v`), read-then-mutate (`len(xs)` then `append(xs, …)`),
+and per-iteration fresh containers — all with byte-identical output. A
+**four-oracle** differential fuzzer (graph / BC-noopt / BC-route-A-only /
+BC-all) guards them; both routes soaked to 300k seeds. `OptFlags::default()`
+enables both `in_place_mutation` (B) and `in_place_straight_line` (A); recover
+the clone-and-alloc oracle per-run with `--no-opt` / `PETAL_OPT=off`. **M5a
+(call-path allocation elimination) is in:** the M3.5 re-profile showed ~20% of
+a call-heavy workload was frame malloc/free, so `VmFrame`s are now pooled on
+the `Stack` and the remaining per-call allocations (arg gathering via an
+operand `SmallVec`, capture clone, builtin-name `String`) are gone — the
+steady-state call path allocates nothing, and the profile shows zero allocator
+frames. The remaining M5 micro-architecture items (superinstructions / packed
+encoding / pattern-tree / structural sharing) were re-profiled and found **not
+warranted** — see the M5 milestone entry; the current profile is pure
+dispatch.**
 The VM
 runs the entire language — straight-line, calls, closures, all control flow,
 match, and persistent state — and matches the graph engine on value, print
@@ -101,7 +103,7 @@ backend/
     isa.rs      # Inst, Reg, Label, BytecodeFn (+origins/result_reg), BytecodeProgram (+match_binds)  [DONE]
     lower.rs    # Program -> BytecodeProgram (recursive block emitter, jump backpatching)  [DONE thru M3]
     disasm.rs   # text + JSON rendering for show-bytecode / ShowBytecode  [DONE]
-    vm.rs       # Vm, VmFrame, step(), calls, all control flow, state, match, intrinsics  [DONE thru M3]
+    vm.rs       # Vm, VmFrame, step(), calls, all control flow, state, match, intrinsics; register-file pooling (M5)  [DONE]
     tests.rs    # differential + multi-run-state + resumability tests vs the graph oracle  [DONE]
     escape.rs   # route-B uniqueness/escape analysis (graph-side, feeds lowering)  [DONE]
     lastuse.rs  # route-A last-use in-place rewrite pass (bytecode-side, post-lowering)  [DONE]
@@ -489,7 +491,7 @@ phantom terms — expected.)
     (persistent `count` 1→2→3 across `reset_and_run` while route-A builder
     chains and a declined alias stay value-correct each run).
 - [x] **M5a — call-path allocation elimination (the register-file reuse the
-  M3.5 profile predicted).** The gating re-profile (2026-07-02, post-M4
+  M3.5 profile predicted).** The gating re-profile (2026-07-03, post-M4
   defaults) found: `DupStats` already 0 bytes on every benchmark (structural
   sharing has no remainder to cap), but ~20% of `calls.ptl`'s samples were
   allocator traffic — `drop_in_place<VmFrame>` on every return, the
@@ -521,18 +523,29 @@ phantom terms — expected.)
     `cargo check --target wasm32-unknown-unknown` clean. (petal-sdl's *link*
     step currently fails on this machine — homebrew `libSDL2.dylib` is
     missing, unrelated to the crate.)
-- [ ] **M5 remainder (optional, profiling-gated).** Packed encoding,
-  superinstructions, pattern-tree micro-ops (Maranget-style decision trees
-  replacing the `MatchArm` fat-op) — behind the same `Inst`/flag APIs. The
-  post-M5a profile is pure dispatch, so superinstructions are the next lever
-  if more speed is wanted. **Structural sharing (RRB vectors / HAMTs)** also
-  lives here as the *complement* to M4, not its alternative: it caps the
-  worst case (O(log n) copy instead of O(n)) when the analysis can't prove
-  uniqueness, at the price of read-path constants, and preserves
-  fork/speculation semantics with zero hazards. The M5a re-profile found
-  `DupStats` at 0 bytes on every benchmark, so there is currently **no
-  remainder to justify it** — re-check if real programs (params/state
-  containers) show one.
+- [ ] **M5 remainder — deferred, profiling says not warranted (2026-07-03).**
+  The remaining sketch items are micro-architecture whose payoff the current
+  profile does not support; recorded here so the next person re-checks rather
+  than re-discovers:
+  - **Structural sharing (RRB vectors / HAMTs).** The stated trigger was "post-M4
+    `DupStats` shows a stubborn remainder from params/state containers." It does
+    not: `DupStats::total_bytes()` is **0** under default flags on every
+    accumulator workload (`append`/`particles`/`life`). Routes A+B already prove
+    uniqueness for the whole corpus, so there is no un-provable COW left to cap.
+    Revisit only if a real program surfaces a params/state-container remainder,
+    or if `fork` moves to `Rc`-shared payloads (speculative plan Increment 4),
+    where structural sharing becomes the natural fit.
+  - **Superinstructions / packed encoding.** M3.5 attributed ~70% of a
+    call-heavy run to plain interpreter dispatch, so these *could* help — but
+    they are a large, parity-risky change (each fused/packed op is a new
+    correctness surface against the four oracles) for an unquantified win, and
+    the VM is already 4–10x faster than the reference. Gate on a real workload
+    that is dispatch-bound *after* the allocation work above, not on the
+    microbenchmarks.
+  - **Pattern-tree micro-ops** (Maranget decision trees replacing the
+    `MatchArm` fat-op). No match-heavy workload in `benchmarks/` and none in the
+    sketch corpus that dominates runtime; add a match-bound benchmark before
+    spending here.
 
 ---
 
@@ -541,26 +554,27 @@ phantom terms — expected.)
 M1–M4 are done and **default-on**, both routes, and M5a (call-path allocation
 elimination) is in (earlier chunks: M1a/M1b/M1c, M2a/M2b/M2c,
 M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz, M4 route B + flip,
-M4 route A + flip, M5a frame pool). The VM is at full behavioral parity with
-the graph engine, is the default backend, runs 3.4–14x faster on compute-bound
-code (release medians: append 14.1x, arith 5.9x, life 5.3x, calls 5.1x,
-particles 3.7x), mutates provably-unique containers in place by default
-(zero COW bytes on all five benchmarks), and its steady-state call path
-allocates nothing (frames pool on the `Stack`). `--no-opt` / `PETAL_OPT=off`
-recover the clone-and-alloc oracle.
+M4 route A + flip, M5a frame pool + operand `SmallVec`). The VM is at full
+behavioral parity with the graph engine, is the default backend, runs 3.4–14x
+faster on compute-bound code (release medians: append 14.1x, arith 5.9x, life
+5.3x, calls 5.1x, particles 3.7x), mutates provably-unique containers in place
+by default (zero COW bytes on all five benchmarks), and its steady-state call
+path allocates nothing (frames pool on the `Stack`). `--no-opt` /
+`PETAL_OPT=off` recover the clone-and-alloc oracle.
 
-### Next: M5 remainder — or stop here
-1. ~~Default-on M4~~, ~~route A~~, ~~register-file reuse / call-path
-   allocations (M5a)~~ — **done** (see the milestone entries).
-2. **The remaining M5 items lack profiling justification today.** The
-   post-M5a profile is pure interpreter dispatch (`exec_inst`/`step`/
-   `binop`/shared ops) and `DupStats` is 0 bytes on every benchmark — so
-   structural sharing has no measured remainder, and the next real lever
-   would be **superinstructions / packed encoding** (attacking dispatch
-   itself). Before starting any of it, re-run `ts/bin/bench-backends.ts`
-   and `--dup-stats` on *real workloads* (sketches under petal-sdl /
-   Garden), not just `benchmarks/` — and only proceed if something hurts.
-   Consider the backend effort complete until then.
+### Next: nothing is *required*
+The bytecode backend is feature-complete and its optimizations are done to the
+point the profiling justifies. The post-M5a profile is pure interpreter
+dispatch (`exec_inst`/`step`/`binop`/shared ops) and `DupStats` is 0 bytes on
+every benchmark, so the M5 remainder (superinstructions / packed encoding /
+pattern-tree / structural sharing) is **deferred with a recorded rationale** —
+see the two M5 milestone entries. Before picking any of it up, re-run
+`ts/bin/bench-backends.ts` and `--dup-stats` (default *and* `--no-opt`) on
+*real workloads* (sketches under petal-sdl / Garden), not just `benchmarks/`:
+the bar is a *specific* workload the current profile doesn't cover
+(dispatch-bound after the allocation work, a match-bound loop, or a genuine
+params/state COW remainder). If none appears, the honest move is to leave the
+VM as-is and spend effort elsewhere in the language.
 
 **M4 route A gotchas (learned in implementation).**
 - **Track Move-closure alias groups, not registers.** The lowering emits a
@@ -624,11 +638,12 @@ recover the clone-and-alloc oracle.
   for `range(start, end)` with `start != 0` and for state-map key parity).
 - The VM adds *derived caches* the graph engine never had: `Env.bytecode`
   (lowering per `ProgramId`) and per-stack VM run-state (`vm_frames`,
-  `vm_started`). Any operation that replaces a program in place or resets a
-  stack must account for them — `Env::insert_program` drops the cached lowering,
-  and `Stack::reset_execution()` is the single reset point for per-run state
-  (don't reset stack fields by hand; the hand-maintained lists drifted once
-  already and broke hot reload under the VM).
+  `vm_started`, and the M5a `vm_frame_pool` frame free-list). Any operation that
+  replaces a program in place or resets a stack must account for them —
+  `Env::insert_program` drops the cached lowering, and `Stack::reset_execution()`
+  is the single reset point for per-run state (don't reset stack fields by hand;
+  the hand-maintained lists drifted once already and broke hot reload under the
+  VM).
 - `Stack::vm_frame_pool` (M5a) is **not** a GC root, which is only sound
   because `VmFrame::recycle()` empties the register file, loop cursors, and
   loop context before a frame enters the pool. If pooling is ever added on a

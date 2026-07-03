@@ -13,6 +13,7 @@ pub mod dot_graph;
 pub mod env;
 pub mod execution_context;
 pub mod extract;
+pub mod handle;
 pub mod heap;
 pub mod ir_display;
 pub mod ir_serialize;
@@ -29,6 +30,8 @@ pub mod symbol;
 pub mod trace;
 pub mod transfer_state;
 pub mod value;
+
+pub use handle::{HandleClass, HandleClassId, HandleVal};
 
 #[cfg(feature = "wasm")]
 pub mod wasm;

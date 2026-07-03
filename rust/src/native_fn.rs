@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::Value;
@@ -98,6 +99,7 @@ pub struct PetalCxt<'a> {
     output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     bindings: &'a mut HashMap<SymbolId, Value>,
     counters: &'a mut HashMap<SymbolId, u64>,
+    handle_classes: &'a [HandleClass],
     results: Vec<Value>,
     /// When true, the caller (the bytecode VM, under `OptFlags::in_place_mutation`)
     /// has proven this call's container argument is uniquely owned and
@@ -116,6 +118,7 @@ impl<'a> PetalCxt<'a> {
         output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
         bindings: &'a mut HashMap<SymbolId, Value>,
         counters: &'a mut HashMap<SymbolId, u64>,
+        handle_classes: &'a [HandleClass],
     ) -> Self {
         Self {
             args,
@@ -125,6 +128,7 @@ impl<'a> PetalCxt<'a> {
             output_buffers,
             bindings,
             counters,
+            handle_classes,
             results: Vec::new(),
             in_place: false,
         }
@@ -189,6 +193,43 @@ impl<'a> PetalCxt<'a> {
             Value::String(id) => Ok(self.heap.get_string(id).to_string()),
             other => Err(format!("Expected string at arg {}, got {}", index, other.type_name())),
         }
+    }
+
+    /// Get a handle argument at 1-indexed position, checked against the
+    /// expected class and the class's liveness predicate.
+    pub fn get_handle(&self, index: usize, class: HandleClassId) -> Result<HandleVal, String> {
+        let expected = &self.handle_classes[class.0 as usize];
+        let h = match self.get_value(index)? {
+            Value::Handle(h) => h,
+            other => {
+                return Err(format!(
+                    "Expected {} handle at arg {}, got {}",
+                    expected.name,
+                    index,
+                    other.type_name()
+                ))
+            }
+        };
+        if h.class != class {
+            let got = self
+                .handle_classes
+                .get(h.class.0 as usize)
+                .map(|c| c.name.as_str())
+                .unwrap_or("unknown class");
+            return Err(format!(
+                "Expected {} handle at arg {}, got {} handle",
+                expected.name, index, got
+            ));
+        }
+        if !(expected.is_valid)(h.slot, h.serial) {
+            return Err(format!(
+                "Stale {} handle at arg {}: {}",
+                expected.name,
+                index,
+                (expected.describe)(h.slot, h.serial)
+            ));
+        }
+        Ok(h)
     }
 
     /// Get a boolean argument at 1-indexed position.

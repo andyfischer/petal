@@ -4,6 +4,7 @@
 
 use std::fmt;
 
+use crate::handle::HandleVal;
 use crate::heap::{ElementId, F64ArrayId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId};
@@ -35,6 +36,8 @@ pub enum Value {
     /// An interned symbol — a binding key shared with the embedding host.
     /// See `crate::symbol`.
     Symbol(SymbolId),
+    /// An opaque reference to a host-owned foreign object. See `crate::handle`.
+    Handle(HandleVal),
 }
 
 impl Value {
@@ -68,6 +71,7 @@ impl Value {
             Value::Dual { .. } => "dual",
             Value::Vec2(_, _) => "vec2",
             Value::Symbol(_) => "symbol",
+            Value::Handle(_) => "handle",
         }
     }
 
@@ -123,6 +127,7 @@ impl fmt::Debug for Value {
                 write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
             }
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
+            Value::Handle(h) => write!(f, "{}", h),
         }
     }
 }
@@ -183,6 +188,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
             format!("vec2({}, {})", format_float(*x), format_float(*y))
         }
         Value::Symbol(id) => format!("symbol#{}", id.0),
+        Value::Handle(h) => h.to_string(),
     }
 }
 
@@ -347,6 +353,12 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
                 f.to_bits().hash(&mut hasher);
             }
         }
+        Value::Handle(h) => {
+            9u8.hash(&mut hasher);
+            h.class.0.hash(&mut hasher);
+            h.slot.hash(&mut hasher);
+            h.serial.hash(&mut hasher);
+        }
         // For other types, hash the debug representation
         other => { 6u8.hash(&mut hasher); format!("{:?}", other).hash(&mut hasher); }
     }
@@ -407,6 +419,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
             *value == *n as f64
         }
         (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
+        (Value::Handle(a), Value::Handle(b)) => a == b,
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

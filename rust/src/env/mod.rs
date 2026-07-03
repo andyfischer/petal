@@ -9,6 +9,7 @@ use crate::compiler::Compiler;
 use crate::backend::bytecode::{BytecodeProgram, Vm};
 use crate::backend::{Backend, Evaluator, OptFlags, StepResult};
 use crate::execution_context::{ContextKey, ExecutionContext};
+use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
@@ -49,6 +50,8 @@ pub struct Env {
     /// Module resolution: in-memory registrations, search paths, and implicit
     /// imports. See docs/module-system.md.
     modules: ModuleRegistry,
+    /// Host-registered foreign-object classes, indexed by `HandleClassId`.
+    handle_classes: Vec<HandleClass>,
 }
 
 impl Env {
@@ -74,6 +77,7 @@ impl Env {
             opt_flags: Self::opt_flags_from_env(),
             bytecode: HashMap::new(),
             modules: ModuleRegistry::default(),
+            handle_classes: Vec::new(),
         }
     }
 
@@ -366,6 +370,7 @@ impl Env {
             closures: &mut ctx.closures,
             overload_sets: &mut ctx.overload_sets,
             native_fns: &self.native_fns,
+            handle_classes: &self.handle_classes,
             output: &mut ctx.output,
             trace: &mut self.trace,
             symbols: &mut self.symbols,
@@ -403,6 +408,7 @@ impl Env {
             closures: &mut ctx.closures,
             overload_sets: &mut ctx.overload_sets,
             native_fns: &self.native_fns,
+            handle_classes: &self.handle_classes,
             output: &mut ctx.output,
             symbols: &mut self.symbols,
             output_buffers: &mut ctx.output_buffers,
@@ -571,6 +577,7 @@ impl Env {
             closures: &mut ctx.closures,
             overload_sets: &mut ctx.overload_sets,
             native_fns: &self.native_fns,
+            handle_classes: &self.handle_classes,
             output: &mut ctx.output,
             trace: &mut self.trace,
             symbols: &mut self.symbols,
@@ -609,6 +616,25 @@ impl Env {
     /// Must be called before `load_program`.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    /// Register a class of host-owned foreign objects, returning its id.
+    /// Unlike `register_native`, this may be called at any time — handle
+    /// classes are not referenced by compiled programs.
+    pub fn register_handle_class(&mut self, class: HandleClass) -> HandleClassId {
+        let id = HandleClassId(self.handle_classes.len() as u16);
+        self.handle_classes.push(class);
+        id
+    }
+
+    /// Mint a `Value::Handle` for a (slot, serial) address in `class`.
+    pub fn make_handle(&self, class: HandleClassId, slot: u32, serial: u32) -> Value {
+        Value::Handle(HandleVal { class, slot, serial })
+    }
+
+    /// The registered handle classes, indexed by `HandleClassId`.
+    pub fn handle_classes(&self) -> &[HandleClass] {
+        &self.handle_classes
     }
 
     // ── Heap access ──────────────────────────────────────────────

@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
 use crate::backend::{calls, ops};
 use crate::backend::{RuntimeClosure, StepResult};
+use crate::handle::HandleClass;
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable, PetalCxt};
 use crate::backend::errors::TraceFrame;
@@ -123,6 +124,7 @@ pub struct Vm<'a> {
     pub closures: &'a mut Vec<RuntimeClosure>,
     pub overload_sets: &'a mut Vec<Vec<OverloadEntry>>,
     pub native_fns: &'a NativeFnTable,
+    pub handle_classes: &'a [HandleClass],
     pub output: &'a mut Vec<String>,
     pub symbols: &'a mut SymbolTable,
     pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
@@ -957,6 +959,7 @@ impl<'a> Vm<'a> {
             self.output_buffers,
             self.bindings,
             self.counters,
+            self.handle_classes,
         );
         cxt.set_in_place(in_place);
         let count = func(&mut cxt)?;

@@ -25,6 +25,7 @@ use smallvec::SmallVec;
 
 use std::collections::HashMap;
 
+use crate::handle::HandleClass;
 use crate::heap::Heap;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
@@ -75,6 +76,8 @@ pub struct Evaluator<'a> {
     pub closures: &'a mut Vec<RuntimeClosure>,
     pub overload_sets: &'a mut Vec<Vec<OverloadEntry>>,
     pub native_fns: &'a NativeFnTable,
+    /// Host-registered foreign-object classes, indexed by `HandleClassId`.
+    pub handle_classes: &'a [HandleClass],
     pub output: &'a mut Vec<String>,
     pub trace: &'a mut TraceBuffer,
     /// Symbol table for binding native/host state to interned names.

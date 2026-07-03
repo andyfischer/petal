@@ -68,7 +68,37 @@ impl VmFrame {
             call_site,
         }
     }
+
+    /// Re-initialize a recycled frame to the state `new` would produce, keeping
+    /// the register file's allocation. `recycle` already emptied the frame, so
+    /// the resize is a pure `Value::Nil` fill.
+    fn reset(
+        &mut self,
+        func: Option<FunctionId>,
+        reg_count: u16,
+        dst_in_caller: Option<Reg>,
+        call_site: Option<TermId>,
+    ) {
+        self.func = func;
+        self.ip = 0;
+        self.regs.resize(reg_count as usize, Value::Nil);
+        self.dst_in_caller = dst_in_caller;
+        self.call_site = call_site;
+    }
+
+    /// Empty the frame for the pool: registers, cursors, and loop context are
+    /// cleared so a pooled frame holds no values (the pool is not a GC root).
+    fn recycle(&mut self) {
+        self.regs.clear();
+        self.loops.clear();
+        self.loop_idx.clear();
+    }
 }
+
+/// Retention cap for [`Stack::vm_frame_pool`]: deep recursion can push the
+/// pool's high-water mark far above steady-state needs; beyond this many
+/// pooled frames, popped frames are dropped instead.
+const FRAME_POOL_MAX: usize = 1024;
 
 /// A live loop's iteration state (replaces the graph engine's `LoopState`).
 #[derive(Clone)]
@@ -106,13 +136,31 @@ impl<'a> Vm<'a> {
     /// `push_root_frame` does (the compiler assigns builtin phantom terms to
     /// those registers).
     pub fn push_root_frame(&mut self) {
-        let mut frame = VmFrame::new(None, self.bc.root.reg_count, None, None);
+        let mut frame = self.frame_from_pool(None, self.bc.root.reg_count, None, None);
         for i in 0..self.native_fns.count() {
             if i < frame.regs.len() {
                 frame.regs[i] = Value::NativeFunction(NativeFnId(i as u32));
             }
         }
         self.stack.vm_frames.push(frame);
+    }
+
+    /// An initialized frame, reusing a pooled register file when one is
+    /// available (the steady-state case for every call after warm-up).
+    fn frame_from_pool(
+        &mut self,
+        func: Option<FunctionId>,
+        reg_count: u16,
+        dst_in_caller: Option<Reg>,
+        call_site: Option<TermId>,
+    ) -> VmFrame {
+        match self.stack.vm_frame_pool.pop() {
+            Some(mut f) => {
+                f.reset(func, reg_count, dst_in_caller, call_site);
+                f
+            }
+            None => VmFrame::new(func, reg_count, dst_in_caller, call_site),
+        }
     }
 
     /// Execute one instruction and advance. Returns the same [`StepResult`]
@@ -211,21 +259,27 @@ impl<'a> Vm<'a> {
     /// Pop the current frame and deliver `value`: to the caller's `dst`
     /// register, or up as `StepResult::Complete` when the root frame finishes.
     fn deliver_value(&mut self, value: Value) -> StepResult {
-        let frame = self.stack.vm_frames.pop().unwrap();
+        let mut frame = self.stack.vm_frames.pop().unwrap();
         self.stack.last_pop_result = Some(value);
-        if self.stack.vm_frames.is_empty() {
+        let result = if self.stack.vm_frames.is_empty() {
             // The root frame just completed — capture top-level named functions
             // so `Env::call_function` can invoke them without a re-run.
             if frame.func.is_none() {
                 self.capture_root_functions(&frame);
             }
-            return StepResult::Complete(value);
+            StepResult::Complete(value)
+        } else {
+            if let Some(dst) = frame.dst_in_caller {
+                let caller = self.stack.vm_frames.len() - 1;
+                self.set(caller, dst, value);
+            }
+            StepResult::Continue
+        };
+        if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {
+            frame.recycle();
+            self.stack.vm_frame_pool.push(frame);
         }
-        if let Some(dst) = frame.dst_in_caller {
-            let caller = self.stack.vm_frames.len() - 1;
-            self.set(caller, dst, value);
-        }
-        StepResult::Continue
+        result
     }
 
     /// Record top-level named `Closure`/`OverloadSet` bindings from the root
@@ -272,7 +326,9 @@ impl<'a> Vm<'a> {
         regs[r as usize] = v;
     }
 
-    fn regs(&self, fi: usize, rs: &[Reg]) -> Vec<Value> {
+    /// Gather operand registers. Inline capacity covers typical arities, so
+    /// the hot call path (`Call`/`BuiltinCall` args) stays allocation-free.
+    fn regs(&self, fi: usize, rs: &[Reg]) -> SmallVec<[Value; 8]> {
         rs.iter().map(|&r| self.reg(fi, r)).collect()
     }
 
@@ -552,7 +608,7 @@ impl<'a> Vm<'a> {
 
             // --- calls / closures ---
             Inst::MakeClosure { dst, func, caps } => {
-                let captures = self.regs(fi, caps);
+                let captures = self.regs(fi, caps).into_vec();
                 let cid = ClosureId(self.closures.len() as u32);
                 self.closures.push(RuntimeClosure {
                     function_id: *func,
@@ -722,14 +778,15 @@ impl<'a> Vm<'a> {
         args: &[Value],
         call_site: Option<TermId>,
     ) -> Result<(), String> {
-        let method_name = match self.program.get_string_constant(name_cid) {
-            Some(s) => s.to_string(),
+        let program = self.program;
+        let method_name = match program.get_string_constant(name_cid) {
+            Some(s) => s,
             None => return Err("Invalid method name".into()),
         };
 
         // 1) Callable field on a record receiver.
         if let Value::Map(map_id) = recv {
-            let field_val = self.heap.get_map(map_id).get(&method_name).copied();
+            let field_val = self.heap.get_map(map_id).get(method_name).copied();
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
@@ -746,14 +803,15 @@ impl<'a> Vm<'a> {
         }
 
         // 2) Native function with `recv` prepended.
-        if let Some(nid) = self.native_fns.lookup_name(&method_name) {
-            let mut full_args = vec![recv];
+        if let Some(nid) = self.native_fns.lookup_name(method_name) {
+            let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
+            full_args.push(recv);
             full_args.extend_from_slice(args);
             let v = self.call_native_or_intrinsic(nid, &full_args)?;
             self.set(fi, dst, v);
             Ok(())
         } else {
-            let hint = match method_name.as_str() {
+            let hint = match method_name {
                 "toString" => Some("use str() or the str() method instead"),
                 "log" => Some("use print() instead of console.log()"),
                 "indexOf" => Some("use contains() to check membership"),
@@ -781,11 +839,14 @@ impl<'a> Vm<'a> {
         args: &[Value],
         in_place: bool,
     ) -> Result<(), String> {
-        let name = match self.program.get_string_constant(name_cid) {
-            Some(s) => s.to_string(),
+        // `program` is a `Copy` borrow with the Vm's own lifetime, so the name
+        // &str detaches from `self` — no per-call String allocation.
+        let program = self.program;
+        let name = match program.get_string_constant(name_cid) {
+            Some(s) => s,
             None => return Err("BuiltinCall: invalid name constant".into()),
         };
-        let nid = match self.native_fns.lookup_name(&name) {
+        let nid = match self.native_fns.lookup_name(name) {
             Some(id) => id,
             None => return Err(format!("Unknown builtin: {}", name)),
         };
@@ -812,9 +873,7 @@ impl<'a> Vm<'a> {
     ) -> Result<(), String> {
         let bc = self.bc;
         let program = self.program;
-        let closure = &self.closures[cid.0 as usize];
-        let fn_id = closure.function_id;
-        let captures = closure.captures.clone();
+        let fn_id = self.closures[cid.0 as usize].function_id;
 
         let bcfn = bc.function(fn_id);
         let func = &program.functions[fn_id.0 as usize];
@@ -829,12 +888,14 @@ impl<'a> Vm<'a> {
             ));
         }
 
-        let mut frame = VmFrame::new(Some(fn_id), bcfn.reg_count, dst, call_site);
+        let mut frame = self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site);
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];
             }
         }
+        // Reborrowed (not cloned) — the frame is local, so nothing conflicts.
+        let captures = &self.closures[cid.0 as usize].captures;
         for (i, &creg) in bcfn.capture_regs.iter().enumerate() {
             if let (Some(slot), Some(cap)) = (frame.regs.get_mut(creg as usize), captures.get(i)) {
                 *slot = *cap;

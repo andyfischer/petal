@@ -100,6 +100,11 @@ pub struct Stack {
     /// Distinguishes "not started" (push root) from "completed" (`vm_frames`
     /// empty again → done). Reset by [`Stack::reset_execution`].
     pub vm_started: bool,
+    /// Recycled VM activation records: popped frames land here (registers,
+    /// cursors, and loop context cleared) and calls reuse their allocations
+    /// instead of hitting the allocator per call. Cleared frames hold no
+    /// values, so this is deliberately *not* a GC root — keep it that way.
+    pub vm_frame_pool: Vec<crate::backend::bytecode::VmFrame>,
 }
 
 /// A single activation frame on the stack.
@@ -223,6 +228,7 @@ impl Stack {
             functions: HashMap::new(),
             vm_frames: Vec::new(),
             vm_started: false,
+            vm_frame_pool: Vec::new(),
         }
     }
 

@@ -80,7 +80,16 @@ impl OptFlags {
 }
 
 impl Default for OptFlags {
+    /// In-place mutation is **on by default** (M4 default-on flip). It is at
+    /// full triple-differential parity with clone-and-alloc (graph / BC-noopt /
+    /// BC-opt), so sketches get the zero-copy loop-accumulator win without
+    /// opting in. Disable per-run with `--no-opt` / `PETAL_OPT=off` (which map
+    /// to [`OptFlags::none`]) to recover the clone-and-alloc oracle. This is
+    /// spelled out field-by-field rather than delegating to [`OptFlags::all`]
+    /// so a future, not-yet-proven opt added to `all()` does not auto-default-on.
     fn default() -> OptFlags {
-        OptFlags::none()
+        OptFlags {
+            in_place_mutation: true,
+        }
     }
 }

@@ -7,17 +7,17 @@ lands. Companion reading: [Architecture.md](Architecture.md) (backend split),
 is immutable-by-construction — the substrate for the M4 optimization),
 [goals.md](goals.md) (performance is the standing weak spot this targets).
 
-Last updated: 2026-07-02. **Status: M1–M4 (route B) complete — the bytecode VM
-is the default backend, batched dispatch makes it 3–6x faster than the graph
-engine on compute-bound code, and in-place mutation (escape-analysis-gated)
-eliminates the loop-accumulator COW cost: `append.ptl`'s 1.08 GB of copies →
-0, `particles.ptl` 108.7 MB → 0, `game_of_life.ptl` 2.0 MB → 0, all with
-byte-identical output. A triple differential (graph / BC-noopt / BC-opt) fuzzer
-guards it (soaked to 300k seeds). In-place stays behind
-`OptFlags::in_place_mutation` (default off); enable with `PETAL_OPT=all` or by
-flipping `OptFlags::default()`. Route A (straight-line uniqueness) is deferred —
-see the M4 entry. Next: optionally default-on M4 (an M3-style flip with
-sdl/wasm/vitest re-validation), then M5.**
+Last updated: 2026-07-02. **Status: M1–M4 (route B) complete and now
+**default-on** — the bytecode VM is the default backend, batched dispatch makes
+it 3–6x faster than the graph engine on compute-bound code, and in-place
+mutation (escape-analysis-gated) eliminates the loop-accumulator COW cost:
+`append.ptl`'s 1.08 GB of copies → 0, `particles.ptl` 108.7 MB → 0,
+`game_of_life.ptl` 2.0 MB → 0, all with byte-identical output. A triple
+differential (graph / BC-noopt / BC-opt) fuzzer guards it (soaked to 300k
+seeds). `OptFlags::default()` now enables `in_place_mutation`, so sketches get
+the zero-copy win out of the box; recover the clone-and-alloc oracle per-run
+with `--no-opt` / `PETAL_OPT=off`. Route A (straight-line uniqueness) is
+deferred — see the M4 entry. Next: route A, then M5.**
 The VM
 runs the entire language — straight-line, calls, closures, all control flow,
 match, and persistent state — and matches the graph engine on value, print
@@ -406,6 +406,24 @@ phantom terms — expected.)
     in-place mutation cannot cross a fork boundary. The watermark becomes
     necessary only if `fork` moves to `Rc`-shared payloads (speculative plan
     Increment 4); a `debug_assert!(alive)` covers the free-list id-reuse hazard.
+- [x] **M4 default-on flip.** `OptFlags::default()` now enables
+  `in_place_mutation` (spelled out field-by-field, not delegated to
+  `OptFlags::all()`, so a future not-yet-proven opt added to `all()` won't
+  auto-default-on). Escape hatches unchanged: `--no-opt` and `PETAL_OPT=off`
+  both map to `OptFlags::none()` and recover the clone-and-alloc oracle. The
+  M3-style re-validation was run in full and is green: entire Rust suite
+  (incl. the 300k-capable triple fuzzer at default iters), the 24-example
+  differential sweep (graph-clone vs bytecode-in-place, byte-identical),
+  vitest (483/483 — the 3 formerly-pre-existing failures are gone),
+  petal-sdl build + 7 tests, both WASM packages (`petal-web` +
+  `petal-diagram-canvas`, both embed the main crate), and a Node smoke test
+  driving `PetalRuntime` on the fresh WASM (persistent `count` increments
+  1→2→3 across `reset_and_run` while a fresh in-place loop accumulator stays
+  correct each run — proving default-on in-place doesn't corrupt or leak into
+  state-captured containers). `DupStats` under **default** flags is now 0
+  bytes on `append`/`particles`/`life`; `--no-opt` restores the exact recorded
+  baselines (1.08 GB / 108.7 MB / 2.0 MB), confirming the flip is what zeroes
+  them.
 - [ ] **M4 route A — straight-line last-use uniqueness (deferred).** `let xs =
   […]; xs[0] = v` where `xs` is dead after. Lower payoff than the accumulator
   (the plan itself calls route B "the payoff case"), and it wants the same
@@ -427,22 +445,20 @@ phantom terms — expected.)
 
 ## Handoff — next actions
 
-M1–M4 (route B) are done (M4 not yet committed at time of writing; earlier
-chunks: M1a/M1b/M1c, M2a/M2b/M2c, M3-state+annotation, M3-flip,
-M3.5-bench+batch+fuzz). The VM is at full behavioral parity with the graph
-engine, is the default backend, runs 3–6x faster on compute-bound code, and —
-with `PETAL_OPT=all` — mutates provably-unique loop accumulators in place,
-zeroing the COW cost on `append`/`particles`/`life` with byte-identical output.
+M1–M4 (route B) are done and **default-on** (earlier chunks: M1a/M1b/M1c,
+M2a/M2b/M2c, M3-state+annotation, M3-flip, M3.5-bench+batch+fuzz, M4, M4
+default-on flip). The VM is at full behavioral parity with the graph engine, is
+the default backend, runs 3–6x faster on compute-bound code, and — now by
+default — mutates provably-unique loop accumulators in place, zeroing the COW
+cost on `append`/`particles`/`life` with byte-identical output. `--no-opt` /
+`PETAL_OPT=off` recover the clone-and-alloc oracle.
 
-### Next: default-on M4, then route A / M5
-1. **Decide whether to default-on M4** (flip `OptFlags::default()` to enable
-   `in_place_mutation`). It is currently gated off, so sketches don't yet see
-   the win. This is an M3-style flip: re-validate the full Rust suite, vitest,
-   the example sweep, petal-sdl build+tests, both WASM packages, and a Node
-   smoke test — because the mutating builtins and `ops::set_*` are shared with
-   embedders. The correctness net (300k-seed triple fuzzer + example
-   differential + `DupStats` drop) is already in place.
+### Next: route A, then M5
+1. ~~Default-on M4~~ — **done** (see the M4 default-on milestone entry; full
+   M3-style re-validation green: Rust suite, vitest 483/483, example sweep,
+   petal-sdl, both WASM packages, Node `PetalRuntime` smoke test).
 2. **Route A** (straight-line uniqueness) — deferred; see its M4 checklist entry.
+   Wants the same triple-fuzzer rigor route B earned before shipping.
 3. **M5** — packed encoding / superinstructions / structural sharing.
 
 **M4 gotchas (learned the hard way — the fuzzer found both).**

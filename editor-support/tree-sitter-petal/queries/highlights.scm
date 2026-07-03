@@ -12,6 +12,8 @@
 ; ---- Keywords ----
 
 [
+  "import"
+  "as"
   "let"
   "state"
   "fn"

@@ -50,4 +50,23 @@ mod tests {
             .set_language(&super::LANGUAGE.into())
             .expect("Error loading Petal parser");
     }
+
+    #[test]
+    fn test_highlights_query_compiles() {
+        let language = tree_sitter::Language::from(super::LANGUAGE);
+        tree_sitter::Query::new(&language, super::HIGHLIGHTS_QUERY)
+            .expect("highlights.scm must compile against the grammar");
+    }
+
+    #[test]
+    fn test_parses_import_forms() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&super::LANGUAGE.into()).unwrap();
+        let code = "import ui\nimport ui: button, clicked\nimport ui as u\n";
+        let tree = parser.parse(code, None).unwrap();
+        assert!(
+            !tree.root_node().has_error(),
+            "all three import forms must parse without error"
+        );
+    }
 }

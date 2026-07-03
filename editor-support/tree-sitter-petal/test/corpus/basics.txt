@@ -99,3 +99,23 @@ let v = <div class="a">{item}</div>
         (jsx_attribute name: (identifier) value: (string (string_content))))
       (jsx_expression (identifier))
       (jsx_closing_element name: (jsx_close_tag)))))
+
+==================
+Import statements
+==================
+
+import ui
+import ui: button, clicked
+import ui as u
+
+---
+
+(source_file
+  (import_statement module: (identifier))
+  (import_statement
+    module: (identifier)
+    name: (identifier)
+    name: (identifier))
+  (import_statement
+    module: (identifier)
+    alias: (identifier)))

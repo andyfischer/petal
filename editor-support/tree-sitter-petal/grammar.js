@@ -70,6 +70,7 @@ module.exports = grammar({
     // ---- Statements ----
 
     _statement: $ => choice(
+      $.import_statement,
       $.let_declaration,
       $.state_declaration,
       $.function_declaration,
@@ -81,6 +82,27 @@ module.exports = grammar({
       $.continue_statement,
       $.assignment,
       $._expression,
+    ),
+
+    // Three module-import forms (see docs/module-system.md):
+    //   import ui                    (qualified)
+    //   import ui: button, clicked   (selective, comma-separated names)
+    //   import ui as u               (aliased)
+    // `as` is contextual in the real parser; here it is a keyword literal,
+    // which is safe because a syntax-highlighting grammar never needs `as`
+    // as an ordinary identifier. The selective list requires commas between
+    // names, matching the parser and stopping the list at the next statement.
+    import_statement: $ => seq(
+      'import',
+      field('module', $.identifier),
+      optional(choice(
+        seq('as', field('alias', $.identifier)),
+        seq(
+          ':',
+          field('name', $.identifier),
+          repeat(seq(',', field('name', $.identifier))),
+        ),
+      )),
     ),
 
     let_declaration: $ => seq(

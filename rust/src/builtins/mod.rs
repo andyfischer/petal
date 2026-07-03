@@ -16,6 +16,7 @@ mod autodiff;
 mod collections;
 mod color;
 mod creative_coding;
+mod handle;
 mod io;
 mod math;
 mod noise;
@@ -182,6 +183,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("last", collections::native_last);
     table.register("drop_last", collections::native_drop_last);
     table.register("remove", collections::native_remove);
+
+    // --- Handles (append-only to preserve phantom term indices) ---
+    table.register("is_valid", handle::native_is_valid);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

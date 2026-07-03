@@ -19,7 +19,7 @@ use smallvec::SmallVec;
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
 use crate::backend::{calls, ops};
 use crate::backend::{RuntimeClosure, StepResult};
-use crate::handle::HandleClass;
+use crate::handle::{HandleClass, HandleVal};
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable, PetalCxt};
 use crate::backend::errors::TraceFrame;
@@ -770,7 +770,8 @@ impl<'a> Vm<'a> {
     }
 
     /// Method-call syntax `recv.name(args...)`: a callable field on a record
-    /// receiver, else a native function with `recv` prepended to the args.
+    /// receiver, else the handle class's `call_method` on a handle receiver,
+    /// else a native function with `recv` prepended to the args.
     fn do_method_call(
         &mut self,
         fi: usize,
@@ -804,7 +805,16 @@ impl<'a> Vm<'a> {
             }
         }
 
-        // 2) Native function with `recv` prepended.
+        // 2) Handle receiver: dispatch through the handle class's own method
+        //    table. This runs before the native-table lookup so class methods
+        //    win over same-named globals (e.g. the builtin `get`).
+        if let Value::Handle(h) = recv {
+            let v = self.call_handle_method(h, method_name, args)?;
+            self.set(fi, dst, v);
+            return Ok(());
+        }
+
+        // 3) Native function with `recv` prepended.
         if let Some(nid) = self.native_fns.lookup_name(method_name) {
             let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
             full_args.push(recv);
@@ -963,6 +973,53 @@ impl<'a> Vm<'a> {
         );
         cxt.set_in_place(in_place);
         let count = func(&mut cxt)?;
+        let results = cxt.take_results();
+        Ok(if count > 0 && !results.is_empty() {
+            results[0]
+        } else {
+            Value::Nil
+        })
+    }
+
+    /// Dispatch `h.method(args...)` through the handle class registered for
+    /// `h.class`. Mirrors the graph engine's `call_handle_method` (including
+    /// error messages): liveness is checked first, and a stale handle errors
+    /// with the class name and `describe()` output without invoking
+    /// `call_method`. The receiver is prepended, so it is cxt arg 1.
+    fn call_handle_method(
+        &mut self,
+        h: HandleVal,
+        method_name: &str,
+        args: &[Value],
+    ) -> Result<Value, String> {
+        // `handle_classes` is a shared `&'a [HandleClass]`, so copying the
+        // reference detaches `class` from `self` and the `&mut` field
+        // reborrows below don't conflict.
+        let handle_classes = self.handle_classes;
+        let class = handle_classes.get(h.class.0 as usize).ok_or_else(|| {
+            format!("Handle references unregistered handle class id {}", h.class.0)
+        })?;
+        if !(class.is_valid)(h.slot, h.serial) {
+            return Err(format!(
+                "Stale {} handle: {}",
+                class.name,
+                (class.describe)(h.slot, h.serial)
+            ));
+        }
+        let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
+        full_args.push(Value::Handle(h));
+        full_args.extend_from_slice(args);
+        let mut cxt = PetalCxt::new(
+            &full_args,
+            self.heap,
+            self.output,
+            self.symbols,
+            self.output_buffers,
+            self.bindings,
+            self.counters,
+            handle_classes,
+        );
+        let count = (class.call_method)(&mut cxt, method_name)?;
         let results = cxt.take_results();
         Ok(if count > 0 && !results.is_empty() {
             results[0]

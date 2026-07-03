@@ -14,10 +14,13 @@
 //   Env::register_handle_class(&mut self, HandleClass) -> HandleClassId
 //   Env::make_handle(&self, HandleClassId, slot, serial) -> Value  // Value::Handle(HandleVal)
 
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use petal::backend::Backend;
 use petal::env::Env;
+use petal::native_fn::{NativeFn, NativeResult, PetalCxt};
 use petal::value::Value;
 use petal::{HandleClass, HandleClassId, HandleVal};
 
@@ -204,4 +207,324 @@ fn handle_val_equality_and_hash() {
     set.insert(c);
     set.insert(d);
     assert_eq!(set.len(), 3, "a and b must hash/compare as one entry");
+}
+
+// ═════════════════════════════════════════════════════════════════
+// CHUNK 2: handle method dispatch + the `is_valid` builtin
+// (docs/dev/unreal-ffi-proposal.md §5).
+//
+// Contract under test:
+//  - `h.method(args...)` on a `Value::Handle` dispatches through
+//    `handle_classes[h.class].call_method(&mut cxt, "method")` with
+//    cxt args = [receiver, args...]. This arm runs BEFORE the UFCS
+//    native-table fallback.
+//  - If the class's `is_valid` says the handle is stale, dispatch errors
+//    with a message containing the class name and `describe()` output,
+//    WITHOUT invoking `call_method`.
+//  - `call_method` returning Err surfaces as a script runtime error.
+//  - New builtin `is_valid(v)`: true for a live handle, false for a stale
+//    handle (no error — that is its purpose), false for any non-handle
+//    (nil, ints, ...), never an error.
+// ═════════════════════════════════════════════════════════════════
+
+/// State captured by a Counter test class, one set per Env/backend run.
+struct CounterState {
+    cell: Rc<RefCell<i64>>,
+    alive: Rc<RefCell<bool>>,
+    was_called: Rc<RefCell<bool>>,
+}
+
+impl CounterState {
+    fn new(initial: i64) -> Self {
+        Self {
+            cell: Rc::new(RefCell::new(initial)),
+            alive: Rc::new(RefCell::new(true)),
+            was_called: Rc::new(RefCell::new(false)),
+        }
+    }
+}
+
+/// A "Counter" handle class over the captured state.
+/// Methods (receiver is cxt arg 1, method args follow):
+///   get()  -> current cell value
+///   add(n) -> adds n to the cell, returns the new value
+/// Anything else: Err("no method '{name}' on Counter").
+fn counter_class(state: &CounterState) -> HandleClass {
+    let cell = state.cell.clone();
+    let alive = state.alive.clone();
+    let was_called = state.was_called.clone();
+    HandleClass {
+        name: "Counter".to_string(),
+        is_valid: Box::new(move |_slot, _serial| *alive.borrow()),
+        describe: Box::new(|slot, serial| format!("Counter(slot={slot}, serial={serial})")),
+        call_method: Box::new(move |cxt: &mut PetalCxt, method: &str| -> NativeResult {
+            *was_called.borrow_mut() = true;
+            match method {
+                "get" => {
+                    let v = *cell.borrow();
+                    cxt.push_int(v);
+                    Ok(1)
+                }
+                "add" => {
+                    // Receiver is arg 1; the method argument is arg 2.
+                    let n = cxt.get_int(2)?;
+                    *cell.borrow_mut() += n;
+                    let v = *cell.borrow();
+                    cxt.push_int(v);
+                    Ok(1)
+                }
+                other => Err(format!("no method '{other}' on Counter")),
+            }
+        }),
+    }
+}
+
+/// Run `source` under `backend` in a fresh Env with `class` registered and a
+/// handle of that class (slot=1, serial=1) bound as the uniform "h".
+/// Extra global natives (for UFCS-shadowing tests) are registered before load.
+fn run_with_class(
+    backend: Backend,
+    class: HandleClass,
+    natives: &[(&str, NativeFn)],
+    source: &str,
+) -> Result<Value, String> {
+    let mut env = Env::new();
+    env.set_backend(backend);
+    for (name, func) in natives {
+        env.register_native(name, *func);
+    }
+    let class_id = env.register_handle_class(class);
+    let pid = env.load_program(source)?;
+    let sid = env.create_stack(pid)?;
+    let handle = env.make_handle(class_id, 1, 1);
+    let sym = env.intern_symbol("h");
+    env.set_binding(sym, handle);
+    env.run(sid)
+}
+
+/// Run `source` in a fresh Env with no handle classes or bindings.
+fn run_plain(backend: Backend, source: &str) -> Result<Value, String> {
+    let mut env = Env::new();
+    env.set_backend(backend);
+    let pid = env.load_program(source)?;
+    let sid = env.create_stack(pid)?;
+    env.run(sid)
+}
+
+// ── 7. Method dispatch through the handle class ──────────────────
+
+#[test]
+fn handle_method_dispatch_add_then_get() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(0);
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "let h = binding(symbol(\"h\"))\nh.add(5)\nh.get()",
+        );
+        assert_eq!(
+            result,
+            Ok(Value::Int(5)),
+            "[{backend:?}] h.add(5) then h.get() must dispatch through call_method"
+        );
+        assert_eq!(*state.cell.borrow(), 5, "[{backend:?}] add(5) must mutate host state");
+        assert!(*state.was_called.borrow(), "[{backend:?}] call_method must be invoked");
+    }
+}
+
+#[test]
+fn handle_method_add_returns_new_value() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(10);
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "let h = binding(symbol(\"h\"))\nh.add(7)",
+        );
+        assert_eq!(
+            result,
+            Ok(Value::Int(17)),
+            "[{backend:?}] add returns the post-mutation value"
+        );
+    }
+}
+
+// ── 8. Stale handles: dispatch is blocked before call_method ─────
+
+#[test]
+fn stale_handle_method_errors_with_describe_and_skips_call_method() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(0);
+        *state.alive.borrow_mut() = false; // handle goes stale before the run
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "let h = binding(symbol(\"h\"))\nh.get()",
+        );
+        let err = result.expect_err(&format!(
+            "[{backend:?}] calling a method on a stale handle must be a runtime error"
+        ));
+        assert!(
+            err.contains("Counter"),
+            "[{backend:?}] stale-handle error must name the class, got: {err}"
+        );
+        assert!(
+            err.contains("Counter(slot=1, serial=1)"),
+            "[{backend:?}] stale-handle error must include describe() output, got: {err}"
+        );
+        assert!(
+            !*state.was_called.borrow(),
+            "[{backend:?}] call_method must NOT be invoked for a stale handle"
+        );
+    }
+}
+
+// ── 9. Unknown method: call_method's Err surfaces to the script ──
+
+#[test]
+fn unknown_handle_method_surfaces_call_method_error() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(0);
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "let h = binding(symbol(\"h\"))\nh.frobnicate()",
+        );
+        let err = result.expect_err(&format!(
+            "[{backend:?}] unknown handle method must be a runtime error"
+        ));
+        assert!(
+            err.contains("frobnicate"),
+            "[{backend:?}] error must name the missing method, got: {err}"
+        );
+        // The error must come from the class's own dispatcher (it says
+        // "on Counter"), not from the generic no-method fallback.
+        assert!(
+            err.contains("Counter"),
+            "[{backend:?}] error must come from the Counter dispatcher, got: {err}"
+        );
+        assert!(
+            *state.was_called.borrow(),
+            "[{backend:?}] the class dispatcher must have been consulted"
+        );
+    }
+}
+
+// ── 10. Handle-class dispatch wins over the UFCS native fallback ─
+
+fn native_get_999(cxt: &mut PetalCxt) -> NativeResult {
+    cxt.push_int(999);
+    Ok(1)
+}
+
+#[test]
+fn handle_class_method_shadows_ufcs_native() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(5);
+        // Note: a builtin `get(container, key)` also already exists in the
+        // native table, and UFCS name lookup returns the first match — so
+        // today `h.get()` resolves to that builtin (arity error). Either way,
+        // after chunk 2 the handle class's own `get` must win over the table.
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[("get", native_get_999)], // global native `get` would return 999
+            "let h = binding(symbol(\"h\"))\nh.get()",
+        );
+        assert_eq!(
+            result,
+            Ok(Value::Int(5)),
+            "[{backend:?}] the handle class's 'get' must win over the global native 'get'"
+        );
+    }
+}
+
+// ── 11. The `is_valid` builtin ───────────────────────────────────
+
+#[test]
+fn is_valid_true_for_live_handle() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(0);
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "is_valid(binding(symbol(\"h\")))",
+        );
+        assert_eq!(result, Ok(Value::Bool(true)), "[{backend:?}] live handle is valid");
+    }
+}
+
+#[test]
+fn is_valid_false_for_stale_handle_without_error() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let state = CounterState::new(0);
+        *state.alive.borrow_mut() = false;
+        let result = run_with_class(
+            backend,
+            counter_class(&state),
+            &[],
+            "is_valid(binding(symbol(\"h\")))",
+        );
+        assert_eq!(
+            result,
+            Ok(Value::Bool(false)),
+            "[{backend:?}] is_valid must return false (not error) on a stale handle"
+        );
+    }
+}
+
+#[test]
+fn is_valid_false_for_nil() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let result = run_plain(backend, "is_valid(nil)");
+        assert_eq!(
+            result,
+            Ok(Value::Bool(false)),
+            "[{backend:?}] nil is not a valid handle"
+        );
+    }
+}
+
+#[test]
+fn is_valid_false_for_non_handle_value() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let result = run_plain(backend, "is_valid(5)");
+        assert_eq!(
+            result,
+            Ok(Value::Bool(false)),
+            "[{backend:?}] a non-handle value is simply not a valid handle (no error)"
+        );
+    }
+}
+
+// ── 12. Regression guard: UFCS on non-handles keeps working ──────
+// (Passes today; must still pass once the handle-dispatch arm is added.
+//  UFCS is confirmed in ts/test/method-syntax.test.ts, e.g. `[1,2,3].len()`.)
+
+fn native_double(cxt: &mut PetalCxt) -> NativeResult {
+    let n = cxt.get_int(1)?;
+    cxt.push_int(n * 2);
+    Ok(1)
+}
+
+#[test]
+fn ufcs_on_non_handle_receiver_still_works() {
+    for backend in [Backend::Graph, Backend::Bytecode] {
+        let mut env = Env::new();
+        env.set_backend(backend);
+        env.register_native("double", native_double);
+        let pid = env.load_program("let x = 4\nx.double()").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let result = env.run(sid);
+        assert_eq!(
+            result,
+            Ok(Value::Int(8)),
+            "[{backend:?}] UFCS native fallback on non-handle receivers must keep working"
+        );
+    }
 }

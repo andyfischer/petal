@@ -195,6 +195,11 @@ impl<'a> PetalCxt<'a> {
         }
     }
 
+    /// Look up a registered handle class by id (`None` if unregistered).
+    pub fn handle_class(&self, id: HandleClassId) -> Option<&HandleClass> {
+        self.handle_classes.get(id.0 as usize)
+    }
+
     /// Get a handle argument at 1-indexed position, checked against the
     /// expected class and the class's liveness predicate.
     pub fn get_handle(&self, index: usize, class: HandleClassId) -> Result<HandleVal, String> {

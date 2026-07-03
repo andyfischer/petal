@@ -78,7 +78,9 @@ called it.
 
 **Method-call syntax reaches natives.** `obj.method(args)` compiles to a
 `MethodCall` op, and both backends resolve it the same way: a callable field
-on a record receiver first, otherwise **UFCS fallback** — the method name is
+on a record receiver first; then, on a handle receiver, the handle class's own
+`call_method` dispatcher — which wins over any same-named native and rejects
+stale handles before dispatch; otherwise **UFCS fallback** — the method name is
 looked up in the native table and called with the receiver prepended
 (`exec_method_call` in `rust/src/backend/graph/call.rs`, `do_method_call` in
 the bytecode VM). So registering `set_location` makes both

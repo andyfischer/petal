@@ -554,19 +554,6 @@ impl Compiler {
         None
     }
 
-    /// Bind a name in the current function's scope (not the innermost scope).
-    /// Used for captures so nested functions see the local phantom.
-    fn bind_in_function_scope(&mut self, name: String, tid: TermId) {
-        if let Some(&boundary_idx) = self.function_boundaries.last()
-            && boundary_idx < self.scopes.len()
-        {
-            self.scopes[boundary_idx].insert(name, tid);
-            return;
-        }
-        // Fallback: bind in current scope
-        self.scope_bind(name, tid);
-    }
-
     // -----------------------------------------------------------------------
     // Term emission
     // -----------------------------------------------------------------------

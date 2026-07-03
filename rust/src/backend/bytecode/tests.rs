@@ -159,6 +159,29 @@ fn closures_capture() {
 }
 
 #[test]
+fn nested_closure_captures_top_level_fn() {
+    // A lambda nested inside a fn body references a top-level fn. The value
+    // must thread transitively through the intermediate function's frame.
+    assert_parity(
+        "fn dist(p)\n  p + 1\nend\n\
+         fn make()\n  let g = fn(q) -> dist(q)\n  g(41)\nend\n\
+         print(make())",
+    );
+    // Two intermediate boundaries between the reference and the top-level fn.
+    assert_parity(
+        "fn base(p)\n  p * 10\nend\n\
+         fn outer()\n  fn middle()\n    let h = fn(q) -> base(q)\n    h(4)\n  end\n  middle()\nend\n\
+         print(outer())",
+    );
+    // Capturing a top-level fn alongside an enclosing param (mixed sources).
+    assert_parity(
+        "fn twice(p)\n  p + p\nend\n\
+         fn make2(n)\n  let g = fn(q) -> twice(q) + n\n  g(5)\nend\n\
+         print(make2(100))",
+    );
+}
+
+#[test]
 fn overloaded_functions() {
     // Same name, different arities — resolved by argument count.
     assert_parity(

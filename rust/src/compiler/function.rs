@@ -179,34 +179,72 @@ impl Compiler {
     }
 
     /// Get or create a capture phantom for a cross-function variable reference.
+    ///
+    /// When the binding lives several function boundaries out from the
+    /// reference (e.g. a lambda nested in a `fn` that references a top-level
+    /// function), a single capture on the innermost function is not enough:
+    /// its `outer_tid` would point at a term living in a block that the
+    /// intermediate functions don't own, which the graph runtime reads as
+    /// nil and the bytecode lowerer rejects outright. Instead we thread the
+    /// value through *every* enclosing function between the binding and the
+    /// reference, chaining each level's capture source to the previous
+    /// level's local phantom. Returns the innermost function's phantom.
     pub(super) fn get_or_add_capture(&mut self, name: &str, outer_tid: TermId) -> TermId {
-        // Check if already captured
-        if let Some(captures) = self.capture_stack.last() {
-            for cap in captures {
-                if cap.name == name {
-                    return cap.local_phantom;
-                }
+        // Locate the scope that binds `name` (innermost binding). The caller
+        // has already confirmed via `scope_lookup`/`needs_capture` that it
+        // exists and crosses at least one function boundary.
+        let Some(binding_scope_idx) = self
+            .scopes
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, scope)| scope.contains_key(name))
+            .map(|(i, _)| i)
+        else {
+            return outer_tid;
+        };
+
+        // Every enclosing function whose boundary sits *inside* the binding
+        // scope must capture the value and forward it inward.
+        let mut source_tid = outer_tid;
+        for level in 0..self.function_boundaries.len() {
+            if self.function_boundaries[level] <= binding_scope_idx {
+                // At or above the binding: this function sees it directly.
+                continue;
             }
+            source_tid = self.add_capture_at_level(level, name, source_tid);
         }
-        // Create capture phantom in the FUNCTION BODY block (not current block).
-        // This is critical because capture_registers must reference registers in the
-        // function body block, where the evaluator places captured values at call time.
+        source_tid
+    }
+
+    /// Register a capture of `name` (sourced from `source_tid` in the
+    /// enclosing frame) on the function at stack `level`, returning the local
+    /// phantom that stands in for the value inside that function. Reuses an
+    /// existing capture for the same name when one is already present.
+    fn add_capture_at_level(&mut self, level: usize, name: &str, source_tid: TermId) -> TermId {
+        if let Some(cap) = self.capture_stack[level].iter().find(|c| c.name == name) {
+            return cap.local_phantom;
+        }
+
+        // Create the capture phantom in this function's body block, where the
+        // runtime deposits captured values at call time — capture_registers
+        // must reference registers in that block.
+        let body_block = self.function_body_blocks[level];
         let saved_block = self.current_block;
-        if let Some(&fn_body_block) = self.function_body_blocks.last() {
-            self.current_block = fn_body_block;
-        }
+        self.current_block = body_block;
         let phantom = self.emit_phantom_term(name.to_string());
         self.current_block = saved_block;
 
-        if let Some(captures) = self.capture_stack.last_mut() {
-            captures.push(CaptureInfo {
-                outer_tid,
-                local_phantom: phantom,
-                name: name.to_string(),
-            });
-        }
-        // Bind in function scope so nested functions see the local phantom
-        self.bind_in_function_scope(name.to_string(), phantom);
+        self.capture_stack[level].push(CaptureInfo {
+            outer_tid: source_tid,
+            local_phantom: phantom,
+            name: name.to_string(),
+        });
+        // Bind in this function's boundary scope so later references (and
+        // deeper captures) resolve to the local phantom rather than
+        // re-reaching the outer term.
+        let boundary_scope = self.function_boundaries[level];
+        self.scopes[boundary_scope].insert(name.to_string(), phantom);
         phantom
     }
 }

@@ -41,21 +41,36 @@ print("hello, {name}!")            // hello, Petal!
 See the [Language Guide](docs/Language_Guide.md) for the full tour: enums and
 pattern matching, higher-order functions, and more.
 
+## Repository Layout
+
+| Directory | Description |
+|-----------|-------------|
+| [`rust/`](rust/) | The core language implementation: lexer, parser, AST, compiler, IR, evaluator, bytecode VM |
+| [`docs/`](docs/README.md) | Language reference and design docs — see the [docs index](docs/README.md) |
+| [`examples/`](examples/README.md) | Runnable example `.ptl` programs demonstrating language features |
+| [`apps/`](apps/) | Native and web integrations that embed the language (SDL, WASM, canvas) |
+| [`petal-ui/`](petal-ui/) | Interactivity layer for embedders: normalized input events, the shared draw-command vocabulary, and the `ui` prelude module |
+| [`editor-support/`](editor-support/README.md) | Editor/IDE tooling, including the reference tree-sitter grammar for syntax highlighting |
+| [`ts/`](ts/) | TypeScript tooling: dev wrappers, MCP servers, and the vitest integration test suite |
+| [`test/`](test/README.md) | Script-level conformance/regression cases run by `cargo test` |
+| [`benchmarks/`](benchmarks/) | Petal programs used to compare backend performance |
+
 ## Documentation
+
+See the [documentation index](docs/README.md) for the full list. Highlights:
 
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Build instructions, running examples, CLI usage |
 | [Language Guide](docs/Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
-| [Builtins Reference](docs/Builtins.md) | All 68 built-in functions with signatures and examples |
+| [Builtins Reference](docs/Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
+| [Module System](docs/module-system.md) | `import` syntax, module resolution, hot reload across files |
 | [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Goals](docs/goals.md) | Vision (the four pillars), remaining work, and sequencing |
-| [Function Overloading](docs/Function_Overloading.md) | Multi-arity dispatch rules |
-| [Rebind Operator](docs/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
-| [Mutability Plan](docs/MutabilityPlan.md) | Why the IR is purely immutable (design context) |
 | [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
-| [Debug Protocol](docs/debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |
+
+Internal design notes, plans, and engineering logs live in [docs/dev/](docs/dev/).
 
 ## Integrations & Tools
 
@@ -67,7 +82,7 @@ pattern matching, higher-order functions, and more.
 | [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
 | [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | [side-scroller](apps/side-scroller/README.md) | 2D side-scrolling platformer written almost entirely in Petal |
-| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
+| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
 
 ## Testing
 

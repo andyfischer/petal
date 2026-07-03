@@ -42,3 +42,5 @@ Or run all examples with pass/fail reporting:
 | `color_gradient.ptl` | HSV + color interpolation | `hsv`, `color_lerp`, `lerp` |
 | `map_range_demo.ptl` | Remapping values | `map_range`, `clamp` |
 | `differentiation.ptl` | Gradient descent with dual numbers | `dual`, `value_of`, `deriv_of` |
+| `imports.ptl` | Module imports | `import`, qualified/selective forms |
+| `text_utils.ptl` | Library module imported by `imports.ptl` | `fn` exports (no standalone output) |

@@ -2,6 +2,9 @@
 name = "petal-sdl"
 version = "0.1.0"
 edition = "2024"
+description = "SDL2-based 2D graphics host for Petal programs, with hot reload"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../rust" }

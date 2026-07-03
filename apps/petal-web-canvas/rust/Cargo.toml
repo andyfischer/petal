@@ -2,6 +2,9 @@
 name = "petal-web-canvas"
 version = "0.1.0"
 edition = "2024"
+description = "WASM bindings for running Petal drawing scripts in an HTML canvas"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../../rust" }

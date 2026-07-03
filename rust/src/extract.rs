@@ -1,7 +1,7 @@
 //! Typed extraction helpers for pulling Rust data out of Petal `Value`s.
 //!
 //! Embedders that accept structured data from scripts (petal-sdl draw commands,
-//! Garden layouts, ...) otherwise hand-walk the heap: match `Value::Map`, call
+//! panel layouts, ...) otherwise hand-walk the heap: match `Value::Map`, call
 //! `heap.get_map(id)`, match each field's `Value`, and recurse through lists —
 //! re-deriving the same type checks and error strings every time. These methods
 //! collapse that into one call per field with an error message that names the

@@ -178,7 +178,7 @@ accurately, even before any compiler change.
   X." Add a paragraph at the top explaining the dataflow philosophy and
   noting that `Assign` is the one remaining mutation primitive (forward
   reference to this plan).
-- `docs/MutabilityPlan.md` — *this file*; already done.
+- `docs/dev/MutabilityPlan.md` — *this file*; already done.
 - `rust/src/trace.rs` — rename comments and doc strings on `history`,
   `HistoryEntry`, `HistoryKind`. Keep the function names for now (they get
   removed in step 5).

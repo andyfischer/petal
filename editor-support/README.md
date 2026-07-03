@@ -12,8 +12,8 @@ Tooling that helps editors and IDEs work with Petal source (`.ptl`).
 
 ## Consumers
 
-- **Garden** (`~/garden`) — a GPU IDE that embeds Petal as its scripting layer;
-  it depends on `tree-sitter-petal` as a path dependency and registers it in
-  `garden-app/src/syntax.rs`, so `.ptl` files highlight in the editor.
 - Any tree-sitter-based editor (Neovim, Helix, Zed, Emacs) can install the
   grammar + `queries/highlights.scm` to highlight Petal.
+- Applications that embed Petal as a scripting layer can depend on the
+  `tree-sitter-petal` Rust crate (as a path dependency) to highlight `.ptl`
+  files in their own UI.

@@ -110,7 +110,7 @@ jobs:
         run: cargo check --manifest-path apps/petal-diagram-canvas/rust/Cargo.toml
 
   web-builds:
-    name: Web builds (wasm + vite + playground)
+    name: Web builds (wasm + vite)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

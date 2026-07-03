@@ -241,7 +241,7 @@ pub struct Block {
     /// Phi carry-outs: when this block's frame pops, copy each `src_term`'s
     /// register value to the parent frame at each `dest_term`'s register.
     /// Emitted when a conditional branch rebinds a name that was bound in
-    /// an outer scope — see `docs/MutabilityPlan.md`.
+    /// an outer scope — see `docs/dev/MutabilityPlan.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub phi_outs: Vec<PhiOut>,
 }

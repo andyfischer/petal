@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- Node.js (for running tests and the TypeScript tooling)
+- Node.js **23 or newer** (for running tests and the TypeScript tooling — the
+  `ts/bin/*.ts` scripts rely on Node's native TypeScript type-stripping)
 
 ## Building
 
@@ -43,7 +44,7 @@ rust/target/debug/petal run hello.ptl
 
 ## Running the Examples
 
-The `examples/` directory contains 22 example programs:
+The `examples/` directory contains a set of example programs:
 
 ```bash
 # Run a single example
@@ -102,7 +103,7 @@ npx vitest -t "name" # Run tests matching a name
 ## Using the MCP Tools
 
 If you're using an AI assistant that supports MCP (like Claude Code), the project includes
-an MCP server at `ts/tools/petal-mcp.ts` that provides six tools — `TestSnippet`,
-`CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowAST`, `ShowTokens`. These let you compile,
+an MCP server at `ts/tools/petal-mcp.ts` that provides tools — `TestSnippet`,
+`CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens`. These let you compile,
 run, inspect, and debug Petal code directly from your assistant without shelling out
 manually.

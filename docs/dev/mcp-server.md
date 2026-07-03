@@ -1,7 +1,7 @@
 
 ## MCP Server
 
-An MCP server (`ts/tools/petal-mcp.ts`) exposes six tools that compile and run Petal code
+An MCP server (`ts/tools/petal-mcp.ts`) exposes tools that compile and run Petal code
 directly. It automatically builds the Rust binary before running. Use these to
 quickly test Petal snippets without shelling out manually.
 

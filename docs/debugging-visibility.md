@@ -23,7 +23,7 @@ Rebindings inside a child block lower to pure-dataflow joins: a single
 term (`Branch`, `Match`, `ForLoop`, `WhileLoop`). Each phi initializes from
 its `inputs[0]` (the pre-control-flow value) and is updated on child-frame
 pops via `Block.phi_outs`. The IR has no register-mutation primitive — see
-`docs/MutabilityPlan.md`.
+`docs/dev/MutabilityPlan.md`.
 
 ---
 
@@ -61,6 +61,7 @@ Auto-rebuilds the Rust binary on first use. 10s timeout per call.
 | `ExplainTerm` | `{code, term}` | Provenance chain with recorded values for the target term |
 | `ShowAST` | `{code}` | JSON AST |
 | `ShowIR` | `{code}` | JSON IR (terms, ops, inputs, names) |
+| `ShowBytecode` | `{code}` | JSON bytecode lowering of the IR |
 | `ShowTokens` | `{code}` | JSON token array |
 
 ### `petal-diagram-canvas` — frame-by-frame debugger

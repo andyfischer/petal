@@ -27,7 +27,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
 | `show-ir` | Compiled IR (term graph) |
-| `show-bytecode` | Bytecode lowering of the IR (see [bytecode-status.md](bytecode-status.md)) |
+| `show-bytecode` | Bytecode lowering of the IR (see [bytecode-status.md](dev/bytecode-status.md)) |
 | `show-provenance` | Backward dataflow slice from a term |
 | `show-dependents` | Forward dataflow slice from a term |
 | `show-slice` | Minimal dataflow subgraph for one or more targets |
@@ -338,7 +338,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Or | `"Or"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
 | Concat | `"Concat"` | [left, right] | none | String concatenation (`++`) |
 | Copy | `"Copy"` | [source] or [] | none | Variable reference. Empty inputs = phantom (builtin/param) |
-| Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. See [MutabilityPlan.md](MutabilityPlan.md). |
+| Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. See [MutabilityPlan.md](dev/MutabilityPlan.md). |
 | Branch | `"Branch"` | [condition] | [then_block, else_block] | if/else |
 | ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop |
 | NumericForLoop | `"NumericForLoop"` | [start, end] | [body_block] | non-allocating `for x in range(a, b)` integer loop |
@@ -453,43 +453,20 @@ bindings = white) so the output stays readable even on mid-sized programs.
 
 ## Builtin Phantom Terms
 
-Every program starts with **74 phantom terms (t0–t73)** in the root block,
-one per registered built-in function. These are `Copy` terms with empty
-inputs; their `name` field holds the builtin name. The table below reflects
-the registration order from `rust/src/builtins/mod.rs`. Registration order
-is load-bearing: reordering it would renumber every IR snapshot, so
-built-ins can only be appended.
-
-| ID | Name | ID | Name | ID | Name | ID | Name |
-|----|------|----|------|----|------|----|------|
-| 0  | `print`      | 17 | `contains`  | 34 | `cos`        | 51 | `noise`      |
-| 1  | `range`      | 18 | `min`       | 35 | `tan`        | 52 | `noise_seed` |
-| 2  | `len`        | 19 | `max`       | 36 | `atan2`      | 53 | `random_int` |
-| 3  | `push`       | 20 | `round`     | 37 | `pi`         | 54 | `choose`     |
-| 4  | `str`        | 21 | `dual`      | 38 | `clamp`      | 55 | `hsv`        |
-| 5  | `abs`        | 22 | `value_of`  | 39 | `lerp`       | 56 | `hsl`        |
-| 6  | `sqrt`       | 23 | `deriv_of`  | 40 | `map_range`  | 57 | `color_lerp` |
-| 7  | `floor`      | 24 | `sort`      | 41 | `distance`   | 58 | `vec2`       |
-| 8  | `ceil`       | 25 | `reverse`   | 42 | `mag`        | 59 | `normalize`  |
-| 9  | `float`      | 26 | `join`      | 43 | `pow`        | 60 | `dot`        |
-| 10 | `int`        | 27 | `split`     | 44 | `sign`       | 61 | `limit`      |
-| 11 | `random`     | 28 | `enumerate` | 45 | `fract`      | 62 | `map`        |
-| 12 | `type`       | 29 | `zip`       | 46 | `smoothstep` | 63 | `filter`     |
-| 13 | `append`     | 30 | `slice`     | 47 | `radians`    | 64 | `reduce`     |
-| 14 | `pop`        | 31 | `flat`      | 48 | `degrees`    | 65 | `forEach`    |
-| 15 | `keys`       | 32 | `includes`  | 49 | `exp`        | 66 | `assert`     |
-| 16 | `values`     | 33 | `sin`       | 50 | `log`        | 67 | `assert_eq`  |
-
-Appended after the originals: 68 `f64_array`, 69 `get`, 70 `set`, 71 `swap`
-(the typed numeric array builtins), then 72 `hsv_deg`, 73 `hsl_deg` (degree
-variants of the colour builtins).
+Every program starts with **one phantom term per registered built-in
+function** (`t0`, `t1`, …) in the root block. These are `Copy` terms with
+empty inputs; their `name` field holds the builtin name. The IDs follow
+the registration order in `rust/src/builtins/mod.rs`, which is the source
+of truth. Registration order is load-bearing: reordering it would renumber
+every IR snapshot, so built-ins can only be appended.
 
 `includes` is a JS-compat alias for `contains`. `map`, `filter`, `reduce`,
 and `forEach` are declared as natives so name resolution finds them, but
 the evaluator dispatches them as intrinsics (they need access to the
 evaluator to call their function argument).
 
-User-defined terms start at t74. Phantom terms are **not connected to
+User-defined terms are numbered after the phantom terms (the first user
+term's ID is the number of registered builtins). Phantom terms are **not connected to
 the block's linked list** (`block_next`/`block_prev` are `null`, and the
 block's `entry` points to the first user term).
 

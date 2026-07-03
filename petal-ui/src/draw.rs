@@ -228,7 +228,7 @@ pub fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<DrawComm
 }
 
 /// Bind the monospace text metric read by the default `text_width` native:
-/// the glyph advance as a fraction of the font size (Garden's monospace at
+/// the glyph advance as a fraction of the font size (a typical monospace at
 /// size 14 advances 8.4 px → ratio 0.6). Hosts with real text shaping can
 /// instead register their own `text_width` native before [`register_draw`].
 pub fn bind_text_metrics(env: &mut Env, advance_ratio: f64) {
@@ -493,7 +493,7 @@ mod tests {
         // Default ratio 0.6: 5 chars at size 10 → 30.
         let v = env.run_source("text_width(\"hello\", 10)").expect("run");
         assert_eq!(v, Value::Int(30));
-        // Garden's metric: ratio 0.6 at size 14 → 8.4 px/char.
+        // Typical monospace metric: ratio 0.6 at size 14 → 8.4 px/char.
         bind_text_metrics(&mut env, 0.6);
         let v = env.run_source("text_width(\"abc\", 14)").expect("run");
         assert_eq!(v, Value::Int(25)); // 3 × 14 × 0.6 = 25.2 → 25

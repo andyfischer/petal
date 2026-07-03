@@ -1,7 +1,7 @@
 # Builtins Reference
 
-All built-in functions available in Petal. There are 74 native functions
-registered in `rust/src/builtins/mod.rs`; see [CLI.md § Builtin Phantom
+All built-in functions available in Petal. Native functions are registered
+in `rust/src/builtins/mod.rs`; see [CLI.md § Builtin Phantom
 Terms](CLI.md#builtin-phantom-terms) for the registration order and the
 phantom term IDs they occupy in compiled IR.
 

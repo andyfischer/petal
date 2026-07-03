@@ -1,7 +1,7 @@
 ; Syntax highlighting for Petal.
 ;
 ; Capture names follow the tree-sitter highlight convention so editors using
-; the standard theme map (and Garden's `syntax.rs`) light up out of the box.
+; the standard theme map light up out of the box.
 ; More-specific patterns come first; the generic `(identifier) @variable`
 ; fallback is last.
 

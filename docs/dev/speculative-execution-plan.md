@@ -68,9 +68,9 @@ rule from the pin still held and is why the disjoint-field borrow works.
 **Shipped (Increment 1, on `main`):** lists are immutable. `Heap::list_append`
 returns a new list; the `append` builtin is immutable; `push` is a deprecated
 immutable alias. All `examples/` and `apps/` scripts migrated off in-place
-`push`; tests + docs updated; garden scripts checked (no list-mutation, nothing
-to migrate). Commits: `feat: make list append immutable …` → `refactor: migrate
-apps to immutable append`.
+`push`; tests + docs updated; downstream embedder scripts checked (no
+list-mutation, nothing to migrate). Commits: `feat: make list append immutable …`
+→ `refactor: migrate apps to immutable append`.
 
 A companion compiler fix was required and shipped: reassigning a `state`
 variable inside a loop (`xs = append(xs, x)`) now persists across runs
@@ -250,7 +250,7 @@ change** — every `push`/`set`/`SetField` used for its side effect (the common
 case in current scripts and the sample apps) stops working as written; callers
 must rebind (`items = push(items, x)`), and aliasing semantics flip from
 reference to value. Large migration across `examples/`, `apps/*`, and
-`~/garden`.
+downstream embedders.
 
 ### Option C — Snapshot/restore the whole heap (no sharing)
 
@@ -284,8 +284,8 @@ Each increment is independently shippable and keeps the test suite green.
 1. **Immutable lists via `append` — DONE.** `Heap::list_append` returns a new
    list; the `append` builtin is immutable; `push` is a deprecated immutable
    alias. Migrated every statement-form `push(x, v)` → `x = append(x, v)` across
-   `examples/` and `apps/` and updated the embedded-snippet tests + docs. Garden
-   scripts (`~/garden`, `~/.garden`) checked — they use no list-mutation builtins,
+   `examples/` and `apps/` and updated the embedded-snippet tests + docs.
+   Downstream embedder scripts checked — they use no list-mutation builtins,
    so nothing to migrate there.
 
    Required a companion compiler fix: reassigning a `state` variable inside a
@@ -348,11 +348,11 @@ Each increment is independently shippable and keeps the test suite green.
    together with the nested-`if` loop-carry fix above. Pinned by
    `env.rs::speculative_tests::let_alias_of_state_var_mutated_by_index_persists`.
    Reopen only with a concrete failing repro.
-6. **Garden migration — DONE (no-op).** Re-checked `~/garden` and `~/.garden`
-   (3 `.ptl` files total): none use list-mutation builtins, `push`, the changed
-   `set`/`swap`/`pop`, or index/field assignment — nothing to migrate. (They do
-   reference host builtins like `editor(...)` that only exist inside the Garden
-   app, so they're not runnable from the core `petal` CLI; that's unrelated.)
+6. **Downstream embedder migration — DONE (no-op).** Re-checked the embedder
+   scripts (3 `.ptl` files total): none use list-mutation builtins, `push`, the
+   changed `set`/`swap`/`pop`, or index/field assignment — nothing to migrate.
+   (They do reference host builtins that only exist inside the embedding app,
+   so they're not runnable from the core `petal` CLI; that's unrelated.)
 
 The remaining sections describe the **`ExecutionContext` fork** machinery that
 delivers *two concurrently-live* executions. Under Option B the heap is immutable

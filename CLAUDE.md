@@ -1,6 +1,6 @@
 # Petal
 
-A custom programming language: Lexer → Parser → AST → Compiler → IR (term graph) → Backend. Two backends consume the IR: the **graph** step evaluator (reference) and a **bytecode** register VM (in progress — see [docs/bytecode-status.md](./docs/bytecode-status.md)).
+A custom programming language: Lexer → Parser → AST → Compiler → IR (term graph) → Backend. Two backends consume the IR: the **graph** step evaluator (reference) and a **bytecode** register VM (in progress — see [docs/dev/bytecode-status.md](./docs/dev/bytecode-status.md)).
 
 ## Repo Layout
 
@@ -9,7 +9,7 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR (ter
   events + edge/level semantics (`InputState`), the shared draw-command
   vocabulary, the Petal-source `ui` prelude module (widgets: `button`,
   `list_update`, …), and a headless test harness. Used by petal-sdl and by
-  Garden (`~/garden`).
+  external embedders.
 - `apps/` — Native and web integrations that embed the language:
   - `apps/petal-sdl/` — SDL-based native app that integrates the language into a graphical environment
   - `apps/petal-diagram-canvas/` — Experimental integration using Petal for a web based diagram tool.
@@ -22,7 +22,7 @@ A custom programming language: Lexer → Parser → AST → Compiler → IR (ter
   - `editor-support/tree-sitter-petal/` — the reference tree-sitter grammar for
     Petal (syntax highlighting). Ships `grammar.js`, a committed generated
     parser, `queries/highlights.scm`, and a Rust crate (`LANGUAGE` +
-    `HIGHLIGHTS_QUERY`). Consumed by Garden (`~/garden`).
+    `HIGHLIGHTS_QUERY`).
 - `examples/` — Example `.ptl` programs
 - `docs/` — Documentation
 
@@ -41,7 +41,6 @@ Details: [docs/dev/testing.md](./docs/dev/testing.md)
 
  * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)
  * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
- * Bytecode backend design/status/handoff: [docs/bytecode-status.md](./docs/bytecode-status.md)
+ * Bytecode backend design/status/handoff: [docs/dev/bytecode-status.md](./docs/dev/bytecode-status.md)
  * Module / import system (`import`, resolution, hot reload): [docs/module-system.md](./docs/module-system.md)
- * UI interactivity layer (`petal-ui`, the `ui` prelude): [docs/dev/ui-primitives-plan.md](./docs/dev/ui-primitives-plan.md)
 

@@ -2,7 +2,7 @@
 
 A [tree-sitter](https://tree-sitter.github.io/) grammar for the
 [Petal](../../README.md) language. It is the reference editor-support
-implementation: editors that embed tree-sitter (Garden, Neovim, Helix, Zed, …)
+implementation: editors that embed tree-sitter (Neovim, Helix, Zed, …)
 can use it to syntax-highlight `.ptl` files.
 
 The grammar models the surface syntax produced by the canonical lexer
@@ -36,9 +36,8 @@ let language = tree_sitter_petal::LANGUAGE;          // LanguageFn
 let query    = tree_sitter_petal::HIGHLIGHTS_QUERY;  // &str
 ```
 
-Garden depends on it as a path dependency
-(`tree-sitter-petal = { path = "../../petal/editor-support/tree-sitter-petal" }`)
-and registers it in `garden-app/src/syntax.rs`.
+Embedding applications can depend on it as a path dependency
+(`tree-sitter-petal = { path = "path/to/petal/editor-support/tree-sitter-petal" }`).
 
 ## Developing
 
@@ -57,7 +56,7 @@ regenerated `src/`.
 - **Newlines are insignificant** (treated as whitespace, along with `;`). The
   real parser uses them as statement separators, but statement boundaries are
   recoverable from structure in practice, and ignoring them keeps comma-less
-  juxtaposition (`[1 2 3]`, `color(0 1 2)`) simple. All 77 non-aspirational
+  juxtaposition (`[1 2 3]`, `color(0 1 2)`) simple. All non-aspirational
   `.ptl` files in this repo parse without errors.
 - **Spacing-sensitive minus** (`lexer.rs`'s `MinusPrefix`: a `-` with space
   before but not after begins a new negated element in comma-less lists, so

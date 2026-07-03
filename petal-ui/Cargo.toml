@@ -3,6 +3,8 @@ name = "petal-ui"
 version = "0.1.0"
 edition = "2024"
 description = "Standard mouse/keyboard interactivity primitives for Petal embedders"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../rust" }

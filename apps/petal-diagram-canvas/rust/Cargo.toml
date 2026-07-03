@@ -2,6 +2,9 @@
 name = "petal-diagram-canvas"
 version = "0.1.0"
 edition = "2024"
+description = "WASM bindings for the Petal-driven diagram canvas"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../../rust" }

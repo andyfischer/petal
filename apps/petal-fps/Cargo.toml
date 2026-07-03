@@ -2,6 +2,9 @@
 name = "petal-fps"
 version = "0.1.0"
 edition = "2024"
+description = "Hybrid Rust + Petal 3D first-person-shooter experiment"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../rust" }

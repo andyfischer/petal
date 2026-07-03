@@ -21,8 +21,9 @@ it. Two execution **backends** consume it (`rust/src/backend/`): the original
 **bytecode** register VM (`backend/bytecode/`), which runs a linear *lowering* of
 the same graph for speed and for escape-analysis-driven in-place mutation. The
 active backend and its optimization toggles are chosen by `backend::Backend` /
-`backend::OptFlags`. See [bytecode-status.md](dev/bytecode-status.md) for the design,
-milestone status, and handoff notes.
+`backend::OptFlags`. The bytecode VM is complete and default-on; see
+[bytecode-future-ideas.md](dev/bytecode-future-ideas.md) for the remaining
+optional follow-ups.
 
 ---
 

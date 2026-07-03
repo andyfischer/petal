@@ -1,7 +1,7 @@
 //! Differential tests: every snippet is run under both `Backend::Graph` and
 //! `Backend::Bytecode` (optimizations off) and their results must agree. The
 //! graph engine is the correctness oracle; "bytecode with opts off" must match
-//! it exactly (see docs/dev/bytecode-status.md, M1 step 6).
+//! it exactly (see docs/dev/bytecode-future-ideas.md for the parity invariants).
 
 use crate::backend::Backend;
 use crate::env::Env;

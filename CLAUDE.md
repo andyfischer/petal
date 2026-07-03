@@ -1,6 +1,6 @@
 # Petal
 
-A custom programming language: Lexer → Parser → AST → Compiler → IR (term graph) → Backend. Two backends consume the IR: the **graph** step evaluator (reference) and a **bytecode** register VM (in progress — see [docs/dev/bytecode-status.md](./docs/dev/bytecode-status.md)).
+A custom programming language: Lexer → Parser → AST → Compiler → IR (term graph) → Backend. Two backends consume the IR: the **graph** step evaluator (reference) and a **bytecode** register VM (the default backend — see [docs/dev/bytecode-future-ideas.md](./docs/dev/bytecode-future-ideas.md) for open follow-ups).
 
 ## Repo Layout
 
@@ -41,6 +41,6 @@ Details: [docs/dev/testing.md](./docs/dev/testing.md)
 
  * How to write and run the test suite: [docs/dev/testing.md](./docs/dev/testing.md)
  * Using the MCP server to introspect: [docs/dev/mcp-server.md](./docs/dev/mcp-server.md)
- * Bytecode backend design/status/handoff: [docs/dev/bytecode-status.md](./docs/dev/bytecode-status.md)
+ * Bytecode backend open follow-ups / future ideas: [docs/dev/bytecode-future-ideas.md](./docs/dev/bytecode-future-ideas.md)
  * Module / import system (`import`, resolution, hot reload): [docs/module-system.md](./docs/module-system.md)
 

@@ -37,6 +37,6 @@ working documents — expect internal shorthand and point-in-time status:
 |----------|-------------|
 | [Testing](dev/testing.md) | How to write and run the test suites |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
-| [Bytecode Status](dev/bytecode-status.md) | Bytecode backend design/status/handoff log |
+| [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
 | [Mutability Plan](dev/MutabilityPlan.md) | Why the IR is purely immutable (historical design context) |
 | [Speculative Execution Plan](dev/speculative-execution-plan.md) | Plan/log for speculative execution and immutable-heap work |

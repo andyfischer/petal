@@ -70,17 +70,18 @@ impl Env {
 
 #[cfg(test)]
 mod tests {
-    use crate::backend::Backend;
+    use crate::backend::OptFlags;
     use crate::env::Env;
 
-    /// Run a transfer scenario under one backend: run `source_v1`, assert its
-    /// output, transfer onto `source_v2` (asserting preserved/dropped counts),
-    /// re-run, and assert the post-transfer output. Each test runs under both
-    /// backends — hot reload crosses the program-replacement seam (bytecode
-    /// cache invalidation, VM run-state reset), which default-backend runs
-    /// alone would only cover for one engine.
+    /// Run a transfer scenario under one optimization level: run `source_v1`,
+    /// assert its output, transfer onto `source_v2` (asserting preserved/dropped
+    /// counts), re-run, and assert the post-transfer output. Each test runs
+    /// under both the clone-and-alloc baseline and the in-place path — hot
+    /// reload crosses the program-replacement seam (bytecode cache invalidation,
+    /// VM run-state reset), and in-place mutation reaches heap state that
+    /// survives the reload, so both paths must be exercised.
     fn check_transfer(
-        backend: Backend,
+        opts: OptFlags,
         source_v1: &str,
         expect_v1: &[&str],
         source_v2: &str,
@@ -89,23 +90,23 @@ mod tests {
         expect_v2: &[&str],
     ) {
         let mut env = Env::new();
-        env.set_backend(backend);
+        env.set_opt_flags(opts);
 
         let pid = env.load_program(source_v1).unwrap();
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
-        assert_eq!(env.take_output(), expect_v1, "[{backend:?}] v1 output");
+        assert_eq!(env.take_output(), expect_v1, "[{opts:?}] v1 output");
 
         let new_program = env.compile_program(pid, source_v2).unwrap();
         let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, expect_preserved, "[{backend:?}] preserved");
-        assert_eq!(result.state_dropped, expect_dropped, "[{backend:?}] dropped");
+        assert_eq!(result.state_preserved, expect_preserved, "[{opts:?}] preserved");
+        assert_eq!(result.state_dropped, expect_dropped, "[{opts:?}] dropped");
 
         env.run(sid).unwrap();
-        assert_eq!(env.take_output(), expect_v2, "[{backend:?}] v2 output");
+        assert_eq!(env.take_output(), expect_v2, "[{opts:?}] v2 output");
     }
 
-    fn check_transfer_both_backends(
+    fn check_transfer_both_opt_levels(
         source_v1: &str,
         expect_v1: &[&str],
         source_v2: &str,
@@ -113,9 +114,9 @@ mod tests {
         expect_dropped: usize,
         expect_v2: &[&str],
     ) {
-        for backend in [Backend::Graph, Backend::Bytecode] {
+        for opts in [OptFlags::none(), OptFlags::all()] {
             check_transfer(
-                backend,
+                opts,
                 source_v1,
                 expect_v1,
                 source_v2,
@@ -128,7 +129,7 @@ mod tests {
 
     #[test]
     fn transfer_state_preserves_state() {
-        check_transfer_both_backends(
+        check_transfer_both_opt_levels(
             // Run initial program that sets state via StateWrite
             "state counter = 0\ncounter += 5\nprint(counter)",
             &["5"],
@@ -143,7 +144,7 @@ mod tests {
 
     #[test]
     fn transfer_state_drops_removed_state() {
-        check_transfer_both_backends(
+        check_transfer_both_opt_levels(
             // Run with two state variables
             "state a = 1\nstate b = 2\nprint(a + b)",
             &["3"],
@@ -158,7 +159,7 @@ mod tests {
 
     #[test]
     fn transfer_state_preserves_state_after_reordering() {
-        check_transfer_both_backends(
+        check_transfer_both_opt_levels(
             // Run with a=0, b=0, modify both
             "state a = 0\nstate b = 0\na += 10\nb += 20\nprint(a, b)",
             &["10 20"],
@@ -173,7 +174,7 @@ mod tests {
 
     #[test]
     fn transfer_state_fresh_state_gets_initialized() {
-        check_transfer_both_backends(
+        check_transfer_both_opt_levels(
             // Run with one state
             "state x = 10\nprint(x)",
             &["10"],

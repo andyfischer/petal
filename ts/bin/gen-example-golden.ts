@@ -1,13 +1,13 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
-// Freeze the graph engine's output for every examples/*.ptl into a checked-in
-// golden corpus (test/example-golden/<name>.json). This is the oracle
-// replacement for the graph-vs-bytecode differential sweep: once the graph
-// evaluator is removed, test-examples.ts diffs bytecode against these frozen
-// captures instead of running graph live.
+// (Re)baseline the golden corpus (test/example-golden/<name>.json) that
+// test-examples.ts checks every examples/*.ptl against. The corpus was
+// originally frozen from the graph engine (the correctness reference during the
+// bytecode VM's bring-up); with the VM now the only engine, this captures its
+// current output.
 //
-// Run this ONLY while the graph engine still exists. Regenerate deliberately
-// (never as a side effect of a bytecode change) — a golden update is a claim
-// that the reference behavior itself changed.
+// Regenerate ONLY deliberately — a golden update is a claim that the intended
+// behavior changed. Never run it to "make the sweep pass" after an unexpected
+// bytecode diff; investigate the diff first.
 //
 // Usage:  ./ts/bin/gen-example-golden.ts
 import { spawnSync } from 'node:child_process';
@@ -34,7 +34,7 @@ const files = readdirSync(examplesDir).filter(f => f.endsWith('.ptl')).sort();
 let count = 0;
 for (const file of files) {
     const filePath = join(examplesDir, file);
-    const result = spawnSync(petal, [filePath, '--backend=graph'], {
+    const result = spawnSync(petal, [filePath], {
         encoding: 'utf-8',
     });
     const golden = {
@@ -47,4 +47,4 @@ for (const file of files) {
     writeFileSync(out, JSON.stringify(golden, null, 2) + '\n');
     count++;
 }
-console.log(`Wrote ${count} golden captures to ${goldenDir} (backend: graph)`);
+console.log(`Wrote ${count} golden captures to ${goldenDir}`);

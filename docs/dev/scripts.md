@@ -38,14 +38,14 @@ See [testing.md](testing.md) for the full testing guide.
 | `npm run test:watch` | Vitest in watch mode from the repo root. |
 | `./ts/bin/test-examples.ts` | Run every `examples/*.ptl` on the bytecode VM at both optimization levels (opts on / `--no-opt`), require byte-identical output between them, and require both to match the frozen `test/example-golden/` corpus. |
 | `./ts/bin/test-examples.ts --full` | Same, but print full output rather than an 8-line preview. |
-| `./ts/bin/gen-example-golden.ts` | Regenerate the golden corpus from the graph engine. Run deliberately — a golden update asserts the reference behavior itself changed. |
+| `./ts/bin/gen-example-golden.ts` | Re-baseline the `test/example-golden/` corpus from the current VM output. Run deliberately — a golden update asserts the intended behavior changed. |
 
 ## Benchmarking
 
 | Command | Description |
 |---------|-------------|
-| `./ts/bin/bench-backends.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` under both backends (release build) and report per-file medians plus the graph/bytecode speed ratio. |
-| `./ts/bin/bench-backends.ts --runs=10` | Use more repetitions per file (default 5). |
+| `./ts/bin/bench-opts.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` on the bytecode VM at both optimization levels (release build) and report per-file medians plus the no-opt/opts speedup. |
+| `./ts/bin/bench-opts.ts --runs=10` | Use more repetitions per file (default 5). |
 
 ## Tooling
 

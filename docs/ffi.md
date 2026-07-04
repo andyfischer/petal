@@ -71,19 +71,16 @@ scope lookup (and can shadow them).
 Lua (`get_int(1)`, `get_string(2)`, `get_value`, `get_symbol`, …); results are
 pushed (`push_int`, `push_value`, `push_nil`, …). It also exposes the three
 host channels (below), `heap`/`heap_mut`, and an `in_place` flag (see
-Immutability). Both backends dispatch natives identically — graph engine in
-`rust/src/backend/graph/call.rs`, bytecode VM in
-`rust/src/backend/bytecode/vm.rs` — so a native never knows which backend
-called it.
+Immutability). The bytecode VM dispatches natives in
+`rust/src/backend/bytecode/vm.rs`.
 
 **Method-call syntax reaches natives.** `obj.method(args)` compiles to a
-`MethodCall` op, and both backends resolve it the same way: a callable field
+`MethodCall` op, resolved as: a callable field
 on a record receiver first; then, on a handle receiver, the handle class's own
 `call_method` dispatcher — which wins over any same-named native and rejects
 stale handles before dispatch; otherwise **UFCS fallback** — the method name is
 looked up in the native table and called with the receiver prepended
-(`exec_method_call` in `rust/src/backend/graph/call.rs`, `do_method_call` in
-the bytecode VM). So registering `set_location` makes both
+(`do_method_call` in the bytecode VM). So registering `set_location` makes both
 `set_location(obj, p)` and `obj.set_location(p)` work. The namespace is flat —
 one native table for all receiver types.
 
@@ -206,10 +203,10 @@ Petal values are immutable **by construction**, not by runtime check:
   the name (SSA/phi). There is no "set" op to police.
 - Collections are value types; `append`/`set`/`remove` return new collections
   (the `@` rebind operator is sugar: `append(@nums, 4)`).
-- The one exception is an optimization: when the bytecode backend's escape
-  analysis proves a container uniquely owned and non-escaping, it sets
-  `PetalCxt::in_place` and builtins mutate the backing store directly
-  (`list_append_in_place` etc.). The graph engine never sets it.
+- The one exception is an optimization: when the VM's escape analysis proves a
+  container uniquely owned and non-escaping, it sets `PetalCxt::in_place` and
+  builtins mutate the backing store directly (`list_append_in_place` etc.).
+  With optimizations off (`--no-opt`) the flag is never set.
 
 Several load-bearing features assume this: `Heap::fork` / speculative runs,
 cheap state snapshots, and the general "re-run the whole program every frame"

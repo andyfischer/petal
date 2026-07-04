@@ -2,8 +2,7 @@
 //
 // The first multi-.ptl cases in the harness: fixtures/modules/ holds a shared
 // palette module imported by two sibling entry scripts. Every case runs the
-// compiled CLI on real files so importer-relative resolution is exercised,
-// and asserts graph and bytecode backends agree.
+// compiled CLI on real files so importer-relative resolution is exercised.
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { execSync } from "child_process";
@@ -13,8 +12,8 @@ import { ensureBuild } from "./helpers";
 const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 const FIXTURES = resolve(__dirname, "fixtures/modules");
 
-function runFile(path: string, backend: string): string {
-  return execSync(`${PETAL} run --backend ${backend} ${path}`, {
+function runFile(path: string): string {
+  return execSync(`${PETAL} run ${path}`, {
     encoding: "utf-8",
     timeout: 10000,
   }).trim();
@@ -38,23 +37,14 @@ beforeAll(() => {
 });
 
 describe("module imports across files", () => {
-  for (const backend of ["graph", "bytecode"]) {
-    it(`panel.ptl: qualified + selective import (${backend})`, () => {
-      const out = runFile(resolve(FIXTURES, "panel.ptl"), backend);
-      expect(out).toBe("15\n255\n1");
-    });
+  it("panel.ptl: qualified + selective import", () => {
+    const out = runFile(resolve(FIXTURES, "panel.ptl"));
+    expect(out).toBe("15\n255\n1");
+  });
 
-    it(`detail.ptl: aliased import used inside a fn (${backend})`, () => {
-      const out = runFile(resolve(FIXTURES, "detail.ptl"), backend);
-      expect(out).toBe("<11>\n9");
-    });
-  }
-
-  it("both backends produce identical output", () => {
-    for (const file of ["panel.ptl", "detail.ptl"]) {
-      const path = resolve(FIXTURES, file);
-      expect(runFile(path, "graph")).toBe(runFile(path, "bytecode"));
-    }
+  it("detail.ptl: aliased import used inside a fn", () => {
+    const out = runFile(resolve(FIXTURES, "detail.ptl"));
+    expect(out).toBe("<11>\n9");
   });
 
   it("private members are not importable", () => {

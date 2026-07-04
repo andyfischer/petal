@@ -85,7 +85,7 @@ Refresh).
 The **foundation is real and shipped**: a flat, SSA-style dataflow term graph
 with explicit input edges, `Phi` joins for rebinding (no mutation primitive —
 see [MutabilityPlan.md](MutabilityPlan.md)), reified control flow, first-class
-`state` with temporal edges, a mark-sweep GC, and a step evaluator. The
+`state` with temporal edges, a mark-sweep GC, and a bytecode VM. The
 introspection pillars built on it — provenance, forward dependents, slicing,
 `ExplainTerm`, structured traces — and **state-preserving hot reload** are
 shipped and tested. Forward-mode autodiff (dual numbers) propagates through

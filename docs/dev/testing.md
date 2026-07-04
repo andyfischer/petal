@@ -33,7 +33,7 @@ npx vitest -t "emits Add"
 - `string-interp.test.ts` / `string-intern.test.ts` / `list-string-builtins.test.ts` / `collection-builtins.test.ts`
 - `gc.test.ts` / `loop-state.test.ts` / `loop-carry-limitations.test.ts` / `is-callable.test.ts`
 - `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
-- `modules.test.ts` — multi-file import cases (`fixtures/modules/*.ptl`), both backends, `-I`, IR file table
+- `modules.test.ts` — multi-file import cases (`fixtures/modules/*.ptl`), `-I`, IR file table
 - `test-samples.test.ts` — every `examples/*.ptl` file runs without error
 
 **Helpers** (`ts/test/helpers.ts`):

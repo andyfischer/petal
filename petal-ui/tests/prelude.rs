@@ -1,18 +1,12 @@
 //! Behavioral tests for the `ui` prelude module, driven headlessly through
-//! the standard host frame contract. The interaction tests run under both
-//! backends (graph + bytecode) via `both_backends`.
+//! the standard host frame contract.
 
-use petal::backend::Backend;
 use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 
-fn both_backends(source: &str, check: impl Fn(&mut Headless)) {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let mut ui = Headless::new(source)
-            .unwrap_or_else(|e| panic!("compile failed: {e}"))
-            .with_backend(backend);
-        check(&mut ui);
-    }
+fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
+    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    check(&mut ui);
 }
 
 #[test]
@@ -22,7 +16,7 @@ fn hovered_and_clicked_edges() {
                let r = {x: 100, y: 100, w: 50, h: 20}\n\
                if hovered(r) then hovers = hovers + 1 end\n\
                if clicked(r) then hits = hits + 1 end";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("hovers"), Some(0));
 
@@ -50,7 +44,7 @@ fn button_draws_and_reports_click() {
                if button({x: 10, y: 10, w: 100, h: 30}, \"OK\") then\n\
                  pressed = pressed + 1\n\
                end";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         let cmds = ui.frame().unwrap();
         assert!(
             cmds.iter().any(|c| matches!(c, DrawCommand::Rect { x: 10, y: 10, w: 100, h: 30, .. })),
@@ -73,7 +67,7 @@ fn record_draw_overloads_emit_flat_commands() {
     let src = "draw_rect({x: 1, y: 2, w: 3, h: 4}, #ff8800)\n\
                draw_rect(5, 6, 7, 8, 10, 20, 30)\n\
                draw_text(\"hi\", {x: 9, y: 9}, 14, {r: 1, g: 2, b: 3})";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         assert_eq!(
             cmds[0],
@@ -96,7 +90,7 @@ const LIST_SRC: &str = "state lst = list_state()\n\
 
 #[test]
 fn list_keyboard_navigation_and_clamping() {
-    both_backends(LIST_SRC, |ui| {
+    run_headless(LIST_SRC, |ui| {
         ui.frame().unwrap();
         assert_eq!(state_field(ui, "selected"), Some(0));
 
@@ -127,7 +121,7 @@ fn list_keyboard_navigation_and_clamping() {
 
 #[test]
 fn list_click_selects_row_under_pointer() {
-    both_backends(LIST_SRC, |ui| {
+    run_headless(LIST_SRC, |ui| {
         ui.frame().unwrap();
         // Rows are 20px tall (h 100 / 5 rows) starting at y=100; row 3 spans
         // y 160..180.
@@ -142,7 +136,7 @@ fn list_click_selects_row_under_pointer() {
 
 #[test]
 fn list_wheel_scrolls_when_hovered_and_clamps() {
-    both_backends(LIST_SRC, |ui| {
+    run_headless(LIST_SRC, |ui| {
         ui.frame().unwrap();
         // Wheel outside the list: no scroll.
         ui.mouse_move(300, 300);
@@ -172,7 +166,7 @@ fn scroll_update_wheel_pages_and_clamps() {
     let src = "state off = 0\n\
                let r = {x: 0, y: 0, w: 100, h: 100}\n\
                off = scroll_update(off, 50, 10, r)";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.mouse_move(50, 50);
         ui.scroll(5.0);
         ui.frame().unwrap();
@@ -200,7 +194,7 @@ fn truncate_helpers() {
                tail = truncate_tail(\"src/app/mouse.rs\", 8)\n\
                head = truncate_head(\"src/app/mouse.rs\", 8)\n\
                short = truncate_tail(\"abc\", 8)";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.frame().unwrap();
         let st = ui.state();
         // The ellipsis counts toward max_chars: results are exactly 8 chars.
@@ -217,7 +211,7 @@ fn released_edges_and_ui_version() {
                version = ui_version()\n\
                if mouse_released(0) then releases = releases + 1 end\n\
                if key_released(\"a\") then releases = releases + 10 end";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("version"), Some(petal_ui::UI_VERSION));
 
@@ -243,7 +237,7 @@ fn drag_and_click_count_reach_scripts() {
                  from_x = drag_start_x()\n\
                end\n\
                if click_count() == 2 then doubles = doubles + 1 end";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.mouse_move(100, 100);
         ui.mouse_down(0);
         ui.frame().unwrap();
@@ -278,7 +272,7 @@ fn explicit_and_selective_imports_also_work() {
     let src = "import ui as u\n\
                state inside = false\n\
                inside = u.point_in(5, 5, u.rect(0, 0, 10, 10))";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state()["inside"], true);
     });
@@ -286,7 +280,7 @@ fn explicit_and_selective_imports_also_work() {
     let src2 = "import ui: truncate_tail\n\
                 state t = \"\"\n\
                 t = truncate_tail(\"hello world\", 6)";
-    both_backends(src2, |ui| {
+    run_headless(src2, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state()["t"], "…world");
     });
@@ -298,7 +292,7 @@ fn scripts_shadow_prelude_names() {
     let src = "fn button(a, b) 42 end\n\
                state got = 0\n\
                got = button(1, 2)";
-    both_backends(src, |ui| {
+    run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("got"), Some(42));
     });

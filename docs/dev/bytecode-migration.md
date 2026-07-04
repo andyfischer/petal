@@ -1,6 +1,6 @@
 # Migrating 100% to Bytecode — Removing the Graph Evaluator
 
-**Status:** Phases 0–3 complete. Phase 4 (doc/consumer sweep) next.
+**Status:** Complete. All phases (0–4) done — bytecode is the only engine.
 
 ## Goal
 
@@ -130,10 +130,26 @@ Each phase is independently committable.
 - Verified after each commit: full Rust suite, 3000-seed fuzz soak, GC,
   hot-reload/transfer, examples sweep, and 483 TS integration tests.
 
-### Phase 4 — Consumer & doc sweep
-- `cli.rs` flag removal; de-parameterize the TS harnesses (`test-examples.ts`,
-  `bench-backends.ts`, `modules.test.ts`).
-- Update `backend/mod.rs`, `scripts.md`, `goals.md`, `Architecture.md`,
-  `ir-as-target.md`.
-- Confirm no `.ptl` scripts in `apps/`, `~/garden`, `~/.garden` are affected
-  (engine-internal change — they shouldn't be).
+### Phase 4 — Consumer & doc sweep  *(done)*
+- ✅ De-parameterized the remaining consumers: `ts/test/modules.test.ts` (dropped
+  the backend loop), renamed `bench-backends.ts` → `bench-opts.ts` (now times
+  no-opt vs opts — the in-place win, up to ~39× on append-heavy code).
+- ✅ Fixed the standalone **petal-ui** crate, which still referenced the deleted
+  `Backend`/`set_backend` (`Headless::with_backend`, the `both_backends` test
+  loop) — it wouldn't have compiled.
+- ✅ Doc sweep: `Architecture.md` (diagram + file map), `goals.md`, `testing.md`,
+  `ffi.md`, `module-system.md`, `unreal-ffi-proposal.md`,
+  `bytecode-future-ideas.md`, `scripts.md` — removed the "two engines / four
+  oracles / `backend/graph/…`" framing. `gen-example-golden.ts` re-baselines from
+  the VM now; regenerating produced **zero golden drift** (VM output still
+  byte-identical to the frozen graph reference).
+- ✅ Confirmed no `.ptl` scripts in `apps/`, `~/garden`, `~/.garden` used
+  `--backend`/`PETAL_BACKEND` — engine-internal change, none affected.
+
+## Final state
+
+The bytecode VM is Petal's only execution engine. The term-graph IR,
+provenance/slicing, autodiff, hot reload, and IR-as-target are unchanged; the VM
+populates the trace buffer that `explain`/`ExplainTerm` read. Verified green:
+full Rust suite + 3000-seed fuzz soak, petal-ui, the 24-example golden sweep, and
+the vitest integration suite.

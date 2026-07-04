@@ -5,9 +5,7 @@ It's the internal counterpart to the [Language Guide](../Language_Guide.md) — 
 this if you're working on the compiler or debugging IR behavior.
 
 ```
-Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Backend
-                                                                     ├─ Graph engine (step evaluator)
-                                                                     └─ Bytecode VM (register machine)
+Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Bytecode VM
 ```
 
 All of the above lives in `rust/src/` as a single crate. The binary entry
@@ -16,14 +14,14 @@ point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
 
 The term graph is the canonical, introspectable IR — provenance, slicing,
 autodiff, `explain`, hot-reload, and the IR-as-target contract all reason about
-it. Two execution **backends** consume it (`rust/src/backend/`): the original
-**graph** step evaluator (`backend/graph/`, the reference engine) and a
-**bytecode** register VM (`backend/bytecode/`), which runs a linear *lowering* of
-the same graph for speed and for escape-analysis-driven in-place mutation. The
-active backend and its optimization toggles are chosen by `backend::Backend` /
-`backend::OptFlags`. The bytecode VM is complete and default-on; see
-[bytecode-future-ideas.md](bytecode-future-ideas.md) for the remaining
-optional follow-ups.
+it. It is executed by the **bytecode VM** (`rust/src/backend/bytecode/`), a
+register machine that runs a linear *lowering* of the graph, with
+escape-analysis-driven in-place mutation gated by `backend::OptFlags`. (An
+earlier term-graph step evaluator served as the reference engine during the
+VM's bring-up; it was removed once the VM reached parity — see
+[bytecode-migration.md](bytecode-migration.md).) The VM still populates the
+trace buffer that the graph-level introspection reads. See
+[bytecode-future-ideas.md](bytecode-future-ideas.md) for optional follow-ups.
 
 ---
 
@@ -42,10 +40,9 @@ optional follow-ups.
 | `constant_table.rs` | Deduplicated literal storage |
 | `source_map.rs` | `TermId` → source span mapping |
 | `rewrite.rs` | Formatting-preserving source rewriting (find a top-level call by name, splice its span) |
-| `backend/mod.rs` | `Backend` selector + `OptFlags` optimization toggles |
-| `backend/graph/` | Step evaluator (the reference runtime; walks the term graph) |
+| `backend/mod.rs` | `OptFlags` optimization toggles + shared `StepResult`/`RuntimeClosure` |
 | `backend/bytecode/` | Register VM: `isa` (instructions), `lower` (graph→bytecode), `vm`, `disasm` (`show-bytecode`), `escape` (in-place analysis) |
-| `stack.rs` | `Stack` and `Frame` — execution context |
+| `stack.rs` | `Stack` — execution context (VM frames, persistent state) |
 | `value.rs` | `Value` enum (runtime values) |
 | `heap.rs` | Mark-and-sweep GC for strings, lists, maps, vecs, elements |
 | `env.rs` | `Env` — owns programs, stacks, heap, native table |

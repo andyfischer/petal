@@ -2,8 +2,8 @@
 
 Petal programs can be split across files (or embedder-provided sources) with
 `import`. Modules are resolved and **merged into one program at compile
-time** — there is no runtime linker, no separate compilation, and both
-backends (graph and bytecode) run merged programs unchanged.
+time** — there is no runtime linker and no separate compilation; the bytecode
+VM runs merged programs unchanged.
 
 ```petal
 import ui                       // qualified: ui.button(...), ui.palette
@@ -202,8 +202,7 @@ and `set_implicit_imports`.
 
 - `rust/tests/modules.rs` — binding forms, execution order, collision/cycle
   errors, state-key stability, hot reload, implicit imports, resolver
-  ordering, in-memory (wasm-shaped) embedding; the behavioral cases run
-  under both backends.
+  ordering, in-memory (wasm-shaped) embedding.
 - `ts/test/modules.test.ts` + `ts/test/fixtures/modules/` — multi-file
   golden cases through the CLI, IR roundtrip with a file table, `-I`, and
   file-attributed errors.

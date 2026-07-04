@@ -17,7 +17,6 @@
 //! assert_eq!(ui.state()["hits"], 1);
 //! ```
 
-use petal::backend::Backend;
 use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
@@ -64,12 +63,6 @@ impl Headless {
             commands: Vec::new(),
             result: Value::Nil,
         })
-    }
-
-    /// Switch the evaluation backend (the default follows `PETAL_BACKEND`).
-    pub fn with_backend(mut self, backend: Backend) -> Self {
-        self.env.set_backend(backend);
-        self
     }
 
     /// Feed one input event (applied to the *next* frame's snapshot).

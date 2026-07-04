@@ -192,9 +192,8 @@ host queues events and binds them as a per-frame list uniform, exactly like
 ## 5. Method-call syntax on handles — build it early
 
 `h.set_location(p)` needs **no parser or IR work**: `obj.method(args)`
-already parses, compiles to `TermOp::MethodCall` / `Inst::MethodCall`, and
-both backends dispatch it identically (`rust/src/backend/graph/call.rs
-exec_method_call`, `rust/src/backend/bytecode/vm.rs do_method_call`):
+already parses, compiles to `TermOp::MethodCall` / `Inst::MethodCall`, and the
+bytecode VM dispatches it (`rust/src/backend/bytecode/vm.rs do_method_call`):
 
 1. a callable field on a record receiver, else
 2. **UFCS fallback** — look the method name up in the native table and call

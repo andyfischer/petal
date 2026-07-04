@@ -564,15 +564,17 @@ impl Env {
         })?;
 
         let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
+        let pid = self.stacks.get(&stack_id).unwrap().program_id;
+        self.ensure_bytecode(pid)?;
+
+        let bc = &self.bytecode.get(&pid).unwrap().1;
+        let program = self.programs.get(&pid).ok_or("Program not found")?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
-        let program = self
-            .programs
-            .get(&stack.program_id)
-            .ok_or("Program not found")?;
         let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
 
-        Evaluator {
+        Vm {
             program,
+            bc,
             stack,
             heap: &mut ctx.heap,
             closures: &mut ctx.closures,
@@ -580,11 +582,11 @@ impl Env {
             native_fns: &self.native_fns,
             handle_classes: &self.handle_classes,
             output: &mut ctx.output,
-            trace: &mut self.trace,
             symbols: &mut self.symbols,
             output_buffers: &mut ctx.output_buffers,
             bindings: &mut ctx.bindings,
             counters: &mut ctx.counters,
+            trace: &mut self.trace,
         }
         .call_closure_sync(callable, args)
     }

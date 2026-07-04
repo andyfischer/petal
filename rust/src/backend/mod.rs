@@ -24,7 +24,27 @@ pub mod pattern;
 
 // The graph engine's public surface is re-exported here so callers depend on
 // `crate::backend::…` rather than a specific engine module.
-pub use graph::{Evaluator, RuntimeClosure, StepResult};
+pub use graph::Evaluator;
+
+use crate::program::FunctionId;
+use crate::value::Value;
+
+/// Result of a single execution step. Shared contract between the graph
+/// `Evaluator` and the bytecode `Vm` so `Env`'s run loops are engine-agnostic.
+#[derive(Debug)]
+pub enum StepResult {
+    Continue,
+    Complete(Value),
+    Error(String),
+}
+
+/// Runtime closure — a function reference plus its captured values. Stored in
+/// the execution context and referenced by `Value::Closure` ids.
+#[derive(Clone)]
+pub struct RuntimeClosure {
+    pub function_id: FunctionId,
+    pub captures: Vec<Value>,
+}
 
 /// Which execution engine `Env` uses to run a program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

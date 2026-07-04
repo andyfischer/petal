@@ -34,13 +34,7 @@ use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
 use crate::value::{self, Value};
 
-/// Result of a single evaluation step.
-#[derive(Debug)]
-pub enum StepResult {
-    Continue,
-    Complete(Value),
-    Error(String),
-}
+pub use crate::backend::{RuntimeClosure, StepResult};
 
 /// Signal for control flow within the evaluator.
 enum ControlFlow {
@@ -56,13 +50,6 @@ enum ControlFlow {
     Continue,
     /// Fatal error
     Error(String),
-}
-
-/// Runtime closure — captures + function reference.
-#[derive(Clone)]
-pub struct RuntimeClosure {
-    pub function_id: FunctionId,
-    pub captures: Vec<Value>,
 }
 
 /// The evaluator: a bundle of borrows over the runtime data owned by `Env`,

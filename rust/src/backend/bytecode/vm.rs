@@ -1072,8 +1072,10 @@ impl<'a> Vm<'a> {
     // -- higher-order intrinsics ---------------------------------------------
 
     /// Call a closure synchronously: push its frame, step until it pops, and
-    /// return its result. Mirrors the graph engine's `call_closure_sync`.
-    fn call_closure_sync(&mut self, callable: Value, call_args: &[Value]) -> Result<Value, String> {
+    /// return its result. Used by the synchronous higher-order intrinsics and by
+    /// `Env::call_function` (the host-facing "invoke one function" API). Works
+    /// from any frame depth, including a fresh VM with no root frame.
+    pub(crate) fn call_closure_sync(&mut self, callable: Value, call_args: &[Value]) -> Result<Value, String> {
         let cid = calls::resolve_callable(
             self.program,
             self.closures,

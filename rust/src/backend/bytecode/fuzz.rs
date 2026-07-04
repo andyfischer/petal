@@ -511,29 +511,29 @@ fn run(code: &str, backend: Backend, opts: OptFlags) -> Result<(String, Vec<Stri
     Ok((rendered, env.take_output()))
 }
 
-/// Require exact agreement across all four oracles, including error text: the
-/// graph engine, the bytecode VM with optimizations off, the VM with only the
-/// route-A last-use pass, and the VM with everything on (M4 routes A+B). The
-/// generator emits exactly the mutation shapes both routes target —
-/// `xs = append(xs, e)`, `xs[i] = e`, `r.a = e` at top level and inside loops,
-/// branches, and functions, plus `let al = xs` aliases — so this is the
-/// primary net catching a mis-fired in-place mutation as a value divergence.
-/// The route-A-only oracle attributes a failure to one route and keeps a
-/// route-B interaction from masking a route-A bug.
+/// Require exact agreement across all three bytecode oracles, including error
+/// text: the VM with optimizations off (the clone-and-alloc correctness
+/// baseline), the VM with only the route-A last-use pass, and the VM with
+/// everything on (M4 routes A+B). The generator emits exactly the mutation
+/// shapes both routes target — `xs = append(xs, e)`, `xs[i] = e`, `r.a = e` at
+/// top level and inside loops, branches, and functions, plus `let al = xs`
+/// aliases — so this is the primary net catching a mis-fired in-place mutation
+/// as a value divergence. The route-A-only oracle attributes a failure to one
+/// route and keeps a route-B interaction from masking a route-A bug.
+///
+/// BC-noopt (clone-and-alloc) is the oracle here: it replaces the graph engine,
+/// which used to be the fourth oracle before it was removed. Absolute
+/// correctness for fixed programs is anchored by the golden corpus
+/// (`test/example-golden`) and the `test/<case>/expects` harness; this fuzzer's
+/// job is to prove the in-place optimizations never diverge from clone-and-alloc.
 fn assert_exact_parity(seed: u64, code: &str) {
     const ROUTE_A_ONLY: OptFlags = OptFlags {
         in_place_mutation: false,
         in_place_straight_line: true,
     };
-    let graph = run(code, Backend::Graph, OptFlags::none());
     let bc_noopt = run(code, Backend::Bytecode, OptFlags::none());
     let bc_route_a = run(code, Backend::Bytecode, ROUTE_A_ONLY);
     let bc_opt = run(code, Backend::Bytecode, OptFlags::all());
-    assert_eq!(
-        graph, bc_noopt,
-        "graph vs bytecode(no-opt) divergence at seed {seed}; reproduce with \
-         Gen::new({seed}).program()\n--- program ---\n{code}"
-    );
     assert_eq!(
         bc_noopt, bc_route_a,
         "route-A in-place mutation (M4) divergence at seed {seed}; \

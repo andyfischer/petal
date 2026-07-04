@@ -1,6 +1,6 @@
 # Migrating 100% to Bytecode — Removing the Graph Evaluator
 
-**Status:** Phase 0 complete. Phase 1 next.
+**Status:** Phase 0 + Phase 1 complete. Phase 2 next.
 
 ## Goal
 
@@ -75,12 +75,25 @@ Each phase is independently committable.
   Phase 1 repoints the `bytecode/tests.rs` and `fuzz.rs` in-Rust oracles to
   BC-noopt.
 
-### Phase 1 — Repoint the oracle (before any deletion)
-- Rewrite `bytecode/tests.rs`, `fuzz.rs`, `test-examples.ts`,
-  `transfer_state.rs` to diff **BC-noopt vs BC-all** plus the frozen corpus,
-  instead of vs graph.
-- Verify coverage is preserved. After this, graph is no longer load-bearing for
-  correctness.
+### Phase 1 — Repoint the oracle (before any deletion)  *(done)*
+- ✅ `fuzz.rs` — dropped the graph line from `assert_exact_parity`; the 3-way
+  bytecode comparison (BC-noopt vs route-A vs BC-all) is now the oracle.
+- ✅ `bytecode/tests.rs` — `run`/`run_stateful` take `OptFlags`;
+  `assert_parity`/`assert_stateful_parity` diff `OptFlags::none` vs
+  `OptFlags::all`. Collapsed the duplicate `run_opt` helper into `run`. Two
+  direct graph uses repointed to BC opt levels.
+- ✅ `transfer_state.rs` — expectations were already literal constants; swapped
+  the `[Graph, Bytecode]` loop for `[OptFlags::none, OptFlags::all]` under
+  bytecode.
+- ✅ `test-examples.ts` — runs each example at `--no-opt` and default opts,
+  requires them byte-identical, and checks both against the frozen
+  `test/example-golden` corpus. Negative-tested (a corrupted golden fails).
+- ✅ Verified: no `Backend::Graph` / `--backend=graph` remains in the four
+  harnesses. Full suite green — 257 Rust tests, 3000-seed fuzz soak, 483 TS
+  tests, 24/24 golden sweep. **Graph is no longer load-bearing for correctness.**
+- Note: `ts/test/modules.test.ts` and `ts/bin/bench-backends.ts` still pass a
+  `--backend` arg (benchmark + module-resolution harnesses, not correctness
+  oracles) — handled in Phase 4 alongside the CLI flag removal.
 
 ### Phase 2 — VM trace (best-effort)
 - Add `trace: &mut TraceBuffer` to `Vm`; emit `(origin, inputs, result)` at

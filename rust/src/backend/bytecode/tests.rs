@@ -7,7 +7,7 @@
 //! (docs/dev/bytecode-migration.md); absolute correctness for fixed programs is
 //! anchored by the golden corpus and the `test/<case>/expects` harness.
 
-use crate::backend::{Backend, OptFlags};
+use crate::backend::OptFlags;
 use crate::env::Env;
 use crate::value;
 
@@ -442,7 +442,6 @@ fn run_bounded_resumes_identically() {
     // lives on the VM frame stack.
     let code = "let s = 0\nfor i in range(20) do s = s + i end\nlet y = s";
     let mut env = Env::new();
-    env.set_backend(Backend::Bytecode);
     let pid = env.load_program(code).unwrap();
     let sid = env.create_stack(pid).unwrap();
     let mut steps = 0;
@@ -768,7 +767,6 @@ fn route_a_dup_bytes_drop_on_builder() {
     let code = "let grid = []\nfor y in range(0, 50) do\n  let t = [0, 0, 0, 0]\n  t[0] = y\n  t[1] = y\n  grid = append(grid, t)\nend\nprint(len(grid))";
     let bytes = |opts| {
         let mut env = Env::new();
-        env.set_backend(Backend::Bytecode);
         env.set_opt_flags(opts);
         env.run_source(code).expect("run");
         env.heap().dup_stats().total_bytes()
@@ -789,7 +787,6 @@ fn inplace_dup_bytes_drop_on_accumulator() {
     let code = "let xs = []\nfor i in range(0, 200) do\n  xs = append(xs, i)\nend\nlet n = len(xs)";
     let bytes = |opts| {
         let mut env = Env::new();
-        env.set_backend(Backend::Bytecode);
         env.set_opt_flags(opts);
         env.run_source(code).expect("run");
         env.heap().dup_stats().total_bytes()

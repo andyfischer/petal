@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::compiler::Compiler;
 use crate::backend::bytecode::{BytecodeProgram, Vm};
-use crate::backend::{Backend, Evaluator, OptFlags, StepResult};
+use crate::backend::{OptFlags, StepResult};
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
@@ -37,9 +37,7 @@ pub struct Env {
     trace: TraceBuffer,
     next_program_id: u32,
     next_stack_id: u32,
-    /// Which execution engine runs programs (graph step evaluator or bytecode VM).
-    backend: Backend,
-    /// Per-run optimization toggles for the bytecode backend.
+    /// Per-run optimization toggles for the bytecode VM.
     opt_flags: OptFlags,
     /// Lazily-lowered bytecode, cached next to each `Program`. Populated on the
     /// first bytecode run of a program; an entry's presence means lowering
@@ -73,21 +71,11 @@ impl Env {
             trace: TraceBuffer::new(),
             next_program_id: 1,
             next_stack_id: 1,
-            backend: Self::backend_from_env(),
             opt_flags: Self::opt_flags_from_env(),
             bytecode: HashMap::new(),
             modules: ModuleRegistry::default(),
             handle_classes: Vec::new(),
         }
-    }
-
-    /// Default backend from the `PETAL_BACKEND` env var (`graph` / `bytecode`),
-    /// falling back to the compiled default ([`Backend::default`]).
-    fn backend_from_env() -> Backend {
-        std::env::var("PETAL_BACKEND")
-            .ok()
-            .and_then(|s| Backend::parse(&s))
-            .unwrap_or_default()
     }
 
     /// Default opt flags from the `PETAL_OPT` env var: `none`/`0`/`off` disables
@@ -101,18 +89,7 @@ impl Env {
         }
     }
 
-    /// The active execution backend.
-    pub fn backend(&self) -> Backend {
-        self.backend
-    }
-
-    /// Select the execution backend for subsequent runs. `Env`'s run loops are
-    /// backend-agnostic; this only changes which engine `step` dispatches to.
-    pub fn set_backend(&mut self, backend: Backend) {
-        self.backend = backend;
-    }
-
-    /// Set the bytecode backend's optimization flags for subsequent runs.
+    /// Set the bytecode VM's optimization flags for subsequent runs.
     pub fn set_opt_flags(&mut self, flags: OptFlags) {
         self.opt_flags = flags;
     }
@@ -339,48 +316,14 @@ impl Env {
     const BYTECODE_BATCH: u64 = 65_536;
 
     /// Run up to `budget` steps, returning the final [`StepResult`] and the
-    /// number of steps consumed. The graph engine always consumes exactly one
-    /// (it is introspection-first; hosts step it term-by-term); the bytecode
-    /// VM consumes up to the whole budget in one dispatch.
+    /// number of steps consumed. The bytecode VM consumes up to the whole
+    /// budget in one dispatch.
     fn step_n(
         &mut self,
         stack_id: StackKey,
         budget: u64,
     ) -> Result<(StepResult, u64), String> {
-        match self.backend {
-            Backend::Graph => Ok((self.step_graph(stack_id)?, 1)),
-            Backend::Bytecode => self.step_bytecode(stack_id, budget),
-        }
-    }
-
-    /// One step of the graph (term-graph) step evaluator.
-    fn step_graph(&mut self, stack_id: StackKey) -> Result<StepResult, String> {
-        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
-        let stack = self.stacks.get_mut(&stack_id).unwrap();
-        let program = self
-            .programs
-            .get(&stack.program_id)
-            .ok_or("Program not found")?;
-        let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
-
-        let result = Evaluator {
-            program,
-            stack,
-            heap: &mut ctx.heap,
-            closures: &mut ctx.closures,
-            overload_sets: &mut ctx.overload_sets,
-            native_fns: &self.native_fns,
-            handle_classes: &self.handle_classes,
-            output: &mut ctx.output,
-            trace: &mut self.trace,
-            symbols: &mut self.symbols,
-            output_buffers: &mut ctx.output_buffers,
-            bindings: &mut ctx.bindings,
-            counters: &mut ctx.counters,
-        }
-        .step();
-
-        Ok(result)
+        self.step_bytecode(stack_id, budget)
     }
 
     /// Run the bytecode VM for up to `budget` instructions. Lowers the program

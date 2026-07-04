@@ -1,21 +1,17 @@
 // Integration tests for the module / import system (docs/module-system.md).
 //
 // Most cases use in-memory modules (`Env::register_module`) — which doubles
-// as coverage for the wasm-shaped "no filesystem" embedding — and run under
-// both backends, since imports compile into the one merged Program both
-// engines consume. Filesystem resolution (importer-relative and search-path)
-// gets its own temp-dir cases at the bottom.
+// as coverage for the wasm-shaped "no filesystem" embedding. Filesystem
+// resolution (importer-relative and search-path) gets its own temp-dir cases
+// at the bottom.
 
-use petal::backend::Backend;
 use petal::compiler::Compiler;
 use petal::env::Env;
 use petal::program::StateKey;
 
-/// Run `entry` with the given in-memory modules under one backend and return
-/// its print output.
-fn run_with_modules(backend: Backend, modules: &[(&str, &str)], entry: &str) -> Vec<String> {
+/// Run `entry` with the given in-memory modules and return its print output.
+fn run_with_modules(modules: &[(&str, &str)], entry: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_backend(backend);
     for (name, source) in modules {
         env.register_module(name, source);
     }
@@ -25,12 +21,10 @@ fn run_with_modules(backend: Backend, modules: &[(&str, &str)], entry: &str) -> 
     env.take_output()
 }
 
-/// Assert both backends produce the same expected output.
-fn check_both_backends(modules: &[(&str, &str)], entry: &str, expect: &[&str]) {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let out = run_with_modules(backend, modules, entry);
-        assert_eq!(out, expect, "[{backend:?}]");
-    }
+/// Assert `entry` produces the expected output.
+fn check_output(modules: &[(&str, &str)], entry: &str, expect: &[&str]) {
+    let out = run_with_modules(modules, entry);
+    assert_eq!(out, expect);
 }
 
 /// Load `entry` expecting a compile-time error; return the message.
@@ -56,7 +50,7 @@ end
 
 #[test]
 fn qualified_access_through_module_alias() {
-    check_both_backends(
+    check_output(
         &[("ui", UI)],
         "import ui\nprint(ui.button(\"go\"))\nprint(ui.palette.bg)",
         &["[go]", "2"],
@@ -65,7 +59,7 @@ fn qualified_access_through_module_alias() {
 
 #[test]
 fn selective_import_binds_bare_names() {
-    check_both_backends(
+    check_output(
         &[("ui", UI)],
         "import ui: button\nprint(button(\"x\"))",
         &["[x]"],
@@ -74,7 +68,7 @@ fn selective_import_binds_bare_names() {
 
 #[test]
 fn alias_import() {
-    check_both_backends(
+    check_output(
         &[("ui", UI)],
         "import ui as u\nprint(u.button(\"y\"))",
         &["[y]"],
@@ -83,7 +77,7 @@ fn alias_import() {
 
 #[test]
 fn module_member_used_inside_function_is_captured() {
-    check_both_backends(
+    check_output(
         &[("ui", UI)],
         "import ui\nimport ui: button\nfn both(l)\n  ui.button(l) ++ button(l)\nend\nprint(both(\"a\"))",
         &["[a][a]"],
@@ -93,7 +87,7 @@ fn module_member_used_inside_function_is_captured() {
 #[test]
 fn local_binding_shadows_module_alias() {
     // Once `ui` is an ordinary value, `ui.fg` is plain field access.
-    check_both_backends(
+    check_output(
         &[("ui", UI)],
         "import ui\nlet ui = { fg: 9 }\nprint(ui.fg)",
         &["9"],
@@ -104,7 +98,7 @@ fn local_binding_shadows_module_alias() {
 fn imports_can_nest() {
     let base = "fn double(x)\n  x * 2\nend";
     let mid = "import base\nfn quad(x)\n  base.double(base.double(x))\nend";
-    check_both_backends(
+    check_output(
         &[("base", base), ("mid", mid)],
         "import mid\nprint(mid.quad(3))",
         &["12"],
@@ -118,7 +112,7 @@ fn module_top_level_runs_once_before_importer_diamond() {
     let base = "print(\"base-init\")\nlet shared = 7";
     let left = "import base\nlet l = base.shared + 1";
     let right = "import base\nlet r = base.shared + 2";
-    check_both_backends(
+    check_output(
         &[("base", base), ("left", left), ("right", right)],
         "import left\nimport right\nprint(left.l + right.r)",
         &["base-init", "17"],
@@ -128,7 +122,7 @@ fn module_top_level_runs_once_before_importer_diamond() {
 #[test]
 fn enum_variants_export_and_match_across_modules() {
     let shapes = "enum Shape\n  Circle(r)\n  Dot\nend";
-    check_both_backends(
+    check_output(
         &[("shapes", shapes)],
         "import shapes: Circle, Dot\n\
          let c = Circle(5)\n\
@@ -140,7 +134,7 @@ fn enum_variants_export_and_match_across_modules() {
 #[test]
 fn overloaded_module_fn_exports_as_one_set() {
     let m = "fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
-    check_both_backends(
+    check_output(
         &[("m", m)],
         "import m: f\nprint(f(1))\nprint(f(1, 2))",
         &["1", "3"],
@@ -256,7 +250,7 @@ fn runtime_error_in_module_names_the_file() {
 fn same_state_name_in_two_modules_gets_distinct_slots() {
     let m1 = "state scroll = 0\nscroll += 1\nfn get1()\n  scroll\nend";
     let m2 = "state scroll = 0\nscroll += 10\nfn get2()\n  scroll\nend";
-    check_both_backends(
+    check_output(
         &[("m1", m1), ("m2", m2)],
         "import m1\nimport m2\nprint(m1.get1())\nprint(m2.get2())",
         &["1", "10"],

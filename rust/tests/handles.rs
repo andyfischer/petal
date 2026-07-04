@@ -18,7 +18,6 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use petal::backend::Backend;
 use petal::env::Env;
 use petal::native_fn::{NativeFn, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -44,16 +43,14 @@ fn env_with_test_class() -> (Env, HandleClassId) {
     (env, class)
 }
 
-/// Run `source` under one backend with the given named handle bindings
-/// (bound as uniforms, read in-script via `binding(symbol("name"))`).
+/// Run `source` with the given named handle bindings (bound as uniforms, read
+/// in-script via `binding(symbol("name"))`).
 /// Returns (program result, print output).
 fn run_with_handles(
-    backend: Backend,
     bindings: &[(&str, u32, u32)], // (name, slot, serial) minted on the TestEntity class
     source: &str,
 ) -> (Value, Vec<String>) {
     let (mut env, class) = env_with_test_class();
-    env.set_backend(backend);
     let pid = env.load_program(source).unwrap();
     let sid = env.create_stack(pid).unwrap();
     for (name, slot, serial) in bindings {
@@ -65,20 +62,16 @@ fn run_with_handles(
     (result, env.take_output())
 }
 
-/// Assert both backends produce the same program result for `source`.
-fn check_result_both_backends(bindings: &[(&str, u32, u32)], source: &str, expect: Value) {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let (result, _out) = run_with_handles(backend, bindings, source);
-        assert_eq!(result, expect, "[{backend:?}] source: {source}");
-    }
+/// Assert `source` produces the expected program result.
+fn check_result(bindings: &[(&str, u32, u32)], source: &str, expect: Value) {
+    let (result, _out) = run_with_handles(bindings, source);
+    assert_eq!(result, expect, "source: {source}");
 }
 
-/// Assert both backends produce the same print output for `source`.
-fn check_output_both_backends(bindings: &[(&str, u32, u32)], source: &str, expect: &[&str]) {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let (_result, out) = run_with_handles(backend, bindings, source);
-        assert_eq!(out, expect, "[{backend:?}] source: {source}");
-    }
+/// Assert `source` produces the expected print output.
+fn check_output(bindings: &[(&str, u32, u32)], source: &str, expect: &[&str]) {
+    let (_result, out) = run_with_handles(bindings, source);
+    assert_eq!(out, expect, "source: {source}");
 }
 
 // ── 1. Host-side registration & minting ──────────────────────────
@@ -112,26 +105,23 @@ fn make_handle_returns_handle_value_with_fields() {
 
 #[test]
 fn handle_round_trips_through_script() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let (mut env, class) = env_with_test_class();
-        env.set_backend(backend);
-        let pid = env
-            .load_program("let h = binding(symbol(\"h\"))\nh")
-            .unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        let handle = env.make_handle(class, 3, 9);
-        let sym = env.intern_symbol("h");
-        env.set_binding(sym, handle);
-        let result = env.run(sid).unwrap();
-        assert_eq!(result, handle, "[{backend:?}] handle must round-trip intact");
-    }
+    let (mut env, class) = env_with_test_class();
+    let pid = env
+        .load_program("let h = binding(symbol(\"h\"))\nh")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let handle = env.make_handle(class, 3, 9);
+    let sym = env.intern_symbol("h");
+    env.set_binding(sym, handle);
+    let result = env.run(sid).unwrap();
+    assert_eq!(result, handle, "handle must round-trip intact");
 }
 
 // ── 3. type(h) ───────────────────────────────────────────────────
 
 #[test]
 fn type_of_handle_is_handle() {
-    check_output_both_backends(
+    check_output(
         &[("h", 1, 1)],
         "let h = binding(symbol(\"h\"))\nprint(type(h))",
         &["handle"],
@@ -143,7 +133,7 @@ fn type_of_handle_is_handle() {
 #[test]
 fn handles_with_same_triple_are_equal_in_script() {
     // a and b are minted separately with the same (class, slot, serial).
-    check_result_both_backends(
+    check_result(
         &[("a", 5, 8), ("b", 5, 8)],
         "binding(symbol(\"a\")) == binding(symbol(\"b\"))",
         Value::Bool(true),
@@ -152,7 +142,7 @@ fn handles_with_same_triple_are_equal_in_script() {
 
 #[test]
 fn handles_with_different_serial_are_not_equal_in_script() {
-    check_result_both_backends(
+    check_result(
         &[("a", 5, 8), ("b", 5, 9)],
         "binding(symbol(\"a\")) == binding(symbol(\"b\"))",
         Value::Bool(false),
@@ -170,7 +160,7 @@ fn handle_is_truthy_host_side() {
 
 #[test]
 fn handle_is_truthy_in_script() {
-    check_result_both_backends(
+    check_result(
         &[("h", 2, 2)],
         "let h = binding(symbol(\"h\"))\nif h then \"truthy\" else \"falsy\" end == \"truthy\"",
         Value::Bool(true),
@@ -179,7 +169,7 @@ fn handle_is_truthy_in_script() {
 
 #[test]
 fn handle_is_not_equal_to_nil() {
-    check_result_both_backends(
+    check_result(
         &[("h", 2, 2)],
         "binding(symbol(\"h\")) == nil",
         Value::Bool(false),
@@ -279,17 +269,15 @@ fn counter_class(state: &CounterState) -> HandleClass {
     }
 }
 
-/// Run `source` under `backend` in a fresh Env with `class` registered and a
+/// Run `source` in a fresh Env with `class` registered and a
 /// handle of that class (slot=1, serial=1) bound as the uniform "h".
 /// Extra global natives (for UFCS-shadowing tests) are registered before load.
 fn run_with_class(
-    backend: Backend,
     class: HandleClass,
     natives: &[(&str, NativeFn)],
     source: &str,
 ) -> Result<Value, String> {
     let mut env = Env::new();
-    env.set_backend(backend);
     for (name, func) in natives {
         env.register_native(name, *func);
     }
@@ -303,9 +291,8 @@ fn run_with_class(
 }
 
 /// Run `source` in a fresh Env with no handle classes or bindings.
-fn run_plain(backend: Backend, source: &str) -> Result<Value, String> {
+fn run_plain(source: &str) -> Result<Value, String> {
     let mut env = Env::new();
-    env.set_backend(backend);
     let pid = env.load_program(source)?;
     let sid = env.create_stack(pid)?;
     env.run(sid)
@@ -315,103 +302,91 @@ fn run_plain(backend: Backend, source: &str) -> Result<Value, String> {
 
 #[test]
 fn handle_method_dispatch_add_then_get() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(0);
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "let h = binding(symbol(\"h\"))\nh.add(5)\nh.get()",
-        );
-        assert_eq!(
-            result,
-            Ok(Value::Int(5)),
-            "[{backend:?}] h.add(5) then h.get() must dispatch through call_method"
-        );
-        assert_eq!(*state.cell.borrow(), 5, "[{backend:?}] add(5) must mutate host state");
-        assert!(*state.was_called.borrow(), "[{backend:?}] call_method must be invoked");
-    }
+    let state = CounterState::new(0);
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "let h = binding(symbol(\"h\"))\nh.add(5)\nh.get()",
+    );
+    assert_eq!(
+        result,
+        Ok(Value::Int(5)),
+        "h.add(5) then h.get() must dispatch through call_method"
+    );
+    assert_eq!(*state.cell.borrow(), 5, "add(5) must mutate host state");
+    assert!(*state.was_called.borrow(), "call_method must be invoked");
 }
 
 #[test]
 fn handle_method_add_returns_new_value() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(10);
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "let h = binding(symbol(\"h\"))\nh.add(7)",
-        );
-        assert_eq!(
-            result,
-            Ok(Value::Int(17)),
-            "[{backend:?}] add returns the post-mutation value"
-        );
-    }
+    let state = CounterState::new(10);
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "let h = binding(symbol(\"h\"))\nh.add(7)",
+    );
+    assert_eq!(
+        result,
+        Ok(Value::Int(17)),
+        "add returns the post-mutation value"
+    );
 }
 
 // ── 8. Stale handles: dispatch is blocked before call_method ─────
 
 #[test]
 fn stale_handle_method_errors_with_describe_and_skips_call_method() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(0);
-        *state.alive.borrow_mut() = false; // handle goes stale before the run
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "let h = binding(symbol(\"h\"))\nh.get()",
-        );
-        let err = result.expect_err(&format!(
-            "[{backend:?}] calling a method on a stale handle must be a runtime error"
-        ));
-        assert!(
-            err.contains("Counter"),
-            "[{backend:?}] stale-handle error must name the class, got: {err}"
-        );
-        assert!(
-            err.contains("Counter(slot=1, serial=1)"),
-            "[{backend:?}] stale-handle error must include describe() output, got: {err}"
-        );
-        assert!(
-            !*state.was_called.borrow(),
-            "[{backend:?}] call_method must NOT be invoked for a stale handle"
-        );
-    }
+    let state = CounterState::new(0);
+    *state.alive.borrow_mut() = false; // handle goes stale before the run
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "let h = binding(symbol(\"h\"))\nh.get()",
+    );
+    let err = result.expect_err(&format!(
+        "calling a method on a stale handle must be a runtime error"
+    ));
+    assert!(
+        err.contains("Counter"),
+        "stale-handle error must name the class, got: {err}"
+    );
+    assert!(
+        err.contains("Counter(slot=1, serial=1)"),
+        "stale-handle error must include describe() output, got: {err}"
+    );
+    assert!(
+        !*state.was_called.borrow(),
+        "call_method must NOT be invoked for a stale handle"
+    );
 }
 
 // ── 9. Unknown method: call_method's Err surfaces to the script ──
 
 #[test]
 fn unknown_handle_method_surfaces_call_method_error() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(0);
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "let h = binding(symbol(\"h\"))\nh.frobnicate()",
-        );
-        let err = result.expect_err(&format!(
-            "[{backend:?}] unknown handle method must be a runtime error"
-        ));
-        assert!(
-            err.contains("frobnicate"),
-            "[{backend:?}] error must name the missing method, got: {err}"
-        );
-        // The error must come from the class's own dispatcher (it says
-        // "on Counter"), not from the generic no-method fallback.
-        assert!(
-            err.contains("Counter"),
-            "[{backend:?}] error must come from the Counter dispatcher, got: {err}"
-        );
-        assert!(
-            *state.was_called.borrow(),
-            "[{backend:?}] the class dispatcher must have been consulted"
-        );
-    }
+    let state = CounterState::new(0);
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "let h = binding(symbol(\"h\"))\nh.frobnicate()",
+    );
+    let err = result.expect_err(&format!(
+        "unknown handle method must be a runtime error"
+    ));
+    assert!(
+        err.contains("frobnicate"),
+        "error must name the missing method, got: {err}"
+    );
+    // The error must come from the class's own dispatcher (it says
+    // "on Counter"), not from the generic no-method fallback.
+    assert!(
+        err.contains("Counter"),
+        "error must come from the Counter dispatcher, got: {err}"
+    );
+    assert!(
+        *state.was_called.borrow(),
+        "the class dispatcher must have been consulted"
+    );
 }
 
 // ── 10. Handle-class dispatch wins over the UFCS native fallback ─
@@ -423,83 +398,70 @@ fn native_get_999(cxt: &mut PetalCxt) -> NativeResult {
 
 #[test]
 fn handle_class_method_shadows_ufcs_native() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(5);
-        // Note: a builtin `get(container, key)` also already exists in the
-        // native table, and UFCS name lookup returns the first match — so
-        // today `h.get()` resolves to that builtin (arity error). Either way,
-        // after chunk 2 the handle class's own `get` must win over the table.
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[("get", native_get_999)], // global native `get` would return 999
-            "let h = binding(symbol(\"h\"))\nh.get()",
-        );
-        assert_eq!(
-            result,
-            Ok(Value::Int(5)),
-            "[{backend:?}] the handle class's 'get' must win over the global native 'get'"
-        );
-    }
+    let state = CounterState::new(5);
+    // Note: a builtin `get(container, key)` also already exists in the
+    // native table, and UFCS name lookup returns the first match — so
+    // today `h.get()` resolves to that builtin (arity error). Either way,
+    // after chunk 2 the handle class's own `get` must win over the table.
+    let result = run_with_class(
+        counter_class(&state),
+        &[("get", native_get_999)], // global native `get` would return 999
+        "let h = binding(symbol(\"h\"))\nh.get()",
+    );
+    assert_eq!(
+        result,
+        Ok(Value::Int(5)),
+        "the handle class's 'get' must win over the global native 'get'"
+    );
 }
 
 // ── 11. The `is_valid` builtin ───────────────────────────────────
 
 #[test]
 fn is_valid_true_for_live_handle() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(0);
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "is_valid(binding(symbol(\"h\")))",
-        );
-        assert_eq!(result, Ok(Value::Bool(true)), "[{backend:?}] live handle is valid");
-    }
+    let state = CounterState::new(0);
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "is_valid(binding(symbol(\"h\")))",
+    );
+    assert_eq!(result, Ok(Value::Bool(true)), "live handle is valid");
 }
 
 #[test]
 fn is_valid_false_for_stale_handle_without_error() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let state = CounterState::new(0);
-        *state.alive.borrow_mut() = false;
-        let result = run_with_class(
-            backend,
-            counter_class(&state),
-            &[],
-            "is_valid(binding(symbol(\"h\")))",
-        );
-        assert_eq!(
-            result,
-            Ok(Value::Bool(false)),
-            "[{backend:?}] is_valid must return false (not error) on a stale handle"
-        );
-    }
+    let state = CounterState::new(0);
+    *state.alive.borrow_mut() = false;
+    let result = run_with_class(
+        counter_class(&state),
+        &[],
+        "is_valid(binding(symbol(\"h\")))",
+    );
+    assert_eq!(
+        result,
+        Ok(Value::Bool(false)),
+        "is_valid must return false (not error) on a stale handle"
+    );
 }
 
 #[test]
 fn is_valid_false_for_nil() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let result = run_plain(backend, "is_valid(nil)");
-        assert_eq!(
-            result,
-            Ok(Value::Bool(false)),
-            "[{backend:?}] nil is not a valid handle"
-        );
-    }
+    let result = run_plain("is_valid(nil)");
+    assert_eq!(
+        result,
+        Ok(Value::Bool(false)),
+        "nil is not a valid handle"
+    );
 }
 
 #[test]
 fn is_valid_false_for_non_handle_value() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let result = run_plain(backend, "is_valid(5)");
-        assert_eq!(
-            result,
-            Ok(Value::Bool(false)),
-            "[{backend:?}] a non-handle value is simply not a valid handle (no error)"
-        );
-    }
+    let result = run_plain("is_valid(5)");
+    assert_eq!(
+        result,
+        Ok(Value::Bool(false)),
+        "a non-handle value is simply not a valid handle (no error)"
+    );
 }
 
 // ── 12. Regression guard: UFCS on non-handles keeps working ──────
@@ -514,17 +476,14 @@ fn native_double(cxt: &mut PetalCxt) -> NativeResult {
 
 #[test]
 fn ufcs_on_non_handle_receiver_still_works() {
-    for backend in [Backend::Graph, Backend::Bytecode] {
-        let mut env = Env::new();
-        env.set_backend(backend);
-        env.register_native("double", native_double);
-        let pid = env.load_program("let x = 4\nx.double()").unwrap();
-        let sid = env.create_stack(pid).unwrap();
-        let result = env.run(sid);
-        assert_eq!(
-            result,
-            Ok(Value::Int(8)),
-            "[{backend:?}] UFCS native fallback on non-handle receivers must keep working"
-        );
-    }
+    let mut env = Env::new();
+    env.register_native("double", native_double);
+    let pid = env.load_program("let x = 4\nx.double()").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let result = env.run(sid);
+    assert_eq!(
+        result,
+        Ok(Value::Int(8)),
+        "UFCS native fallback on non-handle receivers must keep working"
+    );
 }

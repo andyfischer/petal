@@ -14,7 +14,7 @@
 //! iteration count keeps `cargo test` fast; scale up with
 //! `PETAL_FUZZ_ITERS=20000 cargo test fuzz -- --nocapture` for a soak run.
 
-use crate::backend::{Backend, OptFlags};
+use crate::backend::OptFlags;
 use crate::env::Env;
 use crate::value;
 
@@ -501,11 +501,10 @@ impl Gen {
 
 // ── Differential runner ─────────────────────────────────────────
 
-/// Run `code` on `backend` with `opts`: rendered result value + print output,
-/// or the full annotated error text.
-fn run(code: &str, backend: Backend, opts: OptFlags) -> Result<(String, Vec<String>), String> {
+/// Run `code` with `opts`: rendered result value + print output, or the full
+/// annotated error text.
+fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
     let mut env = Env::new();
-    env.set_backend(backend);
     env.set_opt_flags(opts);
     let v = env.run_source(code)?;
     let rendered = value::value_to_display_string(&v, env.heap());
@@ -532,9 +531,9 @@ fn assert_exact_parity(seed: u64, code: &str) {
         in_place_mutation: false,
         in_place_straight_line: true,
     };
-    let bc_noopt = run(code, Backend::Bytecode, OptFlags::none());
-    let bc_route_a = run(code, Backend::Bytecode, ROUTE_A_ONLY);
-    let bc_opt = run(code, Backend::Bytecode, OptFlags::all());
+    let bc_noopt = run(code, OptFlags::none());
+    let bc_route_a = run(code, ROUTE_A_ONLY);
+    let bc_opt = run(code, OptFlags::all());
     assert_eq!(
         bc_noopt, bc_route_a,
         "route-A in-place mutation (M4) divergence at seed {seed}; \

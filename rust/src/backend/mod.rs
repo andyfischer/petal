@@ -1,36 +1,25 @@
-//! Execution backends for Petal.
+//! Execution for Petal.
 //!
-//! Petal compiles source to a canonical term-graph IR (`crate::program`). That
-//! IR can be executed two ways:
+//! Petal compiles source to a canonical term-graph IR (`crate::program`), which
+//! the [`bytecode`] backend runs: a linear register VM over a *lowering* of the
+//! term graph (see `bytecode::lower`), with an in-place mutation optimization
+//! gated by escape analysis. Static analyses (slicing, `explain`'s provenance
+//! walk, autodiff-as-graph) still reason about the term graph directly; the VM
+//! populates the trace buffer those analyses read at runtime.
 //!
-//! - [`graph`] — the original step evaluator, which walks the term graph
-//!   node-by-node. It is the reference/introspection engine; provenance,
-//!   slicing, autodiff, `explain`, and hot-reload all reason about the same
-//!   graph it executes.
-//! - [`bytecode`] — a linear register VM that runs a *lowering* of the term
-//!   graph (see `bytecode::lower`). It exists for speed and for the in-place
-//!   mutation optimization gated by escape analysis.
-//!
-//! Both engines share the [`StepResult`] contract, so `Env`'s run loops are
-//! backend-agnostic. The active engine and its enabled optimizations are chosen
-//! by [`Backend`] and [`OptFlags`].
+//! [`OptFlags`] chooses which optimizations a run enables.
 
 pub mod bytecode;
 pub mod calls;
 pub mod errors;
-pub mod graph;
 pub mod ops;
 pub mod pattern;
-
-// The graph engine's public surface is re-exported here so callers depend on
-// `crate::backend::…` rather than a specific engine module.
-pub use graph::Evaluator;
 
 use crate::program::FunctionId;
 use crate::value::Value;
 
-/// Result of a single execution step. Shared contract between the graph
-/// `Evaluator` and the bytecode `Vm` so `Env`'s run loops are engine-agnostic.
+/// Result of a single execution step. The contract between `Env`'s run loops
+/// and the bytecode `Vm`.
 #[derive(Debug)]
 pub enum StepResult {
     Continue,
@@ -44,32 +33,6 @@ pub enum StepResult {
 pub struct RuntimeClosure {
     pub function_id: FunctionId,
     pub captures: Vec<Value>,
-}
-
-/// Which execution engine `Env` uses to run a program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Backend {
-    /// The term-graph step evaluator — the reference engine and correctness
-    /// oracle. Select with `--backend=graph` / `PETAL_BACKEND=graph`.
-    Graph,
-    /// The linear register VM — the default engine. At full behavioral parity
-    /// with `Graph` (value, output, state, and error text; enforced by the
-    /// differential tests in `bytecode::tests` and the example sweep).
-    #[default]
-    Bytecode,
-}
-
-impl Backend {
-    /// Parse a backend name (`"graph"` / `"bytecode"`), e.g. from `--backend`
-    /// or the `PETAL_BACKEND` env var. Case-insensitive; `"ir"` is an alias for
-    /// `graph`.
-    pub fn parse(s: &str) -> Option<Backend> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "graph" | "ir" | "steps" => Some(Backend::Graph),
-            "bytecode" | "bc" | "vm" => Some(Backend::Bytecode),
-            _ => None,
-        }
-    }
 }
 
 /// Per-run optimization toggles. Every optimization is individually switchable

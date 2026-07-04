@@ -1,0 +1,6 @@
+{
+  "example": "closures.ptl",
+  "status": 0,
+  "stdout": "add5(3) = 8\nadd10(3) = 13\ndouble(7) = 14\nnumbers: [1, 2, 3, 4, 5]\ndoubled: [2, 4, 6, 8, 10]\nsquared: [1, 4, 9, 16, 25]\nevens: [2, 4]\nsum: 15\nproduct: 120\n",
+  "stderr": ""
+}

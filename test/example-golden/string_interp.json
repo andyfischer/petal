@@ -1,0 +1,6 @@
+{
+  "example": "string_interp.ptl",
+  "status": 0,
+  "stdout": "Hello, Ada! You are 36 years old.\n7 + 5 = 12\nmax is 7\npoint = { x: 3, y: 4 }, distance = 5.0\nHi Ada — welcome back\nuse {expr} to interpolate\n",
+  "stderr": ""
+}

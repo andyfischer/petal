@@ -1,0 +1,6 @@
+{
+  "example": "state.ptl",
+  "status": 0,
+  "stdout": "Counter Demo\n============\nCall 1: 1\nCall 2: 2\nCall 3: 3\n\nAccumulator Demo\n================\nAfter adding 1 -> total: 1\nAfter adding 2 -> total: 3\nAfter adding 3 -> total: 6\nAfter adding 4 -> total: 10\nAfter adding 5 -> total: 15\n\nBranch State Demo\n=================\n  true branch called 1 times\n  true branch called 2 times\n  false branch called 1 times\n  true branch called 3 times\n  false branch called 2 times\n",
+  "stderr": ""
+}

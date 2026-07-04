@@ -1,0 +1,6 @@
+{
+  "example": "records.ptl",
+  "status": 0,
+  "stdout": "Name: Alice\nAge: 30\nCity: Portland\nCompany: Acme\nCEO: Bob\nAlice is an Admin\nAlice is an adult\nCharlie is a minor\n",
+  "stderr": ""
+}

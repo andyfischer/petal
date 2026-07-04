@@ -1,0 +1,6 @@
+{
+  "example": "enums.ptl",
+  "status": 0,
+  "stdout": "Favorite color: Blue\nArea: 78.53975\nArea: 24.0\nArea: 12.0\n10 / 3 = 3\nError: division by zero\n",
+  "stderr": ""
+}

@@ -1,0 +1,6 @@
+{
+  "example": "pattern_matching.ptl",
+  "status": 0,
+  "stdout": "zero one other\n20 degrees is comfortable\n-5 degrees is freezing\nempty list\nsingle element: 42\npair: 1 and 2\nstarts with 1, 4 more\n(2 + 3) * 4 = 20\n",
+  "stderr": ""
+}

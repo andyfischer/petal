@@ -1,0 +1,6 @@
+{
+  "example": "state_machine.ptl",
+  "status": 0,
+  "stdout": "Traffic Light Simulation\n========================\nTick 1 : [R] .  . \nTick 2 : [R] .  . \nTick 3 : [R] .  . \nTick 4 : [R] .  . \nTick 5 :  .  . [G]\nTick 6 :  .  . [G]\nTick 7 :  .  . [G]\nTick 8 :  .  . [G]\nTick 9 :  . [Y] . \nTick 10 :  . [Y] . \nTick 11 : [R] .  . \nTick 12 : [R] .  . \nTick 13 : [R] .  . \nTick 14 : [R] .  . \nTick 15 : [R] .  . \nTick 16 :  .  . [G]\nTick 17 :  .  . [G]\nTick 18 :  .  . [G]\nTick 19 :  .  . [G]\nTick 20 :  . [Y] . \nTick 21 :  . [Y] . \nTick 22 : [R] .  . \nTick 23 : [R] .  . \nTick 24 : [R] .  . \n",
+  "stderr": ""
+}

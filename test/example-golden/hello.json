@@ -1,0 +1,6 @@
+{
+  "example": "hello.ptl",
+  "status": 0,
+  "stdout": "Hello, World!\n",
+  "stderr": ""
+}

@@ -1,0 +1,6 @@
+{
+  "example": "lists.ptl",
+  "status": 0,
+  "stdout": "numbers: [1, 2, 3, 4, 5]\nlength: 5\nfirst: 1\nlast: 5\ndoubled:\n  2\n  4\n  6\n  8\n  10\nsquares: [1, 4, 9, 16, 25]\ncenter element: 5\nx: 10 y: 20 z: 30\nhead: 1 tail: [2, 3, 4]\n",
+  "stderr": ""
+}

@@ -1,0 +1,6 @@
+{
+  "example": "particles.ptl",
+  "status": 0,
+  "stdout": "Particle Simulation\n====================\nFrame 1\n  Particle 0 -> x: 1.0 y: 0.0\n  Particle 1 -> x: 3.0 y: 1.0\n  Particle 2 -> x: 4.0 y: 2.0\n  Particle 3 -> x: 6.0 y: 3.0\n\nFrame 2\n  Particle 0 -> x: 7.0 y: 4.0\n  Particle 1 -> x: 9.0 y: 4.0\n  Particle 2 -> x: 10.0 y: 5.0\n  Particle 3 -> x: 12.0 y: 6.0\n\nFrame 3\n  Particle 0 -> x: 13.0 y: 7.0\n  Particle 1 -> x: 15.0 y: 7.0\n  Particle 2 -> x: 16.0 y: 8.0\n  Particle 3 -> x: 18.0 y: 9.0\n\nFrame 4\n  Particle 0 -> x: 19.0 y: 10.0\n  Particle 1 -> x: 21.0 y: 11.0\n  Particle 2 -> x: 22.0 y: 12.0\n  Particle 3 -> x: 24.0 y: 12.0\n\nFrame 5\n  Particle 0 -> x: 25.0 y: 13.0\n  Particle 1 -> x: 27.0 y: 14.0\n  Particle 2 -> x: 28.0 y: 15.0\n  Particle 3 -> x: 30.0 y: 16.0\n\nFrame 6\n  Particle 0 -> x: 31.0 y: 16.0\n  Particle 1 -> x: 33.0 y: 17.0\n  Particle 2 -> x: 34.0 y: 18.0\n  Particle 3 -> x: 36.0 y: 19.0\n\nFrame 7\n  Particle 0 -> x: 37.0 y: 20.0\n  Particle 1 -> x: 39.0 y: 20.0\n  Particle 2 -> x: 40.0 y: 21.0\n  Particle 3 -> x: 42.0 y: 22.0\n\n",
+  "stderr": ""
+}

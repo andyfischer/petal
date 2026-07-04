@@ -1,0 +1,6 @@
+{
+  "example": "arithmetic.ptl",
+  "status": 0,
+  "stdout": "a = 10 b = 3\na + b = 13\na - b = 7\na * b = 30\na / b = 3\na % b = 1\na after rebind: 15\nx * y = 6.28\na + x = 18.14\nsqrt(16) = 4.0\nabs(-7) = 7\nfloor(3.9) = 3.0\nceil(3.1) = 4.0\n",
+  "stderr": ""
+}

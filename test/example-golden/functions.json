@@ -1,0 +1,6 @@
+{
+  "example": "functions.ptl",
+  "status": 0,
+  "stdout": "Hello, World\n5 squared = 25\n3 + 4 = 7\n5! = 120\nfib(10) = 55\n4 is even? true\n7 is even? false\ndouble then increment 5: 11\n",
+  "stderr": ""
+}

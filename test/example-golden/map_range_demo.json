@@ -1,0 +1,6 @@
+{
+  "example": "map_range_demo.ptl",
+  "status": 0,
+  "stdout": "Temperature -> progress bar\n===========================\n  32.0F  [--------------------]\n  50.0F  [#####---------------]\n  68.0F  [##########----------]\n  86.0F  [###############-----]\n  104.0F  [####################]\n\nBounded response curve (clamped)\n================================\n  input=-2.0  mapped=-1.4  clamped=-1.0\n  input=-1.0  mapped=-1.2  clamped=-1.0\n  input=0.0  mapped=-1.0  clamped=-1.0\n  input=1.0  mapped=-0.8  clamped=-0.8\n  input=2.0  mapped=-0.6  clamped=-0.6\n  input=3.0  mapped=-0.4  clamped=-0.4\n  input=4.0  mapped=-0.19999999999999996  clamped=-0.19999999999999996\n  input=5.0  mapped=0.0  clamped=0.0\n  input=6.0  mapped=0.19999999999999996  clamped=0.19999999999999996\n  input=7.0  mapped=0.3999999999999999  clamped=0.3999999999999999\n  input=8.0  mapped=0.6000000000000001  clamped=0.6000000000000001\n  input=9.0  mapped=0.8  clamped=0.8\n  input=10.0  mapped=1.0  clamped=1.0\n  input=11.0  mapped=1.2000000000000002  clamped=1.0\n  input=12.0  mapped=1.4  clamped=1.0\n",
+  "stderr": ""
+}

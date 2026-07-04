@@ -1,0 +1,6 @@
+{
+  "example": "reactive_ui.ptl",
+  "status": 0,
+  "stdout": "Reactive UI Demo\n=================\n\nFrame 1:\n  Todo App (3 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [Add (0)]\n\nFrame 2:\n  Todo App (4 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [ ] Water plants\n  [Add (1)]\n\nFrame 3:\n  Todo App (5 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [ ] Water plants\n  [ ] Call Alex\n  [Add (2)]\n\nFrame 4:\n  Todo App (5 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [ ] Water plants\n  [ ] Call Alex\n  [Add (2)]\n\n",
+  "stderr": ""
+}

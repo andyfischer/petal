@@ -1,0 +1,6 @@
+{
+  "example": "control_flow.ptl",
+  "status": 0,
+  "stdout": "42 is even\n10 > 5: true\n10 < 5: false\n10 == 10: true\n10 != 5: true\nsunny && warm: false\nsunny || warm: true\n!sunny: false\nCounting 1 to 5:\n  1\n  2\n  3\n  4\n  5\nSum of 1..10 = 55\n( 0 , 0 )\n( 0 , 1 )\n( 0 , 2 )\n( 1 , 0 )\n( 1 , 1 )\n( 1 , 2 )\n( 2 , 0 )\n( 2 , 1 )\n( 2 , 2 )\n",
+  "stderr": ""
+}

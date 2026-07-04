@@ -145,6 +145,126 @@ pub enum Inst {
     Error { msg: ConstantId },
 }
 
+impl Inst {
+    /// The destination register this instruction writes its result to, if it
+    /// produces a value in the current frame. Used by the VM's best-effort
+    /// trace hook to record `(origin term, result)` at instruction retire.
+    ///
+    /// `Call`/`MethodCall` have a `dst` but do not fill it in the current frame
+    /// — the result is delivered when the callee frame returns — so they are
+    /// deliberately excluded here and traced from the frame-return path instead.
+    /// Control-flow, loop-cursor, and store-only ops produce no traceable value.
+    pub fn dst(&self) -> Option<Reg> {
+        match self {
+            Inst::LoadConst { dst, .. }
+            | Inst::LoadNil { dst }
+            | Inst::LoadBool { dst, .. }
+            | Inst::Move { dst, .. }
+            | Inst::Add { dst, .. }
+            | Inst::Sub { dst, .. }
+            | Inst::Mul { dst, .. }
+            | Inst::Div { dst, .. }
+            | Inst::Mod { dst, .. }
+            | Inst::Neg { dst, .. }
+            | Inst::Eq { dst, .. }
+            | Inst::Ne { dst, .. }
+            | Inst::Lt { dst, .. }
+            | Inst::Le { dst, .. }
+            | Inst::Gt { dst, .. }
+            | Inst::Ge { dst, .. }
+            | Inst::Not { dst, .. }
+            | Inst::Concat { dst, .. }
+            | Inst::BuiltinCall { dst, .. }
+            | Inst::MakeClosure { dst, .. }
+            | Inst::MakeOverloadSet { dst, .. }
+            | Inst::AllocList { dst, .. }
+            | Inst::AllocMap { dst, .. }
+            | Inst::AllocMapSpread { dst, .. }
+            | Inst::AllocElement { dst, .. }
+            | Inst::MakeEnumVariant { dst, .. }
+            | Inst::GetField { dst, .. }
+            | Inst::SetField { dst, .. }
+            | Inst::GetIndex { dst, .. }
+            | Inst::SetIndex { dst, .. }
+            | Inst::SetFieldInPlace { dst, .. }
+            | Inst::SetIndexInPlace { dst, .. }
+            | Inst::StateInit { dst, .. }
+            | Inst::StateRead { dst, .. }
+            | Inst::StateWrite { dst, .. } => Some(*dst),
+            // Value delivered on frame return, not in this frame.
+            Inst::Call { .. } | Inst::MethodCall { .. } => None,
+            // No traceable single-value result.
+            Inst::Jump { .. }
+            | Inst::JumpIfFalse { .. }
+            | Inst::JumpIfTrue { .. }
+            | Inst::ForEachInit { .. }
+            | Inst::ForEachNext { .. }
+            | Inst::RangeInit { .. }
+            | Inst::RangeNext { .. }
+            | Inst::WhileInit { .. }
+            | Inst::LoopBumpIdx { .. }
+            | Inst::LoopPop { .. }
+            | Inst::Return { .. }
+            | Inst::MatchArm { .. }
+            | Inst::MatchFail { .. }
+            | Inst::Error { .. } => None,
+        }
+    }
+
+    /// The source registers this instruction reads, for the trace's input list.
+    /// Best-effort: gathered before the instruction executes (a `dst` that
+    /// aliases a source would otherwise clobber it). Inputs enrich the full
+    /// trace dump (`--record-trace`); `explain` needs only the result, so an
+    /// approximate or empty list here is acceptable.
+    pub fn input_regs(&self) -> SmallVec<[Reg; 4]> {
+        let mut v: SmallVec<[Reg; 4]> = SmallVec::new();
+        match self {
+            Inst::Move { src, .. } | Inst::Neg { a: src, .. } | Inst::Not { a: src, .. } => {
+                v.push(*src)
+            }
+            Inst::Add { a, b, .. }
+            | Inst::Sub { a, b, .. }
+            | Inst::Mul { a, b, .. }
+            | Inst::Div { a, b, .. }
+            | Inst::Mod { a, b, .. }
+            | Inst::Eq { a, b, .. }
+            | Inst::Ne { a, b, .. }
+            | Inst::Lt { a, b, .. }
+            | Inst::Le { a, b, .. }
+            | Inst::Gt { a, b, .. }
+            | Inst::Ge { a, b, .. }
+            | Inst::Concat { a, b, .. } => {
+                v.push(*a);
+                v.push(*b);
+            }
+            Inst::GetField { obj, .. } => v.push(*obj),
+            Inst::GetIndex { obj, idx, .. } => {
+                v.push(*obj);
+                v.push(*idx);
+            }
+            Inst::SetField { obj, val, .. }
+            | Inst::SetFieldInPlace { obj, val, .. } => {
+                v.push(*obj);
+                v.push(*val);
+            }
+            Inst::SetIndex { obj, idx, val, .. }
+            | Inst::SetIndexInPlace { obj, idx, val, .. } => {
+                v.push(*obj);
+                v.push(*idx);
+                v.push(*val);
+            }
+            Inst::BuiltinCall { args, .. } => v.extend(args.iter().copied()),
+            Inst::AllocList { elems, .. } => v.extend(elems.iter().copied()),
+            Inst::AllocMap { vals, .. } => v.extend(vals.iter().copied()),
+            Inst::MakeEnumVariant { fields, .. } => v.extend(fields.iter().copied()),
+            Inst::StateWrite { val, .. } => v.push(*val),
+            // Everything else contributes no simple input registers.
+            _ => {}
+        }
+        v
+    }
+}
+
 /// One lowered function: the program root block, or a `FunctionDef` body.
 #[derive(Debug, Clone)]
 pub struct BytecodeFn {

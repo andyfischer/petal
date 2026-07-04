@@ -1,6 +1,6 @@
 # Migrating 100% to Bytecode — Removing the Graph Evaluator
 
-**Status:** Phase 0 + Phase 1 complete. Phase 2 next.
+**Status:** Phases 0–2 complete. Phase 3 next.
 
 ## Goal
 
@@ -95,12 +95,23 @@ Each phase is independently committable.
   `--backend` arg (benchmark + module-resolution harnesses, not correctness
   oracles) — handled in Phase 4 alongside the CLI flag removal.
 
-### Phase 2 — VM trace (best-effort)
-- Add `trace: &mut TraceBuffer` to `Vm`; emit `(origin, inputs, result)` at
-  instruction retire, gated on `trace.enabled`, using the existing
-  `func.origins: Vec<Option<TermId>>` table (already fetched every step for
-  error annotation, `vm.rs:184`).
-- Accept fidelity gaps. Keep `explain` / `ExplainTerm` functional.
+### Phase 2 — VM trace (best-effort)  *(done)*
+- ✅ Added `trace: &mut TraceBuffer` to `Vm`, wired from `Env::step_bytecode`.
+- ✅ `Inst::dst()` / `Inst::input_regs()` helpers (`isa.rs`). Straight-line
+  value-producing instructions push `(origin, inputs, result)` at retire in
+  `Vm::step`, gated on `trace.enabled` (bool test first, so the disabled hot
+  path never calls `dst()`/`input_regs()`). Calls are skipped there (dst not yet
+  written) and traced from `Vm::deliver_value` against the call-site term.
+- ✅ Fixed the regression: `petal explain` under the default (bytecode) backend
+  showed `<not executed>` for every term; it now shows values.
+- **Fidelity result** (better than the "can-degrade" bar): with opts off,
+  bytecode `explain` is **byte-identical to graph**. The only divergence is with
+  in-place mutation on — the trace stores heap ids, so historical entries for a
+  mutated container display its *final* contents (e.g. a loop accumulator's
+  early snapshots read as the finished list). This is inherent to zero-copy
+  mutation and is the accepted best-effort gap.
+- Tests: `bytecode_trace_records_term_values`,
+  `bytecode_trace_records_call_results` in `bytecode/tests.rs`.
 
 ### Phase 3 — Delete the graph Evaluator
 - Remove `backend/graph/`, `Backend::Graph`, `step_graph`,

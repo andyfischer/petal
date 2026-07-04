@@ -130,6 +130,12 @@ pub struct Vm<'a> {
     pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
     pub counters: &'a mut HashMap<SymbolId, u64>,
+    /// Structured execution trace (off by default). When enabled, the VM records
+    /// `(origin term, inputs, result)` per retired instruction so `explain` /
+    /// `ExplainTerm` work under the VM — see [`Vm::step`] and
+    /// [`Vm::deliver_value`]. Best-effort: in-place mutation and register reuse
+    /// can thin coverage relative to the graph engine.
+    pub trace: &'a mut crate::trace::TraceBuffer,
 }
 
 impl<'a> Vm<'a> {
@@ -181,9 +187,36 @@ impl<'a> Vm<'a> {
         // Advance past this instruction before executing; call/jump handlers
         // overwrite `ip` when they need to.
         self.stack.vm_frames[frame_idx].ip = ip + 1;
+        let inst = &func.code[ip];
         let origin = func.origins.get(ip).copied().flatten();
-        match self.exec_inst(frame_idx, &func.code[ip], origin) {
-            Ok(sr) => sr,
+        // Gather trace inputs before execution — a `dst` that aliases a source
+        // register would clobber it otherwise. The `enabled` check comes first
+        // so the disabled hot path pays only one bool test, never `dst()` /
+        // `input_regs()`.
+        let trace_inputs: Option<(TermId, Reg, SmallVec<[Value; 4]>)> = if self.trace.enabled {
+            match (origin, inst.dst()) {
+                (Some(term), Some(dst)) => {
+                    let inputs = inst.input_regs().iter().map(|&r| self.reg(frame_idx, r)).collect();
+                    Some((term, dst, inputs))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        match self.exec_inst(frame_idx, inst, origin) {
+            Ok(sr) => {
+                // Record the retired instruction's result, but only if it stayed
+                // in this frame (a pushed call frame means `dst` isn't written
+                // yet — call results are traced from `deliver_value` instead).
+                if let Some((term, dst, inputs)) = trace_inputs {
+                    if self.stack.vm_frames.len() == frame_idx + 1 {
+                        let result = self.reg(frame_idx, dst);
+                        self.trace.push(term, &inputs, result);
+                    }
+                }
+                sr
+            }
             Err(e) => StepResult::Error(self.annotate(e, origin)),
         }
     }
@@ -274,6 +307,14 @@ impl<'a> Vm<'a> {
             if let Some(dst) = frame.dst_in_caller {
                 let caller = self.stack.vm_frames.len() - 1;
                 self.set(caller, dst, value);
+            }
+            // Trace the call's result against the call-site term, so `explain`
+            // can show the value of a term whose value came from a call (the
+            // `Call`/`MethodCall` op itself is skipped in `step`).
+            if self.trace.enabled {
+                if let Some(call_site) = frame.call_site {
+                    self.trace.push(call_site, &[], value);
+                }
             }
             StepResult::Continue
         };

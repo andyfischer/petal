@@ -414,6 +414,7 @@ impl Env {
             output_buffers: &mut ctx.output_buffers,
             bindings: &mut ctx.bindings,
             counters: &mut ctx.counters,
+            trace: &mut self.trace,
         };
         if !vm.stack.vm_started {
             vm.push_root_frame();

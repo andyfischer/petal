@@ -799,3 +799,51 @@ fn inplace_dup_bytes_drop_on_accumulator() {
     assert!(off > 0, "baseline should copy something");
     assert!(on < off, "in-place should strictly reduce copied bytes ({on} !< {off})");
 }
+
+// -- Trace / provenance (best-effort under the VM) --------------------------
+
+/// The bytecode VM must populate the trace buffer keyed by origin TermId so
+/// `explain` / `ExplainTerm` keep working once the graph engine is gone. This
+/// is best-effort (in-place mutation and register reuse can thin coverage), but
+/// straight-line value-producing terms and call results must be recorded.
+#[test]
+fn bytecode_trace_records_term_values() {
+    let mut env = Env::new(); // default backend is bytecode
+    env.trace_mut().enable();
+    let pid = env.load_program("let x = 2 + 3\nlet total = x * 4\nprint(total)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let program = env.get_program(pid).expect("program");
+    let render = |tid| {
+        let ev = env
+            .trace()
+            .last_for_term(tid)
+            .unwrap_or_else(|| panic!("term {tid:?} was not traced"));
+        value::value_to_display_string(&ev.result, env.heap())
+    };
+
+    let x = program.find_term("x").expect("x term");
+    assert_eq!(render(x), "5", "x = 2 + 3");
+    let total = program.find_term("total").expect("total term");
+    assert_eq!(render(total), "20", "total = x * 4");
+}
+
+/// A user function's call result must be traced (recorded when the callee frame
+/// delivers its value back to the caller), so `explain` can show the value of a
+/// term whose value came from a call.
+#[test]
+fn bytecode_trace_records_call_results() {
+    let mut env = Env::new();
+    env.trace_mut().enable();
+    let pid = env
+        .load_program("fn double(n)\n  n * 2\nend\nlet r = double(21)\nprint(r)")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let program = env.get_program(pid).expect("program");
+    let r = program.find_term("r").expect("r term");
+    let ev = env.trace().last_for_term(r).expect("r (call result) was not traced");
+    assert_eq!(value::value_to_display_string(&ev.result, env.heap()), "42");
+}

@@ -36,9 +36,9 @@ See [testing.md](testing.md) for the full testing guide.
 | `cd ts && npx vitest run` | Run the integration suite once. |
 | `npm test` | Run the vitest suite from the repo root (delegates to `ts`). |
 | `npm run test:watch` | Vitest in watch mode from the repo root. |
-| `./ts/bin/test-examples.ts` | Differential test: run every `examples/*.ptl` under both backends (graph and bytecode) and require byte-identical output. |
+| `./ts/bin/test-examples.ts` | Run every `examples/*.ptl` on the bytecode VM at both optimization levels (opts on / `--no-opt`), require byte-identical output between them, and require both to match the frozen `test/example-golden/` corpus. |
 | `./ts/bin/test-examples.ts --full` | Same, but print full output rather than an 8-line preview. |
-| `./ts/bin/test-examples.ts --backend=graph` | Run a single backend only (no diff). |
+| `./ts/bin/gen-example-golden.ts` | Regenerate the golden corpus from the graph engine. Run deliberately — a golden update asserts the reference behavior itself changed. |
 
 ## Benchmarking
 

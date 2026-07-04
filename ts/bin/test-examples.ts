@@ -1,27 +1,26 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
-// Run every examples/*.ptl file as a differential test between the two
-// execution backends (graph and bytecode): each example must exit 0 under
-// both AND produce byte-identical stdout/stderr.
+// Run every examples/*.ptl file as a differential test on the bytecode VM: each
+// example must exit 0 under both optimization levels (clone-and-alloc baseline
+// via --no-opt, and all in-place opts on by default), produce byte-identical
+// stdout/stderr across the two, AND match the frozen graph-captured golden in
+// test/example-golden/ (see docs/dev/bytecode-migration.md). The golden corpus
+// is the absolute-correctness anchor now that the graph engine is no longer an
+// execution oracle; regenerate it deliberately with ts/bin/gen-example-golden.ts.
 // Usage:
-//   ./bin/test-examples.ts                    # differential sweep, 8-line preview
-//   ./bin/test-examples.ts --full             # differential sweep, full output
-//   ./bin/test-examples.ts --backend=graph    # single backend, no diff
+//   ./bin/test-examples.ts            # differential + golden sweep, 8-line preview
+//   ./bin/test-examples.ts --full     # same, full output
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const examplesDir = join(repoRoot, 'examples');
+const goldenDir = join(repoRoot, 'test', 'example-golden');
 const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
 const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
 
-const ALL_BACKENDS = ['graph', 'bytecode'];
 const full = process.argv.includes('--full');
-const backendArg = process.argv
-    .map(a => /^--backend=(.+)$/.exec(a)?.[1])
-    .find(Boolean);
-const backends = backendArg ? [backendArg] : ALL_BACKENDS;
 
 interface RunResult {
     status: number | null;
@@ -29,8 +28,14 @@ interface RunResult {
     stderr: string;
 }
 
-function runExample(filePath: string, backend: string): RunResult {
-    const result = spawnSync(petal, [filePath, `--backend=${backend}`], {
+// The two bytecode optimization levels the sweep diffs against each other.
+const OPT_LEVELS = [
+    { label: 'opts', args: [] as string[] },
+    { label: 'no-opt', args: ['--no-opt'] },
+];
+
+function runExample(filePath: string, optArgs: string[]): RunResult {
+    const result = spawnSync(petal, [filePath, ...optArgs], {
         encoding: 'utf-8',
     });
     return {
@@ -38,6 +43,13 @@ function runExample(filePath: string, backend: string): RunResult {
         stdout: result.stdout ?? '',
         stderr: result.stderr ?? '',
     };
+}
+
+function loadGolden(name: string): RunResult | null {
+    const path = join(goldenDir, name.replace(/\.ptl$/, '.json'));
+    if (!existsSync(path)) return null;
+    const g = JSON.parse(readFileSync(path, 'utf-8'));
+    return { status: g.status, stdout: g.stdout, stderr: g.stderr };
 }
 
 function printPreview(output: string) {
@@ -53,7 +65,7 @@ function printPreview(output: string) {
 }
 
 // Report the first line where two outputs disagree, for quick triage.
-function firstDivergence(a: string, b: string): string {
+function firstDivergence(labelA: string, a: string, labelB: string, b: string): string {
     const aLines = a.split('\n');
     const bLines = b.split('\n');
     const n = Math.max(aLines.length, bLines.length);
@@ -61,12 +73,23 @@ function firstDivergence(a: string, b: string): string {
         if (aLines[i] !== bLines[i]) {
             return [
                 `  first divergence at line ${i + 1}:`,
-                `    ${backends[0]}:    ${aLines[i] ?? '<missing>'}`,
-                `    ${backends[1]}: ${bLines[i] ?? '<missing>'}`,
+                `    ${labelA}: ${aLines[i] ?? '<missing>'}`,
+                `    ${labelB}: ${bLines[i] ?? '<missing>'}`,
             ].join('\n');
         }
     }
     return '  outputs differ (identical lines, differing whitespace?)';
+}
+
+// Compare two runs on stdout+stderr; return a divergence report or null.
+function diff(labelA: string, a: RunResult, labelB: string, b: RunResult): string | null {
+    if (a.stdout !== b.stdout) {
+        return firstDivergence(labelA, a.stdout, labelB, b.stdout);
+    }
+    if (a.stderr !== b.stderr) {
+        return firstDivergence(`${labelA}(stderr)`, a.stderr, `${labelB}(stderr)`, b.stderr);
+    }
+    return null;
 }
 
 const build = spawnSync(
@@ -79,35 +102,63 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 const files = readdirSync(examplesDir).filter(f => f.endsWith('.ptl')).sort();
 let pass = 0;
 let fail = 0;
+let missingGolden = 0;
 
 for (const name of files) {
     const filePath = join(examplesDir, name);
     console.log(`=== ${name} ===`);
-    const runs = backends.map(b => runExample(filePath, b));
+    const runs = OPT_LEVELS.map(o => ({ label: o.label, result: runExample(filePath, o.args) }));
 
-    const failed = runs.find(r => r.status !== 0);
+    const failed = runs.find(r => r.result.status !== 0);
     if (failed) {
-        const which = backends[runs.indexOf(failed)];
-        const head = (failed.stdout + failed.stderr).split('\n').slice(0, 5).join('\n');
-        console.log(`FAILED (${which}): ${head}`);
+        const head = (failed.result.stdout + failed.result.stderr).split('\n').slice(0, 5).join('\n');
+        console.log(`FAILED (${failed.label}): ${head}`);
         fail++;
-    } else if (
-        runs.length === 2 &&
-        (runs[0].stdout !== runs[1].stdout || runs[0].stderr !== runs[1].stderr)
-    ) {
-        const onStdout = runs[0].stdout !== runs[1].stdout;
-        console.log(`BACKEND DIVERGENCE (${backends.join(' vs ')}, ${onStdout ? 'stdout' : 'stderr'}):`);
-        console.log(onStdout
-            ? firstDivergence(runs[0].stdout, runs[1].stdout)
-            : firstDivergence(runs[0].stderr, runs[1].stderr));
-        fail++;
-    } else {
-        printPreview(runs[0].stdout + runs[0].stderr);
-        pass++;
+        console.log();
+        continue;
     }
+
+    // Differential: the two optimization levels must agree exactly.
+    const optDiff = diff(runs[0].label, runs[0].result, runs[1].label, runs[1].result);
+    if (optDiff) {
+        console.log(`OPT-LEVEL DIVERGENCE (${runs[0].label} vs ${runs[1].label}):`);
+        console.log(optDiff);
+        fail++;
+        console.log();
+        continue;
+    }
+
+    // Absolute: both must match the frozen graph-captured golden.
+    const golden = loadGolden(name);
+    if (!golden) {
+        console.log(`NO GOLDEN (run ts/bin/gen-example-golden.ts): ${name}`);
+        missingGolden++;
+        fail++;
+        console.log();
+        continue;
+    }
+    if (golden.status !== runs[0].result.status) {
+        console.log(`GOLDEN STATUS MISMATCH: golden=${golden.status} actual=${runs[0].result.status}`);
+        fail++;
+        console.log();
+        continue;
+    }
+    const goldenDiff = diff('golden', golden, 'actual', runs[0].result);
+    if (goldenDiff) {
+        console.log('GOLDEN DIVERGENCE (frozen graph output vs bytecode):');
+        console.log(goldenDiff);
+        fail++;
+        console.log();
+        continue;
+    }
+
+    printPreview(runs[0].result.stdout + runs[0].result.stderr);
+    pass++;
     console.log();
 }
 
-const mode = backends.length === 2 ? `differential (${backends.join(' vs ')})` : backends[0];
-console.log(`Results [${mode}]: ${pass} passed, ${fail} failed`);
+console.log(
+    `Results [differential (opts vs no-opt) + golden corpus]: ${pass} passed, ${fail} failed` +
+    (missingGolden > 0 ? ` (${missingGolden} missing golden)` : ''),
+);
 process.exit(fail > 0 ? 1 : 0);

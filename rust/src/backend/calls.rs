@@ -1,12 +1,10 @@
-//! Shared call-resolution helpers used by both execution backends.
+//! Call-resolution helpers for the bytecode VM.
 //!
 //! Resolving a callable `Value` to a concrete `ClosureId` (including overload
 //! selection by argument count) and building an overload-set value are pure over
-//! `(&Program, closures, overload_sets)`, so both the graph `Evaluator` and the
-//! bytecode `Vm` call the same functions — the call-dispatch parity lever.
-//!
-//! Frame *construction* differs between the engines (graph `Frame` vs
-//! [`VmFrame`](super::bytecode::VmFrame)) and stays in each.
+//! `(&Program, closures, overload_sets)`, so they live here rather than inline
+//! in the [`Vm`](super::bytecode::Vm). Frame construction
+//! ([`VmFrame`](super::bytecode::VmFrame)) stays in the VM.
 
 use crate::backend::RuntimeClosure;
 use crate::program::{ClosureId, OverloadEntry, OverloadSetId, Program};

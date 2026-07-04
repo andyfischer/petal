@@ -458,7 +458,7 @@ pub fn set_field(
 /// In-place `obj.field = val`: mutates `obj`'s backing map and reuses its id.
 /// Sound only when the bytecode escape analysis has proven `obj` unique and
 /// non-escaping (see `backend/bytecode/escape.rs`); the VM emits this via
-/// `Inst::SetFieldInPlace`, the graph engine never does.
+/// `Inst::SetFieldInPlace` only when that gate holds (never with opts off).
 pub fn set_field_in_place(
     program: &Program,
     heap: &mut Heap,
@@ -544,7 +544,7 @@ pub fn set_index(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<
 
 /// In-place `obj[idx] = val`: mutates `obj`'s backing store and reuses its id.
 /// Sound only under the escape-analysis gate; the VM emits this via
-/// `Inst::SetIndexInPlace`, the graph engine never does.
+/// `Inst::SetIndexInPlace` only when that gate holds (never with opts off).
 pub fn set_index_in_place(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<Value, String> {
     set_index_impl(heap, obj, idx, val, true)
 }

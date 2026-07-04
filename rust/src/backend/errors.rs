@@ -1,11 +1,9 @@
-//! Shared runtime-error annotation used by both execution backends.
+//! Runtime-error annotation for the bytecode VM.
 //!
-//! When a term/instruction fails at runtime, both engines dress the raw message
-//! with the failing term's source position, a caret snippet, dataflow
-//! provenance, and a call stack trace — so the graph `Evaluator` and the
-//! bytecode `Vm` produce identical error text. The per-engine part is only
-//! *building* the [`TraceFrame`] list (from graph `Frame`s vs `VmFrame`s); the
-//! formatting lives here.
+//! When an instruction fails at runtime, the raw message is dressed with the
+//! failing term's source position, a caret snippet, dataflow provenance, and a
+//! call stack trace. The VM builds the [`TraceFrame`] list from its `VmFrame`s;
+//! the formatting lives here.
 
 use crate::program::{Program, TermId};
 use crate::source_map::SourceSpan;

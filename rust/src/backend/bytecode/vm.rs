@@ -1,16 +1,9 @@
-//! The register VM that executes lowered [`BytecodeProgram`]s.
+//! The register VM that executes lowered [`BytecodeProgram`]s — Petal's only
+//! execution engine.
 //!
-//! [`Vm`] mirrors the graph engine's [`Evaluator`](crate::backend::graph::Evaluator):
-//! a bundle of borrows over the runtime data owned by `Env`, rebuilt for each
-//! `step`. Execution state (the frame stack) lives on the [`Stack`] so it
-//! survives across steps and is reachable for garbage collection, exactly like
-//! the graph engine's `Frame`s.
-//!
-//! ## Milestone status
-//! M1 executes the straight-line op set plus calls, closures, overload sets,
-//! returns, native/builtin dispatch, and the synchronous higher-order
-//! intrinsics (map/filter/reduce/forEach). Control flow, state, and match
-//! return an error until M2–M3 — matching the lowering.
+//! [`Vm`] is a bundle of borrows over the runtime data owned by `Env`, rebuilt
+//! for each `step`. Execution state (the frame stack) lives on the [`Stack`] so
+//! it survives across steps and is reachable for garbage collection.
 
 use std::collections::HashMap;
 

@@ -14,7 +14,7 @@ use crate::heap::Heap;
 use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
 use crate::program::{Program, ProgramId, StateKey};
-use crate::stack::{Frame, RuntimeStateKey, Stack, StackKey, StackStatus};
+use crate::stack::{RuntimeStateKey, Stack, StackKey, StackStatus};
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::trace::TraceBuffer;
@@ -282,18 +282,17 @@ impl Env {
 
     /// Create a new execution stack for a program
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String> {
-        let program = self
-            .programs
+        // Validate the program exists (the stack references it by id).
+        self.programs
             .get(&program_id)
             .ok_or("Program not found")?;
 
         let key = StackKey(self.next_stack_id);
         self.next_stack_id += 1;
 
-        let mut stack = Stack::new(key, program_id, self.default_context);
-
-        // Push initial frame for the root block
-        Self::push_root_frame(&self.native_fns,&mut stack, program);
+        // The bytecode VM pushes its own root frame on the first step of a run
+        // (gated by `vm_started`), so a freshly created stack needs no frame.
+        let stack = Stack::new(key, program_id, self.default_context);
 
         self.stacks.insert(key, stack);
         Ok(key)
@@ -545,15 +544,10 @@ impl Env {
             .stacks
             .get_mut(&stack_id)
             .ok_or("Stack not found")?;
-        let program = self
-            .programs
-            .get(&stack.program_id)
-            .ok_or("Program not found")?;
 
-        // Keep state, reset frames and any in-progress loop tracking
+        // Keep state, reset execution; the VM re-pushes its root frame on the
+        // next run (gated by `vm_started`, cleared by `reset_execution`).
         stack.reset_execution();
-
-        Self::push_root_frame(&self.native_fns, stack, program);
 
         Ok(())
     }
@@ -791,25 +785,6 @@ impl Env {
         ctx.overload_sets.clear();
     }
 
-    /// Push the root frame for a stack's program.
-    pub(crate) fn push_root_frame_for(&mut self, stack_id: StackKey) -> Result<(), String> {
-        let stack = self.stacks.get(&stack_id).ok_or("Stack not found")?;
-        let program = self.programs.get(&stack.program_id).ok_or("Program not found")?;
-        let root_block = program.get_block(program.root_block);
-        let mut frame = Frame::new(
-            program.root_block, root_block.entry,
-            root_block.register_count as usize, None, None,
-        );
-        for i in 0..self.native_fns.count() {
-            if i < frame.registers.len() {
-                frame.registers[i] = Value::NativeFunction(NativeFnId(i as u32));
-            }
-        }
-        let stack = self.stacks.get_mut(&stack_id).unwrap();
-        stack.push_frame(frame);
-        Ok(())
-    }
-
     // ── State JSON helpers ──────────────────────────────────────
 
     /// Serialize all state variables to a JSON map keyed by variable name.
@@ -905,26 +880,6 @@ impl Env {
             .collect()
     }
 
-    /// Build and push the initial root frame for a program, with native function
-    /// values pre-populated in registers.
-    fn push_root_frame(
-        native_fns: &NativeFnTable,
-        stack: &mut Stack,
-        program: &Program,
-    ) {
-        let root_block = program.get_block(program.root_block);
-        let mut frame = Frame::new(
-            program.root_block, root_block.entry,
-            root_block.register_count as usize, None, None,
-        );
-        for i in 0..native_fns.count() {
-            if i < frame.registers.len() {
-                frame.registers[i] = Value::NativeFunction(NativeFnId(i as u32));
-            }
-        }
-        stack.push_frame(frame);
-    }
-
     /// Run a mark-and-sweep garbage collection cycle.
     /// Marks all values reachable from roots (stack registers, state, closures,
     /// loop state), then sweeps unmarked heap objects.
@@ -939,21 +894,8 @@ impl Env {
             if stack.context != ck {
                 continue;
             }
-            for frame in &stack.frames {
-                for val in &frame.registers {
-                    heap.mark_value(*val);
-                }
-                // Loop state elements (a for-each loop snapshots a Vec<Value>)
-                for (_, loop_state) in &frame.loop_states {
-                    if let crate::stack::LoopKind::ForEach { elements } = &loop_state.kind {
-                        for val in elements {
-                            heap.mark_value(*val);
-                        }
-                    }
-                }
-            }
-            // Bytecode VM frames are GC roots exactly as graph frames are: their
-            // register files and any snapshotted for-each cursors hold live values.
+            // VM frames are GC roots: their register files and any snapshotted
+            // for-each cursors hold live values.
             for frame in &stack.vm_frames {
                 for val in &frame.regs {
                     heap.mark_value(*val);

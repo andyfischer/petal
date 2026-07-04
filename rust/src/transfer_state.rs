@@ -58,8 +58,8 @@ impl Env {
             // vec; they get recaptured on the next run.
             stack.functions.clear();
         }
-
-        self.push_root_frame_for(stack_id)?;
+        // `reset_execution` cleared `vm_started`, so the VM re-pushes its root
+        // frame (against the new program's lowering) on the next run.
 
         Ok(TransferStateResult {
             state_preserved: preserved,

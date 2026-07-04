@@ -1,11 +1,10 @@
-//! Shared runtime pattern matching, used by both execution backends.
+//! Runtime pattern matching for the bytecode VM.
 //!
 //! [`match_pattern`] tests a `Value` against a `Pattern`, accumulating variable
 //! bindings. It is pure over `&mut Heap` (mutable only because rest-patterns
-//! allocate the remainder list), so the graph engine's `Match` handler and the
-//! bytecode VM's `MatchArm` op share it verbatim — the pattern-matching parity
-//! lever. How the resulting bindings are written into registers differs between
-//! the engines and stays in each.
+//! allocate the remainder list), so it lives here rather than inline in the
+//! VM's `MatchArm` op. How the resulting bindings are written into registers
+//! stays in the VM.
 
 use crate::ast::{Literal, Pattern};
 use crate::heap::Heap;

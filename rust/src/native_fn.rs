@@ -105,7 +105,7 @@ pub struct PetalCxt<'a> {
     /// has proven this call's container argument is uniquely owned and
     /// non-escaping, so a mutating builtin (`append`, `drop_last`, `set`, …) may
     /// mutate the backing store in place and reuse its id instead of cloning.
-    /// Always false from the graph engine (the clone-and-alloc oracle).
+    /// Always false with optimizations off (the clone-and-alloc baseline).
     in_place: bool,
 }
 

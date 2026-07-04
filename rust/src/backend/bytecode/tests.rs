@@ -1,34 +1,39 @@
-//! Differential tests: every snippet is run under both `Backend::Graph` and
-//! `Backend::Bytecode` (optimizations off) and their results must agree. The
-//! graph engine is the correctness oracle; "bytecode with opts off" must match
-//! it exactly (see docs/dev/bytecode-future-ideas.md for the parity invariants).
+//! Differential tests: every snippet is run under the bytecode VM twice — once
+//! with optimizations off (`OptFlags::none`, the clone-and-alloc baseline) and
+//! once with everything on (`OptFlags::all`) — and their results must agree.
+//! BC-noopt is the correctness oracle; the in-place optimizations must match it
+//! exactly (see docs/dev/bytecode-future-ideas.md for the parity invariants).
+//! This replaced the graph engine as the oracle in the bytecode migration
+//! (docs/dev/bytecode-migration.md); absolute correctness for fixed programs is
+//! anchored by the golden corpus and the `test/<case>/expects` harness.
 
-use crate::backend::Backend;
+use crate::backend::{Backend, OptFlags};
 use crate::env::Env;
 use crate::value;
 
-/// Run `code` on `backend`, returning the rendered result value plus the print
-/// output buffer. Values are compared by display string because heap ids are
-/// not comparable across two independent runs.
-fn run(code: &str, backend: Backend) -> Result<(String, Vec<String>), String> {
+/// Run `code` on the bytecode VM with the given `opts`, returning the rendered
+/// result value plus the print output buffer. Values are compared by display
+/// string because heap ids are not comparable across two independent runs.
+fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
     let mut env = Env::new();
-    env.set_backend(backend);
+    env.set_opt_flags(opts);
     let v = env.run_source(code)?;
     let rendered = value::value_to_display_string(&v, env.heap());
     Ok((rendered, env.take_output()))
 }
 
-/// Run `code` on `backend` for `runs` successive runs of one persistent stack
-/// (reset between runs, keeping state), returning the last rendered value, the
-/// concatenated output, and the final state map rendered to a sorted JSON
-/// string. Exercises state persistence and the untouched-key sweep.
+/// Run `code` on the bytecode VM with the given `opts` for `runs` successive
+/// runs of one persistent stack (reset between runs, keeping state), returning
+/// the last rendered value, the concatenated output, and the final state map
+/// rendered to a sorted JSON string. Exercises state persistence and the
+/// untouched-key sweep.
 fn run_stateful(
     code: &str,
-    backend: Backend,
+    opts: OptFlags,
     runs: usize,
 ) -> Result<(String, Vec<String>, String), String> {
     let mut env = Env::new();
-    env.set_backend(backend);
+    env.set_opt_flags(opts);
     let pid = env.load_program(code)?;
     let sid = env.create_stack(pid)?;
     let mut last = value::Value::Nil;
@@ -51,36 +56,36 @@ fn run_stateful(
     Ok((rendered, output, pairs.join(",")))
 }
 
-/// Assert the two backends agree across `runs` successive runs, including the
-/// final persistent state map.
+/// Assert the two optimization levels agree across `runs` successive runs,
+/// including the final persistent state map.
 #[track_caller]
 fn assert_stateful_parity(code: &str, runs: usize) {
-    let graph = run_stateful(code, Backend::Graph, runs);
-    let bytecode = run_stateful(code, Backend::Bytecode, runs);
-    match (graph, bytecode) {
+    let noopt = run_stateful(code, OptFlags::none(), runs);
+    let allopt = run_stateful(code, OptFlags::all(), runs);
+    match (noopt, allopt) {
         (Ok((gv, go, gs)), Ok((bv, bo, bs))) => {
             assert_eq!(gv, bv, "value mismatch for:\n{code}");
             assert_eq!(go, bo, "output mismatch for:\n{code}");
             assert_eq!(gs, bs, "state mismatch for:\n{code}");
         }
         (Err(_), Err(_)) => {}
-        (g, b) => panic!("ok/err mismatch for:\n{code}\n  graph={g:?}\n  bytecode={b:?}"),
+        (g, b) => panic!("ok/err mismatch for:\n{code}\n  noopt={g:?}\n  allopt={b:?}"),
     }
 }
 
-/// Assert the two backends agree: either both error, or both succeed with an
-/// equal rendered value and equal print output.
+/// Assert the two optimization levels agree: either both error, or both succeed
+/// with an equal rendered value and equal print output.
 #[track_caller]
 fn assert_parity(code: &str) {
-    let graph = run(code, Backend::Graph);
-    let bytecode = run(code, Backend::Bytecode);
-    match (graph, bytecode) {
+    let noopt = run(code, OptFlags::none());
+    let allopt = run(code, OptFlags::all());
+    match (noopt, allopt) {
         (Ok((gv, go)), Ok((bv, bo))) => {
             assert_eq!(gv, bv, "value mismatch for:\n{code}");
             assert_eq!(go, bo, "output mismatch for:\n{code}");
         }
         (Err(_), Err(_)) => {} // both errored — parity holds (messages may differ)
-        (g, b) => panic!("ok/err mismatch for:\n{code}\n  graph={g:?}\n  bytecode={b:?}"),
+        (g, b) => panic!("ok/err mismatch for:\n{code}\n  noopt={g:?}\n  allopt={b:?}"),
     }
 }
 
@@ -186,11 +191,11 @@ fn slice_string_snaps_to_char_boundaries() {
     // '─' (U+2500) is 3 bytes. slice()/len() are byte-indexed; a byte index
     // that lands mid-char must snap to a char boundary rather than panic.
     // Snap the start up and the end down so only whole chars are returned.
-    let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, Backend::Graph).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, OptFlags::none()).unwrap();
     assert_eq!(out, vec!["a"], "end mid-char snaps down to a boundary");
-    let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, Backend::Graph).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, OptFlags::none()).unwrap();
     assert_eq!(out, vec!["b"], "start mid-char snaps up to a boundary");
-    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, Backend::Graph).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, OptFlags::none()).unwrap();
     assert_eq!(out, vec!["a─"], "index on a boundary is unchanged");
     // Parity + no-panic across both backends, including out-of-range indices.
     assert_parity(r#"print(slice("a─b", 0, 2))"#);
@@ -337,7 +342,7 @@ fn break_continue_transfer_control_immediately() {
     // would change the value / raise an error if trailing code ran.
     let (_, out) = run(
         "let m = 1\nfor i in range(0, 2) do\n  continue\n  m = 10\nend\nprint(m)",
-        Backend::Bytecode,
+        OptFlags::none(),
     )
     .unwrap();
     assert_eq!(out, vec!["1"], "dead rebind after continue must not run");
@@ -358,7 +363,7 @@ fn arm_carry_slots_survive_mid_block_exits() {
     // for that dead rebind must deliver `m`'s live value (via the arm's
     // seeded carry slot), not the dead rebind's uninitialized register.
     let code = "let m = 1\nfor a in range(0, 3) do\n  for b in range(0, 2) do\n    m = 7\n  end\n  for c in range(0, 4) do\n    print(\"read:\", m)\n    if 1 == 1 then\n      if 1 == 1 then\n        continue\n      end\n      m = 10\n      break\n    end\n  end\nend\nprint(\"end\", m)";
-    let (_, out) = run(code, Backend::Bytecode).unwrap();
+    let (_, out) = run(code, OptFlags::none()).unwrap();
     assert_eq!(out.last().map(String::as_str), Some("end 7"));
     assert!(out.iter().all(|l| l != "read: nil"), "nil leak: {out:?}");
     assert_parity(code);
@@ -367,7 +372,7 @@ fn arm_carry_slots_survive_mid_block_exits() {
     // the dead second rebind's register or the pre-iteration value.
     let (_, out) = run(
         "let total = 0\nfor x in range(1, 4) do\n  total = total + x\n  if x == 2 then break end\n  total = total + 100\nend\nprint(total)",
-        Backend::Bytecode,
+        OptFlags::none(),
     )
     .unwrap();
     assert_eq!(out, vec!["103"]);
@@ -452,9 +457,13 @@ fn run_bounded_resumes_identically() {
     };
     let rendered = value::value_to_display_string(&value, env.heap());
 
-    let single = run(code, Backend::Bytecode).unwrap().0;
+    let single = run(code, OptFlags::all()).unwrap().0;
     assert_eq!(rendered, single, "bounded run diverged from single run");
-    assert_eq!(rendered, run(code, Backend::Graph).unwrap().0, "diverged from graph");
+    assert_eq!(
+        rendered,
+        run(code, OptFlags::none()).unwrap().0,
+        "diverged from clone-and-alloc baseline"
+    );
 }
 
 // -- M3: state --------------------------------------------------------------
@@ -503,38 +512,20 @@ fn match_in_loop() {
 
 // -- M4: in-place mutation (escape-analysis gated) --------------------------
 //
-// These assert the triple differential the plan requires: the graph engine,
-// the bytecode VM with in-place mutation off, and the bytecode VM with it on
-// must all agree on value + output. They also pin that the optimization
+// These assert the differential the plan requires: the bytecode VM with
+// in-place mutation off (the clone-and-alloc baseline) and the bytecode VM with
+// it on must agree on value + output. They also pin that the optimization
 // actually *fires* (via `DupStats` and the analysis directly) so the parity
 // checks aren't vacuously green on a disabled optimization.
 
 use crate::backend::bytecode::escape;
-use crate::backend::OptFlags;
 
-/// Run `code` on the bytecode VM with `opts`, returning value + output.
-fn run_opt(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
-    let mut env = Env::new();
-    env.set_backend(Backend::Bytecode);
-    env.set_opt_flags(opts);
-    let v = env.run_source(code)?;
-    Ok((value::value_to_display_string(&v, env.heap()), env.take_output()))
-}
-
-/// Graph == bytecode(no-opt) == bytecode(in-place): the M4 correctness bar.
+/// bytecode(no-opt) == bytecode(in-place): the M4 correctness bar. Identical to
+/// [`assert_parity`] (which already diffs the two optimization levels); kept as
+/// a named entry point so the M4 tests read intent-first.
 #[track_caller]
 fn assert_inplace_parity(code: &str) {
-    assert_parity(code); // graph vs bytecode(no-opt)
-    let noopt = run_opt(code, OptFlags::none());
-    let opt = run_opt(code, OptFlags::all());
-    match (noopt, opt) {
-        (Ok((nv, no)), Ok((ov, oo))) => {
-            assert_eq!(nv, ov, "in-place value mismatch for:\n{code}");
-            assert_eq!(no, oo, "in-place output mismatch for:\n{code}");
-        }
-        (Err(_), Err(_)) => {}
-        (n, o) => panic!("in-place ok/err mismatch for:\n{code}\n  noopt={n:?}\n  opt={o:?}"),
-    }
+    assert_parity(code);
 }
 
 /// Compile `code` to a `Program` (the front half of the run pipeline).
@@ -654,12 +645,12 @@ const ROUTE_A_ONLY: OptFlags = OptFlags {
     in_place_straight_line: true,
 };
 
-/// Graph == bytecode(no-opt) == bytecode(route A only) == bytecode(all).
+/// bytecode(no-opt) == bytecode(route A only) == bytecode(all).
 #[track_caller]
 fn assert_route_a_parity(code: &str) {
-    assert_inplace_parity(code); // graph vs no-opt vs all
-    let noopt = run_opt(code, OptFlags::none());
-    let ra = run_opt(code, ROUTE_A_ONLY);
+    assert_inplace_parity(code); // no-opt vs all
+    let noopt = run(code, OptFlags::none());
+    let ra = run(code, ROUTE_A_ONLY);
     match (noopt, ra) {
         (Ok((nv, no)), Ok((rv, ro))) => {
             assert_eq!(nv, rv, "route-A value mismatch for:\n{code}");

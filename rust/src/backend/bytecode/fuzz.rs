@@ -1,7 +1,8 @@
 //! Differential fuzzer: generate random (but always-terminating) Petal
-//! programs from a seeded grammar and require the graph engine and the
-//! bytecode VM to agree exactly — same result value, same print output, and
-//! same error text when a program faults at runtime.
+//! programs from a seeded grammar and require the bytecode VM's optimization
+//! levels (clone-and-alloc baseline, route-A only, and all opts) to agree
+//! exactly — same result value, same print output, and same error text when a
+//! program faults at runtime.
 //!
 //! The hand-written differential tests in `tests.rs` cover the constructs we
 //! thought of; this covers the compositions we didn't. The subtlest lowering

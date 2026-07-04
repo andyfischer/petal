@@ -1,7 +1,7 @@
 # Petal Architecture
 
 This document describes the implementation of the Petal compiler and runtime.
-It's the internal counterpart to the [Language Guide](Language_Guide.md) — read
+It's the internal counterpart to the [Language Guide](../Language_Guide.md) — read
 this if you're working on the compiler or debugging IR behavior.
 
 ```
@@ -22,7 +22,7 @@ it. Two execution **backends** consume it (`rust/src/backend/`): the original
 the same graph for speed and for escape-analysis-driven in-place mutation. The
 active backend and its optimization toggles are chosen by `backend::Backend` /
 `backend::OptFlags`. The bytecode VM is complete and default-on; see
-[bytecode-future-ideas.md](dev/bytecode-future-ideas.md) for the remaining
+[bytecode-future-ideas.md](bytecode-future-ideas.md) for the remaining
 optional follow-ups.
 
 ---
@@ -88,7 +88,7 @@ pub struct Program {
 ```
 
 `Program` is the unit the CLI prints when you run `show-ir --json`. See
-[CLI Reference](CLI.md) for the full JSON schema.
+[CLI Reference](../CLI.md) for the full JSON schema.
 
 ### Term
 
@@ -143,7 +143,7 @@ that references the function.
 ### TermOp
 
 The operation a term performs. All variants and their IR serialization are
-documented in [CLI.md](CLI.md#termop--serdes-externally-tagged-encoding);
+documented in [CLI.md](../CLI.md#termop--serdes-externally-tagged-encoding);
 the important groups are:
 
 - **Loads** — `Constant`, `Error`, `Copy`
@@ -170,7 +170,7 @@ pre-control-flow value) and gets updated by each child-frame pop via
 `Block.phi_outs`. Branches that don't rebind leave the init value in
 place; loop iterations read the latest value.
 
-Ongoing design notes live in [MutabilityPlan.md](dev/MutabilityPlan.md).
+Ongoing design notes live in [MutabilityPlan.md](MutabilityPlan.md).
 
 ### ConstantTable
 
@@ -202,7 +202,7 @@ pub struct FunctionDef {
 }
 ```
 
-Overloading (see [Function_Overloading.md](Function_Overloading.md)) is
+Overloading (see [Function_Overloading.md](../Function_Overloading.md)) is
 compiled as one `MakeClosure` per variant plus one `MakeOverloadSet` that
 bundles them. Dispatch at runtime selects the variant by argument count.
 
@@ -470,11 +470,11 @@ for the host side.
 
 ## Further Reading
 
-- [Language Guide](Language_Guide.md) — user-facing language reference
-- [CLI Reference](CLI.md) — full CLI command list + IR JSON schema
-- [Builtins Reference](Builtins.md) — all built-in functions
-- [Function Overloading](Function_Overloading.md) — multi-arity dispatch
+- [Language Guide](../Language_Guide.md) — user-facing language reference
+- [CLI Reference](../CLI.md) — full CLI command list + IR JSON schema
+- [Builtins Reference](../Builtins.md) — all built-in functions
+- [Function Overloading](../Function_Overloading.md) — multi-arity dispatch
 - [Debug Protocol](debug-protocol.md) — SDL / canvas agent protocol
 - [Debugging & Visibility](debugging-visibility.md) — observability stack
-- [Mutability Plan](dev/MutabilityPlan.md) — design notes on phi joins
+- [Mutability Plan](MutabilityPlan.md) — design notes on phi joins
 - [Goals](goals.md) — vision, remaining work, and sequencing

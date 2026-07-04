@@ -12,7 +12,7 @@
 > state" and "the plan" sections describe the pre-migration codebase.
 >
 > See [Architecture.md](Architecture.md) (the "Phi terms" section) for the
-> shipping documentation, and [CLI.md](CLI.md) for the `Phi` op's IR JSON
+> shipping documentation, and [CLI.md](../CLI.md) for the `Phi` op's IR JSON
 > shape.
 
 A plan to make Petal's IR match its true philosophy: there are no mutable

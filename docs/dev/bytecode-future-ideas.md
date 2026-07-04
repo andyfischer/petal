@@ -68,7 +68,7 @@ Replace the `MatchArm` fat-op (which re-runs the shared `match_pattern` per arm)
 with a Maranget-style decision tree of small opcodes, sharing the discrimination
 work across arms.
 
-**Why deferred:** there is no match-heavy workload in `benchmarks/`, and none in
+**Why deferred:** there is no match-heavy workload in `test/benchmarks/`, and none in
 the sketch corpus that dominates runtime.
 
 **Revisit when:** add a match-bound benchmark first; only spend here if it shows

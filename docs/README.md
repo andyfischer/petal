@@ -22,11 +22,11 @@ How the implementation works and where it's headed:
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
-| [Goals](goals.md) | Vision (the four pillars), remaining work, and sequencing |
-| [IR as a Target](ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
-| [Debugging & Visibility](debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
-| [Debug Protocol](debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |
+| [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
+| [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
+| [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
+| [Debugging & Visibility](dev/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
+| [Debug Protocol](dev/debug-protocol.md) | JSON command/response schema shared by petal-sdl and petal-diagram-canvas |
 
 ## Internal dev notes ([dev/](dev/))
 
@@ -35,6 +35,7 @@ working documents — expect internal shorthand and point-in-time status:
 
 | Document | Description |
 |----------|-------------|
+| [Developer Scripts & Commands](dev/scripts.md) | Build, run, test, and benchmark commands for development |
 | [Testing](dev/testing.md) | How to write and run the test suites |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |

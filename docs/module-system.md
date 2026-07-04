@@ -151,7 +151,7 @@ Cannot add int and nil [bad.ptl line 2, column 3]
 Caret snippets, provenance ("Caused by:"), and stack traces all render
 against the correct file's source. Parse errors in a module are prefixed
 with the module's display name. Multi-file programs serialize the file table
-into their IR (schema v0.1, see [ir-as-target.md](ir-as-target.md)); the IR
+into their IR (schema v0.1, see [ir-as-target.md](dev/ir-as-target.md)); the IR
 of single-file programs is unchanged.
 
 `petal::rewrite` (source splicing) is unaffected: it operates on individual

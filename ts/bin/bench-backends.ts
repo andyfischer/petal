@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
-// Time every benchmarks/*.ptl under both backends (release build) and report
+// Time every test/benchmarks/*.ptl under both backends (release build) and report
 // per-file medians and the graph/bytecode speed ratio. Outputs must also be
 // byte-identical between backends — a divergence fails the run.
 // Usage:
@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const benchDir = join(repoRoot, 'benchmarks');
+const benchDir = join(repoRoot, 'test', 'benchmarks');
 const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
 const petal = join(repoRoot, 'rust', 'target', 'release', 'petal');
 

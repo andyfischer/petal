@@ -61,19 +61,22 @@ rust/target/debug/petal run -e 'print("hello, world!")'
 rust/target/debug/petal run examples/fizzbuzz.ptl
 ```
 
+For the full list of developer scripts, see [Developer Scripts & Commands](docs/dev/scripts.md).
+
 ## Repository Layout
 
 | Directory | Description |
 |-----------|-------------|
 | [`rust/`](rust/) | The core language implementation: lexer, parser, AST, compiler, IR, evaluator, bytecode VM |
-| [`docs/`](docs/README.md) | Language reference and design docs — see the [docs index](docs/README.md) |
+| [`docs/`](docs/README.md) | Language documentation for using Petal |
+| [`docs/dev/`](docs/dev/) | Documentation for developing on Petal |
 | [`examples/`](examples/README.md) | Runnable example `.ptl` programs demonstrating language features |
-| [`apps/`](apps/) | Native and web integrations that embed the language (SDL, WASM, canvas) |
+| [`editor-support/`](editor-support/README.md) | Editor/IDE tooling |
+| [`ts/`](ts/) | TypeScript tooling, including: dev wrappers, MCP servers, and the vitest integration test suite |
+| [`test/`](test/README.md) | Automated tests |
+| [`test/benchmarks/`](test/benchmarks/) | Petal programs used to compare backend performance |
+| [`apps/`](apps/) | Test apps that integrate/embed Petal (including apps that use SDL, WASM, and HTML canvas) |
 | [`petal-ui/`](petal-ui/) | Interactivity layer for embedders: normalized input events, the shared draw-command vocabulary, and the `ui` prelude module |
-| [`editor-support/`](editor-support/README.md) | Editor/IDE tooling, including the reference tree-sitter grammar for syntax highlighting |
-| [`ts/`](ts/) | TypeScript tooling: dev wrappers, MCP servers, and the vitest integration test suite |
-| [`test/`](test/README.md) | Script-level conformance/regression cases run by `cargo test` |
-| [`benchmarks/`](benchmarks/) | Petal programs used to compare backend performance |
 
 ## Documentation
 
@@ -83,12 +86,11 @@ rust/target/debug/petal run examples/fizzbuzz.ptl
 | [Language Guide](docs/Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
 | [Builtins Reference](docs/Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
-| [Module System](docs/module-system.md) | `import` syntax, module resolution, hot reload across files |
-| [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
-| [Goals](docs/goals.md) | Vision (the four pillars), remaining work, and sequencing |
-| [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
+| [Module System](docs/module-system.md) | `import` syntax, module resolution |
+| [Architecture](docs/dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
+| [Goals](docs/dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 
-## Integrations & Tools
+## Sample Integration Apps
 
 | Integration | Description |
 |-------------|-------------|
@@ -98,21 +100,6 @@ rust/target/debug/petal run examples/fizzbuzz.ptl
 | [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
 | [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | [side-scroller](apps/side-scroller/README.md) | 2D side-scrolling platformer written almost entirely in Petal |
-| MCP Server | AI assistant integration — `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens` tools (`ts/tools/petal-mcp.ts`) |
-
-## Testing
-
-```bash
-make test                    # Build, then run the full suite (or: cd ts && npx vitest run)
-```
-
-`npx vitest` (and `make test`) runs the integration tests **and** every program in
-`examples/` — `ts/test/test-samples.test.ts` executes each `.ptl` file and fails on
-any error, so one command covers everything.
-
-```bash
-./ts/bin/test-examples.ts    # Optional: print each example's output for manual inspection
-```
 
 ## License
 

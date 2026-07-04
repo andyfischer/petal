@@ -7,7 +7,7 @@ are deleted from this file as they land — if a capability isn't listed under
 
 > Design context for already-shipped pillars lives elsewhere and is not
 > repeated here: [ir-as-target.md](ir-as-target.md) (the IR-as-emit-target
-> contract), [MutabilityPlan.md](dev/MutabilityPlan.md) (why the IR is purely
+> contract), [MutabilityPlan.md](MutabilityPlan.md) (why the IR is purely
 > immutable), and [Architecture.md](Architecture.md) (how the term graph
 > realizes these goals).
 
@@ -84,7 +84,7 @@ Refresh).
 
 The **foundation is real and shipped**: a flat, SSA-style dataflow term graph
 with explicit input edges, `Phi` joins for rebinding (no mutation primitive —
-see [MutabilityPlan.md](dev/MutabilityPlan.md)), reified control flow, first-class
+see [MutabilityPlan.md](MutabilityPlan.md)), reified control flow, first-class
 `state` with temporal edges, a mark-sweep GC, and a step evaluator. The
 introspection pillars built on it — provenance, forward dependents, slicing,
 `ExplainTerm`, structured traces — and **state-preserving hot reload** are
@@ -142,7 +142,7 @@ mounting are still aspirational.
 |---|---|---|
 | AI-legibility as a *named* goal | 🟡 | The pieces ship and de-facto differentiate (MCP tools, headless protocol, structured JSON traces, `ExplainTerm`). Remaining: consolidate them into a coherent, documented agent-facing surface (Phase 2). |
 | Types as a projection | 🔭 | Dynamically typed today (runtime tags only). Future: infer shapes from the dataflow graph and surface them to tooling/agents — never enforced (consistent with "low floor, forgiving types"). |
-| Modules / imports | ✅ | v1 landed: `import` with qualified/selective/alias forms, pluggable resolution (in-memory, importer-relative, search paths), merge-at-compile-time, module-qualified state keys, hot reload across files. See [module-system.md](module-system.md). |
+| Modules / imports | ✅ | v1 landed: `import` with qualified/selective/alias forms, pluggable resolution (in-memory, importer-relative, search paths), merge-at-compile-time, module-qualified state keys, hot reload across files. See [module-system.md](../module-system.md). |
 | Performance | 🟡 | Introspection-first interpreter, not a fast VM. The Phase 0 enablers shipped; heavy sketches still run ~11–17fps with an inner-loop boxing tax. Profile and chip away as the wedge demands. |
 
 ---
@@ -204,7 +204,7 @@ builtins, records-and-lists data model, headless agent protocol). The shipped
 vocabulary — `clamp`/`lerp`/`map_range`/`distance`/`smoothstep`/noise/`vec2`
 with operator overloading, `random_int`/`choose`, `hsv`/`hsl`/`color_lerp`,
 record spread, in-place field mutation, typed arrays, offscreen canvases,
-filled polygons — is documented in [Builtins.md](Builtins.md). What's left,
+filled polygons — is documented in [Builtins.md](../Builtins.md). What's left,
 ranked roughly by impact-per-effort:
 
 - **Drawing functions accept float.** `petal-sdl` draw fns still require `int`,

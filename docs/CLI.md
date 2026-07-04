@@ -27,7 +27,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
 | `show-ir` | Compiled IR (term graph) |
-| `show-bytecode` | Bytecode lowering of the IR (see [Architecture.md](Architecture.md) for the backend split) |
+| `show-bytecode` | Bytecode lowering of the IR (see [Architecture.md](dev/Architecture.md) for the backend split) |
 | `show-provenance` | Backward dataflow slice from a term |
 | `show-dependents` | Forward dataflow slice from a term |
 | `show-slice` | Minimal dataflow subgraph for one or more targets |

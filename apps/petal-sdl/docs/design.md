@@ -8,7 +8,7 @@ This page is the high-level overview. For deeper material:
 
 - [`apps/petal-sdl/docs/game-dev-guide.md`](../apps/petal-sdl/docs/game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
 - [`apps/petal-sdl/docs/agent-protocol.md`](../apps/petal-sdl/docs/agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
-- [`docs/debug-protocol.md`](debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and petal-diagram-canvas (WebSocket)
+- [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and petal-diagram-canvas (WebSocket)
 - [`apps/petal-fps/README.md`](../apps/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
 
 ## Prerequisites
@@ -235,7 +235,7 @@ The `--agent` flag enables a JSON-based debugging protocol over stdin/stdout, de
 for AI assistants to interact with running games programmatically. The `--headless` flag
 combines this with no-window mode for automated testing and screenshot capture.
 
-See [`docs/debug-protocol.md`](debug-protocol.md) for the command/response
+See [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) for the command/response
 schema — the same protocol is used by `petal-diagram-canvas` over
 WebSocket, so tooling written against one transport works against the
 other.

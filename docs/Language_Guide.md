@@ -6,7 +6,7 @@ types, operators, and features with examples.
 For built-in functions (math, collections, color, vectors, autodiff, etc.) see
 [Builtins.md](Builtins.md). For the `petal` CLI and the IR JSON schema, see
 [CLI.md](CLI.md). For the design philosophy behind the language, see
-[goals.md](goals.md).
+[goals.md](dev/goals.md).
 
 ## Hello World
 

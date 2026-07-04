@@ -21,5 +21,5 @@ TestSnippet({ code: 'print("hello")' })
 
 petal-diagram-canvas exposes a separate MCP server (`ts/tools/petal-diagram-mcp.ts`) with
 `Diagram*` tools that speak the debug protocol over WebSocket — see
-`docs/debug-protocol.md`.
+`docs/dev/debug-protocol.md`.
 

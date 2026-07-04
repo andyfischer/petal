@@ -1,6 +1,6 @@
 # Migrating 100% to Bytecode — Removing the Graph Evaluator
 
-**Status:** Phases 0–2 complete. Phase 3 next.
+**Status:** Phases 0–3 complete. Phase 4 (doc/consumer sweep) next.
 
 ## Goal
 
@@ -113,12 +113,22 @@ Each phase is independently committable.
 - Tests: `bytecode_trace_records_term_values`,
   `bytecode_trace_records_call_results` in `bytecode/tests.rs`.
 
-### Phase 3 — Delete the graph Evaluator
-- Remove `backend/graph/`, `Backend::Graph`, `step_graph`,
-  `--backend`/`PETAL_BACKEND`, `set_backend`; collapse `step_n`.
-- Move shared items (`RuntimeClosure`, `StepResult`) out of `graph` into
-  `backend/mod.rs`.
-- Resolve `OptFlags` — keep it; BC-noopt is now the oracle.
+### Phase 3 — Delete the graph Evaluator  *(done)*
+- ✅ Ported `Env::call_function` (the host sync closure-call API) off the graph
+  `Evaluator` onto `Vm::call_closure_sync` — the last non-test runtime use of
+  graph. Moved `StepResult`/`RuntimeClosure` into `backend/mod.rs`. (`7489b63`)
+- ✅ Deleted `backend/graph/`, the `Backend` enum, `--backend`/`PETAL_BACKEND`,
+  `Env::set_backend`/`backend`/`backend_from_env`/`step_graph`; collapsed
+  `step_n` to the bytecode path. De-parameterized the Rust + integration tests
+  (`env`, `modules`, `handles`) that looped over backends. Kept `OptFlags`
+  (BC-noopt is the oracle). (`ba069fc`)
+- ✅ Removed the now-dead graph runtime state from `Stack`: `Frame`,
+  `LoopState`/`LoopKind`, `frames`/`break_flag`/`continue_flag`, the frame
+  helpers, and the two `Env` helpers that pushed a graph root frame the VM never
+  read (plus their GC root-marking loop). Fixed module docs that still described
+  two engines. (`3fe4d9b`)
+- Verified after each commit: full Rust suite, 3000-seed fuzz soak, GC,
+  hot-reload/transfer, examples sweep, and 483 TS integration tests.
 
 ### Phase 4 — Consumer & doc sweep
 - `cli.rs` flag removal; de-parameterize the TS harnesses (`test-examples.ts`,

@@ -1,25 +1,33 @@
 # Petal
 
-Petal is a programming language built around **dataflow graphs**, **first-class state**,
-and **live editing**. Every construct in Petal maps to a dataflow graph, making data flow through programs explicit and traceable.
+Petal is a programming language for creative coding.
 
-## Quick Start
+### Main features ###
 
-```bash
-# Build the compiler (or run `make build`)
-cd rust && cargo build && cd ..
+ - Programs are **dataflow graphs** allowing for high levels of introspection.
+ - **First-class state** as part of control flow.
+ - **Live editing** - modify source while it's running and preserve state.
+ - **Speculative execution** - safely run the same program multiple times with alterations for experimentation.
+ - **Differentiable** - supports back-propogation, make program modifications based on observed outputs.
+ - Various other language features to help quick iteration. Hybrid functional/imperative design, optional type declarations, immutable values.
 
-# Hello world
-rust/target/debug/petal run -e 'print("hello, world!")'
+### Existing Research ###
 
-# Run an example
-rust/target/debug/petal run examples/fizzbuzz.ptl
-```
+Some projects and research on the same topics:
 
-Common commands are wrapped in the [Makefile](Makefile) — run `make` to list them
-(`make build`, `make test`, `make clean`).
+ - **Dataflow & reactive languages** — [Lucid](https://en.wikipedia.org/wiki/Lucid_(programming_language)),
+   [Lustre](https://en.wikipedia.org/wiki/Lustre_(programming_language)), LabVIEW, and
+   FRP (Elm, signal graphs).
+ - **Differentiable & automatic programming** — [JAX](https://github.com/jax-ml/jax),
+   [PyTorch](https://pytorch.org/), Swift for TensorFlow.
+ - **Live coding & hot reloading** — [Sonic Pi](https://sonic-pi.net/),
+   [Tidal](https://tidalcycles.org/), Extempore; Smalltalk images, Erlang hot swap,
+   [React Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+ - **Control flow keyed state** — storing state as part of the control flow graph - 
+   React Hooks ([useState](https://overreacted.io/why-do-hooks-rely-on-call-order/))
+   and Jetpack Compose's [positional memoization](https://newsletter.jorgecastillo.dev/p/positional-memoization-in-jetpack).
 
-## Language Example
+## Quick Language Example
 
 ```petal
 fn square(x)
@@ -38,8 +46,20 @@ print([1, 2, 3] |> map(square))   // [1, 4, 9]
 print("hello, {name}!")            // hello, Petal!
 ```
 
-See the [Language Guide](docs/Language_Guide.md) for the full tour: enums and
-pattern matching, higher-order functions, and more.
+See the [Language Guide](docs/Language_Guide.md) for the full tour.
+
+## Quick Start
+
+```bash
+# Build the compiler
+make build
+
+# Hello world
+rust/target/debug/petal run -e 'print("hello, world!")'
+
+# Run an example
+rust/target/debug/petal run examples/fizzbuzz.ptl
+```
 
 ## Repository Layout
 
@@ -57,8 +77,6 @@ pattern matching, higher-order functions, and more.
 
 ## Documentation
 
-See the [documentation index](docs/README.md) for the full list. Highlights:
-
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Build instructions, running examples, CLI usage |
@@ -69,8 +87,6 @@ See the [documentation index](docs/README.md) for the full list. Highlights:
 | [Architecture](docs/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Goals](docs/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [Debugging & Visibility](docs/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |
-
-Internal design notes, plans, and engineering logs live in [docs/dev/](docs/dev/).
 
 ## Integrations & Tools
 

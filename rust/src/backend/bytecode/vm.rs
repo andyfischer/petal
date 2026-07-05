@@ -129,6 +129,15 @@ pub struct Vm<'a> {
     /// [`Vm::deliver_value`]. Best-effort: in-place mutation and register reuse
     /// can thin coverage relative to the graph engine.
     pub trace: &'a mut crate::trace::TraceBuffer,
+    /// Set by `call_closure_sync` when a synchronous closure call (map/filter/
+    /// reduce/forEach, or the host `Env::call_function`) unwinds with an error
+    /// that `step` already annotated. The intrinsic returns that error via `?`,
+    /// so it re-enters the outer `step`'s error path — this flag tells that path
+    /// to pass the message through instead of annotating a second time (which
+    /// would splice the outer call site's position and snippet into an
+    /// already-complete message). Consumed with `mem::take`; a fresh `Vm` starts
+    /// it clear, so a host-path error that leaves it set can't leak to a later run.
+    pub error_already_annotated: bool,
 }
 
 impl<'a> Vm<'a> {
@@ -210,7 +219,15 @@ impl<'a> Vm<'a> {
                 }
                 sr
             }
-            Err(e) => StepResult::Error(self.annotate(e, origin)),
+            Err(e) => {
+                // A synchronous closure call already annotated this error; don't
+                // re-annotate at the intrinsic's call site (see the flag's docs).
+                if std::mem::take(&mut self.error_already_annotated) {
+                    StepResult::Error(e)
+                } else {
+                    StepResult::Error(self.annotate(e, origin))
+                }
+            }
         }
     }
 
@@ -1087,7 +1104,13 @@ impl<'a> Vm<'a> {
             match self.step() {
                 StepResult::Continue => {}
                 StepResult::Complete(v) => return Ok(v),
-                StepResult::Error(e) => return Err(e),
+                StepResult::Error(e) => {
+                    // `e` is already annotated at the closure's failing term. Flag
+                    // the outer `step` (which will receive this via `?`) not to
+                    // annotate it again at the intrinsic's call site.
+                    self.error_already_annotated = true;
+                    return Err(e);
+                }
             }
         }
     }

@@ -67,6 +67,34 @@ let y = x - 1`);
     expect(err).not.toMatch(/panic/i);
   });
 
+  // An error raised inside a closure called by a higher-order intrinsic
+  // (map/filter/reduce/forEach) must be annotated exactly once — at the true
+  // failing term — not re-annotated again at the intrinsic's call site as the
+  // error unwinds through `call_closure_sync`. Regression for the old
+  // double-annotation quirk (see docs/dev/bytecode-future-ideas.md).
+  it("closure error inside map() is annotated once, at the real failure", () => {
+    const err = runPetalError(`fn boom(x)
+  x / 0
+end
+let ys = map([1, 2, 3], boom)`);
+    expect(err).toMatch(/Division by zero/);
+    // The single annotation points at the division (line 2), not the map call.
+    expect(err).toMatch(/2 \|   x \/ 0/);
+    // One "Division by zero" and one stack trace — no re-annotation duplicates.
+    expect(err.match(/Division by zero/g)?.length ?? 0).toBe(1);
+    expect(err.match(/Stack trace:/g)?.length ?? 0).toBe(1);
+    // The map() call site must not be grafted into the message or the trace.
+    expect(err).not.toMatch(/map\(\[1, 2, 3\], boom\)/);
+  });
+
+  // A raw argument error from the intrinsic itself (not from a called closure)
+  // is a genuine first-time failure and must still be annotated at the call site.
+  it("map() argument-type error is still annotated at the call site", () => {
+    const err = runPetalError(`let ys = map(42, fn(x) -> x)`);
+    expect(err).toMatch(/map\(\) expects a list/);
+    expect(err).toMatch(/line 1/);
+  });
+
   it("errors include a source snippet with a caret under the failing span", () => {
     const err = runPetalError(`let a = 1
 let b = 2

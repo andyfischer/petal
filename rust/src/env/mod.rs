@@ -357,6 +357,7 @@ impl Env {
             bindings: &mut ctx.bindings,
             counters: &mut ctx.counters,
             trace: &mut self.trace,
+            error_already_annotated: false,
         };
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -529,6 +530,7 @@ impl Env {
             bindings: &mut ctx.bindings,
             counters: &mut ctx.counters,
             trace: &mut self.trace,
+            error_already_annotated: false,
         }
         .call_closure_sync(callable, args)
     }

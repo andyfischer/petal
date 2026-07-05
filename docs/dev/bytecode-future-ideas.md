@@ -94,19 +94,29 @@ would need rework).
 **Revisit when:** a call-heavy profile after pooling still shows frame management
 as a top cost.
 
-## Non-M5 open decision
+## Resolved decisions
 
-### Error re-annotation: semantics or quirk?
-The VM **re-annotates** an already-annotated error as it propagates back up
-through a synchronous intrinsic call (`call_closure_sync`) — it annotates at
-every `step()` error. This matched the (now-removed) graph engine's behavior and
-was deliberately preserved during the parity push (don't "fix" the apparent
-double-annotation while parity is the goal).
+### Error re-annotation was a quirk — now a single annotation
+Historically the VM **re-annotated** an already-annotated error as it propagated
+back up through a synchronous intrinsic call (`call_closure_sync`): the closure's
+`step()` annotated at the true failing term, then the error returned via `?` into
+the intrinsic's call site, and the *outer* `step()` annotated it again. The result
+spliced the call site's position mid-message and stacked a second snippet and
+stack trace onto the message — e.g. a `map(xs, boom)` where `boom` divides by zero
+showed `in boom() [line 6, column 10]` (the `map` call site grafted onto the inner
+trace) followed by a duplicate snippet. This matched the (now-removed) graph
+engine, and was deliberately kept during the parity push.
 
-The open question stands: **is this the semantics or a quirk?** If a quirk, fix
-it in `backend/errors.rs`, re-soak the fuzzer (error text is part of the
-exact-agreement check), and write the decision down. If it's the intended
-semantics, document it as such so it stops reading like an accident.
+**Verdict: quirk, fixed.** The re-annotation was misleading — the outer call site
+is `map(...)`, not where the division happened, so the second pass pointed at the
+wrong source. The innermost annotation (at the actual failing term, with the
+frames present at failure) is authoritative. `call_closure_sync` now sets
+`Vm::error_already_annotated` when it unwinds with an already-annotated error, and
+`step`'s error path passes such errors through untouched instead of annotating a
+second time. Raw intrinsic errors (e.g. `map() expects a list`) are *not* flagged,
+so they still get annotated once at the `map` call site. The differential fuzzer
+stays green (both opt levels annotate identically), as do `error_parity` and the
+example golden corpus.
 
 ## Hazards that reappear if the substrate changes
 

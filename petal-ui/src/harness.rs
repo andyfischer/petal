@@ -23,6 +23,7 @@ use petal::stack::StackKey;
 use petal::value::Value;
 
 use crate::draw::{self, DrawCommand};
+use crate::host_data::{self, DataProvider};
 use crate::input::{self, InputEvent, InputState};
 
 /// Fixed per-frame dt (60 fps) so tests are deterministic.
@@ -38,6 +39,9 @@ pub struct Headless {
     pub commands: Vec<DrawCommand>,
     /// Value returned by the most recent run.
     pub result: Value,
+    /// Host data source for the `host_data` native, swapped into the
+    /// thread-local channel around each run (see [`set_data_provider`](Self::set_data_provider)).
+    provider: Option<DataProvider>,
 }
 
 impl Headless {
@@ -62,7 +66,16 @@ impl Headless {
             frame_count: 0,
             commands: Vec::new(),
             result: Value::Nil,
+            provider: None,
         })
+    }
+
+    /// Attach a host data source for the `host_data(kind, arg)` native. It is
+    /// swapped into the thread-local channel for the duration of each
+    /// [`frame`](Self::frame), mirroring how a real embedder wires its
+    /// provider around `env.run`.
+    pub fn set_data_provider(&mut self, provider: DataProvider) {
+        self.provider = Some(provider);
     }
 
     /// Feed one input event (applied to the *next* frame's snapshot).
@@ -122,7 +135,12 @@ impl Headless {
         draw::clear_draw_commands(&mut self.env);
         draw::reset_canvas_ids(&mut self.env);
         self.env.reset_stack(self.stack_id)?;
-        self.result = self.env.run(self.stack_id)?;
+        // Make the data provider reachable from the `host_data` native for this
+        // run, then take it back (with any cache it updated) afterwards.
+        let saved = host_data::swap_data_provider(self.provider.take());
+        let run = self.env.run(self.stack_id);
+        self.provider = host_data::swap_data_provider(saved);
+        self.result = run?;
         self.commands = draw::take_draw_commands(&mut self.env);
         Ok(&self.commands)
     }

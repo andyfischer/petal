@@ -35,6 +35,7 @@
 
 pub mod draw;
 pub mod harness;
+pub mod host_data;
 pub mod input;
 
 /// Version of the petal-ui contract, exposed to scripts as `ui_version()`.
@@ -70,5 +71,6 @@ pub fn register_prelude(env: &mut petal::env::Env) {
 pub fn register_all(env: &mut petal::env::Env) {
     input::register_input(env);
     draw::register_draw(env);
+    host_data::register_host_data(env);
     register_prelude(env);
 }

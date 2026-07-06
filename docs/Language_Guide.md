@@ -149,6 +149,29 @@ end
 let label = if x > 5 then "big" else "small" end
 ```
 
+Chain conditions with `elsif` — it continues the same `if` and shares the
+single closing `end` (no nested blocks):
+
+```petal
+fn classify(n)
+  if n < 0 then "negative"
+  elsif n == 0 then "zero"
+  else "positive"
+  end
+end
+
+// Reads well for the multi-way branches common in drawer code:
+let color =
+  if line.kind == "hunk" then HUNK
+  elsif line.kind == "add" then GREEN
+  elsif line.kind == "del" then RED
+  else CONTEXT
+  end
+```
+
+Note the keyword is `elsif` (one word, Ruby-style), not `else if` — writing
+`else if` opens a nested `if` that needs its own `end`.
+
 ### For Loops
 
 Iterate over lists or ranges:

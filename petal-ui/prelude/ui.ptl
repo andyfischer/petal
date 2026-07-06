@@ -257,6 +257,22 @@ fn scroll_update(offset, total_lines, visible_lines, r, active)
   _clamp(off, 0, max(0, total_lines - visible_lines))
 end
 
+// Proportional scrollbar thumb along the right edge of scroll region `r`.
+// `count` is the total row count, `rows` the visible rows, `scroll` the current
+// top offset (as fed to list_update / scroll_update). Draws nothing when the
+// content fits (count <= rows); otherwise a dim track with an accent-neutral
+// thumb sized rows/count of the track and positioned by scroll/(count - rows).
+fn draw_scrollbar(r, count, rows, scroll)
+  if count > rows then
+    let bar_w = 4
+    let track = {x: r.x + r.w - bar_w, y: r.y, w: bar_w, h: r.h}
+    draw_rect(track, theme.outline)
+    let thumb_h = max(12, r.h * rows / count)
+    let thumb_y = track.y + (r.h - thumb_h) * scroll / (count - rows)
+    draw_rect({x: track.x, y: thumb_y, w: bar_w, h: thumb_h}, theme.dim)
+  end
+end
+
 // ── Focus registry ─────────────────────────────────────────────────────────
 // Focus is panel-global: at most one widget id holds the keyboard at a time.
 // Keep it in a `state` record so it survives hot reload:
@@ -331,6 +347,19 @@ fn focus_update(fc, ids)
     end
   else
     fc
+  end
+end
+
+// A section heading that shows which region owns the keyboard: accent-colored
+// with an underline when `active`, dim otherwise. Pairs with the focus
+// registry — pass `focused(fc, id)` as `active` to label each focusable region.
+fn section_label(label, x, y, active)
+  let size = 14
+  let color = if active then theme.accent else theme.dim end
+  draw_text(label, {x: x, y: y}, size, color)
+  if active then
+    let uy = y + size + 1
+    draw_line({x: x, y: uy}, {x: x + text_width(label, size), y: uy}, color)
   end
 end
 

@@ -537,3 +537,87 @@ fn focus_gated_list_ignores_keys_until_focused() {
         assert_eq!(state_field(ui, "selected"), Some(3));
     });
 }
+
+// ── Scrollbar + section label widgets ───────────────────────────────────────
+
+#[test]
+fn scrollbar_draws_nothing_when_everything_fits() {
+    // count <= rows: the whole list is visible, so no scrollbar is drawn.
+    let src = "draw_scrollbar({x: 0, y: 0, w: 100, h: 200}, 5, 5, 0)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap();
+        assert!(cmds.is_empty(), "no scrollbar when content fits: {cmds:?}");
+    });
+}
+
+#[test]
+fn scrollbar_draws_track_and_proportional_thumb() {
+    // 20 items, 5 visible → thumb covers a quarter of the track; scrolled to
+    // the bottom (scroll = count - rows = 15) the thumb sits at the track end.
+    let top = "draw_scrollbar({x: 0, y: 0, w: 100, h: 200}, 20, 5, 0)";
+    run_headless(top, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let rects: Vec<_> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Rect { x, y, w, h, .. } => Some((*x, *y, *w, *h)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rects.len(), 2, "track + thumb: {cmds:?}");
+        // Track runs the full height along the right edge.
+        let (tx, ty, tw, th) = rects[0];
+        assert_eq!((ty, th), (0, 200), "track spans the region height");
+        assert_eq!(tx + tw as i32, 100, "track hugs the right edge");
+        // Thumb is at the top and a quarter of the height (5/20 * 200 = 50).
+        let (_, thumb_y, _, thumb_h) = rects[1];
+        assert_eq!(thumb_y, 0, "at scroll 0 the thumb is at the top");
+        assert_eq!(thumb_h, 50, "thumb height is rows/count of the track");
+    });
+
+    let bottom = "draw_scrollbar({x: 0, y: 0, w: 100, h: 200}, 20, 5, 15)";
+    run_headless(bottom, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let thumb = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Rect { y, h, .. } => Some((*y, *h)),
+                _ => None,
+            })
+            .nth(1)
+            .expect("thumb rect");
+        assert_eq!(thumb.0 + thumb.1 as i32, 200, "fully scrolled: thumb bottom at track end");
+    });
+}
+
+#[test]
+fn section_label_underlines_and_accents_only_when_active() {
+    // Inactive: dim text, no underline.
+    run_headless("section_label(\"Files\", 10, 20, false)", |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            cmds.iter().any(|c| matches!(c,
+                DrawCommand::Text { text, r: 138, g: 147, b: 162, .. } if text == "Files")),
+            "inactive label is dim text: {cmds:?}"
+        );
+        assert!(
+            !cmds.iter().any(|c| matches!(c, DrawCommand::Line { .. })),
+            "inactive label has no underline: {cmds:?}"
+        );
+    });
+
+    // Active: accent text plus an underline in the accent color starting at x.
+    run_headless("section_label(\"Files\", 10, 20, true)", |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            cmds.iter().any(|c| matches!(c,
+                DrawCommand::Text { text, r: 60, g: 140, b: 255, .. } if text == "Files")),
+            "active label is accent text: {cmds:?}"
+        );
+        assert!(
+            cmds.iter().any(|c| matches!(c,
+                DrawCommand::Line { x1: 10, r: 60, g: 140, b: 255, .. })),
+            "active label draws an accent underline from x: {cmds:?}"
+        );
+    });
+}

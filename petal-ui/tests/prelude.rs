@@ -193,6 +193,38 @@ fn scroll_update_wheel_pages_and_clamps() {
 }
 
 #[test]
+fn scroll_update_gates_page_keys_when_inactive() {
+    // The focus-gated overload keeps the wheel hover-scoped but only pages on
+    // pageup/pagedown when `active` — so PageDown in the focused region does not
+    // leak into every other scroll region on screen.
+    let src = "state off = 0\n\
+               let r = {x: 0, y: 0, w: 100, h: 100}\n\
+               off = scroll_update(off, 50, 10, r, false)";
+    run_headless(src, |ui| {
+        // Wheel still scrolls even when inactive (hover-scoped, not gated).
+        ui.mouse_move(50, 50);
+        ui.scroll(5.0);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("off"), Some(5), "wheel is not gated by focus");
+
+        // PageDown is ignored while inactive — no leak across regions.
+        ui.key("pagedown").unwrap();
+        assert_eq!(ui.state_int("off"), Some(5), "page keys are gated off when inactive");
+    });
+}
+
+#[test]
+fn scroll_update_pages_when_active() {
+    let src = "state off = 0\n\
+               let r = {x: 0, y: 0, w: 100, h: 100}\n\
+               off = scroll_update(off, 50, 10, r, true)";
+    run_headless(src, |ui| {
+        ui.key("pagedown").unwrap();
+        assert_eq!(ui.state_int("off"), Some(10), "active region pages on PageDown");
+    });
+}
+
+#[test]
 fn truncate_helpers() {
     let src = "state tail = \"\"\n\
                state head = \"\"\n\

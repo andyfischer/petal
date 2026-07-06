@@ -234,15 +234,25 @@ end
 // offset is clamped to [0, total_lines - visible_lines].
 
 fn scroll_update(offset, total_lines, visible_lines, r)
+  scroll_update(offset, total_lines, visible_lines, r, true)
+end
+
+// Focus-gated form (mirrors list_update's): the wheel stays hover-scoped, but
+// pageup/pagedown only page when `active` is true. In a multi-region panel
+// built on the focus registry this stops PageDown in the focused region from
+// paging every other scroll region on screen — gate on focused(fc, id).
+fn scroll_update(offset, total_lines, visible_lines, r, active)
   let off = offset
   if hovered(r) then
     off = off + scroll_y()
   end
-  if key_pressed("pagedown") then
-    off = off + visible_lines
-  end
-  if key_pressed("pageup") then
-    off = off - visible_lines
+  if active then
+    if key_pressed("pagedown") then
+      off = off + visible_lines
+    end
+    if key_pressed("pageup") then
+      off = off - visible_lines
+    end
   end
   _clamp(off, 0, max(0, total_lines - visible_lines))
 end

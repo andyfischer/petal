@@ -1,32 +1,8 @@
-# Petal IR as a Legible Emit Target
+# Petal IR as an Emit Target
 
-**Status:** M1 (contract) + M2 (loader) + M3 (validation) + M4 (reference
-external emitter) implemented and tested. Tracked by
-`idea-34b8348d`. Sequenced as Phase 3 in [goals.md](goals.md).
-
-Try it:
-
-```bash
-petal show-ir --json -e 'print(1 + 2)' | petal run --ir -   # => 3
-petal run --ir path/to/program.ir.json
-```
-
-`run --ir` deserializes a Program from JSON IR, rebuilds the indexes that
-serialization drops, runs the M3 validation pass, and evaluates it. Round-trip
-(`show-ir --json | run --ir`) is covered by `ts/test/ir-roundtrip.test.ts`
-across the snippet matrix and the full `examples/*.ptl` corpus.
-
-## The idea
-
-[goals.md](goals.md) Goal 3 imagines *cross-language abstract
-programming*: mounting foreign programs (JS, C, Python) through a projectional
-lens. Done in that direction — importing arbitrary foreign semantics — it is a
-multi-year research program competing with JetBrains MPS.
-
-**Invert it.** Instead of pulling foreign languages *into* Petal, make Petal's
-dataflow IR a **stable, documented target that other front-ends compile into**.
-Any tool that emits valid Petal IR immediately inherits the things the IR was
-built to provide:
+Petal's dataflow IR is a **stable, documented target that other front-ends can
+compile into**. Any tool that emits valid Petal IR JSON gets a byte-for-byte
+normal `Program`, and so inherits everything the IR was built to provide:
 
 - **Provenance** — backward "what influenced this?" (`trace_provenance`)
 - **Slicing / projection** — minimal subgraph for a target (`slice`)
@@ -35,104 +11,71 @@ built to provide:
 - **AI-legibility** — an agent can emit IR directly and reason over the
   resulting dataflow graph, or read provenance back out of one it didn't write
 
-This is the tractable 80% of the cross-language vision: shared *computational
-structure* (dataflow, control flow, state) is exactly what the IR already
-encodes, independent of any surface syntax.
+The shared substrate is *computational structure* (dataflow, control flow,
+state), which the IR encodes independent of any surface syntax.
 
-## What exists today
+## Usage
 
-Petal already serializes IR to JSON (`petal show-ir --json`,
-`rust/src/ir_serialize.rs`). A term looks like:
-
-```json
-{
-  "id": 7,
-  "op": "Add",
-  "inputs": [5, 6],
-  "block_id": 0,
-  "block_next": 8,
-  "block_prev": 6,
-  "name": null,
-  "register": 4,
-  "state_key": null,
-  "child_blocks": []
-}
+```bash
+petal show-ir --json -e 'print(1 + 2)' | petal run --ir -   # => 3
+petal run --ir path/to/program.ir.json
+petal run --ir -                                            # read IR JSON from stdin
 ```
 
-A program is a flat `terms` array plus blocks; `inputs` are dataflow edges by
-`TermId`; control flow is reified as terms (`Branch`, `ForLoop`, `WhileLoop`,
-`Match`, `And`/`Or`) carrying `child_blocks`; rebinding/loop-carry uses `Phi`
-terms; state uses `StateInit`/`StateRead`/`StateWrite` with a `state_key`.
+`petal show-ir --json` serializes a compiled `Program` to JSON IR
+(`rust/src/ir_serialize.rs`). `petal run --ir <file>` (or `-` for stdin) is the
+inverse: it deserializes the JSON back into a `Program`, validates it, and
+evaluates it on the bytecode VM.
 
-The gap: this is a one-way **debug dump**. There is no loader, no schema
-contract, and no validation. Making it a *target* means making it a load-and-run
-contract.
+## How loading works
 
-## Milestones
+`run --ir` goes JSON → `Program` → evaluate:
 
-### M1 — Specify the import format (the contract) — ✅ done
+- **Deserialize** via `Program::from_json` (`rust/src/program.rs`) and
+  `Env::load_program_ir` (`rust/src/env.rs`). The IR types carry `Deserialize`
+  derives; `rebuild_indexes` reconstructs the `#[serde(skip)]` indexes
+  (`block_terms`, constant dedup) so a loaded `Program` is identical to a
+  compiled one.
+- **Validate** — `Program::validate` runs before evaluation and rejects invalid
+  graphs with actionable messages (see [Validation invariants](#validation-invariants)).
+- **Evaluate** on the bytecode VM, exactly as a compiled program.
 
-The versioned schema is written out in **[Schema (v0)](#schema-v0)** below: the
-program/term/block shapes, the full `TermOp` table with arities and child-block
-rules, the Phi / state / constant conventions, and the validation invariants.
-Golden fixtures live in `ts/test/fixtures/ir/` (`print_arith`, `branch_phi`,
-`state_counter`).
+**Round-trip guarantee:** `show-ir --json <src> | run --ir -` produces the same
+result as `run <src>`, verified across the snippet matrix and the full
+`examples/*.ptl` corpus in `ts/test/ir-roundtrip.test.ts`.
 
-### M2 — Load-and-run path — ✅ done
+## Emitting IR from a foreign front-end
 
-- `petal run --ir <file.json>` (and `--ir -` for stdin): deserialize IR JSON →
-  `Program` → evaluate. Implemented via `Program::from_json`
-  (`rust/src/program.rs`) and `Env::load_program_ir` (`rust/src/env.rs`); the
-  IR types gained `Deserialize` derives, and `rebuild_indexes` reconstructs the
-  `#[serde(skip)]` indexes (`block_terms`, constant dedup) so a loaded Program
-  is identical to a compiled one.
-- **Round-trip guarantee:** `show-ir --json <src> | run --ir -` matches
-  `run <src>` — verified across the snippet matrix and every `examples/*.ptl`
-  in `ts/test/ir-roundtrip.test.ts`.
-
-### M3 — Validation pass with good errors — ✅ done (v0)
-
-`Program::validate` runs before evaluation and rejects, with actionable
-messages: dangling `inputs`/`child_blocks`/constant/function references; raw
-`inputs` cycles (only loop-carry via `Phi` is legal); `phi_outs` whose
-`dest_term` is not a `Phi`; `State*` ops missing a `state_key`; a
-`StateRead`/`StateWrite` whose key has no `StateInit`; `Error` terms or
-`has_errors=true`; and `id != index`. The full invariant list is in
-[Validation invariants](#validation-invariants-the-m3-contract). Negative cases
-are covered in `ts/test/ir-roundtrip.test.ts`.
-
-### M4 — Reference external emitter — ✅ done
-
-`ts/tools/calc-to-ir.ts` is a self-contained front-end for a toy "calc" language
-(`let`/`print` + integer arithmetic with precedence, parens, and unary minus).
-It shares **no** code with Petal's lexer/parser/compiler — its only contract is
-the v0 import format below — and emits Petal IR JSON straight from its own AST:
+`ts/tools/calc-to-ir.ts` is a worked example: a self-contained front-end for a
+toy "calc" language (`let`/`print` + integer arithmetic with precedence, parens,
+and unary minus). It shares **no** code with Petal's lexer/parser/compiler — its
+only contract is the schema below — and emits Petal IR JSON straight from its
+own AST:
 
 ```bash
 echo 'print 1 + 2 * 3' | tsx ts/tools/calc-to-ir.ts | petal run --ir -   # => 7
 ```
 
-The emitter demonstrates the key conventions a foreign front-end must honour:
-constants go in the constant table and are referenced by `Constant` index;
-builtins (here `print`) are emitted as leading phantom `Copy` terms *before* the
-block's `entry`, where the evaluator binds them to their native functions; real
-terms form the block's `block_next`/`block_prev` linked list; `let` bindings emit
-a named `Copy` so the value stays legible in the dataflow graph.
+It demonstrates the key conventions a foreign front-end must honour: constants
+go in the constant table and are referenced by `Constant` index; builtins (here
+`print`) are emitted as leading phantom `Copy` terms *before* the block's
+`entry`, where the evaluator binds them to their native functions; real terms
+form the block's `block_next`/`block_prev` linked list; `let` bindings emit a
+named `Copy` so the value stays legible in the dataflow graph.
 
-Because the loaded IR is byte-for-byte a normal `Program`, programs authored in
-*not-Petal* inherit provenance, slicing, `ExplainTerm`, and state-preserving
-live-reload for free. Covered by `ts/test/calc-emitter.test.ts`, which runs the
-emitted IR through `run --ir`, cross-checks its output against the real Petal
-compiler for the equivalent source, and confirms the M3 validator rejects a
-tampered graph.
+`ts/test/calc-emitter.test.ts` runs the emitted IR through `run --ir`,
+cross-checks its output against the real Petal compiler for the equivalent
+source, and confirms the validator rejects a tampered graph. Golden IR fixtures
+live in `ts/test/fixtures/ir/` (`print_arith`, `branch_phi`, `state_counter`).
 
-## Schema (v0)
+## Schema
 
-This section is the M1 contract. It is derived from the live types in
+This is the import contract. It is derived from the live types in
 `rust/src/program.rs`, `rust/src/constant_table.rs`, and `rust/src/ast.rs`, and
-matches today's `petal show-ir --json` output (the serde derive). v0 is the
-exact shape Petal already emits; the only additions a *loader* introduces are a
-`schema_version` field and the validation pass (M3).
+matches `petal show-ir --json` output (the serde derive). The schema is
+versioned: `schema_version` is `0`. The only additions a *loader* introduces
+over the raw `show-ir` dump are the `schema_version` field and the validation
+pass.
 
 ### Encoding conventions
 
@@ -155,7 +98,7 @@ exact shape Petal already emits; the only additions a *loader* introduces are a
 
 ```
 {
-  "schema_version": 0,             // NEW: loader-required; show-ir omits it today
+  "schema_version": 0,             // loader-required; show-ir omits it
   "id": 0,
   "source": "...",                 // optional for imports; "" is fine
   "terms":   [ Term, ... ],
@@ -288,7 +231,7 @@ Pattern := "Wildcard"
 (`f64::to_bits`), for hashable dedup. An emitter must bit-encode floats; a
 reader must `from_bits` them.
 
-### Validation invariants (the M3 contract)
+### Validation invariants
 
 A program is a valid import iff:
 
@@ -309,8 +252,8 @@ A program is a valid import iff:
    control-flow term; every `phi_outs.dest_term` is a `Phi` in the parent block.
 7. **State integrity** — every `StateRead`/`StateWrite` `state_key` has a
    matching `StateInit` with the same key; `state_key` is non-null exactly for
-   `State*` ops. (This is the same invariant Phase 0's state-correctness audit
-   enforces from the compiler side.)
+   `State*` ops. (This is the same invariant the compiler-side state-correctness
+   audit enforces.)
 8. **Registers** (if provided) — every register index used in a block is
    `< register_count`. If omitted, the loader assigns registers itself.
 
@@ -318,18 +261,15 @@ A program is a valid import iff:
 an importer — the loader can synthesize registers from the dataflow graph and
 default the source metadata. Everything else is required.
 
-## Non-goals (for this work)
+## Scope
 
-- Importing arbitrary existing languages (JS/C/Python). M4 deliberately uses a
-  trivial emitter; real foreign front-ends are downstream and out of scope.
-- Bidirectional editing / mapping edits on a projection back to foreign source
-  (that remains North Star in goals.md Goal 3).
-- A binary/compact IR format. JSON first; optimize only if a real emitter needs
-  it.
+The emit target is a load-and-run contract for *computational structure*, not a
+language-interop layer. Deliberately outside it:
 
-## Why this serves the broader goals
-
-It turns the IR from an internal implementation detail into a **public
-interface**, which is the same move that makes Petal legible to AI agents
-(Phase 2). The dataflow graph becomes the universal substrate the vision
-describes — reached by being a *target*, not a *importer*.
+- **Importing arbitrary existing languages** (JS/C/Python). The `calc` emitter
+  is only a reference; building real foreign front-ends is downstream work that
+  lives against this contract, not inside it.
+- **Bidirectional editing** — mapping edits on a projection back to foreign
+  source. See Goal 3 in [goals.md](goals.md).
+- **A binary/compact IR format.** The contract is JSON; a denser encoding would
+  only be worth adding if a real emitter needs it.

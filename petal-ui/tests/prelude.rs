@@ -3,6 +3,7 @@
 
 use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
+use petal_ui::input::{InputEvent, Modifiers};
 
 fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
     let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
@@ -301,4 +302,201 @@ fn scripts_shadow_prelude_names() {
 /// Read a field of the `lst` state record.
 fn state_field(ui: &Headless, field: &str) -> Option<i64> {
     ui.state().get("lst")?.get(field)?.as_i64()
+}
+
+// ── Focus registry ──────────────────────────────────────────────────────────
+
+#[test]
+fn focus_set_focused_and_clear() {
+    let src = "state fc = focus_state()\n\
+               state none = true\n\
+               state a = false\n\
+               state b = false\n\
+               none = focused(fc, \"a\")\n\
+               fc = focus_set(fc, \"a\")\n\
+               a = focused(fc, \"a\")\n\
+               b = focused(fc, \"b\")";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        // Nothing focused by default.
+        assert_eq!(ui.state()["none"], false);
+        // After focus_set("a"), a is focused and b is not.
+        assert_eq!(ui.state()["a"], true);
+        assert_eq!(ui.state()["b"], false);
+
+        // Clearing focus un-focuses everything (survives across frames via state).
+        let mut ui2 = Headless::new(
+            "state fc = focus_set(focus_state(), \"a\")\n\
+             state cleared = true\n\
+             fc = focus_clear(fc)\n\
+             cleared = focused(fc, \"a\")",
+        )
+        .unwrap();
+        ui2.frame().unwrap();
+        assert_eq!(ui2.state()["cleared"], false);
+        let _ = ui;
+    });
+}
+
+const CYCLE_SRC: &str = "state fc = focus_state()\n\
+                         let ids = [\"a\", \"b\", \"c\"]\n\
+                         if key_pressed(\"n\") then fc = focus_next(fc, ids) end\n\
+                         if key_pressed(\"p\") then fc = focus_prev(fc, ids) end\n\
+                         state cur = \"\"\n\
+                         cur = fc.id";
+
+#[test]
+fn focus_next_and_prev_cycle_and_wrap() {
+    run_headless(CYCLE_SRC, |ui| {
+        // From nothing, next → first, prev → last.
+        ui.key("n").unwrap();
+        assert_eq!(ui.state()["cur"], "a");
+        ui.key("n").unwrap();
+        assert_eq!(ui.state()["cur"], "b");
+        ui.key("n").unwrap();
+        assert_eq!(ui.state()["cur"], "c");
+        // Wrap forward.
+        ui.key("n").unwrap();
+        assert_eq!(ui.state()["cur"], "a");
+        // Wrap backward past the first.
+        ui.key("p").unwrap();
+        assert_eq!(ui.state()["cur"], "c");
+        ui.key("p").unwrap();
+        assert_eq!(ui.state()["cur"], "b");
+    });
+
+    // prev from nothing focused → last.
+    run_headless(CYCLE_SRC, |ui| {
+        ui.key("p").unwrap();
+        assert_eq!(ui.state()["cur"], "c");
+    });
+}
+
+#[test]
+fn focus_update_reads_tab_and_shift_tab() {
+    let src = "state fc = focus_state()\n\
+               let ids = [\"a\", \"b\", \"c\"]\n\
+               fc = focus_update(fc, ids)\n\
+               state cur = \"\"\n\
+               cur = fc.id";
+    run_headless(src, |ui| {
+        // A frame with no tab leaves focus untouched.
+        ui.frame().unwrap();
+        assert_eq!(ui.state()["cur"], "");
+
+        // Tab advances.
+        ui.key("tab").unwrap();
+        assert_eq!(ui.state()["cur"], "a");
+        ui.key("tab").unwrap();
+        assert_eq!(ui.state()["cur"], "b");
+
+        // Shift+Tab goes back.
+        ui.event(InputEvent::Modifiers(Modifiers { shift: true, ..Default::default() }));
+        ui.key("tab").unwrap();
+        assert_eq!(ui.state()["cur"], "a");
+        ui.event(InputEvent::Modifiers(Modifiers::default()));
+    });
+}
+
+// ── Text field widget ───────────────────────────────────────────────────────
+
+const FIELD_SRC: &str = "state fc = focus_state()\n\
+                         state buf = \"\"\n\
+                         state submits = 0\n\
+                         let r = {x: 10, y: 10, w: 200, h: 24}\n\
+                         let res = text_field(fc, \"name\", r, buf)\n\
+                         fc = res.focus\n\
+                         buf = res.text\n\
+                         if res.submitted then submits = submits + 1 end";
+
+#[test]
+fn text_field_ignores_typing_until_focused() {
+    run_headless(FIELD_SRC, |ui| {
+        // Typing before focus is dropped.
+        ui.text("hi").unwrap();
+        assert_eq!(ui.state()["buf"], "");
+
+        // Click focuses the field.
+        ui.click(50, 20).unwrap();
+        assert_eq!(ui.state().get("fc").unwrap()["id"], "name");
+
+        // Now typing lands in the buffer.
+        ui.text("hel").unwrap();
+        ui.text("lo").unwrap();
+        assert_eq!(ui.state()["buf"], "hello");
+    });
+}
+
+#[test]
+fn text_field_backspace_and_submit() {
+    run_headless(FIELD_SRC, |ui| {
+        ui.click(50, 20).unwrap();
+        ui.text("abc").unwrap();
+        assert_eq!(ui.state()["buf"], "abc");
+
+        ui.key("backspace").unwrap();
+        assert_eq!(ui.state()["buf"], "ab");
+
+        // Backspace on empty is a no-op (no underflow).
+        ui.key("backspace").unwrap();
+        ui.key("backspace").unwrap();
+        ui.key("backspace").unwrap();
+        assert_eq!(ui.state()["buf"], "");
+
+        // Return submits.
+        ui.text("x").unwrap();
+        ui.key("return").unwrap();
+        assert_eq!(ui.state_int("submits"), Some(1));
+    });
+}
+
+#[test]
+fn text_field_draws_caret_only_when_focused() {
+    // A focused field draws a caret line after its text; an unfocused one
+    // draws no line.
+    run_headless(FIELD_SRC, |ui| {
+        let cmds = ui.frame().unwrap();
+        assert!(
+            !cmds.iter().any(|c| matches!(c, DrawCommand::Line { .. })),
+            "unfocused field has no caret: {cmds:?}"
+        );
+
+        ui.click(50, 20).unwrap();
+        let cmds = ui.frame().unwrap();
+        assert!(
+            cmds.iter().any(|c| matches!(c, DrawCommand::Line { .. })),
+            "focused field draws a caret: {cmds:?}"
+        );
+    });
+}
+
+// ── Focus-gated list ────────────────────────────────────────────────────────
+
+const GATED_LIST_SRC: &str = "state lst = list_state()\n\
+                              state fc = focus_state()\n\
+                              let r = {x: 0, y: 100, w: 200, h: 100}\n\
+                              if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
+                                fc = focus_set(fc, \"list\")\n\
+                              end\n\
+                              lst = list_update(lst, 20, 5, r, focused(fc, \"list\"))";
+
+#[test]
+fn focus_gated_list_ignores_keys_until_focused() {
+    run_headless(GATED_LIST_SRC, |ui| {
+        ui.frame().unwrap();
+        // Keyboard nav is inert while the list is unfocused.
+        ui.key("j").unwrap();
+        ui.key("j").unwrap();
+        assert_eq!(state_field(ui, "selected"), Some(0));
+
+        // Clicking a row both focuses the list and selects that row.
+        // Rows are 20px tall from y=100; row 2 spans y 140..160.
+        ui.click(50, 145).unwrap();
+        assert_eq!(state_field(ui, "selected"), Some(2));
+        assert_eq!(ui.state().get("fc").unwrap()["id"], "list");
+
+        // Now keyboard nav works.
+        ui.key("j").unwrap();
+        assert_eq!(state_field(ui, "selected"), Some(3));
+    });
 }

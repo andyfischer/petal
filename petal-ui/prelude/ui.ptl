@@ -170,25 +170,35 @@ fn ensure_visible(scroll, selected, visible_rows)
 end
 
 fn list_update(lst, item_count, visible_rows, r)
+  list_update(lst, item_count, visible_rows, r, true)
+end
+
+// Focus-gated form: keyboard navigation only runs when `active` is true, so a
+// list can share the keyboard with other widgets (see the focus registry).
+// Mouse click still selects a row regardless — the caller pairs that click
+// with `focus_set` to make the list focused.
+fn list_update(lst, item_count, visible_rows, r, active)
   let sel = lst.selected
   let scroll = lst.scroll
-  if key_pressed("down") || key_pressed("j") then
-    sel = sel + 1
-  end
-  if key_pressed("up") || key_pressed("k") then
-    sel = sel - 1
-  end
-  if key_pressed("pagedown") then
-    sel = sel + visible_rows
-  end
-  if key_pressed("pageup") then
-    sel = sel - visible_rows
-  end
-  if key_pressed("home") then
-    sel = 0
-  end
-  if key_pressed("end") then
-    sel = item_count - 1
+  if active then
+    if key_pressed("down") || key_pressed("j") then
+      sel = sel + 1
+    end
+    if key_pressed("up") || key_pressed("k") then
+      sel = sel - 1
+    end
+    if key_pressed("pagedown") then
+      sel = sel + visible_rows
+    end
+    if key_pressed("pageup") then
+      sel = sel - visible_rows
+    end
+    if key_pressed("home") then
+      sel = 0
+    end
+    if key_pressed("end") then
+      sel = item_count - 1
+    end
   end
   if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
     let row = scroll + (mouse_y() - r.y) / _row_h(r, visible_rows)
@@ -221,4 +231,128 @@ fn scroll_update(offset, total_lines, visible_lines, r)
     off = off - visible_lines
   end
   _clamp(off, 0, max(0, total_lines - visible_lines))
+end
+
+// ── Focus registry ─────────────────────────────────────────────────────────
+// Focus is panel-global: at most one widget id holds the keyboard at a time.
+// Keep it in a `state` record so it survives hot reload:
+//   state fc = focus_state()
+// An id is any value you compare with == ; the default "" means "nothing".
+// Widgets that consume the keyboard (text_field, the gated list_update) check
+// `focused(fc, id)` before reading keys, and request focus on click.
+
+fn focus_state()
+  {id: ""}
+end
+
+fn focused(fc, id)
+  fc.id == id
+end
+
+fn focus_set(fc, id)
+  {id: id}
+end
+
+fn focus_clear(fc)
+  {id: ""}
+end
+
+// Position of `id` in the ordered list `ids`, or -1 if absent (so an unfocused
+// registry — id "" — reads as "before the first").
+fn _index_of(ids, id)
+  let found = -1
+  for i in range(0, len(ids)) do
+    if found < 0 && ids[i] == id then
+      found = i
+    end
+  end
+  found
+end
+
+// Move focus to the next / previous id in the ordered ring `ids`. From nothing
+// focused, next lands on the first and prev on the last; both wrap.
+fn focus_next(fc, ids)
+  if len(ids) == 0 then
+    fc
+  else
+    let j = _index_of(ids, fc.id) + 1
+    if j >= len(ids) then
+      j = 0
+    end
+    focus_set(fc, ids[j])
+  end
+end
+
+fn focus_prev(fc, ids)
+  if len(ids) == 0 then
+    fc
+  else
+    let idx = _index_of(ids, fc.id)
+    let j = idx - 1
+    if idx < 0 || j < 0 then
+      j = len(ids) - 1
+    end
+    focus_set(fc, ids[j])
+  end
+end
+
+// Convenience: Tab advances focus, Shift+Tab reverses it. Call once per frame
+// with the ring of focusable widget ids.
+fn focus_update(fc, ids)
+  if key_pressed("tab") then
+    if mod_shift() then
+      focus_prev(fc, ids)
+    else
+      focus_next(fc, ids)
+    end
+  else
+    fc
+  end
+end
+
+// ── Text field (immediate-mode, focus-aware) ────────────────────────────────
+// Single-line editable text. Clicking focuses it; while focused it appends
+// typed text, backspace deletes the last char, and Return sets `submitted`.
+// State is the plain string `buf` (keep it in `state`); focus lives in a
+// separate focus record. Returns {focus, text, submitted}:
+//   let res = text_field(fc, "name", r, buf)
+//   fc = res.focus  buf = res.text
+//   if res.submitted then ... end
+
+fn _draw_text_field(r, text, has)
+  draw_rect(r, theme.panel)
+  let border = if has then theme.accent else theme.outline end
+  draw_rect_outline(r, border)
+  let size = 14
+  let tx = r.x + 6
+  let ty = r.y + (r.h - size) / 2
+  draw_text(text, {x: tx, y: ty}, size, theme.text)
+  if has then
+    let cx = tx + text_width(text, size)
+    draw_line({x: cx, y: ty}, {x: cx, y: ty + size}, theme.accent)
+  end
+end
+
+fn text_field(fc, id, r, buf)
+  let f = fc
+  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+    f = focus_set(fc, id)
+  end
+  let has = focused(f, id)
+  let text = buf
+  let submitted = false
+  if has then
+    if key_pressed("backspace") && len(text) > 0 then
+      text = slice(text, 0, len(text) - 1)
+    end
+    let typed = text_input()
+    if len(typed) > 0 then
+      text = text ++ typed
+    end
+    if key_pressed("return") then
+      submitted = true
+    end
+  end
+  _draw_text_field(r, text, has)
+  {focus: f, text: text, submitted: submitted}
 end

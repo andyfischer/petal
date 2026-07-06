@@ -1,0 +1,77 @@
+// === FOCUS FORM ===
+// Dogfoods the petal-ui focus story from the implicit `ui` module:
+//   - text_field (click-to-focus, typing, backspace, Return submits)
+//   - the focus registry + focus_update (Tab / Shift+Tab move focus)
+//   - a focus-gated list_update (keyboard nav only while the list is focused)
+// All widgets share one panel-global focus record so exactly one holds the
+// keyboard at a time. State lives in `state` so it survives hot reload.
+
+state name = ""
+state email = ""
+state fc = focus_state()
+state roles = list_state()
+state saved = ""
+
+// Colors (kept local so the example is self-contained).
+let bg = {r: 18, g: 20, b: 28}
+let panel = {r: 29, g: 32, b: 39}
+let ink = {r: 216, g: 222, b: 233}
+let dim = {r: 138, g: 147, b: 162}
+let accent = {r: 60, g: 140, b: 255}
+let outline = {r: 58, g: 64, b: 76}
+let sel = {r: 44, g: 74, b: 122}
+
+// Tab / Shift+Tab cycle focus across the two fields and the list.
+let ids = ["name", "email", "roles"]
+fc = focus_update(fc, ids)
+
+clear(bg.r, bg.g, bg.b)
+draw_text("PROFILE", {x: 40, y: 28}, 28, accent)
+draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
+          {x: 40, y: 64}, 13, dim)
+
+// Two text fields.
+draw_text("Name", {x: 40, y: 100}, 14, dim)
+let nf = text_field(fc, "name", {x: 150, y: 94, w: 380, h: 28}, name)
+fc = nf.focus
+name = nf.text
+
+draw_text("Email", {x: 40, y: 140}, 14, dim)
+let ef = text_field(fc, "email", {x: 150, y: 134, w: 380, h: 28}, email)
+fc = ef.focus
+email = ef.text
+
+// Focus-gated list: a role picker. Clicking it focuses it; j/k/arrows only
+// move the selection while it holds focus.
+let role_names = ["Viewer", "Editor", "Admin", "Owner"]
+let list_r = {x: 150, y: 180, w: 380, h: 120}
+draw_text("Role", {x: 40, y: 186}, 14, dim)
+if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), list_r) then
+  fc = focus_set(fc, "roles")
+end
+roles = list_update(roles, len(role_names), 4, list_r, focused(fc, "roles"))
+
+// Render the list.
+draw_rect(list_r, panel)
+let list_focused = focused(fc, "roles")
+draw_rect_outline(list_r, if list_focused then accent else outline end)
+for i in range(0, len(role_names)) do
+  let rr = list_row_rect(list_r, 4, i, roles.scroll)
+  if i == roles.selected then
+    draw_rect(rr, sel)
+  end
+  draw_text(role_names[i], {x: rr.x + 12, y: rr.y + 6}, 15, ink)
+end
+
+// Save: Return from either field, or the Save button.
+let do_save = nf.submitted || ef.submitted
+if button({x: 150, y: 320, w: 120, h: 34}, "Save") then
+  do_save = true
+end
+if do_save then
+  saved = name ++ " <" ++ email ++ "> · " ++ role_names[roles.selected]
+end
+
+if len(saved) > 0 then
+  draw_text("Saved: " ++ saved, {x: 40, y: 380}, 14, accent)
+end

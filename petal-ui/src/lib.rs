@@ -12,9 +12,11 @@
 //!   [`draw::take_draw_commands`] decoding into [`draw::DrawCommand`] on the
 //!   host side. Hosts implement only rasterization.
 //! - the `ui` Petal module (Layer 1): interaction primitives written in Petal
-//!   (`hovered`, `clicked`, `button`, `list_update`, …), registered with
-//!   [`register_prelude`] and delivered through the module system as an
-//!   implicit import.
+//!   (`hovered`, `clicked`, `button`, `list_update`, …), a panel-global focus
+//!   registry (`focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
+//!   `focus_update`) and the focus-aware `text_field` widget + gated
+//!   `list_update` built on it, registered with [`register_prelude`] and
+//!   delivered through the module system as an implicit import.
 //! - [`harness`]: a headless test driver so widget logic is unit-testable
 //!   with no renderer attached.
 //!

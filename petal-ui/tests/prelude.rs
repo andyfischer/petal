@@ -136,7 +136,7 @@ fn list_click_selects_row_under_pointer() {
 }
 
 #[test]
-fn list_wheel_scrolls_when_hovered_and_clamps() {
+fn list_wheel_scrolls_freely_and_keyboard_re_ensures_selection() {
     run_headless(LIST_SRC, |ui| {
         ui.frame().unwrap();
         // Wheel outside the list: no scroll.
@@ -145,20 +145,25 @@ fn list_wheel_scrolls_when_hovered_and_clamps() {
         ui.frame().unwrap();
         assert_eq!(state_field(ui, "scroll"), Some(0));
 
-        // Wheel over the list scrolls, but never past the end and never off
-        // the selection (selection stays visible).
+        // Wheel over the list moves the window even though selection 0 scrolls
+        // off-screen — the window is NOT clamped to the selection (like gitk /
+        // native list widgets). No snap-back to the selection.
         ui.mouse_move(50, 150);
         ui.scroll(3.0);
         ui.frame().unwrap();
-        // Selection 0 must stay visible: scroll snaps back to 0.
-        assert_eq!(state_field(ui, "scroll"), Some(0));
+        assert_eq!(state_field(ui, "scroll"), Some(3), "wheel scrolls freely");
+        assert_eq!(state_field(ui, "selected"), Some(0), "wheel leaves the selection alone");
 
-        // Move the selection down first, then wheel scrolling has room.
-        for _ in 0..10 {
-            ui.key("j").unwrap();
-        }
-        assert_eq!(state_field(ui, "selected"), Some(10));
-        assert_eq!(state_field(ui, "scroll"), Some(6));
+        // The wheel is still clamped to [0, item_count - visible_rows].
+        ui.scroll(100.0);
+        ui.frame().unwrap();
+        assert_eq!(state_field(ui, "scroll"), Some(15), "20 items, 5 visible → max 15");
+
+        // Keyboard navigation DOES re-ensure the selection: 'down' moves sel to
+        // 1 and pulls the window back so the selection is visible again.
+        ui.key("down").unwrap();
+        assert_eq!(state_field(ui, "selected"), Some(1));
+        assert_eq!(state_field(ui, "scroll"), Some(1), "keyboard pulls the window to the selection");
     });
 }
 

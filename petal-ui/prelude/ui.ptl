@@ -177,27 +177,39 @@ end
 // list can share the keyboard with other widgets (see the focus registry).
 // Mouse click still selects a row regardless — the caller pairs that click
 // with `focus_set` to make the list focused.
+//
+// The wheel scrolls the window freely, unclamped by the selection (like gitk /
+// native list widgets): only keyboard navigation re-runs `ensure_visible` to
+// pull the selection back on screen, so you can browse a long list past the
+// selection without it snapping back.
 fn list_update(lst, item_count, visible_rows, r, active)
   let sel = lst.selected
   let scroll = lst.scroll
+  let key_moved = false
   if active then
     if key_pressed("down") || key_pressed("j") then
       sel = sel + 1
+      key_moved = true
     end
     if key_pressed("up") || key_pressed("k") then
       sel = sel - 1
+      key_moved = true
     end
     if key_pressed("pagedown") then
       sel = sel + visible_rows
+      key_moved = true
     end
     if key_pressed("pageup") then
       sel = sel - visible_rows
+      key_moved = true
     end
     if key_pressed("home") then
       sel = 0
+      key_moved = true
     end
     if key_pressed("end") then
       sel = item_count - 1
+      key_moved = true
     end
   end
   if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
@@ -211,7 +223,9 @@ fn list_update(lst, item_count, visible_rows, r, active)
   end
   sel = _clamp(sel, 0, max(0, item_count - 1))
   scroll = _clamp(scroll, 0, max(0, item_count - visible_rows))
-  scroll = ensure_visible(scroll, sel, visible_rows)
+  if key_moved then
+    scroll = ensure_visible(scroll, sel, visible_rows)
+  end
   {selected: sel, scroll: scroll}
 end
 

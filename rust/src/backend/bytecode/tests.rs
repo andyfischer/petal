@@ -3,9 +3,8 @@
 //! once with everything on (`OptFlags::all`) — and their results must agree.
 //! BC-noopt is the correctness oracle; the in-place optimizations must match it
 //! exactly (see docs/dev/bytecode-future-ideas.md for the parity invariants).
-//! This replaced the graph engine as the oracle in the bytecode migration
-//! (docs/dev/bytecode-migration.md); absolute correctness for fixed programs is
-//! anchored by the golden corpus and the `test/<case>/expects` harness.
+//! Absolute correctness for fixed programs is anchored by the golden corpus and
+//! the `test/<case>/expects` harness.
 
 use crate::backend::OptFlags;
 use crate::env::Env;

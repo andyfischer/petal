@@ -23,7 +23,7 @@ Rebindings inside a child block lower to pure-dataflow joins: a single
 term (`Branch`, `Match`, `ForLoop`, `WhileLoop`). Each phi initializes from
 its `inputs[0]` (the pre-control-flow value) and is updated on child-frame
 pops via `Block.phi_outs`. The IR has no register-mutation primitive — see
-`docs/dev/MutabilityPlan.md`.
+the phi-join discussion in `docs/dev/Architecture.md`.
 
 ---
 

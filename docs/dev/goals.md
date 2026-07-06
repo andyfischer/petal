@@ -7,8 +7,7 @@ are deleted from this file as they land — if a capability isn't listed under
 
 > Design context for already-shipped pillars lives elsewhere and is not
 > repeated here: [ir-as-target.md](ir-as-target.md) (the IR-as-emit-target
-> contract), [MutabilityPlan.md](MutabilityPlan.md) (why the IR is purely
-> immutable), and [Architecture.md](Architecture.md) (how the term graph
+> contract) and [Architecture.md](Architecture.md) (how the term graph
 > realizes these goals).
 
 Status legend:
@@ -83,8 +82,8 @@ Refresh).
 ## Where we are
 
 The **foundation is real and shipped**: a flat, SSA-style dataflow term graph
-with explicit input edges, `Phi` joins for rebinding (no mutation primitive —
-see [MutabilityPlan.md](MutabilityPlan.md)), reified control flow, first-class
+with explicit input edges, `Phi` joins for rebinding (no mutation primitive),
+reified control flow, first-class
 `state` with temporal edges, a mark-sweep GC, and a bytecode VM. The
 introspection pillars built on it — provenance, forward dependents, slicing,
 `ExplainTerm`, structured traces — and **state-preserving hot reload** are

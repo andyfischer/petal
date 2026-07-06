@@ -16,11 +16,8 @@ The term graph is the canonical, introspectable IR — provenance, slicing,
 autodiff, `explain`, hot-reload, and the IR-as-target contract all reason about
 it. It is executed by the **bytecode VM** (`rust/src/backend/bytecode/`), a
 register machine that runs a linear *lowering* of the graph, with
-escape-analysis-driven in-place mutation gated by `backend::OptFlags`. (An
-earlier term-graph step evaluator served as the reference engine during the
-VM's bring-up; it was removed once the VM reached parity — see
-[bytecode-migration.md](bytecode-migration.md).) The VM still populates the
-trace buffer that the graph-level introspection reads. See
+escape-analysis-driven in-place mutation gated by `backend::OptFlags`. The VM
+populates the trace buffer that the graph-level introspection reads. See
 [bytecode-future-ideas.md](bytecode-future-ideas.md) for optional follow-ups.
 
 ---
@@ -166,8 +163,6 @@ control-flow term. The phi initializes from its `inputs[0]` (the
 pre-control-flow value) and gets updated by each child-frame pop via
 `Block.phi_outs`. Branches that don't rebind leave the init value in
 place; loop iterations read the latest value.
-
-Ongoing design notes live in [MutabilityPlan.md](MutabilityPlan.md).
 
 ### ConstantTable
 
@@ -473,5 +468,4 @@ for the host side.
 - [Function Overloading](../Function_Overloading.md) — multi-arity dispatch
 - [Debug Protocol](debug-protocol.md) — SDL / canvas agent protocol
 - [Debugging & Visibility](debugging-visibility.md) — observability stack
-- [Mutability Plan](MutabilityPlan.md) — design notes on phi joins
 - [Goals](goals.md) — vision, remaining work, and sequencing

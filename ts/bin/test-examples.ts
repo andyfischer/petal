@@ -2,10 +2,9 @@
 // Run every examples/*.ptl file as a differential test on the bytecode VM: each
 // example must exit 0 under both optimization levels (clone-and-alloc baseline
 // via --no-opt, and all in-place opts on by default), produce byte-identical
-// stdout/stderr across the two, AND match the frozen graph-captured golden in
-// test/example-golden/ (see docs/dev/bytecode-migration.md). The golden corpus
-// is the absolute-correctness anchor now that the graph engine is no longer an
-// execution oracle; regenerate it deliberately with ts/bin/gen-example-golden.ts.
+// stdout/stderr across the two, AND match the frozen golden in
+// test/example-golden/. The golden corpus is the absolute-correctness anchor;
+// regenerate it deliberately with ts/bin/gen-example-golden.ts.
 // Usage:
 //   ./bin/test-examples.ts            # differential + golden sweep, 8-line preview
 //   ./bin/test-examples.ts --full     # same, full output

@@ -1,16 +1,13 @@
 # Bytecode backend — future ideas
 
-The bytecode VM is Petal's only execution engine (an earlier term-graph step
-evaluator served as the reference oracle during bring-up and was removed at
-parity — see [bytecode-migration.md](bytecode-migration.md)). It runs the entire
+The bytecode VM is Petal's only execution engine. It runs the entire
 language — value, print output, final state, and error text verified across the
 `examples/` golden corpus and the vitest suite — is 4–10x faster on compute-bound
 code, and — by default — mutates provably-unique
 containers in place so the loop-accumulator COW cost is gone (`DupStats` is 0
 bytes on `append`/`particles`/`life`; recover the clone-and-alloc baseline with
-`--no-opt` / `PETAL_OPT=off`). The design, milestone history, and the hard-won
-gotchas that got it there lived in the old `bytecode-status.md`; this file keeps
-only the **open follow-ups** that outlived it.
+`--no-opt` / `PETAL_OPT=off`). This file keeps only the **open follow-ups** for
+the backend.
 
 Nothing here is required. Each item is gated on a *specific* workload the current
 profile does not cover — the standing rule is **re-run `ts/bin/bench-opts.ts`

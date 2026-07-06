@@ -29,6 +29,7 @@ pub mod stats;
 pub mod symbol;
 pub mod trace;
 pub mod transfer_state;
+pub mod trivia;
 pub mod value;
 
 pub use handle::{HandleClass, HandleClassId, HandleVal};

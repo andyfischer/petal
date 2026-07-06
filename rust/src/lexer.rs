@@ -108,6 +108,11 @@ pub struct Lexer {
     pos: usize,
     pub tokens: Vec<Token>,
     pub token_spans: Vec<SourceSpan>,
+    /// Leading trivia (whitespace, comments) preceding each token, parallel to
+    /// `tokens`. Empty until [`Lexer::tokenize`] finishes and populates it. The
+    /// parser ignores this — it exists so source-preserving tooling can round-
+    /// trip comments and layout. See `crate::trivia`.
+    pub token_leading_trivia: Vec<Vec<crate::trivia::Trivia>>,
     mode_stack: Vec<LexerMode>,
     // Line/column tracking (1-based)
     line: u32,
@@ -131,6 +136,7 @@ impl Lexer {
             pos: 0,
             tokens: Vec::new(),
             token_spans: Vec::new(),
+            token_leading_trivia: Vec::new(),
             mode_stack: Vec::new(),
             line: 1,
             col: 1,
@@ -219,6 +225,13 @@ impl Lexer {
 
         let start = self.current_pos();
         self.push_token(Token::Eof, start);
+
+        // Recover the trivia (whitespace/comments) between tokens from the
+        // spans, so downstream tooling can reproduce the original source. This
+        // does not affect `tokens`, which the parser consumes unchanged.
+        let source: String = self.input.iter().collect();
+        self.token_leading_trivia = crate::trivia::leading_trivia(&source, &self.token_spans);
+
         Ok(&self.tokens)
     }
 

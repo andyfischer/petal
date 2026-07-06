@@ -89,8 +89,7 @@ introspection pillars built on it — provenance, forward dependents, slicing,
 `ExplainTerm`, structured traces — and **state-preserving hot reload** are
 shipped and tested. Forward-mode autodiff (dual numbers) propagates through
 arithmetic and `sin`/`cos`/`tan`/`sqrt`/`abs`. The IR is a documented
-load-and-run **emit target** (`run --ir`, M1–M4 complete; see
-[ir-as-target.md](ir-as-target.md)).
+load-and-run **emit target** (`run --ir`; see [ir-as-target.md](ir-as-target.md)).
 
 The **near-term wedge** is live, dataflow-legible **creative coding**, where
 Petal's state + hot-reload + legibility combination is genuinely
@@ -180,13 +179,6 @@ reverse-mode AD worth building by scoping it to a use case:
   documented agent-facing surface.
 - **Types as a projection:** infer shapes and surface them to tooling/agents
   (hover, structured output) without enforcement.
-
-### Phase 3 — IR as a legible emit target — ✅ done
-
-M1–M4 complete: import-format contract (Schema v0), `run --ir` load-and-run
-with verified round-trip, pre-eval validation with actionable errors, and a
-reference external emitter (`calc-to-ir`). See [ir-as-target.md](ir-as-target.md).
-Further external emitters are downstream and optional.
 
 ### North Star (not scheduled)
 

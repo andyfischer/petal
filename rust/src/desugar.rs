@@ -27,6 +27,14 @@
 //! Here `@a`'s nearest enclosing call is `func2`, so `func2(a)` (not the whole
 //! statement) is what gets written back to `a`.
 //!
+//! When the lifted call was the entire statement, no reference remains to
+//! replace — the statement desugars to exactly the assignment, so the
+//! canonical form above compiles to identical IR:
+//!
+//! ```text
+//! something(@var)    =>   var = something(var)
+//! ```
+//!
 //! ## Scope: "nearest statement level"
 //!
 //! Lifting only happens for expressions evaluated **once, unconditionally, at
@@ -60,8 +68,25 @@ fn desugar_stmts(stmts: &mut Vec<Stmt>) {
     for mut stmt in taken {
         let mut hoisted = Vec::new();
         lift_stmt(&mut stmt, &mut hoisted);
+        // When the lifted call was the *entire* expression statement, the
+        // generic rewrite leaves a residual read of the variable behind
+        // (`f(@x)` → `x = f(x)` then a bare `x`). That read is load-bearing
+        // when the call is a subexpression, but as a statement it is a pure
+        // no-op — and its value equals the assignment's, so even a
+        // block-result position is unchanged. Drop it: statement-level
+        // `f(@x)` desugars to exactly `x = f(x)`.
+        let residual = match (&stmt.kind, hoisted.last()) {
+            (StmtKind::Expr(e), Some(h)) => matches!(
+                (&e.kind, &h.kind),
+                (ExprKind::Ident(n), StmtKind::Assign { target: AssignTarget::Name(t), .. })
+                    if n == t
+            ),
+            _ => false,
+        };
         out.extend(hoisted);
-        out.push(stmt);
+        if !residual {
+            out.push(stmt);
+        }
     }
     *stmts = out;
 }
@@ -324,11 +349,13 @@ mod tests {
         stmts
     }
 
-    /// `f(@x)` at statement level → `x = f(x)` hoisted before a bare `x`.
+    /// `f(@x)` at statement level → exactly `x = f(x)`: the residual read the
+    /// generic rewrite leaves at the call site is dropped for a statement
+    /// that was entirely the lifted call.
     #[test]
-    fn flat_at_arg_hoists_assignment() {
+    fn flat_at_arg_becomes_exactly_the_assignment() {
         let stmts = desugared("double(@a)\n");
-        assert_eq!(stmts.len(), 2);
+        assert_eq!(stmts.len(), 1);
         match &stmts[0].kind {
             StmtKind::Assign { target: AssignTarget::Name(n), value } => {
                 assert_eq!(n, "a");
@@ -337,7 +364,15 @@ mod tests {
             }
             other => panic!("expected `a = double(a)`, got {other:?}"),
         }
-        // The original call site is now just `a`.
+    }
+
+    /// A user-written bare identifier statement is *not* a residual and must
+    /// survive desugaring, even right after a statement that hoists onto the
+    /// same variable.
+    #[test]
+    fn user_written_bare_ident_statement_survives() {
+        let stmts = desugared("let a = 1\na\n");
+        assert_eq!(stmts.len(), 2);
         assert!(matches!(
             &stmts[1].kind,
             StmtKind::Expr(e) if matches!(&e.kind, ExprKind::Ident(n) if n == "a")
@@ -394,8 +429,8 @@ mod tests {
         let ExprKind::If { then_body, .. } = &e.kind else {
             panic!("expected an `if`");
         };
-        // The branch gained the hoisted assignment: `a = double(a)` then `a`.
-        assert_eq!(then_body.len(), 2);
+        // The branch body became the hoisted assignment `a = double(a)`.
+        assert_eq!(then_body.len(), 1);
         assert!(matches!(
             &then_body[0].kind,
             StmtKind::Assign { target: AssignTarget::Name(n), .. } if n == "a"

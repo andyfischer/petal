@@ -394,9 +394,9 @@ struct Rebind {
 /// fn/for/while/if/block/lambda bodies) — never inside match arms or `while`
 /// conditions, where an `@` would survive to the compiler as an error.
 ///
-/// The desugarer rewrites `f(@x)` back to `x = f(x)` plus a residual read of
-/// `x` at the call site, so the rewrite is value-preserving by construction;
-/// [`lint_source`] verifies it against the compiled IR anyway.
+/// The desugarer rewrites statement-level `f(@x)` back to exactly `x = f(x)`,
+/// so the rewrite is semantics-preserving by construction; [`lint_source`]
+/// verifies it against the compiled IR anyway.
 fn find_rebinds(stmts: &[Stmt], chars: &[char]) -> Vec<Rebind> {
     let mut out = Vec::new();
     rebind_stmts(stmts, chars, &mut out);
@@ -736,13 +736,12 @@ enum Gate {
     Unavailable(String),
 }
 
-/// Compile both sources and compare the entry programs in **canonical form**:
-/// per-block term chains with unnamed `Copy` terms (pure identity
-/// passthroughs — every plain identifier reference compiles to one) resolved
-/// away and the remaining terms renumbered in traversal order. This is
-/// exactly the slack the rebind rewrite needs: `f(@x)` desugars to
-/// `x = f(x)` plus a residual read of `x` at the call site, i.e. one extra
-/// unnamed `Copy` of the assignment — dataflow-identical, not term-identical.
+/// Compile both sources and compare the entry programs' full serialized IR —
+/// term ids, blocks, registers, constants, everything except the source text
+/// and the source map (whitespace edits move spans). No structural slack:
+/// statement-level `f(@x)` desugars to exactly `x = f(x)`
+/// ([`crate::desugar`]), so the rebind rewrite must produce an identical
+/// program.
 fn ir_gate(before: &str, after: &str, opts: &LintOptions) -> Gate {
     let pre = match compile_ir(before, opts) {
         Ok(v) => v,
@@ -771,112 +770,12 @@ fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, Str
     let program = env
         .get_program(pid)
         .ok_or_else(|| "compiled program missing".to_string())?;
-    Ok(canonical_ir(program))
-}
-
-/// Render a program's IR in a canonical, comparison-stable form:
-/// - unnamed `Copy` terms (identity passthroughs) are dropped, with inputs
-///   that referenced them resolved through to their sources;
-/// - the surviving terms are renumbered in block-traversal order, so an
-///   inserted or removed passthrough doesn't shift every later id;
-/// - derived data (registers, block_next/prev links — implied by chain
-///   order) and source data (source text, source map) are omitted.
-fn canonical_ir(program: &crate::program::Program) -> serde_json::Value {
-    use crate::program::{TermId, TermOp};
-    use serde_json::json;
-    use std::collections::HashMap;
-
-    let passthrough = |id: TermId| {
-        let t = program.get_term(id);
-        matches!(t.op, TermOp::Copy) && t.name.is_none() && t.inputs.len() == 1
-    };
-    let resolve = |mut id: TermId| {
-        while passthrough(id) {
-            id = program.get_term(id).inputs[0];
-        }
-        id
-    };
-
-    // Pass 1: walk every block's chain in block order, assigning canonical
-    // ids to the surviving terms.
-    let mut canon: HashMap<u32, usize> = HashMap::new();
-    let mut chains: Vec<Vec<TermId>> = Vec::with_capacity(program.blocks.len());
-    let mut next = 0usize;
-    for block in &program.blocks {
-        let mut chain = Vec::new();
-        let mut cur = block.entry;
-        while let Some(tid) = cur {
-            if !passthrough(tid) {
-                canon.insert(tid.0, next);
-                next += 1;
-                chain.push(tid);
-            }
-            cur = program.get_term(tid).block_next;
-        }
-        chains.push(chain);
+    let mut json = serde_json::to_value(program).map_err(|e| e.to_string())?;
+    if let serde_json::Value::Object(map) = &mut json {
+        map.remove("source");
+        map.remove("source_map");
     }
-    let canon_of = |id: TermId| -> serde_json::Value {
-        let r = resolve(id);
-        match canon.get(&r.0) {
-            Some(&c) => json!(c),
-            // A term outside every block chain (shouldn't happen) — keep its
-            // raw id so a real difference still shows up.
-            None => json!(format!("raw:{}", r.0)),
-        }
-    };
-
-    // Pass 2: render.
-    let blocks: Vec<serde_json::Value> = program
-        .blocks
-        .iter()
-        .zip(&chains)
-        .map(|(block, chain)| {
-            let terms: Vec<serde_json::Value> = chain
-                .iter()
-                .map(|&tid| {
-                    let t = program.get_term(tid);
-                    let arms = program.match_arms.get(&tid).map(|arms| {
-                        serde_json::to_value(arms).unwrap_or(serde_json::Value::Null)
-                    });
-                    json!({
-                        "op": serde_json::to_value(&t.op).unwrap_or(serde_json::Value::Null),
-                        "name": t.name,
-                        "inputs": t.inputs.iter().map(|&i| canon_of(i)).collect::<Vec<_>>(),
-                        "state_key": t.state_key.map(|k| k.0),
-                        "in_loop": t.in_loop,
-                        "child_blocks": t.child_blocks.iter().map(|b| b.0).collect::<Vec<_>>(),
-                        "arms": arms,
-                    })
-                })
-                .collect();
-            json!({
-                "params": block.param_names,
-                "parent": block.parent_term_id.map(canon_of),
-                "terms": terms,
-            })
-        })
-        .collect();
-
-    let functions: Vec<serde_json::Value> = program
-        .functions
-        .iter()
-        .map(|f| {
-            json!({
-                "name": f.name,
-                "params": f.params,
-                "captures": f.capture_names,
-                "body_block": f.body_block.0,
-            })
-        })
-        .collect();
-
-    json!({
-        "root_block": program.root_block.0,
-        "blocks": blocks,
-        "functions": functions,
-        "constants": serde_json::to_value(&program.constants)
-            .unwrap_or(serde_json::Value::Null),
-    })
+    Ok(json)
 }
 
 #[cfg(test)]

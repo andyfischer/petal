@@ -11,11 +11,13 @@ garden editor scripts.
 
 Two findings from implementation that correct assumptions below:
 
-- `f(@x)` does **not** desugar to exactly `x = f(x)` — the desugarer hoists
-  the assignment and leaves a residual read of `x` at the call site, which
-  compiles to one extra unnamed `Copy` term (a pure identity). The gate
-  therefore compares IR in *canonical form*: unnamed `Copy` passthroughs
-  resolved away and terms renumbered in block-traversal order.
+- The desugarer originally rewrote statement-level `f(@x)` to `x = f(x)`
+  *plus a residual read of `x`* at the call site (one extra unnamed `Copy`
+  term), so the IR gate needed identity-copy slack. Rather than build that
+  slack into the safety check, the desugarer now drops the residual when the
+  lifted call was the entire statement — `f(@x)` desugars to exactly
+  `x = f(x)`, and the gate is **strict**: full serialized-IR equality, term
+  ids and registers included, ignoring only the source text and source map.
 - Rebind candidates must mirror `desugar.rs`'s recursion exactly: the v1
   desugarer does not lift `@` out of match arms or `while` conditions, so the
   linter never proposes rebinds there (the rewrite would leave an `@` that

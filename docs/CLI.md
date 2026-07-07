@@ -94,8 +94,8 @@ Two kinds of normalization (see [dev/linter-plan.md](dev/linter-plan.md)):
   keep comments intact.
 
 Because rebind changes tokens, `lint` verifies it with an IR-equivalence gate:
-the pre- and post-lint sources must compile to structurally identical IR
-(modulo spans and identity copies). If the file doesn't compile standalone
+the pre- and post-lint sources must compile to **identical** IR (only the
+embedded source text and source spans may differ). If the file doesn't compile standalone
 (e.g. its imports need `-I` dirs not given), rebinds are skipped with a note
 and only formatting applies.
 

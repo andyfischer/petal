@@ -177,6 +177,25 @@ pub struct GreenNode {
 }
 
 impl GreenNode {
+    /// Build a node from `kind` and `children`, computing the cached
+    /// `text_len`. This is the tree-editing entry point: an edit constructs
+    /// replacement nodes with this and rebuilds the spine above them with
+    /// [`GreenNode::replace_child`].
+    pub fn with_children(kind: SyntaxKind, children: Vec<GreenChild>) -> Rc<GreenNode> {
+        let text_len = children.iter().map(GreenChild::text_len).sum();
+        Rc::new(GreenNode { kind, children, text_len })
+    }
+
+    /// A copy of this node with the child at `index` swapped for `child`.
+    /// Green nodes are immutable and `Rc`-shared, so an edit rebuilds only the
+    /// parent chain above the change — O(depth) — while every untouched
+    /// subtree stays shared with the original tree.
+    pub fn replace_child(&self, index: usize, child: GreenChild) -> Rc<GreenNode> {
+        let mut children = self.children.clone();
+        children[index] = child;
+        Self::with_children(self.kind, children)
+    }
+
     /// The node kind.
     pub fn kind(&self) -> SyntaxKind {
         self.kind
@@ -260,8 +279,7 @@ impl GreenNodeBuilder {
             .stack
             .pop()
             .expect("GreenNodeBuilder::finish_node called with no open node");
-        let text_len = children.iter().map(GreenChild::text_len).sum();
-        let node = Rc::new(GreenNode { kind, children, text_len });
+        let node = GreenNode::with_children(kind, children);
         match self.stack.last_mut() {
             Some((_, parent)) => parent.push(GreenChild::Node(node)),
             None => self.root = Some(node),

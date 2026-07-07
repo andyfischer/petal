@@ -207,7 +207,8 @@ parser:
     (Token events for free) and add `open`/`close`/`checkpoint`/`wrap` calls at
     each construct, behind a recording flag so normal parsing has zero overhead.
     Validate the structured tree round-trips the whole corpus and has the
-    expected node shapes.
+    expected node shapes. **Step-by-step instructions:**
+    [handoff-3b-ii.md](handoff-3b-ii.md).
 - **▢ 3c — Typed AST as a view.** Project the existing `ast` types (or typed
   accessors) over the red tree so the compiler/desugar read structure from the
   CST.

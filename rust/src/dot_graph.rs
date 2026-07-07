@@ -67,16 +67,12 @@ mod tests {
     use super::*;
     use crate::builtins::register_builtins;
     use crate::compiler::Compiler;
-    use crate::lexer::Lexer;
     use crate::native_fn::NativeFnTable;
-    use crate::parse::Parser;
     use crate::program::ProgramId;
+    use crate::source_map::ENTRY_FILE;
 
     fn compile(source: &str) -> Program {
-        let mut lexer = Lexer::new(source);
-        lexer.tokenize().expect("tokenize");
-        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-        let stmts = parser.parse_program().expect("parse");
+        let (_, stmts) = crate::cst::parse_source(source, ENTRY_FILE).expect("parse");
         let mut natives = NativeFnTable::new();
         register_builtins(&mut natives);
         Compiler::new().compile(&stmts, source.to_string(), ProgramId(0), &natives)

@@ -878,16 +878,12 @@ fn op_name(op: &TermOp) -> &'static str {
 mod tests {
     use super::*;
     use crate::compiler::Compiler;
-    use crate::lexer::Lexer;
     use crate::native_fn::NativeFnTable;
-    use crate::parse::Parser;
     use crate::program::ProgramId;
+    use crate::source_map::ENTRY_FILE;
 
     fn compile(src: &str) -> Program {
-        let mut lexer = Lexer::new(src);
-        lexer.tokenize().expect("tokenize");
-        let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-        let stmts = parser.parse_program().expect("parse");
+        let (_, stmts) = crate::cst::parse_source(src, ENTRY_FILE).expect("parse");
         let mut natives = NativeFnTable::new();
         crate::builtins::register_builtins(&mut natives);
         Compiler::new().compile(&stmts, src.to_string(), ProgramId(0), &natives)

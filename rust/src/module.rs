@@ -18,8 +18,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{ImportDecl, Stmt, StmtKind};
-use crate::lexer::Lexer;
-use crate::parse::Parser;
 use crate::source_map::{FileId, ENTRY_FILE};
 
 /// Where a module's source came from.
@@ -276,10 +274,8 @@ fn parse_module(
         Some(name) => format!("{name}: {e}"),
         None => e,
     };
-    let mut lexer = Lexer::new_in_file(source, file_id);
-    lexer.tokenize().map_err(annotate)?;
-    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-    parser.parse_program().map_err(annotate)
+    let (_tree, stmts) = crate::cst::parse_source(source, file_id).map_err(annotate)?;
+    Ok(stmts)
 }
 
 /// Split a parsed statement list into its leading imports and the rest.

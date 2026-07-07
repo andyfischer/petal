@@ -529,14 +529,10 @@ fn assert_inplace_parity(code: &str) {
 /// Compile `code` to a `Program` (the front half of the run pipeline).
 fn compile_program(code: &str) -> crate::program::Program {
     use crate::compiler::Compiler;
-    use crate::lexer::Lexer;
     use crate::native_fn::NativeFnTable;
-    use crate::parse::Parser;
     use crate::program::ProgramId;
-    let mut lexer = Lexer::new(code);
-    lexer.tokenize().expect("tokenize");
-    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-    let stmts = parser.parse_program().expect("parse");
+    use crate::source_map::ENTRY_FILE;
+    let (_, stmts) = crate::cst::parse_source(code, ENTRY_FILE).expect("parse");
     let mut natives = NativeFnTable::new();
     crate::builtins::register_builtins(&mut natives);
     Compiler::new().compile(&stmts, code.to_string(), ProgramId(0), &natives)

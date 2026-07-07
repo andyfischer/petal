@@ -9,8 +9,8 @@ use crate::dot_graph::program_to_dot;
 use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
-use crate::parse::Parser;
 use crate::program::ProgramId;
+use crate::source_map::ENTRY_FILE;
 
 pub enum Command {
     Run {
@@ -622,14 +622,8 @@ pub fn execute(cli: CliArgs) {
             }
         }
         Command::ShowAst { json } => {
-            let mut lexer = Lexer::new(&source);
-            if let Err(e) = lexer.tokenize() {
-                eprintln!("Error: {}", e);
-                process::exit(1);
-            }
-            let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-            match parser.parse_program() {
-                Ok(stmts) => {
+            match crate::cst::parse_source(&source, ENTRY_FILE) {
+                Ok((_tree, stmts)) => {
                     if json {
                         println!("{}", serde_json::to_string_pretty(&stmts).unwrap());
                     } else {

@@ -41,8 +41,9 @@
 
 use std::rc::Rc;
 
+use crate::ast::Stmt;
 use crate::lexer::{Lexer, Token};
-use crate::source_map::SourceSpan;
+use crate::source_map::{FileId, SourceSpan, ENTRY_FILE};
 use crate::trivia::{Trivia, TriviaKind};
 
 /// The kind of an interior CST node. Token leaves carry their own identity (a
@@ -580,18 +581,41 @@ pub fn build_lossless(source: &str) -> Result<Rc<GreenNode>, String> {
 /// Returns the lexer's or parser's error if `source` does not parse; the tree
 /// is only built on success (an error leaves the event stream unbalanced).
 pub fn parse_cst(source: &str) -> Result<Rc<GreenNode>, String> {
-    let mut lexer = Lexer::new(source);
+    parse_source(source, ENTRY_FILE).map(|(green, _)| green)
+}
+
+/// Parse once: lex, parse with CST recording, build the green tree, and
+/// project the typed AST from it ([`crate::cst_project`]). The tree is the
+/// authoritative parse artifact; the AST the parser builds directly is used
+/// only for a debug-build differential check against the projection.
+///
+/// Spans in the returned statements are tagged with `file` (pass
+/// [`ENTRY_FILE`] for top-level source, the module's [`FileId`] for imports).
+///
+/// Returns the lexer's or parser's error if `source` does not parse; the tree
+/// is only built on success (an error leaves the event stream unbalanced).
+pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
+    let mut lexer = Lexer::new_in_file(source, file);
     lexer.tokenize()?;
     let mut parser =
         crate::parse::Parser::new_recording(lexer.tokens.clone(), lexer.token_spans.clone());
-    parser.parse_program()?; // discard the AST; we want the event stream
-    Ok(build_tree(
+    let direct = parser.parse_program()?;
+    let green = build_tree(
         parser.cst_events(),
         &lexer.tokens,
         &lexer.token_spans,
         &lexer.token_leading_trivia,
         source,
-    ))
+    );
+    let projected = crate::cst_project::project_in_file(&SyntaxNode::new_root(green.clone()), file)?;
+    // The corpus tests prove projection ≡ direct parse; this catches drift on
+    // inputs the corpus lacks.
+    debug_assert_eq!(
+        format!("{direct:#?}"),
+        format!("{projected:#?}"),
+        "CST projection diverged from the parser's direct AST"
+    );
+    Ok((green, projected))
 }
 
 #[cfg(test)]

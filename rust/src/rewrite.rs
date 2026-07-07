@@ -15,19 +15,19 @@
 //! Spans store **character** offsets (the lexer indexes source as `Vec<char>`),
 //! so [`splice`] slices by character, not byte — safe for multi-byte source.
 
-use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
-use crate::lexer::Lexer;
-use crate::parse::Parser;
-use crate::source_map::SourceSpan;
+use std::rc::Rc;
 
-/// Parse `source` into its top-level statements, preserving each node's source
-/// span. A thin wrapper over the lexer + parser for tools that want to inspect
-/// or rewrite source rather than run it.
-pub fn parse_ast(source: &str) -> Result<Vec<Stmt>, String> {
-    let mut lexer = Lexer::new(source);
-    lexer.tokenize()?;
-    let mut parser = Parser::new(lexer.tokens, lexer.token_spans);
-    parser.parse_program()
+use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
+use crate::cst::{parse_source, GreenNode};
+use crate::source_map::{SourceSpan, ENTRY_FILE};
+
+/// Parse `source` into its lossless green tree plus its top-level statements,
+/// preserving each node's source span. A thin wrapper over
+/// [`crate::cst::parse_source`] for tools that want to inspect or rewrite
+/// source rather than run it; the tree carries the comments and layout the AST
+/// drops, which is what tree-splice edits operate on.
+pub fn parse_ast(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
+    parse_source(source, ENTRY_FILE)
 }
 
 /// Find a top-level call `name(...)` written as its own statement, returning the
@@ -85,7 +85,7 @@ pub fn replace_or_append_call(
     name: &str,
     replacement: &str,
 ) -> Result<String, String> {
-    let stmts = parse_ast(source)?;
+    let (_tree, stmts) = parse_ast(source)?;
     match find_call(&stmts, name) {
         Some(span) => Ok(splice(source, span, replacement)),
         None => {
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn finds_top_level_call_span() {
         let src = "x = 1\nlayout(editor())\n";
-        let stmts = parse_ast(src).unwrap();
+        let (_, stmts) = parse_ast(src).unwrap();
         let span = find_call(&stmts, "layout").expect("layout call found");
         // The span should cover exactly `layout(editor())`.
         let chars: Vec<char> = src.chars().collect();
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn splice_preserves_surrounding_code_and_comments() {
         let src = "// a comment\nx = 1\nlayout(editor())\n// trailing\n";
-        let stmts = parse_ast(src).unwrap();
+        let (_, stmts) = parse_ast(src).unwrap();
         let span = find_call(&stmts, "layout").unwrap();
         let out = splice(src, span, "layout(editor(\"new.rs\"))");
         assert_eq!(
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn multiline_call_span_is_replaced_whole() {
         let src = "layout(\n    column([\n        editor(),\n    ])\n)\nx = 2\n";
-        let stmts = parse_ast(src).unwrap();
+        let (_, stmts) = parse_ast(src).unwrap();
         let span = find_call(&stmts, "layout").unwrap();
         let out = splice(src, span, "layout(editor())");
         assert_eq!(out, "layout(editor())\nx = 2\n");
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn ignores_calls_with_other_names() {
         let src = "layout(editor())\n";
-        let stmts = parse_ast(src).unwrap();
+        let (_, stmts) = parse_ast(src).unwrap();
         assert!(find_call(&stmts, "set_layout").is_none());
     }
 
@@ -169,7 +169,7 @@ mod tests {
         // A comment with multi-byte characters before the call: the char-offset
         // splice must not corrupt it.
         let src = "// café ☕ notes\nlayout(editor())\n";
-        let stmts = parse_ast(src).unwrap();
+        let (_, stmts) = parse_ast(src).unwrap();
         let span = find_call(&stmts, "layout").unwrap();
         let out = splice(src, span, "layout(editor(\"x\"))");
         assert_eq!(out, "// café ☕ notes\nlayout(editor(\"x\"))\n");

@@ -319,7 +319,7 @@ mod tests {
     use crate::rewrite::parse_ast;
 
     fn desugared(src: &str) -> Vec<Stmt> {
-        let mut stmts = parse_ast(src).expect("parse");
+        let (_, mut stmts) = parse_ast(src).expect("parse");
         desugar(&mut stmts);
         stmts
     }

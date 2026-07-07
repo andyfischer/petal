@@ -1405,7 +1405,8 @@ impl Parser {
 
 /// Parse a hex color string (without '#') into (field_name, value) pairs.
 /// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
-fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
+/// Shared with `crate::cst_project` so the CST projection can't drift.
+pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
     let expand = |c: u8| -> i64 {
         let v = if c.is_ascii_digit() { c - b'0' } else { (c.to_ascii_lowercase() - b'a') + 10 };
         (v as i64) * 17 // e.g. 0xf -> 255, 0x8 -> 136
@@ -1425,7 +1426,8 @@ fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
     }
 }
 
-fn expr_to_assign_target(expr: Expr) -> Result<AssignTarget, String> {
+/// Shared with `crate::cst_project` so the CST projection can't drift.
+pub(crate) fn expr_to_assign_target(expr: Expr) -> Result<AssignTarget, String> {
     let span = expr.span;
     match expr.kind {
         ExprKind::Ident(name) => Ok(AssignTarget::Name(name)),

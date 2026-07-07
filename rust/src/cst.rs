@@ -372,6 +372,14 @@ impl SyntaxToken {
         self.green.is_trivia()
     }
 
+    /// The significant lexer token this leaf carries, or `None` for trivia.
+    pub fn token(&self) -> Option<&Token> {
+        match self.green.as_ref() {
+            GreenToken::Token { token, .. } => Some(token),
+            GreenToken::Trivia { .. } => None,
+        }
+    }
+
     /// The underlying green leaf.
     pub fn green(&self) -> &Rc<GreenToken> {
         &self.green

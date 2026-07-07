@@ -4,9 +4,10 @@ Status: **in progress** (2026-07-06). End goal committed: **full lossless
 representation (Option C — a concrete syntax tree)**. Steps 1–2 (a lossless
 lexer/trivia foundation with source-tiling token spans) are **done and
 proven**; Step 3 (the concrete syntax tree) is **in progress** — 3a (green-tree
-data structures) and 3b (parser emits a structured CST via `cst::parse_cst`,
-dual output alongside the AST) are done; next is 3c (typed AST as a view). See
-"Progress" below.
+data structures), 3b (parser emits a structured CST via `cst::parse_cst`, dual
+output alongside the AST), and 3c (the AST projected from the CST, proven
+identical to the parser's) are done; next is 3d (migrate consumers, make
+`parse_cst` the sole parser). See "Progress" below.
 
 ## Motivation
 
@@ -219,20 +220,35 @@ parser:
     `(a + b) * c` keeps `ParenExpr`, comments survive inside `FnDecl`), and the
     full existing suite green (AST unchanged). Trivia lands adjacent to node
     boundaries (sometimes just inside a wrapped node); attachment refinement is
-    deferred, as planned. Original instructions:
-    [handoff-3b-ii.md](handoff-3b-ii.md).
-- **▢ 3c — Typed AST as a view.** Project the existing `ast` types (or typed
-  accessors) over the red tree so the compiler/desugar read structure from the
-  CST.
-- **▢ 3d — Migrate consumers.** Move `rewrite.rs` to tree splices (comments carry
-  structurally through inserts/reorders) and `show-ast` to the typed view; wire
-  the `petal lint` re-indenter.
+    deferred, as planned.
+- **✅ 3c — Typed AST as a view** (`rust/src/cst_project.rs`, done 2026-07-06).
+  `cst_project::project(&SyntaxNode) -> Vec<Stmt>` walks the red tree and
+  rebuilds the exact `ast` values the parser builds directly — same shapes,
+  same `SourceSpan`s (line/column recomputed from a line index over the tree's
+  own text). The walk mirrors `parse.rs` construct-for-construct, including its
+  span conventions (binary/postfix exprs start at the left operand's *expression*
+  span, pipe calls span from the `|>` token, compound assignment desugars with a
+  whole-statement value span) and the running `state`-id counter (allocated
+  after the init expression, so states nested in lambdas number first).
+  `parse_color_hex` / `expr_to_assign_target` are shared from `parse.rs` so the
+  two paths can't drift. **Proven:** `projected_ast_matches_parser_over_repo_corpus`
+  — for every repo `.ptl` that parses, the projected AST is Debug-identical
+  (spans included) to the directly-built one — plus snippet tests covering the
+  quirky corners (pipe rewrites, elsif chains, match do-bodies, interpolation
+  edge parts, JSX, patterns, color literals, `import` forms).
+  `project_in_file(root, FileId)` exists for imported modules (file-local spans).
+- **▢ 3d — Migrate consumers.** Make `parse_cst` the sole parser and project the
+  AST from the tree (delete the dual-output path); move `rewrite.rs` to tree
+  splices (comments carry structurally through inserts/reorders) and `show-ast`
+  to the typed view; wire the `petal lint` re-indenter. Instructions:
+  [handoff-3d.md](handoff-3d.md).
 
 **Migration strategy (decided):** head toward *CST-authoritative*. 3b ships the
 low-risk intermediate state — the AST stays authoritative and the CST is a
 recorded side channel (`record_cst` off by default, so drift is impossible: both
-come from the same parse) — then 3c projects the AST from the tree and 3d makes
-`parse_cst` the sole parser.
+come from the same parse) — 3c proves the projection is lossless w.r.t. the AST,
+and 3d makes `parse_cst` the sole parser with the AST derived via
+`cst_project::project`.
 
 ---
 

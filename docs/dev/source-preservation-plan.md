@@ -187,10 +187,27 @@ parser:
   == src`, proven over the whole repo corpus. Touches nothing else — parser, AST,
   and consumers are unchanged.
 - **▶ 3b — Parser drives the builder.** Give the parser grammar node kinds and
-  have it emit `start_node`/`finish_node` around each construct while it consumes
-  tokens, producing a *structured* green tree alongside (or instead of) the AST.
-  This is the invasive increment; the sub-step boundary keeps it isolated. See
-  "Open decision" below.
+  have it emit events around each construct while it consumes tokens, producing a
+  *structured* green tree alongside the AST (dual output — AST stays
+  authoritative until 3d). Split again because the checkpoint machinery is the
+  tricky part:
+  - **✅ 3b-i — Event + checkpoint infrastructure** (`rust/src/cst.rs`, done
+    2026-07-06). Added the grammar `SyntaxKind` node kinds and an event layer:
+    `Event` (`Open`/`Close`/`Token`), an `EventBuilder` with `checkpoint()` +
+    `wrap()` (insert-`Open`-at-checkpoint / push-`Close`, so repeated wraps nest
+    outward → left-associative trees), and `build_tree(events, tokens, spans,
+    trivia, source)` which materializes the green tree, interleaving each token's
+    leading trivia and flushing any unconsumed trailing tokens into `Root`.
+    `build_lossless` is now `build_tree` with an empty event stream. Unit-tested
+    with synthetic event streams over real lexed tokens: left-assoc nesting of
+    `1 + 2 + 3`, node offsets tracking leading trivia, and lossless flush of
+    unconsumed tokens. The parser is untouched; this is the reusable core it will
+    drive.
+  - **▢ 3b-ii — Wire the parser.** Route `advance()` through the `EventBuilder`
+    (Token events for free) and add `open`/`close`/`checkpoint`/`wrap` calls at
+    each construct, behind a recording flag so normal parsing has zero overhead.
+    Validate the structured tree round-trips the whole corpus and has the
+    expected node shapes.
 - **▢ 3c — Typed AST as a view.** Project the existing `ast` types (or typed
   accessors) over the red tree so the compiler/desugar read structure from the
   CST.

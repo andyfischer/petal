@@ -42,6 +42,7 @@
 use std::rc::Rc;
 
 use crate::lexer::{Lexer, Token};
+use crate::source_map::SourceSpan;
 use crate::trivia::{Trivia, TriviaKind};
 
 /// The kind of an interior CST node. Token leaves carry their own identity (a
@@ -57,6 +58,58 @@ pub enum SyntaxKind {
     /// [`build_lossless`] (which never fails structurally); reserved for the
     /// parser-driven increment so error recovery still yields a lossless tree.
     Error,
+
+    // === Statement nodes ===
+    LetStmt,
+    AssignStmt,
+    ExprStmt,
+    FnDecl,
+    EnumDecl,
+    ForStmt,
+    WhileStmt,
+    ReturnStmt,
+    BreakStmt,
+    ContinueStmt,
+    StateStmt,
+    ImportStmt,
+
+    // === Expression nodes ===
+    LiteralExpr,
+    IdentExpr,
+    AtVarExpr,
+    BinaryExpr,
+    UnaryExpr,
+    CallExpr,
+    /// A parenthesized expression `( expr )`. The AST drops the parens; the CST
+    /// keeps them so grouping round-trips.
+    ParenExpr,
+    IfExpr,
+    MatchExpr,
+    ListExpr,
+    RecordExpr,
+    FieldAccessExpr,
+    IndexAccessExpr,
+    LambdaExpr,
+    StringInterpExpr,
+    ElementExpr,
+
+    // === Helper / interior nodes ===
+    /// A `{ … }` statement block (fn/for/while/lambda/match-do bodies).
+    Block,
+    /// A parenthesized call-argument list.
+    ArgList,
+    /// A parenthesized parameter list.
+    ParamList,
+    /// One `when pattern [if guard] -> body` arm of a `match`.
+    MatchArm,
+    /// A pattern in a `match` arm.
+    Pattern,
+    /// One field of a record literal (`key: value` or `...spread`).
+    RecordField,
+    /// An `elsif …` / `else …` tail of an if-expression.
+    ElseBranch,
+    /// One `name="value"` / `name={expr}` attribute of a JSX element.
+    JsxAttr,
 }
 
 /// A leaf of the green tree: either a significant token or a trivia run, each
@@ -162,6 +215,7 @@ impl GreenNode {
 /// let mut b = GreenNodeBuilder::new();
 /// b.start_node(SyntaxKind::Root);
 /// b.token(GreenToken::Token { token: Token::Int(1), text: "1".to_string() });
+/// b.finish_node();
 /// let root = b.finish();
 /// assert_eq!(root.text(), "1");
 /// ```
@@ -324,57 +378,189 @@ impl SyntaxToken {
     }
 }
 
+/// A parse event: the abstract shape of the tree, emitted by the parser as it
+/// recognizes constructs and later materialized by [`build_tree`]. Keeping
+/// events separate from tree construction buys two things the parser needs:
+/// checkpoints that retroactively *wrap* already-emitted nodes (for
+/// left-associative operators — see [`EventBuilder::wrap`]), and a single place
+/// to decide how trivia attaches to the tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    /// Open an interior node of this kind. Children follow until the matching
+    /// [`Event::Close`].
+    Open(SyntaxKind),
+    /// Close the most recently opened node.
+    Close,
+    /// Consume the next significant token from the token stream (trivia is
+    /// attached automatically by [`build_tree`]).
+    Token,
+}
+
+/// A saved position in an [`EventBuilder`]'s event list, used to wrap the nodes
+/// emitted after it. Only valid for the builder that produced it, and only
+/// until an earlier `wrap` shifts it (the standard recursive-descent usage —
+/// each parse function wraps at its own checkpoint after its callees have
+/// returned — never does this).
+#[derive(Debug, Clone, Copy)]
+pub struct Checkpoint(usize);
+
+/// Records the parser's [`Event`] stream. Interior nodes are opened with
+/// [`EventBuilder::open`] and closed with [`EventBuilder::close`]; a token is
+/// marked consumed with [`EventBuilder::token`]. For left-recursive constructs,
+/// take a [`EventBuilder::checkpoint`] *before* parsing the left operand and
+/// call [`EventBuilder::wrap`] *after* the right operand to enclose the whole
+/// range in a node — nesting outward on each loop iteration, which yields
+/// left-associative trees.
+#[derive(Debug, Default, Clone)]
+pub struct EventBuilder {
+    events: Vec<Event>,
+}
+
+impl EventBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A checkpoint at the current position, for a later [`EventBuilder::wrap`].
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint(self.events.len())
+    }
+
+    /// Open a node; subsequent events are its children until [`Self::close`].
+    pub fn open(&mut self, kind: SyntaxKind) {
+        self.events.push(Event::Open(kind));
+    }
+
+    /// Close the most recently opened node.
+    pub fn close(&mut self) {
+        self.events.push(Event::Close);
+    }
+
+    /// Mark the next significant token as consumed.
+    pub fn token(&mut self) {
+        self.events.push(Event::Token);
+    }
+
+    /// Retroactively wrap everything emitted since `cp` in a node of `kind`.
+    /// Repeated `wrap`s at the same checkpoint nest outward, so a `a + b + c`
+    /// loop builds the left-associative `((a + b) + c)`.
+    pub fn wrap(&mut self, cp: Checkpoint, kind: SyntaxKind) {
+        self.events.insert(cp.0, Event::Open(kind));
+        self.events.push(Event::Close);
+    }
+
+    /// The recorded events.
+    pub fn events(&self) -> &[Event] {
+        &self.events
+    }
+
+    /// Consume the builder, returning the recorded events.
+    pub fn into_events(self) -> Vec<Event> {
+        self.events
+    }
+}
+
+/// Materialize a structured green tree from a parser's [`Event`] stream and the
+/// lexer output. Every `Event::Token` consumes the next significant token (and
+/// first emits that token's leading trivia as leaves); `Open`/`Close` frame
+/// interior nodes. The whole thing is wrapped in a [`SyntaxKind::Root`], and any
+/// tokens the parser did not consume (the trailing `Eof` and its leading
+/// trivia) are flushed as final `Root` children — so the tree always covers the
+/// entire source and round-trips exactly.
+///
+/// `tokens`, `spans`, and `leading_trivia` are the parallel arrays the lexer
+/// produces (see [`crate::lexer::Lexer`]); `source` is the original text.
+pub fn build_tree(
+    events: &[Event],
+    tokens: &[Token],
+    spans: &[SourceSpan],
+    leading_trivia: &[Vec<Trivia>],
+    source: &str,
+) -> Rc<GreenNode> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut builder = GreenNodeBuilder::new();
+    builder.start_node(SyntaxKind::Root);
+
+    // A monotonic cursor over the source, mirroring `trivia::reconstruct`: each
+    // token contributes its leading-trivia gap plus its own clamped text. Step-2
+    // tiling spans mean this covers every character exactly once.
+    let mut cursor = 0usize;
+    let mut k = 0usize;
+    for event in events {
+        match event {
+            Event::Open(kind) => builder.start_node(*kind),
+            Event::Close => builder.finish_node(),
+            Event::Token => {
+                emit_token(&mut builder, &mut k, &mut cursor, &chars, tokens, spans, leading_trivia);
+            }
+        }
+    }
+    // Flush tokens the parser never consumed (trailing Eof + its trivia) into
+    // the root, so nothing is lost even though no event references them.
+    while k < tokens.len() {
+        emit_token(&mut builder, &mut k, &mut cursor, &chars, tokens, spans, leading_trivia);
+    }
+    // Defensive: any characters past the final token (only reachable if the
+    // stream somehow lacks an Eof whose trivia covers the tail).
+    if cursor < chars.len() {
+        let text: String = chars[cursor..].iter().collect();
+        builder.token(GreenToken::Trivia { kind: TriviaKind::Whitespace, text });
+    }
+
+    builder.finish_node(); // Root
+    builder.finish()
+}
+
+/// Emit token `*k`'s leading trivia and its own clamped source text, advancing
+/// `*k` and the monotonic `*cursor`.
+#[allow(clippy::too_many_arguments)]
+fn emit_token(
+    builder: &mut GreenNodeBuilder,
+    k: &mut usize,
+    cursor: &mut usize,
+    chars: &[char],
+    tokens: &[Token],
+    spans: &[SourceSpan],
+    leading_trivia: &[Vec<Trivia>],
+) {
+    for tr in &leading_trivia[*k] {
+        builder.token(GreenToken::Trivia { kind: tr.kind.clone(), text: tr.text.clone() });
+    }
+    let span = spans[*k];
+    let len = chars.len();
+    let start = (span.start.offset as usize).min(len);
+    let end = (span.end.offset as usize).min(len);
+    *cursor = (*cursor).max(start);
+    let text: String = if end > *cursor {
+        let t = chars[*cursor..end].iter().collect();
+        *cursor = end;
+        t
+    } else {
+        // Zero-width token (Eof, empty interpolation parts): still emit a leaf so
+        // the tree has one token leaf per lexer token.
+        String::new()
+    };
+    builder.token(GreenToken::Token { token: tokens[*k].clone(), text });
+    *k += 1;
+}
+
 /// Build a flat, lossless green tree from `source`: a single [`SyntaxKind::Root`]
 /// node whose children are every trivia run and significant token, in source
-/// order. The tree has no grammar structure yet — that arrives when the parser
-/// drives [`GreenNodeBuilder`] — but it round-trips exactly:
-/// `build_lossless(src).text() == src`.
+/// order. This is [`build_tree`] with an empty event stream — no grammar
+/// structure yet, that arrives when the parser drives [`EventBuilder`] — and it
+/// round-trips exactly: `build_lossless(src).text() == src`.
 ///
 /// Returns the lexer's error if `source` does not tokenize.
 pub fn build_lossless(source: &str) -> Result<Rc<GreenNode>, String> {
     let mut lexer = Lexer::new(source);
     lexer.tokenize()?;
-
-    let chars: Vec<char> = source.chars().collect();
-    let len = chars.len();
-    let mut builder = GreenNodeBuilder::new();
-    builder.start_node(SyntaxKind::Root);
-
-    // Walk the tokens with a monotonic cursor, mirroring `trivia::reconstruct`:
-    // each token's leading trivia (the gap before it) becomes trivia leaves, and
-    // the token's own clamped text becomes a token leaf. Because Step-2 spans
-    // tile the source, this covers every character exactly once.
-    let mut cursor = 0usize;
-    for (i, span) in lexer.token_spans.iter().enumerate() {
-        for tr in &lexer.token_leading_trivia[i] {
-            emit_trivia(&mut builder, tr);
-        }
-        let start = (span.start.offset as usize).min(len);
-        let end = (span.end.offset as usize).min(len);
-        cursor = cursor.max(start);
-        let text: String = if end > cursor {
-            let t = chars[cursor..end].iter().collect();
-            cursor = end;
-            t
-        } else {
-            // Zero-width token (Eof, empty interpolation parts): still emit a
-            // leaf so the tree has one token per lexer token.
-            String::new()
-        };
-        builder.token(GreenToken::Token { token: lexer.tokens[i].clone(), text });
-    }
-    // Any characters past the final token (only if Eof is somehow absent).
-    if cursor < len {
-        let text: String = chars[cursor..].iter().collect();
-        builder.token(GreenToken::Trivia { kind: TriviaKind::Whitespace, text });
-    }
-
-    builder.finish_node();
-    Ok(builder.finish())
-}
-
-fn emit_trivia(builder: &mut GreenNodeBuilder, tr: &Trivia) {
-    builder.token(GreenToken::Trivia { kind: tr.kind.clone(), text: tr.text.clone() });
+    Ok(build_tree(
+        &[],
+        &lexer.tokens,
+        &lexer.token_spans,
+        &lexer.token_leading_trivia,
+        source,
+    ))
 }
 
 #[cfg(test)]
@@ -452,6 +638,120 @@ mod tests {
         }
         assert_eq!(reassembled, "x = 1 // c\n");
         assert!(saw_comment, "the line comment should be a trivia leaf");
+    }
+
+    fn lex(src: &str) -> (Vec<Token>, Vec<SourceSpan>, Vec<Vec<Trivia>>) {
+        let mut lexer = Lexer::new(src);
+        lexer.tokenize().expect("tokenize");
+        (
+            lexer.tokens.clone(),
+            lexer.token_spans.clone(),
+            lexer.token_leading_trivia.clone(),
+        )
+    }
+
+    /// Find the single child node of `parent` (asserting there is exactly one).
+    fn only_child_node(parent: &SyntaxNode) -> SyntaxNode {
+        let mut nodes: Vec<SyntaxNode> = parent
+            .children()
+            .into_iter()
+            .filter_map(|el| match el {
+                SyntaxElement::Node(n) => Some(n),
+                SyntaxElement::Token(_) => None,
+            })
+            .collect();
+        assert_eq!(nodes.len(), 1, "expected exactly one child node");
+        nodes.pop().unwrap()
+    }
+
+    #[test]
+    fn build_tree_with_empty_events_matches_build_lossless() {
+        let src = "let x = 1 // c\nf(a, b)\n";
+        let (tokens, spans, trivia) = lex(src);
+        let a = build_tree(&[], &tokens, &spans, &trivia, src);
+        let b = build_lossless(src).unwrap();
+        assert_eq!(a, b, "empty-event build_tree must equal build_lossless");
+        assert_eq!(a.text(), src);
+    }
+
+    #[test]
+    fn wrap_builds_left_associative_nesting() {
+        // Drive the builder as the parser's additive level would for `1 + 2 + 3`,
+        // wrapping each operand as a LiteralExpr and each `l op r` as a
+        // BinaryExpr. The Newline and Eof are left for build_tree to flush.
+        let src = "1 + 2 + 3\n";
+        let (tokens, spans, trivia) = lex(src);
+
+        let mut b = EventBuilder::new();
+        let cp = b.checkpoint();
+        let literal = |b: &mut EventBuilder| {
+            b.open(SyntaxKind::LiteralExpr);
+            b.token();
+            b.close();
+        };
+        literal(&mut b); // 1
+        b.token(); // +
+        literal(&mut b); // 2
+        b.wrap(cp, SyntaxKind::BinaryExpr); // (1 + 2)
+        b.token(); // +
+        literal(&mut b); // 3
+        b.wrap(cp, SyntaxKind::BinaryExpr); // ((1 + 2) + 3)
+
+        let tree = build_tree(b.events(), &tokens, &spans, &trivia, src);
+        assert_eq!(tree.text(), src, "structured tree must still round-trip");
+
+        // Shape: Root > BinaryExpr(outer) > BinaryExpr(inner) > LiteralExpr…
+        let root = SyntaxNode::new_root(tree);
+        let outer = only_child_node(&root);
+        assert_eq!(outer.kind(), SyntaxKind::BinaryExpr);
+        assert_eq!(outer.text(), "1 + 2 + 3"); // node spans just the expression
+        // The outer binary's first child node is the inner (left-assoc) binary.
+        let inner = outer
+            .children()
+            .into_iter()
+            .find_map(|el| match el {
+                SyntaxElement::Node(n) => Some(n),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(inner.kind(), SyntaxKind::BinaryExpr);
+        assert_eq!(inner.text(), "1 + 2");
+        assert_eq!(inner.offset(), 0);
+    }
+
+    #[test]
+    fn node_offsets_track_leading_trivia() {
+        // In `// hi\n42\n` the comment attaches to the leading Newline token; a
+        // parser skips that newline (root level) before wrapping `42`, so the
+        // LiteralExpr node starts *after* the comment.
+        let src = "// hi\n42\n";
+        let (tokens, spans, trivia) = lex(src);
+        let mut b = EventBuilder::new();
+        b.token(); // the Newline that carries the leading `// hi` comment
+        b.open(SyntaxKind::LiteralExpr);
+        b.token(); // 42
+        b.close();
+        let tree = build_tree(b.events(), &tokens, &spans, &trivia, src);
+        assert_eq!(tree.text(), src);
+
+        let root = SyntaxNode::new_root(tree);
+        let lit = only_child_node(&root);
+        assert_eq!(lit.kind(), SyntaxKind::LiteralExpr);
+        // "// hi\n" is 6 chars, so the node starts at offset 6 and covers `42`.
+        assert_eq!(lit.offset(), 6);
+        assert_eq!(lit.text(), "42");
+    }
+
+    #[test]
+    fn build_tree_flushes_unconsumed_tokens() {
+        // Consume only the first token; the rest (including Eof) must still be
+        // flushed so the tree covers the whole source.
+        let src = "a b c\n";
+        let (tokens, spans, trivia) = lex(src);
+        let mut b = EventBuilder::new();
+        b.token(); // only `a`
+        let tree = build_tree(b.events(), &tokens, &spans, &trivia, src);
+        assert_eq!(tree.text(), src, "unconsumed tokens must be flushed losslessly");
     }
 
     #[test]

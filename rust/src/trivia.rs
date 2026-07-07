@@ -17,12 +17,12 @@
 //! source, without changing the tokenizer.
 //!
 //! [`reconstruct`] walks the tokens with a cursor, emitting each gap verbatim
-//! and then each token's own source text. It is robust to the two span
-//! irregularities the lexer currently produces — zero-width tokens (collapsed
-//! JSX text, empty interpolation parts) and forward-overlapping spans (the
-//! `InterpStart` token spans the opening quote plus the first literal run) —
-//! because it clamps with a monotonic cursor and never emits a character twice.
-//! The invariant, checked by tests over a broad corpus, is:
+//! and then each token's own source text. As of Step 2 (tight token spans) the
+//! lexer's spans tile the source: every non-trivia character is covered by
+//! exactly one token span, so the only inter-token gaps are whitespace and
+//! comments. `reconstruct` still clamps with a monotonic cursor and never emits
+//! a character twice, so it remains robust to any residual overlap. The
+//! invariant, checked by tests over a broad corpus, is:
 //!
 //! ```text
 //! reconstruct(src, &lexer.token_spans) == src   for every src
@@ -30,10 +30,10 @@
 //!
 //! [`leading_trivia`] additionally classifies each gap into typed [`Trivia`]
 //! runs (whitespace vs. line comment vs. other) attached to the following
-//! token — the shape a CST will hang comments off of. `TriviaKind::Other`
-//! marks characters that ended up in a gap only because a token's span is
-//! looser than its text (interpolation/JSX); reconstruction stays lossless, but
-//! these flag the spots whose spans a later CST stage should tighten.
+//! token — the shape a CST will hang comments off of. `TriviaKind::Other` is
+//! now a regression sentinel: with tiling spans it should never occur, and the
+//! `no_other_trivia_*` tests assert as much. If it reappears, a token's span
+//! has stopped covering its own source text.
 
 use crate::source_map::SourceSpan;
 
@@ -46,9 +46,11 @@ pub enum TriviaKind {
     /// A `//` line comment. `text` excludes the terminating newline, which is
     /// lexed as a significant `Newline` token, not trivia.
     LineComment,
-    /// Characters that landed in an inter-token gap because a nearby token's
-    /// span is looser than its source text (interpolation / JSX delimiters).
-    /// Reconstruction is unaffected; this is a marker for future span cleanup.
+    /// Characters that landed in an inter-token gap despite not being
+    /// whitespace or a comment — only possible if a token's span fails to cover
+    /// its own source text. With the lexer's tiling spans this never occurs; it
+    /// remains as a regression sentinel that the `no_other_trivia_*` tests
+    /// assert against.
     Other,
 }
 
@@ -115,10 +117,9 @@ pub fn leading_trivia(source: &str, spans: &[SourceSpan]) -> Vec<Vec<Trivia>> {
     result
 }
 
-/// Split a gap into typed trivia runs. Gaps produced by the main lexer loop
-/// contain only whitespace and `//` comments; interpolation/JSX gaps may
-/// contain delimiter characters (classified `Other`) and non-significant
-/// newlines (classified `Whitespace`).
+/// Split a gap into typed trivia runs. With the lexer's tiling spans, gaps
+/// contain only whitespace and `//` comments; the `Other` arm is a sentinel
+/// that fires only if some token's span stops covering its own source text.
 fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -268,15 +269,74 @@ mod tests {
         assert!(checked > 50, "expected to check a real corpus, checked {checked}");
     }
 
+    /// Every inter-token gap is whitespace or a comment — never `Other`. After
+    /// Step 2 (tight token spans) this holds *everywhere*, including inside
+    /// string interpolation and JSX, where delimiters (`{ } " `, collapsed JSX
+    /// text) used to leak into gaps. `Other` is now purely a regression
+    /// sentinel: if it ever reappears, a token's span no longer covers its own
+    /// source text.
     #[test]
-    fn no_other_trivia_in_core_language() {
-        // Outside interpolation/JSX, every gap char is whitespace or comment —
-        // never `Other`. This guards against span regressions in the core.
-        let src = "fn f(a, b)\n  // c\n  a + b // trailing\nend\n";
-        let trivia = leading_trivia(src, &spans_of(src));
-        assert!(
-            !trivia.iter().flatten().any(|t| t.kind == TriviaKind::Other),
-            "unexpected Other trivia (span regression): {trivia:#?}"
-        );
+    fn no_other_trivia_anywhere() {
+        let cases = [
+            "fn f(a, b)\n  // c\n  a + b // trailing\nend\n",
+            "print(\"hello, {name}!\")\n",
+            "print(\"{a}{b}{c}\")\n",             // adjacent holes, empty parts
+            "print(\"sum = {2 + 2} done\")\n",
+            "print(\"{ {k: v} } trailing\")\n",   // record literal inside a hole
+            "let e = <div class=\"x\">hello {name} world</div>\n",
+            "let n = <ul>\n  <li>one {a}</li>\n  <li>two</li>\n</ul>\n",
+        ];
+        for src in cases {
+            let trivia = leading_trivia(src, &spans_of(src));
+            let others: Vec<_> = trivia
+                .iter()
+                .flatten()
+                .filter(|t| t.kind == TriviaKind::Other)
+                .collect();
+            assert!(
+                others.is_empty(),
+                "unexpected Other trivia (span regression) in {src:?}: {others:#?}"
+            );
+        }
+    }
+
+    /// The whole repo corpus must be free of `Other` trivia too — the strongest
+    /// form of the "spans tile the source" guarantee.
+    #[test]
+    fn no_other_trivia_in_repo_corpus() {
+        fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                        continue;
+                    }
+                    collect_ptl(&path, out);
+                } else if path.extension().is_some_and(|e| e == "ptl") {
+                    out.push(path);
+                }
+            }
+        }
+
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root");
+        let mut files = Vec::new();
+        collect_ptl(repo_root, &mut files);
+
+        let mut checked = 0;
+        for path in &files {
+            let Ok(src) = std::fs::read_to_string(path) else { continue };
+            let mut lexer = Lexer::new(&src);
+            if lexer.tokenize().is_err() {
+                continue;
+            }
+            let trivia = leading_trivia(&src, &lexer.token_spans);
+            let has_other = trivia.iter().flatten().any(|t| t.kind == TriviaKind::Other);
+            assert!(!has_other, "unexpected Other trivia in {}", path.display());
+            checked += 1;
+        }
+        assert!(checked > 50, "expected to check a real corpus, checked {checked}");
     }
 }

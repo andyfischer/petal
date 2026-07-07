@@ -1,8 +1,9 @@
 # Source preservation plan — comments & original-source fidelity
 
-Status: **in progress** (2026-07-05). End goal committed: **full lossless
-representation (Option C — a concrete syntax tree)**. Step 1 (a lossless
-lexer/trivia foundation) is **done and proven**; see "Progress" below.
+Status: **in progress** (2026-07-06). End goal committed: **full lossless
+representation (Option C — a concrete syntax tree)**. Steps 1–2 (a lossless
+lexer/trivia foundation with source-tiling token spans) are **done and
+proven**; see "Progress" below. Step 3 (the concrete syntax tree) is next.
 
 ## Motivation
 
@@ -129,30 +130,37 @@ strings, comment-only and whitespace-only files) but over **the entire repo
 (`no_other_trivia_in_core_language`) asserts core-language gaps only ever produce
 whitespace/comment trivia, catching span regressions early.
 
-`TriviaKind::Other` currently appears only for interpolation/JSX delimiter chars
-whose tokens have loose spans; reconstruction is unaffected, but these mark the
-spans a later CST step should tighten (see Step 2).
+As of Step 2, `TriviaKind::Other` no longer appears at all — it is a regression
+sentinel that the `no_other_trivia_*` tests assert against.
 
-### ▶ Step 2 — Tighten token spans so they tile the source exactly (next)
+### ✅ Step 2 — Tighten token spans so they tile the source exactly
 
-Prerequisite for a clean CST: make every token's span cover exactly its own
-source text, eliminating `Other` trivia. The offenders (identified in the lexer
-survey):
-- `read_string` emits `InterpStart` with the *string's opening-quote* position
-  as its start, so its span overlaps the first literal part; the string-part
-  tokens are then zero-width. Give `InterpStart` the `{`'s own span (or the
-  opening quote alone) and give each literal part its true `[start,end)`.
-- `flush_jsx_text` emits `JsxText` with a collapsed value and a zero-width span
-  at the *end* of the consumed text; stamp it with the real `[start,end)` span
-  of the raw text it consumed.
-- JSX `{`/`}` holes: ensure the delimiter chars belong to a token span.
+Done 2026-07-06. Every token's span now covers exactly its own source text, so
+the token spans *tile* the source and the only inter-token gaps are whitespace
+and comments — `Other` trivia is eliminated. The fixes, all in `lexer.rs`:
 
-Keep `reconstruct`'s corpus round-trip green throughout (it already tolerates the
-loose spans, so this is a safe, test-guarded refactor), and extend
-`no_other_trivia_in_core_language` to assert **zero** `Other` trivia anywhere,
-including interpolation/JSX, once done.
+- **Interpolated strings** (`read_string`). Rewrote the span bookkeeping so the
+  pieces of `"…{expr}…"` tile the source: `InterpStart` spans exactly the
+  opening quote, `InterpEnd` exactly the closing quote, and each literal
+  `String` part absorbs the adjacent interpolation braces — the part before a
+  hole extends through its opening `{`, and the part after a hole begins at the
+  closing `}` (recovered via `prev_char_pos`, since `tokenize_braced_expr`
+  consumes that `}` without a token). No `{`/`}`/quote is left in a gap.
+- **JSX text** (`flush_jsx_text`). `JsxText` carries the *collapsed* value but is
+  now stamped with the raw text's real `[run_start, cursor)` span, so
+  reconstruction replays the original bytes while the parser still sees the
+  collapsed value. Previously the span was zero-width at the text's end.
+- **JSX close tags.** The `>` closing `</div>` was consumed by `expect_char`
+  with no token of its own; it is now folded into the preceding `JsxTagName`
+  span via `extend_last_span_to_cursor`.
 
-### ▢ Step 3 — Concrete syntax tree
+New helpers: `push_token_span` (explicit `[start,end)`), `prev_char_pos`, and
+`extend_last_span_to_cursor`. **Zero parser churn** — token *kinds* and order are
+unchanged; only spans moved. Proven by `no_other_trivia_anywhere` (interp + JSX
+snippets) and `no_other_trivia_in_repo_corpus` (100+ programs), alongside the
+still-green `reconstruct` round-trip corpus test.
+
+### ▶ Step 3 — Concrete syntax tree (next)
 
 Build a green/red lossless tree (rowan/Roslyn style): every token, including
 trivia, is a node; the typed AST becomes a view over it. The parser builds the

@@ -157,11 +157,39 @@ impl Lexer {
         }
     }
 
-    /// Push a token with its source span.
+    /// Push a token whose span runs from `start` to the current position.
     fn push_token(&mut self, token: Token, start: SourcePosition) {
         let end = self.current_pos();
+        self.push_token_span(token, start, end);
+    }
+
+    /// Push a token with an explicit `[start, end)` span. Used where a token's
+    /// span must be stated exactly rather than "start .. cursor" — e.g. the
+    /// pieces of an interpolated string, so every character of the source is
+    /// covered by exactly one token span (see `crate::trivia`).
+    fn push_token_span(&mut self, token: Token, start: SourcePosition, end: SourcePosition) {
         self.tokens.push(token);
         self.token_spans.push(SourceSpan { start, end, file: self.file });
+    }
+
+    /// The position of the single non-newline character immediately before the
+    /// cursor. Valid only when the last consumed character was not a newline —
+    /// used to recover the position of a closing `}` that
+    /// [`Lexer::tokenize_braced_expr`] has just consumed without emitting a
+    /// token.
+    fn prev_char_pos(&self) -> SourcePosition {
+        SourcePosition { line: self.line, column: self.col - 1, offset: self.pos as u32 - 1 }
+    }
+
+    /// Extend the most recently pushed token's span to the current cursor,
+    /// absorbing a trailing delimiter that has no token of its own (e.g. the
+    /// `>` closing a JSX end tag, consumed by [`Lexer::expect_char`]) so it is
+    /// not left in an inter-token gap. See `crate::trivia`.
+    fn extend_last_span_to_cursor(&mut self) {
+        let end = self.current_pos();
+        if let Some(span) = self.token_spans.last_mut() {
+            span.end = end;
+        }
     }
 
     /// Advance position by one character, updating line/column tracking.
@@ -381,6 +409,9 @@ impl Lexer {
                     self.push_token(Token::JsxCloseStart, start);
                     self.read_jsx_tag_name()?;
                     self.expect_char('>')?;
+                    // Fold the `>` into the tag-name span so no delimiter is
+                    // left ungoverned by a token (see crate::trivia).
+                    self.extend_last_span_to_cursor();
                     self.mode_stack.pop(); // pop JsxContent
                 } else {
                     self.advance_char();
@@ -463,21 +494,31 @@ impl Lexer {
     }
 
     fn read_string(&mut self) -> Result<(), String> {
-        let start = self.current_pos();
+        let open_quote = self.current_pos();
         self.advance_char(); // skip opening quote
         let mut s = String::new();
         let mut has_interp = false;
+        // Source position where the current literal part's span begins. It
+        // starts just after the opening quote; after each interpolation hole it
+        // moves to the closing `}` so the following literal part absorbs that
+        // delimiter. This keeps every token span gap-free so the source
+        // reconstructs exactly — see docs/dev/source-preservation-plan.md Step 2
+        // and `crate::trivia`.
+        let mut part_start = self.current_pos();
 
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             if ch == '"' {
+                let close_quote = self.current_pos();
                 self.advance_char();
                 if has_interp {
-                    // Emit trailing string part (even if empty, for concatenation)
-                    self.push_token(Token::String(s), start);
-                    self.push_token(Token::InterpEnd, start);
+                    // Trailing literal part runs up to the closing quote; the
+                    // quote itself is the InterpEnd token's span.
+                    self.push_token_span(Token::String(s), part_start, close_quote);
+                    let end = self.current_pos();
+                    self.push_token_span(Token::InterpEnd, close_quote, end);
                 } else {
-                    self.push_token(Token::String(s), start);
+                    self.push_token(Token::String(s), open_quote);
                 }
                 return Ok(());
             }
@@ -502,24 +543,29 @@ impl Lexer {
                 continue;
             }
             if ch == '{' {
-                // Start of interpolation
+                // Start of interpolation.
                 if !has_interp {
                     has_interp = true;
-                    self.push_token(Token::InterpStart, start);
+                    // InterpStart's span is exactly the opening quote.
+                    self.push_token_span(Token::InterpStart, open_quote, part_start);
                 }
-                // Emit the string part accumulated so far
-                let part_start = self.current_pos();
-                self.push_token(Token::String(s), part_start);
+                // Emit the literal part accumulated so far, spanning from its
+                // start through and including this opening `{`.
+                self.advance_char(); // consume `{`
+                let after_brace = self.current_pos();
+                self.push_token_span(Token::String(s), part_start, after_brace);
                 s = String::new();
-                self.advance_char();
 
                 self.tokenize_braced_expr(false, false)?;
+                // The next literal part absorbs the closing `}` just consumed,
+                // so no delimiter is left in an inter-token gap.
+                part_start = self.prev_char_pos();
                 continue;
             }
             s.push(ch);
             self.advance_char();
         }
-        Err(format!("Unterminated string [line {}, column {}]", start.line, start.column))
+        Err(format!("Unterminated string [line {}, column {}]", open_quote.line, open_quote.column))
     }
 
     /// Read a triple-quoted raw string: `"""..."""`. Everything between the
@@ -689,12 +735,17 @@ impl Lexer {
 
     fn tokenize_jsx_content(&mut self) -> Result<(), String> {
         let mut text = String::new();
+        // Where this run of raw text began. The JsxText token's collapsed value
+        // differs from the raw source, so the token carries a span covering the
+        // raw text (`[run_start, cursor)`); reconstruction replays those bytes
+        // verbatim while the parser sees the collapsed value. See `crate::trivia`.
+        let run_start = self.current_pos();
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
             match ch {
                 '<' => {
                     // Flush accumulated text
-                    self.flush_jsx_text(&mut text);
+                    self.flush_jsx_text(&mut text, run_start);
 
                     if self.peek_next() == Some('/') {
                         // Closing tag: `</div>`
@@ -703,6 +754,8 @@ impl Lexer {
                         self.push_token(Token::JsxCloseStart, start);
                         self.read_jsx_tag_name()?;
                         self.expect_char('>')?;
+                        // Fold the `>` into the tag-name span (see crate::trivia).
+                        self.extend_last_span_to_cursor();
                         self.mode_stack.pop(); // pop JsxContent
                         return Ok(());
                     } else if self.peek_next().is_some_and(|c| c.is_ascii_alphabetic()) {
@@ -721,7 +774,7 @@ impl Lexer {
                 }
                 '{' => {
                     // Expression hole
-                    self.flush_jsx_text(&mut text);
+                    self.flush_jsx_text(&mut text, run_start);
                     let start = self.current_pos();
                     self.advance_char();
                     self.push_token(Token::LBrace, start);
@@ -735,16 +788,18 @@ impl Lexer {
             }
         }
         // Flush remaining text
-        self.flush_jsx_text(&mut text);
+        self.flush_jsx_text(&mut text, run_start);
         Ok(())
     }
 
-    fn flush_jsx_text(&mut self, text: &mut String) {
+    fn flush_jsx_text(&mut self, text: &mut String, run_start: SourcePosition) {
         // Trim and collapse whitespace
         let trimmed = collapse_jsx_whitespace(text);
         if !trimmed.is_empty() {
-            let start = self.current_pos();
-            self.push_token(Token::JsxText(trimmed), start);
+            // Span the raw text consumed since `run_start`, not the collapsed
+            // value — so reconstruction replays the original bytes exactly.
+            let end = self.current_pos();
+            self.push_token_span(Token::JsxText(trimmed), run_start, end);
         }
         text.clear();
     }

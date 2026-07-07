@@ -563,6 +563,29 @@ pub fn build_lossless(source: &str) -> Result<Rc<GreenNode>, String> {
     ))
 }
 
+/// Parse `source` into a *structured* lossless green tree: the parser runs as
+/// normal (the AST it builds is discarded) while recording a CST [`Event`]
+/// stream, which [`build_tree`] materializes with trivia interleaved. The
+/// result has grammar nodes ([`SyntaxKind::LetStmt`], [`SyntaxKind::CallExpr`],
+/// …) and still round-trips exactly: `parse_cst(src)?.text() == src`.
+///
+/// Returns the lexer's or parser's error if `source` does not parse; the tree
+/// is only built on success (an error leaves the event stream unbalanced).
+pub fn parse_cst(source: &str) -> Result<Rc<GreenNode>, String> {
+    let mut lexer = Lexer::new(source);
+    lexer.tokenize()?;
+    let mut parser =
+        crate::parse::Parser::new_recording(lexer.tokens.clone(), lexer.token_spans.clone());
+    parser.parse_program()?; // discard the AST; we want the event stream
+    Ok(build_tree(
+        parser.cst_events(),
+        &lexer.tokens,
+        &lexer.token_spans,
+        &lexer.token_leading_trivia,
+        source,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -765,39 +788,197 @@ mod tests {
         assert!(unbalanced.is_err());
     }
 
-    /// The definitive proof: the CST round-trips every real Petal program in the
-    /// repo, exactly as `trivia::reconstruct` does — the tree loses nothing the
-    /// flat token stream preserved.
-    #[test]
-    fn round_trips_entire_repo_corpus() {
-        fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else { return };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
-                        continue;
-                    }
-                    collect_ptl(&path, out);
-                } else if path.extension().is_some_and(|e| e == "ptl") {
-                    out.push(path);
+    fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                    continue;
                 }
+                collect_ptl(&path, out);
+            } else if path.extension().is_some_and(|e| e == "ptl") {
+                out.push(path);
             }
         }
+    }
 
+    fn repo_ptl_files() -> Vec<std::path::PathBuf> {
         let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root");
         let mut files = Vec::new();
         collect_ptl(repo_root, &mut files);
+        files
+    }
 
+    /// The definitive proof: the CST round-trips every real Petal program in the
+    /// repo, exactly as `trivia::reconstruct` does — the tree loses nothing the
+    /// flat token stream preserved.
+    #[test]
+    fn round_trips_entire_repo_corpus() {
         let mut checked = 0;
-        for path in &files {
+        for path in &repo_ptl_files() {
             let Ok(src) = std::fs::read_to_string(path) else { continue };
             let Ok(root) = build_lossless(&src) else { continue };
             assert_eq!(root.text(), src, "CST round-trip mismatch for {}", path.display());
             checked += 1;
         }
         assert!(checked > 50, "expected a real corpus, checked {checked}");
+    }
+
+    // ---- parse_cst: the parser-driven structured tree (step 3b-ii) ----
+
+    /// Every repo program that parses must round-trip through the *structured*
+    /// tree too — the grammar nodes change the shape, never the text.
+    #[test]
+    fn parse_cst_round_trips_entire_repo_corpus() {
+        let mut checked = 0;
+        for path in &repo_ptl_files() {
+            let Ok(src) = std::fs::read_to_string(path) else { continue };
+            let Ok(root) = parse_cst(&src) else { continue };
+            assert_eq!(
+                root.text(),
+                src,
+                "structured CST round-trip mismatch for {}",
+                path.display()
+            );
+            checked += 1;
+        }
+        assert!(checked > 50, "expected a real corpus, checked {checked}");
+    }
+
+    fn assert_parse_round_trips(src: &str) {
+        let root = parse_cst(src).expect("parse_cst");
+        assert_eq!(root.text(), src, "structured round-trip mismatch for {src:?}");
+    }
+
+    #[test]
+    fn parse_cst_round_trips_snippets() {
+        assert_parse_round_trips("let x = 1 // keep me\nlet y = 2\n");
+        assert_parse_round_trips("fn add(a, b)\n    a + b // sum\nend\n");
+        assert_parse_round_trips("if x > 1 then\n  y\nelsif x > 0 then\n  z\nelse\n  w\nend\n");
+        assert_parse_round_trips("match v\nwhen Some(x) -> x\nwhen _ -> 0\nend\n");
+        assert_parse_round_trips("let r = { a: 1, ...rest }\nlet l = [1 -2 3]\n");
+        assert_parse_round_trips("state count = 0\ncount += 1\n");
+        assert_parse_round_trips("xs |> map(fn(x) -> x * 2) |> sum\n");
+        assert_parse_round_trips("let e = <div class=\"x\">hi {name}<br/></div>\n");
+        assert_parse_round_trips("print(\"sum = {2 + 2} done\")\n");
+        assert_parse_round_trips("for i in [1, 2] do\n  print(i)\nend\n");
+    }
+
+    /// Depth-first search for the first descendant node of `kind`.
+    fn find_node(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
+        for el in node.children() {
+            if let SyntaxElement::Node(n) = el {
+                if n.kind() == kind {
+                    return Some(n);
+                }
+                if let Some(found) = find_node(&n, kind) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    fn child_nodes(node: &SyntaxNode) -> Vec<SyntaxNode> {
+        node.children()
+            .into_iter()
+            .filter_map(|el| match el {
+                SyntaxElement::Node(n) => Some(n),
+                SyntaxElement::Token(_) => None,
+            })
+            .collect()
+    }
+
+    fn parse_root(src: &str) -> SyntaxNode {
+        SyntaxNode::new_root(parse_cst(src).expect("parse_cst"))
+    }
+
+    #[test]
+    fn parse_cst_binary_precedence_shape() {
+        // `1 + 2 * 3` — the outer BinaryExpr's right operand is the `2 * 3`
+        // BinaryExpr, nested per precedence.
+        let root = parse_root("1 + 2 * 3\n");
+        let stmt = find_node(&root, SyntaxKind::ExprStmt).expect("ExprStmt");
+        let outer = find_node(&stmt, SyntaxKind::BinaryExpr).expect("outer BinaryExpr");
+        assert_eq!(outer.text(), "1 + 2 * 3");
+        let operands = child_nodes(&outer);
+        assert_eq!(operands.len(), 2);
+        assert_eq!(operands[0].kind(), SyntaxKind::LiteralExpr);
+        assert_eq!(operands[0].text(), "1");
+        assert_eq!(operands[1].kind(), SyntaxKind::BinaryExpr);
+        // Leading trivia may sit just inside a wrapped node's boundary —
+        // placement is refined in a later pass, so compare trimmed text.
+        assert_eq!(operands[1].text().trim(), "2 * 3");
+    }
+
+    #[test]
+    fn parse_cst_call_shape() {
+        // `f(a, b)` — a CallExpr containing the callee and an ArgList that
+        // spans the parens.
+        let root = parse_root("f(a, b)\n");
+        let call = find_node(&root, SyntaxKind::CallExpr).expect("CallExpr");
+        assert_eq!(call.text(), "f(a, b)");
+        let kids = child_nodes(&call);
+        assert_eq!(kids.len(), 2);
+        assert_eq!(kids[0].kind(), SyntaxKind::IdentExpr);
+        assert_eq!(kids[0].text(), "f");
+        assert_eq!(kids[1].kind(), SyntaxKind::ArgList);
+        assert_eq!(kids[1].text(), "(a, b)");
+        let args = child_nodes(&kids[1]);
+        assert_eq!(args.len(), 2);
+        assert!(args.iter().all(|a| a.kind() == SyntaxKind::IdentExpr));
+    }
+
+    #[test]
+    fn parse_cst_paren_grouping_shape() {
+        // `(a + b) * c` — grouping parens survive as a ParenExpr under the
+        // multiplicative BinaryExpr (the AST drops them; the CST must not).
+        let root = parse_root("(a + b) * c\n");
+        let outer = find_node(&root, SyntaxKind::BinaryExpr).expect("BinaryExpr");
+        assert_eq!(outer.text(), "(a + b) * c");
+        let kids = child_nodes(&outer);
+        assert_eq!(kids[0].kind(), SyntaxKind::ParenExpr);
+        assert_eq!(kids[0].text(), "(a + b)");
+        let inner = find_node(&kids[0], SyntaxKind::BinaryExpr).expect("inner BinaryExpr");
+        assert_eq!(inner.text(), "a + b");
+    }
+
+    #[test]
+    fn parse_cst_stmt_shapes() {
+        let root = parse_root("let x = 1\nfn f(a)\n  return a\nend\n");
+        let let_stmt = find_node(&root, SyntaxKind::LetStmt).expect("LetStmt");
+        assert_eq!(let_stmt.text(), "let x = 1");
+        let fn_decl = find_node(&root, SyntaxKind::FnDecl).expect("FnDecl");
+        assert_eq!(fn_decl.text(), "fn f(a)\n  return a\nend");
+        let params = find_node(&fn_decl, SyntaxKind::ParamList).expect("ParamList");
+        assert_eq!(params.text(), "(a)");
+        assert!(find_node(&fn_decl, SyntaxKind::Block).is_some(), "fn body Block");
+        assert!(find_node(&fn_decl, SyntaxKind::ReturnStmt).is_some(), "ReturnStmt");
+    }
+
+    #[test]
+    fn parse_cst_comment_survives_inside_statement_region() {
+        // The motivating case for the whole plan: a comment inside a parsed
+        // construct is a trivia leaf in the tree, not lost. It lives somewhere
+        // inside the FnDecl subtree (exact attachment — FnDecl vs Block — is
+        // refined in a later pass).
+        let src = "fn f()\n  // important note\n  1\nend\n";
+        let root = parse_root(src);
+        assert_eq!(root.text(), src);
+        let fn_decl = find_node(&root, SyntaxKind::FnDecl).expect("FnDecl");
+        assert!(
+            fn_decl.text().contains("// important note"),
+            "comment should live inside the FnDecl subtree, got {:?}",
+            fn_decl.text()
+        );
+    }
+
+    #[test]
+    fn parse_cst_errors_on_bad_source() {
+        assert!(parse_cst("let = 1\n").is_err());
+        assert!(parse_cst("(1 + \n").is_err());
     }
 }

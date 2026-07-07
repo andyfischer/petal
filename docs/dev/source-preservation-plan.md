@@ -3,8 +3,10 @@
 Status: **in progress** (2026-07-06). End goal committed: **full lossless
 representation (Option C — a concrete syntax tree)**. Steps 1–2 (a lossless
 lexer/trivia foundation with source-tiling token spans) are **done and
-proven**; Step 3 (the concrete syntax tree) is **in progress** — its foundational
-increment (3a, the green-tree data structures) is done. See "Progress" below.
+proven**; Step 3 (the concrete syntax tree) is **in progress** — 3a (green-tree
+data structures) and 3b (parser emits a structured CST via `cst::parse_cst`,
+dual output alongside the AST) are done; next is 3c (typed AST as a view). See
+"Progress" below.
 
 ## Motivation
 
@@ -186,7 +188,7 @@ parser:
   directly from the lexer stream and pins the invariant `build_lossless(src).text()
   == src`, proven over the whole repo corpus. Touches nothing else — parser, AST,
   and consumers are unchanged.
-- **▶ 3b — Parser drives the builder.** Give the parser grammar node kinds and
+- **✅ 3b — Parser drives the builder.** Give the parser grammar node kinds and
   have it emit events around each construct while it consumes tokens, producing a
   *structured* green tree alongside the AST (dual output — AST stays
   authoritative until 3d). Split again because the checkpoint machinery is the
@@ -203,11 +205,21 @@ parser:
     `1 + 2 + 3`, node offsets tracking leading trivia, and lossless flush of
     unconsumed tokens. The parser is untouched; this is the reusable core it will
     drive.
-  - **▢ 3b-ii — Wire the parser.** Route `advance()` through the `EventBuilder`
-    (Token events for free) and add `open`/`close`/`checkpoint`/`wrap` calls at
-    each construct, behind a recording flag so normal parsing has zero overhead.
-    Validate the structured tree round-trips the whole corpus and has the
-    expected node shapes. **Step-by-step instructions:**
+  - **✅ 3b-ii — Wire the parser** (done 2026-07-06). `advance()` routes through
+    the `EventBuilder` (one Token event per consumed token) and every construct
+    is instrumented with `open`/`close` (statements, primaries, collections,
+    if/match/lambda/JSX) or `checkpoint`+`wrap` (all Pratt levels, postfix,
+    pipe — pipe records as `CallExpr`, matching its AST rewrite), all behind a
+    `record_cst` flag (`Parser::new_recording`) so normal parsing is untouched.
+    `cst::parse_cst(src)` is the entry point: lex, parse (AST discarded), and
+    `build_tree` the recorded events — only on `Ok`, since an error leaves the
+    event stream unbalanced. Proven by `parse_cst_round_trips_entire_repo_corpus`
+    (structured tree, whole corpus, byte-exact), structural shape tests
+    (`1 + 2 * 3` precedence nesting, `f(a, b)` → `CallExpr`+`ArgList`,
+    `(a + b) * c` keeps `ParenExpr`, comments survive inside `FnDecl`), and the
+    full existing suite green (AST unchanged). Trivia lands adjacent to node
+    boundaries (sometimes just inside a wrapped node); attachment refinement is
+    deferred, as planned. Original instructions:
     [handoff-3b-ii.md](handoff-3b-ii.md).
 - **▢ 3c — Typed AST as a view.** Project the existing `ast` types (or typed
   accessors) over the red tree so the compiler/desugar read structure from the
@@ -216,15 +228,11 @@ parser:
   structurally through inserts/reorders) and `show-ast` to the typed view; wire
   the `petal lint` re-indenter.
 
-**Open decision (blocks 3b): migration strategy.**
-- *CST-authoritative:* the parser builds the CST and the AST is projected from it
-  (3c). End state is a single tree; largest change, but no dual representation to
-  keep in sync.
-- *AST-authoritative + parallel CST:* keep the AST as-is and build the CST
-  alongside purely for source preservation. Smaller, lower-risk, but two
-  representations coexist and can drift.
-
-3a is identical under both, so it shipped first. 3b's shape depends on this call.
+**Migration strategy (decided):** head toward *CST-authoritative*. 3b ships the
+low-risk intermediate state — the AST stays authoritative and the CST is a
+recorded side channel (`record_cst` off by default, so drift is impossible: both
+come from the same parse) — then 3c projects the AST from the tree and 3d makes
+`parse_cst` the sole parser.
 
 ---
 

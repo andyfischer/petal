@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::cst::{Checkpoint, Event, EventBuilder, SyntaxKind};
 use crate::lexer::Token;
 use crate::source_map::{SourceSpan, ZERO_SPAN};
 
@@ -12,6 +13,12 @@ pub struct Parser {
     /// `MinusPrefix` token starts a new negated element rather than binding as
     /// subtraction. See docs/syntax/optional-commas.md.
     in_juxta: bool,
+    /// CST event stream, recorded alongside AST construction when
+    /// `record_cst` is set (see `new_recording` / `crate::cst::parse_cst`).
+    events: EventBuilder,
+    /// Whether to record CST events. Off in `new` so normal parsing has zero
+    /// overhead; the `ev_*` helpers are no-ops when this is false.
+    record_cst: bool,
 }
 
 impl Parser {
@@ -22,6 +29,47 @@ impl Parser {
             pos: 0,
             next_state_id: 0,
             in_juxta: false,
+            events: EventBuilder::new(),
+            record_cst: false,
+        }
+    }
+
+    /// Like [`Parser::new`], but records a CST [`Event`] stream as a side
+    /// channel while parsing. Read it back with [`Parser::cst_events`] after
+    /// `parse_program` succeeds (on error the stream may be unbalanced).
+    pub fn new_recording(tokens: Vec<Token>, token_spans: Vec<SourceSpan>) -> Self {
+        let mut p = Self::new(tokens, token_spans);
+        p.record_cst = true;
+        p
+    }
+
+    /// The CST events recorded so far (empty unless built with
+    /// [`Parser::new_recording`]).
+    pub fn cst_events(&self) -> &[Event] {
+        self.events.events()
+    }
+
+    // ---- CST event recording (no-ops when `record_cst` is off) ----
+
+    fn ev_open(&mut self, kind: SyntaxKind) {
+        if self.record_cst {
+            self.events.open(kind);
+        }
+    }
+
+    fn ev_close(&mut self) {
+        if self.record_cst {
+            self.events.close();
+        }
+    }
+
+    fn ev_checkpoint(&self) -> Checkpoint {
+        self.events.checkpoint()
+    }
+
+    fn ev_wrap(&mut self, cp: Checkpoint, kind: SyntaxKind) {
+        if self.record_cst {
+            self.events.wrap(cp, kind);
         }
     }
 
@@ -59,6 +107,9 @@ impl Parser {
     fn advance(&mut self) -> Token {
         let tok = self.tokens[self.pos].clone();
         self.pos += 1;
+        if self.record_cst {
+            self.events.token();
+        }
         tok
     }
 
@@ -149,11 +200,15 @@ impl Parser {
             Token::While => self.parse_while(start),
             Token::Return => self.parse_return(start),
             Token::Break => {
+                self.ev_open(SyntaxKind::BreakStmt);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_stmt(StmtKind::Break, start))
             }
             Token::Continue => {
+                self.ev_open(SyntaxKind::ContinueStmt);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_stmt(StmtKind::Continue, start))
             }
             Token::State => self.parse_state(start),
@@ -164,14 +219,17 @@ impl Parser {
     }
 
     fn parse_let(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::LetStmt);
         self.advance(); // consume 'let'
         let name = self.expect_ident()?;
         self.expect(&Token::Assign)?;
         let value = self.parse_expr()?;
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::Let { name, value }, start))
     }
 
     fn parse_state(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::StateStmt);
         self.advance(); // consume 'state'
 
         // Check for explicit key: state(expr) name = init
@@ -189,12 +247,14 @@ impl Parser {
         let init = self.parse_expr()?;
         let id = self.next_state_id;
         self.next_state_id += 1;
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::State { name, init, id, key }, start))
     }
 
     /// `import m` / `import m as u` / `import m: a, b`.
     /// The name list ends at the newline; `as` is contextual (not a keyword).
     fn parse_import(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::ImportStmt);
         self.advance(); // consume 'import'
         let module = self.expect_ident()?;
 
@@ -221,22 +281,28 @@ impl Parser {
             _ => {}
         }
 
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::Import(ImportDecl { module, alias, names }), start))
     }
 
     fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::FnDecl);
         self.advance(); // consume 'fn'
         let name = self.expect_ident()?;
+        self.ev_open(SyntaxKind::ParamList);
         self.expect(&Token::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
+        self.ev_close(); // ParamList
         self.skip_newlines();
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
+        self.ev_close(); // FnDecl
         Ok(self.mk_stmt(StmtKind::FnDecl { name, params, body }, start))
     }
 
     fn parse_enum_decl(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::EnumDecl);
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
         self.skip_newlines();
@@ -244,9 +310,11 @@ impl Parser {
         while !matches!(self.peek(), Token::End | Token::Eof) {
             let variant_name = self.expect_ident()?;
             let fields = if matches!(self.peek(), Token::LParen) {
+                self.ev_open(SyntaxKind::ParamList);
                 self.advance(); // consume '('
                 let params = self.parse_param_list()?;
                 self.expect(&Token::RParen)?;
+                self.ev_close();
                 params
             } else {
                 Vec::new()
@@ -255,10 +323,12 @@ impl Parser {
             self.skip_separator();
         }
         self.expect(&Token::End)?;
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::EnumDecl { name, variants }, start))
     }
 
     fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::ForStmt);
         self.advance(); // consume 'for'
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
@@ -267,36 +337,44 @@ impl Parser {
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
     }
 
     fn parse_while(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::WhileStmt);
         self.advance(); // consume 'while'
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
+        self.ev_close();
         Ok(self.mk_stmt(StmtKind::While { condition, body }, start))
     }
 
     fn parse_return(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::ReturnStmt);
         self.advance(); // consume 'return'
-        if matches!(self.peek(), Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof) {
-            Ok(self.mk_stmt(StmtKind::Return(None), start))
+        let stmt = if matches!(self.peek(), Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof) {
+            self.mk_stmt(StmtKind::Return(None), start)
         } else {
             let expr = self.parse_expr()?;
-            Ok(self.mk_stmt(StmtKind::Return(Some(expr)), start))
-        }
+            self.mk_stmt(StmtKind::Return(Some(expr)), start)
+        };
+        self.ev_close();
+        Ok(stmt)
     }
 
     fn parse_expr_or_assign(&mut self, start: usize) -> Result<Stmt, String> {
+        let cp = self.ev_checkpoint();
         let expr = self.parse_expr()?;
 
         if matches!(self.peek(), Token::Assign) {
             self.advance(); // consume '='
             let value = self.parse_expr()?;
             let target = expr_to_assign_target(expr)?;
+            self.ev_wrap(cp, SyntaxKind::AssignStmt);
             Ok(self.mk_stmt(StmtKind::Assign { target, value }, start))
         } else if let Some(op) = self.peek_compound_assign_op() {
             self.advance(); // consume the compound assignment token
@@ -311,8 +389,10 @@ impl Parser {
                 },
                 span: self.span_from(start),
             };
+            self.ev_wrap(cp, SyntaxKind::AssignStmt);
             Ok(self.mk_stmt(StmtKind::Assign { target, value }, start))
         } else {
+            self.ev_wrap(cp, SyntaxKind::ExprStmt);
             Ok(self.mk_stmt(StmtKind::Expr(expr), start))
         }
     }
@@ -333,11 +413,13 @@ impl Parser {
     fn parse_block_until(&mut self, stops: &[Token]) -> Result<Vec<Stmt>, String> {
         let mut stmts = Vec::new();
         self.skip_newlines();
+        self.ev_open(SyntaxKind::Block);
         while !matches!(self.peek(), Token::Eof) && !stops.contains(self.peek()) {
             let stmt = self.parse_stmt()?;
             stmts.push(stmt);
             self.skip_newlines();
         }
+        self.ev_close();
         Ok(stmts)
     }
 
@@ -404,12 +486,16 @@ impl Parser {
     }
 
     fn parse_pipe(&mut self) -> Result<Expr, String> {
+        // The CST records pipe syntax as a CallExpr, matching the AST's
+        // rewrite of `a |> f` into a call.
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_or()?;
         while matches!(self.peek(), Token::Pipe) {
             let start = self.pos;
             self.advance();
             self.skip_newlines();
             let rhs = self.parse_or()?;
+            self.ev_wrap(cp, SyntaxKind::CallExpr);
             left = match rhs.kind {
                 ExprKind::Call { function, mut args } => {
                     args.insert(0, left);
@@ -427,11 +513,13 @@ impl Parser {
     }
 
     fn parse_or(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_and()?;
         while matches!(self.peek(), Token::Or) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_and()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -449,11 +537,13 @@ impl Parser {
     }
 
     fn parse_and(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_equality()?;
         while matches!(self.peek(), Token::And) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_equality()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -471,6 +561,7 @@ impl Parser {
     }
 
     fn parse_equality(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_comparison()?;
         while matches!(self.peek(), Token::Eq | Token::Ne) {
             let op = match self.advance() {
@@ -480,6 +571,7 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_comparison()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -497,6 +589,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_concat()?;
         while matches!(self.peek(), Token::Lt | Token::Le | Token::Gt | Token::Ge) {
             let op = match self.advance() {
@@ -508,6 +601,7 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_concat()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -525,11 +619,13 @@ impl Parser {
     }
 
     fn parse_concat(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_additive()?;
         while matches!(self.peek(), Token::PlusPlus) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_additive()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -547,6 +643,7 @@ impl Parser {
     }
 
     fn parse_additive(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_multiplicative()?;
         // A MinusPrefix (`1 -2`) binds as subtraction in normal contexts, but
         // inside comma-less juxtaposition it begins a new negated element, so
@@ -561,6 +658,7 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_multiplicative()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -578,6 +676,7 @@ impl Parser {
     }
 
     fn parse_multiplicative(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut left = self.parse_unary()?;
         while matches!(self.peek(), Token::Star | Token::Slash | Token::Percent) {
             let op = match self.advance() {
@@ -588,6 +687,7 @@ impl Parser {
             };
             self.skip_newlines();
             let right = self.parse_unary()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
             left = Expr {
                 span: SourceSpan {
                     start: left.span.start,
@@ -608,16 +708,20 @@ impl Parser {
         let start = self.pos;
         match self.peek().clone() {
             Token::Minus | Token::MinusPrefix => {
+                self.ev_open(SyntaxKind::UnaryExpr);
                 self.advance();
                 let operand = self.parse_unary()?;
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::UnaryOp {
                     op: UnaryOp::Neg,
                     operand: Box::new(operand),
                 }, start))
             }
             Token::Bang => {
+                self.ev_open(SyntaxKind::UnaryExpr);
                 self.advance();
                 let operand = self.parse_unary()?;
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::UnaryOp {
                     op: UnaryOp::Not,
                     operand: Box::new(operand),
@@ -628,12 +732,14 @@ impl Parser {
     }
 
     fn parse_postfix(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
                 Token::Dot => {
                     self.advance();
                     let field = self.expect_ident()?;
+                    self.ev_wrap(cp, SyntaxKind::FieldAccessExpr);
                     expr = Expr {
                         span: SourceSpan {
                             start: expr.span.start,
@@ -655,6 +761,7 @@ impl Parser {
                     let index = self.parse_expr()?;
                     self.in_juxta = saved;
                     self.expect(&Token::RBracket)?;
+                    self.ev_wrap(cp, SyntaxKind::IndexAccessExpr);
                     expr = Expr {
                         span: SourceSpan {
                             start: expr.span.start,
@@ -669,9 +776,12 @@ impl Parser {
                 }
                 Token::LParen => {
                     self.check_callable(&expr)?;
+                    self.ev_open(SyntaxKind::ArgList);
                     self.advance();
                     let args = self.parse_arg_list()?;
                     self.expect(&Token::RParen)?;
+                    self.ev_close(); // ArgList
+                    self.ev_wrap(cp, SyntaxKind::CallExpr);
                     expr = Expr {
                         span: SourceSpan {
                             start: expr.span.start,
@@ -730,45 +840,63 @@ impl Parser {
         let start = self.pos;
         match self.peek().clone() {
             Token::Int(n) => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Int(n)), start))
             }
             Token::Float(f) => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Float(f)), start))
             }
             Token::InterpStart => {
                 self.parse_string_interp()
             }
             Token::String(s) => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::String(s)), start))
             }
             Token::True => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Bool(true)), start))
             }
             Token::False => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Bool(false)), start))
             }
             Token::Nil => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Nil), start))
             }
             Token::At => {
+                self.ev_open(SyntaxKind::AtVarExpr);
                 self.advance(); // consume '@'
                 let name = self.expect_ident()?;
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::AtVar(name), start))
             }
             Token::Ident(_) => {
+                self.ev_open(SyntaxKind::IdentExpr);
                 let name = self.expect_ident()?;
+                self.ev_close();
                 Ok(self.mk_expr(ExprKind::Ident(name), start))
             }
             Token::LParen => {
+                self.ev_open(SyntaxKind::ParenExpr);
                 self.advance();
                 let expr = self.parse_expr()?;
                 self.expect(&Token::RParen)?;
+                self.ev_close();
                 Ok(expr)
             }
             Token::LBracket => self.parse_list_literal(),
@@ -777,7 +905,9 @@ impl Parser {
             Token::Match => self.parse_match_expr(),
             Token::Fn => self.parse_lambda(),
             Token::Color(hex) => {
+                self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
+                self.ev_close();
                 let fields = parse_color_hex(&hex);
                 let record_fields = fields
                     .into_iter()
@@ -797,6 +927,7 @@ impl Parser {
 
     fn parse_list_literal(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::ListExpr);
         self.advance(); // consume '['
         let mut elements = Vec::new();
         self.skip_newlines();
@@ -813,15 +944,18 @@ impl Parser {
         }
         self.in_juxta = saved_juxta;
         self.expect(&Token::RBracket)?;
+        self.ev_close();
         Ok(self.mk_expr(ExprKind::List(elements), start))
     }
 
     fn parse_record_literal(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::RecordExpr);
         self.advance(); // consume '{'
         let mut fields = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+            self.ev_open(SyntaxKind::RecordField);
             if matches!(self.peek(), Token::DotDotDot) {
                 self.advance(); // consume '...'
                 let expr = self.parse_expr()?;
@@ -832,20 +966,24 @@ impl Parser {
                 let value = self.parse_expr()?;
                 fields.push(RecordField::Named(key, value));
             }
+            self.ev_close(); // RecordField
             self.skip_separator();
         }
         self.expect(&Token::RBrace)?;
+        self.ev_close(); // RecordExpr
         Ok(self.mk_expr(ExprKind::Record(fields), start))
     }
 
     fn parse_if_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::IfExpr);
         self.advance(); // consume 'if'
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::Then)?;
         let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
         let else_body = self.parse_else_chain()?;
+        self.ev_close();
         Ok(self.mk_expr(ExprKind::If {
             condition: Box::new(condition),
             then_body,
@@ -860,12 +998,14 @@ impl Parser {
         match self.peek() {
             Token::Elsif => {
                 let start = self.pos;
+                self.ev_open(SyntaxKind::ElseBranch);
                 self.advance(); // consume 'elsif'
                 let condition = self.parse_expr()?;
                 self.skip_newlines();
                 self.expect(&Token::Then)?;
                 let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
                 let else_body = self.parse_else_chain()?; // consumes the final 'end'
+                self.ev_close();
                 let inner = self.mk_expr(ExprKind::If {
                     condition: Box::new(condition),
                     then_body,
@@ -874,9 +1014,11 @@ impl Parser {
                 Ok(Some(ElseBranch::ElseIf(Box::new(inner))))
             }
             Token::Else => {
+                self.ev_open(SyntaxKind::ElseBranch);
                 self.advance(); // consume 'else'
                 let body = self.parse_block_until(&[Token::End])?;
                 self.expect(&Token::End)?;
+                self.ev_close();
                 Ok(Some(ElseBranch::Block(body)))
             }
             _ => {
@@ -888,6 +1030,7 @@ impl Parser {
 
     fn parse_match_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::MatchExpr);
         self.advance(); // consume 'match'
         let subject = self.parse_expr()?;
         self.skip_newlines();
@@ -898,10 +1041,12 @@ impl Parser {
             self.skip_newlines();
         }
         self.expect(&Token::End)?;
+        self.ev_close();
         Ok(self.mk_expr(ExprKind::Match { subject: Box::new(subject), arms }, start))
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
+        self.ev_open(SyntaxKind::MatchArm);
         self.expect(&Token::When)?;
         let pattern = self.parse_pattern()?;
         let guard = if matches!(self.peek(), Token::If) {
@@ -921,11 +1066,19 @@ impl Parser {
             self.skip_newlines();
             self.parse_expr()?
         };
+        self.ev_close(); // MatchArm — before the trailing newlines between arms
         self.skip_newlines();
         Ok(MatchArm { pattern, guard, body })
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, String> {
+        self.ev_open(SyntaxKind::Pattern);
+        let pattern = self.parse_pattern_inner()?;
+        self.ev_close();
+        Ok(pattern)
+    }
+
+    fn parse_pattern_inner(&mut self) -> Result<Pattern, String> {
         match self.peek().clone() {
             Token::Ident(name) if name == "_" => {
                 self.advance();
@@ -1045,26 +1198,33 @@ impl Parser {
 
     fn parse_lambda(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::LambdaExpr);
         self.advance(); // consume 'fn'
+        self.ev_open(SyntaxKind::ParamList);
         self.expect(&Token::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
+        self.ev_close(); // ParamList
         if matches!(self.peek(), Token::Arrow) {
             self.advance(); // consume '->'
             self.skip_newlines();
             let expr = self.parse_expr()?;
             let body = vec![self.mk_stmt(StmtKind::Expr(expr), start)];
+            self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
         } else {
             self.skip_newlines();
             let body = self.parse_block_until(&[Token::End])?;
             self.expect(&Token::End)?;
+            self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
         }
     }
 
     fn parse_string_interp(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        // Kind depends on whether any holes appear, so wrap retroactively.
+        let cp = self.ev_checkpoint();
         self.advance(); // consume InterpStart
         let mut parts: Vec<String> = Vec::new();
         let mut exprs: Vec<Expr> = Vec::new();
@@ -1096,17 +1256,20 @@ impl Parser {
         }
 
         if exprs.is_empty() {
+            self.ev_wrap(cp, SyntaxKind::LiteralExpr);
             Ok(self.mk_expr(
                 ExprKind::Literal(Literal::String(parts.into_iter().next().unwrap_or_default())),
                 start,
             ))
         } else {
+            self.ev_wrap(cp, SyntaxKind::StringInterpExpr);
             Ok(self.mk_expr(ExprKind::StringInterp { parts, exprs }, start))
         }
     }
 
     fn parse_jsx_element(&mut self) -> Result<Expr, String> {
         let start = self.pos;
+        self.ev_open(SyntaxKind::ElementExpr);
         self.advance(); // consume JsxOpenStart
         let tag = match self.advance() {
             Token::JsxTagName(name) => name,
@@ -1122,6 +1285,7 @@ impl Parser {
                 }
                 Token::JsxSelfClose => {
                     self.advance();
+                    self.ev_close(); // ElementExpr
                     return Ok(self.mk_expr(ExprKind::Element {
                         tag,
                         props,
@@ -1129,6 +1293,7 @@ impl Parser {
                     }, start));
                 }
                 Token::Ident(attr_name) => {
+                    self.ev_open(SyntaxKind::JsxAttr);
                     self.advance();
                     self.expect(&Token::Assign)?;
                     let value = match self.peek().clone() {
@@ -1150,6 +1315,7 @@ impl Parser {
                             )))
                         }
                     };
+                    self.ev_close(); // JsxAttr
                     props.push((attr_name, value));
                 }
                 other => {
@@ -1210,6 +1376,7 @@ impl Parser {
             }
         }
 
+        self.ev_close(); // ElementExpr
         Ok(self.mk_expr(ExprKind::Element {
             tag,
             props,

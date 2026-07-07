@@ -8,6 +8,7 @@ pub mod builtins;
 pub mod cli;
 pub mod compiler;
 pub mod constant_table;
+pub mod cst;
 pub mod desugar;
 pub mod dot_graph;
 pub mod env;

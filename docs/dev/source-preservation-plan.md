@@ -3,7 +3,8 @@
 Status: **in progress** (2026-07-06). End goal committed: **full lossless
 representation (Option C — a concrete syntax tree)**. Steps 1–2 (a lossless
 lexer/trivia foundation with source-tiling token spans) are **done and
-proven**; see "Progress" below. Step 3 (the concrete syntax tree) is next.
+proven**; Step 3 (the concrete syntax tree) is **in progress** — its foundational
+increment (3a, the green-tree data structures) is done. See "Progress" below.
 
 ## Motivation
 
@@ -160,7 +161,7 @@ unchanged; only spans moved. Proven by `no_other_trivia_anywhere` (interp + JSX
 snippets) and `no_other_trivia_in_repo_corpus` (100+ programs), alongside the
 still-green `reconstruct` round-trip corpus test.
 
-### ▶ Step 3 — Concrete syntax tree (next)
+### ▶ Step 3 — Concrete syntax tree (in progress)
 
 Build a green/red lossless tree (rowan/Roslyn style): every token, including
 trivia, is a node; the typed AST becomes a view over it. The parser builds the
@@ -169,6 +170,43 @@ CST (or the CST is derived and the AST projected from it). Migrate consumers
 where inserts/reorders carry comments structurally and whole-file reprint
 becomes faithful — unblocking the `petal lint` re-indenter
 ([linter-plan.md](linter-plan.md)).
+
+Because this is the highest-effort step, it is split into load-bearing
+sub-increments, each independently testable, to avoid a long-lived half-migrated
+parser:
+
+- **✅ 3a — Green-tree data structures + lossless round-trip** (`rust/src/cst.rs`,
+  done 2026-07-06). Hand-rolled (no `rowan` dependency, matching the project's
+  minimal-deps style): `GreenNode`/`GreenToken` (immutable, char-length-indexed,
+  `Rc`-shared; a token leaf is either a significant lexer `Token` or a `Trivia`
+  run, each with its verbatim text), a `GreenNodeBuilder` driven by
+  `start_node`/`token`/`finish_node` events (the interface the parser will use),
+  and a `SyntaxNode`/`SyntaxToken` *red* layer that adds absolute char offsets on
+  demand. `build_lossless(src)` produces a flat `Root` (no grammar structure yet)
+  directly from the lexer stream and pins the invariant `build_lossless(src).text()
+  == src`, proven over the whole repo corpus. Touches nothing else — parser, AST,
+  and consumers are unchanged.
+- **▶ 3b — Parser drives the builder.** Give the parser grammar node kinds and
+  have it emit `start_node`/`finish_node` around each construct while it consumes
+  tokens, producing a *structured* green tree alongside (or instead of) the AST.
+  This is the invasive increment; the sub-step boundary keeps it isolated. See
+  "Open decision" below.
+- **▢ 3c — Typed AST as a view.** Project the existing `ast` types (or typed
+  accessors) over the red tree so the compiler/desugar read structure from the
+  CST.
+- **▢ 3d — Migrate consumers.** Move `rewrite.rs` to tree splices (comments carry
+  structurally through inserts/reorders) and `show-ast` to the typed view; wire
+  the `petal lint` re-indenter.
+
+**Open decision (blocks 3b): migration strategy.**
+- *CST-authoritative:* the parser builds the CST and the AST is projected from it
+  (3c). End state is a single tree; largest change, but no dual representation to
+  keep in sync.
+- *AST-authoritative + parallel CST:* keep the AST as-is and build the CST
+  alongside purely for source preservation. Smaller, lower-risk, but two
+  representations coexist and can drift.
+
+3a is identical under both, so it shipped first. 3b's shape depends on this call.
 
 ---
 

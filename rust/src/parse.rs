@@ -13,12 +13,11 @@ pub struct Parser {
     /// `MinusPrefix` token starts a new negated element rather than binding as
     /// subtraction. See docs/syntax/optional-commas.md.
     in_juxta: bool,
-    /// CST event stream, recorded alongside AST construction when
-    /// `record_cst` is set (see `new_recording` / `crate::cst::parse_cst`).
+    /// CST event stream, recorded alongside AST construction. The tree built
+    /// from it is the authoritative parse artifact (see
+    /// [`crate::cst::parse_source`]); read it back with [`Parser::cst_events`]
+    /// after `parse_program` succeeds (on error the stream may be unbalanced).
     events: EventBuilder,
-    /// Whether to record CST events. Off in `new` so normal parsing has zero
-    /// overhead; the `ev_*` helpers are no-ops when this is false.
-    record_cst: bool,
 }
 
 impl Parser {
@@ -30,37 +29,22 @@ impl Parser {
             next_state_id: 0,
             in_juxta: false,
             events: EventBuilder::new(),
-            record_cst: false,
         }
     }
 
-    /// Like [`Parser::new`], but records a CST [`Event`] stream as a side
-    /// channel while parsing. Read it back with [`Parser::cst_events`] after
-    /// `parse_program` succeeds (on error the stream may be unbalanced).
-    pub fn new_recording(tokens: Vec<Token>, token_spans: Vec<SourceSpan>) -> Self {
-        let mut p = Self::new(tokens, token_spans);
-        p.record_cst = true;
-        p
-    }
-
-    /// The CST events recorded so far (empty unless built with
-    /// [`Parser::new_recording`]).
+    /// The CST events recorded so far.
     pub fn cst_events(&self) -> &[Event] {
         self.events.events()
     }
 
-    // ---- CST event recording (no-ops when `record_cst` is off) ----
+    // ---- CST event recording ----
 
     fn ev_open(&mut self, kind: SyntaxKind) {
-        if self.record_cst {
-            self.events.open(kind);
-        }
+        self.events.open(kind);
     }
 
     fn ev_close(&mut self) {
-        if self.record_cst {
-            self.events.close();
-        }
+        self.events.close();
     }
 
     fn ev_checkpoint(&self) -> Checkpoint {
@@ -68,9 +52,7 @@ impl Parser {
     }
 
     fn ev_wrap(&mut self, cp: Checkpoint, kind: SyntaxKind) {
-        if self.record_cst {
-            self.events.wrap(cp, kind);
-        }
+        self.events.wrap(cp, kind);
     }
 
     pub fn parse_program(&mut self) -> Result<Vec<Stmt>, String> {
@@ -107,9 +89,7 @@ impl Parser {
     fn advance(&mut self) -> Token {
         let tok = self.tokens[self.pos].clone();
         self.pos += 1;
-        if self.record_cst {
-            self.events.token();
-        }
+        self.events.token();
         tok
     }
 

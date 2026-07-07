@@ -1,13 +1,13 @@
 # Source preservation plan — comments & original-source fidelity
 
-Status: **in progress** (2026-07-06). End goal committed: **full lossless
+Status: **Steps 1–3 done** (2026-07-06). End goal committed: **full lossless
 representation (Option C — a concrete syntax tree)**. Steps 1–2 (a lossless
-lexer/trivia foundation with source-tiling token spans) are **done and
-proven**; Step 3 (the concrete syntax tree) is **in progress** — 3a (green-tree
-data structures), 3b (parser emits a structured CST via `cst::parse_cst`, dual
-output alongside the AST), and 3c (the AST projected from the CST, proven
-identical to the parser's) are done; next is 3d (migrate consumers, make
-`parse_cst` the sole parser). See "Progress" below.
+lexer/trivia foundation with source-tiling token spans) and Step 3 (the
+concrete syntax tree) are **done and proven**: every consumer parses once via
+`cst::parse_source`, the green tree is the authoritative parse artifact, the
+AST is projected from it, and `rewrite.rs` edits are tree splices that keep
+trivia. See "Progress" below. Next up: the `petal lint` re-indenter
+([linter-plan.md](linter-plan.md)) can now reprint from the tree.
 
 ## Motivation
 
@@ -237,18 +237,34 @@ parser:
   quirky corners (pipe rewrites, elsif chains, match do-bodies, interpolation
   edge parts, JSX, patterns, color literals, `import` forms).
   `project_in_file(root, FileId)` exists for imported modules (file-local spans).
-- **▢ 3d — Migrate consumers.** Make `parse_cst` the sole parser and project the
-  AST from the tree (delete the dual-output path); move `rewrite.rs` to tree
-  splices (comments carry structurally through inserts/reorders) and `show-ast`
-  to the typed view; wire the `petal lint` re-indenter. Instructions:
-  [handoff-3d.md](handoff-3d.md).
+- **✅ 3d — Migrate consumers** (done 2026-07-06). The CST is the authoritative
+  parse:
+  - **3d-i** — `cst::parse_source(source, file) -> (Rc<GreenNode>, Vec<Stmt>)`
+    is the single-parse entry point: lex, parse (recording events), `build_tree`,
+    then project the AST from the tree via `cst_project::project_in_file`. A
+    debug-build `debug_assert_eq!` still differential-checks the projection
+    against the parser's direct AST on every parse. All call sites (module
+    loading, `rewrite.rs`, `show-ast`, test helpers) migrated; `parse_cst` is a
+    thin wrapper.
+  - **3d-ii** — `rewrite.rs` edits are tree splices. Green-tree editing
+    primitives `GreenNode::with_children` / `replace_child` rebuild the spine
+    (O(depth), untouched subtrees stay shared); `rewrite::splice_node` locates
+    the node by significant range, splices in a subtree parsed from the
+    replacement snippet, and keeps the old node's leading/trailing trivia
+    leaves (comments and indentation at its edges) around the new subtree.
+    The span-based string `splice` remains as the fallback for replacements
+    that don't parse as a single expression.
+  - **3d-iii** — the `record_cst` flag and `Parser::new_recording` are removed;
+    recording is always on (measured: full `parse_source` ≈ 3× a bare
+    lex+parse, ~2 ms absolute on the largest `.ptl` in the repo — negligible
+    for every real path, and nothing used the non-recording parser anymore).
 
-**Migration strategy (decided):** head toward *CST-authoritative*. 3b ships the
-low-risk intermediate state — the AST stays authoritative and the CST is a
-recorded side channel (`record_cst` off by default, so drift is impossible: both
-come from the same parse) — 3c proves the projection is lossless w.r.t. the AST,
-and 3d makes `parse_cst` the sole parser with the AST derived via
-`cst_project::project`.
+**Migration strategy (followed):** head toward *CST-authoritative*. 3b shipped
+the low-risk intermediate state — the AST stayed authoritative and the CST was
+a recorded side channel (behind a `record_cst` flag, so drift was impossible:
+both come from the same parse) — 3c proved the projection is lossless w.r.t.
+the AST, and 3d made the tree the sole parse artifact with the AST derived via
+`cst_project::project` (the flag is gone; recording is always on).
 
 ---
 

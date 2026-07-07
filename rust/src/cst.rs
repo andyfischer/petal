@@ -616,7 +616,7 @@ pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<St
     let mut lexer = Lexer::new_in_file(source, file);
     lexer.tokenize()?;
     let mut parser =
-        crate::parse::Parser::new_recording(lexer.tokens.clone(), lexer.token_spans.clone());
+        crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
     let direct = parser.parse_program()?;
     let green = build_tree(
         parser.cst_events(),

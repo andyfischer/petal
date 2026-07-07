@@ -20,6 +20,7 @@ pub mod heap;
 pub mod ir_display;
 pub mod ir_serialize;
 pub mod lexer;
+pub mod lint;
 pub mod module;
 pub mod native_fn;
 pub mod parse;

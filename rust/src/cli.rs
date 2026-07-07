@@ -22,6 +22,7 @@ pub enum Command {
         no_opt: bool,
     },
     Check { json: bool },
+    Lint { fix: bool, check: bool },
     Explain { json: bool, term: String },
     ShowIr { json: bool, all: bool },
     ShowBytecode { json: bool },
@@ -89,6 +90,7 @@ fn dispatch_args(args: &[String]) -> CliArgs {
         }
         "run" => parse_run_args(&args[1..]),
         "check" => parse_show_args(&args[1..], |json| Command::Check { json }),
+        "lint" => parse_lint_args(&args[1..]),
         "explain" => parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term }),
         "show-ir" => parse_show_with_all(&args[1..], |json, all| Command::ShowIr { json, all }),
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
@@ -154,6 +156,43 @@ fn parse_run_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Run { json, trace, record_trace, ir, dup_stats, no_opt },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+fn parse_lint_args(args: &[String]) -> CliArgs {
+    let mut fix = false;
+    let mut check = false;
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--fix" => fix = true,
+            "--check" => check = true,
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Usage: petal lint [--fix | --check] <file>  |  petal lint -e <code>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::Lint { fix, check },
         source,
         include_dirs: Vec::new(),
     }
@@ -355,6 +394,11 @@ Commands:
                                  --trace: emit per-term events to stderr
                                  (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
+  lint [--fix | --check] <file>  Normalize source (2-space indent, rebind `x = f(x)` -> `f(@x)`)
+                                 default: report and exit 1 if changes needed
+                                 --fix: rewrite the file in place
+                                 --check: CI mode, exit 0/1 with no output on success
+  lint -e <code>                 Lint inline code, print result to stdout
   show-ir [--json] [--all] <file> Display compiled IR (--all to include builtin phantoms)
   show-bytecode [--json] <file>  Display the bytecode lowering of the compiled IR
   show-ast [--json] <file>       Display parsed AST
@@ -598,6 +642,52 @@ pub fn execute(cli: CliArgs) {
                     }
                     process::exit(1);
                 }
+            }
+        }
+        Command::Lint { fix, check } => {
+            let opts = crate::lint::LintOptions {
+                include_dirs: include_dirs.clone(),
+                origin: source_origin(&source_input),
+            };
+            let outcome = match crate::lint::lint_source(&source, &opts) {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    process::exit(1);
+                }
+            };
+            for note in &outcome.notes {
+                eprintln!("lint: {}", note);
+            }
+            let changed = outcome.changed(&source);
+
+            // Inline code always prints the normalized result to stdout.
+            if let SourceInput::Inline(_) = source_input {
+                print!("{}", outcome.output);
+                return;
+            }
+            let SourceInput::File(path) = &source_input else { unreachable!() };
+            let summary = format!(
+                "{}: {} line(s) reformatted, {} rebind rewrite(s)",
+                path, outcome.reindented_lines, outcome.rebinds
+            );
+            if check {
+                // CI mode: no output on success, one stderr line on failure.
+                if changed {
+                    eprintln!("would fix {}", summary);
+                    process::exit(1);
+                }
+            } else if fix {
+                if changed {
+                    if let Err(e) = fs::write(path, &outcome.output) {
+                        eprintln!("Error writing '{}': {}", path, e);
+                        process::exit(1);
+                    }
+                    println!("fixed {}", summary);
+                }
+            } else if changed {
+                println!("would fix {} (run with --fix to apply)", summary);
+                process::exit(1);
             }
         }
         Command::ShowTokens { json } => {

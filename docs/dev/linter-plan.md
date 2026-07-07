@@ -1,9 +1,25 @@
 # Linter plan (`petal lint`)
 
-Status: **active** (2026-07-06). The source-preservation prerequisite is done:
-the lossless CST (`rust/src/cst.rs`) is the authoritative parse artifact,
-`cst::parse_source` round-trips byte-for-byte, and `rewrite.rs` edits are
-trivia-preserving tree splices. The linter can now be built on top.
+Status: **first slice shipped** (2026-07-07, `rust/src/lint.rs`): `petal lint`
+with report / `--fix` / `--check` / `-e` modes, the token-driven 2-space
+re-indenter (plus trailing-whitespace trim and single trailing newline), the
+rebind rule, and the IR-equivalence gate — proven by a corpus property test
+(`lint_preserves_ir_over_repo_corpus`: every repo `.ptl` that compiles must
+lint to IR-equivalent, idempotent output). Remaining: the rest of the
+normalization catalogue below, and running the linter over `apps/*` and the
+garden editor scripts.
+
+Two findings from implementation that correct assumptions below:
+
+- `f(@x)` does **not** desugar to exactly `x = f(x)` — the desugarer hoists
+  the assignment and leaves a residual read of `x` at the call site, which
+  compiles to one extra unnamed `Copy` term (a pure identity). The gate
+  therefore compares IR in *canonical form*: unnamed `Copy` passthroughs
+  resolved away and terms renumbered in block-traversal order.
+- Rebind candidates must mirror `desugar.rs`'s recursion exactly: the v1
+  desugarer does not lift `@` out of match arms or `while` conditions, so the
+  linter never proposes rebinds there (the rewrite would leave an `@` that
+  compiles to a deferred error).
 
 ## Goal
 

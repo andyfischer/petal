@@ -23,6 +23,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 |---------|---------|
 | `run` | Execute a program |
 | `check` | Lex + parse + compile only (no execution) |
+| `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
@@ -72,6 +73,31 @@ compilation succeeds, 1 otherwise. With `--json`, emits either
 failure (`phase` is `"parse"` or `"compile"`).
 
 Faster than `run` when you only care about syntactic validity.
+
+### `lint` — Normalize source
+
+```
+petal lint <file.ptl>            # report; exit 1 if changes needed
+petal lint --fix <file.ptl>      # rewrite the file in place
+petal lint --check <file.ptl>    # CI mode: exit 0/1, no output on success
+petal lint -e '<code>'           # lint inline code, print result to stdout
+```
+
+Two kinds of normalization (see [dev/linter-plan.md](dev/linter-plan.md)):
+
+- **Formatting** — 2-space re-indentation driven by the token stream, plus
+  trailing-whitespace trim and a single trailing newline. Only leading/trailing
+  whitespace outside tokens is touched, so comments, string contents, and JSX
+  text are preserved exactly.
+- **Rebind** — rewrites `x = f(x)` to `f(@x)` (and `nums = append(nums, 4)` to
+  `append(@nums, 4)`) when the rewrite is unambiguous, via minimal splices that
+  keep comments intact.
+
+Because rebind changes tokens, `lint` verifies it with an IR-equivalence gate:
+the pre- and post-lint sources must compile to structurally identical IR
+(modulo spans and identity copies). If the file doesn't compile standalone
+(e.g. its imports need `-I` dirs not given), rebinds are skipped with a note
+and only formatting applies.
 
 ### `explain` — Walk the dataflow graph backward from a term
 

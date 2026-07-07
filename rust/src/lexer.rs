@@ -502,8 +502,7 @@ impl Lexer {
         // starts just after the opening quote; after each interpolation hole it
         // moves to the closing `}` so the following literal part absorbs that
         // delimiter. This keeps every token span gap-free so the source
-        // reconstructs exactly — see docs/dev/source-preservation-plan.md Step 2
-        // and `crate::trivia`.
+        // reconstructs exactly — see `crate::trivia`.
         let mut part_start = self.current_pos();
 
         while self.pos < self.input.len() {

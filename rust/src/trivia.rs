@@ -3,8 +3,8 @@
 //! This is the foundation for making Petal's parsed representation *lossless* —
 //! able to reproduce the original source byte-for-byte, comments and layout
 //! included — which is what programmatic, source-preserving runtime edits need.
-//! See `docs/dev/source-preservation-plan.md` for the staged plan toward a full
-//! concrete syntax tree (CST); this module is its first, load-bearing step.
+//! This module is the first, load-bearing layer under the full concrete
+//! syntax tree ([`crate::cst`]).
 //!
 //! ## The idea
 //!

@@ -3,8 +3,8 @@
 //! Petal's AST (see [`crate::ast`]) is *lossy*: it carries source spans but not
 //! comments or the original whitespace, so re-emitting a whole parsed program
 //! would discard the author's formatting. The tooling here edits the
-//! **lossless green tree** instead ([`crate::cst`], step 3d-ii of the
-//! source-preservation plan): it locates the tree node covering the construct
+//! **lossless green tree** instead ([`crate::cst`]): it locates the tree node
+//! covering the construct
 //! being edited, splices in a subtree parsed from the replacement snippet —
 //! keeping the old node's leading/trailing trivia (comments, indentation)
 //! around it — and re-emits the tree's text. Everything outside the replaced

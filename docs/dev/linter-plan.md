@@ -1,10 +1,9 @@
 # Linter plan (`petal lint`)
 
-Status: **deferred** (paused 2026-07-05 in favor of source-preservation work,
-which is a prerequisite for doing the linter well — see
-[source-preservation-plan.md](source-preservation-plan.md)).
-
-This captures the design we converged on so we can pick it up later.
+Status: **active** (2026-07-06). The source-preservation prerequisite is done:
+the lossless CST (`rust/src/cst.rs`) is the authoritative parse artifact,
+`cst::parse_source` round-trips byte-for-byte, and `rewrite.rs` edits are
+trivia-preserving tree splices. The linter can now be built on top.
 
 ## Goal
 
@@ -21,23 +20,18 @@ Petal source. Two kinds of normalization:
    nums = append(nums, 4)   -->   append(@nums, 4)
    ```
 
-## Hard constraint: this needs source preservation first
+## Prerequisite (met): source preservation
 
-The current AST (`rust/src/ast.rs`) is **lossy** — the lexer discards comments
-(`lexer.rs::skip_line_comment`) and all non-newline whitespace, so we cannot
-reprint a whole program from the AST without deleting the author's comments and
-layout. `rust/src/rewrite.rs` works around this today with **surgical span
-splicing** (edit only the characters a span covers, copy everything else
-verbatim), which is exactly the right primitive for a linter's `--fix` too —
-but it can only *replace known spans*, not re-emit a full re-indented file.
+The linter needs a representation that can re-emit source without deleting the
+author's comments and layout. That now exists: the lossless CST
+(`rust/src/cst.rs`) is the authoritative parse artifact — every token including
+whitespace/comment trivia is a leaf, `SyntaxNode::text()` reproduces the source
+byte-for-byte, and the typed AST is projected from the tree
+(`rust/src/cst_project.rs`). `rust/src/rewrite.rs` provides trivia-preserving
+tree splices plus span-based string splicing as a fallback — the right
+primitives for `--fix`.
 
-A whole-file re-indenter therefore needs one of:
-- a lossless concrete syntax tree (CST), or
-- a line/token-based re-indenter that never reprints from the AST.
-
-This is why the linter is blocked on the source-preservation work.
-
-## Recommended architecture (once source preservation lands)
+## Recommended architecture
 
 Split the two normalization kinds by mechanism — do **not** try to do both from
 one AST reprint:

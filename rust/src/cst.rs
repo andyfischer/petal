@@ -1,9 +1,7 @@
 //! Concrete syntax tree (CST) — the lossless, tree-structured substrate for
 //! source-preserving edits.
 //!
-//! This is **Step 3** of the source-preservation plan
-//! (`docs/dev/source-preservation-plan.md`). Steps 1–2 gave the lexer *tiling*
-//! spans, so the token stream — significant tokens plus the whitespace/comment
+//! The foundation is the lexer's *tiling* spans, so the token stream — significant tokens plus the whitespace/comment
 //! trivia between them — reproduces the source byte-for-byte
 //! ([`crate::trivia`]). This module lifts that flat stream into a **green tree**
 //! in the rowan/Roslyn style: an immutable, shareable tree whose leaves are

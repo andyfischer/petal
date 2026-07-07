@@ -1,5 +1,4 @@
-//! Project the typed AST out of the lossless CST — step 3c of the
-//! source-preservation plan (`docs/dev/source-preservation-plan.md`).
+//! Project the typed AST out of the lossless CST.
 //!
 //! [`project`] walks a structured green tree produced by
 //! [`crate::cst::parse_cst`] and rebuilds the exact [`crate::ast`] values the

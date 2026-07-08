@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 
 use super::*;
+use crate::ast::{self, ExprVisitor};
 
 impl Compiler {
     /// Record a cross-block rebinding of `name` to `new_tid` (a term in the
@@ -82,55 +83,14 @@ impl Compiler {
     }
 
     fn collect_assigned_names_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
+        let mut v = AssignedNames { out };
         for s in stmts {
-            match &s.kind {
-                StmtKind::Assign {
-                    target: AssignTarget::Name(n),
-                    value,
-                } => {
-                    if !out.contains(n) {
-                        out.push(n.clone());
-                    }
-                    Self::collect_assigned_names_expr(value, out);
-                }
-                StmtKind::Assign {
-                    target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
-                    value,
-                } => {
-                    // Under value semantics, `obj.f = v` / `xs[i] = v` desugars
-                    // to a functional rebuild + rebind of the ROOT variable, so
-                    // the root is reassigned just like a plain `name = v`. It
-                    // must be detected as a loop carry / rebind, otherwise the
-                    // in-loop write never reaches the base (state) slot.
-                    if let Some(root) = Self::assign_target_root(object)
-                        && !out.contains(&root.to_string())
-                    {
-                        out.push(root.to_string());
-                    }
-                    Self::collect_assigned_names_expr(value, out);
-                }
-                StmtKind::Let { value, .. } => {
-                    Self::collect_assigned_names_expr(value, out);
-                }
-                StmtKind::Expr(e) => Self::collect_assigned_names_expr(e, out),
-                StmtKind::For { iter, body, .. } => {
-                    Self::collect_assigned_names_expr(iter, out);
-                    Self::collect_assigned_names_stmts(body, out);
-                }
-                StmtKind::While { condition, body } => {
-                    Self::collect_assigned_names_expr(condition, out);
-                    Self::collect_assigned_names_stmts(body, out);
-                }
-                StmtKind::Return(Some(e)) => Self::collect_assigned_names_expr(e, out),
-                StmtKind::State { init, key, .. } => {
-                    Self::collect_assigned_names_expr(init, out);
-                    if let Some(k) = key {
-                        Self::collect_assigned_names_expr(k, out);
-                    }
-                }
-                _ => {}
-            }
+            v.visit_stmt(s);
         }
+    }
+
+    fn collect_assigned_names_expr(e: &Expr, out: &mut Vec<String>) {
+        AssignedNames { out }.visit_expr(e);
     }
 
     /// Walk an index/field assignment-target object expression down to its
@@ -141,86 +101,6 @@ impl Compiler {
             ExprKind::FieldAccess { object, .. } => Self::assign_target_root(object),
             ExprKind::IndexAccess { object, .. } => Self::assign_target_root(object),
             _ => None,
-        }
-    }
-
-    fn collect_assigned_names_expr(e: &Expr, out: &mut Vec<String>) {
-        match &e.kind {
-            ExprKind::If {
-                condition,
-                then_body,
-                else_body,
-            } => {
-                Self::collect_assigned_names_expr(condition, out);
-                Self::collect_assigned_names_stmts(then_body, out);
-                if let Some(eb) = else_body {
-                    match eb {
-                        ElseBranch::Block(stmts) => Self::collect_assigned_names_stmts(stmts, out),
-                        ElseBranch::ElseIf(e) => Self::collect_assigned_names_expr(e, out),
-                    }
-                }
-            }
-            ExprKind::Match { subject, arms } => {
-                Self::collect_assigned_names_expr(subject, out);
-                for arm in arms {
-                    if let Some(g) = &arm.guard {
-                        Self::collect_assigned_names_expr(g, out);
-                    }
-                    Self::collect_assigned_names_expr(&arm.body, out);
-                }
-            }
-            ExprKind::Block(stmts) => Self::collect_assigned_names_stmts(stmts, out),
-            // Don't descend into lambdas — they have their own scope.
-            ExprKind::Lambda { .. } => {}
-            ExprKind::BinaryOp { left, right, .. } => {
-                Self::collect_assigned_names_expr(left, out);
-                Self::collect_assigned_names_expr(right, out);
-            }
-            ExprKind::UnaryOp { operand, .. } => {
-                Self::collect_assigned_names_expr(operand, out);
-            }
-            ExprKind::Call { function, args } => {
-                Self::collect_assigned_names_expr(function, out);
-                for a in args {
-                    Self::collect_assigned_names_expr(a, out);
-                }
-            }
-            ExprKind::List(elems) => {
-                for el in elems {
-                    Self::collect_assigned_names_expr(el, out);
-                }
-            }
-            ExprKind::Record(fields) => {
-                for f in fields {
-                    match f {
-                        RecordField::Named(_, e) => Self::collect_assigned_names_expr(e, out),
-                        RecordField::Spread(e) => Self::collect_assigned_names_expr(e, out),
-                    }
-                }
-            }
-            ExprKind::FieldAccess { object, .. } => {
-                Self::collect_assigned_names_expr(object, out);
-            }
-            ExprKind::IndexAccess { object, index } => {
-                Self::collect_assigned_names_expr(object, out);
-                Self::collect_assigned_names_expr(index, out);
-            }
-            ExprKind::StringInterp { exprs, .. } => {
-                for e in exprs {
-                    Self::collect_assigned_names_expr(e, out);
-                }
-            }
-            ExprKind::Element { props, children, .. } => {
-                for (_, e) in props {
-                    Self::collect_assigned_names_expr(e, out);
-                }
-                for c in children {
-                    if let JsxChild::Expr(e) = c {
-                        Self::collect_assigned_names_expr(e, out);
-                    }
-                }
-            }
-            _ => {}
         }
     }
 
@@ -445,5 +325,101 @@ impl Compiler {
         self.pop_scope();
         self.set_block(saved);
         self.loop_depth -= 1;
+    }
+}
+
+/// Collects the names an assignment binds — plain reassignments and the *root*
+/// variable of a field/index write — for loop-carry / rebind detection. Uses
+/// the shared total traversal but overrides two nodes: `fn` declarations and
+/// lambda bodies are skipped because they open their own scopes, so their
+/// assignments must not be reported as carries of the enclosing scope.
+struct AssignedNames<'a> {
+    out: &'a mut Vec<String>,
+}
+
+impl AssignedNames<'_> {
+    fn push_unique(&mut self, name: &str) {
+        if !self.out.iter().any(|n| n == name) {
+            self.out.push(name.to_string());
+        }
+    }
+}
+
+impl ExprVisitor for AssignedNames<'_> {
+    fn visit_stmt(&mut self, s: &Stmt) {
+        match &s.kind {
+            StmtKind::Assign {
+                target: AssignTarget::Name(n),
+                value,
+            } => {
+                self.push_unique(n);
+                self.visit_expr(value);
+            }
+            StmtKind::Assign {
+                target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
+                value,
+            } => {
+                // Under value semantics, `obj.f = v` / `xs[i] = v` desugars to a
+                // functional rebuild + rebind of the ROOT variable, so the root
+                // is reassigned just like a plain `name = v`. It must be detected
+                // as a loop carry / rebind, otherwise the in-loop write never
+                // reaches the base (state) slot.
+                if let Some(root) = Compiler::assign_target_root(object) {
+                    self.push_unique(root);
+                }
+                self.visit_expr(value);
+            }
+            // A nested `fn` opens its own scope; its assignments don't carry out.
+            StmtKind::FnDecl { .. } => {}
+            _ => ast::walk_stmt(self, s),
+        }
+    }
+
+    fn visit_expr(&mut self, e: &Expr) {
+        // Lambdas have their own scope — don't descend into their bodies.
+        if let ExprKind::Lambda { .. } = &e.kind {
+            return;
+        }
+        ast::walk_expr(self, e);
+    }
+}
+
+#[cfg(test)]
+mod walker_tests {
+    //! Characterization tests for the assigned-name pre-scan walker. These lock
+    //! in the exact set of names `collect_assigned_names_stmts` reports — plain
+    //! reassignments, the *root* variable of a field/index assignment, dedup in
+    //! insertion order, and descent through `if`/`for`/`while` bodies — so a
+    //! refactor of the traversal can't silently change loop-carry detection.
+
+    use super::*;
+    use crate::rewrite::parse_ast;
+
+    fn assigned(src: &str) -> Vec<String> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        let mut out = Vec::new();
+        Compiler::collect_assigned_names_stmts(&stmts, &mut out);
+        out
+    }
+
+    #[test]
+    fn plain_name_assignments_collected_in_order_and_deduped() {
+        assert_eq!(assigned("x = f(x)\ny = g(y)\nx = h(x)\n"), vec!["x", "y"]);
+    }
+
+    #[test]
+    fn index_and_field_assignments_collect_the_root_variable() {
+        assert_eq!(assigned("xs[0] = double(xs[0])\n"), vec!["xs"]);
+        assert_eq!(assigned("p.x = double(p.x)\n"), vec!["p"]);
+    }
+
+    #[test]
+    fn descends_into_if_for_and_while_bodies() {
+        assert_eq!(assigned("if c then\n  x = f(x)\nend\n"), vec!["x"]);
+        assert_eq!(
+            assigned("for i in range(0, 3) do\n  s = add(s, i)\nend\n"),
+            vec!["s"]
+        );
+        assert_eq!(assigned("while gt(n, 0) do\n  n = dec(n)\nend\n"), vec!["n"]);
     }
 }

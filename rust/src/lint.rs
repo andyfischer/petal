@@ -28,9 +28,7 @@
 
 use std::path::PathBuf;
 
-use crate::ast::{
-    AssignTarget, ElseBranch, Expr, ExprKind, JsxChild, RecordField, Stmt, StmtKind,
-};
+use crate::ast::{self, AssignTarget, Expr, ExprKind, ExprVisitor, Stmt, StmtKind};
 use crate::env::Env;
 use crate::lexer::{Lexer, Token};
 
@@ -399,47 +397,69 @@ struct Rebind {
 /// verifies it against the compiled IR anyway.
 fn find_rebinds(stmts: &[Stmt], chars: &[char]) -> Vec<Rebind> {
     let mut out = Vec::new();
-    rebind_stmts(stmts, chars, &mut out);
+    let mut finder = Rebinder { chars, out: &mut out };
+    for stmt in stmts {
+        finder.visit_stmt(stmt);
+    }
     out
 }
 
-/// One liftable statement scope — the counterpart of `desugar::desugar_stmts`.
-fn rebind_stmts(stmts: &[Stmt], chars: &[char], out: &mut Vec<Rebind>) {
-    for stmt in stmts {
+/// Walks the statement scopes the desugarer lifts `@` from, collecting rebind
+/// candidates. Its traversal mirrors [`crate::desugar`] exactly by overriding
+/// the two nodes where the desugarer stops short of a total walk: a `while`
+/// condition (re-evaluated each iteration) and `match` arms (conditional
+/// bodies) are never lifted into, so no candidates are collected there.
+struct Rebinder<'a> {
+    chars: &'a [char],
+    out: &'a mut Vec<Rebind>,
+}
+
+impl ExprVisitor for Rebinder<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         if let StmtKind::Assign { target: AssignTarget::Name(x), value } = &stmt.kind
-            && let Some(rebind) = rebind_candidate(stmt, x, value, chars)
+            && let Some(rebind) = rebind_candidate(stmt, x, value, self.chars)
         {
-            out.push(rebind);
+            self.out.push(rebind);
         }
         match &stmt.kind {
             StmtKind::Let { value, .. }
             | StmtKind::Expr(value)
-            | StmtKind::Return(Some(value)) => rebind_expr(value, chars, out),
+            | StmtKind::Return(Some(value)) => self.visit_expr(value),
             StmtKind::Assign { target, value } => {
-                rebind_expr(value, chars, out);
+                self.visit_expr(value);
                 match target {
                     AssignTarget::Name(_) => {}
-                    AssignTarget::Field(obj, _) => rebind_expr(obj, chars, out),
+                    AssignTarget::Field(obj, _) => self.visit_expr(obj),
                     AssignTarget::Index(obj, idx) => {
-                        rebind_expr(obj, chars, out);
-                        rebind_expr(idx, chars, out);
+                        self.visit_expr(obj);
+                        self.visit_expr(idx);
                     }
                 }
             }
             StmtKind::State { init, key, .. } => {
-                rebind_expr(init, chars, out);
+                self.visit_expr(init);
                 if let Some(k) = key {
-                    rebind_expr(k, chars, out);
+                    self.visit_expr(k);
                 }
             }
-            StmtKind::FnDecl { body, .. } => rebind_stmts(body, chars, out),
+            StmtKind::FnDecl { body, .. } => {
+                for s in body {
+                    self.visit_stmt(s);
+                }
+            }
             StmtKind::For { iter, body, .. } => {
-                rebind_expr(iter, chars, out);
-                rebind_stmts(body, chars, out);
+                self.visit_expr(iter);
+                for s in body {
+                    self.visit_stmt(s);
+                }
             }
             // The desugarer never lifts from a `while` condition (it
-            // re-evaluates each iteration), so no candidates there either.
-            StmtKind::While { body, .. } => rebind_stmts(body, chars, out),
+            // re-evaluates each iteration), so recurse the body only.
+            StmtKind::While { body, .. } => {
+                for s in body {
+                    self.visit_stmt(s);
+                }
+            }
             StmtKind::Return(None)
             | StmtKind::Break
             | StmtKind::Continue
@@ -447,73 +467,14 @@ fn rebind_stmts(stmts: &[Stmt], chars: &[char], out: &mut Vec<Rebind>) {
             | StmtKind::Import(_) => {}
         }
     }
-}
 
-/// Recurse into the nested statement scopes an expression owns — the
-/// counterpart of `desugar::lift_expr`'s block-boundary handling.
-fn rebind_expr(expr: &Expr, chars: &[char], out: &mut Vec<Rebind>) {
-    match &expr.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
-        ExprKind::BinaryOp { left, right, .. } => {
-            rebind_expr(left, chars, out);
-            rebind_expr(right, chars, out);
+    fn visit_expr(&mut self, expr: &Expr) {
+        // The desugarer lifts only the subject of a `match`, not the arms.
+        if let ExprKind::Match { subject, .. } = &expr.kind {
+            self.visit_expr(subject);
+            return;
         }
-        ExprKind::UnaryOp { operand, .. } => rebind_expr(operand, chars, out),
-        ExprKind::Call { function, args } => {
-            rebind_expr(function, chars, out);
-            for a in args {
-                rebind_expr(a, chars, out);
-            }
-        }
-        ExprKind::If { condition, then_body, else_body } => {
-            rebind_expr(condition, chars, out);
-            rebind_stmts(then_body, chars, out);
-            match else_body {
-                Some(ElseBranch::Block(stmts)) => rebind_stmts(stmts, chars, out),
-                Some(ElseBranch::ElseIf(e)) => rebind_expr(e, chars, out),
-                None => {}
-            }
-        }
-        // The desugarer does not lift into match arms (conditional bodies);
-        // only the subject is a liftable position.
-        ExprKind::Match { subject, .. } => rebind_expr(subject, chars, out),
-        ExprKind::List(items) => {
-            for e in items {
-                rebind_expr(e, chars, out);
-            }
-        }
-        ExprKind::Record(fields) => {
-            for f in fields {
-                match f {
-                    RecordField::Named(_, e) | RecordField::Spread(e) => {
-                        rebind_expr(e, chars, out)
-                    }
-                }
-            }
-        }
-        ExprKind::FieldAccess { object, .. } => rebind_expr(object, chars, out),
-        ExprKind::IndexAccess { object, index } => {
-            rebind_expr(object, chars, out);
-            rebind_expr(index, chars, out);
-        }
-        ExprKind::Block(stmts) | ExprKind::Lambda { body: stmts, .. } => {
-            rebind_stmts(stmts, chars, out)
-        }
-        ExprKind::StringInterp { exprs, .. } => {
-            for e in exprs {
-                rebind_expr(e, chars, out);
-            }
-        }
-        ExprKind::Element { props, children, .. } => {
-            for (_, e) in props {
-                rebind_expr(e, chars, out);
-            }
-            for c in children {
-                if let JsxChild::Expr(e) = c {
-                    rebind_expr(e, chars, out);
-                }
-            }
-        }
+        ast::walk_expr(self, expr);
     }
 }
 
@@ -566,7 +527,7 @@ fn rebind_candidate(stmt: &Stmt, x: &str, value: &Expr, chars: &[char]) -> Optio
 /// Whether any `@var` marker appears anywhere in `e` (nested bodies included).
 fn contains_atvar(e: &Expr) -> bool {
     let mut found = false;
-    for_each_expr(e, &mut |e| found |= matches!(e.kind, ExprKind::AtVar(_)));
+    ast::for_each_expr(e, &mut |e| found |= matches!(e.kind, ExprKind::AtVar(_)));
     found
 }
 
@@ -575,138 +536,11 @@ fn contains_atvar(e: &Expr) -> bool {
 /// matter: they are identical text on both sides of the rewrite.)
 fn count_ident(e: &Expr, name: &str) -> usize {
     let mut n = 0;
-    for_each_expr(e, &mut |e| match &e.kind {
+    ast::for_each_expr(e, &mut |e| match &e.kind {
         ExprKind::Ident(id) | ExprKind::AtVar(id) if id == name => n += 1,
         _ => {}
     });
     n
-}
-
-/// Visit every expression in `e`'s whole subtree, nested statements included.
-fn for_each_expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
-    f(e);
-    match &e.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
-        ExprKind::BinaryOp { left, right, .. } => {
-            for_each_expr(left, f);
-            for_each_expr(right, f);
-        }
-        ExprKind::UnaryOp { operand, .. } => for_each_expr(operand, f),
-        ExprKind::Call { function, args } => {
-            for_each_expr(function, f);
-            for a in args {
-                for_each_expr(a, f);
-            }
-        }
-        ExprKind::If { condition, then_body, else_body } => {
-            for_each_expr(condition, f);
-            for s in then_body {
-                for_each_expr_in_stmt(s, f);
-            }
-            match else_body {
-                Some(ElseBranch::Block(stmts)) => {
-                    for s in stmts {
-                        for_each_expr_in_stmt(s, f);
-                    }
-                }
-                Some(ElseBranch::ElseIf(e)) => for_each_expr(e, f),
-                None => {}
-            }
-        }
-        ExprKind::Match { subject, arms } => {
-            for_each_expr(subject, f);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    for_each_expr(g, f);
-                }
-                for_each_expr(&arm.body, f);
-            }
-        }
-        ExprKind::List(items) => {
-            for e in items {
-                for_each_expr(e, f);
-            }
-        }
-        ExprKind::Record(fields) => {
-            for field in fields {
-                match field {
-                    RecordField::Named(_, e) | RecordField::Spread(e) => for_each_expr(e, f),
-                }
-            }
-        }
-        ExprKind::FieldAccess { object, .. } => for_each_expr(object, f),
-        ExprKind::IndexAccess { object, index } => {
-            for_each_expr(object, f);
-            for_each_expr(index, f);
-        }
-        ExprKind::Block(stmts) | ExprKind::Lambda { body: stmts, .. } => {
-            for s in stmts {
-                for_each_expr_in_stmt(s, f);
-            }
-        }
-        ExprKind::StringInterp { exprs, .. } => {
-            for e in exprs {
-                for_each_expr(e, f);
-            }
-        }
-        ExprKind::Element { props, children, .. } => {
-            for (_, e) in props {
-                for_each_expr(e, f);
-            }
-            for c in children {
-                if let JsxChild::Expr(e) = c {
-                    for_each_expr(e, f);
-                }
-            }
-        }
-    }
-}
-
-fn for_each_expr_in_stmt(s: &Stmt, f: &mut impl FnMut(&Expr)) {
-    match &s.kind {
-        StmtKind::Let { value, .. }
-        | StmtKind::Expr(value)
-        | StmtKind::Return(Some(value)) => for_each_expr(value, f),
-        StmtKind::Assign { target, value } => {
-            match target {
-                AssignTarget::Name(_) => {}
-                AssignTarget::Field(obj, _) => for_each_expr(obj, f),
-                AssignTarget::Index(obj, idx) => {
-                    for_each_expr(obj, f);
-                    for_each_expr(idx, f);
-                }
-            }
-            for_each_expr(value, f);
-        }
-        StmtKind::FnDecl { body, .. } => {
-            for s in body {
-                for_each_expr_in_stmt(s, f);
-            }
-        }
-        StmtKind::For { iter, body, .. } => {
-            for_each_expr(iter, f);
-            for s in body {
-                for_each_expr_in_stmt(s, f);
-            }
-        }
-        StmtKind::While { condition, body } => {
-            for_each_expr(condition, f);
-            for s in body {
-                for_each_expr_in_stmt(s, f);
-            }
-        }
-        StmtKind::State { init, key, .. } => {
-            for_each_expr(init, f);
-            if let Some(k) = key {
-                for_each_expr(k, f);
-            }
-        }
-        StmtKind::Return(None)
-        | StmtKind::Break
-        | StmtKind::Continue
-        | StmtKind::EnumDecl { .. }
-        | StmtKind::Import(_) => {}
-    }
 }
 
 

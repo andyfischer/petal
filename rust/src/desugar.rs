@@ -52,7 +52,7 @@
 //! compile-time errors.
 
 use crate::ast::{
-    AssignTarget, ElseBranch, Expr, ExprKind, JsxChild, RecordField, Stmt, StmtKind,
+    self, AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, ExprVisitorMut, Stmt, StmtKind,
 };
 
 /// Rewrite every `@`-argument in `stmts` in place (see module docs).
@@ -138,82 +138,60 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
 /// blocks (`if`/block/lambda bodies) as their own statement scopes rather than
 /// lifting across them.
 fn lift_expr(expr: &mut Expr, hoisted: &mut Vec<Stmt>) {
-    match &mut expr.kind {
-        // Same-frame sub-expressions: recurse, lifting into the same buffer.
-        ExprKind::Call { function, args } => {
-            lift_expr(function, hoisted);
-            for a in args.iter_mut() {
-                lift_expr(a, hoisted);
-            }
-        }
-        ExprKind::BinaryOp { left, right, .. } => {
-            lift_expr(left, hoisted);
-            lift_expr(right, hoisted);
-        }
-        ExprKind::UnaryOp { operand, .. } => lift_expr(operand, hoisted),
-        ExprKind::List(xs) => {
-            for x in xs {
-                lift_expr(x, hoisted);
-            }
-        }
-        ExprKind::Record(fields) => {
-            for f in fields {
-                match f {
-                    RecordField::Named(_, e) | RecordField::Spread(e) => lift_expr(e, hoisted),
-                }
-            }
-        }
-        ExprKind::FieldAccess { object, .. } => lift_expr(object, hoisted),
-        ExprKind::IndexAccess { object, index } => {
-            lift_expr(object, hoisted);
-            lift_expr(index, hoisted);
-        }
-        ExprKind::StringInterp { exprs, .. } => {
-            for e in exprs {
-                lift_expr(e, hoisted);
-            }
-        }
-        ExprKind::Element { props, children, .. } => {
-            for (_, e) in props {
-                lift_expr(e, hoisted);
-            }
-            for c in children {
-                if let JsxChild::Expr(e) = c {
-                    lift_expr(e, hoisted);
-                }
-            }
-        }
+    LiftAt { hoisted }.visit_expr(expr);
+}
 
-        // Block boundaries: the condition/subject evaluates at this level, but
-        // each nested body is its own statement scope.
-        ExprKind::If {
-            condition,
-            then_body,
-            else_body,
-        } => {
-            lift_expr(condition, hoisted);
-            desugar_stmts(then_body);
-            match else_body {
-                Some(ElseBranch::Block(stmts)) => desugar_stmts(stmts),
-                Some(ElseBranch::ElseIf(e)) => lift_expr(e, hoisted),
-                None => {}
+/// The `@`-lifter as a mutable visitor. Same-frame operator sub-expressions
+/// recurse through the shared [`ast::walk_expr_mut`] (all lifting into one
+/// buffer); block boundaries (`if`/`block`/`lambda` bodies, `match` arms) are
+/// treated as their own statement scopes via `desugar_stmts` rather than lifted
+/// across; and each call, post-order, hoists its single `@`-argument.
+struct LiftAt<'a> {
+    hoisted: &'a mut Vec<Stmt>,
+}
+
+impl ExprVisitorMut for LiftAt<'_> {
+    fn visit_expr(&mut self, expr: &mut Expr) {
+        match &mut expr.kind {
+            // Same-frame sub-expressions: recurse, lifting into the same buffer.
+            ExprKind::Call { .. }
+            | ExprKind::BinaryOp { .. }
+            | ExprKind::UnaryOp { .. }
+            | ExprKind::List(_)
+            | ExprKind::Record(_)
+            | ExprKind::FieldAccess { .. }
+            | ExprKind::IndexAccess { .. }
+            | ExprKind::StringInterp { .. }
+            | ExprKind::Element { .. } => ast::walk_expr_mut(self, expr),
+
+            // Block boundaries: the condition/subject evaluates at this level,
+            // but each nested body is its own statement scope.
+            ExprKind::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                self.visit_expr(condition);
+                desugar_stmts(then_body);
+                match else_body {
+                    Some(ElseBranch::Block(stmts)) => desugar_stmts(stmts),
+                    Some(ElseBranch::ElseIf(e)) => self.visit_expr(e),
+                    None => {}
+                }
             }
-        }
-        ExprKind::Block(stmts) => desugar_stmts(stmts),
-        ExprKind::Lambda { body, .. } => desugar_stmts(body),
-        ExprKind::Match { subject, arms } => {
-            lift_expr(subject, hoisted);
+            ExprKind::Block(stmts) => desugar_stmts(stmts),
+            ExprKind::Lambda { body, .. } => desugar_stmts(body),
             // Arm bodies are conditional expressions; v1 does not lift into them.
-            let _ = arms;
+            ExprKind::Match { subject, .. } => self.visit_expr(subject),
+
+            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
         }
 
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
-    }
-
-    // Post-order: this call's own `@`-arguments (nested calls already handled
-    // theirs) are now visible. Exactly one → lift it.
-    if let ExprKind::Call { .. } = &expr.kind {
-        if count_call_atvars(expr) == 1 {
+        // Post-order: this call's own `@`-arguments (nested calls already
+        // handled theirs) are now visible. Exactly one → lift it.
+        if let ExprKind::Call { .. } = &expr.kind
+            && count_call_atvars(expr) == 1
+        {
             let name = replace_one_call_atvar(expr).expect("count == 1");
             let span = expr.span;
             let call = std::mem::replace(
@@ -223,7 +201,7 @@ fn lift_expr(expr: &mut Expr, hoisted: &mut Vec<Stmt>) {
                     span,
                 },
             );
-            hoisted.push(Stmt {
+            self.hoisted.push(Stmt {
                 kind: StmtKind::Assign {
                     target: AssignTarget::Name(name),
                     value: call,
@@ -247,36 +225,30 @@ fn count_call_atvars(call: &Expr) -> usize {
 /// Count `AtVar`s in `e`, stopping at any call or block boundary (those own
 /// their own markers).
 fn count_at(e: &Expr) -> usize {
-    match &e.kind {
-        ExprKind::AtVar(_) => 1,
-        ExprKind::Call { .. }
-        | ExprKind::If { .. }
-        | ExprKind::Block(_)
-        | ExprKind::Lambda { .. }
-        | ExprKind::Match { .. }
-        | ExprKind::Ident(_)
-        | ExprKind::Literal(_) => 0,
-        ExprKind::BinaryOp { left, right, .. } => count_at(left) + count_at(right),
-        ExprKind::UnaryOp { operand, .. } => count_at(operand),
-        ExprKind::List(xs) => xs.iter().map(count_at).sum(),
-        ExprKind::Record(fields) => fields
-            .iter()
-            .map(|f| match f {
-                RecordField::Named(_, e) | RecordField::Spread(e) => count_at(e),
-            })
-            .sum(),
-        ExprKind::FieldAccess { object, .. } => count_at(object),
-        ExprKind::IndexAccess { object, index } => count_at(object) + count_at(index),
-        ExprKind::StringInterp { exprs, .. } => exprs.iter().map(count_at).sum(),
-        ExprKind::Element { props, children, .. } => {
-            props.iter().map(|(_, e)| count_at(e)).sum::<usize>()
-                + children
-                    .iter()
-                    .map(|c| match c {
-                        JsxChild::Expr(e) => count_at(e),
-                        JsxChild::Text(_) => 0,
-                    })
-                    .sum::<usize>()
+    let mut counter = AtCounter { count: 0 };
+    counter.visit_expr(e);
+    counter.count
+}
+
+/// Counts same-frame `@`-markers: descends the operator sub-expressions of `e`
+/// but stops at any call or block boundary, which own their own markers.
+struct AtCounter {
+    count: usize,
+}
+
+impl ExprVisitor for AtCounter {
+    fn visit_expr(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::AtVar(_) => self.count += 1,
+            ExprKind::Call { .. }
+            | ExprKind::If { .. }
+            | ExprKind::Block(_)
+            | ExprKind::Lambda { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::Ident(_)
+            | ExprKind::Literal(_) => {}
+            // Same-frame operators (BinaryOp, List, FieldAccess, …): recurse.
+            _ => ast::walk_expr(self, e),
         }
     }
 }
@@ -300,41 +272,38 @@ fn replace_one_call_atvar(call: &mut Expr) -> Option<String> {
 /// Find the first `AtVar` in `e` (not crossing a call or block boundary),
 /// rewrite it to a plain `Ident`, and return its name.
 fn replace_one_at(e: &mut Expr) -> Option<String> {
-    match &mut e.kind {
-        ExprKind::AtVar(name) => {
-            let name = std::mem::take(name);
-            e.kind = ExprKind::Ident(name.clone());
-            Some(name)
+    let mut replacer = AtReplacer { found: None };
+    replacer.visit_expr(e);
+    replacer.found
+}
+
+/// Rewrites the first same-frame `@`-marker to a plain `Ident`, mirroring
+/// [`AtCounter`]'s boundary policy. Short-circuits after the first hit: once
+/// `found` is set, further nodes are skipped so exactly one marker is rewritten.
+struct AtReplacer {
+    found: Option<String>,
+}
+
+impl ExprVisitorMut for AtReplacer {
+    fn visit_expr(&mut self, e: &mut Expr) {
+        if self.found.is_some() {
+            return;
         }
-        ExprKind::Call { .. }
-        | ExprKind::If { .. }
-        | ExprKind::Block(_)
-        | ExprKind::Lambda { .. }
-        | ExprKind::Match { .. }
-        | ExprKind::Ident(_)
-        | ExprKind::Literal(_) => None,
-        ExprKind::BinaryOp { left, right, .. } => {
-            replace_one_at(left).or_else(|| replace_one_at(right))
+        match &mut e.kind {
+            ExprKind::AtVar(name) => {
+                let name = std::mem::take(name);
+                e.kind = ExprKind::Ident(name.clone());
+                self.found = Some(name);
+            }
+            ExprKind::Call { .. }
+            | ExprKind::If { .. }
+            | ExprKind::Block(_)
+            | ExprKind::Lambda { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::Ident(_)
+            | ExprKind::Literal(_) => {}
+            _ => ast::walk_expr_mut(self, e),
         }
-        ExprKind::UnaryOp { operand, .. } => replace_one_at(operand),
-        ExprKind::List(xs) => xs.iter_mut().find_map(replace_one_at),
-        ExprKind::Record(fields) => fields.iter_mut().find_map(|f| match f {
-            RecordField::Named(_, e) | RecordField::Spread(e) => replace_one_at(e),
-        }),
-        ExprKind::FieldAccess { object, .. } => replace_one_at(object),
-        ExprKind::IndexAccess { object, index } => {
-            replace_one_at(object).or_else(|| replace_one_at(index))
-        }
-        ExprKind::StringInterp { exprs, .. } => exprs.iter_mut().find_map(replace_one_at),
-        ExprKind::Element { props, children, .. } => props
-            .iter_mut()
-            .find_map(|(_, e)| replace_one_at(e))
-            .or_else(|| {
-                children.iter_mut().find_map(|c| match c {
-                    JsxChild::Expr(e) => replace_one_at(e),
-                    JsxChild::Text(_) => None,
-                })
-            }),
     }
 }
 
@@ -439,66 +408,12 @@ mod tests {
 
     /// Test-only recursive count of surviving `AtVar` markers in a statement.
     fn count_atvars_in_stmt(stmt: &Stmt) -> usize {
-        fn in_expr(e: &Expr) -> usize {
-            match &e.kind {
-                ExprKind::AtVar(_) => 1,
-                ExprKind::Ident(_) | ExprKind::Literal(_) => 0,
-                ExprKind::BinaryOp { left, right, .. } => in_expr(left) + in_expr(right),
-                ExprKind::UnaryOp { operand, .. } => in_expr(operand),
-                ExprKind::Call { function, args } => {
-                    in_expr(function) + args.iter().map(in_expr).sum::<usize>()
-                }
-                ExprKind::List(xs) => xs.iter().map(in_expr).sum(),
-                ExprKind::Record(fields) => fields
-                    .iter()
-                    .map(|f| match f {
-                        RecordField::Named(_, e) | RecordField::Spread(e) => in_expr(e),
-                    })
-                    .sum(),
-                ExprKind::FieldAccess { object, .. } => in_expr(object),
-                ExprKind::IndexAccess { object, index } => in_expr(object) + in_expr(index),
-                ExprKind::StringInterp { exprs, .. } => exprs.iter().map(in_expr).sum(),
-                ExprKind::If { condition, then_body, else_body } => {
-                    in_expr(condition)
-                        + then_body.iter().map(in_stmt).sum::<usize>()
-                        + match else_body {
-                            Some(ElseBranch::Block(s)) => s.iter().map(in_stmt).sum(),
-                            Some(ElseBranch::ElseIf(e)) => in_expr(e),
-                            None => 0,
-                        }
-                }
-                ExprKind::Block(s) => s.iter().map(in_stmt).sum(),
-                ExprKind::Lambda { body, .. } => body.iter().map(in_stmt).sum(),
-                ExprKind::Match { subject, .. } => in_expr(subject),
-                ExprKind::Element { props, children, .. } => {
-                    props.iter().map(|(_, e)| in_expr(e)).sum::<usize>()
-                        + children
-                            .iter()
-                            .map(|c| match c {
-                                JsxChild::Expr(e) => in_expr(e),
-                                JsxChild::Text(_) => 0,
-                            })
-                            .sum::<usize>()
-                }
+        let mut n = 0;
+        ast::for_each_expr_in_stmt(stmt, &mut |e| {
+            if matches!(e.kind, ExprKind::AtVar(_)) {
+                n += 1;
             }
-        }
-        fn in_stmt(s: &Stmt) -> usize {
-            match &s.kind {
-                StmtKind::Let { value, .. } => in_expr(value),
-                StmtKind::Assign { value, .. } => in_expr(value),
-                StmtKind::Expr(e) => in_expr(e),
-                StmtKind::Return(Some(e)) => in_expr(e),
-                StmtKind::State { init, .. } => in_expr(init),
-                StmtKind::For { iter, body, .. } => {
-                    in_expr(iter) + body.iter().map(in_stmt).sum::<usize>()
-                }
-                StmtKind::While { condition, body } => {
-                    in_expr(condition) + body.iter().map(in_stmt).sum::<usize>()
-                }
-                StmtKind::FnDecl { body, .. } => body.iter().map(in_stmt).sum(),
-                _ => 0,
-            }
-        }
-        in_stmt(stmt)
+        });
+        n
     }
 }

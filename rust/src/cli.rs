@@ -475,10 +475,7 @@ fn compile_source(
     };
     match result {
         Ok(program) => program,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
+        Err(e) => die_plain(&e),
     }
 }
 
@@ -489,6 +486,23 @@ fn load_into(env: &mut Env, source: &str, input: &SourceInput) -> Result<Program
         Some(path) => env.load_program_at(source, &path),
         None => env.load_program(source),
     }
+}
+
+/// Print an error and exit(1). In `--json` mode the error is emitted as a JSON
+/// object tagged with `phase`; otherwise as a plain `Error: …` line on stderr.
+fn die(json: bool, err: &str, phase: &str) -> ! {
+    if json {
+        println!("{}", error_to_json(err, phase));
+    } else {
+        eprintln!("Error: {}", err);
+    }
+    process::exit(1);
+}
+
+/// Print a plain `Error: …` line and exit(1), for commands with no JSON mode.
+fn die_plain(err: &str) -> ! {
+    eprintln!("Error: {}", err);
+    process::exit(1);
 }
 
 pub fn execute(cli: CliArgs) {
@@ -514,26 +528,11 @@ pub fn execute(cli: CliArgs) {
             };
             let pid = match load_result {
                 Ok(pid) => pid,
-                Err(e) => {
-                    let phase = classify_load_error(&e);
-                    if json {
-                        println!("{}", error_to_json(&e, phase));
-                    } else {
-                        eprintln!("Error: {}", e);
-                    }
-                    process::exit(1);
-                }
+                Err(e) => die(json, &e, classify_load_error(&e)),
             };
             let sid = match env.create_stack(pid) {
                 Ok(sid) => sid,
-                Err(e) => {
-                    if json {
-                        println!("{}", error_to_json(&e, "compile"));
-                    } else {
-                        eprintln!("Error: {}", e);
-                    }
-                    process::exit(1);
-                }
+                Err(e) => die(json, &e, "compile"),
             };
             let run_result = env.run(sid);
 
@@ -547,12 +546,7 @@ pub fn execute(cli: CliArgs) {
             }
 
             if let Err(e) = run_result {
-                if json {
-                    println!("{}", error_to_json(&e, "runtime"));
-                } else {
-                    eprintln!("Error: {}", e);
-                }
-                process::exit(1);
+                die(json, &e, "runtime");
             }
         }
         Command::Explain { json, term: term_query } => {
@@ -560,15 +554,9 @@ pub fn execute(cli: CliArgs) {
             env.trace_mut().enable();
             let pid = match load_into(&mut env, &source, &source_input) {
                 Ok(pid) => pid,
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => die_plain(&e),
             };
-            let sid = env.create_stack(pid).unwrap_or_else(|e| {
-                eprintln!("Error: {}", e);
-                process::exit(1);
-            });
+            let sid = env.create_stack(pid).unwrap_or_else(|e| die_plain(&e));
             // Run to completion (ignore errors — we still want the partial trace)
             let _ = env.run(sid);
 
@@ -633,15 +621,7 @@ pub fn execute(cli: CliArgs) {
                     }
                     // Otherwise silent on success, like most linters
                 }
-                Err(e) => {
-                    let phase = classify_load_error(&e);
-                    if json {
-                        println!("{}", error_to_json(&e, phase));
-                    } else {
-                        eprintln!("Error: {}", e);
-                    }
-                    process::exit(1);
-                }
+                Err(e) => die(json, &e, classify_load_error(&e)),
             }
         }
         Command::Lint { fix, check } => {
@@ -651,10 +631,7 @@ pub fn execute(cli: CliArgs) {
             };
             let outcome = match crate::lint::lint_source(&source, &opts) {
                 Ok(o) => o,
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => die_plain(&e),
             };
             for note in &outcome.notes {
                 eprintln!("lint: {}", note);
@@ -705,10 +682,7 @@ pub fn execute(cli: CliArgs) {
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => die_plain(&e),
             }
         }
         Command::ShowAst { json } => {
@@ -722,10 +696,7 @@ pub fn execute(cli: CliArgs) {
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => die_plain(&e),
             }
         }
         Command::ShowIr { json, all } => {

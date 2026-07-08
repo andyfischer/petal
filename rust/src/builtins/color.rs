@@ -7,13 +7,13 @@ use crate::value::Value;
 
 use super::require_args;
 
-/// HSV to RGB conversion. h: 0-360, s: 0-1, v: 0-1. Returns (r, g, b) 0-255.
-fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
+/// Map a hue (degrees) and chroma to the un-lightened RGB sector `(r, g, b)`,
+/// shared by the HSV and HSL conversions (which differ only in how they derive
+/// chroma `c` and the lightness offset `m`).
+fn hue_sector(h: f64, c: f64) -> (f64, f64, f64) {
     let h = ((h % 360.0) + 360.0) % 360.0;
-    let c = v * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let m = v - c;
-    let (r, g, b) = if h < 60.0 {
+    if h < 60.0 {
         (c, x, 0.0)
     } else if h < 120.0 {
         (x, c, 0.0)
@@ -25,29 +25,22 @@ fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
         (x, 0.0, c)
     } else {
         (c, 0.0, x)
-    };
+    }
+}
+
+/// HSV to RGB conversion. h: 0-360, s: 0-1, v: 0-1. Returns (r, g, b) 0-255.
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
+    let c = v * s;
+    let m = v - c;
+    let (r, g, b) = hue_sector(h, c);
     ((r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0)
 }
 
 /// HSL to RGB conversion. h: 0-360, s: 0-1, l: 0-1. Returns (r, g, b) 0-255.
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
-    let h = ((h % 360.0) + 360.0) % 360.0;
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
     let m = l - c / 2.0;
-    let (r, g, b) = if h < 60.0 {
-        (c, x, 0.0)
-    } else if h < 120.0 {
-        (x, c, 0.0)
-    } else if h < 180.0 {
-        (0.0, c, x)
-    } else if h < 240.0 {
-        (0.0, x, c)
-    } else if h < 300.0 {
-        (x, 0.0, c)
-    } else {
-        (c, 0.0, x)
-    };
+    let (r, g, b) = hue_sector(h, c);
     ((r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0)
 }
 

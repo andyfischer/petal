@@ -172,10 +172,10 @@ impl<'p> Analysis<'p> {
     fn is_mutation(&self, term: &Term) -> bool {
         match &term.op {
             TermOp::SetIndex | TermOp::SetField(_) => true,
-            TermOp::BuiltinCall(cid) => matches!(
-                self.program.get_string_constant(*cid),
-                Some("append" | "push" | "drop_last" | "pop" | "remove" | "set" | "swap")
-            ),
+            TermOp::BuiltinCall(cid) => self
+                .program
+                .get_string_constant(*cid)
+                .is_some_and(crate::builtins::is_mutating_builtin),
             _ => false,
         }
     }

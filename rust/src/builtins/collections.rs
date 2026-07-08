@@ -6,6 +6,18 @@ use crate::value::{self, Value};
 
 use super::require_args;
 
+/// Bounds-check a signed index against an f64-array length, returning the
+/// validated `usize` or the standard out-of-bounds error.
+fn checked_f64_index(i: i64, len: usize) -> Result<usize, String> {
+    if i < 0 || i as usize >= len {
+        return Err(format!(
+            "Index {} out of bounds for f64_array of length {}",
+            i, len
+        ));
+    }
+    Ok(i as usize)
+}
+
 pub(super) fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
     let argc = state.arg_count();
     let (start, end) = match argc {
@@ -65,14 +77,8 @@ pub(super) fn native_get(state: &mut PetalCxt) -> Result<u32, String> {
         Value::F64Array(id) => {
             let i = state.get_int(2)?;
             let data = state.heap().get_f64_array(id);
-            let len = data.len();
-            if i < 0 || i as usize >= len {
-                return Err(format!(
-                    "Index {} out of bounds for f64_array of length {}",
-                    i, len
-                ));
-            }
-            let v = data[i as usize];
+            let idx = checked_f64_index(i, data.len())?;
+            let v = data[idx];
             state.push_float(v);
             Ok(1)
         }
@@ -99,17 +105,11 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
                     ))
                 }
             };
-            let len = state.heap().f64_array_len(id);
-            if i < 0 || i as usize >= len {
-                return Err(format!(
-                    "Index {} out of bounds for f64_array of length {}",
-                    i, len
-                ));
-            }
+            let idx = checked_f64_index(i, state.heap().f64_array_len(id))?;
             let new_id = if state.in_place() {
-                state.heap_mut().f64_array_set_in_place(id, i as usize, v)
+                state.heap_mut().f64_array_set_in_place(id, idx, v)
             } else {
-                state.heap_mut().f64_array_set(id, i as usize, v)
+                state.heap_mut().f64_array_set(id, idx, v)
             };
             state.push_value(Value::F64Array(new_id));
             Ok(1)
@@ -129,22 +129,12 @@ pub(super) fn native_swap(state: &mut PetalCxt) -> Result<u32, String> {
             let i = state.get_int(2)?;
             let j = state.get_int(3)?;
             let len = state.heap().f64_array_len(id);
-            if i < 0 || i as usize >= len {
-                return Err(format!(
-                    "Index {} out of bounds for f64_array of length {}",
-                    i, len
-                ));
-            }
-            if j < 0 || j as usize >= len {
-                return Err(format!(
-                    "Index {} out of bounds for f64_array of length {}",
-                    j, len
-                ));
-            }
+            let i = checked_f64_index(i, len)?;
+            let j = checked_f64_index(j, len)?;
             let new_id = if state.in_place() {
-                state.heap_mut().f64_array_swap_in_place(id, i as usize, j as usize)
+                state.heap_mut().f64_array_swap_in_place(id, i, j)
             } else {
-                state.heap_mut().f64_array_swap(id, i as usize, j as usize)
+                state.heap_mut().f64_array_swap(id, i, j)
             };
             state.push_value(Value::F64Array(new_id));
             Ok(1)

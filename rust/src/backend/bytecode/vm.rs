@@ -16,7 +16,9 @@ use crate::handle::{HandleClass, HandleVal};
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable, PetalCxt};
 use crate::backend::errors::TraceFrame;
-use crate::program::{ClosureId, FunctionId, OverloadEntry, Program, StateKey, TermId, TermOp};
+use crate::program::{
+    base_fn_name, ClosureId, FunctionId, OverloadEntry, Program, StateKey, TermId, TermOp,
+};
 use crate::stack::{LoopKeyPart, RuntimeStateKey, Stack};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::Value;
@@ -282,11 +284,8 @@ impl<'a> Vm<'a> {
     fn fn_display_name(&self, fid: FunctionId) -> Option<String> {
         self.program.functions[fid.0 as usize]
             .name
-            .as_ref()
-            .map(|n| match n.rfind('#') {
-                Some(pos) => n[..pos].to_string(),
-                None => n.clone(),
-            })
+            .as_deref()
+            .map(|n| base_fn_name(n).to_string())
     }
 
     /// A frame ran off the end of its code without an explicit `Return`: its

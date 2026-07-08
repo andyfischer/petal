@@ -7,7 +7,7 @@
 //! ([`VmFrame`](super::bytecode::VmFrame)) stays in the VM.
 
 use crate::backend::RuntimeClosure;
-use crate::program::{ClosureId, OverloadEntry, OverloadSetId, Program};
+use crate::program::{base_fn_name, ClosureId, OverloadEntry, OverloadSetId, Program};
 use crate::value::Value;
 
 /// Resolve a callable to a `ClosureId`, selecting an overload by `arg_count`.
@@ -45,9 +45,7 @@ pub fn resolve_overload(
         .first()
         .and_then(|e| {
             let func = &program.functions[closures[e.closure_id.0 as usize].function_id.0 as usize];
-            func.name
-                .as_ref()
-                .and_then(|n| n.split('#').next().map(|s| s.to_string()))
+            func.name.as_deref().map(|n| base_fn_name(n).to_string())
         })
         .unwrap_or_else(|| "<anonymous>".to_string());
     let arities: Vec<String> = entries.iter().map(|e| e.arity.to_string()).collect();
@@ -85,9 +83,7 @@ pub fn make_overload_set(
     // then patch every capture of that name to the overload set value.
     let base_name = entries.first().and_then(|e| {
         let func = &program.functions[closures[e.closure_id.0 as usize].function_id.0 as usize];
-        func.name
-            .as_ref()
-            .and_then(|n| n.rfind('#').map(|pos| n[..pos].to_string()))
+        func.name.as_deref().map(|n| base_fn_name(n).to_string())
     });
     if let Some(ref base) = base_name {
         for entry in &entries {

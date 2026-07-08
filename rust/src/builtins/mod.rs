@@ -8,9 +8,19 @@
 //! serialized programs would drift if this list were reordered. Don't
 //! reorder, only append.
 
-use crate::heap::Heap;
 use crate::native_fn::{NativeFnTable, PetalCxt};
-use crate::value::Value;
+
+/// The mutating builtins: those whose container is their first argument and
+/// whose result is the new (or in-place-updated) container. This is the single
+/// source of truth shared by the two backend in-place analyses
+/// (`backend::bytecode::escape` and `::lastuse`) and the `PetalCxt::in_place`
+/// consumers in [`collections`].
+pub fn is_mutating_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "append" | "push" | "drop_last" | "pop" | "remove" | "set" | "swap"
+    )
+}
 
 mod autodiff;
 mod collections;
@@ -197,39 +207,3 @@ fn native_intrinsic_placeholder(_state: &mut PetalCxt) -> Result<u32, String> {
     Err("This function requires evaluator context and should be dispatched as an intrinsic".into())
 }
 
-/// Compare two Values (used by eval.rs for sorting and by min/max).
-pub fn compare_values(
-    a: &Value,
-    b: &Value,
-    heap: &Heap,
-) -> Result<std::cmp::Ordering, String> {
-    match (a, b) {
-        (Value::Int(a), Value::Int(b)) => Ok(a.cmp(b)),
-        (Value::Float(a), Value::Float(b)) => {
-            Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        }
-        (Value::Int(a), Value::Float(b)) => {
-            Ok((*a as f64)
-                .partial_cmp(b)
-                .unwrap_or(std::cmp::Ordering::Equal))
-        }
-        (Value::Float(a), Value::Int(b)) => {
-            Ok(a.partial_cmp(&(*b as f64))
-                .unwrap_or(std::cmp::Ordering::Equal))
-        }
-        (Value::String(a), Value::String(b)) => {
-            Ok(heap.get_string(*a).cmp(heap.get_string(*b)))
-        }
-        // Dual comparisons use primal value only
-        _ if a.as_f64().is_some() && b.as_f64().is_some() => {
-            let af = a.as_f64().unwrap();
-            let bf = b.as_f64().unwrap();
-            Ok(af.partial_cmp(&bf).unwrap_or(std::cmp::Ordering::Equal))
-        }
-        _ => Err(format!(
-            "Cannot compare {} and {}",
-            a.type_name(),
-            b.type_name()
-        )),
-    }
-}

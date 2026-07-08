@@ -14,7 +14,6 @@
 
 use indexmap::IndexMap;
 
-use crate::builtins;
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
 use crate::program::{MapSpreadEntry, Program, TermOp};
@@ -232,7 +231,7 @@ pub fn equals(a: Value, b: Value, heap: &Heap) -> bool {
 /// Lt / Le / Gt / Ge via the shared value-ordering in `builtins`.
 pub fn comparison(op: &TermOp, a: Value, b: Value, heap: &Heap) -> Result<Value, String> {
     use std::cmp::Ordering;
-    let ord = builtins::compare_values(&a, &b, heap)?;
+    let ord = value::compare_values(&a, &b, heap)?;
     let result = match op {
         TermOp::Lt => ord == Ordering::Less,
         TermOp::Le => ord != Ordering::Greater,

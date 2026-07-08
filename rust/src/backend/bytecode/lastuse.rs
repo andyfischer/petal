@@ -73,6 +73,7 @@
 use std::collections::HashMap;
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, Reg};
+use crate::builtins::is_mutating_builtin;
 use crate::program::{Program, TermId};
 
 /// Rewrite every provably-safe straight-line mutation in `bc` to its in-place
@@ -92,17 +93,6 @@ pub fn apply(bc: &mut BytecodeProgram, program: &Program) -> usize {
 /// the value) blocks the rewrite, it never breaks it.
 fn is_pure_builtin(name: &str) -> bool {
     matches!(name, "len" | "last" | "print" | "str" | "type")
-}
-
-/// The mutating builtins the in-place flag routes to `Heap::*_in_place`
-/// (must stay in sync with `escape.rs::is_mutation` and the `PetalCxt::
-/// in_place` consumers in `builtins/collections.rs`). Their container is
-/// always the first argument and their result the new container.
-fn is_mutating_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "append" | "push" | "drop_last" | "pop" | "remove" | "set" | "swap"
-    )
 }
 
 /// One function's rewrite pass. Re-scans until a fixpoint so chains convert

@@ -439,6 +439,36 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
     }
 }
 
+/// Order two Values (used for sorting and by the `min`/`max` builtins). Numeric
+/// kinds compare by their `f64` value (dual numbers by their primal); strings
+/// compare lexically; mismatched non-numeric kinds are an error.
+pub fn compare_values(a: &Value, b: &Value, heap: &Heap) -> Result<std::cmp::Ordering, String> {
+    match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Ok(a.cmp(b)),
+        (Value::Float(a), Value::Float(b)) => {
+            Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        }
+        (Value::Int(a), Value::Float(b)) => Ok((*a as f64)
+            .partial_cmp(b)
+            .unwrap_or(std::cmp::Ordering::Equal)),
+        (Value::Float(a), Value::Int(b)) => Ok(a
+            .partial_cmp(&(*b as f64))
+            .unwrap_or(std::cmp::Ordering::Equal)),
+        (Value::String(a), Value::String(b)) => Ok(heap.get_string(*a).cmp(heap.get_string(*b))),
+        // Dual comparisons use primal value only
+        _ if a.as_f64().is_some() && b.as_f64().is_some() => {
+            let af = a.as_f64().unwrap();
+            let bf = b.as_f64().unwrap();
+            Ok(af.partial_cmp(&bf).unwrap_or(std::cmp::Ordering::Equal))
+        }
+        _ => Err(format!(
+            "Cannot compare {} and {}",
+            a.type_name(),
+            b.type_name()
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

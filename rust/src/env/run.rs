@@ -272,6 +272,9 @@ fn make_vm<'a>(
         output_buffers: &mut ctx.output_buffers,
         bindings: &mut ctx.bindings,
         counters: &mut ctx.counters,
+        rng_state: &mut ctx.rng_state,
+        noise_seed: &mut ctx.noise_seed,
+        echo: ctx.echo,
         trace,
         error_already_annotated: false,
     }

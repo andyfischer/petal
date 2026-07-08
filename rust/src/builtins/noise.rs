@@ -4,9 +4,6 @@ use crate::native_fn::PetalCxt;
 
 use super::require_args;
 
-/// Global noise seed, set via noise_seed().
-static NOISE_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 /// Permutation table for noise, derived from seed.
 fn noise_perm(seed: u64) -> [u8; 512] {
     let mut perm = [0u8; 512];
@@ -124,7 +121,7 @@ fn perlin_3d(x: f64, y: f64, z: f64, perm: &[u8; 512]) -> f64 {
 
 pub(super) fn native_noise(state: &mut PetalCxt) -> Result<u32, String> {
     let argc = state.arg_count();
-    let seed = NOISE_SEED.load(std::sync::atomic::Ordering::Relaxed);
+    let seed = state.noise_seed();
     let perm = noise_perm(seed);
     match argc {
         1 => {
@@ -152,7 +149,7 @@ pub(super) fn native_noise(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_noise_seed(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "noise_seed")?;
     let seed = state.get_int(1)? as u64;
-    NOISE_SEED.store(seed, std::sync::atomic::Ordering::Relaxed);
+    state.set_noise_seed(seed);
     state.push_nil();
     Ok(1)
 }

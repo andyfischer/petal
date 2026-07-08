@@ -33,14 +33,16 @@ mod noise;
 mod output;
 mod vec2;
 
-// xorshift64* PRNG, seeded from system time on first use. Replaces an earlier
+// xorshift64* PRNG. The state lives per-run on `ExecutionContext::rng_state`
+// (seeded from `initial_seed()` at context creation) rather than in a process
+// global, so each run/fork has isolated randomness. Replaces an earlier
 // implementation that used `subsec_nanos()` per call — that aliased multiple
 // random() calls within the same frame to nearly identical values.
-use std::sync::atomic::{AtomicU64, Ordering};
-static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 
+/// The seed a fresh [`ExecutionContext`](crate::execution_context::ExecutionContext)
+/// initializes its `rng_state` to.
 #[cfg(not(target_arch = "wasm32"))]
-fn initial_seed() -> u64 {
+pub fn initial_seed() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -48,30 +50,34 @@ fn initial_seed() -> u64 {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn initial_seed() -> u64 {
+pub fn initial_seed() -> u64 {
     // `SystemTime::now()` traps on `wasm32-unknown-unknown` (no system clock).
     // Use a monotonically-bumped counter mixed with a constant so that repeated
     // process lifetimes still get distinct seeds.
+    use std::sync::atomic::{AtomicU64, Ordering};
     static SEED_BUMP: AtomicU64 = AtomicU64::new(0);
     let n = SEED_BUMP.fetch_add(1, Ordering::Relaxed);
     0x9E3779B97F4A7C15u64.wrapping_add(n.wrapping_mul(0x100000001B3))
 }
 
-fn rng_next_u64() -> u64 {
-    let mut x = RNG_STATE.load(Ordering::Relaxed);
+/// Advance the caller-owned xorshift64* state and return the next raw u64.
+/// The algorithm is byte-identical to the previous process-global version;
+/// only the storage location moved to `state`.
+pub(super) fn rng_next_u64(state: &mut u64) -> u64 {
+    let mut x = *state;
     if x == 0 {
         x = initial_seed() | 1; // xorshift requires non-zero state
     }
     x ^= x << 13;
     x ^= x >> 7;
     x ^= x << 17;
-    RNG_STATE.store(x, Ordering::Relaxed);
+    *state = x;
     x.wrapping_mul(0x2545F4914F6CDD1D)
 }
 
-pub(super) fn rng_next_f64() -> f64 {
+pub(super) fn rng_next_f64(state: &mut u64) -> f64 {
     // 53-bit mantissa, uniform in [0, 1)
-    (rng_next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+    (rng_next_u64(state) >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
 }
 
 /// Validate that a native function received exactly `n` arguments.

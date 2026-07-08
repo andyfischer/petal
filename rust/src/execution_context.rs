@@ -32,6 +32,16 @@ pub struct ExecutionContext {
     pub output_buffers: HashMap<SymbolId, Vec<Value>>,
     pub bindings: HashMap<SymbolId, Value>,
     pub counters: HashMap<SymbolId, u64>,
+    /// When true, `print` echoes to real stdout (the sole stdout path for
+    /// `petal run`, which never drains `output`). A speculative [`fork`](Self::fork)
+    /// clears this so its output stays captured in the buffer and never leaks to
+    /// the primary run's stdout.
+    pub echo: bool,
+    /// Per-context xorshift64* PRNG state (see [`crate::builtins`]). Owned here so
+    /// each run/fork has isolated randomness instead of sharing a process global.
+    pub rng_state: u64,
+    /// Per-context Perlin-noise seed, set via the `noise_seed()` builtin.
+    pub noise_seed: u64,
 }
 
 impl ExecutionContext {
@@ -44,6 +54,9 @@ impl ExecutionContext {
             output_buffers: HashMap::new(),
             bindings: HashMap::new(),
             counters: HashMap::new(),
+            echo: true,
+            rng_state: crate::builtins::initial_seed(),
+            noise_seed: 0,
         }
     }
 
@@ -59,6 +72,13 @@ impl ExecutionContext {
             counters: self.counters.clone(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
+            // A speculative fork must not print to real stdout.
+            echo: false,
+            // Copy the parent's RNG/noise state so the fork starts from the same
+            // point, then advances independently — the parent's stream is
+            // unaffected by anything the fork draws.
+            rng_state: self.rng_state,
+            noise_seed: self.noise_seed,
         }
     }
 
@@ -136,5 +156,50 @@ impl ExecutionContext {
 impl Default for ExecutionContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A speculative fork must isolate the noise seed: it starts equal to the
+    /// parent's at fork time, but mutating the child never touches the parent.
+    #[test]
+    fn fork_isolates_noise_seed() {
+        let mut parent = ExecutionContext::new();
+        parent.noise_seed = 42;
+
+        let mut child = parent.fork();
+        // The fork copies the seed as of fork time.
+        assert_eq!(child.noise_seed, 42);
+
+        // The child then advances independently — the parent is unaffected.
+        child.noise_seed = 99;
+        assert_eq!(parent.noise_seed, 42);
+        assert_eq!(child.noise_seed, 99);
+    }
+
+    /// A fork's RNG stream starts from the same state as the parent's at fork
+    /// time (then each advances independently). Deterministic to assert on
+    /// because it only checks the copied seed, not any time-seeded draw.
+    #[test]
+    fn fork_copies_rng_state() {
+        let mut parent = ExecutionContext::new();
+        parent.rng_state = 0xDEAD_BEEF;
+
+        let child = parent.fork();
+        assert_eq!(child.rng_state, 0xDEAD_BEEF);
+    }
+
+    /// `new()` matches the pre-refactor process-global defaults: echo on,
+    /// noise seed zero.
+    #[test]
+    fn new_defaults_preserve_primary_run_behavior() {
+        let ctx = ExecutionContext::new();
+        assert!(ctx.echo);
+        assert_eq!(ctx.noise_seed, 0);
+        // A fork never echoes to real stdout.
+        assert!(!ctx.fork().echo);
     }
 }

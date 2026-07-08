@@ -61,6 +61,13 @@ pub struct Vm<'a> {
     pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
     pub counters: &'a mut HashMap<SymbolId, u64>,
+    /// Per-run PRNG state and noise seed, borrowed from the `ExecutionContext`
+    /// so the RNG/noise builtins mutate the owning context's isolated state.
+    pub rng_state: &'a mut u64,
+    pub noise_seed: &'a mut u64,
+    /// Whether `print` echoes to real stdout (true for the primary run, false
+    /// for speculative forks). Copied from the `ExecutionContext`.
+    pub echo: bool,
     /// Structured execution trace (off by default). When enabled, the VM records
     /// `(origin term, inputs, result)` per retired instruction so `explain` /
     /// `ExplainTerm` work under the VM — see [`Vm::step`] and

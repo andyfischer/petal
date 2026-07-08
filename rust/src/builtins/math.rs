@@ -100,7 +100,7 @@ pub(super) fn native_random(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "random")?;
     let min = state.get_float(1)?;
     let max = state.get_float(2)?;
-    let r = super::rng_next_f64() * (max - min) + min;
+    let r = state.rng_next_f64() * (max - min) + min;
     state.push_float(r);
     Ok(1)
 }

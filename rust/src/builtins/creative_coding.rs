@@ -183,7 +183,7 @@ pub(super) fn native_random_int(state: &mut PetalCxt) -> Result<u32, String> {
         return Ok(1);
     }
     let range = (max - min) as f64;
-    let val = min + (super::rng_next_f64() * range) as i64;
+    let val = min + (state.rng_next_f64() * range) as i64;
     state.push_int(val);
     Ok(1)
 }
@@ -192,12 +192,12 @@ pub(super) fn native_choose(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "choose")?;
     match state.get_value(1)? {
         Value::List(id) => {
-            let list = state.heap().get_list(id);
-            if list.is_empty() {
+            let len = state.heap().get_list(id).len();
+            if len == 0 {
                 state.push_nil();
             } else {
-                let idx = (super::rng_next_f64() * list.len() as f64) as usize;
-                let val = list[idx.min(list.len() - 1)];
+                let idx = ((state.rng_next_f64() * len as f64) as usize).min(len - 1);
+                let val = state.heap().get_list(id)[idx];
                 state.push_value(val);
             }
             Ok(1)

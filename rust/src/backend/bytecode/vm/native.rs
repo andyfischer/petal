@@ -88,6 +88,9 @@ impl<'a> Vm<'a> {
             self.output_buffers,
             self.bindings,
             self.counters,
+            self.rng_state,
+            self.noise_seed,
+            self.echo,
             self.handle_classes,
         );
         cxt.set_in_place(in_place);
@@ -136,6 +139,9 @@ impl<'a> Vm<'a> {
             self.output_buffers,
             self.bindings,
             self.counters,
+            self.rng_state,
+            self.noise_seed,
+            self.echo,
             handle_classes,
         );
         let count = (class.call_method)(&mut cxt, method_name)?;

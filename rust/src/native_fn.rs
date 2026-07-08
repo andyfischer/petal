@@ -99,6 +99,14 @@ pub struct PetalCxt<'a> {
     output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     bindings: &'a mut HashMap<SymbolId, Value>,
     counters: &'a mut HashMap<SymbolId, u64>,
+    /// Per-run xorshift64* PRNG state, borrowed from the owning
+    /// `ExecutionContext` so the RNG builtins advance that context's stream.
+    rng_state: &'a mut u64,
+    /// Per-run Perlin-noise seed, borrowed from the owning `ExecutionContext`.
+    noise_seed: &'a mut u64,
+    /// Whether `print` echoes to real stdout. False for speculative forks so
+    /// their output stays captured in the buffer instead of leaking to stdout.
+    echo: bool,
     handle_classes: &'a [HandleClass],
     results: Vec<Value>,
     /// When true, the caller (the bytecode VM, under `OptFlags::in_place_mutation`)
@@ -118,6 +126,9 @@ impl<'a> PetalCxt<'a> {
         output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
         bindings: &'a mut HashMap<SymbolId, Value>,
         counters: &'a mut HashMap<SymbolId, u64>,
+        rng_state: &'a mut u64,
+        noise_seed: &'a mut u64,
+        echo: bool,
         handle_classes: &'a [HandleClass],
     ) -> Self {
         Self {
@@ -128,6 +139,9 @@ impl<'a> PetalCxt<'a> {
             output_buffers,
             bindings,
             counters,
+            rng_state,
+            noise_seed,
+            echo,
             handle_classes,
             results: Vec::new(),
             in_place: false,
@@ -280,8 +294,28 @@ impl<'a> PetalCxt<'a> {
     // --- Output ---
 
     pub fn print(&mut self, line: String) {
-        println!("{}", line);
+        if self.echo {
+            println!("{}", line);
+        }
         self.output.push(line);
+    }
+
+    // --- Randomness & noise ---
+
+    /// Draw the next uniform `f64` in [0, 1), advancing the owning context's
+    /// per-run PRNG state. Backs `random`, `random_int`, and `choose`.
+    pub fn rng_next_f64(&mut self) -> f64 {
+        crate::builtins::rng_next_f64(self.rng_state)
+    }
+
+    /// The owning context's current Perlin-noise seed.
+    pub fn noise_seed(&self) -> u64 {
+        *self.noise_seed
+    }
+
+    /// Set the owning context's Perlin-noise seed (the `noise_seed()` builtin).
+    pub fn set_noise_seed(&mut self, seed: u64) {
+        *self.noise_seed = seed;
     }
 
     // --- Symbols & buffered output ---

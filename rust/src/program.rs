@@ -381,6 +381,16 @@ impl Program {
         &self.terms[id.0 as usize]
     }
 
+    /// Iterate the program's state-bearing terms as `(state key, optional
+    /// variable name)`. The single scan behind both `Env::state_key_names`
+    /// (which keeps the named keys) and cross-run state transfer (which keeps
+    /// every key) — each caller applies its own filter to this.
+    pub fn state_terms(&self) -> impl Iterator<Item = (StateKey, Option<&String>)> {
+        self.terms
+            .iter()
+            .filter_map(|t| t.state_key.map(|k| (k, t.name.as_ref())))
+    }
+
     pub fn get_block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
     }

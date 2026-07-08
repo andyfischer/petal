@@ -32,9 +32,8 @@ impl Env {
         let old_program_id = stack.program_id;
 
         // Collect base state keys from the new program to know which state to keep
-        let new_state_keys: std::collections::HashSet<_> = new_program.terms.iter()
-            .filter_map(|t| t.state_key)
-            .collect();
+        let new_state_keys: std::collections::HashSet<_> =
+            new_program.state_terms().map(|(k, _)| k).collect();
 
         // Determine which old state values will be preserved (match on base key)
         let preserved: usize = stack.state.keys()

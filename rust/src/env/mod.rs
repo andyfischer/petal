@@ -448,8 +448,8 @@ impl Env {
     pub fn state_key_names(&self, program_id: ProgramId) -> HashMap<StateKey, String> {
         let mut map = HashMap::new();
         if let Some(program) = self.programs.get(&program_id) {
-            for term in &program.terms {
-                if let (Some(sk), Some(name)) = (term.state_key, &term.name) {
+            for (sk, name) in program.state_terms() {
+                if let Some(name) = name {
                     map.entry(sk).or_insert_with(|| name.clone());
                 }
             }

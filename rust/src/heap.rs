@@ -50,56 +50,101 @@ pub struct MapId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementId(pub u32);
 
-#[derive(Clone)]
-struct HeapString {
-    data: String,
-    gc_mark: bool,
-    alive: bool,
-}
-
-#[derive(Clone)]
-struct HeapList {
-    elements: Vec<Value>,
-    gc_mark: bool,
-    alive: bool,
-}
-
-#[derive(Clone)]
-struct HeapF64Array {
-    data: Vec<f64>,
-    gc_mark: bool,
-    alive: bool,
-}
-
-#[derive(Clone)]
-struct HeapMap {
-    entries: IndexMap<String, Value>,
-    gc_mark: bool,
-    alive: bool,
-}
-
-#[derive(Clone)]
-struct HeapElement {
+/// Payload of a single heap element: three `Copy` ids referencing the element's
+/// tag string, props map, and children list. Stored as the `T` of an element
+/// slab; the `gc_mark`/`alive` bits live in the enclosing [`Slot`].
+#[derive(Clone, Copy)]
+struct ElementPayload {
     tag: StringId,
     props: MapId,
     children: ListId,
+}
+
+/// One slab slot: a payload plus its GC bits. `gc_mark` is the mark-and-sweep
+/// reachability flag (cleared each sweep); `alive` is false for a reclaimed slot
+/// sitting on the free list.
+#[derive(Clone)]
+struct Slot<T> {
+    data: T,
     gc_mark: bool,
     alive: bool,
+}
+
+/// A generic slot store with an index free list. Backs each of the heap's object
+/// kinds. Ids are bare indices (no generation counter): a reclaimed slot is
+/// reused and hands back the same index value.
+#[derive(Clone)]
+struct Slab<T> {
+    slots: Vec<Slot<T>>,
+    free: Vec<u32>,
+}
+
+impl<T> Slab<T> {
+    fn new() -> Self {
+        Slab { slots: Vec::new(), free: Vec::new() }
+    }
+
+    /// Allocate `data` into a reused free slot or a fresh one; return its index.
+    fn alloc(&mut self, data: T) -> u32 {
+        if let Some(idx) = self.free.pop() {
+            let slot = &mut self.slots[idx as usize];
+            slot.data = data;
+            slot.gc_mark = false;
+            slot.alive = true;
+            idx
+        } else {
+            let idx = self.slots.len() as u32;
+            self.slots.push(Slot { data, gc_mark: false, alive: true });
+            idx
+        }
+    }
+
+    fn get(&self, idx: u32) -> &T {
+        &self.slots[idx as usize].data
+    }
+
+    fn get_mut(&mut self, idx: u32) -> &mut T {
+        &mut self.slots[idx as usize].data
+    }
+
+    /// Mark slot `idx` live. Returns true iff it was newly marked (alive and not
+    /// already marked) — the caller then recurses into the payload's children.
+    fn mark(&mut self, idx: u32) -> bool {
+        let slot = &mut self.slots[idx as usize];
+        if slot.alive && !slot.gc_mark {
+            slot.gc_mark = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Sweep: reclaim every unmarked-live slot (flip alive off, run `on_reclaim`
+    /// on its payload to release backing memory / side-table entries, push to the
+    /// free list); clear the mark on every surviving slot. Rebuilds `free`.
+    fn sweep_with(&mut self, mut on_reclaim: impl FnMut(&mut T)) {
+        self.free.clear();
+        for (i, slot) in self.slots.iter_mut().enumerate() {
+            if slot.alive {
+                if slot.gc_mark {
+                    slot.gc_mark = false;
+                } else {
+                    slot.alive = false;
+                    on_reclaim(&mut slot.data);
+                    self.free.push(i as u32);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct Heap {
-    strings: Vec<HeapString>,
-    lists: Vec<HeapList>,
-    f64_arrays: Vec<HeapF64Array>,
-    maps: Vec<HeapMap>,
-    elements: Vec<HeapElement>,
-    /// Free slot indices for reuse
-    free_strings: Vec<u32>,
-    free_lists: Vec<u32>,
-    free_f64_arrays: Vec<u32>,
-    free_maps: Vec<u32>,
-    free_elements: Vec<u32>,
+    strings: Slab<String>,
+    lists: Slab<Vec<Value>>,
+    f64_arrays: Slab<Vec<f64>>,
+    maps: Slab<IndexMap<String, Value>>,
+    elements: Slab<ElementPayload>,
     /// String intern table: content → existing StringId
     intern_table: HashMap<String, StringId>,
     /// Allocation counter — GC triggers after this many allocations
@@ -121,16 +166,11 @@ const GC_THRESHOLD: u32 = 1024;
 impl Heap {
     pub fn new() -> Self {
         Self {
-            strings: Vec::new(),
-            lists: Vec::new(),
-            f64_arrays: Vec::new(),
-            maps: Vec::new(),
-            elements: Vec::new(),
-            free_strings: Vec::new(),
-            free_lists: Vec::new(),
-            free_f64_arrays: Vec::new(),
-            free_maps: Vec::new(),
-            free_elements: Vec::new(),
+            strings: Slab::new(),
+            lists: Slab::new(),
+            f64_arrays: Slab::new(),
+            maps: Slab::new(),
+            elements: Slab::new(),
             intern_table: HashMap::new(),
             alloc_count: 0,
             dup_stats: DupStats::new(),
@@ -167,27 +207,31 @@ impl Heap {
     fn payload_bytes(&self) -> u64 {
         let strings: u64 = self
             .strings
+            .slots
             .iter()
             .filter(|s| s.alive)
             .map(|s| s.data.len() as u64)
             .sum();
         let lists: u64 = self
             .lists
+            .slots
             .iter()
             .filter(|l| l.alive)
-            .map(|l| value_slice_bytes(l.elements.len()))
+            .map(|l| value_slice_bytes(l.data.len()))
             .sum();
         let f64s: u64 = self
             .f64_arrays
+            .slots
             .iter()
             .filter(|a| a.alive)
             .map(|a| (a.data.len() * std::mem::size_of::<f64>()) as u64)
             .sum();
         let maps: u64 = self
             .maps
+            .slots
             .iter()
             .filter(|m| m.alive)
-            .map(|m| map_entries_bytes(&m.entries))
+            .map(|m| map_entries_bytes(&m.data))
             .sum();
         strings + lists + f64s + maps
     }
@@ -231,7 +275,7 @@ impl Heap {
     pub fn alloc_string(&mut self, s: String) -> StringId {
         // Check intern table for an existing live string with the same content
         if let Some(&existing_id) = self.intern_table.get(&s) {
-            let slot = &self.strings[existing_id.0 as usize];
+            let slot = &self.strings.slots[existing_id.0 as usize];
             if slot.alive {
                 return existing_id;
             }
@@ -239,57 +283,28 @@ impl Heap {
         }
 
         self.tick_alloc(AllocKind::String);
-        let id = if let Some(idx) = self.free_strings.pop() {
-            let slot = &mut self.strings[idx as usize];
-            slot.data = s.clone();
-            slot.gc_mark = false;
-            slot.alive = true;
-            StringId(idx)
-        } else {
-            let id = StringId(self.strings.len() as u32);
-            self.strings.push(HeapString {
-                data: s.clone(),
-                gc_mark: false,
-                alive: true,
-            });
-            id
-        };
-
+        let id = StringId(self.strings.alloc(s.clone()));
         self.intern_table.insert(s, id);
         id
     }
 
     pub fn get_string(&self, id: StringId) -> &str {
-        &self.strings[id.0 as usize].data
+        self.strings.get(id.0)
     }
 
     // --- List allocation ---
 
     pub fn alloc_list(&mut self, elements: Vec<Value>) -> ListId {
         self.tick_alloc(AllocKind::List);
-        if let Some(idx) = self.free_lists.pop() {
-            let slot = &mut self.lists[idx as usize];
-            slot.elements = elements;
-            slot.gc_mark = false;
-            slot.alive = true;
-            ListId(idx)
-        } else {
-            let id = ListId(self.lists.len() as u32);
-            self.lists.push(HeapList {
-                elements,
-                gc_mark: false,
-                alive: true,
-            });
-            id
-        }
+        ListId(self.lists.alloc(elements))
     }
 
     pub fn get_list(&self, id: ListId) -> &[Value] {
-        &self.lists[id.0 as usize].elements
+        self.lists.get(id.0)
     }
 
     pub fn list_len(&self, id: ListId) -> usize {
-        self.lists[id.0 as usize].elements.len()
+        self.lists.get(id.0).len()
     }
 
     // --- Immutable list operations (value semantics) ---
@@ -301,7 +316,7 @@ impl Heap {
 
     /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
     pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
-        let mut elements = self.lists[id.0 as usize].elements.clone();
+        let mut elements = self.lists.get(id.0).clone();
         self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.push(val);
         self.alloc_list(elements)
@@ -311,7 +326,7 @@ impl Heap {
     /// unchanged. The caller must ensure `index` is in bounds (eval already
     /// bounds-checks before calling).
     pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
-        let mut elements = self.lists[id.0 as usize].elements.clone();
+        let mut elements = self.lists.get(id.0).clone();
         self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements[index] = val;
         self.alloc_list(elements)
@@ -320,7 +335,7 @@ impl Heap {
     /// Return a new list equal to `id` with its last element removed. `id` is
     /// unchanged. On an empty list, returns a new empty list.
     pub fn list_drop_last(&mut self, id: ListId) -> ListId {
-        let mut elements = self.lists[id.0 as usize].elements.clone();
+        let mut elements = self.lists.get(id.0).clone();
         self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.pop();
         self.alloc_list(elements)
@@ -340,24 +355,24 @@ impl Heap {
     /// In-place [`list_append`](Self::list_append): push `val` onto `id`'s
     /// backing store and return `id` unchanged. Amortized O(1), no copy.
     pub fn list_append_in_place(&mut self, id: ListId, val: Value) -> ListId {
-        debug_assert!(self.lists[id.0 as usize].alive, "in-place append on a dead list");
-        self.lists[id.0 as usize].elements.push(val);
+        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place append on a dead list");
+        self.lists.get_mut(id.0).push(val);
         id
     }
 
     /// In-place [`list_set`](Self::list_set): overwrite `elements[index]` and
     /// return `id`. The caller must ensure `index` is in bounds.
     pub fn list_set_in_place(&mut self, id: ListId, index: usize, val: Value) -> ListId {
-        debug_assert!(self.lists[id.0 as usize].alive, "in-place set on a dead list");
-        self.lists[id.0 as usize].elements[index] = val;
+        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place set on a dead list");
+        self.lists.get_mut(id.0)[index] = val;
         id
     }
 
     /// In-place [`list_drop_last`](Self::list_drop_last): pop `id`'s last
     /// element and return `id`. A no-op on an empty list.
     pub fn list_drop_last_in_place(&mut self, id: ListId) -> ListId {
-        debug_assert!(self.lists[id.0 as usize].alive, "in-place drop_last on a dead list");
-        self.lists[id.0 as usize].elements.pop();
+        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place drop_last on a dead list");
+        self.lists.get_mut(id.0).pop();
         id
     }
 
@@ -365,35 +380,21 @@ impl Heap {
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
         self.tick_alloc(AllocKind::F64Array);
-        if let Some(idx) = self.free_f64_arrays.pop() {
-            let slot = &mut self.f64_arrays[idx as usize];
-            slot.data = data;
-            slot.gc_mark = false;
-            slot.alive = true;
-            F64ArrayId(idx)
-        } else {
-            let id = F64ArrayId(self.f64_arrays.len() as u32);
-            self.f64_arrays.push(HeapF64Array {
-                data,
-                gc_mark: false,
-                alive: true,
-            });
-            id
-        }
+        F64ArrayId(self.f64_arrays.alloc(data))
     }
 
     pub fn get_f64_array(&self, id: F64ArrayId) -> &[f64] {
-        &self.f64_arrays[id.0 as usize].data
+        self.f64_arrays.get(id.0)
     }
 
     pub fn f64_array_len(&self, id: F64ArrayId) -> usize {
-        self.f64_arrays[id.0 as usize].data.len()
+        self.f64_arrays.get(id.0).len()
     }
 
     /// Return a new f64 array equal to `id` with `data[index] = val`. `id` is
     /// unchanged. The caller must ensure `index` is in bounds.
     pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
-        let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        let mut data = self.f64_arrays.get(id.0).clone();
         self.dup_stats
             .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data[index] = val;
@@ -403,7 +404,7 @@ impl Heap {
     /// Return a new f64 array equal to `id` with elements `i` and `j` swapped.
     /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
     pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
-        let mut data = self.f64_arrays[id.0 as usize].data.clone();
+        let mut data = self.f64_arrays.get(id.0).clone();
         self.dup_stats
             .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
         data.swap(i, j);
@@ -414,16 +415,16 @@ impl Heap {
     /// and return `id`. Caller must ensure `index` is in bounds. See the
     /// in-place list methods for the soundness contract.
     pub fn f64_array_set_in_place(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
-        debug_assert!(self.f64_arrays[id.0 as usize].alive, "in-place set on a dead f64 array");
-        self.f64_arrays[id.0 as usize].data[index] = val;
+        debug_assert!(self.f64_arrays.slots[id.0 as usize].alive, "in-place set on a dead f64 array");
+        self.f64_arrays.get_mut(id.0)[index] = val;
         id
     }
 
     /// In-place [`f64_array_swap`](Self::f64_array_swap): swap elements `i` and
     /// `j` and return `id`. Caller must ensure both are in bounds.
     pub fn f64_array_swap_in_place(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
-        debug_assert!(self.f64_arrays[id.0 as usize].alive, "in-place swap on a dead f64 array");
-        self.f64_arrays[id.0 as usize].data.swap(i, j);
+        debug_assert!(self.f64_arrays.slots[id.0 as usize].alive, "in-place swap on a dead f64 array");
+        self.f64_arrays.get_mut(id.0).swap(i, j);
         id
     }
 
@@ -431,31 +432,17 @@ impl Heap {
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
         self.tick_alloc(AllocKind::Map);
-        if let Some(idx) = self.free_maps.pop() {
-            let slot = &mut self.maps[idx as usize];
-            slot.entries = entries;
-            slot.gc_mark = false;
-            slot.alive = true;
-            MapId(idx)
-        } else {
-            let id = MapId(self.maps.len() as u32);
-            self.maps.push(HeapMap {
-                entries,
-                gc_mark: false,
-                alive: true,
-            });
-            id
-        }
+        MapId(self.maps.alloc(entries))
     }
 
     pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
-        &self.maps[id.0 as usize].entries
+        self.maps.get(id.0)
     }
 
     /// Return a new map equal to `id` with `key` set to `val`. `id` is
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
-        let mut entries = self.maps[id.0 as usize].entries.clone();
+        let mut entries = self.maps.get(id.0).clone();
         self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
         self.alloc_map(entries)
@@ -465,7 +452,7 @@ impl Heap {
     /// (value semantics). Insertion order of the remaining keys is preserved.
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
-        let mut entries = self.maps[id.0 as usize].entries.clone();
+        let mut entries = self.maps.get(id.0).clone();
         self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
         self.alloc_map(entries)
@@ -475,16 +462,16 @@ impl Heap {
     /// entry table and return `id`. See the in-place list methods for the
     /// soundness contract.
     pub fn map_set_in_place(&mut self, id: MapId, key: String, val: Value) -> MapId {
-        debug_assert!(self.maps[id.0 as usize].alive, "in-place set on a dead map");
-        self.maps[id.0 as usize].entries.insert(key, val);
+        debug_assert!(self.maps.slots[id.0 as usize].alive, "in-place set on a dead map");
+        self.maps.get_mut(id.0).insert(key, val);
         id
     }
 
     /// In-place [`map_remove`](Self::map_remove): shift-remove `key` from `id`
     /// (preserving order of the rest) and return `id`. A no-op for an absent key.
     pub fn map_remove_in_place(&mut self, id: MapId, key: &str) -> MapId {
-        debug_assert!(self.maps[id.0 as usize].alive, "in-place remove on a dead map");
-        self.maps[id.0 as usize].entries.shift_remove(key);
+        debug_assert!(self.maps.slots[id.0 as usize].alive, "in-place remove on a dead map");
+        self.maps.get_mut(id.0).shift_remove(key);
         id
     }
 
@@ -492,37 +479,19 @@ impl Heap {
 
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
         self.tick_alloc(AllocKind::Element);
-        if let Some(idx) = self.free_elements.pop() {
-            let slot = &mut self.elements[idx as usize];
-            slot.tag = tag;
-            slot.props = props;
-            slot.children = children;
-            slot.gc_mark = false;
-            slot.alive = true;
-            ElementId(idx)
-        } else {
-            let id = ElementId(self.elements.len() as u32);
-            self.elements.push(HeapElement {
-                tag,
-                props,
-                children,
-                gc_mark: false,
-                alive: true,
-            });
-            id
-        }
+        ElementId(self.elements.alloc(ElementPayload { tag, props, children }))
     }
 
     pub fn get_element_tag(&self, id: ElementId) -> StringId {
-        self.elements[id.0 as usize].tag
+        self.elements.get(id.0).tag
     }
 
     pub fn get_element_props(&self, id: ElementId) -> MapId {
-        self.elements[id.0 as usize].props
+        self.elements.get(id.0).props
     }
 
     pub fn get_element_children(&self, id: ElementId) -> ListId {
-        self.elements[id.0 as usize].children
+        self.elements.get(id.0).children
     }
 
     // -----------------------------------------------------------------------
@@ -550,18 +519,14 @@ impl Heap {
     }
 
     fn mark_string(&mut self, id: StringId) {
-        let slot = &mut self.strings[id.0 as usize];
-        if slot.alive && !slot.gc_mark {
-            slot.gc_mark = true;
-        }
+        // Leaf: no children to recurse into.
+        self.strings.mark(id.0);
     }
 
     fn mark_list(&mut self, id: ListId) {
-        let slot = &mut self.lists[id.0 as usize];
-        if slot.alive && !slot.gc_mark {
-            slot.gc_mark = true;
+        if self.lists.mark(id.0) {
             // Copy elements to avoid borrow conflict
-            let elements: Vec<Value> = slot.elements.clone();
+            let elements: Vec<Value> = self.lists.get(id.0).clone();
             for val in elements {
                 self.mark_value(val);
             }
@@ -569,19 +534,14 @@ impl Heap {
     }
 
     fn mark_f64_array(&mut self, id: F64ArrayId) {
-        let slot = &mut self.f64_arrays[id.0 as usize];
-        if slot.alive && !slot.gc_mark {
-            slot.gc_mark = true;
-            // f64s are primitives — nothing recursive to mark.
-        }
+        // Leaf: f64s are primitives — nothing recursive to mark.
+        self.f64_arrays.mark(id.0);
     }
 
     fn mark_map(&mut self, id: MapId) {
-        let slot = &mut self.maps[id.0 as usize];
-        if slot.alive && !slot.gc_mark {
-            slot.gc_mark = true;
+        if self.maps.mark(id.0) {
             // Copy values to avoid borrow conflict
-            let values: Vec<Value> = slot.entries.values().copied().collect();
+            let values: Vec<Value> = self.maps.get(id.0).values().copied().collect();
             for val in values {
                 self.mark_value(val);
             }
@@ -589,85 +549,30 @@ impl Heap {
     }
 
     fn mark_element(&mut self, id: ElementId) {
-        let slot = &mut self.elements[id.0 as usize];
-        if slot.alive && !slot.gc_mark {
-            slot.gc_mark = true;
-            let tag = slot.tag;
-            let props = slot.props;
-            let children = slot.children;
-            self.mark_string(tag);
-            self.mark_map(props);
-            self.mark_list(children);
+        if self.elements.mark(id.0) {
+            let e = *self.elements.get(id.0);
+            self.mark_string(e.tag);
+            self.mark_map(e.props);
+            self.mark_list(e.children);
         }
     }
 
     /// Sweep phase: free all unmarked objects and reset marks.
     /// Call this after marking all roots.
     pub fn sweep(&mut self) {
-        self.free_strings.clear();
-        for (i, slot) in self.strings.iter_mut().enumerate() {
-            if slot.alive {
-                if slot.gc_mark {
-                    slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    self.intern_table.remove(&slot.data);
-                    slot.data.clear();
-                    self.free_strings.push(i as u32);
-                }
-            }
-        }
+        // Reclaiming a string must also drop its interned entry. Destructure to
+        // borrow `strings` and `intern_table` disjointly (the closure needs the
+        // table while `sweep_with` holds `strings` mutably).
+        let Self { strings, intern_table, .. } = self;
+        strings.sweep_with(|s| {
+            intern_table.remove(s.as_str());
+            s.clear();
+        });
 
-        self.free_lists.clear();
-        for (i, slot) in self.lists.iter_mut().enumerate() {
-            if slot.alive {
-                if slot.gc_mark {
-                    slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    slot.elements.clear();
-                    self.free_lists.push(i as u32);
-                }
-            }
-        }
-
-        self.free_f64_arrays.clear();
-        for (i, slot) in self.f64_arrays.iter_mut().enumerate() {
-            if slot.alive {
-                if slot.gc_mark {
-                    slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    slot.data.clear();
-                    self.free_f64_arrays.push(i as u32);
-                }
-            }
-        }
-
-        self.free_maps.clear();
-        for (i, slot) in self.maps.iter_mut().enumerate() {
-            if slot.alive {
-                if slot.gc_mark {
-                    slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    slot.entries.clear();
-                    self.free_maps.push(i as u32);
-                }
-            }
-        }
-
-        self.free_elements.clear();
-        for (i, slot) in self.elements.iter_mut().enumerate() {
-            if slot.alive {
-                if slot.gc_mark {
-                    slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    self.free_elements.push(i as u32);
-                }
-            }
-        }
+        self.lists.sweep_with(|v| v.clear());
+        self.f64_arrays.sweep_with(|v| v.clear());
+        self.maps.sweep_with(|v| v.clear());
+        self.elements.sweep_with(|_| {});
 
         self.alloc_count = 0;
     }

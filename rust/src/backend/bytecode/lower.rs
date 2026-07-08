@@ -396,7 +396,7 @@ impl<'p> FnLowerer<'p> {
             },
 
             other => {
-                return Err(format!("unlowered op: {} (arrives in a later milestone)", op_name(other)));
+                return Err(format!("unlowered op: {other:?} (arrives in a later milestone)"));
             }
         };
         Ok(inst)
@@ -842,31 +842,6 @@ impl<'p> FnLowerer<'p> {
     }
 }
 
-/// Short display name for a `TermOp`, for `unlowered op` diagnostics.
-fn op_name(op: &TermOp) -> &'static str {
-    match op {
-        TermOp::And => "And",
-        TermOp::Or => "Or",
-        TermOp::Phi => "Phi",
-        TermOp::Branch => "Branch",
-        TermOp::ForLoop => "ForLoop",
-        TermOp::NumericForLoop => "NumericForLoop",
-        TermOp::WhileLoop => "WhileLoop",
-        TermOp::Break => "Break",
-        TermOp::Continue => "Continue",
-        TermOp::Return => "Return",
-        TermOp::MakeClosure(_) => "MakeClosure",
-        TermOp::MakeOverloadSet => "MakeOverloadSet",
-        TermOp::Call => "Call",
-        TermOp::MethodCall(_) => "MethodCall",
-        TermOp::BuiltinCall(_) => "BuiltinCall",
-        TermOp::StateInit => "StateInit",
-        TermOp::StateRead => "StateRead",
-        TermOp::StateWrite => "StateWrite",
-        TermOp::Match => "Match",
-        _ => "?",
-    }
-}
 
 #[cfg(test)]
 mod tests {

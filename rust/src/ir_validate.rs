@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::program::{BlockId, MapSpreadEntry, Program, TermId, TermOp};
+use crate::program::{BlockId, Program, TermId, TermOp};
 
 impl Program {
     /// Deserialize a Program from its JSON IR form (the shape emitted by
@@ -71,29 +71,9 @@ impl Program {
                 return Err(format!("t{}: block_id b{} out of range", i, term.block_id.0));
             }
             // Constant references inside ops.
-            let cids: Vec<u32> = match &term.op {
-                TermOp::Constant(c) | TermOp::Error(c) | TermOp::GetField(c)
-                | TermOp::SetField(c) | TermOp::MethodCall(c)
-                | TermOp::BuiltinCall(c)
-                | TermOp::MakeEnumVariant(c) => vec![c.0],
-                TermOp::AllocMap { fields } => fields.iter().map(|c| c.0).collect(),
-                TermOp::AllocElement { tag, prop_keys } => {
-                    let mut v = vec![tag.0];
-                    v.extend(prop_keys.iter().map(|c| c.0));
-                    v
-                }
-                TermOp::AllocMapSpread { entries } => entries
-                    .iter()
-                    .filter_map(|e| match e {
-                        MapSpreadEntry::Named(c, _) => Some(c.0),
-                        MapSpreadEntry::Spread(_) => None,
-                    })
-                    .collect(),
-                _ => vec![],
-            };
-            for c in cids {
-                if c >= n_consts {
-                    return Err(format!("t{}: constant c{} out of range", i, c));
+            for c in term.op.constant_ids() {
+                if c.0 >= n_consts {
+                    return Err(format!("t{}: constant c{} out of range", i, c.0));
                 }
             }
             if let TermOp::MakeClosure(f) = &term.op

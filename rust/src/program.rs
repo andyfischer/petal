@@ -193,6 +193,38 @@ pub enum TermOp {
     Match,
 }
 
+impl TermOp {
+    /// The constant-table ids this op references into `Program.constants`.
+    /// Single source of truth for the (previously duplicated) enumeration of
+    /// which variants carry constants — used by IR validation to range-check
+    /// them.
+    pub fn constant_ids(&self) -> Vec<ConstantId> {
+        match self {
+            TermOp::Constant(c)
+            | TermOp::Error(c)
+            | TermOp::GetField(c)
+            | TermOp::SetField(c)
+            | TermOp::MethodCall(c)
+            | TermOp::BuiltinCall(c)
+            | TermOp::MakeEnumVariant(c) => vec![*c],
+            TermOp::AllocMap { fields } => fields.clone(),
+            TermOp::AllocElement { tag, prop_keys } => {
+                let mut v = vec![*tag];
+                v.extend(prop_keys.iter().copied());
+                v
+            }
+            TermOp::AllocMapSpread { entries } => entries
+                .iter()
+                .filter_map(|e| match e {
+                    MapSpreadEntry::Named(c, _) => Some(*c),
+                    MapSpreadEntry::Spread(_) => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Term
 // ---------------------------------------------------------------------------

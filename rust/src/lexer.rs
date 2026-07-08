@@ -284,7 +284,19 @@ impl Lexer {
             }
             '(' => { self.advance_char(); self.push_token(Token::LParen, start); }
             ')' => { self.advance_char(); self.push_token(Token::RParen, start); }
-            '{' => { self.advance_char(); self.push_token(Token::LBrace, start); }
+            '{' => {
+                self.advance_char();
+                self.push_token(Token::LBrace, start);
+                if *self.current_mode() == LexerMode::JsxTag {
+                    // Attribute value hole `{...}` inside a JSX open tag. Lex it
+                    // as a normal braced expression (in Normal mode) so operators
+                    // like `>` and `/>` inside the expression aren't mistaken for
+                    // the tag's closing/self-closing delimiter.
+                    self.mode_stack.push(LexerMode::Normal);
+                    self.tokenize_braced_expr(true, true)?;
+                    self.mode_stack.pop();
+                }
+            }
             '}' => { self.advance_char(); self.push_token(Token::RBrace, start); }
             '[' => { self.advance_char(); self.push_token(Token::LBracket, start); }
             ']' => { self.advance_char(); self.push_token(Token::RBracket, start); }
@@ -981,5 +993,45 @@ mod tests {
     #[test]
     fn collapse_jsx_whitespace_blank_lines() {
         assert_eq!(collapse_jsx_whitespace("a\n\n\nb"), "a b");
+    }
+
+    #[test]
+    fn lex_jsx_attr_expr_with_gt() {
+        // `>` inside a JSX attribute expression `{...}` is a comparison
+        // operator, not the tag's closing delimiter.
+        let tokens = tokenize("<div expr={x > 1}/>");
+        assert_eq!(tokens, vec![
+            Token::JsxOpenStart,
+            Token::JsxTagName("div".into()),
+            Token::Ident("expr".into()),
+            Token::Assign,
+            Token::LBrace,
+            Token::Ident("x".into()),
+            Token::Gt,
+            Token::Int(1),
+            Token::RBrace,
+            Token::JsxSelfClose,
+        ]);
+    }
+
+    #[test]
+    fn lex_jsx_attr_expr_with_self_close_inside() {
+        // A `/>` sequence inside a JSX attribute expression must not be
+        // mistaken for the tag's self-close.
+        let tokens = tokenize("<div expr={6 / 2 > 1}/>");
+        assert_eq!(tokens, vec![
+            Token::JsxOpenStart,
+            Token::JsxTagName("div".into()),
+            Token::Ident("expr".into()),
+            Token::Assign,
+            Token::LBrace,
+            Token::Int(6),
+            Token::Slash,
+            Token::Int(2),
+            Token::Gt,
+            Token::Int(1),
+            Token::RBrace,
+            Token::JsxSelfClose,
+        ]);
     }
 }

@@ -127,4 +127,35 @@ impl Stack {
             .retain(|key, _| self.touched_state_keys.contains(key));
         before - self.state.len()
     }
+
+    /// Enumerate this stack's GC roots — every heap `Value` reachable from its
+    /// live execution state — by handing each to `mark`. These are the
+    /// register files and snapshotted for-each cursors of the VM frames, the
+    /// persistent state values, and the last synchronous-call pop result. The
+    /// recycled frame pool is deliberately *not* walked: recycled frames hold
+    /// no values (see `vm_frame_pool`). Used by `Env::collect_garbage`.
+    pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
+        // VM frames are GC roots: their register files and any snapshotted
+        // for-each cursors hold live values.
+        for frame in &self.vm_frames {
+            for val in &frame.regs {
+                mark(*val);
+            }
+            for cursor in frame.loops.iter().flatten() {
+                if let crate::backend::bytecode::vm::LoopCursor::ForEach { elems, .. } = cursor {
+                    for val in elems {
+                        mark(*val);
+                    }
+                }
+            }
+        }
+        // Persistent state values
+        for val in self.state.values() {
+            mark(*val);
+        }
+        // Last pop result (used by synchronous closure calls)
+        if let Some(val) = self.last_pop_result {
+            mark(val);
+        }
+    }
 }

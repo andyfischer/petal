@@ -835,15 +835,9 @@ impl<'p> FnLowerer<'p> {
 
     /// Backpatch the jump/exit target of the instruction at `at`.
     fn patch(&mut self, at: usize, target: u32) {
-        match &mut self.code[at] {
-            Inst::Jump { to }
-            | Inst::JumpIfFalse { to, .. }
-            | Inst::JumpIfTrue { to, .. }
-            | Inst::ForEachNext { exit: to, .. }
-            | Inst::RangeNext { exit: to, .. }
-            | Inst::MatchArm { next: to, .. }
-            | Inst::StateInit { after: to, .. } => *to = target,
-            other => panic!("patch: not a patchable instruction: {other:?}"),
+        match self.code[at].branch_target_mut() {
+            Some(to) => *to = target,
+            None => panic!("patch: not a patchable instruction: {:?}", self.code[at]),
         }
     }
 }

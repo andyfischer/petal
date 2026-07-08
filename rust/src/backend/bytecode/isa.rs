@@ -263,6 +263,123 @@ impl Inst {
         }
         v
     }
+
+    /// Every register this instruction writes. Unlike [`dst`](Inst::dst) — which
+    /// reports only the single value delivered *in the current frame* for the
+    /// trace hook — this is the full dataflow write set the liveness / last-use
+    /// analysis needs: it includes `Call`/`MethodCall` (the return lands in
+    /// `dst`), the loop-variable of `ForEachNext`/`RangeNext`, and a
+    /// `MatchArm`'s precomputed pattern-binding registers (whose own `dst` is
+    /// written later by the arm body's join `Move`, not by the op).
+    pub fn for_each_write(
+        &self,
+        match_binds: &std::collections::HashMap<(TermId, u16), Vec<(String, Reg)>>,
+        mut f: impl FnMut(Reg),
+    ) {
+        match self {
+            Inst::LoadConst { dst, .. }
+            | Inst::LoadNil { dst }
+            | Inst::LoadBool { dst, .. }
+            | Inst::Move { dst, .. }
+            | Inst::Add { dst, .. }
+            | Inst::Sub { dst, .. }
+            | Inst::Mul { dst, .. }
+            | Inst::Div { dst, .. }
+            | Inst::Mod { dst, .. }
+            | Inst::Neg { dst, .. }
+            | Inst::Eq { dst, .. }
+            | Inst::Ne { dst, .. }
+            | Inst::Lt { dst, .. }
+            | Inst::Le { dst, .. }
+            | Inst::Gt { dst, .. }
+            | Inst::Ge { dst, .. }
+            | Inst::Not { dst, .. }
+            | Inst::Concat { dst, .. }
+            | Inst::Call { dst, .. }
+            | Inst::MethodCall { dst, .. }
+            | Inst::BuiltinCall { dst, .. }
+            | Inst::MakeClosure { dst, .. }
+            | Inst::MakeOverloadSet { dst, .. }
+            | Inst::AllocList { dst, .. }
+            | Inst::AllocMap { dst, .. }
+            | Inst::AllocMapSpread { dst, .. }
+            | Inst::AllocElement { dst, .. }
+            | Inst::MakeEnumVariant { dst, .. }
+            | Inst::GetField { dst, .. }
+            | Inst::SetField { dst, .. }
+            | Inst::GetIndex { dst, .. }
+            | Inst::SetIndex { dst, .. }
+            | Inst::SetFieldInPlace { dst, .. }
+            | Inst::SetIndexInPlace { dst, .. }
+            | Inst::StateInit { dst, .. }
+            | Inst::StateRead { dst, .. }
+            | Inst::StateWrite { dst, .. } => f(*dst),
+            Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
+            Inst::MatchArm { term, arm, .. } => {
+                if let Some(binds) = match_binds.get(&(*term, *arm)) {
+                    for (_, r) in binds {
+                        f(*r);
+                    }
+                }
+            }
+            Inst::Jump { .. }
+            | Inst::JumpIfFalse { .. }
+            | Inst::JumpIfTrue { .. }
+            | Inst::ForEachInit { .. }
+            | Inst::RangeInit { .. }
+            | Inst::WhileInit { .. }
+            | Inst::LoopBumpIdx { .. }
+            | Inst::LoopPop { .. }
+            | Inst::Return { .. }
+            | Inst::MatchFail { .. }
+            | Inst::Error { .. } => {}
+        }
+    }
+
+    /// Whether control can fall through to the following instruction. False only
+    /// for the unconditional terminators (`Jump` diverts; `Return`/`Error`/
+    /// `MatchFail` end the path).
+    pub fn falls_through(&self) -> bool {
+        !matches!(
+            self,
+            Inst::Jump { .. } | Inst::Return { .. } | Inst::Error { .. } | Inst::MatchFail { .. }
+        )
+    }
+
+    /// This instruction's explicit branch target label, if any. Every branching
+    /// op carries at most one — the same field lowering backpatches (see
+    /// [`branch_target_mut`](Inst::branch_target_mut), which must stay in lockstep
+    /// with this variant set) and the CFG treats as a non-fall-through successor.
+    pub fn branch_target(&self) -> Option<Label> {
+        match self {
+            Inst::Jump { to }
+            | Inst::JumpIfFalse { to, .. }
+            | Inst::JumpIfTrue { to, .. }
+            | Inst::ForEachNext { exit: to, .. }
+            | Inst::RangeNext { exit: to, .. }
+            | Inst::MatchArm { next: to, .. }
+            | Inst::StateInit { after: to, .. } => Some(*to),
+            _ => None,
+        }
+    }
+
+    /// Mutable view of the single backpatchable branch-target label — the write
+    /// counterpart of [`branch_target`](Inst::branch_target). Lowering resolves a
+    /// placeholder block-id to a code offset through this; the two methods
+    /// enumerate the identical variant set so successors and patch can never
+    /// drift apart.
+    pub fn branch_target_mut(&mut self) -> Option<&mut Label> {
+        match self {
+            Inst::Jump { to }
+            | Inst::JumpIfFalse { to, .. }
+            | Inst::JumpIfTrue { to, .. }
+            | Inst::ForEachNext { exit: to, .. }
+            | Inst::RangeNext { exit: to, .. }
+            | Inst::MatchArm { next: to, .. }
+            | Inst::StateInit { after: to, .. } => Some(to),
+            _ => None,
+        }
+    }
 }
 
 /// One lowered function: the program root block, or a `FunctionDef` body.

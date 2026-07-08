@@ -185,7 +185,7 @@ fn route_a_fires(
     // slots do, must count as a second def and reject).
     let mut defs: HashMap<Reg, Vec<usize>> = HashMap::new();
     for (j, inst) in f.code.iter().enumerate() {
-        for_each_write(inst, match_binds, |w| defs.entry(w).or_default().push(j));
+        inst.for_each_write(match_binds, |w| defs.entry(w).or_default().push(j));
     }
     let single_def = |r: Reg| -> Option<usize> {
         match defs.get(&r).map(Vec::as_slice) {
@@ -289,97 +289,15 @@ fn route_a_fires(
 }
 
 /// CFG successors of instruction `j` (instruction indices; `exit` is the
-/// pseudo-node for running off the end of the function).
+/// pseudo-node for running off the end of the function). Fall-through and the
+/// explicit branch target are both sourced from [`Inst`]'s own metadata so this
+/// can never disagree with lowering's backpatch set.
 fn push_succs(inst: &Inst, j: usize, exit: usize, out: &mut Vec<usize>) {
-    let fall_through = |out: &mut Vec<usize>| out.push((j + 1).min(exit));
-    match inst {
-        Inst::Jump { to } => out.push(*to as usize),
-        Inst::JumpIfFalse { to, .. } | Inst::JumpIfTrue { to, .. } => {
-            fall_through(out);
-            out.push(*to as usize);
-        }
-        Inst::ForEachNext { exit: e, .. } | Inst::RangeNext { exit: e, .. } => {
-            fall_through(out);
-            out.push(*e as usize);
-        }
-        Inst::MatchArm { next, .. } => {
-            fall_through(out);
-            out.push(*next as usize);
-        }
-        Inst::StateInit { after, .. } => {
-            fall_through(out);
-            out.push(*after as usize);
-        }
-        Inst::Return { .. } | Inst::Error { .. } | Inst::MatchFail { .. } => {}
-        _ => fall_through(out),
+    if inst.falls_through() {
+        out.push((j + 1).min(exit));
     }
-}
-
-/// Every register `inst` writes. `MatchArm` writes its arm's precomputed
-/// pattern-binding registers (its `dst` is written by the arm body's join
-/// `Move`, not by the op itself).
-fn for_each_write(
-    inst: &Inst,
-    match_binds: &HashMap<(TermId, u16), Vec<(String, Reg)>>,
-    mut f: impl FnMut(Reg),
-) {
-    match inst {
-        Inst::LoadConst { dst, .. }
-        | Inst::LoadNil { dst }
-        | Inst::LoadBool { dst, .. }
-        | Inst::Move { dst, .. }
-        | Inst::Add { dst, .. }
-        | Inst::Sub { dst, .. }
-        | Inst::Mul { dst, .. }
-        | Inst::Div { dst, .. }
-        | Inst::Mod { dst, .. }
-        | Inst::Neg { dst, .. }
-        | Inst::Eq { dst, .. }
-        | Inst::Ne { dst, .. }
-        | Inst::Lt { dst, .. }
-        | Inst::Le { dst, .. }
-        | Inst::Gt { dst, .. }
-        | Inst::Ge { dst, .. }
-        | Inst::Not { dst, .. }
-        | Inst::Concat { dst, .. }
-        | Inst::Call { dst, .. }
-        | Inst::MethodCall { dst, .. }
-        | Inst::BuiltinCall { dst, .. }
-        | Inst::MakeClosure { dst, .. }
-        | Inst::MakeOverloadSet { dst, .. }
-        | Inst::AllocList { dst, .. }
-        | Inst::AllocMap { dst, .. }
-        | Inst::AllocMapSpread { dst, .. }
-        | Inst::AllocElement { dst, .. }
-        | Inst::MakeEnumVariant { dst, .. }
-        | Inst::GetField { dst, .. }
-        | Inst::SetField { dst, .. }
-        | Inst::GetIndex { dst, .. }
-        | Inst::SetIndex { dst, .. }
-        | Inst::SetFieldInPlace { dst, .. }
-        | Inst::SetIndexInPlace { dst, .. }
-        | Inst::StateInit { dst, .. }
-        | Inst::StateRead { dst, .. }
-        | Inst::StateWrite { dst, .. } => f(*dst),
-        Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
-        Inst::MatchArm { term, arm, .. } => {
-            if let Some(binds) = match_binds.get(&(*term, *arm)) {
-                for (_, r) in binds {
-                    f(*r);
-                }
-            }
-        }
-        Inst::Jump { .. }
-        | Inst::JumpIfFalse { .. }
-        | Inst::JumpIfTrue { .. }
-        | Inst::ForEachInit { .. }
-        | Inst::RangeInit { .. }
-        | Inst::WhileInit { .. }
-        | Inst::LoopBumpIdx { .. }
-        | Inst::LoopPop { .. }
-        | Inst::Return { .. }
-        | Inst::MatchFail { .. }
-        | Inst::Error { .. } => {}
+    if let Some(to) = inst.branch_target() {
+        out.push(to as usize);
     }
 }
 

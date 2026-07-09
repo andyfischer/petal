@@ -4,12 +4,16 @@ Run Petal scripts that draw interactive graphics into an HTML canvas, in the bro
 
 The Petal compiler runs as a WebAssembly module loaded by Vite. Each frame, the
 canvas event loop:
-1. feeds mouse + keyboard state into the WASM runtime
+1. feeds mouse + keyboard events into the WASM runtime
 2. resets the script's stack and re-executes it
 3. drains the queued draw commands and plays them back through `CanvasRenderingContext2D`
 
-The drawing API is the same as [petal-sdl](../petal-sdl/), so most petal-sdl
-sample scripts run unchanged.
+The runtime shares the standard interactivity layer (`petal-ui`) with
+[petal-sdl](../petal-sdl/): the same input contract, draw-command vocabulary,
+offscreen canvases, and `ui` prelude. So petal-sdl sample scripts run unchanged.
+Browser events are translated to `petal_ui::input::InputEvent`s as they arrive
+and latched by `InputState`, so a press edge (`mouse_pressed` / `key_pressed`)
+fires even for a click that goes down and up between two animation frames.
 
 ## Drawing API
 
@@ -32,9 +36,14 @@ draw_canvas(c, x, y)          # blit the offscreen canvas onto the current targe
 
 ```
 mouse_x(),  mouse_y()
-mouse_down(button),  mouse_pressed(button)   // button: 1=left, 2=middle, 3=right
-key_down("space"),   key_pressed("up")       // see input.ts for the key name map
+mouse_down(button),  mouse_pressed(button),  mouse_released(button)   // button: 0=left, 1=right, 2=middle
+key_down("space"),   key_pressed("up"),      key_released("a")        // see input.ts for the key name map
+scroll_x(),  scroll_y()                      // wheel/trackpad lines this frame
+text_input()                                 // typed text this frame
 ```
+
+The full `petal-ui` input vocabulary (drag, click-count, modifiers, …) is also
+available — see [`petal-ui/src/input.rs`](../../petal-ui/src/input.rs).
 
 ## Frame info
 

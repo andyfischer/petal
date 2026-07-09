@@ -99,8 +99,8 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | Integration | Description |
 |-------------|-------------|
 | [petal-sdl](apps/petal-sdl/README.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
-| [petal-web](apps/petal-web/README.md) | WebAssembly target that renders JSX element trees as live DOM |
-| [petal-web-canvas](apps/petal-web-canvas/README.md) | Run Petal scripts that draw interactive graphics into an HTML canvas in the browser |
+| [petal-web](apps/petal-web/README.md) | WebAssembly target that renders DOM updates using JSX-like syntax |
+| [petal-web-canvas](apps/petal-web-canvas/README.md) | WebAssembly target that renders to an HTML Canvas |
 | [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
 | [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | [side-scroller](apps/side-scroller/README.md) | 2D side-scrolling platformer written almost entirely in Petal |

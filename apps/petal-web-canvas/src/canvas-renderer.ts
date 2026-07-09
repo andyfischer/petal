@@ -1,86 +1,63 @@
-/** Render an array of draw-command JSON objects to a Canvas2D context. */
+/** Render petal-ui draw commands to a Canvas2D context.
+ *
+ * The WASM runtime serializes petal-ui's `DrawCommand` enum directly, so each
+ * command already arrives in `{ op, ...fields }` form — no decoding step. Alpha
+ * (`a`), corner radius (`radius`), and stroke width (`width`) are optional and
+ * omitted from the JSON when at their defaults (opaque / square / hairline). */
 
 export interface DrawCommand {
   op: string;
-  // Color fields (shared by all commands)
+  // Color (shared)
   r?: number;
   g?: number;
   b?: number;
-  // Rect / RectOutline
+  /** Opacity 0–255; absent = 255 (opaque). */
+  a?: number;
+  // Rect / RectOutline / Clip
   x?: number;
   y?: number;
   w?: number;
   h?: number;
-  // Line
+  /** Rect corner radius (px); RectOutline/Line stroke width lives in `width`. */
+  radius?: number;
+  width?: number;
+  // Line / Triangle
   x1?: number;
   y1?: number;
   x2?: number;
   y2?: number;
-  // Triangle (also uses x1,y1,x2,y2 above)
   x3?: number;
   y3?: number;
-  // Poly — decoded to [[x,y],...] from the buffered points list
+  // Poly — serialized as [[x, y], ...]
   points?: number[][];
   // Circle
   cx?: number;
   cy?: number;
-  radius?: number;
   // Text
   text?: string;
   size?: number;
-  // Offscreen canvas (create_canvas / draw_to / draw_canvas)
+  // Offscreen canvas (create_canvas / set_target / draw_canvas)
   id?: number;
 }
 
-/** Raw command as emitted by the WASM runtime: a `Value::EnumVariant`,
- * serialized as `{ type: "enum", tag, data }` where `data` is the flat argument
- * list. `decodeCommand` maps this into the named-field `DrawCommand` above. */
-export interface RawCommand {
-  type: string;
-  tag: string;
-  data: any[];
+function fillStyle(cmd: DrawCommand): string {
+  const a = cmd.a ?? 255;
+  if (a >= 255) return `rgb(${cmd.r},${cmd.g},${cmd.b})`;
+  return `rgba(${cmd.r},${cmd.g},${cmd.b},${a / 255})`;
 }
 
-/** Decode a point from the buffered list. Vec2 values serialize as
- * `{ type: "vec2", x, y }`; `[x, y]` lists serialize as `[x, y]`. */
-function decodePoint(p: any): [number, number] {
-  return Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y];
-}
-
-/** Map a raw `{tag, data}` command to a named-field `DrawCommand`. Mirrors the
- * argument order emitted by the native draw functions (see lib.rs). */
-function decodeCommand(raw: RawCommand): DrawCommand {
-  const d = raw.data ?? [];
-  switch (raw.tag) {
-    case "clear":
-      return { op: "clear", r: d[0], g: d[1], b: d[2] };
-    case "rect":
-      return { op: "rect", x: d[0], y: d[1], w: d[2], h: d[3], r: d[4], g: d[5], b: d[6] };
-    case "rect_outline":
-      return { op: "rect_outline", x: d[0], y: d[1], w: d[2], h: d[3], r: d[4], g: d[5], b: d[6] };
-    case "line":
-      return { op: "line", x1: d[0], y1: d[1], x2: d[2], y2: d[3], r: d[4], g: d[5], b: d[6] };
-    case "circle":
-      return { op: "circle", cx: d[0], cy: d[1], radius: d[2], r: d[3], g: d[4], b: d[5] };
-    case "triangle":
-      return { op: "triangle", x1: d[0], y1: d[1], x2: d[2], y2: d[3], x3: d[4], y3: d[5], r: d[6], g: d[7], b: d[8] };
-    case "poly":
-      return { op: "poly", points: (d[0] ?? []).map(decodePoint), r: d[1], g: d[2], b: d[3] };
-    case "text":
-      return { op: "text", text: d[0], x: d[1], y: d[2], size: d[3], r: d[4], g: d[5], b: d[6] };
-    case "create_canvas":
-      return { op: "create_canvas", id: d[0], w: d[1], h: d[2] };
-    case "set_target":
-      return { op: "set_target", id: d[0] };
-    case "draw_canvas":
-      return { op: "draw_canvas", id: d[0], x: d[1], y: d[2] };
-    default:
-      return { op: raw.tag };
+/** Trace a rounded-rectangle path (falls back to a plain rect when radius 0). */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, radius: number,
+): void {
+  const rr = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  if (rr <= 0) {
+    ctx.rect(x, y, w, h);
+  } else {
+    ctx.roundRect(x, y, w, h, rr);
   }
-}
-
-function rgb(r: number, g: number, b: number): string {
-  return `rgb(${r},${g},${b})`;
 }
 
 /** Draw a single primitive command into a 2D context (the active target). */
@@ -92,24 +69,35 @@ function renderPrimitive(
 ): void {
   switch (cmd.op) {
     case "clear":
-      ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+      // clear ignores alpha — it repaints the whole target opaque.
+      ctx.fillStyle = `rgb(${cmd.r},${cmd.g},${cmd.b})`;
       ctx.fillRect(0, 0, width, height);
       break;
 
     case "rect":
-      ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
-      ctx.fillRect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
+      ctx.fillStyle = fillStyle(cmd);
+      if (cmd.radius && cmd.radius > 0) {
+        roundRectPath(ctx, cmd.x!, cmd.y!, cmd.w!, cmd.h!, cmd.radius);
+        ctx.fill();
+      } else {
+        ctx.fillRect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
+      }
       break;
 
     case "rect_outline":
-      ctx.strokeStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
+      ctx.strokeStyle = fillStyle(cmd);
+      ctx.lineWidth = cmd.width ?? 1;
+      if (cmd.radius && cmd.radius > 0) {
+        roundRectPath(ctx, cmd.x!, cmd.y!, cmd.w!, cmd.h!, cmd.radius);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
+      }
       break;
 
     case "line":
-      ctx.strokeStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = fillStyle(cmd);
+      ctx.lineWidth = cmd.width ?? 1;
       ctx.beginPath();
       ctx.moveTo(cmd.x1!, cmd.y1!);
       ctx.lineTo(cmd.x2!, cmd.y2!);
@@ -117,14 +105,14 @@ function renderPrimitive(
       break;
 
     case "circle":
-      ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+      ctx.fillStyle = fillStyle(cmd);
       ctx.beginPath();
       ctx.arc(cmd.cx!, cmd.cy!, Math.abs(cmd.radius!), 0, Math.PI * 2);
       ctx.fill();
       break;
 
     case "triangle":
-      ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+      ctx.fillStyle = fillStyle(cmd);
       ctx.beginPath();
       ctx.moveTo(cmd.x1!, cmd.y1!);
       ctx.lineTo(cmd.x2!, cmd.y2!);
@@ -136,7 +124,7 @@ function renderPrimitive(
     case "poly": {
       const points = cmd.points!;
       if (points.length >= 3) {
-        ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+        ctx.fillStyle = fillStyle(cmd);
         ctx.beginPath();
         ctx.moveTo(points[0][0], points[0][1]);
         for (let i = 1; i < points.length; i++) {
@@ -149,7 +137,7 @@ function renderPrimitive(
     }
 
     case "text":
-      ctx.fillStyle = rgb(cmd.r!, cmd.g!, cmd.b!);
+      ctx.fillStyle = fillStyle(cmd);
       ctx.font = `${cmd.size}px sans-serif`;
       ctx.textBaseline = "top";
       ctx.fillText(cmd.text!, cmd.x!, cmd.y!);
@@ -169,11 +157,10 @@ function createOffscreen(w: number, h: number): CanvasRenderingContext2D {
 
 export function renderCommands(
   ctx: CanvasRenderingContext2D,
-  rawCommands: RawCommand[],
+  commands: DrawCommand[],
   canvasWidth: number,
   canvasHeight: number,
 ): void {
-  const commands = rawCommands.map(decodeCommand);
   // The main canvas persists between frames: we only paint over it on an
   // explicit "clear" command. A sketch that never calls clear() therefore
   // accumulates its drawing (particle trails, attractors), matching petal-sdl's
@@ -188,6 +175,8 @@ export function renderCommands(
   // The active target. `0` is the main canvas; any other value is an offscreen
   // canvas id.
   let target = 0;
+  // Whether the active target currently has a clip pushed (needs a restore).
+  let clipped = false;
 
   const targetCtx = (): CanvasRenderingContext2D | null => {
     if (target === 0) return ctx;
@@ -198,6 +187,13 @@ export function renderCommands(
     const t = offscreen.get(target);
     return t ? [t.canvas.width, t.canvas.height] : [0, 0];
   };
+  const clearClip = (): void => {
+    const dst = targetCtx();
+    if (clipped && dst) {
+      dst.restore();
+      clipped = false;
+    }
+  };
 
   for (const cmd of commands) {
     switch (cmd.op) {
@@ -206,7 +202,25 @@ export function renderCommands(
         break;
 
       case "set_target":
+        clearClip();
         target = cmd.id!;
+        break;
+
+      case "clip": {
+        const dst = targetCtx();
+        if (dst) {
+          clearClip();
+          dst.save();
+          dst.beginPath();
+          dst.rect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
+          dst.clip();
+          clipped = true;
+        }
+        break;
+      }
+
+      case "clip_none":
+        clearClip();
         break;
 
       case "draw_canvas": {
@@ -228,4 +242,5 @@ export function renderCommands(
       }
     }
   }
+  clearClip();
 }

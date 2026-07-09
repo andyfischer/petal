@@ -209,7 +209,7 @@ if key_pressed("c") then
 end
 
 // Draw when mouse is held (only below toolbar)
-if mouse_down(1) then
+if mouse_down(0) then
     if mouse_y() > toolbar_h then
         if len(points) < 3000 then
             points = append(points, {

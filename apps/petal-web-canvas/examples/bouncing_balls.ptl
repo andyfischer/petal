@@ -25,7 +25,7 @@ if len(balls) == 0 then
 end
 
 // Add a ball on click
-if mouse_pressed(1) then
+if mouse_pressed(0) then
     let mx = float(mouse_x())
     let my = float(mouse_y())
     balls = append(balls, {

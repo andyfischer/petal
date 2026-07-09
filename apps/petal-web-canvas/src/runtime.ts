@@ -92,9 +92,10 @@ export class PetalCanvas {
     this.lastTime = now;
 
     try {
-      this.runtime.begin_frame();
-      this.input.feedToRuntime(this.runtime);
+      // Stage timing/dimensions first (begin_frame advances the input clock by
+      // dt to promote this frame's pending input edges), then run.
       this.runtime.set_frame_info(dt, this.frameCount, this.canvas.width, this.canvas.height);
+      this.runtime.begin_frame();
       this.runtime.reset_and_run(this.stackId);
       this.frameCount++;
 

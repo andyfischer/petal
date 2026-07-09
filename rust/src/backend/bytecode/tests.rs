@@ -839,3 +839,39 @@ fn bytecode_trace_records_call_results() {
     let ev = env.trace().last_for_term(r).expect("r (call result) was not traced");
     assert_eq!(value::value_to_display_string(&ev.result, env.heap()), "42");
 }
+
+/// A term whose input edge points into another function's block is a malformed
+/// IR graph. Lowering must surface that as a `Result::Err` — which reaches the
+/// user as a clean "bytecode lowering failed" message — rather than panicking
+/// mid-lowering (the pre-existing `flat()` panic this replaced).
+#[test]
+fn lowering_reports_cross_function_term_reference_as_error() {
+    let mut program = compile_program("fn f()\n  1\nend\nlet a = 2\na + 3\n");
+
+    // A term that lives in `f`'s body block — foreign to the root function.
+    let f_body = program.functions[0].body_block;
+    let foreign = program
+        .terms
+        .iter()
+        .find(|t| t.block_id == f_body)
+        .expect("f has at least one body term")
+        .id;
+
+    // Corrupt a root-level term so one of its inputs crosses the function
+    // boundary, exactly the shape that used to hit the `flat()` panic.
+    let root = program.root_block;
+    let victim = program
+        .terms
+        .iter()
+        .find(|t| t.block_id == root && !t.inputs.is_empty())
+        .expect("root has a term with inputs")
+        .id;
+    program.terms[victim.0 as usize].inputs[0] = foreign;
+
+    let err = crate::backend::bytecode::lower_program(&program)
+        .expect_err("cross-function reference must lower to an error, not a panic");
+    assert!(
+        err.contains("not in this function"),
+        "unexpected lowering error message: {err}"
+    );
+}

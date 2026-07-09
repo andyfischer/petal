@@ -136,18 +136,28 @@ impl<'p> FnLowerer<'p> {
     }
 
     /// Flat register for a term (in any block belonging to this function).
-    fn flat(&self, tid: TermId) -> Reg {
+    ///
+    /// A term whose block is not part of this function signals a malformed IR
+    /// graph — an input edge crossing a function boundary (only captures may do
+    /// that, and they resolve to the closure's own registers). Rather than
+    /// panic, surface it as a lowering error so it flows through the same
+    /// `Result` path as every other lowering failure (see `lower_program_opt`).
+    fn flat(&self, tid: TermId) -> Result<Reg, String> {
         let term = self.program.get_term(tid);
-        let base = self
-            .base
-            .get(&term.block_id)
-            .copied()
-            .unwrap_or_else(|| panic!("term t{} in block b{} not in this function",
-                tid.0, term.block_id.0));
-        base + term.register.0
+        let base = self.base.get(&term.block_id).copied().ok_or_else(|| {
+            format!(
+                "term t{} in block b{} not in this function",
+                tid.0, term.block_id.0
+            )
+        })?;
+        Ok(base + term.register.0)
     }
 
-    /// Flat register for a raw `(block, register)` pair (params/captures).
+    /// Flat register for a raw `(block, register)` pair (params/captures/loop
+    /// variables). Unlike [`flat`](Self::flat), `block` is always one this
+    /// function owns (a function body or a loop's child block), never a foreign
+    /// term reference — so the boundary-crossing failure `flat` guards against
+    /// cannot arise here, and the base lookup is infallible.
     fn flat_reg(&self, block: BlockId, reg: u16) -> Reg {
         self.base[&block] + reg
     }
@@ -161,7 +171,7 @@ impl<'p> FnLowerer<'p> {
         self.emit_block(self.entry_block)?;
 
         let (param_regs, capture_regs, self_ref_reg) = self.binding_regs();
-        let result_reg = self.entry_result_reg();
+        let result_reg = self.entry_result_reg()?;
         let bf = BytecodeFn {
             func_id: self.func.map(|f| f.id),
             name: self.func.and_then(|f| f.name.clone()),
@@ -241,7 +251,7 @@ impl<'p> FnLowerer<'p> {
     /// Flat register of the entry block's last term — the function's result
     /// register (mirrors the graph engine's `block_result`). `None` for an
     /// empty entry block.
-    fn entry_result_reg(&self) -> Option<Reg> {
+    fn entry_result_reg(&self) -> Result<Option<Reg>, String> {
         self.block_result_reg(self.entry_block)
     }
 
@@ -266,7 +276,7 @@ impl<'p> FnLowerer<'p> {
             .unwrap_or_default()
     }
 
-    fn regs(&self, inputs: &[TermId]) -> SmallVec<[Reg; 4]> {
+    fn regs(&self, inputs: &[TermId]) -> Result<SmallVec<[Reg; 4]>, String> {
         inputs.iter().map(|&t| self.flat(t)).collect()
     }
 
@@ -274,15 +284,15 @@ impl<'p> FnLowerer<'p> {
     /// terms (Branch/And/Or/loops/Match/Break/Continue) are handled by
     /// [`emit_block`](Self::emit_block) and never reach here.
     fn lower_term_inst(&self, term: &Term) -> Result<Inst, String> {
-        let dst = self.flat(term.id);
+        let dst = self.flat(term.id)?;
         let ins = &term.inputs;
         let inst = match &term.op {
             TermOp::Constant(k) => Inst::LoadConst { dst, k: *k },
             TermOp::Error(msg) => Inst::Error { msg: *msg },
-            TermOp::Copy => Inst::Move { dst, src: self.flat(ins[0]) },
+            TermOp::Copy => Inst::Move { dst, src: self.flat(ins[0])? },
             // A Phi initializes its register from the pre-control-flow value;
             // child regions overwrite it via phi_outs (also lowered to Move).
-            TermOp::Phi => Inst::Move { dst, src: self.flat(ins[0]) },
+            TermOp::Phi => Inst::Move { dst, src: self.flat(ins[0])? },
 
             // State reads/writes are single instructions; StateInit is
             // multi-instruction (inline init block) and handled in emit_block.
@@ -295,71 +305,71 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 base: term.state_key.expect("StateWrite without state_key"),
                 in_loop: term.in_loop,
-                val: self.flat(ins[0]),
+                val: self.flat(ins[0])?,
                 // Inputs are [value] or [value, explicit_key]; the key is last.
-                key: (ins.len() > 1).then(|| self.flat(ins[ins.len() - 1])),
+                key: (ins.len() > 1).then(|| self.flat(ins[ins.len() - 1])).transpose()?,
             },
 
-            TermOp::Add => Inst::Add { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Sub => Inst::Sub { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Mul => Inst::Mul { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Div => Inst::Div { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Mod => Inst::Mod { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Neg => Inst::Neg { dst, a: self.flat(ins[0]) },
+            TermOp::Add => Inst::Add { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Sub => Inst::Sub { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Mul => Inst::Mul { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Div => Inst::Div { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Mod => Inst::Mod { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Neg => Inst::Neg { dst, a: self.flat(ins[0])? },
 
-            TermOp::Eq => Inst::Eq { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Ne => Inst::Ne { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Lt => Inst::Lt { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Le => Inst::Le { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Gt => Inst::Gt { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
-            TermOp::Ge => Inst::Ge { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
+            TermOp::Eq => Inst::Eq { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Ne => Inst::Ne { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Lt => Inst::Lt { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Le => Inst::Le { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Gt => Inst::Gt { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Ge => Inst::Ge { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
 
-            TermOp::Not => Inst::Not { dst, a: self.flat(ins[0]) },
-            TermOp::Concat => Inst::Concat { dst, a: self.flat(ins[0]), b: self.flat(ins[1]) },
+            TermOp::Not => Inst::Not { dst, a: self.flat(ins[0])? },
+            TermOp::Concat => Inst::Concat { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
 
-            TermOp::AllocList => Inst::AllocList { dst, elems: self.regs(ins) },
+            TermOp::AllocList => Inst::AllocList { dst, elems: self.regs(ins)? },
             TermOp::AllocMap { fields } => {
-                Inst::AllocMap { dst, fields: fields.clone(), vals: self.regs(ins) }
+                Inst::AllocMap { dst, fields: fields.clone(), vals: self.regs(ins)? }
             }
             TermOp::AllocMapSpread { entries } => {
-                Inst::AllocMapSpread { dst, entries: entries.clone(), ins: self.regs(ins) }
+                Inst::AllocMapSpread { dst, entries: entries.clone(), ins: self.regs(ins)? }
             }
             TermOp::AllocElement { tag, prop_keys } => Inst::AllocElement {
                 dst,
                 tag: *tag,
                 prop_keys: prop_keys.clone(),
-                ins: self.regs(ins),
+                ins: self.regs(ins)?,
             },
             TermOp::MakeEnumVariant(name) => {
-                Inst::MakeEnumVariant { dst, name: *name, fields: self.regs(ins) }
+                Inst::MakeEnumVariant { dst, name: *name, fields: self.regs(ins)? }
             }
-            TermOp::GetField(field) => Inst::GetField { dst, obj: self.flat(ins[0]), field: *field },
+            TermOp::GetField(field) => Inst::GetField { dst, obj: self.flat(ins[0])?, field: *field },
             TermOp::SetField(field) if self.in_place.allows(term.id) => Inst::SetFieldInPlace {
                 dst,
-                obj: self.flat(ins[0]),
+                obj: self.flat(ins[0])?,
                 field: *field,
-                val: self.flat(ins[1]),
+                val: self.flat(ins[1])?,
             },
             TermOp::SetField(field) => Inst::SetField {
                 dst,
-                obj: self.flat(ins[0]),
+                obj: self.flat(ins[0])?,
                 field: *field,
-                val: self.flat(ins[1]),
+                val: self.flat(ins[1])?,
             },
             TermOp::GetIndex => {
-                Inst::GetIndex { dst, obj: self.flat(ins[0]), idx: self.flat(ins[1]) }
+                Inst::GetIndex { dst, obj: self.flat(ins[0])?, idx: self.flat(ins[1])? }
             }
             TermOp::SetIndex if self.in_place.allows(term.id) => Inst::SetIndexInPlace {
                 dst,
-                obj: self.flat(ins[0]),
-                idx: self.flat(ins[1]),
-                val: self.flat(ins[2]),
+                obj: self.flat(ins[0])?,
+                idx: self.flat(ins[1])?,
+                val: self.flat(ins[2])?,
             },
             TermOp::SetIndex => Inst::SetIndex {
                 dst,
-                obj: self.flat(ins[0]),
-                idx: self.flat(ins[1]),
-                val: self.flat(ins[2]),
+                obj: self.flat(ins[0])?,
+                idx: self.flat(ins[1])?,
+                val: self.flat(ins[2])?,
             },
 
             // --- calls / closures (M1c) ---
@@ -367,32 +377,32 @@ impl<'p> FnLowerer<'p> {
             // [receiver, args...]; a `BuiltinCall` carries only args.
             TermOp::Call => Inst::Call {
                 dst,
-                callee: self.flat(ins[0]),
-                args: self.regs(&ins[1..]),
+                callee: self.flat(ins[0])?,
+                args: self.regs(&ins[1..])?,
             },
             TermOp::MethodCall(name) => Inst::MethodCall {
                 dst,
-                recv: self.flat(ins[0]),
+                recv: self.flat(ins[0])?,
                 name: *name,
-                args: self.regs(&ins[1..]),
+                args: self.regs(&ins[1..])?,
             },
             TermOp::BuiltinCall(name) => Inst::BuiltinCall {
                 dst,
                 name: *name,
-                args: self.regs(ins),
+                args: self.regs(ins)?,
                 in_place: self.in_place.allows(term.id),
             },
             TermOp::MakeClosure(fn_id) => Inst::MakeClosure {
                 dst,
                 func: *fn_id,
-                caps: self.regs(ins),
+                caps: self.regs(ins)?,
             },
             TermOp::MakeOverloadSet => Inst::MakeOverloadSet {
                 dst,
-                closures: self.regs(ins),
+                closures: self.regs(ins)?,
             },
             TermOp::Return => Inst::Return {
-                val: ins.first().map(|&t| self.flat(t)),
+                val: ins.first().map(|&t| self.flat(t)).transpose()?,
             },
 
             other => {
@@ -444,7 +454,7 @@ impl<'p> FnLowerer<'p> {
     /// ```
     fn emit_for_each(&mut self, term: &Term) -> Result<(), String> {
         let slot = self.alloc_slot();
-        let iter = self.flat(term.inputs[0]);
+        let iter = self.flat(term.inputs[0])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
         self.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
@@ -457,8 +467,8 @@ impl<'p> FnLowerer<'p> {
     /// but with an integer-range cursor and no list allocation.
     fn emit_range(&mut self, term: &Term) -> Result<(), String> {
         let slot = self.alloc_slot();
-        let start = self.flat(term.inputs[0]);
-        let end = self.flat(term.inputs[1]);
+        let start = self.flat(term.inputs[0])?;
+        let end = self.flat(term.inputs[1])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
         self.push(Inst::RangeInit { start, end, slot, idx_ctx: true });
@@ -484,7 +494,7 @@ impl<'p> FnLowerer<'p> {
             break_jumps: Vec::new(),
         });
         self.emit_block(body_block)?;
-        self.emit_phi_outs(body_block); // normal-path carry-outs
+        self.emit_phi_outs(body_block)?; // normal-path carry-outs
         self.push(Inst::Jump { to: cont }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
@@ -517,9 +527,9 @@ impl<'p> FnLowerer<'p> {
         self.push(Inst::WhileInit { slot });
         let top = self.here();
         self.emit_block(cond_block)?;
-        self.emit_phi_outs(cond_block);
+        self.emit_phi_outs(cond_block)?;
         let cond = self
-            .block_result_reg(cond_block)
+            .block_result_reg(cond_block)?
             .ok_or("while loop has an empty condition block")?;
         let jexit = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
@@ -529,7 +539,7 @@ impl<'p> FnLowerer<'p> {
             break_jumps: Vec::new(),
         });
         self.emit_block(body_block)?;
-        self.emit_phi_outs(body_block); // normal-path carry-outs
+        self.emit_phi_outs(body_block)?; // normal-path carry-outs
         let bump = self.here();
         self.push(Inst::LoopBumpIdx { slot });
         self.push(Inst::Jump { to: top }); // back-edge
@@ -560,8 +570,8 @@ impl<'p> FnLowerer<'p> {
     /// precomputed flat registers; a present guard block is emitted inline and
     /// its result drives a `JumpIfFalse` to the next arm.
     fn emit_match(&mut self, term: &Term) -> Result<(), String> {
-        let subject = self.flat(term.inputs[0]);
-        let dst = self.flat(term.id);
+        let subject = self.flat(term.inputs[0])?;
+        let dst = self.flat(term.id)?;
         let arms: Vec<(BlockId, Option<BlockId>)> = self
             .program
             .match_arms
@@ -592,17 +602,17 @@ impl<'p> FnLowerer<'p> {
             // Bindings must reach both the guard block and the body block —
             // each has its own registers for the captured names (the graph
             // engine applies bindings to each block separately).
-            let mut binds = self.arm_bind_regs(*body_block);
+            let mut binds = self.arm_bind_regs(*body_block)?;
             if let Some(gb) = guard_block {
-                binds.extend(self.arm_bind_regs(*gb));
+                binds.extend(self.arm_bind_regs(*gb)?);
             }
             self.match_binds.insert((term.id, k as u16), binds);
 
             if let Some(gb) = guard_block {
                 self.emit_block(*gb)?;
-                self.emit_phi_outs(*gb);
+                self.emit_phi_outs(*gb)?;
                 let gres = self
-                    .block_result_reg(*gb)
+                    .block_result_reg(*gb)?
                     .ok_or("match guard has an empty block")?;
                 let jf = self.emit_placeholder(Inst::JumpIfFalse { cond: gres, to: 0 });
                 to_next.push(jf);
@@ -638,19 +648,19 @@ impl<'p> FnLowerer<'p> {
     /// The init block is inlined and reached only on a cache miss; on a hit the
     /// `StateInit` op loads the slot and jumps past it.
     fn emit_state_init(&mut self, term: &Term) -> Result<(), String> {
-        let dst = self.flat(term.id);
+        let dst = self.flat(term.id)?;
         let base = term.state_key.expect("StateInit without state_key");
         let in_loop = term.in_loop;
         // The explicit `state(expr)` key, if any, is the only input.
-        let key = term.inputs.first().map(|&t| self.flat(t));
+        let key = term.inputs.first().map(|&t| self.flat(t)).transpose()?;
 
         let si = self.emit_placeholder(Inst::StateInit { dst, base, in_loop, after: 0, key });
         match term.child_blocks.first() {
             Some(&init_block) => {
                 self.emit_block(init_block)?;
-                self.emit_phi_outs(init_block);
+                self.emit_phi_outs(init_block)?;
                 let init_res = self
-                    .block_result_reg(init_block)
+                    .block_result_reg(init_block)?
                     .ok_or("state init has an empty init block")?;
                 // Recursion moved cur_origin; restore it for the commit write.
                 self.cur_origin = Some(term.id);
@@ -670,17 +680,17 @@ impl<'p> FnLowerer<'p> {
     /// Precompute the flat registers a match arm's body binds pattern variables
     /// into — the flat-register form of the graph engine's
     /// `apply_pattern_bindings` name→register scan over the body block's terms.
-    fn arm_bind_regs(&self, body_block: BlockId) -> Vec<(String, Reg)> {
+    fn arm_bind_regs(&self, body_block: BlockId) -> Result<Vec<(String, Reg)>, String> {
         let mut out = Vec::new();
         if let Some(tids) = self.program.block_terms.get(&body_block) {
             for &tid in tids {
                 let term = self.program.get_term(tid);
                 if let Some(name) = &term.name {
-                    out.push((name.clone(), self.flat(tid)));
+                    out.push((name.clone(), self.flat(tid)?));
                 }
             }
         }
-        out
+        Ok(out)
     }
 
     /// `break` / `continue`: emit the phi carry-outs of every region from the
@@ -694,7 +704,7 @@ impl<'p> FnLowerer<'p> {
             .last()
             .ok_or("break/continue outside a loop")?
             .body_block;
-        self.emit_exit_phi_chain(body_block);
+        self.emit_exit_phi_chain(body_block)?;
         let j = self.emit_placeholder(Inst::Jump { to: 0 });
         let ctx = self.loop_stack.last_mut().unwrap();
         if is_break {
@@ -708,7 +718,7 @@ impl<'p> FnLowerer<'p> {
     /// Emit phi carry-outs for the active regions from the innermost down to
     /// `body_block` (inclusive), innermost first — the order in which the graph
     /// engine runs them as it pops frames on a break/continue.
-    fn emit_exit_phi_chain(&mut self, body_block: BlockId) {
+    fn emit_exit_phi_chain(&mut self, body_block: BlockId) -> Result<(), String> {
         let k = self
             .region_stack
             .iter()
@@ -716,8 +726,9 @@ impl<'p> FnLowerer<'p> {
             .expect("loop body must be on the region stack");
         let chain: Vec<BlockId> = self.region_stack[k..].iter().rev().copied().collect();
         for blk in chain {
-            self.emit_phi_outs(blk);
+            self.emit_phi_outs(blk)?;
         }
+        Ok(())
     }
 
     /// Allocate a fresh loop-cursor slot for this function.
@@ -740,8 +751,8 @@ impl<'p> FnLowerer<'p> {
     /// graph's `block_result`) and clears any stale value from a prior iteration
     /// when the branch sits in a loop body.
     fn emit_branch(&mut self, term: &Term) -> Result<(), String> {
-        let dst = self.flat(term.id);
-        let cond = self.flat(term.inputs[0]);
+        let dst = self.flat(term.id)?;
+        let cond = self.flat(term.inputs[0])?;
         self.push(Inst::LoadNil { dst });
         let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
@@ -767,8 +778,8 @@ impl<'p> FnLowerer<'p> {
     /// `&&` runs the rhs when the left is truthy and short-circuits to `false`;
     /// `||` runs the rhs when the left is falsy and short-circuits to `true`.
     fn emit_short_circuit(&mut self, term: &Term, is_and: bool) -> Result<(), String> {
-        let dst = self.flat(term.id);
-        let left = self.flat(term.inputs[0]);
+        let dst = self.flat(term.id)?;
+        let left = self.flat(term.inputs[0])?;
         let to_rhs = if is_and {
             self.emit_placeholder(Inst::JumpIfTrue { cond: left, to: 0 })
         } else {
@@ -790,8 +801,8 @@ impl<'p> FnLowerer<'p> {
     /// phi carry-outs, then `dst = <block result>` (the control term's value).
     fn emit_arm(&mut self, block: BlockId, dst: Reg) -> Result<(), String> {
         self.emit_block(block)?;
-        self.emit_phi_outs(block);
-        if let Some(src) = self.block_result_reg(block) {
+        self.emit_phi_outs(block)?;
+        if let Some(src) = self.block_result_reg(block)? {
             self.push(Inst::Move { dst, src });
         }
         Ok(())
@@ -801,7 +812,7 @@ impl<'p> FnLowerer<'p> {
     /// edge. In the flat register file, the child's `src` and the parent's
     /// `dest` are distinct registers, so the graph's cross-frame copy becomes a
     /// plain intra-file move.
-    fn emit_phi_outs(&mut self, block: BlockId) {
+    fn emit_phi_outs(&mut self, block: BlockId) -> Result<(), String> {
         let outs: Vec<(TermId, TermId)> = self
             .program
             .get_block(block)
@@ -810,16 +821,16 @@ impl<'p> FnLowerer<'p> {
             .map(|p| (p.src_term, p.dest_term))
             .collect();
         for (src, dest) in outs {
-            self.push(Inst::Move {
-                dst: self.flat(dest),
-                src: self.flat(src),
-            });
+            let dst = self.flat(dest)?;
+            let src = self.flat(src)?;
+            self.push(Inst::Move { dst, src });
         }
+        Ok(())
     }
 
     /// Flat register of a block's result (its last term), or `None` if empty.
-    fn block_result_reg(&self, block: BlockId) -> Option<Reg> {
-        self.block_terms_in_order(block).last().map(|&t| self.flat(t))
+    fn block_result_reg(&self, block: BlockId) -> Result<Option<Reg>, String> {
+        self.block_terms_in_order(block).last().map(|&t| self.flat(t)).transpose()
     }
 
     /// Push an instruction that carries a jump target, returning its index for

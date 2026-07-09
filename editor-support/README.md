@@ -9,6 +9,9 @@ Tooling that helps editors and IDEs work with Petal source (`.ptl`).
   syntax highlighting. It ships a `grammar.js`, a committed generated parser, a
   `highlights.scm` query, and a Rust crate exposing `LANGUAGE` +
   `HIGHLIGHTS_QUERY`. See its [README](./tree-sitter-petal/README.md).
+- [`vim/`](./vim/) — classic-Vim syntax highlighting for stock Vim (and Neovim
+  without a tree-sitter parser installed). Derived from the tree-sitter grammar.
+  See its [README](./vim/README.md).
 
 ## Consumers
 

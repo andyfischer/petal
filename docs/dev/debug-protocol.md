@@ -27,7 +27,8 @@ so future additions stay backwards-compatible.
 { "cmd": "capture_draw_commands" }
 { "cmd": "input",
   "keys_down": ["w", "a"],
-  "mouse": { "x": 400, "y": 300, "buttons": [1] } }
+  "mouse": { "x": 400, "y": 300, "buttons": [0] },
+  "text": "hello" }
 { "cmd": "screenshot" }
 ```
 
@@ -41,18 +42,20 @@ so future additions stay backwards-compatible.
 | `state` | — | Dump all runtime state vars as JSON. |
 | `set_state` | `name: string`, `value: json` | Mutate one state var. |
 | `capture_draw_commands` | — | Speculative run, no side effects. |
-| `input` | `keys_down?: string[]`, `mouse?: MouseInput` | Inject input. |
+| `input` | `keys_down?: string[]`, `mouse?: MouseInput`, `text?: string` | Inject input. `text` is delivered to the next frame's `text_input()`. |
 | `screenshot` | — | Return current frame as PNG data URL. |
 
 ### `MouseInput`
 
 The canonical shape is an object:
 ```json
-{ "x": 400, "y": 300, "buttons": [1, 3] }
+{ "x": 400, "y": 300, "buttons": [0, 1] }
 ```
 For backwards compatibility, petal-sdl also accepts the legacy tuple form
-`[400, 300]`. New agents should use the object form. `buttons` is an array of
-SDL mouse button codes (1 = left, 2 = middle, 3 = right).
+`[400, 300]` (sets position only; held buttons untouched). New agents should
+use the object form. `buttons` is an array of **petal-ui button ids**
+(`0 = left`, `1 = right`, `2 = middle`) — the same ids scripts read via
+`mouse_pressed(0)` — and is authoritative: an empty list releases all buttons.
 
 ---
 
@@ -112,6 +115,7 @@ Canvas and SDL emit draw commands in the same shape. Fields are optional per
 | Startup | Engine emits one ready message `{ok:true, frame:0, paused}` | Client connects on demand |
 | Headless mode | `--headless` starts paused | N/A — always has a canvas |
 | Screenshot | PNG via software rasterizer, also `--screenshot out.png --frames N` one-shot | `canvas.toDataURL()` |
+| `input` `text` | Delivered to `text_input()` | Not yet wired (keys/mouse only) |
 
 The command/response schemas above are identical across transports; the only
 variation is the delivery mechanism.

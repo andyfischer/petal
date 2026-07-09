@@ -137,6 +137,14 @@ Mouse position and buttons persist similarly.
 {"ok": true}
 ```
 
+To drive a text field, include a `text` string. It is delivered to the next
+stepped frame's `text_input()` (the same channel real keyboard typing uses), so
+you can type into a script without simulating individual key scancodes:
+
+```json
+{"cmd": "input", "text": "hello"}
+```
+
 Key names are the petal-ui canonical set: `a`-`z`, `0`-`9`, `up`, `down`,
 `left`, `right`, `pageup`, `pagedown`, `home`, `end`, `space`, `return`,
 `escape`, `tab`, `shift`, `ctrl`, `alt`, `cmd`, `backspace`, `delete`.

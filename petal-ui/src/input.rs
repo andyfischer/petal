@@ -278,6 +278,21 @@ impl InputState {
         }
     }
 
+    /// Queue typed text (e.g. from a debug-protocol `input` command or an SDL
+    /// text event). Like the edge state, it is delivered to the next frame
+    /// promoted by [`begin_frame`](Self::begin_frame) and read via
+    /// `text_input()`.
+    pub fn type_text(&mut self, text: &str) {
+        self.event(InputEvent::Text { text: text.to_string() });
+    }
+
+    /// The typed text delivered to the current frame (what `text_input()`
+    /// reads). Empty unless [`type_text`](Self::type_text) / an
+    /// [`InputEvent::Text`] arrived before the last `begin_frame`.
+    pub fn frame_text(&self) -> &str {
+        &self.frame_text
+    }
+
     pub fn is_key_down(&self, key: &str) -> bool {
         self.keys_down.contains(key)
     }

@@ -31,6 +31,11 @@ pub enum Command {
         keys_down: Vec<String>,
         #[serde(default)]
         mouse: Option<MouseInput>,
+        /// Typed text to deliver to the next stepped frame, read by the
+        /// script's `text_input()`. Lets an agent drive a text field over the
+        /// protocol, not just press keys.
+        #[serde(default)]
+        text: String,
     },
     SetState {
         name: String,
@@ -226,8 +231,14 @@ pub fn run_one_frame(
 
 /// Apply an absolute input snapshot from the agent protocol ("these keys and
 /// buttons are down now"); press/release edges are derived by diffing and
-/// reach the next stepped frame.
-pub fn apply_input(input: &mut InputState, keys_down: &[String], mouse: Option<&MouseInput>) {
+/// reach the next stepped frame. Any `text` is queued as typed input for the
+/// next frame (read by the script's `text_input()`).
+pub fn apply_input(
+    input: &mut InputState,
+    keys_down: &[String],
+    mouse: Option<&MouseInput>,
+    text: &str,
+) {
     // Only the object form carries an authoritative buttons list; the tuple
     // form (and a keys-only message) leaves held buttons untouched.
     let (buttons, position) = match mouse {
@@ -236,6 +247,9 @@ pub fn apply_input(input: &mut InputState, keys_down: &[String], mouse: Option<&
         None => (None, None),
     };
     input.apply_absolute(keys_down, buttons.as_deref(), position);
+    if !text.is_empty() {
+        input.type_text(text);
+    }
 }
 
 pub fn set_state_from_json(
@@ -246,4 +260,38 @@ pub fn set_state_from_json(
     json_val: &JsonValue,
 ) -> Result<(), String> {
     env.set_state_from_json(program_id, stack_id, name, json_val)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use petal_ui::input::InputState;
+
+    #[test]
+    fn input_command_parses_text_field() {
+        let cmd: Command =
+            serde_json::from_str(r#"{"cmd":"input","text":"hi"}"#).unwrap();
+        match cmd {
+            Command::Input { text, .. } => assert_eq!(text, "hi"),
+            _ => panic!("expected an Input command"),
+        }
+    }
+
+    #[test]
+    fn input_command_text_defaults_empty() {
+        let cmd: Command =
+            serde_json::from_str(r#"{"cmd":"input","keys_down":["a"]}"#).unwrap();
+        match cmd {
+            Command::Input { text, .. } => assert_eq!(text, ""),
+            _ => panic!("expected an Input command"),
+        }
+    }
+
+    #[test]
+    fn apply_input_delivers_typed_text_to_next_frame() {
+        let mut input = InputState::new();
+        apply_input(&mut input, &[], None, "hi");
+        input.begin_frame(1.0 / 60.0);
+        assert_eq!(input.frame_text(), "hi");
+    }
 }

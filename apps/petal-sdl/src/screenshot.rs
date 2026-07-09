@@ -107,6 +107,7 @@ mod tests {
                 r: 255,
                 g: 255,
                 b: 255,
+                a: 255,
             },
         ];
         let img = render_commands(&commands, 200, 80, &fonts);
@@ -144,7 +145,7 @@ mod tests {
         let fonts = test_ladder(&ttf).expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
-            DrawCommand::Rect { x: 5, y: 5, w: 20, h: 20, r: 10, g: 200, b: 40 },
+            DrawCommand::Rect { x: 5, y: 5, w: 20, h: 20, r: 10, g: 200, b: 40, a: 255, radius: 0 },
         ];
         let img = render_commands(&commands, 64, 64, &fonts);
         let px = img.get_pixel(15, 15);

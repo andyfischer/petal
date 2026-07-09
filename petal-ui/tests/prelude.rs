@@ -72,15 +72,15 @@ fn record_draw_overloads_emit_flat_commands() {
         let cmds = ui.frame().unwrap().to_vec();
         assert_eq!(
             cmds[0],
-            DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 0xff, g: 0x88, b: 0x00 }
+            DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 0xff, g: 0x88, b: 0x00, a: 255, radius: 0 }
         );
         assert_eq!(
             cmds[1],
-            DrawCommand::Rect { x: 5, y: 6, w: 7, h: 8, r: 10, g: 20, b: 30 }
+            DrawCommand::Rect { x: 5, y: 6, w: 7, h: 8, r: 10, g: 20, b: 30, a: 255, radius: 0 }
         );
         assert_eq!(
             cmds[2],
-            DrawCommand::Text { text: "hi".into(), x: 9, y: 9, size: 14, r: 1, g: 2, b: 3 }
+            DrawCommand::Text { text: "hi".into(), x: 9, y: 9, size: 14, r: 1, g: 2, b: 3, a: 255 }
         );
     });
 }

@@ -193,7 +193,7 @@ mod tests {
             vec![
                 DrawCommand::CreateCanvas { id: 1, w: 32, h: 32 },
                 DrawCommand::SetTarget { id: 1 },
-                DrawCommand::Rect { x: 0, y: 0, w: 4, h: 4, r: 255, g: 255, b: 255 },
+                DrawCommand::Rect { x: 0, y: 0, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 },
                 DrawCommand::SetTarget { id: 0 },
                 DrawCommand::DrawCanvas { id: 1, x: 10, y: 10 },
             ]

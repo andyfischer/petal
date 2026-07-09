@@ -35,20 +35,50 @@ end
 // the classic signatures keep working when these shadow the builtins.
 
 let _native_rect = draw_rect
+let _native_rect_rounded = draw_rect_rounded
 let _native_rect_outline = draw_rect_outline
 let _native_line = draw_line
 let _native_circle = draw_circle
 let _native_text = draw_text
 
+// Every primitive takes an optional trailing alpha (0–255, 255 = opaque).
+// Lines and outlines also take an optional trailing stroke `width`. Rounded
+// rects add a `radius`. Each forwards to the native, which fills defaults.
+
 fn draw_rect(x, y, w, h, r, g, b)
   _native_rect(x, y, w, h, r, g, b)
+end
+fn draw_rect(x, y, w, h, r, g, b, a)
+  _native_rect(x, y, w, h, r, g, b, a)
 end
 fn draw_rect(r, c)
   _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
 end
+fn draw_rect(r, c, a)
+  _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)
+end
+
+fn draw_rect_rounded(x, y, w, h, radius, r, g, b)
+  _native_rect_rounded(x, y, w, h, radius, r, g, b)
+end
+fn draw_rect_rounded(x, y, w, h, radius, r, g, b, a)
+  _native_rect_rounded(x, y, w, h, radius, r, g, b, a)
+end
+fn draw_rect_rounded(rect, radius, c)
+  _native_rect_rounded(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b)
+end
+fn draw_rect_rounded(rect, radius, c, a)
+  _native_rect_rounded(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a)
+end
 
 fn draw_rect_outline(x, y, w, h, r, g, b)
   _native_rect_outline(x, y, w, h, r, g, b)
+end
+fn draw_rect_outline(x, y, w, h, r, g, b, a)
+  _native_rect_outline(x, y, w, h, r, g, b, a)
+end
+fn draw_rect_outline(x, y, w, h, r, g, b, a, width)
+  _native_rect_outline(x, y, w, h, r, g, b, a, width)
 end
 fn draw_rect_outline(r, c)
   _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
@@ -57,6 +87,12 @@ end
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _native_line(x1, y1, x2, y2, r, g, b)
 end
+fn draw_line(x1, y1, x2, y2, r, g, b, a)
+  _native_line(x1, y1, x2, y2, r, g, b, a)
+end
+fn draw_line(x1, y1, x2, y2, r, g, b, a, width)
+  _native_line(x1, y1, x2, y2, r, g, b, a, width)
+end
 fn draw_line(a, b, c)
   _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b)
 end
@@ -64,12 +100,18 @@ end
 fn draw_circle(cx, cy, radius, r, g, b)
   _native_circle(cx, cy, radius, r, g, b)
 end
+fn draw_circle(cx, cy, radius, r, g, b, a)
+  _native_circle(cx, cy, radius, r, g, b, a)
+end
 fn draw_circle(center, radius, c)
   _native_circle(center.x, center.y, radius, c.r, c.g, c.b)
 end
 
 fn draw_text(text, x, y, size, r, g, b)
   _native_text(text, x, y, size, r, g, b)
+end
+fn draw_text(text, x, y, size, r, g, b, a)
+  _native_text(text, x, y, size, r, g, b, a)
 end
 fn draw_text(text, pos, size, c)
   _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b)

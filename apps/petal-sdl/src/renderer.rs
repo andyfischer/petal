@@ -130,34 +130,34 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             canvas.set_draw_color(Color::RGB(r, g, b));
             canvas.clear();
         }
-        DrawCommand::Rect { x, y, w, h, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::Rect { x, y, w, h, r, g, b, a, .. } => {
+            set_draw_color(canvas, r, g, b, a);
             let _ = canvas.fill_rect(Rect::new(x, y, w, h));
         }
-        DrawCommand::RectOutline { x, y, w, h, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::RectOutline { x, y, w, h, r, g, b, a, .. } => {
+            set_draw_color(canvas, r, g, b, a);
             let _ = canvas.draw_rect(Rect::new(x, y, w, h));
         }
-        DrawCommand::Line { x1, y1, x2, y2, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::Line { x1, y1, x2, y2, r, g, b, a, .. } => {
+            set_draw_color(canvas, r, g, b, a);
             let _ = canvas.draw_line((x1, y1), (x2, y2));
         }
-        DrawCommand::Circle { cx, cy, radius, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::Circle { cx, cy, radius, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
             draw_filled_circle(canvas, cx, cy, radius);
         }
-        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
         }
-        DrawCommand::Poly { points, r, g, b } => {
-            canvas.set_draw_color(Color::RGB(r, g, b));
+        DrawCommand::Poly { points, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &points);
         }
-        DrawCommand::Text { text, x, y, size, r, g, b } => {
+        DrawCommand::Text { text, x, y, size, r, g, b, a } => {
             // Honor the command's size by rendering with the nearest ladder rung.
             let font = fonts.nearest(size);
-            T::render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
+            T::render_text(canvas, font, &text, x, y, Color::RGBA(r, g, b, a));
         }
         DrawCommand::Clip { x, y, w, h } => {
             canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
@@ -172,6 +172,15 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
         | DrawCommand::SetTarget { .. }
         | DrawCommand::DrawCanvas { .. } => {}
     }
+}
+
+/// Set the draw color, enabling alpha blending only when the primitive is
+/// translucent. Opaque primitives keep `BlendMode::None` so they overwrite —
+/// which also preserves the offscreen-canvas contract (an opaque draw sets the
+/// canvas pixel fully opaque; the later blit composites it).
+fn set_draw_color<T: RenderTarget>(canvas: &mut Canvas<T>, r: u8, g: u8, b: u8, a: u8) {
+    canvas.set_blend_mode(if a < 255 { BlendMode::Blend } else { BlendMode::None });
+    canvas.set_draw_color(Color::RGBA(r, g, b, a));
 }
 
 /// Fill an arbitrary polygon using the even-odd scanline rule.
@@ -260,14 +269,21 @@ fn render_text_impl<T, C>(
     if text.is_empty() {
         return;
     }
-    let surface = match font.render(text).blended(color) {
+    // Render the glyphs fully opaque, then scale coverage by the requested
+    // alpha via the texture's alpha-mod so translucent text composites.
+    let opaque = Color::RGB(color.r, color.g, color.b);
+    let surface = match font.render(text).blended(opaque) {
         Ok(s) => s,
         Err(_) => return,
     };
-    let texture = match texture_creator.create_texture_from_surface(&surface) {
+    let mut texture = match texture_creator.create_texture_from_surface(&surface) {
         Ok(t) => t,
         Err(_) => return,
     };
+    if color.a < 255 {
+        texture.set_blend_mode(BlendMode::Blend);
+        texture.set_alpha_mod(color.a);
+    }
     let query = texture.query();
     let target = Rect::new(x, y, query.width, query.height);
     let _ = canvas.copy(&texture, None, Some(target));
@@ -367,13 +383,13 @@ mod tests {
         // Frame 1: white rect at (2,2), NO clear.
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255 }],
+            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
             &fonts,
         );
         // Frame 2: white rect at (40,40), NO clear — should accumulate.
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255 }],
+            vec![DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
             &fonts,
         );
 
@@ -390,7 +406,7 @@ mod tests {
         // Frame 1: white rect at (2,2).
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255 }],
+            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
             &fonts,
         );
         // Frame 2: Clear(black) then white rect at (40,40).
@@ -398,7 +414,7 @@ mod tests {
             surface,
             vec![
                 DrawCommand::Clear { r: 0, g: 0, b: 0 },
-                DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255 },
+                DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 },
             ],
             &fonts,
         );
@@ -424,6 +440,7 @@ mod tests {
                 r: 255,
                 g: 255,
                 b: 255,
+                a: 255,
             }],
             &fonts,
         );
@@ -457,6 +474,27 @@ mod tests {
     }
 
     #[test]
+    fn alpha_blends_over_background() {
+        // A 50%-opacity white rect over black should composite to mid-gray, not
+        // overwrite to full white — proof that per-primitive alpha blends.
+        let ttf = sdl2::ttf::init().unwrap();
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let surface = render_frame(
+            new_black_surface(),
+            vec![DrawCommand::Rect {
+                x: 0, y: 0, w: 20, h: 20, r: 255, g: 255, b: 255, a: 128, radius: 0,
+            }],
+            &fonts,
+        );
+        let px = pixel_rgb(&surface, 5, 5);
+        assert!(
+            px.0 > 100 && px.0 < 160,
+            "alpha-blended white over black should be ~gray, got {px:?}"
+        );
+        assert!(px.0 == px.1 && px.1 == px.2, "blend should stay neutral gray, got {px:?}");
+    }
+
+    #[test]
     fn text_size_is_honored() {
         // A larger `size` must render taller glyphs than a smaller one — the
         // ladder picks a bigger font rung. With size ignored (one baked font)
@@ -479,6 +517,7 @@ mod tests {
                     r: 255,
                     g: 255,
                     b: 255,
+                    a: 255,
                 }],
                 &fonts,
             )
@@ -508,7 +547,7 @@ mod tests {
                 DrawCommand::CreateCanvas { id: 1, w: 16, h: 16 },
                 DrawCommand::SetTarget { id: 1 },
                 // Fill a 6x6 white block in the canvas's top-left.
-                DrawCommand::Rect { x: 0, y: 0, w: 6, h: 6, r: 255, g: 255, b: 255 },
+                DrawCommand::Rect { x: 0, y: 0, w: 6, h: 6, r: 255, g: 255, b: 255, a: 255, radius: 0 },
                 DrawCommand::SetTarget { id: 0 },
                 // Blit the canvas onto the main framebuffer at (20, 20).
                 DrawCommand::DrawCanvas { id: 1, x: 20, y: 20 },

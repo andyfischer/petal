@@ -42,20 +42,69 @@ pub const DEFAULT_TEXT_ADVANCE: f64 = 0.6;
 /// codepoint beyond the table's length falls back to [`SYM_TEXT_ADVANCE`].
 pub const SYM_TEXT_ADVANCES: &str = "text_advances";
 
+/// `skip_serializing_if` predicates that keep the JSON identical to the
+/// pre-alpha shape when a primitive is opaque / square-cornered / hairline, so
+/// existing draw-command consumers see no change unless a feature is used.
+/// (The enum has no `Deserialize`, so no matching `default` fns are needed.)
+fn is_opaque(a: &u8) -> bool {
+    *a == 255
+}
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+fn is_one(v: &u32) -> bool {
+    *v == 1
+}
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum DrawCommand {
     Clear { r: u8, g: u8, b: u8 },
-    Rect { x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8 },
-    RectOutline { x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8 },
-    Line { x1: i32, y1: i32, x2: i32, y2: i32, r: u8, g: u8, b: u8 },
-    Circle { cx: i32, cy: i32, radius: i32, r: u8, g: u8, b: u8 },
-    Text { text: String, x: i32, y: i32, size: u16, r: u8, g: u8, b: u8 },
+    Rect {
+        x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8,
+        /// Opacity 0–255 (255 = opaque).
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        /// Corner radius in px; 0 = square corners.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
+    },
+    RectOutline {
+        x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        /// Stroke width in px (1 = hairline).
+        #[serde(skip_serializing_if = "is_one")]
+        width: u32,
+    },
+    Line {
+        x1: i32, y1: i32, x2: i32, y2: i32, r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        #[serde(skip_serializing_if = "is_one")]
+        width: u32,
+    },
+    Circle {
+        cx: i32, cy: i32, radius: i32, r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
+    Text {
+        text: String, x: i32, y: i32, size: u16, r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
     Triangle {
         x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32,
         r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
     },
-    Poly { points: Vec<(i32, i32)>, r: u8, g: u8, b: u8 },
+    Poly {
+        points: Vec<(i32, i32)>, r: u8, g: u8, b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
     /// Restrict subsequent drawing to a rectangle (intersected with the
     /// drawable). Cleared by [`DrawCommand::ClipNone`].
     Clip { x: i32, y: i32, w: u32, h: u32 },
@@ -78,6 +127,16 @@ pub enum DrawCommand {
         #[serde(skip)]
         data: Vec<Value>,
     },
+}
+
+/// Read a numeric `Value` (int or float) as i64, or `None` if non-numeric —
+/// used for optional trailing draw-command args.
+fn num_as_i64(v: &Value) -> Option<i64> {
+    match v {
+        Value::Int(n) => Some(*n),
+        Value::Float(f) => Some(*f as i64),
+        _ => None,
+    }
 }
 
 /// Read a numeric `Value` (int or float) as i64.
@@ -114,29 +173,43 @@ impl DrawCommand {
         let i32_at = |i: usize| -> Result<i32, String> { Ok(as_i64(arg(i)?)? as i32) };
         let u32_at = |i: usize| -> Result<u32, String> { Ok(as_i64(arg(i)?)? as u32) };
         let u8_at = |i: usize| -> Result<u8, String> { Ok(as_i64(arg(i)?)? as u8) };
+        // Optional trailing args (alpha / radius / width) — absent means the
+        // caller used the short form, so fall back to the default. This keeps
+        // scripts that emit the pre-alpha arg lists working unchanged.
+        let opt_u8 = |i: usize, default: u8| -> u8 {
+            data.get(i).and_then(num_as_i64).map_or(default, |n| n as u8)
+        };
+        let opt_u32 = |i: usize, default: u32| -> u32 {
+            data.get(i).and_then(num_as_i64).map_or(default, |n| n as u32)
+        };
 
         let cmd = match tag.as_str() {
             "clear" => DrawCommand::Clear { r: u8_at(0)?, g: u8_at(1)?, b: u8_at(2)? },
             "rect" => DrawCommand::Rect {
                 x: i32_at(0)?, y: i32_at(1)?, w: u32_at(2)?, h: u32_at(3)?,
                 r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
+                a: opt_u8(7, 255), radius: opt_u32(8, 0),
             },
             "rect_outline" => DrawCommand::RectOutline {
                 x: i32_at(0)?, y: i32_at(1)?, w: u32_at(2)?, h: u32_at(3)?,
                 r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
+                a: opt_u8(7, 255), width: opt_u32(8, 1),
             },
             "line" => DrawCommand::Line {
                 x1: i32_at(0)?, y1: i32_at(1)?, x2: i32_at(2)?, y2: i32_at(3)?,
                 r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
+                a: opt_u8(7, 255), width: opt_u32(8, 1),
             },
             "circle" => DrawCommand::Circle {
                 cx: i32_at(0)?, cy: i32_at(1)?, radius: i32_at(2)?,
                 r: u8_at(3)?, g: u8_at(4)?, b: u8_at(5)?,
+                a: opt_u8(6, 255),
             },
             "triangle" => DrawCommand::Triangle {
                 x1: i32_at(0)?, y1: i32_at(1)?, x2: i32_at(2)?, y2: i32_at(3)?,
                 x3: i32_at(4)?, y3: i32_at(5)?,
                 r: u8_at(6)?, g: u8_at(7)?, b: u8_at(8)?,
+                a: opt_u8(9, 255),
             },
             "poly" => {
                 let points_id = match arg(0)? {
@@ -161,7 +234,9 @@ impl DrawCommand {
                         }
                     }
                 }
-                DrawCommand::Poly { points, r: u8_at(1)?, g: u8_at(2)?, b: u8_at(3)? }
+                DrawCommand::Poly {
+                    points, r: u8_at(1)?, g: u8_at(2)?, b: u8_at(3)?, a: opt_u8(4, 255),
+                }
             }
             "text" => {
                 let text = match arg(0)? {
@@ -172,7 +247,7 @@ impl DrawCommand {
                 };
                 DrawCommand::Text {
                     text, x: i32_at(1)?, y: i32_at(2)?, size: as_i64(arg(3)?)? as u16,
-                    r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
+                    r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?, a: opt_u8(7, 255),
                 }
             }
             "clip" => DrawCommand::Clip {
@@ -270,6 +345,7 @@ pub fn reset_canvas_ids(env: &mut Env) {
 pub fn register_draw(env: &mut Env) {
     env.register_native("clear", native_clear);
     env.register_native("draw_rect", native_draw_rect);
+    env.register_native("draw_rect_rounded", native_draw_rect_rounded);
     env.register_native("draw_rect_outline", native_draw_rect_outline);
     env.register_native("draw_line", native_draw_line);
     env.register_native("draw_circle", native_draw_circle);
@@ -303,6 +379,17 @@ fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
     (1..=n).map(|i| state.get_int(i).map(Value::Int)).collect()
 }
 
+/// Read an optional 1-indexed integer arg, or `default` if the caller omitted
+/// it — how the draw natives accept trailing alpha / width without breaking
+/// callers that use the short (opaque, hairline) form.
+fn opt_int(state: &PetalCxt, index: usize, default: i64) -> Result<i64, String> {
+    if state.arg_count() >= index {
+        state.get_int(index)
+    } else {
+        Ok(default)
+    }
+}
+
 fn native_clear(state: &mut PetalCxt) -> NativeResult {
     let args = int_args(state, 3)?;
     emit_draw(state, "clear", args);
@@ -310,36 +397,73 @@ fn native_clear(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+// `draw_rect(x, y, w, h, r, g, b, [a])` — trailing alpha is optional (opaque).
 fn native_draw_rect(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 7)?;
+    let mut args = int_args(state, 7)?;
+    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
     emit_draw(state, "rect", args);
     state.push_nil();
     Ok(1)
 }
 
+// `draw_rect_rounded(x, y, w, h, radius, r, g, b, [a])`. Emits a `rect` with a
+// corner radius — the same extended variant, so hosts without rounded support
+// still draw a square rect.
+fn native_draw_rect_rounded(state: &mut PetalCxt) -> NativeResult {
+    let x = state.get_int(1)?;
+    let y = state.get_int(2)?;
+    let w = state.get_int(3)?;
+    let h = state.get_int(4)?;
+    let radius = state.get_int(5)?;
+    let r = state.get_int(6)?;
+    let g = state.get_int(7)?;
+    let b = state.get_int(8)?;
+    let a = opt_int(state, 9, 255)?;
+    emit_draw(
+        state,
+        "rect",
+        vec![
+            Value::Int(x), Value::Int(y), Value::Int(w), Value::Int(h),
+            Value::Int(r), Value::Int(g), Value::Int(b), Value::Int(a), Value::Int(radius),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+// `draw_rect_outline(x, y, w, h, r, g, b, [a], [width])`.
 fn native_draw_rect_outline(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 7)?;
+    let mut args = int_args(state, 7)?;
+    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+    args.push(Value::Int(opt_int(state, 9, 1)?)); // width
     emit_draw(state, "rect_outline", args);
     state.push_nil();
     Ok(1)
 }
 
+// `draw_line(x1, y1, x2, y2, r, g, b, [a], [width])`.
 fn native_draw_line(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 7)?;
+    let mut args = int_args(state, 7)?;
+    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+    args.push(Value::Int(opt_int(state, 9, 1)?)); // width
     emit_draw(state, "line", args);
     state.push_nil();
     Ok(1)
 }
 
+// `draw_circle(cx, cy, radius, r, g, b, [a])`.
 fn native_draw_circle(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 6)?;
+    let mut args = int_args(state, 6)?;
+    args.push(Value::Int(opt_int(state, 7, 255)?)); // a
     emit_draw(state, "circle", args);
     state.push_nil();
     Ok(1)
 }
 
+// `fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b, [a])`.
 fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 9)?;
+    let mut args = int_args(state, 9)?;
+    args.push(Value::Int(opt_int(state, 10, 255)?)); // a
     emit_draw(state, "triangle", args);
     state.push_nil();
     Ok(1)
@@ -396,22 +520,26 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
     let r = state.get_int(2)?;
     let g = state.get_int(3)?;
     let b = state.get_int(4)?;
+    let a = opt_int(state, 5, 255)?;
 
     emit_draw(
         state,
         "poly",
-        vec![points_value, Value::Int(r), Value::Int(g), Value::Int(b)],
+        vec![points_value, Value::Int(r), Value::Int(g), Value::Int(b), Value::Int(a)],
     );
     state.push_nil();
     Ok(1)
 }
 
+// `draw_text(text, x, y, size, r, g, b, [a])`.
 fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
+    let a = opt_int(state, 8, 255)?;
     let args = vec![
         Value::String(state.heap_mut().alloc_string(text)),
         Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
         Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+        Value::Int(a),
     ];
     emit_draw(state, "text", args);
     state.push_nil();
@@ -543,6 +671,36 @@ mod tests {
         bind_text_metrics(&mut env, 0.6);
         let v = env.run_source("text_width(\"abc\", 14)").expect("run");
         assert_eq!(v, Value::Int(25)); // 3 × 14 × 0.6 = 25.2 → 25
+    }
+
+    #[test]
+    fn rect_alpha_and_radius_decode() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // Opaque short form: no alpha, square corners.
+        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3)").expect("run");
+        // Translucent long form.
+        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3, 128)").expect("run");
+        // Rounded via the convenience native (radius 6, alpha 200).
+        env.run_source("draw_rect_rounded(0, 0, 10, 10, 6, 1, 2, 3, 200)").expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(cmds[0], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 255, radius: 0 });
+        assert_eq!(cmds[1], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 128, radius: 0 });
+        assert_eq!(cmds[2], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 200, radius: 6 });
+    }
+
+    #[test]
+    fn opaque_defaults_are_not_serialized() {
+        // An opaque, square, hairline primitive must serialize to the exact
+        // pre-alpha JSON shape (no `a`/`radius`/`width`) so existing consumers
+        // and the protocol docs stay valid.
+        let cmd = DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 5, g: 6, b: 7, a: 255, radius: 0 };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert_eq!(json, r#"{"op":"rect","x":1,"y":2,"w":3,"h":4,"r":5,"g":6,"b":7}"#);
+        // But a translucent rounded rect includes the extra fields.
+        let cmd = DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 5, g: 6, b: 7, a: 128, radius: 8 };
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains(r#""a":128"#) && json.contains(r#""radius":8"#), "{json}");
     }
 
     #[test]

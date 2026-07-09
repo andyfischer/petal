@@ -138,13 +138,11 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
                 fill_rounded_rect(canvas, x, y, w, h, radius, r, g, b, a);
             }
         }
-        DrawCommand::RectOutline { x, y, w, h, r, g, b, a, .. } => {
-            set_draw_color(canvas, r, g, b, a);
-            let _ = canvas.draw_rect(Rect::new(x, y, w, h));
+        DrawCommand::RectOutline { x, y, w, h, r, g, b, a, width } => {
+            stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
         }
-        DrawCommand::Line { x1, y1, x2, y2, r, g, b, a, .. } => {
-            set_draw_color(canvas, r, g, b, a);
-            let _ = canvas.draw_line((x1, y1), (x2, y2));
+        DrawCommand::Line { x1, y1, x2, y2, r, g, b, a, width } => {
+            stroke_line_aa(canvas, x1, y1, x2, y2, width, r, g, b, a);
         }
         DrawCommand::Circle { cx, cy, radius, r, g, b, a } => {
             fill_disc_aa(canvas, cx as f64 + 0.5, cy as f64 + 0.5, radius as f64, r, g, b, a);
@@ -229,6 +227,64 @@ fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i32, i32)]) 
             let _ = canvas.draw_line((x_start, y), (x_end, y));
             i += 2;
         }
+    }
+}
+
+/// Draw an antialiased line of the given stroke `width` as a distance-field
+/// capsule: a pixel's coverage is its distance to the segment against the half-
+/// width. This handles thickness and antialiasing together (round caps), and a
+/// width-1 line reduces to a soft 1px stroke.
+fn stroke_line_aa<T: RenderTarget>(
+    canvas: &mut Canvas<T>, x1: i32, y1: i32, x2: i32, y2: i32, width: u32,
+    r: u8, g: u8, b: u8, a: u8,
+) {
+    canvas.set_blend_mode(BlendMode::Blend);
+    let half = width.max(1) as f64 / 2.0;
+    let (ax, ay) = (x1 as f64, y1 as f64);
+    let (bx, by) = (x2 as f64, y2 as f64);
+    let pad = half.ceil() as i32 + 1;
+    let (x0, xe) = (x1.min(x2) - pad, x1.max(x2) + pad);
+    let (y0, ye) = (y1.min(y2) - pad, y1.max(y2) + pad);
+    for py in y0..=ye {
+        for px in x0..=xe {
+            let dist = dist_to_segment(px as f64 + 0.5, py as f64 + 0.5, ax, ay, bx, by);
+            let pa = ((half + 0.5 - dist).clamp(0.0, 1.0) * a as f64).round() as u8;
+            if pa > 0 {
+                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
+                let _ = canvas.draw_point((px, py));
+            }
+        }
+    }
+}
+
+/// Distance from point (`px`, `py`) to the segment (`ax`,`ay`)–(`bx`,`by`).
+fn dist_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 == 0.0 { 0.0 } else { ((px - ax) * dx + (py - ay) * dy) / len2 };
+    let t = t.clamp(0.0, 1.0);
+    let (cx, cy) = (ax + t * dx, ay + t * dy);
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+}
+
+/// Stroke a rectangle outline of the given `width` as four disjoint border
+/// bands (so translucent strokes don't double-blend at the corners). `width` is
+/// clamped so the bands don't overlap.
+fn stroke_rect_outline<T: RenderTarget>(
+    canvas: &mut Canvas<T>, x: i32, y: i32, w: u32, h: u32, width: u32, r: u8, g: u8, b: u8, a: u8,
+) {
+    let sw = width.max(1).min(w).min(h);
+    set_draw_color(canvas, r, g, b, a);
+    let swi = sw as i32;
+    let (wi, hi) = (w as i32, h as i32);
+    // Top and bottom span the full width; left/right fill only the gap between
+    // them so no pixel is painted twice.
+    let _ = canvas.fill_rect(Rect::new(x, y, w, sw));
+    let _ = canvas.fill_rect(Rect::new(x, y + hi - swi, w, sw));
+    let mid_h = h.saturating_sub(2 * sw);
+    if mid_h > 0 {
+        let _ = canvas.fill_rect(Rect::new(x, y + swi, sw, mid_h));
+        let _ = canvas.fill_rect(Rect::new(x + wi - swi, y + swi, sw, mid_h));
     }
 }
 
@@ -533,6 +589,34 @@ mod tests {
             }
         }
         top.map_or(0, |t| bottom - t + 1)
+    }
+
+    /// Count vertically-lit pixels in column `px` (a proxy for stroke thickness).
+    fn lit_rows_in_column(surface: &Surface, px: u32) -> u32 {
+        let (_, h) = surface.size();
+        (0..h).filter(|&py| !is_black(pixel_rgb(surface, px, py))).count() as u32
+    }
+
+    #[test]
+    fn line_width_thickens_the_stroke() {
+        // A width-6 horizontal line must light several rows; a hairline lights
+        // ~1. (AA may add a faint fringe row, so compare thick vs thin.)
+        let ttf = sdl2::ttf::init().unwrap();
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let thin = render_frame(
+            new_black_surface(),
+            vec![DrawCommand::Line { x1: 5, y1: 30, x2: 58, y2: 30, r: 255, g: 255, b: 255, a: 255, width: 1 }],
+            &fonts,
+        );
+        let thick = render_frame(
+            new_black_surface(),
+            vec![DrawCommand::Line { x1: 5, y1: 30, x2: 58, y2: 30, r: 255, g: 255, b: 255, a: 255, width: 8 }],
+            &fonts,
+        );
+        let thin_rows = lit_rows_in_column(&thin, 30);
+        let thick_rows = lit_rows_in_column(&thick, 30);
+        assert!(thick_rows >= 6, "width-8 line should light ~8 rows, got {thick_rows}");
+        assert!(thick_rows > thin_rows + 3, "thick ({thick_rows}) should clearly exceed thin ({thin_rows})");
     }
 
     #[test]

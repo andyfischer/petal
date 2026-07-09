@@ -102,8 +102,14 @@ Canvas and SDL emit draw commands in the same shape. Fields are optional per
   "x": 0, "y": 0, "w": 0, "h": 0,
   "cx": 0, "cy": 0, "radius": 0,
   "x1": 0, "y1": 0, "x2": 0, "y2": 0,
-  "text": "", "size": 16 }
+  "text": "", "size": 16,
+  "a": 255, "width": 1 }
 ```
+
+Every colored primitive carries an optional `a` (alpha, 0–255, default 255).
+`rect` also takes a `radius` (rounded corners, default 0); `line` and
+`rect_outline` take a stroke `width` (default 1). These fields are omitted from
+the JSON when at their defaults, so opaque/square/hairline output is unchanged.
 
 ---
 

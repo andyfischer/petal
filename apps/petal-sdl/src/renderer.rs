@@ -130,9 +130,13 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             canvas.set_draw_color(Color::RGB(r, g, b));
             canvas.clear();
         }
-        DrawCommand::Rect { x, y, w, h, r, g, b, a, .. } => {
-            set_draw_color(canvas, r, g, b, a);
-            let _ = canvas.fill_rect(Rect::new(x, y, w, h));
+        DrawCommand::Rect { x, y, w, h, r, g, b, a, radius } => {
+            if radius == 0 {
+                set_draw_color(canvas, r, g, b, a);
+                let _ = canvas.fill_rect(Rect::new(x, y, w, h));
+            } else {
+                fill_rounded_rect(canvas, x, y, w, h, radius, r, g, b, a);
+            }
         }
         DrawCommand::RectOutline { x, y, w, h, r, g, b, a, .. } => {
             set_draw_color(canvas, r, g, b, a);
@@ -143,8 +147,7 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             let _ = canvas.draw_line((x1, y1), (x2, y2));
         }
         DrawCommand::Circle { cx, cy, radius, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
-            draw_filled_circle(canvas, cx, cy, radius);
+            fill_disc_aa(canvas, cx as f64 + 0.5, cy as f64 + 0.5, radius as f64, r, g, b, a);
         }
         DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a } => {
             set_draw_color(canvas, r, g, b, a);
@@ -229,25 +232,84 @@ fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i32, i32)]) 
     }
 }
 
-fn draw_filled_circle<T: RenderTarget>(canvas: &mut Canvas<T>, cx: i32, cy: i32, radius: i32) {
-    // Midpoint circle algorithm - draw horizontal scanlines for filled circle
-    let mut x = radius;
-    let mut y = 0i32;
-    let mut err = 1 - radius;
+/// Coverage of the pixel at (`px`, `py`) by a disc of `radius` centered at
+/// (`cx`, `cy`) — 1 inside, 0 outside, a smooth ramp across the 1px edge band.
+/// This is the antialiasing kernel shared by circles and rounded-rect corners.
+fn disc_coverage(px: i32, py: i32, cx: f64, cy: f64, radius: f64) -> f64 {
+    let dx = px as f64 + 0.5 - cx;
+    let dy = py as f64 + 0.5 - cy;
+    let dist = (dx * dx + dy * dy).sqrt();
+    (radius + 0.5 - dist).clamp(0.0, 1.0)
+}
 
-    while x >= y {
-        // Draw horizontal lines for each octant pair
-        let _ = canvas.draw_line((cx - x, cy + y), (cx + x, cy + y));
-        let _ = canvas.draw_line((cx - x, cy - y), (cx + x, cy - y));
-        let _ = canvas.draw_line((cx - y, cy + x), (cx + y, cy + x));
-        let _ = canvas.draw_line((cx - y, cy - x), (cx + y, cy - x));
+/// Draw an antialiased filled disc. Edge pixels are drawn with partial alpha
+/// (coverage × the fill alpha), which smooths the outline instead of the
+/// stair-stepped midpoint circle.
+fn fill_disc_aa<T: RenderTarget>(
+    canvas: &mut Canvas<T>, cx: f64, cy: f64, radius: f64, r: u8, g: u8, b: u8, a: u8,
+) {
+    if radius <= 0.0 {
+        return;
+    }
+    canvas.set_blend_mode(BlendMode::Blend);
+    let x0 = (cx - radius - 1.0).floor() as i32;
+    let x1 = (cx + radius + 1.0).ceil() as i32;
+    let y0 = (cy - radius - 1.0).floor() as i32;
+    let y1 = (cy + radius + 1.0).ceil() as i32;
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let pa = (disc_coverage(px, py, cx, cy, radius) * a as f64).round() as u8;
+            if pa > 0 {
+                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
+                let _ = canvas.draw_point((px, py));
+            }
+        }
+    }
+}
 
-        y += 1;
-        if err < 0 {
-            err += 2 * y + 1;
-        } else {
-            x -= 1;
-            err += 2 * (y - x) + 1;
+/// Fill a rounded rectangle: fast solid bands for the body (top strip, bottom
+/// strip, full-width middle) plus four antialiased quarter-disc corners. The
+/// bands and corner boxes are disjoint, so nothing is painted twice. `radius`
+/// is clamped to half the smaller side.
+fn fill_rounded_rect<T: RenderTarget>(
+    canvas: &mut Canvas<T>, x: i32, y: i32, w: u32, h: u32, radius: u32, r: u8, g: u8, b: u8, a: u8,
+) {
+    let rad = radius.min(w / 2).min(h / 2);
+    if rad == 0 {
+        set_draw_color(canvas, r, g, b, a);
+        let _ = canvas.fill_rect(Rect::new(x, y, w, h));
+        return;
+    }
+    let radi = rad as i32;
+    let (wi, hi) = (w as i32, h as i32);
+
+    // Solid body: the middle band spans the full width; the top/bottom bands
+    // span only between the corner columns.
+    set_draw_color(canvas, r, g, b, a);
+    let _ = canvas.fill_rect(Rect::new(x, y + radi, w, h - 2 * rad));
+    let mid_w = w - 2 * rad;
+    let _ = canvas.fill_rect(Rect::new(x + radi, y, mid_w, rad));
+    let _ = canvas.fill_rect(Rect::new(x + radi, y + hi - radi, mid_w, rad));
+
+    // Antialiased corners: each rad×rad box is a quarter disc about the inner
+    // corner point (`bx`, `by` is the box's top-left).
+    canvas.set_blend_mode(BlendMode::Blend);
+    let radf = rad as f64;
+    let corners = [
+        (x as f64 + radf, y as f64 + radf, x, y),
+        (x as f64 + wi as f64 - radf, y as f64 + radf, x + wi - radi, y),
+        (x as f64 + radf, y as f64 + hi as f64 - radf, x, y + hi - radi),
+        (x as f64 + wi as f64 - radf, y as f64 + hi as f64 - radf, x + wi - radi, y + hi - radi),
+    ];
+    for (ccx, ccy, bx, by) in corners {
+        for py in by..by + radi {
+            for px in bx..bx + radi {
+                let pa = (disc_coverage(px, py, ccx, ccy, radf) * a as f64).round() as u8;
+                if pa > 0 {
+                    canvas.set_draw_color(Color::RGBA(r, g, b, pa));
+                    let _ = canvas.draw_point((px, py));
+                }
+            }
         }
     }
 }
@@ -471,6 +533,55 @@ mod tests {
             }
         }
         top.map_or(0, |t| bottom - t + 1)
+    }
+
+    #[test]
+    fn circle_edge_is_antialiased() {
+        // A white disc on black must have partially-lit edge pixels (grays),
+        // not a hard black/white boundary — proof of coverage antialiasing.
+        let ttf = sdl2::ttf::init().unwrap();
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let surface = render_frame(
+            new_black_surface(),
+            vec![DrawCommand::Circle { cx: 30, cy: 30, radius: 18, r: 255, g: 255, b: 255, a: 255 }],
+            &fonts,
+        );
+        assert!(is_white(pixel_rgb(&surface, 30, 30)), "the disc center should be filled");
+        // Somewhere along the edge ring there is a gray (partially covered) pixel.
+        let mut found_gray = false;
+        for py in 0..64 {
+            for px in 0..64 {
+                let (r, _, _) = pixel_rgb(&surface, px, py);
+                if r > 40 && r < 215 {
+                    found_gray = true;
+                }
+            }
+        }
+        assert!(found_gray, "an antialiased edge should leave gray coverage pixels");
+    }
+
+    #[test]
+    fn rounded_rect_clips_its_corners() {
+        // A rounded rect must leave its corners unpainted (background shows
+        // through) while its center is filled. A square rect would paint the
+        // corner too.
+        let ttf = sdl2::ttf::init().unwrap();
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let surface = render_frame(
+            new_black_surface(),
+            vec![DrawCommand::Rect {
+                x: 0, y: 0, w: 40, h: 40, r: 255, g: 255, b: 255, a: 255, radius: 12,
+            }],
+            &fonts,
+        );
+        assert!(
+            is_black(pixel_rgb(&surface, 1, 1)),
+            "the rounded corner should be unpainted, got {:?}",
+            pixel_rgb(&surface, 1, 1)
+        );
+        assert!(is_white(pixel_rgb(&surface, 20, 20)), "the center should be filled");
+        // A point along the flat top edge (past the corner radius) is filled.
+        assert!(is_white(pixel_rgb(&surface, 20, 1)), "the flat edge should be filled");
     }
 
     #[test]

@@ -215,7 +215,7 @@ the proposal doc.
 
 ## Existing embedders (worked examples)
 
-- **petal-sdl** (`apps/petal-sdl/`) — the reference native embedder. Per frame:
+- **petal-sdl** (`integrations/petal-desktop-sdl/`) — the reference native embedder. Per frame:
   translate SDL events into `petal_ui::InputState`, bind the input snapshot +
   frame info as uniforms, `reset_stack` + `run`, drain `draw_commands`, and
   rasterize. File-watcher hot reload via `module_manifest` + `transfer_state`.
@@ -227,9 +227,10 @@ the proposal doc.
   keep their place in the command stream), the Petal-source `ui` prelude
   registered as an implicit import, and a `Headless` harness that mirrors the
   frame contract exactly for tests.
-- **petal-web / petal-diagram-canvas** (`apps/`) — wasm-bindgen `PetalRuntime`
+- **petal-web-html** (`integrations/petal-web-html/`) **/ diagram-canvas**
+  (`sample-apps/diagram-canvas/`) — wasm-bindgen `PetalRuntime`
   structs owning an `Env`; the same channels, marshalled as JSON strings
-  across the wasm boundary. petal-web returns a retained element tree instead
+  across the wasm boundary. petal-web-html returns a retained element tree instead
   of draw commands; diagram-canvas reimplements the draw-command loop and
   exposes `run_speculative` for isolated what-if frames.
 

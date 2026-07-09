@@ -150,11 +150,11 @@ core (steps 3–6, ⭐⭐). The single-timeline speculative-isolation goal was m
 even before that (⭐).
 
 **How to verify (live, not just `cargo test`):** the bug above only surfaced
-under multi-frame execution. Build `apps/petal-sdl` and run headless:
+under multi-frame execution. Build `integrations/petal-desktop-sdl` and run headless:
 `petal-sdl --headless <file.ptl>` then pipe `{"cmd":"step","n":50}` +
 `{"cmd":"state"}` to inspect state-list lengths; or `--screenshot out.png
 --frames N <file>` (no window; runs the program multiple times, so it exercises
-cross-frame state persistence). Sweep all `apps/petal-sdl/examples/*.ptl`.
+cross-frame state persistence). Sweep all `integrations/petal-desktop-sdl/examples/*.ptl`.
 
 ## Current state (as of this writing)
 

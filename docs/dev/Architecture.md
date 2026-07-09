@@ -455,7 +455,7 @@ emits terms. Key responsibilities:
    draw commands / element tree / state snapshot as JSON.
 
 State is round-tripped as JSON so the JS host owns it across reloads.
-See `apps/petal-web/src/runtime.ts` and `apps/petal-diagram-canvas/src/runtime.ts`
+See `integrations/petal-web-html/src/runtime.ts` and `sample-apps/diagram-canvas/src/runtime.ts`
 for the host side.
 
 ---

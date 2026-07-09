@@ -369,7 +369,7 @@ module.exports = grammar({
       seq('-', choice($.integer, $.float)),
     ),
 
-    // ---- JSX (React-like elements, see apps/petal-web) ----
+    // ---- JSX (React-like elements, see integrations/petal-web-html) ----
 
     jsx_element: $ => prec(PREC.jsx, choice(
       $.jsx_self_closing_element,

@@ -6,7 +6,7 @@ re-indenter (plus trailing-whitespace trim and single trailing newline), the
 rebind rule, and the IR-equivalence gate — proven by a corpus property test
 (`lint_preserves_ir_over_repo_corpus`: every repo `.ptl` that compiles must
 lint to IR-equivalent, idempotent output). Remaining: the rest of the
-normalization catalogue below, and running the linter over `apps/*` and the
+normalization catalogue below, and running the linter over `integrations/*` / `sample-apps/*` and the
 garden editor scripts.
 
 Two findings from implementation that correct assumptions below:
@@ -134,5 +134,5 @@ petal lint -e <code>         # lint inline code, print result to stdout
 
 Wire into `cli.rs`: add a `Command::Lint { fix, check }` variant, a
 `parse_lint_args`, a dispatch arm, and an entry in `print_usage`. Also update
-`docs/CLI.md`. Per `CLAUDE.local.md`, run the linter over `apps/*` and the
+`docs/CLI.md`. Per `CLAUDE.local.md`, run the linter over `integrations/*` / `sample-apps/*` and the
 garden editor scripts once it's stable.

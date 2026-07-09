@@ -6,10 +6,10 @@ a game loop, rendering primitives, input handling, and hot reload.
 
 This page is the high-level overview. For deeper material:
 
-- [`apps/petal-sdl/docs/game-dev-guide.md`](../apps/petal-sdl/docs/game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
-- [`apps/petal-sdl/docs/agent-protocol.md`](../apps/petal-sdl/docs/agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
-- [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and petal-diagram-canvas (WebSocket)
-- [`apps/petal-fps/README.md`](../apps/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
+- [`game-dev-guide.md`](game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
+- [`agent-protocol.md`](agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
+- [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and the diagram-canvas sample app (WebSocket)
+- [`sample-apps/petal-fps/README.md`](../../../sample-apps/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ brew install sdl2 sdl2_image sdl2_ttf
 ## Building
 
 ```bash
-cd apps/petal-sdl
+cd integrations/petal-desktop-sdl
 cargo build
 ```
 
@@ -195,7 +195,7 @@ Disable with `--no-hot-reload`.
 
 ## Example Games
 
-The `apps/petal-sdl/examples/` directory contains a mix of playable games and
+The `integrations/petal-desktop-sdl/examples/` directory contains a mix of playable games and
 sketches from *The Nature of Code* (the `noc_*.ptl` set):
 
 | Game / Sketch | Description |

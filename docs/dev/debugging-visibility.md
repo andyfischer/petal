@@ -125,7 +125,7 @@ Agents can validate visuals *structurally* (exact draw ops) without pixel diffs.
   "output": ["..."], "screenshot": "data:image/png;base64,..." }
 ```
 
-Command handlers live in `apps/petal-sdl/src/game_loop.rs` (≈ lines 269–450).
+Command handlers live in `integrations/petal-desktop-sdl/src/game_loop.rs` (≈ lines 269–450).
 Supports hot reload (`--no-hot-reload` to disable).
 
 ---
@@ -165,7 +165,7 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
   `PETAL_DEBUG=1`. Queryable post-run via `Env::trace().explain(...)` or the
   `petal explain` CLI.
 - petal-diagram-canvas parses error line info to highlight source
-  (`apps/petal-diagram-canvas/src/runtime.ts`)
+  (`sample-apps/diagram-canvas/src/runtime.ts`)
 
 ### Trace JSON schema (`--record-trace <path>`)
 

@@ -1,7 +1,7 @@
 /**
  * Unit test for the web Canvas2D offscreen-canvas (PGraphics-style) renderer.
  *
- * The two web integrations (petal-web-canvas, petal-diagram-canvas) share an
+ * The web canvas integration and the diagram-canvas sample app share an
  * identical `canvas-renderer.ts`. This test drives that renderer with a stubbed
  * Canvas2D API (no DOM/jsdom needed) and asserts that the offscreen-canvas
  * commands — create_canvas / set_target (draw_to) / draw_canvas — route drawing
@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   renderCommands,
   type RawCommand,
-} from "../../apps/petal-web-canvas/src/canvas-renderer.js";
+} from "../../integrations/petal-web-canvas/src/canvas-renderer.js";
 
 /**
  * Build a raw enum-variant command as emitted by the WASM runtime. The renderer

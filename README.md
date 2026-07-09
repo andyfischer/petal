@@ -79,8 +79,24 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [`ts/`](ts/) | TypeScript tooling, including: dev wrappers, MCP servers, and the vitest integration test suite |
 | [`test/`](test/README.md) | Automated tests |
 | [`test/benchmarks/`](test/benchmarks/) | Petal programs used to compare backend performance |
-| [`apps/`](apps/) | Test apps that integrate/embed Petal (including apps that use SDL, WASM, and HTML canvas) |
 | [`petal-ui/`](petal-ui/) | Interactivity layer for embedders: normalized input events, the shared draw-command vocabulary, and the `ui` prelude module |
+| [`integrations/`](integrations/) | Reusable host integrations that embed Petal for a specific platform (desktop SDL, web HTML, web canvas) |
+| [`sample-apps/`](sample-apps/) | Example applications built on top of an integration |
+
+### Dependency hierarchy
+
+Petal is layered so that each tier depends only on the tier above it:
+
+```
+Petal Core  →  Integrations  →  Sample Apps
+```
+
+- **Petal Core** — the language implementation ([`rust/`](rust/)) and the embedder interactivity layer ([`petal-ui/`](petal-ui/)).
+- **Integrations** ([`integrations/`](integrations/)) — reusable hosts that embed Petal Core for one platform:
+  [`petal-desktop-sdl`](integrations/petal-desktop-sdl/README.md) (native SDL2),
+  [`petal-web-html`](integrations/petal-web-html/README.md) (WASM + DOM),
+  [`petal-web-canvas`](integrations/petal-web-canvas/README.md) (WASM + HTML canvas).
+- **Sample Apps** ([`sample-apps/`](sample-apps/)) — example programs that build on top of an integration rather than talking to Petal Core directly.
 
 ## Documentation
 
@@ -94,16 +110,25 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [Architecture](docs/dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Goals](docs/dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 
-## Sample Integration Apps
+## Integrations
+
+Reusable hosts that embed Petal Core for a specific platform.
 
 | Integration | Description |
 |-------------|-------------|
-| [petal-sdl](apps/petal-sdl/README.md) | SDL2-based 2D game framework with hot reload — see also [apps/petal-sdl/docs/game-dev-guide.md](apps/petal-sdl/docs/game-dev-guide.md) and [apps/petal-sdl/docs/agent-protocol.md](apps/petal-sdl/docs/agent-protocol.md) |
-| [petal-web](apps/petal-web/README.md) | WebAssembly target that renders DOM updates using JSX-like syntax |
-| [petal-web-canvas](apps/petal-web-canvas/README.md) | WebAssembly target that renders to an HTML Canvas |
-| [petal-diagram-canvas](apps/petal-diagram-canvas/README.md) | Canvas-based diagram visualization with live source editor |
-| [petal-fps](apps/petal-fps/README.md) | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
-| [side-scroller](apps/side-scroller/README.md) | 2D side-scrolling platformer written almost entirely in Petal |
+| [petal-desktop-sdl](integrations/petal-desktop-sdl/README.md) | SDL2-based 2D game framework with hot reload — see also [game-dev-guide.md](integrations/petal-desktop-sdl/docs/game-dev-guide.md) and [agent-protocol.md](integrations/petal-desktop-sdl/docs/agent-protocol.md) |
+| [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly target that renders DOM updates using JSX-like syntax |
+| [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly target that renders to an HTML Canvas |
+
+## Sample Apps
+
+Example applications built on top of one of the integrations above.
+
+| App | Built on | Description |
+|-----|----------|-------------|
+| [diagram-canvas](sample-apps/diagram-canvas/README.md) | petal-web-canvas | Canvas-based diagram visualization with live source editor |
+| [petal-fps](sample-apps/petal-fps/README.md) | petal-desktop-sdl | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
+| [side-scroller](sample-apps/side-scroller/README.md) | petal-desktop-sdl | 2D side-scrolling platformer written almost entirely in Petal |
 
 ## License
 

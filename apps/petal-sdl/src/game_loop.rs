@@ -8,10 +8,10 @@ use sdl2::keyboard::Scancode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::render::Canvas;
 use sdl2::surface::Surface;
-use sdl2::ttf::Font;
 use sdl2::video::Window;
 
 use crate::commands::DrawCommand;
+use crate::font::{self, FontLadder};
 
 use petal::env::Env;
 use petal::program::ProgramId;
@@ -157,7 +157,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
-    let font = load_font(&ttf, 24)?;
+    let fonts = font::FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
 
     // Persistent software framebuffer: pixels accumulate across frames unless a
     // `clear()` (DrawCommand::Clear) wipes them. Sized to the drawable area.
@@ -264,7 +264,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
 
         let commands = take_draw_commands(&mut env);
         let surface = framebuffer.take().expect("framebuffer present");
-        framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
+        framebuffer = Some(present_frame(&mut canvas, surface, commands, &fonts)?);
     }
 
     Ok(())
@@ -308,7 +308,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
-    let font = load_font(&ttf, 24)?;
+    let fonts = font::FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
 
     // Persistent software framebuffer (see run_game): accumulates across frames
     // unless `clear()` wipes it.
@@ -389,7 +389,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
         // commands are produced, so present_frame re-blits the retained surface.
         let commands = take_draw_commands(&mut env);
         let surface = framebuffer.take().expect("framebuffer present");
-        framebuffer = Some(present_frame(&mut canvas, surface, commands, &font)?);
+        framebuffer = Some(present_frame(&mut canvas, surface, commands, &fonts)?);
     }
 
     Ok(())
@@ -620,11 +620,11 @@ fn present_frame(
     canvas: &mut Canvas<Window>,
     surface: Surface<'static>,
     commands: Vec<DrawCommand>,
-    font: &Font,
+    fonts: &FontLadder,
 ) -> Result<Surface<'static>, String> {
     // Render into the persistent surface (software canvas).
     let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
-    renderer::render(&mut sc, commands, font);
+    renderer::render(&mut sc, commands, fonts);
     let surface = sc.into_surface();
 
     // Upload the surface to the window as a texture and present. The full-surface
@@ -726,30 +726,4 @@ fn setup_watcher(
     }
 
     Ok(Some(watcher))
-}
-
-fn load_font(ttf: &sdl2::ttf::Sdl2TtfContext, size: u16) -> Result<sdl2::ttf::Font<'_, '_>, String> {
-    let font_paths = [
-        // macOS
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/SFNSMono.ttf",
-        "/Library/Fonts/Arial.ttf",
-        // Linux
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        // Windows
-        "C:\\Windows\\Fonts\\arial.ttf",
-    ];
-
-    for path in &font_paths {
-        if Path::new(path).exists() {
-            match ttf.load_font(path, size) {
-                Ok(font) => return Ok(font),
-                Err(_) => continue,
-            }
-        }
-    }
-
-    Err("No system font found. Install a TTF font.".to_string())
 }

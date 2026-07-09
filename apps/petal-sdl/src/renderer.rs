@@ -8,6 +8,7 @@ use sdl2::ttf::Font;
 use sdl2::video::Window;
 
 use crate::commands::DrawCommand;
+use crate::font::FontLadder;
 
 /// Render targets that can also render TTF text. `texture_creator()` is not
 /// part of the generic `Canvas<T>` API — it is defined separately for
@@ -63,7 +64,7 @@ impl TextTarget for Surface<'_> {
     }
 }
 
-pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>, font: &Font) {
+pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>, fonts: &FontLadder) {
     // Offscreen canvases (PGraphics-style render targets), keyed by id. They are
     // rebuilt fresh from the command stream every frame, so the per-frame re-run
     // model needs no extra bookkeeping. Each is a software `Canvas<Surface>`
@@ -111,9 +112,9 @@ pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>,
             }
             other => {
                 if target == 0 {
-                    render_one(canvas, other, font);
+                    render_one(canvas, other, fonts);
                 } else if let Some(dst) = offscreen.get_mut(&target) {
-                    render_one(dst, other, font);
+                    render_one(dst, other, fonts);
                 }
                 // If the target id is unknown, the command is silently dropped.
             }
@@ -123,7 +124,7 @@ pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>,
 
 /// Render a single primitive draw command onto a target canvas. `CreateCanvas`,
 /// `SetTarget`, and `DrawCanvas` are handled by `render` and never reach here.
-fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, font: &Font) {
+fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &FontLadder) {
     match cmd {
         DrawCommand::Clear { r, g, b } => {
             canvas.set_draw_color(Color::RGB(r, g, b));
@@ -153,7 +154,9 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, font: &Fo
             canvas.set_draw_color(Color::RGB(r, g, b));
             fill_polygon(canvas, &points);
         }
-        DrawCommand::Text { text, x, y, size: _, r, g, b } => {
+        DrawCommand::Text { text, x, y, size, r, g, b } => {
+            // Honor the command's size by rendering with the nearest ladder rung.
+            let font = fonts.nearest(size);
             T::render_text(canvas, font, &text, x, y, Color::RGB(r, g, b));
         }
         DrawCommand::Clip { x, y, w, h } => {
@@ -297,6 +300,7 @@ fn blit_surface_impl<T, C>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font::DEFAULT_LADDER;
     use sdl2::pixels::PixelFormatEnum;
     use sdl2::surface::Surface;
 
@@ -310,25 +314,11 @@ mod tests {
         surface
     }
 
-    /// Try to load a font; tests pass None if no system font is available so
-    /// they remain robust in headless CI. Primitive-only frames don't need it.
-    fn load_test_font(
-        ttf: &sdl2::ttf::Sdl2TtfContext,
-    ) -> Option<sdl2::ttf::Font<'_, '_>> {
-        let paths = [
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/System/Library/Fonts/SFNSMono.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        ];
-        for p in &paths {
-            if std::path::Path::new(p).exists() {
-                if let Ok(f) = ttf.load_font(p, 24) {
-                    return Some(f);
-                }
-            }
-        }
-        None
+    /// Build a small font ladder for tests; returns None if no system font is
+    /// available so tests stay robust in headless CI. Primitive-only frames
+    /// don't need it.
+    fn load_test_ladder(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontLadder<'_>> {
+        FontLadder::load_system(ttf, DEFAULT_LADDER).ok()
     }
 
     /// Render a frame's commands into the persistent surface via the REAL
@@ -337,10 +327,10 @@ mod tests {
     fn render_frame(
         surface: Surface<'static>,
         commands: Vec<DrawCommand>,
-        font: &Font,
+        fonts: &FontLadder,
     ) -> Surface<'static> {
         let mut sc = surface.into_canvas().unwrap();
-        render(&mut sc, commands, font);
+        render(&mut sc, commands, fonts);
         sc.into_surface()
     }
 
@@ -371,20 +361,20 @@ mod tests {
     #[test]
     fn no_clear_accumulates() {
         let ttf = sdl2::ttf::init().unwrap();
-        let font = load_test_font(&ttf).expect("a system font for tests");
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2), NO clear.
         surface = render_frame(
             surface,
             vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255 }],
-            &font,
+            &fonts,
         );
         // Frame 2: white rect at (40,40), NO clear — should accumulate.
         surface = render_frame(
             surface,
             vec![DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255 }],
-            &font,
+            &fonts,
         );
 
         assert!(is_white(pixel_rgb(&surface, 3, 3)), "frame-1 pixel should persist");
@@ -394,14 +384,14 @@ mod tests {
     #[test]
     fn clear_wipes() {
         let ttf = sdl2::ttf::init().unwrap();
-        let font = load_test_font(&ttf).expect("a system font for tests");
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2).
         surface = render_frame(
             surface,
             vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255 }],
-            &font,
+            &fonts,
         );
         // Frame 2: Clear(black) then white rect at (40,40).
         surface = render_frame(
@@ -410,7 +400,7 @@ mod tests {
                 DrawCommand::Clear { r: 0, g: 0, b: 0 },
                 DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255 },
             ],
-            &font,
+            &fonts,
         );
 
         assert!(is_black(pixel_rgb(&surface, 3, 3)), "frame-1 pixel should be wiped");
@@ -423,7 +413,7 @@ mod tests {
         // renderer path) and is not silently dropped. We scan the text's
         // bounding box for any non-black pixel.
         let ttf = sdl2::ttf::init().unwrap();
-        let font = load_test_font(&ttf).expect("a system font for tests");
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Text {
@@ -435,7 +425,7 @@ mod tests {
                 g: 255,
                 b: 255,
             }],
-            &font,
+            &fonts,
         );
 
         let mut any_lit = false;
@@ -449,6 +439,60 @@ mod tests {
         assert!(any_lit, "text should draw at least one non-black pixel on the software surface");
     }
 
+    /// Vertical extent (in rows) of any non-black pixel in a surface — a proxy
+    /// for rendered glyph height.
+    fn lit_height(surface: &Surface) -> u32 {
+        let (w, h) = surface.size();
+        let mut top: Option<u32> = None;
+        let mut bottom = 0u32;
+        for py in 0..h {
+            for px in 0..w {
+                if !is_black(pixel_rgb(surface, px, py)) {
+                    top.get_or_insert(py);
+                    bottom = py;
+                }
+            }
+        }
+        top.map_or(0, |t| bottom - t + 1)
+    }
+
+    #[test]
+    fn text_size_is_honored() {
+        // A larger `size` must render taller glyphs than a smaller one — the
+        // ladder picks a bigger font rung. With size ignored (one baked font)
+        // both would be identical and this fails.
+        let ttf = sdl2::ttf::init().unwrap();
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+
+        let big = 48u16;
+        let small = 12u16;
+        let make = |size| {
+            let mut surface = Surface::new(96, 96, PixelFormatEnum::RGB888).unwrap();
+            surface.fill_rect(None, Color::RGB(0, 0, 0)).unwrap();
+            render_frame(
+                surface,
+                vec![DrawCommand::Text {
+                    text: "Hg".to_string(),
+                    x: 4,
+                    y: 4,
+                    size,
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                }],
+                &fonts,
+            )
+        };
+
+        let big_h = lit_height(&make(big));
+        let small_h = lit_height(&make(small));
+        assert!(big_h > 0 && small_h > 0, "both sizes should draw glyphs");
+        assert!(
+            big_h > small_h + 8,
+            "size {big} glyphs ({big_h}px tall) should be clearly taller than size {small} ({small_h}px)"
+        );
+    }
+
     #[test]
     fn offscreen_canvas_composites_onto_main() {
         // Draw a white rect into an offscreen canvas, then blit that canvas
@@ -456,7 +500,7 @@ mod tests {
         // should appear; the rest of the framebuffer stays black (the canvas
         // is transparent where nothing was drawn).
         let ttf = sdl2::ttf::init().unwrap();
-        let font = load_test_font(&ttf).expect("a system font for tests");
+        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
 
         let surface = render_frame(
             new_black_surface(),
@@ -469,7 +513,7 @@ mod tests {
                 // Blit the canvas onto the main framebuffer at (20, 20).
                 DrawCommand::DrawCanvas { id: 1, x: 20, y: 20 },
             ],
-            &font,
+            &fonts,
         );
 
         // The blitted block should be white at (22, 22).

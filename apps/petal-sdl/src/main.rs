@@ -1,4 +1,5 @@
 mod commands;
+mod font;
 mod game_loop;
 mod input;
 mod native_fns;

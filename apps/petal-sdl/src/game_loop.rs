@@ -168,6 +168,7 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
     let has_browser = config.examples_dir.is_some();
 
     let (mut env, mut program_id, mut stack_id) = init_petal(source_path, &config)?;
+    bind_text_metrics_from(&mut env, &fonts);
 
     let mut current_source_path: Option<String> = source_path.map(|s| s.to_string());
 
@@ -316,6 +317,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
     let mut framebuffer = Some(new_framebuffer(fb_w, fb_h)?);
 
     let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
+    bind_text_metrics_from(&mut env, &fonts);
 
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
@@ -406,6 +408,9 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
     // commands still work and `screenshot` returns an informative error.
     let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
     let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER).ok();
+    if let Some(f) = &fonts {
+        bind_text_metrics_from(&mut env, f);
+    }
 
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
@@ -464,6 +469,13 @@ pub fn run_screenshot(
 ) -> Result<(), String> {
     let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
 
+    // Load the font up front and bind its proportional metrics, so text_width()
+    // is correct during the frames we run (not just at render time). The same
+    // ladder renders the screenshot through the real renderer (real glyphs).
+    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
+    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
+    bind_text_metrics_from(&mut env, &fonts);
+
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..frames {
@@ -476,10 +488,6 @@ pub fn run_screenshot(
         Err(e) => return Err(e),
     };
 
-    // Render the screenshot through the real renderer (real glyphs), same as
-    // the window and the `screenshot` protocol command.
-    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
-    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
     screenshot::save_png(&commands, config.width, config.height, output_path, &fonts)?;
     eprintln!("Screenshot saved to {}", output_path);
     Ok(())
@@ -658,6 +666,13 @@ fn present_frame(
     canvas.present();
 
     Ok(surface)
+}
+
+/// Measure the font's proportional glyph advances and bind them so scripts'
+/// `text_width()` matches the actually-rendered text (correct centering /
+/// right-alignment) instead of assuming a monospace advance.
+fn bind_text_metrics_from(env: &mut Env, fonts: &FontLadder) {
+    petal_ui::draw::bind_text_advance_table(env, &fonts.ascii_advance_ratios());
 }
 
 fn drain_output(env: &mut Env) {

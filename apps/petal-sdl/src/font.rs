@@ -62,12 +62,33 @@ impl<'ttf> FontLadder<'ttf> {
     /// The rung whose baked size is closest to `size`. On a tie the smaller
     /// rung wins (rungs are sorted ascending, so the first minimum is kept).
     pub fn nearest(&self, size: u16) -> &Font<'ttf, 'static> {
-        &self
-            .rungs
+        &self.rung_nearest(size).1
+    }
+
+    fn rung_nearest(&self, size: u16) -> &(u16, Font<'ttf, 'static>) {
+        self.rungs
             .iter()
             .min_by_key(|(rung, _)| (*rung as i32 - size as i32).abs())
             .expect("FontLadder is never empty")
-            .1
+    }
+
+    /// Per-codepoint advance ratios (glyph advance ÷ font size) for ASCII 0–127,
+    /// measured from a representative rung — the table `text_width` sums for
+    /// proportional layout. Control codes and glyphs the font lacks get 0.
+    /// Measuring at a mid-size rung and normalizing keeps the ratios size-
+    /// independent (glyph advance scales linearly with point size).
+    pub fn ascii_advance_ratios(&self) -> Vec<f64> {
+        let (size, font) = self.rung_nearest(32);
+        let size = *size as f64;
+        (0u32..128)
+            .map(|cp| match char::from_u32(cp) {
+                Some(c) if !c.is_control() => font
+                    .find_glyph_metrics(c)
+                    .map(|m| m.advance as f64 / size)
+                    .unwrap_or(0.0),
+                _ => 0.0,
+            })
+            .collect()
     }
 }
 

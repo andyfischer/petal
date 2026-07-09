@@ -36,6 +36,12 @@ pub const SYM_TEXT_ADVANCE: &str = "text_advance";
 /// monospace glyph advances ~0.6× the font size.
 pub const DEFAULT_TEXT_ADVANCE: f64 = 0.6;
 
+/// Per-glyph advance table read by `text_width` for proportional fonts:
+/// a list of advance-÷-size ratios indexed by Unicode codepoint. When bound,
+/// `text_width` sums per-glyph advances instead of `chars × size × ratio`. A
+/// codepoint beyond the table's length falls back to [`SYM_TEXT_ADVANCE`].
+pub const SYM_TEXT_ADVANCES: &str = "text_advances";
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum DrawCommand {
@@ -236,6 +242,19 @@ pub fn bind_text_metrics(env: &mut Env, advance_ratio: f64) {
     env.set_binding(s, Value::Float(advance_ratio));
 }
 
+/// Bind the per-glyph advance table read by the proportional `text_width`:
+/// `ratios[codepoint]` is that glyph's advance as a fraction of the font size,
+/// measured by the host from its actual font. Codepoints past the table's end
+/// fall back to the uniform [`bind_text_metrics`] ratio. Binding this is what
+/// lets a script measure a proportional glyph run correctly (centered /
+/// right-aligned layout), instead of assuming monospace.
+pub fn bind_text_advance_table(env: &mut Env, ratios: &[f64]) {
+    let list: Vec<Value> = ratios.iter().map(|r| Value::Float(*r)).collect();
+    let id = env.heap_mut().alloc_list(list);
+    let s = env.intern_symbol(SYM_TEXT_ADVANCES);
+    env.set_binding(s, Value::List(id));
+}
+
 /// Reset the per-frame offscreen-canvas id counter so `create_canvas` hands
 /// out stable ids each frame. Call before each run (only needed with
 /// [`register_canvas`]).
@@ -413,18 +432,45 @@ fn native_clip_none(state: &mut PetalCxt) -> NativeResult {
 }
 
 /// `text_width(s, size) -> int`: width in logical px of `s` at font `size`.
-/// The default implementation is the monospace model `chars × size × ratio`,
-/// with the ratio from [`bind_text_metrics`] (default 0.6).
+/// If the host bound a per-glyph advance table ([`bind_text_advance_table`]),
+/// the width is the sum of each glyph's advance × `size` — correct for
+/// proportional fonts. Otherwise it falls back to the monospace model
+/// `chars × size × ratio`, with the ratio from [`bind_text_metrics`]
+/// (default 0.6).
 fn native_text_width(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
     let size = state.get_int(2)? as f64;
-    let ratio = match state.binding_named(SYM_TEXT_ADVANCE) {
+    let uniform = match state.binding_named(SYM_TEXT_ADVANCE) {
         Value::Float(f) => f,
         Value::Int(n) => n as f64,
         _ => DEFAULT_TEXT_ADVANCE,
     };
-    let chars = text.chars().count() as f64;
-    state.push_int((chars * size * ratio).round() as i64);
+
+    // Proportional path: a bound advance table maps codepoint → advance ratio.
+    let table: Option<Vec<f64>> = match state.binding_named(SYM_TEXT_ADVANCES) {
+        Value::List(id) => Some(
+            state
+                .heap()
+                .get_list(id)
+                .iter()
+                .map(|v| match v {
+                    Value::Float(f) => *f,
+                    Value::Int(n) => *n as f64,
+                    _ => uniform,
+                })
+                .collect(),
+        ),
+        _ => None,
+    };
+
+    let width = match table {
+        Some(ratios) => text
+            .chars()
+            .map(|c| ratios.get(c as usize).copied().unwrap_or(uniform) * size)
+            .sum::<f64>(),
+        None => text.chars().count() as f64 * size * uniform,
+    };
+    state.push_int(width.round() as i64);
     Ok(1)
 }
 
@@ -497,5 +543,39 @@ mod tests {
         bind_text_metrics(&mut env, 0.6);
         let v = env.run_source("text_width(\"abc\", 14)").expect("run");
         assert_eq!(v, Value::Int(25)); // 3 × 14 × 0.6 = 25.2 → 25
+    }
+
+    #[test]
+    fn text_width_uses_advance_table_when_bound() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // A proportional table: 'i' is narrow, 'W' is wide; everything else 0.6.
+        let mut ratios = vec![0.6f64; 128];
+        ratios['i' as usize] = 0.2;
+        ratios['W' as usize] = 0.9;
+        bind_text_advance_table(&mut env, &ratios);
+
+        // Per-glyph sum, not chars × uniform: 3 × 10 × 0.2 = 6, 3 × 10 × 0.9 = 27.
+        let narrow = env.run_source("text_width(\"iii\", 10)").expect("run");
+        let wide = env.run_source("text_width(\"WWW\", 10)").expect("run");
+        assert_eq!(narrow, Value::Int(6));
+        assert_eq!(wide, Value::Int(27));
+        assert!(
+            narrow != wide,
+            "a proportional font must measure 'iii' and 'WWW' differently"
+        );
+    }
+
+    #[test]
+    fn text_width_advance_table_falls_back_for_untabled_chars() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // Table only covers a few ASCII slots; a char beyond its length uses the
+        // uniform ratio (default 0.6).
+        let ratios = vec![0.3f64; 65]; // covers up to 'A' - 1
+        bind_text_advance_table(&mut env, &ratios);
+        // 'Z' (0x5A) is past the table → uniform 0.6: 2 × 10 × 0.6 = 12.
+        let v = env.run_source("text_width(\"ZZ\", 10)").expect("run");
+        assert_eq!(v, Value::Int(12));
     }
 }

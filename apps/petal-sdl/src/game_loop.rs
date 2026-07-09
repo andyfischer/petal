@@ -351,6 +351,7 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
                 &mut paused,
                 &mut input,
                 &mut frame_count,
+                Some(&fonts),
             );
         }
 
@@ -399,6 +400,13 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
 pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
     let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
 
+    // A font ladder for the `screenshot` command's real-renderer path. Headless
+    // mode has no window, but rendering text to a software surface only needs
+    // the TTF context. Optional: if no system font loads, non-screenshot
+    // commands still work and `screenshot` returns an informative error.
+    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
+    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER).ok();
+
     let (reload_tx, reload_rx) = mpsc::channel();
     let _watcher = if config.hot_reload {
         match source_path {
@@ -440,6 +448,7 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
             &mut paused,
             &mut input,
             &mut frame_count,
+            fonts.as_ref(),
         );
     }
 
@@ -467,7 +476,11 @@ pub fn run_screenshot(
         Err(e) => return Err(e),
     };
 
-    screenshot::save_png(&commands, config.width, config.height, output_path)?;
+    // Render the screenshot through the real renderer (real glyphs), same as
+    // the window and the `screenshot` protocol command.
+    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
+    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
+    screenshot::save_png(&commands, config.width, config.height, output_path, &fonts)?;
     eprintln!("Screenshot saved to {}", output_path);
     Ok(())
 }
@@ -515,6 +528,7 @@ fn handle_command(
     paused: &mut bool,
     input: &mut InputState,
     frame_count: &mut i64,
+    fonts: Option<&FontLadder>,
 ) {
     match cmd {
         Command::Pause => {
@@ -581,10 +595,16 @@ fn handle_command(
             }
         }
         Command::Screenshot => {
+            let Some(fonts) = fonts else {
+                protocol::send_response(&Response::err(
+                    "screenshot unavailable: no system font could be loaded".to_string(),
+                ));
+                return;
+            };
             match protocol::capture_draw_commands(env, stack_id, input) {
                 Ok((commands, _output)) => {
                     let (w, h) = native_fns::dimensions(env);
-                    let b64 = screenshot::render_to_png_base64(&commands, w, h);
+                    let b64 = screenshot::render_to_png_base64(&commands, w, h, fonts);
                     protocol::send_response(&Response {
                         screenshot: Some(b64),
                         ..Response::ok()

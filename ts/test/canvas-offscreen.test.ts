@@ -10,16 +10,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   renderCommands,
-  type RawCommand,
+  type DrawCommand,
 } from "../../integrations/petal-web-canvas/src/canvas-renderer.js";
 
 /**
- * Build a raw enum-variant command as emitted by the WASM runtime. The renderer
- * decodes these internally (see `decodeCommand`); `data` is the flat argument
- * list in the order the native draw functions emit.
+ * Build a draw command in the `{ op, ...fields }` shape the WASM runtime
+ * serializes (petal-ui's `DrawCommand`, `#[serde(tag = "op")]`). The renderer
+ * consumes these named fields directly — there is no decoding step.
  */
-function raw(tag: string, ...data: any[]): RawCommand {
-  return { type: "enum", tag, data };
+function cmd(op: string, fields: Partial<DrawCommand> = {}): DrawCommand {
+  return { op, ...fields };
 }
 
 /** A minimal Canvas2D context stub that records the calls we care about. */
@@ -105,12 +105,12 @@ describe("offscreen canvas renderer", () => {
   it("routes drawing into an offscreen canvas and composites it onto main", () => {
     const main = makeCtx(100, 100);
 
-    const commands: RawCommand[] = [
-      raw("create_canvas", 1, 32, 32),
-      raw("set_target", 1),
-      raw("rect", 0, 0, 8, 8, 255, 255, 255),
-      raw("set_target", 0),
-      raw("draw_canvas", 1, 20, 20),
+    const commands: DrawCommand[] = [
+      cmd("create_canvas", { id: 1, w: 32, h: 32 }),
+      cmd("set_target", { id: 1 }),
+      cmd("rect", { x: 0, y: 0, w: 8, h: 8, r: 255, g: 255, b: 255 }),
+      cmd("set_target", { id: 0 }),
+      cmd("draw_canvas", { id: 1, x: 20, y: 20 }),
     ];
 
     renderCommands(main as any, commands, 100, 100);
@@ -136,7 +136,7 @@ describe("offscreen canvas renderer", () => {
     const main = makeCtx(100, 100);
     renderCommands(
       main as any,
-      [raw("rect", 1, 2, 3, 4, 10, 20, 30)],
+      [cmd("rect", { x: 1, y: 2, w: 3, h: 4, r: 10, g: 20, b: 30 })],
       100,
       100,
     );

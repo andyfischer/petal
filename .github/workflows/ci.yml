@@ -74,7 +74,7 @@ jobs:
         run: npx vitest run
 
   rust-subprojects:
-    name: Rust subprojects (petal-sdl, petal-fps, petal-diagram-canvas)
+    name: Rust subprojects (petal-sdl, petal-fps)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,8 +96,7 @@ jobs:
             ~/.cargo/git
             integrations/petal-desktop-sdl/target
             sample-apps/petal-fps/target
-            sample-apps/diagram-canvas/rust/target
-          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('integrations/petal-desktop-sdl/Cargo.lock', 'sample-apps/petal-fps/Cargo.lock', 'sample-apps/diagram-canvas/rust/Cargo.lock') }}
+          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('integrations/petal-desktop-sdl/Cargo.lock', 'sample-apps/petal-fps/Cargo.lock') }}
           restore-keys: cargo-subprojects-${{ runner.os }}-
 
       - name: Build petal-sdl
@@ -105,9 +104,6 @@ jobs:
 
       - name: Build petal-fps
         run: cargo build --manifest-path sample-apps/petal-fps/Cargo.toml
-
-      - name: Check petal-diagram-canvas (Rust crate)
-        run: cargo check --manifest-path sample-apps/diagram-canvas/rust/Cargo.toml
 
   web-builds:
     name: Web builds (wasm + vite)
@@ -137,8 +133,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-            sample-apps/diagram-canvas/rust/target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'sample-apps/diagram-canvas/rust/Cargo.lock') }}
+            integrations/petal-web-canvas/rust/target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
 
       - name: Set up Node.js
@@ -159,15 +155,18 @@ jobs:
         working-directory: integrations/petal-web-html
         run: npx vite build
 
-      # ----- petal-diagram-canvas -----
-      - name: petal-diagram-canvas — install deps
-        working-directory: sample-apps/diagram-canvas
+      # ----- petal-web-canvas + petal-diagram-canvas (npm workspace) -----
+      # diagram-canvas is a sample app that consumes the petal-web-canvas
+      # integration (its WASM runtime + shared TS) via the npm workspace, so
+      # install once at the repo root and build the integration's wasm first.
+      - name: workspace — install deps
         run: npm ci --no-audit --no-fund
 
-      - name: petal-diagram-canvas — build wasm
-        working-directory: sample-apps/diagram-canvas
-        run: bash build-wasm.sh
+      - name: petal-web-canvas — build wasm
+        run: npm run build:wasm --workspace integrations/petal-web-canvas
+
+      - name: petal-web-canvas — vite build
+        run: npm run build --workspace integrations/petal-web-canvas
 
       - name: petal-diagram-canvas — vite build
-        working-directory: sample-apps/diagram-canvas
-        run: npx vite build
+        run: npm run build --workspace sample-apps/diagram-canvas

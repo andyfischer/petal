@@ -3,31 +3,38 @@
 Canvas-based diagram visualization tool with a live source code editor. Renders
 Petal programs as interactive diagrams on an HTML5 Canvas.
 
+This is a **sample app**: it builds on the
+[`petal-web-canvas`](../../integrations/petal-web-canvas/) integration for the
+WASM runtime, canvas renderer, and browser-input plumbing, and adds only the
+diagram-specific shell (the CodeMirror source editor and the pause/step debug
+protocol). It does **not** embed Petal Core directly or ship its own WASM crate.
+
 ## Prerequisites
 
 - **Node.js** (v18+)
-- **Rust** (latest stable)
-- **wasm-pack**: `cargo install wasm-pack`
+
+The WASM runtime is provided prebuilt by `petal-web-canvas` (an npm workspace
+package). If you change that integration's Rust, rebuild it with
+`npm run build:wasm --workspace integrations/petal-web-canvas` from the repo
+root.
 
 ## Setup
 
 ```bash
-cd petal-diagram-canvas
-npm install
-npm run build:wasm   # compiles Petal to WASM (requires wasm-pack)
+npm install          # from the repo root — installs the whole workspace
 ```
 
 ## Development
 
 ```bash
-npm run dev          # starts Vite dev server (http://localhost:4012)
+npm run dev --workspace sample-apps/diagram-canvas   # Vite dev server (http://localhost:4012)
 ```
 
 ## Production build
 
 ```bash
-npm run build        # output to dist/
-npm run preview      # preview the build locally
+npm run build --workspace sample-apps/diagram-canvas     # output to dist/
+npm run preview --workspace sample-apps/diagram-canvas   # preview the build locally
 ```
 
 ## Examples
@@ -43,8 +50,11 @@ the CodeMirror editor — changes update the diagram live.
 
 ## How it works
 
-1. `build-wasm.sh` compiles the Petal compiler (`../rust/`) to WASM via `wasm-pack`
-2. The runtime (`src/runtime.ts`) captures draw commands during Petal evaluation
-3. `src/canvas-renderer.ts` converts draw commands to Canvas API calls
-4. `src/input.ts` provides mouse/keyboard state to the Petal program
-5. `src/editor.ts` integrates CodeMirror for live source editing
+1. `petal-web-canvas` provides the WASM `PetalRuntime`, the `PetalCanvas` frame
+   loop, the canvas renderer, and browser-input plumbing (all imported from the
+   `petal-web-canvas` package)
+2. `src/main.ts` wires a `PetalCanvas` up to the example picker and the debug
+   controller, gating the shared frame loop for pause/step
+3. `src/editor.ts` integrates CodeMirror for live source editing
+4. `src/debug.ts` / `src/debug-panel.ts` / `src/debug-ws.ts` add the pause/step
+   debug protocol and its WebSocket bridge (dev only)

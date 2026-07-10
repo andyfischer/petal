@@ -14,7 +14,9 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 use petal::value::value_to_json;
 
-use petal_ui::draw::{clear_draw_commands, reset_canvas_ids, take_draw_commands};
+use petal_ui::draw::{
+    clear_draw_commands, reset_canvas_ids, take_draw_commands, take_draw_commands_for,
+};
 use petal_ui::input::{bind_dimensions, bind_frame_info, bind_input, buttons, InputEvent, InputState};
 
 /// Map a DOM `MouseEvent.button` (0 = left, 1 = middle, 2 = right) onto the
@@ -212,13 +214,27 @@ impl PetalRuntime {
     pub fn run_speculative(&mut self) -> Result<String, JsValue> {
         let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
         // Bind input + reset the draw buffer / canvas ids so a speculative run
-        // matches the live frame.
+        // matches the live frame, then fork: the fork inherits those and runs
+        // with empty output sinks, so its draw commands accumulate in the fork's
+        // own context, isolated from the live state.
+        //
+        // We drive the fork by hand rather than calling `Env::run_speculative`,
+        // which drops the fork before we could read its draw buffer — the
+        // speculative frame's draw commands live in the fork's context, so we
+        // must drain them (with `take_draw_commands_for`) before releasing it.
         self.prepare_run();
-        self.env
-            .run_speculative(sid)
-            .map_err(|e| JsValue::from_str(&e))?;
-        let cmds = take_draw_commands(&mut self.env);
-        Ok(serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string()))
+        let fork = self.env.fork_execution(sid).map_err(|e| JsValue::from_str(&e))?;
+        self.env.reset_stack(fork).map_err(|e| JsValue::from_str(&e))?;
+        let result = self
+            .env
+            .run(fork)
+            .map(|_| {
+                let cmds = take_draw_commands_for(&mut self.env, fork);
+                serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string())
+            })
+            .map_err(|e| JsValue::from_str(&e));
+        self.env.drop_fork(fork);
+        result
     }
 }
 

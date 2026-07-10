@@ -17,6 +17,17 @@ export class PetalCanvas {
   private currentSource = "";
   private errored = false;
 
+  /**
+   * Optional frame gate. Given the real elapsed dt, return the dt to run the
+   * frame with, or `null` to skip the frame body while keeping the rAF loop
+   * alive. Defaults to clamping dt at 0.1s. Hosts (e.g. a debug pause/step
+   * controller) can override it.
+   */
+  frameGate: ((realDt: number) => number | null) | null = null;
+
+  /** Optional callback invoked after each frame renders (debug panels use it). */
+  onFrameComplete: (() => void) | null = null;
+
   async init(): Promise<void> {
     await init();
     this.runtime = new PetalRuntime();
@@ -88,8 +99,35 @@ export class PetalCanvas {
     if (this.errored) return;
 
     const now = performance.now();
-    const dt = Math.min((now - this.lastTime) / 1000, 0.1);
+    const realDt = (now - this.lastTime) / 1000;
     this.lastTime = now;
+
+    const dt = this.frameGate ? this.frameGate(realDt) : Math.min(realDt, 0.1);
+    if (dt === null) return; // gated off (e.g. paused) — skip body, keep rAF alive
+
+    this.runFrame(dt);
+  };
+
+  /**
+   * Run one frame with an explicit dt and return its draw commands as JSON.
+   * Used by the loop and by debug stepping (which drives frames while the
+   * loop is gated off). Bypasses the frame gate.
+   */
+  runOneFrame(dt: number): string {
+    return this.runFrame(dt);
+  }
+
+  /** Stop the animation loop. */
+  stop(): void {
+    if (this.animId !== null) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
+    }
+  }
+
+  private runFrame(dt: number): string {
+    if (!this.runtime || this.stackId === null || !this.ctx || !this.canvas) return "[]";
+    if (this.errored) return "[]";
 
     try {
       // Stage timing/dimensions first (begin_frame advances the input clock by
@@ -104,11 +142,14 @@ export class PetalCanvas {
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 
       this.clearError();
+      this.onFrameComplete?.();
+      return cmdsJson;
     } catch (err: any) {
       this.showError(String(err));
       this.errored = true;
+      return "[]";
     }
-  };
+  }
 
   private showError(msg: string): void {
     if (!this.errorEl) return;

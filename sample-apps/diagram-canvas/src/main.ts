@@ -1,6 +1,6 @@
-import { PetalCanvas } from "./runtime.js";
+import { PetalCanvas } from "petal-web-canvas";
 import { SourceEditor } from "./editor.js";
-import { PetalDebugAPI } from "./debug.js";
+import { PetalDebugAPI, DebugController } from "./debug.js";
 import { DebugPanel, injectDebugStyles } from "./debug-panel.js";
 import { connectDebugWebSocket } from "./debug-ws.js";
 
@@ -27,8 +27,11 @@ async function main() {
     picker.appendChild(opt);
   }
 
-  // Init runtime
+  // Init runtime. The debug controller gates the shared frame loop for
+  // pause/step; the shared PetalCanvas has no debug notion of its own.
+  const debug = new DebugController();
   const petal = new PetalCanvas();
+  petal.frameGate = (dt) => debug.shouldRunFrame(dt);
   await petal.init();
   petal.start(canvas, errorEl);
 
@@ -37,7 +40,7 @@ async function main() {
     runOneFrame: (dt) => petal.runOneFrame(dt),
     getCanvas: () => petal.canvas,
     getRuntime: () => petal.runtime,
-    getController: () => petal.debug,
+    getController: () => debug,
     getFrameCount: () => petal.frameCount,
   });
 

@@ -5,7 +5,7 @@
  *                   by the WebSocket bridge.
  */
 
-import type { PetalRuntime } from "../pkg/petal_diagram_canvas.js";
+import type { PetalRuntime } from "petal-web-canvas";
 
 // ---------------------------------------------------------------------------
 // DebugController

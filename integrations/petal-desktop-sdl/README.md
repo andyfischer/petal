@@ -80,3 +80,12 @@ draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 ```
 
 See [`docs/game-dev-guide.md`](docs/game-dev-guide.md) for the full API reference.
+
+## Use as a library
+
+This crate is also a library (`petal_sdl`). Apps that need a different renderer
+or native set — like the `petal-fps` software 3D rasterizer — depend on it and
+implement the `Host` trait instead of copying the host code, reusing the window,
+event loop, agent protocol, screenshot/record modes, and hot reload. See
+[`docs/building-on-integrations.md`](../../docs/building-on-integrations.md) for
+the pattern.

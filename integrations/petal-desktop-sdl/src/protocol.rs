@@ -1,3 +1,12 @@
+//! The JSON-over-stdio agent protocol, shared by every SDL host.
+//!
+//! Commands arrive on stdin (one JSON object per line) and responses go to
+//! stdout. The command/response *shape* is fixed here; the two places a host
+//! varies — how a frame's draw output is serialized to JSON and rasterized to
+//! pixels — are delegated to the [`Host`] (`draw_commands_json`, `render_image`,
+//! `draw_stats`), so `capture_draw_commands`/`screenshot`/`draw_stats` work for
+//! any draw vocabulary.
+
 use std::io::{self, BufRead};
 use std::sync::mpsc;
 use std::thread;
@@ -9,9 +18,10 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::{clear_draw_commands, take_draw_commands_for, DrawCommand};
-use crate::input::InputState;
-use crate::native_fns::{bind_frame_info, bind_input, reset_canvas_ids};
+use petal_ui::draw::clear_draw_commands;
+use petal_ui::input::{bind_frame_info, bind_input, dimensions, InputState};
+
+use crate::game_loop::Host;
 
 // --- Commands (stdin → engine) ---
 
@@ -32,16 +42,22 @@ pub enum Command {
         #[serde(default)]
         mouse: Option<MouseInput>,
         /// Typed text to deliver to the next stepped frame, read by the
-        /// script's `text_input()`. Lets an agent drive a text field over the
-        /// protocol, not just press keys.
+        /// script's `text_input()`.
         #[serde(default)]
         text: String,
+        /// Raw relative pointer motion for the next stepped frame, read by
+        /// `mouse_dx()`/`mouse_dy()` — drives mouselook over the protocol.
+        #[serde(default)]
+        mouse_delta: Option<MouseDelta>,
     },
     SetState {
         name: String,
         value: JsonValue,
     },
     Screenshot,
+    /// Optional per-frame draw statistics; hosts that don't implement it
+    /// respond with an "unsupported" error.
+    DrawStats,
 }
 
 fn default_step_count() -> u32 {
@@ -80,6 +96,12 @@ impl MouseInput {
     }
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct MouseDelta {
+    pub dx: i32,
+    pub dy: i32,
+}
+
 // --- Responses (engine → stdout) ---
 
 #[derive(Serialize)]
@@ -93,12 +115,16 @@ pub struct Response {
     pub frame: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<serde_json::Map<String, JsonValue>>,
+    /// Draw commands as JSON — the shape is the host's own draw vocabulary.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub draw_commands: Option<Vec<DrawCommand>>,
+    pub draw_commands: Option<JsonValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screenshot: Option<String>,
+    /// Optional host-defined per-frame statistics (see [`Host::draw_stats`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats: Option<JsonValue>,
 }
 
 impl Response {
@@ -112,6 +138,7 @@ impl Response {
             draw_commands: None,
             output: None,
             screenshot: None,
+            stats: None,
         }
     }
 
@@ -119,12 +146,7 @@ impl Response {
         Self {
             ok: false,
             error: Some(msg),
-            paused: None,
-            frame: None,
-            state: None,
-            draw_commands: None,
-            output: None,
-            screenshot: None,
+            ..Response::ok()
         }
     }
 }
@@ -165,79 +187,160 @@ pub fn send_response(resp: &Response) {
     }
 }
 
-// --- Command handlers ---
+// --- Frame driving ---
 
-pub fn get_state_json(
-    env: &Env,
-    program_id: ProgramId,
-    stack_id: StackKey,
-) -> serde_json::Map<String, JsonValue> {
-    env.get_state_json(program_id, stack_id)
-}
-
-pub fn capture_draw_commands(
-    env: &mut Env,
-    stack_id: StackKey,
-    input: &InputState,
-) -> Result<(Vec<DrawCommand>, Vec<String>), String> {
-    // Capture must run the frame *speculatively* — produce its draw commands
-    // without advancing the live state. We do that by forking: bind this frame's
-    // inputs / reset the canvas counter on the source, then fork. The fork
-    // inherits those and starts with empty output sinks, so its draw commands and
-    // prints accumulate in the fork's own context, fully isolated from the source.
-    //
-    // (We drive the fork by hand rather than calling `run_speculative`, which
-    // forks → runs → drops and *discards* the fork's output before we could read
-    // it — exactly the side effects we need here.)
-    reset_canvas_ids(env);
-    bind_input(env, input);
-
-    let fork = env.fork_execution(stack_id)?;
-    env.reset_stack(fork)?;
-    let run = env.run(fork);
-
-    // Drain the fork's own draw buffer + print output (decoded against the
-    // fork's heap), then release the fork. Drop it whether or not the run erred.
-    let result = run.map(|_| {
-        let commands = take_draw_commands_for(env, fork);
-        let output = env.take_output_for(fork);
-        (commands, output)
-    });
-    env.drop_fork(fork);
-    result
-}
-
-/// Run one frame under the standard contract: promote pending input edges,
-/// bind, reset_stack + run. Returns the new frame count.
-pub fn run_one_frame(
+/// Run one frame under the standard contract at a fixed agent-mode dt (so
+/// frame-stepping is deterministic). Returns the new frame count.
+pub fn run_one_frame<H: Host>(
     env: &mut Env,
     stack_id: StackKey,
     input: &mut InputState,
     frame_count: &mut i64,
+    host: &mut H,
 ) -> Result<i64, String> {
     clear_draw_commands(env);
-    reset_canvas_ids(env);
+    host.prepare_frame(env);
 
     *frame_count += 1;
-    input.begin_frame(1.0 / 60.0); // Fixed dt in agent mode
+    input.begin_frame(1.0 / 60.0);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;
     env.run(stack_id)?;
-
     Ok(*frame_count)
 }
 
+/// Run this frame *speculatively* — fork so live state is untouched — and hand
+/// the fork to `decode` to drain/rasterize with the host's vocabulary. Returns
+/// `decode`'s value plus the fork's print output. The fork is always dropped.
+///
+/// The caller must set up the frame's bindings (`prepare_frame` + `bind_input`)
+/// on the source *before* calling this, so the fork inherits them.
+///
+/// (We drive the fork by hand rather than `run_speculative`, which forks → runs
+/// → drops and discards the fork's output before it can be read.)
+pub fn with_speculative_frame<T>(
+    env: &mut Env,
+    stack_id: StackKey,
+    decode: impl FnOnce(&mut Env, StackKey) -> T,
+) -> Result<(T, Vec<String>), String> {
+    let fork = env.fork_execution(stack_id)?;
+    env.reset_stack(fork)?;
+    let run = env.run(fork);
+
+    let result = run.map(|_| {
+        let value = decode(env, fork);
+        let output = env.take_output_for(fork);
+        (value, output)
+    });
+    env.drop_fork(fork);
+    result
+}
+
+// --- Command dispatch ---
+
+#[allow(clippy::too_many_arguments)]
+pub fn handle_command<H: Host>(
+    cmd: Command,
+    env: &mut Env,
+    program_id: ProgramId,
+    stack_id: StackKey,
+    paused: &mut bool,
+    input: &mut InputState,
+    frame_count: &mut i64,
+    host: &mut H,
+) {
+    match cmd {
+        Command::Pause => {
+            *paused = true;
+            send_response(&Response { paused: Some(true), ..Response::ok() });
+        }
+        Command::Resume => {
+            *paused = false;
+            send_response(&Response { paused: Some(false), ..Response::ok() });
+        }
+        Command::Step { n } => {
+            let mut last_frame = 0i64;
+            for _ in 0..n {
+                match run_one_frame(env, stack_id, input, frame_count, host) {
+                    Ok(fc) => last_frame = fc,
+                    Err(e) => {
+                        send_response(&Response::err(e));
+                        return;
+                    }
+                }
+            }
+            let output = env.take_output();
+            send_response(&Response {
+                frame: Some(last_frame),
+                output: if output.is_empty() { None } else { Some(output) },
+                ..Response::ok()
+            });
+        }
+        Command::State => {
+            let state = env.get_state_json(program_id, stack_id);
+            send_response(&Response { state: Some(state), ..Response::ok() });
+        }
+        Command::CaptureDrawCommands => {
+            host.prepare_frame(env);
+            bind_input(env, input);
+            match with_speculative_frame(env, stack_id, |env, fork| host.draw_commands_json(env, fork)) {
+                Ok((commands, output)) => send_response(&Response {
+                    draw_commands: Some(commands),
+                    output: if output.is_empty() { None } else { Some(output) },
+                    ..Response::ok()
+                }),
+                Err(e) => send_response(&Response::err(e)),
+            }
+        }
+        Command::Input { keys_down, mouse, text, mouse_delta } => {
+            apply_input(input, &keys_down, mouse.as_ref(), &text, mouse_delta.as_ref());
+            send_response(&Response::ok());
+        }
+        Command::SetState { name, value } => {
+            match env.set_state_from_json(program_id, stack_id, &name, &value) {
+                Ok(()) => send_response(&Response::ok()),
+                Err(e) => send_response(&Response::err(e)),
+            }
+        }
+        Command::Screenshot => {
+            let (w, h) = dimensions(env);
+            host.prepare_frame(env);
+            bind_input(env, input);
+            match with_speculative_frame(env, stack_id, |env, fork| host.render_image(env, fork, w, h)) {
+                Ok((Ok(img), _output)) => {
+                    let b64 = crate::screenshot::to_base64(&img);
+                    send_response(&Response { screenshot: Some(b64), ..Response::ok() });
+                }
+                Ok((Err(e), _)) => send_response(&Response::err(e)),
+                Err(e) => send_response(&Response::err(e)),
+            }
+        }
+        Command::DrawStats => {
+            host.prepare_frame(env);
+            bind_input(env, input);
+            match with_speculative_frame(env, stack_id, |env, fork| host.draw_stats(env, fork)) {
+                Ok((Some(stats), _)) => send_response(&Response { stats: Some(stats), ..Response::ok() }),
+                Ok((None, _)) => send_response(&Response::err(
+                    "draw_stats is not supported by this host".to_string(),
+                )),
+                Err(e) => send_response(&Response::err(e)),
+            }
+        }
+    }
+}
+
 /// Apply an absolute input snapshot from the agent protocol ("these keys and
-/// buttons are down now"); press/release edges are derived by diffing and
-/// reach the next stepped frame. Any `text` is queued as typed input for the
-/// next frame (read by the script's `text_input()`).
+/// buttons are down now"); press/release edges are derived by diffing and reach
+/// the next stepped frame. `text` is queued as typed input; `mouse_delta` is
+/// queued as relative pointer motion for the next frame.
 pub fn apply_input(
     input: &mut InputState,
     keys_down: &[String],
     mouse: Option<&MouseInput>,
     text: &str,
+    mouse_delta: Option<&MouseDelta>,
 ) {
     // Only the object form carries an authoritative buttons list; the tuple
     // form (and a keys-only message) leaves held buttons untouched.
@@ -250,16 +353,9 @@ pub fn apply_input(
     if !text.is_empty() {
         input.type_text(text);
     }
-}
-
-pub fn set_state_from_json(
-    env: &mut Env,
-    program_id: ProgramId,
-    stack_id: StackKey,
-    name: &str,
-    json_val: &JsonValue,
-) -> Result<(), String> {
-    env.set_state_from_json(program_id, stack_id, name, json_val)
+    if let Some(d) = mouse_delta {
+        input.move_relative(d.dx, d.dy);
+    }
 }
 
 #[cfg(test)]
@@ -269,8 +365,7 @@ mod tests {
 
     #[test]
     fn input_command_parses_text_field() {
-        let cmd: Command =
-            serde_json::from_str(r#"{"cmd":"input","text":"hi"}"#).unwrap();
+        let cmd: Command = serde_json::from_str(r#"{"cmd":"input","text":"hi"}"#).unwrap();
         match cmd {
             Command::Input { text, .. } => assert_eq!(text, "hi"),
             _ => panic!("expected an Input command"),
@@ -278,19 +373,19 @@ mod tests {
     }
 
     #[test]
-    fn input_command_text_defaults_empty() {
+    fn input_command_parses_mouse_delta() {
         let cmd: Command =
-            serde_json::from_str(r#"{"cmd":"input","keys_down":["a"]}"#).unwrap();
+            serde_json::from_str(r#"{"cmd":"input","mouse_delta":{"dx":3,"dy":-2}}"#).unwrap();
         match cmd {
-            Command::Input { text, .. } => assert_eq!(text, ""),
-            _ => panic!("expected an Input command"),
+            Command::Input { mouse_delta: Some(d), .. } => assert_eq!((d.dx, d.dy), (3, -2)),
+            _ => panic!("expected an Input command with a mouse_delta"),
         }
     }
 
     #[test]
     fn apply_input_delivers_typed_text_to_next_frame() {
         let mut input = InputState::new();
-        apply_input(&mut input, &[], None, "hi");
+        apply_input(&mut input, &[], None, "hi", None);
         input.begin_frame(1.0 / 60.0);
         assert_eq!(input.frame_text(), "hi");
     }

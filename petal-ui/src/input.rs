@@ -36,6 +36,8 @@ pub const MULTI_CLICK_RADIUS: i32 = 4;
 
 pub const SYM_MOUSE_X: &str = "mouse_x";
 pub const SYM_MOUSE_Y: &str = "mouse_y";
+pub const SYM_MOUSE_DX: &str = "mouse_dx";
+pub const SYM_MOUSE_DY: &str = "mouse_dy";
 pub const SYM_KEYS_DOWN: &str = "keys_down";
 pub const SYM_KEYS_PRESSED: &str = "keys_pressed";
 pub const SYM_KEYS_RELEASED: &str = "keys_released";
@@ -54,6 +56,11 @@ pub const SYM_DT: &str = "dt";
 pub const SYM_FRAME_COUNT: &str = "frame_count";
 pub const SYM_SCREEN_WIDTH: &str = "screen_width";
 pub const SYM_SCREEN_HEIGHT: &str = "screen_height";
+
+/// Output channel: pointer grab/release requests emitted by `grab_mouse()` /
+/// `release_mouse()`. Hosts that support pointer lock (native windows) honor
+/// it via [`take_mouse_grab`]; hosts that don't may leave it undrained.
+pub const MOUSE_GRAB_SIGNAL: &str = "mouse_grab";
 
 const MOD_SHIFT: i64 = 1;
 const MOD_CTRL: i64 = 2;
@@ -99,6 +106,11 @@ impl Modifiers {
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputEvent {
     MouseMove { x: i32, y: i32 },
+    /// Raw relative pointer motion, independent of the absolute position.
+    /// Deltas accumulate within a frame and are read via `mouse_dx()` /
+    /// `mouse_dy()`. This is what makes mouselook work while the pointer is
+    /// grabbed/locked (absolute position stops moving, but deltas keep coming).
+    MouseRelative { dx: i32, dy: i32 },
     MouseDown { button: u8 },
     MouseUp { button: u8 },
     /// Wheel/trackpad scroll in lines. Fractional deltas accumulate across
@@ -139,6 +151,8 @@ pub struct InputState {
     pending_buttons_pressed: HashSet<u8>,
     pending_buttons_released: HashSet<u8>,
     pending_scroll: (f64, f64),
+    pending_mouse_dx: i32,
+    pending_mouse_dy: i32,
     pending_text: String,
     pending_click_count: i64,
 
@@ -148,6 +162,8 @@ pub struct InputState {
     frame_buttons_pressed: HashSet<u8>,
     frame_buttons_released: HashSet<u8>,
     frame_scroll: (i64, i64),
+    frame_mouse_dx: i32,
+    frame_mouse_dy: i32,
     frame_text: String,
     frame_click_count: i64,
 
@@ -210,6 +226,10 @@ impl InputState {
                 self.pending_scroll.0 += dx;
                 self.pending_scroll.1 += dy;
             }
+            InputEvent::MouseRelative { dx, dy } => {
+                self.pending_mouse_dx += dx;
+                self.pending_mouse_dy += dy;
+            }
             InputEvent::KeyDown { key } => {
                 self.pending_keys_pressed.insert(key.clone());
                 self.keys_down.insert(key);
@@ -240,6 +260,8 @@ impl InputState {
         self.pending_scroll.0 -= wx;
         self.pending_scroll.1 -= wy;
         self.frame_scroll = (wx as i64, wy as i64);
+        self.frame_mouse_dx = std::mem::take(&mut self.pending_mouse_dx);
+        self.frame_mouse_dy = std::mem::take(&mut self.pending_mouse_dy);
         self.frame_text = std::mem::take(&mut self.pending_text);
         self.frame_click_count = std::mem::take(&mut self.pending_click_count);
     }
@@ -276,6 +298,14 @@ impl InputState {
                 self.event(InputEvent::MouseDown { button: b });
             }
         }
+    }
+
+    /// Queue raw relative pointer motion (e.g. from an SDL `MouseMotion`
+    /// xrel/yrel or a protocol `mouse_delta`). Accumulates like the other edge
+    /// state and is delivered to the next frame promoted by
+    /// [`begin_frame`](Self::begin_frame), read via `mouse_dx()`/`mouse_dy()`.
+    pub fn move_relative(&mut self, dx: i32, dy: i32) {
+        self.event(InputEvent::MouseRelative { dx, dy });
     }
 
     /// Queue typed text (e.g. from a debug-protocol `input` command or an SDL
@@ -331,6 +361,8 @@ pub fn bind_input(env: &mut Env, input: &InputState) {
     );
     bind_int(env, SYM_MOUSE_X, input.mouse_x as i64);
     bind_int(env, SYM_MOUSE_Y, input.mouse_y as i64);
+    bind_int(env, SYM_MOUSE_DX, input.frame_mouse_dx as i64);
+    bind_int(env, SYM_MOUSE_DY, input.frame_mouse_dy as i64);
     bind_int(env, SYM_SCROLL_X, input.frame_scroll.0);
     bind_int(env, SYM_SCROLL_Y, input.frame_scroll.1);
     bind_int(env, SYM_MODIFIERS, input.mods.to_bits());
@@ -373,6 +405,21 @@ pub fn dimensions(env: &mut Env) -> (u32, u32) {
     )
 }
 
+/// Drain the pointer grab/release request channel, returning the last request
+/// the script made this frame — `Some(true)` to grab/lock the pointer,
+/// `Some(false)` to release, `None` if it made no request. Hosts that support
+/// pointer lock call this after running a frame and reconcile it with their
+/// window; hosts that don't can ignore it (the buffer is harmless if undrained,
+/// but draining keeps it from growing).
+pub fn take_mouse_grab(env: &mut Env) -> Option<bool> {
+    let s = env.intern_symbol(MOUSE_GRAB_SIGNAL);
+    let vals = env.take_output_buffer(s);
+    vals.into_iter().rev().find_map(|v| match v {
+        Value::Bool(b) => Some(b),
+        _ => None,
+    })
+}
+
 fn bind_int(env: &mut Env, name: &str, v: i64) {
     let s = env.intern_symbol(name);
     env.set_binding(s, Value::Int(v));
@@ -402,6 +449,8 @@ fn bind_int_list(env: &mut Env, name: &str, items: impl Iterator<Item = i64>) {
 pub fn register_input(env: &mut Env) {
     env.register_native("mouse_x", native_mouse_x);
     env.register_native("mouse_y", native_mouse_y);
+    env.register_native("mouse_dx", native_mouse_dx);
+    env.register_native("mouse_dy", native_mouse_dy);
     env.register_native("mouse_down", native_mouse_down);
     env.register_native("mouse_pressed", native_mouse_pressed);
     env.register_native("mouse_released", native_mouse_released);
@@ -419,6 +468,8 @@ pub fn register_input(env: &mut Env) {
     env.register_native("drag_start_y", native_drag_start_y);
     env.register_native("click_count", native_click_count);
     env.register_native("text_input", native_text_input);
+    env.register_native("grab_mouse", native_grab_mouse);
+    env.register_native("release_mouse", native_release_mouse);
     env.register_native("dt", native_dt);
     env.register_native("frame_count", native_frame_count);
     env.register_native("screen_width", native_screen_width);
@@ -490,6 +541,14 @@ fn native_mouse_x(state: &mut PetalCxt) -> NativeResult {
 
 fn native_mouse_y(state: &mut PetalCxt) -> NativeResult {
     push_binding_int(state, SYM_MOUSE_Y)
+}
+
+fn native_mouse_dx(state: &mut PetalCxt) -> NativeResult {
+    push_binding_int(state, SYM_MOUSE_DX)
+}
+
+fn native_mouse_dy(state: &mut PetalCxt) -> NativeResult {
+    push_binding_int(state, SYM_MOUSE_DY)
 }
 
 fn native_mouse_down(state: &mut PetalCxt) -> NativeResult {
@@ -583,6 +642,20 @@ fn native_text_input(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+fn native_grab_mouse(state: &mut PetalCxt) -> NativeResult {
+    let sym = state.intern_symbol(MOUSE_GRAB_SIGNAL);
+    state.push_output(sym, Value::Bool(true));
+    state.push_nil();
+    Ok(1)
+}
+
+fn native_release_mouse(state: &mut PetalCxt) -> NativeResult {
+    let sym = state.intern_symbol(MOUSE_GRAB_SIGNAL);
+    state.push_output(sym, Value::Bool(false));
+    state.push_nil();
+    Ok(1)
+}
+
 fn native_dt(state: &mut PetalCxt) -> NativeResult {
     let v = binding_float(state, SYM_DT);
     state.push_float(v);
@@ -628,6 +701,18 @@ mod tests {
         input.begin_frame(0.016);
         assert!(input.frame_keys_released.contains("j"));
         assert!(!input.is_key_down("j"));
+    }
+
+    #[test]
+    fn relative_motion_accumulates_then_resets_each_frame() {
+        let mut input = InputState::new();
+        input.move_relative(3, -2);
+        input.move_relative(1, 5);
+        input.begin_frame(0.016);
+        assert_eq!((input.frame_mouse_dx, input.frame_mouse_dy), (4, 3));
+        // No motion this frame → deltas fall back to zero (edge, not level).
+        input.begin_frame(0.016);
+        assert_eq!((input.frame_mouse_dx, input.frame_mouse_dy), (0, 0));
     }
 
     #[test]

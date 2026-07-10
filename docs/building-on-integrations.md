@@ -2,8 +2,8 @@
 
 This doc describes how apps in this repo are layered on top of Petal, and the
 concrete local mechanisms for building a new one. It is the reference for
-routing the remaining sample apps through their integrations (the "SDL track"
-and any future ports).
+routing sample apps through their integrations (the web track and the SDL track
+are both done; use it as the template for future ports).
 
 ## The three tiers
 
@@ -177,23 +177,22 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
 
 ## Mechanism: Desktop (Rust + SDL) — the SDL track
 
-`petal-desktop-sdl` ships the `petal-sdl` **binary**. Today:
+`petal-desktop-sdl` is a lib + bin crate. The library is the reusable host; the
+`petal-sdl` binary is a thin CLI over it. Both sample apps build on it:
 
-- `side-scroller` is **Shape A** — it uses the binary unchanged. Done, correct.
-- `petal-fps` is **Shape B done wrong** — it depends on Petal Core (`petal`)
-  directly and carries its own copy of the host (`game_loop`, `input`,
-  `protocol`, `screenshot`, `font`, `main`). It is genuinely different (a
-  software-framebuffer 3D rasterizer with `triangle3d`/`sky_gradient`/z-buffer
-  natives and relative-mouse input — it doesn't even use `petal-ui`), but it
-  still duplicates all the *scaffolding* it doesn't customize.
+- `side-scroller` is **Shape A** — it launches the binary unchanged.
+- `petal-fps` is **Shape B** — it depends on the library and adds only its
+  delta (a software-framebuffer 3D rasterizer and the `triangle3d` native
+  family). It no longer copies any of the host scaffolding.
 
-The fix is the same principle as the web track: make the integration a
-**library** the app can depend on, and reduce the app to its delta.
+`petal-fps` used to be Shape B *done wrong*: it depended on Petal Core directly
+and carried its own `game_loop`/`input`/`protocol`/`screenshot`/`font`/`main`.
+Routing it through the library deleted all of that scaffolding — the app is now
+one small `Host` impl plus its rasterizer and font.
 
-### Recommended design
+### The design: one `Host` trait over a generic loop
 
-**1. Split `petal-desktop-sdl` into lib + bin.** Give the crate a `lib.rs` and
-keep `main.rs` as a thin CLI over it:
+**1. lib + bin split.** The crate has a `lib.rs`; `main.rs` is a thin CLI:
 
 ```toml
 # integrations/petal-desktop-sdl/Cargo.toml
@@ -206,64 +205,74 @@ name = "petal-sdl"
 path = "src/main.rs"
 ```
 
-The library exposes the reusable host: `GameConfig`, the run entry points
-(`run_game`/`run_agent`/`run_headless`/`run_screenshot`), SDL event → `petal_ui`
-input translation, the agent JSON protocol, screenshot/PNG encoding, the file
-watcher (hot reload), and font/text rendering. `side-scroller` is unaffected —
-it still launches the binary.
+The library owns everything reusable: `GameConfig`, the run entry points
+(`run_game`/`run_agent`/`run_headless`/`run_screenshot`/`run_record`), SDL event
+→ `petal_ui` input translation, the agent JSON protocol, PNG encoding, the
+hot-reload watcher, and the font ladder + SDL-canvas renderer.
 
-**2. Give the host an extension seam for the parts apps customize.** The two
-axes `petal-fps` varies are the **renderer** and the **native-function set**.
-Model them as traits the host is generic over (default impls = today's behavior):
+**2. The `Host` trait is the app seam.** Rather than two narrow traits, one
+`Host` bundles the axes apps actually vary — the natives a script can call, how
+a live frame is painted, and how a frame is captured to pixels/JSON — with inert
+defaults for the rest (browser hooks, per-frame prep, draw stats):
 
 ```rust
-/// What the game loop calls to paint a frame. The default SDL-canvas renderer
-/// consumes petal-ui draw commands; petal-fps supplies a framebuffer renderer.
-pub trait FrameRenderer {
-    fn present(&mut self, env: &mut Env) -> Result<(), String>;
-}
-
-/// Natives + prelude a host registers. The default registers the petal-ui set;
-/// petal-fps registers its 3D natives instead of (or alongside) it.
-pub trait HostNatives {
-    fn register(&self, env: &mut Env);
+pub trait Host {
+    fn register(&mut self, env: &mut Env);                       // natives + prelude
+    fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String>;
+    fn render_image(&mut self, env: &mut Env, stack: StackKey, w: u32, h: u32)
+        -> Result<RgbImage, String>;                             // screenshot/record/agent
+    // + default-inert hooks: default_source, on_program_loaded, prepare_frame,
+    //   draw_commands_json, draw_stats, on_escape, after_frame
 }
 ```
 
-`run_game(source, config, renderer, natives)` (or a `HostApp` struct bundling
-them) then drives the shared loop — event poll, `input.begin_frame(dt)`, bind
-uniforms, `env.run`, `renderer.present` — for any host. `petal-fps` becomes a
-small crate that depends on `petal-sdl`, implements `FrameRenderer` (its
-framebuffer + streaming texture) and `HostNatives` (its `triangle3d` family),
-and keeps its 3D math — but drops the copied `game_loop`/`protocol`/
-`screenshot`/`input`/`main` scaffolding.
+The generic loop drives it: poll events → `input.begin_frame(dt)` → bind
+`frame_info`/`input` → `env.run` → `host.present`. `DefaultHost` (the binary)
+renders `petal-ui` draw commands to an SDL canvas and adds the example browser +
+file I/O; `FpsHost` renders its framebuffer through a streaming texture and
+registers its 3D natives. Both leave the loop untouched.
 
-**3. Keep the frame contract identical to petal-ui's.** Even a custom renderer
-should follow the same order the web hosts use, so behavior is portable:
+**3. The frame contract is identical to the web hosts'**, so behavior is
+portable:
 
 ```text
-poll events → input.begin_frame(dt) → bind frame_info/input → env.run → renderer.present
+poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
 ```
+
+### Extend the shared layer, don't special-case the app
+
+`petal-fps` needs relative-mouse deltas (mouselook) and pointer grab — neither
+existed in `petal-ui`. Because those are generally useful (any pointer-locked
+game wants them), they went **into `petal-ui`**, not into the app: an
+`InputEvent::MouseRelative`, `mouse_dx()`/`mouse_dy()` natives, and
+`grab_mouse()`/`release_mouse()` with a `take_mouse_grab` drain the loop honors
+via SDL relative-mouse mode. Every host — web included — now gets them for free.
+This is the desktop echo of the web track's rule: a fix a sample app needs
+belongs in the layer below it (§"Extension hooks, not forks").
 
 ### What is shared vs. custom in petal-fps (scope guide)
 
-| Concern | Shared (move to `petal-sdl` lib) | Custom (stays in `petal-fps`) |
+| Concern | Shared (`petal-sdl` lib / `petal-ui`) | Custom (stays in `petal-fps`) |
 |---------|----------------------------------|-------------------------------|
 | Window + event loop | ✅ | |
-| SDL event → input translation | ✅ (relative-mouse can be a config flag) | |
+| SDL event → input translation (incl. relative mouse) | ✅ | |
 | Agent protocol / headless / screenshot / record | ✅ | |
 | Hot-reload file watcher | ✅ | |
-| Renderer | default SDL-canvas impl | framebuffer + 3D rasterizer (`FrameRenderer`) |
-| Native functions | default petal-ui set | `triangle3d`/`sky_gradient`/… (`HostNatives`) |
-| Camera / projection / scene | | ✅ (already in Petal) |
+| Input / timing / grab natives | ✅ (`petal-ui`) | |
+| Renderer | default SDL-canvas impl (`DefaultHost`) | framebuffer + 3D rasterizer (`FpsHost::present`/`render_image`) |
+| Draw native functions | default `petal-ui` set | `triangle3d`/`sky_gradient`/… (`native_fns`) |
+| Camera / projection / scene | | ✅ (in Petal) |
 
 ### Build & CI (desktop)
 
 - The crates are standalone (`cargo build --manifest-path <crate>/Cargo.toml`),
-  not a Cargo workspace. `petal-fps` gains `petal-sdl = { path = "../../integrations/petal-desktop-sdl" }`.
-- Building `petal-desktop-sdl` needs SDL2; on this machine set
+  not a Cargo workspace. `petal-fps` carries
+  `petal-sdl = { path = "../../integrations/petal-desktop-sdl" }` and
+  `petal-ui = { path = "../../petal-ui" }`; building it builds the library
+  transitively.
+- Building either crate needs SDL2; on this machine set
   `LIBRARY_PATH=/opt/homebrew/lib` for the linker (see the petal-sdl notes).
-- CI: `petal-fps` builds under the `rust-subprojects` job; keep it there.
+- CI: both build under the `rust-subprojects` job.
 
 ## Choosing an approach for a new port — checklist
 

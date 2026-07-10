@@ -1,15 +1,13 @@
-mod commands;
-mod font;
-mod game_loop;
-mod input;
-mod native_fns;
-mod protocol;
-mod renderer;
-mod screenshot;
+//! The `petal-sdl` binary: a thin CLI over the crate's generic game loop and
+//! its [`DefaultHost`](petal_sdl::DefaultHost). All the reusable machinery lives
+//! in the library (`src/lib.rs`); this file only parses arguments and dispatches
+//! to a run mode.
 
 use std::path::PathBuf;
 
-use game_loop::GameConfig;
+use petal_sdl::{
+    run_agent, run_game, run_headless, run_screenshot, DefaultHost, GameConfig,
+};
 
 /// Resolved at compile time to `petal-sdl/examples/`.
 const EXAMPLES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples");
@@ -46,12 +44,8 @@ fn main() {
                 i += 1;
                 title = args[i].clone();
             }
-            "--no-hot-reload" => {
-                hot_reload = false;
-            }
-            "--agent" => {
-                agent = true;
-            }
+            "--no-hot-reload" => hot_reload = false,
+            "--agent" => agent = true,
             "--headless" => {
                 headless = true;
                 agent = true; // headless implies agent
@@ -64,9 +58,7 @@ fn main() {
                 i += 1;
                 screenshot_frames = args[i].parse().expect("Invalid frame count");
             }
-            arg if !arg.starts_with('-') => {
-                source_path = Some(arg.to_string());
-            }
+            arg if !arg.starts_with('-') => source_path = Some(arg.to_string()),
             other => {
                 eprintln!("Unknown option: {}", other);
                 print_usage();
@@ -76,11 +68,14 @@ fn main() {
         i += 1;
     }
 
-    // When no source file is given, enable browser mode with the examples directory
+    // With no source file, enable browser mode over the examples directory.
     let examples_dir = if source_path.is_none() {
         let dir = PathBuf::from(EXAMPLES_DIR);
         if !dir.is_dir() {
-            eprintln!("Error: no source file provided and examples directory not found at {}", EXAMPLES_DIR);
+            eprintln!(
+                "Error: no source file provided and examples directory not found at {}",
+                EXAMPLES_DIR
+            );
             print_usage();
             std::process::exit(1);
         }
@@ -89,26 +84,18 @@ fn main() {
         None
     };
 
-    let config = GameConfig {
-        width,
-        height,
-        title,
-        hot_reload,
-        agent,
-        headless,
-        examples_dir,
-    };
-
+    let config = GameConfig { width, height, title, hot_reload, agent, headless };
+    let mut host = DefaultHost::new(examples_dir);
     let sp = source_path.as_deref();
 
     let result = if let Some(ref out_path) = screenshot_path {
-        game_loop::run_screenshot(sp, config, out_path, screenshot_frames)
+        run_screenshot(sp, config, out_path, screenshot_frames, &mut host)
     } else if headless {
-        game_loop::run_headless(sp, config)
+        run_headless(sp, config, &mut host)
     } else if agent {
-        game_loop::run_agent(sp, config)
+        run_agent(sp, config, &mut host)
     } else {
-        game_loop::run_game(sp, config)
+        run_game(sp, config, &mut host)
     };
 
     if let Err(e) = result {

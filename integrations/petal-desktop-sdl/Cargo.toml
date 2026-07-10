@@ -6,6 +6,14 @@ description = "SDL2-based 2D graphics host for Petal programs, with hot reload"
 license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
+[lib]
+name = "petal_sdl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "petal-sdl"
+path = "src/main.rs"
+
 [dependencies]
 petal = { path = "../../rust" }
 petal-ui = { path = "../../petal-ui" }

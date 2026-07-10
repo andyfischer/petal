@@ -8,12 +8,12 @@ repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../rust" }
+petal-ui = { path = "../../petal-ui" }
+petal-sdl = { path = "../../integrations/petal-desktop-sdl" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
-notify = "7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 image = "0.25"
-base64 = "0.22"
 
 [profile.release]
 opt-level = 3

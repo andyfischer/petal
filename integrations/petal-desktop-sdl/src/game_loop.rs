@@ -1,32 +1,41 @@
-use std::path::{Path, PathBuf};
+//! The generic desktop game loop, shared by every SDL host.
+//!
+//! The loop owns *platform policy* — SDL init, the window and canvas, the event
+//! pump, frame timing, the agent/headless/screenshot/record entry points, hot
+//! reload, and pointer-grab handling — and drives a [`Host`] for the parts that
+//! vary between apps: which natives a script can call, how a frame is painted,
+//! and how a frame is captured to pixels/JSON. The default binary supplies
+//! [`crate::default_host::DefaultHost`] (an SDL-canvas renderer over the
+//! `petal-ui` draw vocabulary); other apps (e.g. `petal-fps`) supply their own
+//! `Host` and drop all of this scaffolding.
+//!
+//! Every host follows the same frame contract as the web hosts, so behavior is
+//! portable:
+//!
+//! ```text
+//! poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
+//! ```
+
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use notify::{RecursiveMode, Watcher};
-use sdl2::event::Event;
-use sdl2::keyboard::Scancode;
-use sdl2::pixels::{Color, PixelFormatEnum};
+use image::RgbImage;
 use sdl2::render::Canvas;
-use sdl2::surface::Surface;
 use sdl2::video::Window;
-
-use crate::commands::DrawCommand;
-use crate::font::{self, FontLadder};
 
 use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use crate::commands::{clear_draw_commands, take_draw_commands};
-use crate::input::{mods_from_sdl, scancode_to_name, sdl_button_to_std, InputEvent, InputState};
-use crate::native_fns::{
-    self, bind_dimensions, bind_examples, bind_frame_info, bind_input, reset_canvas_ids,
-    take_pending_launch, ExampleEntry,
-};
-use crate::protocol::{self, Command, Response};
-use crate::renderer;
-use crate::screenshot;
+use petal_ui::draw::clear_draw_commands;
+use petal_ui::input::{bind_frame_info, bind_input, take_mouse_grab, InputState};
 
+use crate::input::poll_sdl_events;
+use crate::protocol::{self, Command, Response};
+use crate::watcher::{check_hot_reload, setup_watcher};
+
+/// Window + mode configuration shared by every run entry point.
 pub struct GameConfig {
     pub width: u32,
     pub height: u32,
@@ -36,112 +45,144 @@ pub struct GameConfig {
     pub agent: bool,
     #[allow(dead_code)]
     pub headless: bool,
-    /// When set, enables browser mode: populate BROWSER_STATE from this directory.
-    pub examples_dir: Option<PathBuf>,
 }
 
-const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
+/// A request to (re)load a different script into the running host — the
+/// mechanism behind an example browser's "launch" and "return to browser".
+pub struct ScriptSwitch {
+    pub source: String,
+    /// The on-disk path, when the source came from a file (so it can `import`
+    /// siblings and hot-reload). `None` for an embedded source (e.g. a browser).
+    pub path: Option<String>,
+}
 
-enum PollResult {
-    None,
+/// What the Escape key does in windowed interactive mode.
+pub enum EscapeAction {
     Quit,
-    Escape,
+    Switch(ScriptSwitch),
 }
 
-/// Poll SDL events, translating them into standard `petal_ui` input events.
-/// Returns Quit/Escape signals. The caller starts the script frame afterwards
-/// with `input.begin_frame(dt)`.
-fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> PollResult {
-    let mut result = PollResult::None;
-    for event in event_pump.poll_iter() {
-        match event {
-            Event::Quit { .. } => return PollResult::Quit,
-            Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
-                result = PollResult::Escape;
-            }
-            // OS auto-repeats are dropped: `key_pressed` fires once per
-            // physical press, matching the pre-petal-ui behavior.
-            Event::KeyDown { scancode: Some(sc), keymod, repeat: false, .. } => {
-                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
-                if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyDown { key: name.to_string() });
+/// The per-app seam. Everything a host must provide to run on this loop; every
+/// method beyond the three required ones has an inert default, so a minimal
+/// host is small. Hosts must not re-implement the loop, event translation,
+/// protocol, or watcher — those live here.
+pub trait Host {
+    /// Register this host's natives, prelude, and modules into a fresh `Env`.
+    /// Called once, before any program is loaded.
+    fn register(&mut self, env: &mut Env);
+
+    /// Paint the live frame's draw output (drained from `env`'s default draw
+    /// buffer) to the window and present. Windowed modes only.
+    fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String>;
+
+    /// Rasterize `stack`'s pending draw output into an RGB image, with no
+    /// window — used by `--screenshot`/`--record` and the agent `screenshot`
+    /// command. `stack` is a speculative fork; drain it with the host's
+    /// vocabulary (`take_draw_commands_for`).
+    fn render_image(
+        &mut self,
+        env: &mut Env,
+        stack: StackKey,
+        width: u32,
+        height: u32,
+    ) -> Result<RgbImage, String>;
+
+    /// The program to run when the CLI got no path (e.g. an example browser).
+    /// `None` (the default) makes "no source file" a usage error.
+    fn default_source(&mut self) -> Option<ScriptSwitch> {
+        None
+    }
+
+    /// Bind host state after each (re)load of a program — dimensions are
+    /// already bound. `path` is the loaded program's path (`None` for embedded
+    /// sources). The default host binds text metrics and its example list here.
+    fn on_program_loaded(&mut self, _env: &mut Env, _path: Option<&str>) {}
+
+    /// Reset per-frame host bindings right before the script runs (both live
+    /// and speculative frames) — e.g. the offscreen-canvas id counter.
+    fn prepare_frame(&mut self, _env: &mut Env) {}
+
+    /// Serialize `stack`'s pending draw output as JSON for the agent
+    /// `capture_draw_commands` response. Default: JSON `null`.
+    fn draw_commands_json(&mut self, _env: &mut Env, _stack: StackKey) -> serde_json::Value {
+        serde_json::Value::Null
+    }
+
+    /// Optional per-frame draw statistics for the agent `draw_stats` command.
+    /// Default: `None` (the command reports "unsupported").
+    fn draw_stats(&mut self, _env: &mut Env, _stack: StackKey) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Windowed interactive Escape behavior. Default: quit the app.
+    fn on_escape(&mut self, _env: &mut Env) -> EscapeAction {
+        EscapeAction::Quit
+    }
+
+    /// After each interactive frame, optionally request a script switch (an
+    /// example browser drains its `launch_script` channel here). Default: none.
+    fn after_frame(&mut self, _env: &mut Env) -> Option<ScriptSwitch> {
+        None
+    }
+}
+
+/// A loaded program + its stack, path, and file watcher. Threaded through the
+/// interactive loop so a browser "launch"/"return" can swap it wholesale.
+struct Loaded {
+    program_id: ProgramId,
+    stack_id: StackKey,
+    path: Option<String>,
+    reloader: Reloader,
+}
+
+/// Owns the hot-reload watcher + its receiver. `poll` is a no-op when disabled
+/// or when the program has no on-disk path (an embedded browser can't reload).
+struct Reloader {
+    rx: mpsc::Receiver<()>,
+    _watcher: Option<notify::RecommendedWatcher>,
+}
+
+impl Reloader {
+    fn disabled() -> Self {
+        let (_tx, rx) = mpsc::channel();
+        Self { rx, _watcher: None }
+    }
+
+    fn start(env: &Env, program_id: ProgramId, path: Option<&str>, enabled: bool) -> Self {
+        if !enabled {
+            return Self::disabled();
+        }
+        match path {
+            Some(p) => {
+                let (tx, rx) = mpsc::channel();
+                match setup_watcher(env, program_id, p, tx) {
+                    Ok(w) => Self { rx, _watcher: w },
+                    Err(e) => {
+                        eprintln!("[hot-reload] {}", e);
+                        Self::disabled()
+                    }
                 }
             }
-            Event::KeyUp { scancode: Some(sc), keymod, .. } => {
-                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
-                if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyUp { key: name.to_string() });
-                }
-            }
-            Event::TextInput { text, .. } => {
-                input.event(InputEvent::Text { text });
-            }
-            Event::MouseMotion { x, y, .. } => {
-                input.event(InputEvent::MouseMove { x, y });
-            }
-            Event::MouseButtonDown { mouse_btn, .. } => {
-                if let Some(button) = sdl_button_to_std(mouse_btn) {
-                    input.event(InputEvent::MouseDown { button });
-                }
-            }
-            Event::MouseButtonUp { mouse_btn, .. } => {
-                if let Some(button) = sdl_button_to_std(mouse_btn) {
-                    input.event(InputEvent::MouseUp { button });
-                }
-            }
-            Event::MouseWheel { precise_x, precise_y, .. } => {
-                // SDL y > 0 means "scrolled up"; the standard scroll_y() is
-                // positive scrolling down.
-                input.event(InputEvent::Scroll {
-                    dx: precise_x as f64,
-                    dy: -precise_y as f64,
-                });
-            }
-            _ => {}
+            None => Self::disabled(),
         }
     }
-    result
-}
 
-/// Scan a directory for example `.ptl` scripts (excluding the browser itself),
-/// returning display-name/path entries sorted by path.
-fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
-    let mut entries: Vec<ExampleEntry> = Vec::new();
-    if let Ok(mut dir_entries) = std::fs::read_dir(examples_dir) {
-        let mut paths: Vec<PathBuf> = Vec::new();
-        while let Some(Ok(entry)) = dir_entries.next() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "ptl") {
-                let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                if name != "browser" {
-                    paths.push(path);
-                }
-            }
-        }
-        paths.sort();
-        for path in paths {
-            let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-            // Capitalize first letter
-            let display_name = {
-                let mut c = name.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            };
-            entries.push(ExampleEntry {
-                name: display_name,
-                path: path.to_string_lossy().to_string(),
-            });
+    fn poll(&self, env: &mut Env, loaded_program: ProgramId, stack_id: StackKey, path: Option<&str>) {
+        if let Some(p) = path {
+            check_hot_reload(&self.rx, p, env, loaded_program, stack_id);
         }
     }
-    entries
 }
 
-pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
+// --- Windowed interactive mode ---
+
+pub fn run_game<H: Host>(
+    source_path: Option<&str>,
+    config: GameConfig,
+    host: &mut H,
+) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
     let window = video
         .window(&config.title, config.width, config.height)
@@ -157,57 +198,27 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
-    let fonts = font::FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
 
-    // Persistent software framebuffer: pixels accumulate across frames unless a
-    // `clear()` (DrawCommand::Clear) wipes them. Sized to the drawable area.
-    let (fb_w, fb_h) = canvas.output_size()?;
-    let mut framebuffer = Some(new_framebuffer(fb_w, fb_h)?);
-
-    let mut in_browser = source_path.is_none();
-    let has_browser = config.examples_dir.is_some();
-
-    let (mut env, mut program_id, mut stack_id) = init_petal(source_path, &config)?;
-    bind_text_metrics_from(&mut env, &fonts);
-
-    let mut current_source_path: Option<String> = source_path.map(|s| s.to_string());
-
-    let (mut _reload_tx, mut reload_rx) = mpsc::channel();
-    let mut _watcher: Option<notify::RecommendedWatcher> = None;
-    if config.hot_reload {
-        if let Some(ref sp) = current_source_path {
-            let (tx, rx) = mpsc::channel();
-            _reload_tx = tx.clone();
-            reload_rx = rx;
-            _watcher = setup_watcher(&env, program_id, sp, tx)?;
-        }
-    }
+    let mut env = Env::new();
+    host.register(&mut env);
+    let mut current = load_initial(&mut env, source_path, &config, host)?;
 
     let mut last_frame = Instant::now();
     let mut frame_count: i64 = 0;
     let mut input = InputState::default();
+    let mut mouse_grabbed = false;
 
     'game: loop {
         match poll_sdl_events(&mut event_pump, &mut input) {
-            PollResult::Quit => break 'game,
-            PollResult::Escape if in_browser || !has_browser => break 'game,
-            PollResult::Escape => {
-                // In game mode with browser available, return to browser
-                match switch_script(&mut env, BROWSER_SCRIPT, None, &config) {
-                    Ok((pid, sid)) => {
-                        program_id = pid;
-                        stack_id = sid;
-                        in_browser = true;
-                        current_source_path = None;
-                        _watcher = None;
-                        frame_count = 0;
-                        last_frame = Instant::now();
-                    }
-                    Err(e) => eprintln!("[browser] failed to return to browser: {}", e),
+            crate::input::PollResult::Quit => break 'game,
+            crate::input::PollResult::Escape => match host.on_escape(&mut env) {
+                EscapeAction::Quit => break 'game,
+                EscapeAction::Switch(sw) => {
+                    perform_switch(&mut env, sw, &config, host, &mut current, &mut frame_count, &mut last_frame);
+                    continue;
                 }
-                continue;
-            }
-            PollResult::None => {}
+            },
+            crate::input::PollResult::None => {}
         }
 
         let now = Instant::now();
@@ -218,82 +229,49 @@ pub fn run_game(source_path: Option<&str>, config: GameConfig) -> Result<(), Str
         input.begin_frame(dt);
         bind_frame_info(&mut env, dt, frame_count);
 
-        if let Some(ref sp) = current_source_path {
-            check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
-        }
+        current
+            .reloader
+            .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
 
         clear_draw_commands(&mut env);
-        reset_canvas_ids(&mut env);
+        host.prepare_frame(&mut env);
         bind_input(&mut env, &input);
 
-        env.reset_stack(stack_id)?;
-        if let Err(e) = env.run(stack_id) {
+        env.reset_stack(current.stack_id)?;
+        if let Err(e) = env.run(current.stack_id) {
             eprintln!("[petal error] {}", e);
         }
-
         drain_output(&mut env);
 
-        // Check if browser wants to launch a script
-        let pending = take_pending_launch(&mut env);
-        if let Some(script_path) = pending {
-            match std::fs::read_to_string(&script_path) {
-                Ok(source) => {
-                    match switch_script(&mut env, &source, Some(&script_path), &config) {
-                        Ok((pid, sid)) => {
-                            program_id = pid;
-                            stack_id = sid;
-                            in_browser = false;
-                            current_source_path = Some(script_path.clone());
-                            frame_count = 0;
-                            last_frame = Instant::now();
-                            // Set up file watcher for new script
-                            if config.hot_reload {
-                                let (tx, rx) = mpsc::channel();
-                                _reload_tx = tx.clone();
-                                reload_rx = rx;
-                                _watcher =
-                                    setup_watcher(&env, program_id, &script_path, tx)
-                                        .unwrap_or(None);
-                            }
-                        }
-                        Err(e) => eprintln!("[browser] failed to launch {}: {}", script_path, e),
-                    }
-                }
-                Err(e) => eprintln!("[browser] failed to read {}: {}", script_path, e),
+        // Honor the script's pointer grab/release requests (pointer lock for
+        // mouselook). Set once when it changes, so we don't thrash SDL.
+        if let Some(want_grab) = take_mouse_grab(&mut env) {
+            if want_grab != mouse_grabbed {
+                sdl.mouse().set_relative_mouse_mode(want_grab);
+                mouse_grabbed = want_grab;
             }
         }
 
-        let commands = take_draw_commands(&mut env);
-        let surface = framebuffer.take().expect("framebuffer present");
-        framebuffer = Some(present_frame(&mut canvas, surface, commands, &fonts)?);
+        if let Some(sw) = host.after_frame(&mut env) {
+            perform_switch(&mut env, sw, &config, host, &mut current, &mut frame_count, &mut last_frame);
+            continue;
+        }
+
+        host.present(&mut canvas, &mut env)?;
     }
 
     Ok(())
 }
 
-fn switch_script(
-    env: &mut Env,
-    source: &str,
-    source_path: Option<&str>,
-    config: &GameConfig,
-) -> Result<(ProgramId, StackKey), String> {
-    // Loading with the script's path lets it `import` sibling .ptl files.
-    let program_id = match source_path {
-        Some(sp) => env.load_program_at(source, Path::new(sp))?,
-        None => env.load_program(source)?,
-    };
-    let stack_id = env.create_stack(program_id)?;
-    bind_dimensions(env, config.width as i32, config.height as i32);
-    bind_frame_info(env, 0.0, 0);
-    Ok((program_id, stack_id))
-}
+// --- Windowed agent mode (hybrid: interactive window + stdin protocol) ---
 
-/// Agent mode with SDL window (hybrid): game runs interactively,
-/// LLM can pause/resume/step/inspect via stdin protocol.
-pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
+pub fn run_agent<H: Host>(
+    source_path: Option<&str>,
+    config: GameConfig,
+    host: &mut H,
+) -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
     let window = video
         .window(&config.title, config.width, config.height)
@@ -309,25 +287,10 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
-    let fonts = font::FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
 
-    // Persistent software framebuffer (see run_game): accumulates across frames
-    // unless `clear()` wipes it.
-    let (fb_w, fb_h) = canvas.output_size()?;
-    let mut framebuffer = Some(new_framebuffer(fb_w, fb_h)?);
-
-    let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
-    bind_text_metrics_from(&mut env, &fonts);
-
-    let (reload_tx, reload_rx) = mpsc::channel();
-    let _watcher = if config.hot_reload {
-        match source_path {
-            Some(sp) => setup_watcher(&env, program_id, sp, reload_tx)?,
-            None => None,
-        }
-    } else {
-        None
-    };
+    let mut env = Env::new();
+    host.register(&mut env);
+    let current = load_initial(&mut env, source_path, &config, host)?;
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = false;
@@ -335,7 +298,6 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
     let mut frame_count: i64 = 0;
     let mut input = InputState::default();
 
-    // Signal ready
     protocol::send_response(&Response {
         frame: Some(0),
         paused: Some(false),
@@ -343,24 +305,13 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
     });
 
     'game: loop {
-        // Process all pending protocol commands
         while let Ok(cmd) = cmd_rx.try_recv() {
-            handle_command(
-                cmd,
-                &mut env,
-                program_id,
-                stack_id,
-                &mut paused,
-                &mut input,
-                &mut frame_count,
-                Some(&fonts),
-            );
+            handle_command(cmd, &mut env, &current, &mut paused, &mut input, &mut frame_count, host);
         }
 
-        // Poll SDL events (always, even when paused, to keep window responsive)
         match poll_sdl_events(&mut event_pump, &mut input) {
-            PollResult::Quit | PollResult::Escape => break 'game,
-            PollResult::None => {}
+            crate::input::PollResult::Quit | crate::input::PollResult::Escape => break 'game,
+            crate::input::PollResult::None => {}
         }
 
         if !paused {
@@ -371,63 +322,44 @@ pub fn run_agent(source_path: Option<&str>, config: GameConfig) -> Result<(), St
 
             input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);
-
-            if let Some(sp) = source_path {
-                check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
-            }
+            current
+                .reloader
+                .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
 
             clear_draw_commands(&mut env);
-            reset_canvas_ids(&mut env);
+            host.prepare_frame(&mut env);
             bind_input(&mut env, &input);
 
-            env.reset_stack(stack_id)?;
-            if let Err(e) = env.run(stack_id) {
+            env.reset_stack(current.stack_id)?;
+            if let Err(e) = env.run(current.stack_id) {
                 eprintln!("[petal error] {}", e);
             }
-
             drain_output(&mut env);
         }
 
-        // Always render (shows last frame when paused). When paused, no new
-        // commands are produced, so present_frame re-blits the retained surface.
-        let commands = take_draw_commands(&mut env);
-        let surface = framebuffer.take().expect("framebuffer present");
-        framebuffer = Some(present_frame(&mut canvas, surface, commands, &fonts)?);
+        // Always present (shows the retained frame when paused).
+        host.present(&mut canvas, &mut env)?;
     }
 
     Ok(())
 }
 
-/// Headless agent mode: no SDL window, purely protocol-driven.
-pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(), String> {
-    let (mut env, program_id, stack_id) = init_petal(source_path, &config)?;
+// --- Headless agent mode: no window, purely protocol-driven ---
 
-    // A font ladder for the `screenshot` command's real-renderer path. Headless
-    // mode has no window, but rendering text to a software surface only needs
-    // the TTF context. Optional: if no system font loads, non-screenshot
-    // commands still work and `screenshot` returns an informative error.
-    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
-    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER).ok();
-    if let Some(f) = &fonts {
-        bind_text_metrics_from(&mut env, f);
-    }
-
-    let (reload_tx, reload_rx) = mpsc::channel();
-    let _watcher = if config.hot_reload {
-        match source_path {
-            Some(sp) => setup_watcher(&env, program_id, sp, reload_tx)?,
-            None => None,
-        }
-    } else {
-        None
-    };
+pub fn run_headless<H: Host>(
+    source_path: Option<&str>,
+    config: GameConfig,
+    host: &mut H,
+) -> Result<(), String> {
+    let mut env = Env::new();
+    host.register(&mut env);
+    let current = load_initial(&mut env, source_path, &config, host)?;
 
     let cmd_rx = protocol::spawn_stdin_reader();
-    let mut paused = true; // Headless starts paused — LLM drives frames
+    let mut paused = true; // Headless starts paused — the agent drives frames.
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
 
-    // Signal ready
     protocol::send_response(&Response {
         frame: Some(0),
         paused: Some(true),
@@ -435,330 +367,179 @@ pub fn run_headless(source_path: Option<&str>, config: GameConfig) -> Result<(),
     });
 
     loop {
-        // Block waiting for commands (no render loop to drive)
         let cmd = match cmd_rx.recv() {
             Ok(cmd) => cmd,
             Err(_) => break, // stdin closed
         };
-
-        if let Some(sp) = source_path {
-            check_hot_reload(&reload_rx, sp, &mut env, program_id, stack_id);
-        }
-
-        handle_command(
-            cmd,
-            &mut env,
-            program_id,
-            stack_id,
-            &mut paused,
-            &mut input,
-            &mut frame_count,
-            fonts.as_ref(),
-        );
+        current
+            .reloader
+            .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
+        handle_command(cmd, &mut env, &current, &mut paused, &mut input, &mut frame_count, host);
     }
 
     Ok(())
 }
 
-/// Screenshot mode: run N frames headlessly, save a PNG, exit.
-pub fn run_screenshot(
+// --- Screenshot mode: run N frames headlessly, save a PNG, exit ---
+
+pub fn run_screenshot<H: Host>(
     source_path: Option<&str>,
     config: GameConfig,
     output_path: &str,
     frames: u32,
+    host: &mut H,
 ) -> Result<(), String> {
-    let (mut env, _program_id, stack_id) = init_petal(source_path, &config)?;
-
-    // Load the font up front and bind its proportional metrics, so text_width()
-    // is correct during the frames we run (not just at render time). The same
-    // ladder renders the screenshot through the real renderer (real glyphs).
-    let ttf = sdl2::ttf::init().map_err(|e| e.to_string())?;
-    let fonts = FontLadder::load_system(&ttf, font::DEFAULT_LADDER)?;
-    bind_text_metrics_from(&mut env, &fonts);
+    let mut env = Env::new();
+    host.register(&mut env);
+    let current = load_initial(&mut env, source_path, &config, host)?;
 
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..frames {
-        protocol::run_one_frame(&mut env, stack_id, &mut input, &mut frame_count)?;
+        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
     }
 
-    // Capture draw commands from one more speculative frame
-    let commands = match protocol::capture_draw_commands(&mut env, stack_id, &input) {
-        Ok((cmds, _)) => cmds,
-        Err(e) => return Err(e),
-    };
-
-    screenshot::save_png(&commands, config.width, config.height, output_path, &fonts)?;
+    let (img, output) = capture_image(&mut env, current.stack_id, &input, config.width, config.height, host)?;
+    for line in output {
+        eprintln!("{}", line);
+    }
+    crate::screenshot::save_png(&img, output_path)?;
     eprintln!("Screenshot saved to {}", output_path);
+    Ok(())
+}
+
+// --- Record mode: write a PNG per frame into a directory (flipbook) ---
+
+pub fn run_record<H: Host>(
+    source_path: Option<&str>,
+    config: GameConfig,
+    out_dir: &str,
+    frames: u32,
+    warmup: u32,
+    host: &mut H,
+) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
+
+    let mut env = Env::new();
+    host.register(&mut env);
+    let current = load_initial(&mut env, source_path, &config, host)?;
+
+    let mut input = InputState::default();
+    let mut frame_count: i64 = 0;
+    for _ in 0..warmup {
+        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
+    }
+    for i in 0..frames {
+        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
+        let (img, _) = capture_image(&mut env, current.stack_id, &input, config.width, config.height, host)?;
+        let path = format!("{}/frame_{:04}.png", out_dir, i);
+        crate::screenshot::save_png(&img, &path)?;
+    }
+    eprintln!("[record] wrote {} frames to {}", frames, out_dir);
     Ok(())
 }
 
 // --- Shared helpers ---
 
-/// Initialize the Petal env from a source file path, or from the embedded
-/// browser script when `source_path` is None (browser mode).
-/// When `config.examples_dir` is set, populates BROWSER_STATE.
-fn init_petal(
+/// Load the initial program: the CLI path when given, else the host's default
+/// source (e.g. a browser). Errors if neither is available.
+fn load_initial<H: Host>(
+    env: &mut Env,
     source_path: Option<&str>,
     config: &GameConfig,
-) -> Result<(Env, ProgramId, StackKey), String> {
-    let mut env = Env::new();
-    native_fns::register_all(&mut env);
-
-    if let Some(ref dir) = config.examples_dir {
-        let examples = load_examples(dir);
-        bind_examples(&mut env, &examples);
-    }
-
-    let source = match source_path {
-        Some(sp) => std::fs::read_to_string(sp)
-            .map_err(|e| format!("Failed to read {}: {}", sp, e))?,
-        None => BROWSER_SCRIPT.to_string(),
+    host: &mut H,
+) -> Result<Loaded, String> {
+    let switch = match source_path {
+        Some(sp) => {
+            let source = std::fs::read_to_string(sp)
+                .map_err(|e| format!("Failed to read {}: {}", sp, e))?;
+            ScriptSwitch { source, path: Some(sp.to_string()) }
+        }
+        None => host
+            .default_source()
+            .ok_or_else(|| "no source file provided".to_string())?,
     };
+    load_switch(env, switch, config, host)
+}
 
-    // Loading with the script's path lets it `import` sibling .ptl files.
-    let program_id = match source_path {
-        Some(sp) => env.load_program_at(&source, Path::new(sp))?,
-        None => env.load_program(&source)?,
+/// Load + install a program: compile, create its stack, bind dimensions, let
+/// the host bind its per-program state, and start a watcher. Shared by the
+/// initial load and every browser switch.
+fn load_switch<H: Host>(
+    env: &mut Env,
+    switch: ScriptSwitch,
+    config: &GameConfig,
+    host: &mut H,
+) -> Result<Loaded, String> {
+    let program_id = match &switch.path {
+        Some(sp) => env.load_program_at(&switch.source, Path::new(sp))?,
+        None => env.load_program(&switch.source)?,
     };
     let stack_id = env.create_stack(program_id)?;
+    petal_ui::input::bind_dimensions(env, config.width as i32, config.height as i32);
+    bind_frame_info(env, 0.0, 0);
+    host.on_program_loaded(env, switch.path.as_deref());
 
-    bind_dimensions(&mut env, config.width as i32, config.height as i32);
-
-    Ok((env, program_id, stack_id))
+    let reloader = Reloader::start(env, program_id, switch.path.as_deref(), config.hot_reload);
+    Ok(Loaded { program_id, stack_id, path: switch.path, reloader })
 }
 
-fn handle_command(
-    cmd: Command,
+/// Perform a browser switch requested by a host hook. On success, swaps in the
+/// new program and resets the frame counter/clock; on failure, logs and keeps
+/// the current program running (a bad launch must not kill the window).
+fn perform_switch<H: Host>(
     env: &mut Env,
-    program_id: ProgramId,
-    stack_id: StackKey,
-    paused: &mut bool,
-    input: &mut InputState,
+    switch: ScriptSwitch,
+    config: &GameConfig,
+    host: &mut H,
+    current: &mut Loaded,
     frame_count: &mut i64,
-    fonts: Option<&FontLadder>,
+    last_frame: &mut Instant,
 ) {
-    match cmd {
-        Command::Pause => {
-            *paused = true;
-            protocol::send_response(&Response {
-                paused: Some(true),
-                ..Response::ok()
-            });
+    match load_switch(env, switch, config, host) {
+        Ok(next) => {
+            *current = next;
+            *frame_count = 0;
+            *last_frame = Instant::now();
         }
-        Command::Resume => {
-            *paused = false;
-            protocol::send_response(&Response {
-                paused: Some(false),
-                ..Response::ok()
-            });
-        }
-        Command::Step { n } => {
-            let mut last_frame = 0i64;
-            for _ in 0..n {
-                match protocol::run_one_frame(env, stack_id, input, frame_count) {
-                    Ok(fc) => last_frame = fc,
-                    Err(e) => {
-                        protocol::send_response(&Response::err(e));
-                        return;
-                    }
-                }
-            }
-            let output = env.take_output();
-            protocol::send_response(&Response {
-                frame: Some(last_frame),
-                output: if output.is_empty() { None } else { Some(output) },
-                ..Response::ok()
-            });
-        }
-        Command::State => {
-            let state = protocol::get_state_json(env, program_id, stack_id);
-            protocol::send_response(&Response {
-                state: Some(state),
-                ..Response::ok()
-            });
-        }
-        Command::CaptureDrawCommands => {
-            match protocol::capture_draw_commands(env, stack_id, input) {
-                Ok((commands, output)) => {
-                    protocol::send_response(&Response {
-                        draw_commands: Some(commands),
-                        output: if output.is_empty() { None } else { Some(output) },
-                        ..Response::ok()
-                    });
-                }
-                Err(e) => {
-                    protocol::send_response(&Response::err(e));
-                }
-            }
-        }
-        Command::Input { keys_down, mouse, text } => {
-            protocol::apply_input(input, &keys_down, mouse.as_ref(), &text);
-            protocol::send_response(&Response::ok());
-        }
-        Command::SetState { name, value } => {
-            match protocol::set_state_from_json(env, program_id, stack_id, &name, &value) {
-                Ok(()) => protocol::send_response(&Response::ok()),
-                Err(e) => protocol::send_response(&Response::err(e)),
-            }
-        }
-        Command::Screenshot => {
-            let Some(fonts) = fonts else {
-                protocol::send_response(&Response::err(
-                    "screenshot unavailable: no system font could be loaded".to_string(),
-                ));
-                return;
-            };
-            match protocol::capture_draw_commands(env, stack_id, input) {
-                Ok((commands, _output)) => {
-                    let (w, h) = native_fns::dimensions(env);
-                    let b64 = screenshot::render_to_png_base64(&commands, w, h, fonts);
-                    protocol::send_response(&Response {
-                        screenshot: Some(b64),
-                        ..Response::ok()
-                    });
-                }
-                Err(e) => {
-                    protocol::send_response(&Response::err(e));
-                }
-            }
-        }
+        Err(e) => eprintln!("[browser] switch failed: {}", e),
     }
 }
 
-/// Create a persistent software framebuffer the size of the window, cleared to
-/// black. Pixels in this surface survive across frames; only a
-/// `DrawCommand::Clear` wipes it, which is what makes accumulative generative
-/// art work (a frame that never calls `clear()` keeps the previous frame).
-fn new_framebuffer(width: u32, height: u32) -> Result<Surface<'static>, String> {
-    let mut surface =
-        Surface::new(width, height, PixelFormatEnum::RGB888).map_err(|e| e.to_string())?;
-    surface
-        .fill_rect(None, Color::RGB(0, 0, 0))
-        .map_err(|e| e.to_string())?;
-    Ok(surface)
-}
-
-/// Render this frame's commands into the persistent `surface`, then blit the
-/// whole surface to the window and present. The surface is passed by value and
-/// returned so the caller threads the same (retained) framebuffer through the
-/// loop. Because the surface is software-backed, pixels persist unless a
-/// `Clear` command wipes them.
-fn present_frame(
-    canvas: &mut Canvas<Window>,
-    surface: Surface<'static>,
-    commands: Vec<DrawCommand>,
-    fonts: &FontLadder,
-) -> Result<Surface<'static>, String> {
-    // Render into the persistent surface (software canvas).
-    let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
-    renderer::render(&mut sc, commands, fonts);
-    let surface = sc.into_surface();
-
-    // Upload the surface to the window as a texture and present. The full-surface
-    // blit overwrites the whole window, so no window clear is needed. `copy` with
-    // `None, None` scales the surface to the window if sizes differ (resizable).
-    let tc = canvas.texture_creator();
-    let tex = tc
-        .create_texture_from_surface(&surface)
-        .map_err(|e| e.to_string())?;
-    canvas.copy(&tex, None, None)?;
-    canvas.present();
-
-    Ok(surface)
-}
-
-/// Measure the font's proportional glyph advances and bind them so scripts'
-/// `text_width()` matches the actually-rendered text (correct centering /
-/// right-alignment) instead of assuming a monospace advance.
-fn bind_text_metrics_from(env: &mut Env, fonts: &FontLadder) {
-    petal_ui::draw::bind_text_advance_table(env, &fonts.ascii_advance_ratios());
+/// Capture a speculative frame as an RGB image (screenshot/record). Sets up the
+/// frame's bindings, forks so live state is untouched, and asks the host to
+/// rasterize the fork's draw output.
+fn capture_image<H: Host>(
+    env: &mut Env,
+    stack_id: StackKey,
+    input: &InputState,
+    width: u32,
+    height: u32,
+    host: &mut H,
+) -> Result<(RgbImage, Vec<String>), String> {
+    host.prepare_frame(env);
+    bind_input(env, input);
+    let (img, output) = protocol::with_speculative_frame(env, stack_id, |env, fork| {
+        host.render_image(env, fork, width, height)
+    })?;
+    Ok((img?, output))
 }
 
 fn drain_output(env: &mut Env) {
-    let output = env.take_output();
-    for line in output {
+    for line in env.take_output() {
         eprintln!("{}", line);
     }
 }
 
-fn check_hot_reload(
-    reload_rx: &mpsc::Receiver<()>,
-    source_path: &str,
+/// Dispatch one agent-protocol command. Shared by windowed-agent and headless.
+fn handle_command<H: Host>(
+    cmd: Command,
     env: &mut Env,
-    program_id: ProgramId,
-    stack_id: StackKey,
+    current: &Loaded,
+    paused: &mut bool,
+    input: &mut InputState,
+    frame_count: &mut i64,
+    host: &mut H,
 ) {
-    if let Ok(()) = reload_rx.try_recv() {
-        if let Ok(new_source) = std::fs::read_to_string(source_path) {
-            let new_program = match env.compile_program_at(
-                program_id,
-                &new_source,
-                Path::new(source_path),
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("[hot-reload] compile error: {}", e);
-                    return;
-                }
-            };
-            match env.transfer_state(stack_id, new_program) {
-                Ok(result) => {
-                    eprintln!(
-                        "[hot-reload] preserved: {}, dropped: {}",
-                        result.state_preserved, result.state_dropped
-                    );
-                }
-                Err(e) => {
-                    eprintln!("[hot-reload] error: {}", e);
-                }
-            }
-        }
-    }
-}
-
-/// Watch every directory the program's source files live in — the entry
-/// script's directory plus the directory of each imported module in the
-/// program's module manifest (`Env::module_manifest`). Editing an imported
-/// `palette.ptl` hot-reloads the scripts that import it, not just edits to
-/// the entry file. Directories are watched (non-recursively), matching the
-/// original entry-file behavior; any modify event triggers a reload check.
-fn setup_watcher(
-    env: &Env,
-    program_id: ProgramId,
-    source_path: &str,
-    tx: mpsc::Sender<()>,
-) -> Result<Option<notify::RecommendedWatcher>, String> {
-    let path = Path::new(source_path)
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve path: {}", e))?;
-
-    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
-        if let Ok(event) = res {
-            if event.kind.is_modify() {
-                let _ = tx.send(());
-            }
-        }
-    })
-    .map_err(|e| format!("Failed to create watcher: {}", e))?;
-
-    let mut dirs: Vec<std::path::PathBuf> =
-        vec![path.parent().unwrap_or(Path::new(".")).to_path_buf()];
-    for entry in env.module_manifest(program_id) {
-        if let Some(origin) = entry.origin
-            && let Ok(canonical) = origin.canonicalize()
-            && let Some(parent) = canonical.parent()
-        {
-            dirs.push(parent.to_path_buf());
-        }
-    }
-    dirs.sort();
-    dirs.dedup();
-    for dir in &dirs {
-        watcher
-            .watch(dir, RecursiveMode::NonRecursive)
-            .map_err(|e| format!("Failed to watch {}: {}", dir.display(), e))?;
-    }
-
-    Ok(Some(watcher))
+    protocol::handle_command(cmd, env, current.program_id, current.stack_id, paused, input, frame_count, host);
 }

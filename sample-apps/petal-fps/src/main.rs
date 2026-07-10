@@ -1,18 +1,13 @@
 //! petal-fps — a hybrid Rust + Petal first-person-shooter experiment.
 //!
-//! The Rust host provides:
-//!   - An SDL2 window + software z-buffered triangle rasterizer (the "3D
-//!     engine").
-//!   - Input polling (keyboard, relative mouse, mouse lock).
-//!   - The Petal runtime + a thin native-function bridge for drawing, input,
-//!     and logging.
-//!   - Agent-friendly modes: --headless (stdin JSON protocol), --screenshot
-//!     (run N frames, write PNG), --record (flipbook PNGs), --agent (windowed
-//!     agent protocol).
-//!
-//! The Petal script (e.g. examples/cyberpunk_city.ptl) owns *everything else*:
-//!   - The camera, projection math, and per-frame scene construction.
-//!   - Level geometry, entity list, physics, AI, HUD.
+//! The Petal script (e.g. `examples/cyberpunk_city.ptl`) owns the camera,
+//! projection math, per-frame scene construction, level geometry, entities,
+//! physics, AI, and HUD. The Rust side is only a thin delta over `petal-sdl`:
+//! a software z-buffered triangle rasterizer (`framebuffer.rs`) and the
+//! `triangle3d` native family (`native_fns.rs`), wired together by
+//! [`host::FpsHost`]. Everything else — the window, event loop, input,
+//! agent/headless/screenshot/record modes, and hot reload — is reused from the
+//! `petal-sdl` integration.
 //!
 //! Run:
 //!   cargo run --release -- examples/cyberpunk_city.ptl
@@ -22,14 +17,12 @@
 mod commands;
 mod font;
 mod framebuffer;
-mod game_loop;
-mod input;
+mod host;
 mod native_fns;
-mod protocol;
 mod renderer;
-mod screenshot;
 
-use game_loop::GameConfig;
+use host::FpsHost;
+use petal_sdl::{run_agent, run_game, run_headless, run_record, run_screenshot, GameConfig};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -56,14 +49,14 @@ fn main() {
             "--width" => { i += 1; width = args[i].parse().unwrap_or(width); }
             "--height" => { i += 1; height = args[i].parse().unwrap_or(height); }
             "--title" => { i += 1; title = args[i].clone(); }
-            "--no-hot-reload" => { hot_reload = false; }
-            "--agent" => { agent = true; }
+            "--no-hot-reload" => hot_reload = false,
+            "--agent" => agent = true,
             "--headless" => { headless = true; agent = true; }
             "--screenshot" => { i += 1; screenshot_path = Some(args[i].clone()); }
             "--record" => { i += 1; record_dir = Some(args[i].clone()); }
             "--warmup" => { i += 1; record_warmup = args[i].parse().unwrap_or(30); }
             "--frames" => { i += 1; screenshot_frames = args[i].parse().unwrap_or(60); }
-            arg if !arg.starts_with('-') => { source_path = Some(arg.to_string()); }
+            arg if !arg.starts_with('-') => source_path = Some(arg.to_string()),
             other => {
                 eprintln!("Unknown option: {}", other);
                 print_usage();
@@ -83,17 +76,19 @@ fn main() {
     };
 
     let config = GameConfig { width, height, title, hot_reload, agent, headless };
+    let mut host = FpsHost::new(width, height);
+    let sp = Some(source.as_str());
 
     let result = if let Some(ref out_path) = screenshot_path {
-        game_loop::run_screenshot(&source, config, out_path, screenshot_frames)
+        run_screenshot(sp, config, out_path, screenshot_frames, &mut host)
     } else if let Some(ref dir) = record_dir {
-        game_loop::run_record(&source, config, dir, screenshot_frames, record_warmup)
+        run_record(sp, config, dir, screenshot_frames, record_warmup, &mut host)
     } else if headless {
-        game_loop::run_headless(&source, config)
+        run_headless(sp, config, &mut host)
     } else if agent {
-        game_loop::run_agent(&source, config)
+        run_agent(sp, config, &mut host)
     } else {
-        game_loop::run_game(&source, config)
+        run_game(sp, config, &mut host)
     };
 
     if let Err(e) = result {

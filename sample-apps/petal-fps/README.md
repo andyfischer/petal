@@ -1,9 +1,13 @@
 # petal-fps
 
-A hybrid Rust + Petal first-person-shooter experiment. The Rust host provides
-windowing, input, and a software z-buffered triangle rasterizer; everything
-else — camera, projection math, level geometry, enemies, shooting, HUD —
-lives in a `.ptl` script that can be hot-reloaded while the game is running.
+A hybrid Rust + Petal first-person-shooter experiment. petal-fps builds on the
+[`petal-sdl`](../../integrations/petal-desktop-sdl/) integration (Shape B — see
+[docs/building-on-integrations.md](../../docs/building-on-integrations.md)): it
+reuses that crate's window, event loop, input, agent/headless/screenshot/record
+modes, and hot reload, and adds only its **delta** — a software z-buffered
+triangle rasterizer and the `triangle3d` native family. Everything else —
+camera, projection math, level geometry, enemies, shooting, HUD — lives in a
+`.ptl` script that can be hot-reloaded while the game is running.
 
 See `examples/fps_game.ptl` for the full cyberpunk-city demo
 (12 neon skyscrapers, 8 patrol bots, raycast shooting, health/ammo/minimap
@@ -123,22 +127,25 @@ agent play.
 
 ## Layout
 
+The Rust source is only the app's delta; the game loop, input translation,
+agent protocol, PNG encoding, and hot reload all come from `petal-sdl`.
+
 ```
 petal-fps/
-├── src/                        Rust host
-│   ├── main.rs                 CLI entry point and arg parsing
-│   ├── game_loop.rs            Run modes: game / agent / headless / screenshot / record
+├── src/                        Rust host delta (everything else is petal-sdl)
+│   ├── main.rs                 Thin CLI: parse args → petal_sdl::run_*
+│   ├── host.rs                 FpsHost: impl petal_sdl::Host (renderer + natives + stats)
 │   ├── framebuffer.rs          Software z-buffered triangle rasterizer
-│   ├── renderer.rs             SDL2 streaming-texture blit
-│   ├── commands.rs             DrawCommand enum (Petal → Rust)
-│   ├── native_fns.rs           Petal-callable natives: dt, triangle3d, key_down, ...
-│   ├── protocol.rs             JSON-over-stdio agent protocol
-│   ├── input.rs                Keyboard / mouse state
-│   ├── font.rs                 5×7 embedded bitmap font for HUD text
-│   └── screenshot.rs           Draw-command → PNG encoding
+│   ├── renderer.rs             SDL2 streaming-texture presenter
+│   ├── commands.rs             DrawCommand enum + decode (Petal → Rust)
+│   ├── native_fns.rs           3D/2D draw natives (triangle3d, …) + log
+│   └── font.rs                 5×7 embedded bitmap font for HUD text
 └── examples/
     ├── fps_game.ptl            The full cyberpunk-city game
     ├── cyberpunk_city.ptl      Step-1 scaffold (camera + ground + one cube)
     ├── test_triangle.ptl       Minimal rasterizer smoke test
     └── debug_state.ptl         State-persistence repro / sanity check
 ```
+
+Input, timing, and dimension natives (`key_down`, `mouse_dx`, `grab_mouse`,
+`dt`, `screen_width`, …) come from `petal-ui`, shared with every other host.

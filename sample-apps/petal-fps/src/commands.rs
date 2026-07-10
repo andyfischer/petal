@@ -163,12 +163,6 @@ pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
     out
 }
 
-/// Discard any buffered draw commands (defensive clear at the top of a frame).
-pub fn clear_draw_commands(env: &mut Env) {
-    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
-    env.clear_output_buffer(sym);
-}
-
 /// [`take_draw_commands`] for a *forked* stack: drain and decode the draw buffer
 /// of `stack_id`'s own context. A fork's draw commands — and the heap objects
 /// they reference — live in the fork's context, not the default one, so both the

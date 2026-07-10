@@ -7,9 +7,6 @@ use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
 use petal::value::Value;
 
-pub use petal_ui::draw::reset_canvas_ids;
-pub use petal_ui::input::{bind_dimensions, bind_frame_info, bind_input, dimensions};
-
 /// Host→script browser state: the example list, as `[name, path]` pairs.
 const SYM_EXAMPLES: &str = "examples";
 /// Output channel: paths the sketch asked the host to launch (`launch_script`).
@@ -171,6 +168,7 @@ fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
 mod tests {
     use super::*;
     use crate::commands::{take_draw_commands, DrawCommand};
+    use petal_ui::draw::reset_canvas_ids;
 
     #[test]
     fn offscreen_canvas_emits_stream_commands() {

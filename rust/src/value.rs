@@ -10,6 +10,13 @@ use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId};
 use crate::symbol::SymbolId;
 
+/// Opaque index into an [`ExecutionContext`](crate::execution_context)'s resource
+/// table. Kept a thin `Copy` id (like the heap ids) so [`Value`] stays `Copy`;
+/// the resolution state and provenance live in the table entry it points at.
+/// See docs/dev/pending-values-plan.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PendingId(pub u32);
+
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Value {
@@ -38,6 +45,12 @@ pub enum Value {
     Symbol(SymbolId),
     /// An opaque reference to a host-owned foreign object. See `crate::handle`.
     Handle(HandleVal),
+    /// An unresolved (pending or errored) resource. A thin id into the owning
+    /// context's resource table, where state/provenance live. Ordinary ops are
+    /// strict in Pending (they absorb and return it); a small non-strict meta set
+    /// inspects it. See docs/dev/pending-values-plan.md.
+    // TODO(pending): operator/native absorption + meta builtins land in later chunks.
+    Pending(PendingId),
 }
 
 impl Value {
@@ -72,6 +85,7 @@ impl Value {
             Value::Vec2(_, _) => "vec2",
             Value::Symbol(_) => "symbol",
             Value::Handle(_) => "handle",
+            Value::Pending(_) => "pending",
         }
     }
 
@@ -128,6 +142,7 @@ impl fmt::Debug for Value {
             }
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
             Value::Handle(h) => write!(f, "{}", h),
+            Value::Pending(id) => write!(f, "Pending({})", id.0),
         }
     }
 }
@@ -189,6 +204,8 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Symbol(id) => format!("symbol#{}", id.0),
         Value::Handle(h) => h.to_string(),
+        // Provenance-rich rendering (`<pending fetch(...) 12f>`) is a later chunk.
+        Value::Pending(_) => "<pending>".to_string(),
     }
 }
 
@@ -420,6 +437,10 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         }
         (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
         (Value::Handle(a), Value::Handle(b)) => a == b,
+        // Two Pendings are equal iff they reference the same resource entry.
+        // (Ordinary `==` on Pending is strict — absorbs — in later chunks; this
+        // structural equality is for tooling/tests.)
+        (Value::Pending(a), Value::Pending(b)) => a == b,
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

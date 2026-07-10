@@ -51,6 +51,12 @@ impl Env {
             heap.mark_value(*val);
         }
 
+        // 5. The resource table persists resolved values (Ready/Errored) across
+        //    runs, independent of any stack — so a heap-backed resolved value
+        //    would otherwise be swept while a pending resource still references
+        //    it. Mark those payloads as roots.
+        ctx.resources.gc_roots(|val| heap.mark_value(val));
+
         // Sweep phase
         heap.sweep();
     }

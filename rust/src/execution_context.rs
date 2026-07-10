@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::backend::RuntimeClosure;
 use crate::heap::Heap;
 use crate::program::OverloadEntry;
+use crate::resource_table::ResourceTable;
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolId;
 use crate::value::Value;
@@ -42,6 +43,10 @@ pub struct ExecutionContext {
     pub rng_state: u64,
     /// Per-context Perlin-noise seed, set via the `noise_seed()` builtin.
     pub noise_seed: u64,
+    /// Table of pending/unresolved resources (the home for `Value::Pending`).
+    /// Lives here so it survives `reset_stack` (the cross-frame home for
+    /// between-frame resolution) and forks consistently with the heap.
+    pub resources: ResourceTable,
 }
 
 impl ExecutionContext {
@@ -57,6 +62,7 @@ impl ExecutionContext {
             echo: true,
             rng_state: crate::builtins::initial_seed(),
             noise_seed: 0,
+            resources: ResourceTable::new(),
         }
     }
 
@@ -79,6 +85,10 @@ impl ExecutionContext {
             // unaffected by anything the fork draws.
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,
+            // Snapshot resource state so a fork observes the same resolution
+            // status as its source at fork time, then diverges independently —
+            // exactly how the heap is forked above.
+            resources: self.resources.clone(),
         }
     }
 

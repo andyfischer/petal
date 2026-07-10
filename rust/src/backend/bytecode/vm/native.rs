@@ -90,6 +90,7 @@ impl<'a> Vm<'a> {
             self.counters,
             self.rng_state,
             self.noise_seed,
+            self.resources,
             self.echo,
             self.handle_classes,
         );
@@ -141,6 +142,7 @@ impl<'a> Vm<'a> {
             self.counters,
             self.rng_state,
             self.noise_seed,
+            self.resources,
             self.echo,
             handle_classes,
         );

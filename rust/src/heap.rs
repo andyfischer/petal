@@ -510,11 +510,14 @@ impl Heap {
                 self.mark_string(tag);
                 self.mark_list(data);
             }
-            // Non-heap values: nothing to mark
+            // Non-heap values: nothing to mark. `Pending` is a thin id into the
+            // resource table (not the heap); the table's own Ready/Errored
+            // payloads are rooted separately.
+            // TODO(pending): root resource-table payload Values in GC.
             Value::Nil | Value::Bool(_) | Value::Int(_) | Value::Float(_)
             | Value::Closure(_) | Value::OverloadSet(_) | Value::NativeFunction(_)
             | Value::Dual { .. } | Value::Vec2(_, _) | Value::Symbol(_)
-            | Value::Handle(_) => {}
+            | Value::Handle(_) | Value::Pending(_) => {}
         }
     }
 

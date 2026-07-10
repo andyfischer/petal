@@ -104,6 +104,9 @@ pub struct PetalCxt<'a> {
     rng_state: &'a mut u64,
     /// Per-run Perlin-noise seed, borrowed from the owning `ExecutionContext`.
     noise_seed: &'a mut u64,
+    /// The owning context's resource table, borrowed so the pending-resource
+    /// builtins (`__pending`/`__resolve`/`__reject`) can create/resolve entries.
+    resources: &'a mut crate::resource_table::ResourceTable,
     /// Whether `print` echoes to real stdout. False for speculative forks so
     /// their output stays captured in the buffer instead of leaking to stdout.
     echo: bool,
@@ -128,6 +131,7 @@ impl<'a> PetalCxt<'a> {
         counters: &'a mut HashMap<SymbolId, u64>,
         rng_state: &'a mut u64,
         noise_seed: &'a mut u64,
+        resources: &'a mut crate::resource_table::ResourceTable,
         echo: bool,
         handle_classes: &'a [HandleClass],
     ) -> Self {
@@ -141,6 +145,7 @@ impl<'a> PetalCxt<'a> {
             counters,
             rng_state,
             noise_seed,
+            resources,
             echo,
             handle_classes,
             results: Vec::new(),
@@ -383,6 +388,20 @@ impl<'a> PetalCxt<'a> {
 
     pub fn heap_mut(&mut self) -> &mut Heap {
         self.heap
+    }
+
+    // --- Pending resources ---
+
+    /// The owning context's resource table (read-only). See
+    /// [`crate::resource_table`].
+    pub fn resources(&self) -> &crate::resource_table::ResourceTable {
+        self.resources
+    }
+
+    /// The owning context's resource table (mutable) — for creating/resolving
+    /// pending resource entries.
+    pub fn resources_mut(&mut self) -> &mut crate::resource_table::ResourceTable {
+        self.resources
     }
 
     /// Consume the state and return the results vector.

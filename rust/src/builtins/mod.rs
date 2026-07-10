@@ -31,6 +31,7 @@ mod io;
 mod math;
 mod noise;
 mod output;
+mod pending;
 mod vec2;
 
 // xorshift64* PRNG. The state lives per-run on `ExecutionContext::rng_state`
@@ -202,6 +203,11 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 
     // --- Handles (append-only to preserve phantom term indices) ---
     table.register("is_valid", handle::native_is_valid);
+
+    // --- Test-only pending-resource builtins (append-only) ---
+    table.register("__pending", pending::native_pending);
+    table.register("__resolve", pending::native_resolve);
+    table.register("__reject", pending::native_reject);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

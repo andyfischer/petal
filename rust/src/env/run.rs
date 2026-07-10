@@ -274,6 +274,7 @@ fn make_vm<'a>(
         counters: &mut ctx.counters,
         rng_state: &mut ctx.rng_state,
         noise_seed: &mut ctx.noise_seed,
+        resources: &mut ctx.resources,
         echo: ctx.echo,
         trace,
         error_already_annotated: false,

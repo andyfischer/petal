@@ -65,6 +65,9 @@ pub struct Vm<'a> {
     /// so the RNG/noise builtins mutate the owning context's isolated state.
     pub rng_state: &'a mut u64,
     pub noise_seed: &'a mut u64,
+    /// The owning context's resource table, borrowed so the pending-resource
+    /// builtins can create/resolve entries. See [`crate::resource_table`].
+    pub resources: &'a mut crate::resource_table::ResourceTable,
     /// Whether `print` echoes to real stdout (true for the primary run, false
     /// for speculative forks). Copied from the `ExecutionContext`.
     pub echo: bool,

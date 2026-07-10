@@ -734,3 +734,96 @@ mod run_bounded_tests {
     }
 }
 
+/// Chunk A of the pending-values feature: the `Value::Pending` kind plus the
+/// resource table living in `ExecutionContext`, driven by the deterministic
+/// test-only builtins `__pending` / `__resolve` / `__reject`.
+///
+/// All `run_source` calls here share the Env's single default context, so the
+/// resource table persists across separate runs — this is exactly the
+/// "between-frame resolution" model the design relies on (the frame loop's
+/// re-run picks up a value resolved since the previous frame).
+mod pending_value_chunk_a_tests {
+    use super::super::*;
+
+    /// `__pending("k")` with no prior entry yields a fresh `Value::Pending`
+    /// whose `type_name` is `"pending"`.
+    #[test]
+    fn pending_builtin_yields_pending_value() {
+        let mut env = Env::new();
+        let v = env.run_source("__pending(\"k\")\n").unwrap();
+        assert!(matches!(v, Value::Pending(_)), "expected Pending, got {v:?}");
+        assert_eq!(v.type_name(), "pending");
+    }
+
+    /// After `__resolve("k", 42)`, a later `__pending("k")` returns the real
+    /// value (`Int(42)`) — modelling a resource that landed between frames.
+    #[test]
+    fn resolve_then_pending_returns_ready_value() {
+        let mut env = Env::new();
+        // First fetch: loading -> a Pending value.
+        let loading = env.run_source("__pending(\"k\")\n").unwrap();
+        assert!(matches!(loading, Value::Pending(_)), "expected Pending, got {loading:?}");
+        // Resolve the entry, then re-fetch on a fresh run (same context).
+        env.run_source("__resolve(\"k\", 42)\n").unwrap();
+        let ready = env.run_source("__pending(\"k\")\n").unwrap();
+        assert_eq!(ready, Value::Int(42));
+    }
+
+    /// After `__reject("k2", "boom")`, `__pending("k2")` still yields a
+    /// `Value::Pending` (an errored resource is a pending-kind value; it does
+    /// NOT return the resolved value the way a Ready entry would).
+    #[test]
+    fn reject_then_pending_stays_pending() {
+        let mut env = Env::new();
+        env.run_source("__reject(\"k2\", \"boom\")\n").unwrap();
+        let v = env.run_source("__pending(\"k2\")\n").unwrap();
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "errored resource should still fetch as Pending, got {v:?}"
+        );
+    }
+
+    /// Two `__pending` calls with the same key dedup to the same
+    /// `PendingId` (the resource table is keyed by the hashed key).
+    #[test]
+    fn same_key_dedups_to_same_pending_id() {
+        let mut env = Env::new();
+        let a = env.run_source("__pending(\"dupe\")\n").unwrap();
+        let b = env.run_source("__pending(\"dupe\")\n").unwrap();
+        match (a, b) {
+            (Value::Pending(ia), Value::Pending(ib)) => {
+                assert_eq!(ia, ib, "same key must return the same PendingId");
+            }
+            other => panic!("expected two Pending values, got {other:?}"),
+        }
+    }
+
+    /// A heap-backed resolved value (here a list) must survive a garbage
+    /// collection: the resource table outlives any single run's stack, so its
+    /// `Ready`/`Errored` payloads are GC roots. Without that rooting, the list
+    /// slot is swept while the resource still references it and `__pending`
+    /// returns a dangling id. (Regression: the earlier Int-only tests missed
+    /// this because inline ints are never collected.)
+    #[test]
+    fn resolved_heap_value_survives_gc() {
+        let mut env = Env::new();
+        // Resolve with a list. After this run's stack is reset, the resource
+        // table entry is the list's only root.
+        env.run_source("__resolve(\"gk\", [1, 2, 3])\n").unwrap();
+        // Force a collection on the default context. Pre-fix, this sweeps the
+        // list slot.
+        let ck = env.default_context;
+        env.collect_garbage(ck);
+        // Re-fetch: the Ready value must still be intact.
+        let v = env.run_source("__pending(\"gk\")\n").unwrap();
+        match v {
+            Value::List(id) => assert_eq!(
+                env.ctx(ck).heap.get_list(id).to_vec(),
+                vec![Value::Int(1), Value::Int(2), Value::Int(3)],
+                "resolved list must survive GC (resource table must be a GC root)",
+            ),
+            other => panic!("expected the resolved List to survive GC, got {other:?}"),
+        }
+    }
+}
+

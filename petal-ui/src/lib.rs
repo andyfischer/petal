@@ -1,7 +1,7 @@
 //! petal-ui — the standard interactivity layer shipped with Petal.
 //!
 //! Embedders that render interactive graphics from Petal scripts share one
-//! contract instead of hand-copying it (see `docs/dev/ui-primitives-plan.md`):
+//! contract instead of hand-copying it (see `docs/building-on-integrations.md`):
 //!
 //! - [`input`] (Layer 0): a normalized [`input::InputEvent`] stream, an
 //!   [`input::InputState`] that derives level/edge semantics, canonical key

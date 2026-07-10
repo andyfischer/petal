@@ -23,6 +23,7 @@ How the implementation works and where it's headed:
 | Document | Description |
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
+| [Building on Integrations](building-on-integrations.md) | How apps are layered on Core + integrations, and how to route a new port through one |
 | [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
 | [Debugging & Visibility](dev/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |

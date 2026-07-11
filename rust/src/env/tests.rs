@@ -1746,3 +1746,95 @@ mod pending_collections_chunk_h_tests {
     }
 }
 
+/// Chunk I — the StateInit no-commit rule. A `state x = <pending>` init does
+/// NOT commit the slot while the value is pending: this frame reads the
+/// Pending, and the init block re-runs on later frames until it resolves, then
+/// commits normally. Ordinary reassignment (`x = <pending>`) still commits.
+mod pending_state_init_chunk_i_tests {
+    use super::super::*;
+
+    /// The core rule across two frames: a loading init stays uncommitted (the
+    /// frame sees the Pending); once the resource resolves, the re-run init
+    /// commits the real value. The resource table persists on the context
+    /// across `reset_stack`, so resolving at the end of frame 1 is visible to
+    /// frame 2 (the between-frame resolution model).
+    #[test]
+    fn state_init_does_not_commit_pending_and_reinits_until_resolved() {
+        let mut env = Env::new();
+        let src = "state user = __pending(\"u\")\nlet shown = user\n__resolve(\"u\", 42)\nshown\n";
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        // Frame 1: the fetch is loading → the init result is Pending → the slot
+        // is NOT committed → this frame's value is the Pending.
+        let f1 = env.run(sid).unwrap();
+        assert!(
+            matches!(f1, Value::Pending(_)),
+            "a pending StateInit must not commit; frame 1 must see the pending, got {f1:?}"
+        );
+
+        // Frame 2: the slot was never committed, so StateInit re-runs; the
+        // resource is now resolved, so it commits the real value.
+        env.reset_stack(sid).unwrap();
+        let f2 = env.run(sid).unwrap();
+        assert_eq!(
+            f2,
+            Value::Int(42),
+            "once resolved, the re-run StateInit commits the real value"
+        );
+    }
+
+    /// A pending init that never resolves keeps re-initializing: every frame
+    /// re-reads the Pending, and the slot is never permanently cached as
+    /// loading (the failure mode this rule exists to prevent).
+    #[test]
+    fn unresolved_state_init_reinits_every_frame() {
+        let mut env = Env::new();
+        let pid = env.load_program("state user = __pending(\"u\")\nuser\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        for frame in 0..3 {
+            if frame > 0 {
+                env.reset_stack(sid).unwrap();
+            }
+            let v = env.run(sid).unwrap();
+            assert!(
+                matches!(v, Value::Pending(_)),
+                "frame {frame}: an unresolved init must re-read the pending, got {v:?}"
+            );
+        }
+    }
+
+    /// The no-commit rule is scoped to the init commit: an ordinary
+    /// reassignment of a state var to a Pending still commits (Q3
+    /// allow-and-flag), so `x` reads back as the Pending this frame.
+    #[test]
+    fn ordinary_reassignment_commits_a_pending() {
+        let mut env = Env::new();
+        let v = env
+            .run_source("state x = 0\nx = __pending(\"p\")\nx\n")
+            .unwrap();
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "a plain reassignment to a pending is allowed and committed, got {v:?}"
+        );
+    }
+
+    /// State-in-loop interaction: a per-iteration `state` initialized from a
+    /// pending stays uncommitted in every iteration's slot, so each reads the
+    /// Pending. Guards that the re-enterable init path does not disturb the
+    /// loop-carry / phi machinery.
+    #[test]
+    fn pending_state_init_inside_loop_stays_uncommitted_per_iteration() {
+        let mut env = Env::new();
+        env.run_source(
+            "for i in [0, 1, 2] do\n  state s = __pending(\"s\")\n  print(is_loading(s))\nend\n",
+        )
+        .unwrap();
+        assert_eq!(
+            env.take_output(),
+            vec!["true", "true", "true"],
+            "each iteration's pending state init must stay uncommitted"
+        );
+    }
+}
+

@@ -136,7 +136,12 @@ pub enum Inst {
     /// the init block. `key` is the explicit `state(expr)` key register, if any.
     StateInit { dst: Reg, base: StateKey, in_loop: bool, after: Label, key: Option<Reg> },
     StateRead { dst: Reg, base: StateKey, in_loop: bool },
-    StateWrite { dst: Reg, base: StateKey, in_loop: bool, val: Reg, key: Option<Reg> },
+    /// Commit `val` into the state slot and mirror it into `dst`. `init` marks
+    /// the write that commits a `StateInit` block's result: such a write does
+    /// NOT commit a `Pending` value (the slot stays uninitialized so the init
+    /// re-runs next frame), whereas an ordinary `state x = …` reassignment
+    /// (`init = false`) commits whatever it is given.
+    StateWrite { dst: Reg, base: StateKey, in_loop: bool, val: Reg, key: Option<Reg>, init: bool },
 
     // --- match (fat op; reuses the graph engine's match_pattern) ---
     /// Test the subject in `subject` against arm `arm` of match term `term`.

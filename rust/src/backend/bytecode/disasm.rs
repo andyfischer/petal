@@ -167,9 +167,9 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         StateRead { dst, base, in_loop } => {
             format!("r{} = state_read k{} in_loop={}", dst, base.0, in_loop)
         }
-        StateWrite { dst, base, in_loop, val, key } => format!(
-            "r{} = state_write k{} in_loop={} = r{}{}",
-            dst, base.0, in_loop, val, opt_key(key)
+        StateWrite { dst, base, in_loop, val, key, init } => format!(
+            "r{} = state_write{} k{} in_loop={} = r{}{}",
+            dst, if *init { " init" } else { "" }, base.0, in_loop, val, opt_key(key)
         ),
         MatchArm { subject, term, arm, next, dst } => format!(
             "match_arm r{} t{} arm{} -> r{} else -> {}",

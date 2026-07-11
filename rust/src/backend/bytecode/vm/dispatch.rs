@@ -301,12 +301,18 @@ impl<'a> Vm<'a> {
                 let v = self.stack.state.get(&key).copied().unwrap_or(Value::Nil);
                 self.set(fi, *dst, v);
             }
-            Inst::StateWrite { dst, base, in_loop, val, key } => {
+            Inst::StateWrite { dst, base, in_loop, val, key, init } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
                 let k = self.state_key(*base, *in_loop, explicit);
                 self.stack.touched_state_keys.insert(k.clone());
-                self.stack.state.insert(k, val_v);
+                // A pending StateInit result is not committed: leave the slot
+                // uninitialized so the init block re-runs next frame until it
+                // resolves. Reads this frame still see the Pending (via `dst`).
+                // Ordinary reassignments (`init = false`) commit any value.
+                if !(*init && matches!(val_v, Value::Pending(_))) {
+                    self.stack.state.insert(k, val_v);
+                }
                 self.set(fi, *dst, val_v);
             }
             Inst::StateInit { dst, base, in_loop, after, key } => {

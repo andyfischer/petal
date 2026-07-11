@@ -308,6 +308,9 @@ impl<'p> FnLowerer<'p> {
                 val: self.flat(ins[0])?,
                 // Inputs are [value] or [value, explicit_key]; the key is last.
                 key: (ins.len() > 1).then(|| self.flat(ins[ins.len() - 1])).transpose()?,
+                // A plain reassignment commits whatever value it is given,
+                // including a Pending (see the StateInit no-commit rule).
+                init: false,
             },
 
             TermOp::Add => Inst::Add { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
@@ -698,12 +701,14 @@ impl<'p> FnLowerer<'p> {
                     .ok_or("state init has an empty init block")?;
                 // Recursion moved cur_origin; restore it for the commit write.
                 self.cur_origin = Some(term.id);
-                self.push(Inst::StateWrite { dst, base, in_loop, val: init_res, key });
+                // `init: true` — a Pending init result is not committed, so the
+                // slot re-initializes next frame until the value resolves.
+                self.push(Inst::StateWrite { dst, base, in_loop, val: init_res, key, init: true });
             }
             None => {
                 // No init block (synthetic StateInit): seed nil.
                 self.push(Inst::LoadNil { dst });
-                self.push(Inst::StateWrite { dst, base, in_loop, val: dst, key });
+                self.push(Inst::StateWrite { dst, base, in_loop, val: dst, key, init: true });
             }
         }
         let after = self.here();

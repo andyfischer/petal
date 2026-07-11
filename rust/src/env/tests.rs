@@ -1562,3 +1562,97 @@ mod pending_control_flow_chunk_f_tests {
     }
 }
 
+/// Chunk G — `for` over a Pending iterable and `match` on a Pending subject
+/// both absorb: zero iterations / no arm runs, and the expression evaluates to
+/// that Pending. A wildcard `match` arm does NOT catch a Pending — the absorb
+/// happens before any arm is tested.
+mod pending_control_flow_chunk_g_tests {
+    use super::super::*;
+
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// `for x in <pending>` runs zero iterations and yields the Pending. Today
+    /// it errors "Cannot iterate over pending".
+    #[test]
+    fn for_over_pending_absorbs_and_runs_zero_iterations() {
+        let mut env = Env::new();
+        let iter = env.run_source("__pending(\"k\")\n").unwrap();
+        let iter_id = expect_pending(&iter);
+        let v = env
+            .run_source("for x in __pending(\"k\") do print(x) end\n")
+            .unwrap();
+        assert!(
+            env.take_output().is_empty(),
+            "a pending iterable must run zero iterations"
+        );
+        assert_eq!(
+            expect_pending(&v),
+            iter_id,
+            "for over a pending iterable must evaluate to that pending"
+        );
+    }
+
+    /// Once the iterable resolves to a real list, the loop runs normally.
+    #[test]
+    fn for_resolves_to_list_and_iterates() {
+        let mut env = Env::new();
+        env.run_source("__resolve(\"k\", [1, 2, 3])\n").unwrap();
+        env.run_source("for x in __pending(\"k\") do print(x) end\n")
+            .unwrap();
+        assert_eq!(env.take_output(), vec!["1", "2", "3"]);
+    }
+
+    /// `match <pending>` runs no arm and yields the Pending. Today the pending
+    /// matches no concrete arm and hits `MatchFail` (a runtime error).
+    #[test]
+    fn match_on_pending_absorbs() {
+        let mut env = Env::new();
+        let subj = env.run_source("__pending(\"m\")\n").unwrap();
+        let subj_id = expect_pending(&subj);
+        let v = env
+            .run_source("match __pending(\"m\")\n  when 1 -> \"a\"\n  when 2 -> \"b\"\nend\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&v),
+            subj_id,
+            "match on a pending subject must evaluate to that pending"
+        );
+    }
+
+    /// A wildcard arm must NOT catch a Pending: absorption precedes arm testing.
+    #[test]
+    fn match_wildcard_does_not_catch_pending() {
+        let mut env = Env::new();
+        let subj = env.run_source("__pending(\"m\")\n").unwrap();
+        let subj_id = expect_pending(&subj);
+        let v = env
+            .run_source("match __pending(\"m\")\n  when other -> print(\"caught\")\nend\n")
+            .unwrap();
+        assert!(
+            env.take_output().is_empty(),
+            "a wildcard arm must not run on a pending subject"
+        );
+        assert_eq!(
+            expect_pending(&v),
+            subj_id,
+            "the match still evaluates to the pending, not the arm body"
+        );
+    }
+
+    /// Once the subject resolves, `match` selects the real arm normally.
+    #[test]
+    fn match_resolves_to_arm_once_ready() {
+        let mut env = Env::new();
+        env.run_source("__resolve(\"m\", 2)\n").unwrap();
+        let v = env
+            .run_source("match __pending(\"m\")\n  when 1 -> 10\n  when 2 -> 20\nend\n")
+            .unwrap();
+        assert_eq!(v, Value::Int(20), "a resolved subject matches its arm");
+    }
+}
+

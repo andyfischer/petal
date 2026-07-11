@@ -458,10 +458,23 @@ impl<'p> FnLowerer<'p> {
         let iter = self.flat(term.inputs[0])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
+        // A Pending iterable absorbs: skip the loop entirely (zero iterations)
+        // and yield the Pending as the loop value.
+        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: iter, to: 0 });
         self.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
-        self.emit_counted_loop(body_block, slot, cont, next)
+        self.emit_counted_loop(body_block, slot, cont, next)?;
+        let jend = self.emit_placeholder(Inst::Jump { to: 0 });
+
+        let pend_label = self.here();
+        self.patch(jpend, pend_label);
+        let dst = self.flat(term.id)?;
+        self.push(Inst::Move { dst, src: iter });
+
+        let end = self.here();
+        self.patch(jend, end);
+        Ok(())
     }
 
     /// `for i in range(a, b) do <body> end` — like [`emit_for_each`](Self::emit_for_each)
@@ -583,6 +596,9 @@ impl<'p> FnLowerer<'p> {
     fn emit_match(&mut self, term: &Term) -> Result<(), String> {
         let subject = self.flat(term.inputs[0])?;
         let dst = self.flat(term.id)?;
+        // A Pending subject absorbs: no arm (not even a wildcard) is tested and
+        // the match evaluates to the Pending.
+        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: subject, to: 0 });
         let arms: Vec<(BlockId, Option<BlockId>)> = self
             .program
             .match_arms
@@ -641,6 +657,13 @@ impl<'p> FnLowerer<'p> {
         // error points at the match term.
         self.cur_origin = Some(term.id);
         self.push(Inst::MatchFail { subject });
+
+        // Pending arm: yield the Pending subject as the match value. Reached
+        // only via `jpend`; `MatchFail` above diverges, so control never falls
+        // into it from the fail path.
+        let pend_label = self.here();
+        self.patch(jpend, pend_label);
+        self.push(Inst::Move { dst, src: subject });
 
         let end = self.here();
         for j in to_end {

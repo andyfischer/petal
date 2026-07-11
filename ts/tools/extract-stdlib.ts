@@ -17,9 +17,10 @@
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
 //
-//   2. Canvas builtins — `integrations/petal-web-canvas/rust/src/lib.rs`'s
-//      `register_graphics()`, the drawing + input/timing API that the WASM
-//      runtime exposes to browser sketches.
+//   2. Canvas builtins — the shared `petal-ui` crate's `register_draw` +
+//      `register_canvas` (drawing) and `register_input` (input/timing), the
+//      interactivity API that hosts like petal-web-canvas and petal-sdl expose
+//      to sketches.
 //
 // For each registered function we open its implementation and read:
 //   • arity      — from `require_args(state, N, "name")`
@@ -43,11 +44,8 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
-const canvasLibRs = join(repoRoot, "integrations/petal-web-canvas/rust/src/lib.rs");
-const canvasRendererTs = join(
-  repoRoot,
-  "integrations/petal-web-canvas/src/canvas-renderer.ts",
-);
+const petalUiDrawRs = join(repoRoot, "petal-ui/src/draw.rs");
+const petalUiInputRs = join(repoRoot, "petal-ui/src/input.rs");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -328,32 +326,45 @@ function extractCore(): {
 // ── Canvas builtins ──────────────────────────────────────────────────────────
 
 /**
- * The buffered draw builtins (`draw_rect`, `draw_line`, …) no longer name their
- * arguments in Rust: they forward a positional `int_args(state, N)` list to
- * `emit_draw(state, "<tag>", …)`, so the generic `let <name> = state.get_int(…)`
- * extraction finds nothing. The canonical positional→name mapping lives on the
- * decode side — `canvas-renderer.ts`'s `decodeCommand`, which turns each
- * `{tag, data}` command back into a named-field object `{ <name>: d[<i>], … }`.
- * We read that mapping so the extracted signatures stay derived from source
- * rather than hand-maintained here.
+ * The buffered draw builtins (`draw_rect`, `draw_line`, …) don't name their
+ * arguments in the native fn: they forward a positional `int_args(state, N)`
+ * list to `emit_draw(state, "<tag>", …)`, so the generic
+ * `let <name> = state.get_int(…)` extraction finds nothing. The canonical
+ * positional→name mapping lives on the decode side — `draw.rs`'s
+ * `DrawCommand::from_value`, whose match arms turn each `{tag, data}` command
+ * back into a named-field struct (`"rect" => DrawCommand::Rect { x: i32_at(0)?,
+ * … }`). We read that mapping so the extracted signatures stay derived from
+ * source rather than hand-maintained here.
+ *
+ * Only the *required* positional args (bound with `i32_at`/`u32_at`/`u8_at` or
+ * `as_i64(arg(i))`) are collected; trailing optional args (`opt_u8`, `opt_u32`
+ * for alpha/radius/width) are excluded, so the recovered arity matches the
+ * native's `int_args(state, N)` count.
  *
  * Returns a map from draw-command tag (e.g. "rect") to argument names ordered by
  * their data index (e.g. ["x","y","w","h","r","g","b"]).
  */
-function loadDrawArgNames(): Map<string, string[]> {
-  const source = readFileSync(canvasRendererTs, "utf8");
-  const body = extractBlock(source, /function decodeCommand\s*\(/);
+function loadDrawArgNames(drawSource: string): Map<string, string[]> {
+  const body = extractBlock(drawSource, /fn from_value\s*\(/);
+  // Split the `match tag.as_str()` into arms: each starts with `"<tag>" =>`.
+  // The catch-all `_ => DrawCommand::Host` isn't quoted, so it isn't a start.
+  const armStarts: Array<{ tag: string; at: number }> = [];
+  const armRe = /"(\w+)"\s*=>/g;
+  for (let m; (m = armRe.exec(body)); ) {
+    armStarts.push({ tag: m[1], at: m.index });
+  }
   const out = new Map<string, string[]>();
-  // Each arm is `case "<tag>": return { … };`.
-  const caseRe = /case\s+"([^"]+)"\s*:\s*return\s*\{([^}]*)\}/g;
-  for (let m; (m = caseRe.exec(body)); ) {
-    const [, tag, obj] = m;
-    // Collect `<name>: d[<index>]` bindings; the `op:` discriminant and any
-    // computed field (e.g. poly's `points: (d[0] ?? []).map(…)`) don't match.
+  // Required positional accessors: `<name>: i32_at(<i>)`, `u32_at`, `u8_at`, or
+  // `<name>: as_i64(arg(<i>)…` (text's `size`). `opt_u8`/`opt_u32` are excluded.
+  const fieldRe =
+    /(\w+)\s*:\s*(?:(?:i32_at|u32_at|u8_at)\(\s*(\d+)\s*\)|as_i64\(\s*arg\(\s*(\d+)\s*\))/g;
+  for (let i = 0; i < armStarts.length; i++) {
+    const { tag, at } = armStarts[i];
+    const end = i + 1 < armStarts.length ? armStarts[i + 1].at : body.length;
+    const chunk = body.slice(at, end);
     const byIndex: Array<[number, string]> = [];
-    const fieldRe = /(\w+)\s*:\s*d\[(\d+)\]/g;
-    for (let f; (f = fieldRe.exec(obj)); ) {
-      byIndex.push([Number(f[2]), f[1]]);
+    for (let f; (f = fieldRe.exec(chunk)); ) {
+      byIndex.push([Number(f[2] ?? f[3]), f[1]]);
     }
     if (byIndex.length) {
       out.set(
@@ -387,36 +398,39 @@ function bufferedDrawSignature(
   };
 }
 
+/** Parse `env.register_native("name", native_fn)` lines from a register block. */
+function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
+  const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/g;
+  const out: Array<{ name: string; fnName: string }> = [];
+  for (let m; (m = re.exec(block)); ) out.push({ name: m[1], fnName: m[2] });
+  return out;
+}
+
 /**
- * Parse `register_graphics()`. Its body groups registrations with blank lines:
- * the first group is the drawing API, the rest are input/timing. We use that
- * boundary to split the canvas builtins into two categories.
+ * Extract the canvas builtins from the shared `petal-ui` crate. Drawing lives in
+ * `draw.rs` (`register_draw` + the offscreen-canvas `register_canvas`); input +
+ * timing lives in `input.rs` (`register_input`). Each register fn is a flat list
+ * of `env.register_native(…)` calls, so the block a function is registered in —
+ * not source order — decides its category.
  */
 function extractCanvas(): {
   functions: StdlibFunction[];
   categories: StdlibCategory[];
 } {
-  const libSource = readFileSync(canvasLibRs, "utf8");
-  const block = extractBlock(libSource, /fn register_graphics\s*\(/);
-  const drawArgNames = loadDrawArgNames();
+  const drawSource = readFileSync(petalUiDrawRs, "utf8");
+  const inputSource = readFileSync(petalUiInputRs, "utf8");
+  const drawArgNames = loadDrawArgNames(drawSource);
 
-  const lines = block.split("\n");
-  const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/;
   const functions: StdlibFunction[] = [];
-  let sawFirstGroup = false;
-  let inDrawingGroup = true;
 
-  for (const line of lines) {
-    if (line.trim() === "") {
-      if (sawFirstGroup) inDrawingGroup = false; // a blank line ends drawing
-      continue;
-    }
-    const m = re.exec(line);
-    if (!m) continue;
-    sawFirstGroup = true;
-    const [, name, fnName] = m;
-    const category = inDrawingGroup ? "drawing" : "input";
-    const fn = findFn(libSource, fnName);
+  const addCanvasFn = (
+    name: string,
+    fnName: string,
+    category: "drawing" | "input",
+    source: string,
+    file: string,
+  ) => {
+    const fn = findFn(source, fnName);
     const parsed = fn
       ? (bufferedDrawSignature(fn.body, drawArgNames) ?? parseFnBody(fn.body))
       : { arity: null, variadic: false, params: [] };
@@ -427,11 +441,21 @@ function extractCanvas(): {
       arity: parsed.arity,
       variadic: parsed.variadic,
       params: parsed.params,
-      source: {
-        file: "integrations/petal-web-canvas/rust/src/lib.rs",
-        line: fn?.line ?? 0,
-      },
+      source: { file, line: fn?.line ?? 0 },
     });
+  };
+
+  // Drawing: register_draw + the offscreen-canvas register_canvas.
+  for (const sig of [/pub fn register_draw\s*\(/, /pub fn register_canvas\s*\(/]) {
+    for (const reg of parseNativeRegistrations(extractBlock(drawSource, sig))) {
+      addCanvasFn(reg.name, reg.fnName, "drawing", drawSource, "petal-ui/src/draw.rs");
+    }
+  }
+  // Input + timing: register_input.
+  for (const reg of parseNativeRegistrations(
+    extractBlock(inputSource, /pub fn register_input\s*\(/),
+  )) {
+    addCanvasFn(reg.name, reg.fnName, "input", inputSource, "petal-ui/src/input.rs");
   }
 
   const categories: StdlibCategory[] = [
@@ -464,7 +488,8 @@ export function buildManifest(): StdlibManifest {
     generatedFrom: [
       "rust/src/builtins/mod.rs",
       "rust/src/builtins/*.rs",
-      "integrations/petal-web-canvas/rust/src/lib.rs",
+      "petal-ui/src/draw.rs",
+      "petal-ui/src/input.rs",
     ],
     categories,
     functions,

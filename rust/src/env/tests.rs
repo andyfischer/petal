@@ -1470,3 +1470,95 @@ mod pending_coalesce_operator_chunk_e_tests {
     }
 }
 
+/// Chunk F — control-flow conditions absorb a Pending. `if`/`while` with a
+/// Pending condition run NEITHER branch / ZERO iterations, and the whole
+/// expression evaluates to that Pending rather than treating it as truthy.
+mod pending_control_flow_chunk_f_tests {
+    use super::super::*;
+
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// `if <pending> then A else B` runs neither arm and evaluates to the
+    /// Pending itself. Today a Pending is truthy, so the `then` arm runs and
+    /// this returns 1.
+    #[test]
+    fn if_with_pending_condition_absorbs() {
+        let mut env = Env::new();
+        let cond = env.run_source("__pending(\"c\")\n").unwrap();
+        let cond_id = expect_pending(&cond);
+        let v = env
+            .run_source("if __pending(\"c\") then 1 else 2 end\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&v),
+            cond_id,
+            "if on a pending condition must evaluate to that pending"
+        );
+    }
+
+    /// Neither branch of a pending `if` executes its side effects.
+    #[test]
+    fn if_with_pending_condition_runs_no_branch() {
+        let mut env = Env::new();
+        env.run_source("if __pending(\"c\") then print(\"then\") else print(\"else\") end\n")
+            .unwrap();
+        assert!(
+            env.take_output().is_empty(),
+            "no branch of a pending if may run"
+        );
+    }
+
+    /// Once the condition resolves, the `if` selects the real branch normally.
+    #[test]
+    fn if_resolves_to_branch_once_ready() {
+        let mut env = Env::new();
+        env.run_source("__resolve(\"c\", true)\n").unwrap();
+        assert_eq!(
+            env.run_source("if __pending(\"c\") then 1 else 2 end\n").unwrap(),
+            Value::Int(1),
+            "a resolved-true condition takes the then branch"
+        );
+    }
+
+    /// `while <pending>` runs zero iterations and evaluates to the Pending.
+    #[test]
+    fn while_with_pending_condition_absorbs_and_runs_zero_iterations() {
+        let mut env = Env::new();
+        let cond = env.run_source("__pending(\"w\")\n").unwrap();
+        let cond_id = expect_pending(&cond);
+        let v = env
+            .run_source("while __pending(\"w\") do print(\"body\") end\n")
+            .unwrap();
+        assert!(
+            env.take_output().is_empty(),
+            "a pending while condition must run zero iterations"
+        );
+        assert_eq!(
+            expect_pending(&v),
+            cond_id,
+            "a pending while must evaluate to that pending"
+        );
+    }
+
+    /// A while whose pending condition resolves to false runs zero iterations
+    /// but is NOT pending — it terminates normally.
+    #[test]
+    fn while_resolved_false_is_not_pending() {
+        let mut env = Env::new();
+        env.run_source("__resolve(\"w\", false)\n").unwrap();
+        let v = env
+            .run_source("while __pending(\"w\") do print(\"body\") end\n")
+            .unwrap();
+        assert!(
+            !matches!(v, Value::Pending(_)),
+            "a resolved-false while is not pending"
+        );
+        assert!(env.take_output().is_empty());
+    }
+}
+

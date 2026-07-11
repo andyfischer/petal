@@ -523,6 +523,7 @@ impl<'p> FnLowerer<'p> {
     /// the index), matching the graph engine.
     fn emit_while(&mut self, term: &Term) -> Result<(), String> {
         let slot = self.alloc_slot();
+        let dst = self.flat(term.id)?;
         let cond_block = term.child_blocks[0];
         let body_block = term.child_blocks[1];
         self.push(Inst::WhileInit { slot });
@@ -532,6 +533,9 @@ impl<'p> FnLowerer<'p> {
         let cond = self
             .block_result_reg(cond_block)?
             .ok_or("while loop has an empty condition block")?;
+        // A Pending condition (this or any later iteration) stops the loop and
+        // makes the whole `while` evaluate to that Pending.
+        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond, to: 0 });
         let jexit = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.loop_stack.push(LoopCtx {
@@ -546,6 +550,12 @@ impl<'p> FnLowerer<'p> {
         self.push(Inst::Jump { to: top }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
+        // Pending arm: yield the Pending as the loop value, then share the exit
+        // (so the loop-index context is still popped).
+        let pend_label = self.here();
+        self.patch(jpend, pend_label);
+        self.push(Inst::Move { dst, src: cond });
+
         let exit = self.here();
         self.patch(jexit, exit);
         for j in ctx.break_jumps {
@@ -755,6 +765,8 @@ impl<'p> FnLowerer<'p> {
         let dst = self.flat(term.id)?;
         let cond = self.flat(term.inputs[0])?;
         self.push(Inst::LoadNil { dst });
+        // A Pending condition absorbs: run no arm and yield the Pending itself.
+        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond, to: 0 });
         let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.emit_arm(term.child_blocks[0], dst)?;
@@ -765,8 +777,16 @@ impl<'p> FnLowerer<'p> {
         if let Some(&else_block) = term.child_blocks.get(1) {
             self.emit_arm(else_block, dst)?;
         }
+        // Both real arms jump over the pending arm to `end`.
+        let jelse = self.emit_placeholder(Inst::Jump { to: 0 });
+
+        let pend_label = self.here();
+        self.patch(jpend, pend_label);
+        self.push(Inst::Move { dst, src: cond });
+
         let end_label = self.here();
         self.patch(jend, end_label);
+        self.patch(jelse, end_label);
         Ok(())
     }
 

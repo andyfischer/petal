@@ -48,6 +48,11 @@ impl<'a> Vm<'a> {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
             }
+            Inst::JumpIfPending { cond, to } => {
+                if matches!(self.reg(fi, *cond), Value::Pending(_)) {
+                    self.stack.vm_frames[fi].ip = *to as usize;
+                }
+            }
 
             // --- loops ---
             Inst::ForEachInit { iter, slot, idx_ctx } => {

@@ -72,6 +72,11 @@ pub enum Inst {
     /// `??` coalescing: jump to `to` when `cond` is present (not `Nil`/`Pending`),
     /// leaving the LHS in the result register; otherwise fall through to the RHS arm.
     JumpIfPresent { cond: Reg, to: Label },
+    /// Control-flow Pending absorption: jump to `to` when `cond` is a
+    /// `Value::Pending`. The lowering routes `to` to an arm that copies `cond`
+    /// into the control expression's result register, so `if`/`while`/`for`/
+    /// `match` on a Pending run no branch and evaluate to that Pending.
+    JumpIfPending { cond: Reg, to: Label },
 
     // --- loops (replace Frame.loop_states) ---
     /// Snapshot `iter`'s list into loop slot `slot`; push a loop-index context
@@ -201,6 +206,7 @@ impl Inst {
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
             | Inst::JumpIfPresent { .. }
+            | Inst::JumpIfPending { .. }
             | Inst::ForEachInit { .. }
             | Inst::ForEachNext { .. }
             | Inst::RangeInit { .. }
@@ -330,6 +336,7 @@ impl Inst {
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
             | Inst::JumpIfPresent { .. }
+            | Inst::JumpIfPending { .. }
             | Inst::ForEachInit { .. }
             | Inst::RangeInit { .. }
             | Inst::WhileInit { .. }
@@ -361,6 +368,7 @@ impl Inst {
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
             | Inst::JumpIfPresent { to, .. }
+            | Inst::JumpIfPending { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }
@@ -380,6 +388,7 @@ impl Inst {
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
             | Inst::JumpIfPresent { to, .. }
+            | Inst::JumpIfPending { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }

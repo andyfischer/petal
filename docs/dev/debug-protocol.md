@@ -30,6 +30,7 @@ so future additions stay backwards-compatible.
   "mouse": { "x": 400, "y": 300, "buttons": [0] },
   "text": "hello" }
 { "cmd": "screenshot" }
+{ "cmd": "pending_report" }
 ```
 
 ### Field reference
@@ -44,6 +45,7 @@ so future additions stay backwards-compatible.
 | `capture_draw_commands` | — | Speculative run, no side effects. |
 | `input` | `keys_down?: string[]`, `mouse?: MouseInput`, `text?: string` | Inject input. `text` is delivered to the next frame's `text_input()`. |
 | `screenshot` | — | Return current frame as PNG data URL. |
+| `pending_report` | — | Structured per-frame report of every live pending resource. Replies in `pending`. |
 
 ### `MouseInput`
 
@@ -70,6 +72,7 @@ use the object form. `buttons` is an array of **petal-ui button ids**
   "draw_commands": [ ... ],
   "output": [ "..." ],
   "screenshot": "data:image/png;base64,...",
+  "pending": [ ... ],
   "error": null
 }
 ```
@@ -88,6 +91,38 @@ no other fields set.
 | `draw_commands` | DrawCommand[] | `step`, `capture_draw_commands` |
 | `output` | string[] | `step`, `capture_draw_commands` when stdout captured |
 | `screenshot` | string (data URL) | `screenshot` |
+| `pending` | PendingEntry[] | `pending_report` |
+
+---
+
+## PendingEntry
+
+One entry per live pending resource, returned in the `pending` array of a
+`pending_report` response. This is the observability data behind the dev
+overlay and agent "why is this region blank" debugging — every pending value
+carries provenance (see `docs/dev/pending-values-plan.md` §Observability).
+
+```json
+{ "id": 0,
+  "key": 12345,
+  "state": "loading",
+  "age_frames": 12,
+  "origin": { "line": 3, "col": 11, "text": "fetch(\"/api/user/7\")" },
+  "absorbed_count": 4 }
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `id` | int | Resource-table index (`PendingId`). |
+| `key` | int | Cache key — two fetches of the same key share one entry. |
+| `state` | `"loading" \| "errored" \| "ready"` | Resolution state. |
+| `age_frames` | int | Frames since the resource was first requested. |
+| `origin` | `{ line, col, text } \| null` | Originating call site; `null` when a native created it with no reachable term. |
+| `absorbed_count` | int | How many ops absorbed this resource **this frame** (reset each frame). |
+
+`age_frames` only advances when the host calls
+`ExecutionContext::advance_frame()` once per frame (petal-sdl does; the CLI and
+tests leave it at 0 unless advanced).
 
 ---
 

@@ -37,6 +37,7 @@ pub mod draw;
 pub mod harness;
 pub mod host_data;
 pub mod input;
+pub mod pending;
 
 /// Version of the petal-ui contract, exposed to scripts as `ui_version()`.
 /// Bump when native signatures, binding names, or prelude semantics change

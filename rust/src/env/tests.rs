@@ -2158,3 +2158,58 @@ mod pending_render_chunk_m_tests {
     }
 }
 
+
+/// Chunk N of the pending-values feature: the frame pending report — a
+/// structured, per-frame summary of every live resource, surfaced through
+/// [`Env::pending_report`] (and, downstream, the debug-protocol `pending_report`
+/// query and the petal-ui overlay hook). Each entry names the resource's id,
+/// key, resolution state, age in frames, origin call site, and this-frame
+/// absorption count.
+mod pending_report_chunk_n_tests {
+    use super::super::*;
+
+    /// A live pending resource appears in the report with its `loading` state,
+    /// its age in frames (grown by `advance_frame`), a zero absorption count
+    /// (nothing absorbed it this frame), and an origin object whose source text
+    /// is the `__pending("k")` call site. Pre-Chunk-N there is no report builder
+    /// at all, so this pins the whole shape.
+    #[test]
+    fn pending_report_lists_live_resource_with_state_age_and_origin() {
+        let mut env = Env::new();
+        let pid = env.load_program("let x = __pending(\"k\")\nx\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+
+        // Age the resource two frames so `age_frames` is a non-trivial value.
+        let ck = env.default_context;
+        env.ctx_mut(ck).advance_frame();
+        env.ctx_mut(ck).advance_frame();
+
+        let report = env.pending_report(pid, sid);
+        let arr = report.as_array().expect("report must be a JSON array");
+        assert_eq!(arr.len(), 1, "exactly one live resource expected, got {report}");
+
+        let entry = &arr[0];
+        assert_eq!(
+            entry.get("state").and_then(|s| s.as_str()),
+            Some("loading"),
+            "resource state missing/wrong in {entry}"
+        );
+        assert_eq!(
+            entry.get("age_frames").and_then(|a| a.as_u64()),
+            Some(2),
+            "age-in-frames missing/wrong in {entry}"
+        );
+        assert_eq!(
+            entry.get("absorbed_count").and_then(|a| a.as_u64()),
+            Some(0),
+            "absorbed_count missing/wrong in {entry}"
+        );
+        let origin = entry.get("origin").expect("origin field missing");
+        let text = origin.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        assert!(
+            text.contains("__pending"),
+            "origin source text should name the call site, got {origin}"
+        );
+    }
+}

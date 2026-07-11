@@ -342,6 +342,35 @@ impl Env {
         Ok(())
     }
 
+    /// Advance the frame counter of the context `stack_id` runs in (see
+    /// [`ExecutionContext::advance_frame`](crate::execution_context::ExecutionContext::advance_frame)).
+    /// A host calls this once per rendered frame so resource ages
+    /// (`current_frame - frame_started`) grow over time. No-op if the stack is
+    /// unknown.
+    pub fn advance_frame(&mut self, stack_id: StackKey) {
+        if let Some(ck) = self.ctx_for(stack_id) {
+            self.ctx_mut(ck).advance_frame();
+        }
+    }
+
+    /// A structured, per-frame report of every live pending resource in the
+    /// context `stack_id` runs in: a JSON array of
+    /// `{ id, key, state, age_frames, origin, absorbed_count }` objects (see
+    /// [`crate::value::pending_report_json`] for the exact shape). This is what
+    /// the debug-protocol `pending_report` query and the petal-ui overlay hook
+    /// surface, and what `--trace-pending` prints per frame. An empty array when
+    /// the program is unknown (no source map to resolve origins against).
+    pub fn pending_report(&self, program_id: ProgramId, stack_id: StackKey) -> serde_json::Value {
+        let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
+        let ctx = self.ctx(ck);
+        match self.get_program(program_id) {
+            Some(program) => {
+                crate::value::pending_report_json(&ctx.resources, program, ctx.frame())
+            }
+            None => serde_json::Value::Array(Vec::new()),
+        }
+    }
+
     /// Register a native function that can be called from Petal code.
     /// Must be called before `load_program`.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {

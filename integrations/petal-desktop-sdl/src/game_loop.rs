@@ -225,6 +225,8 @@ pub fn run_game<H: Host>(
         let dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
         frame_count += 1;
+        // Advance the ExecutionContext frame so pending-resource ages grow.
+        env.advance_frame(current.stack_id);
 
         input.begin_frame(dt);
         bind_frame_info(&mut env, dt, frame_count);
@@ -319,6 +321,8 @@ pub fn run_agent<H: Host>(
             let dt = now.duration_since(last_frame).as_secs_f64();
             last_frame = now;
             frame_count += 1;
+            // Advance the ExecutionContext frame so pending-resource ages grow.
+            env.advance_frame(current.stack_id);
 
             input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);

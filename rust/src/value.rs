@@ -382,6 +382,36 @@ fn pending_json(id: PendingId, ctx: &PendingJsonCtx) -> serde_json::Value {
     })
 }
 
+/// The frame pending report: a structured summary over **every** live resource
+/// in `resources`, as a JSON array of
+/// `{ id, key, state, age_frames, origin, absorbed_count }` objects (origin is
+/// `{ line, col, text }` or `null`). This is the data the debug-protocol
+/// `pending_report` query, the petal-ui overlay hook, and `--trace-pending`
+/// consume: state + provenance + this-frame absorption count for the whole
+/// table. `current_frame` supplies each entry's age; `program` resolves origin
+/// source text, reusing [`pending_origin_json`] (the same resolution the Chunk-M
+/// per-value rendering uses).
+pub fn pending_report_json(
+    resources: &ResourceTable,
+    program: &Program,
+    current_frame: u64,
+) -> serde_json::Value {
+    let entries: Vec<serde_json::Value> = resources
+        .iter()
+        .map(|(id, entry)| {
+            serde_json::json!({
+                "id": id.0,
+                "key": entry.key,
+                "state": resource_state_name(&entry.state),
+                "age_frames": entry.age_frames(current_frame),
+                "origin": pending_origin_json(program, entry.origin),
+                "absorbed_count": entry.absorbed_count,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(entries)
+}
+
 /// Convert a Value to serde_json::Value for JSON serialization, without pending
 /// provenance. A `Value::Pending` renders as its context-free `"<pending N>"`
 /// string; callers that can supply a [`PendingJsonCtx`] should use

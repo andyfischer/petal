@@ -112,6 +112,17 @@ impl ResourceTable {
         &self.entries[id.0 as usize]
     }
 
+    /// Iterate every live resource with its [`PendingId`], in id order. Entries
+    /// are cross-frame (a resource keeps loading across frames), so this yields
+    /// every resource this context has created — the whole-table view the frame
+    /// pending report is built from.
+    pub fn iter(&self) -> impl Iterator<Item = (PendingId, &ResourceEntry)> {
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| (PendingId(i as u32), entry))
+    }
+
     /// Bump `id`'s absorbed-operation counter. Every strict-operator absorption
     /// and effectful no-op calls this — the cheap, always-on steady-state signal
     /// (not gated by the trace flag).

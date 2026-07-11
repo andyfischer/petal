@@ -367,12 +367,26 @@ scope for v1; noted so the fetcher trait leaves room for a batch entry point.
    an `init` flag so only the StateInit commit skips a Pending — the slot
    re-inits each frame until it resolves; ordinary reassignment still commits
    (Q3 allow-and-flag).*
-3. **Observability:** provenance, **debug-gated** absorption log, frame
-   pending report; debug protocol query + MCP `PendingReport` tool +
-   `--trace-pending`. The log is off by default (memory); the always-on
-   `absorbed_count` counter covers the cheap case. Do this *before* real
-   I/O — it makes step 4 debuggable and it's a stated requirement, not
-   polish.
+3. **✅ Done (Chunks J–O).** **Observability:** provenance, **debug-gated**
+   absorption log, frame pending report; debug protocol query + MCP
+   `PendingReport` tool + `--trace-pending`. The log is off by default (memory);
+   the always-on `absorbed_count` counter covers the cheap case. *Chunk J stamps
+   `origin: Option<TermId>` + `frame_started` on every Pending at creation and
+   adds the `frame: u64` / `advance_frame()` counter to `ExecutionContext`
+   (`age_frames` = current − started, saturating). Chunk K bumps
+   `ResourceEntry.absorbed_count` on every strict-op and effectful-no-op
+   absorption, unconditionally. Chunk L adds the per-frame absorption log
+   (`Vec<(Option<TermId>, PendingId)>`) + `trace_pending` flag on
+   `ExecutionContext`, mirroring `TraceBuffer` — off by default, cleared at the
+   per-frame stack reset. Chunk M renders Pending distinctly in every debug
+   surface (`value_to_display_string`, `Debug`, `value_to_json`, state dumps) as
+   `<pending …>`/`<errored …>` with origin text, never nil or a bare handle.
+   Chunk N assembles the structured frame pending report (per-resource `{ id,
+   key, state, age_frames, origin: {line,col,text}|null, absorbed_count }`),
+   wires it to the debug protocol `pending_report` query and a petal-ui host
+   hook. Chunk O exposes it through the `pending-report` CLI subcommand, the
+   MCP `PendingReport` tool, and the `--trace-pending` flag on `run` (also
+   honored via `PETAL_TRACE_PENDING`) which prints the report after the run.*
 4. **`petal-query` crate:** cache, dedup, fetcher trait, frame-boundary
    delivery; SDL host fetcher (threads) and web-canvas fetcher (browser
    fetch). Sample-app demo (diagram-canvas or a new sample) exercising

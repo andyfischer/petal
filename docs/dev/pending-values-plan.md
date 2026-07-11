@@ -349,14 +349,24 @@ scope for v1; noted so the fetcher trait leaves room for a batch entry point.
 
 ## Incremental roadmap
 
-1. **`Value::Pending` + resource table + strict propagation** in
-   `ops.rs`/`dispatch.rs` (follow the `Dual` pattern), the non-strict meta
-   builtins, and the hard-error positions. Unit tests = the strict/non-strict
-   table, row by row. No I/O yet: a test-only builtin `__pending(key)` /
-   `__resolve(key, value)` drives everything deterministically.
-2. **Control-flow + collections rules** (`if`/`while`/`for`/`match`,
-   element-wise lists/maps) + the StateInit no-commit rule (with the
-   phi-interaction test).
+1. **✅ Done (Chunks A–E).** **`Value::Pending` + resource table + strict
+   propagation** in `ops.rs`/`dispatch.rs` (follow the `Dual` pattern), the
+   non-strict meta builtins, and the hard-error positions. Unit tests = the
+   strict/non-strict table, row by row. No I/O yet: a test-only builtin
+   `__pending(key)` / `__resolve(key, value)` drives everything
+   deterministically. *(The native pending-disposition tag `NativeClass` uses
+   `AllowPending` for the non-strict class; a Pending map key/index is the
+   hard-error position.)*
+2. **✅ Done (Chunks F–I).** **Control-flow + collections rules**
+   (`if`/`while`/`for`/`match`, element-wise lists/maps) + the StateInit
+   no-commit rule (with the phi-interaction test). *A single `JumpIfPending`
+   opcode (mirroring `JumpIfPresent`) guards the `if`/`while`/`for`/`match`
+   lowerings so a Pending condition/iterable/subject runs no branch and the
+   expression evaluates to that Pending. `sort`/`join` absorb a Pending
+   element (element-wise `len`/index/`map` do not). `Inst::StateWrite` gained
+   an `init` flag so only the StateInit commit skips a Pending — the slot
+   re-inits each frame until it resolves; ordinary reassignment still commits
+   (Q3 allow-and-flag).*
 3. **Observability:** provenance, **debug-gated** absorption log, frame
    pending report; debug protocol query + MCP `PendingReport` tool +
    `--trace-pending`. The log is off by default (memory); the always-on

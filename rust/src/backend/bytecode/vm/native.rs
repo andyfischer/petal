@@ -43,9 +43,38 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    /// Pending interception (Chunk C). If any argument is a `Pending`, apply the
+    /// native's classification: `Strict` absorbs (return the leftmost `Pending`
+    /// arg, don't call), `Effectful` no-ops (return `Nil`, emit nothing, don't
+    /// call), `NonStrict` proceeds (it inspects the pending itself). Returns
+    /// `None` to proceed with the real call.
+    ///
+    /// Cheap early-out: only a top-level `Pending` *argument* triggers it — a
+    /// pending nested inside a resolved list is left alone (element-wise). This
+    /// MUST be consulted at every native entry point, because a native can be
+    /// invoked three ways that don't share a single call site: the intrinsic
+    /// fork below (map/filter/… never reach the leaf), the shared leaf
+    /// `call_native_fn_flagged` (plain + in-place mutating builtins), and
+    /// record-field method calls. Guarding only one path would make absorption
+    /// depend on the in-place optimizer or call syntax.
+    fn intercept_pending(&self, nid: NativeFnId, args: &[Value]) -> Option<Value> {
+        let pending = args.iter().find(|v| matches!(v, Value::Pending(_)))?;
+        match self.native_fns.get_class(nid) {
+            crate::native_fn::NativeClass::Strict => Some(*pending),
+            crate::native_fn::NativeClass::Effectful => Some(Value::Nil),
+            crate::native_fn::NativeClass::NonStrict => None,
+        }
+    }
+
     /// Dispatch a native function, handling the higher-order intrinsics
     /// specially (they call closures synchronously).
     pub(super) fn call_native_or_intrinsic(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+        // Intercept before the intrinsic fork: map/filter/reduce/forEach are
+        // dispatched here and never reach the leaf, so a Pending collection base
+        // (e.g. `map(pending, f)`) must be absorbed here.
+        if let Some(v) = self.intercept_pending(nid, args) {
+            return Ok(v);
+        }
         let nf = self.native_fns;
         if nf.intrinsic_map == Some(nid) {
             self.builtin_map(args)
@@ -79,6 +108,16 @@ impl<'a> Vm<'a> {
         args: &[Value],
         in_place: bool,
     ) -> Result<Value, String> {
+        // The shared leaf for every real native invocation — plain calls, the
+        // in-place mutating path (`append`/`set`/…, on by default via the
+        // optimizer), and record-field method calls. Intercept here so a Pending
+        // argument is absorbed/no-op'd regardless of which path or optimization
+        // reached this native (redundant with the pre-fork check on the plain
+        // path, but that check only returns early; the scan is a cheap no-op
+        // when no arg is Pending).
+        if let Some(v) = self.intercept_pending(nid, args) {
+            return Ok(v);
+        }
         let func = self.native_fns.get_func(nid);
         let mut cxt = PetalCxt::new(
             args,

@@ -979,3 +979,187 @@ mod pending_operator_absorption_tests {
     }
 }
 
+/// Chunk C of the pending-values feature: NATIVE-FN classification. Every native
+/// call flows through `call_native_or_intrinsic`; before the native runs, its
+/// argument list is scanned for a `Value::Pending`, and if one is present the
+/// native's class decides the outcome:
+///
+///   * Strict (default)  -> return the LEFTMOST Pending arg without calling.
+///   * Effectful (print / draw emitters) -> no-op: return Nil, emit nothing.
+///   * NonStrict (`__pending`/`__resolve`/`__reject`) -> call normally.
+///
+/// This mirrors the strict/non-strict table in `docs/dev/pending-values-plan.md`:
+/// arithmetic/math builtins, `str`, `map`, etc. absorb a Pending operand, while
+/// effectful natives silently no-op (the frame emits no command).
+///
+/// These are TDD tests written BEFORE the Chunk C implementation. They FAIL
+/// against today's code, which has no classification layer:
+///   - `sqrt(__pending("k"))` errors "Expected float at arg 1, got pending"
+///     (want: Pending),
+///   - `str(__pending("k"))` returns the String "<pending>" (want: Pending),
+///   - `map(__pending("k"), fn)` errors "map() expects a list as first
+///     argument" (the collection base is arg[0]; want: Pending),
+///   - `print(__pending("k"))` prints "<pending>" (want: NO output, run ok).
+/// The two guards (`map` over a real list; `sqrt` after `__resolve`) already
+/// pass today and pin that classification must not disturb the no-Pending path.
+///
+/// Pendings are built with the deterministic Chunk A test builtin `__pending`.
+/// All `run_source` calls on one `Env` share its default context, so a resolve
+/// in one run is visible to a later run (the between-frame resolution model).
+mod pending_native_classification_tests {
+    use super::super::*;
+
+    /// Pull the `PendingId` out of a `Value::Pending`, or panic helpfully.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// A Strict math native (`sqrt`) absorbs a Pending argument: it returns the
+    /// Pending itself, NOT a Float and NOT an error. Today `sqrt(pending)`
+    /// errors "Expected float at arg 1, got pending", so this fails at `unwrap`.
+    #[test]
+    fn strict_math_native_absorbs_pending() {
+        let mut env = Env::new();
+        let v = env.run_source("sqrt(__pending(\"k\"))\n").unwrap();
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "sqrt(pending) should absorb to Pending, got {v:?}"
+        );
+    }
+
+    /// `str` is Strict too: `str(pending)` yields the Pending, never a rendered
+    /// String. Today `str(pending)` returns String("<pending>"), so this fails.
+    #[test]
+    fn strict_str_native_absorbs_pending() {
+        let mut env = Env::new();
+        let v = env.run_source("str(__pending(\"k\"))\n").unwrap();
+        assert!(
+            !matches!(v, Value::String(_)),
+            "str(pending) must NOT collapse to a String, got {v:?}"
+        );
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "str(pending) should absorb to Pending, got {v:?}"
+        );
+    }
+
+    /// A higher-order intrinsic (`map`) over a Pending BASE absorbs: the base is
+    /// arg[0], a Pending, so the whole call returns that Pending (the closure
+    /// never runs). The returned id must be exactly the base's id (leftmost
+    /// wins; here it is the only Pending). Today `map(pending, fn)` errors
+    /// "map() expects a list as first argument", so this fails at `unwrap`.
+    #[test]
+    fn map_over_pending_base_absorbs_pending() {
+        let mut env = Env::new();
+        // `__pending` dedups by key across runs in this shared context, so a
+        // fresh fetch of "k" recovers the id the map result must carry.
+        let base = env.run_source("__pending(\"k\")\n").unwrap();
+        let base_id = expect_pending(&base);
+        let mapped = env
+            .run_source("map(__pending(\"k\"), fn(x) -> x)\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&mapped),
+            base_id,
+            "map over a Pending base must return that Pending"
+        );
+    }
+
+    /// An Effectful native (`print`) no-ops on a Pending argument: the run
+    /// succeeds and NOTHING is printed. Today `print(pending)` writes the line
+    /// "<pending>" to the output buffer, so `take_output()` is non-empty and
+    /// this assertion fails.
+    #[test]
+    fn effectful_print_noops_on_pending() {
+        let mut env = Env::new();
+        env.run_source("print(__pending(\"k\"))\n").unwrap();
+        let printed = env.take_output();
+        assert!(
+            printed.is_empty(),
+            "print(pending) must emit nothing (effectful no-op), got {printed:?}"
+        );
+    }
+
+    /// Regression guard: classification must not touch the no-Pending path.
+    /// `map` over a RESOLVED list runs normally and returns the mapped list —
+    /// arg[0] is a List, not a Pending, so there is no interception (the
+    /// element-wise rule stays intact). This passes today and must keep passing.
+    #[test]
+    fn map_over_real_list_is_unaffected() {
+        let mut env = Env::new();
+        let v = env
+            .run_source("map([1, 2, 3], fn(x) -> x * 2)\n")
+            .unwrap();
+        let ck = env.default_context;
+        match v {
+            Value::List(id) => assert_eq!(
+                env.ctx(ck).heap.get_list(id).to_vec(),
+                vec![Value::Int(2), Value::Int(4), Value::Int(6)],
+                "map over a real list must still compute element-wise"
+            ),
+            other => panic!("expected a List result, got {other:?}"),
+        }
+    }
+
+    /// Guard: absorption only applies WHILE pending. After `__resolve("k", 9.0)`
+    /// the resource is Ready, so `__pending("k")` returns the real Float(9.0) and
+    /// `sqrt` computes normally (3.0) — proving the Strict interception keys off
+    /// the Pending value, not off the call site. Passes today; pins that the
+    /// classification early-out is skipped when no arg is Pending.
+    #[test]
+    fn resolved_value_computes_normally_through_strict_native() {
+        let mut env = Env::new();
+        let v = env
+            .run_source("__resolve(\"k\", 9.0)\nsqrt(__pending(\"k\"))\n")
+            .unwrap();
+        assert_eq!(v, Value::Float(3.0), "sqrt of a resolved 9.0 must be 3.0");
+    }
+
+    /// Bypass regression: the in-place mutating path must absorb too. `append`
+    /// is a Strict mutating builtin; with the last-use in-place optimizer on (the
+    /// default), `append(xs, pending)` routes through `call_native_fn_in_place`,
+    /// NOT `call_native_or_intrinsic`. Absorption must still happen — otherwise
+    /// the Pending is physically appended and semantics diverge purely from the
+    /// optimizer. Interception lives at the shared leaf to cover this.
+    #[test]
+    fn in_place_mutating_native_absorbs_pending() {
+        let mut env = Env::new();
+        // `xs` is dead after the append, so the optimizer picks the in-place path.
+        let v = env
+            .run_source("let xs = [1, 2]\nappend(xs, __pending(\"k\"))\n")
+            .unwrap();
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "append(xs, pending) must absorb to Pending regardless of the in-place \
+             optimization, got {v:?}"
+        );
+    }
+
+    /// Bypass regression: a native stored as a record field and invoked via
+    /// method syntax (`r.f(pending)`) dispatches through the record-field path,
+    /// which also bottoms out at the shared leaf. A Strict native there must
+    /// absorb, and an Effectful one must no-op.
+    #[test]
+    fn record_field_native_call_absorbs_pending() {
+        let mut env = Env::new();
+        let v = env
+            .run_source("let r = { f: sqrt }\nr.f(__pending(\"k\"))\n")
+            .unwrap();
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "r.f(pending) via a record-field native must absorb to Pending, got {v:?}"
+        );
+        // And the Effectful case: a print stored on a record must still no-op.
+        let mut env2 = Env::new();
+        env2.run_source("let r = { p: print }\nr.p(__pending(\"k\"))\n")
+            .unwrap();
+        assert!(
+            env2.take_output().is_empty(),
+            "r.p(pending) for an Effectful native must emit nothing"
+        );
+    }
+}
+

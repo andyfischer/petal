@@ -8,7 +8,7 @@
 //! serialized programs would drift if this list were reordered. Don't
 //! reorder, only append.
 
-use crate::native_fn::{NativeFnTable, PetalCxt};
+use crate::native_fn::{NativeClass, NativeFnTable, PetalCxt};
 
 /// The mutating builtins: those whose container is their first argument and
 /// whose result is the new (or in-place-updated) container. This is the single
@@ -99,7 +99,7 @@ pub(super) fn require_args(state: &PetalCxt, n: usize, name: &str) -> Result<(),
 pub fn register_builtins(table: &mut NativeFnTable) {
     // Order matters — these must be registered in the same order as the old
     // BuiltinTable so that phantom term indices stay consistent.
-    table.register("print", io::native_print);
+    let print_id = table.register("print", io::native_print);
     table.register("range", collections::native_range);
     table.register("len", collections::native_len);
     table.register("push", collections::native_push);
@@ -193,7 +193,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 
     // --- Symbols & buffered output (append-only to preserve phantom term indices) ---
     table.register("symbol", output::native_symbol);
-    table.register("push_output", output::native_push_output);
+    let push_output_id = table.register("push_output", output::native_push_output);
     table.register("binding", output::native_binding);
 
     // --- Immutable collection ops (append-only to preserve phantom term indices) ---
@@ -205,9 +205,19 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("is_valid", handle::native_is_valid);
 
     // --- Test-only pending-resource builtins (append-only) ---
-    table.register("__pending", pending::native_pending);
-    table.register("__resolve", pending::native_resolve);
-    table.register("__reject", pending::native_reject);
+    let pending_id = table.register("__pending", pending::native_pending);
+    let resolve_id = table.register("__resolve", pending::native_resolve);
+    let reject_id = table.register("__reject", pending::native_reject);
+
+    // --- Pending classification (Chunk C) ---
+    // Effectful emitters no-op on a Pending argument (emit nothing); the three
+    // test-only pending builtins inspect Pendings themselves and must always
+    // run. Everything else stays Strict (absorbs a Pending arg) by default.
+    table.set_class(print_id, NativeClass::Effectful);
+    table.set_class(push_output_id, NativeClass::Effectful);
+    table.set_class(pending_id, NativeClass::NonStrict);
+    table.set_class(resolve_id, NativeClass::NonStrict);
+    table.set_class(reject_id, NativeClass::NonStrict);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

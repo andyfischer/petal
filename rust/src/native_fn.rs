@@ -22,10 +22,27 @@ pub type NativeResult = Result<u32, String>;
 /// Signature for native functions.
 pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;
 
+/// How a native function behaves when handed a `Value::Pending` argument.
+/// Consulted at the single native-call boundary (see the bytecode VM's
+/// `call_native_or_intrinsic`) only when a Pending arg is actually present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeClass {
+    /// Default. A Pending argument is absorbed: the call returns the leftmost
+    /// Pending arg without invoking the native (`sqrt(pending) -> pending`).
+    Strict,
+    /// Side-effecting emitter (`print`, `push_output`, …). A Pending argument
+    /// makes the call a no-op returning `Nil` — it emits nothing.
+    Effectful,
+    /// The native inspects Pendings itself and must run normally
+    /// (`__pending`/`__resolve`/`__reject`). Never intercepted.
+    NonStrict,
+}
+
 /// Entry in the native function table.
 struct NativeFnEntry {
     name: String,
     func: NativeFn,
+    class: NativeClass,
 }
 
 /// Registry of native functions, mapping IDs to names and function pointers.
@@ -55,8 +72,21 @@ impl NativeFnTable {
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
             func,
+            class: NativeClass::Strict,
         });
         id
+    }
+
+    /// Override the Pending-handling class of an already-registered native.
+    /// Registration stays append-only (indices are stable); classification is
+    /// applied afterward by id.
+    pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
+        self.entries[id.0 as usize].class = class;
+    }
+
+    /// The Pending-handling class of a native (defaults to `Strict`).
+    pub fn get_class(&self, id: NativeFnId) -> NativeClass {
+        self.entries[id.0 as usize].class
     }
 
     /// Look up a native function by name.

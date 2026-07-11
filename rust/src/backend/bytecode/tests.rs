@@ -281,6 +281,24 @@ fn short_circuit() {
     assert_parity("let a = 3\nlet y = a < 0 || a > 100");
 }
 
+/// Chunk E: the `??` coalescing operator must lower to identical results under
+/// both optimization levels — both the fallback path and the short-circuit (the
+/// RHS effect runs only when the LHS is absent, so the print output must match).
+///
+/// The `??` coalescing operator lowers to `Move` + the `JumpIfPresent` opcode
+/// around the RHS block; this pins that the optimized and unoptimized lowerings
+/// agree (value + output), including the short-circuit output cases. The
+/// value-level semantics (nil/pending fallback, present-but-falsy, precedence)
+/// are asserted in `env::tests::pending_coalesce_operator_chunk_e_tests`.
+#[test]
+fn coalesce() {
+    assert_parity("let y = nil ?? 5");
+    assert_parity("let y = 3 ?? 5");
+    assert_parity("let y = __pending(\"k\") ?? 7");
+    assert_parity("let y = 1 ?? print(\"boom\")"); // present LHS: no output either way
+    assert_parity("nil ?? print(\"run\")"); // absent LHS: RHS effect runs, output must match
+}
+
 // -- M2b: loops -------------------------------------------------------------
 
 #[test]

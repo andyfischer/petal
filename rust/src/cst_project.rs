@@ -889,6 +889,7 @@ fn bin_op(tok: &Token) -> Option<BinOp> {
         Token::Ge => BinOp::Ge,
         Token::And => BinOp::And,
         Token::Or => BinOp::Or,
+        Token::DoubleQuestion => BinOp::Coalesce,
         _ => return None,
     })
 }

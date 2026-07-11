@@ -49,6 +49,9 @@ impl Compiler {
                 if *op == BinOp::Or {
                     return self.compile_short_circuit(left, right, false);
                 }
+                if *op == BinOp::Coalesce {
+                    return self.compile_coalesce(left, right);
+                }
 
                 let l = self.compile_expr(left);
                 let r = self.compile_expr(right);
@@ -65,7 +68,7 @@ impl Compiler {
                     BinOp::Gt => TermOp::Gt,
                     BinOp::Ge => TermOp::Ge,
                     BinOp::Concat => TermOp::Concat,
-                    BinOp::And | BinOp::Or => unreachable!(),
+                    BinOp::And | BinOp::Or | BinOp::Coalesce => unreachable!(),
                 };
                 self.emit_term(term_op, smallvec![l, r], None)
             }
@@ -536,6 +539,27 @@ impl Compiler {
 
         let op = if is_and { TermOp::And } else { TermOp::Or };
         let tid = self.emit_term_with_children(op, smallvec![left_tid], None, smallvec![rhs_block]);
+        self.blocks[rhs_block.0 as usize].parent_term_id = Some(tid);
+        tid
+    }
+
+    /// Compile `x ?? y`: the RHS lives in a child block that only runs when the
+    /// LHS is absent (`Nil` or `Pending`). Mirrors [`compile_short_circuit`].
+    fn compile_coalesce(&mut self, left: &Expr, right: &Expr) -> TermId {
+        let left_tid = self.compile_expr(left);
+        let rhs_block = self.new_block(None);
+
+        // Compile RHS in its own block
+        self.compile_in_block(rhs_block, |c| {
+            c.compile_expr(right);
+        });
+
+        let tid = self.emit_term_with_children(
+            TermOp::Coalesce,
+            smallvec![left_tid],
+            None,
+            smallvec![rhs_block],
+        );
         self.blocks[rhs_block.0 as usize].parent_term_id = Some(tid);
         tid
     }

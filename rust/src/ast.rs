@@ -26,6 +26,9 @@ pub enum BinOp {
     Ge,
     And,
     Or,
+    /// `??` — short-circuit coalescing: yields the RHS when the LHS is absent
+    /// (`Nil` or `Pending`), otherwise the LHS.
+    Coalesce,
     Concat,
 }
 

@@ -146,6 +146,7 @@ fn format_op(op: &TermOp) -> String {
         TermOp::Not => "Not".into(),
         TermOp::And => "And".into(),
         TermOp::Or => "Or".into(),
+        TermOp::Coalesce => "Coalesce".into(),
         TermOp::Concat => "Concat".into(),
         TermOp::Copy => "Copy".into(),
         TermOp::Phi => "Phi".into(),

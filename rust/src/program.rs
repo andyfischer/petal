@@ -100,6 +100,9 @@ pub enum TermOp {
     And,
     /// Short-circuit OR: inputs=[left], child_blocks=[rhs_block]
     Or,
+    /// Short-circuit coalesce `??`: inputs=[left], child_blocks=[rhs_block].
+    /// Yields the RHS when the left is absent (`Nil` or `Pending`), else the left.
+    Coalesce,
 
     // String
     Concat,

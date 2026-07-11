@@ -95,6 +95,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         Jump { to } => format!("jump -> {}", to),
         JumpIfFalse { cond, to } => format!("jump_if_false r{} -> {}", cond, to),
         JumpIfTrue { cond, to } => format!("jump_if_true r{} -> {}", cond, to),
+        JumpIfPresent { cond, to } => format!("jump_if_present r{} -> {}", cond, to),
         ForEachInit { iter, slot, idx_ctx } => {
             format!("foreach_init r{} slot{} idx_ctx={}", iter, slot, idx_ctx)
         }

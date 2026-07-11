@@ -43,6 +43,11 @@ impl<'a> Vm<'a> {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
             }
+            Inst::JumpIfPresent { cond, to } => {
+                if self.reg(fi, *cond).is_present() {
+                    self.stack.vm_frames[fi].ip = *to as usize;
+                }
+            }
 
             // --- loops ---
             Inst::ForEachInit { iter, slot, idx_ctx } => {

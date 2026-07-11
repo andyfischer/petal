@@ -428,6 +428,7 @@ impl<'p> FnLowerer<'p> {
                 TermOp::Branch => self.emit_branch(term)?,
                 TermOp::And => self.emit_short_circuit(term, true)?,
                 TermOp::Or => self.emit_short_circuit(term, false)?,
+                TermOp::Coalesce => self.emit_coalesce(term)?,
                 TermOp::ForLoop => self.emit_for_each(term)?,
                 TermOp::NumericForLoop => self.emit_range(term)?,
                 TermOp::WhileLoop => self.emit_while(term)?,
@@ -794,6 +795,26 @@ impl<'p> FnLowerer<'p> {
 
         let end_label = self.here();
         self.patch(jend, end_label);
+        Ok(())
+    }
+
+    /// Lower `x ?? y`:
+    /// ```text
+    ///   dst = <left>
+    ///   JumpIfPresent dst -> end   // present LHS wins, skip the RHS
+    ///   <rhs>: dst = <rhs result>  // absent LHS: evaluate the fallback
+    /// end:
+    /// ```
+    /// The RHS arm runs only when the LHS is absent (`Nil` or `Pending`), so a
+    /// present LHS short-circuits any RHS side effect.
+    fn emit_coalesce(&mut self, term: &Term) -> Result<(), String> {
+        let dst = self.flat(term.id)?;
+        let left = self.flat(term.inputs[0])?;
+        self.push(Inst::Move { dst, src: left });
+        let to_end = self.emit_placeholder(Inst::JumpIfPresent { cond: dst, to: 0 });
+        self.emit_arm(term.child_blocks[0], dst)?;
+        let end_label = self.here();
+        self.patch(to_end, end_label);
         Ok(())
     }
 

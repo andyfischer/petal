@@ -1326,3 +1326,147 @@ mod pending_meta_builtins_tests {
     }
 }
 
+/// Chunk E — the `??` coalescing operator: `x ?? y` yields `y` when `x` is
+/// `nil` or a `Pending` (loading OR errored), otherwise `x`; the RHS is
+/// evaluated only when the LHS is absent (short-circuit). Precedence sits
+/// between comparison (looser) and concat (tighter).
+mod pending_coalesce_operator_chunk_e_tests {
+    use super::super::*;
+
+    /// nil falls back to the RHS; a present value wins over it.
+    #[test]
+    fn nil_falls_back_present_value_wins() {
+        let mut env = Env::new();
+        assert_eq!(env.run_source("nil ?? 5\n").unwrap(), Value::Int(5));
+        assert_eq!(env.run_source("3 ?? 5\n").unwrap(), Value::Int(3));
+    }
+
+    /// A loading pending falls back; once resolved, the real value wins.
+    #[test]
+    fn loading_pending_falls_back_then_resolved_wins() {
+        let mut env = Env::new();
+        assert_eq!(
+            env.run_source("__pending(\"k\") ?? 5\n").unwrap(),
+            Value::Int(5),
+            "a loading pending must fall back to the RHS"
+        );
+        env.run_source("__resolve(\"k\", 7)\n").unwrap();
+        assert_eq!(
+            env.run_source("__pending(\"k\") ?? 5\n").unwrap(),
+            Value::Int(7),
+            "once resolved, the real value wins over the fallback"
+        );
+    }
+
+    /// An errored pending also falls back (absent = nil OR pending, either state).
+    #[test]
+    fn errored_pending_falls_back() {
+        let mut env = Env::new();
+        env.run_source("__reject(\"e\", \"boom\")\n").unwrap();
+        assert_eq!(
+            env.run_source("__pending(\"e\") ?? 42\n").unwrap(),
+            Value::Int(42),
+            "an errored pending must fall back to the RHS"
+        );
+    }
+
+    /// `??` is NOT `||`: present-but-falsy LHS values (false, 0, "") win over
+    /// the RHS — only nil and pending fall back.
+    #[test]
+    fn present_but_falsy_lhs_is_kept() {
+        let mut env = Env::new();
+        assert_eq!(env.run_source("0 ?? 5\n").unwrap(), Value::Int(0), "0 is present");
+        assert_eq!(
+            env.run_source("false ?? 9\n").unwrap(),
+            Value::Bool(false),
+            "false is present"
+        );
+        let empty = env.run_source("\"\" ?? \"x\"\n").unwrap();
+        match empty {
+            Value::String(id) => assert_eq!(
+                env.ctx(env.default_context).heap.get_string(id),
+                "",
+                "empty string is present"
+            ),
+            other => panic!("expected empty String, got {other:?}"),
+        }
+    }
+
+    /// Short-circuit: when the LHS is present, the RHS is NOT evaluated, so its
+    /// side effect (a print) never runs.
+    #[test]
+    fn present_lhs_short_circuits_rhs_side_effect() {
+        let mut env = Env::new();
+        let v = env.run_source("1 ?? print(\"boom\")\n").unwrap();
+        assert_eq!(v, Value::Int(1));
+        assert!(
+            env.take_output().is_empty(),
+            "present LHS must short-circuit — the RHS print must not run"
+        );
+    }
+
+    /// Short-circuit: when the LHS is absent (nil), the RHS IS evaluated.
+    #[test]
+    fn absent_lhs_evaluates_rhs_side_effect() {
+        let mut env = Env::new();
+        env.run_source("nil ?? print(\"run\")\n").unwrap();
+        assert_eq!(
+            env.take_output(),
+            vec!["run".to_string()],
+            "absent LHS must evaluate the RHS side effect"
+        );
+    }
+
+    /// Precedence: `??` binds TIGHTER than comparison, so `3 ?? 0 > 5` parses as
+    /// `(3 ?? 0) > 5` == false. A present LHS (3) discriminates the two parses:
+    /// the wrong `3 ?? (0 > 5)` would yield Int(3).
+    #[test]
+    fn coalesce_binds_tighter_than_comparison() {
+        let mut env = Env::new();
+        assert_eq!(
+            env.run_source("3 ?? 0 > 5\n").unwrap(),
+            Value::Bool(false),
+            "must parse as (3 ?? 0) > 5"
+        );
+        assert_eq!(env.run_source("nil ?? 10 > 5\n").unwrap(), Value::Bool(true));
+        assert_eq!(env.run_source("nil ?? 0 > 5\n").unwrap(), Value::Bool(false));
+    }
+
+    /// Precedence: `++` (concat) binds TIGHTER than `??`. `"a" ++ p ?? "y"`
+    /// parses as `("a" ++ p) ?? "y"`; the concat absorbs the pending so the whole
+    /// LHS is pending and falls back to "y" (the wrong parse would give "ay").
+    #[test]
+    fn concat_binds_tighter_than_coalesce() {
+        let mut env = Env::new();
+        let v = env
+            .run_source("\"a\" ++ __pending(\"k\") ?? \"y\"\n")
+            .unwrap();
+        match v {
+            Value::String(id) => assert_eq!(
+                env.ctx(env.default_context).heap.get_string(id),
+                "y",
+                "must parse as (\"a\" ++ p) ?? \"y\" and fall back to \"y\""
+            ),
+            other => panic!("expected String \"y\", got {other:?}"),
+        }
+    }
+
+    /// Left-associative: `a ?? b ?? c` is `((a ?? b) ?? c)` — the first present
+    /// value wins.
+    #[test]
+    fn coalesce_is_left_associative() {
+        let mut env = Env::new();
+        assert_eq!(env.run_source("nil ?? nil ?? 3\n").unwrap(), Value::Int(3));
+        assert_eq!(env.run_source("nil ?? 2 ?? 3\n").unwrap(), Value::Int(2));
+    }
+
+    /// Lexer edge: a single-`?` predicate identifier still lexes as one
+    /// identifier, and `??` still tokenizes next to it.
+    #[test]
+    fn single_question_identifier_preserved_alongside_coalesce() {
+        let mut env = Env::new();
+        let v = env.run_source("let ok? = nil\nok? ?? 5\n").unwrap();
+        assert_eq!(v, Value::Int(5), "ok? is one identifier; ok? ?? 5 falls back to 5");
+    }
+}
+

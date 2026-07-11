@@ -69,6 +69,9 @@ pub enum Inst {
     Jump { to: Label },
     JumpIfFalse { cond: Reg, to: Label },
     JumpIfTrue { cond: Reg, to: Label },
+    /// `??` coalescing: jump to `to` when `cond` is present (not `Nil`/`Pending`),
+    /// leaving the LHS in the result register; otherwise fall through to the RHS arm.
+    JumpIfPresent { cond: Reg, to: Label },
 
     // --- loops (replace Frame.loop_states) ---
     /// Snapshot `iter`'s list into loop slot `slot`; push a loop-index context
@@ -197,6 +200,7 @@ impl Inst {
             Inst::Jump { .. }
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
+            | Inst::JumpIfPresent { .. }
             | Inst::ForEachInit { .. }
             | Inst::ForEachNext { .. }
             | Inst::RangeInit { .. }
@@ -325,6 +329,7 @@ impl Inst {
             Inst::Jump { .. }
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
+            | Inst::JumpIfPresent { .. }
             | Inst::ForEachInit { .. }
             | Inst::RangeInit { .. }
             | Inst::WhileInit { .. }
@@ -355,6 +360,7 @@ impl Inst {
             Inst::Jump { to }
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
+            | Inst::JumpIfPresent { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }
@@ -373,6 +379,7 @@ impl Inst {
             Inst::Jump { to }
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
+            | Inst::JumpIfPresent { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }

@@ -66,6 +66,13 @@ impl Value {
         }
     }
 
+    /// Whether a value is "present" for the `??` coalescing operator: anything
+    /// other than `Nil` or a `Pending` (loading OR errored). Distinct from
+    /// [`is_truthy`](Value::is_truthy) — `0`, `false`, and `""` are present.
+    pub fn is_present(&self) -> bool {
+        !matches!(self, Value::Nil | Value::Pending(_))
+    }
+
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Nil => "nil",

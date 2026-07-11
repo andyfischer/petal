@@ -570,7 +570,7 @@ impl Parser {
 
     fn parse_comparison(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
-        let mut left = self.parse_concat()?;
+        let mut left = self.parse_coalesce()?;
         while matches!(self.peek(), Token::Lt | Token::Le | Token::Gt | Token::Ge) {
             let op = match self.advance() {
                 Token::Lt => BinOp::Lt,
@@ -579,6 +579,34 @@ impl Parser {
                 Token::Ge => BinOp::Ge,
                 _ => unreachable!(),
             };
+            self.skip_newlines();
+            let right = self.parse_coalesce()?;
+            self.ev_wrap(cp, SyntaxKind::BinaryExpr);
+            left = Expr {
+                span: SourceSpan {
+                    start: left.span.start,
+                    end: right.span.end,
+                    file: left.span.file,
+                },
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            };
+        }
+        Ok(left)
+    }
+
+    /// `x ?? y` — binds tighter than comparison but looser than concat (`++`),
+    /// so `count ?? 0 > 5` is `(count ?? 0) > 5` and `"a" ++ b ?? "x"` is
+    /// `("a" ++ b) ?? "x"`. Short-circuits at lowering (RHS runs only when the
+    /// LHS is absent).
+    fn parse_coalesce(&mut self) -> Result<Expr, String> {
+        let cp = self.ev_checkpoint();
+        let mut left = self.parse_concat()?;
+        while matches!(self.peek(), Token::DoubleQuestion) {
+            self.advance();
             self.skip_newlines();
             let right = self.parse_concat()?;
             self.ev_wrap(cp, SyntaxKind::BinaryExpr);
@@ -589,7 +617,7 @@ impl Parser {
                     file: left.span.file,
                 },
                 kind: ExprKind::BinaryOp {
-                    op,
+                    op: BinOp::Coalesce,
                     left: Box::new(left),
                     right: Box::new(right),
                 },

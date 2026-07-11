@@ -50,6 +50,7 @@ pub enum Token {
     Ge,       // >=
     And,      // &&
     Or,       // ||
+    DoubleQuestion, // ??
     Bang,     // !
     Assign,   // =
     PlusAssign,    // +=
@@ -465,6 +466,14 @@ impl Lexer {
                     return Err(format!("Unexpected character '|' [line {}, column {}]", self.line, self.col));
                 }
             }
+            '?' => {
+                if self.peek_next() == Some('?') {
+                    self.advance_n(2);
+                    self.push_token(Token::DoubleQuestion, start);
+                } else {
+                    return Err(format!("Unexpected character '?' [line {}, column {}]", self.line, self.col));
+                }
+            }
             '#' => self.read_color()?,
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
@@ -820,6 +829,12 @@ impl Lexer {
         let text_start = self.pos;
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
+            // A single trailing `?` stays part of a predicate identifier
+            // (`is_valid?`), but a `??` is the coalescing operator — stop before
+            // it so `foo??bar` splits into `foo`, `??`, `bar`.
+            if ch == '?' && self.peek_next() == Some('?') {
+                break;
+            }
             if ch.is_alphanumeric() || ch == '_' || ch == '?' {
                 self.advance_char();
             } else {

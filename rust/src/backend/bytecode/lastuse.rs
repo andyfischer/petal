@@ -339,6 +339,9 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         }
         Inst::Neg { a, .. } | Inst::Not { a, .. } => f(*a, PURE),
         Inst::JumpIfFalse { cond, .. } | Inst::JumpIfTrue { cond, .. } => f(*cond, PURE),
+        // The tested register survives as the coalesce result when present, so
+        // it must not be freed at this use.
+        Inst::JumpIfPresent { cond, .. } => f(*cond, RETAIN),
         Inst::ForEachInit { iter, .. } => f(*iter, PURE), // snapshots elems
         Inst::RangeInit { start, end, .. } => {
             f(*start, PURE);

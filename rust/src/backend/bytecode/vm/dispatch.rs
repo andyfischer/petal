@@ -149,11 +149,11 @@ impl<'a> Vm<'a> {
             }
 
             Inst::Eq { dst, a, b } => {
-                let v = Value::Bool(ops::equals(self.reg(fi, *a), self.reg(fi, *b), self.heap));
+                let v = ops::eq(self.reg(fi, *a), self.reg(fi, *b), self.heap);
                 self.set(fi, *dst, v);
             }
             Inst::Ne { dst, a, b } => {
-                let v = Value::Bool(!ops::equals(self.reg(fi, *a), self.reg(fi, *b), self.heap));
+                let v = ops::ne(self.reg(fi, *a), self.reg(fi, *b), self.heap);
                 self.set(fi, *dst, v);
             }
             Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b)?,

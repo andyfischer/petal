@@ -43,6 +43,13 @@ pub fn constant_to_value(program: &Program, heap: &mut Heap, cid: ConstantId) ->
 /// operands delegated to their own handlers. `op` must be one of
 /// `Add`/`Sub`/`Mul`/`Div`/`Mod`.
 pub fn arithmetic(op: &TermOp, a: Value, b: Value, _heap: &mut Heap) -> Result<Value, String> {
+    // Pending is strict-absorbing: any Pending operand short-circuits the whole
+    // op to that Pending (leftmost wins). Checked before the div-by-zero guard
+    // so `pending / 0` yields the Pending, not a spurious error. Mirrors the
+    // Value::Dual precedent below, but absorbs rather than threading a payload.
+    if let Some(p) = leftmost_pending(a, b) {
+        return Ok(p);
+    }
     // Guard integer/float division by zero up front (dual/vec2 handlers do
     // their own checks, so this only fires for scalar operands).
     if matches!(op, TermOp::Div) {
@@ -72,6 +79,19 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, _heap: &mut Heap) -> Result<V
             a.type_name(),
             b.type_name()
         )),
+    }
+}
+
+/// The leftmost `Value::Pending` among two operands, if either is Pending.
+///
+/// This is the single strict-absorption primitive shared by every binary
+/// operator: a Pending operand makes the whole operation Pending, and when both
+/// operands are Pending the *leftmost* one wins (the design's rule). `Value` is
+/// `Copy`, so the returned Pending is the same thin `PendingId` handle.
+fn leftmost_pending(a: Value, b: Value) -> Option<Value> {
+    match (a, b) {
+        (p @ Value::Pending(_), _) | (_, p @ Value::Pending(_)) => Some(p),
+        _ => None,
     }
 }
 
@@ -223,14 +243,34 @@ fn binop_verb(op: &TermOp) -> &'static str {
 // Comparison / logical
 // ---------------------------------------------------------------------------
 
-/// `==` structural equality.
-pub fn equals(a: Value, b: Value, heap: &Heap) -> bool {
-    value::values_equal(&a, &b, heap)
+/// `==` with Pending absorption. A Pending operand makes the comparison itself
+/// Pending — never `Bool` — because a comparison against an unresolved value is
+/// *unknown*, not false (the SQL-NULL footgun the design explicitly forbids).
+/// On resolved operands it is ordinary structural equality.
+pub fn eq(a: Value, b: Value, heap: &Heap) -> Value {
+    match leftmost_pending(a, b) {
+        Some(p) => p,
+        None => Value::Bool(value::values_equal(&a, &b, heap)),
+    }
+}
+
+/// `!=` with the same Pending absorption as [`eq`]; the negation only applies to
+/// resolved operands, so a Pending stays Pending rather than flipping to a Bool.
+pub fn ne(a: Value, b: Value, heap: &Heap) -> Value {
+    match leftmost_pending(a, b) {
+        Some(p) => p,
+        None => Value::Bool(!value::values_equal(&a, &b, heap)),
+    }
 }
 
 /// Lt / Le / Gt / Ge via the shared value-ordering in `builtins`.
 pub fn comparison(op: &TermOp, a: Value, b: Value, heap: &Heap) -> Result<Value, String> {
     use std::cmp::Ordering;
+    // A Pending operand absorbs: the ordering is unknown, so the result is that
+    // Pending — never a Bool. Same footgun-avoidance as `eq`/`ne`.
+    if let Some(p) = leftmost_pending(a, b) {
+        return Ok(p);
+    }
     let ord = value::compare_values(&a, &b, heap)?;
     let result = match op {
         TermOp::Lt => ord == Ordering::Less,
@@ -242,14 +282,20 @@ pub fn comparison(op: &TermOp, a: Value, b: Value, heap: &Heap) -> Result<Value,
     Ok(Value::Bool(result))
 }
 
-/// Logical `!`: negate truthiness.
+/// Logical `!`: negate truthiness. A Pending operand absorbs (the negation is
+/// unknown), yielding the same Pending rather than a Bool.
 pub fn not(v: Value) -> Value {
+    if let Value::Pending(_) = v {
+        return v;
+    }
     Value::Bool(!v.is_truthy())
 }
 
 /// Unary negation for numbers, dual numbers, and vec2.
 pub fn negate(v: Value) -> Result<Value, String> {
     match v {
+        // Pending absorbs: negating an unresolved value stays that Pending.
+        p @ Value::Pending(_) => Ok(p),
         Value::Int(n) => Ok(Value::Int(-n)),
         Value::Float(f) => Ok(Value::Float(-f)),
         Value::Dual { value, derivative } => Ok(Value::Dual {
@@ -264,6 +310,12 @@ pub fn negate(v: Value) -> Result<Value, String> {
 /// `++`: list concatenation, or string concatenation with display conversion
 /// for non-string operands.
 pub fn concat(a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
+    // Pending absorbs: any Pending part makes the whole result Pending (the
+    // string never materializes). String interpolation lowers to `++`, so this
+    // one guard covers interpolation too.
+    if let Some(p) = leftmost_pending(a, b) {
+        return Ok(p);
+    }
     match (a, b) {
         (Value::List(x), Value::List(y)) => {
             let mut combined = heap.get_list(x).to_vec();
@@ -401,6 +453,11 @@ pub fn get_field(
     field_cid: ConstantId,
     obj: Value,
 ) -> Result<Value, String> {
+    // Pending base absorbs: `pending.name` is the same Pending, regardless of
+    // which field is requested (the object isn't there yet to have fields).
+    if let Value::Pending(_) = obj {
+        return Ok(obj);
+    }
     let field_name = match program.get_string_constant(field_cid) {
         Some(s) => s,
         None => return Err("GetField: invalid field name".into()),
@@ -496,6 +553,12 @@ fn set_field_impl(
 /// `obj[idx]` on lists (negative indices count from the end), f64 arrays, and
 /// records (string key).
 pub fn get_index(heap: &Heap, obj: Value, idx: Value) -> Result<Value, String> {
+    // Pending base absorbs: `pending[i]` is the same Pending. (A resolved
+    // collection *containing* a Pending is element-wise — a later chunk — so
+    // only the base is handled here, not a Pending index.)
+    if let Value::Pending(_) = obj {
+        return Ok(obj);
+    }
     match (obj, idx) {
         (Value::List(list_id), Value::Int(i)) => {
             let list = heap.get_list(list_id);
@@ -555,6 +618,12 @@ fn set_index_impl(
     val: Value,
     in_place: bool,
 ) -> Result<Value, String> {
+    // A Pending in key/index position is a HARD error, never absorbed: a key
+    // that silently vanished would corrupt the container's structure. This is
+    // the enumerated map-key hard-error position from the design.
+    if let Value::Pending(_) = idx {
+        return Err("Cannot use a pending value as a map key / index".into());
+    }
     match (obj, idx) {
         (Value::List(list_id), Value::Int(i)) => {
             let len = heap.list_len(list_id);

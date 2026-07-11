@@ -827,3 +827,155 @@ mod pending_value_chunk_a_tests {
     }
 }
 
+/// Chunk B of the pending-values feature: `Value::Pending` must be *absorbed*
+/// through the primitive OPERATORS in `backend/ops.rs` (arithmetic, comparison,
+/// unary not/negate, string concat/interpolation, field/index access), mirroring
+/// the existing `Value::Dual` propagation pattern — plus the one hard-error
+/// position (a Pending used as a map KEY).
+///
+/// These are TDD tests written BEFORE the implementation: they encode the
+/// strict/non-strict table from `docs/dev/pending-values-plan.md`. They are
+/// expected to FAIL against today's code, which either errors on a Pending
+/// operand (arithmetic / `<` / negate / field / index) or — worse — silently
+/// collapses it to a real value (comparison → `Bool`, `!` → `Bool`, concat and
+/// interpolation → `String`). That silent collapse is precisely the SQL-NULL
+/// footgun the design forbids.
+///
+/// Pendings are constructed with the deterministic test builtin `__pending("k")`
+/// (Chunk A). All `run_source` calls on one `Env` share its default context, so
+/// the same key deduplicates to the same `PendingId` across separate runs — this
+/// is how the leftmost-wins assertion recovers the id of the left operand.
+mod pending_operator_absorption_tests {
+    use super::super::*;
+
+    /// Extract the `PendingId` from a `Value::Pending`, panicking with a helpful
+    /// message otherwise. Used both to assert absorption and to compare ids.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// Rule 1 — Arithmetic (`+ - * / %`) with a Pending operand yields that
+    /// Pending. Covers Pending on the left, on the right, and both operands
+    /// Pending (leftmost id wins). Today `p + 1` errors "Cannot add pending and
+    /// int", so these fail at `unwrap`.
+    #[test]
+    fn arithmetic_absorbs_pending() {
+        let mut env = Env::new();
+        // Pending on the left.
+        let left = env.run_source("let p = __pending(\"k\")\np + 1\n").unwrap();
+        assert!(matches!(left, Value::Pending(_)), "p + 1 should be Pending, got {left:?}");
+        // Pending on the right.
+        let right = env.run_source("let p = __pending(\"k\")\n1 + p\n").unwrap();
+        assert!(matches!(right, Value::Pending(_)), "1 + p should be Pending, got {right:?}");
+
+        // Both operands Pending: the result is the LEFTMOST Pending. `__pending`
+        // dedups by key across runs in this shared context, so a fresh fetch of
+        // key "a" recovers the exact id the product must carry.
+        let a = env.run_source("__pending(\"a\")\n").unwrap();
+        let a_id = expect_pending(&a);
+        let prod = env
+            .run_source("let a = __pending(\"a\")\nlet b = __pending(\"b\")\na * b\n")
+            .unwrap();
+        assert_eq!(expect_pending(&prod), a_id, "a * b must be the leftmost Pending (a)");
+    }
+
+    /// Rule 2 — Comparison (`== != < <= > >=`) with a Pending operand yields that
+    /// Pending, and CRITICALLY never collapses to `Bool`. Today `p == 5` returns
+    /// `Bool(true/false)` and `p != 5` returns `Bool(true)` — the SQL-NULL
+    /// footgun — while `p < 5` errors "Cannot compare pending and int".
+    #[test]
+    fn comparison_absorbs_pending_never_bool() {
+        let mut env = Env::new();
+
+        let eq = env.run_source("let p = __pending(\"k\")\np == 5\n").unwrap();
+        assert!(
+            !matches!(eq, Value::Bool(_)),
+            "p == 5 must NOT collapse to a Bool (SQL-NULL footgun), got {eq:?}"
+        );
+        assert!(matches!(eq, Value::Pending(_)), "p == 5 should be Pending, got {eq:?}");
+
+        let ne = env.run_source("let p = __pending(\"k\")\np != 5\n").unwrap();
+        assert!(matches!(ne, Value::Pending(_)), "p != 5 should be Pending, got {ne:?}");
+
+        let lt = env.run_source("let p = __pending(\"k\")\np < 5\n").unwrap();
+        assert!(matches!(lt, Value::Pending(_)), "p < 5 should be Pending, got {lt:?}");
+    }
+
+    /// Rule 3 — Unary `!` (logical not) and `-` (negate) on a Pending yield that
+    /// Pending. Today `!p` returns `Bool` and `-p` errors "Cannot negate
+    /// pending". (Petal spells logical-not `!`, not `not`.)
+    #[test]
+    fn unary_not_and_negate_absorb_pending() {
+        let mut env = Env::new();
+
+        let notted = env.run_source("let p = __pending(\"k\")\n!p\n").unwrap();
+        assert!(
+            !matches!(notted, Value::Bool(_)),
+            "!p must NOT collapse to a Bool, got {notted:?}"
+        );
+        assert!(matches!(notted, Value::Pending(_)), "!p should be Pending, got {notted:?}");
+
+        let negated = env.run_source("let p = __pending(\"k\")\n-p\n").unwrap();
+        assert!(matches!(negated, Value::Pending(_)), "-p should be Pending, got {negated:?}");
+    }
+
+    /// Rule 4 — String concatenation (`++`) and interpolation (`"hi {p}"`, which
+    /// lowers to concat) with a Pending part make the whole string Pending.
+    /// Today both return a real `String` (the Pending rendered into text).
+    #[test]
+    fn string_concat_and_interpolation_absorb_pending() {
+        let mut env = Env::new();
+
+        let concatenated = env.run_source("let p = __pending(\"k\")\n\"hi \" ++ p\n").unwrap();
+        assert!(
+            !matches!(concatenated, Value::String(_)),
+            "\"hi \" ++ p must NOT collapse to a String, got {concatenated:?}"
+        );
+        assert!(
+            matches!(concatenated, Value::Pending(_)),
+            "\"hi \" ++ p should be Pending, got {concatenated:?}"
+        );
+
+        let interpolated = env.run_source("let p = __pending(\"k\")\n\"hi {p}\"\n").unwrap();
+        assert!(
+            matches!(interpolated, Value::Pending(_)),
+            "interpolation \"hi {{p}}\" should be Pending, got {interpolated:?}"
+        );
+    }
+
+    /// Rule 5 — Field access (`p.name`) and index access (`p[0]`) with a Pending
+    /// BASE yield that Pending. Today both error ("Cannot access field 'name' on
+    /// pending" / "Cannot index pending with int"). (This is the Pending-base
+    /// case only; an element-wise resolved collection containing a Pending is a
+    /// later chunk.)
+    #[test]
+    fn field_and_index_on_pending_base_absorb_pending() {
+        let mut env = Env::new();
+
+        let field = env.run_source("let p = __pending(\"k\")\np.name\n").unwrap();
+        assert!(matches!(field, Value::Pending(_)), "p.name should be Pending, got {field:?}");
+
+        let index = env.run_source("let p = __pending(\"k\")\np[0]\n").unwrap();
+        assert!(matches!(index, Value::Pending(_)), "p[0] should be Pending, got {index:?}");
+    }
+
+    /// Rule 6 — A Pending in a map KEY position is a HARD runtime error, never
+    /// absorbed (an absorbed key would silently corrupt structure). Petal has no
+    /// computed-map-key literal syntax, so the reachable key-position construct
+    /// is index-assignment `m[p] = 1`; this run must return `Err`.
+    ///
+    /// NOTE: unlike the other cases this already errors today (Petal rejects
+    /// index-assignment on records outright), so it currently PASSES as a guard
+    /// rather than failing — see the module's fail report. It pins that whichever
+    /// map-key path exists, a Pending key stays a hard error under Chunk B.
+    #[test]
+    fn pending_map_key_is_hard_error() {
+        let mut env = Env::new();
+        let result = env.run_source("let p = __pending(\"k\")\nlet m = {}\nm[p] = 1\n");
+        assert!(result.is_err(), "a Pending map key must be a hard error, got {result:?}");
+    }
+}
+

@@ -1838,3 +1838,80 @@ mod pending_state_init_chunk_i_tests {
     }
 }
 
+/// Chunk J of the pending-values feature: PROVENANCE on every Pending. When a
+/// resource is created, its `ResourceEntry` records the call-site `TermId` that
+/// requested it (`origin`) and the frame it started in (`frame_started`), so the
+/// observability tooling can render "where did this come from" and "how many
+/// frames has it been loading". A frame counter on the `ExecutionContext` makes
+/// age-in-frames computable.
+///
+/// The `origin` assertion FAILS against pre-Chunk-J code: `get_or_create_loading`
+/// hard-codes `origin: None`, so the entry carries no call site.
+mod pending_provenance_tests {
+    use super::super::*;
+
+    /// Pull the `PendingId` out of a `Value::Pending`, or panic helpfully.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// A resource created by `__pending("k")` carries the origin `TermId` of the
+    /// requesting call site, and its `frame_started` is the context's current
+    /// frame (0 in a fresh Env). The origin's source span must cover the
+    /// `__pending` call. Today `origin` is hard-coded `None`, so the
+    /// `.expect("origin ...")` panics — this is the failing assertion.
+    #[test]
+    fn pending_records_origin_and_start_frame() {
+        let mut env = Env::new();
+        let pid = env.load_program("let x = __pending(\"k\")\nx\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let v = env.run(sid).unwrap();
+        let id = expect_pending(&v);
+
+        let ck = env.default_context;
+        let entry = env.ctx(ck).resources.entry(id);
+
+        // frame_started is the context frame at creation — 0 for a fresh Env.
+        assert_eq!(entry.frame_started, 0, "a fresh Env starts at frame 0");
+
+        // origin points at the __pending call site.
+        let origin = entry.origin.expect("origin should be populated with the call site");
+        let program = env.get_program(pid).unwrap();
+        let span = program.source_map.get(origin).expect("origin term has a source span");
+        let text = &program.source[span.start.offset as usize..span.end.offset as usize];
+        assert!(
+            text.contains("__pending"),
+            "origin should point at the __pending call, got source text {text:?}"
+        );
+    }
+
+    /// `advance_frame()` bumps the context frame counter, and `age_frames` on a
+    /// resource entry is `current_frame - frame_started` (saturating). A resource
+    /// created at frame 0 is 2 frames old after two advances.
+    #[test]
+    fn age_frames_tracks_advances() {
+        let mut env = Env::new();
+        let pid = env.load_program("let x = __pending(\"k\")\nx\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let ck = env.default_context;
+        assert_eq!(env.ctx(ck).frame(), 0, "fresh context is at frame 0");
+        assert_eq!(env.ctx(ck).resources.entry(id).age_frames(0), 0);
+
+        env.ctx_mut(ck).advance_frame();
+        env.ctx_mut(ck).advance_frame();
+        assert_eq!(env.ctx(ck).frame(), 2, "two advances reach frame 2");
+
+        let current = env.ctx(ck).frame();
+        assert_eq!(
+            env.ctx(ck).resources.entry(id).age_frames(current),
+            2,
+            "a resource born at frame 0 is 2 frames old at frame 2"
+        );
+    }
+}
+

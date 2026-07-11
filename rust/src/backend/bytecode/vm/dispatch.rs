@@ -287,7 +287,7 @@ impl<'a> Vm<'a> {
             }
             Inst::BuiltinCall { dst, name, args, in_place } => {
                 let argv = self.regs(fi, args);
-                self.do_builtin_call(fi, *dst, *name, &argv, *in_place)?;
+                self.do_builtin_call(fi, *dst, *name, &argv, *in_place, origin)?;
             }
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);

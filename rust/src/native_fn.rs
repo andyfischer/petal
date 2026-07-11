@@ -137,6 +137,13 @@ pub struct PetalCxt<'a> {
     /// The owning context's resource table, borrowed so the pending-resource
     /// builtins (`__pending`/`__resolve`/`__reject`) can create/resolve entries.
     resources: &'a mut crate::resource_table::ResourceTable,
+    /// The call site (`TermId`) of the instruction invoking this native, when
+    /// known — stamped onto any resource this call creates for the observability
+    /// tooling. `None` when the caller has no origin term to attribute.
+    origin: Option<crate::program::TermId>,
+    /// The owning context's current frame, stamped onto any resource this call
+    /// creates (`ResourceEntry::frame_started`).
+    frame: u64,
     /// Whether `print` echoes to real stdout. False for speculative forks so
     /// their output stays captured in the buffer instead of leaking to stdout.
     echo: bool,
@@ -162,6 +169,8 @@ impl<'a> PetalCxt<'a> {
         rng_state: &'a mut u64,
         noise_seed: &'a mut u64,
         resources: &'a mut crate::resource_table::ResourceTable,
+        origin: Option<crate::program::TermId>,
+        frame: u64,
         echo: bool,
         handle_classes: &'a [HandleClass],
     ) -> Self {
@@ -176,6 +185,8 @@ impl<'a> PetalCxt<'a> {
             rng_state,
             noise_seed,
             resources,
+            origin,
+            frame,
             echo,
             handle_classes,
             results: Vec::new(),
@@ -432,6 +443,18 @@ impl<'a> PetalCxt<'a> {
     /// pending resource entries.
     pub fn resources_mut(&mut self) -> &mut crate::resource_table::ResourceTable {
         self.resources
+    }
+
+    /// The call site of the instruction invoking this native, when known — the
+    /// origin to stamp onto a resource this call creates. See [`origin`](Self::origin).
+    pub fn origin(&self) -> Option<crate::program::TermId> {
+        self.origin
+    }
+
+    /// The owning context's current frame — the `frame_started` to stamp onto a
+    /// resource this call creates.
+    pub fn frame(&self) -> u64 {
+        self.frame
     }
 
     /// Consume the state and return the results vector.

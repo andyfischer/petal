@@ -68,6 +68,9 @@ pub struct Vm<'a> {
     /// The owning context's resource table, borrowed so the pending-resource
     /// builtins can create/resolve entries. See [`crate::resource_table`].
     pub resources: &'a mut crate::resource_table::ResourceTable,
+    /// The owning context's current frame, copied from the `ExecutionContext`.
+    /// Stamped onto any resource created during this run (`frame_started`).
+    pub frame: u64,
     /// Whether `print` echoes to real stdout (true for the primary run, false
     /// for speculative forks). Copied from the `ExecutionContext`.
     pub echo: bool,

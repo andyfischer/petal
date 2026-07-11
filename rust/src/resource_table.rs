@@ -25,13 +25,27 @@ pub enum ResourceState {
 
 /// One resource's table entry: its cache key, current state, origin call site
 /// (for the visualization tooling — `None` when a native can't reach the origin
-/// term), and how many ops absorbed it this frame.
+/// term), the frame it was created in, and how many ops absorbed it this frame.
 #[derive(Clone, Debug)]
 pub struct ResourceEntry {
     pub key: u64,
     pub state: ResourceState,
     pub origin: Option<TermId>,
+    /// The [`ExecutionContext`](crate::execution_context::ExecutionContext) frame
+    /// this resource was first requested in. With the current frame, yields the
+    /// resource's age (see [`age_frames`](Self::age_frames)).
+    pub frame_started: u64,
     pub absorbed_count: u64,
+}
+
+impl ResourceEntry {
+    /// How many frames this resource has been alive at `current_frame`:
+    /// `current_frame - frame_started`, saturating (a `current_frame` behind the
+    /// start frame — which should not happen — reads as age 0 rather than
+    /// underflowing).
+    pub fn age_frames(&self, current_frame: u64) -> u64 {
+        current_frame.saturating_sub(self.frame_started)
+    }
 }
 
 /// Keyed table of resources. `entries` is index-addressed by [`PendingId`];
@@ -53,9 +67,17 @@ impl ResourceTable {
         self.by_key.get(&key).copied()
     }
 
-    /// Return the existing entry for `key`, or create a fresh `Loading` one.
-    /// Dedup: the same key always yields the same `PendingId`.
-    pub fn get_or_create_loading(&mut self, key: u64) -> PendingId {
+    /// Return the existing entry for `key`, or create a fresh `Loading` one
+    /// stamped with the requesting call site (`origin`, `None` when a native
+    /// can't reach an origin term) and the context `frame` it started in.
+    /// Dedup: the same key always yields the same `PendingId` (a repeat fetch
+    /// keeps the first entry's origin/start frame).
+    pub fn get_or_create_loading(
+        &mut self,
+        key: u64,
+        origin: Option<TermId>,
+        frame: u64,
+    ) -> PendingId {
         if let Some(id) = self.by_key.get(&key) {
             return *id;
         }
@@ -63,23 +85,25 @@ impl ResourceTable {
         self.entries.push(ResourceEntry {
             key,
             state: ResourceState::Loading,
-            // TODO(pending): thread the requesting instruction's origin TermId in.
-            origin: None,
+            origin,
+            frame_started: frame,
             absorbed_count: 0,
         });
         self.by_key.insert(key, id);
         id
     }
 
-    /// Mark `key`'s entry `Ready(value)`, creating it if absent.
-    pub fn resolve(&mut self, key: u64, value: Value) {
-        let id = self.get_or_create_loading(key);
+    /// Mark `key`'s entry `Ready(value)`, creating it (in `frame`, with no
+    /// origin) if absent.
+    pub fn resolve(&mut self, key: u64, value: Value, frame: u64) {
+        let id = self.get_or_create_loading(key, None, frame);
         self.entries[id.0 as usize].state = ResourceState::Ready(value);
     }
 
-    /// Mark `key`'s entry `Errored(error)`, creating it if absent.
-    pub fn reject(&mut self, key: u64, error: Value) {
-        let id = self.get_or_create_loading(key);
+    /// Mark `key`'s entry `Errored(error)`, creating it (in `frame`, with no
+    /// origin) if absent.
+    pub fn reject(&mut self, key: u64, error: Value, frame: u64) {
+        let id = self.get_or_create_loading(key, None, frame);
         self.entries[id.0 as usize].state = ResourceState::Errored(error);
     }
 

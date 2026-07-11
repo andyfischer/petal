@@ -258,6 +258,8 @@ fn make_vm<'a>(
     symbols: &'a mut SymbolTable,
     trace: &'a mut TraceBuffer,
 ) -> Vm<'a> {
+    // Read the frame before splitting `ctx`'s fields into disjoint borrows.
+    let frame = ctx.frame();
     Vm {
         program,
         bc,
@@ -274,6 +276,7 @@ fn make_vm<'a>(
         counters: &mut ctx.counters,
         rng_state: &mut ctx.rng_state,
         noise_seed: &mut ctx.noise_seed,
+        frame,
         resources: &mut ctx.resources,
         echo: ctx.echo,
         trace,

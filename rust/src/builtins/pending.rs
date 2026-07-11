@@ -34,7 +34,11 @@ pub(super) fn native_pending(state: &mut PetalCxt) -> Result<u32, String> {
         state.push_value(v);
         return Ok(1);
     }
-    let id = state.resources_mut().get_or_create_loading(key);
+    // Stamp the resource with the requesting call site and current frame so the
+    // observability tooling can render its provenance and age.
+    let origin = state.origin();
+    let frame = state.frame();
+    let id = state.resources_mut().get_or_create_loading(key, origin, frame);
     state.push_value(Value::Pending(id));
     Ok(1)
 }
@@ -45,7 +49,8 @@ pub(super) fn native_resolve(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 2, "__resolve")?;
     let key = hash_key(&state.get_string(1)?);
     let value = state.get_value(2)?;
-    state.resources_mut().resolve(key, value);
+    let frame = state.frame();
+    state.resources_mut().resolve(key, value, frame);
     state.push_nil();
     Ok(1)
 }
@@ -56,7 +61,8 @@ pub(super) fn native_reject(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 2, "__reject")?;
     let key = hash_key(&state.get_string(1)?);
     let error = state.get_value(2)?;
-    state.resources_mut().reject(key, error);
+    let frame = state.frame();
+    state.resources_mut().reject(key, error, frame);
     state.push_nil();
     Ok(1)
 }

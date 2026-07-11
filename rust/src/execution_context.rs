@@ -47,6 +47,12 @@ pub struct ExecutionContext {
     /// Lives here so it survives `reset_stack` (the cross-frame home for
     /// between-frame resolution) and forks consistently with the heap.
     pub resources: ResourceTable,
+    /// Monotonic frame counter, advanced once per host frame via
+    /// [`advance_frame`](Self::advance_frame). Stamped onto every resource at
+    /// creation (`ResourceEntry::frame_started`) so age-in-frames is computable.
+    /// The core lib has no frame loop, so this stays 0 under the CLI and tests
+    /// unless a host advances it.
+    frame: u64,
 }
 
 impl ExecutionContext {
@@ -63,6 +69,7 @@ impl ExecutionContext {
             rng_state: crate::builtins::initial_seed(),
             noise_seed: 0,
             resources: ResourceTable::new(),
+            frame: 0,
         }
     }
 
@@ -89,7 +96,20 @@ impl ExecutionContext {
             // status as its source at fork time, then diverges independently —
             // exactly how the heap is forked above.
             resources: self.resources.clone(),
+            // A fork observes the same frame as its source at fork time.
+            frame: self.frame,
         }
+    }
+
+    /// The current frame number (see [`advance_frame`](Self::advance_frame)).
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
+    /// Advance to the next frame. A host calls this once per rendered frame so
+    /// resource ages (`current_frame - frame_started`) grow over time.
+    pub fn advance_frame(&mut self) {
+        self.frame += 1;
     }
 
     /// This context's value-duplication statistics, accumulated by its heap's

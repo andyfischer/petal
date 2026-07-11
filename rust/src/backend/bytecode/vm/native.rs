@@ -20,6 +20,7 @@ impl<'a> Vm<'a> {
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
         in_place: bool,
+        origin: Option<TermId>,
     ) -> Result<(), String> {
         // `program` is a `Copy` borrow with the Vm's own lifetime, so the name
         // &str detaches from `self` — no per-call String allocation.
@@ -35,9 +36,9 @@ impl<'a> Vm<'a> {
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
         // in-place flag only reaches `call_native_fn`.
         let v = if in_place {
-            self.call_native_fn_in_place(nid, args)?
+            self.call_native_fn_in_place(nid, args, origin)?
         } else {
-            self.call_native_or_intrinsic(nid, args)?
+            self.call_native_or_intrinsic(nid, args, origin)?
         };
         self.set(fi, dst, v);
         Ok(())
@@ -68,7 +69,12 @@ impl<'a> Vm<'a> {
 
     /// Dispatch a native function, handling the higher-order intrinsics
     /// specially (they call closures synchronously).
-    pub(super) fn call_native_or_intrinsic(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn call_native_or_intrinsic(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        origin: Option<TermId>,
+    ) -> Result<Value, String> {
         // Intercept before the intrinsic fork: map/filter/reduce/forEach are
         // dispatched here and never reach the leaf, so a Pending collection base
         // (e.g. `map(pending, f)`) must be absorbed here.
@@ -85,21 +91,33 @@ impl<'a> Vm<'a> {
         } else if nf.intrinsic_for_each == Some(nid) {
             self.builtin_for_each(args)
         } else {
-            self.call_native_fn(nid, args)
+            self.call_native_fn(nid, args, origin)
         }
     }
 
     /// Call a non-intrinsic native function via `PetalCxt` (clone-and-alloc).
-    pub(super) fn call_native_fn(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
-        self.call_native_fn_flagged(nid, args, false)
+    /// `origin` is the requesting call site, stamped onto any resource the
+    /// native creates.
+    pub(super) fn call_native_fn(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        origin: Option<TermId>,
+    ) -> Result<Value, String> {
+        self.call_native_fn_flagged(nid, args, false, origin)
     }
 
     /// Call a non-intrinsic native function marked in-place: a mutating builtin
     /// (`append`/`set`/…) may reuse its container argument's backing store.
     /// Only reached when escape analysis proved the container unique +
     /// non-escaping (M4).
-    fn call_native_fn_in_place(&mut self, nid: NativeFnId, args: &[Value]) -> Result<Value, String> {
-        self.call_native_fn_flagged(nid, args, true)
+    fn call_native_fn_in_place(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        origin: Option<TermId>,
+    ) -> Result<Value, String> {
+        self.call_native_fn_flagged(nid, args, true, origin)
     }
 
     fn call_native_fn_flagged(
@@ -107,6 +125,7 @@ impl<'a> Vm<'a> {
         nid: NativeFnId,
         args: &[Value],
         in_place: bool,
+        origin: Option<TermId>,
     ) -> Result<Value, String> {
         // The shared leaf for every real native invocation — plain calls, the
         // in-place mutating path (`append`/`set`/…, on by default via the
@@ -130,6 +149,8 @@ impl<'a> Vm<'a> {
             self.rng_state,
             self.noise_seed,
             self.resources,
+            origin,
+            self.frame,
             self.echo,
             self.handle_classes,
         );
@@ -153,6 +174,7 @@ impl<'a> Vm<'a> {
         h: HandleVal,
         method_name: &str,
         args: &[Value],
+        origin: Option<TermId>,
     ) -> Result<Value, String> {
         // `handle_classes` is a shared `&'a [HandleClass]`, so copying the
         // reference detaches `class` from `self` and the `&mut` field
@@ -182,6 +204,8 @@ impl<'a> Vm<'a> {
             self.rng_state,
             self.noise_seed,
             self.resources,
+            origin,
+            self.frame,
             self.echo,
             handle_classes,
         );

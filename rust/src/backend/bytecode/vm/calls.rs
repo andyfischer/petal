@@ -106,7 +106,7 @@ impl<'a> Vm<'a> {
                 self.push_closure_frame(cid, args, Some(dst), call_site)?;
             }
             Value::NativeFunction(nid) => {
-                let v = self.call_native_or_intrinsic(nid, args)?;
+                let v = self.call_native_or_intrinsic(nid, args, call_site)?;
                 self.set(fi, dst, v);
             }
             // Calling a fieldless enum variant yields the variant itself.
@@ -143,7 +143,7 @@ impl<'a> Vm<'a> {
                         return self.do_call(fi, dst, field_val, args, call_site);
                     }
                     Value::NativeFunction(nid) => {
-                        let v = self.call_native_fn(nid, args)?;
+                        let v = self.call_native_fn(nid, args, call_site)?;
                         self.set(fi, dst, v);
                         return Ok(());
                     }
@@ -156,7 +156,7 @@ impl<'a> Vm<'a> {
         //    table. This runs before the native-table lookup so class methods
         //    win over same-named globals (e.g. the builtin `get`).
         if let Value::Handle(h) = recv {
-            let v = self.call_handle_method(h, method_name, args)?;
+            let v = self.call_handle_method(h, method_name, args, call_site)?;
             self.set(fi, dst, v);
             return Ok(());
         }
@@ -166,7 +166,7 @@ impl<'a> Vm<'a> {
             let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
             full_args.push(recv);
             full_args.extend_from_slice(args);
-            let v = self.call_native_or_intrinsic(nid, &full_args)?;
+            let v = self.call_native_or_intrinsic(nid, &full_args, call_site)?;
             self.set(fi, dst, v);
             Ok(())
         } else {

@@ -6,6 +6,14 @@ use crate::value::{self, Value};
 
 use super::require_args;
 
+/// The leftmost `Value::Pending` element of `items`, if any. Aggregates that
+/// must read every element (`sort`, `join`) absorb it and return that Pending —
+/// the whole result is unknown while one element is unresolved. Element-wise
+/// operations (`len`, indexing, `map`) leave Pending elements in place instead.
+fn leftmost_pending_element(items: &[Value]) -> Option<Value> {
+    items.iter().copied().find(|v| matches!(v, Value::Pending(_)))
+}
+
 /// Bounds-check a signed index against an f64-array length, returning the
 /// validated `usize` or the standard out-of-bounds error.
 fn checked_f64_index(i: i64, len: usize) -> Result<usize, String> {
@@ -345,6 +353,12 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
+            // A Pending element has no orderable key; absorb it (element-wise
+            // ops keep it, but sorting needs every key).
+            if let Some(p) = leftmost_pending_element(&items) {
+                state.push_value(p);
+                return Ok(1);
+            }
             // Build sort keys: extract string content and numeric values up front
             // so the sort closure doesn't need heap access.
             let mut keyed: Vec<(SortKey, Value)> = items.into_iter()
@@ -392,6 +406,12 @@ pub(super) fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
     let sep = state.get_value(2)?;
     match (list, sep) {
         (Value::List(list_id), Value::String(sep_id)) => {
+            // A Pending element makes the whole joined string unknown; absorb it.
+            let pending = leftmost_pending_element(state.heap().get_list(list_id));
+            if let Some(p) = pending {
+                state.push_value(p);
+                return Ok(1);
+            }
             let separator = state.heap().get_string(sep_id).to_string();
             let elements = state.heap().get_list(list_id);
             let parts: Vec<String> = elements.iter()

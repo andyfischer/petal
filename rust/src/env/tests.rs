@@ -1656,3 +1656,93 @@ mod pending_control_flow_chunk_g_tests {
     }
 }
 
+/// Chunk H — collections are element-wise. A list literal with a Pending
+/// element is a REAL list (not a pending list): `len` and indexing stay exact.
+/// Only aggregates that must read every element (`join`, `sort`) absorb a
+/// Pending element and return that Pending.
+mod pending_collections_chunk_h_tests {
+    use super::super::*;
+
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// A Pending element does not make the list pending: `len` is exact.
+    #[test]
+    fn len_of_list_with_pending_element_is_exact() {
+        let mut env = Env::new();
+        assert_eq!(
+            env.run_source("len([1, __pending(\"e\"), 3])\n").unwrap(),
+            Value::Int(3),
+            "a pending element must not collapse the list; len stays 3"
+        );
+    }
+
+    /// Indexing a real list returns the Pending element itself, element-wise.
+    #[test]
+    fn indexing_returns_the_pending_element() {
+        let mut env = Env::new();
+        let elem = env.run_source("__pending(\"e\")\n").unwrap();
+        let elem_id = expect_pending(&elem);
+        let v = env
+            .run_source("[1, __pending(\"e\"), 3][1]\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&v),
+            elem_id,
+            "index access yields the pending element unchanged"
+        );
+    }
+
+    /// `join` must read every element, so a Pending element absorbs: the whole
+    /// joined string is unknown. Today join renders it as "<pending>".
+    #[test]
+    fn join_absorbs_a_pending_element() {
+        let mut env = Env::new();
+        let elem = env.run_source("__pending(\"e\")\n").unwrap();
+        let elem_id = expect_pending(&elem);
+        let v = env
+            .run_source("join([1, __pending(\"e\"), 3], \",\")\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&v),
+            elem_id,
+            "join over a list with a pending element must absorb to that pending"
+        );
+    }
+
+    /// `sort` cannot order a list with an unknown key, so a Pending element
+    /// absorbs. Today it sorts the pending to the end as an "other" key.
+    #[test]
+    fn sort_absorbs_a_pending_element() {
+        let mut env = Env::new();
+        let elem = env.run_source("__pending(\"e\")\n").unwrap();
+        let elem_id = expect_pending(&elem);
+        let v = env
+            .run_source("sort([3, __pending(\"e\"), 1])\n")
+            .unwrap();
+        assert_eq!(
+            expect_pending(&v),
+            elem_id,
+            "sort over a list with a pending element must absorb to that pending"
+        );
+    }
+
+    /// Regression: aggregates over a fully-resolved list are untouched.
+    #[test]
+    fn aggregates_over_resolved_lists_still_work() {
+        let mut env = Env::new();
+        let joined = env.run_source("join([1, 2, 3], \"-\")\n").unwrap();
+        match joined {
+            Value::String(id) => assert_eq!(
+                env.ctx(env.default_context).heap.get_string(id),
+                "1-2-3"
+            ),
+            other => panic!("expected a String, got {other:?}"),
+        }
+    }
+}
+

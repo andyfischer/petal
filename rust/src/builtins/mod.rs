@@ -209,6 +209,17 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let resolve_id = table.register("__resolve", pending::native_resolve);
     let reject_id = table.register("__reject", pending::native_reject);
 
+    // --- Pending meta builtins (Chunk D, append-only) ---
+    // The sanctioned way to inspect pending-ness. Each is tagged NonStrict below
+    // so it sees the Pending arg instead of absorbing it.
+    let is_loading_id = table.register("is_loading", pending::native_is_loading);
+    let is_error_id = table.register("is_error", pending::native_is_error);
+    let is_pending_id = table.register("is_pending", pending::native_is_pending);
+    let is_ready_id = table.register("is_ready", pending::native_is_ready);
+    let error_of_id = table.register("error_of", pending::native_error_of);
+    let or_else_id = table.register("or_else", pending::native_or_else);
+    let resource_key_id = table.register("resource_key", pending::native_resource_key);
+
     // --- Pending classification (Chunk C) ---
     // Effectful emitters no-op on a Pending argument (emit nothing); the three
     // test-only pending builtins inspect Pendings themselves and must always
@@ -218,6 +229,17 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.set_class(pending_id, NativeClass::NonStrict);
     table.set_class(resolve_id, NativeClass::NonStrict);
     table.set_class(reject_id, NativeClass::NonStrict);
+
+    // Chunk D meta builtins inspect Pendings themselves — all NonStrict so a
+    // Pending arg reaches the native instead of being absorbed. Strict here
+    // would be a bug (inspection would collapse to absorption).
+    table.set_class(is_loading_id, NativeClass::NonStrict);
+    table.set_class(is_error_id, NativeClass::NonStrict);
+    table.set_class(is_pending_id, NativeClass::NonStrict);
+    table.set_class(is_ready_id, NativeClass::NonStrict);
+    table.set_class(error_of_id, NativeClass::NonStrict);
+    table.set_class(or_else_id, NativeClass::NonStrict);
+    table.set_class(resource_key_id, NativeClass::NonStrict);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

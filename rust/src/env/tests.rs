@@ -1163,3 +1163,166 @@ mod pending_native_classification_tests {
     }
 }
 
+/// Chunk D of the pending-values feature: the NonStrict META builtins that are
+/// the ONLY sanctioned way to inspect pending-ness (everything else absorbs).
+/// All of these must be registered `NativeClass::NonStrict` — a Strict
+/// registration would let a Pending argument be absorbed before the builtin ever
+/// ran, so the function could never see it. See the classification note in
+/// `docs/dev/pending-values-plan.md`.
+///
+/// Builtins under test:
+///   - `is_loading(x)`   -> Bool: true iff x is Pending + Loading.
+///   - `is_error(x)`     -> Bool: true iff x is Pending + Errored.
+///   - `is_pending(x)`   -> Bool: true iff x is a Pending at all (Loading OR Errored).
+///   - `is_ready(x)`     -> Bool: true iff x is NOT a Pending (== !is_pending).
+///   - `error_of(x)`     -> Value: the stored error if Pending + Errored, else Nil.
+///   - `or_else(x, d)`   -> Value: `d` if x is Pending (loading OR errored), else x.
+///   - `resource_key(x)` -> Value: the resource cache key as an Int if x is Pending,
+///                          else Nil; equal keys for two pendings of the same key.
+///
+/// These are TDD tests written BEFORE the Chunk D implementation. They are
+/// expected to FAIL against today's code, which has none of these builtins — so
+/// each `run_source` errors with an unknown-identifier/compile error and the
+/// `unwrap` panics. `Env` shares its default context across `run_source` calls,
+/// so a `__resolve`/`__reject` in one run is visible to a later `__pending` (the
+/// between-frame resolution model). A `Ready` resource never surfaces as a
+/// `Value::Pending` (`__pending` returns the real value once Ready), so the
+/// "resolved" cases below fetch the real value directly.
+mod pending_meta_builtins_tests {
+    use super::super::*;
+
+    /// Read the heap string behind a `Value::String`, panicking otherwise.
+    fn expect_string(env: &Env, v: Value) -> String {
+        match v {
+            Value::String(id) => env.ctx(env.default_context).heap.get_string(id).to_string(),
+            other => panic!("expected a String, got {other:?}"),
+        }
+    }
+
+    /// `is_loading` is true for a loading `__pending`, false once the resource is
+    /// resolved (a Ready resource fetches as its real value, not a Pending), and
+    /// false for a plain value.
+    #[test]
+    fn is_loading_true_only_for_loading_pending() {
+        let mut env = Env::new();
+        let loading = env.run_source("is_loading(__pending(\"k\"))\n").unwrap();
+        assert_eq!(loading, Value::Bool(true), "is_loading(loading pending) should be true");
+
+        // After resolve, `__pending("k")` returns the real Int(7), not a Pending.
+        let resolved = env
+            .run_source("__resolve(\"k\", 7)\nis_loading(__pending(\"k\"))\n")
+            .unwrap();
+        assert_eq!(resolved, Value::Bool(false), "is_loading(resolved value) should be false");
+
+        let plain = env.run_source("is_loading(5)\n").unwrap();
+        assert_eq!(plain, Value::Bool(false), "is_loading(5) should be false");
+    }
+
+    /// `is_error` is true for an errored resource (rejected then fetched via
+    /// `__pending`), false for a still-loading pending, and false for a plain
+    /// value.
+    #[test]
+    fn is_error_true_only_for_errored_pending() {
+        let mut env = Env::new();
+        let errored = env
+            .run_source("__reject(\"e\", \"boom\")\nis_error(__pending(\"e\"))\n")
+            .unwrap();
+        assert_eq!(errored, Value::Bool(true), "is_error(errored pending) should be true");
+
+        let loading = env.run_source("is_error(__pending(\"k\"))\n").unwrap();
+        assert_eq!(loading, Value::Bool(false), "is_error(loading pending) should be false");
+
+        let plain = env.run_source("is_error(5)\n").unwrap();
+        assert_eq!(plain, Value::Bool(false), "is_error(5) should be false");
+    }
+
+    /// `is_pending` and `is_ready` are complementary: on a loading pending
+    /// pending=true/ready=false; on a plain value pending=false/ready=true; and
+    /// after resolve the value fetches real so pending=false/ready=true.
+    #[test]
+    fn is_pending_and_is_ready_are_complementary() {
+        let mut env = Env::new();
+
+        // Loading pending: pending, not ready.
+        let p_loading = env.run_source("is_pending(__pending(\"k\"))\n").unwrap();
+        let r_loading = env.run_source("is_ready(__pending(\"k\"))\n").unwrap();
+        assert_eq!(p_loading, Value::Bool(true), "is_pending(loading) should be true");
+        assert_eq!(r_loading, Value::Bool(false), "is_ready(loading) should be false");
+
+        // Plain value: not pending, ready.
+        let p_plain = env.run_source("is_pending(5)\n").unwrap();
+        let r_plain = env.run_source("is_ready(5)\n").unwrap();
+        assert_eq!(p_plain, Value::Bool(false), "is_pending(5) should be false");
+        assert_eq!(r_plain, Value::Bool(true), "is_ready(5) should be true");
+
+        // After resolve, `__pending` returns the real value: not pending, ready.
+        let p_resolved = env
+            .run_source("__resolve(\"k\", 7)\nis_pending(__pending(\"k\"))\n")
+            .unwrap();
+        let r_resolved = env.run_source("is_ready(__pending(\"k\"))\n").unwrap();
+        assert_eq!(p_resolved, Value::Bool(false), "is_pending(resolved) should be false");
+        assert_eq!(r_resolved, Value::Bool(true), "is_ready(resolved) should be true");
+    }
+
+    /// `error_of` returns the stored error value for an errored resource, and Nil
+    /// for a loading pending and for a plain value.
+    #[test]
+    fn error_of_returns_error_value_else_nil() {
+        let mut env = Env::new();
+        let err = env
+            .run_source("__reject(\"e\", \"boom\")\nerror_of(__pending(\"e\"))\n")
+            .unwrap();
+        assert_eq!(expect_string(&env, err), "boom", "error_of(errored) should be the error value");
+
+        let loading = env.run_source("error_of(__pending(\"k\"))\n").unwrap();
+        assert_eq!(loading, Value::Nil, "error_of(loading pending) should be Nil");
+
+        let plain = env.run_source("error_of(5)\n").unwrap();
+        assert_eq!(plain, Value::Nil, "error_of(5) should be Nil");
+    }
+
+    /// `or_else(x, default)` returns `default` when x is Pending (loading OR
+    /// errored) and returns x when it is a plain/resolved value. Both args are
+    /// eagerly evaluated (this is NOT the short-circuit `??` of Chunk E).
+    #[test]
+    fn or_else_falls_back_only_on_pending() {
+        let mut env = Env::new();
+
+        // Loading pending -> default.
+        let loading = env.run_source("or_else(__pending(\"k\"), 99)\n").unwrap();
+        assert_eq!(loading, Value::Int(99), "or_else(loading, 99) should be 99");
+
+        // Plain value -> the value itself.
+        let plain = env.run_source("or_else(42, 99)\n").unwrap();
+        assert_eq!(plain, Value::Int(42), "or_else(42, 99) should be 42");
+
+        // Resolved value -> the real value (fetches non-pending).
+        let resolved = env
+            .run_source("__resolve(\"k\", 7)\nor_else(__pending(\"k\"), 99)\n")
+            .unwrap();
+        assert_eq!(resolved, Value::Int(7), "or_else(resolved 7, 99) should be 7");
+
+        // Errored pending -> default.
+        let errored = env
+            .run_source("__reject(\"e\", \"boom\")\nor_else(__pending(\"e\"), 99)\n")
+            .unwrap();
+        assert_eq!(errored, Value::Int(99), "or_else(errored, 99) should be 99");
+    }
+
+    /// `resource_key` returns an Int cache key for a Pending (equal for two
+    /// pendings of the same key) and Nil for a plain value.
+    #[test]
+    fn resource_key_is_stable_int_for_pending_else_nil() {
+        let mut env = Env::new();
+
+        let a = env.run_source("resource_key(__pending(\"same\"))\n").unwrap();
+        let b = env.run_source("resource_key(__pending(\"same\"))\n").unwrap();
+        assert!(matches!(a, Value::Int(_)), "resource_key(pending) should be an Int, got {a:?}");
+        assert!(matches!(b, Value::Int(_)), "resource_key(pending) should be an Int, got {b:?}");
+        assert_eq!(a, b, "two pendings for the same key must have equal resource_key");
+
+        let plain = env.run_source("resource_key(5)\n").unwrap();
+        assert_eq!(plain, Value::Nil, "resource_key(5) should be Nil");
+    }
+}
+

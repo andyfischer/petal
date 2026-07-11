@@ -35,7 +35,7 @@ pub enum NativeClass {
     Effectful,
     /// The native inspects Pendings itself and must run normally
     /// (`__pending`/`__resolve`/`__reject`). Never intercepted.
-    NonStrict,
+    AllowPending,
 }
 
 /// Entry in the native function table.

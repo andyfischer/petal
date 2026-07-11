@@ -986,7 +986,7 @@ mod pending_operator_absorption_tests {
 ///
 ///   * Strict (default)  -> return the LEFTMOST Pending arg without calling.
 ///   * Effectful (print / draw emitters) -> no-op: return Nil, emit nothing.
-///   * NonStrict (`__pending`/`__resolve`/`__reject`) -> call normally.
+///   * AllowPending (`__pending`/`__resolve`/`__reject`) -> call normally.
 ///
 /// This mirrors the strict/non-strict table in `docs/dev/pending-values-plan.md`:
 /// arithmetic/math builtins, `str`, `map`, etc. absorb a Pending operand, while
@@ -1163,9 +1163,9 @@ mod pending_native_classification_tests {
     }
 }
 
-/// Chunk D of the pending-values feature: the NonStrict META builtins that are
+/// Chunk D of the pending-values feature: the AllowPending META builtins that are
 /// the ONLY sanctioned way to inspect pending-ness (everything else absorbs).
-/// All of these must be registered `NativeClass::NonStrict` — a Strict
+/// All of these must be registered `NativeClass::AllowPending` — a Strict
 /// registration would let a Pending argument be absorbed before the builtin ever
 /// ran, so the function could never see it. See the classification note in
 /// `docs/dev/pending-values-plan.md`.

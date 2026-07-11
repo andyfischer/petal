@@ -64,7 +64,7 @@ pub(super) fn native_reject(state: &mut PetalCxt) -> Result<u32, String> {
 // --- Chunk D: pending meta builtins ---
 //
 // These are the ONLY sanctioned way to inspect pending-ness (everything else
-// absorbs a Pending). Each MUST be registered `NonStrict` (see builtins/mod.rs)
+// absorbs a Pending). Each MUST be registered `AllowPending` (see builtins/mod.rs)
 // or a Strict registration would absorb the Pending arg before it ever reached
 // the native. A `Value::Pending` at the language level is always Loading or
 // Errored — a Ready resource surfaces as its real value via `__pending`.

@@ -210,8 +210,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let reject_id = table.register("__reject", pending::native_reject);
 
     // --- Pending meta builtins (Chunk D, append-only) ---
-    // The sanctioned way to inspect pending-ness. Each is tagged NonStrict below
-    // so it sees the Pending arg instead of absorbing it.
+    // The sanctioned way to inspect pending-ness. Each is tagged AllowPending
+    // below so it sees the Pending arg instead of absorbing it.
     let is_loading_id = table.register("is_loading", pending::native_is_loading);
     let is_error_id = table.register("is_error", pending::native_is_error);
     let is_pending_id = table.register("is_pending", pending::native_is_pending);
@@ -226,20 +226,20 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // run. Everything else stays Strict (absorbs a Pending arg) by default.
     table.set_class(print_id, NativeClass::Effectful);
     table.set_class(push_output_id, NativeClass::Effectful);
-    table.set_class(pending_id, NativeClass::NonStrict);
-    table.set_class(resolve_id, NativeClass::NonStrict);
-    table.set_class(reject_id, NativeClass::NonStrict);
+    table.set_class(pending_id, NativeClass::AllowPending);
+    table.set_class(resolve_id, NativeClass::AllowPending);
+    table.set_class(reject_id, NativeClass::AllowPending);
 
-    // Chunk D meta builtins inspect Pendings themselves — all NonStrict so a
+    // Chunk D meta builtins inspect Pendings themselves — all AllowPending so a
     // Pending arg reaches the native instead of being absorbed. Strict here
     // would be a bug (inspection would collapse to absorption).
-    table.set_class(is_loading_id, NativeClass::NonStrict);
-    table.set_class(is_error_id, NativeClass::NonStrict);
-    table.set_class(is_pending_id, NativeClass::NonStrict);
-    table.set_class(is_ready_id, NativeClass::NonStrict);
-    table.set_class(error_of_id, NativeClass::NonStrict);
-    table.set_class(or_else_id, NativeClass::NonStrict);
-    table.set_class(resource_key_id, NativeClass::NonStrict);
+    table.set_class(is_loading_id, NativeClass::AllowPending);
+    table.set_class(is_error_id, NativeClass::AllowPending);
+    table.set_class(is_pending_id, NativeClass::AllowPending);
+    table.set_class(is_ready_id, NativeClass::AllowPending);
+    table.set_class(error_of_id, NativeClass::AllowPending);
+    table.set_class(or_else_id, NativeClass::AllowPending);
+    table.set_class(resource_key_id, NativeClass::AllowPending);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

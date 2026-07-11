@@ -46,7 +46,7 @@ impl<'a> Vm<'a> {
     /// Pending interception (Chunk C). If any argument is a `Pending`, apply the
     /// native's classification: `Strict` absorbs (return the leftmost `Pending`
     /// arg, don't call), `Effectful` no-ops (return `Nil`, emit nothing, don't
-    /// call), `NonStrict` proceeds (it inspects the pending itself). Returns
+    /// call), `AllowPending` proceeds (it inspects the pending itself). Returns
     /// `None` to proceed with the real call.
     ///
     /// Cheap early-out: only a top-level `Pending` *argument* triggers it — a
@@ -62,7 +62,7 @@ impl<'a> Vm<'a> {
         match self.native_fns.get_class(nid) {
             crate::native_fn::NativeClass::Strict => Some(*pending),
             crate::native_fn::NativeClass::Effectful => Some(Value::Nil),
-            crate::native_fn::NativeClass::NonStrict => None,
+            crate::native_fn::NativeClass::AllowPending => None,
         }
     }
 

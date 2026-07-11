@@ -197,5 +197,18 @@ server.registerTool("ShowTokens", {
   },
 }, ({ code }) => runPetalCommand(["show-tokens", "--json", "-e", code]));
 
+server.registerTool("PendingReport", {
+  title: "Pending Report",
+  description:
+    "Runs Petal code and returns the frame pending report as JSON: an array of " +
+    "every live pending/unresolved resource with its id, key, state " +
+    "(loading|errored|ready), age in frames, origin call site, and how many " +
+    "operations absorbed it this frame. Use it to debug why a region is blank — " +
+    "which resources stayed unresolved and where they came from.",
+  inputSchema: {
+    code: z.string().describe("The Petal source code to run"),
+  },
+}, ({ code }) => runPetalCommand(["pending-report", "--json", "-e", code]));
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

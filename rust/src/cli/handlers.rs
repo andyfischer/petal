@@ -16,6 +16,7 @@ use crate::source_map::ENTRY_FILE;
 
 use super::{die, die_plain, SourceInput};
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_run(
     json: bool,
     trace: bool,
@@ -23,6 +24,7 @@ pub(super) fn handle_run(
     ir: bool,
     dup_stats: bool,
     no_opt: bool,
+    trace_pending: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -30,6 +32,9 @@ pub(super) fn handle_run(
     if trace || std::env::var("PETAL_DEBUG").is_ok() {
         unsafe { std::env::set_var("PETAL_TRACE", "1"); }
     }
+    // `--trace-pending` (or PETAL_TRACE_PENDING=1) turns on the absorption log
+    // and prints the frame pending report after the run.
+    let trace_pending = trace_pending || std::env::var("PETAL_TRACE_PENDING").is_ok();
     let mut env = make_env(include_dirs);
     if no_opt {
         env.set_opt_flags(OptFlags::none());
@@ -50,6 +55,9 @@ pub(super) fn handle_run(
         Ok(sid) => sid,
         Err(e) => die(json, &e, "compile"),
     };
+    if trace_pending {
+        env.enable_pending_trace(sid);
+    }
     let run_result = env.run(sid);
 
     if let Some(path) = &record_trace {
@@ -61,8 +69,73 @@ pub(super) fn handle_run(
         eprintln!("{}", env.alloc_stats());
     }
 
+    if trace_pending {
+        let report = env.pending_report(pid, sid);
+        eprintln!("pending report: {}", serde_json::to_string_pretty(&report).unwrap());
+    }
+
     if let Err(e) = run_result {
         die(json, &e, "runtime");
+    }
+}
+
+/// Run the program and print the frame pending report — the JSON array of every
+/// live pending resource (`{ id, key, state, age_frames, origin,
+/// absorbed_count }`). This is what the MCP `PendingReport` tool shells out to
+/// and what an agent debugging "why is this region blank" reads. `--json` emits
+/// the raw report array; otherwise a short human-readable listing is printed.
+pub(super) fn handle_pending_report(
+    json: bool,
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    let mut env = make_env(include_dirs);
+    let pid = match load_into(&mut env, source, source_input) {
+        Ok(pid) => pid,
+        Err(e) => die(json, &e, classify_load_error(&e)),
+    };
+    let sid = match env.create_stack(pid) {
+        Ok(sid) => sid,
+        Err(e) => die(json, &e, "compile"),
+    };
+    // Record absorptions too, so a caller inspecting the report sees per-frame
+    // absorption counts populated.
+    env.enable_pending_trace(sid);
+    let run_result = env.run(sid);
+
+    let report = env.pending_report(pid, sid);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    } else {
+        print_pending_report_text(&report);
+    }
+
+    if let Err(e) = run_result {
+        die(json, &e, "runtime");
+    }
+}
+
+/// Render the pending report as a short human-readable listing (the non-`--json`
+/// output of `pending-report`): one line per live resource with its state, age,
+/// absorption count, and origin call site.
+fn print_pending_report_text(report: &serde_json::Value) {
+    let entries = report.as_array().map(Vec::as_slice).unwrap_or(&[]);
+    if entries.is_empty() {
+        println!("No pending resources.");
+        return;
+    }
+    println!("Pending resources ({}):", entries.len());
+    for entry in entries {
+        let state = entry.get("state").and_then(|s| s.as_str()).unwrap_or("?");
+        let age = entry.get("age_frames").and_then(|a| a.as_u64()).unwrap_or(0);
+        let absorbed = entry.get("absorbed_count").and_then(|a| a.as_u64()).unwrap_or(0);
+        let origin = entry
+            .get("origin")
+            .and_then(|o| o.get("text"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("<unknown origin>");
+        println!("  {state} {age}f  absorbed {absorbed}x  {origin}");
     }
 }
 

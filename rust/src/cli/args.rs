@@ -25,6 +25,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
         "show-slice" => parse_slice_args(&args[1..]),
         "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
+        "pending-report" => parse_show_args(&args[1..], |json| Command::PendingReport { json }),
         _ => {
             // Shorthand: `petal <file> [flags]` runs the file (same as
             // `petal run <file> [flags]`). Parse the full arg list so flags
@@ -41,6 +42,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut ir = false;
     let mut dup_stats = false;
     let mut no_opt = false;
+    let mut trace_pending = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -51,6 +53,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--ir" => ir = true,
             "--dup-stats" => dup_stats = true,
             "--no-opt" => no_opt = true,
+            "--trace-pending" => trace_pending = true,
             "--record-trace" => {
                 i += 1;
                 if i >= args.len() {
@@ -80,7 +83,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     });
 
     CliArgs {
-        command: Command::Run { json, trace, record_trace, ir, dup_stats, no_opt },
+        command: Command::Run { json, trace, record_trace, ir, dup_stats, no_opt, trace_pending },
         source,
         include_dirs: Vec::new(),
     }

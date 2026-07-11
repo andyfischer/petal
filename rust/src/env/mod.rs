@@ -353,6 +353,18 @@ impl Env {
         }
     }
 
+    /// Turn on the debug-gated pending absorption log in the context `stack_id`
+    /// runs in (see
+    /// [`ExecutionContext::enable_pending_trace`](crate::execution_context::ExecutionContext::enable_pending_trace)).
+    /// The `--trace-pending` CLI flag and the debug protocol flip this before
+    /// stepping so the frame's absorptions are recorded. No-op if the stack is
+    /// unknown.
+    pub fn enable_pending_trace(&mut self, stack_id: StackKey) {
+        if let Some(ck) = self.ctx_for(stack_id) {
+            self.ctx_mut(ck).enable_pending_trace();
+        }
+    }
+
     /// A structured, per-frame report of every live pending resource in the
     /// context `stack_id` runs in: a JSON array of
     /// `{ id, key, state, age_frames, origin, absorbed_count }` objects (see

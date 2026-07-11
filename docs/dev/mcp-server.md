@@ -14,6 +14,7 @@ quickly test Petal snippets without shelling out manually.
 | `ShowBytecode({code})` | Return the bytecode lowering of the IR as JSON. |
 | `ShowAST({code})` | Return the parsed AST as JSON. |
 | `ShowTokens({code})` | Return the token stream as JSON. |
+| `PendingReport({code})` | Run the code and return the frame pending report as JSON: every live pending resource with its state, age, origin, and this-frame absorption count. Debug "why is this region blank". |
 
 ```
 TestSnippet({ code: 'print("hello")' })

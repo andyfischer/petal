@@ -20,6 +20,9 @@ pub enum Command {
         ir: bool,
         dup_stats: bool,
         no_opt: bool,
+        /// Turn on the pending absorption trace and print the frame pending
+        /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
+        trace_pending: bool,
     },
     Check { json: bool },
     Lint { fix: bool, check: bool },
@@ -32,6 +35,9 @@ pub enum Command {
     ShowDependents { json: bool, term: String },
     ShowSlice { json: bool, terms: Vec<String> },
     ShowGraph { all: bool },
+    /// Run the program and emit the frame pending report (a JSON array of every
+    /// live pending resource). The observability counterpart to `run`.
+    PendingReport { json: bool },
 }
 
 pub enum SourceInput {
@@ -86,13 +92,16 @@ Usage: petal <command> [options] <file>
 
 Commands:
   check [--json] <file>          Lex+parse+compile without executing (exit 0/1)
-  run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] <file>
+  run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] [--trace-pending] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
                                  --dup-stats: print value-duplication and heap
                                  allocation stats to stderr after the run (debug
                                  builds / dup-stats feature)
+                                 --trace-pending: record pending absorptions and
+                                 print the frame pending report to stderr after
+                                 the run (PETAL_TRACE_PENDING=1 also enables it)
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -115,6 +124,9 @@ Commands:
   show-slice [--json] --term <name> [--term <name2>] <file>
                                  Compute minimal dataflow slice for targets
   show-graph [--all] <file>      Output DOT-format dataflow graph (--all to include builtins)
+  pending-report [--json] <file> Run the program and report every live pending
+                                 resource (state, age, origin, absorbed count).
+                                 --json emits the raw report array for tooling.
 
   petal <file>                   Shorthand for 'run'
 
@@ -170,11 +182,14 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&source_input);
 
     match command {
-        Command::Run { json, trace, record_trace, ir, dup_stats, no_opt } => {
+        Command::Run { json, trace, record_trace, ir, dup_stats, no_opt, trace_pending } => {
             handlers::handle_run(
-                json, trace, record_trace, ir, dup_stats, no_opt,
+                json, trace, record_trace, ir, dup_stats, no_opt, trace_pending,
                 &source, &source_input, &include_dirs,
             );
+        }
+        Command::PendingReport { json } => {
+            handlers::handle_pending_report(json, &source, &source_input, &include_dirs);
         }
         Command::Explain { json, term } => {
             handlers::handle_explain(json, term, &source, &source_input, &include_dirs);

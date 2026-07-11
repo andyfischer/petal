@@ -137,6 +137,14 @@ pub struct PetalCxt<'a> {
     /// The owning context's resource table, borrowed so the pending-resource
     /// builtins (`__pending`/`__resolve`/`__reject`) can create/resolve entries.
     resources: &'a mut crate::resource_table::ResourceTable,
+    /// Whether the debug-gated absorption log records (copied from the owning
+    /// `ExecutionContext`). Gates the push in [`note_absorbed`](Self::note_absorbed).
+    trace_pending: bool,
+    /// The owning context's per-frame absorption log, borrowed so an aggregate
+    /// that absorbs a Pending element (`sort`/`join`) can record `(origin, id)`
+    /// when `trace_pending` is on. See
+    /// [`crate::execution_context::ExecutionContext::absorption_log`].
+    absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
     /// The call site (`TermId`) of the instruction invoking this native, when
     /// known — stamped onto any resource this call creates for the observability
     /// tooling. `None` when the caller has no origin term to attribute.
@@ -169,6 +177,8 @@ impl<'a> PetalCxt<'a> {
         rng_state: &'a mut u64,
         noise_seed: &'a mut u64,
         resources: &'a mut crate::resource_table::ResourceTable,
+        trace_pending: bool,
+        absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
         origin: Option<crate::program::TermId>,
         frame: u64,
         echo: bool,
@@ -185,6 +195,8 @@ impl<'a> PetalCxt<'a> {
             rng_state,
             noise_seed,
             resources,
+            trace_pending,
+            absorption_log,
             origin,
             frame,
             echo,
@@ -443,6 +455,18 @@ impl<'a> PetalCxt<'a> {
     /// pending resource entries.
     pub fn resources_mut(&mut self) -> &mut crate::resource_table::ResourceTable {
         self.resources
+    }
+
+    /// Record that this native absorbed the resource `id` (an aggregate like
+    /// `sort`/`join` swallowing a Pending element): bump its always-on
+    /// `absorbed_count` and, when the debug-gated log is on, push `(origin, id)`
+    /// to the per-frame absorption log. The counterpart to
+    /// [`Vm::note_absorption`](crate::backend::bytecode::vm) on the native path.
+    pub fn note_absorbed(&mut self, id: crate::value::PendingId) {
+        self.resources.note_absorbed(id);
+        if self.trace_pending {
+            self.absorption_log.push((self.origin, id));
+        }
     }
 
     /// The call site of the instruction invoking this native, when known — the

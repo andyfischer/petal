@@ -30,7 +30,7 @@ use crate::backend::errors::TraceFrame;
 use crate::program::{base_fn_name, FunctionId, OverloadEntry, Program, TermId};
 use crate::stack::Stack;
 use crate::symbol::{SymbolId, SymbolTable};
-use crate::value::Value;
+use crate::value::{PendingId, Value};
 
 mod frame;
 mod dispatch;
@@ -68,6 +68,15 @@ pub struct Vm<'a> {
     /// The owning context's resource table, borrowed so the pending-resource
     /// builtins can create/resolve entries. See [`crate::resource_table`].
     pub resources: &'a mut crate::resource_table::ResourceTable,
+    /// Whether the debug-gated absorption log records (copied from the owning
+    /// `ExecutionContext`). When set, [`note_absorption`](Vm::note_absorption)
+    /// pushes to [`absorption_log`](Self::absorption_log); when clear, absorptions
+    /// pay only the always-on `absorbed_count`.
+    pub trace_pending: bool,
+    /// The owning context's per-frame absorption log, borrowed so absorptions can
+    /// record `(origin, PendingId)` when `trace_pending` is on. See
+    /// [`crate::execution_context::ExecutionContext::absorption_log`].
+    pub absorption_log: &'a mut Vec<(Option<TermId>, PendingId)>,
     /// The owning context's current frame, copied from the `ExecutionContext`.
     /// Stamped onto any resource created during this run (`frame_started`).
     pub frame: u64,

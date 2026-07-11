@@ -357,7 +357,7 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
             // ops keep it, but sorting needs every key).
             if let Some(p) = leftmost_pending_element(&items) {
                 if let Value::Pending(id) = p {
-                    state.resources_mut().note_absorbed(id);
+                    state.note_absorbed(id);
                 }
                 state.push_value(p);
                 return Ok(1);
@@ -413,7 +413,7 @@ pub(super) fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
             let pending = leftmost_pending_element(state.heap().get_list(list_id));
             if let Some(p) = pending {
                 if let Value::Pending(id) = p {
-                    state.resources_mut().note_absorbed(id);
+                    state.note_absorbed(id);
                 }
                 state.push_value(p);
                 return Ok(1);

@@ -328,7 +328,16 @@ impl Env {
 
         // Keep state, reset execution; the VM re-pushes its root frame on the
         // next run (gated by `vm_started`, cleared by `reset_execution`).
+        let ck = stack.context;
         stack.reset_execution();
+
+        // A stack reset is the per-frame boundary (a host resets before each
+        // frame's run). Clear the per-frame absorption state — the debug log and
+        // the always-on `absorbed_count`s — so both describe just the next frame.
+        // The cross-frame resource table itself is kept.
+        if let Some(ctx) = self.contexts.get_mut(&ck) {
+            ctx.reset_frame_absorption();
+        }
 
         Ok(())
     }

@@ -119,6 +119,15 @@ impl ResourceTable {
         self.entries[id.0 as usize].absorbed_count += 1;
     }
 
+    /// Zero every entry's `absorbed_count`. Called at the per-frame stack reset
+    /// so the count reflects only the frame about to run; the entries themselves
+    /// are cross-frame and kept (a resource keeps loading across frames).
+    pub fn reset_absorbed_counts(&mut self) {
+        for entry in &mut self.entries {
+            entry.absorbed_count = 0;
+        }
+    }
+
     /// The resolved value for `id` if its entry is `Ready`; `None` while it is
     /// `Loading` or `Errored`.
     pub fn value_for(&self, id: PendingId) -> Option<Value> {

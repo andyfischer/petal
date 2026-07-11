@@ -58,18 +58,23 @@ impl<'a> Vm<'a> {
     /// `call_native_fn_flagged` (plain + in-place mutating builtins), and
     /// record-field method calls. Guarding only one path would make absorption
     /// depend on the in-place optimizer or call syntax.
-    fn intercept_pending(&mut self, nid: NativeFnId, args: &[Value]) -> Option<Value> {
+    fn intercept_pending(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        origin: Option<TermId>,
+    ) -> Option<Value> {
         let pending = *args.iter().find(|v| matches!(v, Value::Pending(_)))?;
         match self.native_fns.get_class(nid) {
             // Both absorbing outcomes swallow the leftmost Pending — bump its
-            // always-on absorbed_count. AllowPending inspects it instead, so it
-            // does not count.
+            // always-on absorbed_count (and log `(origin, id)` when the debug
+            // trace is on). AllowPending inspects it instead, so it does not count.
             crate::native_fn::NativeClass::Strict => {
-                self.note_absorption(pending);
+                self.note_absorption(pending, origin);
                 Some(pending)
             }
             crate::native_fn::NativeClass::Effectful => {
-                self.note_absorption(pending);
+                self.note_absorption(pending, origin);
                 Some(Value::Nil)
             }
             crate::native_fn::NativeClass::AllowPending => None,
@@ -87,7 +92,7 @@ impl<'a> Vm<'a> {
         // Intercept before the intrinsic fork: map/filter/reduce/forEach are
         // dispatched here and never reach the leaf, so a Pending collection base
         // (e.g. `map(pending, f)`) must be absorbed here.
-        if let Some(v) = self.intercept_pending(nid, args) {
+        if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
         }
         let nf = self.native_fns;
@@ -143,7 +148,7 @@ impl<'a> Vm<'a> {
         // reached this native (redundant with the pre-fork check on the plain
         // path, but that check only returns early; the scan is a cheap no-op
         // when no arg is Pending).
-        if let Some(v) = self.intercept_pending(nid, args) {
+        if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
         }
         let func = self.native_fns.get_func(nid);
@@ -158,6 +163,8 @@ impl<'a> Vm<'a> {
             self.rng_state,
             self.noise_seed,
             self.resources,
+            self.trace_pending,
+            self.absorption_log,
             origin,
             self.frame,
             self.echo,
@@ -213,6 +220,8 @@ impl<'a> Vm<'a> {
             self.rng_state,
             self.noise_seed,
             self.resources,
+            self.trace_pending,
+            self.absorption_log,
             origin,
             self.frame,
             self.echo,

@@ -12,11 +12,11 @@ use std::collections::HashMap;
 
 use crate::backend::RuntimeClosure;
 use crate::heap::Heap;
-use crate::program::OverloadEntry;
+use crate::program::{OverloadEntry, TermId};
 use crate::resource_table::ResourceTable;
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolId;
-use crate::value::Value;
+use crate::value::{PendingId, Value};
 
 /// Key identifying one ExecutionContext within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -53,6 +53,20 @@ pub struct ExecutionContext {
     /// The core lib has no frame loop, so this stays 0 under the CLI and tests
     /// unless a host advances it.
     frame: u64,
+    /// Whether the debug-gated absorption log ([`absorption_log`](Self::absorption_log))
+    /// records. Off by default — a host, `--trace-pending`, or the debug protocol
+    /// flips it on via [`enable_pending_trace`](Self::enable_pending_trace). When
+    /// off, absorptions pay only the always-on `absorbed_count`, never a push.
+    pub trace_pending: bool,
+    /// Debug-gated, per-frame absorption log: `(origin call site, absorbed
+    /// resource)` for every absorption in the current frame while
+    /// [`trace_pending`](Self::trace_pending) is on. This is the data a dataflow
+    /// viz paints — the set of spans a given resource flowed through is its
+    /// downstream cone. Off by default (an unbounded per-absorption push is real
+    /// memory pressure in a hot frame). Per-frame: cleared by
+    /// [`reset_frame_absorption`](Self::reset_frame_absorption) at the stack
+    /// reset, unlike the cross-frame [`resources`](Self::resources) table.
+    pub absorption_log: Vec<(Option<TermId>, PendingId)>,
 }
 
 impl ExecutionContext {
@@ -70,6 +84,8 @@ impl ExecutionContext {
             noise_seed: 0,
             resources: ResourceTable::new(),
             frame: 0,
+            trace_pending: false,
+            absorption_log: Vec::new(),
         }
     }
 
@@ -98,6 +114,10 @@ impl ExecutionContext {
             resources: self.resources.clone(),
             // A fork observes the same frame as its source at fork time.
             frame: self.frame,
+            // A fork inherits the trace setting but starts with an empty log —
+            // its absorptions are its own, captured separately from the source's.
+            trace_pending: self.trace_pending,
+            absorption_log: Vec::new(),
         }
     }
 
@@ -110,6 +130,25 @@ impl ExecutionContext {
     /// resource ages (`current_frame - frame_started`) grow over time.
     pub fn advance_frame(&mut self) {
         self.frame += 1;
+    }
+
+    /// Turn on the debug-gated absorption log (see
+    /// [`absorption_log`](Self::absorption_log)). Off by default; a host, the
+    /// `--trace-pending` flag, or the debug protocol flips it on.
+    pub fn enable_pending_trace(&mut self) {
+        self.trace_pending = true;
+    }
+
+    /// Clear the per-frame absorption state at the start of a frame: empty the
+    /// debug [`absorption_log`](Self::absorption_log) and zero every resource's
+    /// `absorbed_count`, so both describe just the frame about to run. The
+    /// [`resources`](Self::resources) entries themselves are cross-frame and
+    /// kept (a resource keeps loading across frames). Called from
+    /// [`Env::reset_stack`](crate::env::Env::reset_stack), the per-frame stack
+    /// reset. The enable flag is not touched — it persists across frames.
+    pub fn reset_frame_absorption(&mut self) {
+        self.absorption_log.clear();
+        self.resources.reset_absorbed_counts();
     }
 
     /// This context's value-duplication statistics, accumulated by its heap's

@@ -1994,3 +1994,91 @@ mod pending_absorbed_count_tests {
     }
 }
 
+/// Chunk L of the pending-values feature: the DEBUG-GATED per-frame absorption
+/// log. When `ExecutionContext::trace_pending` is enabled, every absorption
+/// records `(origin, PendingId)` into `absorption_log` — the span→id pairs a
+/// dataflow viz paints as a resource's downstream cone. Off by default (the log
+/// stays empty, paying only the always-on `absorbed_count`). The log is
+/// per-frame: cleared at the stack reset while the cross-frame `ResourceTable`
+/// survives.
+///
+/// Pre-Chunk-L there is no `trace_pending` flag or `absorption_log` field, so this
+/// module does not even compile — the behavior is entirely new.
+mod pending_absorption_log_tests {
+    use super::super::*;
+
+    /// Pull the `PendingId` out of a `Value::Pending`, or panic helpfully.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    const TWO_ABSORBS: &str = "let x = __pending(\"k\")\nlet a = x + 1\nlet b = a + 1\nb\n";
+
+    /// With the flag on, two absorbing `+` ops each log one `(origin, id)` pair:
+    /// the entry ids are the absorbed Pending, and each carries a source origin.
+    #[test]
+    fn enabled_log_records_origin_and_id_per_absorption() {
+        let mut env = Env::new();
+        let ck = env.default_context;
+        env.ctx_mut(ck).enable_pending_trace();
+
+        let pid = env.load_program(TWO_ABSORBS).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let log = &env.ctx(ck).absorption_log;
+        assert_eq!(log.len(), 2, "two absorbing `+` ops should log two entries");
+        for (origin, logged) in log {
+            assert_eq!(*logged, id, "each entry logs the absorbed Pending's id");
+            assert!(origin.is_some(), "each absorption is attributed to its call site");
+        }
+    }
+
+    /// With the flag OFF (the default), nothing is logged — the log pays only the
+    /// always-on `absorbed_count`, not the unbounded per-absorption push.
+    #[test]
+    fn disabled_log_stays_empty() {
+        let mut env = Env::new();
+        let ck = env.default_context;
+        // flag left OFF (default)
+
+        let pid = env.load_program(TWO_ABSORBS).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+
+        assert!(
+            env.ctx(ck).absorption_log.is_empty(),
+            "the log stays empty when trace_pending is off"
+        );
+    }
+
+    /// The log is per-frame: a frame boundary (`advance_frame` + `reset_stack`)
+    /// clears it, while the enable flag persists for the next frame.
+    #[test]
+    fn log_clears_between_frames() {
+        let mut env = Env::new();
+        let ck = env.default_context;
+        env.ctx_mut(ck).enable_pending_trace();
+
+        let pid = env.load_program(TWO_ABSORBS).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert!(
+            !env.ctx(ck).absorption_log.is_empty(),
+            "frame 1 populated the log"
+        );
+
+        // Next frame: advance the counter and reset the stack — the per-frame log
+        // clears (the enable flag is not touched).
+        env.ctx_mut(ck).advance_frame();
+        env.reset_stack(sid).unwrap();
+        assert!(
+            env.ctx(ck).absorption_log.is_empty(),
+            "the per-frame log clears at the stack reset"
+        );
+    }
+}
+

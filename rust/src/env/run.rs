@@ -258,8 +258,9 @@ fn make_vm<'a>(
     symbols: &'a mut SymbolTable,
     trace: &'a mut TraceBuffer,
 ) -> Vm<'a> {
-    // Read the frame before splitting `ctx`'s fields into disjoint borrows.
+    // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
+    let trace_pending = ctx.trace_pending;
     Vm {
         program,
         bc,
@@ -278,6 +279,8 @@ fn make_vm<'a>(
         noise_seed: &mut ctx.noise_seed,
         frame,
         resources: &mut ctx.resources,
+        trace_pending,
+        absorption_log: &mut ctx.absorption_log,
         echo: ctx.echo,
         trace,
         error_already_annotated: false,

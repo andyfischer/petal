@@ -148,40 +148,40 @@ impl<'a> Vm<'a> {
                 self.stack.vm_frames[fi].loop_idx.pop();
             }
 
-            Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b)?,
-            Inst::Sub { dst, a, b } => self.binop(fi, TermOp::Sub, *dst, *a, *b)?,
-            Inst::Mul { dst, a, b } => self.binop(fi, TermOp::Mul, *dst, *a, *b)?,
-            Inst::Div { dst, a, b } => self.binop(fi, TermOp::Div, *dst, *a, *b)?,
-            Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b)?,
+            Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b, origin)?,
+            Inst::Sub { dst, a, b } => self.binop(fi, TermOp::Sub, *dst, *a, *b, origin)?,
+            Inst::Mul { dst, a, b } => self.binop(fi, TermOp::Mul, *dst, *a, *b, origin)?,
+            Inst::Div { dst, a, b } => self.binop(fi, TermOp::Div, *dst, *a, *b, origin)?,
+            Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b, origin)?,
             Inst::Neg { dst, a } => {
                 let v = ops::negate(self.reg(fi, *a))?;
-                self.note_absorption(v);
+                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
 
             Inst::Eq { dst, a, b } => {
                 let v = ops::eq(self.reg(fi, *a), self.reg(fi, *b), self.heap);
-                self.note_absorption(v);
+                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
             Inst::Ne { dst, a, b } => {
                 let v = ops::ne(self.reg(fi, *a), self.reg(fi, *b), self.heap);
-                self.note_absorption(v);
+                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
-            Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b)?,
-            Inst::Le { dst, a, b } => self.cmp(fi, TermOp::Le, *dst, *a, *b)?,
-            Inst::Gt { dst, a, b } => self.cmp(fi, TermOp::Gt, *dst, *a, *b)?,
-            Inst::Ge { dst, a, b } => self.cmp(fi, TermOp::Ge, *dst, *a, *b)?,
+            Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b, origin)?,
+            Inst::Le { dst, a, b } => self.cmp(fi, TermOp::Le, *dst, *a, *b, origin)?,
+            Inst::Gt { dst, a, b } => self.cmp(fi, TermOp::Gt, *dst, *a, *b, origin)?,
+            Inst::Ge { dst, a, b } => self.cmp(fi, TermOp::Ge, *dst, *a, *b, origin)?,
 
             Inst::Not { dst, a } => {
                 let v = ops::not(self.reg(fi, *a));
-                self.note_absorption(v);
+                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
             Inst::Concat { dst, a, b } => {
                 let v = ops::concat(self.reg(fi, *a), self.reg(fi, *b), self.heap)?;
-                self.note_absorption(v);
+                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
 
@@ -218,7 +218,7 @@ impl<'a> Vm<'a> {
                 // Pending. A resolved record that merely holds a Pending field is
                 // element-wise (not an absorption), so the result value can't be
                 // the signal here.
-                self.note_absorption(base);
+                self.note_absorption(base, origin);
                 self.set(fi, *dst, v);
             }
             Inst::SetField { dst, obj, field, val } => {
@@ -237,7 +237,7 @@ impl<'a> Vm<'a> {
                 // Absorption gates on the BASE (`pending[i]` is that Pending); a
                 // resolved collection holding a Pending element is element-wise.
                 // A Pending *index* is a hard error above and never reaches here.
-                self.note_absorption(base);
+                self.note_absorption(base, origin);
                 self.set(fi, *dst, v);
             }
             Inst::SetIndex { dst, obj, idx, val } => {
@@ -391,16 +391,16 @@ impl<'a> Vm<'a> {
         Ok(StepResult::Continue)
     }
 
-    fn binop(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg) -> Result<(), String> {
+    fn binop(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg, origin: Option<TermId>) -> Result<(), String> {
         let v = ops::arithmetic(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
-        self.note_absorption(v);
+        self.note_absorption(v, origin);
         self.set(fi, dst, v);
         Ok(())
     }
 
-    fn cmp(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg) -> Result<(), String> {
+    fn cmp(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg, origin: Option<TermId>) -> Result<(), String> {
         let v = ops::comparison(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
-        self.note_absorption(v);
+        self.note_absorption(v, origin);
         self.set(fi, dst, v);
         Ok(())
     }
@@ -408,14 +408,20 @@ impl<'a> Vm<'a> {
     /// Record a strict-operator absorption: when an operator's result is a
     /// `Pending`, an operand was `Pending` and the op swallowed it, so bump the
     /// always-on `absorbed_count` (the plan's steady-state observability
-    /// counter). A no-op on any resolved result. The value-producing ops in
+    /// counter) and, when the debug-gated log is on, push `(origin, id)` to
+    /// [`absorption_log`](Vm::absorption_log) — the span→resource pair a dataflow
+    /// viz paints. A no-op on any resolved result. The value-producing ops in
     /// `ops.rs` (arithmetic, comparisons, `!`/negate, `++`) fabricate a `Pending`
     /// only by absorption, so gating on the result is exact for them; field /
     /// index access instead gate on the *base* (a resolved container may merely
-    /// store a Pending element, which is not an absorption).
-    pub(super) fn note_absorption(&mut self, v: Value) {
+    /// store a Pending element, which is not an absorption). `origin` is the
+    /// absorbing instruction's source term, `None` when it has no source span.
+    pub(super) fn note_absorption(&mut self, v: Value, origin: Option<TermId>) {
         if let Value::Pending(id) = v {
             self.resources.note_absorbed(id);
+            if self.trace_pending {
+                self.absorption_log.push((origin, id));
+            }
         }
     }
 }

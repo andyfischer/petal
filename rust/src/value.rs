@@ -7,7 +7,8 @@ use std::fmt;
 use crate::handle::HandleVal;
 use crate::heap::{ElementId, F64ArrayId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
-use crate::program::{ClosureId, OverloadSetId};
+use crate::program::{ClosureId, OverloadSetId, Program, TermId};
+use crate::resource_table::{ResourceState, ResourceTable};
 use crate::symbol::SymbolId;
 
 /// Opaque index into an [`ExecutionContext`](crate::execution_context)'s resource
@@ -211,8 +212,10 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Symbol(id) => format!("symbol#{}", id.0),
         Value::Handle(h) => h.to_string(),
-        // Provenance-rich rendering (`<pending fetch(...) 12f>`) is a later chunk.
-        Value::Pending(_) => "<pending>".to_string(),
+        // Context-free fallback: unambiguous but bare (no state/origin/age, which
+        // need the resource table + program). Provenance-rich rendering lives in
+        // `pending_to_display` / `value_to_json_ctx`.
+        Value::Pending(id) => format!("<pending {}>", id.0),
     }
 }
 
@@ -221,6 +224,77 @@ pub fn value_to_debug_string(val: &Value, heap: &Heap) -> String {
         Value::String(id) => format!("\"{}\"", heap.get_string(*id)),
         other => value_to_display_string(other, heap),
     }
+}
+
+/// Lower-case name of a resource's resolution state — the token debug surfaces
+/// show (`loading` / `errored` / `ready`).
+fn resource_state_name(state: &ResourceState) -> &'static str {
+    match state {
+        ResourceState::Loading => "loading",
+        ResourceState::Errored(_) => "errored",
+        ResourceState::Ready(_) => "ready",
+    }
+}
+
+/// The source-text slice an origin `TermId` points at (e.g. `__pending("k")`),
+/// used to attribute a pending value in debug output. Resolves the term's span
+/// through the program's source map and slices the owning file's source by byte
+/// offset (falling back to `Program::source` for entry-file spans). `None` when
+/// there is no usable span or the slice would be empty / out of bounds.
+fn origin_text(program: &Program, term_id: TermId) -> Option<String> {
+    let span = program.source_map.get(term_id)?;
+    let src = program
+        .source_map
+        .source_for_span(span)
+        .unwrap_or(&program.source);
+    let text = src.get(span.start.offset as usize..span.end.offset as usize)?;
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
+/// The `{ line, col, text }` origin object for a pending entry's origin term, or
+/// `null` when the entry has no origin (a resource a native created without a
+/// reachable call site). Shared by the JSON pending rendering here and the
+/// frame pending report.
+fn pending_origin_json(program: &Program, origin: Option<TermId>) -> serde_json::Value {
+    let Some(term_id) = origin else {
+        return serde_json::Value::Null;
+    };
+    let (line, col) = match program.source_map.get(term_id) {
+        Some(s) if s.start.line > 0 => (Some(s.start.line), Some(s.start.column)),
+        _ => (None, None),
+    };
+    serde_json::json!({
+        "line": line,
+        "col": col,
+        "text": origin_text(program, term_id),
+    })
+}
+
+/// Provenance-rich rendering of a pending value for human-facing debug surfaces:
+/// `<pending __pending("k") loading 2f>` — the origin call site's source text,
+/// the resource's resolution state, and its age in frames. Falls back to `?` for
+/// the origin when the entry has no origin term. Unlike the context-free
+/// [`Display`](fmt::Display)/[`Debug`](fmt::Debug) (which can only show the bare
+/// id), this needs the resource table (state + provenance), the program (origin
+/// source text), and the current frame (age).
+pub fn pending_to_display(
+    id: PendingId,
+    resources: &ResourceTable,
+    program: &Program,
+    current_frame: u64,
+) -> String {
+    let entry = resources.entry(id);
+    let origin = entry
+        .origin
+        .and_then(|t| origin_text(program, t))
+        .unwrap_or_else(|| "?".to_string());
+    let state = resource_state_name(&entry.state);
+    let age = entry.age_frames(current_frame);
+    format!("<pending {origin} {state} {age}f>")
 }
 
 fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String {
@@ -252,7 +326,11 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     s
 }
 
-fn element_to_json(id: crate::heap::ElementId, heap: &Heap) -> serde_json::Value {
+fn element_to_json(
+    id: crate::heap::ElementId,
+    heap: &Heap,
+    ctx: Option<&PendingJsonCtx>,
+) -> serde_json::Value {
     let tag_id = heap.get_element_tag(id);
     let tag = heap.get_string(tag_id).to_string();
     let props_id = heap.get_element_props(id);
@@ -262,12 +340,12 @@ fn element_to_json(id: crate::heap::ElementId, heap: &Heap) -> serde_json::Value
 
     let props_obj: serde_json::Map<String, serde_json::Value> = props
         .iter()
-        .map(|(k, v)| (k.clone(), value_to_json(v, heap)))
+        .map(|(k, v)| (k.clone(), value_to_json_ctx(v, heap, ctx)))
         .collect();
 
     let children_arr: Vec<serde_json::Value> = children
         .iter()
-        .map(|child| value_to_json(child, heap))
+        .map(|child| value_to_json_ctx(child, heap, ctx))
         .collect();
 
     serde_json::json!({
@@ -278,10 +356,52 @@ fn element_to_json(id: crate::heap::ElementId, heap: &Heap) -> serde_json::Value
     })
 }
 
-/// Convert a Value to serde_json::Value for JSON serialization.
-/// Nil→null, Bool→bool, Int/Float→number, String→string,
-/// List→array (recursive), Map→object (recursive), others→string via display.
+/// Rendering context for provenance-rich pending values in JSON dumps: the
+/// resource table (state + provenance), the program (origin source text), and
+/// the current frame (age). Threaded through [`value_to_json_ctx`] so a
+/// `Value::Pending` — including one nested in a list, map, or element — dumps as
+/// a structured object instead of the context-free `"<pending N>"` fallback.
+pub struct PendingJsonCtx<'a> {
+    pub resources: &'a ResourceTable,
+    pub program: &'a Program,
+    pub frame: u64,
+}
+
+/// The structured JSON object for a pending value:
+/// `{ type:"pending", id, key, state, age_frames, origin }` — the shape debug
+/// surfaces and the frame report consume.
+fn pending_json(id: PendingId, ctx: &PendingJsonCtx) -> serde_json::Value {
+    let entry = ctx.resources.entry(id);
+    serde_json::json!({
+        "type": "pending",
+        "id": id.0,
+        "key": entry.key,
+        "state": resource_state_name(&entry.state),
+        "age_frames": entry.age_frames(ctx.frame),
+        "origin": pending_origin_json(ctx.program, entry.origin),
+    })
+}
+
+/// Convert a Value to serde_json::Value for JSON serialization, without pending
+/// provenance. A `Value::Pending` renders as its context-free `"<pending N>"`
+/// string; callers that can supply a [`PendingJsonCtx`] should use
+/// [`value_to_json_ctx`] so pending values dump as structured objects.
+///
+/// Nil→null, Bool→bool, Int/Float→number, String→string, List→array
+/// (recursive), Map→object (recursive), others→string via display.
 pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
+    value_to_json_ctx(val, heap, None)
+}
+
+/// Like [`value_to_json`], but with an optional [`PendingJsonCtx`] so a
+/// `Value::Pending` dumps as the structured `{ type:"pending", … }` object
+/// (state + provenance + age) instead of the bare `"<pending N>"` string. Pass
+/// `None` to match [`value_to_json`] exactly.
+pub fn value_to_json_ctx(
+    val: &Value,
+    heap: &Heap,
+    ctx: Option<&PendingJsonCtx>,
+) -> serde_json::Value {
     match val {
         Value::Nil => serde_json::Value::Null,
         Value::Bool(b) => serde_json::Value::Bool(*b),
@@ -290,7 +410,8 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
         Value::String(id) => serde_json::Value::String(heap.get_string(*id).to_string()),
         Value::List(id) => {
             let elems = heap.get_list(*id);
-            let arr: Vec<serde_json::Value> = elems.iter().map(|v| value_to_json(v, heap)).collect();
+            let arr: Vec<serde_json::Value> =
+                elems.iter().map(|v| value_to_json_ctx(v, heap, ctx)).collect();
             serde_json::Value::Array(arr)
         }
         Value::F64Array(id) => {
@@ -302,7 +423,7 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
             let map = heap.get_map(*id);
             let obj: serde_json::Map<String, serde_json::Value> = map
                 .iter()
-                .map(|(k, v)| (k.clone(), value_to_json(v, heap)))
+                .map(|(k, v)| (k.clone(), value_to_json_ctx(v, heap, ctx)))
                 .collect();
             serde_json::Value::Object(obj)
         }
@@ -315,11 +436,18 @@ pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag).to_string();
             let fields = heap.get_list(*data);
-            let arr: Vec<serde_json::Value> = fields.iter().map(|v| value_to_json(v, heap)).collect();
+            let arr: Vec<serde_json::Value> =
+                fields.iter().map(|v| value_to_json_ctx(v, heap, ctx)).collect();
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
-        Value::Element(id) => element_to_json(*id, heap),
+        Value::Element(id) => element_to_json(*id, heap, ctx),
         Value::Symbol(id) => serde_json::json!({ "type": "symbol", "id": id.0 }),
+        // A pending value renders richly when a context is available, else falls
+        // back to its context-free string — never `null` or a bare handle.
+        Value::Pending(id) => match ctx {
+            Some(c) => pending_json(*id, c),
+            None => serde_json::Value::String(value_to_display_string(val, heap)),
+        },
         // Closures, native functions → string representation
         other => serde_json::Value::String(value_to_display_string(other, heap)),
     }

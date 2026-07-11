@@ -2082,3 +2082,79 @@ mod pending_absorption_log_tests {
     }
 }
 
+/// Chunk M of the pending-values feature: a pending value must render
+/// *distinctly* — with its resolution state, origin, and age — in every
+/// debugging surface, never as `nil` or a bare `<pending>`. The provenance-rich
+/// [`pending_to_display`](crate::value::pending_to_display) drives human-facing
+/// output (`<pending __pending("k") loading 2f>`), and JSON state dumps route
+/// through [`value_to_json_ctx`](crate::value::value_to_json_ctx) so a pending
+/// state var serializes as a structured object rather than `"<pending>"`.
+mod pending_render_chunk_m_tests {
+    use super::super::*;
+
+    /// Pull the `PendingId` out of a `Value::Pending`, or panic helpfully.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// The context-aware renderer names the resource's state, the source text of
+    /// its origin call site, and its age in frames. Pre-Chunk-M there is no such
+    /// renderer — the only rendering is the bare `<pending>` — so this pins the
+    /// new provenance-rich format.
+    #[test]
+    fn pending_to_display_shows_state_origin_and_age() {
+        let mut env = Env::new();
+        let pid = env.load_program("let x = __pending(\"k\")\nx\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let ck = env.default_context;
+        // Age the resource two frames so the age component is non-zero.
+        env.ctx_mut(ck).advance_frame();
+        env.ctx_mut(ck).advance_frame();
+
+        let program = env.get_program(pid).unwrap();
+        let frame = env.ctx(ck).frame();
+        let rendered =
+            crate::value::pending_to_display(id, &env.ctx(ck).resources, program, frame);
+
+        assert!(rendered.contains("loading"), "state missing from {rendered:?}");
+        assert!(
+            rendered.contains("__pending"),
+            "origin source text missing from {rendered:?}"
+        );
+        assert!(rendered.contains("2f"), "age-in-frames missing from {rendered:?}");
+    }
+
+    /// A JSON state dump containing a pending state var must serialize that var
+    /// as a structured `{"type":"pending", "state":…}` object — not the bare
+    /// `"<pending>"` string (nor `null`). `state x = <pending>` never commits
+    /// (StateInit no-commit rule), so we commit the pending via an ordinary
+    /// reassignment, which is allowed-and-flagged.
+    #[test]
+    fn state_dump_json_renders_pending_as_structured_object() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state x = 0\nx = __pending(\"k\")\nx\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+
+        let json = env.get_state_json(pid, sid);
+        let x = json.get("x").expect("state var x should be in the dump");
+        assert_eq!(
+            x.get("type").and_then(|t| t.as_str()),
+            Some("pending"),
+            "a pending state var must dump as a structured pending object, got {x}"
+        );
+        assert_eq!(
+            x.get("state").and_then(|s| s.as_str()),
+            Some("loading"),
+            "the structured pending object must carry its resolution state, got {x}"
+        );
+    }
+}
+

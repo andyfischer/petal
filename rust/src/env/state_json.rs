@@ -18,7 +18,17 @@ impl Env {
         // Resolve the stack's *own* context heap: a fork's state ids index its
         // forked heap, not the default context's.
         let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
-        let heap = &self.ctx(ck).heap;
+        let ctx = self.ctx(ck);
+        let heap = &ctx.heap;
+        // Context for provenance-rich pending rendering: a pending state var
+        // dumps as a structured `{ type:"pending", … }` object, not `"<pending>"`.
+        let pending_ctx = self.get_program(program_id).map(|program| {
+            crate::value::PendingJsonCtx {
+                resources: &ctx.resources,
+                program,
+                frame: ctx.frame(),
+            }
+        });
         let mut map = serde_json::Map::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
@@ -35,7 +45,10 @@ impl Env {
                     }).collect();
                     format!("{}[{}]", base_name, suffix.join(","))
                 };
-                map.insert(name, crate::value::value_to_json(val, heap));
+                map.insert(
+                    name,
+                    crate::value::value_to_json_ctx(val, heap, pending_ctx.as_ref()),
+                );
             }
         }
         map

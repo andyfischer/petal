@@ -155,15 +155,18 @@ impl<'a> Vm<'a> {
             Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b)?,
             Inst::Neg { dst, a } => {
                 let v = ops::negate(self.reg(fi, *a))?;
+                self.note_absorption(v);
                 self.set(fi, *dst, v);
             }
 
             Inst::Eq { dst, a, b } => {
                 let v = ops::eq(self.reg(fi, *a), self.reg(fi, *b), self.heap);
+                self.note_absorption(v);
                 self.set(fi, *dst, v);
             }
             Inst::Ne { dst, a, b } => {
                 let v = ops::ne(self.reg(fi, *a), self.reg(fi, *b), self.heap);
+                self.note_absorption(v);
                 self.set(fi, *dst, v);
             }
             Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b)?,
@@ -173,10 +176,12 @@ impl<'a> Vm<'a> {
 
             Inst::Not { dst, a } => {
                 let v = ops::not(self.reg(fi, *a));
+                self.note_absorption(v);
                 self.set(fi, *dst, v);
             }
             Inst::Concat { dst, a, b } => {
                 let v = ops::concat(self.reg(fi, *a), self.reg(fi, *b), self.heap)?;
+                self.note_absorption(v);
                 self.set(fi, *dst, v);
             }
 
@@ -207,7 +212,13 @@ impl<'a> Vm<'a> {
             }
 
             Inst::GetField { dst, obj, field } => {
-                let v = ops::get_field(self.program, self.heap, *field, self.reg(fi, *obj))?;
+                let base = self.reg(fi, *obj);
+                let v = ops::get_field(self.program, self.heap, *field, base)?;
+                // Absorption gates on the BASE: `pending.field` yields that same
+                // Pending. A resolved record that merely holds a Pending field is
+                // element-wise (not an absorption), so the result value can't be
+                // the signal here.
+                self.note_absorption(base);
                 self.set(fi, *dst, v);
             }
             Inst::SetField { dst, obj, field, val } => {
@@ -221,7 +232,12 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, v);
             }
             Inst::GetIndex { dst, obj, idx } => {
-                let v = ops::get_index(self.heap, self.reg(fi, *obj), self.reg(fi, *idx))?;
+                let base = self.reg(fi, *obj);
+                let v = ops::get_index(self.heap, base, self.reg(fi, *idx))?;
+                // Absorption gates on the BASE (`pending[i]` is that Pending); a
+                // resolved collection holding a Pending element is element-wise.
+                // A Pending *index* is a hard error above and never reaches here.
+                self.note_absorption(base);
                 self.set(fi, *dst, v);
             }
             Inst::SetIndex { dst, obj, idx, val } => {
@@ -377,13 +393,29 @@ impl<'a> Vm<'a> {
 
     fn binop(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg) -> Result<(), String> {
         let v = ops::arithmetic(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
+        self.note_absorption(v);
         self.set(fi, dst, v);
         Ok(())
     }
 
     fn cmp(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg) -> Result<(), String> {
         let v = ops::comparison(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
+        self.note_absorption(v);
         self.set(fi, dst, v);
         Ok(())
+    }
+
+    /// Record a strict-operator absorption: when an operator's result is a
+    /// `Pending`, an operand was `Pending` and the op swallowed it, so bump the
+    /// always-on `absorbed_count` (the plan's steady-state observability
+    /// counter). A no-op on any resolved result. The value-producing ops in
+    /// `ops.rs` (arithmetic, comparisons, `!`/negate, `++`) fabricate a `Pending`
+    /// only by absorption, so gating on the result is exact for them; field /
+    /// index access instead gate on the *base* (a resolved container may merely
+    /// store a Pending element, which is not an absorption).
+    pub(super) fn note_absorption(&mut self, v: Value) {
+        if let Value::Pending(id) = v {
+            self.resources.note_absorbed(id);
+        }
     }
 }

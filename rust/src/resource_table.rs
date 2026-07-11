@@ -112,6 +112,13 @@ impl ResourceTable {
         &self.entries[id.0 as usize]
     }
 
+    /// Bump `id`'s absorbed-operation counter. Every strict-operator absorption
+    /// and effectful no-op calls this — the cheap, always-on steady-state signal
+    /// (not gated by the trace flag).
+    pub fn note_absorbed(&mut self, id: PendingId) {
+        self.entries[id.0 as usize].absorbed_count += 1;
+    }
+
     /// The resolved value for `id` if its entry is `Ready`; `None` while it is
     /// `Loading` or `Errored`.
     pub fn value_for(&self, id: PendingId) -> Option<Value> {

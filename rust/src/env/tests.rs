@@ -1915,3 +1915,82 @@ mod pending_provenance_tests {
     }
 }
 
+/// Chunk K of the pending-values feature: the always-on `absorbed_count`. Every
+/// strict-operator absorption and every effectful no-op bumps a cheap counter on
+/// the absorbed resource's entry — the steady-state observability signal that
+/// answers "how many operations swallowed this Pending". Meta builtins
+/// (`is_loading`, …) inspect a Pending instead of absorbing it, so they must NOT
+/// bump.
+///
+/// Pre-Chunk-K, nothing increments `absorbed_count` (it inits to 0 and stays
+/// there), so the `== N` assertions FAIL (they read 0).
+mod pending_absorbed_count_tests {
+    use super::super::*;
+
+    /// Pull the `PendingId` out of a `Value::Pending`, or panic helpfully.
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    /// Three arithmetic operations that each absorb the same Pending bump its
+    /// `absorbed_count` to 3. The additions are chained so dead-code elimination
+    /// can't drop them, and every intermediate is the same `PendingId`.
+    #[test]
+    fn absorbing_arithmetic_bumps_absorbed_count() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("let x = __pending(\"k\")\nlet a = x + 1\nlet b = a + 1\nlet c = b + 1\nc\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let ck = env.default_context;
+        assert_eq!(
+            env.ctx(ck).resources.entry(id).absorbed_count,
+            3,
+            "three absorbing `+` ops should bump absorbed_count to 3"
+        );
+    }
+
+    /// An effectful no-op (`print` on a Pending emits nothing but still absorbs)
+    /// bumps `absorbed_count`.
+    #[test]
+    fn effectful_noop_bumps_absorbed_count() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("let x = __pending(\"k\")\nprint(x)\nx\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let ck = env.default_context;
+        assert_eq!(
+            env.ctx(ck).resources.entry(id).absorbed_count,
+            1,
+            "an effectful no-op on a Pending should bump absorbed_count"
+        );
+    }
+
+    /// A meta builtin (`is_loading`) inspects the Pending rather than absorbing
+    /// it (it is registered `AllowPending`), so it must NOT bump `absorbed_count`.
+    #[test]
+    fn meta_call_does_not_bump_absorbed_count() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("let x = __pending(\"k\")\nis_loading(x)\nx\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let id = expect_pending(&env.run(sid).unwrap());
+
+        let ck = env.default_context;
+        assert_eq!(
+            env.ctx(ck).resources.entry(id).absorbed_count,
+            0,
+            "a non-absorbing meta call must not bump absorbed_count"
+        );
+    }
+}
+

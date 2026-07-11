@@ -58,11 +58,20 @@ impl<'a> Vm<'a> {
     /// `call_native_fn_flagged` (plain + in-place mutating builtins), and
     /// record-field method calls. Guarding only one path would make absorption
     /// depend on the in-place optimizer or call syntax.
-    fn intercept_pending(&self, nid: NativeFnId, args: &[Value]) -> Option<Value> {
-        let pending = args.iter().find(|v| matches!(v, Value::Pending(_)))?;
+    fn intercept_pending(&mut self, nid: NativeFnId, args: &[Value]) -> Option<Value> {
+        let pending = *args.iter().find(|v| matches!(v, Value::Pending(_)))?;
         match self.native_fns.get_class(nid) {
-            crate::native_fn::NativeClass::Strict => Some(*pending),
-            crate::native_fn::NativeClass::Effectful => Some(Value::Nil),
+            // Both absorbing outcomes swallow the leftmost Pending — bump its
+            // always-on absorbed_count. AllowPending inspects it instead, so it
+            // does not count.
+            crate::native_fn::NativeClass::Strict => {
+                self.note_absorption(pending);
+                Some(pending)
+            }
+            crate::native_fn::NativeClass::Effectful => {
+                self.note_absorption(pending);
+                Some(Value::Nil)
+            }
             crate::native_fn::NativeClass::AllowPending => None,
         }
     }

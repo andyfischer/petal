@@ -356,6 +356,9 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
             // A Pending element has no orderable key; absorb it (element-wise
             // ops keep it, but sorting needs every key).
             if let Some(p) = leftmost_pending_element(&items) {
+                if let Value::Pending(id) = p {
+                    state.resources_mut().note_absorbed(id);
+                }
                 state.push_value(p);
                 return Ok(1);
             }
@@ -409,6 +412,9 @@ pub(super) fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
             // A Pending element makes the whole joined string unknown; absorb it.
             let pending = leftmost_pending_element(state.heap().get_list(list_id));
             if let Some(p) = pending {
+                if let Value::Pending(id) = p {
+                    state.resources_mut().note_absorbed(id);
+                }
                 state.push_value(p);
                 return Ok(1);
             }

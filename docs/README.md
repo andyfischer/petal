@@ -24,6 +24,8 @@ How the implementation works and where it's headed:
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Building on Integrations](building-on-integrations.md) | How apps are layered on Core + integrations, and how to route a new port through one |
+| [Program Modification](program-modification.md) | Catalogue of ways to modify programs programmatically (source, IR, live) |
+| [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |
 | [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
 | [Debugging & Visibility](dev/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |

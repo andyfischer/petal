@@ -15,6 +15,7 @@ pub mod dot_graph;
 pub mod env;
 pub mod execution_context;
 pub mod extract;
+pub mod goal_based_editing;
 pub mod handle;
 pub mod heap;
 pub mod ir_display;

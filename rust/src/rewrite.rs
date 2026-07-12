@@ -224,36 +224,6 @@ fn collect_edge_trivia(node: &GreenNode, from_end: bool, out: &mut Vec<GreenChil
     false
 }
 
-/// Replace the first top-level `name(...)` call in `source` with `replacement`.
-/// If there is no such call, `replacement` is appended as a new top-level
-/// statement on its own line. Returns the rewritten source.
-///
-/// `replacement` is the full call text to write (e.g. `"layout(editor())"`); it
-/// is spliced in verbatim, so the caller controls its formatting.
-pub fn replace_or_append_call(
-    source: &str,
-    name: &str,
-    replacement: &str,
-) -> Result<String, String> {
-    let (tree, stmts) = parse_ast(source)?;
-    match find_call(&stmts, name) {
-        Some(span) => Ok(match splice_node(&tree, span, replacement) {
-            Some(edited) => edited.text(),
-            // Replacement isn't a single parseable expression: splice it in
-            // verbatim at the string level.
-            None => splice(source, span, replacement),
-        }),
-        None => {
-            let trimmed = source.trim_end_matches('\n');
-            if trimmed.is_empty() {
-                Ok(format!("{replacement}\n"))
-            } else {
-                Ok(format!("{trimmed}\n\n{replacement}\n"))
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,26 +251,6 @@ mod tests {
             out,
             "// a comment\nx = 1\nlayout(editor(\"new.rs\"))\n// trailing\n"
         );
-    }
-
-    #[test]
-    fn replace_or_append_replaces_existing() {
-        let src = "layout(editor())\n";
-        let out = replace_or_append_call(src, "layout", "layout(row([editor()]))").unwrap();
-        assert_eq!(out, "layout(row([editor()]))\n");
-    }
-
-    #[test]
-    fn replace_or_append_appends_when_missing() {
-        let src = "set_theme({})\n";
-        let out = replace_or_append_call(src, "layout", "layout(editor())").unwrap();
-        assert_eq!(out, "set_theme({})\n\nlayout(editor())\n");
-    }
-
-    #[test]
-    fn append_to_empty_source() {
-        let out = replace_or_append_call("", "layout", "layout(editor())").unwrap();
-        assert_eq!(out, "layout(editor())\n");
     }
 
     #[test]
@@ -358,13 +308,6 @@ mod tests {
         let src = "// before\nlayout(\n    column([\n        editor(),\n    ])\n)\n// after\nx = 2\n";
         let out = tree_replaced(src, "layout", "layout(editor())");
         assert_eq!(out, "// before\nlayout(editor())\n// after\nx = 2\n");
-    }
-
-    #[test]
-    fn replace_or_append_falls_back_to_string_splice_for_unparseable_replacement() {
-        // Not a parseable expression — spliced in verbatim at the string level.
-        let out = replace_or_append_call("layout(editor())\n", "layout", "<<broken").unwrap();
-        assert_eq!(out, "<<broken\n");
     }
 
     #[test]

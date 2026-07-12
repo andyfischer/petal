@@ -439,11 +439,45 @@ change `items`. Use `items = append(items, 3)`.
 
 ### `pop(list)`
 
-Removes and returns the last element. Returns `nil` if the list is empty.
+Deprecated alias for [`drop_last`](#drop_lastlist); prefer `drop_last`. It is
+immutable and returns a new list with the last element removed — it does
+**not** return the removed element. Use `last(items)` to read the final
+element.
 
 ```petal
 let items = [1, 2, 3]
-let last = pop(items)   // last = 3, items = [1, 2]
+let shorter = pop(items)   // shorter = [1, 2]; items is still [1, 2, 3]
+```
+
+### `last(list)`
+
+Returns the last element of a list, or `nil` if the list is empty. Pure
+read — the list is never changed.
+
+```petal
+last([1, 2, 3])   // 3
+last([])          // nil
+```
+
+### `drop_last(list)`
+
+Returns a **new** list equal to the input without its last element. The input
+list is never mutated; an empty list yields a new empty list.
+
+```petal
+drop_last([1, 2, 3])   // [1, 2]
+drop_last([])          // []
+```
+
+### `remove(record, key)`
+
+Returns a **new** record equal to the input without `key`. The input record is
+never mutated; removing an absent key yields an equivalent new record. Errors
+if given a list.
+
+```petal
+remove({a: 1, b: 2}, "a")   // { b: 2 }
+remove({a: 1}, "missing")   // { a: 1 }
 ```
 
 ### `keys(record)`
@@ -560,8 +594,8 @@ flat([[1, [2]], [3]])         // [1, [2], 3]
 Applies a function to each element and returns a new list.
 
 ```petal
-map([1, 2, 3], fn(x) { x * 2 })        // [2, 4, 6]
-map(["a", "b"], fn(s) { s ++ "!" })     // ["a!", "b!"]
+map([1, 2, 3], fn(x) -> x * 2)         // [2, 4, 6]
+map(["a", "b"], fn(s) -> s ++ "!")     // ["a!", "b!"]
 ```
 
 ### `filter(list, fn)`
@@ -569,8 +603,8 @@ map(["a", "b"], fn(s) { s ++ "!" })     // ["a!", "b!"]
 Returns a new list containing only elements where the function returns `true`.
 
 ```petal
-filter([1, 2, 3, 4], fn(x) { x > 2 })       // [3, 4]
-filter(["hi", "", "ok"], fn(s) { len(s) > 0 })  // ["hi", "ok"]
+filter([1, 2, 3, 4], fn(x) -> x > 2)            // [3, 4]
+filter(["hi", "", "ok"], fn(s) -> len(s) > 0)   // ["hi", "ok"]
 ```
 
 ### `reduce(list, initial, fn)`
@@ -578,8 +612,8 @@ filter(["hi", "", "ok"], fn(s) { len(s) > 0 })  // ["hi", "ok"]
 Folds over a list, accumulating a result.
 
 ```petal
-reduce([1, 2, 3], 0, fn(acc, x) { acc + x })   // 6
-reduce([1, 2, 3], 1, fn(acc, x) { acc * x })   // 6
+reduce([1, 2, 3], 0, fn(acc, x) -> acc + x)   // 6
+reduce([1, 2, 3], 1, fn(acc, x) -> acc * x)   // 6
 ```
 
 ### `forEach(list, fn)`
@@ -589,7 +623,7 @@ want the side effects (logging, drawing, mutations) but don't need a
 new list.
 
 ```petal
-forEach([1, 2, 3], fn(x) { print(x) })
+forEach([1, 2, 3], fn(x) -> print(x))
 ```
 
 ## Assertions

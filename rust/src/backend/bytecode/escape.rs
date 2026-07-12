@@ -47,7 +47,7 @@
 //! mutation chain, and the back-edge writes the (identical) mutated id forward.
 //! No live observer ever sees a pre-mutation state. Fork safety is automatic:
 //! `Heap::fork` deep-copies the slot vectors, so a speculative child mutates its
-//! own copy (see `docs/dev/speculative-execution-plan.md`).
+//! own copy (see `docs/dev/bytecode-future-ideas.md`, "Hazards" section).
 //!
 //! ## Companion pass: straight-line uniqueness (route A)
 //! Straight-line last-use uniqueness (`let xs = […]; xs[0] = v` where `xs` is

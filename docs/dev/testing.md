@@ -18,7 +18,8 @@ npx vitest test/ir-basics.test.ts
 npx vitest -t "emits Add"
 ```
 
-**Test files** (`ts/test/*.test.ts`):
+**Test files** (`ts/test/*.test.ts`; a representative list — see the directory
+for the full, growing set):
 - `ir-basics.test.ts` — constants, arithmetic, variables, registers, comparisons, unary ops
 - `ir-control-flow.test.ts` — if/else, for, while, match, short-circuit (&&/||), break, return, continue
 - `ir-data-structures.test.ts` — lists, records, enums, field/index access, concat
@@ -37,7 +38,9 @@ npx vitest -t "emits Add"
 - `test-samples.test.ts` — every `examples/*.ptl` file runs without error
 
 **Helpers** (`ts/test/helpers.ts`):
-- `ensureBuild()` — runs `cargo build` once per test session (called in `beforeAll`)
+- The binary is built once per test session by `ts/test/global-setup.ts`
+  (wired via `globalSetup` in `vitest.config.ts`); the old `ensureBuild()`
+  helper is now a no-op kept for compatibility
 - `showIrJson(code)` — compiles Petal code, returns parsed IR JSON (`petal show-ir --json -e '...'`)
 - `showAstJson(code)` — returns parsed AST JSON (`petal show-ast --json -e '...'`)
 - `showTokensJson(code)` — returns parsed token list (`petal show-tokens --json -e '...'`)

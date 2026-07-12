@@ -104,6 +104,6 @@ npx vitest -t "name" # Run tests matching a name
 
 If you're using an AI assistant that supports MCP (like Claude Code), the project includes
 an MCP server at `ts/tools/petal-mcp.ts` that provides tools — `TestSnippet`,
-`CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens`. These let you compile,
+`CheckSnippet`, `ExplainTerm`, `PendingReport`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens`. These let you compile,
 run, inspect, and debug Petal code directly from your assistant without shelling out
 manually.

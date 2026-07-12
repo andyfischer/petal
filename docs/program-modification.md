@@ -1,21 +1,17 @@
 # Programmatic Program Modification
 
-How Petal programs can be **changed by code** — by tools, agents, embedders, and
-the language's own live-editing machinery — rather than only by a human typing
-into an editor.
+How Petal programs can be **changed by code** — by tools, agents, and embedders —
+rather than only by a human typing into an editor.
 
-This document is a **catalogue of what exists today**. It is the starting point
-for a body of work exploring better ways to modify programs: richer
-**hot reloading**, **programming-by-direct-manipulation** (drag an output, edit
-the source that produced it), and **goal-driven edits** (specify a target
-result, let the system suggest source changes). Those directions are sketched at
-the end and cross-referenced to [dev/goals.md](dev/goals.md); everything before
-that is shipped and testable.
+If you are building on Petal — an editor with a "change this setting" menu
+action that rewrites a config script, a visual tool that edits programs live, a
+front-end that emits Petal programs, or a host that hot-reloads scripts without
+losing state — this is the catalogue of the surfaces available to you. Everything
+here is shipped and testable.
 
-> Design context: [dev/Architecture.md](dev/Architecture.md) (the term graph),
-> [dev/ir-as-target.md](dev/ir-as-target.md) (the IR emit contract),
-> [dev/speculative-execution-plan.md](dev/speculative-execution-plan.md) (forking),
-> and [dev/debugging-visibility.md](dev/debugging-visibility.md) (agent surface).
+> Deeper reference: [Architecture.md](dev/Architecture.md) (the term graph),
+> [ir-as-target.md](dev/ir-as-target.md) (the IR emit contract),
+> and [debugging-visibility.md](dev/debugging-visibility.md) (agent surface).
 
 ---
 
@@ -32,7 +28,7 @@ modification surface with its own tooling:
 
 Because Petal is a dataflow language with no register-mutation primitive
 (rebindings lower to pure `Phi` joins — see
-[dev/debugging-visibility.md](dev/debugging-visibility.md)), all three layers are
+[debugging-visibility.md](dev/debugging-visibility.md)), all three layers are
 unusually legible: the IR is a clean graph you can walk and rewrite, and runtime
 state is keyed structurally so it can migrate across an edit.
 
@@ -90,9 +86,8 @@ should satisfy — and the module decides whether to insert or update in place.
 | `modify_source_with_goals(source, goals)` | Apply a list of goals in order; returns the rewritten source. |
 
 `ShouldCall` updates the first existing top-level call to `function` (replacing
-its argument list, layout-flexibly) or appends the call if absent — the shape a
-config file like `~/.garden/init.ptl` wants for a "set the color scheme" menu
-action. Goals compose (apply several in one pass, later goals see earlier
+its argument list, layout-flexibly) or appends the call if absent — the shape
+an app's user-config script wants for a "set the color scheme" menu action. Goals compose (apply several in one pass, later goals see earlier
 insertions), and `Goal` is the extension point for richer intents (ensure an
 import, remove a call, set a field). This is the seam a broader structured-edit
 and goal-driven API grows from. **Usage guide:**
@@ -120,7 +115,7 @@ the IR-equivalence gate is the pattern goal-driven refactors should follow.
 Petal's IR is a **documented, versioned, load-and-run emit target**. You can
 construct or transform a program *as data* and run it directly, bypassing the
 Petal front-end entirely. Full contract:
-[dev/ir-as-target.md](dev/ir-as-target.md).
+[ir-as-target.md](dev/ir-as-target.md).
 
 ### 2a. The term graph as a data structure
 
@@ -254,8 +249,8 @@ is the obvious target for smarter reconciliation (see gaps below).
 ### 3c. Point-mutating live state, bindings, and input
 
 Over the agent JSON protocol and MCP (see
-[dev/debug-protocol.md](dev/debug-protocol.md),
-[dev/mcp-server.md](dev/mcp-server.md),
+[debug-protocol.md](dev/debug-protocol.md),
+[mcp-server.md](dev/mcp-server.md),
 [petal-desktop-sdl/docs/agent-protocol.md](../integrations/petal-desktop-sdl/docs/agent-protocol.md)):
 
 | Surface | Effect |
@@ -289,38 +284,30 @@ shares no mutable state with its source.
   `DiagramScreenshot`: they run a **fork of one frame** and discard it, so
   inspecting a canvas never perturbs it.
 
-Full design & the `ExecutionContext` machinery:
-[dev/speculative-execution-plan.md](dev/speculative-execution-plan.md). This is
+The `ExecutionContext` machinery lives in
+[`rust/src/execution_context.rs`](../rust/src/execution_context.rs) and
+[`rust/src/env/fork.rs`](../rust/src/env/fork.rs). This is
 the substrate for "try an edit, see the effect, keep or discard" — the execution
 half of direct-manipulation and goal-driven editing.
 
 ---
 
-## Layer 4 — Goal-driven / differentiable edits (partial)
+## Layer 4 — Differentiable values (forward-mode sensitivity)
 
-The headline direction — *specify a target output, get suggested source-value
-changes* — is only **partially built**.
-
-**Shipped:** forward-mode automatic differentiation via dual numbers.
+Petal ships forward-mode automatic differentiation via dual numbers.
 [`rust/src/builtins/autodiff.rs`](../rust/src/builtins/autodiff.rs) registers
 `dual(value, derivative)`, `value_of(x)`, `deriv_of(x)`; arithmetic threads
 derivatives through [`backend/ops.rs`](../rust/src/backend/ops.rs) (`dual_arith`),
-and `sin`/`cos`/`tan`/`sqrt`/`abs` propagate (`exp`/`log` drop the derivative —
-a known gap). This lets a program compute *how sensitive an output is to an
-input* in the forward direction.
+and `sin`/`cos`/`tan`/`sqrt`/`abs` propagate (`exp`/`log` currently drop the
+derivative — a known gap). This lets a program compute *how sensitive an output
+is to an input* in the forward direction.
 
-**Not yet built (aspirational):**
-
-- `grad()` / `optimize()` — the stdlib functions used in
-  [docs/examples/aspirational/gradient_descent.ptl](examples/aspirational/gradient_descent.ptl)
-  **do not exist**; that file is a target sketch, not runnable.
-- **Reverse-mode AD / back-propagation** — no gradient/adjoint code exists. This
-  is the centerpiece needed to go from "a target result" to "which source
-  constants to change."
-- **Drag-to-edit** — drag an output on the canvas → back-prop to the influencing
-  source constants → project the candidate slice → live-edit the numbers with
-  state preserved. This is the Phase 1 demo in [dev/goals.md](dev/goals.md) and
-  the composition of all four layers above.
+**Not yet available:** reverse-mode AD / back-propagation, and the `grad()` /
+`optimize()` functions sketched in
+[docs/examples/aspirational/gradient_descent.ptl](examples/aspirational/gradient_descent.ptl)
+(that file is a target sketch, not runnable). Goal-driven editing — *specify a
+target output, get suggested source-value changes* — depends on these and is not
+built yet; see [goals.md](dev/goals.md) for the direction.
 
 ---
 
@@ -340,36 +327,18 @@ input* in the forward direction.
 | Inject input / bindings | — | ✅ | `input`, `set_binding_for` |
 | Speculative variant run | ✅ | (forked) | `fork_execution`, `run_speculative`, `diff_state` |
 | Forward-mode sensitivity | ✅ | — | `dual`/`deriv_of` |
-| Goal-driven source suggestion | — | 🔭 | not built (reverse-mode AD) |
+| Goal-driven source suggestion | — | not yet available | needs reverse-mode AD; see [goals.md](dev/goals.md) |
 
 ---
 
-## Gaps & directions this work will explore
+## Known limitations
 
-Grounded in the catalogue above and [dev/goals.md](dev/goals.md):
+- **Hot-reload reconciliation is by name.** Renaming a `state` variable (or its
+  module) changes its key and drops the value (§3a).
+- **Reverse-mode AD does not exist** — only forward-mode sensitivity (§4), so
+  "given a target output, which inputs should change" is not answerable today.
+- **`program_analysis.rs` queries are read-only** — provenance/dependents/slice
+  describe the graph but there is no in-place IR rewrite API; transform IR by
+  emitting new JSON (§2b).
 
-1. **Richer hot reload.** Today reconciliation drops state on rename/move
-   (name-hash keying, §3a) and integrations re-run the whole program each frame
-   (no incremental graph diffing — `goals.md` Goal 4). Explore
-   structural-correspondence migration that survives renames, and incremental
-   recompute of only affected terms.
-
-2. **Programming by direct manipulation.** The pieces exist in isolation — a
-   formatting-preserving source rewriter (§1b), a walkable dataflow graph with
-   provenance/slice (§2c), and safe speculative runs (§3d). What's missing is the
-   **bidirectional link**: map a manipulated *output* back to the *source node*
-   that produced it and edit it in place. This is the "projectional / bidirectional
-   editing" pillar (`goals.md` Goal 3) plus the drag-to-edit demo (§4).
-
-3. **Goal-driven edits.** Requires **reverse-mode AD** (§4) to turn a target
-   result into gradients over source constants, the **slice** machinery (§2c) to
-   scope which constants are editable, and the **verified-edit discipline** of
-   `lint --fix` (§1c) and speculative `diff_state` (§3d) to apply changes safely.
-
-4. **A first-class structured-edit API.** `goal_based_editing.rs` seeds this: a
-   declarative `Goal` vocabulary over the `rewrite.rs` CST primitives, currently
-   `ShouldCall`. `program_analysis.rs` is still read-only. A unified "state a
-   goal → query the graph → propose an edit → verify (IR-equivalence or
-   speculative diff) → write back through the CST" pipeline — growing the `Goal`
-   enum toward richer and eventually graph-derived intents — would be the shared
-   substrate for all three directions above.
+For where these are headed, see [goals.md](dev/goals.md).

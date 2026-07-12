@@ -6,7 +6,7 @@
 //! its context by key. With a single default context, behavior is identical to
 //! the pre-extraction `Env`.
 //!
-//! See docs/dev/speculative-execution-plan.md §3.
+//! See the "Speculative execution" section of docs/program-modification.md.
 
 use std::collections::HashMap;
 

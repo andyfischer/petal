@@ -17,7 +17,7 @@ Status legend:
 - ⚠️ **Needs hardening** — works, but has a known correctness/robustness risk
   under a core promise.
 
-Last reviewed: 2026-06-22.
+Last reviewed: 2026-07-12.
 
 ---
 

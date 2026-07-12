@@ -1,6 +1,13 @@
 # Proposal: FFI expansion for game-engine embedding (Unreal)
 
-Status: proposal / not implemented. Companion to [../ffi.md](../ffi.md), which
+Status: **M1 in progress**. Shipped so far: `Value::Handle(HandleVal)`
+(`rust/src/handle.rs`), `Env::register_handle_class` / `make_handle`
+(`rust/src/env/mod.rs`), the per-class `call_method` dispatcher (§5),
+`PetalCxt::get_handle` (`rust/src/native_fn.rs`), the `is_valid` builtin
+(`rust/src/builtins/handle.rs`), handle-receiver method dispatch in the VM
+(`rust/src/backend/bytecode/vm/calls.rs`), and equality/hash by identity.
+Remaining in M1: `$handle` JSON state encoding and the Headless mock entity
+table; M2–M4 not started. Companion to [../ffi.md](../ffi.md), which
 documents the existing surface. The motivating scenario: Petal scripting game
 logic inside Unreal Engine 5 — retained references to engine objects, hot
 reload during play, and a safety story for the fact that engine objects are
@@ -193,7 +200,8 @@ host queues events and binds them as a per-frame list uniform, exactly like
 
 `h.set_location(p)` needs **no parser or IR work**: `obj.method(args)`
 already parses, compiles to `TermOp::MethodCall` / `Inst::MethodCall`, and the
-bytecode VM dispatches it (`rust/src/backend/bytecode/vm.rs do_method_call`):
+bytecode VM dispatches it (`rust/src/backend/bytecode/vm/calls.rs`
+`do_method_call`):
 
 1. a callable field on a record receiver, else
 2. **UFCS fallback** — look the method name up in the native table and call
@@ -224,7 +232,7 @@ dispatch point. Unknown methods reuse the existing "No method 'x' on type y"
 error with the class's method list as the hint.
 
 This goes in **M1, with the handle itself**, not later: it is small (the
-machinery exists; the increment is one match arm per backend plus the vtable
+machinery exists; the increment is one match arm in the VM plus the vtable
 field), and deciding it late would mean building a generated-wrapper prelude
 module in M3 and then discarding it — the dispatcher *is* the binding layer.
 
@@ -269,10 +277,10 @@ Petal's story already fits UE's Live Coding culture:
 
 ## Phasing
 
-1. **M1 — handles, engine-agnostic.** `Value::Handle`, `register_handle_class`
-   (with per-class `call_method` dispatcher — §5), `make_handle`, `is_valid`
-   builtin, `PetalCxt::get_handle`, handle-class method dispatch in both
-   backends, JSON encoding, equality/state-key support. Prototype in
+1. **M1 — handles, engine-agnostic.** ✅ `Value::Handle`, ✅ `register_handle_class`
+   (with per-class `call_method` dispatcher — §5), ✅ `make_handle`, ✅ `is_valid`
+   builtin, ✅ `PetalCxt::get_handle`, ✅ handle-class method dispatch in the
+   VM, ⬜ JSON encoding, ✅ equality/state-key support. ⬜ Prototype in
    petal-sdl or the `Headless` harness with a mock entity table (e.g. handles
    to host-side "sprites") — proves the design with no Unreal dependency and
    gives petal-sdl retained resources (textures, sounds) as a side benefit.

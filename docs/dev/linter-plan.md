@@ -1,6 +1,7 @@
 # Linter plan (`petal lint`)
 
-Status: **first slice shipped** (2026-07-07, `rust/src/lint.rs`): `petal lint`
+Status: **first slice shipped** (2026-07-07, `rust/src/lint/` — mod.rs +
+reindent.rs + rebind.rs): `petal lint`
 with report / `--fix` / `--check` / `-e` modes, the token-driven 2-space
 re-indenter (plus trailing-whitespace trim and single trailing newline), the
 rebind rule, and the IR-equivalence gate — proven by a corpus property test
@@ -132,7 +133,7 @@ petal lint --check <file>    # CI mode: exit 0/1, no output on success
 petal lint -e <code>         # lint inline code, print result to stdout
 ```
 
-Wire into `cli.rs`: add a `Command::Lint { fix, check }` variant, a
-`parse_lint_args`, a dispatch arm, and an entry in `print_usage`. Also update
-`docs/CLI.md`. Per `CLAUDE.local.md`, run the linter over `integrations/*` / `sample-apps/*` and the
-garden editor scripts once it's stable.
+Wired into the CLI (done): `Command::Lint { fix, check }` in `rust/src/cli/mod.rs`,
+`parse_lint_args` in `cli/args.rs`, `handle_lint` in `cli/handlers.rs`, and an
+entry in `print_usage`. Still to do per `CLAUDE.local.md`: run the linter over
+`integrations/*` / `sample-apps/*` and the garden editor scripts once it's stable.

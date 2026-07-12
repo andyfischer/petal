@@ -23,8 +23,9 @@ How the implementation works and where it's headed:
 | Document | Description |
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
-| [Building on Integrations](building-on-integrations.md) | How apps are layered on Core + integrations, and how to route a new port through one |
-| [Program Modification](program-modification.md) | Catalogue of ways to modify programs programmatically (source, IR, live) |
+| [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: natives, values, host channels |
+| [Building on Integrations](building-on-integrations.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
+| [Program Modification](program-modification.md) | Modifying programs programmatically (source, IR, live) — for tools, agents, and embedders |
 | [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |
 | [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
@@ -42,4 +43,7 @@ working documents — expect internal shorthand and point-in-time status:
 | [Testing](dev/testing.md) | How to write and run the test suites |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
-| [Speculative Execution Plan](dev/speculative-execution-plan.md) | Plan/log for speculative execution and immutable-heap work |
+| [Linter Plan](dev/linter-plan.md) | `petal lint` design; first slice shipped, normalization catalogue remains |
+| [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
+| [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
+| [Unreal FFI Proposal](dev/unreal-ffi-proposal.md) | Game-engine handle FFI (M1 in progress) |

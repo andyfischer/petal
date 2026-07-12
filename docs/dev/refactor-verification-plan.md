@@ -9,7 +9,8 @@ Two goals motivate this:
 1. **Prove a source change has no observable behavior change.**
 2. **Describe the extent (blast radius) of an observable change when there is one.**
 
-There is currently no `lint` subcommand and no notion of program-to-program
+There is a `petal lint` subcommand (formatter/normalizer — see
+[linter-plan.md](linter-plan.md)), but no notion of program-to-program
 equivalence. What follows is the capability inventory that exists to build on,
 the core difficulty, and a staged plan.
 
@@ -54,10 +55,10 @@ cross-program equivalence.
 
 | Capability | Command / source | Relevance |
 |---|---|---|
-| Compile validation | `check` — `rust/src/cli.rs:576` | "still parses/compiles" — a floor, not behavior. No type check, no execution. |
-| Backward slice (provenance) | `show-provenance` — `program.rs:561` (`trace_provenance`) | BFS over `term.inputs`, follows `Phi` rebinds. "What influenced this output." |
-| Forward slice (dependents) | `show-dependents` — `program.rs:622` (`trace_dependents`) | **Blast-radius primitive.** Reverse index + forward BFS. Caveat: does **not** follow phi rebinds like provenance does, so loop/branch carries under-approximate — fix before trusting. |
-| Minimal slice | `show-slice` — `program.rs:667` | Union of ancestors of target terms; isolates the region a change touches. |
+| Compile validation | `check` — `rust/src/cli/handlers.rs` | "still parses/compiles" — a floor, not behavior. No type check, no execution. |
+| Backward slice (provenance) | `show-provenance` — `program_analysis.rs:58` (`trace_provenance`) | BFS over `term.inputs`, follows `Phi` rebinds. "What influenced this output." |
+| Forward slice (dependents) | `show-dependents` — `program_analysis.rs:119` (`trace_dependents`) | **Blast-radius primitive.** Reverse index + forward BFS. Caveat: does **not** follow phi rebinds like provenance does, so loop/branch carries under-approximate — fix before trusting. |
+| Minimal slice | `show-slice` — `program_analysis.rs:164` | Union of ancestors of target terms; isolates the region a change touches. |
 | Dataflow visualization | `show-graph` — `rust/src/dot_graph.rs` | Graphviz DOT of the IR; visualization only. |
 | Per-term value trace | `--trace` / `--record-trace` — `rust/src/trace.rs` | Ring buffer of `TraceEvent { sequence, term_id, inputs, result }` — every term's inputs and result in execution order. `to_json` serializes with source line/col. The most promising differential primitive. |
 | Cost metrics | `--dup-stats` — `rust/src/stats.rs` | Value-duplication (`DupKind` List/Map/F64Array/Fork) and alloc churn. Perf-regression guard, not correctness — but a real "did the cost profile change" signal. Debug/`dup-stats`-feature only. |
@@ -104,7 +105,7 @@ via `source_map`, then report the forward-reachable **outputs** (draw commands,
 change can only affect these N outputs" — a scoped, reviewable blast radius.
 
 **Prerequisite:** fix `trace_dependents` to follow phi rebinds (mirror
-`trace_provenance`'s handling in `program.rs:573`), or forward reachability
+`trace_provenance`'s handling in `program_analysis.rs:70`), or forward reachability
 leaks across branches/loops.
 
 ### Tier 3 — span-keyed trace diff (semantic middle ground)
@@ -133,7 +134,7 @@ before tiers 1–3 earn their keep.
 
 ## Key source files to build on
 
-- `rust/src/program.rs` — term graph, `trace_provenance` / `trace_dependents` / `slice`.
+- `rust/src/program.rs` — term graph; `rust/src/program_analysis.rs` — `trace_provenance` / `trace_dependents` / `slice`.
 - `rust/src/trace.rs` — per-term value capture.
 - `rust/src/stats.rs` — cost metrics.
 - `rust/src/source_map.rs` — term ↔ source span (needed to key on spans).

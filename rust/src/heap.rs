@@ -7,7 +7,8 @@
 //! `list_drop_last`, `map_set`, `map_remove`, `f64_array_set`,
 //! `f64_array_swap`) allocate and return a *new* id, leaving the input
 //! untouched (value semantics). This is what makes sharing heap objects
-//! between executions safe — see docs/dev/speculative-execution-plan.md.
+//! between executions safe — see the "Speculative execution" section of
+//! docs/program-modification.md.
 
 use std::collections::HashMap;
 
@@ -257,7 +258,7 @@ impl Heap {
     /// without disturbing the original. Today this deep-copies the slot
     /// vectors; a later optimization can wrap payloads in `Rc` so the fork is
     /// O(live slots) pointer clones rather than a full copy (see
-    /// docs/dev/speculative-execution-plan.md, Increment 4).
+    /// docs/dev/bytecode-future-ideas.md, "Structural sharing").
     pub fn fork(&self) -> Heap {
         let mut child = self.clone();
         // The fork copied this whole heap. Attribute that copy to the child

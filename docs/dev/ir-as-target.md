@@ -31,8 +31,8 @@ evaluates it on the bytecode VM.
 
 `run --ir` goes JSON → `Program` → evaluate:
 
-- **Deserialize** via `Program::from_json` (`rust/src/program.rs`) and
-  `Env::load_program_ir` (`rust/src/env.rs`). The IR types carry `Deserialize`
+- **Deserialize** via `Program::from_json` (`rust/src/ir_validate.rs`) and
+  `Env::load_program_ir` (`rust/src/env/mod.rs`). The IR types carry `Deserialize`
   derives; `rebuild_indexes` reconstructs the `#[serde(skip)]` indexes
   (`block_terms`, constant dedup) so a loaded `Program` is identical to a
   compiled one.
@@ -72,10 +72,11 @@ live in `ts/test/fixtures/ir/` (`print_arith`, `branch_phi`, `state_counter`).
 
 This is the import contract. It is derived from the live types in
 `rust/src/program.rs`, `rust/src/constant_table.rs`, and `rust/src/ast.rs`, and
-matches `petal show-ir --json` output (the serde derive). The schema is
-versioned: `schema_version` is `0`. The only additions a *loader* introduces
-over the raw `show-ir` dump are the `schema_version` field and the validation
-pass.
+matches `petal show-ir --json` output (the serde derive). This document refers
+to the current shape as schema v0 (v0.1 with the module-system additions below);
+there is no `schema_version` field in the JSON — the loader neither requires nor
+emits one, and unknown fields are ignored. The only addition a *loader*
+introduces over the raw `show-ir` dump is the validation pass.
 
 ### Encoding conventions
 
@@ -98,7 +99,6 @@ pass.
 
 ```
 {
-  "schema_version": 0,             // loader-required; show-ir omits it
   "id": 0,
   "source": "...",                 // optional for imports; "" is fine
   "terms":   [ Term, ... ],

@@ -25,6 +25,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `check` | Lex + parse + compile only (no execution) |
 | `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
+| `pending-report` | Run, then report every live pending resource |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
 | `show-ir` | Compiled IR (term graph) |
@@ -43,8 +44,8 @@ per-term execution trace.
 ### `run` — Execute a program
 
 ```
-petal run [--json] [--trace] [--record-trace <path>] <file.ptl>
-petal run [--json] [--trace] [--record-trace <path>] -e '<code>'
+petal run [--json] [--trace] [--record-trace <path>] [--ir] [--no-opt] [--dup-stats] [--trace-pending] <file.ptl>
+petal run [--json] [--trace] [--record-trace <path>] [--no-opt] [--dup-stats] [--trace-pending] -e '<code>'
 ```
 
 Runs the program and prints any output to stdout. Exits with code 1 on error.
@@ -59,6 +60,18 @@ Flags:
   after the run completes. Useful for offline analysis and for feeding
   `petal explain`. Environment variable `PETAL_DEBUG=1` enables tracing
   without the flag.
+- `--ir` — load `<file>` as JSON IR (the output of `show-ir --json`) instead
+  of source; use `-` to read from stdin, e.g.
+  `petal show-ir --json -e '<code>' | petal run --ir -`.
+- `--no-opt` — disable optimizations and run the clone-and-alloc baseline
+  (no in-place mutation). Environment variable `PETAL_OPT=off` has the same
+  effect.
+- `--dup-stats` — print value-duplication and heap allocation stats to stderr
+  after the run (debug builds / `dup-stats` feature).
+- `--trace-pending` — record pending absorptions and print the frame pending
+  report to stderr after the run. Environment variable `PETAL_TRACE_PENDING=1`
+  also enables it. For the report as the primary output, see
+  [`pending-report`](#pending-report--report-live-pending-resources).
 
 ### `check` — Validate without running
 
@@ -116,6 +129,25 @@ chain of ancestors. Answers the question "why does `x` have this value?".
 - The `t`-prefixed form: `--term t72`
 
 With `--json`, returns `{name, term_id, chain: [{term_id, op, name, value, line, column}, ...]}`.
+
+### `pending-report` — Report live pending resources
+
+```
+petal pending-report [--json] <file.ptl>
+petal pending-report [--json] -e '<code>'
+```
+
+Runs the program (with pending-absorption tracking enabled), then reports
+every resource value that is still pending or loading after the run — its
+state, age in frames, absorption count, and origin call site. Answers the
+question "why is this region blank?".
+
+**Text output** (default) — one line per live resource, or
+`No pending resources.` when there are none.
+
+With `--json`, emits the raw report array:
+`[{id, key, state, age_frames, origin, absorbed_count}, ...]`. This is what
+the MCP `PendingReport` tool wraps.
 
 ### `show-tokens` — Lexer token stream
 

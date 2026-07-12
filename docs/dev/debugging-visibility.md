@@ -27,7 +27,7 @@ the phi-join discussion in `docs/dev/Architecture.md`.
 
 ---
 
-## 1. Core CLI (`rust/src/cli.rs`)
+## 1. Core CLI (`rust/src/cli/`)
 
 Every command takes `-e <code>` or a file path. Most support `--json`.
 
@@ -43,6 +43,8 @@ Every command takes `-e <code>` or a file path. Most support `--json`.
 | `show-dependents --term <name\|id> [--json]` | Forward dataflow slice (what depends on this term?) |
 | `show-slice --term <a> [--term <b>...] [--json]` | Minimal subgraph for multiple targets |
 | `show-graph` | Graphviz DOT output for visualization |
+| `pending-report [--json]` | Report pending/loading resource values after a run (see also `--trace-pending`) |
+| `lint [--fix\|--check]` | Formatter / source normalizer |
 
 Use `./ts/bin/run-petal.ts` to auto-rebuild the binary before invocation.
 
@@ -63,6 +65,7 @@ Auto-rebuilds the Rust binary on first use. 10s timeout per call.
 | `ShowIR` | `{code}` | JSON IR (terms, ops, inputs, names) |
 | `ShowBytecode` | `{code}` | JSON bytecode lowering of the IR |
 | `ShowTokens` | `{code}` | JSON token array |
+| `PendingReport` | `{code}` | Pending/loading resource values after a run (wraps `pending-report --json`) |
 
 ### `petal-diagram-canvas` — frame-by-frame debugger
 
@@ -157,15 +160,15 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
 - `assert_eq(a, b)` — aborts with `assert_eq: left=X right=Y`
 - Runtime errors carry `"<msg> [line N, column M]"`, a `Caused by:` block of
   nearest named ancestors from the dataflow graph, and stack traces (see
-  `rust/src/eval.rs` `build_stack_trace` / `format_provenance`). In JSON mode
+  `rust/src/backend/errors.rs` `build_stack_trace` / `format_provenance`). In JSON mode
   (`petal run --json`) these surface as `{message, line, column, caused_by[], stack[]}`.
 - Structured trace buffer (`rust/src/trace.rs`): records every term execution
   (inputs + result) into a ring buffer (default capacity 200,000 events — oldest
   events are dropped once full). Enable via `--record-trace`, `--trace`, or
   `PETAL_DEBUG=1`. Queryable post-run via `Env::trace().explain(...)` or the
   `petal explain` CLI.
-- petal-diagram-canvas parses error line info to highlight source
-  (`sample-apps/diagram-canvas/src/runtime.ts`)
+- petal-diagram-canvas surfaces runtime errors in an on-page error panel
+  (`sample-apps/diagram-canvas/src/main.ts`)
 
 ### Trace JSON schema (`--record-trace <path>`)
 

@@ -46,7 +46,8 @@ accumulator workload. There is no un-provable COW left to cap.
 
 **Revisit when:** a real program surfaces a params/state-container COW remainder
 that the analyses genuinely can't prove, **or** `fork` moves to `Rc`-shared
-payloads (speculative-execution plan, Increment 4) — at which point structural
+payloads (the deferred "persistent backing" increment from the completed
+speculative-execution work — today `Heap::fork` deep-copies) — at which point structural
 sharing is the natural fit and the `fork_watermark` hazard (see below) reappears.
 
 ### Superinstructions / packed encoding
@@ -120,7 +121,7 @@ example golden corpus.
 - **`fork_watermark`.** Today `Heap::fork` deep-copies the slot vectors, so a
   speculative child mutates its own copy and in-place mutation can't cross a fork
   boundary — the watermark is unnecessary. It becomes required the moment `fork`
-  moves to `Rc`-shared payloads (structural sharing / speculative Increment 4):
+  moves to `Rc`-shared payloads (structural sharing / persistent backing):
   `Heap::*_in_place` must then refuse ids below a per-heap `fork_watermark`.
 - **Heap free-list id reuse.** In-place mutation only fires while the container
   is a live root; `debug_assert!(alive)` in `Heap::*_in_place` is the net. Any

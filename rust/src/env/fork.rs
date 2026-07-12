@@ -32,7 +32,7 @@ impl Env {
     /// disturbing the source, and vice versa. Pre-fork heap ids resolve to equal
     /// objects in both contexts. This is the public API the host/CLI/WASM will
     /// build speculative side-by-side runs on. See
-    /// docs/dev/speculative-execution-plan.md §3.
+    /// the "Speculative execution" section of docs/program-modification.md.
     pub fn fork_execution(&mut self, src: StackKey) -> Result<StackKey, String> {
         // Read the source's context key (and validate the stack exists).
         let src_ck = self.stacks.get(&src).ok_or("Stack not found")?.context;

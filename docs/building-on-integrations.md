@@ -1,9 +1,18 @@
 # Building Apps on Core and Integrations
 
-This doc describes how apps in this repo are layered on top of Petal, and the
-concrete local mechanisms for building a new one. It is the reference for
-routing sample apps through their integrations (the web track and the SDL track
-are both done; use it as the template for future ports).
+How to build an application on Petal. There are three paths, from lightest to
+heaviest:
+
+1. **Write a pure Petal app** — just `.ptl` scripts, run by an existing
+   integration's host unchanged.
+2. **Extend an integration** — depend on an existing host as a library and add
+   your app's delta (a custom renderer, extra native functions, an editor shell).
+3. **Embed Petal in a new host** — write a new integration for your platform,
+   building on the `petal` and `petal-ui` crates directly (see also
+   [ffi.md](ffi.md) for the embedding API).
+
+This doc explains the layering that makes those paths work and walks through
+the concrete mechanics of each, using the apps in this repo as worked examples.
 
 ## The three tiers
 
@@ -17,32 +26,31 @@ Petal Core  →  Integrations  →  Sample Apps
 |------|-----------------|-------------------|
 | **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`rust/`](../rust/) (`petal`), [`petal-ui/`](../petal-ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../integrations/petal-web-html/) (WASM + DOM) |
-| **Sample Apps** | Example programs built on top of an integration. | [`sample-apps/`](../sample-apps/) |
+| **Apps** | Your programs, built on top of an integration. The [`sample-apps/`](../sample-apps/) directory holds worked examples. | [`sample-apps/`](../sample-apps/) |
 
-**The rule:** a sample app depends on an integration (and, through it, on Core).
-It must not re-implement host code that an integration already provides, and it
-must not embed Petal Core directly when an integration for its platform exists.
+**The rule:** an app depends on an integration (and, through it, on Core). It
+should not re-implement host code an integration already provides, and it
+should not embed Petal Core directly when an integration for its platform
+exists.
 
 ### Why the rule matters
 
-The failure mode we are correcting is **fork-and-drift**: an app starts as a
-copy of an integration's host code, then both evolve independently. The
-integration gains fixes and features; the copy goes stale and re-introduces
-bugs the integration already fixed. Concretely, `diagram-canvas` carried a
-609-line copy of `petal-web-canvas`'s pre-`petal-ui` runtime — including a
-press-edge input bug that `petal-web-canvas` had already fixed. Depending on the
-integration instead of copying it deleted ~1,400 lines and made that class of
-drift impossible.
+The failure mode it prevents is **fork-and-drift**: an app starts as a copy of
+an integration's host code, then both evolve independently. The integration
+gains fixes and features; the copy goes stale and re-introduces bugs the
+integration already fixed. Depending on the integration instead of copying it
+makes that class of drift impossible — and keeps your app down to the code
+that is actually unique to it.
 
-## Two shapes of sample app
+## Two shapes of app
 
 Pick the lightest shape that works.
 
 ### Shape A — Pure-Petal app (no host code)
 
-The app is only `.ptl` files (plus assets and a launch script). It runs on an
+Your app is only `.ptl` files (plus assets and a launch script). It runs on an
 integration's **existing binary/host unchanged**; all app logic is in Petal.
-This is the ideal — zero host code to drift.
+This is the ideal — zero host code to maintain.
 
 `sample-apps/side-scroller` is the model. It has no Rust and no TS: `game.ptl`,
 `editor.ptl`, level files, and a launch script that points the `petal-sdl`
@@ -62,7 +70,7 @@ Most 2D games and canvas sketches fit here.
 
 ### Shape B — App that extends an integration (thin host delta)
 
-The app needs host capabilities the integration doesn't provide — a different
+Your app needs host capabilities the integration doesn't provide — a different
 renderer, extra native functions, an editor/debug shell. It **depends on the
 integration as a library/package** and adds only its delta on top. It never
 copies the integration's shared code.
@@ -77,8 +85,9 @@ part stays in the integration and only the *specific* part lives in the app.
 ## Mechanism: Web (WASM + TypeScript)
 
 Web integrations are a Rust WASM crate (built with `wasm-pack`) plus a
-TypeScript host, wired together by Vite. Sample apps consume them through an
-**npm workspace**.
+TypeScript host, wired together by Vite. Apps consume them as an npm package —
+in this repo, through an **npm workspace**; an out-of-tree app can depend on
+the integration package the same way.
 
 ### How `diagram-canvas` consumes `petal-web-canvas`
 
@@ -160,20 +169,15 @@ Guideline: a hook must be a no-op when unset, and must not change the
 integration app's behavior. If you can't express the app's need as an inert
 hook, that's a signal the capability belongs *in* the integration for everyone.
 
-### Build & CI (web)
+### Building (web)
 
 - `npm ci` at the **repo root** installs the whole workspace.
-- Build the integration's WASM first, then the apps:
+- Build the integration's WASM first, then your app:
   ```bash
   npm run build:wasm --workspace integrations/petal-web-canvas
   npm run build      --workspace integrations/petal-web-canvas
   npm run build      --workspace sample-apps/diagram-canvas
   ```
-- In CI, do a single root `npm ci` (not per-subdir) and drive builds with
-  `--workspace`. See `.github/workflows/ci.yml` (`web-builds` job).
-- An integration that is *not* consumed by any workspace app (e.g.
-  `petal-web-html` today) can stay outside the workspace list and keep its own
-  lockfile + per-dir `npm ci`.
 
 ## Mechanism: Desktop (Rust + SDL) — the SDL track
 
@@ -183,12 +187,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
 - `side-scroller` is **Shape A** — it launches the binary unchanged.
 - `petal-fps` is **Shape B** — it depends on the library and adds only its
   delta (a software-framebuffer 3D rasterizer and the `triangle3d` native
-  family). It no longer copies any of the host scaffolding.
-
-`petal-fps` used to be Shape B *done wrong*: it depended on Petal Core directly
-and carried its own `game_loop`/`input`/`protocol`/`screenshot`/`font`/`main`.
-Routing it through the library deleted all of that scaffolding — the app is now
-one small `Host` impl plus its rasterizer and font.
+  family): one small `Host` impl plus its rasterizer and font.
 
 ### The design: one `Host` trait over a generic loop
 
@@ -241,14 +240,14 @@ poll events → input.begin_frame(dt) → bind frame_info/input → env.run → 
 
 ### Extend the shared layer, don't special-case the app
 
-`petal-fps` needs relative-mouse deltas (mouselook) and pointer grab — neither
-existed in `petal-ui`. Because those are generally useful (any pointer-locked
-game wants them), they went **into `petal-ui`**, not into the app: an
-`InputEvent::MouseRelative`, `mouse_dx()`/`mouse_dy()` natives, and
+Example: `petal-fps` needed relative-mouse deltas (mouselook) and pointer grab —
+neither existed in `petal-ui`. Because those are generally useful (any
+pointer-locked game wants them), they went **into `petal-ui`**, not into the
+app: an `InputEvent::MouseRelative`, `mouse_dx()`/`mouse_dy()` natives, and
 `grab_mouse()`/`release_mouse()` with a `take_mouse_grab` drain the loop honors
 via SDL relative-mouse mode. Every host — web included — now gets them for free.
-This is the desktop echo of the web track's rule: a fix a sample app needs
-belongs in the layer below it (§"Extension hooks, not forks").
+The general rule: a capability an app needs belongs in the layer below it
+(§"Extension hooks, not forks").
 
 ### What is shared vs. custom in petal-fps (scope guide)
 
@@ -263,41 +262,39 @@ belongs in the layer below it (§"Extension hooks, not forks").
 | Draw native functions | default `petal-ui` set | `triangle3d`/`sky_gradient`/… (`native_fns`) |
 | Camera / projection / scene | | ✅ (in Petal) |
 
-### Build & CI (desktop)
+### Building (desktop)
 
 - The crates are standalone (`cargo build --manifest-path <crate>/Cargo.toml`),
-  not a Cargo workspace. `petal-fps` carries
+  not a Cargo workspace. A Shape B app carries a path (or git) dependency on
+  the integration — e.g. `petal-fps` declares
   `petal-sdl = { path = "../../integrations/petal-desktop-sdl" }` and
-  `petal-ui = { path = "../../petal-ui" }`; building it builds the library
-  transitively.
-- Building either crate needs SDL2; on this machine set
+  `petal-ui = { path = "../../petal-ui" }` — and building the app builds the
+  library transitively.
+- Building either crate needs SDL2; on Homebrew macOS, set
   `LIBRARY_PATH=/opt/homebrew/lib` for the linker (see the petal-sdl notes).
-- CI: both build under the `rust-subprojects` job.
 
-## Choosing an approach for a new port — checklist
+## Choosing an approach for a new app — checklist
 
 1. **Does an integration for this platform already exist?**
    - Yes, and it exposes every native you need → **Shape A**: write `.ptl` + a
      launch script. Stop.
    - Yes, but you need custom host code → **Shape B**: depend on the integration
-     (workspace package for web; `path` lib dep for Rust) and add only the delta.
-   - No integration for the platform → you are writing a *new integration*, not a
-     sample app. Put it in `integrations/`, build on `petal` + `petal-ui`, and
-     model it on an existing integration.
+     (npm package for web; `path`/git lib dep for Rust) and add only the delta.
+   - No integration for the platform → you are writing a *new integration*, not
+     an app. Build on the `petal` + `petal-ui` crates, model it on an existing
+     integration, and see [ffi.md](ffi.md) for the embedding API (natives,
+     values, host channels, the per-frame contract).
 2. **Is a capability you need generally useful?** Add it to the integration
    (or to `petal-ui`, if it's cross-platform — e.g. a new draw command belongs
    in `petal-ui/src/draw.rs`, not one host). Don't special-case it in the app.
 3. **Can the app's influence on the host be an inert hook?** If yes, add the
    hook to the integration. If no, the capability probably belongs in the
    integration for all consumers.
-4. **Delete, don't leave stubs.** When routing an app through an integration,
-   remove the duplicated crate/files outright and fix every dangling reference
-   (build scripts, CI cache paths and steps, READMEs, `.gitignore`).
 
-## Verifying a port
+## Verifying your app
 
 Build proves compilation; it does not prove the app still *renders*. Exercise
-the real runtime after any routing change:
+the real runtime after any structural change:
 
 - **petal-web-canvas / diagram-canvas** — `npm run dev --workspace <app>`, open
   the page, and drive it. `diagram-canvas` exposes a debug WebSocket that the
@@ -310,16 +307,14 @@ the real runtime after any routing change:
   JSON protocol, or `--screenshot out.png` to render N frames and write a PNG.
   See [agent-protocol.md](../integrations/petal-desktop-sdl/docs/agent-protocol.md).
 
-A subtle regression to watch for: capabilities that only a sample app exercised.
-Routing `diagram-canvas` through `petal-web-canvas` surfaced that
-`PetalRuntime.run_speculative` returned no draw commands — it used core
-`Env::run_speculative`, which drops the fork before its draw buffer can be read.
-The fix (drain the fork with `petal_ui::draw::take_draw_commands_for` before
-dropping it) belonged in the integration, and now benefits every consumer. Fold
-such fixes into the integration, not the app.
+A subtle regression to watch for: capabilities that only your app exercises.
+If a code path in the integration only ever runs when your app drives it, test
+it from your app — and when you find a bug there, fix it in the integration
+(where every consumer benefits), not with a workaround in the app.
 
 ## Related docs
 
+- [FFI / Embedding](ffi.md) — the Rust embedding API: registering natives, the value model, host channels.
 - [Architecture](dev/Architecture.md) — Core internals (IR, evaluator, state).
 - [petal-ui](../petal-ui/) — the shared input/draw/prelude contract every host implements.
 - [petal-desktop-sdl agent protocol](../integrations/petal-desktop-sdl/docs/agent-protocol.md) and [game-dev guide](../integrations/petal-desktop-sdl/docs/game-dev-guide.md).

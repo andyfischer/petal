@@ -8,9 +8,9 @@ parameters. The correct variant is selected at runtime based on the argument cou
 Define overloads by declaring the same function name multiple times with different parameter lists:
 
 ```petal
-fn greet() { print("hi") }
-fn greet(name) { print("hi", name) }
-fn greet(a, b) { print("hi", a, b) }
+fn greet() print("hi") end
+fn greet(name) print("hi", name) end
+fn greet(a, b) print("hi", a, b) end
 
 greet()           // hi
 greet("world")    // hi world
@@ -25,11 +25,11 @@ Overloaded variants can call each other. A common pattern is a "convenience" var
 delegates to a more general one with default arguments:
 
 ```petal
-fn count(n) { count(n, 0) }
-fn count(n, acc) {
-    if n <= 0 { acc }
-    else { count(n - 1, acc + 1) }
-}
+fn count(n) count(n, 0) end
+fn count(n, acc)
+    if n <= 0 then acc
+    else count(n - 1, acc + 1) end
+end
 
 print(count(5))      // 5
 print(count(3, 10))  // 13
@@ -41,8 +41,8 @@ Overloaded variants capture variables from their enclosing scope, just like norm
 
 ```petal
 let prefix = "Dr."
-fn title(name) { title(prefix, name) }
-fn title(pre, name) { print(pre, name) }
+fn title(name) title(prefix, name) end
+fn title(pre, name) print(pre, name) end
 
 title("Smith")        // Dr. Smith
 title("Mr.", "Jones") // Mr. Jones
@@ -54,8 +54,8 @@ Calling an overloaded function with an argument count that doesn't match any var
 produces a clear error listing the available arities:
 
 ```petal
-fn add(a, b) { a + b }
-fn add(a, b, c) { a + b + c }
+fn add(a, b) a + b end
+fn add(a, b, c) a + b + c end
 
 add(1)  // Error: add() expects 2 or 3 arguments, got 1
 ```

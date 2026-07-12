@@ -280,21 +280,33 @@ impl Gen {
                 if let Some(xs) = self.pick(Kind::List) {
                     let name = self.fresh("al");
                     self.line(&format!("let {name} = {xs}"));
-                    self.vars.push(Var { name, kind: Kind::List, frozen: false });
+                    self.vars.push(Var {
+                        name,
+                        kind: Kind::List,
+                        frozen: false,
+                    });
                 }
             }
             15 => {
                 if let Some(r) = self.pick(Kind::Rec) {
                     let name = self.fresh("ar");
                     self.line(&format!("let {name} = {r}"));
-                    self.vars.push(Var { name, kind: Kind::Rec, frozen: false });
+                    self.vars.push(Var {
+                        name,
+                        kind: Kind::Rec,
+                        frozen: false,
+                    });
                 }
             }
             0 | 1 => {
                 let name = self.fresh("v");
                 let e = self.int_expr(2);
                 self.line(&format!("let {name} = {e}"));
-                self.vars.push(Var { name, kind: Kind::Int, frozen: false });
+                self.vars.push(Var {
+                    name,
+                    kind: Kind::Int,
+                    frozen: false,
+                });
             }
             2 => {
                 if let Some(v) = self.pick_mutable_int() {
@@ -324,7 +336,11 @@ impl Gen {
                 let name = self.fresh("m");
                 let e = self.match_expr();
                 self.line(&format!("let {name} = {e}"));
-                self.vars.push(Var { name, kind: Kind::Int, frozen: false });
+                self.vars.push(Var {
+                    name,
+                    kind: Kind::Int,
+                    frozen: false,
+                });
             }
             8 => {
                 let name = self.fresh("xs");
@@ -332,7 +348,11 @@ impl Gen {
                 let b = self.int_expr(1);
                 let c = self.int_expr(1);
                 self.line(&format!("let {name} = [{a}, {b}, {c}]"));
-                self.vars.push(Var { name, kind: Kind::List, frozen: false });
+                self.vars.push(Var {
+                    name,
+                    kind: Kind::List,
+                    frozen: false,
+                });
             }
             9 => {
                 if let Some(xs) = self.pick(Kind::List) {
@@ -352,7 +372,11 @@ impl Gen {
                 let a = self.int_expr(1);
                 let b = self.int_expr(1);
                 self.line(&format!("let {name} = {{ a: {a}, b: {b} }}"));
-                self.vars.push(Var { name, kind: Kind::Rec, frozen: false });
+                self.vars.push(Var {
+                    name,
+                    kind: Kind::Rec,
+                    frozen: false,
+                });
             }
             12 => {
                 if let Some(r) = self.pick(Kind::Rec) {
@@ -399,7 +423,11 @@ impl Gen {
         self.indent += 1;
         self.loop_depth += 1;
         self.enter_scope();
-        self.vars.push(Var { name: iv, kind: Kind::Int, frozen: true });
+        self.vars.push(Var {
+            name: iv,
+            kind: Kind::Int,
+            frozen: true,
+        });
         self.block(3);
         self.exit_scope();
         self.loop_depth -= 1;
@@ -418,13 +446,21 @@ impl Gen {
         self.loop_depth += 1;
         self.enter_scope();
         self.line(&format!("{w} = {w} - 1"));
-        self.vars.push(Var { name: w.clone(), kind: Kind::Int, frozen: true });
+        self.vars.push(Var {
+            name: w.clone(),
+            kind: Kind::Int,
+            frozen: true,
+        });
         self.block(3);
         self.exit_scope();
         self.loop_depth -= 1;
         self.indent -= 1;
         self.line("end");
-        self.vars.push(Var { name: w, kind: Kind::Int, frozen: true });
+        self.vars.push(Var {
+            name: w,
+            kind: Kind::Int,
+            frozen: true,
+        });
     }
 
     fn function_def(&mut self) {
@@ -437,7 +473,11 @@ impl Gen {
         let outer_vars = std::mem::take(&mut self.vars);
         let outer_scopes = std::mem::take(&mut self.scopes);
         for p in &params {
-            self.vars.push(Var { name: p.clone(), kind: Kind::Int, frozen: false });
+            self.vars.push(Var {
+                name: p.clone(),
+                kind: Kind::Int,
+                frozen: false,
+            });
         }
         self.block(4);
         let result = self.int_expr(2);

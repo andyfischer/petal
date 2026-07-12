@@ -65,7 +65,9 @@ impl Parser {
             // strictly ahead of the declaration prescan, and execution order
             // (modules first, importer after) stays obvious.
             if matches!(stmt.kind, StmtKind::Import(_))
-                && stmts.iter().any(|s: &Stmt| !matches!(s.kind, StmtKind::Import(_)))
+                && stmts
+                    .iter()
+                    .any(|s: &Stmt| !matches!(s.kind, StmtKind::Import(_)))
             {
                 return Err(self.error_at(
                     stmt_pos,
@@ -103,15 +105,9 @@ impl Parser {
                 (Token::Arrow, Token::Assign) => {
                     "Expected '->' but got '=' — use '->' for match arms, not '=>'".to_string()
                 }
-                (Token::RBrace, Token::Eof) => {
-                    "Missing closing '}'".to_string()
-                }
-                (Token::RParen, Token::Eof) => {
-                    "Missing closing ')'".to_string()
-                }
-                (Token::RBracket, Token::Eof) => {
-                    "Missing closing ']'".to_string()
-                }
+                (Token::RBrace, Token::Eof) => "Missing closing '}'".to_string(),
+                (Token::RParen, Token::Eof) => "Missing closing ')'".to_string(),
+                (Token::RBracket, Token::Eof) => "Missing closing ']'".to_string(),
                 _ => {
                     format!("Expected {:?}, got {:?}", expected, got)
                 }
@@ -160,12 +156,18 @@ impl Parser {
 
     /// Helper to create an Expr with a span from start_pos to the last consumed token.
     fn mk_expr(&self, kind: ExprKind, start_pos: usize) -> Expr {
-        Expr { kind, span: self.span_from(start_pos) }
+        Expr {
+            kind,
+            span: self.span_from(start_pos),
+        }
     }
 
     /// Helper to create a Stmt with a span from start_pos to the last consumed token.
     fn mk_stmt(&self, kind: StmtKind, start_pos: usize) -> Stmt {
-        Stmt { kind, span: self.span_from(start_pos) }
+        Stmt {
+            kind,
+            span: self.span_from(start_pos),
+        }
     }
 
     // ---- Statement Parsing ----
@@ -228,7 +230,15 @@ impl Parser {
         let id = self.next_state_id;
         self.next_state_id += 1;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::State { name, init, id, key }, start))
+        Ok(self.mk_stmt(
+            StmtKind::State {
+                name,
+                init,
+                id,
+                key,
+            },
+            start,
+        ))
     }
 
     /// `import m` / `import m as u` / `import m: a, b`.
@@ -262,7 +272,14 @@ impl Parser {
         }
 
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::Import(ImportDecl { module, alias, names }), start))
+        Ok(self.mk_stmt(
+            StmtKind::Import(ImportDecl {
+                module,
+                alias,
+                names,
+            }),
+            start,
+        ))
     }
 
     fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {
@@ -299,7 +316,10 @@ impl Parser {
             } else {
                 Vec::new()
             };
-            variants.push(EnumVariant { name: variant_name, fields });
+            variants.push(EnumVariant {
+                name: variant_name,
+                fields,
+            });
             self.skip_separator();
         }
         self.expect(&Token::End)?;
@@ -336,7 +356,10 @@ impl Parser {
     fn parse_return(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ReturnStmt);
         self.advance(); // consume 'return'
-        let stmt = if matches!(self.peek(), Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof) {
+        let stmt = if matches!(
+            self.peek(),
+            Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof
+        ) {
             self.mk_stmt(StmtKind::Return(None), start)
         } else {
             let expr = self.parse_expr()?;
@@ -431,7 +454,10 @@ impl Parser {
     fn error_at_current(&self, msg: String) -> String {
         let span = self.current_span();
         if span.start.line > 0 {
-            format!("{} [line {}, column {}]", msg, span.start.line, span.start.column)
+            format!(
+                "{} [line {}, column {}]",
+                msg, span.start.line, span.start.column
+            )
         } else {
             msg
         }
@@ -442,7 +468,10 @@ impl Parser {
         if pos < self.token_spans.len() {
             let span = self.token_spans[pos];
             if span.start.line > 0 {
-                format!("{} [line {}, column {}]", msg, span.start.line, span.start.column)
+                format!(
+                    "{} [line {}, column {}]",
+                    msg, span.start.line, span.start.column
+                )
             } else {
                 msg
             }
@@ -481,12 +510,13 @@ impl Parser {
                     args.insert(0, left);
                     self.mk_expr(ExprKind::Call { function, args }, start)
                 }
-                _ => {
-                    self.mk_expr(ExprKind::Call {
+                _ => self.mk_expr(
+                    ExprKind::Call {
                         function: Box::new(rhs),
                         args: vec![left],
-                    }, start)
-                }
+                    },
+                    start,
+                ),
             };
         }
         Ok(left)
@@ -720,20 +750,26 @@ impl Parser {
                 self.advance();
                 let operand = self.parse_unary()?;
                 self.ev_close();
-                Ok(self.mk_expr(ExprKind::UnaryOp {
-                    op: UnaryOp::Neg,
-                    operand: Box::new(operand),
-                }, start))
+                Ok(self.mk_expr(
+                    ExprKind::UnaryOp {
+                        op: UnaryOp::Neg,
+                        operand: Box::new(operand),
+                    },
+                    start,
+                ))
             }
             Token::Bang => {
                 self.ev_open(SyntaxKind::UnaryExpr);
                 self.advance();
                 let operand = self.parse_unary()?;
                 self.ev_close();
-                Ok(self.mk_expr(ExprKind::UnaryOp {
-                    op: UnaryOp::Not,
-                    operand: Box::new(operand),
-                }, start))
+                Ok(self.mk_expr(
+                    ExprKind::UnaryOp {
+                        op: UnaryOp::Not,
+                        operand: Box::new(operand),
+                    },
+                    start,
+                ))
             }
             _ => self.parse_postfix(),
         }
@@ -821,14 +857,33 @@ impl Parser {
             | ExprKind::Match { .. } => Ok(()),
 
             // Not callable: literals, operators, collections, etc.
-            ExprKind::AtVar(_) => Err(self.error_at_current("`@var` cannot be called as a function".to_string())),
-            ExprKind::Literal(_) => Err(self.error_at_current("Literal value cannot be called as a function".to_string())),
-            ExprKind::BinaryOp { .. } => Err(self.error_at_current("Binary operation result cannot be called as a function".to_string())),
-            ExprKind::UnaryOp { .. } => Err(self.error_at_current("Unary operation result cannot be called as a function".to_string())),
-            ExprKind::List(_) => Err(self.error_at_current("List literal cannot be called as a function".to_string())),
-            ExprKind::Record(_) => Err(self.error_at_current("Record literal cannot be called as a function".to_string())),
-            ExprKind::StringInterp { .. } => Err(self.error_at_current("String interpolation cannot be called as a function".to_string())),
-            ExprKind::Element { .. } => Err(self.error_at_current("Element cannot be called as a function".to_string())),
+            ExprKind::AtVar(_) => {
+                Err(self.error_at_current("`@var` cannot be called as a function".to_string()))
+            }
+            ExprKind::Literal(_) => {
+                Err(self
+                    .error_at_current("Literal value cannot be called as a function".to_string()))
+            }
+            ExprKind::BinaryOp { .. } => Err(self.error_at_current(
+                "Binary operation result cannot be called as a function".to_string(),
+            )),
+            ExprKind::UnaryOp { .. } => Err(self.error_at_current(
+                "Unary operation result cannot be called as a function".to_string(),
+            )),
+            ExprKind::List(_) => {
+                Err(self
+                    .error_at_current("List literal cannot be called as a function".to_string()))
+            }
+            ExprKind::Record(_) => {
+                Err(self
+                    .error_at_current("Record literal cannot be called as a function".to_string()))
+            }
+            ExprKind::StringInterp { .. } => Err(self.error_at_current(
+                "String interpolation cannot be called as a function".to_string(),
+            )),
+            ExprKind::Element { .. } => {
+                Err(self.error_at_current("Element cannot be called as a function".to_string()))
+            }
         }
     }
 
@@ -859,9 +914,7 @@ impl Parser {
                 self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Float(f)), start))
             }
-            Token::InterpStart => {
-                self.parse_string_interp()
-            }
+            Token::InterpStart => self.parse_string_interp(),
             Token::String(s) => {
                 self.ev_open(SyntaxKind::LiteralExpr);
                 self.advance();
@@ -920,10 +973,13 @@ impl Parser {
                 let record_fields = fields
                     .into_iter()
                     .map(|(name, value)| {
-                        RecordField::Named(name.to_string(), Expr {
-                            kind: ExprKind::Literal(Literal::Int(value)),
-                            span: self.span_from(start),
-                        })
+                        RecordField::Named(
+                            name.to_string(),
+                            Expr {
+                                kind: ExprKind::Literal(Literal::Int(value)),
+                                span: self.span_from(start),
+                            },
+                        )
                     })
                     .collect();
                 Ok(self.mk_expr(ExprKind::Record(record_fields), start))
@@ -992,11 +1048,14 @@ impl Parser {
         let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
         let else_body = self.parse_else_chain()?;
         self.ev_close();
-        Ok(self.mk_expr(ExprKind::If {
-            condition: Box::new(condition),
-            then_body,
-            else_body,
-        }, start))
+        Ok(self.mk_expr(
+            ExprKind::If {
+                condition: Box::new(condition),
+                then_body,
+                else_body,
+            },
+            start,
+        ))
     }
 
     /// Parse the tail of an if-expression after the then-body. Consumes the
@@ -1014,11 +1073,14 @@ impl Parser {
                 let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
                 let else_body = self.parse_else_chain()?; // consumes the final 'end'
                 self.ev_close();
-                let inner = self.mk_expr(ExprKind::If {
-                    condition: Box::new(condition),
-                    then_body,
-                    else_body,
-                }, start);
+                let inner = self.mk_expr(
+                    ExprKind::If {
+                        condition: Box::new(condition),
+                        then_body,
+                        else_body,
+                    },
+                    start,
+                );
                 Ok(Some(ElseBranch::ElseIf(Box::new(inner))))
             }
             Token::Else => {
@@ -1050,7 +1112,13 @@ impl Parser {
         }
         self.expect(&Token::End)?;
         self.ev_close();
-        Ok(self.mk_expr(ExprKind::Match { subject: Box::new(subject), arms }, start))
+        Ok(self.mk_expr(
+            ExprKind::Match {
+                subject: Box::new(subject),
+                arms,
+            },
+            start,
+        ))
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
@@ -1076,7 +1144,11 @@ impl Parser {
         };
         self.ev_close(); // MatchArm — before the trailing newlines between arms
         self.skip_newlines();
-        Ok(MatchArm { pattern, guard, body })
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body,
+        })
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, String> {
@@ -1150,7 +1222,10 @@ impl Parser {
                         self.advance();
                         Ok(Pattern::Literal(Literal::Float(-f)))
                     }
-                    _ => Err(self.error_at_current("Expected number after '-' in pattern".to_string())),
+                    _ => {
+                        Err(self
+                            .error_at_current("Expected number after '-' in pattern".to_string()))
+                    }
                 }
             }
             other => Err(self.error_at_current(format!("Expected pattern, got {:?}", other))),
@@ -1266,7 +1341,9 @@ impl Parser {
         if exprs.is_empty() {
             self.ev_wrap(cp, SyntaxKind::LiteralExpr);
             Ok(self.mk_expr(
-                ExprKind::Literal(Literal::String(parts.into_iter().next().unwrap_or_default())),
+                ExprKind::Literal(Literal::String(
+                    parts.into_iter().next().unwrap_or_default(),
+                )),
                 start,
             ))
         } else {
@@ -1281,7 +1358,12 @@ impl Parser {
         self.advance(); // consume JsxOpenStart
         let tag = match self.advance() {
             Token::JsxTagName(name) => name,
-            other => return Err(self.error_at(self.pos - 1, format!("Expected JSX tag name, got {:?}", other))),
+            other => {
+                return Err(self.error_at(
+                    self.pos - 1,
+                    format!("Expected JSX tag name, got {:?}", other),
+                ));
+            }
         };
 
         let mut props = Vec::new();
@@ -1294,11 +1376,14 @@ impl Parser {
                 Token::JsxSelfClose => {
                     self.advance();
                     self.ev_close(); // ElementExpr
-                    return Ok(self.mk_expr(ExprKind::Element {
-                        tag,
-                        props,
-                        children: Vec::new(),
-                    }, start));
+                    return Ok(self.mk_expr(
+                        ExprKind::Element {
+                            tag,
+                            props,
+                            children: Vec::new(),
+                        },
+                        start,
+                    ));
                 }
                 Token::Ident(attr_name) => {
                     self.ev_open(SyntaxKind::JsxAttr);
@@ -1320,17 +1405,16 @@ impl Parser {
                             return Err(self.error_at_current(format!(
                                 "Expected string or {{expr}} for attribute value, got {:?}",
                                 other
-                            )))
+                            )));
                         }
                     };
                     self.ev_close(); // JsxAttr
                     props.push((attr_name, value));
                 }
                 other => {
-                    return Err(self.error_at_current(format!(
-                        "Unexpected token in JSX tag: {:?}",
-                        other
-                    )))
+                    return Err(
+                        self.error_at_current(format!("Unexpected token in JSX tag: {:?}", other))
+                    );
                 }
             }
         }
@@ -1343,17 +1427,17 @@ impl Parser {
                     match self.advance() {
                         Token::JsxTagName(close_tag) => {
                             if close_tag != tag {
-                                return Err(self.error_at(self.pos - 1, format!(
-                                    "Mismatched JSX tags: <{}> and </{}>",
-                                    tag, close_tag
-                                )));
+                                return Err(self.error_at(
+                                    self.pos - 1,
+                                    format!("Mismatched JSX tags: <{}> and </{}>", tag, close_tag),
+                                ));
                             }
                         }
                         other => {
-                            return Err(self.error_at(self.pos - 1, format!(
-                                "Expected closing tag name, got {:?}",
-                                other
-                            )))
+                            return Err(self.error_at(
+                                self.pos - 1,
+                                format!("Expected closing tag name, got {:?}", other),
+                            ));
                         }
                     }
                     break;
@@ -1379,17 +1463,20 @@ impl Parser {
                     return Err(self.error_at_current(format!(
                         "Unexpected token in JSX children: {:?}",
                         other
-                    )))
+                    )));
                 }
             }
         }
 
         self.ev_close(); // ElementExpr
-        Ok(self.mk_expr(ExprKind::Element {
-            tag,
-            props,
-            children,
-        }, start))
+        Ok(self.mk_expr(
+            ExprKind::Element {
+                tag,
+                props,
+                children,
+            },
+            start,
+        ))
     }
 
     fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {
@@ -1416,20 +1503,50 @@ impl Parser {
 /// Shared with `crate::cst_project` so the CST projection can't drift.
 pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
     let expand = |c: u8| -> i64 {
-        let v = if c.is_ascii_digit() { c - b'0' } else { (c.to_ascii_lowercase() - b'a') + 10 };
+        let v = if c.is_ascii_digit() {
+            c - b'0'
+        } else {
+            (c.to_ascii_lowercase() - b'a') + 10
+        };
         (v as i64) * 17 // e.g. 0xf -> 255, 0x8 -> 136
     };
     let parse2 = |hi: u8, lo: u8| -> i64 {
-        let h = if hi.is_ascii_digit() { hi - b'0' } else { (hi.to_ascii_lowercase() - b'a') + 10 };
-        let l = if lo.is_ascii_digit() { lo - b'0' } else { (lo.to_ascii_lowercase() - b'a') + 10 };
+        let h = if hi.is_ascii_digit() {
+            hi - b'0'
+        } else {
+            (hi.to_ascii_lowercase() - b'a') + 10
+        };
+        let l = if lo.is_ascii_digit() {
+            lo - b'0'
+        } else {
+            (lo.to_ascii_lowercase() - b'a') + 10
+        };
         (h as i64) * 16 + (l as i64)
     };
     let b = hex.as_bytes();
     match b.len() {
-        3 => vec![("r", expand(b[0])), ("g", expand(b[1])), ("b", expand(b[2]))],
-        4 => vec![("r", expand(b[0])), ("g", expand(b[1])), ("b", expand(b[2])), ("a", expand(b[3]))],
-        6 => vec![("r", parse2(b[0], b[1])), ("g", parse2(b[2], b[3])), ("b", parse2(b[4], b[5]))],
-        8 => vec![("r", parse2(b[0], b[1])), ("g", parse2(b[2], b[3])), ("b", parse2(b[4], b[5])), ("a", parse2(b[6], b[7]))],
+        3 => vec![
+            ("r", expand(b[0])),
+            ("g", expand(b[1])),
+            ("b", expand(b[2])),
+        ],
+        4 => vec![
+            ("r", expand(b[0])),
+            ("g", expand(b[1])),
+            ("b", expand(b[2])),
+            ("a", expand(b[3])),
+        ],
+        6 => vec![
+            ("r", parse2(b[0], b[1])),
+            ("g", parse2(b[2], b[3])),
+            ("b", parse2(b[4], b[5])),
+        ],
+        8 => vec![
+            ("r", parse2(b[0], b[1])),
+            ("g", parse2(b[2], b[3])),
+            ("b", parse2(b[4], b[5])),
+            ("a", parse2(b[6], b[7])),
+        ],
         _ => unreachable!("lexer validates hex length"),
     }
 }
@@ -1443,7 +1560,10 @@ pub(crate) fn expr_to_assign_target(expr: Expr) -> Result<AssignTarget, String> 
         ExprKind::IndexAccess { object, index } => Ok(AssignTarget::Index(object, index)),
         _ => {
             if span.start.line > 0 {
-                Err(format!("Invalid assignment target [line {}, column {}]", span.start.line, span.start.column))
+                Err(format!(
+                    "Invalid assignment target [line {}, column {}]",
+                    span.start.line, span.start.column
+                ))
             } else {
                 Err("Invalid assignment target".to_string())
             }

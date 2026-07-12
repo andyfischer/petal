@@ -59,9 +59,19 @@ fn is_one(v: &u32) -> bool {
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum DrawCommand {
-    Clear { r: u8, g: u8, b: u8 },
+    Clear {
+        r: u8,
+        g: u8,
+        b: u8,
+    },
     Rect {
-        x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        r: u8,
+        g: u8,
+        b: u8,
         /// Opacity 0–255 (255 = opaque).
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
@@ -70,7 +80,13 @@ pub enum DrawCommand {
         radius: u32,
     },
     RectOutline {
-        x: i32, y: i32, w: u32, h: u32, r: u8, g: u8, b: u8,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
         /// Stroke width in px (1 = hairline).
@@ -78,47 +94,89 @@ pub enum DrawCommand {
         width: u32,
     },
     Line {
-        x1: i32, y1: i32, x2: i32, y2: i32, r: u8, g: u8, b: u8,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
         #[serde(skip_serializing_if = "is_one")]
         width: u32,
     },
     Circle {
-        cx: i32, cy: i32, radius: i32, r: u8, g: u8, b: u8,
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
     },
     Text {
-        text: String, x: i32, y: i32, size: u16, r: u8, g: u8, b: u8,
+        text: String,
+        x: i32,
+        y: i32,
+        size: u16,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
     },
     Triangle {
-        x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32,
-        r: u8, g: u8, b: u8,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        x3: i32,
+        y3: i32,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
     },
     Poly {
-        points: Vec<(i32, i32)>, r: u8, g: u8, b: u8,
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
     },
     /// Restrict subsequent drawing to a rectangle (intersected with the
     /// drawable). Cleared by [`DrawCommand::ClipNone`].
-    Clip { x: i32, y: i32, w: u32, h: u32 },
+    Clip {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+    },
     ClipNone,
     /// Allocate an offscreen canvas (render target) of size `w`×`h`,
     /// identified by `id`. Canvases are transparent until drawn into and are
     /// recreated fresh each frame from the command stream. Optional — hosts
     /// without render targets ignore the three canvas ops.
-    CreateCanvas { id: u32, w: u32, h: u32 },
+    CreateCanvas {
+        id: u32,
+        w: u32,
+        h: u32,
+    },
     /// Redirect subsequent draw commands to a render target. `id == 0` is
     /// the main framebuffer; any other `id` is an offscreen canvas.
-    SetTarget { id: u32 },
+    SetTarget {
+        id: u32,
+    },
     /// Blit an offscreen canvas onto the current render target at (`x`, `y`).
-    DrawCanvas { id: u32, x: i32, y: i32 },
+    DrawCanvas {
+        id: u32,
+        x: i32,
+        y: i32,
+    },
     /// A host-registered extension command: an unrecognized tag passes
     /// through in order with its raw args (heap-backed; decode them before
     /// mutating the Env). Not included when serializing a command list.
@@ -144,7 +202,10 @@ fn as_i64(v: &Value) -> Result<i64, String> {
     match v {
         Value::Int(n) => Ok(*n),
         Value::Float(f) => Ok(*f as i64),
-        other => Err(format!("expected number in draw command, got {}", other.type_name())),
+        other => Err(format!(
+            "expected number in draw command, got {}",
+            other.type_name()
+        )),
     }
 }
 
@@ -156,19 +217,21 @@ impl DrawCommand {
     /// [`DrawCommand::Host`].
     pub fn from_value(val: &Value, heap: &Heap) -> Result<DrawCommand, String> {
         let (tag, data) = match val {
-            Value::EnumVariant { tag, data } => {
-                (heap.get_string(*tag).to_string(), heap.get_list(*data).to_vec())
-            }
+            Value::EnumVariant { tag, data } => (
+                heap.get_string(*tag).to_string(),
+                heap.get_list(*data).to_vec(),
+            ),
             other => {
                 return Err(format!(
                     "draw command must be an enum value, got {}",
                     other.type_name()
-                ))
+                ));
             }
         };
 
         let arg = |i: usize| -> Result<&Value, String> {
-            data.get(i).ok_or_else(|| format!("draw command '{tag}' missing arg {i}"))
+            data.get(i)
+                .ok_or_else(|| format!("draw command '{tag}' missing arg {i}"))
         };
         let i32_at = |i: usize| -> Result<i32, String> { Ok(as_i64(arg(i)?)? as i32) };
         let u32_at = |i: usize| -> Result<u32, String> { Ok(as_i64(arg(i)?)? as u32) };
@@ -177,45 +240,84 @@ impl DrawCommand {
         // caller used the short form, so fall back to the default. This keeps
         // scripts that emit the pre-alpha arg lists working unchanged.
         let opt_u8 = |i: usize, default: u8| -> u8 {
-            data.get(i).and_then(num_as_i64).map_or(default, |n| n as u8)
+            data.get(i)
+                .and_then(num_as_i64)
+                .map_or(default, |n| n as u8)
         };
         let opt_u32 = |i: usize, default: u32| -> u32 {
-            data.get(i).and_then(num_as_i64).map_or(default, |n| n as u32)
+            data.get(i)
+                .and_then(num_as_i64)
+                .map_or(default, |n| n as u32)
         };
 
         let cmd = match tag.as_str() {
-            "clear" => DrawCommand::Clear { r: u8_at(0)?, g: u8_at(1)?, b: u8_at(2)? },
+            "clear" => DrawCommand::Clear {
+                r: u8_at(0)?,
+                g: u8_at(1)?,
+                b: u8_at(2)?,
+            },
             "rect" => DrawCommand::Rect {
-                x: i32_at(0)?, y: i32_at(1)?, w: u32_at(2)?, h: u32_at(3)?,
-                r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
-                a: opt_u8(7, 255), radius: opt_u32(8, 0),
+                x: i32_at(0)?,
+                y: i32_at(1)?,
+                w: u32_at(2)?,
+                h: u32_at(3)?,
+                r: u8_at(4)?,
+                g: u8_at(5)?,
+                b: u8_at(6)?,
+                a: opt_u8(7, 255),
+                radius: opt_u32(8, 0),
             },
             "rect_outline" => DrawCommand::RectOutline {
-                x: i32_at(0)?, y: i32_at(1)?, w: u32_at(2)?, h: u32_at(3)?,
-                r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
-                a: opt_u8(7, 255), width: opt_u32(8, 1),
+                x: i32_at(0)?,
+                y: i32_at(1)?,
+                w: u32_at(2)?,
+                h: u32_at(3)?,
+                r: u8_at(4)?,
+                g: u8_at(5)?,
+                b: u8_at(6)?,
+                a: opt_u8(7, 255),
+                width: opt_u32(8, 1),
             },
             "line" => DrawCommand::Line {
-                x1: i32_at(0)?, y1: i32_at(1)?, x2: i32_at(2)?, y2: i32_at(3)?,
-                r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?,
-                a: opt_u8(7, 255), width: opt_u32(8, 1),
+                x1: i32_at(0)?,
+                y1: i32_at(1)?,
+                x2: i32_at(2)?,
+                y2: i32_at(3)?,
+                r: u8_at(4)?,
+                g: u8_at(5)?,
+                b: u8_at(6)?,
+                a: opt_u8(7, 255),
+                width: opt_u32(8, 1),
             },
             "circle" => DrawCommand::Circle {
-                cx: i32_at(0)?, cy: i32_at(1)?, radius: i32_at(2)?,
-                r: u8_at(3)?, g: u8_at(4)?, b: u8_at(5)?,
+                cx: i32_at(0)?,
+                cy: i32_at(1)?,
+                radius: i32_at(2)?,
+                r: u8_at(3)?,
+                g: u8_at(4)?,
+                b: u8_at(5)?,
                 a: opt_u8(6, 255),
             },
             "triangle" => DrawCommand::Triangle {
-                x1: i32_at(0)?, y1: i32_at(1)?, x2: i32_at(2)?, y2: i32_at(3)?,
-                x3: i32_at(4)?, y3: i32_at(5)?,
-                r: u8_at(6)?, g: u8_at(7)?, b: u8_at(8)?,
+                x1: i32_at(0)?,
+                y1: i32_at(1)?,
+                x2: i32_at(2)?,
+                y2: i32_at(3)?,
+                x3: i32_at(4)?,
+                y3: i32_at(5)?,
+                r: u8_at(6)?,
+                g: u8_at(7)?,
+                b: u8_at(8)?,
                 a: opt_u8(9, 255),
             },
             "poly" => {
                 let points_id = match arg(0)? {
                     Value::List(id) => *id,
                     other => {
-                        return Err(format!("poly points must be a list, got {}", other.type_name()))
+                        return Err(format!(
+                            "poly points must be a list, got {}",
+                            other.type_name()
+                        ));
                     }
                 };
                 let mut points = Vec::new();
@@ -230,35 +332,57 @@ impl DrawCommand {
                             return Err(format!(
                                 "poly point must be vec2 or [x, y], got {}",
                                 other.type_name()
-                            ))
+                            ));
                         }
                     }
                 }
                 DrawCommand::Poly {
-                    points, r: u8_at(1)?, g: u8_at(2)?, b: u8_at(3)?, a: opt_u8(4, 255),
+                    points,
+                    r: u8_at(1)?,
+                    g: u8_at(2)?,
+                    b: u8_at(3)?,
+                    a: opt_u8(4, 255),
                 }
             }
             "text" => {
                 let text = match arg(0)? {
                     Value::String(id) => heap.get_string(*id).to_string(),
                     other => {
-                        return Err(format!("text command needs a string, got {}", other.type_name()))
+                        return Err(format!(
+                            "text command needs a string, got {}",
+                            other.type_name()
+                        ));
                     }
                 };
                 DrawCommand::Text {
-                    text, x: i32_at(1)?, y: i32_at(2)?, size: as_i64(arg(3)?)? as u16,
-                    r: u8_at(4)?, g: u8_at(5)?, b: u8_at(6)?, a: opt_u8(7, 255),
+                    text,
+                    x: i32_at(1)?,
+                    y: i32_at(2)?,
+                    size: as_i64(arg(3)?)? as u16,
+                    r: u8_at(4)?,
+                    g: u8_at(5)?,
+                    b: u8_at(6)?,
+                    a: opt_u8(7, 255),
                 }
             }
             "clip" => DrawCommand::Clip {
-                x: i32_at(0)?, y: i32_at(1)?, w: u32_at(2)?, h: u32_at(3)?,
+                x: i32_at(0)?,
+                y: i32_at(1)?,
+                w: u32_at(2)?,
+                h: u32_at(3)?,
             },
             "clip_none" => DrawCommand::ClipNone,
-            "create_canvas" => {
-                DrawCommand::CreateCanvas { id: u32_at(0)?, w: u32_at(1)?, h: u32_at(2)? }
-            }
+            "create_canvas" => DrawCommand::CreateCanvas {
+                id: u32_at(0)?,
+                w: u32_at(1)?,
+                h: u32_at(2)?,
+            },
             "set_target" => DrawCommand::SetTarget { id: u32_at(0)? },
-            "draw_canvas" => DrawCommand::DrawCanvas { id: u32_at(0)?, x: i32_at(1)?, y: i32_at(2)? },
+            "draw_canvas" => DrawCommand::DrawCanvas {
+                id: u32_at(0)?,
+                x: i32_at(1)?,
+                y: i32_at(2)?,
+            },
             _ => DrawCommand::Host { tag, data },
         };
         Ok(cmd)
@@ -423,8 +547,15 @@ fn native_draw_rect_rounded(state: &mut PetalCxt) -> NativeResult {
         state,
         "rect",
         vec![
-            Value::Int(x), Value::Int(y), Value::Int(w), Value::Int(h),
-            Value::Int(r), Value::Int(g), Value::Int(b), Value::Int(a), Value::Int(radius),
+            Value::Int(x),
+            Value::Int(y),
+            Value::Int(w),
+            Value::Int(h),
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+            Value::Int(radius),
         ],
     );
     state.push_nil();
@@ -485,7 +616,7 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
             return Err(format!(
                 "fill_poly() expects a list of points, got {}",
                 other.type_name()
-            ))
+            ));
         }
     };
 
@@ -498,7 +629,7 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
                 let coords = state.heap().get_list(*pid);
                 if coords.len() != 2 {
                     return Err(
-                        "fill_poly() list points must have exactly 2 coords [x, y]".to_string(),
+                        "fill_poly() list points must have exactly 2 coords [x, y]".to_string()
                     );
                 }
                 coord_to_i32(&coords[0])?;
@@ -508,7 +639,7 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
                 return Err(format!(
                     "fill_poly() points must be vec2 or [x, y] lists, got {}",
                     other.type_name()
-                ))
+                ));
             }
         }
     }
@@ -525,7 +656,13 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
     emit_draw(
         state,
         "poly",
-        vec![points_value, Value::Int(r), Value::Int(g), Value::Int(b), Value::Int(a)],
+        vec![
+            points_value,
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+        ],
     );
     state.push_nil();
     Ok(1)
@@ -537,8 +674,12 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let a = opt_int(state, 8, 255)?;
     let args = vec![
         Value::String(state.heap_mut().alloc_string(text)),
-        Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
-        Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+        Value::Int(state.get_int(2)?),
+        Value::Int(state.get_int(3)?),
+        Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?),
+        Value::Int(state.get_int(6)?),
+        Value::Int(state.get_int(7)?),
         Value::Int(a),
     ];
     emit_draw(state, "text", args);
@@ -607,7 +748,11 @@ fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
     let h = state.get_int(2)?;
     let sym = state.intern_symbol(CANVAS_ID_COUNTER);
     let id = state.next_counter(sym) as i64;
-    emit_draw(state, "create_canvas", vec![Value::Int(id), Value::Int(w), Value::Int(h)]);
+    emit_draw(
+        state,
+        "create_canvas",
+        vec![Value::Int(id), Value::Int(w), Value::Int(h)],
+    );
     state.push_int(id);
     Ok(1)
 }
@@ -649,7 +794,15 @@ mod tests {
             .expect("run_source");
         let cmds = take_draw_commands(&mut env);
         assert_eq!(cmds.len(), 3);
-        assert_eq!(cmds[0], DrawCommand::Clip { x: 1, y: 2, w: 30, h: 40 });
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Clip {
+                x: 1,
+                y: 2,
+                w: 30,
+                h: 40
+            }
+        );
         match &cmds[1] {
             DrawCommand::Host { tag, data } => {
                 assert_eq!(tag, "marker");
@@ -678,15 +831,57 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         // Opaque short form: no alpha, square corners.
-        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3)").expect("run");
+        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3)")
+            .expect("run");
         // Translucent long form.
-        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3, 128)").expect("run");
+        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3, 128)")
+            .expect("run");
         // Rounded via the convenience native (radius 6, alpha 200).
-        env.run_source("draw_rect_rounded(0, 0, 10, 10, 6, 1, 2, 3, 200)").expect("run");
+        env.run_source("draw_rect_rounded(0, 0, 10, 10, 6, 1, 2, 3, 200)")
+            .expect("run");
         let cmds = take_draw_commands(&mut env);
-        assert_eq!(cmds[0], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 255, radius: 0 });
-        assert_eq!(cmds[1], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 128, radius: 0 });
-        assert_eq!(cmds[2], DrawCommand::Rect { x: 0, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3, a: 200, radius: 6 });
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Rect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+                radius: 0
+            }
+        );
+        assert_eq!(
+            cmds[1],
+            DrawCommand::Rect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 128,
+                radius: 0
+            }
+        );
+        assert_eq!(
+            cmds[2],
+            DrawCommand::Rect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 200,
+                radius: 6
+            }
+        );
     }
 
     #[test]
@@ -694,13 +889,39 @@ mod tests {
         // An opaque, square, hairline primitive must serialize to the exact
         // pre-alpha JSON shape (no `a`/`radius`/`width`) so existing consumers
         // and the protocol docs stay valid.
-        let cmd = DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 5, g: 6, b: 7, a: 255, radius: 0 };
+        let cmd = DrawCommand::Rect {
+            x: 1,
+            y: 2,
+            w: 3,
+            h: 4,
+            r: 5,
+            g: 6,
+            b: 7,
+            a: 255,
+            radius: 0,
+        };
         let json = serde_json::to_string(&cmd).unwrap();
-        assert_eq!(json, r#"{"op":"rect","x":1,"y":2,"w":3,"h":4,"r":5,"g":6,"b":7}"#);
+        assert_eq!(
+            json,
+            r#"{"op":"rect","x":1,"y":2,"w":3,"h":4,"r":5,"g":6,"b":7}"#
+        );
         // But a translucent rounded rect includes the extra fields.
-        let cmd = DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 5, g: 6, b: 7, a: 128, radius: 8 };
+        let cmd = DrawCommand::Rect {
+            x: 1,
+            y: 2,
+            w: 3,
+            h: 4,
+            r: 5,
+            g: 6,
+            b: 7,
+            a: 128,
+            radius: 8,
+        };
         let json = serde_json::to_string(&cmd).unwrap();
-        assert!(json.contains(r#""a":128"#) && json.contains(r#""radius":8"#), "{json}");
+        assert!(
+            json.contains(r#""a":128"#) && json.contains(r#""radius":8"#),
+            "{json}"
+        );
     }
 
     #[test]

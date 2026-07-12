@@ -67,10 +67,18 @@ fn native_sky_gradient(state: &mut PetalCxt) -> NativeResult {
 
 fn native_triangle3d(state: &mut PetalCxt) -> NativeResult {
     let args = vec![
-        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
-        Value::Float(state.get_float(4)?), Value::Float(state.get_float(5)?), Value::Float(state.get_float(6)?),
-        Value::Float(state.get_float(7)?), Value::Float(state.get_float(8)?), Value::Float(state.get_float(9)?),
-        Value::Int(state.get_int(10)?), Value::Int(state.get_int(11)?), Value::Int(state.get_int(12)?),
+        Value::Float(state.get_float(1)?),
+        Value::Float(state.get_float(2)?),
+        Value::Float(state.get_float(3)?),
+        Value::Float(state.get_float(4)?),
+        Value::Float(state.get_float(5)?),
+        Value::Float(state.get_float(6)?),
+        Value::Float(state.get_float(7)?),
+        Value::Float(state.get_float(8)?),
+        Value::Float(state.get_float(9)?),
+        Value::Int(state.get_int(10)?),
+        Value::Int(state.get_int(11)?),
+        Value::Int(state.get_int(12)?),
     ];
     emit_draw(state, "triangle3d", args);
     state.push_nil();
@@ -79,12 +87,24 @@ fn native_triangle3d(state: &mut PetalCxt) -> NativeResult {
 
 fn native_triangle3d_shaded(state: &mut PetalCxt) -> NativeResult {
     let args = vec![
-        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
-        Value::Int(state.get_int(4)?), Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?),
-        Value::Float(state.get_float(7)?), Value::Float(state.get_float(8)?), Value::Float(state.get_float(9)?),
-        Value::Int(state.get_int(10)?), Value::Int(state.get_int(11)?), Value::Int(state.get_int(12)?),
-        Value::Float(state.get_float(13)?), Value::Float(state.get_float(14)?), Value::Float(state.get_float(15)?),
-        Value::Int(state.get_int(16)?), Value::Int(state.get_int(17)?), Value::Int(state.get_int(18)?),
+        Value::Float(state.get_float(1)?),
+        Value::Float(state.get_float(2)?),
+        Value::Float(state.get_float(3)?),
+        Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?),
+        Value::Int(state.get_int(6)?),
+        Value::Float(state.get_float(7)?),
+        Value::Float(state.get_float(8)?),
+        Value::Float(state.get_float(9)?),
+        Value::Int(state.get_int(10)?),
+        Value::Int(state.get_int(11)?),
+        Value::Int(state.get_int(12)?),
+        Value::Float(state.get_float(13)?),
+        Value::Float(state.get_float(14)?),
+        Value::Float(state.get_float(15)?),
+        Value::Int(state.get_int(16)?),
+        Value::Int(state.get_int(17)?),
+        Value::Int(state.get_int(18)?),
     ];
     emit_draw(state, "triangle3d_shaded", args);
     state.push_nil();
@@ -93,9 +113,15 @@ fn native_triangle3d_shaded(state: &mut PetalCxt) -> NativeResult {
 
 fn native_line3d(state: &mut PetalCxt) -> NativeResult {
     let args = vec![
-        Value::Float(state.get_float(1)?), Value::Float(state.get_float(2)?), Value::Float(state.get_float(3)?),
-        Value::Float(state.get_float(4)?), Value::Float(state.get_float(5)?), Value::Float(state.get_float(6)?),
-        Value::Int(state.get_int(7)?), Value::Int(state.get_int(8)?), Value::Int(state.get_int(9)?),
+        Value::Float(state.get_float(1)?),
+        Value::Float(state.get_float(2)?),
+        Value::Float(state.get_float(3)?),
+        Value::Float(state.get_float(4)?),
+        Value::Float(state.get_float(5)?),
+        Value::Float(state.get_float(6)?),
+        Value::Int(state.get_int(7)?),
+        Value::Int(state.get_int(8)?),
+        Value::Int(state.get_int(9)?),
     ];
     emit_draw(state, "line3d", args);
     state.push_nil();
@@ -129,8 +155,12 @@ fn native_text2d(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
     let args = vec![
         Value::String(state.heap_mut().alloc_string(text)),
-        Value::Int(state.get_int(2)?), Value::Int(state.get_int(3)?), Value::Int(state.get_int(4)?),
-        Value::Int(state.get_int(5)?), Value::Int(state.get_int(6)?), Value::Int(state.get_int(7)?),
+        Value::Int(state.get_int(2)?),
+        Value::Int(state.get_int(3)?),
+        Value::Int(state.get_int(4)?),
+        Value::Int(state.get_int(5)?),
+        Value::Int(state.get_int(6)?),
+        Value::Int(state.get_int(7)?),
     ];
     emit_draw(state, "text2d", args);
     state.push_nil();

@@ -103,7 +103,8 @@ impl Env {
 
     /// [`binding`](Self::binding) read from a specific stack's context.
     pub fn binding_for(&self, stack_id: StackKey, sym: SymbolId) -> Option<Value> {
-        self.ctx_for(stack_id).and_then(|ck| self.ctx(ck).binding(sym))
+        self.ctx_for(stack_id)
+            .and_then(|ck| self.ctx(ck).binding(sym))
     }
 
     /// Remove the binding for `sym`.

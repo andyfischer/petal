@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::lexer::Token;
 
-use super::green::{GreenChild, GreenNode, GreenToken};
 use super::SyntaxKind;
+use super::green::{GreenChild, GreenNode, GreenToken};
 
 /// A cursor into a green tree that pairs a node with its absolute char offset —
 /// the *red* layer. Cheap to clone (an `Rc` bump plus a `u32`); child cursors
@@ -70,10 +70,16 @@ impl SyntaxNode {
         for child in self.green.children() {
             match child {
                 GreenChild::Node(n) => {
-                    out.push(SyntaxElement::Node(SyntaxNode { green: Rc::clone(n), offset: off }));
+                    out.push(SyntaxElement::Node(SyntaxNode {
+                        green: Rc::clone(n),
+                        offset: off,
+                    }));
                 }
                 GreenChild::Token(t) => {
-                    out.push(SyntaxElement::Token(SyntaxToken { green: Rc::clone(t), offset: off }));
+                    out.push(SyntaxElement::Token(SyntaxToken {
+                        green: Rc::clone(t),
+                        offset: off,
+                    }));
                 }
             }
             off += child.text_len();

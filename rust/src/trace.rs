@@ -164,12 +164,7 @@ pub struct ExplainEntry {
 }
 
 impl ExplainEntry {
-    fn from(
-        program: &Program,
-        heap: &Heap,
-        term_id: TermId,
-        event: Option<&TraceEvent>,
-    ) -> Self {
+    fn from(program: &Program, heap: &Heap, term_id: TermId, event: Option<&TraceEvent>) -> Self {
         let term = program.get_term(term_id);
         let span = program.source_map.get(term_id);
         let (line, column) = match span {

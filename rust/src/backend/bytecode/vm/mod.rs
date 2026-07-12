@@ -22,21 +22,21 @@ use std::collections::HashMap;
 use smallvec::SmallVec;
 
 use super::isa::{BytecodeFn, BytecodeProgram, Reg};
+use crate::backend::errors::TraceFrame;
 use crate::backend::{RuntimeClosure, StepResult};
 use crate::handle::HandleClass;
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable};
-use crate::backend::errors::TraceFrame;
-use crate::program::{base_fn_name, FunctionId, OverloadEntry, Program, TermId};
+use crate::program::{FunctionId, OverloadEntry, Program, TermId, base_fn_name};
 use crate::stack::Stack;
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::{PendingId, Value};
 
-mod frame;
-mod dispatch;
 mod calls;
-mod native;
+mod dispatch;
+mod frame;
 mod intrinsics;
+mod native;
 
 pub use frame::{LoopCursor, VmFrame};
 
@@ -140,7 +140,11 @@ impl<'a> Vm<'a> {
         let trace_inputs: Option<(TermId, Reg, SmallVec<[Value; 4]>)> = if self.trace.enabled {
             match (origin, inst.dst()) {
                 (Some(term), Some(dst)) => {
-                    let inputs = inst.input_regs().iter().map(|&r| self.reg(frame_idx, r)).collect();
+                    let inputs = inst
+                        .input_regs()
+                        .iter()
+                        .map(|&r| self.reg(frame_idx, r))
+                        .collect();
                     Some((term, dst, inputs))
                 }
                 _ => None,

@@ -137,7 +137,10 @@ fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
             }
             TriviaKind::LineComment
         } else {
-            while i < gap.len() && !is_ws(gap[i]) && !(gap[i] == '/' && gap.get(i + 1) == Some(&'/')) {
+            while i < gap.len()
+                && !is_ws(gap[i])
+                && !(gap[i] == '/' && gap.get(i + 1) == Some(&'/'))
+            {
                 i += 1;
             }
             TriviaKind::Other
@@ -232,11 +235,16 @@ mod tests {
     #[test]
     fn round_trips_entire_repo_corpus() {
         fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                    if path
+                        .file_name()
+                        .is_some_and(|n| n == "node_modules" || n == "target")
+                    {
                         continue;
                     }
                     collect_ptl(&path, out);
@@ -251,11 +259,17 @@ mod tests {
             .expect("repo root");
         let mut files = Vec::new();
         collect_ptl(repo_root, &mut files);
-        assert!(files.len() > 50, "expected a real corpus, found {}", files.len());
+        assert!(
+            files.len() > 50,
+            "expected a real corpus, found {}",
+            files.len()
+        );
 
         let mut checked = 0;
         for path in &files {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
             let mut lexer = Lexer::new(&src);
             // Only valid programs have meaningful spans; skip anything that
             // fails to lex (reconstruction of a partial stream is undefined).
@@ -266,7 +280,10 @@ mod tests {
             assert_eq!(got, src, "round-trip mismatch for {}", path.display());
             checked += 1;
         }
-        assert!(checked > 50, "expected to check a real corpus, checked {checked}");
+        assert!(
+            checked > 50,
+            "expected to check a real corpus, checked {checked}"
+        );
     }
 
     /// Every inter-token gap is whitespace or a comment — never `Other`. After
@@ -280,9 +297,9 @@ mod tests {
         let cases = [
             "fn f(a, b)\n  // c\n  a + b // trailing\nend\n",
             "print(\"hello, {name}!\")\n",
-            "print(\"{a}{b}{c}\")\n",             // adjacent holes, empty parts
+            "print(\"{a}{b}{c}\")\n", // adjacent holes, empty parts
             "print(\"sum = {2 + 2} done\")\n",
-            "print(\"{ {k: v} } trailing\")\n",   // record literal inside a hole
+            "print(\"{ {k: v} } trailing\")\n", // record literal inside a hole
             "let e = <div class=\"x\">hello {name} world</div>\n",
             "let n = <ul>\n  <li>one {a}</li>\n  <li>two</li>\n</ul>\n",
         ];
@@ -305,11 +322,16 @@ mod tests {
     #[test]
     fn no_other_trivia_in_repo_corpus() {
         fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                    if path
+                        .file_name()
+                        .is_some_and(|n| n == "node_modules" || n == "target")
+                    {
                         continue;
                     }
                     collect_ptl(&path, out);
@@ -327,7 +349,9 @@ mod tests {
 
         let mut checked = 0;
         for path in &files {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
             let mut lexer = Lexer::new(&src);
             if lexer.tokenize().is_err() {
                 continue;
@@ -337,6 +361,9 @@ mod tests {
             assert!(!has_other, "unexpected Other trivia in {}", path.display());
             checked += 1;
         }
-        assert!(checked > 50, "expected to check a real corpus, checked {checked}");
+        assert!(
+            checked > 50,
+            "expected to check a real corpus, checked {checked}"
+        );
     }
 }

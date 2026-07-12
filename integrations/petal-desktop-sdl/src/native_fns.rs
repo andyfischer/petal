@@ -167,7 +167,7 @@ fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{take_draw_commands, DrawCommand};
+    use crate::commands::{DrawCommand, take_draw_commands};
     use petal_ui::draw::reset_canvas_ids;
 
     #[test]
@@ -189,11 +189,29 @@ mod tests {
         assert_eq!(
             cmds,
             vec![
-                DrawCommand::CreateCanvas { id: 1, w: 32, h: 32 },
+                DrawCommand::CreateCanvas {
+                    id: 1,
+                    w: 32,
+                    h: 32
+                },
                 DrawCommand::SetTarget { id: 1 },
-                DrawCommand::Rect { x: 0, y: 0, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 },
+                DrawCommand::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 4,
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                    radius: 0
+                },
                 DrawCommand::SetTarget { id: 0 },
-                DrawCommand::DrawCanvas { id: 1, x: 10, y: 10 },
+                DrawCommand::DrawCanvas {
+                    id: 1,
+                    x: 10,
+                    y: 10
+                },
             ]
         );
     }

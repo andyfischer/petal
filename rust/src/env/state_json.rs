@@ -22,13 +22,13 @@ impl Env {
         let heap = &ctx.heap;
         // Context for provenance-rich pending rendering: a pending state var
         // dumps as a structured `{ type:"pending", … }` object, not `"<pending>"`.
-        let pending_ctx = self.get_program(program_id).map(|program| {
-            crate::value::PendingJsonCtx {
-                resources: &ctx.resources,
-                program,
-                frame: ctx.frame(),
-            }
-        });
+        let pending_ctx =
+            self.get_program(program_id)
+                .map(|program| crate::value::PendingJsonCtx {
+                    resources: &ctx.resources,
+                    program,
+                    frame: ctx.frame(),
+                });
         let mut map = serde_json::Map::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
@@ -39,10 +39,14 @@ impl Env {
                 let name = if key.loop_indices.is_empty() {
                     base_name
                 } else {
-                    let suffix: Vec<String> = key.loop_indices.iter().map(|p| match p {
-                        crate::stack::LoopKeyPart::Index(i) => i.to_string(),
-                        crate::stack::LoopKeyPart::Explicit(h) => format!("k{}", h),
-                    }).collect();
+                    let suffix: Vec<String> = key
+                        .loop_indices
+                        .iter()
+                        .map(|p| match p {
+                            crate::stack::LoopKeyPart::Index(i) => i.to_string(),
+                            crate::stack::LoopKeyPart::Explicit(h) => format!("k{}", h),
+                        })
+                        .collect();
                     format!("{}[{}]", base_name, suffix.join(","))
                 };
                 map.insert(

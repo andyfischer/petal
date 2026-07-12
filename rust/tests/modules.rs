@@ -184,10 +184,7 @@ fn selective_collision_between_modules_is_a_compile_error() {
 
 #[test]
 fn selective_collision_with_local_decl_is_a_compile_error() {
-    let err = load_error(
-        &[("ui", UI)],
-        "import ui: button\nfn button(x)\n  x\nend",
-    );
+    let err = load_error(&[("ui", UI)], "import ui: button\nfn button(x)\n  x\nend");
     assert!(err.contains("also declared in this file"), "got: {err}");
 }
 
@@ -270,15 +267,23 @@ fn entry_file_state_keys_stay_bare_named() {
 
     let entry_key = StateKey(Compiler::hash_state_name("n"));
     let module_key = StateKey(Compiler::hash_state_name("m::n"));
-    assert_eq!(format!("{:?}", env.get_state(sid, entry_key).unwrap()), "Int(101)");
-    assert_eq!(format!("{:?}", env.get_state(sid, module_key).unwrap()), "Int(5)");
+    assert_eq!(
+        format!("{:?}", env.get_state(sid, entry_key).unwrap()),
+        "Int(101)"
+    );
+    assert_eq!(
+        format!("{:?}", env.get_state(sid, module_key).unwrap()),
+        "Int(5)"
+    );
 }
 
 #[test]
 fn hot_reload_of_module_preserves_its_state() {
     let mut env = Env::new();
     env.register_module("counter", "state n = 0\nn += 1\nfn get()\n  n\nend");
-    let pid = env.load_program("import counter\nprint(counter.get())").unwrap();
+    let pid = env
+        .load_program("import counter\nprint(counter.get())")
+        .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), vec!["1"]);
@@ -303,7 +308,9 @@ fn renaming_a_module_drops_its_state() {
     let mut env = Env::new();
     env.register_module("counter", counter);
     env.register_module("tally", counter);
-    let pid = env.load_program("import counter\nprint(counter.get())").unwrap();
+    let pid = env
+        .load_program("import counter\nprint(counter.get())")
+        .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     env.take_output();
@@ -388,10 +395,7 @@ fn module_manifest_lists_all_files() {
 fn imports_are_not_reexported() {
     let base = "fn helper()\n  1\nend";
     let mid = "import base: helper\nfn use_it()\n  helper()\nend";
-    let err = load_error(
-        &[("base", base), ("mid", mid)],
-        "import mid: helper",
-    );
+    let err = load_error(&[("base", base), ("mid", mid)], "import mid: helper");
     assert!(err.contains("no export 'helper'"), "got: {err}");
 }
 
@@ -404,11 +408,8 @@ struct TempTree {
 
 impl TempTree {
     fn new(tag: &str) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "petal-modtest-{}-{}",
-            tag,
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("petal-modtest-{}-{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         Self { root }
@@ -445,7 +446,13 @@ fn imports_resolve_relative_to_the_importing_file() {
     // The manifest records where the module came from.
     let manifest = env.module_manifest(pid);
     let module_entry = manifest.iter().find(|e| e.name == "palette.ptl").unwrap();
-    assert!(module_entry.origin.as_ref().unwrap().ends_with("lib/palette.ptl"));
+    assert!(
+        module_entry
+            .origin
+            .as_ref()
+            .unwrap()
+            .ends_with("lib/palette.ptl")
+    );
 }
 
 #[test]

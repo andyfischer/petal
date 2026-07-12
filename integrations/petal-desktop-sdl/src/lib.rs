@@ -31,6 +31,6 @@ pub mod watcher;
 
 pub use default_host::DefaultHost;
 pub use game_loop::{
-    run_agent, run_game, run_headless, run_record, run_screenshot, EscapeAction, GameConfig, Host,
-    ScriptSwitch,
+    EscapeAction, GameConfig, Host, ScriptSwitch, run_agent, run_game, run_headless, run_record,
+    run_screenshot,
 };

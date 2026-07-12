@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::ast::Stmt;
 use crate::lexer::Lexer;
-use crate::source_map::{FileId, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, FileId};
 
 use super::events::build_tree;
 use super::green::GreenNode;
@@ -37,8 +37,7 @@ pub fn parse_cst(source: &str) -> Result<Rc<GreenNode>, String> {
 pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
     let mut lexer = Lexer::new_in_file(source, file);
     lexer.tokenize()?;
-    let mut parser =
-        crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+    let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
     let direct = parser.parse_program()?;
     let green = build_tree(
         parser.cst_events(),
@@ -47,7 +46,8 @@ pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<St
         &lexer.token_leading_trivia,
         source,
     );
-    let projected = crate::cst_project::project_in_file(&SyntaxNode::new_root(green.clone()), file)?;
+    let projected =
+        crate::cst_project::project_in_file(&SyntaxNode::new_root(green.clone()), file)?;
     // The corpus tests prove projection ≡ direct parse; this catches drift on
     // inputs the corpus lacks.
     debug_assert_eq!(

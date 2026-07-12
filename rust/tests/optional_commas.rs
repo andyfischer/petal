@@ -62,7 +62,10 @@ fn list_space_minus_no_space_is_two_negated_elements() {
             assert_eq!(elems.len(), 2, "[1 -2] should be two elements");
             assert!(matches!(
                 elems[1].kind,
-                ExprKind::UnaryOp { op: UnaryOp::Neg, .. }
+                ExprKind::UnaryOp {
+                    op: UnaryOp::Neg,
+                    ..
+                }
             ));
         }
         other => panic!("expected list, got {other:?}"),

@@ -17,7 +17,9 @@ use petal::value::value_to_json;
 use petal_ui::draw::{
     clear_draw_commands, reset_canvas_ids, take_draw_commands, take_draw_commands_for,
 };
-use petal_ui::input::{bind_dimensions, bind_frame_info, bind_input, buttons, InputEvent, InputState};
+use petal_ui::input::{
+    InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, buttons,
+};
 
 /// Map a DOM `MouseEvent.button` (0 = left, 1 = middle, 2 = right) onto the
 /// standard petal-ui button id (0 = left, 1 = right, 2 = middle). Doing this at
@@ -91,7 +93,10 @@ impl PetalRuntime {
     }
 
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
-        let pid = self.env.load_program(source).map_err(|e| JsValue::from_str(&e))?;
+        let pid = self
+            .env
+            .load_program(source)
+            .map_err(|e| JsValue::from_str(&e))?;
         self.active_program = Some(pid);
         Ok(pid.0)
     }
@@ -195,15 +200,23 @@ impl PetalRuntime {
     // --- Debug ---
 
     pub fn get_state_json(&self) -> Result<String, JsValue> {
-        let pid = self.active_program.ok_or_else(|| JsValue::from_str("No active program"))?;
-        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        let pid = self
+            .active_program
+            .ok_or_else(|| JsValue::from_str("No active program"))?;
+        let sid = self
+            .active_stack
+            .ok_or_else(|| JsValue::from_str("No active stack"))?;
         let map = self.env.get_state_json(pid, sid);
         Ok(serde_json::Value::Object(map).to_string())
     }
 
     pub fn set_state_json(&mut self, name: &str, json_value: &str) -> Result<(), JsValue> {
-        let pid = self.active_program.ok_or_else(|| JsValue::from_str("No active program"))?;
-        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        let pid = self
+            .active_program
+            .ok_or_else(|| JsValue::from_str("No active program"))?;
+        let sid = self
+            .active_stack
+            .ok_or_else(|| JsValue::from_str("No active stack"))?;
         let val: serde_json::Value =
             serde_json::from_str(json_value).map_err(|e| JsValue::from_str(&e.to_string()))?;
         self.env
@@ -212,7 +225,9 @@ impl PetalRuntime {
     }
 
     pub fn run_speculative(&mut self) -> Result<String, JsValue> {
-        let sid = self.active_stack.ok_or_else(|| JsValue::from_str("No active stack"))?;
+        let sid = self
+            .active_stack
+            .ok_or_else(|| JsValue::from_str("No active stack"))?;
         // Bind input + reset the draw buffer / canvas ids so a speculative run
         // matches the live frame, then fork: the fork inherits those and runs
         // with empty output sinks, so its draw commands accumulate in the fork's
@@ -223,8 +238,13 @@ impl PetalRuntime {
         // speculative frame's draw commands live in the fork's context, so we
         // must drain them (with `take_draw_commands_for`) before releasing it.
         self.prepare_run();
-        let fork = self.env.fork_execution(sid).map_err(|e| JsValue::from_str(&e))?;
-        self.env.reset_stack(fork).map_err(|e| JsValue::from_str(&e))?;
+        let fork = self
+            .env
+            .fork_execution(sid)
+            .map_err(|e| JsValue::from_str(&e))?;
+        self.env
+            .reset_stack(fork)
+            .map_err(|e| JsValue::from_str(&e))?;
         let result = self
             .env
             .run(fork)

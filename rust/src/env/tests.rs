@@ -53,8 +53,14 @@ mod call_function_tests {
         // stood when the program ran; repeated calls return it consistently.
         let source = "state base = 41\nfn next_val()\n  base + 1\nend\n";
         let (mut env, sid) = run(source);
-        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
-        assert_eq!(env.call_function(sid, "next_val", &[]).unwrap(), Value::Int(42));
+        assert_eq!(
+            env.call_function(sid, "next_val", &[]).unwrap(),
+            Value::Int(42)
+        );
+        assert_eq!(
+            env.call_function(sid, "next_val", &[]).unwrap(),
+            Value::Int(42)
+        );
     }
 
     #[test]
@@ -78,9 +84,7 @@ mod call_function_tests {
     #[test]
     fn arity_mismatch_is_an_error() {
         let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");
-        let err = env
-            .call_function(sid, "add", &[Value::Int(1)])
-            .unwrap_err();
+        let err = env.call_function(sid, "add", &[Value::Int(1)]).unwrap_err();
         assert!(
             err.contains("argument") || err.contains("expects"),
             "unexpected error: {err}"
@@ -315,9 +319,7 @@ mod speculative_tests {
     fn speculative_run_does_not_leak_output_or_heap_into_source() {
         let mut env = Env::new();
         let pid = env
-            .load_program(
-                "state items = [1, 2, 3]\nitems[0] = items[0] + 100\nprint(\"spec\")\n",
-            )
+            .load_program("state items = [1, 2, 3]\nitems[0] = items[0] + 100\nprint(\"spec\")\n")
             .unwrap();
         let sid = env.create_stack(pid).unwrap();
 
@@ -560,7 +562,10 @@ mod host_surface_tests {
         // Releasing the fork removes its stack and its exclusively-owned context.
         let ctx_count_before = env.contexts.len();
         env.drop_fork(fork);
-        assert!(env.stack(fork).is_none(), "drop_fork removes the fork's stack");
+        assert!(
+            env.stack(fork).is_none(),
+            "drop_fork removes the fork's stack"
+        );
         assert_eq!(
             env.contexts.len(),
             ctx_count_before - 1,
@@ -662,7 +667,9 @@ mod run_bounded_tests {
     #[test]
     fn yields_on_runaway_loop_instead_of_hanging() {
         let mut env = Env::new();
-        let pid = env.load_program("state x = 0\nwhile true do\n  x = x + 1\nend\n").unwrap();
+        let pid = env
+            .load_program("state x = 0\nwhile true do\n  x = x + 1\nend\n")
+            .unwrap();
         let sid = env.create_stack(pid).unwrap();
 
         assert_eq!(
@@ -701,7 +708,10 @@ mod run_bounded_tests {
             }
         };
         assert_eq!(final_val, expected);
-        assert!(yields > 0, "a 5-step budget should have yielded at least once");
+        assert!(
+            yields > 0,
+            "a 5-step budget should have yielded at least once"
+        );
     }
 
     /// `state` accumulated across a resumed run is identical to a single run:
@@ -751,7 +761,10 @@ mod pending_value_chunk_a_tests {
     fn pending_builtin_yields_pending_value() {
         let mut env = Env::new();
         let v = env.run_source("__pending(\"k\")\n").unwrap();
-        assert!(matches!(v, Value::Pending(_)), "expected Pending, got {v:?}");
+        assert!(
+            matches!(v, Value::Pending(_)),
+            "expected Pending, got {v:?}"
+        );
         assert_eq!(v.type_name(), "pending");
     }
 
@@ -762,7 +775,10 @@ mod pending_value_chunk_a_tests {
         let mut env = Env::new();
         // First fetch: loading -> a Pending value.
         let loading = env.run_source("__pending(\"k\")\n").unwrap();
-        assert!(matches!(loading, Value::Pending(_)), "expected Pending, got {loading:?}");
+        assert!(
+            matches!(loading, Value::Pending(_)),
+            "expected Pending, got {loading:?}"
+        );
         // Resolve the entry, then re-fetch on a fresh run (same context).
         env.run_source("__resolve(\"k\", 42)\n").unwrap();
         let ready = env.run_source("__pending(\"k\")\n").unwrap();
@@ -866,10 +882,16 @@ mod pending_operator_absorption_tests {
         let mut env = Env::new();
         // Pending on the left.
         let left = env.run_source("let p = __pending(\"k\")\np + 1\n").unwrap();
-        assert!(matches!(left, Value::Pending(_)), "p + 1 should be Pending, got {left:?}");
+        assert!(
+            matches!(left, Value::Pending(_)),
+            "p + 1 should be Pending, got {left:?}"
+        );
         // Pending on the right.
         let right = env.run_source("let p = __pending(\"k\")\n1 + p\n").unwrap();
-        assert!(matches!(right, Value::Pending(_)), "1 + p should be Pending, got {right:?}");
+        assert!(
+            matches!(right, Value::Pending(_)),
+            "1 + p should be Pending, got {right:?}"
+        );
 
         // Both operands Pending: the result is the LEFTMOST Pending. `__pending`
         // dedups by key across runs in this shared context, so a fresh fetch of
@@ -879,7 +901,11 @@ mod pending_operator_absorption_tests {
         let prod = env
             .run_source("let a = __pending(\"a\")\nlet b = __pending(\"b\")\na * b\n")
             .unwrap();
-        assert_eq!(expect_pending(&prod), a_id, "a * b must be the leftmost Pending (a)");
+        assert_eq!(
+            expect_pending(&prod),
+            a_id,
+            "a * b must be the leftmost Pending (a)"
+        );
     }
 
     /// Rule 2 — Comparison (`== != < <= > >=`) with a Pending operand yields that
@@ -890,18 +916,31 @@ mod pending_operator_absorption_tests {
     fn comparison_absorbs_pending_never_bool() {
         let mut env = Env::new();
 
-        let eq = env.run_source("let p = __pending(\"k\")\np == 5\n").unwrap();
+        let eq = env
+            .run_source("let p = __pending(\"k\")\np == 5\n")
+            .unwrap();
         assert!(
             !matches!(eq, Value::Bool(_)),
             "p == 5 must NOT collapse to a Bool (SQL-NULL footgun), got {eq:?}"
         );
-        assert!(matches!(eq, Value::Pending(_)), "p == 5 should be Pending, got {eq:?}");
+        assert!(
+            matches!(eq, Value::Pending(_)),
+            "p == 5 should be Pending, got {eq:?}"
+        );
 
-        let ne = env.run_source("let p = __pending(\"k\")\np != 5\n").unwrap();
-        assert!(matches!(ne, Value::Pending(_)), "p != 5 should be Pending, got {ne:?}");
+        let ne = env
+            .run_source("let p = __pending(\"k\")\np != 5\n")
+            .unwrap();
+        assert!(
+            matches!(ne, Value::Pending(_)),
+            "p != 5 should be Pending, got {ne:?}"
+        );
 
         let lt = env.run_source("let p = __pending(\"k\")\np < 5\n").unwrap();
-        assert!(matches!(lt, Value::Pending(_)), "p < 5 should be Pending, got {lt:?}");
+        assert!(
+            matches!(lt, Value::Pending(_)),
+            "p < 5 should be Pending, got {lt:?}"
+        );
     }
 
     /// Rule 3 — Unary `!` (logical not) and `-` (negate) on a Pending yield that
@@ -916,10 +955,16 @@ mod pending_operator_absorption_tests {
             !matches!(notted, Value::Bool(_)),
             "!p must NOT collapse to a Bool, got {notted:?}"
         );
-        assert!(matches!(notted, Value::Pending(_)), "!p should be Pending, got {notted:?}");
+        assert!(
+            matches!(notted, Value::Pending(_)),
+            "!p should be Pending, got {notted:?}"
+        );
 
         let negated = env.run_source("let p = __pending(\"k\")\n-p\n").unwrap();
-        assert!(matches!(negated, Value::Pending(_)), "-p should be Pending, got {negated:?}");
+        assert!(
+            matches!(negated, Value::Pending(_)),
+            "-p should be Pending, got {negated:?}"
+        );
     }
 
     /// Rule 4 — String concatenation (`++`) and interpolation (`"hi {p}"`, which
@@ -929,7 +974,9 @@ mod pending_operator_absorption_tests {
     fn string_concat_and_interpolation_absorb_pending() {
         let mut env = Env::new();
 
-        let concatenated = env.run_source("let p = __pending(\"k\")\n\"hi \" ++ p\n").unwrap();
+        let concatenated = env
+            .run_source("let p = __pending(\"k\")\n\"hi \" ++ p\n")
+            .unwrap();
         assert!(
             !matches!(concatenated, Value::String(_)),
             "\"hi \" ++ p must NOT collapse to a String, got {concatenated:?}"
@@ -939,7 +986,9 @@ mod pending_operator_absorption_tests {
             "\"hi \" ++ p should be Pending, got {concatenated:?}"
         );
 
-        let interpolated = env.run_source("let p = __pending(\"k\")\n\"hi {p}\"\n").unwrap();
+        let interpolated = env
+            .run_source("let p = __pending(\"k\")\n\"hi {p}\"\n")
+            .unwrap();
         assert!(
             matches!(interpolated, Value::Pending(_)),
             "interpolation \"hi {{p}}\" should be Pending, got {interpolated:?}"
@@ -955,11 +1004,19 @@ mod pending_operator_absorption_tests {
     fn field_and_index_on_pending_base_absorb_pending() {
         let mut env = Env::new();
 
-        let field = env.run_source("let p = __pending(\"k\")\np.name\n").unwrap();
-        assert!(matches!(field, Value::Pending(_)), "p.name should be Pending, got {field:?}");
+        let field = env
+            .run_source("let p = __pending(\"k\")\np.name\n")
+            .unwrap();
+        assert!(
+            matches!(field, Value::Pending(_)),
+            "p.name should be Pending, got {field:?}"
+        );
 
         let index = env.run_source("let p = __pending(\"k\")\np[0]\n").unwrap();
-        assert!(matches!(index, Value::Pending(_)), "p[0] should be Pending, got {index:?}");
+        assert!(
+            matches!(index, Value::Pending(_)),
+            "p[0] should be Pending, got {index:?}"
+        );
     }
 
     /// Rule 6 — A Pending in a map KEY position is a HARD runtime error, never
@@ -975,7 +1032,10 @@ mod pending_operator_absorption_tests {
     fn pending_map_key_is_hard_error() {
         let mut env = Env::new();
         let result = env.run_source("let p = __pending(\"k\")\nlet m = {}\nm[p] = 1\n");
-        assert!(result.is_err(), "a Pending map key must be a hard error, got {result:?}");
+        assert!(
+            result.is_err(),
+            "a Pending map key must be a hard error, got {result:?}"
+        );
     }
 }
 
@@ -1090,9 +1150,7 @@ mod pending_native_classification_tests {
     #[test]
     fn map_over_real_list_is_unaffected() {
         let mut env = Env::new();
-        let v = env
-            .run_source("map([1, 2, 3], fn(x) -> x * 2)\n")
-            .unwrap();
+        let v = env.run_source("map([1, 2, 3], fn(x) -> x * 2)\n").unwrap();
         let ck = env.default_context;
         match v {
             Value::List(id) => assert_eq!(
@@ -1206,13 +1264,21 @@ mod pending_meta_builtins_tests {
     fn is_loading_true_only_for_loading_pending() {
         let mut env = Env::new();
         let loading = env.run_source("is_loading(__pending(\"k\"))\n").unwrap();
-        assert_eq!(loading, Value::Bool(true), "is_loading(loading pending) should be true");
+        assert_eq!(
+            loading,
+            Value::Bool(true),
+            "is_loading(loading pending) should be true"
+        );
 
         // After resolve, `__pending("k")` returns the real Int(7), not a Pending.
         let resolved = env
             .run_source("__resolve(\"k\", 7)\nis_loading(__pending(\"k\"))\n")
             .unwrap();
-        assert_eq!(resolved, Value::Bool(false), "is_loading(resolved value) should be false");
+        assert_eq!(
+            resolved,
+            Value::Bool(false),
+            "is_loading(resolved value) should be false"
+        );
 
         let plain = env.run_source("is_loading(5)\n").unwrap();
         assert_eq!(plain, Value::Bool(false), "is_loading(5) should be false");
@@ -1227,10 +1293,18 @@ mod pending_meta_builtins_tests {
         let errored = env
             .run_source("__reject(\"e\", \"boom\")\nis_error(__pending(\"e\"))\n")
             .unwrap();
-        assert_eq!(errored, Value::Bool(true), "is_error(errored pending) should be true");
+        assert_eq!(
+            errored,
+            Value::Bool(true),
+            "is_error(errored pending) should be true"
+        );
 
         let loading = env.run_source("is_error(__pending(\"k\"))\n").unwrap();
-        assert_eq!(loading, Value::Bool(false), "is_error(loading pending) should be false");
+        assert_eq!(
+            loading,
+            Value::Bool(false),
+            "is_error(loading pending) should be false"
+        );
 
         let plain = env.run_source("is_error(5)\n").unwrap();
         assert_eq!(plain, Value::Bool(false), "is_error(5) should be false");
@@ -1246,8 +1320,16 @@ mod pending_meta_builtins_tests {
         // Loading pending: pending, not ready.
         let p_loading = env.run_source("is_pending(__pending(\"k\"))\n").unwrap();
         let r_loading = env.run_source("is_ready(__pending(\"k\"))\n").unwrap();
-        assert_eq!(p_loading, Value::Bool(true), "is_pending(loading) should be true");
-        assert_eq!(r_loading, Value::Bool(false), "is_ready(loading) should be false");
+        assert_eq!(
+            p_loading,
+            Value::Bool(true),
+            "is_pending(loading) should be true"
+        );
+        assert_eq!(
+            r_loading,
+            Value::Bool(false),
+            "is_ready(loading) should be false"
+        );
 
         // Plain value: not pending, ready.
         let p_plain = env.run_source("is_pending(5)\n").unwrap();
@@ -1260,8 +1342,16 @@ mod pending_meta_builtins_tests {
             .run_source("__resolve(\"k\", 7)\nis_pending(__pending(\"k\"))\n")
             .unwrap();
         let r_resolved = env.run_source("is_ready(__pending(\"k\"))\n").unwrap();
-        assert_eq!(p_resolved, Value::Bool(false), "is_pending(resolved) should be false");
-        assert_eq!(r_resolved, Value::Bool(true), "is_ready(resolved) should be true");
+        assert_eq!(
+            p_resolved,
+            Value::Bool(false),
+            "is_pending(resolved) should be false"
+        );
+        assert_eq!(
+            r_resolved,
+            Value::Bool(true),
+            "is_ready(resolved) should be true"
+        );
     }
 
     /// `error_of` returns the stored error value for an errored resource, and Nil
@@ -1272,10 +1362,18 @@ mod pending_meta_builtins_tests {
         let err = env
             .run_source("__reject(\"e\", \"boom\")\nerror_of(__pending(\"e\"))\n")
             .unwrap();
-        assert_eq!(expect_string(&env, err), "boom", "error_of(errored) should be the error value");
+        assert_eq!(
+            expect_string(&env, err),
+            "boom",
+            "error_of(errored) should be the error value"
+        );
 
         let loading = env.run_source("error_of(__pending(\"k\"))\n").unwrap();
-        assert_eq!(loading, Value::Nil, "error_of(loading pending) should be Nil");
+        assert_eq!(
+            loading,
+            Value::Nil,
+            "error_of(loading pending) should be Nil"
+        );
 
         let plain = env.run_source("error_of(5)\n").unwrap();
         assert_eq!(plain, Value::Nil, "error_of(5) should be Nil");
@@ -1300,7 +1398,11 @@ mod pending_meta_builtins_tests {
         let resolved = env
             .run_source("__resolve(\"k\", 7)\nor_else(__pending(\"k\"), 99)\n")
             .unwrap();
-        assert_eq!(resolved, Value::Int(7), "or_else(resolved 7, 99) should be 7");
+        assert_eq!(
+            resolved,
+            Value::Int(7),
+            "or_else(resolved 7, 99) should be 7"
+        );
 
         // Errored pending -> default.
         let errored = env
@@ -1315,11 +1417,24 @@ mod pending_meta_builtins_tests {
     fn resource_key_is_stable_int_for_pending_else_nil() {
         let mut env = Env::new();
 
-        let a = env.run_source("resource_key(__pending(\"same\"))\n").unwrap();
-        let b = env.run_source("resource_key(__pending(\"same\"))\n").unwrap();
-        assert!(matches!(a, Value::Int(_)), "resource_key(pending) should be an Int, got {a:?}");
-        assert!(matches!(b, Value::Int(_)), "resource_key(pending) should be an Int, got {b:?}");
-        assert_eq!(a, b, "two pendings for the same key must have equal resource_key");
+        let a = env
+            .run_source("resource_key(__pending(\"same\"))\n")
+            .unwrap();
+        let b = env
+            .run_source("resource_key(__pending(\"same\"))\n")
+            .unwrap();
+        assert!(
+            matches!(a, Value::Int(_)),
+            "resource_key(pending) should be an Int, got {a:?}"
+        );
+        assert!(
+            matches!(b, Value::Int(_)),
+            "resource_key(pending) should be an Int, got {b:?}"
+        );
+        assert_eq!(
+            a, b,
+            "two pendings for the same key must have equal resource_key"
+        );
 
         let plain = env.run_source("resource_key(5)\n").unwrap();
         assert_eq!(plain, Value::Nil, "resource_key(5) should be Nil");
@@ -1375,7 +1490,11 @@ mod pending_coalesce_operator_chunk_e_tests {
     #[test]
     fn present_but_falsy_lhs_is_kept() {
         let mut env = Env::new();
-        assert_eq!(env.run_source("0 ?? 5\n").unwrap(), Value::Int(0), "0 is present");
+        assert_eq!(
+            env.run_source("0 ?? 5\n").unwrap(),
+            Value::Int(0),
+            "0 is present"
+        );
         assert_eq!(
             env.run_source("false ?? 9\n").unwrap(),
             Value::Bool(false),
@@ -1428,8 +1547,14 @@ mod pending_coalesce_operator_chunk_e_tests {
             Value::Bool(false),
             "must parse as (3 ?? 0) > 5"
         );
-        assert_eq!(env.run_source("nil ?? 10 > 5\n").unwrap(), Value::Bool(true));
-        assert_eq!(env.run_source("nil ?? 0 > 5\n").unwrap(), Value::Bool(false));
+        assert_eq!(
+            env.run_source("nil ?? 10 > 5\n").unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            env.run_source("nil ?? 0 > 5\n").unwrap(),
+            Value::Bool(false)
+        );
     }
 
     /// Precedence: `++` (concat) binds TIGHTER than `??`. `"a" ++ p ?? "y"`
@@ -1466,7 +1591,11 @@ mod pending_coalesce_operator_chunk_e_tests {
     fn single_question_identifier_preserved_alongside_coalesce() {
         let mut env = Env::new();
         let v = env.run_source("let ok? = nil\nok? ?? 5\n").unwrap();
-        assert_eq!(v, Value::Int(5), "ok? is one identifier; ok? ?? 5 falls back to 5");
+        assert_eq!(
+            v,
+            Value::Int(5),
+            "ok? is one identifier; ok? ?? 5 falls back to 5"
+        );
     }
 }
 
@@ -1519,7 +1648,8 @@ mod pending_control_flow_chunk_f_tests {
         let mut env = Env::new();
         env.run_source("__resolve(\"c\", true)\n").unwrap();
         assert_eq!(
-            env.run_source("if __pending(\"c\") then 1 else 2 end\n").unwrap(),
+            env.run_source("if __pending(\"c\") then 1 else 2 end\n")
+                .unwrap(),
             Value::Int(1),
             "a resolved-true condition takes the then branch"
         );
@@ -1687,9 +1817,7 @@ mod pending_collections_chunk_h_tests {
         let mut env = Env::new();
         let elem = env.run_source("__pending(\"e\")\n").unwrap();
         let elem_id = expect_pending(&elem);
-        let v = env
-            .run_source("[1, __pending(\"e\"), 3][1]\n")
-            .unwrap();
+        let v = env.run_source("[1, __pending(\"e\"), 3][1]\n").unwrap();
         assert_eq!(
             expect_pending(&v),
             elem_id,
@@ -1721,9 +1849,7 @@ mod pending_collections_chunk_h_tests {
         let mut env = Env::new();
         let elem = env.run_source("__pending(\"e\")\n").unwrap();
         let elem_id = expect_pending(&elem);
-        let v = env
-            .run_source("sort([3, __pending(\"e\"), 1])\n")
-            .unwrap();
+        let v = env.run_source("sort([3, __pending(\"e\"), 1])\n").unwrap();
         assert_eq!(
             expect_pending(&v),
             elem_id,
@@ -1737,10 +1863,9 @@ mod pending_collections_chunk_h_tests {
         let mut env = Env::new();
         let joined = env.run_source("join([1, 2, 3], \"-\")\n").unwrap();
         match joined {
-            Value::String(id) => assert_eq!(
-                env.ctx(env.default_context).heap.get_string(id),
-                "1-2-3"
-            ),
+            Value::String(id) => {
+                assert_eq!(env.ctx(env.default_context).heap.get_string(id), "1-2-3")
+            }
             other => panic!("expected a String, got {other:?}"),
         }
     }
@@ -1790,7 +1915,9 @@ mod pending_state_init_chunk_i_tests {
     #[test]
     fn unresolved_state_init_reinits_every_frame() {
         let mut env = Env::new();
-        let pid = env.load_program("state user = __pending(\"u\")\nuser\n").unwrap();
+        let pid = env
+            .load_program("state user = __pending(\"u\")\nuser\n")
+            .unwrap();
         let sid = env.create_stack(pid).unwrap();
         for frame in 0..3 {
             if frame > 0 {
@@ -1878,9 +2005,14 @@ mod pending_provenance_tests {
         assert_eq!(entry.frame_started, 0, "a fresh Env starts at frame 0");
 
         // origin points at the __pending call site.
-        let origin = entry.origin.expect("origin should be populated with the call site");
+        let origin = entry
+            .origin
+            .expect("origin should be populated with the call site");
         let program = env.get_program(pid).unwrap();
-        let span = program.source_map.get(origin).expect("origin term has a source span");
+        let span = program
+            .source_map
+            .get(origin)
+            .expect("origin term has a source span");
         let text = &program.source[span.start.offset as usize..span.end.offset as usize];
         assert!(
             text.contains("__pending"),
@@ -1942,7 +2074,9 @@ mod pending_absorbed_count_tests {
     fn absorbing_arithmetic_bumps_absorbed_count() {
         let mut env = Env::new();
         let pid = env
-            .load_program("let x = __pending(\"k\")\nlet a = x + 1\nlet b = a + 1\nlet c = b + 1\nc\n")
+            .load_program(
+                "let x = __pending(\"k\")\nlet a = x + 1\nlet b = a + 1\nlet c = b + 1\nc\n",
+            )
             .unwrap();
         let sid = env.create_stack(pid).unwrap();
         let id = expect_pending(&env.run(sid).unwrap());
@@ -2033,7 +2167,10 @@ mod pending_absorption_log_tests {
         assert_eq!(log.len(), 2, "two absorbing `+` ops should log two entries");
         for (origin, logged) in log {
             assert_eq!(*logged, id, "each entry logs the absorbed Pending's id");
-            assert!(origin.is_some(), "each absorption is attributed to its call site");
+            assert!(
+                origin.is_some(),
+                "each absorption is attributed to its call site"
+            );
         }
     }
 
@@ -2118,15 +2255,20 @@ mod pending_render_chunk_m_tests {
 
         let program = env.get_program(pid).unwrap();
         let frame = env.ctx(ck).frame();
-        let rendered =
-            crate::value::pending_to_display(id, &env.ctx(ck).resources, program, frame);
+        let rendered = crate::value::pending_to_display(id, &env.ctx(ck).resources, program, frame);
 
-        assert!(rendered.contains("loading"), "state missing from {rendered:?}");
+        assert!(
+            rendered.contains("loading"),
+            "state missing from {rendered:?}"
+        );
         assert!(
             rendered.contains("__pending"),
             "origin source text missing from {rendered:?}"
         );
-        assert!(rendered.contains("2f"), "age-in-frames missing from {rendered:?}");
+        assert!(
+            rendered.contains("2f"),
+            "age-in-frames missing from {rendered:?}"
+        );
     }
 
     /// A JSON state dump containing a pending state var must serialize that var
@@ -2158,7 +2300,6 @@ mod pending_render_chunk_m_tests {
     }
 }
 
-
 /// Chunk N of the pending-values feature: the frame pending report — a
 /// structured, per-frame summary of every live resource, surfaced through
 /// [`Env::pending_report`] (and, downstream, the debug-protocol `pending_report`
@@ -2187,7 +2328,11 @@ mod pending_report_chunk_n_tests {
 
         let report = env.pending_report(pid, sid);
         let arr = report.as_array().expect("report must be a JSON array");
-        assert_eq!(arr.len(), 1, "exactly one live resource expected, got {report}");
+        assert_eq!(
+            arr.len(),
+            1,
+            "exactly one live resource expected, got {report}"
+        );
 
         let entry = &arr[0];
         assert_eq!(

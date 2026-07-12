@@ -164,10 +164,7 @@ pub enum Goal {
     /// argument list is replaced with `params` (the rest of the call — and the
     /// rest of the file — is left untouched). If no such call exists, the call
     /// is appended as a new top-level statement.
-    ShouldCall {
-        function: String,
-        params: Vec<Arg>,
-    },
+    ShouldCall { function: String, params: Vec<Arg> },
 }
 
 impl Goal {
@@ -323,7 +320,10 @@ mod tests {
     fn renders_bool_and_nil() {
         let out = apply(
             "",
-            &[Goal::should_call("configure", vec![Arg::bool(true), Arg::nil()])],
+            &[Goal::should_call(
+                "configure",
+                vec![Arg::bool(true), Arg::nil()],
+            )],
         );
         assert_eq!(out, "configure(true, nil)\n");
     }
@@ -400,7 +400,10 @@ mod tests {
         // at the string level rather than failing.
         let out = apply(
             "set_color_scheme(\"light\")\n",
-            &[Goal::should_call("set_color_scheme", [Arg::expr("<<broken")])],
+            &[Goal::should_call(
+                "set_color_scheme",
+                [Arg::expr("<<broken")],
+            )],
         );
         assert_eq!(out, "set_color_scheme(<<broken)\n");
     }

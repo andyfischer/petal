@@ -124,7 +124,11 @@ impl Compiler {
     /// child frames that rebind the name will overwrite via `phi_outs` on
     /// pop. Rebinds the parent-scope binding of the name to the phi term.
     /// Returns `(name, phi_tid)` pairs for later wiring via `wire_phi_outs`.
-    pub(super) fn emit_phis(&mut self, names: &[String], span: SourceSpan) -> Vec<(String, TermId)> {
+    pub(super) fn emit_phis(
+        &mut self,
+        names: &[String],
+        span: SourceSpan,
+    ) -> Vec<(String, TermId)> {
         let mut out = Vec::with_capacity(names.len());
         for name in names {
             let outer_tid = match self.scope_lookup(name) {
@@ -165,11 +169,7 @@ impl Compiler {
                     // (not the parent-scope phi we just rebound to).
                     let tid = self.scope_lookup(name)?;
                     let blk = self.terms[tid.0 as usize].block_id;
-                    if blk == body_block {
-                        Some(tid)
-                    } else {
-                        None
-                    }
+                    if blk == body_block { Some(tid) } else { None }
                 });
             if let Some(src_tid) = src {
                 self.blocks[body_block.0 as usize].phi_outs.push(PhiOut {
@@ -228,8 +228,7 @@ impl Compiler {
             // Propagating the key makes in-loop reassignment persist to the
             // base state slot, matching how `let` accumulators carry.
             if let Some(init_tid) = self.find_state_init(*phi_tid) {
-                self.terms[in_tid.0 as usize].state_key =
-                    self.terms[init_tid.0 as usize].state_key;
+                self.terms[in_tid.0 as usize].state_key = self.terms[init_tid.0 as usize].state_key;
             }
             self.scope_bind(name.clone(), in_tid);
             let reg = self.terms[in_tid.0 as usize].register;
@@ -256,19 +255,14 @@ impl Compiler {
     pub(super) fn seed_arm_entry_copies(&mut self, block: BlockId, phis: &[(String, TermId)]) {
         let mut slots = HashMap::new();
         for (name, phi_tid) in phis {
-            if self
-                .scopes
-                .last()
-                .is_some_and(|s| s.contains_key(name))
-            {
+            if self.scopes.last().is_some_and(|s| s.contains_key(name)) {
                 continue;
             }
             let in_tid = self.emit_term(TermOp::Copy, smallvec![*phi_tid], Some(name.clone()));
             // Keep state-variable reassignment resolvable through the seed
             // (same reasoning as the loop-body path above).
             if let Some(init_tid) = self.find_state_init(*phi_tid) {
-                self.terms[in_tid.0 as usize].state_key =
-                    self.terms[init_tid.0 as usize].state_key;
+                self.terms[in_tid.0 as usize].state_key = self.terms[init_tid.0 as usize].state_key;
             }
             self.rebind_name_in_current_block(name.clone(), in_tid);
             slots.insert(name.clone(), self.terms[in_tid.0 as usize].register);
@@ -420,6 +414,9 @@ mod walker_tests {
             assigned("for i in range(0, 3) do\n  s = add(s, i)\nend\n"),
             vec!["s"]
         );
-        assert_eq!(assigned("while gt(n, 0) do\n  n = dec(n)\nend\n"), vec!["n"]);
+        assert_eq!(
+            assigned("while gt(n, 0) do\n  n = dec(n)\nend\n"),
+            vec!["n"]
+        );
     }
 }

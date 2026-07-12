@@ -78,7 +78,11 @@ impl GreenNode {
     /// [`GreenNode::replace_child`].
     pub fn with_children(kind: SyntaxKind, children: Vec<GreenChild>) -> Rc<GreenNode> {
         let text_len = children.iter().map(GreenChild::text_len).sum();
-        Rc::new(GreenNode { kind, children, text_len })
+        Rc::new(GreenNode {
+            kind,
+            children,
+            text_len,
+        })
     }
 
     /// A copy of this node with the child at `index` swapped for `child`.
@@ -191,6 +195,8 @@ impl GreenNodeBuilder {
             "GreenNodeBuilder::finish with {} unfinished node(s)",
             self.stack.len()
         );
-        self.root.take().expect("GreenNodeBuilder::finish with no root node")
+        self.root
+            .take()
+            .expect("GreenNodeBuilder::finish with no root node")
     }
 }

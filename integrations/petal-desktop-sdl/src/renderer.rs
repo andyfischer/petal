@@ -16,7 +16,14 @@ use crate::font::FontLadder;
 /// abstract text rendering behind this trait. Each impl keeps its concrete
 /// texture-creator/context type internal.
 pub trait TextTarget: RenderTarget + Sized {
-    fn render_text(canvas: &mut Canvas<Self>, font: &Font, text: &str, x: i32, y: i32, color: Color);
+    fn render_text(
+        canvas: &mut Canvas<Self>,
+        font: &Font,
+        text: &str,
+        x: i32,
+        y: i32,
+        color: Color,
+    );
     /// Blit `src` onto this canvas at (`x`, `y`). Used to composite an offscreen
     /// canvas onto a render target. Defined per-target because the
     /// `TextureCreator` context type is target-specific.
@@ -64,7 +71,11 @@ impl TextTarget for Surface<'_> {
     }
 }
 
-pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>, fonts: &FontLadder) {
+pub fn render<T: TextTarget>(
+    canvas: &mut Canvas<T>,
+    commands: Vec<DrawCommand>,
+    fonts: &FontLadder,
+) {
     // Offscreen canvases (PGraphics-style render targets), keyed by id. They are
     // rebuilt fresh from the command stream every frame, so the per-frame re-run
     // model needs no extra bookkeeping. Each is a software `Canvas<Surface>`
@@ -78,7 +89,8 @@ pub fn render<T: TextTarget>(canvas: &mut Canvas<T>, commands: Vec<DrawCommand>,
     for cmd in commands {
         match cmd {
             DrawCommand::CreateCanvas { id, w, h } => {
-                if let Ok(mut surface) = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888) {
+                if let Ok(mut surface) = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888)
+                {
                     // Start fully transparent so only drawn pixels composite.
                     let _ = surface.fill_rect(None, Color::RGBA(0, 0, 0, 0));
                     if let Ok(mut sc) = surface.into_canvas() {
@@ -130,7 +142,17 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             canvas.set_draw_color(Color::RGB(r, g, b));
             canvas.clear();
         }
-        DrawCommand::Rect { x, y, w, h, r, g, b, a, radius } => {
+        DrawCommand::Rect {
+            x,
+            y,
+            w,
+            h,
+            r,
+            g,
+            b,
+            a,
+            radius,
+        } => {
             if radius == 0 {
                 set_draw_color(canvas, r, g, b, a);
                 let _ = canvas.fill_rect(Rect::new(x, y, w, h));
@@ -138,16 +160,64 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
                 fill_rounded_rect(canvas, x, y, w, h, radius, r, g, b, a);
             }
         }
-        DrawCommand::RectOutline { x, y, w, h, r, g, b, a, width } => {
+        DrawCommand::RectOutline {
+            x,
+            y,
+            w,
+            h,
+            r,
+            g,
+            b,
+            a,
+            width,
+        } => {
             stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
         }
-        DrawCommand::Line { x1, y1, x2, y2, r, g, b, a, width } => {
+        DrawCommand::Line {
+            x1,
+            y1,
+            x2,
+            y2,
+            r,
+            g,
+            b,
+            a,
+            width,
+        } => {
             stroke_line_aa(canvas, x1, y1, x2, y2, width, r, g, b, a);
         }
-        DrawCommand::Circle { cx, cy, radius, r, g, b, a } => {
-            fill_disc_aa(canvas, cx as f64 + 0.5, cy as f64 + 0.5, radius as f64, r, g, b, a);
+        DrawCommand::Circle {
+            cx,
+            cy,
+            radius,
+            r,
+            g,
+            b,
+            a,
+        } => {
+            fill_disc_aa(
+                canvas,
+                cx as f64 + 0.5,
+                cy as f64 + 0.5,
+                radius as f64,
+                r,
+                g,
+                b,
+                a,
+            );
         }
-        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a } => {
+        DrawCommand::Triangle {
+            x1,
+            y1,
+            x2,
+            y2,
+            x3,
+            y3,
+            r,
+            g,
+            b,
+            a,
+        } => {
             set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
         }
@@ -155,7 +225,16 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &points);
         }
-        DrawCommand::Text { text, x, y, size, r, g, b, a } => {
+        DrawCommand::Text {
+            text,
+            x,
+            y,
+            size,
+            r,
+            g,
+            b,
+            a,
+        } => {
             // Honor the command's size by rendering with the nearest ladder rung.
             let font = fonts.nearest(size);
             T::render_text(canvas, font, &text, x, y, Color::RGBA(r, g, b, a));
@@ -180,7 +259,11 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
 /// which also preserves the offscreen-canvas contract (an opaque draw sets the
 /// canvas pixel fully opaque; the later blit composites it).
 fn set_draw_color<T: RenderTarget>(canvas: &mut Canvas<T>, r: u8, g: u8, b: u8, a: u8) {
-    canvas.set_blend_mode(if a < 255 { BlendMode::Blend } else { BlendMode::None });
+    canvas.set_blend_mode(if a < 255 {
+        BlendMode::Blend
+    } else {
+        BlendMode::None
+    });
     canvas.set_draw_color(Color::RGBA(r, g, b, a));
 }
 
@@ -235,8 +318,16 @@ fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i32, i32)]) 
 /// width. This handles thickness and antialiasing together (round caps), and a
 /// width-1 line reduces to a soft 1px stroke.
 fn stroke_line_aa<T: RenderTarget>(
-    canvas: &mut Canvas<T>, x1: i32, y1: i32, x2: i32, y2: i32, width: u32,
-    r: u8, g: u8, b: u8, a: u8,
+    canvas: &mut Canvas<T>,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+    width: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 ) {
     canvas.set_blend_mode(BlendMode::Blend);
     let half = width.max(1) as f64 / 2.0;
@@ -261,7 +352,11 @@ fn stroke_line_aa<T: RenderTarget>(
 fn dist_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
     let len2 = dx * dx + dy * dy;
-    let t = if len2 == 0.0 { 0.0 } else { ((px - ax) * dx + (py - ay) * dy) / len2 };
+    let t = if len2 == 0.0 {
+        0.0
+    } else {
+        ((px - ax) * dx + (py - ay) * dy) / len2
+    };
     let t = t.clamp(0.0, 1.0);
     let (cx, cy) = (ax + t * dx, ay + t * dy);
     ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
@@ -271,7 +366,16 @@ fn dist_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 
 /// bands (so translucent strokes don't double-blend at the corners). `width` is
 /// clamped so the bands don't overlap.
 fn stroke_rect_outline<T: RenderTarget>(
-    canvas: &mut Canvas<T>, x: i32, y: i32, w: u32, h: u32, width: u32, r: u8, g: u8, b: u8, a: u8,
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    width: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 ) {
     let sw = width.max(1).min(w).min(h);
     set_draw_color(canvas, r, g, b, a);
@@ -302,7 +406,14 @@ fn disc_coverage(px: i32, py: i32, cx: f64, cy: f64, radius: f64) -> f64 {
 /// (coverage × the fill alpha), which smooths the outline instead of the
 /// stair-stepped midpoint circle.
 fn fill_disc_aa<T: RenderTarget>(
-    canvas: &mut Canvas<T>, cx: f64, cy: f64, radius: f64, r: u8, g: u8, b: u8, a: u8,
+    canvas: &mut Canvas<T>,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 ) {
     if radius <= 0.0 {
         return;
@@ -328,7 +439,16 @@ fn fill_disc_aa<T: RenderTarget>(
 /// bands and corner boxes are disjoint, so nothing is painted twice. `radius`
 /// is clamped to half the smaller side.
 fn fill_rounded_rect<T: RenderTarget>(
-    canvas: &mut Canvas<T>, x: i32, y: i32, w: u32, h: u32, radius: u32, r: u8, g: u8, b: u8, a: u8,
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    radius: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 ) {
     let rad = radius.min(w / 2).min(h / 2);
     if rad == 0 {
@@ -353,9 +473,24 @@ fn fill_rounded_rect<T: RenderTarget>(
     let radf = rad as f64;
     let corners = [
         (x as f64 + radf, y as f64 + radf, x, y),
-        (x as f64 + wi as f64 - radf, y as f64 + radf, x + wi - radi, y),
-        (x as f64 + radf, y as f64 + hi as f64 - radf, x, y + hi - radi),
-        (x as f64 + wi as f64 - radf, y as f64 + hi as f64 - radf, x + wi - radi, y + hi - radi),
+        (
+            x as f64 + wi as f64 - radf,
+            y as f64 + radf,
+            x + wi - radi,
+            y,
+        ),
+        (
+            x as f64 + radf,
+            y as f64 + hi as f64 - radf,
+            x,
+            y + hi - radi,
+        ),
+        (
+            x as f64 + wi as f64 - radf,
+            y as f64 + hi as f64 - radf,
+            x + wi - radi,
+            y + hi - radi,
+        ),
     ];
     for (ccx, ccy, bx, by) in corners {
         for py in by..by + radi {
@@ -501,18 +636,44 @@ mod tests {
         // Frame 1: white rect at (2,2), NO clear.
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
+            vec![DrawCommand::Rect {
+                x: 2,
+                y: 2,
+                w: 4,
+                h: 4,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                radius: 0,
+            }],
             &fonts,
         );
         // Frame 2: white rect at (40,40), NO clear — should accumulate.
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
+            vec![DrawCommand::Rect {
+                x: 40,
+                y: 40,
+                w: 4,
+                h: 4,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                radius: 0,
+            }],
             &fonts,
         );
 
-        assert!(is_white(pixel_rgb(&surface, 3, 3)), "frame-1 pixel should persist");
-        assert!(is_white(pixel_rgb(&surface, 41, 41)), "frame-2 pixel should be drawn");
+        assert!(
+            is_white(pixel_rgb(&surface, 3, 3)),
+            "frame-1 pixel should persist"
+        );
+        assert!(
+            is_white(pixel_rgb(&surface, 41, 41)),
+            "frame-2 pixel should be drawn"
+        );
     }
 
     #[test]
@@ -524,7 +685,17 @@ mod tests {
         // Frame 1: white rect at (2,2).
         surface = render_frame(
             surface,
-            vec![DrawCommand::Rect { x: 2, y: 2, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 }],
+            vec![DrawCommand::Rect {
+                x: 2,
+                y: 2,
+                w: 4,
+                h: 4,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                radius: 0,
+            }],
             &fonts,
         );
         // Frame 2: Clear(black) then white rect at (40,40).
@@ -532,13 +703,29 @@ mod tests {
             surface,
             vec![
                 DrawCommand::Clear { r: 0, g: 0, b: 0 },
-                DrawCommand::Rect { x: 40, y: 40, w: 4, h: 4, r: 255, g: 255, b: 255, a: 255, radius: 0 },
+                DrawCommand::Rect {
+                    x: 40,
+                    y: 40,
+                    w: 4,
+                    h: 4,
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                    radius: 0,
+                },
             ],
             &fonts,
         );
 
-        assert!(is_black(pixel_rgb(&surface, 3, 3)), "frame-1 pixel should be wiped");
-        assert!(is_white(pixel_rgb(&surface, 41, 41)), "frame-2 pixel should be drawn");
+        assert!(
+            is_black(pixel_rgb(&surface, 3, 3)),
+            "frame-1 pixel should be wiped"
+        );
+        assert!(
+            is_white(pixel_rgb(&surface, 41, 41)),
+            "frame-2 pixel should be drawn"
+        );
     }
 
     #[test]
@@ -571,7 +758,10 @@ mod tests {
                 }
             }
         }
-        assert!(any_lit, "text should draw at least one non-black pixel on the software surface");
+        assert!(
+            any_lit,
+            "text should draw at least one non-black pixel on the software surface"
+        );
     }
 
     /// Vertical extent (in rows) of any non-black pixel in a surface — a proxy
@@ -594,7 +784,9 @@ mod tests {
     /// Count vertically-lit pixels in column `px` (a proxy for stroke thickness).
     fn lit_rows_in_column(surface: &Surface, px: u32) -> u32 {
         let (_, h) = surface.size();
-        (0..h).filter(|&py| !is_black(pixel_rgb(surface, px, py))).count() as u32
+        (0..h)
+            .filter(|&py| !is_black(pixel_rgb(surface, px, py)))
+            .count() as u32
     }
 
     #[test]
@@ -605,18 +797,44 @@ mod tests {
         let fonts = load_test_ladder(&ttf).expect("a system font for tests");
         let thin = render_frame(
             new_black_surface(),
-            vec![DrawCommand::Line { x1: 5, y1: 30, x2: 58, y2: 30, r: 255, g: 255, b: 255, a: 255, width: 1 }],
+            vec![DrawCommand::Line {
+                x1: 5,
+                y1: 30,
+                x2: 58,
+                y2: 30,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                width: 1,
+            }],
             &fonts,
         );
         let thick = render_frame(
             new_black_surface(),
-            vec![DrawCommand::Line { x1: 5, y1: 30, x2: 58, y2: 30, r: 255, g: 255, b: 255, a: 255, width: 8 }],
+            vec![DrawCommand::Line {
+                x1: 5,
+                y1: 30,
+                x2: 58,
+                y2: 30,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                width: 8,
+            }],
             &fonts,
         );
         let thin_rows = lit_rows_in_column(&thin, 30);
         let thick_rows = lit_rows_in_column(&thick, 30);
-        assert!(thick_rows >= 6, "width-8 line should light ~8 rows, got {thick_rows}");
-        assert!(thick_rows > thin_rows + 3, "thick ({thick_rows}) should clearly exceed thin ({thin_rows})");
+        assert!(
+            thick_rows >= 6,
+            "width-8 line should light ~8 rows, got {thick_rows}"
+        );
+        assert!(
+            thick_rows > thin_rows + 3,
+            "thick ({thick_rows}) should clearly exceed thin ({thin_rows})"
+        );
     }
 
     #[test]
@@ -627,10 +845,21 @@ mod tests {
         let fonts = load_test_ladder(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
-            vec![DrawCommand::Circle { cx: 30, cy: 30, radius: 18, r: 255, g: 255, b: 255, a: 255 }],
+            vec![DrawCommand::Circle {
+                cx: 30,
+                cy: 30,
+                radius: 18,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            }],
             &fonts,
         );
-        assert!(is_white(pixel_rgb(&surface, 30, 30)), "the disc center should be filled");
+        assert!(
+            is_white(pixel_rgb(&surface, 30, 30)),
+            "the disc center should be filled"
+        );
         // Somewhere along the edge ring there is a gray (partially covered) pixel.
         let mut found_gray = false;
         for py in 0..64 {
@@ -641,7 +870,10 @@ mod tests {
                 }
             }
         }
-        assert!(found_gray, "an antialiased edge should leave gray coverage pixels");
+        assert!(
+            found_gray,
+            "an antialiased edge should leave gray coverage pixels"
+        );
     }
 
     #[test]
@@ -654,7 +886,15 @@ mod tests {
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
-                x: 0, y: 0, w: 40, h: 40, r: 255, g: 255, b: 255, a: 255, radius: 12,
+                x: 0,
+                y: 0,
+                w: 40,
+                h: 40,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                radius: 12,
             }],
             &fonts,
         );
@@ -663,9 +903,15 @@ mod tests {
             "the rounded corner should be unpainted, got {:?}",
             pixel_rgb(&surface, 1, 1)
         );
-        assert!(is_white(pixel_rgb(&surface, 20, 20)), "the center should be filled");
+        assert!(
+            is_white(pixel_rgb(&surface, 20, 20)),
+            "the center should be filled"
+        );
         // A point along the flat top edge (past the corner radius) is filled.
-        assert!(is_white(pixel_rgb(&surface, 20, 1)), "the flat edge should be filled");
+        assert!(
+            is_white(pixel_rgb(&surface, 20, 1)),
+            "the flat edge should be filled"
+        );
     }
 
     #[test]
@@ -677,7 +923,15 @@ mod tests {
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
-                x: 0, y: 0, w: 20, h: 20, r: 255, g: 255, b: 255, a: 128, radius: 0,
+                x: 0,
+                y: 0,
+                w: 20,
+                h: 20,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 128,
+                radius: 0,
             }],
             &fonts,
         );
@@ -686,7 +940,10 @@ mod tests {
             px.0 > 100 && px.0 < 160,
             "alpha-blended white over black should be ~gray, got {px:?}"
         );
-        assert!(px.0 == px.1 && px.1 == px.2, "blend should stay neutral gray, got {px:?}");
+        assert!(
+            px.0 == px.1 && px.1 == px.2,
+            "blend should stay neutral gray, got {px:?}"
+        );
     }
 
     #[test]
@@ -739,13 +996,31 @@ mod tests {
         let surface = render_frame(
             new_black_surface(),
             vec![
-                DrawCommand::CreateCanvas { id: 1, w: 16, h: 16 },
+                DrawCommand::CreateCanvas {
+                    id: 1,
+                    w: 16,
+                    h: 16,
+                },
                 DrawCommand::SetTarget { id: 1 },
                 // Fill a 6x6 white block in the canvas's top-left.
-                DrawCommand::Rect { x: 0, y: 0, w: 6, h: 6, r: 255, g: 255, b: 255, a: 255, radius: 0 },
+                DrawCommand::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 6,
+                    h: 6,
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 255,
+                    radius: 0,
+                },
                 DrawCommand::SetTarget { id: 0 },
                 // Blit the canvas onto the main framebuffer at (20, 20).
-                DrawCommand::DrawCanvas { id: 1, x: 20, y: 20 },
+                DrawCommand::DrawCanvas {
+                    id: 1,
+                    x: 20,
+                    y: 20,
+                },
             ],
             &fonts,
         );
@@ -762,6 +1037,9 @@ mod tests {
             "transparent regions of the offscreen canvas should not overwrite the framebuffer"
         );
         // And the area the canvas did NOT cover at all stays black.
-        assert!(is_black(pixel_rgb(&surface, 2, 2)), "untouched framebuffer stays black");
+        assert!(
+            is_black(pixel_rgb(&surface, 2, 2)),
+            "untouched framebuffer stays black"
+        );
     }
 }

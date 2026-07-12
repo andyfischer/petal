@@ -2,7 +2,7 @@
 //! `show-bytecode` CLI command and the `ShowBytecode` MCP tool. Mirrors the role
 //! of `ir_display` for the term graph.
 
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst};
 use crate::constant_table::ConstantValue;
@@ -97,14 +97,26 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         JumpIfTrue { cond, to } => format!("jump_if_true r{} -> {}", cond, to),
         JumpIfPresent { cond, to } => format!("jump_if_present r{} -> {}", cond, to),
         JumpIfPending { cond, to } => format!("jump_if_pending r{} -> {}", cond, to),
-        ForEachInit { iter, slot, idx_ctx } => {
+        ForEachInit {
+            iter,
+            slot,
+            idx_ctx,
+        } => {
             format!("foreach_init r{} slot{} idx_ctx={}", iter, slot, idx_ctx)
         }
         ForEachNext { slot, var, exit } => {
             format!("foreach_next slot{} -> r{} else -> {}", slot, var, exit)
         }
-        RangeInit { start, end, slot, idx_ctx } => {
-            format!("range_init r{}..r{} slot{} idx_ctx={}", start, end, slot, idx_ctx)
+        RangeInit {
+            start,
+            end,
+            slot,
+            idx_ctx,
+        } => {
+            format!(
+                "range_init r{}..r{} slot{} idx_ctx={}",
+                start, end, slot, idx_ctx
+            )
         }
         RangeNext { slot, var, exit } => {
             format!("range_next slot{} -> r{} else -> {}", slot, var, exit)
@@ -113,12 +125,38 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         LoopBumpIdx { slot } => format!("loop_bump_idx slot{}", slot),
         LoopPop { slot } => format!("loop_pop slot{}", slot),
         Call { dst, callee, args } => format!("r{} = call r{} {}", dst, callee, reglist(args)),
-        MethodCall { dst, recv, name, args } => {
-            format!("r{} = r{}.{}{}", dst, recv, kconst(program, *name), reglist(args))
+        MethodCall {
+            dst,
+            recv,
+            name,
+            args,
+        } => {
+            format!(
+                "r{} = r{}.{}{}",
+                dst,
+                recv,
+                kconst(program, *name),
+                reglist(args)
+            )
         }
-        BuiltinCall { dst, name, args, in_place } => {
-            let tag = if *in_place { "builtin_in_place" } else { "builtin" };
-            format!("r{} = {} {}{}", dst, tag, kconst(program, *name), reglist(args))
+        BuiltinCall {
+            dst,
+            name,
+            args,
+            in_place,
+        } => {
+            let tag = if *in_place {
+                "builtin_in_place"
+            } else {
+                "builtin"
+            };
+            format!(
+                "r{} = {} {}{}",
+                dst,
+                tag,
+                kconst(program, *name),
+                reglist(args)
+            )
         }
         MakeClosure { dst, func, caps } => {
             format!("r{} = closure f{} caps={}", dst, func.0, reglist(caps))
@@ -141,37 +179,97 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         }
         AllocMapSpread { dst, ins, .. } => format!("r{} = map_spread {}", dst, reglist(ins)),
         AllocElement { dst, tag, ins, .. } => {
-            format!("r{} = element {} {}", dst, kconst(program, *tag), reglist(ins))
+            format!(
+                "r{} = element {} {}",
+                dst,
+                kconst(program, *tag),
+                reglist(ins)
+            )
         }
         MakeEnumVariant { dst, name, fields } => {
-            format!("r{} = enum {}{}", dst, kconst(program, *name), reglist(fields))
+            format!(
+                "r{} = enum {}{}",
+                dst,
+                kconst(program, *name),
+                reglist(fields)
+            )
         }
         GetField { dst, obj, field } => format!("r{} = r{}.{}", dst, obj, kconst(program, *field)),
-        SetField { dst, obj, field, val } => {
-            format!("r{} = set r{}.{} = r{}", dst, obj, kconst(program, *field), val)
+        SetField {
+            dst,
+            obj,
+            field,
+            val,
+        } => {
+            format!(
+                "r{} = set r{}.{} = r{}",
+                dst,
+                obj,
+                kconst(program, *field),
+                val
+            )
         }
         GetIndex { dst, obj, idx } => format!("r{} = r{}[r{}]", dst, obj, idx),
         SetIndex { dst, obj, idx, val } => {
             format!("r{} = set r{}[r{}] = r{}", dst, obj, idx, val)
         }
-        SetFieldInPlace { dst, obj, field, val } => {
-            format!("r{} = set_in_place r{}.{} = r{}", dst, obj, kconst(program, *field), val)
+        SetFieldInPlace {
+            dst,
+            obj,
+            field,
+            val,
+        } => {
+            format!(
+                "r{} = set_in_place r{}.{} = r{}",
+                dst,
+                obj,
+                kconst(program, *field),
+                val
+            )
         }
         SetIndexInPlace { dst, obj, idx, val } => {
             format!("r{} = set_in_place r{}[r{}] = r{}", dst, obj, idx, val)
         }
-        StateInit { dst, base, in_loop, after, key } => format!(
+        StateInit {
+            dst,
+            base,
+            in_loop,
+            after,
+            key,
+        } => format!(
             "r{} = state_init k{} in_loop={} after@{}{}",
-            dst, base.0, in_loop, after, opt_key(key)
+            dst,
+            base.0,
+            in_loop,
+            after,
+            opt_key(key)
         ),
         StateRead { dst, base, in_loop } => {
             format!("r{} = state_read k{} in_loop={}", dst, base.0, in_loop)
         }
-        StateWrite { dst, base, in_loop, val, key, init } => format!(
+        StateWrite {
+            dst,
+            base,
+            in_loop,
+            val,
+            key,
+            init,
+        } => format!(
             "r{} = state_write{} k{} in_loop={} = r{}{}",
-            dst, if *init { " init" } else { "" }, base.0, in_loop, val, opt_key(key)
+            dst,
+            if *init { " init" } else { "" },
+            base.0,
+            in_loop,
+            val,
+            opt_key(key)
         ),
-        MatchArm { subject, term, arm, next, dst } => format!(
+        MatchArm {
+            subject,
+            term,
+            arm,
+            next,
+            dst,
+        } => format!(
             "match_arm r{} t{} arm{} -> r{} else -> {}",
             subject, term.0, arm, dst, next
         ),

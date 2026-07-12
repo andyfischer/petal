@@ -127,7 +127,12 @@ impl Compiler {
                 self.emit_term(TermOp::Continue, smallvec![], None);
             }
 
-            StmtKind::State { name, init, id: _, key } => {
+            StmtKind::State {
+                name,
+                init,
+                id: _,
+                key,
+            } => {
                 self.compile_state_decl(name, init, key.as_ref());
             }
 
@@ -215,15 +220,13 @@ impl Compiler {
     fn compile_assign(&mut self, target: &AssignTarget, value: &Expr) {
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
-            AssignTarget::Field(object, field) => {
-                match Self::resolve_assign_target(object) {
-                    Some((root, mut steps)) => {
-                        steps.push(AssignStep::Field(field));
-                        self.compile_path_assign(root, steps, value);
-                    }
-                    None => self.emit_dead_store_error(),
+            AssignTarget::Field(object, field) => match Self::resolve_assign_target(object) {
+                Some((root, mut steps)) => {
+                    steps.push(AssignStep::Field(field));
+                    self.compile_path_assign(root, steps, value);
                 }
-            }
+                None => self.emit_dead_store_error(),
+            },
             AssignTarget::Index(object, index) => match Self::resolve_assign_target(object) {
                 Some((root, mut steps)) => {
                     steps.push(AssignStep::Index(index));
@@ -278,9 +281,10 @@ impl Compiler {
         let csteps: Vec<CompiledStep> = steps
             .iter()
             .map(|step| match step {
-                AssignStep::Field(name) => {
-                    CompiledStep::Field(self.constants.intern(ConstantValue::String((*name).to_string())))
-                }
+                AssignStep::Field(name) => CompiledStep::Field(
+                    self.constants
+                        .intern(ConstantValue::String((*name).to_string())),
+                ),
                 AssignStep::Index(expr) => CompiledStep::Index(self.compile_expr(expr)),
             })
             .collect();

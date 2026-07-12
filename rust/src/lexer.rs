@@ -41,23 +41,23 @@ pub enum Token {
     Star,
     Slash,
     Percent,
-    PlusPlus, // ++
-    Eq,       // ==
-    Ne,       // !=
-    Lt,       // <
-    Le,       // <=
-    Gt,       // >
-    Ge,       // >=
-    And,      // &&
-    Or,       // ||
+    PlusPlus,       // ++
+    Eq,             // ==
+    Ne,             // !=
+    Lt,             // <
+    Le,             // <=
+    Gt,             // >
+    Ge,             // >=
+    And,            // &&
+    Or,             // ||
     DoubleQuestion, // ??
-    Bang,     // !
-    Assign,   // =
-    PlusAssign,    // +=
-    MinusAssign,   // -=
-    StarAssign,    // *=
-    SlashAssign,   // /=
-    PercentAssign, // %=
+    Bang,           // !
+    Assign,         // =
+    PlusAssign,     // +=
+    MinusAssign,    // -=
+    StarAssign,     // *=
+    SlashAssign,    // /=
+    PercentAssign,  // %=
 
     // Delimiters
     LParen,
@@ -69,9 +69,9 @@ pub enum Token {
     Comma,
     Dot,
     Colon,
-    At, // @ — in-out argument marker (see ast::ExprKind::AtVar)
-    Pipe,  // |>
-    Arrow, // ->
+    At,        // @ — in-out argument marker (see ast::ExprKind::AtVar)
+    Pipe,      // |>
+    Arrow,     // ->
     DotDot,    // ..
     DotDotDot, // ...
 
@@ -102,7 +102,7 @@ enum LexerMode {
     JsxContent, // Between `>` and `</` — lexing children
 }
 
-use crate::source_map::{FileId, SourcePosition, SourceSpan, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
 pub struct Lexer {
     input: Vec<char>,
@@ -170,7 +170,11 @@ impl Lexer {
     /// covered by exactly one token span (see `crate::trivia`).
     fn push_token_span(&mut self, token: Token, start: SourcePosition, end: SourcePosition) {
         self.tokens.push(token);
-        self.token_spans.push(SourceSpan { start, end, file: self.file });
+        self.token_spans.push(SourceSpan {
+            start,
+            end,
+            file: self.file,
+        });
     }
 
     /// The position of the single non-newline character immediately before the
@@ -179,7 +183,11 @@ impl Lexer {
     /// [`Lexer::tokenize_braced_expr`] has just consumed without emitting a
     /// token.
     fn prev_char_pos(&self) -> SourcePosition {
-        SourcePosition { line: self.line, column: self.col - 1, offset: self.pos as u32 - 1 }
+        SourcePosition {
+            line: self.line,
+            column: self.col - 1,
+            offset: self.pos as u32 - 1,
+        }
     }
 
     /// Extend the most recently pushed token's span to the current cursor,
@@ -283,8 +291,14 @@ impl Lexer {
                     self.read_string()?
                 }
             }
-            '(' => { self.advance_char(); self.push_token(Token::LParen, start); }
-            ')' => { self.advance_char(); self.push_token(Token::RParen, start); }
+            '(' => {
+                self.advance_char();
+                self.push_token(Token::LParen, start);
+            }
+            ')' => {
+                self.advance_char();
+                self.push_token(Token::RParen, start);
+            }
             '{' => {
                 self.advance_char();
                 self.push_token(Token::LBrace, start);
@@ -298,12 +312,30 @@ impl Lexer {
                     self.mode_stack.pop();
                 }
             }
-            '}' => { self.advance_char(); self.push_token(Token::RBrace, start); }
-            '[' => { self.advance_char(); self.push_token(Token::LBracket, start); }
-            ']' => { self.advance_char(); self.push_token(Token::RBracket, start); }
-            ',' => { self.advance_char(); self.push_token(Token::Comma, start); }
-            ':' => { self.advance_char(); self.push_token(Token::Colon, start); }
-            '@' => { self.advance_char(); self.push_token(Token::At, start); }
+            '}' => {
+                self.advance_char();
+                self.push_token(Token::RBrace, start);
+            }
+            '[' => {
+                self.advance_char();
+                self.push_token(Token::LBracket, start);
+            }
+            ']' => {
+                self.advance_char();
+                self.push_token(Token::RBracket, start);
+            }
+            ',' => {
+                self.advance_char();
+                self.push_token(Token::Comma, start);
+            }
+            ':' => {
+                self.advance_char();
+                self.push_token(Token::Colon, start);
+            }
+            '@' => {
+                self.advance_char();
+                self.push_token(Token::At, start);
+            }
             '.' => {
                 if self.peek_next() == Some('.') {
                     if self.pos + 2 < self.input.len() && self.input[self.pos + 2] == '.' {
@@ -342,8 +374,8 @@ impl Lexer {
                     // after (e.g. the `-2` in `[1 -2]`) becomes a MinusPrefix
                     // so it can begin a new negated element in comma-less
                     // juxtaposition. See docs/syntax/optional-commas.md.
-                    let space_before = self.pos == 0
-                        || matches!(self.input[self.pos - 1], ' ' | '\t' | '\n');
+                    let space_before =
+                        self.pos == 0 || matches!(self.input[self.pos - 1], ' ' | '\t' | '\n');
                     let space_after =
                         matches!(self.peek_next(), Some(' ') | Some('\t') | Some('\n') | None);
                     self.advance_char();
@@ -364,9 +396,7 @@ impl Lexer {
                 }
             }
             '/' => {
-                if self.peek_next() == Some('>')
-                    && *self.current_mode() == LexerMode::JsxTag
-                {
+                if self.peek_next() == Some('>') && *self.current_mode() == LexerMode::JsxTag {
                     // Self-closing JSX tag: `/>`
                     self.advance_n(2);
                     self.push_token(Token::JsxSelfClose, start);
@@ -452,7 +482,10 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::And, start);
                 } else {
-                    return Err(format!("Unexpected character '&' [line {}, column {}]", self.line, self.col));
+                    return Err(format!(
+                        "Unexpected character '&' [line {}, column {}]",
+                        self.line, self.col
+                    ));
                 }
             }
             '|' => {
@@ -463,7 +496,10 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::Pipe, start);
                 } else {
-                    return Err(format!("Unexpected character '|' [line {}, column {}]", self.line, self.col));
+                    return Err(format!(
+                        "Unexpected character '|' [line {}, column {}]",
+                        self.line, self.col
+                    ));
                 }
             }
             '?' => {
@@ -471,7 +507,10 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::DoubleQuestion, start);
                 } else {
-                    return Err(format!("Unexpected character '?' [line {}, column {}]", self.line, self.col));
+                    return Err(format!(
+                        "Unexpected character '?' [line {}, column {}]",
+                        self.line, self.col
+                    ));
                 }
             }
             '#' => self.read_color()?,
@@ -483,7 +522,10 @@ impl Lexer {
                 self.push_token(Token::Newline, start);
             }
             _ => {
-                return Err(format!("Unexpected character '{}' [line {}, column {}]", ch, self.line, self.col));
+                return Err(format!(
+                    "Unexpected character '{}' [line {}, column {}]",
+                    ch, self.line, self.col
+                ));
             }
         }
         Ok(())
@@ -545,7 +587,10 @@ impl Lexer {
             if ch == '\\' {
                 self.advance_char();
                 if self.pos >= self.input.len() {
-                    return Err(format!("Unterminated string escape [line {}, column {}]", self.line, self.col));
+                    return Err(format!(
+                        "Unterminated string escape [line {}, column {}]",
+                        self.line, self.col
+                    ));
                 }
                 match self.input[self.pos] {
                     'n' => s.push('\n'),
@@ -585,7 +630,10 @@ impl Lexer {
             s.push(ch);
             self.advance_char();
         }
-        Err(format!("Unterminated string [line {}, column {}]", open_quote.line, open_quote.column))
+        Err(format!(
+            "Unterminated string [line {}, column {}]",
+            open_quote.line, open_quote.column
+        ))
     }
 
     /// Read a triple-quoted raw string: `"""..."""`. Everything between the
@@ -610,7 +658,10 @@ impl Lexer {
             s.push(self.input[self.pos]);
             self.advance_char();
         }
-        Err(format!("Unterminated raw string [line {}, column {}]", start.line, start.column))
+        Err(format!(
+            "Unterminated raw string [line {}, column {}]",
+            start.line, start.column
+        ))
     }
 
     fn read_number(&mut self) -> Result<(), String> {
@@ -642,7 +693,9 @@ impl Lexer {
             let f: f64 = text.parse().map_err(|e| format!("Invalid float: {}", e))?;
             self.push_token(Token::Float(f), start_pos);
         } else {
-            let n: i64 = text.parse().map_err(|e| format!("Invalid integer: {}", e))?;
+            let n: i64 = text
+                .parse()
+                .map_err(|e| format!("Invalid integer: {}", e))?;
             self.push_token(Token::Int(n), start_pos);
         }
         Ok(())
@@ -706,10 +759,7 @@ impl Lexer {
                 self.push_token(Token::LBrace, start);
             } else if skip_newlines && (ch == '\n' || ch == '\r') {
                 self.advance_char();
-                if ch == '\r'
-                    && self.pos < self.input.len()
-                    && self.input[self.pos] == '\n'
-                {
+                if ch == '\r' && self.pos < self.input.len() && self.input[self.pos] == '\n' {
                     self.advance_char();
                 }
             } else {
@@ -717,7 +767,10 @@ impl Lexer {
             }
         }
         if depth > 0 {
-            return Err(format!("Unterminated braced expression [line {}, column {}]", self.line, self.col));
+            return Err(format!(
+                "Unterminated braced expression [line {}, column {}]",
+                self.line, self.col
+            ));
         }
         Ok(())
     }
@@ -746,7 +799,10 @@ impl Lexer {
             }
         }
         if self.pos == text_start {
-            return Err(format!("Expected tag name [line {}, column {}]", self.line, self.col));
+            return Err(format!(
+                "Expected tag name [line {}, column {}]",
+                self.line, self.col
+            ));
         }
         let name: String = self.input[text_start..self.pos].iter().collect();
         self.push_token(Token::JsxTagName(name), start);
@@ -900,7 +956,11 @@ mod tests {
     fn tokenize(src: &str) -> Vec<Token> {
         let mut lexer = Lexer::new(src);
         lexer.tokenize().expect("tokenize failed");
-        lexer.tokens.into_iter().filter(|t| !matches!(t, Token::Newline | Token::Eof)).collect()
+        lexer
+            .tokens
+            .into_iter()
+            .filter(|t| !matches!(t, Token::Newline | Token::Eof))
+            .collect()
     }
 
     #[test]
@@ -920,44 +980,91 @@ mod tests {
 
     #[test]
     fn lex_keywords() {
-        let tokens = tokenize("let fn if else for in while match return break continue state enum end then do elsif when");
-        assert_eq!(tokens, vec![
-            Token::Let, Token::Fn, Token::If, Token::Else,
-            Token::For, Token::In, Token::While, Token::Match,
-            Token::Return, Token::Break, Token::Continue,
-            Token::State, Token::Enum,
-            Token::End, Token::Then, Token::Do, Token::Elsif, Token::When,
-        ]);
+        let tokens = tokenize(
+            "let fn if else for in while match return break continue state enum end then do elsif when",
+        );
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Let,
+                Token::Fn,
+                Token::If,
+                Token::Else,
+                Token::For,
+                Token::In,
+                Token::While,
+                Token::Match,
+                Token::Return,
+                Token::Break,
+                Token::Continue,
+                Token::State,
+                Token::Enum,
+                Token::End,
+                Token::Then,
+                Token::Do,
+                Token::Elsif,
+                Token::When,
+            ]
+        );
     }
 
     #[test]
     fn lex_operators() {
         let tokens = tokenize("+ - * / % ++ == != < <= > >= && || !");
-        assert_eq!(tokens, vec![
-            Token::Plus, Token::Minus, Token::Star, Token::Slash,
-            Token::Percent, Token::PlusPlus, Token::Eq, Token::Ne,
-            Token::Lt, Token::Le, Token::Gt, Token::Ge,
-            Token::And, Token::Or, Token::Bang,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Plus,
+                Token::Minus,
+                Token::Star,
+                Token::Slash,
+                Token::Percent,
+                Token::PlusPlus,
+                Token::Eq,
+                Token::Ne,
+                Token::Lt,
+                Token::Le,
+                Token::Gt,
+                Token::Ge,
+                Token::And,
+                Token::Or,
+                Token::Bang,
+            ]
+        );
     }
 
     #[test]
     fn lex_compound_assignment() {
         let tokens = tokenize("+= -= *= /= %=");
-        assert_eq!(tokens, vec![
-            Token::PlusAssign, Token::MinusAssign, Token::StarAssign,
-            Token::SlashAssign, Token::PercentAssign,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::PlusAssign,
+                Token::MinusAssign,
+                Token::StarAssign,
+                Token::SlashAssign,
+                Token::PercentAssign,
+            ]
+        );
     }
 
     #[test]
     fn lex_delimiters() {
         let tokens = tokenize("( ) { } [ ] , . :");
-        assert_eq!(tokens, vec![
-            Token::LParen, Token::RParen, Token::LBrace, Token::RBrace,
-            Token::LBracket, Token::RBracket, Token::Comma, Token::Dot,
-            Token::Colon,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::LParen,
+                Token::RParen,
+                Token::LBrace,
+                Token::RBrace,
+                Token::LBracket,
+                Token::RBracket,
+                Token::Comma,
+                Token::Dot,
+                Token::Colon,
+            ]
+        );
     }
 
     #[test]
@@ -980,13 +1087,16 @@ mod tests {
     #[test]
     fn lex_string_interp() {
         let tokens = tokenize(r#""hello {name}""#);
-        assert_eq!(tokens, vec![
-            Token::InterpStart,
-            Token::String("hello ".into()),
-            Token::Ident("name".into()),
-            Token::String(String::new()),
-            Token::InterpEnd,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::InterpStart,
+                Token::String("hello ".into()),
+                Token::Ident("name".into()),
+                Token::String(String::new()),
+                Token::InterpEnd,
+            ]
+        );
     }
 
     #[test]
@@ -1015,18 +1125,21 @@ mod tests {
         // `>` inside a JSX attribute expression `{...}` is a comparison
         // operator, not the tag's closing delimiter.
         let tokens = tokenize("<div expr={x > 1}/>");
-        assert_eq!(tokens, vec![
-            Token::JsxOpenStart,
-            Token::JsxTagName("div".into()),
-            Token::Ident("expr".into()),
-            Token::Assign,
-            Token::LBrace,
-            Token::Ident("x".into()),
-            Token::Gt,
-            Token::Int(1),
-            Token::RBrace,
-            Token::JsxSelfClose,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::JsxOpenStart,
+                Token::JsxTagName("div".into()),
+                Token::Ident("expr".into()),
+                Token::Assign,
+                Token::LBrace,
+                Token::Ident("x".into()),
+                Token::Gt,
+                Token::Int(1),
+                Token::RBrace,
+                Token::JsxSelfClose,
+            ]
+        );
     }
 
     #[test]
@@ -1034,19 +1147,22 @@ mod tests {
         // A `/>` sequence inside a JSX attribute expression must not be
         // mistaken for the tag's self-close.
         let tokens = tokenize("<div expr={6 / 2 > 1}/>");
-        assert_eq!(tokens, vec![
-            Token::JsxOpenStart,
-            Token::JsxTagName("div".into()),
-            Token::Ident("expr".into()),
-            Token::Assign,
-            Token::LBrace,
-            Token::Int(6),
-            Token::Slash,
-            Token::Int(2),
-            Token::Gt,
-            Token::Int(1),
-            Token::RBrace,
-            Token::JsxSelfClose,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::JsxOpenStart,
+                Token::JsxTagName("div".into()),
+                Token::Ident("expr".into()),
+                Token::Assign,
+                Token::LBrace,
+                Token::Int(6),
+                Token::Slash,
+                Token::Int(2),
+                Token::Gt,
+                Token::Int(1),
+                Token::RBrace,
+                Token::JsxSelfClose,
+            ]
+        );
     }
 }

@@ -11,7 +11,10 @@ use super::require_args;
 /// the whole result is unknown while one element is unresolved. Element-wise
 /// operations (`len`, indexing, `map`) leave Pending elements in place instead.
 fn leftmost_pending_element(items: &[Value]) -> Option<Value> {
-    items.iter().copied().find(|v| matches!(v, Value::Pending(_)))
+    items
+        .iter()
+        .copied()
+        .find(|v| matches!(v, Value::Pending(_)))
 }
 
 /// Bounds-check a signed index against an f64-array length, returning the
@@ -110,7 +113,7 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
                     return Err(format!(
                         "set() expects a number value, got {}",
                         other.type_name()
-                    ))
+                    ));
                 }
             };
             let idx = checked_f64_index(i, state.heap().f64_array_len(id))?;
@@ -195,7 +198,12 @@ pub(super) fn native_last(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "last")?;
     match state.get_value(1)? {
         Value::List(id) => {
-            let v = state.heap().get_list(id).last().copied().unwrap_or(Value::Nil);
+            let v = state
+                .heap()
+                .get_list(id)
+                .last()
+                .copied()
+                .unwrap_or(Value::Nil);
             state.push_value(v);
             Ok(1)
         }
@@ -236,7 +244,7 @@ pub(super) fn native_remove(state: &mut PetalCxt) -> Result<u32, String> {
                     return Err(format!(
                         "remove() expects a string key, got {}",
                         other.type_name()
-                    ))
+                    ));
                 }
             };
             let new_id = if state.in_place() {
@@ -364,13 +372,16 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
             }
             // Build sort keys: extract string content and numeric values up front
             // so the sort closure doesn't need heap access.
-            let mut keyed: Vec<(SortKey, Value)> = items.into_iter()
+            let mut keyed: Vec<(SortKey, Value)> = items
+                .into_iter()
                 .map(|v| {
                     let key = match v {
                         Value::Int(n) => SortKey::Num(n as f64),
                         Value::Float(f) => SortKey::Num(f),
                         Value::Dual { value, .. } => SortKey::Num(value),
-                        Value::String(sid) => SortKey::Str(state.heap().get_string(sid).to_string()),
+                        Value::String(sid) => {
+                            SortKey::Str(state.heap().get_string(sid).to_string())
+                        }
                         _ => SortKey::Other,
                     };
                     (key, v)
@@ -420,7 +431,8 @@ pub(super) fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
             }
             let separator = state.heap().get_string(sep_id).to_string();
             let elements = state.heap().get_list(list_id);
-            let parts: Vec<String> = elements.iter()
+            let parts: Vec<String> = elements
+                .iter()
                 .map(|v| value::value_to_display_string(v, state.heap()))
                 .collect();
             let result = parts.join(&separator);
@@ -439,7 +451,8 @@ pub(super) fn native_split(state: &mut PetalCxt) -> Result<u32, String> {
         (Value::String(s_id), Value::String(sep_id)) => {
             let string = state.heap().get_string(s_id).to_string();
             let separator = state.heap().get_string(sep_id).to_string();
-            let parts: Vec<Value> = string.split(&separator)
+            let parts: Vec<Value> = string
+                .split(&separator)
                 .map(|part| {
                     let id = state.heap_mut().alloc_string(part.to_string());
                     Value::String(id)
@@ -457,7 +470,9 @@ pub(super) fn native_enumerate(state: &mut PetalCxt) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
-            let pairs: Vec<Value> = items.into_iter().enumerate()
+            let pairs: Vec<Value> = items
+                .into_iter()
+                .enumerate()
                 .map(|(i, v)| {
                     let pair = vec![Value::Int(i as i64), v];
                     let pair_id = state.heap_mut().alloc_list(pair);
@@ -479,7 +494,9 @@ pub(super) fn native_zip(state: &mut PetalCxt) -> Result<u32, String> {
         (Value::List(a_id), Value::List(b_id)) => {
             let a_items = state.heap().get_list(a_id).to_vec();
             let b_items = state.heap().get_list(b_id).to_vec();
-            let pairs: Vec<Value> = a_items.into_iter().zip(b_items)
+            let pairs: Vec<Value> = a_items
+                .into_iter()
+                .zip(b_items)
                 .map(|(x, y)| {
                     let pair = vec![x, y];
                     let pair_id = state.heap_mut().alloc_list(pair);
@@ -522,10 +539,18 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
         Value::List(id) => {
             let items = state.heap().get_list(id);
             let len = items.len() as i64;
-            let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
+            let start_idx = if start < 0 {
+                (len + start).max(0) as usize
+            } else {
+                start.min(len) as usize
+            };
             let end_idx = if state.arg_count() == 3 {
                 let end = state.get_int(3)?;
-                if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize }
+                if end < 0 {
+                    (len + end).max(0) as usize
+                } else {
+                    end.min(len) as usize
+                }
             } else {
                 len as usize
             };
@@ -540,10 +565,18 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
         Value::String(id) => {
             let s = state.heap().get_string(id);
             let len = s.len() as i64;
-            let start_idx = if start < 0 { (len + start).max(0) as usize } else { start.min(len) as usize };
+            let start_idx = if start < 0 {
+                (len + start).max(0) as usize
+            } else {
+                start.min(len) as usize
+            };
             let end_idx = if state.arg_count() == 3 {
                 let end = state.get_int(3)?;
-                if end < 0 { (len + end).max(0) as usize } else { end.min(len) as usize }
+                if end < 0 {
+                    (len + end).max(0) as usize
+                } else {
+                    end.min(len) as usize
+                }
             } else {
                 len as usize
             };

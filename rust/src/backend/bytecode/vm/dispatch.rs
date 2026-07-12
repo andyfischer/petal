@@ -55,7 +55,11 @@ impl<'a> Vm<'a> {
             }
 
             // --- loops ---
-            Inst::ForEachInit { iter, slot, idx_ctx } => {
+            Inst::ForEachInit {
+                iter,
+                slot,
+                idx_ctx,
+            } => {
                 let v = self.reg(fi, *iter);
                 let Value::List(list_id) = v else {
                     return Err(format!("Cannot iterate over {}", v.type_name()));
@@ -65,7 +69,9 @@ impl<'a> Vm<'a> {
                 self.stack.vm_frames[fi].loops[*slot as usize] =
                     Some(LoopCursor::ForEach { elems, i: 0 });
                 if *idx_ctx {
-                    self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+                    self.stack.vm_frames[fi]
+                        .loop_idx
+                        .push(LoopKeyPart::Index(0));
                 }
             }
             Inst::ForEachNext { slot, var, exit } => {
@@ -90,16 +96,26 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            Inst::RangeInit { start, end, slot, idx_ctx } => {
+            Inst::RangeInit {
+                start,
+                end,
+                slot,
+                idx_ctx,
+            } => {
                 let (s, e) = (self.reg(fi, *start), self.reg(fi, *end));
                 let (Value::Int(s), Value::Int(e)) = (s, e) else {
                     return Err("numeric for-loop bounds must be integers".into());
                 };
                 self.ensure_slot(fi, *slot);
-                self.stack.vm_frames[fi].loops[*slot as usize] =
-                    Some(LoopCursor::Range { cur: s, end: e, iter: 0 });
+                self.stack.vm_frames[fi].loops[*slot as usize] = Some(LoopCursor::Range {
+                    cur: s,
+                    end: e,
+                    iter: 0,
+                });
                 if *idx_ctx {
-                    self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+                    self.stack.vm_frames[fi]
+                        .loop_idx
+                        .push(LoopKeyPart::Index(0));
                 }
             }
             Inst::RangeNext { slot, var, exit } => {
@@ -129,7 +145,9 @@ impl<'a> Vm<'a> {
                 self.ensure_slot(fi, *slot);
                 self.stack.vm_frames[fi].loops[*slot as usize] =
                     Some(LoopCursor::While { iteration: 0 });
-                self.stack.vm_frames[fi].loop_idx.push(LoopKeyPart::Index(0));
+                self.stack.vm_frames[fi]
+                    .loop_idx
+                    .push(LoopKeyPart::Index(0));
             }
             Inst::LoopBumpIdx { slot } => {
                 let it = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
@@ -200,7 +218,12 @@ impl<'a> Vm<'a> {
                 let v = ops::alloc_map_spread(self.program, self.heap, entries, &inputs)?;
                 self.set(fi, *dst, v);
             }
-            Inst::AllocElement { dst, tag, prop_keys, ins } => {
+            Inst::AllocElement {
+                dst,
+                tag,
+                prop_keys,
+                ins,
+            } => {
                 let inputs = self.regs(fi, ins);
                 let v = ops::alloc_element(self.program, self.heap, *tag, prop_keys, &inputs)?;
                 self.set(fi, *dst, v);
@@ -221,7 +244,12 @@ impl<'a> Vm<'a> {
                 self.note_absorption(base, origin);
                 self.set(fi, *dst, v);
             }
-            Inst::SetField { dst, obj, field, val } => {
+            Inst::SetField {
+                dst,
+                obj,
+                field,
+                val,
+            } => {
                 let v = ops::set_field(
                     self.program,
                     self.heap,
@@ -251,7 +279,12 @@ impl<'a> Vm<'a> {
             }
 
             // --- in-place mutation (M4; escape analysis proved unique) ---
-            Inst::SetFieldInPlace { dst, obj, field, val } => {
+            Inst::SetFieldInPlace {
+                dst,
+                obj,
+                field,
+                val,
+            } => {
                 let v = ops::set_field_in_place(
                     self.program,
                     self.heap,
@@ -296,12 +329,22 @@ impl<'a> Vm<'a> {
                 let argv = self.regs(fi, args);
                 self.do_call(fi, *dst, callable, &argv, origin)?;
             }
-            Inst::MethodCall { dst, recv, name, args } => {
+            Inst::MethodCall {
+                dst,
+                recv,
+                name,
+                args,
+            } => {
                 let receiver = self.reg(fi, *recv);
                 let argv = self.regs(fi, args);
                 self.do_method_call(fi, *dst, receiver, *name, &argv, origin)?;
             }
-            Inst::BuiltinCall { dst, name, args, in_place } => {
+            Inst::BuiltinCall {
+                dst,
+                name,
+                args,
+                in_place,
+            } => {
                 let argv = self.regs(fi, args);
                 self.do_builtin_call(fi, *dst, *name, &argv, *in_place, origin)?;
             }
@@ -317,7 +360,14 @@ impl<'a> Vm<'a> {
                 let v = self.stack.state.get(&key).copied().unwrap_or(Value::Nil);
                 self.set(fi, *dst, v);
             }
-            Inst::StateWrite { dst, base, in_loop, val, key, init } => {
+            Inst::StateWrite {
+                dst,
+                base,
+                in_loop,
+                val,
+                key,
+                init,
+            } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
                 let k = self.state_key(*base, *in_loop, explicit);
@@ -331,7 +381,13 @@ impl<'a> Vm<'a> {
                 }
                 self.set(fi, *dst, val_v);
             }
-            Inst::StateInit { dst, base, in_loop, after, key } => {
+            Inst::StateInit {
+                dst,
+                base,
+                in_loop,
+                after,
+                key,
+            } => {
                 let explicit = key.map(|r| self.reg(fi, r));
                 let k = self.state_key(*base, *in_loop, explicit);
                 self.stack.touched_state_keys.insert(k.clone());
@@ -344,7 +400,13 @@ impl<'a> Vm<'a> {
             }
 
             // --- match ---
-            Inst::MatchArm { subject, term, arm, next, dst: _ } => {
+            Inst::MatchArm {
+                subject,
+                term,
+                arm,
+                next,
+                dst: _,
+            } => {
                 let program = self.program;
                 let bc = self.bc;
                 let subj = self.reg(fi, *subject);
@@ -354,8 +416,12 @@ impl<'a> Vm<'a> {
                     .ok_or("Match: no arm metadata")?;
                 let meta = &arms[*arm as usize];
                 let mut binds = Vec::new();
-                let matched =
-                    crate::backend::pattern::match_pattern(&meta.pattern, subj, self.heap, &mut binds);
+                let matched = crate::backend::pattern::match_pattern(
+                    &meta.pattern,
+                    subj,
+                    self.heap,
+                    &mut binds,
+                );
                 if !matched {
                     self.stack.vm_frames[fi].ip = *next as usize;
                 } else if let Some(bind_regs) = bc.match_binds.get(&(*term, *arm)) {
@@ -384,21 +450,36 @@ impl<'a> Vm<'a> {
                     .get_string_constant(*msg)
                     .unwrap_or("Unknown error")
                     .to_string());
-            }
-            // The instruction set is now fully implemented — no catch-all, so a
-            // future `Inst` variant is a compile error until the VM handles it.
+            } // The instruction set is now fully implemented — no catch-all, so a
+              // future `Inst` variant is a compile error until the VM handles it.
         }
         Ok(StepResult::Continue)
     }
 
-    fn binop(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg, origin: Option<TermId>) -> Result<(), String> {
+    fn binop(
+        &mut self,
+        fi: usize,
+        op: TermOp,
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+        origin: Option<TermId>,
+    ) -> Result<(), String> {
         let v = ops::arithmetic(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
         self.note_absorption(v, origin);
         self.set(fi, dst, v);
         Ok(())
     }
 
-    fn cmp(&mut self, fi: usize, op: TermOp, dst: Reg, a: Reg, b: Reg, origin: Option<TermId>) -> Result<(), String> {
+    fn cmp(
+        &mut self,
+        fi: usize,
+        op: TermOp,
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+        origin: Option<TermId>,
+    ) -> Result<(), String> {
         let v = ops::comparison(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
         self.note_absorption(v, origin);
         self.set(fi, dst, v);

@@ -250,4 +250,3 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 fn native_intrinsic_placeholder(_state: &mut PetalCxt) -> Result<u32, String> {
     Err("This function requires evaluator context and should be dispatched as an intrinsic".into())
 }
-

@@ -51,7 +51,10 @@ pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
 /// the first op that cannot yet be lowered (so `ShowBytecode` surfaces progress
 /// honestly). With `InPlaceSet::default()` (empty) the output is identical to
 /// the un-optimized backend, so "bytecode with opts off" stays a clean oracle.
-pub fn lower_program_opt(program: &Program, in_place: &InPlaceSet) -> Result<BytecodeProgram, String> {
+pub fn lower_program_opt(
+    program: &Program,
+    in_place: &InPlaceSet,
+) -> Result<BytecodeProgram, String> {
     let mut match_binds = HashMap::new();
     let (root, root_binds) = FnLowerer::new(program, None, program.root_block, in_place).lower()?;
     match_binds.extend(root_binds);
@@ -61,7 +64,11 @@ pub fn lower_program_opt(program: &Program, in_place: &InPlaceSet) -> Result<Byt
         match_binds.extend(binds);
         fns.push(bf);
     }
-    Ok(BytecodeProgram { root, fns, match_binds })
+    Ok(BytecodeProgram {
+        root,
+        fns,
+        match_binds,
+    })
 }
 
 /// Lowers one function (root block or a `FunctionDef` body) into a [`BytecodeFn`].
@@ -289,10 +296,16 @@ impl<'p> FnLowerer<'p> {
         let inst = match &term.op {
             TermOp::Constant(k) => Inst::LoadConst { dst, k: *k },
             TermOp::Error(msg) => Inst::Error { msg: *msg },
-            TermOp::Copy => Inst::Move { dst, src: self.flat(ins[0])? },
+            TermOp::Copy => Inst::Move {
+                dst,
+                src: self.flat(ins[0])?,
+            },
             // A Phi initializes its register from the pre-control-flow value;
             // child regions overwrite it via phi_outs (also lowered to Move).
-            TermOp::Phi => Inst::Move { dst, src: self.flat(ins[0])? },
+            TermOp::Phi => Inst::Move {
+                dst,
+                src: self.flat(ins[0])?,
+            },
 
             // State reads/writes are single instructions; StateInit is
             // multi-instruction (inline init block) and handled in emit_block.
@@ -307,46 +320,115 @@ impl<'p> FnLowerer<'p> {
                 in_loop: term.in_loop,
                 val: self.flat(ins[0])?,
                 // Inputs are [value] or [value, explicit_key]; the key is last.
-                key: (ins.len() > 1).then(|| self.flat(ins[ins.len() - 1])).transpose()?,
+                key: (ins.len() > 1)
+                    .then(|| self.flat(ins[ins.len() - 1]))
+                    .transpose()?,
                 // A plain reassignment commits whatever value it is given,
                 // including a Pending (see the StateInit no-commit rule).
                 init: false,
             },
 
-            TermOp::Add => Inst::Add { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Sub => Inst::Sub { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Mul => Inst::Mul { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Div => Inst::Div { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Mod => Inst::Mod { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Neg => Inst::Neg { dst, a: self.flat(ins[0])? },
+            TermOp::Add => Inst::Add {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Sub => Inst::Sub {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Mul => Inst::Mul {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Div => Inst::Div {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Mod => Inst::Mod {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Neg => Inst::Neg {
+                dst,
+                a: self.flat(ins[0])?,
+            },
 
-            TermOp::Eq => Inst::Eq { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Ne => Inst::Ne { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Lt => Inst::Lt { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Le => Inst::Le { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Gt => Inst::Gt { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
-            TermOp::Ge => Inst::Ge { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Eq => Inst::Eq {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Ne => Inst::Ne {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Lt => Inst::Lt {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Le => Inst::Le {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Gt => Inst::Gt {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
+            TermOp::Ge => Inst::Ge {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
 
-            TermOp::Not => Inst::Not { dst, a: self.flat(ins[0])? },
-            TermOp::Concat => Inst::Concat { dst, a: self.flat(ins[0])?, b: self.flat(ins[1])? },
+            TermOp::Not => Inst::Not {
+                dst,
+                a: self.flat(ins[0])?,
+            },
+            TermOp::Concat => Inst::Concat {
+                dst,
+                a: self.flat(ins[0])?,
+                b: self.flat(ins[1])?,
+            },
 
-            TermOp::AllocList => Inst::AllocList { dst, elems: self.regs(ins)? },
-            TermOp::AllocMap { fields } => {
-                Inst::AllocMap { dst, fields: fields.clone(), vals: self.regs(ins)? }
-            }
-            TermOp::AllocMapSpread { entries } => {
-                Inst::AllocMapSpread { dst, entries: entries.clone(), ins: self.regs(ins)? }
-            }
+            TermOp::AllocList => Inst::AllocList {
+                dst,
+                elems: self.regs(ins)?,
+            },
+            TermOp::AllocMap { fields } => Inst::AllocMap {
+                dst,
+                fields: fields.clone(),
+                vals: self.regs(ins)?,
+            },
+            TermOp::AllocMapSpread { entries } => Inst::AllocMapSpread {
+                dst,
+                entries: entries.clone(),
+                ins: self.regs(ins)?,
+            },
             TermOp::AllocElement { tag, prop_keys } => Inst::AllocElement {
                 dst,
                 tag: *tag,
                 prop_keys: prop_keys.clone(),
                 ins: self.regs(ins)?,
             },
-            TermOp::MakeEnumVariant(name) => {
-                Inst::MakeEnumVariant { dst, name: *name, fields: self.regs(ins)? }
-            }
-            TermOp::GetField(field) => Inst::GetField { dst, obj: self.flat(ins[0])?, field: *field },
+            TermOp::MakeEnumVariant(name) => Inst::MakeEnumVariant {
+                dst,
+                name: *name,
+                fields: self.regs(ins)?,
+            },
+            TermOp::GetField(field) => Inst::GetField {
+                dst,
+                obj: self.flat(ins[0])?,
+                field: *field,
+            },
             TermOp::SetField(field) if self.in_place.allows(term.id) => Inst::SetFieldInPlace {
                 dst,
                 obj: self.flat(ins[0])?,
@@ -359,9 +441,11 @@ impl<'p> FnLowerer<'p> {
                 field: *field,
                 val: self.flat(ins[1])?,
             },
-            TermOp::GetIndex => {
-                Inst::GetIndex { dst, obj: self.flat(ins[0])?, idx: self.flat(ins[1])? }
-            }
+            TermOp::GetIndex => Inst::GetIndex {
+                dst,
+                obj: self.flat(ins[0])?,
+                idx: self.flat(ins[1])?,
+            },
             TermOp::SetIndex if self.in_place.allows(term.id) => Inst::SetIndexInPlace {
                 dst,
                 obj: self.flat(ins[0])?,
@@ -409,7 +493,9 @@ impl<'p> FnLowerer<'p> {
             },
 
             other => {
-                return Err(format!("unlowered op: {other:?} (arrives in a later milestone)"));
+                return Err(format!(
+                    "unlowered op: {other:?} (arrives in a later milestone)"
+                ));
             }
         };
         Ok(inst)
@@ -464,7 +550,11 @@ impl<'p> FnLowerer<'p> {
         // A Pending iterable absorbs: skip the loop entirely (zero iterations)
         // and yield the Pending as the loop value.
         let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: iter, to: 0 });
-        self.push(Inst::ForEachInit { iter, slot, idx_ctx: true });
+        self.push(Inst::ForEachInit {
+            iter,
+            slot,
+            idx_ctx: true,
+        });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next)?;
@@ -488,7 +578,12 @@ impl<'p> FnLowerer<'p> {
         let end = self.flat(term.inputs[1])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
-        self.push(Inst::RangeInit { start, end, slot, idx_ctx: true });
+        self.push(Inst::RangeInit {
+            start,
+            end,
+            slot,
+            idx_ctx: true,
+        });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next)
@@ -601,7 +696,10 @@ impl<'p> FnLowerer<'p> {
         let dst = self.flat(term.id)?;
         // A Pending subject absorbs: no arm (not even a wildcard) is tested and
         // the match evaluates to the Pending.
-        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: subject, to: 0 });
+        let jpend = self.emit_placeholder(Inst::JumpIfPending {
+            cond: subject,
+            to: 0,
+        });
         let arms: Vec<(BlockId, Option<BlockId>)> = self
             .program
             .match_arms
@@ -691,7 +789,13 @@ impl<'p> FnLowerer<'p> {
         // The explicit `state(expr)` key, if any, is the only input.
         let key = term.inputs.first().map(|&t| self.flat(t)).transpose()?;
 
-        let si = self.emit_placeholder(Inst::StateInit { dst, base, in_loop, after: 0, key });
+        let si = self.emit_placeholder(Inst::StateInit {
+            dst,
+            base,
+            in_loop,
+            after: 0,
+            key,
+        });
         match term.child_blocks.first() {
             Some(&init_block) => {
                 self.emit_block(init_block)?;
@@ -703,12 +807,26 @@ impl<'p> FnLowerer<'p> {
                 self.cur_origin = Some(term.id);
                 // `init: true` — a Pending init result is not committed, so the
                 // slot re-initializes next frame until the value resolves.
-                self.push(Inst::StateWrite { dst, base, in_loop, val: init_res, key, init: true });
+                self.push(Inst::StateWrite {
+                    dst,
+                    base,
+                    in_loop,
+                    val: init_res,
+                    key,
+                    init: true,
+                });
             }
             None => {
                 // No init block (synthetic StateInit): seed nil.
                 self.push(Inst::LoadNil { dst });
-                self.push(Inst::StateWrite { dst, base, in_loop, val: dst, key, init: true });
+                self.push(Inst::StateWrite {
+                    dst,
+                    base,
+                    in_loop,
+                    val: dst,
+                    key,
+                    init: true,
+                });
             }
         }
         let after = self.here();
@@ -899,7 +1017,10 @@ impl<'p> FnLowerer<'p> {
 
     /// Flat register of a block's result (its last term), or `None` if empty.
     fn block_result_reg(&self, block: BlockId) -> Result<Option<Reg>, String> {
-        self.block_terms_in_order(block).last().map(|&t| self.flat(t)).transpose()
+        self.block_terms_in_order(block)
+            .last()
+            .map(|&t| self.flat(t))
+            .transpose()
     }
 
     /// Push an instruction that carries a jump target, returning its index for
@@ -921,7 +1042,6 @@ impl<'p> FnLowerer<'p> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -961,10 +1081,8 @@ mod tests {
 
     #[test]
     fn lowers_containers_and_access() {
-        let bc = lower_program(&compile(
-            "let p = { a: 1, b: [2, 3] }\nlet y = p.b[1]",
-        ))
-        .expect("lower");
+        let bc =
+            lower_program(&compile("let p = { a: 1, b: [2, 3] }\nlet y = p.b[1]")).expect("lower");
         let has = |pred: fn(&Inst) -> bool| bc.root.code.iter().any(pred);
         assert!(has(|i| matches!(i, Inst::AllocMap { .. })));
         assert!(has(|i| matches!(i, Inst::AllocList { .. })));

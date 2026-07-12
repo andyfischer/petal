@@ -3,5 +3,5 @@
 //! app's historical paths.
 
 pub use petal_ui::draw::{
-    clear_draw_commands, take_draw_commands, take_draw_commands_for, DrawCommand,
+    DrawCommand, clear_draw_commands, take_draw_commands, take_draw_commands_for,
 };

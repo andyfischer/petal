@@ -105,7 +105,11 @@ pub fn register_host_data(env: &mut Env) {
 fn native_host_data(cxt: &mut PetalCxt) -> NativeResult {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_string(2)?;
-    let data = DATA_PROVIDER.with(|p| p.borrow_mut().as_mut().map(|provider| provider(&kind, &arg)));
+    let data = DATA_PROVIDER.with(|p| {
+        p.borrow_mut()
+            .as_mut()
+            .map(|provider| provider(&kind, &arg))
+    });
     let value = data_to_value(cxt, &data.unwrap_or(HostData::Nil));
     cxt.push_value(value);
     Ok(1)

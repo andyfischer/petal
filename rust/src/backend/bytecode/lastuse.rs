@@ -127,11 +127,12 @@ fn apply_fn(
 fn candidate_container(inst: &Inst, program: &Program) -> Option<Reg> {
     match inst {
         Inst::SetIndex { obj, .. } | Inst::SetField { obj, .. } => Some(*obj),
-        Inst::BuiltinCall { name, args, in_place: false, .. }
-            if builtin_name(program, *name).is_some_and(is_mutating_builtin) =>
-        {
-            args.first().copied()
-        }
+        Inst::BuiltinCall {
+            name,
+            args,
+            in_place: false,
+            ..
+        } if builtin_name(program, *name).is_some_and(is_mutating_builtin) => args.first().copied(),
         _ => None,
     }
 }
@@ -145,10 +146,25 @@ fn builtin_name(program: &Program, cid: crate::constant_table::ConstantId) -> Op
 fn rewrite_in_place(inst: &mut Inst) {
     match inst {
         Inst::SetIndex { dst, obj, idx, val } => {
-            *inst = Inst::SetIndexInPlace { dst: *dst, obj: *obj, idx: *idx, val: *val };
+            *inst = Inst::SetIndexInPlace {
+                dst: *dst,
+                obj: *obj,
+                idx: *idx,
+                val: *val,
+            };
         }
-        Inst::SetField { dst, obj, field, val } => {
-            *inst = Inst::SetFieldInPlace { dst: *dst, obj: *obj, field: *field, val: *val };
+        Inst::SetField {
+            dst,
+            obj,
+            field,
+            val,
+        } => {
+            *inst = Inst::SetFieldInPlace {
+                dst: *dst,
+                obj: *obj,
+                field: *field,
+                val: *val,
+            };
         }
         Inst::BuiltinCall { in_place, .. } => *in_place = true,
         other => unreachable!("not a route-A candidate: {other:?}"),
@@ -198,7 +214,9 @@ fn route_a_fires(
     let mut cur = c;
     let mut hops = 0;
     loop {
-        let Some(d) = single_def(cur) else { return false };
+        let Some(d) = single_def(cur) else {
+            return false;
+        };
         match &f.code[d] {
             Inst::Move { src, .. } => {
                 cur = *src;
@@ -232,7 +250,10 @@ fn route_a_fires(
             }
         }
     }
-    debug_assert!(group.contains(&c), "container must be in its own alias group");
+    debug_assert!(
+        group.contains(&c),
+        "container must be in its own alias group"
+    );
 
     // 3. No retaining reader of any member, anywhere in the function.
     // Group-internal Moves are the alias edges themselves (handled above);
@@ -362,7 +383,12 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
                 f(*a, RETAIN);
             }
         }
-        Inst::BuiltinCall { name, args, in_place, .. } => {
+        Inst::BuiltinCall {
+            name,
+            args,
+            in_place,
+            ..
+        } => {
             match builtin_name(program, *name) {
                 Some(n) if is_mutating_builtin(n) => {
                     // Container slot: clone semantics copy, in-place mutates.
@@ -455,7 +481,7 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
             }
         }
         Inst::MatchArm { subject, .. } => f(*subject, RETAIN), // bindings may bind it
-        Inst::MatchFail { subject } => f(*subject, PURE), // formats + raises
+        Inst::MatchFail { subject } => f(*subject, PURE),      // formats + raises
         Inst::LoadConst { .. }
         | Inst::LoadNil { .. }
         | Inst::LoadBool { .. }

@@ -244,9 +244,12 @@ mod tests {
 
     #[test]
     fn find_term_by_id_string() {
-        let prog = test_program(vec![
-            make_term(0, TermOp::Constant(ConstantId(0)), vec![], None),
-        ]);
+        let prog = test_program(vec![make_term(
+            0,
+            TermOp::Constant(ConstantId(0)),
+            vec![],
+            None,
+        )]);
         assert_eq!(prog.find_term("t0"), Some(TermId(0)));
         assert_eq!(prog.find_term("t99"), None);
     }
@@ -263,9 +266,12 @@ mod tests {
 
     #[test]
     fn trace_provenance_leaf_has_no_ancestors() {
-        let prog = test_program(vec![
-            make_term(0, TermOp::Constant(ConstantId(0)), vec![], Some("x")),
-        ]);
+        let prog = test_program(vec![make_term(
+            0,
+            TermOp::Constant(ConstantId(0)),
+            vec![],
+            Some("x"),
+        )]);
         let (ancestors, edges) = prog.trace_provenance(TermId(0));
         assert!(ancestors.is_empty());
         assert!(edges.is_empty());

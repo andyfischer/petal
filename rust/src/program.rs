@@ -72,7 +72,6 @@ pub enum MapSpreadEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TermOp {
     // --- Core ---
-
     /// Load a constant from the constant table
     Constant(ConstantId),
     /// A parse error - message stored as a constant
@@ -166,12 +165,16 @@ pub enum TermOp {
     /// Allocate a list: inputs=[elem0, elem1, ...]
     AllocList,
     /// Allocate a map/record: inputs=[val0, val1, ...], field names stored here
-    AllocMap { fields: Vec<ConstantId> },
+    AllocMap {
+        fields: Vec<ConstantId>,
+    },
     /// Allocate a map with spread: entries describe the order of spreads and named fields.
     /// inputs = [spread_source_0, ..., named_value_0, ...]
     /// Each entry is either Spread (index into inputs for the spread source map)
     /// or Named (field name constant + index into inputs for the value).
-    AllocMapSpread { entries: Vec<MapSpreadEntry> },
+    AllocMapSpread {
+        entries: Vec<MapSpreadEntry>,
+    },
     /// Read a field: inputs=[object], field name as constant
     GetField(ConstantId),
     /// Write a field: inputs=[object, value]
@@ -184,7 +187,10 @@ pub enum TermOp {
     // Elements (JSX-like)
     /// Allocate an element: inputs=[prop_val0, ..., child0, ...]
     /// prop_keys.len() determines where prop values end and children begin
-    AllocElement { tag: ConstantId, prop_keys: Vec<ConstantId> },
+    AllocElement {
+        tag: ConstantId,
+        prop_keys: Vec<ConstantId>,
+    },
 
     // Enums
     /// Construct an enum variant: inputs=[field values], variant name as constant

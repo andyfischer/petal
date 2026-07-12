@@ -12,7 +12,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::program::TermId;
 
-pub fn serialize_termid_map<V, S>(map: &HashMap<TermId, V>, serializer: S) -> Result<S::Ok, S::Error>
+pub fn serialize_termid_map<V, S>(
+    map: &HashMap<TermId, V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     V: Serialize,
     S: Serializer,

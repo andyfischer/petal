@@ -16,9 +16,9 @@ pub mod lastuse;
 pub mod lower;
 pub mod vm;
 
-pub use escape::{analyze as analyze_escapes, InPlaceSet};
-pub use lastuse::apply as apply_last_use;
+pub use escape::{InPlaceSet, analyze as analyze_escapes};
 pub use isa::{BytecodeFn, BytecodeProgram, Inst};
+pub use lastuse::apply as apply_last_use;
 pub use lower::{lower_program, lower_program_opt};
 pub use vm::{Vm, VmFrame};
 

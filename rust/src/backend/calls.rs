@@ -7,7 +7,7 @@
 //! ([`VmFrame`](super::bytecode::VmFrame)) stays in the VM.
 
 use crate::backend::RuntimeClosure;
-use crate::program::{base_fn_name, ClosureId, OverloadEntry, OverloadSetId, Program};
+use crate::program::{ClosureId, OverloadEntry, OverloadSetId, Program, base_fn_name};
 use crate::value::Value;
 
 /// Resolve a callable to a `ClosureId`, selecting an overload by `arg_count`.
@@ -20,9 +20,12 @@ pub fn resolve_callable(
 ) -> Result<ClosureId, String> {
     match callable {
         Value::Closure(id) => Ok(id),
-        Value::OverloadSet(set_id) => {
-            resolve_overload(program, closures, &overload_sets[set_id.0 as usize], arg_count)
-        }
+        Value::OverloadSet(set_id) => resolve_overload(
+            program,
+            closures,
+            &overload_sets[set_id.0 as usize],
+            arg_count,
+        ),
         _ => Err(format!("Expected a function, got {}", callable.type_name())),
     }
 }

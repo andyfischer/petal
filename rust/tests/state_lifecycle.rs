@@ -16,7 +16,9 @@ use petal::program::StateKey;
 #[test]
 fn state_survives_reset_and_rerun() {
     let mut env = Env::new();
-    let pid = env.load_program("state count = 0\ncount = count + 1").unwrap();
+    let pid = env
+        .load_program("state count = 0\ncount = count + 1")
+        .unwrap();
     let sid = env.create_stack(pid).unwrap();
 
     env.run(sid).unwrap();
@@ -59,7 +61,11 @@ fn state_list_accumulated_in_loop_persists_across_runs() {
     // received the writes.
     env.reset_stack(sid).unwrap();
     env.run(sid).unwrap();
-    assert_eq!(list_len(&env), 6, "second run should accumulate onto the persisted list");
+    assert_eq!(
+        list_len(&env),
+        6,
+        "second run should accumulate onto the persisted list"
+    );
 }
 
 #[test]
@@ -85,7 +91,11 @@ fn state_list_mutated_by_index_in_loop_persists_across_runs() {
 
     env.run(sid).unwrap();
     // First run: each cell incremented once → grid == [1, 1, 1].
-    assert_eq!(format!("{:?}", cell0(&env)), "Int(1)", "first run should set cell 0 to 1");
+    assert_eq!(
+        format!("{:?}", cell0(&env)),
+        "Int(1)",
+        "first run should set cell 0 to 1"
+    );
 
     // Second run: init is a cache hit (not reset to [0,0,0]), so cells accumulate
     // → grid == [2, 2, 2]. Confirms the index-assign rebind wrote to the base slot.
@@ -102,9 +112,7 @@ fn state_list_mutated_by_index_in_loop_persists_across_runs() {
 fn explicit_key_state_survives_reset_and_rerun() {
     let mut env = Env::new();
     let pid = env
-        .load_program(
-            "for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend",
-        )
+        .load_program("for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
 
@@ -115,7 +123,13 @@ fn explicit_key_state_survives_reset_and_rerun() {
     // After two runs, hits["a"] == 2 and hits["b"] == 2.
     // Both keys were visited each run so neither is GC'd.
     let map = env.get_all_state(sid).unwrap();
-    assert_eq!(map.len(), 2, "expected 2 entries, got {}: {:?}", map.len(), map);
+    assert_eq!(
+        map.len(),
+        2,
+        "expected 2 entries, got {}: {:?}",
+        map.len(),
+        map
+    );
     for (_k, v) in map.iter() {
         assert_eq!(format!("{:?}", v), "Int(2)");
     }
@@ -127,9 +141,7 @@ fn untouched_state_keys_are_swept_after_run() {
 
     // First program touches both "a" and "b".
     let pid1 = env
-        .load_program(
-            "for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend",
-        )
+        .load_program("for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend")
         .unwrap();
     let sid = env.create_stack(pid1).unwrap();
     env.run(sid).unwrap();
@@ -138,9 +150,7 @@ fn untouched_state_keys_are_swept_after_run() {
     // We swap the program but keep the state map; on the next run, "b"
     // should be swept.
     let pid2 = env
-        .load_program(
-            "for v in [\"a\"] do\n  state(v) hits = 0\n  hits += 1\nend",
-        )
+        .load_program("for v in [\"a\"] do\n  state(v) hits = 0\n  hits += 1\nend")
         .unwrap();
     // Reuse the same Stack with a fresh program: snapshot the state, build
     // a stack on the new program, restore the snapshot.

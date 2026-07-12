@@ -39,8 +39,12 @@ impl DupKind {
     pub const COUNT: usize = 4;
 
     /// Every kind, in display order. Indexes line up with [`DupKind::index`].
-    pub const ALL: [DupKind; Self::COUNT] =
-        [DupKind::List, DupKind::Map, DupKind::F64Array, DupKind::Fork];
+    pub const ALL: [DupKind; Self::COUNT] = [
+        DupKind::List,
+        DupKind::Map,
+        DupKind::F64Array,
+        DupKind::Fork,
+    ];
 
     /// Dense index into the [`DupStats`] backing array.
     const fn index(self) -> usize {

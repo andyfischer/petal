@@ -14,7 +14,11 @@ impl<'a> Vm<'a> {
     /// return its result. Used by the synchronous higher-order intrinsics and by
     /// `Env::call_function` (the host-facing "invoke one function" API). Works
     /// from any frame depth, including a fresh VM with no root frame.
-    pub(crate) fn call_closure_sync(&mut self, callable: Value, call_args: &[Value]) -> Result<Value, String> {
+    pub(crate) fn call_closure_sync(
+        &mut self,
+        callable: Value,
+        call_args: &[Value],
+    ) -> Result<Value, String> {
         let cid = calls::resolve_callable(
             self.program,
             self.closures,

@@ -14,7 +14,7 @@ use crate::lexer::Lexer;
 use crate::program::{Program, ProgramId, Term, TermId};
 use crate::source_map::ENTRY_FILE;
 
-use super::{die, die_plain, SourceInput};
+use super::{SourceInput, die, die_plain};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_run(
@@ -30,7 +30,9 @@ pub(super) fn handle_run(
     include_dirs: &[PathBuf],
 ) {
     if trace || std::env::var("PETAL_DEBUG").is_ok() {
-        unsafe { std::env::set_var("PETAL_TRACE", "1"); }
+        unsafe {
+            std::env::set_var("PETAL_TRACE", "1");
+        }
     }
     // `--trace-pending` (or PETAL_TRACE_PENDING=1) turns on the absorption log
     // and prints the frame pending report after the run.
@@ -71,7 +73,10 @@ pub(super) fn handle_run(
 
     if trace_pending {
         let report = env.pending_report(pid, sid);
-        eprintln!("pending report: {}", serde_json::to_string_pretty(&report).unwrap());
+        eprintln!(
+            "pending report: {}",
+            serde_json::to_string_pretty(&report).unwrap()
+        );
     }
 
     if let Err(e) = run_result {
@@ -128,8 +133,14 @@ fn print_pending_report_text(report: &serde_json::Value) {
     println!("Pending resources ({}):", entries.len());
     for entry in entries {
         let state = entry.get("state").and_then(|s| s.as_str()).unwrap_or("?");
-        let age = entry.get("age_frames").and_then(|a| a.as_u64()).unwrap_or(0);
-        let absorbed = entry.get("absorbed_count").and_then(|a| a.as_u64()).unwrap_or(0);
+        let age = entry
+            .get("age_frames")
+            .and_then(|a| a.as_u64())
+            .unwrap_or(0);
+        let absorbed = entry
+            .get("absorbed_count")
+            .and_then(|a| a.as_u64())
+            .unwrap_or(0);
         let origin = entry
             .get("origin")
             .and_then(|o| o.get("text"))
@@ -166,17 +177,13 @@ pub(super) fn handle_explain(
 
     // Pretty header — use the resolved term name if available so an
     // `--term 72` query still shows `(total)` instead of `(72)`.
-    let header_name = program
-        .get_term(target_id)
-        .name
-        .clone()
-        .unwrap_or_else(|| {
-            if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
-                "unnamed".to_string()
-            } else {
-                term_query.clone()
-            }
-        });
+    let header_name = program.get_term(target_id).name.clone().unwrap_or_else(|| {
+        if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
+            "unnamed".to_string()
+        } else {
+            term_query.clone()
+        }
+    });
 
     if json {
         let entries_json: Vec<_> = entries.iter().map(|e| e.to_json()).collect();
@@ -197,7 +204,10 @@ pub(super) fn handle_explain(
             let name = e.name.as_deref().unwrap_or("-");
             let value = e.value.as_deref().unwrap_or("<not executed>");
             let arrow = if i == 0 { "=>" } else { " ." };
-            println!("    {} t{} {} {} = {}", arrow, e.term_id.0, name, loc, value);
+            println!(
+                "    {} t{} {} {} = {}",
+                arrow, e.term_id.0, name, loc, value
+            );
         }
     }
 }
@@ -252,7 +262,9 @@ pub(super) fn handle_lint(
         print!("{}", outcome.output);
         return;
     }
-    let SourceInput::File(path) = source_input else { unreachable!() };
+    let SourceInput::File(path) = source_input else {
+        unreachable!()
+    };
     let summary = format!(
         "{}: {} line(s) reformatted, {} rebind rewrite(s)",
         path, outcome.reindented_lines, outcome.rebinds
@@ -282,10 +294,7 @@ pub(super) fn handle_show_tokens(json: bool, source: &str) {
     match lexer.tokenize() {
         Ok(_) => {
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&lexer.tokens).unwrap()
-                );
+                println!("{}", serde_json::to_string_pretty(&lexer.tokens).unwrap());
             } else {
                 for (i, token) in lexer.tokens.iter().enumerate() {
                     println!("{}: {:?}", i, token);
@@ -333,7 +342,7 @@ pub(super) fn handle_show_bytecode(
     include_dirs: &[PathBuf],
 ) {
     use crate::backend::bytecode::{
-        analyze_escapes, apply_last_use, disasm, lower_program_opt, InPlaceSet,
+        InPlaceSet, analyze_escapes, apply_last_use, disasm, lower_program_opt,
     };
     let program = compile_source(source, source_input, include_dirs);
     // Mirror the runtime defaults: the disassembly shows the in-place
@@ -354,8 +363,7 @@ pub(super) fn handle_show_bytecode(
             if json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&disasm::render_json(&bc, &program))
-                        .unwrap()
+                    serde_json::to_string_pretty(&disasm::render_json(&bc, &program)).unwrap()
                 );
             } else {
                 print!("{}", disasm::render_text(&bc, &program));
@@ -396,10 +404,16 @@ pub(super) fn handle_show_provenance(
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        println!("Provenance of t{} ({}):", root_id.0,
-            root_term.name.as_deref().unwrap_or("unnamed"));
+        println!(
+            "Provenance of t{} ({}):",
+            root_id.0,
+            root_term.name.as_deref().unwrap_or("unnamed")
+        );
         println!("  op: {:?}", root_term.op);
-        println!("  inputs: {:?}", root_term.inputs.iter().map(|i| i.0).collect::<Vec<_>>());
+        println!(
+            "  inputs: {:?}",
+            root_term.inputs.iter().map(|i| i.0).collect::<Vec<_>>()
+        );
         println!();
         println!("Ancestors ({}):", ancestor_ids.len());
         print_term_rows(&program, &ancestor_ids);
@@ -439,8 +453,11 @@ pub(super) fn handle_show_dependents(
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        println!("Dependents of t{} ({}):", root_id.0,
-            root_term.name.as_deref().unwrap_or("unnamed"));
+        println!(
+            "Dependents of t{} ({}):",
+            root_id.0,
+            root_term.name.as_deref().unwrap_or("unnamed")
+        );
         println!("  op: {:?}", root_term.op);
         println!();
         println!("Downstream ({}):", dependent_ids.len());
@@ -477,10 +494,14 @@ pub(super) fn handle_show_slice(
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        println!("Slice for targets: {}", target_ids.iter()
-            .map(|id| format!("t{}", id.0))
-            .collect::<Vec<_>>()
-            .join(", "));
+        println!(
+            "Slice for targets: {}",
+            target_ids
+                .iter()
+                .map(|id| format!("t{}", id.0))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         println!();
         println!("Terms ({}):", slice_ids.len());
         print_term_rows(&program, &slice_ids);
@@ -602,8 +623,12 @@ fn edges_to_json(edges: &[(TermId, TermId)]) -> Vec<serde_json::Value> {
 fn print_term_rows(program: &Program, ids: &[TermId]) {
     for &id in ids {
         let t = program.get_term(id);
-        println!("  t{}: {:?} {}", t.id.0, t.op,
-            t.name.as_deref().unwrap_or(""));
+        println!(
+            "  t{}: {:?} {}",
+            t.id.0,
+            t.op,
+            t.name.as_deref().unwrap_or("")
+        );
     }
 }
 

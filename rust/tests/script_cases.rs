@@ -24,7 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use petal::env::Env;
-use petal::stats::{AllocStats, DupKind, DupStats, DUP_STATS_ENABLED};
+use petal::stats::{AllocStats, DUP_STATS_ENABLED, DupKind, DupStats};
 
 /// One `max <family>.<kind>.<metric>` ceiling parsed from an `expects` file.
 /// `family` is `dup` (copy-on-write/fork) or `alloc` (new objects created).
@@ -59,7 +59,10 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
             output.push(rest.strip_prefix(' ').unwrap_or(rest).to_string());
         } else if let Some(rest) = trimmed.strip_prefix("max ") {
             let (key, value) = rest.split_once(':').unwrap_or_else(|| {
-                panic!("{case}/expects:{}: `max` line needs `key: value`: {line:?}", lineno + 1)
+                panic!(
+                    "{case}/expects:{}: `max` line needs `key: value`: {line:?}",
+                    lineno + 1
+                )
             });
             let parts: Vec<&str> = key.trim().split('.').collect();
             if parts.len() != 3 || (parts[0] != "dup" && parts[0] != "alloc") {
@@ -70,7 +73,11 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
                 );
             }
             let max = value.trim().parse::<u64>().unwrap_or_else(|_| {
-                panic!("{case}/expects:{}: ceiling must be a number, got {:?}", lineno + 1, value.trim())
+                panic!(
+                    "{case}/expects:{}: ceiling must be a number, got {:?}",
+                    lineno + 1,
+                    value.trim()
+                )
             });
             ceilings.push(MetricCeiling {
                 family: parts[0].to_string(),
@@ -79,7 +86,10 @@ fn parse_expects(text: &str, case: &str) -> Expectations {
                 max,
             });
         } else {
-            panic!("{case}/expects:{}: unrecognized directive: {line:?}", lineno + 1);
+            panic!(
+                "{case}/expects:{}: unrecognized directive: {line:?}",
+                lineno + 1
+            );
         }
     }
 
@@ -142,7 +152,9 @@ fn check_case(dir: &Path) -> Vec<String> {
             return errors;
         }
     };
-    let sid = env.create_stack(pid).unwrap_or_else(|e| panic!("{case}: create_stack: {e}"));
+    let sid = env
+        .create_stack(pid)
+        .unwrap_or_else(|e| panic!("{case}: create_stack: {e}"));
     if let Err(e) = env.run(sid) {
         errors.push(format!("{case}: runtime error: {e}"));
         return errors;

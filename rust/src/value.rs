@@ -34,11 +34,17 @@ pub enum Value {
     /// Multi-arity function: dispatches to the right closure based on arg count.
     OverloadSet(OverloadSetId),
     NativeFunction(NativeFnId),
-    EnumVariant { tag: StringId, data: ListId },
+    EnumVariant {
+        tag: StringId,
+        data: ListId,
+    },
     Element(ElementId),
     /// Dual number for forward-mode automatic differentiation.
     /// Carries a primal value and its derivative (tangent).
-    Dual { value: f64, derivative: f64 },
+    Dual {
+        value: f64,
+        derivative: f64,
+    },
     /// 2D vector for creative coding (positions, velocities, forces).
     Vec2(f64, f64),
     /// An interned symbol — a binding key shared with the embedding host.
@@ -143,7 +149,12 @@ impl fmt::Debug for Value {
             }
             Value::Element(id) => write!(f, "Element({:?})", id),
             Value::Dual { value, derivative } => {
-                write!(f, "Dual({}, {})", format_float(*value), format_float(*derivative))
+                write!(
+                    f,
+                    "Dual({}, {})",
+                    format_float(*value),
+                    format_float(*derivative)
+                )
             }
             Value::Vec2(x, y) => {
                 write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
@@ -205,7 +216,11 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
             }
         }
         Value::Dual { value, derivative } => {
-            format!("dual({}, {})", format_float(*value), format_float(*derivative))
+            format!(
+                "dual({}, {})",
+                format_float(*value),
+                format_float(*derivative)
+            )
         }
         Value::Vec2(x, y) => {
             format!("vec2({}, {})", format_float(*x), format_float(*y))
@@ -440,8 +455,10 @@ pub fn value_to_json_ctx(
         Value::String(id) => serde_json::Value::String(heap.get_string(*id).to_string()),
         Value::List(id) => {
             let elems = heap.get_list(*id);
-            let arr: Vec<serde_json::Value> =
-                elems.iter().map(|v| value_to_json_ctx(v, heap, ctx)).collect();
+            let arr: Vec<serde_json::Value> = elems
+                .iter()
+                .map(|v| value_to_json_ctx(v, heap, ctx))
+                .collect();
             serde_json::Value::Array(arr)
         }
         Value::F64Array(id) => {
@@ -466,8 +483,10 @@ pub fn value_to_json_ctx(
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag).to_string();
             let fields = heap.get_list(*data);
-            let arr: Vec<serde_json::Value> =
-                fields.iter().map(|v| value_to_json_ctx(v, heap, ctx)).collect();
+            let arr: Vec<serde_json::Value> = fields
+                .iter()
+                .map(|v| value_to_json_ctx(v, heap, ctx))
+                .collect();
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
         Value::Element(id) => element_to_json(*id, heap, ctx),
@@ -513,10 +532,22 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     match val {
         Value::Nil => 0u8.hash(&mut hasher),
-        Value::Bool(b) => { 1u8.hash(&mut hasher); b.hash(&mut hasher); }
-        Value::Int(n) => { 2u8.hash(&mut hasher); n.hash(&mut hasher); }
-        Value::Float(f) => { 3u8.hash(&mut hasher); f.to_bits().hash(&mut hasher); }
-        Value::String(id) => { 4u8.hash(&mut hasher); heap.get_string(*id).hash(&mut hasher); }
+        Value::Bool(b) => {
+            1u8.hash(&mut hasher);
+            b.hash(&mut hasher);
+        }
+        Value::Int(n) => {
+            2u8.hash(&mut hasher);
+            n.hash(&mut hasher);
+        }
+        Value::Float(f) => {
+            3u8.hash(&mut hasher);
+            f.to_bits().hash(&mut hasher);
+        }
+        Value::String(id) => {
+            4u8.hash(&mut hasher);
+            heap.get_string(*id).hash(&mut hasher);
+        }
         Value::List(id) => {
             5u8.hash(&mut hasher);
             let elems = heap.get_list(*id);
@@ -542,7 +573,10 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
             h.serial.hash(&mut hasher);
         }
         // For other types, hash the debug representation
-        other => { 6u8.hash(&mut hasher); format!("{:?}", other).hash(&mut hasher); }
+        other => {
+            6u8.hash(&mut hasher);
+            format!("{:?}", other).hash(&mut hasher);
+        }
     }
     hasher.finish()
 }
@@ -561,10 +595,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
             // With string interning, equal content means equal IDs
             a == b || heap.get_string(*a) == heap.get_string(*b)
         }
-        (
-            Value::EnumVariant { tag: at, data: ad },
-            Value::EnumVariant { tag: bt, data: bd },
-        ) => {
+        (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
             (at == bt || heap.get_string(*at) == heap.get_string(*bt)) && {
                 let a_fields = heap.get_list(*ad);
                 let b_fields = heap.get_list(*bd);
@@ -590,13 +621,19 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
             a_data == b_data
         }
         (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
-        (Value::Dual { value: av, derivative: ad }, Value::Dual { value: bv, derivative: bd }) => {
-            av == bv && ad == bd
-        }
+        (
+            Value::Dual {
+                value: av,
+                derivative: ad,
+            },
+            Value::Dual {
+                value: bv,
+                derivative: bd,
+            },
+        ) => av == bv && ad == bd,
         // Dual compared with numeric: compare primal values only
-        (Value::Dual { value, .. }, Value::Float(f)) | (Value::Float(f), Value::Dual { value, .. }) => {
-            value == f
-        }
+        (Value::Dual { value, .. }, Value::Float(f))
+        | (Value::Float(f), Value::Dual { value, .. }) => value == f,
         (Value::Dual { value, .. }, Value::Int(n)) | (Value::Int(n), Value::Dual { value, .. }) => {
             *value == *n as f64
         }

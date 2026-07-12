@@ -19,7 +19,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use petal_ui::draw::clear_draw_commands;
-use petal_ui::input::{bind_frame_info, bind_input, dimensions, InputState};
+use petal_ui::input::{InputState, bind_frame_info, bind_input, dimensions};
 
 use crate::game_loop::Host;
 
@@ -267,11 +267,17 @@ pub fn handle_command<H: Host>(
     match cmd {
         Command::Pause => {
             *paused = true;
-            send_response(&Response { paused: Some(true), ..Response::ok() });
+            send_response(&Response {
+                paused: Some(true),
+                ..Response::ok()
+            });
         }
         Command::Resume => {
             *paused = false;
-            send_response(&Response { paused: Some(false), ..Response::ok() });
+            send_response(&Response {
+                paused: Some(false),
+                ..Response::ok()
+            });
         }
         Command::Step { n } => {
             let mut last_frame = 0i64;
@@ -287,28 +293,52 @@ pub fn handle_command<H: Host>(
             let output = env.take_output();
             send_response(&Response {
                 frame: Some(last_frame),
-                output: if output.is_empty() { None } else { Some(output) },
+                output: if output.is_empty() {
+                    None
+                } else {
+                    Some(output)
+                },
                 ..Response::ok()
             });
         }
         Command::State => {
             let state = env.get_state_json(program_id, stack_id);
-            send_response(&Response { state: Some(state), ..Response::ok() });
+            send_response(&Response {
+                state: Some(state),
+                ..Response::ok()
+            });
         }
         Command::CaptureDrawCommands => {
             host.prepare_frame(env);
             bind_input(env, input);
-            match with_speculative_frame(env, stack_id, |env, fork| host.draw_commands_json(env, fork)) {
+            match with_speculative_frame(env, stack_id, |env, fork| {
+                host.draw_commands_json(env, fork)
+            }) {
                 Ok((commands, output)) => send_response(&Response {
                     draw_commands: Some(commands),
-                    output: if output.is_empty() { None } else { Some(output) },
+                    output: if output.is_empty() {
+                        None
+                    } else {
+                        Some(output)
+                    },
                     ..Response::ok()
                 }),
                 Err(e) => send_response(&Response::err(e)),
             }
         }
-        Command::Input { keys_down, mouse, text, mouse_delta } => {
-            apply_input(input, &keys_down, mouse.as_ref(), &text, mouse_delta.as_ref());
+        Command::Input {
+            keys_down,
+            mouse,
+            text,
+            mouse_delta,
+        } => {
+            apply_input(
+                input,
+                &keys_down,
+                mouse.as_ref(),
+                &text,
+                mouse_delta.as_ref(),
+            );
             send_response(&Response::ok());
         }
         Command::SetState { name, value } => {
@@ -321,10 +351,15 @@ pub fn handle_command<H: Host>(
             let (w, h) = dimensions(env);
             host.prepare_frame(env);
             bind_input(env, input);
-            match with_speculative_frame(env, stack_id, |env, fork| host.render_image(env, fork, w, h)) {
+            match with_speculative_frame(env, stack_id, |env, fork| {
+                host.render_image(env, fork, w, h)
+            }) {
                 Ok((Ok(img), _output)) => {
                     let b64 = crate::screenshot::to_base64(&img);
-                    send_response(&Response { screenshot: Some(b64), ..Response::ok() });
+                    send_response(&Response {
+                        screenshot: Some(b64),
+                        ..Response::ok()
+                    });
                 }
                 Ok((Err(e), _)) => send_response(&Response::err(e)),
                 Err(e) => send_response(&Response::err(e)),
@@ -334,7 +369,10 @@ pub fn handle_command<H: Host>(
             host.prepare_frame(env);
             bind_input(env, input);
             match with_speculative_frame(env, stack_id, |env, fork| host.draw_stats(env, fork)) {
-                Ok((Some(stats), _)) => send_response(&Response { stats: Some(stats), ..Response::ok() }),
+                Ok((Some(stats), _)) => send_response(&Response {
+                    stats: Some(stats),
+                    ..Response::ok()
+                }),
                 Ok((None, _)) => send_response(&Response::err(
                     "draw_stats is not supported by this host".to_string(),
                 )),
@@ -347,7 +385,10 @@ pub fn handle_command<H: Host>(
             // method and has no unsupported-host fallback: it reads the live
             // resource table directly, no speculative frame required.
             let report = petal_ui::pending::pending_report(env, program_id, stack_id);
-            send_response(&Response { pending: Some(report), ..Response::ok() });
+            send_response(&Response {
+                pending: Some(report),
+                ..Response::ok()
+            });
         }
     }
 }
@@ -398,7 +439,10 @@ mod tests {
         let cmd: Command =
             serde_json::from_str(r#"{"cmd":"input","mouse_delta":{"dx":3,"dy":-2}}"#).unwrap();
         match cmd {
-            Command::Input { mouse_delta: Some(d), .. } => assert_eq!((d.dx, d.dy), (3, -2)),
+            Command::Input {
+                mouse_delta: Some(d),
+                ..
+            } => assert_eq!((d.dx, d.dy), (3, -2)),
             _ => panic!("expected an Input command with a mouse_delta"),
         }
     }

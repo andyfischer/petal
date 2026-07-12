@@ -70,14 +70,84 @@ const MOD_CMD: i64 = 8;
 /// Canonical key names. Hosts map their platform's key events onto these
 /// spellings so scripts are portable across embedders.
 pub const KEY_NAMES: &[&str] = &[
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o",
-    "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "0", "1", "2", "3",
-    "4", "5", "6", "7", "8", "9", "return", "escape", "backspace", "tab",
-    "space", "up", "down", "left", "right", "pageup", "pagedown", "home",
-    "end", "delete", "insert", "shift", "ctrl", "alt", "cmd", "f1", "f2",
-    "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", "minus",
-    "equals", "comma", "period", "slash", "backslash", "semicolon", "quote",
-    "backquote", "leftbracket", "rightbracket",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "return",
+    "escape",
+    "backspace",
+    "tab",
+    "space",
+    "up",
+    "down",
+    "left",
+    "right",
+    "pageup",
+    "pagedown",
+    "home",
+    "end",
+    "delete",
+    "insert",
+    "shift",
+    "ctrl",
+    "alt",
+    "cmd",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    "minus",
+    "equals",
+    "comma",
+    "period",
+    "slash",
+    "backslash",
+    "semicolon",
+    "quote",
+    "backquote",
+    "leftbracket",
+    "rightbracket",
 ];
 
 pub fn is_canonical_key(name: &str) -> bool {
@@ -105,24 +175,43 @@ impl Modifiers {
 /// [`KEY_NAMES`]); button ids use the [`buttons`] numbering.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputEvent {
-    MouseMove { x: i32, y: i32 },
+    MouseMove {
+        x: i32,
+        y: i32,
+    },
     /// Raw relative pointer motion, independent of the absolute position.
     /// Deltas accumulate within a frame and are read via `mouse_dx()` /
     /// `mouse_dy()`. This is what makes mouselook work while the pointer is
     /// grabbed/locked (absolute position stops moving, but deltas keep coming).
-    MouseRelative { dx: i32, dy: i32 },
-    MouseDown { button: u8 },
-    MouseUp { button: u8 },
+    MouseRelative {
+        dx: i32,
+        dy: i32,
+    },
+    MouseDown {
+        button: u8,
+    },
+    MouseUp {
+        button: u8,
+    },
     /// Wheel/trackpad scroll in lines. Fractional deltas accumulate across
     /// frames with carry, so slow trackpad scrolling still moves.
-    Scroll { dx: f64, dy: f64 },
+    Scroll {
+        dx: f64,
+        dy: f64,
+    },
     /// A key went down. Feeding OS auto-repeat events here is deliberate:
     /// each one re-fires the `key_pressed` edge (held-key list navigation)
     /// while `key_down` is unaffected.
-    KeyDown { key: String },
-    KeyUp { key: String },
+    KeyDown {
+        key: String,
+    },
+    KeyUp {
+        key: String,
+    },
     /// Typed text (post-layout, pre-IME). Read by `text_input()`.
-    Text { text: String },
+    Text {
+        text: String,
+    },
     /// The current modifier chord. Hosts that deliver modifiers as ordinary
     /// keys ("shift" down/up) may skip this and let scripts use `key_down`.
     Modifiers(Modifiers),
@@ -186,8 +275,7 @@ impl InputState {
                 self.mouse_y = y;
                 if let Some((sx, sy)) = self.drag_press {
                     if !self.drag_active
-                        && ((x - sx).abs() >= DRAG_THRESHOLD
-                            || (y - sy).abs() >= DRAG_THRESHOLD)
+                        && ((x - sx).abs() >= DRAG_THRESHOLD || (y - sy).abs() >= DRAG_THRESHOLD)
                     {
                         self.drag_active = true;
                     }
@@ -209,8 +297,7 @@ impl InputState {
                         }
                         _ => 1,
                     };
-                    self.last_click =
-                        Some((self.now, self.mouse_x, self.mouse_y, count));
+                    self.last_click = Some((self.now, self.mouse_x, self.mouse_y, count));
                     self.pending_click_count = count;
                 }
             }
@@ -250,10 +337,8 @@ impl InputState {
         self.now += dt;
         self.frame_keys_pressed = std::mem::take(&mut self.pending_keys_pressed);
         self.frame_keys_released = std::mem::take(&mut self.pending_keys_released);
-        self.frame_buttons_pressed =
-            std::mem::take(&mut self.pending_buttons_pressed);
-        self.frame_buttons_released =
-            std::mem::take(&mut self.pending_buttons_released);
+        self.frame_buttons_pressed = std::mem::take(&mut self.pending_buttons_pressed);
+        self.frame_buttons_released = std::mem::take(&mut self.pending_buttons_released);
         // Integer lines this frame; the fractional remainder carries over.
         let wx = self.pending_scroll.0.trunc();
         let wy = self.pending_scroll.1.trunc();
@@ -281,20 +366,38 @@ impl InputState {
             self.event(InputEvent::MouseMove { x, y });
         }
         let new_keys: HashSet<String> = keys_down.iter().cloned().collect();
-        for k in self.keys_down.difference(&new_keys).cloned().collect::<Vec<_>>() {
+        for k in self
+            .keys_down
+            .difference(&new_keys)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             self.event(InputEvent::KeyUp { key: k });
         }
-        for k in new_keys.difference(&self.keys_down).cloned().collect::<Vec<_>>() {
+        for k in new_keys
+            .difference(&self.keys_down)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             self.event(InputEvent::KeyDown { key: k });
         }
         // `None` leaves the held buttons untouched (a keys-only message);
         // `Some(&[])` explicitly releases everything.
         if let Some(buttons) = buttons_down {
             let new_buttons: HashSet<u8> = buttons.iter().copied().collect();
-            for b in self.buttons_down.difference(&new_buttons).copied().collect::<Vec<_>>() {
+            for b in self
+                .buttons_down
+                .difference(&new_buttons)
+                .copied()
+                .collect::<Vec<_>>()
+            {
                 self.event(InputEvent::MouseUp { button: b });
             }
-            for b in new_buttons.difference(&self.buttons_down).copied().collect::<Vec<_>>() {
+            for b in new_buttons
+                .difference(&self.buttons_down)
+                .copied()
+                .collect::<Vec<_>>()
+            {
                 self.event(InputEvent::MouseDown { button: b });
             }
         }
@@ -313,7 +416,9 @@ impl InputState {
     /// promoted by [`begin_frame`](Self::begin_frame) and read via
     /// `text_input()`.
     pub fn type_text(&mut self, text: &str) {
-        self.event(InputEvent::Text { text: text.to_string() });
+        self.event(InputEvent::Text {
+            text: text.to_string(),
+        });
     }
 
     /// The typed text delivered to the current frame (what `text_input()`
@@ -348,7 +453,11 @@ pub fn bind_input(env: &mut Env, input: &InputState) {
     bind_str_list(env, SYM_KEYS_DOWN, input.keys_down.iter());
     bind_str_list(env, SYM_KEYS_PRESSED, input.frame_keys_pressed.iter());
     bind_str_list(env, SYM_KEYS_RELEASED, input.frame_keys_released.iter());
-    bind_int_list(env, SYM_BUTTONS_DOWN, input.buttons_down.iter().map(|b| *b as i64));
+    bind_int_list(
+        env,
+        SYM_BUTTONS_DOWN,
+        input.buttons_down.iter().map(|b| *b as i64),
+    );
     bind_int_list(
         env,
         SYM_BUTTONS_PRESSED,
@@ -684,7 +793,9 @@ mod tests {
     use super::*;
 
     fn press(input: &mut InputState, key: &str) {
-        input.event(InputEvent::KeyDown { key: key.to_string() });
+        input.event(InputEvent::KeyDown {
+            key: key.to_string(),
+        });
     }
 
     #[test]
@@ -697,7 +808,9 @@ mod tests {
         input.begin_frame(0.016);
         assert!(!input.frame_keys_pressed.contains("j"));
         assert!(input.is_key_down("j"), "level state persists");
-        input.event(InputEvent::KeyUp { key: "j".to_string() });
+        input.event(InputEvent::KeyUp {
+            key: "j".to_string(),
+        });
         input.begin_frame(0.016);
         assert!(input.frame_keys_released.contains("j"));
         assert!(!input.is_key_down("j"));
@@ -730,7 +843,9 @@ mod tests {
     fn drag_requires_movement_past_threshold() {
         let mut input = InputState::new();
         input.event(InputEvent::MouseMove { x: 100, y: 100 });
-        input.event(InputEvent::MouseDown { button: buttons::LEFT });
+        input.event(InputEvent::MouseDown {
+            button: buttons::LEFT,
+        });
         input.begin_frame(0.016);
         assert!(!input.drag_active());
         input.event(InputEvent::MouseMove { x: 102, y: 100 });
@@ -738,7 +853,9 @@ mod tests {
         input.event(InputEvent::MouseMove { x: 104, y: 100 });
         assert!(input.drag_active());
         assert_eq!(input.drag_start(), Some((100, 100)));
-        input.event(InputEvent::MouseUp { button: buttons::LEFT });
+        input.event(InputEvent::MouseUp {
+            button: buttons::LEFT,
+        });
         assert!(!input.drag_active());
     }
 
@@ -746,26 +863,40 @@ mod tests {
     fn click_count_chains_within_window_and_radius() {
         let mut input = InputState::new();
         input.event(InputEvent::MouseMove { x: 50, y: 50 });
-        input.event(InputEvent::MouseDown { button: buttons::LEFT });
-        input.event(InputEvent::MouseUp { button: buttons::LEFT });
+        input.event(InputEvent::MouseDown {
+            button: buttons::LEFT,
+        });
+        input.event(InputEvent::MouseUp {
+            button: buttons::LEFT,
+        });
         input.begin_frame(0.1);
         assert_eq!(input.frame_click_count, 1);
 
-        input.event(InputEvent::MouseDown { button: buttons::LEFT });
-        input.event(InputEvent::MouseUp { button: buttons::LEFT });
+        input.event(InputEvent::MouseDown {
+            button: buttons::LEFT,
+        });
+        input.event(InputEvent::MouseUp {
+            button: buttons::LEFT,
+        });
         input.begin_frame(0.1);
         assert_eq!(input.frame_click_count, 2, "double click");
 
         // Too far away: chain resets.
         input.event(InputEvent::MouseMove { x: 90, y: 50 });
-        input.event(InputEvent::MouseDown { button: buttons::LEFT });
+        input.event(InputEvent::MouseDown {
+            button: buttons::LEFT,
+        });
         input.begin_frame(0.1);
         assert_eq!(input.frame_click_count, 1);
 
         // Too late: chain resets.
-        input.event(InputEvent::MouseUp { button: buttons::LEFT });
+        input.event(InputEvent::MouseUp {
+            button: buttons::LEFT,
+        });
         input.begin_frame(1.0);
-        input.event(InputEvent::MouseDown { button: buttons::LEFT });
+        input.event(InputEvent::MouseDown {
+            button: buttons::LEFT,
+        });
         input.begin_frame(0.016);
         assert_eq!(input.frame_click_count, 1);
     }

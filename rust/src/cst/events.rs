@@ -8,8 +8,8 @@ use crate::lexer::{Lexer, Token};
 use crate::source_map::SourceSpan;
 use crate::trivia::{Trivia, TriviaKind};
 
-use super::green::{GreenNode, GreenNodeBuilder, GreenToken};
 use super::SyntaxKind;
+use super::green::{GreenNode, GreenNodeBuilder, GreenToken};
 
 /// A parse event: the abstract shape of the tree, emitted by the parser as it
 /// recognizes constructs and later materialized by [`build_tree`]. Keeping
@@ -124,20 +124,39 @@ pub fn build_tree(
             Event::Open(kind) => builder.start_node(*kind),
             Event::Close => builder.finish_node(),
             Event::Token => {
-                emit_token(&mut builder, &mut k, &mut cursor, &chars, tokens, spans, leading_trivia);
+                emit_token(
+                    &mut builder,
+                    &mut k,
+                    &mut cursor,
+                    &chars,
+                    tokens,
+                    spans,
+                    leading_trivia,
+                );
             }
         }
     }
     // Flush tokens the parser never consumed (trailing Eof + its trivia) into
     // the root, so nothing is lost even though no event references them.
     while k < tokens.len() {
-        emit_token(&mut builder, &mut k, &mut cursor, &chars, tokens, spans, leading_trivia);
+        emit_token(
+            &mut builder,
+            &mut k,
+            &mut cursor,
+            &chars,
+            tokens,
+            spans,
+            leading_trivia,
+        );
     }
     // Defensive: any characters past the final token (only reachable if the
     // stream somehow lacks an Eof whose trivia covers the tail).
     if cursor < chars.len() {
         let text: String = chars[cursor..].iter().collect();
-        builder.token(GreenToken::Trivia { kind: TriviaKind::Whitespace, text });
+        builder.token(GreenToken::Trivia {
+            kind: TriviaKind::Whitespace,
+            text,
+        });
     }
 
     builder.finish_node(); // Root
@@ -157,7 +176,10 @@ fn emit_token(
     leading_trivia: &[Vec<Trivia>],
 ) {
     for tr in &leading_trivia[*k] {
-        builder.token(GreenToken::Trivia { kind: tr.kind.clone(), text: tr.text.clone() });
+        builder.token(GreenToken::Trivia {
+            kind: tr.kind.clone(),
+            text: tr.text.clone(),
+        });
     }
     let span = spans[*k];
     let len = chars.len();
@@ -173,7 +195,10 @@ fn emit_token(
         // the tree has one token leaf per lexer token.
         String::new()
     };
-    builder.token(GreenToken::Token { token: tokens[*k].clone(), text });
+    builder.token(GreenToken::Token {
+        token: tokens[*k].clone(),
+        text,
+    });
     *k += 1;
 }
 

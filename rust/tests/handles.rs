@@ -155,7 +155,10 @@ fn handles_with_different_serial_are_not_equal_in_script() {
 fn handle_is_truthy_host_side() {
     let (env, class) = env_with_test_class();
     let v = env.make_handle(class, 0, 0);
-    assert!(v.is_truthy(), "a handle is truthy regardless of slot/serial");
+    assert!(
+        v.is_truthy(),
+        "a handle is truthy regardless of slot/serial"
+    );
 }
 
 #[test]
@@ -181,10 +184,26 @@ fn handle_is_not_equal_to_nil() {
 #[test]
 fn handle_val_equality_and_hash() {
     let class = HandleClassId(1);
-    let a = HandleVal { class, slot: 4, serial: 10 };
-    let b = HandleVal { class, slot: 4, serial: 10 };
-    let c = HandleVal { class, slot: 4, serial: 11 }; // different serial
-    let d = HandleVal { class: HandleClassId(2), slot: 4, serial: 10 }; // different class
+    let a = HandleVal {
+        class,
+        slot: 4,
+        serial: 10,
+    };
+    let b = HandleVal {
+        class,
+        slot: 4,
+        serial: 10,
+    };
+    let c = HandleVal {
+        class,
+        slot: 4,
+        serial: 11,
+    }; // different serial
+    let d = HandleVal {
+        class: HandleClassId(2),
+        slot: 4,
+        serial: 10,
+    }; // different class
 
     assert_eq!(a, b, "same (class, slot, serial) must be equal");
     assert_ne!(a, c, "different serial must not be equal");
@@ -370,9 +389,7 @@ fn unknown_handle_method_surfaces_call_method_error() {
         &[],
         "let h = binding(symbol(\"h\"))\nh.frobnicate()",
     );
-    let err = result.expect_err(&format!(
-        "unknown handle method must be a runtime error"
-    ));
+    let err = result.expect_err(&format!("unknown handle method must be a runtime error"));
     assert!(
         err.contains("frobnicate"),
         "error must name the missing method, got: {err}"
@@ -447,11 +464,7 @@ fn is_valid_false_for_stale_handle_without_error() {
 #[test]
 fn is_valid_false_for_nil() {
     let result = run_plain("is_valid(nil)");
-    assert_eq!(
-        result,
-        Ok(Value::Bool(false)),
-        "nil is not a valid handle"
-    );
+    assert_eq!(result, Ok(Value::Bool(false)), "nil is not a valid handle");
 }
 
 #[test]

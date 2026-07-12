@@ -5,9 +5,7 @@
 
 use std::path::PathBuf;
 
-use petal_sdl::{
-    run_agent, run_game, run_headless, run_screenshot, DefaultHost, GameConfig,
-};
+use petal_sdl::{DefaultHost, GameConfig, run_agent, run_game, run_headless, run_screenshot};
 
 /// Resolved at compile time to `petal-sdl/examples/`.
 const EXAMPLES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples");
@@ -84,7 +82,14 @@ fn main() {
         None
     };
 
-    let config = GameConfig { width, height, title, hot_reload, agent, headless };
+    let config = GameConfig {
+        width,
+        height,
+        title,
+        hot_reload,
+        agent,
+        headless,
+    };
     let mut host = DefaultHost::new(examples_dir);
     let sp = source_path.as_deref();
 

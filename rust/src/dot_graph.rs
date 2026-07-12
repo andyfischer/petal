@@ -10,7 +10,11 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
     let mut dot = String::new();
     writeln!(dot, "digraph dataflow {{").unwrap();
     writeln!(dot, "  rankdir=TB;").unwrap();
-    writeln!(dot, "  node [shape=box, fontname=\"monospace\", fontsize=10];").unwrap();
+    writeln!(
+        dot,
+        "  node [shape=box, fontname=\"monospace\", fontsize=10];"
+    )
+    .unwrap();
     writeln!(dot, "  edge [fontname=\"monospace\", fontsize=8];").unwrap();
 
     for term in &program.terms {
@@ -36,8 +40,12 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
             _ => "white",
         };
 
-        writeln!(dot, "  t{} [label=\"{}\", style=filled, fillcolor={}];",
-            term.id.0, label, color).unwrap();
+        writeln!(
+            dot,
+            "  t{} [label=\"{}\", style=filled, fillcolor={}];",
+            term.id.0, label, color
+        )
+        .unwrap();
 
         // Dataflow edges (input -> term). Skip edges referencing phantom
         // builtins so the rendered graph matches the visible nodes.
@@ -52,8 +60,12 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
         for child_block in &term.child_blocks {
             let block = program.get_block(*child_block);
             if let Some(entry) = block.entry {
-                writeln!(dot, "  t{} -> t{} [style=dashed, color=gray];",
-                    term.id.0, entry.0).unwrap();
+                writeln!(
+                    dot,
+                    "  t{} -> t{} [style=dashed, color=gray];",
+                    term.id.0, entry.0
+                )
+                .unwrap();
             }
         }
     }
@@ -91,7 +103,8 @@ mod tests {
         assert!(dot.contains("(Add)"), "expected an Add term node:\n{dot}");
         // At least one dataflow edge "tN -> tM;" (not a dashed control edge).
         assert!(
-            dot.lines().any(|l| l.contains("->") && !l.contains("dashed")),
+            dot.lines()
+                .any(|l| l.contains("->") && !l.contains("dashed")),
             "expected a dataflow edge:\n{dot}"
         );
     }

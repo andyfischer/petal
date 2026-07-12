@@ -24,20 +24,50 @@ pub enum Command {
         /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
         trace_pending: bool,
     },
-    Check { json: bool },
-    Lint { fix: bool, check: bool },
-    Explain { json: bool, term: String },
-    ShowIr { json: bool, all: bool },
-    ShowBytecode { json: bool },
-    ShowAst { json: bool },
-    ShowTokens { json: bool },
-    ShowProvenance { json: bool, term: String },
-    ShowDependents { json: bool, term: String },
-    ShowSlice { json: bool, terms: Vec<String> },
-    ShowGraph { all: bool },
+    Check {
+        json: bool,
+    },
+    Lint {
+        fix: bool,
+        check: bool,
+    },
+    Explain {
+        json: bool,
+        term: String,
+    },
+    ShowIr {
+        json: bool,
+        all: bool,
+    },
+    ShowBytecode {
+        json: bool,
+    },
+    ShowAst {
+        json: bool,
+    },
+    ShowTokens {
+        json: bool,
+    },
+    ShowProvenance {
+        json: bool,
+        term: String,
+    },
+    ShowDependents {
+        json: bool,
+        term: String,
+    },
+    ShowSlice {
+        json: bool,
+        terms: Vec<String>,
+    },
+    ShowGraph {
+        all: bool,
+    },
     /// Run the program and emit the frame pending report (a JSON array of every
     /// live pending resource). The observability counterpart to `run`.
-    PendingReport { json: bool },
+    PendingReport {
+        json: bool,
+    },
 }
 
 pub enum SourceInput {
@@ -178,14 +208,34 @@ fn die_plain(err: &str) -> ! {
 }
 
 pub fn execute(cli: CliArgs) {
-    let CliArgs { command, source: source_input, include_dirs } = cli;
+    let CliArgs {
+        command,
+        source: source_input,
+        include_dirs,
+    } = cli;
     let source = read_source(&source_input);
 
     match command {
-        Command::Run { json, trace, record_trace, ir, dup_stats, no_opt, trace_pending } => {
+        Command::Run {
+            json,
+            trace,
+            record_trace,
+            ir,
+            dup_stats,
+            no_opt,
+            trace_pending,
+        } => {
             handlers::handle_run(
-                json, trace, record_trace, ir, dup_stats, no_opt, trace_pending,
-                &source, &source_input, &include_dirs,
+                json,
+                trace,
+                record_trace,
+                ir,
+                dup_stats,
+                no_opt,
+                trace_pending,
+                &source,
+                &source_input,
+                &include_dirs,
             );
         }
         Command::PendingReport { json } => {

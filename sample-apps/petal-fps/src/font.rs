@@ -15,13 +15,7 @@ pub fn glyph(ch: char) -> [u8; 7] {
 }
 
 const UNKNOWN: [u8; 7] = [
-    0b11111,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b11111,
+    0b11111, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11111,
 ];
 
 // Rows are top-to-bottom, 5 bits wide each, left-aligned within a byte.

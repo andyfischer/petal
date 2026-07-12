@@ -26,9 +26,7 @@ impl Env {
         stack_id: crate::stack::StackKey,
         new_program: Program,
     ) -> Result<TransferStateResult, String> {
-        let stack = self
-            .stack(stack_id)
-            .ok_or("Stack not found")?;
+        let stack = self.stack(stack_id).ok_or("Stack not found")?;
         let old_program_id = stack.program_id;
 
         // Collect base state keys from the new program to know which state to keep
@@ -36,7 +34,9 @@ impl Env {
             new_program.state_terms().map(|(k, _)| k).collect();
 
         // Determine which old state values will be preserved (match on base key)
-        let preserved: usize = stack.state.keys()
+        let preserved: usize = stack
+            .state
+            .keys()
             .filter(|k| new_state_keys.contains(&k.base))
             .count();
         let dropped: usize = stack.state.len() - preserved;
@@ -98,7 +98,10 @@ mod tests {
 
         let new_program = env.compile_program(pid, source_v2).unwrap();
         let result = env.transfer_state(sid, new_program).unwrap();
-        assert_eq!(result.state_preserved, expect_preserved, "[{opts:?}] preserved");
+        assert_eq!(
+            result.state_preserved, expect_preserved,
+            "[{opts:?}] preserved"
+        );
         assert_eq!(result.state_dropped, expect_dropped, "[{opts:?}] dropped");
 
         env.run(sid).unwrap();

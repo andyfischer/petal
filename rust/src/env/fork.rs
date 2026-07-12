@@ -40,7 +40,11 @@ impl Env {
         // Fork the source context into a fresh context key.
         let new_ck = ContextKey(self.next_context_id);
         self.next_context_id += 1;
-        let forked = self.contexts.get(&src_ck).ok_or("Context not found")?.fork();
+        let forked = self
+            .contexts
+            .get(&src_ck)
+            .ok_or("Context not found")?
+            .fork();
         self.contexts.insert(new_ck, forked);
 
         // Clone the source stack into a fresh stack key, rebinding it to the new

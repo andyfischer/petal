@@ -147,61 +147,105 @@ impl Framebuffer {
     /// rendering at the scales we use, and keeps the inner loop fast.
     pub fn draw_triangle_3d(
         &mut self,
-        x1: f32, y1: f32, z1: f32,
-        x2: f32, y2: f32, z2: f32,
-        x3: f32, y3: f32, z3: f32,
-        r: u8, g: u8, b: u8,
+        x1: f32,
+        y1: f32,
+        z1: f32,
+        x2: f32,
+        y2: f32,
+        z2: f32,
+        x3: f32,
+        y3: f32,
+        z3: f32,
+        r: u8,
+        g: u8,
+        b: u8,
     ) {
         // Reject triangles with any vertex behind the near plane.
         if z1 <= 0.0 || z2 <= 0.0 || z3 <= 0.0 {
             return;
         }
         self.triangle_inner(
-            x1, y1, z1, r, g, b,
-            x2, y2, z2, r, g, b,
-            x3, y3, z3, r, g, b,
-            false,
+            x1, y1, z1, r, g, b, x2, y2, z2, r, g, b, x3, y3, z3, r, g, b, false,
         );
     }
 
     /// Gouraud-shaded triangle (per-vertex colors).
     pub fn draw_triangle_shaded(
         &mut self,
-        x1: f32, y1: f32, z1: f32, r1: u8, g1: u8, b1: u8,
-        x2: f32, y2: f32, z2: f32, r2: u8, g2: u8, b2: u8,
-        x3: f32, y3: f32, z3: f32, r3: u8, g3: u8, b3: u8,
+        x1: f32,
+        y1: f32,
+        z1: f32,
+        r1: u8,
+        g1: u8,
+        b1: u8,
+        x2: f32,
+        y2: f32,
+        z2: f32,
+        r2: u8,
+        g2: u8,
+        b2: u8,
+        x3: f32,
+        y3: f32,
+        z3: f32,
+        r3: u8,
+        g3: u8,
+        b3: u8,
     ) {
         if z1 <= 0.0 || z2 <= 0.0 || z3 <= 0.0 {
             return;
         }
         self.triangle_inner(
-            x1, y1, z1, r1, g1, b1,
-            x2, y2, z2, r2, g2, b2,
-            x3, y3, z3, r3, g3, b3,
-            true,
+            x1, y1, z1, r1, g1, b1, x2, y2, z2, r2, g2, b2, x3, y3, z3, r3, g3, b3, true,
         );
     }
 
     #[allow(clippy::too_many_arguments)]
     fn triangle_inner(
         &mut self,
-        mut x1: f32, mut y1: f32, mut z1: f32, mut r1: u8, mut g1: u8, mut b1: u8,
-        mut x2: f32, mut y2: f32, mut z2: f32, mut r2: u8, mut g2: u8, mut b2: u8,
-        mut x3: f32, mut y3: f32, mut z3: f32, mut r3: u8, mut g3: u8, mut b3: u8,
+        mut x1: f32,
+        mut y1: f32,
+        mut z1: f32,
+        mut r1: u8,
+        mut g1: u8,
+        mut b1: u8,
+        mut x2: f32,
+        mut y2: f32,
+        mut z2: f32,
+        mut r2: u8,
+        mut g2: u8,
+        mut b2: u8,
+        mut x3: f32,
+        mut y3: f32,
+        mut z3: f32,
+        mut r3: u8,
+        mut g3: u8,
+        mut b3: u8,
         shaded: bool,
     ) {
         // Sort vertices by y ascending so v1.y <= v2.y <= v3.y.
         if y2 < y1 {
-            std::mem::swap(&mut x1, &mut x2); std::mem::swap(&mut y1, &mut y2); std::mem::swap(&mut z1, &mut z2);
-            std::mem::swap(&mut r1, &mut r2); std::mem::swap(&mut g1, &mut g2); std::mem::swap(&mut b1, &mut b2);
+            std::mem::swap(&mut x1, &mut x2);
+            std::mem::swap(&mut y1, &mut y2);
+            std::mem::swap(&mut z1, &mut z2);
+            std::mem::swap(&mut r1, &mut r2);
+            std::mem::swap(&mut g1, &mut g2);
+            std::mem::swap(&mut b1, &mut b2);
         }
         if y3 < y1 {
-            std::mem::swap(&mut x1, &mut x3); std::mem::swap(&mut y1, &mut y3); std::mem::swap(&mut z1, &mut z3);
-            std::mem::swap(&mut r1, &mut r3); std::mem::swap(&mut g1, &mut g3); std::mem::swap(&mut b1, &mut b3);
+            std::mem::swap(&mut x1, &mut x3);
+            std::mem::swap(&mut y1, &mut y3);
+            std::mem::swap(&mut z1, &mut z3);
+            std::mem::swap(&mut r1, &mut r3);
+            std::mem::swap(&mut g1, &mut g3);
+            std::mem::swap(&mut b1, &mut b3);
         }
         if y3 < y2 {
-            std::mem::swap(&mut x2, &mut x3); std::mem::swap(&mut y2, &mut y3); std::mem::swap(&mut z2, &mut z3);
-            std::mem::swap(&mut r2, &mut r3); std::mem::swap(&mut g2, &mut g3); std::mem::swap(&mut b2, &mut b3);
+            std::mem::swap(&mut x2, &mut x3);
+            std::mem::swap(&mut y2, &mut y3);
+            std::mem::swap(&mut z2, &mut z3);
+            std::mem::swap(&mut r2, &mut r3);
+            std::mem::swap(&mut g2, &mut g3);
+            std::mem::swap(&mut b2, &mut b3);
         }
 
         let total_h = y3 - y1;
@@ -225,7 +269,11 @@ impl Framebuffer {
             }
             // alpha along 1→3, beta along the current segment (1→2 or 2→3)
             let alpha = (yf - y1) / total_h;
-            let beta = if second_half { (yf - y2) / seg_h } else { (yf - y1) / seg_h };
+            let beta = if second_half {
+                (yf - y2) / seg_h
+            } else {
+                (yf - y1) / seg_h
+            };
 
             // Point A on long edge (v1→v3).
             let ax = x1 + (x3 - x1) * alpha;
@@ -235,22 +283,46 @@ impl Framebuffer {
             if second_half {
                 bx = x2 + (x3 - x2) * beta;
                 bz = z2 + (z3 - z2) * beta;
-                ar = lerp_u8(r1, r3, alpha); ag = lerp_u8(g1, g3, alpha); ab = lerp_u8(b1, b3, alpha);
-                br_ = lerp_u8(r2, r3, beta); bg = lerp_u8(g2, g3, beta); bb_ = lerp_u8(b2, b3, beta);
+                ar = lerp_u8(r1, r3, alpha);
+                ag = lerp_u8(g1, g3, alpha);
+                ab = lerp_u8(b1, b3, alpha);
+                br_ = lerp_u8(r2, r3, beta);
+                bg = lerp_u8(g2, g3, beta);
+                bb_ = lerp_u8(b2, b3, beta);
             } else {
                 bx = x1 + (x2 - x1) * beta;
                 bz = z1 + (z2 - z1) * beta;
-                ar = lerp_u8(r1, r3, alpha); ag = lerp_u8(g1, g3, alpha); ab = lerp_u8(b1, b3, alpha);
-                br_ = lerp_u8(r1, r2, beta); bg = lerp_u8(g1, g2, beta); bb_ = lerp_u8(b1, b2, beta);
+                ar = lerp_u8(r1, r3, alpha);
+                ag = lerp_u8(g1, g3, alpha);
+                ab = lerp_u8(b1, b3, alpha);
+                br_ = lerp_u8(r1, r2, beta);
+                bg = lerp_u8(g1, g2, beta);
+                bb_ = lerp_u8(b1, b2, beta);
             }
 
             let (lx, lz, lr, lg, lb, rx, rz, rr, rg, rb);
             if ax <= bx {
-                lx = ax; lz = az; lr = ar; lg = ag; lb = ab;
-                rx = bx; rz = bz; rr = br_; rg = bg; rb = bb_;
+                lx = ax;
+                lz = az;
+                lr = ar;
+                lg = ag;
+                lb = ab;
+                rx = bx;
+                rz = bz;
+                rr = br_;
+                rg = bg;
+                rb = bb_;
             } else {
-                lx = bx; lz = bz; lr = br_; lg = bg; lb = bb_;
-                rx = ax; rz = az; rr = ar; rg = ag; rb = ab;
+                lx = bx;
+                lz = bz;
+                lr = br_;
+                lg = bg;
+                lb = bb_;
+                rx = ax;
+                rz = az;
+                rr = ar;
+                rg = ag;
+                rb = ab;
             }
 
             let x_start = lx.floor().max(0.0) as i32;
@@ -264,11 +336,7 @@ impl Framebuffer {
                 let t = (xf - lx) / span;
                 let z = lz + (rz - lz) * t;
                 let (pr, pg, pb) = if shaded {
-                    (
-                        lerp_u8(lr, rr, t),
-                        lerp_u8(lg, rg, t),
-                        lerp_u8(lb, rb, t),
-                    )
+                    (lerp_u8(lr, rr, t), lerp_u8(lg, rg, t), lerp_u8(lb, rb, t))
                 } else {
                     (lr, lg, lb)
                 };
@@ -280,9 +348,15 @@ impl Framebuffer {
     /// z-tested 3D line via Bresenham with linear z interpolation.
     pub fn draw_line_3d(
         &mut self,
-        x1: f32, y1: f32, z1: f32,
-        x2: f32, y2: f32, z2: f32,
-        r: u8, g: u8, b: u8,
+        x1: f32,
+        y1: f32,
+        z1: f32,
+        x2: f32,
+        y2: f32,
+        z2: f32,
+        r: u8,
+        g: u8,
+        b: u8,
     ) {
         if z1 <= 0.0 || z2 <= 0.0 {
             return;
@@ -307,36 +381,111 @@ impl Framebuffer {
         for cmd in commands {
             match cmd {
                 DrawCommand::Clear3d { r, g, b } => self.clear(*r, *g, *b),
-                DrawCommand::SkyGradient { r_top, g_top, b_top, r_bot, g_bot, b_bot } => {
+                DrawCommand::SkyGradient {
+                    r_top,
+                    g_top,
+                    b_top,
+                    r_bot,
+                    g_bot,
+                    b_bot,
+                } => {
                     self.sky_gradient(*r_top, *g_top, *b_top, *r_bot, *g_bot, *b_bot);
                 }
-                DrawCommand::Triangle3d { x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b } => {
+                DrawCommand::Triangle3d {
+                    x1,
+                    y1,
+                    z1,
+                    x2,
+                    y2,
+                    z2,
+                    x3,
+                    y3,
+                    z3,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.draw_triangle_3d(*x1, *y1, *z1, *x2, *y2, *z2, *x3, *y3, *z3, *r, *g, *b);
                 }
                 DrawCommand::Triangle3dShaded {
-                    x1, y1, z1, r1, g1, b1,
-                    x2, y2, z2, r2, g2, b2,
-                    x3, y3, z3, r3, g3, b3,
+                    x1,
+                    y1,
+                    z1,
+                    r1,
+                    g1,
+                    b1,
+                    x2,
+                    y2,
+                    z2,
+                    r2,
+                    g2,
+                    b2,
+                    x3,
+                    y3,
+                    z3,
+                    r3,
+                    g3,
+                    b3,
                 } => {
                     self.draw_triangle_shaded(
-                        *x1, *y1, *z1, *r1, *g1, *b1,
-                        *x2, *y2, *z2, *r2, *g2, *b2,
-                        *x3, *y3, *z3, *r3, *g3, *b3,
+                        *x1, *y1, *z1, *r1, *g1, *b1, *x2, *y2, *z2, *r2, *g2, *b2, *x3, *y3, *z3,
+                        *r3, *g3, *b3,
                     );
                 }
-                DrawCommand::Line3d { x1, y1, z1, x2, y2, z2, r, g, b } => {
+                DrawCommand::Line3d {
+                    x1,
+                    y1,
+                    z1,
+                    x2,
+                    y2,
+                    z2,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.draw_line_3d(*x1, *y1, *z1, *x2, *y2, *z2, *r, *g, *b);
                 }
-                DrawCommand::Rect2d { x, y, w, h, r, g, b } => {
+                DrawCommand::Rect2d {
+                    x,
+                    y,
+                    w,
+                    h,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.fill_rect(*x, *y, *w, *h, *r, *g, *b);
                 }
-                DrawCommand::Line2d { x1, y1, x2, y2, r, g, b } => {
+                DrawCommand::Line2d {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.draw_line2d(*x1, *y1, *x2, *y2, *r, *g, *b);
                 }
-                DrawCommand::Circle2d { cx, cy, radius, r, g, b } => {
+                DrawCommand::Circle2d {
+                    cx,
+                    cy,
+                    radius,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.fill_circle(*cx, *cy, *radius, *r, *g, *b);
                 }
-                DrawCommand::Text2d { text, x, y, size, r, g, b } => {
+                DrawCommand::Text2d {
+                    text,
+                    x,
+                    y,
+                    size,
+                    r,
+                    g,
+                    b,
+                } => {
                     self.draw_text(text, *x, *y, *size, *r, *g, *b);
                 }
             }
@@ -347,7 +496,9 @@ impl Framebuffer {
 #[inline]
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
     let t = t.clamp(0.0, 1.0);
-    (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8
+    (a as f32 + (b as f32 - a as f32) * t)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn bresenham(x0: i32, y0: i32, x1: i32, y1: i32, mut plot: impl FnMut(i32, i32)) {
@@ -365,12 +516,16 @@ fn bresenham(x0: i32, y0: i32, x1: i32, y1: i32, mut plot: impl FnMut(i32, i32))
         }
         let e2 = 2 * err;
         if e2 >= dy {
-            if x == x1 { break; }
+            if x == x1 {
+                break;
+            }
             err += dy;
             x += sx;
         }
         if e2 <= dx {
-            if y == y1 { break; }
+            if y == y1 {
+                break;
+            }
             err += dx;
             y += sy;
         }

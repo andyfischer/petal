@@ -197,7 +197,10 @@ impl<'a> Vm<'a> {
         // reborrows below don't conflict.
         let handle_classes = self.handle_classes;
         let class = handle_classes.get(h.class.0 as usize).ok_or_else(|| {
-            format!("Handle references unregistered handle class id {}", h.class.0)
+            format!(
+                "Handle references unregistered handle class id {}",
+                h.class.0
+            )
         })?;
         if !(class.is_valid)(h.slot, h.serial) {
             return Err(format!(

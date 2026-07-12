@@ -117,11 +117,7 @@ fn build_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
             .and_then(|tid| program.source_map.get(tid))
             .filter(|span| span.start.line > 0);
         match call_site {
-            Some(span) => trace.push(format!(
-                "in {}() {}",
-                name,
-                format_position(program, span)
-            )),
+            Some(span) => trace.push(format!("in {}() {}", name, format_position(program, span))),
             None => trace.push(format!("in {}()", name)),
         }
     }
@@ -152,12 +148,12 @@ pub fn format_source_snippet(source: &str, span: &SourceSpan) -> Option<String> 
         caret_pad.push(if ch == '\t' { '\t' } else { ' ' });
     }
     // Clamp span length to what fits on this line for a multi-char underline.
-    let span_len: usize =
-        if span.end.line == span.start.line && span.end.column > span.start.column {
-            (span.end.column - span.start.column) as usize
-        } else {
-            1
-        };
+    let span_len: usize = if span.end.line == span.start.line && span.end.column > span.start.column
+    {
+        (span.end.column - span.start.column) as usize
+    } else {
+        1
+    };
     let underline: String = std::iter::repeat_n('^', span_len.max(1)).collect();
     Some(format!(
         "{} |\n{} | {}\n{} | {}{}",

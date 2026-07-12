@@ -48,11 +48,21 @@ fn button_draws_and_reports_click() {
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap();
         assert!(
-            cmds.iter().any(|c| matches!(c, DrawCommand::Rect { x: 10, y: 10, w: 100, h: 30, .. })),
+            cmds.iter().any(|c| matches!(
+                c,
+                DrawCommand::Rect {
+                    x: 10,
+                    y: 10,
+                    w: 100,
+                    h: 30,
+                    ..
+                }
+            )),
             "button draws its background rect: {cmds:?}"
         );
         assert!(
-            cmds.iter().any(|c| matches!(c, DrawCommand::Text { text, .. } if text == "OK")),
+            cmds.iter()
+                .any(|c| matches!(c, DrawCommand::Text { text, .. } if text == "OK")),
             "button draws its label: {cmds:?}"
         );
         assert_eq!(ui.state_int("pressed"), Some(0));
@@ -72,15 +82,44 @@ fn record_draw_overloads_emit_flat_commands() {
         let cmds = ui.frame().unwrap().to_vec();
         assert_eq!(
             cmds[0],
-            DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, r: 0xff, g: 0x88, b: 0x00, a: 255, radius: 0 }
+            DrawCommand::Rect {
+                x: 1,
+                y: 2,
+                w: 3,
+                h: 4,
+                r: 0xff,
+                g: 0x88,
+                b: 0x00,
+                a: 255,
+                radius: 0
+            }
         );
         assert_eq!(
             cmds[1],
-            DrawCommand::Rect { x: 5, y: 6, w: 7, h: 8, r: 10, g: 20, b: 30, a: 255, radius: 0 }
+            DrawCommand::Rect {
+                x: 5,
+                y: 6,
+                w: 7,
+                h: 8,
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+                radius: 0
+            }
         );
         assert_eq!(
             cmds[2],
-            DrawCommand::Text { text: "hi".into(), x: 9, y: 9, size: 14, r: 1, g: 2, b: 3, a: 255 }
+            DrawCommand::Text {
+                text: "hi".into(),
+                x: 9,
+                y: 9,
+                size: 14,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255
+            }
         );
     });
 }
@@ -98,7 +137,11 @@ fn list_keyboard_navigation_and_clamping() {
         ui.key("j").unwrap();
         ui.key("down").unwrap();
         assert_eq!(state_field(ui, "selected"), Some(2));
-        assert_eq!(state_field(ui, "scroll"), Some(0), "still within the window");
+        assert_eq!(
+            state_field(ui, "scroll"),
+            Some(0),
+            "still within the window"
+        );
 
         // Up past the top clamps at 0.
         ui.key("k").unwrap();
@@ -109,14 +152,22 @@ fn list_keyboard_navigation_and_clamping() {
         // End clamps to the last item and scrolls it into view.
         ui.key("end").unwrap();
         assert_eq!(state_field(ui, "selected"), Some(19));
-        assert_eq!(state_field(ui, "scroll"), Some(15), "19 visible in a 5-row window");
+        assert_eq!(
+            state_field(ui, "scroll"),
+            Some(15),
+            "19 visible in a 5-row window"
+        );
 
         ui.key("pageup").unwrap();
         assert_eq!(state_field(ui, "selected"), Some(14));
 
         ui.key("home").unwrap();
         assert_eq!(state_field(ui, "selected"), Some(0));
-        assert_eq!(state_field(ui, "scroll"), Some(0), "scroll follows the selection up");
+        assert_eq!(
+            state_field(ui, "scroll"),
+            Some(0),
+            "scroll follows the selection up"
+        );
     });
 }
 
@@ -152,18 +203,30 @@ fn list_wheel_scrolls_freely_and_keyboard_re_ensures_selection() {
         ui.scroll(3.0);
         ui.frame().unwrap();
         assert_eq!(state_field(ui, "scroll"), Some(3), "wheel scrolls freely");
-        assert_eq!(state_field(ui, "selected"), Some(0), "wheel leaves the selection alone");
+        assert_eq!(
+            state_field(ui, "selected"),
+            Some(0),
+            "wheel leaves the selection alone"
+        );
 
         // The wheel is still clamped to [0, item_count - visible_rows].
         ui.scroll(100.0);
         ui.frame().unwrap();
-        assert_eq!(state_field(ui, "scroll"), Some(15), "20 items, 5 visible → max 15");
+        assert_eq!(
+            state_field(ui, "scroll"),
+            Some(15),
+            "20 items, 5 visible → max 15"
+        );
 
         // Keyboard navigation DOES re-ensure the selection: 'down' moves sel to
         // 1 and pulls the window back so the selection is visible again.
         ui.key("down").unwrap();
         assert_eq!(state_field(ui, "selected"), Some(1));
-        assert_eq!(state_field(ui, "scroll"), Some(1), "keyboard pulls the window to the selection");
+        assert_eq!(
+            state_field(ui, "scroll"),
+            Some(1),
+            "keyboard pulls the window to the selection"
+        );
     });
 }
 
@@ -209,7 +272,11 @@ fn scroll_update_gates_page_keys_when_inactive() {
 
         // PageDown is ignored while inactive — no leak across regions.
         ui.key("pagedown").unwrap();
-        assert_eq!(ui.state_int("off"), Some(5), "page keys are gated off when inactive");
+        assert_eq!(
+            ui.state_int("off"),
+            Some(5),
+            "page keys are gated off when inactive"
+        );
     });
 }
 
@@ -220,7 +287,11 @@ fn scroll_update_pages_when_active() {
                off = scroll_update(off, 50, 10, r, true)";
     run_headless(src, |ui| {
         ui.key("pagedown").unwrap();
-        assert_eq!(ui.state_int("off"), Some(10), "active region pages on PageDown");
+        assert_eq!(
+            ui.state_int("off"),
+            Some(10),
+            "active region pages on PageDown"
+        );
     });
 }
 
@@ -428,7 +499,10 @@ fn focus_update_reads_tab_and_shift_tab() {
         assert_eq!(ui.state()["cur"], "b");
 
         // Shift+Tab goes back.
-        ui.event(InputEvent::Modifiers(Modifiers { shift: true, ..Default::default() }));
+        ui.event(InputEvent::Modifiers(Modifiers {
+            shift: true,
+            ..Default::default()
+        }));
         ui.key("tab").unwrap();
         assert_eq!(ui.state()["cur"], "a");
         ui.event(InputEvent::Modifiers(Modifiers::default()));
@@ -586,7 +660,11 @@ fn scrollbar_draws_track_and_proportional_thumb() {
             })
             .nth(1)
             .expect("thumb rect");
-        assert_eq!(thumb.0 + thumb.1 as i32, 200, "fully scrolled: thumb bottom at track end");
+        assert_eq!(
+            thumb.0 + thumb.1 as i32,
+            200,
+            "fully scrolled: thumb bottom at track end"
+        );
     });
 }
 
@@ -615,8 +693,16 @@ fn section_label_underlines_and_accents_only_when_active() {
             "active label is accent text: {cmds:?}"
         );
         assert!(
-            cmds.iter().any(|c| matches!(c,
-                DrawCommand::Line { x1: 10, r: 60, g: 140, b: 255, .. })),
+            cmds.iter().any(|c| matches!(
+                c,
+                DrawCommand::Line {
+                    x1: 10,
+                    r: 60,
+                    g: 140,
+                    b: 255,
+                    ..
+                }
+            )),
             "active label draws an accent underline from x: {cmds:?}"
         );
     });

@@ -36,97 +36,270 @@ pub type LoopSlot = u16;
 pub enum Inst {
     // --- constants / moves ---
     /// `dst = constants[k]`
-    LoadConst { dst: Reg, k: ConstantId },
+    LoadConst {
+        dst: Reg,
+        k: ConstantId,
+    },
     /// `dst = nil` — a branch's default result before an arm overwrites it (so
     /// an empty/untaken arm yields `nil`, matching the graph's `block_result`).
-    LoadNil { dst: Reg },
+    LoadNil {
+        dst: Reg,
+    },
     /// `dst = <bool>` — short-circuit results of `And` (`false`) / `Or` (`true`).
-    LoadBool { dst: Reg, val: bool },
+    LoadBool {
+        dst: Reg,
+        val: bool,
+    },
     /// `dst = src` — lowered `Copy`, `Phi` init, `phi_out`, and arm-result joins.
-    Move { dst: Reg, src: Reg },
+    Move {
+        dst: Reg,
+        src: Reg,
+    },
 
     // --- arithmetic (1:1 with TermOp) ---
-    Add { dst: Reg, a: Reg, b: Reg },
-    Sub { dst: Reg, a: Reg, b: Reg },
-    Mul { dst: Reg, a: Reg, b: Reg },
-    Div { dst: Reg, a: Reg, b: Reg },
-    Mod { dst: Reg, a: Reg, b: Reg },
-    Neg { dst: Reg, a: Reg },
+    Add {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Sub {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Mul {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Div {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Mod {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Neg {
+        dst: Reg,
+        a: Reg,
+    },
 
     // --- comparison ---
-    Eq { dst: Reg, a: Reg, b: Reg },
-    Ne { dst: Reg, a: Reg, b: Reg },
-    Lt { dst: Reg, a: Reg, b: Reg },
-    Le { dst: Reg, a: Reg, b: Reg },
-    Gt { dst: Reg, a: Reg, b: Reg },
-    Ge { dst: Reg, a: Reg, b: Reg },
+    Eq {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Ne {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Lt {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Le {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Gt {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Ge {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
 
     // --- logical / string ---
-    Not { dst: Reg, a: Reg },
-    Concat { dst: Reg, a: Reg, b: Reg },
+    Not {
+        dst: Reg,
+        a: Reg,
+    },
+    Concat {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
 
     // --- control flow (new forms; no TermOp equivalent) ---
-    Jump { to: Label },
-    JumpIfFalse { cond: Reg, to: Label },
-    JumpIfTrue { cond: Reg, to: Label },
+    Jump {
+        to: Label,
+    },
+    JumpIfFalse {
+        cond: Reg,
+        to: Label,
+    },
+    JumpIfTrue {
+        cond: Reg,
+        to: Label,
+    },
     /// `??` coalescing: jump to `to` when `cond` is present (not `Nil`/`Pending`),
     /// leaving the LHS in the result register; otherwise fall through to the RHS arm.
-    JumpIfPresent { cond: Reg, to: Label },
+    JumpIfPresent {
+        cond: Reg,
+        to: Label,
+    },
     /// Control-flow Pending absorption: jump to `to` when `cond` is a
     /// `Value::Pending`. The lowering routes `to` to an arm that copies `cond`
     /// into the control expression's result register, so `if`/`while`/`for`/
     /// `match` on a Pending run no branch and evaluate to that Pending.
-    JumpIfPending { cond: Reg, to: Label },
+    JumpIfPending {
+        cond: Reg,
+        to: Label,
+    },
 
     // --- loops (replace Frame.loop_states) ---
     /// Snapshot `iter`'s list into loop slot `slot`; push a loop-index context
     /// entry if `idx_ctx` (state keying).
-    ForEachInit { iter: Reg, slot: LoopSlot, idx_ctx: bool },
+    ForEachInit {
+        iter: Reg,
+        slot: LoopSlot,
+        idx_ctx: bool,
+    },
     /// Advance the ForEach cursor: on exhaustion jump to `exit`; else write the
     /// element into `var` and bump the loop-index context.
-    ForEachNext { slot: LoopSlot, var: Reg, exit: Label },
+    ForEachNext {
+        slot: LoopSlot,
+        var: Reg,
+        exit: Label,
+    },
     /// Initialize an integer range cursor `[start, end)` into `slot`.
-    RangeInit { start: Reg, end: Reg, slot: LoopSlot, idx_ctx: bool },
+    RangeInit {
+        start: Reg,
+        end: Reg,
+        slot: LoopSlot,
+        idx_ctx: bool,
+    },
     /// Advance the range cursor: on exhaustion jump to `exit`; else write the
     /// current integer into `var`.
-    RangeNext { slot: LoopSlot, var: Reg, exit: Label },
+    RangeNext {
+        slot: LoopSlot,
+        var: Reg,
+        exit: Label,
+    },
     /// Initialize a while-loop's iteration counter (loop-index context) in `slot`.
-    WhileInit { slot: LoopSlot },
+    WhileInit {
+        slot: LoopSlot,
+    },
     /// Bump a while-loop's per-iteration index context in `slot`.
-    LoopBumpIdx { slot: LoopSlot },
+    LoopBumpIdx {
+        slot: LoopSlot,
+    },
     /// Pop the loop-index context for `slot` on loop exit / break.
-    LoopPop { slot: LoopSlot },
+    LoopPop {
+        slot: LoopSlot,
+    },
 
     // --- calls ---
-    Call { dst: Reg, callee: Reg, args: SmallVec<[Reg; 4]> },
-    MethodCall { dst: Reg, recv: Reg, name: ConstantId, args: SmallVec<[Reg; 4]> },
+    Call {
+        dst: Reg,
+        callee: Reg,
+        args: SmallVec<[Reg; 4]>,
+    },
+    MethodCall {
+        dst: Reg,
+        recv: Reg,
+        name: ConstantId,
+        args: SmallVec<[Reg; 4]>,
+    },
     /// `dst = name(args…)`. `in_place` is set by escape analysis (M4) when the
     /// builtin is a mutation (`append`/`set`/…) whose container argument is
     /// provably unique + non-escaping — the VM then lets it mutate + reuse the
     /// backing store instead of cloning. Always false unless
     /// `OptFlags::in_place_mutation` proved it.
-    BuiltinCall { dst: Reg, name: ConstantId, args: SmallVec<[Reg; 4]>, in_place: bool },
-    MakeClosure { dst: Reg, func: FunctionId, caps: SmallVec<[Reg; 4]> },
-    MakeOverloadSet { dst: Reg, closures: SmallVec<[Reg; 4]> },
-    Return { val: Option<Reg> },
+    BuiltinCall {
+        dst: Reg,
+        name: ConstantId,
+        args: SmallVec<[Reg; 4]>,
+        in_place: bool,
+    },
+    MakeClosure {
+        dst: Reg,
+        func: FunctionId,
+        caps: SmallVec<[Reg; 4]>,
+    },
+    MakeOverloadSet {
+        dst: Reg,
+        closures: SmallVec<[Reg; 4]>,
+    },
+    Return {
+        val: Option<Reg>,
+    },
 
     // --- data structures (1:1 with TermOp) ---
-    AllocList { dst: Reg, elems: SmallVec<[Reg; 4]> },
-    AllocMap { dst: Reg, fields: Vec<ConstantId>, vals: SmallVec<[Reg; 4]> },
-    AllocMapSpread { dst: Reg, entries: Vec<MapSpreadEntry>, ins: SmallVec<[Reg; 4]> },
-    AllocElement { dst: Reg, tag: ConstantId, prop_keys: Vec<ConstantId>, ins: SmallVec<[Reg; 4]> },
-    MakeEnumVariant { dst: Reg, name: ConstantId, fields: SmallVec<[Reg; 4]> },
-    GetField { dst: Reg, obj: Reg, field: ConstantId },
-    SetField { dst: Reg, obj: Reg, field: ConstantId, val: Reg },
-    GetIndex { dst: Reg, obj: Reg, idx: Reg },
-    SetIndex { dst: Reg, obj: Reg, idx: Reg, val: Reg },
+    AllocList {
+        dst: Reg,
+        elems: SmallVec<[Reg; 4]>,
+    },
+    AllocMap {
+        dst: Reg,
+        fields: Vec<ConstantId>,
+        vals: SmallVec<[Reg; 4]>,
+    },
+    AllocMapSpread {
+        dst: Reg,
+        entries: Vec<MapSpreadEntry>,
+        ins: SmallVec<[Reg; 4]>,
+    },
+    AllocElement {
+        dst: Reg,
+        tag: ConstantId,
+        prop_keys: Vec<ConstantId>,
+        ins: SmallVec<[Reg; 4]>,
+    },
+    MakeEnumVariant {
+        dst: Reg,
+        name: ConstantId,
+        fields: SmallVec<[Reg; 4]>,
+    },
+    GetField {
+        dst: Reg,
+        obj: Reg,
+        field: ConstantId,
+    },
+    SetField {
+        dst: Reg,
+        obj: Reg,
+        field: ConstantId,
+        val: Reg,
+    },
+    GetIndex {
+        dst: Reg,
+        obj: Reg,
+        idx: Reg,
+    },
+    SetIndex {
+        dst: Reg,
+        obj: Reg,
+        idx: Reg,
+        val: Reg,
+    },
 
     // --- in-place mutation variants (M4; selected by escape analysis) ---
     /// Like [`SetField`](Inst::SetField) but mutates `obj`'s backing store and
     /// reuses its id. Only emitted when proven unique + non-escaping.
-    SetFieldInPlace { dst: Reg, obj: Reg, field: ConstantId, val: Reg },
+    SetFieldInPlace {
+        dst: Reg,
+        obj: Reg,
+        field: ConstantId,
+        val: Reg,
+    },
     /// Like [`SetIndex`](Inst::SetIndex) but in place.
-    SetIndexInPlace { dst: Reg, obj: Reg, idx: Reg, val: Reg },
+    SetIndexInPlace {
+        dst: Reg,
+        obj: Reg,
+        idx: Reg,
+        val: Reg,
+    },
 
     // --- state (nested keys resolved from the frame's loop-index context) ---
     /// Lazy state init. The init expression's block is lowered *inline*
@@ -134,28 +307,55 @@ pub enum Inst {
     /// On a cache hit the slot's value is loaded into `dst` and control jumps to
     /// `after` (past the inline init block); on a miss it falls through to run
     /// the init block. `key` is the explicit `state(expr)` key register, if any.
-    StateInit { dst: Reg, base: StateKey, in_loop: bool, after: Label, key: Option<Reg> },
-    StateRead { dst: Reg, base: StateKey, in_loop: bool },
+    StateInit {
+        dst: Reg,
+        base: StateKey,
+        in_loop: bool,
+        after: Label,
+        key: Option<Reg>,
+    },
+    StateRead {
+        dst: Reg,
+        base: StateKey,
+        in_loop: bool,
+    },
     /// Commit `val` into the state slot and mirror it into `dst`. `init` marks
     /// the write that commits a `StateInit` block's result: such a write does
     /// NOT commit a `Pending` value (the slot stays uninitialized so the init
     /// re-runs next frame), whereas an ordinary `state x = …` reassignment
     /// (`init = false`) commits whatever it is given.
-    StateWrite { dst: Reg, base: StateKey, in_loop: bool, val: Reg, key: Option<Reg>, init: bool },
+    StateWrite {
+        dst: Reg,
+        base: StateKey,
+        in_loop: bool,
+        val: Reg,
+        key: Option<Reg>,
+        init: bool,
+    },
 
     // --- match (fat op; reuses the graph engine's match_pattern) ---
     /// Test the subject in `subject` against arm `arm` of match term `term`.
     /// On mismatch (or failed guard) jump to `next`; on success bind pattern
     /// variables into their flat registers and fall through. `dst` is the match
     /// term's result register (written by the arm body's join `Move`).
-    MatchArm { subject: Reg, term: TermId, arm: u16, next: Label, dst: Reg },
+    MatchArm {
+        subject: Reg,
+        term: TermId,
+        arm: u16,
+        next: Label,
+        dst: Reg,
+    },
 
     /// No match arm matched the subject — raise the same runtime error the graph
     /// engine does (`No matching pattern for value: …`), formatting `subject`.
-    MatchFail { subject: Reg },
+    MatchFail {
+        subject: Reg,
+    },
 
     /// A compile-time error term reached at runtime.
-    Error { msg: ConstantId },
+    Error {
+        msg: ConstantId,
+    },
 }
 
 impl Inst {
@@ -257,13 +457,11 @@ impl Inst {
                 v.push(*obj);
                 v.push(*idx);
             }
-            Inst::SetField { obj, val, .. }
-            | Inst::SetFieldInPlace { obj, val, .. } => {
+            Inst::SetField { obj, val, .. } | Inst::SetFieldInPlace { obj, val, .. } => {
                 v.push(*obj);
                 v.push(*val);
             }
-            Inst::SetIndex { obj, idx, val, .. }
-            | Inst::SetIndexInPlace { obj, idx, val, .. } => {
+            Inst::SetIndex { obj, idx, val, .. } | Inst::SetIndexInPlace { obj, idx, val, .. } => {
                 v.push(*obj);
                 v.push(*idx);
                 v.push(*val);

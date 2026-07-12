@@ -81,7 +81,10 @@ struct Slab<T> {
 
 impl<T> Slab<T> {
     fn new() -> Self {
-        Slab { slots: Vec::new(), free: Vec::new() }
+        Slab {
+            slots: Vec::new(),
+            free: Vec::new(),
+        }
     }
 
     /// Allocate `data` into a reused free slot or a fresh one; return its index.
@@ -94,7 +97,11 @@ impl<T> Slab<T> {
             idx
         } else {
             let idx = self.slots.len() as u32;
-            self.slots.push(Slot { data, gc_mark: false, alive: true });
+            self.slots.push(Slot {
+                data,
+                gc_mark: false,
+                alive: true,
+            });
             idx
         }
     }
@@ -261,7 +268,9 @@ impl Heap {
         // from the fork point.
         child.dup_stats.reset();
         child.alloc_stats.reset();
-        child.dup_stats.record(DupKind::Fork, || self.payload_bytes());
+        child
+            .dup_stats
+            .record(DupKind::Fork, || self.payload_bytes());
         child
     }
 
@@ -317,7 +326,8 @@ impl Heap {
     /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
     pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
         let mut elements = self.lists.get(id.0).clone();
-        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats
+            .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.push(val);
         self.alloc_list(elements)
     }
@@ -327,7 +337,8 @@ impl Heap {
     /// bounds-checks before calling).
     pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
         let mut elements = self.lists.get(id.0).clone();
-        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats
+            .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements[index] = val;
         self.alloc_list(elements)
     }
@@ -336,7 +347,8 @@ impl Heap {
     /// unchanged. On an empty list, returns a new empty list.
     pub fn list_drop_last(&mut self, id: ListId) -> ListId {
         let mut elements = self.lists.get(id.0).clone();
-        self.dup_stats.record(DupKind::List, || value_slice_bytes(elements.len()));
+        self.dup_stats
+            .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.pop();
         self.alloc_list(elements)
     }
@@ -355,7 +367,10 @@ impl Heap {
     /// In-place [`list_append`](Self::list_append): push `val` onto `id`'s
     /// backing store and return `id` unchanged. Amortized O(1), no copy.
     pub fn list_append_in_place(&mut self, id: ListId, val: Value) -> ListId {
-        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place append on a dead list");
+        debug_assert!(
+            self.lists.slots[id.0 as usize].alive,
+            "in-place append on a dead list"
+        );
         self.lists.get_mut(id.0).push(val);
         id
     }
@@ -363,7 +378,10 @@ impl Heap {
     /// In-place [`list_set`](Self::list_set): overwrite `elements[index]` and
     /// return `id`. The caller must ensure `index` is in bounds.
     pub fn list_set_in_place(&mut self, id: ListId, index: usize, val: Value) -> ListId {
-        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place set on a dead list");
+        debug_assert!(
+            self.lists.slots[id.0 as usize].alive,
+            "in-place set on a dead list"
+        );
         self.lists.get_mut(id.0)[index] = val;
         id
     }
@@ -371,7 +389,10 @@ impl Heap {
     /// In-place [`list_drop_last`](Self::list_drop_last): pop `id`'s last
     /// element and return `id`. A no-op on an empty list.
     pub fn list_drop_last_in_place(&mut self, id: ListId) -> ListId {
-        debug_assert!(self.lists.slots[id.0 as usize].alive, "in-place drop_last on a dead list");
+        debug_assert!(
+            self.lists.slots[id.0 as usize].alive,
+            "in-place drop_last on a dead list"
+        );
         self.lists.get_mut(id.0).pop();
         id
     }
@@ -395,8 +416,9 @@ impl Heap {
     /// unchanged. The caller must ensure `index` is in bounds.
     pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
         let mut data = self.f64_arrays.get(id.0).clone();
-        self.dup_stats
-            .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
+        self.dup_stats.record(DupKind::F64Array, || {
+            (data.len() * std::mem::size_of::<f64>()) as u64
+        });
         data[index] = val;
         self.alloc_f64_array(data)
     }
@@ -405,8 +427,9 @@ impl Heap {
     /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
     pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
         let mut data = self.f64_arrays.get(id.0).clone();
-        self.dup_stats
-            .record(DupKind::F64Array, || (data.len() * std::mem::size_of::<f64>()) as u64);
+        self.dup_stats.record(DupKind::F64Array, || {
+            (data.len() * std::mem::size_of::<f64>()) as u64
+        });
         data.swap(i, j);
         self.alloc_f64_array(data)
     }
@@ -415,7 +438,10 @@ impl Heap {
     /// and return `id`. Caller must ensure `index` is in bounds. See the
     /// in-place list methods for the soundness contract.
     pub fn f64_array_set_in_place(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
-        debug_assert!(self.f64_arrays.slots[id.0 as usize].alive, "in-place set on a dead f64 array");
+        debug_assert!(
+            self.f64_arrays.slots[id.0 as usize].alive,
+            "in-place set on a dead f64 array"
+        );
         self.f64_arrays.get_mut(id.0)[index] = val;
         id
     }
@@ -423,7 +449,10 @@ impl Heap {
     /// In-place [`f64_array_swap`](Self::f64_array_swap): swap elements `i` and
     /// `j` and return `id`. Caller must ensure both are in bounds.
     pub fn f64_array_swap_in_place(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
-        debug_assert!(self.f64_arrays.slots[id.0 as usize].alive, "in-place swap on a dead f64 array");
+        debug_assert!(
+            self.f64_arrays.slots[id.0 as usize].alive,
+            "in-place swap on a dead f64 array"
+        );
         self.f64_arrays.get_mut(id.0).swap(i, j);
         id
     }
@@ -443,7 +472,8 @@ impl Heap {
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
         let mut entries = self.maps.get(id.0).clone();
-        self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
+        self.dup_stats
+            .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
         self.alloc_map(entries)
     }
@@ -453,7 +483,8 @@ impl Heap {
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
         let mut entries = self.maps.get(id.0).clone();
-        self.dup_stats.record(DupKind::Map, || map_entries_bytes(&entries));
+        self.dup_stats
+            .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
         self.alloc_map(entries)
     }
@@ -462,7 +493,10 @@ impl Heap {
     /// entry table and return `id`. See the in-place list methods for the
     /// soundness contract.
     pub fn map_set_in_place(&mut self, id: MapId, key: String, val: Value) -> MapId {
-        debug_assert!(self.maps.slots[id.0 as usize].alive, "in-place set on a dead map");
+        debug_assert!(
+            self.maps.slots[id.0 as usize].alive,
+            "in-place set on a dead map"
+        );
         self.maps.get_mut(id.0).insert(key, val);
         id
     }
@@ -470,7 +504,10 @@ impl Heap {
     /// In-place [`map_remove`](Self::map_remove): shift-remove `key` from `id`
     /// (preserving order of the rest) and return `id`. A no-op for an absent key.
     pub fn map_remove_in_place(&mut self, id: MapId, key: &str) -> MapId {
-        debug_assert!(self.maps.slots[id.0 as usize].alive, "in-place remove on a dead map");
+        debug_assert!(
+            self.maps.slots[id.0 as usize].alive,
+            "in-place remove on a dead map"
+        );
         self.maps.get_mut(id.0).shift_remove(key);
         id
     }
@@ -479,7 +516,11 @@ impl Heap {
 
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
         self.tick_alloc(AllocKind::Element);
-        ElementId(self.elements.alloc(ElementPayload { tag, props, children }))
+        ElementId(self.elements.alloc(ElementPayload {
+            tag,
+            props,
+            children,
+        }))
     }
 
     pub fn get_element_tag(&self, id: ElementId) -> StringId {
@@ -514,10 +555,18 @@ impl Heap {
             // resource table (not the heap); the table's own Ready/Errored
             // payloads are rooted separately.
             // TODO(pending): root resource-table payload Values in GC.
-            Value::Nil | Value::Bool(_) | Value::Int(_) | Value::Float(_)
-            | Value::Closure(_) | Value::OverloadSet(_) | Value::NativeFunction(_)
-            | Value::Dual { .. } | Value::Vec2(_, _) | Value::Symbol(_)
-            | Value::Handle(_) | Value::Pending(_) => {}
+            Value::Nil
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Closure(_)
+            | Value::OverloadSet(_)
+            | Value::NativeFunction(_)
+            | Value::Dual { .. }
+            | Value::Vec2(_, _)
+            | Value::Symbol(_)
+            | Value::Handle(_)
+            | Value::Pending(_) => {}
         }
     }
 
@@ -566,7 +615,11 @@ impl Heap {
         // Reclaiming a string must also drop its interned entry. Destructure to
         // borrow `strings` and `intern_table` disjointly (the closure needs the
         // table while `sweep_with` holds `strings` mutably).
-        let Self { strings, intern_table, .. } = self;
+        let Self {
+            strings,
+            intern_table,
+            ..
+        } = self;
         strings.sweep_with(|s| {
             intern_table.remove(s.as_str());
             s.clear();
@@ -807,10 +860,7 @@ mod tests {
         let stats = heap.dup_stats();
         assert_eq!(stats.get(DupKind::List).count, 2);
         // Each clone copied the 3-element backing store.
-        assert_eq!(
-            stats.get(DupKind::List).bytes,
-            2 * value_slice_bytes(3),
-        );
+        assert_eq!(stats.get(DupKind::List).bytes, 2 * value_slice_bytes(3),);
         assert_eq!(stats.total_count(), 2);
     }
 

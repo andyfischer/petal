@@ -52,7 +52,10 @@ impl Program {
         // terms[i].id == i, and every reference resolves.
         for (i, term) in self.terms.iter().enumerate() {
             if term.id.0 as usize != i {
-                return Err(format!("terms[{}] has id {} (must equal index)", i, term.id.0));
+                return Err(format!(
+                    "terms[{}] has id {} (must equal index)",
+                    i, term.id.0
+                ));
             }
             if matches!(term.op, TermOp::Error(_)) {
                 return Err(format!("t{}: Error terms are not valid in an import", i));
@@ -68,7 +71,10 @@ impl Program {
                 }
             }
             if term.block_id.0 >= n_blocks {
-                return Err(format!("t{}: block_id b{} out of range", i, term.block_id.0));
+                return Err(format!(
+                    "t{}: block_id b{} out of range",
+                    i, term.block_id.0
+                ));
             }
             // Constant references inside ops.
             for c in term.op.constant_ids() {
@@ -103,7 +109,10 @@ impl Program {
         // Block back-references and phi_outs targets.
         for (i, block) in self.blocks.iter().enumerate() {
             if block.id.0 as usize != i {
-                return Err(format!("blocks[{}] has id {} (must equal index)", i, block.id.0));
+                return Err(format!(
+                    "blocks[{}] has id {} (must equal index)",
+                    i, block.id.0
+                ));
             }
             if let Some(entry) = block.entry
                 && entry.0 >= n_terms

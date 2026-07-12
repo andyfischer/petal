@@ -108,7 +108,8 @@ impl Compiler {
                     // later user binding) compiles to a static BuiltinCall.
                     let builtin_name: Option<String> = match &function.kind {
                         ExprKind::Ident(name)
-                            if self.builtin_phantoms.get(name) == self.scope_lookup(name).as_ref() =>
+                            if self.builtin_phantoms.get(name)
+                                == self.scope_lookup(name).as_ref() =>
                         {
                             Some(name.clone())
                         }
@@ -190,9 +191,11 @@ impl Compiler {
 
             ExprKind::Lambda { params, body } => self.compile_function(None, params, body),
 
-            ExprKind::Element { tag, props, children } => {
-                self.compile_element(tag, props, children)
-            }
+            ExprKind::Element {
+                tag,
+                props,
+                children,
+            } => self.compile_element(tag, props, children),
 
             ExprKind::StringInterp { parts, exprs } => self.compile_string_interp(parts, exprs),
         }
@@ -227,9 +230,7 @@ impl Compiler {
                 "elif" | "elseif" | "elsif" => Some("use 'else if' in Petal"),
                 "switch" | "case" => Some("use 'match' for pattern matching in Petal"),
                 "lambda" => Some("use 'fn' for anonymous functions, e.g. fn(x) { x + 1 }"),
-                "null" | "undefined" | "None" => {
-                    Some("use 'nil' for null/empty values in Petal")
-                }
+                "null" | "undefined" | "None" => Some("use 'nil' for null/empty values in Petal"),
                 "console" => Some("use 'print()' for output in Petal"),
                 "typeof" => Some("use 'type()' to get the type of a value in Petal"),
                 "Math" => Some(
@@ -448,7 +449,13 @@ impl Compiler {
                     inputs.push(self.compile_expr(value));
                 }
             }
-            self.emit_term(TermOp::AllocMap { fields: field_names }, inputs, None)
+            self.emit_term(
+                TermOp::AllocMap {
+                    fields: field_names,
+                },
+                inputs,
+                None,
+            )
         } else {
             // Spread case: compile all inputs and build entry list
             let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
@@ -478,7 +485,9 @@ impl Compiler {
         props: &[(String, Expr)],
         children: &[JsxChild],
     ) -> TermId {
-        let tag_cid = self.constants.intern(ConstantValue::String(tag.to_string()));
+        let tag_cid = self
+            .constants
+            .intern(ConstantValue::String(tag.to_string()));
         let mut prop_keys = Vec::new();
         let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
 
@@ -501,14 +510,23 @@ impl Compiler {
             }
         }
 
-        self.emit_term(TermOp::AllocElement { tag: tag_cid, prop_keys }, inputs, None)
+        self.emit_term(
+            TermOp::AllocElement {
+                tag: tag_cid,
+                prop_keys,
+            },
+            inputs,
+            None,
+        )
     }
 
     /// Build: str(parts[0]) ++ str(exprs[0]) ++ str(parts[1]) ++ ... ++ str(parts[N]).
     /// Concat already handles string conversion in the evaluator.
     fn compile_string_interp(&mut self, parts: &[String], exprs: &[Expr]) -> TermId {
         // Start with the first string part
-        let first_cid = self.constants.intern(ConstantValue::String(parts[0].clone()));
+        let first_cid = self
+            .constants
+            .intern(ConstantValue::String(parts[0].clone()));
         let mut result = self.emit_term(TermOp::Constant(first_cid), smallvec![], None);
 
         for (i, expr) in exprs.iter().enumerate() {
@@ -607,8 +625,10 @@ impl Compiler {
                 fields.iter().flat_map(Self::extract_pattern_vars).collect()
             }
             Pattern::List { elements, rest } => {
-                let mut vars: Vec<String> =
-                    elements.iter().flat_map(Self::extract_pattern_vars).collect();
+                let mut vars: Vec<String> = elements
+                    .iter()
+                    .flat_map(Self::extract_pattern_vars)
+                    .collect();
                 if let Some(rest_name) = rest {
                     vars.push(rest_name.clone());
                 }

@@ -102,7 +102,12 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 
     let output = reindent(&rebound)?;
     let reindented_lines = count_changed_lines(&rebound, &output);
-    Ok(LintOutcome { output, reindented_lines, rebinds, notes })
+    Ok(LintOutcome {
+        output,
+        reindented_lines,
+        rebinds,
+        notes,
+    })
 }
 
 fn count_changed_lines(before: &str, after: &str) -> usize {
@@ -173,11 +178,16 @@ mod tests {
     // ---- IR gate + corpus property test ----
 
     fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                if path
+                    .file_name()
+                    .is_some_and(|n| n == "node_modules" || n == "target")
+                {
                     continue;
                 }
                 collect_ptl(&path, out);
@@ -201,9 +211,16 @@ mod tests {
         collect_ptl(repo_root, &mut files);
         let mut checked = 0;
         for path in &files {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
-            let opts = LintOptions { include_dirs: vec![], origin: Some(path.clone()) };
-            let Ok(outcome) = lint_source(&src, &opts) else { continue };
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let opts = LintOptions {
+                include_dirs: vec![],
+                origin: Some(path.clone()),
+            };
+            let Ok(outcome) = lint_source(&src, &opts) else {
+                continue;
+            };
             if compile_ir(&src, &opts).is_err() {
                 continue; // formatting-only file; nothing to compare
             }

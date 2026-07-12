@@ -14,7 +14,9 @@ fn noise_perm(seed: u64) -> [u8; 512] {
     // Fisher-Yates shuffle with seed
     let mut rng = seed.wrapping_add(0x9E3779B97F4A7C15);
     for i in (1..256).rev() {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (rng >> 33) as usize % (i + 1);
         p.swap(i, j);
     }
@@ -41,7 +43,13 @@ fn grad2(hash: u8, x: f64, y: f64) -> f64 {
 fn grad3(hash: u8, x: f64, y: f64, z: f64) -> f64 {
     let h = hash & 15;
     let u = if h < 8 { x } else { y };
-    let v = if h < 4 { y } else if h == 12 || h == 14 { x } else { z };
+    let v = if h < 4 {
+        y
+    } else if h == 12 || h == 14 {
+        x
+    } else {
+        z
+    };
     (if h & 1 == 0 { u } else { -u }) + (if h & 2 == 0 { v } else { -v })
 }
 
@@ -94,10 +102,10 @@ fn perlin_3d(x: f64, y: f64, z: f64, perm: &[u8; 512]) -> f64 {
     let v = fade(yf);
     let w = fade(zf);
 
-    let a  = perm[xi as usize] as usize + yi as usize;
+    let a = perm[xi as usize] as usize + yi as usize;
     let aa = perm[a & 255] as usize + zi as usize;
     let ab = perm[(a + 1) & 255] as usize + zi as usize;
-    let b  = perm[((xi + 1) & 255) as usize] as usize + yi as usize;
+    let b = perm[((xi + 1) & 255) as usize] as usize + yi as usize;
     let ba = perm[b & 255] as usize + zi as usize;
     let bb = perm[(b + 1) & 255] as usize + zi as usize;
 

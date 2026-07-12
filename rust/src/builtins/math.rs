@@ -2,7 +2,7 @@
 //! float, int, random, min, max, sin/cos/tan, atan2, pi.
 
 use crate::native_fn::PetalCxt;
-use crate::value::{compare_values, Value};
+use crate::value::{Value, compare_values};
 
 use super::require_args;
 
@@ -55,7 +55,13 @@ fn unary_num_preserving(
 pub(super) fn native_abs(state: &mut PetalCxt) -> Result<u32, String> {
     // d/dx |x| = sign(x), with the derivative pinned to 0 at exactly 0
     unary_num_preserving(state, "abs", i64::abs, f64::abs, |x| {
-        if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 }
+        if x > 0.0 {
+            1.0
+        } else if x < 0.0 {
+            -1.0
+        } else {
+            0.0
+        }
     })
 }
 
@@ -83,12 +89,21 @@ pub(super) fn native_float(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_int(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "int")?;
     match state.get_value(1)? {
-        Value::Int(n) => { state.push_int(n); Ok(1) }
-        Value::Float(f) => { state.push_int(f as i64); Ok(1) }
+        Value::Int(n) => {
+            state.push_int(n);
+            Ok(1)
+        }
+        Value::Float(f) => {
+            state.push_int(f as i64);
+            Ok(1)
+        }
         Value::String(id) => {
             let s = state.heap().get_string(id).to_string();
             match s.parse::<i64>() {
-                Ok(n) => { state.push_int(n); Ok(1) }
+                Ok(n) => {
+                    state.push_int(n);
+                    Ok(1)
+                }
                 Err(_) => Err(format!("Cannot convert '{}' to int", s)),
             }
         }
@@ -110,8 +125,14 @@ pub(super) fn native_min(state: &mut PetalCxt) -> Result<u32, String> {
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
     match compare_values(&a, &b, state.heap())? {
-        std::cmp::Ordering::Less | std::cmp::Ordering::Equal => { state.push_value(a); Ok(1) }
-        std::cmp::Ordering::Greater => { state.push_value(b); Ok(1) }
+        std::cmp::Ordering::Less | std::cmp::Ordering::Equal => {
+            state.push_value(a);
+            Ok(1)
+        }
+        std::cmp::Ordering::Greater => {
+            state.push_value(b);
+            Ok(1)
+        }
     }
 }
 
@@ -120,8 +141,14 @@ pub(super) fn native_max(state: &mut PetalCxt) -> Result<u32, String> {
     let a = state.get_value(1)?;
     let b = state.get_value(2)?;
     match compare_values(&a, &b, state.heap())? {
-        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => { state.push_value(a); Ok(1) }
-        std::cmp::Ordering::Less => { state.push_value(b); Ok(1) }
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => {
+            state.push_value(a);
+            Ok(1)
+        }
+        std::cmp::Ordering::Less => {
+            state.push_value(b);
+            Ok(1)
+        }
     }
 }
 

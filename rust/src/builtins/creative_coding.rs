@@ -118,11 +118,23 @@ pub(super) fn native_sign(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "sign")?;
     match state.get_value(1)? {
         Value::Int(n) => {
-            state.push_int(if n > 0 { 1 } else if n < 0 { -1 } else { 0 });
+            state.push_int(if n > 0 {
+                1
+            } else if n < 0 {
+                -1
+            } else {
+                0
+            });
             Ok(1)
         }
         Value::Float(f) => {
-            state.push_float(if f > 0.0 { 1.0 } else if f < 0.0 { -1.0 } else { 0.0 });
+            state.push_float(if f > 0.0 {
+                1.0
+            } else if f < 0.0 {
+                -1.0
+            } else {
+                0.0
+            });
             Ok(1)
         }
         _ => Err("sign() expects a number".into()),

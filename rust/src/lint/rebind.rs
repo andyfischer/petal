@@ -32,7 +32,10 @@ pub(super) struct Rebind {
 /// verifies it against the compiled IR anyway.
 pub(super) fn find_rebinds(stmts: &[Stmt], chars: &[char]) -> Vec<Rebind> {
     let mut out = Vec::new();
-    let mut finder = Rebinder { chars, out: &mut out };
+    let mut finder = Rebinder {
+        chars,
+        out: &mut out,
+    };
     for stmt in stmts {
         finder.visit_stmt(stmt);
     }
@@ -51,15 +54,18 @@ struct Rebinder<'a> {
 
 impl ExprVisitor for Rebinder<'_> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
-        if let StmtKind::Assign { target: AssignTarget::Name(x), value } = &stmt.kind
+        if let StmtKind::Assign {
+            target: AssignTarget::Name(x),
+            value,
+        } = &stmt.kind
             && let Some(rebind) = rebind_candidate(stmt, x, value, self.chars)
         {
             self.out.push(rebind);
         }
         match &stmt.kind {
-            StmtKind::Let { value, .. }
-            | StmtKind::Expr(value)
-            | StmtKind::Return(Some(value)) => self.visit_expr(value),
+            StmtKind::Let { value, .. } | StmtKind::Expr(value) | StmtKind::Return(Some(value)) => {
+                self.visit_expr(value)
+            }
             StmtKind::Assign { target, value } => {
                 self.visit_expr(value);
                 match target {
@@ -117,11 +123,15 @@ impl ExprVisitor for Rebinder<'_> {
 /// sanity checks so a surprising span can only ever make us *skip*, never
 /// produce a wrong edit.
 fn rebind_candidate(stmt: &Stmt, x: &str, value: &Expr, chars: &[char]) -> Option<Rebind> {
-    let ExprKind::Call { function, args } = &value.kind else { return None };
+    let ExprKind::Call { function, args } = &value.kind else {
+        return None;
+    };
     // Callee must be a plain identifier other than `x` — a field/method chain
     // could evaluate `x` on its own, which the occurrence count below would
     // catch, but a plain-ident callee is also what the `@` sugar reads best on.
-    let ExprKind::Ident(callee) = &function.kind else { return None };
+    let ExprKind::Ident(callee) = &function.kind else {
+        return None;
+    };
     if callee == x {
         return None;
     }
@@ -156,7 +166,11 @@ fn rebind_candidate(stmt: &Stmt, x: &str, value: &Expr, chars: &[char]) -> Optio
     if !chars[at_pos..].starts_with(&x.chars().collect::<Vec<_>>()[..]) {
         return None;
     }
-    Some(Rebind { prefix_start, prefix_end, at_pos })
+    Some(Rebind {
+        prefix_start,
+        prefix_end,
+        at_pos,
+    })
 }
 
 /// Whether any `@var` marker appears anywhere in `e` (nested bodies included).
@@ -178,7 +192,6 @@ fn count_ident(e: &Expr, name: &str) -> usize {
     n
 }
 
-
 /// Apply rebind edits to the source, highest offset first so earlier
 /// positions stay valid.
 pub(super) fn apply_rebinds(chars: &[char], rebinds: &[Rebind]) -> String {
@@ -197,7 +210,7 @@ pub(super) fn apply_rebinds(chars: &[char], rebinds: &[Rebind]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::lint::{lint_source, LintOptions, LintOutcome};
+    use crate::lint::{LintOptions, LintOutcome, lint_source};
 
     fn lint(src: &str) -> LintOutcome {
         lint_source(src, &LintOptions::default()).expect("lint_source")
@@ -230,7 +243,10 @@ mod tests {
     #[test]
     fn rebind_applies_inside_fn_bodies() {
         let out = rebound("fn f()\nlet a = [1]\na = append(a, 2)\na\nend\nf()\n");
-        assert_eq!(out, "fn f()\n  let a = [1]\n  append(@a, 2)\n  a\nend\nf()\n");
+        assert_eq!(
+            out,
+            "fn f()\n  let a = [1]\n  append(@a, 2)\n  a\nend\nf()\n"
+        );
     }
 
     #[test]

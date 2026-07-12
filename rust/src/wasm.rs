@@ -9,7 +9,7 @@ use crate::env::Env;
 use crate::native_fn::{NativeResult, PetalCxt};
 use crate::program::ProgramId;
 use crate::stack::StackKey;
-use crate::value::{value_to_json, Value};
+use crate::value::{Value, value_to_json};
 
 // ---------------------------------------------------------------------------
 // Env channel names — element tree (petal-web)
@@ -95,7 +95,10 @@ impl PetalRuntime {
 
     /// Compile source code and return a program ID.
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
-        let pid = self.env.load_program(source).map_err(|e| JsValue::from_str(&e))?;
+        let pid = self
+            .env
+            .load_program(source)
+            .map_err(|e| JsValue::from_str(&e))?;
         self.active_program = Some(pid);
         Ok(pid.0)
     }

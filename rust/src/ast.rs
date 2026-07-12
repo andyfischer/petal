@@ -331,7 +331,9 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
                 v.visit_expr(e);
             }
         }
-        ExprKind::Element { props, children, .. } => {
+        ExprKind::Element {
+            props, children, ..
+        } => {
             for (_, e) in props {
                 v.visit_expr(e);
             }
@@ -479,7 +481,9 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 v.visit_expr(e);
             }
         }
-        ExprKind::Element { props, children, .. } => {
+        ExprKind::Element {
+            props, children, ..
+        } => {
             for (_, e) in props.iter_mut() {
                 v.visit_expr(e);
             }

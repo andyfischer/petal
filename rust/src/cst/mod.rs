@@ -43,7 +43,7 @@ mod green;
 mod red;
 
 pub use driver::{parse_cst, parse_source};
-pub use events::{build_lossless, build_tree, Checkpoint, Event, EventBuilder};
+pub use events::{Checkpoint, Event, EventBuilder, build_lossless, build_tree};
 pub use green::{GreenChild, GreenNode, GreenNodeBuilder, GreenToken};
 pub use red::{SyntaxElement, SyntaxNode, SyntaxToken};
 
@@ -172,7 +172,9 @@ mod tests {
                 SyntaxElement::Node(n) => (n.offset(), n.text_len(), n.text()),
                 SyntaxElement::Token(t) => (t.offset(), t.text_len(), t.text().to_string()),
             };
-            let slice: String = src_chars[off as usize..(off + len) as usize].iter().collect();
+            let slice: String = src_chars[off as usize..(off + len) as usize]
+                .iter()
+                .collect();
             assert_eq!(slice, txt, "child text must match source at its offset");
         }
     }
@@ -187,7 +189,11 @@ mod tests {
         for child in root.children() {
             if let GreenChild::Token(t) = child {
                 reassembled.push_str(t.text());
-                if let GreenToken::Trivia { kind: TriviaKind::LineComment, text } = &**t {
+                if let GreenToken::Trivia {
+                    kind: TriviaKind::LineComment,
+                    text,
+                } = &**t
+                {
                     assert_eq!(text, "// c");
                     saw_comment = true;
                 }
@@ -308,7 +314,11 @@ mod tests {
         let mut b = EventBuilder::new();
         b.token(); // only `a`
         let tree = build_tree(b.events(), &tokens, &spans, &trivia, src);
-        assert_eq!(tree.text(), src, "unconsumed tokens must be flushed losslessly");
+        assert_eq!(
+            tree.text(),
+            src,
+            "unconsumed tokens must be flushed losslessly"
+        );
     }
 
     #[test]
@@ -323,11 +333,16 @@ mod tests {
     }
 
     fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                if path
+                    .file_name()
+                    .is_some_and(|n| n == "node_modules" || n == "target")
+                {
                     continue;
                 }
                 collect_ptl(&path, out);
@@ -353,9 +368,18 @@ mod tests {
     fn round_trips_entire_repo_corpus() {
         let mut checked = 0;
         for path in &repo_ptl_files() {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
-            let Ok(root) = build_lossless(&src) else { continue };
-            assert_eq!(root.text(), src, "CST round-trip mismatch for {}", path.display());
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(root) = build_lossless(&src) else {
+                continue;
+            };
+            assert_eq!(
+                root.text(),
+                src,
+                "CST round-trip mismatch for {}",
+                path.display()
+            );
             checked += 1;
         }
         assert!(checked > 50, "expected a real corpus, checked {checked}");
@@ -369,7 +393,9 @@ mod tests {
     fn parse_cst_round_trips_entire_repo_corpus() {
         let mut checked = 0;
         for path in &repo_ptl_files() {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
             let Ok(root) = parse_cst(&src) else { continue };
             assert_eq!(
                 root.text(),
@@ -384,7 +410,11 @@ mod tests {
 
     fn assert_parse_round_trips(src: &str) {
         let root = parse_cst(src).expect("parse_cst");
-        assert_eq!(root.text(), src, "structured round-trip mismatch for {src:?}");
+        assert_eq!(
+            root.text(),
+            src,
+            "structured round-trip mismatch for {src:?}"
+        );
     }
 
     #[test]
@@ -489,8 +519,14 @@ mod tests {
         assert_eq!(fn_decl.text(), "fn f(a)\n  return a\nend");
         let params = find_node(&fn_decl, SyntaxKind::ParamList).expect("ParamList");
         assert_eq!(params.text(), "(a)");
-        assert!(find_node(&fn_decl, SyntaxKind::Block).is_some(), "fn body Block");
-        assert!(find_node(&fn_decl, SyntaxKind::ReturnStmt).is_some(), "ReturnStmt");
+        assert!(
+            find_node(&fn_decl, SyntaxKind::Block).is_some(),
+            "fn body Block"
+        );
+        assert!(
+            find_node(&fn_decl, SyntaxKind::ReturnStmt).is_some(),
+            "ReturnStmt"
+        );
     }
 
     #[test]

@@ -81,9 +81,10 @@ pub fn reindent(source: &str) -> Result<String, String> {
         }
         // A token starting within the leading run means that "whitespace" is
         // token content (JSX text beginning at line start) — leave it alone.
-        let token_in_leading_ws = line_tokens
-            .clone()
-            .any(|k| { let s = spans[k].start.offset as usize; s >= ls && s < ws_end });
+        let token_in_leading_ws = line_tokens.clone().any(|k| {
+            let s = spans[k].start.offset as usize;
+            s >= ls && s < ws_end
+        });
 
         // Trailing trim is safe only when no token spills past the line end
         // (the spill means the tail is inside a multi-line token).
@@ -124,7 +125,10 @@ pub fn reindent(source: &str) -> Result<String, String> {
                 .checked_sub(dedent)
                 .and_then(|i| stack.get(i))
                 .map_or(0, |content| content.saturating_sub(1))
-        } else if matches!(sig.first().map(|&k| &tokens[k]), Some(Token::Else | Token::Elsif)) {
+        } else if matches!(
+            sig.first().map(|&k| &tokens[k]),
+            Some(Token::Else | Token::Elsif)
+        ) {
             stack.last().map_or(0, |content| content.saturating_sub(1))
         } else {
             stack.last().copied().unwrap_or(0)
@@ -287,14 +291,20 @@ mod tests {
     fn when_guard_if_is_not_an_opener() {
         let src = "match s\nwhen Red if t >= 5 do\nx = 1\nend\nend\n";
         let out = reindent(src).unwrap();
-        assert_eq!(out, "match s\n  when Red if t >= 5 do\n    x = 1\n  end\nend\n");
+        assert_eq!(
+            out,
+            "match s\n  when Red if t >= 5 do\n    x = 1\n  end\nend\n"
+        );
     }
 
     #[test]
     fn multiline_collections_indent_one_level() {
         let src = "let xs = [\n1,\n2\n]\nlet r = {\na: 1\nb: 2\n}\n";
         let out = reindent(src).unwrap();
-        assert_eq!(out, "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1\n  b: 2\n}\n");
+        assert_eq!(
+            out,
+            "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1\n  b: 2\n}\n"
+        );
     }
 
     #[test]
@@ -320,14 +330,20 @@ mod tests {
     #[test]
     fn enum_variants_indent() {
         let src = "enum Event\nNone()\nAdd(text)\nend\n";
-        assert_eq!(reindent(src).unwrap(), "enum Event\n  None()\n  Add(text)\nend\n");
+        assert_eq!(
+            reindent(src).unwrap(),
+            "enum Event\n  None()\n  Add(text)\nend\n"
+        );
     }
 
     #[test]
     fn jsx_children_indent_and_close_tag_dedents() {
         let src = "let e = <div class=\"x\">\n<p>hi</p>\n<br/>\n</div>\n";
         let out = reindent(src).unwrap();
-        assert_eq!(out, "let e = <div class=\"x\">\n  <p>hi</p>\n  <br/>\n</div>\n");
+        assert_eq!(
+            out,
+            "let e = <div class=\"x\">\n  <p>hi</p>\n  <br/>\n</div>\n"
+        );
     }
 
     #[test]
@@ -338,11 +354,14 @@ mod tests {
     }
 
     #[test]
-    fn raw_string_interior_lines_are_untouched(){
+    fn raw_string_interior_lines_are_untouched() {
         // Lines inside a multi-line raw string are content, not layout.
         let src = "if a then\nlet s = \"\"\"\n   keep   me\n\"\"\"\nend\n";
         let out = reindent(src).unwrap();
-        assert_eq!(out, "if a then\n  let s = \"\"\"\n   keep   me\n\"\"\"\nend\n");
+        assert_eq!(
+            out,
+            "if a then\n  let s = \"\"\"\n   keep   me\n\"\"\"\nend\n"
+        );
     }
 
     #[test]

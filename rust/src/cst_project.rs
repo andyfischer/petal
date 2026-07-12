@@ -29,7 +29,7 @@ use crate::ast::*;
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
 use crate::parse::{expr_to_assign_target, parse_color_hex};
-use crate::source_map::{FileId, SourcePosition, SourceSpan, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
 /// the entry file (matching a tree built by [`crate::cst::parse_cst`]).
@@ -47,7 +47,11 @@ pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, Str
             line_starts.push(i as u32 + 1);
         }
     }
-    let mut p = Projector { line_starts, file, next_state_id: 0 };
+    let mut p = Projector {
+        line_starts,
+        file,
+        next_state_id: 0,
+    };
     child_nodes(root).iter().map(|n| p.stmt(n)).collect()
 }
 
@@ -229,7 +233,12 @@ impl Projector {
                 let init = self.expr(init_node)?;
                 let id = self.next_state_id;
                 self.next_state_id += 1;
-                StmtKind::State { name, init, id, key }
+                StmtKind::State {
+                    name,
+                    init,
+                    id,
+                    key,
+                }
             }
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
             other => return Err(format!("expected a statement node, got {other:?}")),
@@ -268,7 +277,10 @@ impl Projector {
             ),
             None => (expr_to_assign_target(target_expr)?, rhs),
         };
-        Ok(Stmt { kind: StmtKind::Assign { target, value }, span })
+        Ok(Stmt {
+            kind: StmtKind::Assign { target, value },
+            span,
+        })
     }
 
     fn enum_decl(&mut self, node: &SyntaxNode) -> Result<StmtKind, String> {
@@ -282,7 +294,10 @@ impl Projector {
                         if name.is_none() {
                             name = Some(ident);
                         } else {
-                            variants.push(EnumVariant { name: ident, fields: Vec::new() });
+                            variants.push(EnumVariant {
+                                name: ident,
+                                fields: Vec::new(),
+                            });
                         }
                     }
                 }
@@ -294,7 +309,10 @@ impl Projector {
                         .fields = fields;
                 }
                 SyntaxElement::Node(n) => {
-                    return Err(format!("unexpected {:?} node in enum declaration", n.kind()))
+                    return Err(format!(
+                        "unexpected {:?} node in enum declaration",
+                        n.kind()
+                    ));
                 }
             }
         }
@@ -311,14 +329,20 @@ impl Projector {
 
         let mut alias = None;
         let mut names = None;
-        let has_colon = tokens.iter().any(|t| matches!(t.token(), Some(Token::Colon)));
+        let has_colon = tokens
+            .iter()
+            .any(|t| matches!(t.token(), Some(Token::Colon)));
         if has_colon {
             names = Some(idents.map(|(_, v)| v).collect());
         } else if let Some((_, kw)) = idents.next() {
             debug_assert_eq!(kw, "as", "only `as` can follow the module name");
             alias = Some(idents.next().ok_or("import `as` missing alias")?.1);
         }
-        Ok(StmtKind::Import(ImportDecl { module, alias, names }))
+        Ok(StmtKind::Import(ImportDecl {
+            module,
+            alias,
+            names,
+        }))
     }
 
     /// The statements of the node's `Block` child (fn/for/while bodies, etc.).
@@ -392,7 +416,10 @@ impl Projector {
                     .ok_or("unary expression missing its operator")?;
                 let operand = self.only_expr(node)?;
                 Ok(Expr {
-                    kind: ExprKind::UnaryOp { op, operand: Box::new(operand) },
+                    kind: ExprKind::UnaryOp {
+                        op,
+                        operand: Box::new(operand),
+                    },
                     span: self.node_span(node)?,
                 })
             }
@@ -407,14 +434,20 @@ impl Projector {
                     file: object.span.file,
                 };
                 Ok(Expr {
-                    kind: ExprKind::FieldAccess { object: Box::new(object), field },
+                    kind: ExprKind::FieldAccess {
+                        object: Box::new(object),
+                        field,
+                    },
                     span,
                 })
             }
             SyntaxKind::IndexAccessExpr => {
                 let nodes = child_nodes(node);
                 let [object_node, index_node] = nodes.as_slice() else {
-                    return Err(format!("index access with {} expression nodes", nodes.len()));
+                    return Err(format!(
+                        "index access with {} expression nodes",
+                        nodes.len()
+                    ));
                 };
                 let object = self.expr(object_node)?;
                 let index = self.expr(index_node)?;
@@ -436,14 +469,20 @@ impl Projector {
                     .iter()
                     .map(|n| self.expr(n))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(Expr { kind: ExprKind::List(elements), span: self.node_span(node)? })
+                Ok(Expr {
+                    kind: ExprKind::List(elements),
+                    span: self.node_span(node)?,
+                })
             }
             SyntaxKind::RecordExpr => {
                 let fields = child_nodes(node)
                     .iter()
                     .map(|n| self.record_field(n))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(Expr { kind: ExprKind::Record(fields), span: self.node_span(node)? })
+                Ok(Expr {
+                    kind: ExprKind::Record(fields),
+                    span: self.node_span(node)?,
+                })
             }
             SyntaxKind::IfExpr => self.if_expr(node),
             SyntaxKind::MatchExpr => {
@@ -455,7 +494,10 @@ impl Projector {
                     .map(|n| self.match_arm(n))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Expr {
-                    kind: ExprKind::Match { subject: Box::new(subject), arms },
+                    kind: ExprKind::Match {
+                        subject: Box::new(subject),
+                        arms,
+                    },
                     span: self.node_span(node)?,
                 })
             }
@@ -489,10 +531,13 @@ impl Projector {
                 parse_color_hex(&hex)
                     .into_iter()
                     .map(|(name, value)| {
-                        RecordField::Named(name.to_string(), Expr {
-                            kind: ExprKind::Literal(Literal::Int(value)),
-                            span,
-                        })
+                        RecordField::Named(
+                            name.to_string(),
+                            Expr {
+                                kind: ExprKind::Literal(Literal::Int(value)),
+                                span,
+                            },
+                        )
                     })
                     .collect(),
             ),
@@ -516,7 +561,10 @@ impl Projector {
     fn binary_expr(&mut self, node: &SyntaxNode) -> Result<Expr, String> {
         let nodes = child_nodes(node);
         let [left_node, right_node] = nodes.as_slice() else {
-            return Err(format!("binary expression with {} operand nodes", nodes.len()));
+            return Err(format!(
+                "binary expression with {} operand nodes",
+                nodes.len()
+            ));
         };
         let op = direct_tokens(node)
             .iter()
@@ -530,7 +578,11 @@ impl Projector {
                 end: right.span.end,
                 file: left.span.file,
             },
-            kind: ExprKind::BinaryOp { op, left: Box::new(left), right: Box::new(right) },
+            kind: ExprKind::BinaryOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         })
     }
 
@@ -546,7 +598,10 @@ impl Projector {
             // `left |> rhs` — the parser rewrites into a call whose span runs
             // from the `|>` token to the end of the right-hand side.
             let [left_node, rhs_node] = nodes.as_slice() else {
-                return Err(format!("pipe expression with {} operand nodes", nodes.len()));
+                return Err(format!(
+                    "pipe expression with {} operand nodes",
+                    nodes.len()
+                ));
             };
             let left = self.expr(left_node)?;
             let rhs = self.expr(rhs_node)?;
@@ -560,7 +615,10 @@ impl Projector {
                     args.insert(0, left);
                     ExprKind::Call { function, args }
                 }
-                _ => ExprKind::Call { function: Box::new(rhs), args: vec![left] },
+                _ => ExprKind::Call {
+                    function: Box::new(rhs),
+                    args: vec![left],
+                },
             };
             return Ok(Expr { kind, span });
         }
@@ -569,7 +627,10 @@ impl Projector {
             return Err(format!("call expression with {} nodes", nodes.len()));
         };
         if arg_list.kind() != SyntaxKind::ArgList {
-            return Err(format!("call expression missing ArgList, got {:?}", arg_list.kind()));
+            return Err(format!(
+                "call expression missing ArgList, got {:?}",
+                arg_list.kind()
+            ));
         }
         let function = self.expr(callee_node)?;
         let args = child_nodes(arg_list)
@@ -581,13 +642,22 @@ impl Projector {
             end: self.end_of(node)?,
             file: function.span.file,
         };
-        Ok(Expr { kind: ExprKind::Call { function: Box::new(function), args }, span })
+        Ok(Expr {
+            kind: ExprKind::Call {
+                function: Box::new(function),
+                args,
+            },
+            span,
+        })
     }
 
     fn field_access_object(&mut self, node: &SyntaxNode) -> Result<Expr, String> {
         let nodes = child_nodes(node);
         let [object] = nodes.as_slice() else {
-            return Err(format!("field access with {} expression nodes", nodes.len()));
+            return Err(format!(
+                "field access with {} expression nodes",
+                nodes.len()
+            ));
         };
         self.expr(object)
     }
@@ -611,7 +681,10 @@ impl Projector {
         let nodes = child_nodes(node);
         let condition = self.expr(nodes.first().ok_or("if missing its condition")?)?;
         let then_body = self.block(node)?;
-        let else_body = match nodes.into_iter().find(|n| n.kind() == SyntaxKind::ElseBranch) {
+        let else_body = match nodes
+            .into_iter()
+            .find(|n| n.kind() == SyntaxKind::ElseBranch)
+        {
             Some(branch) => Some(self.else_branch(&branch)?),
             None => None,
         };
@@ -639,7 +712,10 @@ impl Projector {
         let nodes = child_nodes(node);
         let condition = self.expr(nodes.first().ok_or("elsif missing its condition")?)?;
         let then_body = self.block(node)?;
-        let else_body = match nodes.into_iter().find(|n| n.kind() == SyntaxKind::ElseBranch) {
+        let else_body = match nodes
+            .into_iter()
+            .find(|n| n.kind() == SyntaxKind::ElseBranch)
+        {
             Some(branch) => Some(self.else_branch(&branch)?),
             None => None,
         };
@@ -666,7 +742,12 @@ impl Projector {
         let (guard_node, body_node) = match (has_guard, rest) {
             (true, [guard, body]) => (Some(guard), body),
             (false, [body]) => (None, body),
-            _ => return Err(format!("match arm with {} nodes after the pattern", rest.len())),
+            _ => {
+                return Err(format!(
+                    "match arm with {} nodes after the pattern",
+                    rest.len()
+                ));
+            }
         };
         let guard = match guard_node {
             Some(g) => Some(self.expr(g)?),
@@ -690,7 +771,11 @@ impl Projector {
         } else {
             self.expr(body_node)?
         };
-        Ok(MatchArm { pattern, guard, body })
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body,
+        })
     }
 
     fn pattern(&mut self, node: &SyntaxNode) -> Result<Pattern, String> {
@@ -702,7 +787,9 @@ impl Projector {
         match first {
             Some(Token::Ident(name)) if name == "_" => Ok(Pattern::Wildcard),
             Some(Token::Ident(name)) => {
-                let has_parens = tokens.iter().any(|t| matches!(t.token(), Some(Token::LParen)));
+                let has_parens = tokens
+                    .iter()
+                    .any(|t| matches!(t.token(), Some(Token::LParen)));
                 if has_parens {
                     let fields = child_nodes(node)
                         .iter()
@@ -723,7 +810,9 @@ impl Projector {
                 match tokens.get(1).and_then(|t| t.token().cloned()) {
                     Some(Token::Int(n)) => Ok(Pattern::Literal(Literal::Int(-n))),
                     Some(Token::Float(f)) => Ok(Pattern::Literal(Literal::Float(-f))),
-                    other => Err(format!("expected number after '-' in pattern, got {other:?}")),
+                    other => Err(format!(
+                        "expected number after '-' in pattern, got {other:?}"
+                    )),
                 }
             }
             Some(Token::LBracket) => {
@@ -784,11 +873,17 @@ impl Projector {
                 .find(|n| n.kind() != SyntaxKind::ParamList)
                 .ok_or("arrow lambda missing its body expression")?;
             let expr = self.expr(&expr_node)?;
-            vec![Stmt { kind: StmtKind::Expr(expr), span }]
+            vec![Stmt {
+                kind: StmtKind::Expr(expr),
+                span,
+            }]
         } else {
             self.block(node)?
         };
-        Ok(Expr { kind: ExprKind::Lambda { params, body }, span })
+        Ok(Expr {
+            kind: ExprKind::Lambda { params, body },
+            span,
+        })
     }
 
     /// Rebuild interpolation parts/exprs: parts are the direct string tokens
@@ -862,7 +957,9 @@ impl Projector {
                     .into_iter()
                     .find(|t| matches!(t.token(), Some(Token::String(_))))
                     .ok_or("JSX attribute missing its value")?;
-                let Some(Token::String(s)) = string_tok.token().cloned() else { unreachable!() };
+                let Some(Token::String(s)) = string_tok.token().cloned() else {
+                    unreachable!()
+                };
                 Expr {
                     kind: ExprKind::Literal(Literal::String(s)),
                     span: self.token_span(&string_tok),
@@ -895,7 +992,10 @@ fn bin_op(tok: &Token) -> Option<BinOp> {
 }
 
 fn param_names(param_list: &SyntaxNode) -> Vec<String> {
-    direct_tokens(param_list).iter().filter_map(ident_value).collect()
+    direct_tokens(param_list)
+        .iter()
+        .filter_map(ident_value)
+        .collect()
 }
 
 #[cfg(test)]
@@ -943,7 +1043,9 @@ mod tests {
         assert_projects("for i in [1, 2] do\n  print(i)\nend\n");
         assert_projects("while x < 10 do\n  x += 1\nend\n");
         assert_projects("fn f()\n  return\nend\nfn g()\n  return 1\nend\n");
-        assert_projects("for i in xs do\n  if i then\n    break\n  else\n    continue\n  end\nend\n");
+        assert_projects(
+            "for i in xs do\n  if i then\n    break\n  else\n    continue\n  end\nend\n",
+        );
         assert_projects("state count = 0\nstate(key) slot = init()\n");
         assert_projects("enum Shape\n  Circle(r)\n  Point\n  Rect(w, h)\nend\n");
     }
@@ -1024,17 +1126,23 @@ mod tests {
         // A state nested inside another state's init (via a lambda body) is
         // parsed — and must be numbered — before the outer state's own id.
         assert_projects("state outer = fn()\n  state inner = 1\n  inner\nend\nstate last = 2\n");
-        let stmts = projected_ast(
-            "state outer = fn()\n  state inner = 1\n  inner\nend\nstate last = 2\n",
-        )
-        .unwrap();
-        let StmtKind::State { id: outer_id, ref init, .. } = stmts[0].kind else {
+        let stmts =
+            projected_ast("state outer = fn()\n  state inner = 1\n  inner\nend\nstate last = 2\n")
+                .unwrap();
+        let StmtKind::State {
+            id: outer_id,
+            ref init,
+            ..
+        } = stmts[0].kind
+        else {
             panic!("expected state stmt");
         };
         let StmtKind::State { id: last_id, .. } = stmts[1].kind else {
             panic!("expected state stmt");
         };
-        let ExprKind::Lambda { ref body, .. } = init.kind else { panic!("expected lambda") };
+        let ExprKind::Lambda { ref body, .. } = init.kind else {
+            panic!("expected lambda")
+        };
         let StmtKind::State { id: inner_id, .. } = body[0].kind else {
             panic!("expected nested state stmt");
         };
@@ -1042,11 +1150,16 @@ mod tests {
     }
 
     fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if path.file_name().is_some_and(|n| n == "node_modules" || n == "target") {
+                if path
+                    .file_name()
+                    .is_some_and(|n| n == "node_modules" || n == "target")
+                {
                     continue;
                 }
                 collect_ptl(&path, out);
@@ -1069,8 +1182,12 @@ mod tests {
 
         let mut checked = 0;
         for path in &files {
-            let Ok(src) = std::fs::read_to_string(path) else { continue };
-            let Ok(direct) = direct_ast(&src) else { continue };
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(direct) = direct_ast(&src) else {
+                continue;
+            };
             let projected = projected_ast(&src)
                 .unwrap_or_else(|e| panic!("projection failed for {}: {e}", path.display()));
             assert_eq!(

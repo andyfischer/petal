@@ -131,11 +131,18 @@ impl<'a> Vm<'a> {
     /// its value; otherwise a term inside a loop keys by the loop-index context
     /// gathered across *all* active frames (outermost first), matching the graph
     /// engine's `loop_key_parts`; a non-loop term keys by base alone.
-    pub(super) fn state_key(&self, base: StateKey, in_loop: bool, explicit: Option<Value>) -> RuntimeStateKey {
+    pub(super) fn state_key(
+        &self,
+        base: StateKey,
+        in_loop: bool,
+        explicit: Option<Value>,
+    ) -> RuntimeStateKey {
         let loop_indices = match explicit {
             Some(kv) => {
                 let mut v = SmallVec::new();
-                v.push(LoopKeyPart::Explicit(crate::value::hash_value(&kv, self.heap)));
+                v.push(LoopKeyPart::Explicit(crate::value::hash_value(
+                    &kv, self.heap,
+                )));
                 v
             }
             None if in_loop => {

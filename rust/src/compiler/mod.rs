@@ -16,14 +16,14 @@ mod stmt;
 
 use std::collections::HashMap;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use crate::ast::*;
 use crate::constant_table::{ConstantTable, ConstantValue};
 use crate::module::LoadedModule;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
-use crate::source_map::{SourceFile, SourceMap, SourceSpan, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, SourceFile, SourceMap, SourceSpan};
 
 /// Info about a captured variable in the current function being compiled.
 struct CaptureInfo {
@@ -234,7 +234,11 @@ impl Compiler {
         // empty table so their IR serialization stays in the v0 shape.
         if modules.len() > 1 {
             let mut files = vec![
-                SourceFile { name: String::new(), source: String::new(), origin: None };
+                SourceFile {
+                    name: String::new(),
+                    source: String::new(),
+                    origin: None
+                };
                 modules.len()
             ];
             for m in modules {
@@ -347,7 +351,9 @@ impl Compiler {
             self.module_aliases.insert(alias, m.clone());
 
             // Selective bindings (`import ui: button, clicked`).
-            let Some(names) = &import.decl.names else { continue };
+            let Some(names) = &import.decl.names else {
+                continue;
+            };
             for name in names {
                 if name.starts_with('_') {
                     return Err(format!(
@@ -362,7 +368,11 @@ impl Compiler {
                         module.display_name,
                         m,
                         name,
-                        if exports.is_empty() { "none".to_string() } else { exports.join(", ") }
+                        if exports.is_empty() {
+                            "none".to_string()
+                        } else {
+                            exports.join(", ")
+                        }
                     ));
                 }
                 if let Some(other) = selective.get(name) {

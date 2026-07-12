@@ -44,8 +44,16 @@ fn is_entry_file(f: &FileId) -> bool {
 
 /// A zero-value span used as a placeholder when no source position is available.
 pub const ZERO_SPAN: SourceSpan = SourceSpan {
-    start: SourcePosition { line: 0, column: 0, offset: 0 },
-    end: SourcePosition { line: 0, column: 0, offset: 0 },
+    start: SourcePosition {
+        line: 0,
+        column: 0,
+        offset: 0,
+    },
+    end: SourcePosition {
+        line: 0,
+        column: 0,
+        offset: 0,
+    },
     file: ENTRY_FILE,
 };
 

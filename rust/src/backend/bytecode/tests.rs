@@ -47,10 +47,7 @@ fn run_stateful(
     let rendered = value::value_to_display_string(&last, env.heap());
     // get_state_json is a serde Map (unordered); serialize deterministically.
     let state = env.get_state_json(pid, sid);
-    let mut pairs: Vec<String> = state
-        .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect();
+    let mut pairs: Vec<String> = state.iter().map(|(k, v)| format!("{k}={v}")).collect();
     pairs.sort();
     Ok((rendered, output, pairs.join(",")))
 }
@@ -206,9 +203,7 @@ fn slice_string_snaps_to_char_boundaries() {
 #[test]
 fn overloaded_functions() {
     // Same name, different arities — resolved by argument count.
-    assert_parity(
-        "fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend\nlet y = f(10)\nlet z = f(3, 4)",
-    );
+    assert_parity("fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend\nlet y = f(10)\nlet z = f(3, 4)");
 }
 
 #[test]
@@ -320,13 +315,21 @@ fn while_loops() {
 #[test]
 fn break_and_continue() {
     // break before the loop-carried update.
-    assert_parity("let s = 0\nfor i in range(10) do\n  if i == 5 then break end\n  s = s + i\nend\nlet y = s");
+    assert_parity(
+        "let s = 0\nfor i in range(10) do\n  if i == 5 then break end\n  s = s + i\nend\nlet y = s",
+    );
     // break after the update — the phi carry-out still propagates.
-    assert_parity("let s = 0\nfor i in range(10) do\n  s = s + i\n  if i == 2 then break end\nend\nlet y = s");
+    assert_parity(
+        "let s = 0\nfor i in range(10) do\n  s = s + i\n  if i == 2 then break end\nend\nlet y = s",
+    );
     // continue skips the rest of the body.
-    assert_parity("let s = 0\nfor i in range(6) do\n  if i % 2 == 0 then continue end\n  s = s + i\nend\nlet y = s");
+    assert_parity(
+        "let s = 0\nfor i in range(6) do\n  if i % 2 == 0 then continue end\n  s = s + i\nend\nlet y = s",
+    );
     // continue in a while re-evaluates the condition.
-    assert_parity("let c = 0\nlet i = 0\nwhile i < 10 do\n  i = i + 1\n  if i % 2 == 0 then continue end\n  c = c + 1\nend\nlet y = c");
+    assert_parity(
+        "let c = 0\nlet i = 0\nwhile i < 10 do\n  i = i + 1\n  if i % 2 == 0 then continue end\n  c = c + 1\nend\nlet y = c",
+    );
 }
 
 #[test]
@@ -603,10 +606,13 @@ fn inplace_does_not_fire_when_container_aliased() {
     // `ys = xs` before the append means a live alias observes the old value —
     // in-place must NOT fire, and the two engines must still agree that the
     // append is value-semantic (ys unchanged).
-    let code =
-        "let xs = []\nlet ys = xs\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))";
+    let code = "let xs = []\nlet ys = xs\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))";
     assert_inplace_parity(code);
-    assert_eq!(inplace_count(code), 0, "aliased accumulator must not be in-place");
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "aliased accumulator must not be in-place"
+    );
 }
 
 #[test]
@@ -623,9 +629,12 @@ fn inplace_does_not_fire_on_bystander_alias_of_carried_value() {
 #[test]
 fn inplace_does_not_fire_on_state_container() {
     // A state-backed list is not a fresh unique alloc — never in-place.
-    let code =
-        "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
-    assert_eq!(inplace_count(code), 0, "state container must not be in-place");
+    let code = "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "state container must not be in-place"
+    );
 }
 
 #[test]
@@ -633,7 +642,9 @@ fn inplace_analysis_fires_on_accumulators() {
     // Guards against a refactor silently disabling the optimization: the
     // canonical accumulator shapes must be recognized.
     assert!(
-        inplace_count("let xs = []\nfor i in range(0, 5) do\n  xs = append(xs, i)\nend\nlet n = len(xs)") >= 1,
+        inplace_count(
+            "let xs = []\nfor i in range(0, 5) do\n  xs = append(xs, i)\nend\nlet n = len(xs)"
+        ) >= 1,
         "simple accumulator should fire",
     );
     assert!(
@@ -679,8 +690,7 @@ fn assert_route_a_parity(code: &str) {
 fn route_a_count(code: &str) -> usize {
     let program = compile_program(code);
     let in_place = escape::analyze(&program);
-    let mut bc = crate::backend::bytecode::lower_program_opt(&program, &in_place)
-        .expect("lower");
+    let mut bc = crate::backend::bytecode::lower_program_opt(&program, &in_place).expect("lower");
     crate::backend::bytecode::lastuse::apply(&mut bc, &program)
 }
 
@@ -710,7 +720,10 @@ fn route_a_fires_on_per_iteration_builder() {
     // iteration's mutation is in-place even though the mutation sits in a
     // loop. This composes with route B on the outer accumulator.
     let code = "let grid = []\nfor y in range(0, 4) do\n  let t = [0, 0]\n  t[0] = y\n  grid = append(grid, t)\nend\nprint(len(grid), grid[3][0])";
-    assert!(route_a_count(code) >= 1, "per-iteration builder should fire");
+    assert!(
+        route_a_count(code) >= 1,
+        "per-iteration builder should fire"
+    );
     assert_route_a_parity(code);
 }
 
@@ -734,7 +747,11 @@ fn route_a_does_not_fire_on_alias() {
 fn route_a_does_not_fire_on_escapes() {
     // Stored into another container before the mutation.
     let code = "let xs = [1, 2]\nlet outer = [xs]\nxs[0] = 9\nprint(outer[0][0], xs[0])";
-    assert_eq!(route_a_count(code), 0, "stored-into-container must not fire");
+    assert_eq!(
+        route_a_count(code),
+        0,
+        "stored-into-container must not fire"
+    );
     assert_route_a_parity(code);
     // Captured by a closure before the mutation.
     let code = "let xs = [1, 2]\nlet get = fn() -> xs[0]\nxs[0] = 9\nprint(get(), xs[0])";
@@ -742,12 +759,17 @@ fn route_a_does_not_fire_on_escapes() {
     assert_route_a_parity(code);
     // Passed to a user function before the mutation (arbitrary code could
     // retain it).
-    let code = "fn probe(v)\n  v[0]\nend\nlet xs = [1, 2]\nlet a = probe(xs)\nxs[0] = 9\nprint(a, xs[0])";
+    let code =
+        "fn probe(v)\n  v[0]\nend\nlet xs = [1, 2]\nlet a = probe(xs)\nxs[0] = 9\nprint(a, xs[0])";
     assert_eq!(route_a_count(code), 0, "call argument must not fire");
     assert_route_a_parity(code);
     // Returning a pre-mutation alias out of a function.
     let code = "fn f()\n  let xs = [1, 2]\n  let ys = xs\n  xs[0] = 5\n  ys\nend\nprint(f()[0])";
-    assert_eq!(route_a_count(code), 0, "escaping pre-mutation alias must not fire");
+    assert_eq!(
+        route_a_count(code),
+        0,
+        "escaping pre-mutation alias must not fire"
+    );
     assert_route_a_parity(code);
 }
 
@@ -757,7 +779,10 @@ fn route_a_fires_on_returned_mutation_result() {
     // container escapes, which is value-identical to the clone. The
     // pre-mutation id has no other observer.
     let code = "fn f(v)\n  let xs = [1, 2]\n  xs[0] = v\n  xs\nend\nprint(f(5)[0], f(7)[0])";
-    assert!(route_a_count(code) >= 1, "returned mutation result should fire");
+    assert!(
+        route_a_count(code) >= 1,
+        "returned mutation result should fire"
+    );
     assert_route_a_parity(code);
 }
 
@@ -787,7 +812,10 @@ fn route_a_dup_bytes_drop_on_builder() {
     let off = bytes(OptFlags::none());
     let on = bytes(ROUTE_A_ONLY);
     assert!(off > 0, "baseline should copy something");
-    assert!(on < off, "route A should strictly reduce copied bytes ({on} !< {off})");
+    assert!(
+        on < off,
+        "route A should strictly reduce copied bytes ({on} !< {off})"
+    );
 }
 
 #[test]
@@ -807,7 +835,10 @@ fn inplace_dup_bytes_drop_on_accumulator() {
     let off = bytes(OptFlags::none());
     let on = bytes(OptFlags::all());
     assert!(off > 0, "baseline should copy something");
-    assert!(on < off, "in-place should strictly reduce copied bytes ({on} !< {off})");
+    assert!(
+        on < off,
+        "in-place should strictly reduce copied bytes ({on} !< {off})"
+    );
 }
 
 // -- Trace / provenance (best-effort under the VM) --------------------------
@@ -820,7 +851,9 @@ fn inplace_dup_bytes_drop_on_accumulator() {
 fn bytecode_trace_records_term_values() {
     let mut env = Env::new(); // default backend is bytecode
     env.trace_mut().enable();
-    let pid = env.load_program("let x = 2 + 3\nlet total = x * 4\nprint(total)").unwrap();
+    let pid = env
+        .load_program("let x = 2 + 3\nlet total = x * 4\nprint(total)")
+        .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
 
@@ -854,7 +887,10 @@ fn bytecode_trace_records_call_results() {
 
     let program = env.get_program(pid).expect("program");
     let r = program.find_term("r").expect("r term");
-    let ev = env.trace().last_for_term(r).expect("r (call result) was not traced");
+    let ev = env
+        .trace()
+        .last_for_term(r)
+        .expect("r (call result) was not traced");
     assert_eq!(value::value_to_display_string(&ev.result, env.heap()), "42");
 }
 

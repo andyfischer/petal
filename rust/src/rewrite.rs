@@ -24,10 +24,10 @@ use std::rc::Rc;
 
 use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
 use crate::cst::{
-    parse_cst, parse_source, GreenChild, GreenNode, SyntaxElement, SyntaxKind, SyntaxNode,
-    SyntaxToken,
+    GreenChild, GreenNode, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, parse_cst,
+    parse_source,
 };
-use crate::source_map::{SourceSpan, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, SourceSpan};
 
 /// Parse `source` into its lossless green tree plus its top-level statements,
 /// preserving each node's source span. A thin wrapper over
@@ -110,7 +110,9 @@ pub fn splice_node(
 /// the tree node an AST span identifies, since AST spans exclude trivia.
 fn find_node_path(node: &SyntaxNode, range: (u32, u32)) -> Option<Vec<usize>> {
     for (i, el) in node.children().into_iter().enumerate() {
-        let SyntaxElement::Node(child) = el else { continue };
+        let SyntaxElement::Node(child) = el else {
+            continue;
+        };
         // The node's full extent (trivia included) must cover the range; a
         // node's extent is always a superset of its significant range.
         if child.offset() > range.0 || child.offset() + child.text_len() < range.1 {
@@ -305,7 +307,8 @@ mod tests {
 
     #[test]
     fn tree_splice_keeps_comments_around_multiline_call() {
-        let src = "// before\nlayout(\n    column([\n        editor(),\n    ])\n)\n// after\nx = 2\n";
+        let src =
+            "// before\nlayout(\n    column([\n        editor(),\n    ])\n)\n// after\nx = 2\n";
         let out = tree_replaced(src, "layout", "layout(editor())");
         assert_eq!(out, "// before\nlayout(editor())\n// after\nx = 2\n");
     }

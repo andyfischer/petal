@@ -28,7 +28,9 @@ pub(super) fn native_pending(state: &mut PetalCxt) -> Result<u32, String> {
     // Ready → the resolved value; Loading/Errored → the Pending id.
     let ready = {
         let table = state.resources();
-        table.pending_for_key(key).and_then(|id| table.value_for(id))
+        table
+            .pending_for_key(key)
+            .and_then(|id| table.value_for(id))
     };
     if let Some(v) = ready {
         state.push_value(v);
@@ -38,7 +40,9 @@ pub(super) fn native_pending(state: &mut PetalCxt) -> Result<u32, String> {
     // observability tooling can render its provenance and age.
     let origin = state.origin();
     let frame = state.frame();
-    let id = state.resources_mut().get_or_create_loading(key, origin, frame);
+    let id = state
+        .resources_mut()
+        .get_or_create_loading(key, origin, frame);
     state.push_value(Value::Pending(id));
     Ok(1)
 }

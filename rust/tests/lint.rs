@@ -9,7 +9,7 @@
 // literals with real newlines starting at column 0, so what you see is
 // byte-for-byte what the linter sees.
 
-use petal::lint::{lint_source, LintOptions, LintOutcome};
+use petal::lint::{LintOptions, LintOutcome, lint_source};
 
 fn lint_outcome(src: &str) -> LintOutcome {
     lint_source(src, &LintOptions::default()).expect("lint_source should succeed")
@@ -463,10 +463,7 @@ fn trailing_whitespace_is_trimmed() {
 
 #[test]
 fn whitespace_only_lines_become_empty() {
-    assert_lints_to(
-        "let x = 1\n   \nprint(x)\n",
-        "let x = 1\n\nprint(x)\n",
-    );
+    assert_lints_to("let x = 1\n   \nprint(x)\n", "let x = 1\n\nprint(x)\n");
 }
 
 #[test]

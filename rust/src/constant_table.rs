@@ -82,7 +82,9 @@ impl ConstantTable {
     pub fn rebuild_dedup(&mut self) {
         self.dedup.clear();
         for (i, value) in self.values.iter().enumerate() {
-            self.dedup.entry(value.clone()).or_insert(ConstantId(i as u32));
+            self.dedup
+                .entry(value.clone())
+                .or_insert(ConstantId(i as u32));
         }
     }
 }

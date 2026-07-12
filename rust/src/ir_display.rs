@@ -169,10 +169,13 @@ fn format_op(op: &TermOp) -> String {
             format!("AllocMap({})", ids.join(", "))
         }
         TermOp::AllocMapSpread { entries } => {
-            let parts: Vec<String> = entries.iter().map(|e| match e {
-                MapSpreadEntry::Spread(idx) => format!("...#{}", idx),
-                MapSpreadEntry::Named(cid, idx) => format!("c{}=#{}", cid.0, idx),
-            }).collect();
+            let parts: Vec<String> = entries
+                .iter()
+                .map(|e| match e {
+                    MapSpreadEntry::Spread(idx) => format!("...#{}", idx),
+                    MapSpreadEntry::Named(cid, idx) => format!("c{}=#{}", cid.0, idx),
+                })
+                .collect();
             format!("AllocMapSpread({})", parts.join(", "))
         }
         TermOp::GetField(cid) => format!("GetField(c{})", cid.0),

@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{ImportDecl, Stmt, StmtKind};
-use crate::source_map::{FileId, ENTRY_FILE};
+use crate::source_map::{ENTRY_FILE, FileId};
 
 /// Where a module's source came from.
 #[derive(Debug, Clone, PartialEq)]
@@ -157,7 +157,11 @@ pub fn load_modules(
         imports.insert(
             0,
             ResolvedImport {
-                decl: ImportDecl { module: name.clone(), alias: None, names: None },
+                decl: ImportDecl {
+                    module: name.clone(),
+                    alias: None,
+                    names: None,
+                },
                 implicit: true,
             },
         );
@@ -172,7 +176,11 @@ pub fn load_modules(
     };
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
     for import in &imports {
-        walker.visit(&import.decl.module, entry_module_origin.as_ref(), &entry_display)?;
+        walker.visit(
+            &import.decl.module,
+            entry_module_origin.as_ref(),
+            &entry_display,
+        )?;
     }
 
     let mut modules = walker.out;
@@ -209,19 +217,21 @@ impl Walker<'_> {
             return Ok(());
         }
         if let Some(pos) = self.in_progress.iter().position(|n| n == name) {
-            let mut cycle: Vec<&str> =
-                self.in_progress[pos..].iter().map(String::as_str).collect();
+            let mut cycle: Vec<&str> = self.in_progress[pos..].iter().map(String::as_str).collect();
             cycle.push(name);
             return Err(format!("import cycle: {}", cycle.join(" -> ")));
         }
 
-        let resolved = self.resolver.resolve(name, importer_origin).ok_or_else(|| {
-            format!(
-                "cannot find module '{}' (imported by {}): not registered, and no \
+        let resolved = self
+            .resolver
+            .resolve(name, importer_origin)
+            .ok_or_else(|| {
+                format!(
+                    "cannot find module '{}' (imported by {}): not registered, and no \
                  {}.ptl in the importing file's directory, module paths, or PETAL_PATH",
-                name, importer_display, name
-            )
-        })?;
+                    name, importer_display, name
+                )
+            })?;
 
         let display_name = match &resolved.origin {
             ModuleOrigin::File(path) => path
@@ -285,9 +295,10 @@ fn split_imports(stmts: Vec<Stmt>) -> (Vec<ResolvedImport>, Vec<Stmt>) {
     let mut rest = Vec::new();
     for stmt in stmts {
         match stmt.kind {
-            StmtKind::Import(decl) => {
-                imports.push(ResolvedImport { decl, implicit: false })
-            }
+            StmtKind::Import(decl) => imports.push(ResolvedImport {
+                decl,
+                implicit: false,
+            }),
             _ => rest.push(stmt),
         }
     }

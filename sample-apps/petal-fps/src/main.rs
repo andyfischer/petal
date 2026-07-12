@@ -22,7 +22,7 @@ mod native_fns;
 mod renderer;
 
 use host::FpsHost;
-use petal_sdl::{run_agent, run_game, run_headless, run_record, run_screenshot, GameConfig};
+use petal_sdl::{GameConfig, run_agent, run_game, run_headless, run_record, run_screenshot};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -46,16 +46,40 @@ fn main() {
                 print_usage();
                 return;
             }
-            "--width" => { i += 1; width = args[i].parse().unwrap_or(width); }
-            "--height" => { i += 1; height = args[i].parse().unwrap_or(height); }
-            "--title" => { i += 1; title = args[i].clone(); }
+            "--width" => {
+                i += 1;
+                width = args[i].parse().unwrap_or(width);
+            }
+            "--height" => {
+                i += 1;
+                height = args[i].parse().unwrap_or(height);
+            }
+            "--title" => {
+                i += 1;
+                title = args[i].clone();
+            }
             "--no-hot-reload" => hot_reload = false,
             "--agent" => agent = true,
-            "--headless" => { headless = true; agent = true; }
-            "--screenshot" => { i += 1; screenshot_path = Some(args[i].clone()); }
-            "--record" => { i += 1; record_dir = Some(args[i].clone()); }
-            "--warmup" => { i += 1; record_warmup = args[i].parse().unwrap_or(30); }
-            "--frames" => { i += 1; screenshot_frames = args[i].parse().unwrap_or(60); }
+            "--headless" => {
+                headless = true;
+                agent = true;
+            }
+            "--screenshot" => {
+                i += 1;
+                screenshot_path = Some(args[i].clone());
+            }
+            "--record" => {
+                i += 1;
+                record_dir = Some(args[i].clone());
+            }
+            "--warmup" => {
+                i += 1;
+                record_warmup = args[i].parse().unwrap_or(30);
+            }
+            "--frames" => {
+                i += 1;
+                screenshot_frames = args[i].parse().unwrap_or(60);
+            }
             arg if !arg.starts_with('-') => source_path = Some(arg.to_string()),
             other => {
                 eprintln!("Unknown option: {}", other);
@@ -75,7 +99,14 @@ fn main() {
         }
     };
 
-    let config = GameConfig { width, height, title, hot_reload, agent, headless };
+    let config = GameConfig {
+        width,
+        height,
+        title,
+        hot_reload,
+        agent,
+        headless,
+    };
     let mut host = FpsHost::new(width, height);
     let sp = Some(source.as_str());
 

@@ -17,10 +17,10 @@ use sdl2::video::Window;
 use petal::env::Env;
 use petal::stack::StackKey;
 
-use crate::commands::{take_draw_commands, take_draw_commands_for, DrawCommand};
+use crate::commands::{DrawCommand, take_draw_commands, take_draw_commands_for};
 use crate::font::{self, FontLadder};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
-use crate::native_fns::{self, bind_examples, take_pending_launch, ExampleEntry};
+use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
@@ -55,7 +55,12 @@ impl DefaultHost {
             }
             Err(_) => None,
         };
-        Self { fonts, examples_dir, framebuffer: None, in_browser: false }
+        Self {
+            fonts,
+            examples_dir,
+            framebuffer: None,
+            in_browser: false,
+        }
     }
 }
 
@@ -65,9 +70,10 @@ impl Host for DefaultHost {
     }
 
     fn default_source(&mut self) -> Option<ScriptSwitch> {
-        self.examples_dir
-            .as_ref()
-            .map(|_| ScriptSwitch { source: BROWSER_SCRIPT.to_string(), path: None })
+        self.examples_dir.as_ref().map(|_| ScriptSwitch {
+            source: BROWSER_SCRIPT.to_string(),
+            path: None,
+        })
     }
 
     fn on_program_loaded(&mut self, env: &mut Env, path: Option<&str>) {
@@ -106,7 +112,11 @@ impl Host for DefaultHost {
         // the whole surface to the window. Because the surface is software-
         // backed, pixels persist unless a `Clear` command wipes them.
         let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
-        renderer::render(&mut sc, commands, self.fonts.as_ref().expect("fonts for windowed present"));
+        renderer::render(
+            &mut sc,
+            commands,
+            self.fonts.as_ref().expect("fonts for windowed present"),
+        );
         let surface = sc.into_surface();
 
         let tc = canvas.texture_creator();
@@ -127,9 +137,10 @@ impl Host for DefaultHost {
         width: u32,
         height: u32,
     ) -> Result<RgbImage, String> {
-        let fonts = self.fonts.as_ref().ok_or_else(|| {
-            "screenshot unavailable: no system font could be loaded".to_string()
-        })?;
+        let fonts = self
+            .fonts
+            .as_ref()
+            .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
         let commands = take_draw_commands_for(env, stack);
         Ok(render_commands(&commands, width, height, fonts))
     }
@@ -144,14 +155,20 @@ impl Host for DefaultHost {
             EscapeAction::Quit
         } else {
             // Return to the browser (a fresh embedded load).
-            EscapeAction::Switch(ScriptSwitch { source: BROWSER_SCRIPT.to_string(), path: None })
+            EscapeAction::Switch(ScriptSwitch {
+                source: BROWSER_SCRIPT.to_string(),
+                path: None,
+            })
         }
     }
 
     fn after_frame(&mut self, env: &mut Env) -> Option<ScriptSwitch> {
         let path = take_pending_launch(env)?;
         match std::fs::read_to_string(&path) {
-            Ok(source) => Some(ScriptSwitch { source, path: Some(path) }),
+            Ok(source) => Some(ScriptSwitch {
+                source,
+                path: Some(path),
+            }),
             Err(e) => {
                 eprintln!("[browser] failed to read {}: {}", path, e);
                 None
@@ -163,8 +180,8 @@ impl Host for DefaultHost {
 /// A black, persistent software framebuffer. Only a `Clear` command wipes it,
 /// which is what makes accumulative generative art work.
 fn new_framebuffer(width: u32, height: u32) -> Result<Surface<'static>, String> {
-    let mut surface =
-        Surface::new(width.max(1), height.max(1), PixelFormatEnum::RGB888).map_err(|e| e.to_string())?;
+    let mut surface = Surface::new(width.max(1), height.max(1), PixelFormatEnum::RGB888)
+        .map_err(|e| e.to_string())?;
     surface
         .fill_rect(None, Color::RGB(0, 0, 0))
         .map_err(|e| e.to_string())?;
@@ -174,12 +191,19 @@ fn new_framebuffer(width: u32, height: u32) -> Result<Surface<'static>, String> 
 /// Rasterize a command stream through the real renderer into an RGB image —
 /// the exact path the live window uses, so screenshots match the screen (real
 /// glyphs, honored clips, correct offscreen-canvas compositing).
-fn render_commands(commands: &[DrawCommand], width: u32, height: u32, fonts: &FontLadder) -> RgbImage {
+fn render_commands(
+    commands: &[DrawCommand],
+    width: u32,
+    height: u32,
+    fonts: &FontLadder,
+) -> RgbImage {
     let mut surface = Surface::new(width.max(1), height.max(1), PixelFormatEnum::RGB888)
         .expect("create screenshot surface");
     let _ = surface.fill_rect(None, Color::RGB(0, 0, 0));
 
-    let mut sc = surface.into_canvas().expect("screenshot surface into canvas");
+    let mut sc = surface
+        .into_canvas()
+        .expect("screenshot surface into canvas");
     renderer::render(&mut sc, commands.to_vec(), fonts);
     surface_to_image(&sc.into_surface())
 }
@@ -213,7 +237,11 @@ fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
         for entry in dir_entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "ptl") {
-                let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if name != "browser" {
                     paths.push(path);
                 }
@@ -224,7 +252,11 @@ fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
     paths
         .into_iter()
         .map(|path| {
-            let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let name = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             // Capitalize the first letter for display.
             let display_name = {
                 let mut c = name.chars();
@@ -233,7 +265,10 @@ fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
                     Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
                 }
             };
-            ExampleEntry { name: display_name, path: path.to_string_lossy().to_string() }
+            ExampleEntry {
+                name: display_name,
+                path: path.to_string_lossy().to_string(),
+            }
         })
         .collect()
 }
@@ -255,7 +290,16 @@ mod tests {
         let fonts = test_ladder(&ttf).expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
-            DrawCommand::Text { text: "Hello".to_string(), x: 10, y: 10, size: 40, r: 255, g: 255, b: 255, a: 255 },
+            DrawCommand::Text {
+                text: "Hello".to_string(),
+                x: 10,
+                y: 10,
+                size: 40,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
         ];
         let img = render_commands(&commands, 200, 80, &fonts);
         let (mut lit, mut dark, mut total) = (0u32, 0u32, 0u32);
@@ -263,12 +307,22 @@ mod tests {
             for x in 10..170 {
                 let px = img.get_pixel(x, y);
                 total += 1;
-                if px[0] > 128 { lit += 1; } else { dark += 1; }
+                if px[0] > 128 {
+                    lit += 1;
+                } else {
+                    dark += 1;
+                }
             }
         }
         assert!(lit > 0, "text should paint lit glyph pixels");
-        assert!(dark > 0, "a real glyph run leaves black gaps between letters");
-        assert!(lit * 2 < total, "lit coverage {lit}/{total} looks like a filled block, not glyphs");
+        assert!(
+            dark > 0,
+            "a real glyph run leaves black gaps between letters"
+        );
+        assert!(
+            lit * 2 < total,
+            "lit coverage {lit}/{total} looks like a filled block, not glyphs"
+        );
     }
 
     /// Primitives read back with the correct color at the correct place.
@@ -278,12 +332,30 @@ mod tests {
         let fonts = test_ladder(&ttf).expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
-            DrawCommand::Rect { x: 5, y: 5, w: 20, h: 20, r: 10, g: 200, b: 40, a: 255, radius: 0 },
+            DrawCommand::Rect {
+                x: 5,
+                y: 5,
+                w: 20,
+                h: 20,
+                r: 10,
+                g: 200,
+                b: 40,
+                a: 255,
+                radius: 0,
+            },
         ];
         let img = render_commands(&commands, 64, 64, &fonts);
         let px = img.get_pixel(15, 15);
-        assert_eq!((px[0], px[1], px[2]), (10, 200, 40), "rect color should read back");
+        assert_eq!(
+            (px[0], px[1], px[2]),
+            (10, 200, 40),
+            "rect color should read back"
+        );
         let bg = img.get_pixel(40, 40);
-        assert_eq!((bg[0], bg[1], bg[2]), (0, 0, 0), "background should be the clear color");
+        assert_eq!(
+            (bg[0], bg[1], bg[2]),
+            (0, 0, 0),
+            "background should be the clear color"
+        );
     }
 }

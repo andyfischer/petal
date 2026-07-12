@@ -152,7 +152,7 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
                     return Err(format!(
                         "Cannot perform arithmetic on vec2 and {}",
                         other.type_name()
-                    ))
+                    ));
                 }
             };
             match op {
@@ -176,7 +176,7 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
                     return Err(format!(
                         "Cannot perform arithmetic on {} and vec2",
                         other.type_name()
-                    ))
+                    ));
                 }
             };
             match op {
@@ -384,7 +384,7 @@ pub fn alloc_map_spread(
                         return Err(format!(
                             "Cannot spread {} into record (expected record)",
                             src.type_name()
-                        ))
+                        ));
                     }
                 }
             }
@@ -423,7 +423,11 @@ pub fn alloc_element(
     }
     let props_id = heap.alloc_map(map);
     let children_id = heap.alloc_list(inputs[prop_keys.len()..].to_vec());
-    Ok(Value::Element(heap.alloc_element(tag_id, props_id, children_id)))
+    Ok(Value::Element(heap.alloc_element(
+        tag_id,
+        props_id,
+        children_id,
+    )))
 }
 
 /// `Variant(fields...)` — an enum variant carrying a name tag and field list.
@@ -473,9 +477,7 @@ pub fn get_field(
             "children" => Value::List(heap.get_element_children(elem_id)),
             _ => return Err(format!("No field '{}' on element", field_name)),
         },
-        Value::List(list_id) if field_name == "length" => {
-            Value::Int(heap.list_len(list_id) as i64)
-        }
+        Value::List(list_id) if field_name == "length" => Value::Int(heap.list_len(list_id) as i64),
         Value::String(str_id) if field_name == "length" => {
             Value::Int(heap.get_string(str_id).len() as i64)
         }
@@ -486,7 +488,7 @@ pub fn get_field(
                 return Err(format!(
                     "No field '{}' on vec2 (available: x, y)",
                     field_name
-                ))
+                ));
             }
         },
         _ => {
@@ -494,7 +496,7 @@ pub fn get_field(
                 "Cannot access field '{}' on {}",
                 field_name,
                 obj.type_name()
-            ))
+            ));
         }
     };
     Ok(val)
@@ -607,7 +609,12 @@ pub fn set_index(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<
 /// In-place `obj[idx] = val`: mutates `obj`'s backing store and reuses its id.
 /// Sound only under the escape-analysis gate; the VM emits this via
 /// `Inst::SetIndexInPlace` only when that gate holds (never with opts off).
-pub fn set_index_in_place(heap: &mut Heap, obj: Value, idx: Value, val: Value) -> Result<Value, String> {
+pub fn set_index_in_place(
+    heap: &mut Heap,
+    obj: Value,
+    idx: Value,
+    val: Value,
+) -> Result<Value, String> {
     set_index_impl(heap, obj, idx, val, true)
 }
 
@@ -650,7 +657,7 @@ fn set_index_impl(
                     return Err(format!(
                         "Cannot assign {} into f64_array",
                         other.type_name()
-                    ))
+                    ));
                 }
             };
             if i >= 0 && (i as usize) < heap.f64_array_len(arr_id) {

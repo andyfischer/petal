@@ -3,7 +3,7 @@
 
 use std::process;
 
-use super::{print_usage, CliArgs, Command, SourceInput};
+use super::{CliArgs, Command, SourceInput, print_usage};
 
 pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
@@ -16,13 +16,17 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "run" => parse_run_args(&args[1..]),
         "check" => parse_show_args(&args[1..], |json| Command::Check { json }),
         "lint" => parse_lint_args(&args[1..]),
-        "explain" => parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term }),
+        "explain" => {
+            parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
+        }
         "show-ir" => parse_show_with_all(&args[1..], |json, all| Command::ShowIr { json, all }),
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "show-provenance" => parse_provenance_args(&args[1..]),
-        "show-dependents" => parse_term_query_args(&args[1..], |json, term| Command::ShowDependents { json, term }),
+        "show-dependents" => parse_term_query_args(&args[1..], |json, term| {
+            Command::ShowDependents { json, term }
+        }),
         "show-slice" => parse_slice_args(&args[1..]),
         "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
         "pending-report" => parse_show_args(&args[1..], |json| Command::PendingReport { json }),
@@ -83,7 +87,15 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     });
 
     CliArgs {
-        command: Command::Run { json, trace, record_trace, ir, dup_stats, no_opt, trace_pending },
+        command: Command::Run {
+            json,
+            trace,
+            record_trace,
+            ir,
+            dup_stats,
+            no_opt,
+            trace_pending,
+        },
         source,
         include_dirs: Vec::new(),
     }

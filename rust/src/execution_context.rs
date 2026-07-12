@@ -177,12 +177,18 @@ impl ExecutionContext {
 
     /// Drain and return the buffer bound to `sym`, leaving it empty.
     pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
-        self.output_buffers.get_mut(&sym).map(std::mem::take).unwrap_or_default()
+        self.output_buffers
+            .get_mut(&sym)
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Peek at the buffer bound to `sym` without draining it.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
-        self.output_buffers.get(&sym).map(Vec::as_slice).unwrap_or(&[])
+        self.output_buffers
+            .get(&sym)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Clear the buffer bound to `sym` (e.g. at the top of a frame).

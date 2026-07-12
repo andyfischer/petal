@@ -29,7 +29,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use petal_ui::draw::clear_draw_commands;
-use petal_ui::input::{bind_frame_info, bind_input, take_mouse_grab, InputState};
+use petal_ui::input::{InputState, bind_frame_info, bind_input, take_mouse_grab};
 
 use crate::input::poll_sdl_events;
 use crate::protocol::{self, Command, Response};
@@ -167,7 +167,13 @@ impl Reloader {
         }
     }
 
-    fn poll(&self, env: &mut Env, loaded_program: ProgramId, stack_id: StackKey, path: Option<&str>) {
+    fn poll(
+        &self,
+        env: &mut Env,
+        loaded_program: ProgramId,
+        stack_id: StackKey,
+        path: Option<&str>,
+    ) {
         if let Some(p) = path {
             check_hot_reload(&self.rx, p, env, loaded_program, stack_id);
         }
@@ -214,7 +220,15 @@ pub fn run_game<H: Host>(
             crate::input::PollResult::Escape => match host.on_escape(&mut env) {
                 EscapeAction::Quit => break 'game,
                 EscapeAction::Switch(sw) => {
-                    perform_switch(&mut env, sw, &config, host, &mut current, &mut frame_count, &mut last_frame);
+                    perform_switch(
+                        &mut env,
+                        sw,
+                        &config,
+                        host,
+                        &mut current,
+                        &mut frame_count,
+                        &mut last_frame,
+                    );
                     continue;
                 }
             },
@@ -231,9 +245,12 @@ pub fn run_game<H: Host>(
         input.begin_frame(dt);
         bind_frame_info(&mut env, dt, frame_count);
 
-        current
-            .reloader
-            .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
+        current.reloader.poll(
+            &mut env,
+            current.program_id,
+            current.stack_id,
+            current.path.as_deref(),
+        );
 
         clear_draw_commands(&mut env);
         host.prepare_frame(&mut env);
@@ -255,7 +272,15 @@ pub fn run_game<H: Host>(
         }
 
         if let Some(sw) = host.after_frame(&mut env) {
-            perform_switch(&mut env, sw, &config, host, &mut current, &mut frame_count, &mut last_frame);
+            perform_switch(
+                &mut env,
+                sw,
+                &config,
+                host,
+                &mut current,
+                &mut frame_count,
+                &mut last_frame,
+            );
             continue;
         }
 
@@ -308,7 +333,15 @@ pub fn run_agent<H: Host>(
 
     'game: loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
-            handle_command(cmd, &mut env, &current, &mut paused, &mut input, &mut frame_count, host);
+            handle_command(
+                cmd,
+                &mut env,
+                &current,
+                &mut paused,
+                &mut input,
+                &mut frame_count,
+                host,
+            );
         }
 
         match poll_sdl_events(&mut event_pump, &mut input) {
@@ -326,9 +359,12 @@ pub fn run_agent<H: Host>(
 
             input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);
-            current
-                .reloader
-                .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
+            current.reloader.poll(
+                &mut env,
+                current.program_id,
+                current.stack_id,
+                current.path.as_deref(),
+            );
 
             clear_draw_commands(&mut env);
             host.prepare_frame(&mut env);
@@ -375,10 +411,21 @@ pub fn run_headless<H: Host>(
             Ok(cmd) => cmd,
             Err(_) => break, // stdin closed
         };
-        current
-            .reloader
-            .poll(&mut env, current.program_id, current.stack_id, current.path.as_deref());
-        handle_command(cmd, &mut env, &current, &mut paused, &mut input, &mut frame_count, host);
+        current.reloader.poll(
+            &mut env,
+            current.program_id,
+            current.stack_id,
+            current.path.as_deref(),
+        );
+        handle_command(
+            cmd,
+            &mut env,
+            &current,
+            &mut paused,
+            &mut input,
+            &mut frame_count,
+            host,
+        );
     }
 
     Ok(())
@@ -400,10 +447,23 @@ pub fn run_screenshot<H: Host>(
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..frames {
-        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
+        protocol::run_one_frame(
+            &mut env,
+            current.stack_id,
+            &mut input,
+            &mut frame_count,
+            host,
+        )?;
     }
 
-    let (img, output) = capture_image(&mut env, current.stack_id, &input, config.width, config.height, host)?;
+    let (img, output) = capture_image(
+        &mut env,
+        current.stack_id,
+        &input,
+        config.width,
+        config.height,
+        host,
+    )?;
     for line in output {
         eprintln!("{}", line);
     }
@@ -431,11 +491,30 @@ pub fn run_record<H: Host>(
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..warmup {
-        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
+        protocol::run_one_frame(
+            &mut env,
+            current.stack_id,
+            &mut input,
+            &mut frame_count,
+            host,
+        )?;
     }
     for i in 0..frames {
-        protocol::run_one_frame(&mut env, current.stack_id, &mut input, &mut frame_count, host)?;
-        let (img, _) = capture_image(&mut env, current.stack_id, &input, config.width, config.height, host)?;
+        protocol::run_one_frame(
+            &mut env,
+            current.stack_id,
+            &mut input,
+            &mut frame_count,
+            host,
+        )?;
+        let (img, _) = capture_image(
+            &mut env,
+            current.stack_id,
+            &input,
+            config.width,
+            config.height,
+            host,
+        )?;
         let path = format!("{}/frame_{:04}.png", out_dir, i);
         crate::screenshot::save_png(&img, &path)?;
     }
@@ -455,9 +534,12 @@ fn load_initial<H: Host>(
 ) -> Result<Loaded, String> {
     let switch = match source_path {
         Some(sp) => {
-            let source = std::fs::read_to_string(sp)
-                .map_err(|e| format!("Failed to read {}: {}", sp, e))?;
-            ScriptSwitch { source, path: Some(sp.to_string()) }
+            let source =
+                std::fs::read_to_string(sp).map_err(|e| format!("Failed to read {}: {}", sp, e))?;
+            ScriptSwitch {
+                source,
+                path: Some(sp.to_string()),
+            }
         }
         None => host
             .default_source()
@@ -485,7 +567,12 @@ fn load_switch<H: Host>(
     host.on_program_loaded(env, switch.path.as_deref());
 
     let reloader = Reloader::start(env, program_id, switch.path.as_deref(), config.hot_reload);
-    Ok(Loaded { program_id, stack_id, path: switch.path, reloader })
+    Ok(Loaded {
+        program_id,
+        stack_id,
+        path: switch.path,
+        reloader,
+    })
 }
 
 /// Perform a browser switch requested by a host hook. On success, swaps in the
@@ -545,5 +632,14 @@ fn handle_command<H: Host>(
     frame_count: &mut i64,
     host: &mut H,
 ) {
-    protocol::handle_command(cmd, env, current.program_id, current.stack_id, paused, input, frame_count, host);
+    protocol::handle_command(
+        cmd,
+        env,
+        current.program_id,
+        current.stack_id,
+        paused,
+        input,
+        frame_count,
+        host,
+    );
 }

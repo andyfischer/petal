@@ -24,9 +24,18 @@ pub(super) fn native_dual(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_value_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "value_of")?;
     match state.get_value(1)? {
-        Value::Dual { value, .. } => { state.push_float(value); Ok(1) }
-        Value::Int(n) => { state.push_float(n as f64); Ok(1) }
-        Value::Float(f) => { state.push_float(f); Ok(1) }
+        Value::Dual { value, .. } => {
+            state.push_float(value);
+            Ok(1)
+        }
+        Value::Int(n) => {
+            state.push_float(n as f64);
+            Ok(1)
+        }
+        Value::Float(f) => {
+            state.push_float(f);
+            Ok(1)
+        }
         _ => Err("value_of() expects a number or dual".into()),
     }
 }
@@ -34,8 +43,14 @@ pub(super) fn native_value_of(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_deriv_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "deriv_of")?;
     match state.get_value(1)? {
-        Value::Dual { derivative, .. } => { state.push_float(derivative); Ok(1) }
-        Value::Int(_) | Value::Float(_) => { state.push_float(0.0); Ok(1) }
+        Value::Dual { derivative, .. } => {
+            state.push_float(derivative);
+            Ok(1)
+        }
+        Value::Int(_) | Value::Float(_) => {
+            state.push_float(0.0);
+            Ok(1)
+        }
         _ => Err("deriv_of() expects a number or dual".into()),
     }
 }

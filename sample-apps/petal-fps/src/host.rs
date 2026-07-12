@@ -22,7 +22,7 @@ use petal_sdl::Host;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
-use crate::commands::{take_draw_commands, take_draw_commands_for, DrawCommand};
+use crate::commands::{DrawCommand, take_draw_commands, take_draw_commands_for};
 use crate::framebuffer::Framebuffer;
 use crate::renderer::Presenter;
 
@@ -38,7 +38,12 @@ pub struct FpsHost {
 
 impl FpsHost {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, fb: Framebuffer::new(width, height), presenter: None }
+        Self {
+            width,
+            height,
+            fb: Framebuffer::new(width, height),
+            presenter: None,
+        }
     }
 }
 
@@ -109,7 +114,10 @@ pub struct DrawStats {
 }
 
 pub fn compute_stats(commands: &[DrawCommand]) -> DrawStats {
-    let mut s = DrawStats { total: commands.len(), ..Default::default() };
+    let mut s = DrawStats {
+        total: commands.len(),
+        ..Default::default()
+    };
     let mut min_z: Option<f32> = None;
     let mut max_z: Option<f32> = None;
     let mut track = |z: f32| {

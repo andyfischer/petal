@@ -45,11 +45,21 @@ fn host_data_provider_receives_kind_and_arg_and_returns_a_value_tree() {
     ui.frame().unwrap();
 
     // The provider was called once with the script's (kind, arg).
-    assert_eq!(*calls.borrow(), vec![("commit".to_string(), "abc".to_string())]);
+    assert_eq!(
+        *calls.borrow(),
+        vec![("commit".to_string(), "abc".to_string())]
+    );
     // The Record converted to a Petal record whose fields the script read out.
-    assert_eq!(ui.state().get("title").and_then(|v| v.as_str()), Some("commit abc"));
+    assert_eq!(
+        ui.state().get("title").and_then(|v| v.as_str()),
+        Some("commit abc")
+    );
     assert_eq!(ui.state_int("n"), Some(42));
-    assert_eq!(ui.state_int("tags"), Some(2), "the nested List became a Petal list");
+    assert_eq!(
+        ui.state_int("tags"),
+        Some(2),
+        "the nested List became a Petal list"
+    );
 }
 
 #[test]
@@ -73,7 +83,11 @@ fn host_data_answers_vary_by_arg_for_lazy_fetch() {
     ui.frame().unwrap();
     assert_eq!(ui.state_int("a"), Some(1));
     assert_eq!(ui.state_int("b"), Some(3));
-    assert_eq!(ui.state_int("flag"), Some(1), "Bool converts to a truthy Petal value");
+    assert_eq!(
+        ui.state_int("flag"),
+        Some(1),
+        "Bool converts to a truthy Petal value"
+    );
 }
 
 #[test]
@@ -89,5 +103,9 @@ fn provider_survives_across_frames_so_it_can_cache() {
     ui.frame().unwrap();
     assert_eq!(ui.state_int("count"), Some(1));
     ui.frame().unwrap();
-    assert_eq!(ui.state_int("count"), Some(2), "the same provider instance runs each frame");
+    assert_eq!(
+        ui.state_int("count"),
+        Some(2),
+        "the same provider instance runs each frame"
+    );
 }

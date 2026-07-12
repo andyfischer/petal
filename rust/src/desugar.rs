@@ -128,8 +128,7 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
             // recurse into the body.
             desugar_stmts(body);
         }
-        StmtKind::EnumDecl { .. } | StmtKind::Break | StmtKind::Continue
-        | StmtKind::Import(_) => {}
+        StmtKind::EnumDecl { .. } | StmtKind::Break | StmtKind::Continue | StmtKind::Import(_) => {}
     }
 }
 
@@ -326,7 +325,10 @@ mod tests {
         let stmts = desugared("double(@a)\n");
         assert_eq!(stmts.len(), 1);
         match &stmts[0].kind {
-            StmtKind::Assign { target: AssignTarget::Name(n), value } => {
+            StmtKind::Assign {
+                target: AssignTarget::Name(n),
+                value,
+            } => {
                 assert_eq!(n, "a");
                 // RHS is the call `double(a)` with the `@` stripped.
                 assert!(matches!(&value.kind, ExprKind::Call { .. }));
@@ -355,7 +357,10 @@ mod tests {
         let stmts = desugared("let r = inc(double(@b))\n");
         assert_eq!(stmts.len(), 2);
         match &stmts[0].kind {
-            StmtKind::Assign { target: AssignTarget::Name(n), value } => {
+            StmtKind::Assign {
+                target: AssignTarget::Name(n),
+                value,
+            } => {
                 assert_eq!(n, "b");
                 // The hoisted call is `double(...)`, not `inc(...)`.
                 let ExprKind::Call { function, .. } = &value.kind else {

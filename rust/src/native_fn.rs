@@ -244,7 +244,11 @@ impl<'a> PetalCxt<'a> {
         match self.get_value(index)? {
             Value::Int(n) => Ok(n),
             Value::Float(f) => Ok(f as i64),
-            other => Err(format!("Expected int at arg {}, got {}", index, other.type_name())),
+            other => Err(format!(
+                "Expected int at arg {}, got {}",
+                index,
+                other.type_name()
+            )),
         }
     }
 
@@ -255,7 +259,11 @@ impl<'a> PetalCxt<'a> {
             Value::Float(f) => Ok(f),
             Value::Int(n) => Ok(n as f64),
             Value::Dual { value, .. } => Ok(value),
-            other => Err(format!("Expected float at arg {}, got {}", index, other.type_name())),
+            other => Err(format!(
+                "Expected float at arg {}, got {}",
+                index,
+                other.type_name()
+            )),
         }
     }
 
@@ -263,7 +271,11 @@ impl<'a> PetalCxt<'a> {
     pub fn get_string(&self, index: usize) -> Result<String, String> {
         match self.get_value(index)? {
             Value::String(id) => Ok(self.heap.get_string(id).to_string()),
-            other => Err(format!("Expected string at arg {}, got {}", index, other.type_name())),
+            other => Err(format!(
+                "Expected string at arg {}, got {}",
+                index,
+                other.type_name()
+            )),
         }
     }
 
@@ -284,7 +296,7 @@ impl<'a> PetalCxt<'a> {
                     expected.name,
                     index,
                     other.type_name()
-                ))
+                ));
             }
         };
         if h.class != class {
@@ -313,7 +325,11 @@ impl<'a> PetalCxt<'a> {
     pub fn get_bool(&self, index: usize) -> Result<bool, String> {
         match self.get_value(index)? {
             Value::Bool(b) => Ok(b),
-            other => Err(format!("Expected bool at arg {}, got {}", index, other.type_name())),
+            other => Err(format!(
+                "Expected bool at arg {}, got {}",
+                index,
+                other.type_name()
+            )),
         }
     }
 

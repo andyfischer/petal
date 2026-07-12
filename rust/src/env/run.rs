@@ -30,11 +30,7 @@ impl Env {
     /// Run up to `budget` steps, returning the final [`StepResult`] and the
     /// number of steps consumed. The bytecode VM consumes up to the whole
     /// budget in one dispatch.
-    fn step_n(
-        &mut self,
-        stack_id: StackKey,
-        budget: u64,
-    ) -> Result<(StepResult, u64), String> {
+    fn step_n(&mut self, stack_id: StackKey, budget: u64) -> Result<(StepResult, u64), String> {
         self.step_bytecode(stack_id, budget)
     }
 

@@ -17,7 +17,12 @@ const PETAL: &str = env!("CARGO_BIN_EXE_petal");
 #[test]
 fn pending_report_subcommand_emits_json_with_a_pending_entry() {
     let out = Command::new(PETAL)
-        .args(["pending-report", "--json", "-e", "let x = __pending(\"k\")\nx\n"])
+        .args([
+            "pending-report",
+            "--json",
+            "-e",
+            "let x = __pending(\"k\")\nx\n",
+        ])
         .output()
         .expect("failed to run petal");
 
@@ -28,13 +33,15 @@ fn pending_report_subcommand_emits_json_with_a_pending_entry() {
     );
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let report: serde_json::Value =
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-            panic!("stdout was not valid JSON ({e}):\n{stdout}")
-        });
+    let report: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON ({e}):\n{stdout}"));
 
     let arr = report.as_array().expect("report must be a JSON array");
-    assert_eq!(arr.len(), 1, "expected exactly one live resource, got {report}");
+    assert_eq!(
+        arr.len(),
+        1,
+        "expected exactly one live resource, got {report}"
+    );
 
     let entry = &arr[0];
     assert_eq!(
@@ -58,7 +65,12 @@ fn pending_report_subcommand_emits_json_with_a_pending_entry() {
 #[test]
 fn run_trace_pending_prints_the_report() {
     let out = Command::new(PETAL)
-        .args(["run", "--trace-pending", "-e", "let x = __pending(\"k\")\nx\n"])
+        .args([
+            "run",
+            "--trace-pending",
+            "-e",
+            "let x = __pending(\"k\")\nx\n",
+        ])
         .output()
         .expect("failed to run petal");
 

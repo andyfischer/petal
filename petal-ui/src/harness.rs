@@ -102,15 +102,21 @@ impl Headless {
     /// Feed a run of typed text, then run one frame — the frame that sees it
     /// through `text_input()`. Mirrors a host delivering post-layout text.
     pub fn text(&mut self, s: &str) -> Result<&[DrawCommand], String> {
-        self.event(InputEvent::Text { text: s.to_string() });
+        self.event(InputEvent::Text {
+            text: s.to_string(),
+        });
         self.frame()
     }
 
     /// Press (and release) a key, then run one frame — the frame that sees
     /// the `key_pressed` edge.
     pub fn key(&mut self, name: &str) -> Result<&[DrawCommand], String> {
-        self.event(InputEvent::KeyDown { key: name.to_string() });
-        self.event(InputEvent::KeyUp { key: name.to_string() });
+        self.event(InputEvent::KeyDown {
+            key: name.to_string(),
+        });
+        self.event(InputEvent::KeyUp {
+            key: name.to_string(),
+        });
         self.frame()
     }
 

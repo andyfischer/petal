@@ -318,8 +318,7 @@ impl<'p> Analysis<'p> {
         // `let ys = xs; ys = append(ys, v)` inside the loop, where `xs` is the
         // real carried value and `ys` a throwaway alias — is NOT the
         // accumulator; mutating it in place would corrupt the aliased `xs`.
-        let back_srcs: Vec<TermId> =
-            self.phi_srcs.get(&p_loop).cloned().unwrap_or_default();
+        let back_srcs: Vec<TermId> = self.phi_srcs.get(&p_loop).cloned().unwrap_or_default();
         let spine = self.backward_carrier_closure(&back_srcs);
         if !spine.contains(&seed) {
             return false;
@@ -327,7 +326,9 @@ impl<'p> Analysis<'p> {
 
         // The region is the loop body subtree: the window over which the
         // accumulator is live and being mutated.
-        let Some(body_block) = self.body_block_of(p_loop) else { return false };
+        let Some(body_block) = self.body_block_of(p_loop) else {
+            return false;
+        };
         let region = self.block_subtree(body_block);
 
         // Build the region-confined value-web: carriers connected to `seed`

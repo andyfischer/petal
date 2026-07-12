@@ -92,9 +92,11 @@ fn native_multiple_registrations() {
     let mut env = Env::new();
     env.register_native("string_repeat", petal_string_repeat);
     env.register_native("add_ints", petal_add_ints);
-    let result = env.run_source(r#"
+    let result = env.run_source(
+        r#"
         let s = string_repeat("x", add_ints(2, 3))
         print(s)
-    "#);
+    "#,
+    );
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }

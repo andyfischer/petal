@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 
-use crate::compiler::Compiler;
-use crate::backend::bytecode::BytecodeProgram;
 use crate::backend::OptFlags;
+use crate::backend::bytecode::BytecodeProgram;
+use crate::compiler::Compiler;
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
@@ -20,11 +20,11 @@ use crate::symbol::SymbolTable;
 use crate::trace::TraceBuffer;
 use crate::value::Value;
 
-mod run;
-mod gc;
 mod fork;
-mod state_json;
+mod gc;
 mod host_io;
+mod run;
+mod state_json;
 
 pub struct Env {
     programs: HashMap<ProgramId, Program>,
@@ -196,11 +196,7 @@ impl Env {
 
     /// Compile source code into a Program without loading it.
     /// Use this to prepare a program for `transfer_state`.
-    pub fn compile_program(
-        &self,
-        program_id: ProgramId,
-        source: &str,
-    ) -> Result<Program, String> {
+    pub fn compile_program(&self, program_id: ProgramId, source: &str) -> Result<Program, String> {
         self.compile_source(program_id, source, None)
     }
 
@@ -289,9 +285,7 @@ impl Env {
     /// Create a new execution stack for a program
     pub fn create_stack(&mut self, program_id: ProgramId) -> Result<StackKey, String> {
         // Validate the program exists (the stack references it by id).
-        self.programs
-            .get(&program_id)
-            .ok_or("Program not found")?;
+        self.programs.get(&program_id).ok_or("Program not found")?;
 
         let key = StackKey(self.next_stack_id);
         self.next_stack_id += 1;
@@ -321,10 +315,7 @@ impl Env {
 
     /// Reset a stack to re-run while keeping state
     pub fn reset_stack(&mut self, stack_id: StackKey) -> Result<(), String> {
-        let stack = self
-            .stacks
-            .get_mut(&stack_id)
-            .ok_or("Stack not found")?;
+        let stack = self.stacks.get_mut(&stack_id).ok_or("Stack not found")?;
 
         // Keep state, reset execution; the VM re-pushes its root frame on the
         // next run (gated by `vm_started`, cleared by `reset_execution`).
@@ -400,7 +391,11 @@ impl Env {
 
     /// Mint a `Value::Handle` for a (slot, serial) address in `class`.
     pub fn make_handle(&self, class: HandleClassId, slot: u32, serial: u32) -> Value {
-        Value::Handle(HandleVal { class, slot, serial })
+        Value::Handle(HandleVal {
+            class,
+            slot,
+            serial,
+        })
     }
 
     /// The registered handle classes, indexed by `HandleClassId`.
@@ -548,7 +543,6 @@ impl Env {
         ctx.closures.clear();
         ctx.overload_sets.clear();
     }
-
 }
 
 /// Outcome of a bounded run (see [`Env::run_bounded`]).
@@ -602,7 +596,10 @@ impl std::fmt::Debug for Env {
             .field("stacks", &self.stacks.len())
             .field("native_fns", &self.native_fns.count())
             .field("contexts", &self.contexts.len())
-            .field("closures", &default_ctx.map(|c| c.closures.len()).unwrap_or(0))
+            .field(
+                "closures",
+                &default_ctx.map(|c| c.closures.len()).unwrap_or(0),
+            )
             .field(
                 "pending_output_lines",
                 &default_ctx.map(|c| c.output.len()).unwrap_or(0),

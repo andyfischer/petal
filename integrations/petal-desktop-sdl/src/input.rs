@@ -24,27 +24,44 @@ pub fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState)
     for event in event_pump.poll_iter() {
         match event {
             Event::Quit { .. } => return PollResult::Quit,
-            Event::KeyDown { scancode: Some(sc), .. } if sc == Scancode::Escape => {
+            Event::KeyDown {
+                scancode: Some(sc), ..
+            } if sc == Scancode::Escape => {
                 result = PollResult::Escape;
             }
             // OS auto-repeats are dropped: `key_pressed` fires once per
             // physical press, matching the pre-petal-ui behavior.
-            Event::KeyDown { scancode: Some(sc), keymod, repeat: false, .. } => {
+            Event::KeyDown {
+                scancode: Some(sc),
+                keymod,
+                repeat: false,
+                ..
+            } => {
                 input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
                 if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyDown { key: name.to_string() });
+                    input.event(InputEvent::KeyDown {
+                        key: name.to_string(),
+                    });
                 }
             }
-            Event::KeyUp { scancode: Some(sc), keymod, .. } => {
+            Event::KeyUp {
+                scancode: Some(sc),
+                keymod,
+                ..
+            } => {
                 input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
                 if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyUp { key: name.to_string() });
+                    input.event(InputEvent::KeyUp {
+                        key: name.to_string(),
+                    });
                 }
             }
             Event::TextInput { text, .. } => {
                 input.event(InputEvent::Text { text });
             }
-            Event::MouseMotion { x, y, xrel, yrel, .. } => {
+            Event::MouseMotion {
+                x, y, xrel, yrel, ..
+            } => {
                 // Both the absolute position and the raw delta: the delta keeps
                 // flowing (mouselook) even while the pointer is grabbed/locked
                 // and the absolute position stops moving.
@@ -61,7 +78,11 @@ pub fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState)
                     input.event(InputEvent::MouseUp { button });
                 }
             }
-            Event::MouseWheel { precise_x, precise_y, .. } => {
+            Event::MouseWheel {
+                precise_x,
+                precise_y,
+                ..
+            } => {
                 // SDL y > 0 means "scrolled up"; the standard scroll_y() is
                 // positive scrolling down.
                 input.event(InputEvent::Scroll {

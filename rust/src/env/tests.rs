@@ -2298,6 +2298,54 @@ mod pending_render_chunk_m_tests {
             "the structured pending object must carry its resolution state, got {x}"
         );
     }
+
+    /// The host→script prop-feed contract that petal-web-canvas's `setProp`
+    /// relies on: a value pushed via `set_state_from_json` *before* the run is
+    /// seen by that run, and it overrides the `state x = <init>` default (the
+    /// initializer is skipped because the key is already committed). Without
+    /// this, a host-controlled prop would flash its default on the first frame.
+    #[test]
+    fn pushed_state_overrides_initializer_on_first_run() {
+        let mut env = Env::new();
+        let pid = env.load_program("state cube = 0\ncube\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        // Host stages the prop before the first run, exactly as the WASM shim
+        // does (set_state_json → reset_and_run).
+        env.set_state_from_json(pid, sid, "cube", &serde_json::json!(42))
+            .unwrap();
+        let result = env.run(sid).unwrap();
+
+        assert_eq!(
+            result,
+            Value::Int(42),
+            "the run must observe the host-pushed value, not the `= 0` default"
+        );
+    }
+
+    /// A prop re-pushed between frames is visible to the next frame, and
+    /// `reset_stack` (the per-frame boundary) preserves it — so the shim's
+    /// "flush props, then reset_and_run each frame" loop delivers updates.
+    #[test]
+    fn pushed_state_updates_across_frames_through_reset() {
+        let mut env = Env::new();
+        let pid = env.load_program("state cube = 0\ncube\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        env.set_state_from_json(pid, sid, "cube", &serde_json::json!(1))
+            .unwrap();
+        assert_eq!(env.run(sid).unwrap(), Value::Int(1));
+
+        // Next frame: reset (keeps state), push a new value, run again.
+        env.reset_stack(sid).unwrap();
+        env.set_state_from_json(pid, sid, "cube", &serde_json::json!(2))
+            .unwrap();
+        assert_eq!(env.run(sid).unwrap(), Value::Int(2));
+
+        // A frame with no push keeps the last pushed value through reset.
+        env.reset_stack(sid).unwrap();
+        assert_eq!(env.run(sid).unwrap(), Value::Int(2));
+    }
 }
 
 /// Chunk N of the pending-values feature: the frame pending report — a

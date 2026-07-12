@@ -69,6 +69,43 @@ npm run dev
 Vite serves `.ptl` files as `text/plain`, so `main.ts` fetches them and hands
 the source to the runtime.
 
+## Host → script data feed
+
+Beyond input events, a host can push arbitrary named data into a running script
+— app state, a fetched record, sensor values, anything JSON-serializable. This
+is the "controlled prop" model: the host owns the value, the script reads it.
+
+```ts
+const canvas = new PetalCanvas();
+await canvas.init();
+canvas.start(canvasEl);
+canvas.load(source);
+
+// Push a prop whenever it changes (dedup'd by value — safe to call every frame):
+canvas.setProp("cubeState", cube);      // any JSON value
+canvas.setProps({ score, level });      // several at once
+
+// Read script-owned state back (for debug panels / two-way sync):
+const { score } = canvas.getState();
+```
+
+The script reads the prop as a like-named `state` variable:
+
+```
+state cubeState = {}          # host overrides this default on frame 1
+draw_from(cubeState)
+```
+
+Each prop is flushed into committed state just before the frame runs, so a
+value set before the first frame wins over the `state x = <default>`
+initializer — the script never flashes a default. Props are one-way (host →
+script); if the script also writes the same `state` var, the host only
+re-pushes when its own value changes. A prop with no matching `state`
+declaration is skipped with a one-time console warning.
+
+Under the hood this is `PetalRuntime.set_state_json` — no per-frame recompile,
+no WASM reload.
+
 ## Examples
 
 `examples/*.ptl`:

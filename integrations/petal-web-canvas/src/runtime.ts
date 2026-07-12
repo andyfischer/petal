@@ -17,6 +17,26 @@ export class PetalCanvas {
   private currentSource = "";
   private errored = false;
 
+  // --- Host→script prop feed (built on set_state_json) ---
+  //
+  // A generic, one-way data channel: the host stages named props, and each
+  // frame — just before the run — every prop whose value changed is pushed
+  // into the script's like-named `state` variable. This is the "controlled
+  // prop" model: the host owns the value, the script reads it. Because
+  // `set_state` writes committed state and `reset_stack` preserves it, a prop
+  // set before the first run also wins over the script's `state x = <init>`
+  // initializer, so the script never flashes a default.
+  //
+  //   host (TS):    canvas.setProp("cubeState", cube)   // any JSON value
+  //   script (ptl): state cubeState = {}                // read each frame
+  //
+  /** Last JSON pushed per prop — the dirty-check baseline. */
+  private propBaseline = new Map<string, string>();
+  /** Props changed since the last flush, awaiting the next frame. */
+  private propPending = new Map<string, string>();
+  /** Prop names already warned about (missing `state` var), to avoid spam. */
+  private propWarned = new Set<string>();
+
   /**
    * Optional frame gate. Given the real elapsed dt, return the dt to run the
    * frame with, or `null` to skip the frame body while keeping the rAF loop
@@ -32,6 +52,67 @@ export class PetalCanvas {
     await init();
     this.runtime = new PetalRuntime();
     this.input.setRuntime(this.runtime);
+  }
+
+  /**
+   * Stage a host-owned prop for the script. `value` is any JSON-serializable
+   * value; it's pushed into the script's `state <name>` variable just before
+   * the next frame runs. Pushes are deduped by serialized value, so calling
+   * this every frame with an unchanged value costs nothing. Safe to call
+   * before `load()` — staged props flush on the first frame.
+   *
+   * The script must declare `state <name> = <default>`; if it doesn't, the
+   * push is skipped and warned once (the script simply won't see the prop).
+   */
+  setProp(name: string, value: unknown): void {
+    const json = JSON.stringify(value ?? null);
+    if (this.propBaseline.get(name) === json) {
+      this.propPending.delete(name); // reverted to the last-pushed value
+      return;
+    }
+    this.propPending.set(name, json);
+  }
+
+  /** Stage several props at once — `setProp` for each key. */
+  setProps(props: Record<string, unknown>): void {
+    for (const [name, value] of Object.entries(props)) this.setProp(name, value);
+  }
+
+  /**
+   * Read the script's committed state back as a plain object keyed by state
+   * variable name. The inverse of `setProp`, for hosts that need to observe
+   * script-owned state (debug panels, two-way sync). Returns `{}` before a
+   * program is loaded.
+   */
+  getState(): Record<string, unknown> {
+    if (!this.runtime || this.stackId === null) return {};
+    try {
+      return JSON.parse(this.runtime.get_state_json());
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Push every pending prop into the script's committed state. Called once per
+   * frame, before `reset_and_run` (which preserves state). A prop naming a
+   * non-existent `state` var throws from the runtime; we warn once and drop it
+   * so one bad name can't stall the others or spam the console.
+   */
+  private flushProps(): void {
+    if (!this.runtime || this.stackId === null || this.propPending.size === 0) return;
+    for (const [name, json] of this.propPending) {
+      try {
+        this.runtime.set_state_json(name, json);
+        this.propBaseline.set(name, json);
+      } catch (err) {
+        if (!this.propWarned.has(name)) {
+          this.propWarned.add(name);
+          console.warn(`[petal] setProp("${name}") skipped: ${String(err)}`);
+        }
+      }
+    }
+    this.propPending.clear();
   }
 
   load(source: string): void {
@@ -53,6 +134,13 @@ export class PetalCanvas {
       this.showError(String(err));
       return;
     }
+
+    // A fresh stack starts with empty state, so re-stage every known prop to
+    // push onto it. Clear the missing-var warnings too — the reloaded program
+    // may now declare a `state` var it previously lacked.
+    for (const [name, json] of this.propBaseline) this.propPending.set(name, json);
+    this.propBaseline.clear();
+    this.propWarned.clear();
 
     this.errored = false;
     this.frameCount = 0;
@@ -134,6 +222,9 @@ export class PetalCanvas {
       // dt to promote this frame's pending input edges), then run.
       this.runtime.set_frame_info(dt, this.frameCount, this.canvas.width, this.canvas.height);
       this.runtime.begin_frame();
+      // Push host-owned props into committed state, then run. reset_and_run's
+      // reset preserves state, so the values reach this frame's run.
+      this.flushProps();
       this.runtime.reset_and_run(this.stackId);
       this.frameCount++;
 

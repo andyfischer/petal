@@ -7,9 +7,10 @@ Petal is a programming language for creative coding.
  - Programs are **dataflow graphs** allowing for high levels of introspection.
  - **First-class state** as part of control flow.
  - **Live editing** - modify source while it's running and preserve state.
- - **Speculative execution** - safely run the same program multiple times with alterations for experimentation.
+ - **Speculative execution** - safely re-run a program in exploration modes. 
  - **Differentiable** - supports back-propogation, make program modifications based on observed outputs.
- - Various other language features to help quick iteration. Hybrid functional/imperative design, optional type declarations, immutable values.
+ - Supports programmatic modification of source code with **goal based** editing semantics. 
+ - Comes with various other language features to help quick iteration. Hybrid functional/imperative design, optional type declarations, immutable values.
 
 ### Project Status
 
@@ -83,21 +84,6 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [`integrations/`](integrations/) | Reusable host integrations that embed Petal for a specific platform (desktop SDL, web HTML, web canvas) |
 | [`sample-apps/`](sample-apps/) | Example applications built on top of an integration |
 
-### Dependency hierarchy
-
-Petal is layered so that each tier depends only on the tier above it:
-
-```
-Petal Core  →  Integrations  →  Sample Apps
-```
-
-- **Petal Core** — the language implementation ([`rust/`](rust/)) and the embedder interactivity layer ([`petal-ui/`](petal-ui/)).
-- **Integrations** ([`integrations/`](integrations/)) — reusable hosts that embed Petal Core for one platform:
-  [`petal-desktop-sdl`](integrations/petal-desktop-sdl/README.md) (native SDL2),
-  [`petal-web-html`](integrations/petal-web-html/README.md) (WASM + DOM),
-  [`petal-web-canvas`](integrations/petal-web-canvas/README.md) (WASM + HTML canvas).
-- **Sample Apps** ([`sample-apps/`](sample-apps/)) — example programs that build on top of an integration rather than talking to Petal Core directly.
-
 ## Documentation
 
 | Document | Description |
@@ -109,6 +95,21 @@ Petal Core  →  Integrations  →  Sample Apps
 | [Module System](docs/module-system.md) | `import` syntax, module resolution |
 | [Architecture](docs/dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [Goals](docs/dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
+
+### Dependency hierarchy
+
+Petal apps are built with this dependency chain:
+
+```
+Petal Core  →  Integrations  →  Sample Apps
+```
+
+- **Petal Core** — the core language implementation ([`rust/`](rust/)) and the embedder interactivity layer ([`petal-ui/`](petal-ui/)).
+- **Integrations** ([`integrations/`](integrations/)) — Native bindings of Petal core: 
+  [`petal-desktop-sdl`](integrations/petal-desktop-sdl/README.md) - Desktop application using SDL for rendering 
+  [`petal-web-html`](integrations/petal-web-html/README.md) - Browser based (WebAssembly) target that emits DOM
+  [`petal-web-canvas`](integrations/petal-web-canvas/README.md) - Browser based (WebAssembly) target that renders to a Canvas.
+- **Sample Apps** ([`sample-apps/`](sample-apps/)) — example programs that build on top of an integration rather than talking to Petal Core directly.
 
 ## Integrations
 

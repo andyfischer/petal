@@ -15,8 +15,13 @@
 //! Call arguments are **structured values** ([`Arg`]), not pre-rendered source:
 //! the caller passes `"dracula"` / `5` / `true` and this module renders each into
 //! a valid Petal literal (strings are quoted and escaped, so interpolation `{`,
-//! quotes, and backslashes can never leak). [`Arg::expr`] is the escape hatch for
-//! arguments a literal can't express (identifiers, nested calls, records).
+//! quotes, and backslashes can never leak). Composite arguments — nested calls
+//! ([`Arg::call`]), lists ([`Arg::list`]), records ([`Arg::record`]) — let an
+//! embedder express whole declarative trees, e.g. Garden's
+//! `layout(row([editor("a.rs")], [1.0]))`; a list of composite elements is
+//! pretty-printed one element per line so the generated source reads like
+//! hand-written config. [`Arg::expr`] remains the escape hatch for anything the
+//! structured variants can't express (identifiers, field access, operators).
 //!
 //! Edits go through the lossless CST primitives in [`crate::rewrite`]
 //! ([`parse_ast`], [`find_call`], [`splice_node`], [`splice`]), so comments and
@@ -51,9 +56,20 @@ pub enum Arg {
     Bool(bool),
     /// The `nil` literal.
     Nil,
+    /// A list literal `[a, b, c]`. Renders inline when every element is a
+    /// scalar; a list containing composite elements (calls, lists, records)
+    /// renders one element per line, indented — the shape of a declarative
+    /// layout tree.
+    List(Vec<Arg>),
+    /// A record literal `{ key: value, ... }`, rendered inline. Keys are
+    /// rendered bare, so they must be valid Petal identifiers.
+    Record(Vec<(String, Arg)>),
+    /// A nested call `function(args...)` — building block for declarative
+    /// call trees like `layout(row([editor("a")], [1.0]))`.
+    Call { function: String, args: Vec<Arg> },
     /// A raw source expression, rendered **verbatim** — the escape hatch for
-    /// arguments structured literals can't express (identifiers, nested calls,
-    /// records, list literals): `Arg::expr("theme.dark")`, `Arg::expr("[1, 2]")`.
+    /// arguments the structured variants can't express (identifiers, field
+    /// access, operators): `Arg::expr("theme.dark")`.
     Expr(String),
 }
 
@@ -82,9 +98,47 @@ impl Arg {
     pub fn expr(src: impl Into<String>) -> Arg {
         Arg::Expr(src.into())
     }
+    /// A list argument. Elements coerce like call params do.
+    pub fn list<P, A>(items: P) -> Arg
+    where
+        P: IntoIterator<Item = A>,
+        A: Into<Arg>,
+    {
+        Arg::List(items.into_iter().map(Into::into).collect())
+    }
+    /// A record argument. Keys must be valid Petal identifiers (they render
+    /// bare); values coerce like call params do.
+    pub fn record<P, K, A>(fields: P) -> Arg
+    where
+        P: IntoIterator<Item = (K, A)>,
+        K: Into<String>,
+        A: Into<Arg>,
+    {
+        Arg::Record(
+            fields
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        )
+    }
+    /// A nested call argument: `Arg::call("editor", ["a.rs"])` renders as
+    /// `editor("a.rs")`.
+    pub fn call<S, P, A>(function: S, args: P) -> Arg
+    where
+        S: Into<String>,
+        P: IntoIterator<Item = A>,
+        A: Into<Arg>,
+    {
+        Arg::Call {
+            function: function.into(),
+            args: args.into_iter().map(Into::into).collect(),
+        }
+    }
 
-    /// Render this argument as Petal source.
-    fn render(&self) -> String {
+    /// Render this argument as Petal source. `depth` is the current indent
+    /// level in two-space units; it only matters for multi-line lists (see
+    /// [`Arg::List`]) — scalars ignore it.
+    fn render(&self, depth: usize) -> String {
         match self {
             Arg::Str(s) => render_string_literal(s),
             Arg::Int(n) => n.to_string(),
@@ -94,9 +148,63 @@ impl Arg {
             Arg::Bool(true) => "true".to_string(),
             Arg::Bool(false) => "false".to_string(),
             Arg::Nil => "nil".to_string(),
+            Arg::List(items) => render_list(items, depth),
+            Arg::Record(fields) => render_record(fields, depth),
+            Arg::Call { function, args } => render_call_at(function, args, depth),
             Arg::Expr(src) => src.clone(),
         }
     }
+
+    /// True for the composite variants whose rendering can span lines; a list
+    /// containing any of these is laid out one element per line.
+    fn is_composite(&self) -> bool {
+        matches!(self, Arg::List(_) | Arg::Record(_) | Arg::Call { .. })
+    }
+}
+
+/// Render a list literal at `depth`. All-scalar lists stay inline
+/// (`[0.7, 0.3]`); a list with composite elements puts each element on its own
+/// line at `depth + 1`, with the closing bracket back at `depth` — the layout a
+/// user would write for a tree of nested calls.
+fn render_list(items: &[Arg], depth: usize) -> String {
+    if !items.iter().any(Arg::is_composite) {
+        let rendered: Vec<String> = items.iter().map(|a| a.render(depth)).collect();
+        return format!("[{}]", rendered.join(", "));
+    }
+    let mut out = String::from("[\n");
+    let inner = indent(depth + 1);
+    for item in items {
+        out.push_str(&inner);
+        out.push_str(&item.render(depth + 1));
+        out.push_str(",\n");
+    }
+    out.push_str(&indent(depth));
+    out.push(']');
+    out
+}
+
+/// Render a record literal inline: `{ key: value, ... }` (`{}` when empty).
+fn render_record(fields: &[(String, Arg)], depth: usize) -> String {
+    if fields.is_empty() {
+        return "{}".to_string();
+    }
+    let rendered: Vec<String> = fields
+        .iter()
+        .map(|(k, v)| format!("{k}: {}", v.render(depth)))
+        .collect();
+    format!("{{ {} }}", rendered.join(", "))
+}
+
+/// Render a call `function(arg0, arg1, ...)` with its arguments at `depth`
+/// (multi-line lists among them indent their elements at `depth + 1`).
+fn render_call_at(function: &str, args: &[Arg], depth: usize) -> String {
+    let rendered: Vec<String> = args.iter().map(|a| a.render(depth)).collect();
+    format!("{function}({})", rendered.join(", "))
+}
+
+/// Two spaces per `depth` level.
+fn indent(depth: usize) -> String {
+    "  ".repeat(depth)
 }
 
 impl From<&str> for Arg {
@@ -122,6 +230,14 @@ impl From<i32> for Arg {
 impl From<f64> for Arg {
     fn from(f: f64) -> Arg {
         Arg::Float(f)
+    }
+}
+impl From<f32> for Arg {
+    fn from(f: f32) -> Arg {
+        // A plain `as f64` widening drags in garbage digits (0.7f32 becomes
+        // 0.7000000298023224); round-tripping through the shortest display
+        // form keeps the literal the user actually meant.
+        Arg::Float(format!("{f}").parse().unwrap_or(f as f64))
     }
 }
 impl From<bool> for Arg {
@@ -214,10 +330,10 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, String> {
     }
 }
 
-/// Render a call `function(arg0, arg1, ...)` from structured args.
+/// Render a top-level call `function(arg0, arg1, ...)` from structured args.
+/// The call starts at column 0, so its arguments render at depth 1.
 fn render_call(function: &str, params: &[Arg]) -> String {
-    let args: Vec<String> = params.iter().map(Arg::render).collect();
-    format!("{function}({})", args.join(", "))
+    render_call_at(function, params, 1)
 }
 
 /// Ensure `source` has a top-level `function(params...)` call: update the first
@@ -359,6 +475,127 @@ mod tests {
         // And the result is valid, re-editable source.
         let again = apply(&out, &[Goal::should_call("name", ["plain"])]);
         assert_eq!(again, "name(\"plain\")\n");
+    }
+
+    #[test]
+    fn renders_scalar_list_inline() {
+        let out = apply("", &[Goal::should_call("grid", [Arg::list([1, 2, 3])])]);
+        assert_eq!(out, "grid([1, 2, 3])\n");
+    }
+
+    #[test]
+    fn renders_empty_list_and_record() {
+        let out = apply(
+            "",
+            &[Goal::should_call(
+                "configure",
+                vec![
+                    Arg::list(Vec::<Arg>::new()),
+                    Arg::record(Vec::<(String, Arg)>::new()),
+                ],
+            )],
+        );
+        assert_eq!(out, "configure([], {})\n");
+    }
+
+    #[test]
+    fn renders_record_inline() {
+        let out = apply(
+            "",
+            &[Goal::should_call(
+                "editor_config",
+                [Arg::record(vec![
+                    ("line_numbers", Arg::bool(true)),
+                    ("tab_width", Arg::int(4)),
+                ])],
+            )],
+        );
+        assert_eq!(out, "editor_config({ line_numbers: true, tab_width: 4 })\n");
+    }
+
+    #[test]
+    fn renders_nested_call() {
+        let out = apply(
+            "",
+            &[Goal::should_call("layout", [Arg::call("editor", ["a.rs"])])],
+        );
+        assert_eq!(out, "layout(editor(\"a.rs\"))\n");
+    }
+
+    #[test]
+    fn f32_coerces_via_shortest_display() {
+        let out = apply("", &[Goal::should_call("ratios", [0.7f32, 0.3f32])]);
+        assert_eq!(out, "ratios(0.7, 0.3)\n");
+    }
+
+    #[test]
+    fn list_of_calls_renders_multiline() {
+        // A composite-element list is laid out one element per line, indented
+        // relative to the call nesting — the shape of a declarative layout tree.
+        let out = apply(
+            "",
+            &[Goal::should_call(
+                "layout",
+                [Arg::call(
+                    "row",
+                    vec![
+                        Arg::list([
+                            Arg::call(
+                                "column",
+                                vec![Arg::list([
+                                    Arg::call("editor", ["a"]),
+                                    Arg::call("editor", ["b"]),
+                                ])],
+                            ),
+                            Arg::call("editor", ["c"]),
+                        ]),
+                        Arg::list([0.6f32, 0.4f32]),
+                    ],
+                )],
+            )],
+        );
+        let expected = "\
+layout(row([
+    column([
+      editor(\"a\"),
+      editor(\"b\"),
+    ]),
+    editor(\"c\"),
+  ], [0.6, 0.4]))\n";
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn multiline_call_updates_in_place_and_reparses() {
+        // The multi-line rendered call still takes the lossless tree-splice
+        // path (it parses as one expression), so surrounding comments survive.
+        let src = "// config\nlayout(editor())\n// end\n";
+        let out = apply(
+            src,
+            &[Goal::should_call(
+                "layout",
+                [Arg::call(
+                    "column",
+                    vec![
+                        Arg::list([Arg::call("editor", ["x"]), Arg::call("editor", ["y"])]),
+                        Arg::list([0.5f32, 0.5f32]),
+                    ],
+                )],
+            )],
+        );
+        assert_eq!(
+            out,
+            "// config\nlayout(column([\n    editor(\"x\"),\n    editor(\"y\"),\n  ], [0.5, 0.5]))\n// end\n"
+        );
+        // And the result is valid, re-editable source.
+        let again = apply(
+            &out,
+            &[Goal::should_call(
+                "layout",
+                [Arg::call("editor", Vec::<Arg>::new())],
+            )],
+        );
+        assert!(again.contains("layout(editor())"), "got: {again}");
     }
 
     #[test]

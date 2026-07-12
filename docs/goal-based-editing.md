@@ -109,14 +109,49 @@ interpolation.
 | `Arg::Float` | `Arg::float(f)` / `1.0.into()` | float literal (always has a `.`) | `1.0` |
 | `Arg::Bool` | `Arg::bool(b)` / `true.into()` | `true` / `false` | `true` |
 | `Arg::Nil` | `Arg::nil()` | `nil` | `nil` |
+| `Arg::List` | `Arg::list(items)` | list literal | `[1, 2, 3]` |
+| `Arg::Record` | `Arg::record(fields)` | record literal (keys render bare, so they must be valid identifiers) | `{ line_numbers: true }` |
+| `Arg::Call` | `Arg::call(name, args)` | nested call | `editor("a.rs")` |
 | `Arg::Expr` | `Arg::expr(src)` | **verbatim source** | anything |
 
-`Arg::Expr` is the escape hatch for arguments a literal can't express —
-identifiers, field access, nested calls, list/record literals:
+An `f32` also coerces via `From` (round-tripped through its shortest display
+form, so `0.7f32` renders as `0.7`, not `0.7000000298023224`).
+
+The composite variants (`List`/`Record`/`Call`) nest arbitrarily, so a whole
+declarative tree can be expressed as one goal — this is how Garden persists a
+runtime layout change back to `init.ptl`:
+
+```rust
+Goal::should_call("layout", [Arg::call("row", vec![
+    Arg::list([
+        Arg::call("editor", vec![Arg::str("a.rs"),
+                                 Arg::record(vec![("line_numbers", Arg::bool(true))])]),
+        Arg::call("editor", vec![Arg::str("b.md")]),
+    ]),
+    Arg::list([0.6f32, 0.4f32]),
+])]);
+```
+
+renders (and splices in) as:
+
+```petal
+layout(row([
+    editor("a.rs", { line_numbers: true }),
+    editor("b.md"),
+  ], [0.6, 0.4]))
+```
+
+**Pretty-printing rule:** a list whose elements are all scalars renders inline
+(`[0.6, 0.4]`); a list containing any composite element (call, list, record)
+renders one element per line, indented two spaces per nesting level — so
+generated layout trees read like hand-written config. Records always render
+inline.
+
+`Arg::Expr` is the escape hatch for arguments the structured variants can't
+express — identifiers, field access, operators:
 
 ```rust
 Goal::should_call("theme", [Arg::expr("palette.dark")]);   // theme(palette.dark)
-Goal::should_call("grid", [Arg::expr("[1, 2, 3]")]);       // grid([1, 2, 3])
 ```
 
 Because `Arg::Expr` is rendered verbatim, **you** are responsible for its
@@ -190,8 +225,10 @@ splice** that replaces the call's character span verbatim. It never fails just
 because an `Arg::expr` was malformed; the malformed text lands in the output for
 you to notice.
 
-Structured `Arg` variants (`Str`/`Int`/`Float`/`Bool`/`Nil`) always render to
-valid literals, so they always take the clean tree-splice path.
+Structured `Arg` variants (scalars and `List`/`Record`/`Call` trees built from
+them) always render to valid source, so they always take the clean tree-splice
+path. The one caveat is `Arg::Record` keys, which render bare and so must be
+valid Petal identifiers.
 
 ---
 

@@ -521,7 +521,22 @@ pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value,
             let id = heap.alloc_string(s.clone());
             Ok(Value::String(id))
         }
-        _ => Err("Only null, bool, number, and string values are supported".to_string()),
+        serde_json::Value::Array(items) => {
+            let mut elems = Vec::with_capacity(items.len());
+            for item in items {
+                elems.push(json_to_value(item, heap)?);
+            }
+            let id = heap.alloc_list(elems);
+            Ok(Value::List(id))
+        }
+        serde_json::Value::Object(obj) => {
+            let mut entries = indexmap::IndexMap::with_capacity(obj.len());
+            for (key, item) in obj {
+                entries.insert(key.clone(), json_to_value(item, heap)?);
+            }
+            let id = heap.alloc_map(entries);
+            Ok(Value::Map(id))
+        }
     }
 }
 

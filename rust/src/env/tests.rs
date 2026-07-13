@@ -2346,6 +2346,32 @@ mod pending_render_chunk_m_tests {
         env.reset_stack(sid).unwrap();
         assert_eq!(env.run(sid).unwrap(), Value::Int(2));
     }
+
+    /// A pushed compound value (nested arrays + objects) is reconstructed into
+    /// native lists/maps the script can index into — the case the petal-web-canvas
+    /// cube renderer relies on (host stages an array of `{c, n, p}` sticker quads).
+    #[test]
+    fn pushed_state_supports_nested_arrays_and_objects() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state faces = []\nfaces[0].c[1]\n")
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        env.set_state_from_json(
+            pid,
+            sid,
+            "faces",
+            &serde_json::json!([{ "c": [10, 20, 30], "n": [0, 1, 0] }]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            env.run(sid).unwrap(),
+            Value::Int(20),
+            "the script must be able to index a host-pushed array of objects"
+        );
+    }
 }
 
 /// Chunk N of the pending-values feature: the frame pending report — a

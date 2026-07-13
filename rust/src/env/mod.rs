@@ -12,7 +12,7 @@ use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::module::ModuleRegistry;
-use crate::native_fn::{NativeFn, NativeFnId, NativeFnTable};
+use crate::native_fn::{NativeClass, NativeFn, NativeFnId, NativeFnTable};
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{RuntimeStateKey, Stack, StackKey};
 use crate::stats::{AllocStats, DupStats};
@@ -378,6 +378,18 @@ impl Env {
     /// Must be called before `load_program`.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    /// Override the [`NativeClass`] of an already-registered native (by the id
+    /// [`register_native`](Self::register_native) returned). Registration stays
+    /// append-only — indices are stable — so an embedding classifies its natives
+    /// afterward. Mark side-effecting emitters (natives that only
+    /// [`push_output`](crate::native_fn::PetalCxt::push_output)/
+    /// [`emit`](crate::native_fn::PetalCxt::emit) into a buffer)
+    /// [`Effectful`](NativeClass::Effectful) so a `Pending` argument makes the
+    /// call a no-op instead of being absorbed as the result.
+    pub fn set_native_class(&mut self, id: NativeFnId, class: NativeClass) {
+        self.native_fns.set_class(id, class);
     }
 
     /// Register a class of host-owned foreign objects, returning its id.

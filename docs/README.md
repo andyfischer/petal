@@ -24,6 +24,7 @@ How the implementation works and where it's headed:
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: natives, values, host channels |
+| [Embedding Guide](embedding-guide.md) | Patterns for embedding without host globals: observing function calls, feeding inputs, per-run ids |
 | [Building on Integrations](building-on-integrations.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
 | [Program Modification](program-modification.md) | Modifying programs programmatically (source, IR, live) — for tools, agents, and embedders |
 | [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |

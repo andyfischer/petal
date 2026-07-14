@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-14 · Branch: `main`
+Last updated: 2026-07-14 (Chunks D + E landed) · Branch: `main`
 
 ---
 
@@ -27,12 +27,18 @@ Last updated: 2026-07-14 · Branch: `main`
 | A — `Type` core | ✅ done | `e817f17` | `rust/src/types.rs`: `Type`, `from_name`, `name`, `is_assignable_to` |
 | B — let & param annotations | ✅ done | `28c7724` | `let x: int`, `fn f(a: int)`, lambda params → `Param`/`Let.ty` |
 | C — fn return types | ✅ done | `d604d21` | `fn f(...) -> t` → `FnDecl.ret` |
-| D — prescan signature table | ⬜ todo | — | collect declared param/return types for call-site checking |
-| E — the checker | ⬜ todo | — | shallow inference + assignability + non-fatal diagnostics |
-| F — surface diagnostics | ⬜ todo | — | warnings via `run`/`check` + MCP, caret rendering |
+| E1 — preserve raw type names | ✅ done | `a85ea3d` | `Option<Type>` → `Option<TypeAnn { name, resolved }>`; unknown names kept |
+| D — prescan signature table | ✅ done | `c90adf7` | `collect_fn_signatures` → `Compiler.fn_signatures` keyed by `(name, arity)` |
+| E2 — the checker | ✅ done | `12f1a45` | `rust/src/typecheck/`: scoped env, shallow infer, 5 check sites, `Diagnostic` |
+| E3 — surface (run/check) | ✅ done | `a9bf3e3` | `Program.warnings`; `check`/`run` stderr carets + `check --json warnings[]` |
+| F — remaining surfacing | 🚧 partial | — | **done:** run/check text+JSON+carets. **todo:** MCP `CheckSnippet`/`TestSnippet`, `check --strict` (plan §12 Q2) |
 | G — docs & examples | ⬜ todo | — | Language_Guide, goals.md reconcile, `examples/typed.ptl`, README |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
+
+> **Ordering note:** the unknown-type-name decision (Chunk E spec) was resolved by
+> *preserving the raw name* — landed as its own commit (E1) ahead of D, since it
+> changed the annotation representation D and the checker both read.
 
 ---
 
@@ -91,50 +97,51 @@ uses them yet** (compiler strips them to names; runtime unaffected).
 
 ## Remaining work (specs for the next implementer)
 
-### Chunk D — prescan signature table
-Collect declared `(param types, return type)` per function so the checker can
-verify call sites even with forward references and arity overloads.
-- Extend `prescan_declarations` (`compiler/mod.rs:~657`) — it already walks
-  `FnDecl` and knows arities. Store into a **compile-time side table** keyed by
-  `(name, arity)`; do **not** add type fields to the IR `Term`/`FunctionDef`.
-- Respect arity-only overloading (`Function_Overloading.md`): key by arity.
-- Ships with unit tests only (no user-facing behavior yet). Optional to merge
-  into Chunk E if a standalone commit feels too thin.
+### Chunks D + E — DONE (this pass)
+The prescan signature table, the checker, and basic diagnostic surfacing all
+landed. What now exists on top of the Chunk-C foundation:
+- **`rust/src/ast.rs`** — `TypeAnn { name: String, resolved: Option<Type> }`
+  replaces the bare `Option<Type>` on `Let.ty` / `Param.ty` / `FnDecl.ret`. An
+  unrecognized name (`let x: banana`) is preserved with `resolved: None` instead
+  of being dropped. `show-ast --json` emits `ty`/`ret` as `{ name, resolved }`.
+- **`rust/src/compiler/mod.rs`** — `pub(crate) fn collect_fn_signatures(&[Stmt])
+  -> HashMap<(String,usize), FnSignature>`; result folded into the new
+  `Compiler.fn_signatures` side table during `prescan_declarations`. IR
+  untouched. `FnSignature` lives in `types.rs`.
+- **`rust/src/typecheck/mod.rs`** — `check_module(stmts, &fn_signatures) ->
+  Vec<Diagnostic>`, invoked from `compile_module` after prescan. Scoped
+  `Vec<HashMap<String, VarType>>` env; folded `check_expr` doing conservative
+  shallow inference (any ambiguity ⇒ `Any`, which suppresses); five check sites
+  (unknown type name, typed `let`, reassignment, call args, fn return tail).
+  Never errors. 18 unit tests; the entire un-annotated corpus stays silent.
+- **`rust/src/diagnostic.rs`** — `Diagnostic { span: SourceSpan, message }`.
+- **`rust/src/program.rs`** — `#[serde(skip)] Program.warnings: Vec<Diagnostic>`
+  (compile-time artifact, not in portable IR).
+- **`rust/src/cli/handlers.rs`** — `petal check` prints carets to stderr / a
+  `warnings[]` array under `--json` (exit stays 0); `petal run` prints warnings
+  to stderr before executing (stdout + runtime untouched).
+- **`rust/src/source_map.rs`** — `SourceSpan`/`SourcePosition` gained
+  `PartialEq, Eq` (needed by `Diagnostic`).
 
-### Chunk E — the checker (the crux)
-New module `rust/src/typecheck/` (model on `lint/` and `desugar.rs`). Runs on the
-projected + desugared AST, invoked from `compile_module` right after
-`desugar::desugar` (`compiler/mod.rs:~278`).
-- **Scoped type env** mirroring the compiler's `scopes` stack: `name ->
-  (declared: Option<Type>, inferred: Type)`.
-- **infer(expr) -> Type** (shallow): literals → obvious type; ident → recorded
-  type; cast calls `int()/float()/str()` → `Int/Float/String`; `BinaryOp` →
-  promotion rules (int op int→int, any float→float, comparisons→bool, string
-  `+`→string); known call → declared return; `if`/`match`/`for`/`while` value
-  position → branch join (equal ⇒ that type, else `Any`); unknown ⇒ `Any`.
-- **check** sites (warn when a *concrete* inferred type is not
-  `is_assignable_to` the declared type; `Any` on either side suppresses):
-  `let x: T = e`; call args vs declared params; fn last-expr vs declared `ret`;
-  reassignment of an annotated binding.
-- **Warning-only:** never returns `Err`; accumulates `Vec<Diagnostic>`.
-- Tests: golden `.ptl` → expected `warnings[]` (mismatch warns; `Any`
-  suppresses; explicit cast clears; `int`→`float` promotion doesn't warn).
-- **Also revisit the unknown-type-name TODO** (Chunk B): to warn on
-  `let x: banana = …`, the annotation must preserve the raw name. Options: add a
-  richer AST field (`Option<TypeAnn { name, resolved }>`) or validate at parse
-  time. Decide here.
+**Design notes for the next implementer:**
+- Inference is deliberately conservative — prefer a false negative to a false
+  positive. `Div` on two ints is `Int` (integer division); `+` on strings is a
+  *runtime* error so it infers `Any`; string concat is the separate `Concat`
+  (`++`) op. `Concat`/`Coalesce`/field/index and any non-obvious case ⇒ `Any`.
+- Call-site checks read the global `fn_signatures` table (handles forward refs +
+  arity overloads); local bindings follow lexical scope order.
+- Match-arm pattern vars, `for`/`while` loop vars, `state` names, and lambda
+  params are all bound as `Any` so they never mis-trigger against an outer typed
+  binding of the same name.
 
-### Chunk F — surface diagnostics
-- Add a **non-fatal warning channel** (a `Vec<Diagnostic>` produced alongside the
-  compiled `Program`). Today only hard `Result<_, String>` errors and deferred
-  `TermOp::Error` runtime errors exist.
-- `Diagnostic` carries a `SourceSpan` (`source_map.rs`, file-tagged). Render with
-  `format_source_snippet` (`backend/errors.rs:~131`, already `pub`) +
-  `format_position` (`errors.rs:~97`).
-- Surface in `petal run` and `petal check` (stderr text; `--json` ⇒ a
-  `warnings[]` array). `check` (`cli/args.rs`) becomes the check-only entry.
-- Wire into MCP `CheckSnippet` / `TestSnippet`.
-- Open Q (plan §12): `check --strict` exits non-zero on warnings for CI?
+### Chunk F — remaining surfacing (partly done in E3)
+Done: `run`/`check` text + `--json warnings[]` + caret rendering via
+`format_source_snippet`. **Remaining:**
+- Wire warnings into MCP `CheckSnippet` / `TestSnippet` (`mcp-server`) so the
+  agent/editor loop sees them. The `Program.warnings` + `warnings_json` helper
+  (`cli/handlers.rs`) are the pieces to reuse.
+- Plan §12 Q2: add `check --strict` (exit non-zero when warnings exist) for CI?
+  Recommend yes; plain `check`/`run` stay zero.
 
 ### Chunk G — docs & examples
 - `Language_Guide.md` Types section: annotation grammar.
@@ -181,9 +188,10 @@ end'
   callable builtins; only recognized in type position (after `:` / `->`).
 - **`parse_param_list` is shared** by fn/lambda/enum. Changing it ripples;
   enum keeps names only.
-- **Unknown type names** currently resolve to `None` (dropped). Preserve the raw
-  name before the checker can warn on them (see Chunk E).
+- **Unknown type names** are now preserved as `TypeAnn { name, resolved: None }`
+  (Chunk E1) and warned on by the checker — no longer dropped.
 - **Serde:** AST types derive `Serialize` only (not `Deserialize`); `Type` must
   keep `Serialize` for `show-ast --json`.
-- The `check` CLI command exists and today does **no** type checking — it's the
-  natural home for the checker entry point.
+- The `check` CLI command now runs the type checker and prints warnings
+  (stderr text / `--json warnings[]`), still exiting 0. `--strict` (non-zero on
+  warnings) is the remaining open decision — see Chunk F.

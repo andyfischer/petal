@@ -53,6 +53,17 @@ pub(super) fn handle_run(
         Ok(pid) => pid,
         Err(e) => die(json, &e, classify_load_error(&e)),
     };
+    // Surface type-checker warnings on stderr before running. Warnings go to
+    // stderr even in --json mode, so JSON consumers of stdout are unaffected.
+    // Scoped so the immutable borrow of `env` ends before `create_stack`.
+    {
+        if let Some(program) = env.get_program(pid) {
+            let text = render_warnings_text(program);
+            if !text.is_empty() {
+                eprint!("{}", text);
+            }
+        }
+    }
     let sid = match env.create_stack(pid) {
         Ok(sid) => sid,
         Err(e) => die(json, &e, "compile"),
@@ -212,6 +223,59 @@ pub(super) fn handle_explain(
     }
 }
 
+/// Format the `[line N, column M]` (or `[file line N, column M]`) position tag
+/// for a warning's span — mirrors `backend::errors::format_position`.
+fn warning_position(program: &Program, span: &crate::source_map::SourceSpan) -> String {
+    match program.source_map.file_name_for_span(span) {
+        Some(file) => format!(
+            "[{} line {}, column {}]",
+            file, span.start.line, span.start.column
+        ),
+        None => format!("[line {}, column {}]", span.start.line, span.start.column),
+    }
+}
+
+/// Render a program's type-checker warnings as human-readable text (for
+/// stderr). Each diagnostic becomes a `warning:` line, a ` --> <position>`
+/// line, and (when a real span + source exist) a caret snippet.
+fn render_warnings_text(program: &Program) -> String {
+    let mut out = String::new();
+    for d in &program.warnings {
+        out.push_str(&format!("warning: {}\n", d.message));
+        out.push_str(&format!(" --> {}\n", warning_position(program, &d.span)));
+        let src = program
+            .source_map
+            .source_for_span(&d.span)
+            .unwrap_or(&program.source);
+        if let Some(snippet) =
+            crate::backend::errors::format_source_snippet(src, &d.span)
+        {
+            out.push_str(&snippet);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Build the JSON array of a program's warnings: one object per diagnostic with
+/// `message`, `line`, `column`, and `file` (null for the entry file).
+fn warnings_json(program: &Program) -> serde_json::Value {
+    let items: Vec<serde_json::Value> = program
+        .warnings
+        .iter()
+        .map(|d| {
+            let file = program.source_map.file_name_for_span(&d.span);
+            serde_json::json!({
+                "message": d.message,
+                "line": d.span.start.line,
+                "column": d.span.start.column,
+                "file": file,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(items)
+}
+
 pub(super) fn handle_check(
     json: bool,
     source: &str,
@@ -221,17 +285,29 @@ pub(super) fn handle_check(
     let mut env = make_env(include_dirs);
     let is_empty = source.trim().is_empty();
     match load_into(&mut env, source, source_input) {
-        Ok(_) => {
+        Ok(pid) => {
+            let program = env.get_program(pid);
             if json {
+                let warnings = program
+                    .map(warnings_json)
+                    .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+                let mut obj = serde_json::json!({ "ok": true, "warnings": warnings });
                 if is_empty {
-                    println!("{{\"ok\": true, \"warning\": \"empty program\"}}");
-                } else {
-                    println!("{{\"ok\": true}}");
+                    obj["warning"] = serde_json::json!("empty program");
                 }
-            } else if is_empty {
-                eprintln!("warning: empty program");
+                println!("{}", obj);
+            } else {
+                if let Some(program) = program {
+                    let text = render_warnings_text(program);
+                    if !text.is_empty() {
+                        eprint!("{}", text);
+                    }
+                }
+                if is_empty {
+                    eprintln!("warning: empty program");
+                }
+                // Otherwise silent on success, like most linters
             }
-            // Otherwise silent on success, like most linters
         }
         Err(e) => die(json, &e, classify_load_error(&e)),
     }

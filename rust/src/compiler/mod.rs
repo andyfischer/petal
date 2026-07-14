@@ -275,6 +275,7 @@ impl Compiler {
             functions: self.functions,
             match_arms: self.match_arms,
             block_terms,
+            warnings: self.warnings,
         })
     }
 

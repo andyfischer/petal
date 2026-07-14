@@ -212,6 +212,7 @@ mod tests {
             functions: vec![],
             match_arms: HashMap::new(),
             block_terms: HashMap::new(),
+            warnings: Vec::new(),
         }
     }
 

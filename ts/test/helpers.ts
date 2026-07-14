@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { resolve } from "path";
 
 const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
@@ -30,6 +30,43 @@ export function showTokensJson(code: string): any {
 
 export function runPetal(code: string): string {
   return run(["run", "-e", shellEscape(code)]);
+}
+
+/** `petal check --json -e <code>`, parsed. */
+export function checkJson(code: string): any {
+  return JSON.parse(run(["check", "--json", "-e", shellEscape(code)]));
+}
+
+/** Run the built binary capturing stdout, stderr, and exit code separately. */
+function capture(args: string[]): {
+  stdout: string;
+  stderr: string;
+  code: number;
+} {
+  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000 });
+  return {
+    stdout: (r.stdout || "").toString(),
+    stderr: (r.stderr || "").toString(),
+    code: typeof r.status === "number" ? r.status : 1,
+  };
+}
+
+/** `petal check -e <code>` (text mode): capture stdout/stderr/exit code. */
+export function checkText(code: string): {
+  stdout: string;
+  stderr: string;
+  code: number;
+} {
+  return capture(["check", "-e", code]);
+}
+
+/** `petal run -e <code>`: capture both stdout and stderr (expects success). */
+export function runWithStderr(code: string): {
+  stdout: string;
+  stderr: string;
+} {
+  const { stdout, stderr } = capture(["run", "-e", code]);
+  return { stdout, stderr };
 }
 
 /** Raw `show-ir --json` output as a JSON string (not parsed). */

@@ -389,6 +389,10 @@ pub struct Program {
     /// Built once at compile time to avoid O(N) scans over all terms.
     #[serde(skip)]
     pub block_terms: HashMap<BlockId, Vec<TermId>>,
+    /// Non-fatal compile-time diagnostics (type-checker warnings). A compile-time
+    /// artifact, NOT part of the portable IR — skipped in (de)serialization.
+    #[serde(skip)]
+    pub warnings: Vec<crate::diagnostic::Diagnostic>,
 }
 
 impl Program {

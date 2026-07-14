@@ -69,6 +69,10 @@ pub struct Compiler {
     // and consulted by the type checker at call sites. Compile-time only.
     fn_signatures: HashMap<(String, usize), FnSignature>,
 
+    // Non-fatal type-checker diagnostics, accumulated during compilation and
+    // surfaced alongside the compiled program (a later chunk consumes them).
+    warnings: Vec<crate::diagnostic::Diagnostic>,
+
     // Overloaded function tracking: name → number of unique arities expected
     overloaded_fns: HashMap<String, usize>,
     // Compiled overload variants: name → vec of closure term IDs (one per arity)
@@ -141,6 +145,7 @@ impl Compiler {
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
+            warnings: Vec::new(),
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
@@ -299,6 +304,8 @@ impl Compiler {
 
         self.bind_imports(module, &stmts)?;
         self.prescan_declarations(&stmts);
+        let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures);
+        self.warnings.extend(diags);
         for stmt in &stmts {
             self.compile_stmt(stmt);
         }
@@ -710,7 +717,7 @@ impl Compiler {
 /// declarations of the same `(name, arity)` win. Pure so it is unit-testable
 /// without a live [`Compiler`]; `prescan_declarations` folds the result into
 /// [`Compiler::fn_signatures`].
-fn collect_fn_signatures(stmts: &[Stmt]) -> HashMap<(String, usize), FnSignature> {
+pub(crate) fn collect_fn_signatures(stmts: &[Stmt]) -> HashMap<(String, usize), FnSignature> {
     let mut sigs = HashMap::new();
     for stmt in stmts {
         if let StmtKind::FnDecl {

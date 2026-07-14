@@ -21,14 +21,14 @@ pub struct FileId(pub u16);
 /// The entry file's id — the file a program was loaded from.
 pub const ENTRY_FILE: FileId = FileId(0);
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePosition {
     pub line: u32,
     pub column: u32,
     pub offset: u32,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceSpan {
     pub start: SourcePosition,
     pub end: SourcePosition,

@@ -11,6 +11,7 @@ pub mod constant_table;
 pub mod cst;
 pub mod cst_project;
 pub mod desugar;
+pub mod diagnostic;
 pub mod dot_graph;
 pub mod env;
 pub mod execution_context;
@@ -37,6 +38,7 @@ pub mod symbol;
 pub mod trace;
 pub mod transfer_state;
 pub mod trivia;
+pub mod typecheck;
 pub mod types;
 pub mod value;
 

@@ -118,6 +118,24 @@ impl Type {
     }
 }
 
+/// The declared static signature of a named function.
+///
+/// Collected during the compiler's prescan (so forward references resolve) and
+/// consulted by the type checker at call sites. Compile-time only — never
+/// serialized into the IR. Elsewhere these are keyed by `(name, arity)` so
+/// arity-based overloading (`Function_Overloading.md`) keeps distinct entries.
+///
+/// Each slot holds the *resolved* [`Type`], or `None` when the corresponding
+/// annotation was absent or unrecognized — either way the checker treats it as
+/// [`Type::Any`] (no check at that position).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FnSignature {
+    /// Declared parameter types, positionally.
+    pub params: Vec<Option<Type>>,
+    /// Declared return type.
+    pub ret: Option<Type>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

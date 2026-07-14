@@ -24,6 +24,7 @@ use crate::module::LoadedModule;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
 use crate::source_map::{ENTRY_FILE, SourceFile, SourceMap, SourceSpan};
+use crate::types::FnSignature;
 
 /// Info about a captured variable in the current function being compiled.
 struct CaptureInfo {
@@ -62,6 +63,11 @@ pub struct Compiler {
 
     // Track loop nesting depth so state terms know if they're inside a loop
     loop_depth: u32,
+
+    // Declared type signatures of named functions, keyed by (name, arity) so
+    // arity overloads keep distinct entries. Populated by `prescan_declarations`
+    // and consulted by the type checker at call sites. Compile-time only.
+    fn_signatures: HashMap<(String, usize), FnSignature>,
 
     // Overloaded function tracking: name → number of unique arities expected
     overloaded_fns: HashMap<String, usize>,
@@ -134,6 +140,7 @@ impl Compiler {
             scopes: Vec::new(),
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
+            fn_signatures: HashMap::new(),
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
@@ -655,6 +662,10 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     fn prescan_declarations(&mut self, stmts: &[Stmt]) {
+        // Record declared signatures so the checker can verify call sites even
+        // across forward references. Accumulates across modules.
+        self.fn_signatures.extend(collect_fn_signatures(stmts));
+
         // Detect overloaded function names (same name, different arities)
         let mut fn_arities: HashMap<String, std::collections::HashSet<usize>> = HashMap::new();
         for stmt in stmts {
@@ -690,5 +701,86 @@ impl Compiler {
                 _ => {}
             }
         }
+    }
+}
+
+/// Collect declared function signatures from a statement list, keyed by
+/// `(name, arity)`. Only the *resolved* types are kept — an un-annotated or
+/// unrecognized-name parameter/return becomes `None` (checked as `any`). Later
+/// declarations of the same `(name, arity)` win. Pure so it is unit-testable
+/// without a live [`Compiler`]; `prescan_declarations` folds the result into
+/// [`Compiler::fn_signatures`].
+fn collect_fn_signatures(stmts: &[Stmt]) -> HashMap<(String, usize), FnSignature> {
+    let mut sigs = HashMap::new();
+    for stmt in stmts {
+        if let StmtKind::FnDecl {
+            name, params, ret, ..
+        } = &stmt.kind
+        {
+            let sig = FnSignature {
+                params: params
+                    .iter()
+                    .map(|p| p.ty.as_ref().and_then(|t| t.resolved))
+                    .collect(),
+                ret: ret.as_ref().and_then(|t| t.resolved),
+            };
+            sigs.insert((name.clone(), params.len()), sig);
+        }
+    }
+    sigs
+}
+
+#[cfg(test)]
+mod prescan_tests {
+    use super::collect_fn_signatures;
+    use crate::rewrite::parse_ast;
+    use crate::types::{FnSignature, Type};
+
+    fn sigs(src: &str) -> std::collections::HashMap<(String, usize), FnSignature> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        collect_fn_signatures(&stmts)
+    }
+
+    #[test]
+    fn collects_param_and_return_types() {
+        let table = sigs("fn area(r: float) -> float\n  r * r\nend");
+        assert_eq!(
+            table.get(&("area".to_string(), 1)),
+            Some(&FnSignature {
+                params: vec![Some(Type::Float)],
+                ret: Some(Type::Float),
+            })
+        );
+    }
+
+    #[test]
+    fn un_annotated_and_unknown_slots_are_none() {
+        // `b` un-annotated, `banana` unrecognized, no return annotation.
+        let table = sigs("fn f(a: int, b, c: banana)\n  a\nend");
+        assert_eq!(
+            table.get(&("f".to_string(), 3)),
+            Some(&FnSignature {
+                params: vec![Some(Type::Int), None, None],
+                ret: None,
+            })
+        );
+    }
+
+    #[test]
+    fn arity_overloads_get_distinct_entries() {
+        let table = sigs(
+            "fn g(x: int) -> int\n  x\nend\nfn g(x: int, y: int) -> int\n  x + y\nend",
+        );
+        assert_eq!(table.len(), 2);
+        assert_eq!(table[&("g".to_string(), 1)].params, vec![Some(Type::Int)]);
+        assert_eq!(
+            table[&("g".to_string(), 2)].params,
+            vec![Some(Type::Int), Some(Type::Int)]
+        );
+    }
+
+    #[test]
+    fn no_functions_yields_empty_table() {
+        assert!(sigs("let x: int = 5\nprint(x)").is_empty());
     }
 }

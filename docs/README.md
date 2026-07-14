@@ -8,6 +8,7 @@ Start here if you're learning or using the language:
 |----------|-------------|
 | [Getting Started](Getting_Started.md) | Build instructions, running examples, CLI usage |
 | [Language Guide](Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
+| [Syntax Overview](syntax/overview.md) | Compact map of all lexical forms, statements, expressions, and operators |
 | [Builtins Reference](Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](CLI.md) | Full CLI command reference and JSON output schemas |
 | [Module System](module-system.md) | `import` syntax, module resolution, hot reload across files |

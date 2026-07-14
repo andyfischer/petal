@@ -3,10 +3,11 @@
 This is a user-facing reference for the Petal programming language. It covers all syntax,
 types, operators, and features with examples.
 
-For built-in functions (math, collections, color, vectors, autodiff, etc.) see
-[Builtins.md](Builtins.md). For the `petal` CLI and the IR JSON schema, see
-[CLI.md](CLI.md). For the design philosophy behind the language, see
-[goals.md](dev/goals.md).
+For a compact, reference-style map of the whole surface syntax, see
+[Syntax Overview](syntax/overview.md). For built-in functions (math,
+collections, color, vectors, autodiff, etc.) see [Builtins.md](Builtins.md). For
+the `petal` CLI and the IR JSON schema, see [CLI.md](CLI.md). For the design
+philosophy behind the language, see [goals.md](dev/goals.md).
 
 ## Hello World
 

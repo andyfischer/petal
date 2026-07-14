@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::source_map::SourceSpan;
-use crate::types::Type;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Literal {
@@ -173,12 +172,31 @@ pub struct EnumVariant {
     pub fields: Vec<String>,
 }
 
+/// A written type annotation: the source name plus its resolution.
+/// `resolved` is `None` when `name` is not a recognized type — the checker
+/// warns on that but treats it as `any`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TypeAnn {
+    /// The type name exactly as written (`int`, `str`, `banana`).
+    pub name: String,
+    /// The resolved static type, or `None` for an unrecognized name.
+    pub resolved: Option<crate::types::Type>,
+}
+
+impl TypeAnn {
+    pub fn new(name: String) -> Self {
+        let resolved = crate::types::Type::from_name(&name);
+        TypeAnn { name, resolved }
+    }
+}
+
 /// A function/lambda parameter with an optional declared type.
-/// `ty` is `None` when the parameter is un-annotated.
+/// `ty` is `None` when the parameter is un-annotated. A written annotation is
+/// preserved even when its name is unrecognized (`resolved: None`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Param {
     pub name: String,
-    pub ty: Option<Type>,
+    pub ty: Option<TypeAnn>,
 }
 
 /// A statement with source location.
@@ -192,9 +210,10 @@ pub struct Stmt {
 pub enum StmtKind {
     Let {
         name: String,
-        /// Optional declared type (`let x: int = …`). `None` when un-annotated
-        /// (or, for now, when an unknown type name was written).
-        ty: Option<Type>,
+        /// Optional declared type (`let x: int = …`). `None` only when
+        /// un-annotated; a written but unrecognized name is preserved as a
+        /// [`TypeAnn`] with `resolved: None`.
+        ty: Option<TypeAnn>,
         value: Expr,
     },
     Assign {
@@ -206,8 +225,10 @@ pub enum StmtKind {
         name: String,
         params: Vec<Param>,
         /// Optional declared return type (`fn f(…) -> int`). `None` when
-        /// un-annotated. Named functions only; lambdas have no return-type slot.
-        ret: Option<Type>,
+        /// un-annotated; a written but unrecognized name is preserved as a
+        /// [`TypeAnn`] with `resolved: None`. Named functions only; lambdas have
+        /// no return-type slot.
+        ret: Option<TypeAnn>,
         body: Vec<Stmt>,
     },
     EnumDecl {

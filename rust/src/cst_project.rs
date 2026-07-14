@@ -30,7 +30,6 @@ use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
 use crate::parse::{expr_to_assign_target, parse_color_hex};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
-use crate::types::Type;
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
 /// the entry file (matching a tree built by [`crate::cst::parse_cst`]).
@@ -130,12 +129,13 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
-/// Read the declared [`Type`] from a `TypeAnnotation` node — the type-name
-/// identifier it wraps, resolved via [`Type::from_name`]. An unknown name yields
-/// `None`, mirroring the parser (see `parse_type_annotation`).
-fn type_from_annotation_node(ann: &SyntaxNode) -> Option<Type> {
+/// Read the declared [`TypeAnn`] from a `TypeAnnotation` (or `ReturnType`)
+/// node — the type-name identifier it wraps, preserved raw and resolved via
+/// [`Type::from_name`], mirroring the parser (see `parse_type_annotation`). An
+/// unrecognized name is kept with `resolved: None`.
+fn type_from_annotation_node(ann: &SyntaxNode) -> Option<TypeAnn> {
     let name = direct_tokens(ann).iter().filter_map(ident_value).next()?;
-    Type::from_name(&name)
+    Some(TypeAnn::new(name))
 }
 
 /// Project the parameters of a `ParamList` node, pairing each parameter name
@@ -1064,6 +1064,7 @@ mod tests {
     use crate::cst::parse_cst;
     use crate::lexer::Lexer;
     use crate::parse::Parser;
+    use crate::types::Type;
 
     /// Parse `src` the ordinary way (the authoritative AST).
     fn direct_ast(src: &str) -> Result<Vec<Stmt>, String> {
@@ -1137,14 +1138,32 @@ mod tests {
         let StmtKind::Let { ty, .. } = &ast[0].kind else {
             panic!("expected let");
         };
-        assert_eq!(*ty, Some(Type::Int));
+        assert_eq!(
+            *ty,
+            Some(TypeAnn {
+                name: "int".into(),
+                resolved: Some(Type::Int),
+            })
+        );
 
         let StmtKind::FnDecl { params, .. } = &ast[1].kind else {
             panic!("expected fn");
         };
-        assert_eq!(params[0].ty, Some(Type::Int));
+        assert_eq!(
+            params[0].ty,
+            Some(TypeAnn {
+                name: "int".into(),
+                resolved: Some(Type::Int),
+            })
+        );
         assert_eq!(params[1].ty, None); // bare param
-        assert_eq!(params[2].ty, Some(Type::String)); // `str` alias
+        assert_eq!(
+            params[2].ty,
+            Some(TypeAnn {
+                name: "str".into(),
+                resolved: Some(Type::String),
+            })
+        ); // `str` alias
     }
 
     #[test]
@@ -1154,13 +1173,20 @@ mod tests {
         let StmtKind::FnDecl { ret, .. } = &ast[0].kind else {
             panic!("expected fn");
         };
-        assert_eq!(*ret, Some(Type::Float));
+        assert_eq!(
+            *ret,
+            Some(TypeAnn {
+                name: "float".into(),
+                resolved: Some(Type::Float),
+            })
+        );
         let StmtKind::FnDecl { ret: bare_ret, .. } = &ast[1].kind else {
             panic!("expected fn");
         };
         assert_eq!(*bare_ret, None);
 
-        // Un-annotated and unknown-name forms both land as None.
+        // Un-annotated stays None; an unknown name is now PRESERVED (raw name
+        // kept, `resolved: None`) so the checker can warn on it.
         let untyped = projected_ast("let y = 5\nlet z: banana = 3\n").expect("parse");
         let StmtKind::Let { ty: y_ty, .. } = &untyped[0].kind else {
             panic!();
@@ -1169,7 +1195,13 @@ mod tests {
             panic!();
         };
         assert_eq!(*y_ty, None);
-        assert_eq!(*z_ty, None);
+        assert_eq!(
+            *z_ty,
+            Some(TypeAnn {
+                name: "banana".into(),
+                resolved: None,
+            })
+        );
     }
 
     #[test]

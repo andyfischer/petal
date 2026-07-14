@@ -2,7 +2,6 @@ use crate::ast::*;
 use crate::cst::{Checkpoint, Event, EventBuilder, SyntaxKind};
 use crate::lexer::Token;
 use crate::source_map::{SourceSpan, ZERO_SPAN};
-use crate::types::Type;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -473,10 +472,10 @@ impl Parser {
     /// AST can recover the type while un-annotated code keeps its old CST shape.
     ///
     /// Type names are contextual (not reserved): `int`/`float`/`str` are still
-    /// callable builtins elsewhere. An unknown name yields `None` for now (same
-    /// as no annotation) — the raw name is kept in the CST but dropped from the
-    /// AST. TODO(types): preserve unknown names for checker diagnostics.
-    fn parse_type_annotation(&mut self) -> Result<Option<Type>, String> {
+    /// callable builtins elsewhere. The raw name is always preserved in the AST
+    /// as a [`TypeAnn`]; an unrecognized name resolves to `None` so the checker
+    /// can later warn on it.
+    fn parse_type_annotation(&mut self) -> Result<Option<TypeAnn>, String> {
         if !matches!(self.peek(), Token::Colon) {
             return Ok(None);
         }
@@ -484,7 +483,7 @@ impl Parser {
         self.expect(&Token::Colon)?;
         let name = self.expect_ident()?;
         self.ev_close();
-        Ok(Type::from_name(&name))
+        Ok(Some(TypeAnn::new(name)))
     }
 
     /// Parse an optional `-> type` return annotation on a named `fn`. Returns
@@ -492,8 +491,9 @@ impl Parser {
     /// identifier are wrapped in a `ReturnType` CST node. Unambiguous because a
     /// named fn body is a block (`… end`), so `->` is not otherwise valid here
     /// (unlike lambdas, whose `->` introduces the body — hence lambdas have no
-    /// return-type annotation). Unknown names yield `None`, as with parameters.
-    fn parse_return_type(&mut self) -> Result<Option<Type>, String> {
+    /// return-type annotation). The raw name is preserved as a [`TypeAnn`], as
+    /// with parameters.
+    fn parse_return_type(&mut self) -> Result<Option<TypeAnn>, String> {
         if !matches!(self.peek(), Token::Arrow) {
             return Ok(None);
         }
@@ -501,7 +501,7 @@ impl Parser {
         self.expect(&Token::Arrow)?;
         let name = self.expect_ident()?;
         self.ev_close();
-        Ok(Type::from_name(&name))
+        Ok(Some(TypeAnn::new(name)))
     }
 
     /// Get the span of the current token (the one at self.pos).

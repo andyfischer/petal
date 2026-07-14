@@ -234,10 +234,10 @@ the common variants but are not exhaustive.
 
 | Variant | Shape |
 |---------|-------|
-| `Let` | `{"Let": {"name": string, "ty": Type \| null, "value": Expr}}` — `ty` is the optional declared type |
+| `Let` | `{"Let": {"name": string, "ty": TypeAnn \| null, "value": Expr}}` — `ty` is the optional declared type annotation |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
-| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "ret": Type \| null, "body": Stmt[]}}` — `ret` is the optional declared return type |
+| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "ret": TypeAnn \| null, "body": Stmt[]}}` — `ret` is the optional declared return-type annotation |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
 | `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |
@@ -266,9 +266,11 @@ the common variants but are not exhaustive.
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
 | `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
 
-**Param**: `{"name": string, "ty": Type | null}` — a function/lambda parameter with its optional declared type.
+**Param**: `{"name": string, "ty": TypeAnn | null}` — a function/lambda parameter with its optional declared type annotation.
 
-**Type**: a string naming the declared static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Optional annotations are parsed but not yet type-checked; an unknown type name currently projects to `null`.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Optional annotations are parsed and their raw names preserved, but not yet type-checked.
+
+**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
 **RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
 

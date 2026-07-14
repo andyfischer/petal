@@ -229,8 +229,17 @@ impl Projector {
             SyntaxKind::FnDecl => {
                 let name = self.only_ident(node)?;
                 let params = self.param_list(node)?;
+                let ret = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::ReturnType)
+                    .and_then(type_from_annotation_node);
                 let body = self.block(node)?;
-                StmtKind::FnDecl { name, params, body }
+                StmtKind::FnDecl {
+                    name,
+                    params,
+                    ret,
+                    body,
+                }
             }
             SyntaxKind::EnumDecl => self.enum_decl(node)?,
             SyntaxKind::ForStmt => {
@@ -1115,6 +1124,10 @@ mod tests {
         assert_projects("let d = fn(n: int) -> n * 2\n");
         assert_projects("let z: banana = 3\n"); // unknown type name
         assert_projects("enum Shape\n  Circle(radius: float)\nend\n");
+        // Return types (named fn only).
+        assert_projects("fn area(r: float) -> float\n  r\nend\n");
+        assert_projects("fn greet(n)\n  n\nend\n"); // no return type
+        assert_projects("fn f() -> bool\n  true\nend\n");
     }
 
     #[test]
@@ -1132,6 +1145,20 @@ mod tests {
         assert_eq!(params[0].ty, Some(Type::Int));
         assert_eq!(params[1].ty, None); // bare param
         assert_eq!(params[2].ty, Some(Type::String)); // `str` alias
+    }
+
+    #[test]
+    fn parses_return_types_onto_the_ast() {
+        let ast = projected_ast("fn area(r: float) -> float\n  r\nend\nfn greet(n)\n  n\nend\n")
+            .expect("parse");
+        let StmtKind::FnDecl { ret, .. } = &ast[0].kind else {
+            panic!("expected fn");
+        };
+        assert_eq!(*ret, Some(Type::Float));
+        let StmtKind::FnDecl { ret: bare_ret, .. } = &ast[1].kind else {
+            panic!("expected fn");
+        };
+        assert_eq!(*bare_ret, None);
 
         // Un-annotated and unknown-name forms both land as None.
         let untyped = projected_ast("let y = 5\nlet z: banana = 3\n").expect("parse");

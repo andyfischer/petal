@@ -293,11 +293,12 @@ impl Parser {
         let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
         self.ev_close(); // ParamList
+        let ret = self.parse_return_type()?;
         self.skip_newlines();
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
         self.ev_close(); // FnDecl
-        Ok(self.mk_stmt(StmtKind::FnDecl { name, params, body }, start))
+        Ok(self.mk_stmt(StmtKind::FnDecl { name, params, ret, body }, start))
     }
 
     fn parse_enum_decl(&mut self, start: usize) -> Result<Stmt, String> {
@@ -481,6 +482,23 @@ impl Parser {
         }
         self.ev_open(SyntaxKind::TypeAnnotation);
         self.expect(&Token::Colon)?;
+        let name = self.expect_ident()?;
+        self.ev_close();
+        Ok(Type::from_name(&name))
+    }
+
+    /// Parse an optional `-> type` return annotation on a named `fn`. Returns
+    /// `Ok(None)` when the next token isn't `->`. The `->` and type-name
+    /// identifier are wrapped in a `ReturnType` CST node. Unambiguous because a
+    /// named fn body is a block (`… end`), so `->` is not otherwise valid here
+    /// (unlike lambdas, whose `->` introduces the body — hence lambdas have no
+    /// return-type annotation). Unknown names yield `None`, as with parameters.
+    fn parse_return_type(&mut self) -> Result<Option<Type>, String> {
+        if !matches!(self.peek(), Token::Arrow) {
+            return Ok(None);
+        }
+        self.ev_open(SyntaxKind::ReturnType);
+        self.expect(&Token::Arrow)?;
         let name = self.expect_ident()?;
         self.ev_close();
         Ok(Type::from_name(&name))

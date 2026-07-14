@@ -53,6 +53,20 @@ describe("optional type annotations", () => {
     ]);
   });
 
+  it("parses a function return-type annotation", () => {
+    const ast = showAstJson("fn area(r: float) -> float\n  r\nend");
+    expect(fnDecl(ast).ret).toBe("Float");
+  });
+
+  it("leaves an un-annotated function with ret: null", () => {
+    const ast = showAstJson("fn greet(n)\n  n\nend");
+    expect(fnDecl(ast).ret).toBeNull();
+  });
+
+  it("runs a function with a return-type annotation (ignored at runtime)", () => {
+    expect(runPetal("fn dbl(n: int) -> int\n  n * 2\nend\nprint(dbl(21))")).toBe("42");
+  });
+
   it("parses lambda parameter annotations", () => {
     const ast = showAstJson("let d = fn(n: int) -> n * 2");
     const lambda = ast.find((s: any) => s.kind.Let).kind.Let.value.kind.Lambda;

@@ -33,7 +33,7 @@ impl Compiler {
                 self.compile_expr(expr);
             }
 
-            StmtKind::FnDecl { name, params, body } => {
+            StmtKind::FnDecl { name, params, body, .. } => {
                 // Declared parameter types are not yet used at compile time
                 // (checking lands in a later chunk); the compiler only needs the
                 // names.

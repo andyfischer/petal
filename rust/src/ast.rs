@@ -205,6 +205,9 @@ pub enum StmtKind {
     FnDecl {
         name: String,
         params: Vec<Param>,
+        /// Optional declared return type (`fn f(…) -> int`). `None` when
+        /// un-annotated. Named functions only; lambdas have no return-type slot.
+        ret: Option<Type>,
         body: Vec<Stmt>,
     },
     EnumDecl {

@@ -108,6 +108,9 @@ pub enum SyntaxKind {
     /// An optional `: type` annotation on a `let` binding or a parameter.
     /// Wraps the `:` token and the type-name identifier.
     TypeAnnotation,
+    /// An optional `-> type` return-type annotation on a named `fn`
+    /// declaration. Wraps the `->` token and the type-name identifier.
+    ReturnType,
     /// One `when pattern [if guard] -> body` arm of a `match`.
     MatchArm,
     /// A pattern in a `match` arm.

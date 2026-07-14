@@ -237,7 +237,7 @@ the common variants but are not exhaustive.
 | `Let` | `{"Let": {"name": string, "ty": Type \| null, "value": Expr}}` — `ty` is the optional declared type |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
-| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "body": Stmt[]}}` |
+| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "ret": Type \| null, "body": Stmt[]}}` — `ret` is the optional declared return type |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
 | `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |

@@ -193,7 +193,10 @@ impl Compiler {
                 last_tid
             }
 
-            ExprKind::Lambda { params, body } => self.compile_function(None, params, body),
+            ExprKind::Lambda { params, body } => {
+                let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                self.compile_function(None, &param_names, body)
+            }
 
             ExprKind::Element {
                 tag,

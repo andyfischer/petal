@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::source_map::SourceSpan;
+use crate::types::Type;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Literal {
@@ -98,7 +99,7 @@ pub enum ExprKind {
     },
     Block(Vec<Stmt>),
     Lambda {
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
     },
     /// String interpolation: alternating string parts and expressions.
@@ -172,6 +173,14 @@ pub struct EnumVariant {
     pub fields: Vec<String>,
 }
 
+/// A function/lambda parameter with an optional declared type.
+/// `ty` is `None` when the parameter is un-annotated.
+#[derive(Debug, Clone, Serialize)]
+pub struct Param {
+    pub name: String,
+    pub ty: Option<Type>,
+}
+
 /// A statement with source location.
 #[derive(Debug, Clone, Serialize)]
 pub struct Stmt {
@@ -183,6 +192,9 @@ pub struct Stmt {
 pub enum StmtKind {
     Let {
         name: String,
+        /// Optional declared type (`let x: int = …`). `None` when un-annotated
+        /// (or, for now, when an unknown type name was written).
+        ty: Option<Type>,
         value: Expr,
     },
     Assign {
@@ -192,7 +204,7 @@ pub enum StmtKind {
     Expr(Expr),
     FnDecl {
         name: String,
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
     },
     EnumDecl {

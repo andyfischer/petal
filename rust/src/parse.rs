@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::cst::{Checkpoint, Event, EventBuilder, SyntaxKind};
 use crate::lexer::Token;
 use crate::source_map::{SourceSpan, ZERO_SPAN};
+use crate::types::Type;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -204,10 +205,11 @@ impl Parser {
         self.ev_open(SyntaxKind::LetStmt);
         self.advance(); // consume 'let'
         let name = self.expect_ident()?;
+        let ty = self.parse_type_annotation()?;
         self.expect(&Token::Assign)?;
         let value = self.parse_expr()?;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::Let { name, value }, start))
+        Ok(self.mk_stmt(StmtKind::Let { name, ty, value }, start))
     }
 
     fn parse_state(&mut self, start: usize) -> Result<Stmt, String> {
@@ -312,7 +314,9 @@ impl Parser {
                 let params = self.parse_param_list()?;
                 self.expect(&Token::RParen)?;
                 self.ev_close();
-                params
+                // Enum field type annotations are deferred (see the plan): keep
+                // field names only. Any `: type` was still parsed into the CST.
+                params.into_iter().map(|p| p.name).collect()
             } else {
                 Vec::new()
             };
@@ -446,12 +450,13 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<String>, String> {
+    fn parse_param_list(&mut self) -> Result<Vec<Param>, String> {
         let mut params = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
             let name = self.expect_ident()?;
-            params.push(name);
+            let ty = self.parse_type_annotation()?;
+            params.push(Param { name, ty });
             self.skip_newlines();
             if matches!(self.peek(), Token::Comma) {
                 self.advance();
@@ -459,6 +464,26 @@ impl Parser {
             }
         }
         Ok(params)
+    }
+
+    /// Parse an optional `: type` annotation. Consumes nothing and returns
+    /// `Ok(None)` when the next token isn't a colon. The `:` and type-name
+    /// identifier are wrapped in a `TypeAnnotation` CST node so the projected
+    /// AST can recover the type while un-annotated code keeps its old CST shape.
+    ///
+    /// Type names are contextual (not reserved): `int`/`float`/`str` are still
+    /// callable builtins elsewhere. An unknown name yields `None` for now (same
+    /// as no annotation) — the raw name is kept in the CST but dropped from the
+    /// AST. TODO(types): preserve unknown names for checker diagnostics.
+    fn parse_type_annotation(&mut self) -> Result<Option<Type>, String> {
+        if !matches!(self.peek(), Token::Colon) {
+            return Ok(None);
+        }
+        self.ev_open(SyntaxKind::TypeAnnotation);
+        self.expect(&Token::Colon)?;
+        let name = self.expect_ident()?;
+        self.ev_close();
+        Ok(Type::from_name(&name))
     }
 
     /// Get the span of the current token (the one at self.pos).

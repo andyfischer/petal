@@ -234,10 +234,10 @@ the common variants but are not exhaustive.
 
 | Variant | Shape |
 |---------|-------|
-| `Let` | `{"Let": {"name": string, "value": Expr}}` |
+| `Let` | `{"Let": {"name": string, "ty": Type \| null, "value": Expr}}` — `ty` is the optional declared type |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
-| `FnDecl` | `{"FnDecl": {"name": string, "params": string[], "body": Stmt[]}}` |
+| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "body": Stmt[]}}` |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
 | `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |
@@ -262,9 +262,13 @@ the common variants but are not exhaustive.
 | `FieldAccess` | `{"FieldAccess": {"object": Expr, "field": string}}` |
 | `IndexAccess` | `{"IndexAccess": {"object": Expr, "index": Expr}}` |
 | `Block` | `{"Block": Stmt[]}` |
-| `Lambda` | `{"Lambda": {"params": string[], "body": Stmt[]}}` |
+| `Lambda` | `{"Lambda": {"params": Param[], "body": Stmt[]}}` |
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
 | `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
+
+**Param**: `{"name": string, "ty": Type | null}` — a function/lambda parameter with its optional declared type.
+
+**Type**: a string naming the declared static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Optional annotations are parsed but not yet type-checked; an unknown type name currently projects to `null`.
 
 **RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
 

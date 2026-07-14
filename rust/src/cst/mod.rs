@@ -105,6 +105,9 @@ pub enum SyntaxKind {
     ArgList,
     /// A parenthesized parameter list.
     ParamList,
+    /// An optional `: type` annotation on a `let` binding or a parameter.
+    /// Wraps the `:` token and the type-name identifier.
+    TypeAnnotation,
     /// One `when pattern [if guard] -> body` arm of a `match`.
     MatchArm,
     /// A pattern in a `match` arm.

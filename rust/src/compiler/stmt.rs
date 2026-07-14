@@ -19,7 +19,7 @@ impl Compiler {
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         let stmt_span = stmt.span;
         match &stmt.kind {
-            StmtKind::Let { name, value } => {
+            StmtKind::Let { name, value, .. } => {
                 let val_tid = self.compile_expr(value);
                 self.terms[val_tid.0 as usize].name = Some(name.clone());
                 self.scope_bind(name.clone(), val_tid);
@@ -34,7 +34,11 @@ impl Compiler {
             }
 
             StmtKind::FnDecl { name, params, body } => {
-                self.compile_fn_decl(name, params, body);
+                // Declared parameter types are not yet used at compile time
+                // (checking lands in a later chunk); the compiler only needs the
+                // names.
+                let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                self.compile_fn_decl(name, &param_names, body);
             }
 
             StmtKind::EnumDecl { name: _, variants } => {

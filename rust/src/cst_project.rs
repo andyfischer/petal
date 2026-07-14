@@ -30,6 +30,7 @@ use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
 use crate::parse::{expr_to_assign_target, parse_color_hex};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
+use crate::types::Type;
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
 /// the entry file (matching a tree built by [`crate::cst::parse_cst`]).
@@ -129,6 +130,37 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
+/// Read the declared [`Type`] from a `TypeAnnotation` node — the type-name
+/// identifier it wraps, resolved via [`Type::from_name`]. An unknown name yields
+/// `None`, mirroring the parser (see `parse_type_annotation`).
+fn type_from_annotation_node(ann: &SyntaxNode) -> Option<Type> {
+    let name = direct_tokens(ann).iter().filter_map(ident_value).next()?;
+    Type::from_name(&name)
+}
+
+/// Project the parameters of a `ParamList` node, pairing each parameter name
+/// with a following `TypeAnnotation` node (if any). Un-annotated params get
+/// `ty: None`.
+fn projected_params(param_list: &SyntaxNode) -> Vec<Param> {
+    let mut params: Vec<Param> = Vec::new();
+    for el in param_list.children() {
+        match el {
+            SyntaxElement::Token(t) => {
+                if let Some(name) = ident_value(&t) {
+                    params.push(Param { name, ty: None });
+                }
+            }
+            SyntaxElement::Node(n) if n.kind() == SyntaxKind::TypeAnnotation => {
+                if let Some(last) = params.last_mut() {
+                    last.ty = type_from_annotation_node(&n);
+                }
+            }
+            SyntaxElement::Node(_) => {}
+        }
+    }
+    params
+}
+
 impl Projector {
     // ---- Span reconstruction ----
 
@@ -180,8 +212,17 @@ impl Projector {
         let kind = match node.kind() {
             SyntaxKind::LetStmt => {
                 let name = self.only_ident(node)?;
-                let value = self.only_expr(node)?;
-                StmtKind::Let { name, value }
+                let ty = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
+                    .and_then(type_from_annotation_node);
+                // The value is the sole child node that isn't the type annotation.
+                let value_node = child_nodes(node)
+                    .into_iter()
+                    .find(|n| n.kind() != SyntaxKind::TypeAnnotation)
+                    .ok_or("let binding missing its value expression")?;
+                let value = self.expr(&value_node)?;
+                StmtKind::Let { name, ty, value }
             }
             SyntaxKind::AssignStmt => return self.assign_stmt(node, span),
             SyntaxKind::ExprStmt => StmtKind::Expr(self.only_expr(node)?),
@@ -358,12 +399,12 @@ impl Projector {
         child_nodes(block).iter().map(|n| self.stmt(n)).collect()
     }
 
-    fn param_list(&self, parent: &SyntaxNode) -> Result<Vec<String>, String> {
+    fn param_list(&self, parent: &SyntaxNode) -> Result<Vec<Param>, String> {
         let params = child_nodes(parent)
             .into_iter()
             .find(|n| n.kind() == SyntaxKind::ParamList)
             .ok_or_else(|| format!("{:?} missing its ParamList child", parent.kind()))?;
-        Ok(param_names(&params))
+        Ok(projected_params(&params))
     }
 
     /// The first direct identifier token — the declared name of a let / fn /
@@ -1061,6 +1102,47 @@ mod tests {
         );
         assert_projects("state count = 0\nstate(key) slot = init()\n");
         assert_projects("enum Shape\n  Circle(r)\n  Point\n  Rect(w, h)\nend\n");
+    }
+
+    #[test]
+    fn projects_type_annotations() {
+        // The differential (direct parser AST vs CST projection) must agree on
+        // annotated code, not just the un-annotated corpus.
+        assert_projects("let x: int = 5\n");
+        assert_projects("let y = 5\n");
+        assert_projects("let s: str = \"hi\"\n");
+        assert_projects("fn f(a: int, b, c: string)\n  a\nend\n");
+        assert_projects("let d = fn(n: int) -> n * 2\n");
+        assert_projects("let z: banana = 3\n"); // unknown type name
+        assert_projects("enum Shape\n  Circle(radius: float)\nend\n");
+    }
+
+    #[test]
+    fn parses_declared_types_onto_the_ast() {
+        let ast = projected_ast("let x: int = 5\nfn f(a: int, b, c: str)\n  a\nend\n")
+            .expect("parse");
+        let StmtKind::Let { ty, .. } = &ast[0].kind else {
+            panic!("expected let");
+        };
+        assert_eq!(*ty, Some(Type::Int));
+
+        let StmtKind::FnDecl { params, .. } = &ast[1].kind else {
+            panic!("expected fn");
+        };
+        assert_eq!(params[0].ty, Some(Type::Int));
+        assert_eq!(params[1].ty, None); // bare param
+        assert_eq!(params[2].ty, Some(Type::String)); // `str` alias
+
+        // Un-annotated and unknown-name forms both land as None.
+        let untyped = projected_ast("let y = 5\nlet z: banana = 3\n").expect("parse");
+        let StmtKind::Let { ty: y_ty, .. } = &untyped[0].kind else {
+            panic!();
+        };
+        let StmtKind::Let { ty: z_ty, .. } = &untyped[1].kind else {
+            panic!();
+        };
+        assert_eq!(*y_ty, None);
+        assert_eq!(*z_ty, None);
     }
 
     #[test]

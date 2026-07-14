@@ -2,8 +2,12 @@
 //!
 //! See docs/dev/type-declarations-plan.md. This is a compile-time-only notion
 //! layered on top of the dynamically-typed runtime `Value` (see `crate::value`);
-//! it does not appear in the serialized IR. `Any` is the dynamic escape hatch:
-//! it is compatible with every type in both directions and suppresses checking.
+//! it does not appear in the serialized IR, but it *does* appear in the
+//! serialized AST (`show-ast --json`), so it derives `Serialize`. `Any` is the
+//! dynamic escape hatch: it is compatible with every type in both directions and
+//! suppresses checking.
+
+use serde::Serialize;
 
 /// A declared or inferred static type.
 ///
@@ -12,7 +16,7 @@
 /// exactly those strings — so "the name you see at runtime is the name you write
 /// in an annotation". Parameterized forms (element types, arrow types,
 /// structural records) are intentionally deferred; see the plan.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize)]
 pub enum Type {
     /// The dynamic type. Compatible with everything; suppresses checking.
     Any,

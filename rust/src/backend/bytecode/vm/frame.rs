@@ -80,16 +80,50 @@ impl VmFrame {
 }
 
 /// A live loop's iteration state (replaces the graph engine's `LoopState`).
+///
+/// `acc` is the collection accumulator for a value-position loop (`x = for …`):
+/// `LoopCollect` pushes each iteration's body result and `LoopCollectEnd`
+/// materializes it into a list. It stays empty (and never allocates) for a
+/// plain side-effect loop.
 #[derive(Clone)]
 pub enum LoopCursor {
     /// `for x in <list>`: the snapshotted elements and the next index.
-    ForEach { elems: Vec<Value>, i: usize },
+    ForEach { elems: Vec<Value>, i: usize, acc: Vec<Value> },
     /// `for i in range(a, b)`: the current value, exclusive end, and 0-based
     /// iteration count (the state-key index, which differs from the value when
     /// the range does not start at 0).
-    Range { cur: i64, end: i64, iter: usize },
+    Range { cur: i64, end: i64, iter: usize, acc: Vec<Value> },
     /// A `while` loop tracks only its iteration counter (for state keying).
-    While { iteration: usize },
+    While { iteration: usize, acc: Vec<Value> },
+}
+
+impl LoopCursor {
+    /// Push a value onto this cursor's collection accumulator.
+    pub(super) fn push_acc(&mut self, v: Value) {
+        match self {
+            LoopCursor::ForEach { acc, .. }
+            | LoopCursor::Range { acc, .. }
+            | LoopCursor::While { acc, .. } => acc.push(v),
+        }
+    }
+
+    /// Take this cursor's collection accumulator, leaving it empty.
+    pub(super) fn take_acc(&mut self) -> Vec<Value> {
+        match self {
+            LoopCursor::ForEach { acc, .. }
+            | LoopCursor::Range { acc, .. }
+            | LoopCursor::While { acc, .. } => std::mem::take(acc),
+        }
+    }
+
+    /// This cursor's collection accumulator (GC root).
+    pub(crate) fn acc(&self) -> &[Value] {
+        match self {
+            LoopCursor::ForEach { acc, .. }
+            | LoopCursor::Range { acc, .. }
+            | LoopCursor::While { acc, .. } => acc,
+        }
+    }
 }
 
 impl<'a> Vm<'a> {

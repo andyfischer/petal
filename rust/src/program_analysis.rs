@@ -228,6 +228,7 @@ mod tests {
             state_key: None,
             child_blocks: SmallVec::new(),
             in_loop: false,
+            collect: false,
         }
     }
 

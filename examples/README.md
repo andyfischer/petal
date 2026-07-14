@@ -23,6 +23,7 @@ Or run all examples with pass/fail reporting:
 | `hello.ptl` | Hello world | `print` |
 | `arithmetic.ptl` | Numeric operations | Variables, arithmetic, math builtins |
 | `control_flow.ptl` | Conditionals and loops | `if`/`else`, `for`, `while`, logical operators |
+| `for_expression.ptl` | For loops as mapping expressions | `x = for … do … end`, `continue`/`break`, nested maps |
 | `fizzbuzz.ptl` | Classic FizzBuzz | Loops, conditionals, modulo |
 | `functions.ptl` | Function declarations | Functions, recursion, implicit return |
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |

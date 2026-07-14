@@ -147,6 +147,11 @@ impl Stack {
                         mark(*val);
                     }
                 }
+                // A collecting loop's in-progress accumulator holds live values
+                // until it is materialized into a list at loop exit.
+                for val in cursor.acc() {
+                    mark(*val);
+                }
             }
         }
         // Persistent state values

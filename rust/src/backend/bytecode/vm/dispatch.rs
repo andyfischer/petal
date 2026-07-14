@@ -67,7 +67,7 @@ impl<'a> Vm<'a> {
                 let elems = self.heap.get_list(list_id).to_vec();
                 self.ensure_slot(fi, *slot);
                 self.stack.vm_frames[fi].loops[*slot as usize] =
-                    Some(LoopCursor::ForEach { elems, i: 0 });
+                    Some(LoopCursor::ForEach { elems, i: 0, acc: Vec::new() });
                 if *idx_ctx {
                     self.stack.vm_frames[fi]
                         .loop_idx
@@ -76,7 +76,7 @@ impl<'a> Vm<'a> {
             }
             Inst::ForEachNext { slot, var, exit } => {
                 let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
-                    Some(Some(LoopCursor::ForEach { elems, i })) => {
+                    Some(Some(LoopCursor::ForEach { elems, i, .. })) => {
                         if *i >= elems.len() {
                             None
                         } else {
@@ -111,6 +111,7 @@ impl<'a> Vm<'a> {
                     cur: s,
                     end: e,
                     iter: 0,
+                    acc: Vec::new(),
                 });
                 if *idx_ctx {
                     self.stack.vm_frames[fi]
@@ -120,7 +121,7 @@ impl<'a> Vm<'a> {
             }
             Inst::RangeNext { slot, var, exit } => {
                 let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
-                    Some(Some(LoopCursor::Range { cur, end, iter })) => {
+                    Some(Some(LoopCursor::Range { cur, end, iter, .. })) => {
                         if *cur < *end {
                             let v = *cur;
                             let it = *iter;
@@ -144,14 +145,14 @@ impl<'a> Vm<'a> {
             Inst::WhileInit { slot } => {
                 self.ensure_slot(fi, *slot);
                 self.stack.vm_frames[fi].loops[*slot as usize] =
-                    Some(LoopCursor::While { iteration: 0 });
+                    Some(LoopCursor::While { iteration: 0, acc: Vec::new() });
                 self.stack.vm_frames[fi]
                     .loop_idx
                     .push(LoopKeyPart::Index(0));
             }
             Inst::LoopBumpIdx { slot } => {
                 let it = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
-                    Some(Some(LoopCursor::While { iteration })) => {
+                    Some(Some(LoopCursor::While { iteration, .. })) => {
                         *iteration += 1;
                         *iteration
                     }
@@ -164,6 +165,21 @@ impl<'a> Vm<'a> {
                     *cell = None;
                 }
                 self.stack.vm_frames[fi].loop_idx.pop();
+            }
+            Inst::LoopCollect { slot, src } => {
+                let v = self.reg(fi, *src);
+                match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(cursor)) => cursor.push_acc(v),
+                    _ => return Err("loop_collect: no active cursor".into()),
+                }
+            }
+            Inst::LoopCollectEnd { slot, dst } => {
+                let acc = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(cursor)) => cursor.take_acc(),
+                    _ => return Err("loop_collect_end: no active cursor".into()),
+                };
+                let v = ops::alloc_list(self.heap, &acc);
+                self.set(fi, *dst, v);
             }
 
             Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b, origin)?,

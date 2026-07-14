@@ -77,6 +77,15 @@ pub enum ExprKind {
         subject: Box<Expr>,
         arms: Vec<MatchArm>,
     },
+    /// A `for` loop used in value position (`x = for … do … end`): evaluates to
+    /// a list built from the last expression of each iteration (a mapping). The
+    /// statement form ([`StmtKind::For`]) runs purely for side effects and
+    /// collects nothing. `while` has no expression form — it is statement-only.
+    For {
+        var: String,
+        iter: Box<Expr>,
+        body: Vec<Stmt>,
+    },
     List(Vec<Expr>),
     Record(Vec<RecordField>),
     FieldAccess {
@@ -299,6 +308,12 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
                 v.visit_expr(&arm.body);
             }
         }
+        ExprKind::For { iter, body, .. } => {
+            v.visit_expr(iter);
+            for s in body {
+                v.visit_stmt(s);
+            }
+        }
         ExprKind::List(items) => {
             for e in items {
                 v.visit_expr(e);
@@ -447,6 +462,12 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
                     v.visit_expr(g);
                 }
                 v.visit_expr(&mut arm.body);
+            }
+        }
+        ExprKind::For { iter, body, .. } => {
+            v.visit_expr(iter);
+            for s in body.iter_mut() {
+                v.visit_stmt(s);
             }
         }
         ExprKind::List(items) => {

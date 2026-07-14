@@ -198,6 +198,15 @@ pub enum Inst {
     LoopPop {
         slot: LoopSlot,
     },
+    /// Push the current iteration's body result (`src`) onto loop slot `slot`'s
+    /// collection accumulator. Emitted once per iteration for a collecting loop
+    /// (`x = for …`), after the body and its phi-outs; `continue` jumps past it
+    /// (that iteration contributes nothing) and `break` exits before it.
+    LoopCollect { slot: LoopSlot, src: Reg },
+    /// Materialize loop slot `slot`'s collection accumulator into a list and
+    /// write it to `dst` (the collecting loop's result value). Emitted at the
+    /// loop's normal-termination exit, just before [`LoopPop`](Inst::LoopPop).
+    LoopCollectEnd { slot: LoopSlot, dst: Reg },
 
     // --- calls ---
     Call {
@@ -403,7 +412,8 @@ impl Inst {
             | Inst::SetIndexInPlace { dst, .. }
             | Inst::StateInit { dst, .. }
             | Inst::StateRead { dst, .. }
-            | Inst::StateWrite { dst, .. } => Some(*dst),
+            | Inst::StateWrite { dst, .. }
+            | Inst::LoopCollectEnd { dst, .. } => Some(*dst),
             // Value delivered on frame return, not in this frame.
             Inst::Call { .. } | Inst::MethodCall { .. } => None,
             // No traceable single-value result.
@@ -419,6 +429,7 @@ impl Inst {
             | Inst::WhileInit { .. }
             | Inst::LoopBumpIdx { .. }
             | Inst::LoopPop { .. }
+            | Inst::LoopCollect { .. }
             | Inst::Return { .. }
             | Inst::MatchArm { .. }
             | Inst::MatchFail { .. }
@@ -526,7 +537,8 @@ impl Inst {
             | Inst::SetIndexInPlace { dst, .. }
             | Inst::StateInit { dst, .. }
             | Inst::StateRead { dst, .. }
-            | Inst::StateWrite { dst, .. } => f(*dst),
+            | Inst::StateWrite { dst, .. }
+            | Inst::LoopCollectEnd { dst, .. } => f(*dst),
             Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
             Inst::MatchArm { term, arm, .. } => {
                 if let Some(binds) = match_binds.get(&(*term, *arm)) {
@@ -545,6 +557,7 @@ impl Inst {
             | Inst::WhileInit { .. }
             | Inst::LoopBumpIdx { .. }
             | Inst::LoopPop { .. }
+            | Inst::LoopCollect { .. }
             | Inst::Return { .. }
             | Inst::MatchFail { .. }
             | Inst::Error { .. } => {}

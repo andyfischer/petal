@@ -261,6 +261,12 @@ pub struct Term {
     /// True if this state term is inside a loop body (for per-iteration state).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub in_loop: bool,
+    /// For a loop control term (`ForLoop`/`NumericForLoop`/`WhileLoop`): collect
+    /// each iteration's body result into a list and yield it as the term's
+    /// value. Set only when the loop is used in value position (`x = for …`);
+    /// a bare statement loop leaves this false so it allocates nothing.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub collect: bool,
 }
 
 // ---------------------------------------------------------------------------

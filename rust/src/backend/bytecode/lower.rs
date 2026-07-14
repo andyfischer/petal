@@ -547,8 +547,12 @@ impl<'p> FnLowerer<'p> {
         let iter = self.flat(term.inputs[0])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
+        let dst = self.flat(term.id)?;
+        // In value position (`x = for …`) collect each iteration's result into
+        // the loop's `dst`; a bare statement loop collects nothing.
+        let collect_dst = if term.collect { Some(dst) } else { None };
         // A Pending iterable absorbs: skip the loop entirely (zero iterations)
-        // and yield the Pending as the loop value.
+        // and yield the Pending as the loop value (overriding collection).
         let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: iter, to: 0 });
         self.push(Inst::ForEachInit {
             iter,
@@ -557,12 +561,11 @@ impl<'p> FnLowerer<'p> {
         });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
-        self.emit_counted_loop(body_block, slot, cont, next)?;
+        self.emit_counted_loop(body_block, slot, cont, next, collect_dst)?;
         let jend = self.emit_placeholder(Inst::Jump { to: 0 });
 
         let pend_label = self.here();
         self.patch(jpend, pend_label);
-        let dst = self.flat(term.id)?;
         self.push(Inst::Move { dst, src: iter });
 
         let end = self.here();
@@ -578,6 +581,11 @@ impl<'p> FnLowerer<'p> {
         let end = self.flat(term.inputs[1])?;
         let body_block = term.child_blocks[0];
         let var = self.flat_reg(body_block, 0);
+        let collect_dst = if term.collect {
+            Some(self.flat(term.id)?)
+        } else {
+            None
+        };
         self.push(Inst::RangeInit {
             start,
             end,
@@ -586,7 +594,7 @@ impl<'p> FnLowerer<'p> {
         });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
-        self.emit_counted_loop(body_block, slot, cont, next)
+        self.emit_counted_loop(body_block, slot, cont, next, collect_dst)
     }
 
     /// Shared tail of the counted loops (`for-each` / range): emit the body with
@@ -599,6 +607,7 @@ impl<'p> FnLowerer<'p> {
         slot: LoopSlot,
         cont: u32,
         next_idx: usize,
+        collect_dst: Option<Reg>,
     ) -> Result<(), String> {
         self.loop_stack.push(LoopCtx {
             body_block,
@@ -607,6 +616,14 @@ impl<'p> FnLowerer<'p> {
         });
         self.emit_block(body_block)?;
         self.emit_phi_outs(body_block)?; // normal-path carry-outs
+        // Collect this iteration's body result. Placed after the carry-outs and
+        // before the back-edge, so `continue` (which targets `cont`) skips it —
+        // that iteration contributes nothing to the resulting list.
+        if collect_dst.is_some()
+            && let Some(src) = self.block_result_reg(body_block)?
+        {
+            self.push(Inst::LoopCollect { slot, src });
+        }
         self.push(Inst::Jump { to: cont }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
@@ -617,6 +634,11 @@ impl<'p> FnLowerer<'p> {
         }
         for j in ctx.continue_jumps {
             self.patch(j, cont);
+        }
+        // Normal exit / break: materialize the collected list into the loop's
+        // result register before the loop-index context is popped.
+        if let Some(dst) = collect_dst {
+            self.push(Inst::LoopCollectEnd { slot, dst });
         }
         self.push(Inst::LoopPop { slot });
         Ok(())

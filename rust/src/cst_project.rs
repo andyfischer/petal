@@ -501,6 +501,16 @@ impl Projector {
                     span: self.node_span(node)?,
                 })
             }
+            SyntaxKind::ForExpr => {
+                let var = self.only_ident(node)?;
+                let nodes = child_nodes(node);
+                let iter = self.expr(nodes.first().ok_or("for expression missing iterable")?)?;
+                let body = self.block(node)?;
+                Ok(Expr {
+                    kind: ExprKind::For { var, iter: Box::new(iter), body },
+                    span: self.node_span(node)?,
+                })
+            }
             SyntaxKind::LambdaExpr => self.lambda_expr(node),
             SyntaxKind::StringInterpExpr => {
                 let (parts, exprs) = self.interp_parts(node)?;
@@ -1041,6 +1051,9 @@ mod tests {
         assert_projects("fn add(a, b)\n  a + b\nend\n");
         assert_projects("fn none()\nend\n");
         assert_projects("for i in [1, 2] do\n  print(i)\nend\n");
+        // The value-position `for` (an expression that projects to ExprKind::For).
+        assert_projects("x = for i in [1, 2] do\n  i * 2\nend\n");
+        assert_projects("print(for i in range(3) do\n  i\nend)\n");
         assert_projects("while x < 10 do\n  x += 1\nend\n");
         assert_projects("fn f()\n  return\nend\nfn g()\n  return 1\nend\n");
         assert_projects(

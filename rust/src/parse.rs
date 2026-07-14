@@ -329,6 +329,26 @@ impl Parser {
 
     fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ForStmt);
+        let (var, iter, body) = self.parse_for_inner()?;
+        self.ev_close();
+        Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
+    }
+
+    /// The expression form of `for`, reached only in value position (`x = for …`,
+    /// `f(for …)`, `return for …`): evaluates to a list of each iteration's last
+    /// expression. A `for` that begins a statement stays [`parse_for`] (side
+    /// effects, no collection).
+    fn parse_for_expr(&mut self) -> Result<Expr, String> {
+        let start = self.pos;
+        self.ev_open(SyntaxKind::ForExpr);
+        let (var, iter, body) = self.parse_for_inner()?;
+        self.ev_close();
+        Ok(self.mk_expr(ExprKind::For { var, iter: Box::new(iter), body }, start))
+    }
+
+    /// Shared body of the statement and expression `for` forms: consumes
+    /// `for <var> in <iter> do <body> end` and returns its parts.
+    fn parse_for_inner(&mut self) -> Result<(String, Expr, Vec<Stmt>), String> {
         self.advance(); // consume 'for'
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
@@ -337,10 +357,10 @@ impl Parser {
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
-        self.ev_close();
-        Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
+        Ok((var, iter, body))
     }
 
+    /// `while` is statement-only (no expression / collecting form).
     fn parse_while(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::WhileStmt);
         self.advance(); // consume 'while'
@@ -884,6 +904,9 @@ impl Parser {
             ExprKind::Element { .. } => {
                 Err(self.error_at_current("Element cannot be called as a function".to_string()))
             }
+            ExprKind::For { .. } => Err(self.error_at_current(
+                "For-loop result (a list) cannot be called as a function".to_string(),
+            )),
         }
     }
 
@@ -964,6 +987,7 @@ impl Parser {
             Token::LBrace => self.parse_record_literal(),
             Token::If => self.parse_if_expr(),
             Token::Match => self.parse_match_expr(),
+            Token::For => self.parse_for_expr(),
             Token::Fn => self.parse_lambda(),
             Token::Color(hex) => {
                 self.ev_open(SyntaxKind::LiteralExpr);

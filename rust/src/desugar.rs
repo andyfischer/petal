@@ -183,6 +183,13 @@ impl ExprVisitorMut for LiftAt<'_> {
             // Arm bodies are conditional expressions; v1 does not lift into them.
             ExprKind::Match { subject, .. } => self.visit_expr(subject),
 
+            // Value-position `for`: the iterable evaluates at this level; the
+            // body is its own statement scope (like an `if` body).
+            ExprKind::For { iter, body, .. } => {
+                self.visit_expr(iter);
+                desugar_stmts(body);
+            }
+
             ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
         }
 

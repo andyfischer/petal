@@ -372,6 +372,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | `state_key` | `number \| null` | State key for StateInit/StateRead/StateWrite |
 | `child_blocks` | `number[]` | BlockIds of child blocks (for control flow) |
 | `in_loop` | `boolean` | Omitted when `false`. Marks state terms inside a loop body for per-iteration state. |
+| `collect` | `boolean` | Omitted when `false`. On a `ForLoop`/`NumericForLoop` term, marks a value-position loop (`x = for …`) that collects each iteration's body result into a list. |
 
 **TermOp** — serde's externally-tagged encoding:
 
@@ -398,8 +399,8 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Copy | `"Copy"` | [source] or [] | none | Variable reference. Empty inputs = phantom (builtin/param) |
 | Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. |
 | Branch | `"Branch"` | [condition] | [then_block, else_block] | if/else |
-| ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop |
-| NumericForLoop | `"NumericForLoop"` | [start, end] | [body_block] | non-allocating `for x in range(a, b)` integer loop |
+| ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop. Yields a list of each iteration's body result when `collect` is set (value-position `x = for …`). |
+| NumericForLoop | `"NumericForLoop"` | [start, end] | [body_block] | non-allocating `for x in range(a, b)` integer loop. Collects like `ForLoop` when `collect` is set. |
 | WhileLoop | `"WhileLoop"` | none | [cond_block, body_block] | while loop |
 | Break | `"Break"` | none | none | |
 | Continue | `"Continue"` | none | none | |

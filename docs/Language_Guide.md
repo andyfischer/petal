@@ -186,6 +186,65 @@ for i in range(0, 5) do
 end
 ```
 
+#### For loops as mapping expressions
+
+Used in **value position** — assigned to a name, `return`ed, passed as an
+argument, or placed as a list element — a `for` loop evaluates to a **list**
+built from the last expression of each iteration. This turns a loop into a
+mapping:
+
+```petal
+let squares = for i in range(1, 6) do
+    i * i
+end
+// squares == [1, 4, 9, 16, 25]
+
+fn doubled(xs)
+    return for x in xs do x * 2 end
+end
+```
+
+A `for` loop only produces a list when its value is actually used ("captured").
+A **bare `for` statement** runs purely for its side effects and allocates no
+list — so existing loops keep their zero-overhead behavior:
+
+```petal
+for i in range(0, 3) do
+    print(i)          // side effects only, no list built
+end
+```
+
+Inside a collecting loop:
+
+- `continue` **filters**: that iteration contributes nothing to the list.
+- `break` ends collection; the elements gathered so far are the result.
+
+```petal
+let odds = for i in range(0, 10) do
+    if i % 2 == 0 then continue end
+    i
+end
+// odds == [1, 3, 5, 7, 9]
+```
+
+To build a nested list, **bind the inner loop** so its value is captured, then
+make it the body's last expression:
+
+```petal
+let grid = for row in range(0, 3) do
+    let cells = for col in range(0, 3) do
+        row * 10 + col
+    end
+    cells
+end
+// grid == [[0,1,2], [10,11,12], [20,21,22]]
+```
+
+An inner loop written as a bare statement is *not* captured, so each outer
+iteration would collect `nil` — bind it (as above) when you want a nested list.
+
+`while` loops are statement-only: they have no collecting expression form.
+
 ### While Loops
 
 ```petal

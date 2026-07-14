@@ -59,55 +59,12 @@ impl Compiler {
             }
 
             StmtKind::For { var, iter, body } => {
-                // Fast path: `for i in range(a, b)` / `for i in range(n)`
-                // lowers to a NumericForLoop that iterates an integer counter
-                // with no list allocation. Everything after the op selection
-                // is identical to the generic ForLoop path, so per-iteration
-                // state, loop-carried phis, break, and continue behave the
-                // same on both.
-                let (op, loop_inputs) = match self.try_range_bounds(iter) {
-                    Some((start_tid, end_tid)) => {
-                        (TermOp::NumericForLoop, smallvec![start_tid, end_tid])
-                    }
-                    None => (TermOp::ForLoop, smallvec![self.compile_expr(iter)]),
-                };
-
-                let carries = self.detect_loop_carries(body, None);
-                let phis = self.emit_phis(&carries, stmt_span);
-
-                let body_block = self.new_block(None);
-                self.blocks[body_block.0 as usize].param_names = vec![var.clone()];
-
-                let for_tid =
-                    self.emit_term_with_children(op, loop_inputs, None, smallvec![body_block]);
-                self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
-
-                self.compile_loop_body(body_block, body, &phis, Some(var));
+                // Statement form: no collection (side-effect loop).
+                self.compile_for(var, iter, body, false, stmt_span);
             }
 
             StmtKind::While { condition, body } => {
-                let carries = self.detect_loop_carries(body, Some(condition));
-                let phis = self.emit_phis(&carries, stmt_span);
-
-                let cond_block = self.new_block(None);
-                let body_block = self.new_block(None);
-
-                let while_tid = self.emit_term_with_children(
-                    TermOp::WhileLoop,
-                    smallvec![],
-                    None,
-                    smallvec![cond_block, body_block],
-                );
-                self.blocks[cond_block.0 as usize].parent_term_id = Some(while_tid);
-                self.blocks[body_block.0 as usize].parent_term_id = Some(while_tid);
-
-                // Condition reads carry names via parent_frame walk to the
-                // phi's register; nothing carry-specific to set up here.
-                self.compile_in_block(cond_block, |c| {
-                    c.compile_expr(condition);
-                });
-
-                self.compile_loop_body(body_block, body, &phis, None);
+                self.compile_while(condition, body, stmt_span);
             }
 
             StmtKind::Return(expr) => {
@@ -141,6 +98,81 @@ impl Compiler {
             // (legacy single-file `compile`) has nothing left to do.
             StmtKind::Import(_) => {}
         }
+    }
+
+    /// Compile a `for … in … do … end` loop, shared by the statement form
+    /// (`compile_stmt`, `collect = false`) and the expression form
+    /// (`compile_expr`, `collect = true`). When `collect` is set the loop term
+    /// evaluates to a list built from each iteration's last expression (a
+    /// mapping); otherwise it runs purely for side effects and allocates
+    /// nothing. Returns the loop control term.
+    ///
+    /// Fast path: `for i in range(a, b)` / `for i in range(n)` lowers to a
+    /// `NumericForLoop` that iterates an integer counter with no list
+    /// allocation. Everything after the op selection is identical to the
+    /// generic `ForLoop` path, so per-iteration state, loop-carried phis,
+    /// break, continue, and collection behave the same on both.
+    pub(super) fn compile_for(
+        &mut self,
+        var: &str,
+        iter: &Expr,
+        body: &[Stmt],
+        collect: bool,
+        span: SourceSpan,
+    ) -> TermId {
+        let (op, loop_inputs) = match self.try_range_bounds(iter) {
+            Some((start_tid, end_tid)) => {
+                (TermOp::NumericForLoop, smallvec![start_tid, end_tid])
+            }
+            None => (TermOp::ForLoop, smallvec![self.compile_expr(iter)]),
+        };
+
+        let carries = self.detect_loop_carries(body, None);
+        let phis = self.emit_phis(&carries, span);
+
+        let body_block = self.new_block(None);
+        self.blocks[body_block.0 as usize].param_names = vec![var.to_string()];
+
+        let for_tid =
+            self.emit_term_with_children(op, loop_inputs, None, smallvec![body_block]);
+        self.terms[for_tid.0 as usize].collect = collect;
+        self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
+
+        self.compile_loop_body(body_block, body, &phis, Some(var));
+        for_tid
+    }
+
+    /// Compile a `while … do … end` loop. `while` is statement-only (no
+    /// collecting expression form), so it never yields a list.
+    pub(super) fn compile_while(
+        &mut self,
+        condition: &Expr,
+        body: &[Stmt],
+        span: SourceSpan,
+    ) -> TermId {
+        let carries = self.detect_loop_carries(body, Some(condition));
+        let phis = self.emit_phis(&carries, span);
+
+        let cond_block = self.new_block(None);
+        let body_block = self.new_block(None);
+
+        let while_tid = self.emit_term_with_children(
+            TermOp::WhileLoop,
+            smallvec![],
+            None,
+            smallvec![cond_block, body_block],
+        );
+        self.blocks[cond_block.0 as usize].parent_term_id = Some(while_tid);
+        self.blocks[body_block.0 as usize].parent_term_id = Some(while_tid);
+
+        // Condition reads carry names via parent_frame walk to the phi's
+        // register; nothing carry-specific to set up here.
+        self.compile_in_block(cond_block, |c| {
+            c.compile_expr(condition);
+        });
+
+        self.compile_loop_body(body_block, body, &phis, None);
+        while_tid
     }
 
     /// `state name = init` / `state(key) name = init`.

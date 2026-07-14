@@ -87,6 +87,9 @@ pub enum SyntaxKind {
     ParenExpr,
     IfExpr,
     MatchExpr,
+    /// A `for` loop in value position (`x = for … do … end`). The statement
+    /// form is [`SyntaxKind::ForStmt`]; `while` has no expression form.
+    ForExpr,
     ListExpr,
     RecordExpr,
     FieldAccessExpr,
@@ -142,6 +145,7 @@ mod tests {
         assert_round_trips("let x = 1 // inline comment\nlet y = 2\n");
         assert_round_trips("// leading\n// two lines\nlet x = 1\n");
         assert_round_trips("x = 1;y = 2\n");
+        assert_round_trips("grid = for i in xs do\n  i * 2\nend\n");
         assert_round_trips("no_newline_at_eof");
         assert_round_trips("   \t  \n   \n");
         assert_round_trips("");

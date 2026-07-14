@@ -143,6 +143,10 @@ impl Compiler {
 
             ExprKind::Match { subject, arms } => self.compile_match(subject, arms, span),
 
+            // Value-position `for`: collect each iteration's last expression
+            // into a list (see `compile_for`). `while` has no expression form.
+            ExprKind::For { var, iter, body } => self.compile_for(var, iter, body, true, span),
+
             ExprKind::List(elements) => {
                 let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
                 for elem in elements {

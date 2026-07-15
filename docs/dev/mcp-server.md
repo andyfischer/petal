@@ -7,8 +7,8 @@ quickly test Petal snippets without shelling out manually.
 
 | Tool | Purpose |
 |------|---------|
-| `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. `trace: true` adds a per-term execution trace. |
-| `CheckSnippet({code})` | Lex+parse+compile without running. Cheaper than `TestSnippet` for syntax validation. |
+| `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. Non-fatal type-checker warnings appear on stderr. `trace: true` adds a per-term execution trace. |
+| `CheckSnippet({code})` | Lex+parse+compile without running. Returns `{ok: true, warnings: [...]}` (each warning `{message, line, column, file}`) or a structured error. Warnings are non-fatal. Cheaper than `TestSnippet` for validating syntax and type annotations. |
 | `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
 | `ShowIR({code})` | Return the compiled IR as JSON. |
 | `ShowBytecode({code})` | Return the bytecode lowering of the IR as JSON. |

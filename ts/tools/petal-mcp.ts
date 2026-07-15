@@ -52,6 +52,8 @@ server.registerTool("TestSnippet", {
   title: "Test Petal Snippet",
   description:
     "Compiles and runs a snippet of Petal code, returning stdout, stderr, and exit code. " +
+    "Non-fatal type-checker warnings (if any) are printed to stderr before the " +
+    "program's own output; they never change the exit code or runtime behavior. " +
     "Set `trace: true` to also record a structured per-term execution trace " +
     "(returned as parsed JSON in the tool result). Use this when debugging " +
     "wrong values or off-by-one bugs — the trace shows every term's inputs " +
@@ -143,9 +145,12 @@ server.registerTool("ExplainTerm", {
 server.registerTool("CheckSnippet", {
   title: "Check Petal Snippet",
   description:
-    "Lex+parse+compile a Petal snippet without running it. Returns either " +
-    "{ok: true} or a structured error with phase/line/column. Cheaper than " +
-    "TestSnippet for validating syntax.",
+    "Lex+parse+compile a Petal snippet without running it. On success returns " +
+    "{ok: true, warnings: [...]} where each warning is a non-fatal type-checker " +
+    "diagnostic {message, line, column, file} (e.g. a declared/inferred type " +
+    "mismatch or unknown type name); on failure a structured error with " +
+    "phase/line/column. Warnings never fail the check. Cheaper than TestSnippet " +
+    "for validating syntax and type annotations.",
   inputSchema: {
     code: z.string().describe("The Petal source code to validate"),
   },
@@ -157,7 +162,7 @@ server.registerTool("CheckSnippet", {
   try {
     const result = await runCommand(petalBin, ["check", "--json", tmpFile]);
     return {
-      content: [{ type: "text", text: result.stdout || result.stderr || '{"ok": true}' }],
+      content: [{ type: "text", text: result.stdout || result.stderr || '{"ok": true, "warnings": []}' }],
       isError: result.exitCode !== 0,
     };
   } finally {

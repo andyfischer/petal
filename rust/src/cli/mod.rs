@@ -26,6 +26,9 @@ pub enum Command {
     },
     Check {
         json: bool,
+        /// Exit non-zero when type-checker warnings exist (for CI). Plain
+        /// `check` always exits 0.
+        strict: bool,
     },
     Lint {
         fix: bool,
@@ -244,8 +247,8 @@ pub fn execute(cli: CliArgs) {
         Command::Explain { json, term } => {
             handlers::handle_explain(json, term, &source, &source_input, &include_dirs);
         }
-        Command::Check { json } => {
-            handlers::handle_check(json, &source, &source_input, &include_dirs);
+        Command::Check { json, strict } => {
+            handlers::handle_check(json, strict, &source, &source_input, &include_dirs);
         }
         Command::Lint { fix, check } => {
             handlers::handle_lint(fix, check, &source, &source_input, &include_dirs);

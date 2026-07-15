@@ -60,6 +60,15 @@ export function checkText(code: string): {
   return capture(["check", "-e", code]);
 }
 
+/** `petal check --strict -e <code>`: capture stdout/stderr/exit code. */
+export function checkStrict(code: string): {
+  stdout: string;
+  stderr: string;
+  code: number;
+} {
+  return capture(["check", "--strict", "-e", code]);
+}
+
 /** `petal run -e <code>`: capture both stdout and stderr (expects success). */
 export function runWithStderr(code: string): {
   stdout: string;

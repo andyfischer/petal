@@ -3,6 +3,7 @@ import {
   ensureBuild,
   checkJson,
   checkText,
+  checkStrict,
   runWithStderr,
 } from "./helpers";
 
@@ -48,6 +49,19 @@ describe("type-checker warnings via `petal check` (text)", () => {
     expect(stdout).toBe("");
     expect(stderr).toContain("warning:");
     expect(stderr).toMatch(/mismatch/i);
+  });
+});
+
+describe("`petal check --strict`", () => {
+  it("exits non-zero when warnings exist", () => {
+    const { code, stderr } = checkStrict('let x: int = "hi"');
+    expect(code).toBe(1);
+    expect(stderr).toContain("warning:");
+  });
+
+  it("exits 0 for a clean program", () => {
+    const { code } = checkStrict("let x: int = 5");
+    expect(code).toBe(0);
   });
 });
 

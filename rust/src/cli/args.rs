@@ -14,7 +14,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             process::exit(0);
         }
         "run" => parse_run_args(&args[1..]),
-        "check" => parse_show_args(&args[1..], |json| Command::Check { json }),
+        "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
@@ -133,6 +133,45 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Lint { fix, check },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// Parse args for `check`: `--json` plus `--strict` (exit non-zero when
+/// warnings exist).
+fn parse_check_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut strict = false;
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--strict" => strict = true,
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Usage: petal check [--json] [--strict] <file>  |  petal check -e <code>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::Check { json, strict },
         source,
         include_dirs: Vec::new(),
     }

@@ -278,6 +278,7 @@ fn warnings_json(program: &Program) -> serde_json::Value {
 
 pub(super) fn handle_check(
     json: bool,
+    strict: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -287,6 +288,7 @@ pub(super) fn handle_check(
     match load_into(&mut env, source, source_input) {
         Ok(pid) => {
             let program = env.get_program(pid);
+            let warning_count = program.map_or(0, |p| p.warnings.len());
             if json {
                 let warnings = program
                     .map(warnings_json)
@@ -307,6 +309,11 @@ pub(super) fn handle_check(
                     eprintln!("warning: empty program");
                 }
                 // Otherwise silent on success, like most linters
+            }
+            // `--strict` turns warnings into a non-zero exit (for CI); plain
+            // `check` always succeeds. Output above is unchanged either way.
+            if strict && warning_count > 0 {
+                process::exit(1);
             }
         }
         Err(e) => die(json, &e, classify_load_error(&e)),

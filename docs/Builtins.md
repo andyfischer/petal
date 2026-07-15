@@ -366,6 +366,12 @@ limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
 
 ## Type Conversion
 
+`str`, `int`, and `float` are the sanctioned way to cross between types. Petal
+does no implicit casting, so when a
+[type annotation](Language_Guide.md#type-annotations) doesn't line up (e.g. a
+`float` value in an `int` slot) the fix is an explicit call to one of these —
+the type checker then sees the conversion and is satisfied.
+
 ### `str(value)`
 
 Converts any value to its string representation.

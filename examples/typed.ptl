@@ -1,0 +1,27 @@
+// Typed
+// Optional type annotations on let bindings, parameters, and return types.
+// Types are checked at compile time (warnings only) and ignored at runtime —
+// run `petal check typed.ptl` to see any mismatches reported.
+
+// Annotated let bindings.
+let count: int = 3
+let name: string = "Petal"
+
+// Parameter and return-type annotations. `str` is accepted for `string`.
+fn greet(who: string) -> string
+  "Hello, {who}!"
+end
+
+fn area(r: float) -> float
+  3.14159 * r * r
+end
+
+// Typed and un-annotated code mix freely; an int promotes to a float slot.
+fn scale(v, factor: float) -> float
+  v * factor
+end
+
+print(greet(name))
+print(count)
+print(area(2.0))
+print(scale(count, 1.5))

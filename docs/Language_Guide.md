@@ -43,6 +43,51 @@ Petal has the following value types:
 
 Use `type(value)` to get the type name as a string at runtime.
 
+## Type Annotations
+
+Petal is dynamically typed, but you can *optionally* annotate `let` bindings,
+function parameters, and function return types. Annotations are checked at
+compile time and are **advisory only**: a mismatch is a warning, never an error,
+and annotations have no effect at runtime. Run `petal check <file>` to see the
+warnings (see [CLI.md](CLI.md#check--validate-without-running)).
+
+```petal
+let count: int = 0
+let name: string = "Petal"        // `str` is also accepted for `string`
+
+fn area(r: float) -> float        // `:` before a param type, `->` before the return type
+  3.14159 * r * r
+end
+
+fn greet(who: string)             // the return type is optional
+  print("Hello, {who}!")
+end
+
+// Typed and un-annotated code mix freely — an omitted annotation is inferred
+// where possible, otherwise treated as `any` (which suppresses checking).
+fn scale(v, factor: float) -> float
+  v * factor
+end
+```
+
+The type names are exactly the ones `type(value)` reports (plus `any`), written
+lowercase. They are recognized only in type position, so `int`, `float`, and
+`str` remain callable as the cast builtins everywhere else.
+
+**Assignability.** An `int` may be used where a `float` is expected (the same
+promotion arithmetic already does), but the reverse is not allowed — there is no
+implicit casting. Cross types explicitly with `int()`, `float()`, or `str()`:
+
+```petal
+let n: int = 3.9          // warning: float is not assignable to int
+let n: int = int(3.9)     // ok — explicit cast, n is 3
+let x: float = 5          // ok — int promotes to float
+```
+
+`any` on either side of a check is always compatible, so a value flowing in from
+un-annotated (dynamic) code is trusted. Unrecognized type names (e.g. a typo)
+are reported as warnings too.
+
 ## Arithmetic
 
 ```petal

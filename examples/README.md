@@ -26,6 +26,7 @@ Or run all examples with pass/fail reporting:
 | `for_expression.ptl` | For loops as mapping expressions | `x = for … do … end`, `continue`/`break`, nested maps |
 | `fizzbuzz.ptl` | Classic FizzBuzz | Loops, conditionals, modulo |
 | `functions.ptl` | Function declarations | Functions, recursion, implicit return |
+| `typed.ptl` | Optional type annotations | `let x: int`, param/return types, `str` alias, int→float promotion |
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |
 | `records.ptl` | Record manipulation | Record literals, field access, nested records |
 | `enums.ptl` | Enum types | Enum variants, associated data, pattern matching |

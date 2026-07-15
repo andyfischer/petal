@@ -10,7 +10,8 @@ Petal is a programming language for creative coding.
  - **Speculative execution** - safely re-run a program in exploration modes. 
  - **Differentiable** - supports back-propogation, make program modifications based on observed outputs.
  - Supports programmatic modification of source code with **goal based** editing semantics. 
- - Comes with various other language features to help quick iteration. Hybrid functional/imperative design, optional type declarations, immutable values.
+ - **Optional type declarations** - annotate `let` bindings, parameters, and return types where you want them; a shallow checker reports mismatches as warnings without ever blocking the dynamically-typed runtime.
+ - Comes with various other language features to help quick iteration. Hybrid functional/imperative design, immutable values.
 
 ### Project Status
 

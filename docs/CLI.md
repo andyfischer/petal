@@ -76,16 +76,27 @@ Flags:
 ### `check` — Validate without running
 
 ```
-petal check [--json] <file.ptl>
-petal check [--json] -e '<code>'
+petal check [--json] [--strict] <file.ptl>
+petal check [--json] [--strict] -e '<code>'
 ```
 
 Lex, parse, and compile the program but do not execute it. Exits 0 if
-compilation succeeds, 1 otherwise. With `--json`, emits either
-`{"ok": true}` on success or `{message, line, column, phase, ...}` on
-failure (`phase` is `"parse"` or `"compile"`).
+compilation succeeds, 1 otherwise.
 
-Faster than `run` when you only care about syntactic validity.
+The compile step runs the optional type checker (see
+[Type Annotations](Language_Guide.md#type-annotations)). Its findings are
+**non-fatal warnings** and do not change the exit code: in text mode they print
+to stderr with a source caret; with `--json` they appear as a `warnings` array
+(`check` still exits 0). Pass `--strict` to make any warning force a non-zero
+exit — useful for CI — while `run` and plain `check` stay 0.
+
+With `--json`, emits `{"ok": true, "warnings": [...]}` on success (each warning
+is `{message, line, column, file}`, where `file` is `null` for the entry file),
+or `{message, line, column, phase, ...}` on a hard failure (`phase` is
+`"parse"` or `"compile"`).
+
+Faster than `run` when you only care about syntactic validity and type
+annotations.
 
 ### `lint` — Normalize source
 

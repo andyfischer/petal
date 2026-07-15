@@ -10,8 +10,9 @@ Last updated: 2026-07-14 (Chunks A–G complete — feature shipped) · Branch: 
 
 ## Locked decisions (do not re-litigate)
 - **Optional** annotations; absence ⇒ inferred type or `any`.
-- **Enforcement = warnings only.** The checker never blocks compilation. Needs a
-  new non-fatal diagnostic channel (see Chunk E/F).
+- **Enforcement = warnings only.** The checker never blocks compilation.
+  Delivered via the non-fatal `Diagnostic` channel (`rust/src/diagnostic.rs` +
+  `Program.warnings`).
 - **Inference = shallow / local** (literals + called fn signatures; else `any`).
 - **Runtime checks = none** (static-only) this phase.
 - **No implicit casting** — explicit `int()` / `float()` / `str()` only.
@@ -42,10 +43,10 @@ Legend: ✅ done · 🚧 in progress · ⬜ todo
 
 ---
 
-## What exists after Chunk C (the parsing foundation)
+## What exists now (A–G shipped)
 
-The parser accepts and the AST/tooling expose annotations; **nothing checks or
-uses them yet** (compiler strips them to names; runtime unaffected).
+Annotations parse, type-check (warning-only), and surface through the CLI/MCP.
+The runtime is untouched — annotations are stripped to names for codegen.
 
 ### Type representation — `rust/src/types.rs`
 - `pub enum Type { Any, Nil, Bool, Int, Float, String, List, Record, Function,
@@ -57,73 +58,64 @@ uses them yet** (compiler strips them to names; runtime unaffected).
   for concretes, `"any"` for `Any`.
 - `Type::is_assignable_to(&self, &Type) -> bool` — `Any` both ways; `Int`→`Float`
   yes, `Float`→`Int` no; else equality.
+- `pub struct FnSignature { params: Vec<Option<Type>>, ret: Option<Type> }` —
+  a function's declared signature (resolved types only). Compile-time; not in IR.
 
 ### AST — `rust/src/ast.rs`
-- `pub struct Param { pub name: String, pub ty: Option<Type> }`
-- `StmtKind::Let { name, ty: Option<Type>, value }`
-- `StmtKind::FnDecl { name, params: Vec<Param>, ret: Option<Type>, body }`
+- `pub struct TypeAnn { name: String, resolved: Option<Type> }` — a written
+  annotation: the raw name plus its resolution (`resolved: None` = unrecognized
+  name, preserved for diagnostics, not dropped). `TypeAnn::new(name)` builds it.
+- `pub struct Param { pub name: String, pub ty: Option<TypeAnn> }`
+- `StmtKind::Let { name, ty: Option<TypeAnn>, value }`
+- `StmtKind::FnDecl { name, params: Vec<Param>, ret: Option<TypeAnn>, body }`
 - `ExprKind::Lambda { params: Vec<Param>, body }` (no return type)
 - `EnumVariant.fields` stays `Vec<String>` (field types deferred).
 
-### Parser — `rust/src/parse.rs`
-- `parse_type_annotation() -> Result<Option<Type>, String>` — optional `: type`,
-  wrapped in a `TypeAnnotation` CST node.
-- `parse_return_type() -> Result<Option<Type>, String>` — optional `-> type` on
-  named fns, wrapped in a `ReturnType` CST node.
-- `parse_param_list()` now returns `Vec<Param>` (shared by fn/lambda/enum;
-  `parse_enum_decl` maps `Param`→name).
+### Parser / CST — `rust/src/parse.rs`, `cst/mod.rs`, `cst_project.rs`
+- `parse_type_annotation()` / `parse_return_type()` return
+  `Result<Option<TypeAnn>, String>`, wrapping the `:`/`->` + name in a
+  `SyntaxKind::TypeAnnotation` / `ReturnType` CST node.
+- `type_from_annotation_node(&SyntaxNode) -> Option<TypeAnn>`;
+  `projected_params(&SyntaxNode) -> Vec<Param>`. `param_names` (names only)
+  retained for enums. Both parse paths build `TypeAnn` via `TypeAnn::new` so the
+  `debug_assert_eq!` differential stays green.
 
-### CST — `rust/src/cst/mod.rs`, `rust/src/cst_project.rs`
-- New `SyntaxKind::TypeAnnotation` and `SyntaxKind::ReturnType`.
-- Projection helpers: `type_from_annotation_node(&SyntaxNode) -> Option<Type>`
-  (reads the first ident, skips `:`/`->`), `projected_params(&SyntaxNode) ->
-  Vec<Param>`. `param_list` returns `Vec<Param>`; `param_names` (names only)
-  retained for enums.
-- `LetStmt` projection excludes the `TypeAnnotation` node when finding the value;
-  `FnDecl` projection reads the optional `ReturnType` child.
-
-### Compiler — annotations dropped to names (for now)
-- `compiler/stmt.rs`: `Let { .., value, .. }`; `FnDecl { name, params, body, .. }`
-  maps params to `Vec<String>` before `compile_fn_decl`.
-- `compiler/expr.rs`: `Lambda` maps params to names before `compile_function`.
-- `compile_fn_decl` / `compile_function` still take `&[String]` — **unchanged**.
-
-### Serialization — `show-ast --json`
-`ty`/`ret` serialize as the Rust variant name (`"Int"`, `"Float"`, `"String"`,
-…) or `null`. Params are `[{name, ty}]`. Schema documented in
-[`../CLI.md`](../CLI.md) (`Param`, `Type`, FnDecl `ret`).
-
----
-
-## Remaining work (specs for the next implementer)
-
-### Chunks D + E — DONE (this pass)
-The prescan signature table, the checker, and basic diagnostic surfacing all
-landed. What now exists on top of the Chunk-C foundation:
-- **`rust/src/ast.rs`** — `TypeAnn { name: String, resolved: Option<Type> }`
-  replaces the bare `Option<Type>` on `Let.ty` / `Param.ty` / `FnDecl.ret`. An
-  unrecognized name (`let x: banana`) is preserved with `resolved: None` instead
-  of being dropped. `show-ast --json` emits `ty`/`ret` as `{ name, resolved }`.
-- **`rust/src/compiler/mod.rs`** — `pub(crate) fn collect_fn_signatures(&[Stmt])
-  -> HashMap<(String,usize), FnSignature>`; result folded into the new
-  `Compiler.fn_signatures` side table during `prescan_declarations`. IR
-  untouched. `FnSignature` lives in `types.rs`.
-- **`rust/src/typecheck/mod.rs`** — `check_module(stmts, &fn_signatures) ->
-  Vec<Diagnostic>`, invoked from `compile_module` after prescan. Scoped
+### Checker — `rust/src/typecheck/mod.rs`, `diagnostic.rs`
+- `check_module(stmts, &fn_signatures) -> Vec<Diagnostic>`, invoked from
+  `compile_module` after `prescan_declarations`. Scoped
   `Vec<HashMap<String, VarType>>` env; folded `check_expr` doing conservative
   shallow inference (any ambiguity ⇒ `Any`, which suppresses); five check sites
   (unknown type name, typed `let`, reassignment, call args, fn return tail).
   Never errors. 18 unit tests; the entire un-annotated corpus stays silent.
-- **`rust/src/diagnostic.rs`** — `Diagnostic { span: SourceSpan, message }`.
-- **`rust/src/program.rs`** — `#[serde(skip)] Program.warnings: Vec<Diagnostic>`
-  (compile-time artifact, not in portable IR).
-- **`rust/src/cli/handlers.rs`** — `petal check` prints carets to stderr / a
-  `warnings[]` array under `--json` (exit stays 0); `petal run` prints warnings
-  to stderr before executing (stdout + runtime untouched).
-- **`rust/src/source_map.rs`** — `SourceSpan`/`SourcePosition` gained
-  `PartialEq, Eq` (needed by `Diagnostic`).
+- `pub(crate) collect_fn_signatures(&[Stmt]) -> HashMap<(String,usize),
+  FnSignature>` (`compiler/mod.rs`) → `Compiler.fn_signatures` side table.
+- `Diagnostic { span: SourceSpan, message }`; carried on
+  `#[serde(skip)] Program.warnings` (compile-time artifact, not in IR).
 
-**Design notes for the next implementer:**
+### Compiler codegen — annotations dropped to names (unchanged)
+- `compiler/stmt.rs` / `expr.rs` still map params to `Vec<String>` and drop
+  `ty`/`ret` before `compile_fn_decl` / `compile_function` (which take
+  `&[String]`). Type info lives only in the checker + side table.
+
+### Surfacing — `cli/handlers.rs`, `cli/args.rs`, MCP
+- `petal check` prints carets to stderr / a `warnings[]` array under `--json`
+  (exit 0); `--strict` exits 1 when warnings exist. `petal run` prints warnings
+  to stderr before executing (stdout + runtime untouched). Helpers:
+  `warnings_json`, `render_warnings_text`.
+- MCP `CheckSnippet` forwards `check --json` (carries `warnings[]`);
+  `TestSnippet` shows them via `run` stderr.
+
+### Serialization — `show-ast --json`
+`ty`/`ret` serialize as `{ "name": "int", "resolved": "Int" }`, or
+`{ "name": "banana", "resolved": null }` for an unknown name, or `null` when
+un-annotated. Schema documented in [`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
+
+---
+
+## What landed & implementation notes
+
+- **`SourceSpan`/`SourcePosition`** gained `PartialEq, Eq` (needed by
+  `Diagnostic`).
 - Inference is deliberately conservative — prefer a false negative to a false
   positive. `Div` on two ints is `Int` (integer division); `+` on strings is a
   *runtime* error so it infers `Any`; string concat is the separate `Concat`
@@ -151,13 +143,28 @@ landed. What now exists on top of the Chunk-C foundation:
   to a shipped feature. `examples/typed.ptl` (+ `test/example-golden/typed.json`)
   runs clean and is in the manifest.
 
-### Possible future work (not scheduled)
-- Give `TypeAnn` its own span so the unknown-type caret underlines just the type
-  name, not the whole statement.
-- Parameterized types (`list<int>`, arrow types, structural records), user type
-  aliases, deeper inference — all explicitly deferred by the plan.
-- A per-file `// @strict` pragma to opt individual files into error-level
+---
+
+## Follow-up ideas (not scheduled)
+
+- **Tighter unknown-type carets.** Give `TypeAnn` its own `SourceSpan` so the
+  unknown-type warning underlines just the type name, not the whole statement.
+  (Today the checker uses the enclosing stmt/expr span since `TypeAnn` carries
+  no span — the four-place differential makes threading a span through both
+  parse paths the fiddly part.)
+- **Structured warnings in `run --json`.** `run` prints warnings as stderr text
+  only; a `warnings[]` channel on `run --json` (reusing `warnings_json`) would
+  let `TestSnippet` return them as data, not just text.
+- **`return`-statement return checks.** The checker only compares a function's
+  *tail expression* to its declared `ret`; explicit `return e` mid-body isn't
+  checked yet.
+- **Parameterized / richer types** — `list<int>`, arrow types, structural
+  records, user type aliases, deeper (non-local) inference. All explicitly
+  deferred by the plan.
+- **Per-file `// @strict` pragma** to opt individual files into error-level
   enforcement (plan §12 Q3).
+- **Enum variant field annotations** (`Circle(radius: float)`) — the shared
+  param parser makes this a cheap future add (plan §12 Q4).
 
 ---
 
@@ -165,23 +172,21 @@ landed. What now exists on top of the Chunk-C foundation:
 
 ```bash
 # Rust: unit + CST/AST differential over the repo corpus
-cd rust && cargo test --lib            # expect: all pass (353+ as of Chunk C)
-cargo test --lib cst_project::         # the differential + annotation projection
+cd rust && cargo test --lib            # expect: all pass (375 as of Chunk G)
+cargo test --lib typecheck::           # checker unit tests
+cargo test --lib prescan_tests         # signature side-table tests
 
 # TS integration (builds the binary via global-setup)
-cd ts && npx vitest run test/type-annotations.test.ts
-npx vitest run                         # full suite; expect no regressions (518+)
+cd ts && npx vitest run test/type-annotations.test.ts test/type-warnings.test.ts
+npx vitest run                         # full suite; expect no regressions (526)
+cd .. && npm run test-examples         # example goldens incl. typed.ptl (26)
 
 # End-to-end spot checks
 B=rust/target/debug/petal
-$B run -e 'let x: int = 5
-fn area(r: float) -> float
-  3.14159 * r * r
-end
-print(x, area(2.0))'
-$B show-ast --json -e 'fn f(a: int, b) -> bool
-  true
-end'
+$B run examples/typed.ptl                            # runs clean, no warnings
+$B check --json -e 'let x: int = "hi"'               # {"ok":true,"warnings":[…]}
+$B check --strict -e 'let x: int = "hi"'; echo $?    # exit 1
+$B show-ast --json -e 'let x: banana = 5'            # ty: {name:"banana",resolved:null}
 ```
 
 ---
@@ -201,6 +206,6 @@ end'
   (Chunk E1) and warned on by the checker — no longer dropped.
 - **Serde:** AST types derive `Serialize` only (not `Deserialize`); `Type` must
   keep `Serialize` for `show-ast --json`.
-- The `check` CLI command now runs the type checker and prints warnings
-  (stderr text / `--json warnings[]`), still exiting 0. `--strict` (non-zero on
-  warnings) is the remaining open decision — see Chunk F.
+- The `check` CLI command runs the type checker and prints warnings (stderr
+  text / `--json warnings[]`), exiting 0; `check --strict` exits 1 when warnings
+  exist. `run` prints warnings to stderr and always exits on runtime status.

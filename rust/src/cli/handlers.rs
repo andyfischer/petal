@@ -55,14 +55,8 @@ pub(super) fn handle_run(
     };
     // Surface type-checker warnings on stderr before running. Warnings go to
     // stderr even in --json mode, so JSON consumers of stdout are unaffected.
-    // Scoped so the immutable borrow of `env` ends before `create_stack`.
-    {
-        if let Some(program) = env.get_program(pid) {
-            let text = render_warnings_text(program);
-            if !text.is_empty() {
-                eprint!("{}", text);
-            }
-        }
+    if let Some(program) = env.get_program(pid) {
+        eprint_warnings(program);
     }
     let sid = match env.create_stack(pid) {
         Ok(sid) => sid,
@@ -257,6 +251,16 @@ fn render_warnings_text(program: &Program) -> String {
     out
 }
 
+/// Print a program's type-checker warnings to stderr (nothing when there are
+/// none). Used before running and by `check`; stderr keeps them off the stdout
+/// JSON channel.
+fn eprint_warnings(program: &Program) {
+    let text = render_warnings_text(program);
+    if !text.is_empty() {
+        eprint!("{}", text);
+    }
+}
+
 /// Build the JSON array of a program's warnings: one object per diagnostic with
 /// `message`, `line`, `column`, and `file` (null for the entry file).
 fn warnings_json(program: &Program) -> serde_json::Value {
@@ -300,10 +304,7 @@ pub(super) fn handle_check(
                 println!("{}", obj);
             } else {
                 if let Some(program) = program {
-                    let text = render_warnings_text(program);
-                    if !text.is_empty() {
-                        eprint!("{}", text);
-                    }
+                    eprint_warnings(program);
                 }
                 if is_empty {
                     eprintln!("warning: empty program");

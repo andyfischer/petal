@@ -9,8 +9,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Pattern, RecordField, Stmt,
-    StmtKind, TypeAnn, UnaryOp,
+    AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, Pattern, RecordField,
+    Stmt, StmtKind, TypeAnn, UnaryOp,
 };
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
@@ -99,6 +99,46 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Warn when `actual` can't be assigned into the slot `name` declared as
+    /// `declared`. Shared by `let` initializers and re-assignments. `Any` on
+    /// either side is trusted (no warning), matching the conservative policy.
+    fn check_assignment(
+        &mut self,
+        span: SourceSpan,
+        name: &str,
+        declared: Option<Type>,
+        actual: Type,
+    ) {
+        let Some(dt) = declared else { return };
+        if actual != Type::Any && dt != Type::Any && !actual.is_assignable_to(&dt) {
+            self.warn(
+                span,
+                format!(
+                    "type mismatch: `{}` declared `{}` but assigned `{}`",
+                    name,
+                    dt.name(),
+                    actual.name()
+                ),
+            );
+        }
+    }
+
+    /// Warn on any unrecognized parameter annotations, then bind every parameter
+    /// into the current scope (its resolved type when present, else `Any`).
+    /// Shared by named functions and lambdas; the caller pushes the scope and
+    /// supplies the span used for annotation warnings.
+    fn check_and_bind_params(&mut self, params: &[Param], span: SourceSpan) {
+        for p in params {
+            if let Some(ann) = &p.ty {
+                self.check_type_ann(ann, span);
+            }
+        }
+        for p in params {
+            let declared = p.ty.as_ref().and_then(|t| t.resolved);
+            self.bind(p.name.clone(), declared, declared.unwrap_or(Type::Any));
+        }
+    }
+
     /// Bind every variable a pattern introduces as `Any`, so pattern names
     /// shadow any outer typed binding (never a false positive from an arm body).
     fn bind_pattern(&mut self, pattern: &Pattern) {
@@ -135,38 +175,14 @@ impl<'a> Checker<'a> {
                 }
                 let inferred = self.check_expr(value);
                 let declared = ty.as_ref().and_then(|t| t.resolved);
-                if let Some(dt) = declared {
-                    if inferred != Type::Any && dt != Type::Any && !inferred.is_assignable_to(&dt) {
-                        self.warn(
-                            value.span,
-                            format!(
-                                "type mismatch: `{}` declared `{}` but assigned `{}`",
-                                name,
-                                dt.name(),
-                                inferred.name()
-                            ),
-                        );
-                    }
-                }
+                self.check_assignment(value.span, name, declared, inferred);
                 self.bind(name.clone(), declared, inferred);
             }
             StmtKind::Assign { target, value } => match target {
                 AssignTarget::Name(n) => {
                     let vt = self.check_expr(value);
                     let declared = self.lookup(n).and_then(|v| v.declared);
-                    if let Some(dt) = declared {
-                        if vt != Type::Any && dt != Type::Any && !vt.is_assignable_to(&dt) {
-                            self.warn(
-                                value.span,
-                                format!(
-                                    "type mismatch: `{}` declared `{}` but assigned `{}`",
-                                    n,
-                                    dt.name(),
-                                    vt.name()
-                                ),
-                            );
-                        }
-                    }
+                    self.check_assignment(value.span, n, declared, vt);
                 }
                 AssignTarget::Field(object, _) => {
                     self.check_expr(object);
@@ -187,20 +203,11 @@ impl<'a> Checker<'a> {
                 ret,
                 body,
             } => {
+                self.push_scope();
                 // Site 1 for params + return.
-                for p in params {
-                    if let Some(ann) = &p.ty {
-                        self.check_type_ann(ann, stmt.span);
-                    }
-                }
+                self.check_and_bind_params(params, stmt.span);
                 if let Some(ann) = ret {
                     self.check_type_ann(ann, stmt.span);
-                }
-                self.push_scope();
-                for p in params {
-                    let declared = p.ty.as_ref().and_then(|t| t.resolved);
-                    let inferred = declared.unwrap_or(Type::Any);
-                    self.bind(p.name.clone(), declared, inferred);
                 }
                 let (tail_ty, tail_span) = self.check_block_body(body);
                 if let Some(ann) = ret {
@@ -393,17 +400,8 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Block(stmts) => self.check_block_scoped(stmts),
             ExprKind::Lambda { params, body } => {
-                for p in params {
-                    if let Some(ann) = &p.ty {
-                        self.check_type_ann(ann, expr.span);
-                    }
-                }
                 self.push_scope();
-                for p in params {
-                    let declared = p.ty.as_ref().and_then(|t| t.resolved);
-                    let inferred = declared.unwrap_or(Type::Any);
-                    self.bind(p.name.clone(), declared, inferred);
-                }
+                self.check_and_bind_params(params, expr.span);
                 self.check_block_body(body);
                 self.pop_scope();
                 Type::Function

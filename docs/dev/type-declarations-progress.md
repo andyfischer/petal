@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-14 (Chunks D + E landed) · Branch: `main`
+Last updated: 2026-07-14 (Chunks A–G complete — feature shipped) · Branch: `main`
 
 ---
 
@@ -31,8 +31,8 @@ Last updated: 2026-07-14 (Chunks D + E landed) · Branch: `main`
 | D — prescan signature table | ✅ done | `c90adf7` | `collect_fn_signatures` → `Compiler.fn_signatures` keyed by `(name, arity)` |
 | E2 — the checker | ✅ done | `12f1a45` | `rust/src/typecheck/`: scoped env, shallow infer, 5 check sites, `Diagnostic` |
 | E3 — surface (run/check) | ✅ done | `a9bf3e3` | `Program.warnings`; `check`/`run` stderr carets + `check --json warnings[]` |
-| F — remaining surfacing | 🚧 partial | — | **done:** run/check text+JSON+carets. **todo:** MCP `CheckSnippet`/`TestSnippet`, `check --strict` (plan §12 Q2) |
-| G — docs & examples | ⬜ todo | — | Language_Guide, goals.md reconcile, `examples/typed.ptl`, README |
+| F — surface + MCP + strict | ✅ done | `fada42e`,`f638449` | run/check text+JSON+carets; `check --strict`; MCP CheckSnippet/TestSnippet warnings |
+| G — docs & examples | ✅ done | `4b3d9d7` | Language_Guide Types section, CLI/Builtins/goals reconcile, `examples/typed.ptl`, README |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -134,21 +134,30 @@ landed. What now exists on top of the Chunk-C foundation:
   params are all bound as `Any` so they never mis-trigger against an outer typed
   binding of the same name.
 
-### Chunk F — remaining surfacing (partly done in E3)
-Done: `run`/`check` text + `--json warnings[]` + caret rendering via
-`format_source_snippet`. **Remaining:**
-- Wire warnings into MCP `CheckSnippet` / `TestSnippet` (`mcp-server`) so the
-  agent/editor loop sees them. The `Program.warnings` + `warnings_json` helper
-  (`cli/handlers.rs`) are the pieces to reuse.
-- Plan §12 Q2: add `check --strict` (exit non-zero when warnings exist) for CI?
-  Recommend yes; plain `check`/`run` stay zero.
+### Chunk F — surfacing + MCP + strict — DONE
+- `run`/`check` text carets + `--json warnings[]` via `format_source_snippet`
+  (E3). `warnings_json` / `render_warnings_text` helpers in `cli/handlers.rs`.
+- `check --strict` exits 1 when warnings exist (plan §12 Q2); plain `check`/`run`
+  stay 0. Parsed in `cli/args.rs::parse_check_args`.
+- MCP: `CheckSnippet` already forwards `check --json` (so it carries
+  `warnings[]`); `TestSnippet` shows them via `run`'s stderr. Tool descriptions +
+  `docs/dev/mcp-server.md` updated to say so.
 
-### Chunk G — docs & examples
-- `Language_Guide.md` Types section: annotation grammar.
-- `Builtins.md`: cross-link casts as the sanctioned conversions.
-- `goals.md`: reconcile "Types as a projection" (now user-writable, still
-  warning-only — consistent with "never enforced").
-- `examples/typed.ptl`; flip `README.md:13` from aspiration to reality.
+### Chunk G — docs & examples — DONE
+- `Language_Guide.md` gained a **Type Annotations** section (syntax, warning-only,
+  promotion, explicit casts). `CLI.md` `check` documents warnings + `--strict`.
+  `Builtins.md` cross-links the casts. `goals.md` "Types as a projection" rows
+  reconciled (🟡, user-writable + warning-only). `README.md` types line flipped
+  to a shipped feature. `examples/typed.ptl` (+ `test/example-golden/typed.json`)
+  runs clean and is in the manifest.
+
+### Possible future work (not scheduled)
+- Give `TypeAnn` its own span so the unknown-type caret underlines just the type
+  name, not the whole statement.
+- Parameterized types (`list<int>`, arrow types, structural records), user type
+  aliases, deeper inference — all explicitly deferred by the plan.
+- A per-file `// @strict` pragma to opt individual files into error-level
+  enforcement (plan §12 Q3).
 
 ---
 

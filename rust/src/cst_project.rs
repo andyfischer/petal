@@ -134,8 +134,24 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
 /// [`Type::from_name`], mirroring the parser (see `parse_type_annotation`). An
 /// unrecognized name is kept with `resolved: None`.
 fn type_from_annotation_node(ann: &SyntaxNode) -> Option<TypeAnn> {
-    let name = direct_tokens(ann).iter().filter_map(ident_value).next()?;
+    let name = direct_tokens(ann)
+        .iter()
+        .filter_map(type_name_value)
+        .next()?;
     Some(TypeAnn::new(name))
+}
+
+/// The type-name spelling of a token in type position: a plain identifier, or
+/// the two vocabulary names that lex as keywords (`nil`/`enum`). Mirrors the
+/// parser's `expect_type_name`; the `:`/`->` leaders yield `None` and are
+/// skipped.
+fn type_name_value(t: &SyntaxToken) -> Option<String> {
+    match t.token()? {
+        Token::Ident(name) => Some(name.clone()),
+        Token::Nil => Some("nil".to_string()),
+        Token::Enum => Some("enum".to_string()),
+        _ => None,
+    }
 }
 
 /// Project the parameters of a `ParamList` node, pairing each parameter name

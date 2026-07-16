@@ -33,6 +33,12 @@ impl VarType {
 struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     scopes: Vec<HashMap<String, VarType>>,
+    /// The declared return type of each enclosing function-like scope, innermost
+    /// last. `Some((ty, name))` when the nearest `fn` declared a resolved return
+    /// type; `None` for a lambda or an un-annotated `fn`. `return <expr>` is
+    /// checked against the top entry — `return` is function-local at runtime, so
+    /// a `return` inside a lambda is unchecked (its `None` frame).
+    ret_stack: Vec<Option<(Type, String)>>,
     diags: Vec<Diagnostic>,
 }
 
@@ -45,6 +51,7 @@ pub fn check_module(
     let mut checker = Checker {
         fn_signatures,
         scopes: vec![HashMap::new()],
+        ret_stack: Vec::new(),
         diags: Vec::new(),
     };
     for stmt in stmts {
@@ -117,6 +124,28 @@ impl<'a> Checker<'a> {
                     "type mismatch: `{}` declared `{}` but assigned `{}`",
                     name,
                     dt.name(),
+                    actual.name()
+                ),
+            );
+        }
+    }
+
+    /// Warn when `actual` can't satisfy the enclosing function's declared return
+    /// type. Shared by the body's tail expression and every explicit `return`.
+    /// A no-op when there's no declared return type in scope, or when either
+    /// side is `Any` (trusted).
+    fn check_return_type(&mut self, actual: Type, span: SourceSpan) {
+        let Some(Some((rt, name))) = self.ret_stack.last() else {
+            return;
+        };
+        let (rt, name) = (*rt, name.clone());
+        if actual != Type::Any && rt != Type::Any && !actual.is_assignable_to(&rt) {
+            self.warn(
+                span,
+                format!(
+                    "return type mismatch: `{}` declares `{}` but returns `{}`",
+                    name,
+                    rt.name(),
                     actual.name()
                 ),
             );
@@ -209,26 +238,16 @@ impl<'a> Checker<'a> {
                 if let Some(ann) = ret {
                     self.check_type_ann(ann, stmt.span);
                 }
+                // Record the declared return type so both the tail expression
+                // and every explicit `return` in the body are checked against it.
+                let ctx = ret
+                    .as_ref()
+                    .and_then(|ann| ann.resolved)
+                    .map(|rt| (rt, name.clone()));
+                self.ret_stack.push(ctx);
                 let (tail_ty, tail_span) = self.check_block_body(body);
-                if let Some(ann) = ret {
-                    if let Some(rt) = ann.resolved {
-                        if tail_ty != Type::Any
-                            && rt != Type::Any
-                            && !tail_ty.is_assignable_to(&rt)
-                        {
-                            let span = tail_span.unwrap_or(stmt.span);
-                            self.warn(
-                                span,
-                                format!(
-                                    "return type mismatch: `{}` declares `{}` but returns `{}`",
-                                    name,
-                                    rt.name(),
-                                    tail_ty.name()
-                                ),
-                            );
-                        }
-                    }
-                }
+                self.check_return_type(tail_ty, tail_span.unwrap_or(stmt.span));
+                self.ret_stack.pop();
                 self.pop_scope();
             }
             StmtKind::EnumDecl { .. } => {}
@@ -247,7 +266,11 @@ impl<'a> Checker<'a> {
             }
             StmtKind::Return(value) => {
                 if let Some(e) = value {
-                    self.check_expr(e);
+                    let ty = self.check_expr(e);
+                    // Check the returned value against the enclosing fn's
+                    // declared return type (bare `return` → nil is left
+                    // unchecked, to avoid warning on early-exit patterns).
+                    self.check_return_type(ty, e.span);
                 }
             }
             StmtKind::Break | StmtKind::Continue => {}
@@ -402,7 +425,12 @@ impl<'a> Checker<'a> {
             ExprKind::Lambda { params, body } => {
                 self.push_scope();
                 self.check_and_bind_params(params, expr.span);
+                // Lambdas have no declared return type, and `return` is
+                // lambda-local at runtime — push a `None` frame so any `return`
+                // in the body is not checked against an outer fn's return type.
+                self.ret_stack.push(None);
                 self.check_block_body(body);
+                self.ret_stack.pop();
                 self.pop_scope();
                 Type::Function
             }
@@ -485,14 +513,13 @@ fn binary_type(op: BinOp, l: Type, r: Type) -> Type {
                 Type::Any
             }
         }
-        BinOp::Eq
-        | BinOp::Ne
-        | BinOp::Lt
-        | BinOp::Le
-        | BinOp::Gt
-        | BinOp::Ge
-        | BinOp::And
-        | BinOp::Or => Type::Bool,
+        BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => Type::Bool,
+        // `&&`/`||` are value-returning, not strict boolean: at runtime the
+        // result type depends on the operands' truthiness (`5 && 10` → `10`,
+        // `0 || 42` → `42`), so it isn't statically knowable. Infer `Any` to
+        // avoid false positives on idiomatic default/guard code like
+        // `let name: string = arg || "default"`.
+        BinOp::And | BinOp::Or => Type::Any,
         BinOp::Concat => {
             if l == Type::String && r == Type::String {
                 Type::String
@@ -617,5 +644,56 @@ mod tests {
     #[test]
     fn unannotated_program_is_silent() {
         assert!(warns("let a = 1\nlet b = a + 2\nprint(b)").is_empty());
+    }
+
+    // ── Fix #1: `&&`/`||` are value-returning, not strictly boolean ──────────
+    #[test]
+    fn logical_or_default_does_not_warn() {
+        // `arg || "default"` yields the operand at runtime, not a bool.
+        assert!(warns("let name: string = \"\" || \"default\"").is_empty());
+    }
+
+    #[test]
+    fn logical_and_guard_does_not_warn() {
+        assert!(warns("let x: int = 5 && 10").is_empty());
+    }
+
+    // ── Fix #2: explicit `return` is checked against the declared return ─────
+    #[test]
+    fn early_return_mismatch_warns() {
+        let w = warns("fn f() -> int\n  return \"nope\"\n  0\nend");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("return type mismatch"), "{w:?}");
+    }
+
+    #[test]
+    fn early_return_match_no_warning() {
+        assert!(warns("fn f() -> int\n  return 5\nend").is_empty());
+    }
+
+    #[test]
+    fn early_return_int_promotes_to_float() {
+        assert!(warns("fn f() -> float\n  return 5\nend").is_empty());
+    }
+
+    #[test]
+    fn return_inside_lambda_not_checked_against_outer_fn() {
+        // `return` is lambda-local; it must not be checked against `f`'s `-> int`.
+        assert!(warns("fn f() -> int\n  let g = fn(x)\n    return \"s\"\n  end\n  0\nend").is_empty());
+    }
+
+    #[test]
+    fn nested_fn_return_checked_against_own_signature() {
+        let w = warns("fn a() -> int\n  fn b() -> string\n    return 7\n  end\n  0\nend");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`b`"), "{w:?}");
+    }
+
+    // ── Fix #3: `nil`/`enum` type names parse (checked via full pipeline) ────
+    #[test]
+    fn nil_type_annotation_parses_and_checks() {
+        assert!(warns("let x: nil = nil").is_empty());
+        let w = warns("let x: nil = 5");
+        assert_eq!(w.len(), 1, "{w:?}");
     }
 }

@@ -481,7 +481,7 @@ impl Parser {
         }
         self.ev_open(SyntaxKind::TypeAnnotation);
         self.expect(&Token::Colon)?;
-        let name = self.expect_ident()?;
+        let name = self.expect_type_name()?;
         self.ev_close();
         Ok(Some(TypeAnn::new(name)))
     }
@@ -499,7 +499,7 @@ impl Parser {
         }
         self.ev_open(SyntaxKind::ReturnType);
         self.expect(&Token::Arrow)?;
-        let name = self.expect_ident()?;
+        let name = self.expect_type_name()?;
         self.ev_close();
         Ok(Some(TypeAnn::new(name)))
     }
@@ -548,6 +548,22 @@ impl Parser {
         match self.advance() {
             Token::Ident(name) => Ok(name),
             other => Err(self.error_at(pos, format!("Expected identifier, got {:?}", other))),
+        }
+    }
+
+    /// Read a type name in type position (after `:` or `->`). Accepts a plain
+    /// identifier, plus the two type-vocabulary names that lex as keywords
+    /// (`nil` → [`Token::Nil`], `enum` → [`Token::Enum`]). Without this, the
+    /// documented `nil`/`enum` annotations would hit a hard "Expected identifier"
+    /// parse error even though the checker recognizes them (see
+    /// docs/dev/type-declarations-plan.md §2 grammar).
+    fn expect_type_name(&mut self) -> Result<String, String> {
+        let pos = self.pos;
+        match self.advance() {
+            Token::Ident(name) => Ok(name),
+            Token::Nil => Ok("nil".to_string()),
+            Token::Enum => Ok("enum".to_string()),
+            other => Err(self.error_at(pos, format!("Expected type name, got {:?}", other))),
         }
     }
 

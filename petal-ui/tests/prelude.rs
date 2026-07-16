@@ -314,6 +314,81 @@ fn truncate_helpers() {
 }
 
 #[test]
+fn wrap_basic_and_word_boundaries() {
+    let src = "state short = \"\"\n\
+               state multi = \"\"\n\
+               state exact = \"\"\n\
+               short = join(wrap(\"hello\", 10), \"|\")\n\
+               multi = join(wrap(\"the quick brown fox\", 9), \"|\")\n\
+               exact = join(wrap(\"abc def\", 3), \"|\")";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["short"], "hello", "a string that fits is one line");
+        assert_eq!(st["multi"], "the quick|brown fox");
+        assert_eq!(st["exact"], "abc|def", "word exactly max_chars wide");
+    });
+}
+
+#[test]
+fn wrap_hard_breaks_long_tokens() {
+    let src = "state lone = \"\"\n\
+               state mixed = \"\"\n\
+               lone = join(wrap(\"abcdefgh\", 3), \"|\")\n\
+               mixed = join(wrap(\"x abcdefgh yz\", 4), \"|\")";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["lone"], "abc|def|gh");
+        // The oversized token starts fresh lines; its remainder takes the
+        // following word when it fits.
+        assert_eq!(st["mixed"], "x|abcd|efgh|yz");
+    });
+}
+
+#[test]
+fn wrap_unicode_multibyte_is_safe() {
+    // len/slice are byte-based; slice snaps to UTF-8 char boundaries so
+    // multibyte input must not panic (lines may run short in chars).
+    let src = "state uni = \"\"\n\
+               state glued = \"\"\n\
+               let lines = wrap(\"héllo wörld ünïcödé\", 8)\n\
+               uni = join(lines, \"|\")\n\
+               glued = join(lines, \"\")";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["uni"], "héllo|wörld|ünïcö|dé");
+        // No content lost: lines minus the breaks reconstruct the input
+        // minus its (consumed) word separators.
+        assert_eq!(st["glued"], "héllowörldünïcödé");
+    });
+}
+
+#[test]
+fn wrap_edge_cases_and_newlines() {
+    let src = "state nempty = 0\n\
+               state empty = \"\"\n\
+               state zero = \"\"\n\
+               state paras = \"\"\n\
+               let e = wrap(\"\", 5)\n\
+               nempty = len(e)\n\
+               empty = join(e, \"|\")\n\
+               zero = join(wrap(\"hello world\", 0), \"|\")\n\
+               paras = join(wrap(\"ab cd\\nef\\n\\ngh\", 5), \"|\")";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(ui.state_int("nempty"), Some(1), "empty string is one empty line");
+        assert_eq!(st["empty"], "");
+        assert_eq!(st["zero"], "hello world", "max_chars <= 0 returns [s]");
+        // Explicit newlines split first; each segment wraps independently,
+        // and a blank segment stays a blank line.
+        assert_eq!(st["paras"], "ab cd|ef||gh");
+    });
+}
+
+#[test]
 fn released_edges_and_ui_version() {
     let src = "state releases = 0\n\
                state version = 0\n\

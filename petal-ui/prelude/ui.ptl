@@ -138,6 +138,65 @@ fn truncate_head(s, max_chars)
   end
 end
 
+fn _wrap_segment(seg, max_chars)
+  let lines = []
+  let cur = ""
+  for word in split(seg, " ") do
+    let w = word
+    // A token that can never fit gets its own hard-broken lines.
+    while len(w) > max_chars do
+      if len(cur) > 0 then
+        lines = append(lines, cur)
+        cur = ""
+      end
+      let take = max_chars
+      let piece = slice(w, 0, take)
+      while len(piece) == 0 do
+        // max_chars landed inside w's first char and boundary snapping
+        // emptied the slice: widen until the char fits.
+        take = take + 1
+        piece = slice(w, 0, take)
+      end
+      lines = append(lines, piece)
+      w = slice(w, len(piece), len(w))
+    end
+    if len(cur) == 0 then
+      cur = w
+    elsif len(cur) + 1 + len(w) <= max_chars then
+      cur = cur ++ " " ++ w
+    else
+      lines = append(lines, cur)
+      cur = w
+    end
+  end
+  // Flush the line under construction; skip a leftover "" (the tail of a
+  // fully hard-broken final word) unless it is the segment's only line.
+  if len(cur) > 0 || len(lines) == 0 then
+    lines = append(lines, cur)
+  end
+  lines
+end
+
+// Greedy word wrap: split `s` into a list of lines at most `max_chars` wide.
+// Explicit "\n"s split first (each segment wraps independently), words break
+// on single spaces, and a token longer than max_chars is hard-broken into
+// max_chars-sized pieces. Widths are bytes, like the truncate_* helpers;
+// slice snaps to UTF-8 char boundaries, so multibyte input never panics
+// (its lines may just run a little short). max_chars <= 0 returns [s].
+fn wrap(s, max_chars)
+  if max_chars <= 0 then
+    [s]
+  else
+    let lines = []
+    for seg in split(s, "\n") do
+      for line in _wrap_segment(seg, max_chars) do
+        lines = append(lines, line)
+      end
+    end
+    lines
+  end
+end
+
 // Right-aligned text: the right edge sits at `right_x`.
 fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)

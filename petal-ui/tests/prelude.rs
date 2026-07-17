@@ -366,6 +366,229 @@ fn wrap_unicode_multibyte_is_safe() {
 }
 
 #[test]
+fn preview_short_input_is_one_untruncated_line() {
+    let src = "state lines = \"\"\n\
+               state count = 0\n\
+               state trunc = true\n\
+               let pv = preview(\"hello world\", 20, 3)\n\
+               lines = join(pv.lines, \"|\")\n\
+               count = len(pv.lines)\n\
+               trunc = pv.truncated";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["lines"], "hello world");
+        assert_eq!(ui.state_int("count"), Some(1));
+        assert_eq!(st["trunc"], false, "a string that fits is not truncated");
+    });
+}
+
+#[test]
+fn preview_wraps_to_max_lines_with_trailing_ellipsis() {
+    // Six 3-char words wrap 2-per-line at width 7; capped at 2 lines, so the
+    // second kept line ends in an explicit "…".
+    let src = "state lines = \"\"\n\
+               state count = 0\n\
+               state trunc = false\n\
+               let pv = preview(\"aaa bbb ccc ddd eee fff\", 7, 2)\n\
+               lines = join(pv.lines, \"|\")\n\
+               count = len(pv.lines)\n\
+               trunc = pv.truncated";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["lines"], "aaa bbb|ccc dd…");
+        assert_eq!(ui.state_int("count"), Some(2), "capped at max_lines");
+        assert_eq!(st["trunc"], true);
+    });
+}
+
+#[test]
+fn preview_cost_is_bounded_by_the_clip_window() {
+    // The input is pre-clipped to (max_lines+1)*max_chars = 30 bytes before
+    // wrapping, so a marker sitting far beyond that window can never appear in
+    // the result no matter how long the input is.
+    let src = "state lines = \"\"\n\
+               state count = 0\n\
+               let long = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaDEEPMARKER\"\n\
+               let pv = preview(long, 10, 2)\n\
+               lines = join(pv.lines, \"|\")\n\
+               count = len(pv.lines)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert!(
+            !st["lines"].as_str().unwrap().contains("DEEPMARKER"),
+            "content beyond the clip window is never wrapped: {:?}",
+            st["lines"]
+        );
+        assert_eq!(
+            ui.state_int("count"),
+            Some(2),
+            "a huge input still returns at most max_lines"
+        );
+    });
+}
+
+#[test]
+fn preview_max_lines_one() {
+    // max_lines = 1: a wrapping input collapses to a single ellipsised line.
+    let src = "state lines = \"\"\n\
+               state count = 0\n\
+               state trunc = false\n\
+               let pv = preview(\"aaa bbb ccc\", 7, 1)\n\
+               lines = join(pv.lines, \"|\")\n\
+               count = len(pv.lines)\n\
+               trunc = pv.truncated";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["lines"], "aaa bb…");
+        assert_eq!(ui.state_int("count"), Some(1));
+        assert_eq!(st["trunc"], true);
+    });
+}
+
+#[test]
+fn preview_tiny_max_chars_is_safe() {
+    // The callers guard max_chars with max(8, …); still, a tiny positive width
+    // must neither panic nor exceed max_lines (hard-broken tokens included).
+    let src = "state count = 0\n\
+               state trunc = false\n\
+               let pv = preview(\"hello world foo\", 3, 2)\n\
+               count = len(pv.lines)\n\
+               trunc = pv.truncated";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert!(ui.state_int("count").unwrap() <= 2, "never exceeds max_lines");
+        assert_eq!(st["trunc"], true);
+    });
+}
+
+// ── fit_parts ─────────────────────────────────────────────────────────────
+// text_width in the headless harness is round(chars × size × 0.6). At size 10
+// each char is 6px; the "   ·   " separator is 7 chars = 42px. Three 3-char
+// parts: "aaa" = 18px, "aaa   ·   bbb" = 78px, full join = 138px.
+
+#[test]
+fn fit_parts_all_segments_fit() {
+    let src = "state text = \"\"\n\
+               state count = 0\n\
+               let r = fit_parts_n([\"aaa\", \"bbb\", \"ccc\"], 200, 10)\n\
+               text = r.text\n\
+               count = r.count";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["text"], "aaa   ·   bbb   ·   ccc");
+        assert_eq!(ui.state_int("count"), Some(3));
+    });
+}
+
+#[test]
+fn fit_parts_drops_rightmost_until_it_fits() {
+    // avail 100px: "aaa   ·   bbb" (78) fits, the full join (138) does not, so
+    // the third segment is dropped.
+    let src = "state text = \"\"\n\
+               state count = 0\n\
+               let r = fit_parts_n([\"aaa\", \"bbb\", \"ccc\"], 100, 10)\n\
+               text = r.text\n\
+               count = r.count\n\
+               state plain = \"\"\n\
+               plain = fit_parts([\"aaa\", \"bbb\", \"ccc\"], 100, 10)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["text"], "aaa   ·   bbb");
+        assert_eq!(ui.state_int("count"), Some(2));
+        // fit_parts is the plain-text convenience over fit_parts_n.
+        assert_eq!(st["plain"], "aaa   ·   bbb");
+    });
+}
+
+#[test]
+fn fit_parts_single_segment_too_long_is_dropped() {
+    // A first segment that already overflows yields nothing (retro.ptl drops it
+    // rather than truncating — the value survives in the detail panel).
+    let src = "state text = \"x\"\n\
+               state count = -1\n\
+               let r = fit_parts_n([\"aaaaaaaaaa\"], 30, 10)\n\
+               text = r.text\n\
+               count = r.count";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["text"], "");
+        assert_eq!(ui.state_int("count"), Some(0));
+    });
+}
+
+#[test]
+fn fit_parts_empty_list() {
+    let src = "state text = \"x\"\n\
+               state count = -1\n\
+               let r = fit_parts_n([], 100, 10)\n\
+               text = r.text\n\
+               count = r.count";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let st = ui.state();
+        assert_eq!(st["text"], "");
+        assert_eq!(ui.state_int("count"), Some(0));
+    });
+}
+
+// ── ensure_visible_px ───────────────────────────────────────────────────────
+
+#[test]
+fn ensure_visible_px_keeps_selected_row_in_view() {
+    // A viewport 200px tall over rows of assorted heights.
+    let src = "state above = 0\n\
+               state below = 0\n\
+               state stay = 0\n\
+               state top_first = 0\n\
+               state bottom_last = 0\n\
+               // selection above the viewport scrolls up to its offset\n\
+               above = ensure_visible_px(300, 100, 80, 200)\n\
+               // selection below the viewport scrolls down to reveal its bottom\n\
+               below = ensure_visible_px(0, 500, 80, 200)\n\
+               // an already-visible row leaves scroll untouched\n\
+               stay = ensure_visible_px(50, 100, 80, 200)\n\
+               // the first row (offset 0) pins the top at 0\n\
+               top_first = ensure_visible_px(120, 0, 80, 200)\n\
+               // a last row whose bottom is past the viewport scrolls to show it\n\
+               bottom_last = ensure_visible_px(0, 920, 80, 200)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("above"), Some(100), "scroll up to the row top");
+        assert_eq!(
+            ui.state_int("below"),
+            Some(380),
+            "scroll down so 500+80 = 580 is the viewport bottom (580-200)"
+        );
+        assert_eq!(ui.state_int("stay"), Some(50), "already visible: unchanged");
+        assert_eq!(ui.state_int("top_first"), Some(0), "first row pins top");
+        assert_eq!(ui.state_int("bottom_last"), Some(800), "920+80-200");
+    });
+}
+
+#[test]
+fn ensure_visible_px_row_taller_than_viewport_pins_top() {
+    // A 300px row in a 200px viewport can't fit; ensure-visible pins its top so
+    // reading starts from the beginning (the overflow runs off the bottom).
+    let src = "state up = 0\n\
+               state down = 0\n\
+               up = ensure_visible_px(350, 100, 300, 200)\n\
+               down = ensure_visible_px(0, 100, 300, 200)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("up"), Some(100), "scrolling up pins the top");
+        assert_eq!(ui.state_int("down"), Some(100), "scrolling down pins the top");
+    });
+}
+
+#[test]
 fn wrap_edge_cases_and_newlines() {
     let src = "state nempty = 0\n\
                state empty = \"\"\n\

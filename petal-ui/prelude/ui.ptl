@@ -197,9 +197,73 @@ fn wrap(s, max_chars)
   end
 end
 
+// Bounded-cost N-line preview: wrap `text` into at most `max_lines` lines of
+// `max_chars`, ending the last kept line with an explicit "…" when content was
+// clipped. The wrap input is pre-clipped to (max_lines+1)*max_chars bytes first,
+// so a huge string costs no more than a short one to preview (slice snaps to
+// UTF-8 char boundaries, so multibyte text never breaks). Widths are bytes, like
+// wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
+// true when the last kept line carries the "…" (content was dropped).
+fn preview(text, max_chars, max_lines)
+  let t = text
+  let over = false
+  if len(t) > max_chars * (max_lines + 1) then
+    t = slice(t, 0, max_chars * (max_lines + 1))
+    over = true
+  end
+  let ls = wrap(t, max_chars)
+  if len(ls) > max_lines then
+    over = true
+  end
+  let keep = min(max_lines, len(ls))
+  let kept = []
+  for j in range(0, keep) do
+    let line = ls[j]
+    if over && j == keep - 1 then
+      // Keep the head, explicit trailing "…" (truncate_head keeps the head;
+      // truncate_tail would keep the tail and prefix the ellipsis).
+      line = truncate_head(line ++ "…", max_chars)
+    end
+    kept = append(kept, line)
+  end
+  {lines: kept, truncated: over}
+end
+
 // Right-aligned text: the right edge sits at `right_x`.
 fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
+end
+
+// Join `parts` left to right with "   ·   " separators, keeping only the leading
+// run that fits `avail_px` (measured with text_width at font `size`): it stops
+// at the first part whose addition would overflow and drops that part and every
+// part after it. Lets header / metadata lines degrade by shedding their rightmost
+// segments instead of clipping mid-glyph at the pane edge. Returns {text, count}
+// — `count` is how many segments survived (0 when even the first overflows).
+fn fit_parts_n(parts, avail_px, size)
+  let out = ""
+  let cnt = 0
+  let stopped = false
+  for i in range(0, len(parts)) do
+    if !stopped then
+      let cand = parts[i]
+      if len(out) > 0 then
+        cand = out ++ "   ·   " ++ parts[i]
+      end
+      if text_width(cand, size) <= avail_px then
+        out = cand
+        cnt = cnt + 1
+      else
+        stopped = true
+      end
+    end
+  end
+  {text: out, count: cnt}
+end
+
+// The plain-text convenience over fit_parts_n: just the joined string.
+fn fit_parts(parts, avail_px, size)
+  fit_parts_n(parts, avail_px, size).text
 end
 
 // ── Style ─────────────────────────────────────────────────────────────────
@@ -266,6 +330,23 @@ fn ensure_visible(scroll, selected, visible_rows)
   end
   if selected >= s + visible_rows then
     s = selected - visible_rows + 1
+  end
+  s
+end
+
+// Pixel counterpart of ensure_visible for a VARIABLE-height row list: return the
+// scroll offset (px) that keeps the selected row's full [row_off, row_off+row_h)
+// span inside a `view_h`-tall viewport. `scroll`, `row_off`, `row_h`, `view_h`
+// are all pixels. A row taller than the viewport pins its top (its overflow then
+// runs off the bottom); for any row that fits, this leaves an already-visible
+// row untouched, scrolls up to reveal a row above, or down to reveal one below.
+fn ensure_visible_px(scroll, row_off, row_h, view_h)
+  let s = scroll
+  if row_off + row_h > s + view_h then
+    s = row_off + row_h - view_h
+  end
+  if row_off < s then
+    s = row_off
   end
   s
 end

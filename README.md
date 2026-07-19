@@ -82,6 +82,7 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [`test/`](test/README.md) | Automated tests |
 | [`test/benchmarks/`](test/benchmarks/) | Petal programs used to compare backend performance |
 | [`petal-ui/`](petal-ui/) | Interactivity layer for embedders: normalized input events, the shared draw-command vocabulary, and the `ui` prelude module |
+| [`petal-query/`](petal-query/README.md) | React-Query-style async data layer for Petal UI panels: an elegant native provider API (`query(kind, arg)` handlers with per-resource cacheability) and a host-side cache honoring that policy |
 | [`integrations/`](integrations/) | Reusable host integrations that embed Petal for a specific platform (desktop SDL, web HTML, web canvas) |
 | [`sample-apps/`](sample-apps/) | Example applications built on top of an integration |
 
@@ -105,7 +106,7 @@ Petal apps are built with this dependency chain:
 Petal Core  →  Integrations  →  Sample Apps
 ```
 
-- **Petal Core** — the core language implementation ([`rust/`](rust/)) and the embedder interactivity layer ([`petal-ui/`](petal-ui/)).
+- **Petal Core** — the core language implementation ([`rust/`](rust/)), the embedder interactivity layer ([`petal-ui/`](petal-ui/)), and the panel data layer ([`petal-query/`](petal-query/README.md)).
 - **Integrations** ([`integrations/`](integrations/)) — Native bindings of Petal core: 
   [`petal-desktop-sdl`](integrations/petal-desktop-sdl/README.md) - Desktop application using SDL for rendering 
   [`petal-web-html`](integrations/petal-web-html/README.md) - Browser based (WebAssembly) target that emits DOM

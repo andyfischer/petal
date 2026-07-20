@@ -13,6 +13,10 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             print_usage();
             process::exit(0);
         }
+        "version" | "--version" | "-V" => {
+            println!("petal {}", env!("CARGO_PKG_VERSION"));
+            process::exit(0);
+        }
         "run" => parse_run_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),

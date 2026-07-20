@@ -1,0 +1,133 @@
+name: Release
+
+# Cut a release by pushing a version tag, e.g.:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# This builds the `petal` CLI for macOS (arm64 + x86_64) and Linux (x86_64 +
+# arm64, static musl), packages each as a tarball + SHA-256 checksum, and
+# publishes them as assets on a GitHub Release for the tag. The installer at
+# https://petal-lang.org/install.sh downloads those assets.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allow a dry-run build (no publish) from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            builder: cargo
+          - target: x86_64-apple-darwin
+            os: macos-14
+            builder: cargo
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            builder: zigbuild
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            builder: zigbuild
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # cargo-zigbuild uses Zig as the cross-linker so we can build fully static
+      # musl binaries (both x86_64 and aarch64) from an x86_64 Linux runner.
+      - name: Install Zig
+        if: matrix.builder == 'zigbuild'
+        uses: mlugg/setup-zig@v1
+
+      - name: Install cargo-zigbuild
+        if: matrix.builder == 'zigbuild'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-release-${{ matrix.target }}-
+
+      - name: Build (cargo)
+        if: matrix.builder == 'cargo'
+        run: cargo build --release --locked --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build (cargo-zigbuild)
+        if: matrix.builder == 'zigbuild'
+        run: cargo zigbuild --release --locked --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Package tarball + checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          bin="rust/target/${target}/release/petal"
+          dist="petal-${target}"
+          mkdir -p "dist/${dist}"
+          cp "$bin" "dist/${dist}/petal"
+          cp LICENSE "dist/${dist}/" 2>/dev/null || true
+          cp README.md "dist/${dist}/" 2>/dev/null || true
+          ( cd dist && tar -czf "${dist}.tar.gz" "${dist}" )
+          # Checksum file references the archive by name so the installer can
+          # `sha256sum -c` / `shasum -c` it directly.
+          ( cd dist
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "${dist}.tar.gz" > "${dist}.tar.gz.sha256"
+            else
+              shasum -a 256 "${dist}.tar.gz" > "${dist}.tar.gz.sha256"
+            fi )
+          ls -l dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: petal-${{ matrix.target }}
+          path: |
+            dist/petal-${{ matrix.target }}.tar.gz
+            dist/petal-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish when triggered by a tag push; workflow_dispatch is a dry run.
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lR artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/petal-*.tar.gz
+            artifacts/petal-*.tar.gz.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -162,6 +162,7 @@ Commands:
                                  --json emits the raw report array for tooling.
 
   petal <file>                   Shorthand for 'run'
+  version | --version | -V       Print the Petal version and exit
 
 Options accepted by every compiling command:
   -I <dir>                       Add a module search directory (repeatable).

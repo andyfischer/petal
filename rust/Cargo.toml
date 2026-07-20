@@ -24,3 +24,12 @@ wasm-bindgen = { version = "0.2", optional = true }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+# Optimized profile for the binaries we ship in releases: smaller, faster.
+# (`strip` removes debug symbols; `lto`/`codegen-units=1` trade build time for
+# a leaner, faster binary.)
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

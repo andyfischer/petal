@@ -54,7 +54,21 @@ print("hello, {name}!")            // hello, Petal!
 
 See the [Language Guide](docs/Language_Guide.md) for the full tour.
 
-## Quick Start
+## Install
+
+Install the `petal` CLI with a prebuilt binary (macOS Apple Silicon/Intel,
+Linux x86_64/arm64):
+
+```bash
+curl -fsSL https://petal-lang.org/install.sh | sh
+```
+
+This installs `petal` to `~/.petal/bin` and adds it to your PATH — no `sudo`,
+no dependencies. Uninstall with `curl -fsSL https://petal-lang.org/uninstall.sh | sh`
+(or `~/.petal/uninstall.sh`). See [docs/dev/releasing.md](docs/dev/releasing.md)
+for how these binaries are built and published.
+
+## Quick Start (build from source)
 
 ```bash
 # Build the compiler
@@ -74,6 +88,7 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | Directory | Description |
 |-----------|-------------|
 | [`rust/`](rust/) | The core language implementation: lexer, parser, AST, compiler, IR, evaluator, bytecode VM |
+| [`dist/`](dist/) | Release distribution: the `install.sh` / `uninstall.sh` scripts hosted at petal-lang.org |
 | [`docs/`](docs/README.md) | Language documentation for using Petal |
 | [`docs/dev/`](docs/dev/) | Documentation for developing on Petal |
 | [`examples/`](examples/README.md) | Runnable example `.ptl` programs demonstrating language features |

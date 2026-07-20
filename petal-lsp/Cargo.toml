@@ -1,0 +1,12 @@
+[package]
+name = "petal-lsp"
+version = "0.1.0"
+edition = "2024"
+description = "LSP language server for the Petal programming language"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[dependencies]
+petal = { path = "../rust" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

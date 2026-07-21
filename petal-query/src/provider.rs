@@ -166,7 +166,9 @@ type EmitHandler<S> = Box<dyn FnMut(&mut S, &EmitContext)>;
 /// The provider owns *no* presentation: no pane name, no UI script, no
 /// transport. Those are supplied by whatever runs it.
 pub struct Provider<S> {
-    pub(crate) build_state: Box<dyn FnOnce(&InitializeParams) -> S>,
+    // `Option` models the one-shot nature: `build` takes it, so a second call
+    // panics loudly rather than silently re-running a placeholder.
+    pub(crate) build_state: Option<Box<dyn FnOnce(&InitializeParams) -> S>>,
     pub(crate) query_handlers: HashMap<String, QueryHandler<S>>,
     pub(crate) emit_handlers: HashMap<String, EmitHandler<S>>,
 }
@@ -183,7 +185,7 @@ impl<S: 'static> Provider<S> {
     /// [`InitializeParams`] (launch args, cwd) by `build_state`.
     pub fn new(build_state: impl FnOnce(&InitializeParams) -> S + 'static) -> Provider<S> {
         Provider {
-            build_state: Box::new(build_state),
+            build_state: Some(Box::new(build_state)),
             query_handlers: HashMap::new(),
             emit_handlers: HashMap::new(),
         }
@@ -215,9 +217,12 @@ impl<S: 'static> Provider<S> {
     /// Build the per-run state from the handshake params (consumes the
     /// `build_state` closure). Call once, before serving queries.
     pub fn build(&mut self, init: &InitializeParams) -> S {
-        // Swap in a no-op so `build_state` (a FnOnce) can be moved out; it is
-        // only ever called once, so the placeholder is never invoked.
-        let build = std::mem::replace(&mut self.build_state, Box::new(|_| unreachable!()));
+        // Take the one-shot `build_state` (a FnOnce) out; calling `build` twice
+        // panics rather than silently misbehaving.
+        let build = self
+            .build_state
+            .take()
+            .expect("Provider::build called once");
         build(init)
     }
 

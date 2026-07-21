@@ -44,7 +44,7 @@ not globally reserved.
 | Kind | Examples |
 |------|----------|
 | int | `42`, `-3`, `0` |
-| float | `3.14`, `-0.5`, `1.0` |
+| float | `3.14`, `-0.5`, `1.0`, `.001` (leading zero optional) |
 | bool | `true`, `false` |
 | nil | `nil` |
 | string | `"hello"`, `"line\n"` |

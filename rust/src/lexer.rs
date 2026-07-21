@@ -345,6 +345,12 @@ impl Lexer {
                         self.advance_n(2);
                         self.push_token(Token::DotDot, start);
                     }
+                } else if self
+                    .peek_next()
+                    .is_some_and(|c| c.is_ascii_digit())
+                {
+                    // A leading-dot float like `.001` (no integer part).
+                    self.read_number()?;
                 } else {
                     self.advance_char();
                     self.push_token(Token::Dot, start);
@@ -971,6 +977,27 @@ mod tests {
     #[test]
     fn lex_float_literal() {
         assert_eq!(tokenize("3.25"), vec![Token::Float(3.25)]);
+    }
+
+    #[test]
+    fn lex_float_without_leading_zero() {
+        assert_eq!(tokenize(".001"), vec![Token::Float(0.001)]);
+        assert_eq!(tokenize(".5"), vec![Token::Float(0.5)]);
+        // Leading-dot float inside an expression
+        assert_eq!(
+            tokenize("x + .5"),
+            vec![Token::Ident("x".into()), Token::Plus, Token::Float(0.5)]
+        );
+        // A bare dot (method access / range) must still lex as before
+        assert_eq!(
+            tokenize("a.b"),
+            vec![
+                Token::Ident("a".into()),
+                Token::Dot,
+                Token::Ident("b".into())
+            ]
+        );
+        assert_eq!(tokenize("1..3"), vec![Token::Int(1), Token::DotDot, Token::Int(3)]);
     }
 
     #[test]

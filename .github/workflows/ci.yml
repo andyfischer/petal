@@ -65,6 +65,12 @@ jobs:
         working-directory: ts
         run: npm ci
 
+      - name: Check committed stdlib manifest is current
+        run: |
+          npm --prefix ts run stdlib:json
+          git diff --exit-code docs/stdlib.json \
+            || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' in ts/ and commit the result"; exit 1; }
+
       - name: Type-check TypeScript
         working-directory: ts
         run: npx tsc --noEmit

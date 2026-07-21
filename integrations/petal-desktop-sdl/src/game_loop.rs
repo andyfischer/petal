@@ -32,7 +32,7 @@ use petal_ui::draw::clear_draw_commands;
 use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time, take_mouse_grab};
 
 use crate::input::poll_sdl_events;
-use crate::protocol::{self, Command, Response};
+use crate::protocol::{self, ClockSource, Command, Response};
 use crate::watcher::{check_hot_reload, setup_watcher};
 
 /// Window + mode configuration shared by every run entry point.
@@ -336,6 +336,8 @@ pub fn run_agent<H: Host>(
 
     'game: loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
+            // Share the live loop's real clock so a Step interleaved with the
+            // live frames below never rewinds `time()`.
             handle_command(
                 cmd,
                 &mut env,
@@ -343,6 +345,7 @@ pub fn run_agent<H: Host>(
                 &mut paused,
                 &mut input,
                 &mut frame_count,
+                ClockSource::Wall(start),
                 host,
             );
         }
@@ -421,6 +424,8 @@ pub fn run_headless<H: Host>(
             current.stack_id,
             current.path.as_deref(),
         );
+        // Headless is fully scripted (no real-clock loop), so frames step on the
+        // deterministic clock for reproducibility.
         handle_command(
             cmd,
             &mut env,
@@ -428,6 +433,7 @@ pub fn run_headless<H: Host>(
             &mut paused,
             &mut input,
             &mut frame_count,
+            ClockSource::Fixed,
             host,
         );
     }
@@ -456,6 +462,7 @@ pub fn run_screenshot<H: Host>(
             current.stack_id,
             &mut input,
             &mut frame_count,
+            ClockSource::Fixed,
             host,
         )?;
     }
@@ -500,6 +507,7 @@ pub fn run_record<H: Host>(
             current.stack_id,
             &mut input,
             &mut frame_count,
+            ClockSource::Fixed,
             host,
         )?;
     }
@@ -509,6 +517,7 @@ pub fn run_record<H: Host>(
             current.stack_id,
             &mut input,
             &mut frame_count,
+            ClockSource::Fixed,
             host,
         )?;
         let (img, _) = capture_image(
@@ -627,6 +636,10 @@ fn drain_output(env: &mut Env) {
 }
 
 /// Dispatch one agent-protocol command. Shared by windowed-agent and headless.
+/// `clock` is the session's single `time()` source — the real monotonic clock
+/// in windowed-agent mode (so a `Step` interleaved with the live loop stays
+/// monotonic), a deterministic per-frame clock in headless mode.
+#[allow(clippy::too_many_arguments)]
 fn handle_command<H: Host>(
     cmd: Command,
     env: &mut Env,
@@ -634,6 +647,7 @@ fn handle_command<H: Host>(
     paused: &mut bool,
     input: &mut InputState,
     frame_count: &mut i64,
+    clock: ClockSource,
     host: &mut H,
 ) {
     protocol::handle_command(
@@ -644,6 +658,7 @@ fn handle_command<H: Host>(
         paused,
         input,
         frame_count,
+        clock,
         host,
     );
 }

@@ -10,6 +10,7 @@
 use std::io::{self, BufRead};
 use std::sync::mpsc;
 use std::thread;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -199,13 +200,41 @@ pub fn send_response(resp: &Response) {
 
 // --- Frame driving ---
 
+/// Which monotonic clock a frame binds into `time()`. A session must use ONE
+/// source for its whole lifetime: mixing them lets `time()` jump backward and
+/// `elapsed()` go negative, breaking the monotonicity scripts rely on.
+#[derive(Clone, Copy)]
+pub enum ClockSource {
+    /// The real monotonic clock (`start.elapsed()`). Used by the windowed agent
+    /// loop, whose live frames already advance real time — a `Step` interleaved
+    /// with the live loop must stay on that same clock, so it threads the loop's
+    /// `start: Instant` here.
+    Wall(Instant),
+    /// Deterministic `frame_count / 60` seconds per frame. Used by the
+    /// fully-scripted modes (headless / screenshot / record) that never run the
+    /// real-clock loop, so stepped runs are reproducible.
+    Fixed,
+}
+
+impl ClockSource {
+    /// The `time()` value for the frame just about to run.
+    fn now(&self, frame_count: i64) -> f64 {
+        match self {
+            ClockSource::Wall(start) => start.elapsed().as_secs_f64(),
+            ClockSource::Fixed => frame_count as f64 / 60.0,
+        }
+    }
+}
+
 /// Run one frame under the standard contract at a fixed agent-mode dt (so
-/// frame-stepping is deterministic). Returns the new frame count.
+/// frame-stepping is deterministic). `clock` selects the `time()` source (see
+/// [`ClockSource`]). Returns the new frame count.
 pub fn run_one_frame<H: Host>(
     env: &mut Env,
     stack_id: StackKey,
     input: &mut InputState,
     frame_count: &mut i64,
+    clock: ClockSource,
     host: &mut H,
 ) -> Result<i64, String> {
     clear_draw_commands(env);
@@ -217,9 +246,10 @@ pub fn run_one_frame<H: Host>(
     env.advance_frame(stack_id);
     input.begin_frame(1.0 / 60.0);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
-    // Deterministic clock for stepped/agent runs: exactly 1/60 s per frame, so
-    // `time()`/`elapsed()` are reproducible under scripted stepping.
-    bind_time(env, *frame_count as f64 / 60.0);
+    // Bind `time()` from the session's single clock source: the real monotonic
+    // clock when stepping is interleaved with a live real-clock loop (agent
+    // mode), or a deterministic 1/60 s per frame for fully-scripted runs.
+    bind_time(env, clock.now(*frame_count));
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;
@@ -265,6 +295,7 @@ pub fn handle_command<H: Host>(
     paused: &mut bool,
     input: &mut InputState,
     frame_count: &mut i64,
+    clock: ClockSource,
     host: &mut H,
 ) {
     match cmd {
@@ -285,7 +316,7 @@ pub fn handle_command<H: Host>(
         Command::Step { n } => {
             let mut last_frame = 0i64;
             for _ in 0..n {
-                match run_one_frame(env, stack_id, input, frame_count, host) {
+                match run_one_frame(env, stack_id, input, frame_count, clock, host) {
                     Ok(fc) => last_frame = fc,
                     Err(e) => {
                         send_response(&Response::err(e));

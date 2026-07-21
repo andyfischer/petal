@@ -109,7 +109,7 @@ statements, if any, must come first.
 
 Only valid before any other statement in a file:
 
-```petal
+```petal ignore
 import ui                    // qualified:  ui.button(...)
 import ui: button, clicked   // selective:  button(...)
 import ui as u               // alias:      u.button(...)
@@ -188,8 +188,7 @@ chain. `elsif` (one word, Ruby-style — not `else if`) continues the same `if`:
 ```petal
 let label = if x > 5 then "big" else "small" end
 
-let color =
-    if line.kind == "add" then GREEN
+let color = if line.kind == "add" then GREEN
     elsif line.kind == "del" then RED
     else CONTEXT
     end

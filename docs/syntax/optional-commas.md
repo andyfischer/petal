@@ -93,7 +93,7 @@ The rule applies **only inside juxtaposition contexts** — list literals and ca
 argument lists. Everywhere else, `-` is always subtraction regardless of
 spacing, so ordinary code is unaffected:
 
-```petal
+```petal ignore
 let x = total -discount   // subtraction (statement context)
 return a -b               // subtraction
 if a -b > 0 then ...      // subtraction

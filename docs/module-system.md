@@ -9,7 +9,7 @@ time (there is no runtime linker and no separate compilation units)
 
 Basic import - importing a module called 'ui':
 
-```petal
+```petal ignore
 import ui                       // qualified: ui.button(...), ui.palette
 
 ui.button(...)
@@ -17,7 +17,7 @@ ui.button(...)
 
 Selective import:
 
-```petal
+```petal ignore
 import ui: button, clicked
 
 button(...)
@@ -25,7 +25,7 @@ button(...)
 
 Import into an alias:
 
-```petal
+```petal ignore
 import ui as u
 
 u.button(...)

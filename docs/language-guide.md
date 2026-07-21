@@ -207,8 +207,7 @@ fn classify(n)
 end
 
 // Reads well for the multi-way branches common in drawer code:
-let color =
-  if line.kind == "hunk" then HUNK
+let color = if line.kind == "hunk" then HUNK
   elsif line.kind == "add" then GREEN
   elsif line.kind == "del" then RED
   else CONTEXT
@@ -365,7 +364,7 @@ Functions capture variables from their enclosing scope:
 
 ```petal
 fn make_adder(n)
-    fn(x) -> x + n
+    return fn(x) -> x + n
 end
 
 let add5 = make_adder(5)
@@ -461,7 +460,7 @@ let user = {
     name: "Bob",
     address: {
         city: "Portland",
-        state: "OR"
+        region: "OR"
     }
 }
 print(user.address.city)  // "Portland"

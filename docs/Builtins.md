@@ -17,7 +17,7 @@ Prints arguments to stdout, separated by spaces, followed by a newline.
 ```petal
 print("hello")           // hello
 print(1, "and", 2)       // 1 and 2
-print([1, 2], {a: 3})    // [1, 2] {a: 3}
+print([1, 2], {a: 3})    // [1, 2] { a: 3 }
 ```
 
 ## Math

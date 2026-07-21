@@ -106,6 +106,10 @@ fn list_scalar_broadcast() {
     // scalar op list (broadcast from the left)
     assert_eq!(run("2 * [1, 2, 3]", all).unwrap().0, "[2, 4, 6]");
     assert_eq!(run("10 + [1, 2, 3]", all).unwrap().0, "[11, 12, 13]");
+    // non-commutative scalar-on-left: operand order must be preserved
+    // (`s - el` / `s / el`, not `el - s`), so pin the values explicitly.
+    assert_eq!(run("4 - [1, 2, 3]", all).unwrap().0, "[3, 2, 1]");
+    assert_eq!(run("12 / [2, 3, 4]", all).unwrap().0, "[6, 4, 3]");
     // float scalar promotes int elements
     assert_eq!(run("[1, 3] * 0.5", all).unwrap().0, "[0.5, 1.5]");
     // both engines agree

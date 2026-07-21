@@ -51,8 +51,14 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Va
         return Ok(p);
     }
     // Guard integer/float division by zero up front (dual/vec2 handlers do
-    // their own checks, so this only fires for scalar operands).
-    if matches!(op, TermOp::Div) {
+    // their own checks, so this only fires for scalar operands). Skip it when
+    // either operand is a List so per-element broadcast semantics hold: `[] / 0`
+    // yields `[]` (no element is divided), while `[1, 2] / 0` still errors per
+    // element inside `list_scalar_arith` (which re-checks via `arithmetic`).
+    if matches!(op, TermOp::Div)
+        && !matches!(a, Value::List(_))
+        && !matches!(b, Value::List(_))
+    {
         match b {
             Value::Int(0) => return Err("Division by zero".into()),
             Value::Float(f) if f == 0.0 => return Err("Division by zero".into()),

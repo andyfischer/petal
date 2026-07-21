@@ -95,4 +95,23 @@ describe("stdlib extractor", () => {
       expect(ids.has(fn.category), `${fn.name} → ${fn.category}`).toBe(true);
     }
   });
+
+  it("gives every category a friendly (non-id) title", () => {
+    // The site sidebar shows these titles; a bare lowercase id means the
+    // category was added in Rust without a CATEGORY_TITLES entry here.
+    for (const cat of manifest.categories) {
+      expect(cat.title, `category "${cat.id}" has no friendly title`).not.toBe(
+        cat.id,
+      );
+    }
+  });
+
+  it("keeps the committed docs/stdlib.json in sync with the extractor", () => {
+    // The manifest is a generated artifact checked into the repo so the docs
+    // site (and the CI drift gate) can consume it without re-parsing Rust.
+    // If this fails, run `npm run stdlib:json` and commit the result.
+    const committedPath = join(repoRoot, "docs/stdlib.json");
+    const committed = JSON.parse(readFileSync(committedPath, "utf8"));
+    expect(committed).toEqual(manifest);
+  });
 });

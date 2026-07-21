@@ -104,6 +104,9 @@ const CATEGORY_TITLES: Record<string, string> = {
   collections: "Collections",
   "higher-order": "Higher-Order Functions",
   autodiff: "Automatic Differentiation",
+  output: "Output & Symbols",
+  handle: "Handles",
+  pending: "Async & Query Values",
   drawing: "Drawing",
   input: "Input & Timing",
 };

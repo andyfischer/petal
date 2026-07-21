@@ -1,0 +1,2512 @@
+{
+  "generatedFrom": [
+    "rust/src/builtins/mod.rs",
+    "rust/src/builtins/*.rs",
+    "petal-ui/src/draw.rs",
+    "petal-ui/src/input.rs"
+  ],
+  "categories": [
+    {
+      "id": "io",
+      "title": "I/O & Types",
+      "group": "core",
+      "doc": "I/O and type-name builtins: print, str, type, assert, assert_eq."
+    },
+    {
+      "id": "math",
+      "title": "Math",
+      "group": "core",
+      "doc": "Basic math, trig, and numeric conversion: abs, sqrt, floor, ceil, round, float, int, random, min, max, sin/cos/tan, atan2, pi."
+    },
+    {
+      "id": "creative_coding",
+      "title": "Creative-Coding Math",
+      "group": "core",
+      "doc": "Creative-coding math + extended randomness: clamp, lerp, map_range, distance, mag, pow, sign, fract, smoothstep, radians, degrees, exp, log, random_int, choose."
+    },
+    {
+      "id": "noise",
+      "title": "Noise",
+      "group": "core",
+      "doc": "Perlin noise builtins (1D/2D/3D) and noise_seed."
+    },
+    {
+      "id": "color",
+      "title": "Color",
+      "group": "core",
+      "doc": "Color builtins: hsv, hsl, color_lerp. All return RGB records `{r, g, b}` with 0..255 integer channels, matching the shape produced by color literals like `#ff8800`."
+    },
+    {
+      "id": "vec2",
+      "title": "Vectors (2D)",
+      "group": "core",
+      "doc": "2D vector builtins: vec2, normalize, dot, limit."
+    },
+    {
+      "id": "collections",
+      "title": "Collections",
+      "group": "core",
+      "doc": "List and record manipulation: range, len, push, append, pop, keys, values, contains, sort, reverse, join, split, enumerate, zip, slice, flat."
+    },
+    {
+      "id": "higher-order",
+      "title": "Higher-Order Functions",
+      "group": "core",
+      "doc": "List transforms that take a function: map, filter, reduce, forEach."
+    },
+    {
+      "id": "autodiff",
+      "title": "Automatic Differentiation",
+      "group": "core",
+      "doc": "Automatic differentiation (dual numbers): dual, value_of, deriv_of."
+    },
+    {
+      "id": "output",
+      "title": "Output & Symbols",
+      "group": "core",
+      "doc": "Symbol and buffered-output builtins.  `symbol(name)` interns a name into a `Value::Symbol`, the binding key shared with the embedding host. `push_output(sym, value)` appends a value into the host-visible buffer bound to that symbol — the script-side counterpart to `Env::take_output_buffer`. Native host functions (e.g. draw commands) use the same channel via `PetalCxt::push_output`/`emit`."
+    },
+    {
+      "id": "handle",
+      "title": "Handles",
+      "group": "core",
+      "doc": "Handle-related builtins (docs/dev/unreal-ffi-proposal.md §5)."
+    },
+    {
+      "id": "pending",
+      "title": "Async & Query Values",
+      "group": "core",
+      "doc": "Test-only pending-resource builtins: `__pending`, `__resolve`, `__reject`.  These deterministically drive the resource table (no real I/O) so the pending-value semantics can be exercised in tests. Names are `__`-prefixed to read as internal. See docs/dev/pending-values-plan.md (roadmap step 1) — real fetchers arrive with `petal-query`."
+    },
+    {
+      "id": "drawing",
+      "title": "Drawing",
+      "group": "canvas",
+      "doc": "Canvas drawing commands. Colors are r, g, b integer channels 0–255; the origin is the top-left."
+    },
+    {
+      "id": "input",
+      "title": "Input & Timing",
+      "group": "canvas",
+      "doc": "Read the mouse, keyboard, clock, and canvas size each frame."
+    }
+  ],
+  "functions": [
+    {
+      "name": "print",
+      "category": "io",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/io.rs",
+        "line": 6
+      }
+    },
+    {
+      "name": "range",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "end",
+          "type": "int"
+        },
+        {
+          "name": "end",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 32
+      }
+    },
+    {
+      "name": "len",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 53
+      }
+    },
+    {
+      "name": "push",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 182
+      }
+    },
+    {
+      "name": "str",
+      "category": "io",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/io.rs",
+        "line": 19
+      }
+    },
+    {
+      "name": "abs",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 55
+      }
+    },
+    {
+      "name": "sqrt",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 68
+      }
+    },
+    {
+      "name": "floor",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 76
+      }
+    },
+    {
+      "name": "ceil",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 81
+      }
+    },
+    {
+      "name": "float",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 85
+      }
+    },
+    {
+      "name": "int",
+      "category": "math",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 89
+      }
+    },
+    {
+      "name": "random",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "min",
+          "type": "float"
+        },
+        {
+          "name": "max",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 114
+      }
+    },
+    {
+      "name": "type",
+      "category": "io",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/io.rs",
+        "line": 27
+      }
+    },
+    {
+      "name": "append",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "val",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 160
+      }
+    },
+    {
+      "name": "pop",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 191
+      }
+    },
+    {
+      "name": "keys",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 262
+      }
+    },
+    {
+      "name": "values",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 281
+      }
+    },
+    {
+      "name": "contains",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "needle",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 293
+      }
+    },
+    {
+      "name": "min",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 123
+      }
+    },
+    {
+      "name": "max",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 139
+      }
+    },
+    {
+      "name": "round",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 155
+      }
+    },
+    {
+      "name": "dual",
+      "category": "autodiff",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "derivative",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/autodiff.rs",
+        "line": 8
+      }
+    },
+    {
+      "name": "value_of",
+      "category": "autodiff",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/autodiff.rs",
+        "line": 24
+      }
+    },
+    {
+      "name": "deriv_of",
+      "category": "autodiff",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/autodiff.rs",
+        "line": 43
+      }
+    },
+    {
+      "name": "sort",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 359
+      }
+    },
+    {
+      "name": "reverse",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 399
+      }
+    },
+    {
+      "name": "join",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "sep",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 417
+      }
+    },
+    {
+      "name": "split",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "any"
+        },
+        {
+          "name": "sep",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 446
+      }
+    },
+    {
+      "name": "enumerate",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 468
+      }
+    },
+    {
+      "name": "zip",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 489
+      }
+    },
+    {
+      "name": "slice",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "start",
+          "type": "int"
+        },
+        {
+          "name": "end",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 532
+      }
+    },
+    {
+      "name": "flat",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 601
+      }
+    },
+    {
+      "name": "includes",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "needle",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 293
+      },
+      "aliasOf": "contains"
+    },
+    {
+      "name": "sin",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 159
+      }
+    },
+    {
+      "name": "cos",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 164
+      }
+    },
+    {
+      "name": "tan",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 169
+      }
+    },
+    {
+      "name": "atan2",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "name": "x",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 177
+      }
+    },
+    {
+      "name": "pi",
+      "category": "math",
+      "group": "core",
+      "arity": 0,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 185
+      }
+    },
+    {
+      "name": "clamp",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "float"
+        },
+        {
+          "name": "lo",
+          "type": "float"
+        },
+        {
+          "name": "hi",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 10
+      }
+    },
+    {
+      "name": "lerp",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "float"
+        },
+        {
+          "name": "b",
+          "type": "float"
+        },
+        {
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 19
+      }
+    },
+    {
+      "name": "map_range",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 5,
+      "variadic": false,
+      "params": [
+        {
+          "name": "v",
+          "type": "float"
+        },
+        {
+          "name": "in_lo",
+          "type": "float"
+        },
+        {
+          "name": "in_hi",
+          "type": "float"
+        },
+        {
+          "name": "out_lo",
+          "type": "float"
+        },
+        {
+          "name": "out_hi",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 28
+      }
+    },
+    {
+      "name": "distance",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        },
+        {
+          "name": "x2",
+          "type": "float"
+        },
+        {
+          "name": "y2",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 44
+      }
+    },
+    {
+      "name": "mag",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "name": "z",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 75
+      }
+    },
+    {
+      "name": "pow",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "base",
+          "type": "float"
+        },
+        {
+          "name": "exp",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 109
+      }
+    },
+    {
+      "name": "sign",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 117
+      }
+    },
+    {
+      "name": "fract",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "f",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 144
+      }
+    },
+    {
+      "name": "smoothstep",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "edge0",
+          "type": "float"
+        },
+        {
+          "name": "edge1",
+          "type": "float"
+        },
+        {
+          "name": "x",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 151
+      }
+    },
+    {
+      "name": "radians",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "deg",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 161
+      }
+    },
+    {
+      "name": "degrees",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "rad",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 168
+      }
+    },
+    {
+      "name": "exp",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 175
+      }
+    },
+    {
+      "name": "log",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 182
+      }
+    },
+    {
+      "name": "noise",
+      "category": "noise",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "name": "z",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/noise.rs",
+        "line": 130
+      }
+    },
+    {
+      "name": "noise_seed",
+      "category": "noise",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "seed",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/noise.rs",
+        "line": 157
+      }
+    },
+    {
+      "name": "random_int",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "min",
+          "type": "int"
+        },
+        {
+          "name": "max",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 189
+      }
+    },
+    {
+      "name": "choose",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/creative_coding.rs",
+        "line": 203
+      }
+    },
+    {
+      "name": "hsv",
+      "category": "color",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "h",
+          "type": "float"
+        },
+        {
+          "name": "s",
+          "type": "float"
+        },
+        {
+          "name": "v",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/color.rs",
+        "line": 56
+      }
+    },
+    {
+      "name": "hsl",
+      "category": "color",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "h",
+          "type": "float"
+        },
+        {
+          "name": "s",
+          "type": "float"
+        },
+        {
+          "name": "l",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/color.rs",
+        "line": 69
+      }
+    },
+    {
+      "name": "color_lerp",
+      "category": "color",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "c1",
+          "type": "any"
+        },
+        {
+          "name": "c2",
+          "type": "any"
+        },
+        {
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/color.rs",
+        "line": 102
+      }
+    },
+    {
+      "name": "vec2",
+      "category": "vec2",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "name": "y",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/vec2.rs",
+        "line": 8
+      }
+    },
+    {
+      "name": "normalize",
+      "category": "vec2",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/vec2.rs",
+        "line": 16
+      }
+    },
+    {
+      "name": "dot",
+      "category": "vec2",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/vec2.rs",
+        "line": 32
+      }
+    },
+    {
+      "name": "limit",
+      "category": "vec2",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "max_mag",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/vec2.rs",
+        "line": 43
+      }
+    },
+    {
+      "name": "map",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/mod.rs",
+        "line": 250
+      }
+    },
+    {
+      "name": "filter",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/mod.rs",
+        "line": 250
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "reduce",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/mod.rs",
+        "line": 250
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "forEach",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/mod.rs",
+        "line": 250
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "assert",
+      "category": "io",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "cond",
+          "type": "any"
+        },
+        {
+          "name": "m",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/io.rs",
+        "line": 34
+      }
+    },
+    {
+      "name": "assert_eq",
+      "category": "io",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/io.rs",
+        "line": 60
+      }
+    },
+    {
+      "name": "f64_array",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "n",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 73
+      }
+    },
+    {
+      "name": "get",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "i",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 84
+      }
+    },
+    {
+      "name": "set",
+      "category": "collections",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "i",
+          "type": "int"
+        },
+        {
+          "name": "v",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 103
+      }
+    },
+    {
+      "name": "swap",
+      "category": "collections",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "i",
+          "type": "int"
+        },
+        {
+          "name": "j",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 135
+      }
+    },
+    {
+      "name": "hsv_deg",
+      "category": "color",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "h",
+          "type": "float"
+        },
+        {
+          "name": "s",
+          "type": "float"
+        },
+        {
+          "name": "v",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/color.rs",
+        "line": 81
+      }
+    },
+    {
+      "name": "hsl_deg",
+      "category": "color",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "h",
+          "type": "float"
+        },
+        {
+          "name": "s",
+          "type": "float"
+        },
+        {
+          "name": "l",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/color.rs",
+        "line": 92
+      }
+    },
+    {
+      "name": "symbol",
+      "category": "output",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/output.rs",
+        "line": 12
+      }
+    },
+    {
+      "name": "push_output",
+      "category": "output",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/output.rs",
+        "line": 20
+      }
+    },
+    {
+      "name": "binding",
+      "category": "output",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/output.rs",
+        "line": 31
+      }
+    },
+    {
+      "name": "last",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 197
+      }
+    },
+    {
+      "name": "drop_last",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 217
+      }
+    },
+    {
+      "name": "remove",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "container",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 236
+      }
+    },
+    {
+      "name": "is_valid",
+      "category": "handle",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/handle.rs",
+        "line": 10
+      }
+    },
+    {
+      "name": "__pending",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 25
+      }
+    },
+    {
+      "name": "__resolve",
+      "category": "pending",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 52
+      }
+    },
+    {
+      "name": "__reject",
+      "category": "pending",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "error",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 64
+      }
+    },
+    {
+      "name": "is_loading",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 83
+      }
+    },
+    {
+      "name": "is_error",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 95
+      }
+    },
+    {
+      "name": "is_pending",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 110
+      }
+    },
+    {
+      "name": "is_ready",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 119
+      }
+    },
+    {
+      "name": "error_of",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 128
+      }
+    },
+    {
+      "name": "or_else",
+      "category": "pending",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        },
+        {
+          "name": "default",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 145
+      }
+    },
+    {
+      "name": "resource_key",
+      "category": "pending",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/pending.rs",
+        "line": 160
+      }
+    },
+    {
+      "name": "clear",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 517
+      }
+    },
+    {
+      "name": "draw_rect",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 7,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        },
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 525
+      }
+    },
+    {
+      "name": "draw_rect_rounded",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        },
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        },
+        {
+          "name": "radius",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 536
+      }
+    },
+    {
+      "name": "draw_rect_outline",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 7,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        },
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 566
+      }
+    },
+    {
+      "name": "draw_line",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 7,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x1",
+          "type": "int"
+        },
+        {
+          "name": "y1",
+          "type": "int"
+        },
+        {
+          "name": "x2",
+          "type": "int"
+        },
+        {
+          "name": "y2",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 576
+      }
+    },
+    {
+      "name": "draw_circle",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 6,
+      "variadic": false,
+      "params": [
+        {
+          "name": "cx",
+          "type": "int"
+        },
+        {
+          "name": "cy",
+          "type": "int"
+        },
+        {
+          "name": "radius",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 586
+      }
+    },
+    {
+      "name": "fill_triangle",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 9,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x1",
+          "type": "int"
+        },
+        {
+          "name": "y1",
+          "type": "int"
+        },
+        {
+          "name": "x2",
+          "type": "int"
+        },
+        {
+          "name": "y2",
+          "type": "int"
+        },
+        {
+          "name": "x3",
+          "type": "int"
+        },
+        {
+          "name": "y3",
+          "type": "int"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 595
+      }
+    },
+    {
+      "name": "fill_poly",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "points_value",
+          "type": "any"
+        },
+        {
+          "name": "r",
+          "type": "int"
+        },
+        {
+          "name": "g",
+          "type": "int"
+        },
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 611
+      }
+    },
+    {
+      "name": "draw_text",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 672
+      }
+    },
+    {
+      "name": "clip",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 4,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        },
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 690
+      }
+    },
+    {
+      "name": "clip_none",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 697
+      }
+    },
+    {
+      "name": "text_width",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 709
+      }
+    },
+    {
+      "name": "create_canvas",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 746
+      }
+    },
+    {
+      "name": "draw_to",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 760
+      }
+    },
+    {
+      "name": "draw_to_screen",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 767
+      }
+    },
+    {
+      "name": "draw_canvas",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "id",
+          "type": "int"
+        },
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/draw.rs",
+        "line": 773
+      }
+    },
+    {
+      "name": "mouse_x",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 647
+      }
+    },
+    {
+      "name": "mouse_y",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 651
+      }
+    },
+    {
+      "name": "mouse_dx",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 655
+      }
+    },
+    {
+      "name": "mouse_dy",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 659
+      }
+    },
+    {
+      "name": "mouse_down",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 663
+      }
+    },
+    {
+      "name": "mouse_pressed",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 670
+      }
+    },
+    {
+      "name": "mouse_released",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "b",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 677
+      }
+    },
+    {
+      "name": "scroll_x",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 684
+      }
+    },
+    {
+      "name": "scroll_y",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 688
+      }
+    },
+    {
+      "name": "key_down",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 692
+      }
+    },
+    {
+      "name": "key_pressed",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 699
+      }
+    },
+    {
+      "name": "key_released",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 706
+      }
+    },
+    {
+      "name": "mod_shift",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 713
+      }
+    },
+    {
+      "name": "mod_ctrl",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 717
+      }
+    },
+    {
+      "name": "mod_alt",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 721
+      }
+    },
+    {
+      "name": "mod_cmd",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 725
+      }
+    },
+    {
+      "name": "drag_active",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 729
+      }
+    },
+    {
+      "name": "drag_start_x",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 733
+      }
+    },
+    {
+      "name": "drag_start_y",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 737
+      }
+    },
+    {
+      "name": "click_count",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 741
+      }
+    },
+    {
+      "name": "text_input",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 745
+      }
+    },
+    {
+      "name": "grab_mouse",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 754
+      }
+    },
+    {
+      "name": "release_mouse",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 761
+      }
+    },
+    {
+      "name": "dt",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 768
+      }
+    },
+    {
+      "name": "frame_count",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 774
+      }
+    },
+    {
+      "name": "screen_width",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 778
+      }
+    },
+    {
+      "name": "screen_height",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 782
+      }
+    },
+    {
+      "name": "ui_version",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 786
+      }
+    }
+  ]
+}

@@ -20,8 +20,8 @@
 //! embedder express whole declarative trees, e.g. Garden's
 //! `layout(row([editor("a.rs")], [1.0]))`; a list of composite elements is
 //! pretty-printed one element per line so the generated source reads like
-//! hand-written config. [`Arg::expr`] remains the escape hatch for anything the
-//! structured variants can't express (identifiers, field access, operators).
+//! hand-written config. Every argument is a structured value, so the rendered
+//! source is always well-formed — there is no verbatim/raw-source escape hatch.
 //!
 //! Edits go through the lossless CST primitives in [`crate::rewrite`]
 //! ([`parse_ast`], [`find_call`], [`splice_node`], [`splice`]), so comments and
@@ -39,11 +39,48 @@
 
 use crate::rewrite::{find_call, parse_ast, splice, splice_node};
 
+/// Why a goal batch could not be applied — the source didn't parse, or the
+/// rewrite machinery rejected an edit. A distinct type (rather than a bare
+/// `String`) so the result of [`modify_source_with_goals`] reads unambiguously:
+/// `Ok` is the rewritten source, `Err` is this failure. Wraps a human-readable
+/// message; `Display`/`From<GoalError> for String` recover it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoalError {
+    pub message: String,
+}
+
+impl std::fmt::Display for GoalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for GoalError {}
+
+impl From<String> for GoalError {
+    fn from(message: String) -> Self {
+        GoalError { message }
+    }
+}
+
+impl From<&str> for GoalError {
+    fn from(message: &str) -> Self {
+        GoalError {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl From<GoalError> for String {
+    fn from(err: GoalError) -> Self {
+        err.message
+    }
+}
+
 /// A structured call argument. Rendered into a Petal literal at edit time.
 ///
-/// Prefer the typed variants (via the [`From`] impls or the constructors), so
-/// strings are quoted/escaped for you; reach for [`Arg::Expr`] only when the
-/// argument is something a literal can't express.
+/// Use the typed variants (via the [`From`] impls or the constructors); strings
+/// are quoted/escaped for you and every variant renders to well-formed Petal.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Arg {
     /// A string, rendered as a quoted-and-escaped Petal string literal.
@@ -67,10 +104,6 @@ pub enum Arg {
     /// A nested call `function(args...)` — building block for declarative
     /// call trees like `layout(row([editor("a")], [1.0]))`.
     Call { function: String, args: Vec<Arg> },
-    /// A raw source expression, rendered **verbatim** — the escape hatch for
-    /// arguments the structured variants can't express (identifiers, field
-    /// access, operators): `Arg::expr("theme.dark")`.
-    Expr(String),
 }
 
 impl Arg {
@@ -93,10 +126,6 @@ impl Arg {
     /// The `nil` argument.
     pub fn nil() -> Arg {
         Arg::Nil
-    }
-    /// A raw source expression, rendered verbatim.
-    pub fn expr(src: impl Into<String>) -> Arg {
-        Arg::Expr(src.into())
     }
     /// A list argument. Elements coerce like call params do.
     pub fn list<P, A>(items: P) -> Arg
@@ -151,7 +180,6 @@ impl Arg {
             Arg::List(items) => render_list(items, depth),
             Arg::Record(fields) => render_record(fields, depth),
             Arg::Call { function, args } => render_call_at(function, args, depth),
-            Arg::Expr(src) => src.clone(),
         }
     }
 
@@ -315,7 +343,7 @@ impl Goal {
 /// Goals are applied sequentially, each seeing the output of the previous one,
 /// so later goals observe earlier insertions. An error from any goal aborts the
 /// whole batch (the source is only returned on full success).
-pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, String> {
+pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, GoalError> {
     let mut current = source.to_string();
     for goal in goals {
         current = apply_goal(&current, goal)?;
@@ -324,7 +352,7 @@ pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, 
 }
 
 /// Rewrite `source` to satisfy a single `goal`.
-fn apply_goal(source: &str, goal: &Goal) -> Result<String, String> {
+fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
     match goal {
         Goal::ShouldCall { function, params } => ensure_call(source, function, params),
     }
@@ -345,15 +373,15 @@ fn render_call(function: &str, params: &[Arg]) -> String {
 /// calls with a bare-identifier callee are matched (the shape of declarative
 /// config); a call nested in another expression is ignored, so ensuring it
 /// appends a new statement rather than editing the nested one.
-fn ensure_call(source: &str, function: &str, params: &[Arg]) -> Result<String, String> {
+fn ensure_call(source: &str, function: &str, params: &[Arg]) -> Result<String, GoalError> {
     let replacement = render_call(function, params);
     let (tree, stmts) = parse_ast(source)?;
     match find_call(&stmts, function) {
         Some(span) => Ok(match splice_node(&tree, span, &replacement) {
             Some(edited) => edited.text(),
-            // Rendered call isn't a single parseable expression (only reachable
-            // via a malformed `Arg::expr`): splice it in verbatim at the string
-            // level.
+            // Defensive: structured args always render to a parseable call, but
+            // if a splice ever can't reparse, fall back to a string-level span
+            // splice rather than dropping the edit.
             None => splice(source, span, &replacement),
         }),
         None => {
@@ -373,6 +401,20 @@ mod tests {
 
     fn apply(source: &str, goals: &[Goal]) -> String {
         modify_source_with_goals(source, goals).unwrap()
+    }
+
+    #[test]
+    fn unparseable_source_returns_a_goal_error() {
+        // The source doesn't parse, so the batch fails with a typed GoalError
+        // (not a bare String) whose message is recoverable.
+        let err = modify_source_with_goals(
+            "set_color_scheme(\n",
+            &[Goal::should_call("set_color_scheme", ["dracula"])],
+        )
+        .unwrap_err();
+        assert!(!err.message.is_empty());
+        // Display and the String conversion both surface the same message.
+        assert_eq!(err.to_string(), String::from(err.clone()));
     }
 
     #[test]
@@ -599,15 +641,6 @@ layout(row([
     }
 
     #[test]
-    fn expr_arg_is_rendered_verbatim() {
-        let out = apply(
-            "theme({})\n",
-            &[Goal::should_call("theme", [Arg::expr("palette.dark")])],
-        );
-        assert_eq!(out, "theme(palette.dark)\n");
-    }
-
-    #[test]
     fn multiple_goals_apply_in_sequence() {
         let out = apply(
             "set_color_scheme(\"light\")\n",
@@ -629,20 +662,6 @@ layout(row([
             ],
         );
         assert_eq!(out, "set_color_scheme(\"dracula\")\n");
-    }
-
-    #[test]
-    fn malformed_expr_arg_falls_back_to_string_splice() {
-        // A raw expr that makes the rendered call unparseable: spliced verbatim
-        // at the string level rather than failing.
-        let out = apply(
-            "set_color_scheme(\"light\")\n",
-            &[Goal::should_call(
-                "set_color_scheme",
-                [Arg::expr("<<broken")],
-            )],
-        );
-        assert_eq!(out, "set_color_scheme(<<broken)\n");
     }
 
     #[test]

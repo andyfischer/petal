@@ -56,8 +56,8 @@ should satisfy — and the module decides whether to insert or update in place.
 | Item | Purpose |
 |---|---|
 | `Goal::should_call(function, params)` | Goal: source should contain a top-level `function(params...)` call. `params` are structured `Arg` values (`&str`/`i64`/`f64`/`bool` coerce in via `From`). |
-| `Arg` | A structured argument: `Str`/`Int`/`Float`/`Bool`/`Nil`, plus `Expr` (verbatim source escape hatch). Strings are rendered as quoted, escaped Petal literals. |
-| `modify_source_with_goals(source, goals)` | Apply a list of goals in order; returns the rewritten source. |
+| `Arg` | A structured argument: `Str`/`Int`/`Float`/`Bool`/`Nil`, plus composites `List`/`Record`/`Call`. Every variant renders to well-formed Petal (strings are quoted and escaped); there is no verbatim/raw-source variant. |
+| `modify_source_with_goals(source, goals)` | Apply a list of goals in order; `Ok(String)` is the rewritten source, `Err(GoalError)` a typed failure. |
 
 `ShouldCall` updates the first existing top-level call to `function` (replacing
 its argument list, layout-flexibly) or appends the call if absent — the shape

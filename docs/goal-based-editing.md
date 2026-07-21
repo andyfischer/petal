@@ -38,10 +38,19 @@ std::fs::write("~/.garden/init.ptl", updated)?;
 
 ## The API
 
-### `modify_source_with_goals(source, goals) -> Result<String, String>`
+### `modify_source_with_goals(source, goals) -> Result<String, GoalError>`
 
-Modifies the Petal source text using the list of goals. Returns the modified
-source text.
+Modifies the Petal source text using the list of goals. On success returns the
+modified source text (`Ok(String)`); on failure returns a [`GoalError`](#goalerror)
+(the source didn't parse, or an edit was rejected). The distinct `Ok`/`Err`
+types make the outcome unambiguous — the `Ok` string is the *only* output, and
+an error is never mistaken for it.
+
+### `GoalError`
+
+A failure to apply the goals, wrapping a human-readable `message`. It implements
+`Display` and `From<GoalError> for String`, so callers that thread a
+`Result<_, String>` can keep using `?`.
 
 ### `Goal`
 
@@ -84,19 +93,13 @@ interpolation.
 | `Arg::List` | `Arg::list(items)` | list literal | `[1, 2, 3]` |
 | `Arg::Record` | `Arg::record(fields)` | record literal (keys render bare, so they must be valid identifiers) | `{ line_numbers: true }` |
 | `Arg::Call` | `Arg::call(name, args)` | nested call | `editor("a.rs")` |
-| `Arg::Expr` | `Arg::expr(src)` | **verbatim source** | anything |
 
-
-`Arg::Expr` is the escape hatch for arguments the structured variants can't
-express — identifiers, field access, operators:
-
-```rust
-Goal::should_call("theme", [Arg::expr("palette.dark")]);   // theme(palette.dark)
-```
-
-Because `Arg::Expr` is rendered verbatim, **you** are responsible for its
-validity — an unparseable expr falls back to a raw string splice rather than an
-error (see [Fallback behavior](#fallback-behavior)).
+Every variant renders to well-formed Petal, so a rewritten call always parses.
+There is deliberately **no verbatim/raw-source argument** — an escape hatch that
+rendered caller-supplied text unquoted would defeat the point of structured
+args (injection, unbalanced delimiters). Express identifiers or field access by
+modeling them structurally, or add a new typed `Arg` variant if a case is
+genuinely missing.
 
 ## See also
 

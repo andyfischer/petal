@@ -43,7 +43,7 @@ use crate::rewrite::{find_call, parse_ast, splice, splice_node};
 /// rewrite machinery rejected an edit. A distinct type (rather than a bare
 /// `String`) so the result of [`modify_source_with_goals`] reads unambiguously:
 /// `Ok` is the rewritten source, `Err` is this failure. Wraps a human-readable
-/// message; `Display`/`From<GoalError> for String` recover it.
+/// message; `Display` recovers it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoalError {
     pub message: String,
@@ -60,20 +60,6 @@ impl std::error::Error for GoalError {}
 impl From<String> for GoalError {
     fn from(message: String) -> Self {
         GoalError { message }
-    }
-}
-
-impl From<&str> for GoalError {
-    fn from(message: &str) -> Self {
-        GoalError {
-            message: message.to_string(),
-        }
-    }
-}
-
-impl From<GoalError> for String {
-    fn from(err: GoalError) -> Self {
-        err.message
     }
 }
 
@@ -379,9 +365,14 @@ fn ensure_call(source: &str, function: &str, params: &[Arg]) -> Result<String, G
     match find_call(&stmts, function) {
         Some(span) => Ok(match splice_node(&tree, span, &replacement) {
             Some(edited) => edited.text(),
-            // Defensive: structured args always render to a parseable call, but
-            // if a splice ever can't reparse, fall back to a string-level span
-            // splice rather than dropping the edit.
+            // Fallback: the tree splice couldn't reparse the replacement as a
+            // single expression, so string-splice the span rather than drop the
+            // edit. Rendered output only parses when the caller supplies valid
+            // Petal identifiers — record keys and fn names are rendered bare and
+            // are NOT validated against the grammar, so a contract-violating
+            // structured arg (e.g. a record key with a space) reaches here and is
+            // string-spliced as-is, producing possibly-invalid source returned as
+            // Ok. Well-formed identifiers always take the tree-splice path above.
             None => splice(source, span, &replacement),
         }),
         None => {
@@ -413,8 +404,26 @@ mod tests {
         )
         .unwrap_err();
         assert!(!err.message.is_empty());
-        // Display and the String conversion both surface the same message.
-        assert_eq!(err.to_string(), String::from(err.clone()));
+        // Display surfaces the message.
+        assert_eq!(err.to_string(), err.message);
+    }
+
+    #[test]
+    fn invalid_record_key_string_splices_as_is() {
+        // Record keys render bare and are not validated against Petal's grammar,
+        // so a key with a space produces a call that can't reparse as a single
+        // expression. The tree splice fails and the string-splice fallback runs,
+        // returning the (syntactically invalid) rendered source as Ok — this
+        // pins that documented fallback behavior for a valid-but-contract-
+        // violating structured arg.
+        let out = apply(
+            "foo({})\n",
+            &[Goal::should_call(
+                "foo",
+                [Arg::record(vec![("bad key", Arg::int(1))])],
+            )],
+        );
+        assert_eq!(out, "foo({ bad key: 1 })\n");
     }
 
     #[test]

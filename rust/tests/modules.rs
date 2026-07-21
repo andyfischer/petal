@@ -141,6 +141,20 @@ fn overloaded_module_fn_exports_as_one_set() {
     );
 }
 
+#[test]
+fn overloaded_module_fn_with_mixed_export_markers_is_a_compile_error() {
+    // Export visibility is per-name and all arities share one binding, so a
+    // single `export` arity would silently leak the unmarked one. Require the
+    // markers to be consistent across the whole overload group.
+    let m = "export fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
+    let err = load_error(&[("m", m)], "import m: f");
+    assert!(
+        err.contains("mixed export markers"),
+        "got: {err}"
+    );
+    assert!(err.contains("'f'"), "names the function: {err}");
+}
+
 // ── Errors ───────────────────────────────────────────────────────
 
 #[test]
@@ -167,8 +181,10 @@ fn unknown_selective_name_is_a_compile_error() {
 
 #[test]
 fn selective_import_of_private_name_is_a_compile_error() {
+    // `_secret` is an unexported `fn`; under the single export rule it is
+    // private like any other, reported via the ordinary "no export" path.
     let err = load_error(&[("ui", UI)], "import ui: _secret");
-    assert!(err.contains("module-private"), "got: {err}");
+    assert!(err.contains("no export '_secret'"), "got: {err}");
 }
 
 #[test]
@@ -180,6 +196,29 @@ fn unexported_name_is_not_importable() {
     assert!(err.contains("no export 'hidden'"), "got: {err}");
     // The exports list should mention the one exported name.
     assert!(err.contains("shown"), "error lists exports: {err}");
+}
+
+#[test]
+fn export_marks_underscore_name_importable() {
+    // `export` is the single privacy rule: a leading `_` carries no special
+    // privacy meaning. An `export fn _helper` exports normally — both
+    // selectively importable and reachable via qualified member access.
+    let m = "export fn _helper()\n  1\nend";
+    check_output(
+        &[("m", m)],
+        "import m: _helper\nprint(_helper())",
+        &["1"],
+    );
+    check_output(&[("m", m)], "import m\nprint(m._helper())", &["1"]);
+}
+
+#[test]
+fn unexported_underscore_name_is_private() {
+    // A plain `_`-prefixed name with no `export` is private like any other
+    // unexported name — flagged via the ordinary "no export" path.
+    let m = "fn _helper()\n  1\nend";
+    let err = load_error(&[("m", m)], "import m: _helper");
+    assert!(err.contains("no export '_helper'"), "got: {err}");
 }
 
 #[test]

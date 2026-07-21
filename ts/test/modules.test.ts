@@ -51,7 +51,7 @@ describe("module imports across files", () => {
     const err = runFileError(
       `run -e 'import palette: _clamp' -I ${FIXTURES}`
     );
-    expect(err).toContain("module-private");
+    expect(err).toContain("no export '_clamp'");
   });
 
   it("-I adds a module search directory", () => {

@@ -304,6 +304,8 @@ impl Compiler {
         }
 
         self.bind_imports(module, &stmts)?;
+        Self::check_overload_export_consistency(&stmts)
+            .map_err(|e| format!("{}: {}", module.display_name, e))?;
         self.prescan_declarations(&stmts);
         let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures);
         self.warnings.extend(diags);
@@ -370,13 +372,6 @@ impl Compiler {
                 continue;
             };
             for name in names {
-                if name.starts_with('_') {
-                    return Err(format!(
-                        "{}: cannot import '{}' from '{}': names starting with '_' \
-                         are module-private",
-                        module.display_name, name, m
-                    ));
-                }
                 if !exports.contains(name) {
                     return Err(format!(
                         "{}: module '{}' has no export '{}' (exports: {})",
@@ -471,8 +466,9 @@ impl Compiler {
 
     /// Top-level names a module explicitly `export`s (fn, enum variants, let,
     /// state) — the set that importers may see. Everything else is private.
-    /// A leading `_` still forces module-privacy, so `export fn _helper` does
-    /// not export (the underscore convention wins).
+    /// `export` is the single privacy rule: a name is exported iff its
+    /// declaration is marked `export`, regardless of a leading underscore
+    /// (`export fn _helper` exports normally).
     fn exported_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
         for stmt in stmts {
@@ -483,15 +479,11 @@ impl Compiler {
                 StmtKind::FnDecl { name, .. }
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. } => {
-                    if !name.starts_with('_') {
-                        names.insert(name.clone());
-                    }
+                    names.insert(name.clone());
                 }
                 StmtKind::EnumDecl { variants, .. } => {
                     for v in variants {
-                        if !v.name.starts_with('_') {
-                            names.insert(v.name.clone());
-                        }
+                        names.insert(v.name.clone());
                     }
                 }
                 _ => {}
@@ -702,6 +694,41 @@ impl Compiler {
     // -----------------------------------------------------------------------
     // Prescan for forward references
     // -----------------------------------------------------------------------
+
+    /// Reject overload groups (same top-level name, 2+ `fn` declarations) whose
+    /// members carry inconsistent `export` markers. Export visibility is tracked
+    /// per *name*, and all arities of an overloaded fn share one name binding, so
+    /// marking a single arity `export` would silently export the whole set (and
+    /// leak the unmarked arities). Rather than pick a winner, require the author
+    /// to be explicit: mark every overload `export`, or none.
+    fn check_overload_export_consistency(stmts: &[Stmt]) -> Result<(), String> {
+        // name -> (any exported, any not exported), in first-seen order.
+        let mut groups: Vec<String> = Vec::new();
+        let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
+        for stmt in stmts {
+            if let StmtKind::FnDecl { name, .. } = &stmt.kind {
+                let entry = seen.entry(name.clone()).or_insert_with(|| {
+                    groups.push(name.clone());
+                    (false, false)
+                });
+                if stmt.exported {
+                    entry.0 = true;
+                } else {
+                    entry.1 = true;
+                }
+            }
+        }
+        for name in groups {
+            let (any_exported, any_plain) = seen[&name];
+            if any_exported && any_plain {
+                return Err(format!(
+                    "overloaded function '{name}' has mixed export markers: \
+                     mark all overloads 'export' or none"
+                ));
+            }
+        }
+        Ok(())
+    }
 
     fn prescan_declarations(&mut self, stmts: &[Stmt]) {
         // Record declared signatures so the checker can verify call sites even

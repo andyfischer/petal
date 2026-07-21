@@ -56,9 +56,13 @@ end
 variants. `export` is only meaningful at a module's top level — it has no effect
 in the entry file (nothing imports the entry) or on nested statements.
 
-Names starting with `_` are always module-private: `export fn _helper` does not
-export (the underscore convention wins), and `_`-names are never resolvable via
-`m._helper` nor importable.
+`export` is the single privacy rule. A leading `_` carries no special privacy
+meaning: `export fn _helper` exports normally, and a plain `fn _helper` (no
+`export`) is private exactly like any other unexported name.
+
+Overloaded functions (the same top-level name declared with several arities)
+share one name binding, so their export markers must be consistent: mark every
+overload `export`, or none. A mixed group is a compile error.
 
 An importer that names a non-exported symbol gets a compile error
 (`import m: helper`) or a deferred error at the access site (`m.helper()`):
@@ -134,7 +138,7 @@ time:
 - `import a: draw` + `import b: draw` — error with both provenances.
 - `import a: draw` + a local top-level declaration of `draw` — error.
 - Two imports aliasing the same name to different modules — error.
-- Importing an unknown or `_`-private name — error (unknown-name errors list
+- Importing an unknown or unexported name — error (unknown-name errors list
   the module's exports).
 
 Ordinary lexical shadowing (`let x = ...` rebinding an implicit import or an

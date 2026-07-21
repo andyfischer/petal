@@ -1,27 +1,33 @@
 # Programmatic Program Modification
 
-Documents the various ways that Petal code can be changed programatticaly.
+Documents the ways Petal code can be changed programmatically — for tools,
+agents, and embedders.
 
-## The three layers a program can be modified at
+## Two modes of editing
 
-A Petal program exists in three representations, and each is a distinct
-modification surface with its own tooling:
+A Petal program can be modified in two fundamentally different situations:
 
-| Layer | Representation | Modify by | Preserves |
+| Mode | When | Modify by | Preserves |
 |---|---|---|---|
-| **Source** | `.ptl` text (+ lossless CST) | text splice / tree splice / rebind desugar / lint | comments & formatting (CST path) |
-| **IR** | term-graph `Program` (JSON) | emit / transform / validate | dataflow structure |
-| **Running program** | live `Stack` + `ExecutionContext` | hot reload / state-set / input / fork | live state across a swap |
+| **Static editing** | no running app — you have the `.ptl` source | text splice / tree splice / goal-based edit / lint | comments & formatting (CST path) |
+| **Live editing** | a running app whose `state` must survive the change | hot reload / state-set / input / speculative fork | live state across a swap |
 
 Because Petal is a dataflow language with no register-mutation primitive
 (rebindings lower to pure `Phi` joins — see
-[debugging-visibility.md](dev/debugging-visibility.md)), all three layers are
-unusually legible: the IR is a clean graph you can walk and rewrite, and runtime
-state is keyed structurally so it can migrate across an edit.
+[debugging-visibility.md](dev/debugging-visibility.md)), both modes are unusually
+legible: runtime state is keyed structurally so it can migrate across an edit,
+and the source can be rewritten through a lossless tree without reformatting.
+
+> A third surface — constructing or transforming a program *as IR data* — exists
+> but is **experimental and unfinished**; it is documented separately in
+> [dev/experimental-ir-based-editing.md](dev/experimental-ir-based-editing.md).
 
 ---
 
-## Layer 1 — Source modification
+## Static editing (no running app)
+
+Rewrites the `.ptl` source text. Nothing needs to be running; the output is new
+source you can write back to disk, hand to a compiler, or diff.
 
 ### Formatting-preserving tree splices (`rust/src/rewrite.rs`)
 
@@ -47,7 +53,7 @@ These are the intended surface for "the program is *also* a live document the
 user is editing": a tool can rewrite a single `layout(...)` call and write the
 result back without clobbering the rest of the file.
 
-### 1b′. Goal-based editing (`rust/src/goal_based_editing.rs`)
+### Goal-based editing (`rust/src/goal_based_editing.rs`)
 
 The primitives above are wrapped by a **declarative, goal-based** API. Rather
 than "replace this span," a caller states *goals* — properties the edited source
@@ -60,14 +66,14 @@ should satisfy — and the module decides whether to insert or update in place.
 | `modify_source_with_goals(source, goals)` | Apply a list of goals in order; `Ok(String)` is the rewritten source, `Err(GoalError)` a typed failure. |
 
 `ShouldCall` updates the first existing top-level call to `function` (replacing
-its argument list, layout-flexibly) or appends the call if absent — the shape
-an app's user-config script wants for a "set the color scheme" menu action. Goals compose (apply several in one pass, later goals see earlier
-insertions), and `Goal` is the extension point for richer intents (ensure an
-import, remove a call, set a field). This is the seam a broader structured-edit
-and goal-driven API grows from. **Usage guide:**
-[goal-based-editing.md](goal-based-editing.md).
+its argument list, layout-flexibly) or appends the call if absent — the shape an
+app's user-config script wants for a "set the color scheme" menu action. Goals
+compose (apply several in one pass, later goals see earlier insertions), and
+`Goal` is the extension point for richer intents (ensure an import, remove a
+call, set a field). This is the seam a broader structured-edit and goal-driven
+API grows from. **Usage guide:** [goal-based-editing.md](goal-based-editing.md).
 
-### 1c. `petal lint --fix` (normalize source in place)
+### `petal lint --fix` (normalize source in place)
 
 [`rust/src/lint/`](../rust/src/lint/) is the only **agent-usable command that
 rewrites program source on disk today**. `lint_source`
@@ -82,87 +88,28 @@ CLI: `petal lint [--fix | --check]`. `--check` reports without writing; `--fix`
 writes. This is a real, if narrow, example of a **verified automatic edit** —
 the IR-equivalence gate is the pattern goal-driven refactors should follow.
 
----
+### Future: goal-driven source *suggestion*
 
-## Layer 2 — The IR as a construction & transformation target
-
-Petal's IR is a **documented, versioned, load-and-run emit target**. You can
-construct or transform a program *as data* and run it directly, bypassing the
-Petal front-end entirely. Full contract:
-[ir-as-target.md](dev/ir-as-target.md).
-
-### 2a. The term graph as a data structure
-
-A `Program` ([`rust/src/program.rs:352`](../rust/src/program.rs)) owns the whole
-graph:
-
-- `terms: Vec<Term>` — nodes, indexed so `terms[i].id == i`.
-- `blocks: Vec<Block>` — scopes; `root_block`, `constants`, `functions`, `match_arms`.
-
-Each `Term` ([`program.rs:237`](../rust/src/program.rs)) is in **two graphs at
-once**: the **dataflow DAG** via `inputs: SmallVec<[TermId;4]>` (ordered value
-edges) and the **intra-block execution order** via `block_next`/`block_prev`
-(a linked list; `Block.entry` is the head). Other fields: `op: TermOp`,
-`block_id`, `name` (binding label), `register`, `state_key`, `child_blocks`,
-`in_loop`.
-
-`TermOp` ([`program.rs:73`](../rust/src/program.rs)) is the operation vocabulary:
-arithmetic/comparison, `Copy`, `Phi`, `Branch`, `Return`, `Constant(id)`,
-`MethodCall(id)`, `MakeClosure(fn)`, `AllocMap`, `AllocElement`,
-`MakeEnumVariant`, etc. There is **no register-mutation op** — cross-block
-rebinding goes through a `Phi` and `Block.phi_outs: Vec<PhiOut>`
-([`program.rs:287`](../rust/src/program.rs)): on child-frame pop, `src_term`'s
-value is written into the parent frame at `dest_term`'s register (`dest_term`
-must be a `Phi`).
-
-### 2b. Emit / load / run round-trip
-
-Serialization is **JSON via serde derives** — the wire shape is the derived
-serialization of `Program`, matching `show-ir --json` byte-for-byte.
-
-- **Emit:** `petal show-ir --json` →
-  [`cli/handlers.rs:314`](../rust/src/cli/handlers.rs) (`serde_json::to_string_pretty`).
-- **Load:** `Program::from_json` ([`ir_validate.rs:19`](../rust/src/ir_validate.rs))
-  → `rebuild_indexes()` (rebuilds the `block_terms` index + constant dedup) →
-  `validate()` (eight structural invariants).
-- **Run:** `petal run --ir <file|->` → `env.load_program_ir`
-  ([`env/mod.rs:280`](../rust/src/env/mod.rs)) → same bytecode-VM path as a
-  compiled program. Guarantee: `show-ir --json | run --ir -` equals `run`.
-
-So a program can be **built or rewritten as JSON, validated, and executed**
-without touching source text.
-
-### 2c. Reference emitter & transform passes
-
-- **Foreign-language emitter (the canonical builder pattern):**
-  [`ts/tools/calc-to-ir.ts`](../ts/tools/calc-to-ir.ts) is a complete standalone
-  front-end for a toy "calc" language that emits Petal IR JSON sharing **zero
-  code** with Petal. Its `Emitter` class shows the mechanics: a deduped constant
-  table (`constId`), phantom builtin `Copy` terms in leading slots
-  (`addPhantom`), and `addListed` threading the `block_next`/`block_prev` linked
-  list. This is the model for programmatic construction. Golden fixtures live in
-  [`ts/test/fixtures/ir/`](../ts/test/fixtures/ir/).
-- **Read/rewrite passes over the graph (Rust):**
-  [`rust/src/program_analysis.rs`](../rust/src/program_analysis.rs) —
-  `trace_provenance` (backward dataflow slice), `trace_dependents` (forward
-  slice), `slice(targets)` (minimal connecting subgraph), `find_term`,
-  `named_terms`. Exposed on the CLI as `show-provenance`, `show-dependents`,
-  `show-slice`, `show-graph` (DOT). These are read-only today but define the
-  graph queries a transformation would target (e.g. "slice the constants that
-  influence this output, then rewrite them").
-
-There is **no dedicated `IrBuilder` API in Rust** — the "builder" is either the
-compiler (internal, [`rust/src/compiler/`](../rust/src/compiler/)) or a foreign
-emitter following the JSON contract.
+*Specify a target output, get suggested source-value changes* is not built yet.
+It depends on **reverse-mode AD**, which does not exist — Petal ships only
+forward-mode sensitivity (dual numbers:
+[`builtins/autodiff.rs`](../rust/src/builtins/autodiff.rs) registers
+`dual`/`value_of`/`deriv_of`, threaded through
+[`backend/ops.rs`](../rust/src/backend/ops.rs)), which answers "how sensitive is
+this output to that input" but not "which inputs should change to hit a target."
+See [dev/goals.md](dev/goals.md) for the direction.
 
 ---
 
-## Layer 3 — Modifying a running program (live)
+## Live editing (running program, state preserved)
 
-### 3a. State-preserving hot reload (`transfer_state`)
+Modifies a program (or its inputs) *while it runs*, keeping the parts of live
+`state` that still make sense. This is what hot reload and the debug protocol do.
+
+### State-preserving hot reload (`transfer_state`)
 
 The core primitive is **`Env::transfer_state`**
-([`rust/src/transfer_state.rs:24`](../rust/src/transfer_state.rs)): it reshapes a
+([`rust/src/transfer_state.rs`](../rust/src/transfer_state.rs)): it reshapes a
 running stack onto a freshly compiled `Program` while keeping matching state
 values. Hot reload is one use; the mechanism is general ("reshape a stack for any
 new program that shares the same StateKeys").
@@ -178,12 +125,12 @@ Flow:
 Returns `TransferStateResult { state_preserved, state_dropped }`.
 
 **State reconciliation is by name-hash, order-independent.** `StateKey(u64)`
-([`program.rs:44`](../rust/src/program.rs)) is a **hash of the state variable's
+([`program.rs`](../rust/src/program.rs)) is a **hash of the state variable's
 name**, computed at compile time by `Compiler::state_key_for`
-([`compiler/mod.rs:461`](../rust/src/compiler/mod.rs)) — bare name for entry-file
+([`compiler/mod.rs`](../rust/src/compiler/mod.rs)) — bare name for entry-file
 `state`, qualified `"module::name"` for module state. The runtime key is
 `RuntimeStateKey { base: StateKey, loop_indices }`
-([`stack.rs:24`](../rust/src/stack.rs)); `transfer_state` matches on `base` only.
+([`stack.rs`](../rust/src/stack.rs)); `transfer_state` matches on `base` only.
 Migration semantics (pinned by tests in `transfer_state.rs`):
 
 - **Addition** — new key absent in old state → `StateInit` runs, default-initializes.
@@ -196,10 +143,9 @@ declaration wasn't visited on a run (e.g. per-iteration state for a removed list
 item).
 
 **Known limitation:** renaming a `state` var — or moving/renaming its module —
-changes its `StateKey` and **drops the value** (it reads as remove + add). This
-is the obvious target for smarter reconciliation (see gaps below).
+changes its `StateKey` and **drops the value** (it reads as remove + add).
 
-### 3b. Hosts that trigger reload
+### Hosts that trigger reload
 
 - **Native SDL file-watcher** (shared by all SDL hosts) —
   [`integrations/petal-desktop-sdl/src/watcher.rs`](../integrations/petal-desktop-sdl/src/watcher.rs):
@@ -220,7 +166,7 @@ is the obvious target for smarter reconciliation (see gaps below).
   panic poisons the module and requires a page reload. This is browser-UI only —
   **not exposed over the debug protocol/MCP**.
 
-### 3c. Point-mutating live state, bindings, and input
+### Point-mutating live state, bindings, and input
 
 Over the agent JSON protocol and MCP (see
 [debug-protocol.md](dev/debug-protocol.md),
@@ -240,7 +186,7 @@ only. The command set is exactly `pause, resume, step, state, set_state,
 capture_draw_commands, input, screenshot, pending_report`
 ([`sample-apps/diagram-canvas/src/debug.ts`](../sample-apps/diagram-canvas/src/debug.ts)).
 
-### 3d. Speculative execution — safe experimental modification
+### Speculative execution — safe experimental modification
 
 Petal can **fork a running execution**, apply a modification (different inputs or
 a variant program), run it, and compare — **without disturbing the original**.
@@ -260,28 +206,9 @@ shares no mutable state with its source.
 
 The `ExecutionContext` machinery lives in
 [`rust/src/execution_context.rs`](../rust/src/execution_context.rs) and
-[`rust/src/env/fork.rs`](../rust/src/env/fork.rs). This is
-the substrate for "try an edit, see the effect, keep or discard" — the execution
-half of direct-manipulation and goal-driven editing.
-
----
-
-## Layer 4 — Differentiable values (forward-mode sensitivity)
-
-Petal ships forward-mode automatic differentiation via dual numbers.
-[`rust/src/builtins/autodiff.rs`](../rust/src/builtins/autodiff.rs) registers
-`dual(value, derivative)`, `value_of(x)`, `deriv_of(x)`; arithmetic threads
-derivatives through [`backend/ops.rs`](../rust/src/backend/ops.rs) (`dual_arith`),
-and `sin`/`cos`/`tan`/`sqrt`/`abs` propagate (`exp`/`log` currently drop the
-derivative — a known gap). This lets a program compute *how sensitive an output
-is to an input* in the forward direction.
-
-**Not yet available:** reverse-mode AD / back-propagation, and the `grad()` /
-`optimize()` functions sketched in
-[docs/examples/aspirational/gradient_descent.ptl](examples/aspirational/gradient_descent.ptl)
-(that file is a target sketch, not runnable). Goal-driven editing — *specify a
-target output, get suggested source-value changes* — depends on these and is not
-built yet; see [goals.md](dev/goals.md) for the direction.
+[`rust/src/env/fork.rs`](../rust/src/env/fork.rs). This is the substrate for "try
+an edit, see the effect, keep or discard" — the execution half of
+direct-manipulation and goal-driven editing.
 
 ---
 
@@ -292,9 +219,6 @@ built yet; see [goals.md](dev/goals.md) for the direction.
 | Inspect source (tokens/AST/CST) | ✅ | — | `show-tokens/ast`, `rewrite::parse_ast` |
 | Rewrite source, formatting-preserved | — | ✅ | `goal_based_editing.rs` (goals) over `rewrite.rs` primitives |
 | Normalize source (verified) | — | ✅ | `petal lint --fix` |
-| Inspect IR graph | ✅ | — | `show-ir`, `program_analysis.rs`, MCP `ShowIR` |
-| Construct/transform IR as data | — | ✅ | `run --ir`, `Program::from_json`, `calc-to-ir.ts` |
-| Provenance / dependents / slice | ✅ | — | `show-provenance/dependents/slice` |
 | Hot reload (state-preserving) | — | ✅ | `transfer_state`, SDL watcher |
 | Full reload (state reset) | — | ✅ | `petal.load` (web-canvas) |
 | Mutate one live state var | — | ✅ | `set_state` / `DiagramSetState` |
@@ -302,17 +226,18 @@ built yet; see [goals.md](dev/goals.md) for the direction.
 | Speculative variant run | ✅ | (forked) | `fork_execution`, `run_speculative`, `diff_state` |
 | Forward-mode sensitivity | ✅ | — | `dual`/`deriv_of` |
 | Goal-driven source suggestion | — | not yet available | needs reverse-mode AD; see [goals.md](dev/goals.md) |
+| Construct/transform IR as data | — | ✅ (experimental) | [dev/experimental-ir-based-editing.md](dev/experimental-ir-based-editing.md) |
 
 ---
 
 ## Known limitations
 
 - **Hot-reload reconciliation is by name.** Renaming a `state` variable (or its
-  module) changes its key and drops the value (§3a).
-- **Reverse-mode AD does not exist** — only forward-mode sensitivity (§4), so
-  "given a target output, which inputs should change" is not answerable today.
-- **`program_analysis.rs` queries are read-only** — provenance/dependents/slice
-  describe the graph but there is no in-place IR rewrite API; transform IR by
-  emitting new JSON (§2b).
+  module) changes its key and drops the value (see Live editing).
+- **Reverse-mode AD does not exist** — only forward-mode sensitivity, so "given a
+  target output, which inputs should change" is not answerable today.
+- **IR editing is experimental** — the graph-query passes are read-only and there
+  is no in-place IR rewrite API; see
+  [dev/experimental-ir-based-editing.md](dev/experimental-ir-based-editing.md).
 
 For where these are headed, see [goals.md](dev/goals.md).

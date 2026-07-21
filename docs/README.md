@@ -27,7 +27,7 @@ How the implementation works and where it's headed:
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: natives, values, host channels |
 | [Embedding Guide](embedding-guide.md) | Patterns for embedding without host globals: observing function calls, feeding inputs, per-run ids |
 | [Building on Integrations](building-on-integrations.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
-| [Program Modification](program-modification.md) | Modifying programs programmatically (source, IR, live) — for tools, agents, and embedders |
+| [Program Modification](program-modification.md) | Modifying programs programmatically — static (source) and live (running-state) editing — for tools, agents, and embedders |
 | [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |
 | [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
@@ -48,4 +48,5 @@ working documents — expect internal shorthand and point-in-time status:
 | [Linter Plan](dev/linter-plan.md) | `petal lint` design; first slice shipped, normalization catalogue remains |
 | [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
+| [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | Early, unfinished surface for constructing/transforming a program as IR data |
 | [Unreal FFI Proposal](dev/unreal-ffi-proposal.md) | Game-engine handle FFI (M1 in progress) |

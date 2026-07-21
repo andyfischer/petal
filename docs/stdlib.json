@@ -2154,7 +2154,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 647
+        "line": 661
       }
     },
     {
@@ -2166,7 +2166,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 651
+        "line": 665
       }
     },
     {
@@ -2178,7 +2178,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 655
+        "line": 669
       }
     },
     {
@@ -2190,7 +2190,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 659
+        "line": 673
       }
     },
     {
@@ -2207,7 +2207,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 663
+        "line": 677
       }
     },
     {
@@ -2224,7 +2224,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 670
+        "line": 684
       }
     },
     {
@@ -2241,7 +2241,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 677
+        "line": 691
       }
     },
     {
@@ -2253,7 +2253,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 684
+        "line": 698
       }
     },
     {
@@ -2265,7 +2265,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 688
+        "line": 702
       }
     },
     {
@@ -2282,7 +2282,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 692
+        "line": 706
       }
     },
     {
@@ -2299,7 +2299,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 699
+        "line": 713
       }
     },
     {
@@ -2316,7 +2316,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 706
+        "line": 720
       }
     },
     {
@@ -2328,7 +2328,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 713
+        "line": 727
       }
     },
     {
@@ -2340,7 +2340,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 717
+        "line": 731
       }
     },
     {
@@ -2352,7 +2352,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 721
+        "line": 735
       }
     },
     {
@@ -2364,7 +2364,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 725
+        "line": 739
       }
     },
     {
@@ -2376,7 +2376,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 729
+        "line": 743
       }
     },
     {
@@ -2388,7 +2388,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 733
+        "line": 747
       }
     },
     {
@@ -2400,7 +2400,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 737
+        "line": 751
       }
     },
     {
@@ -2412,7 +2412,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 741
+        "line": 755
       }
     },
     {
@@ -2424,7 +2424,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 745
+        "line": 759
       }
     },
     {
@@ -2436,7 +2436,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 754
+        "line": 768
       }
     },
     {
@@ -2448,7 +2448,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 761
+        "line": 775
       }
     },
     {
@@ -2460,7 +2460,19 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 768
+        "line": 782
+      }
+    },
+    {
+      "name": "time",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/input.rs",
+        "line": 791
       }
     },
     {
@@ -2472,7 +2484,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 774
+        "line": 797
       }
     },
     {
@@ -2484,7 +2496,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 778
+        "line": 801
       }
     },
     {
@@ -2496,7 +2508,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 782
+        "line": 805
       }
     },
     {
@@ -2508,7 +2520,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 786
+        "line": 809
       }
     }
   ]

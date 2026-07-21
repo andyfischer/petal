@@ -54,6 +54,10 @@ pub const SYM_CLICK_COUNT: &str = "click_count";
 pub const SYM_TEXT_INPUT: &str = "text_input";
 pub const SYM_DT: &str = "dt";
 pub const SYM_FRAME_COUNT: &str = "frame_count";
+/// Absolute monotonic clock in seconds, read fresh from the host each frame
+/// (never a running sum of `dt`). Backs the `time()` native and the prelude's
+/// `elapsed()`.
+pub const SYM_TIME: &str = "time";
 pub const SYM_SCREEN_WIDTH: &str = "screen_width";
 pub const SYM_SCREEN_HEIGHT: &str = "screen_height";
 
@@ -492,6 +496,15 @@ pub fn bind_frame_info(env: &mut Env, dt: f64, frame_count: i64) {
     bind_int(env, SYM_FRAME_COUNT, frame_count);
 }
 
+/// Bind the absolute clock (seconds) exposed to scripts as `time()`. Hosts
+/// pass a value read straight from a monotonic source each frame (e.g.
+/// `start.elapsed().as_secs_f64()`) — never a running sum of `dt`, which is the
+/// whole point of `elapsed()` avoiding accumulation drift.
+pub fn bind_time(env: &mut Env, seconds: f64) {
+    let s = env.intern_symbol(SYM_TIME);
+    env.set_binding(s, Value::Float(seconds));
+}
+
 /// Bind the drawable size in logical pixels (set on init/resize; persists).
 pub fn bind_dimensions(env: &mut Env, width: i32, height: i32) {
     bind_int(env, SYM_SCREEN_WIDTH, width as i64);
@@ -580,6 +593,7 @@ pub fn register_input(env: &mut Env) {
     env.register_native("grab_mouse", native_grab_mouse);
     env.register_native("release_mouse", native_release_mouse);
     env.register_native("dt", native_dt);
+    env.register_native("time", native_time);
     env.register_native("frame_count", native_frame_count);
     env.register_native("screen_width", native_screen_width);
     env.register_native("screen_height", native_screen_height);
@@ -767,6 +781,15 @@ fn native_release_mouse(state: &mut PetalCxt) -> NativeResult {
 
 fn native_dt(state: &mut PetalCxt) -> NativeResult {
     let v = binding_float(state, SYM_DT);
+    state.push_float(v);
+    Ok(1)
+}
+
+/// `time()` — absolute clock in seconds since the host started, read fresh each
+/// frame. Unlike accumulating `dt()`, it does not drift; `elapsed()` builds on
+/// it. Returns 0.0 under hosts that don't publish a clock via [`bind_time`].
+fn native_time(state: &mut PetalCxt) -> NativeResult {
+    let v = binding_float(state, SYM_TIME);
     state.push_float(v);
     Ok(1)
 }

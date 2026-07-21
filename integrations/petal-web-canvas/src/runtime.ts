@@ -220,7 +220,16 @@ export class PetalCanvas {
     try {
       // Stage timing/dimensions first (begin_frame advances the input clock by
       // dt to promote this frame's pending input edges), then run.
-      this.runtime.set_frame_info(dt, this.frameCount, this.canvas.width, this.canvas.height);
+      // Absolute clock in seconds since page load (monotonic, read fresh — not
+      // an accumulation of dt), backing time()/elapsed() in the script.
+      const time = performance.now() / 1000;
+      this.runtime.set_frame_info(
+        dt,
+        time,
+        this.frameCount,
+        this.canvas.width,
+        this.canvas.height,
+      );
       this.runtime.begin_frame();
       // Push host-owned props into committed state, then run. reset_and_run's
       // reset preserves state, so the values reach this frame's run.

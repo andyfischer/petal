@@ -30,6 +30,19 @@ fn _clamp(v, lo, hi)
   max(lo, min(v, hi))
 end
 
+// ── Timing ────────────────────────────────────────────────────────────────
+// `time()` is an absolute clock in seconds, published by the host each frame
+// (monotonic, read fresh — never a running sum of `dt()`, so it does not
+// drift). `elapsed()` reports the seconds since it was first called: it
+// captures the clock once into `state` and subtracts. The captured `start` is
+// a single module state slot, so `elapsed()` is one global timer measured from
+// the app's first `elapsed()` call — for independent timers, capture your own
+// `state t0 = time()` at the call site and subtract `time() - t0`.
+fn elapsed()
+  state start = time()
+  time() - start
+end
+
 // ── Record overloads over the flat draw natives ───────────────────────────
 // The flat-int arities delegate to the captured natives, so scripts that use
 // the classic signatures keep working when these shadow the builtins.

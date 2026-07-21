@@ -18,7 +18,7 @@ use petal_ui::draw::{
     clear_draw_commands, reset_canvas_ids, take_draw_commands, take_draw_commands_for,
 };
 use petal_ui::input::{
-    InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, buttons,
+    InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, bind_time, buttons,
 };
 
 /// Map a DOM `MouseEvent.button` (0 = left, 1 = middle, 2 = right) onto the
@@ -51,6 +51,9 @@ pub struct PetalRuntime {
     /// This frame's timing/dimensions, staged by `set_frame_info` and bound
     /// into `env` at run time.
     dt: f64,
+    /// Absolute clock in seconds (host `performance.now()`), read fresh each
+    /// frame — backs `time()`/`elapsed()` without accumulating `dt`.
+    time: f64,
     frame_count: i64,
     width: i32,
     height: i32,
@@ -75,6 +78,7 @@ impl PetalRuntime {
             active_stack: None,
             input: InputState::new(),
             dt: 0.0,
+            time: 0.0,
             frame_count: 0,
             width: 0,
             height: 0,
@@ -88,6 +92,7 @@ impl PetalRuntime {
         clear_draw_commands(&mut self.env);
         reset_canvas_ids(&mut self.env);
         bind_frame_info(&mut self.env, self.dt, self.frame_count);
+        bind_time(&mut self.env, self.time);
         bind_dimensions(&mut self.env, self.width, self.height);
         bind_input(&mut self.env, &self.input);
     }
@@ -183,8 +188,16 @@ impl PetalRuntime {
         self.input.type_text(text);
     }
 
-    pub fn set_frame_info(&mut self, dt: f64, frame_count: i32, width: i32, height: i32) {
+    pub fn set_frame_info(
+        &mut self,
+        dt: f64,
+        time: f64,
+        frame_count: i32,
+        width: i32,
+        height: i32,
+    ) {
         self.dt = dt;
+        self.time = time;
         self.frame_count = frame_count as i64;
         self.width = width;
         self.height = height;

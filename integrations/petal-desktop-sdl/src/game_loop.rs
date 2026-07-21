@@ -29,7 +29,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use petal_ui::draw::clear_draw_commands;
-use petal_ui::input::{InputState, bind_frame_info, bind_input, take_mouse_grab};
+use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time, take_mouse_grab};
 
 use crate::input::poll_sdl_events;
 use crate::protocol::{self, Command, Response};
@@ -210,6 +210,7 @@ pub fn run_game<H: Host>(
     let mut current = load_initial(&mut env, source_path, &config, host)?;
 
     let mut last_frame = Instant::now();
+    let start = Instant::now();
     let mut frame_count: i64 = 0;
     let mut input = InputState::default();
     let mut mouse_grabbed = false;
@@ -244,6 +245,7 @@ pub fn run_game<H: Host>(
 
         input.begin_frame(dt);
         bind_frame_info(&mut env, dt, frame_count);
+        bind_time(&mut env, start.elapsed().as_secs_f64());
 
         current.reloader.poll(
             &mut env,
@@ -322,6 +324,7 @@ pub fn run_agent<H: Host>(
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = false;
     let mut last_frame = Instant::now();
+    let start = Instant::now();
     let mut frame_count: i64 = 0;
     let mut input = InputState::default();
 
@@ -359,6 +362,7 @@ pub fn run_agent<H: Host>(
 
             input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);
+            bind_time(&mut env, start.elapsed().as_secs_f64());
             current.reloader.poll(
                 &mut env,
                 current.program_id,

@@ -19,7 +19,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 use petal_ui::draw::clear_draw_commands;
-use petal_ui::input::{InputState, bind_frame_info, bind_input, dimensions};
+use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time, dimensions};
 
 use crate::game_loop::Host;
 
@@ -217,6 +217,9 @@ pub fn run_one_frame<H: Host>(
     env.advance_frame(stack_id);
     input.begin_frame(1.0 / 60.0);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
+    // Deterministic clock for stepped/agent runs: exactly 1/60 s per frame, so
+    // `time()`/`elapsed()` are reproducible under scripted stepping.
+    bind_time(env, *frame_count as f64 / 60.0);
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;

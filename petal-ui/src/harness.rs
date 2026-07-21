@@ -35,6 +35,9 @@ pub struct Headless {
     program_id: ProgramId,
     stack_id: StackKey,
     frame_count: i64,
+    /// Absolute clock (seconds) published to the script as `time()` each frame.
+    /// Tests advance it explicitly to exercise `elapsed()`.
+    pub time: f64,
     /// Draw commands produced by the most recent [`frame`](Self::frame).
     pub commands: Vec<DrawCommand>,
     /// Value returned by the most recent run.
@@ -64,6 +67,7 @@ impl Headless {
             program_id,
             stack_id,
             frame_count: 0,
+            time: 0.0,
             commands: Vec::new(),
             result: Value::Nil,
             provider: None,
@@ -137,6 +141,7 @@ impl Headless {
         self.frame_count += 1;
         self.input.begin_frame(FRAME_DT);
         input::bind_frame_info(&mut self.env, FRAME_DT, self.frame_count);
+        input::bind_time(&mut self.env, self.time);
         input::bind_input(&mut self.env, &self.input);
         draw::clear_draw_commands(&mut self.env);
         draw::reset_canvas_ids(&mut self.env);
@@ -167,5 +172,10 @@ impl Headless {
     /// Convenience: an integer `state` variable by name.
     pub fn state_int(&self, name: &str) -> Option<i64> {
         self.state().get(name)?.as_i64()
+    }
+
+    /// Convenience: a float `state` variable by name.
+    pub fn state_float(&self, name: &str) -> Option<f64> {
+        self.state().get(name)?.as_f64()
     }
 }

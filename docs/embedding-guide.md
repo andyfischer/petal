@@ -177,6 +177,13 @@ Use bindings for scalars/lists the script reads this frame (time, screen size,
 input snapshot). See [ffi.md](ffi.md) for the input-state and clicked-id
 examples.
 
+petal-ui hosts also publish an **absolute clock** each frame via
+`petal_ui::input::bind_time(env, seconds)` — a monotonic value read straight
+from the host's clock (e.g. `start.elapsed().as_secs_f64()`), *never* a running
+sum of `dt`. Scripts read it as `time()`, and the `ui` prelude's `elapsed()`
+captures it once into `state` to report seconds since its first call without the
+rounding drift of accumulating `dt` every frame.
+
 ### Allocating stable per-run ids
 
 Use a **counter** when the host needs to hand out sequential ids that are stable

@@ -11,6 +11,38 @@ fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
 }
 
 #[test]
+fn time_and_elapsed() {
+    // `time()` reflects the host clock; `elapsed()` measures from its first call.
+    let src = "state t = 0.0\n\
+               state e = 0.0\n\
+               t = time()\n\
+               e = elapsed()";
+    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+
+    ui.time = 10.0;
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("t"), Some(10.0), "time() reads the host clock");
+    assert_eq!(
+        ui.state_float("e"),
+        Some(0.0),
+        "elapsed() is 0 on its first call"
+    );
+
+    ui.time = 12.5;
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("t"), Some(12.5));
+    assert_eq!(
+        ui.state_float("e"),
+        Some(2.5),
+        "elapsed() = now - first-call clock, immune to dt summation"
+    );
+
+    ui.time = 100.0;
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("e"), Some(90.0));
+}
+
+#[test]
 fn hovered_and_clicked_edges() {
     let src = "state hovers = 0\n\
                state hits = 0\n\

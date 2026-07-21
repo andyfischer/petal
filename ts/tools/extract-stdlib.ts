@@ -73,6 +73,12 @@ export interface StdlibFunction {
   source: { file: string; line: number };
   /** When set, this name is an alias for another builtin. */
   aliasOf?: string;
+  /**
+   * Internal builtins the public reference hides — `__`-prefixed names the
+   * runtime uses for tests/plumbing (e.g. `__pending`), not part of the
+   * user-facing standard library.
+   */
+  internal?: boolean;
 }
 
 export interface StdlibCategory {
@@ -303,6 +309,7 @@ function extractCore(): {
       params: parsed.params,
       source,
       ...(aliasOf ? { aliasOf } : {}),
+      ...(reg.name.startsWith("__") ? { internal: true } : {}),
     });
   }
 

@@ -1521,7 +1521,8 @@
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 25
-      }
+      },
+      "internal": true
     },
     {
       "name": "__resolve",
@@ -1538,7 +1539,8 @@
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 52
-      }
+      },
+      "internal": true
     },
     {
       "name": "__reject",
@@ -1555,7 +1557,8 @@
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 64
-      }
+      },
+      "internal": true
     },
     {
       "name": "is_loading",

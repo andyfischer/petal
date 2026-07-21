@@ -106,6 +106,16 @@ describe("stdlib extractor", () => {
     }
   });
 
+  it("marks __-prefixed builtins internal so the public reference can hide them", () => {
+    expect(byName.get("__pending")!.internal).toBe(true);
+    expect(byName.get("__resolve")!.internal).toBe(true);
+    // Public builtins carry no internal flag.
+    expect(byName.get("abs")!.internal).toBeUndefined();
+    for (const fn of manifest.functions) {
+      if (fn.internal) expect(fn.name.startsWith("__")).toBe(true);
+    }
+  });
+
   it("keeps the committed docs/stdlib.json in sync with the extractor", () => {
     // The manifest is a generated artifact checked into the repo so the docs
     // site (and the CI drift gate) can consume it without re-parsing Rust.

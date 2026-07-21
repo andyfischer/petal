@@ -29,6 +29,7 @@ pub enum Token {
     Elsif,
     When,
     Import,
+    Export,
 
     // Operators
     Plus,
@@ -925,6 +926,7 @@ impl Lexer {
             "elsif" => Token::Elsif,
             "when" => Token::When,
             "import" => Token::Import,
+            "export" => Token::Export,
             "true" => Token::True,
             "false" => Token::False,
             "nil" => Token::Nil,

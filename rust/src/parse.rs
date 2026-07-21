@@ -167,6 +167,7 @@ impl Parser {
         Stmt {
             kind,
             span: self.span_from(start_pos),
+            exported: false,
         }
     }
 
@@ -176,8 +177,8 @@ impl Parser {
         self.skip_newlines();
         let start = self.pos;
         match self.peek().clone() {
-            Token::Let => self.parse_let(start),
-            Token::Fn => self.parse_fn_decl(start),
+            Token::Let => self.parse_let(start, false),
+            Token::Fn => self.parse_fn_decl(start, false),
             Token::For => self.parse_for(start),
             Token::While => self.parse_while(start),
             Token::Return => self.parse_return(start),
@@ -193,26 +194,52 @@ impl Parser {
                 self.ev_close();
                 Ok(self.mk_stmt(StmtKind::Continue, start))
             }
-            Token::State => self.parse_state(start),
-            Token::Enum => self.parse_enum_decl(start),
+            Token::State => self.parse_state(start, false),
+            Token::Enum => self.parse_enum_decl(start, false),
             Token::Import => self.parse_import(start),
+            Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
         }
     }
 
-    fn parse_let(&mut self, start: usize) -> Result<Stmt, String> {
+    /// `export <decl>` — a modifier on a top-level `fn`/`let`/`state`/`enum`
+    /// that makes the declared name visible to importers (see
+    /// `docs/module-system.md`). The `export` token is consumed inside the
+    /// declaration's own CST node so the tree round-trips; the resulting
+    /// [`Stmt`] carries `exported = true`. Routes on the token *after* `export`.
+    fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
+        match self.tokens.get(self.pos + 1) {
+            Some(Token::Fn) => self.parse_fn_decl(start, true),
+            Some(Token::Let) => self.parse_let(start, true),
+            Some(Token::State) => self.parse_state(start, true),
+            Some(Token::Enum) => self.parse_enum_decl(start, true),
+            _ => Err(self.error_at_current(
+                "`export` must be followed by a fn, let, state, or enum declaration".to_string(),
+            )),
+        }
+    }
+
+    fn parse_let(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::LetStmt);
+        if exported {
+            self.advance(); // consume 'export'
+        }
         self.advance(); // consume 'let'
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
         self.expect(&Token::Assign)?;
         let value = self.parse_expr()?;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::Let { name, ty, value }, start))
+        let mut stmt = self.mk_stmt(StmtKind::Let { name, ty, value }, start);
+        stmt.exported = exported;
+        Ok(stmt)
     }
 
-    fn parse_state(&mut self, start: usize) -> Result<Stmt, String> {
+    fn parse_state(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::StateStmt);
+        if exported {
+            self.advance(); // consume 'export'
+        }
         self.advance(); // consume 'state'
 
         // Check for explicit key: state(expr) name = init
@@ -231,7 +258,7 @@ impl Parser {
         let id = self.next_state_id;
         self.next_state_id += 1;
         self.ev_close();
-        Ok(self.mk_stmt(
+        let mut stmt = self.mk_stmt(
             StmtKind::State {
                 name,
                 init,
@@ -239,7 +266,9 @@ impl Parser {
                 key,
             },
             start,
-        ))
+        );
+        stmt.exported = exported;
+        Ok(stmt)
     }
 
     /// `import m` / `import m as u` / `import m: a, b`.
@@ -283,8 +312,11 @@ impl Parser {
         ))
     }
 
-    fn parse_fn_decl(&mut self, start: usize) -> Result<Stmt, String> {
+    fn parse_fn_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::FnDecl);
+        if exported {
+            self.advance(); // consume 'export'
+        }
         self.advance(); // consume 'fn'
         let name = self.expect_ident()?;
         self.ev_open(SyntaxKind::ParamList);
@@ -297,11 +329,16 @@ impl Parser {
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
         self.ev_close(); // FnDecl
-        Ok(self.mk_stmt(StmtKind::FnDecl { name, params, ret, body }, start))
+        let mut stmt = self.mk_stmt(StmtKind::FnDecl { name, params, ret, body }, start);
+        stmt.exported = exported;
+        Ok(stmt)
     }
 
-    fn parse_enum_decl(&mut self, start: usize) -> Result<Stmt, String> {
+    fn parse_enum_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::EnumDecl);
+        if exported {
+            self.advance(); // consume 'export'
+        }
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
         self.skip_newlines();
@@ -328,7 +365,9 @@ impl Parser {
         }
         self.expect(&Token::End)?;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::EnumDecl { name, variants }, start))
+        let mut stmt = self.mk_stmt(StmtKind::EnumDecl { name, variants }, start);
+        stmt.exported = exported;
+        Ok(stmt)
     }
 
     fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {

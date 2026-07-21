@@ -204,6 +204,12 @@ pub struct Param {
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: SourceSpan,
+    /// Whether this top-level declaration was written with the `export`
+    /// modifier (`export fn`, `export let`, `export state`, `export enum`).
+    /// Only meaningful for a module's top-level `fn`/`let`/`state`/`enum`: it
+    /// gates what importers can see (see `docs/module-system.md`). `false`
+    /// everywhere else — nested statements and the entry file never export.
+    pub exported: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

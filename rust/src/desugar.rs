@@ -213,6 +213,7 @@ impl ExprVisitorMut for LiftAt<'_> {
                     value: call,
                 },
                 span,
+                exported: false,
             });
         }
     }

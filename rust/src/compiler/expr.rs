@@ -274,18 +274,17 @@ impl Compiler {
         let module = self.module_aliases.get(name)?.clone();
 
         let qualified = format!("{module}::{member}");
-        if !member.starts_with('_') && self.scope_lookup(&qualified).is_some() {
+        if self.scope_lookup(&qualified).is_some() {
             return Some(self.compile_ident(&qualified));
         }
-        let msg = if member.starts_with('_') {
-            format!(
-                "'{}' in module '{}' is private (names starting with '_' are \
-                 module-private)",
-                member, module
-            )
-        } else {
-            format!("module '{}' has no export '{}'", module, member)
-        };
+        // A non-exported name is absent from the global scope, so the two cases
+        // (declared-but-private vs. never declared) look the same here; the
+        // message points at the likely cause — a missing `export`.
+        let msg = format!(
+            "module '{}' has no export '{}' (declarations are private unless \
+             marked `export`)",
+            module, member
+        );
         let msg_cid = self.constants.intern(ConstantValue::String(msg));
         Some(self.emit_term(TermOp::Error(msg_cid), smallvec![], None))
     }

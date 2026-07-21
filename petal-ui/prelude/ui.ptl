@@ -3,26 +3,27 @@
 // Standard interaction primitives over the Layer-0 input natives and the
 // Layer-2 draw natives. Registered by embedders as an implicit import, so
 // scripts call these bare; `import ui` / `import ui: button` also work.
-// Names starting with `_` are module-private.
+// Only declarations marked `export` are visible to importers; everything else
+// (and any name starting with `_`) is module-private.
 //
 // Rects are records: {x, y, w, h}. Colors are records: {r, g, b} (hex
 // literals like #3c8cff work). Button 0 is the left mouse button.
 
 // ── Geometry + hit testing ────────────────────────────────────────────────
 
-fn rect(x, y, w, h)
+export fn rect(x, y, w, h)
   {x: x, y: y, w: w, h: h}
 end
 
-fn point_in(px, py, r)
+export fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
 end
 
-fn hovered(r)
+export fn hovered(r)
   point_in(mouse_x(), mouse_y(), r)
 end
 
-fn clicked(r)
+export fn clicked(r)
   hovered(r) && mouse_pressed(0)
 end
 
@@ -38,7 +39,7 @@ end
 // a single module state slot, so `elapsed()` is one global timer measured from
 // the app's first `elapsed()` call — for independent timers, capture your own
 // `state t0 = time()` at the call site and subtract `time() - t0`.
-fn elapsed()
+export fn elapsed()
   state start = time()
   time() - start
 end
@@ -58,75 +59,75 @@ let _native_text = draw_text
 // Lines and outlines also take an optional trailing stroke `width`. Rounded
 // rects add a `radius`. Each forwards to the native, which fills defaults.
 
-fn draw_rect(x, y, w, h, r, g, b)
+export fn draw_rect(x, y, w, h, r, g, b)
   _native_rect(x, y, w, h, r, g, b)
 end
-fn draw_rect(x, y, w, h, r, g, b, a)
+export fn draw_rect(x, y, w, h, r, g, b, a)
   _native_rect(x, y, w, h, r, g, b, a)
 end
-fn draw_rect(r, c)
+export fn draw_rect(r, c)
   _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
 end
-fn draw_rect(r, c, a)
+export fn draw_rect(r, c, a)
   _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)
 end
 
-fn draw_rect_rounded(x, y, w, h, radius, r, g, b)
+export fn draw_rect_rounded(x, y, w, h, radius, r, g, b)
   _native_rect_rounded(x, y, w, h, radius, r, g, b)
 end
-fn draw_rect_rounded(x, y, w, h, radius, r, g, b, a)
+export fn draw_rect_rounded(x, y, w, h, radius, r, g, b, a)
   _native_rect_rounded(x, y, w, h, radius, r, g, b, a)
 end
-fn draw_rect_rounded(rect, radius, c)
+export fn draw_rect_rounded(rect, radius, c)
   _native_rect_rounded(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b)
 end
-fn draw_rect_rounded(rect, radius, c, a)
+export fn draw_rect_rounded(rect, radius, c, a)
   _native_rect_rounded(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a)
 end
 
-fn draw_rect_outline(x, y, w, h, r, g, b)
+export fn draw_rect_outline(x, y, w, h, r, g, b)
   _native_rect_outline(x, y, w, h, r, g, b)
 end
-fn draw_rect_outline(x, y, w, h, r, g, b, a)
+export fn draw_rect_outline(x, y, w, h, r, g, b, a)
   _native_rect_outline(x, y, w, h, r, g, b, a)
 end
-fn draw_rect_outline(x, y, w, h, r, g, b, a, width)
+export fn draw_rect_outline(x, y, w, h, r, g, b, a, width)
   _native_rect_outline(x, y, w, h, r, g, b, a, width)
 end
-fn draw_rect_outline(r, c)
+export fn draw_rect_outline(r, c)
   _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
 end
 
-fn draw_line(x1, y1, x2, y2, r, g, b)
+export fn draw_line(x1, y1, x2, y2, r, g, b)
   _native_line(x1, y1, x2, y2, r, g, b)
 end
-fn draw_line(x1, y1, x2, y2, r, g, b, a)
+export fn draw_line(x1, y1, x2, y2, r, g, b, a)
   _native_line(x1, y1, x2, y2, r, g, b, a)
 end
-fn draw_line(x1, y1, x2, y2, r, g, b, a, width)
+export fn draw_line(x1, y1, x2, y2, r, g, b, a, width)
   _native_line(x1, y1, x2, y2, r, g, b, a, width)
 end
-fn draw_line(a, b, c)
+export fn draw_line(a, b, c)
   _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b)
 end
 
-fn draw_circle(cx, cy, radius, r, g, b)
+export fn draw_circle(cx, cy, radius, r, g, b)
   _native_circle(cx, cy, radius, r, g, b)
 end
-fn draw_circle(cx, cy, radius, r, g, b, a)
+export fn draw_circle(cx, cy, radius, r, g, b, a)
   _native_circle(cx, cy, radius, r, g, b, a)
 end
-fn draw_circle(center, radius, c)
+export fn draw_circle(center, radius, c)
   _native_circle(center.x, center.y, radius, c.r, c.g, c.b)
 end
 
-fn draw_text(text, x, y, size, r, g, b)
+export fn draw_text(text, x, y, size, r, g, b)
   _native_text(text, x, y, size, r, g, b)
 end
-fn draw_text(text, x, y, size, r, g, b, a)
+export fn draw_text(text, x, y, size, r, g, b, a)
   _native_text(text, x, y, size, r, g, b, a)
 end
-fn draw_text(text, pos, size, c)
+export fn draw_text(text, pos, size, c)
   _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b)
 end
 
@@ -134,7 +135,7 @@ end
 
 // Keep the tail of `s` (rightmost chars, e.g. a file path), "…"-prefixed
 // when clipped to `max_chars`.
-fn truncate_tail(s, max_chars)
+export fn truncate_tail(s, max_chars)
   if len(s) <= max_chars then
     s
   else
@@ -143,7 +144,7 @@ fn truncate_tail(s, max_chars)
 end
 
 // Keep the head of `s`, "…"-suffixed when clipped to `max_chars`.
-fn truncate_head(s, max_chars)
+export fn truncate_head(s, max_chars)
   if len(s) <= max_chars then
     s
   else
@@ -196,7 +197,7 @@ end
 // max_chars-sized pieces. Widths are bytes, like the truncate_* helpers;
 // slice snaps to UTF-8 char boundaries, so multibyte input never panics
 // (its lines may just run a little short). max_chars <= 0 returns [s].
-fn wrap(s, max_chars)
+export fn wrap(s, max_chars)
   if max_chars <= 0 then
     [s]
   else
@@ -217,7 +218,7 @@ end
 // UTF-8 char boundaries, so multibyte text never breaks). Widths are bytes, like
 // wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
 // true when the last kept line carries the "…" (content was dropped).
-fn preview(text, max_chars, max_lines)
+export fn preview(text, max_chars, max_lines)
   let t = text
   let over = false
   if len(t) > max_chars * (max_lines + 1) then
@@ -243,7 +244,7 @@ fn preview(text, max_chars, max_lines)
 end
 
 // Right-aligned text: the right edge sits at `right_x`.
-fn draw_text_right(text, right_x, y, size, c)
+export fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
 end
 
@@ -253,7 +254,7 @@ end
 // part after it. Lets header / metadata lines degrade by shedding their rightmost
 // segments instead of clipping mid-glyph at the pane edge. Returns {text, count}
 // — `count` is how many segments survived (0 when even the first overflows).
-fn fit_parts_n(parts, avail_px, size)
+export fn fit_parts_n(parts, avail_px, size)
   let out = ""
   let cnt = 0
   let stopped = false
@@ -275,13 +276,13 @@ fn fit_parts_n(parts, avail_px, size)
 end
 
 // The plain-text convenience over fit_parts_n: just the joined string.
-fn fit_parts(parts, avail_px, size)
+export fn fit_parts(parts, avail_px, size)
   fit_parts_n(parts, avail_px, size).text
 end
 
 // ── Style ─────────────────────────────────────────────────────────────────
 
-let theme = {
+export let theme = {
   bg: #14161c,
   panel: #1d2027,
   text: #d8dee9,
@@ -294,7 +295,7 @@ let theme = {
 
 // ── Button (immediate-mode): draws, returns true on click this frame ─────
 
-fn button(r, label)
+export fn button(r, label)
   button(r, label, {
     bg: theme.panel,
     hover: theme.hover,
@@ -303,7 +304,7 @@ fn button(r, label)
   })
 end
 
-fn button(r, label, style)
+export fn button(r, label, style)
   let bg = if hovered(r) then style.hover else style.bg end
   draw_rect(r, bg)
   draw_rect_outline(r, style.outline)
@@ -322,7 +323,7 @@ end
 // inside `r` selects the row under the pointer, the wheel scrolls when the
 // pointer is over `r`, and the selection is always kept visible.
 
-fn list_state()
+export fn list_state()
   {selected: 0, scroll: 0}
 end
 
@@ -331,12 +332,12 @@ fn _row_h(r, visible_rows)
 end
 
 // Rect of the item with absolute index `i`, given the list's current scroll.
-fn list_row_rect(r, visible_rows, i, scroll)
+export fn list_row_rect(r, visible_rows, i, scroll)
   {x: r.x, y: r.y + (i - scroll) * _row_h(r, visible_rows), w: r.w, h: _row_h(r, visible_rows)}
 end
 
 // Scroll offset that keeps `selected` inside a `visible_rows` window.
-fn ensure_visible(scroll, selected, visible_rows)
+export fn ensure_visible(scroll, selected, visible_rows)
   let s = scroll
   if selected < s then
     s = selected
@@ -353,7 +354,7 @@ end
 // are all pixels. A row taller than the viewport pins its top (its overflow then
 // runs off the bottom); for any row that fits, this leaves an already-visible
 // row untouched, scrolls up to reveal a row above, or down to reveal one below.
-fn ensure_visible_px(scroll, row_off, row_h, view_h)
+export fn ensure_visible_px(scroll, row_off, row_h, view_h)
   let s = scroll
   if row_off + row_h > s + view_h then
     s = row_off + row_h - view_h
@@ -364,7 +365,7 @@ fn ensure_visible_px(scroll, row_off, row_h, view_h)
   s
 end
 
-fn list_update(lst, item_count, visible_rows, r)
+export fn list_update(lst, item_count, visible_rows, r)
   list_update(lst, item_count, visible_rows, r, true)
 end
 
@@ -377,7 +378,7 @@ end
 // native list widgets): only keyboard navigation re-runs `ensure_visible` to
 // pull the selection back on screen, so you can browse a long list past the
 // selection without it snapping back.
-fn list_update(lst, item_count, visible_rows, r, active)
+export fn list_update(lst, item_count, visible_rows, r, active)
   let sel = lst.selected
   let scroll = lst.scroll
   let key_moved = false
@@ -428,7 +429,7 @@ end
 // Wheel scrolls when the pointer is over `r`; pageup/pagedown page; the
 // offset is clamped to [0, total_lines - visible_lines].
 
-fn scroll_update(offset, total_lines, visible_lines, r)
+export fn scroll_update(offset, total_lines, visible_lines, r)
   scroll_update(offset, total_lines, visible_lines, r, true)
 end
 
@@ -436,7 +437,7 @@ end
 // pageup/pagedown only page when `active` is true. In a multi-region panel
 // built on the focus registry this stops PageDown in the focused region from
 // paging every other scroll region on screen — gate on focused(fc, id).
-fn scroll_update(offset, total_lines, visible_lines, r, active)
+export fn scroll_update(offset, total_lines, visible_lines, r, active)
   let off = offset
   if hovered(r) then
     off = off + scroll_y()
@@ -457,7 +458,7 @@ end
 // top offset (as fed to list_update / scroll_update). Draws nothing when the
 // content fits (count <= rows); otherwise a dim track with an accent-neutral
 // thumb sized rows/count of the track and positioned by scroll/(count - rows).
-fn draw_scrollbar(r, count, rows, scroll)
+export fn draw_scrollbar(r, count, rows, scroll)
   if count > rows then
     let bar_w = 4
     let track = {x: r.x + r.w - bar_w, y: r.y, w: bar_w, h: r.h}
@@ -476,19 +477,19 @@ end
 // Widgets that consume the keyboard (text_field, the gated list_update) check
 // `focused(fc, id)` before reading keys, and request focus on click.
 
-fn focus_state()
+export fn focus_state()
   {id: ""}
 end
 
-fn focused(fc, id)
+export fn focused(fc, id)
   fc.id == id
 end
 
-fn focus_set(fc, id)
+export fn focus_set(fc, id)
   {id: id}
 end
 
-fn focus_clear(fc)
+export fn focus_clear(fc)
   {id: ""}
 end
 
@@ -506,7 +507,7 @@ end
 
 // Move focus to the next / previous id in the ordered ring `ids`. From nothing
 // focused, next lands on the first and prev on the last; both wrap.
-fn focus_next(fc, ids)
+export fn focus_next(fc, ids)
   if len(ids) == 0 then
     fc
   else
@@ -518,7 +519,7 @@ fn focus_next(fc, ids)
   end
 end
 
-fn focus_prev(fc, ids)
+export fn focus_prev(fc, ids)
   if len(ids) == 0 then
     fc
   else
@@ -533,7 +534,7 @@ end
 
 // Convenience: Tab advances focus, Shift+Tab reverses it. Call once per frame
 // with the ring of focusable widget ids.
-fn focus_update(fc, ids)
+export fn focus_update(fc, ids)
   if key_pressed("tab") then
     if mod_shift() then
       focus_prev(fc, ids)
@@ -548,7 +549,7 @@ end
 // A section heading that shows which region owns the keyboard: accent-colored
 // with an underline when `active`, dim otherwise. Pairs with the focus
 // registry — pass `focused(fc, id)` as `active` to label each focusable region.
-fn section_label(label, x, y, active)
+export fn section_label(label, x, y, active)
   let size = 14
   let color = if active then theme.accent else theme.dim end
   draw_text(label, {x: x, y: y}, size, color)
@@ -581,7 +582,7 @@ fn _draw_text_field(r, text, has)
   end
 end
 
-fn text_field(fc, id, r, buf)
+export fn text_field(fc, id, r, buf)
   let f = fc
   if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
     f = focus_set(fc, id)

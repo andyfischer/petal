@@ -309,7 +309,16 @@ impl Projector {
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
             other => return Err(format!("expected a statement node, got {other:?}")),
         };
-        Ok(Stmt { kind, span })
+        // A leading `export` modifier is kept as a direct token child of the
+        // decl node (fn/let/state/enum), so its presence gates module exports.
+        let exported = direct_tokens(node)
+            .iter()
+            .any(|t| matches!(t.token(), Some(Token::Export)));
+        Ok(Stmt {
+            kind,
+            span,
+            exported,
+        })
     }
 
     fn assign_stmt(&mut self, node: &SyntaxNode, span: SourceSpan) -> Result<Stmt, String> {
@@ -346,6 +355,7 @@ impl Projector {
         Ok(Stmt {
             kind: StmtKind::Assign { target, value },
             span,
+            exported: false,
         })
     }
 
@@ -952,6 +962,7 @@ impl Projector {
             vec![Stmt {
                 kind: StmtKind::Expr(expr),
                 span,
+                exported: false,
             }]
         } else {
             self.block(node)?

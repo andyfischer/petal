@@ -413,11 +413,12 @@ impl Compiler {
         Ok(())
     }
 
-    /// Record a finished module's exports: every top-level binding whose name
-    /// doesn't start with `_` (module-private) and that the module didn't
-    /// itself import (imports are not re-exported). Each export is also bound
-    /// in the global scope under its qualified name (`"ui::button"`), which is
-    /// how alias access, later importers, and `Env::call_function` reach it.
+    /// Record a finished module's exports: every top-level binding declared
+    /// with the `export` modifier that the module didn't itself import (imports
+    /// are not re-exported). Each export is also bound in the global scope under
+    /// its qualified name (`"ui::button"`), which is how alias access, later
+    /// importers, and `Env::call_function` reach it. A module with no `export`
+    /// declarations exports nothing — the default is private.
     fn capture_exports(&mut self, module: &LoadedModule, scope: HashMap<String, TermId>) {
         let module_name = module.name.as_deref().expect("not the entry file");
         let imported: std::collections::HashSet<&str> = module
@@ -427,9 +428,11 @@ impl Compiler {
             .map(String::as_str)
             .collect();
 
+        let exported = Self::exported_top_level_names(&module.stmts);
+
         let mut names: Vec<String> = scope
             .keys()
-            .filter(|n| !n.starts_with('_') && !imported.contains(n.as_str()))
+            .filter(|n| exported.contains(n.as_str()) && !imported.contains(n.as_str()))
             .cloned()
             .collect();
         names.sort_unstable(); // deterministic export order for messages
@@ -458,6 +461,37 @@ impl Compiler {
                 StmtKind::EnumDecl { variants, .. } => {
                     for v in variants {
                         names.insert(v.name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        names
+    }
+
+    /// Top-level names a module explicitly `export`s (fn, enum variants, let,
+    /// state) — the set that importers may see. Everything else is private.
+    /// A leading `_` still forces module-privacy, so `export fn _helper` does
+    /// not export (the underscore convention wins).
+    fn exported_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        for stmt in stmts {
+            if !stmt.exported {
+                continue;
+            }
+            match &stmt.kind {
+                StmtKind::FnDecl { name, .. }
+                | StmtKind::Let { name, .. }
+                | StmtKind::State { name, .. } => {
+                    if !name.starts_with('_') {
+                        names.insert(name.clone());
+                    }
+                }
+                StmtKind::EnumDecl { variants, .. } => {
+                    for v in variants {
+                        if !v.name.starts_with('_') {
+                            names.insert(v.name.clone());
+                        }
                     }
                 }
                 _ => {}

@@ -1,10 +1,10 @@
 // Shared palette module — imported by panel.ptl and detail.ptl.
-let colors = { fg: 15, bg: 2, accent: 9 }
+export let colors = { fg: 15, bg: 2, accent: 9 }
 
 fn _clamp(x)
   if x > 255 then 255 else x end
 end
 
-fn brighten(c)
+export fn brighten(c)
   _clamp(c + 10)
 end

@@ -37,9 +37,32 @@ Import statements (if any) must come before any other statements in the file.
 
 ## Exports
 
-Every top-level `fn`, `enum` (its variants), and `let`/`state` in a module is
-exported. Names starting with `_` are module-private: not resolvable via
-`m._helper` and not importable.
+A module's top-level declarations are **private by default**. A `fn`, `enum`
+(its variants), `let`, or `state` is visible to importers only when it is marked
+with the `export` modifier:
+
+```petal ignore
+export fn button(label)      // importable: m.button, `import m: button`
+  "[" ++ label ++ "]"
+end
+
+fn helper(x)                 // private: usable inside the module, not exported
+  x + 1
+end
+```
+
+`export` goes immediately before the declaration keyword: `export fn`,
+`export let`, `export state`, `export enum`. An `export enum` exports the enum's
+variants. `export` is only meaningful at a module's top level — it has no effect
+in the entry file (nothing imports the entry) or on nested statements.
+
+Names starting with `_` are always module-private: `export fn _helper` does not
+export (the underscore convention wins), and `_`-names are never resolvable via
+`m._helper` nor importable.
+
+An importer that names a non-exported symbol gets a compile error
+(`import m: helper`) or a deferred error at the access site (`m.helper()`):
+*module 'm' has no export 'helper'*.
 
 ## Resolution
 

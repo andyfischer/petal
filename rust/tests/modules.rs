@@ -37,8 +37,8 @@ fn load_error(modules: &[(&str, &str)], entry: &str) -> String {
 }
 
 const UI: &str = "\
-let palette = { fg: 15, bg: 2 }
-fn button(label)
+export let palette = { fg: 15, bg: 2 }
+export fn button(label)
   \"[\" ++ label ++ \"]\"
 end
 fn _secret()
@@ -96,8 +96,8 @@ fn local_binding_shadows_module_alias() {
 
 #[test]
 fn imports_can_nest() {
-    let base = "fn double(x)\n  x * 2\nend";
-    let mid = "import base\nfn quad(x)\n  base.double(base.double(x))\nend";
+    let base = "export fn double(x)\n  x * 2\nend";
+    let mid = "import base\nexport fn quad(x)\n  base.double(base.double(x))\nend";
     check_output(
         &[("base", base), ("mid", mid)],
         "import mid\nprint(mid.quad(3))",
@@ -109,9 +109,9 @@ fn imports_can_nest() {
 
 #[test]
 fn module_top_level_runs_once_before_importer_diamond() {
-    let base = "print(\"base-init\")\nlet shared = 7";
-    let left = "import base\nlet l = base.shared + 1";
-    let right = "import base\nlet r = base.shared + 2";
+    let base = "print(\"base-init\")\nexport let shared = 7";
+    let left = "import base\nexport let l = base.shared + 1";
+    let right = "import base\nexport let r = base.shared + 2";
     check_output(
         &[("base", base), ("left", left), ("right", right)],
         "import left\nimport right\nprint(left.l + right.r)",
@@ -121,7 +121,7 @@ fn module_top_level_runs_once_before_importer_diamond() {
 
 #[test]
 fn enum_variants_export_and_match_across_modules() {
-    let shapes = "enum Shape\n  Circle(r)\n  Dot\nend";
+    let shapes = "export enum Shape\n  Circle(r)\n  Dot\nend";
     check_output(
         &[("shapes", shapes)],
         "import shapes: Circle, Dot\n\
@@ -133,7 +133,7 @@ fn enum_variants_export_and_match_across_modules() {
 
 #[test]
 fn overloaded_module_fn_exports_as_one_set() {
-    let m = "fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
+    let m = "export fn f(a)\n  a\nend\nexport fn f(a, b)\n  a + b\nend";
     check_output(
         &[("m", m)],
         "import m: f\nprint(f(1))\nprint(f(1, 2))",
@@ -172,9 +172,31 @@ fn selective_import_of_private_name_is_a_compile_error() {
 }
 
 #[test]
+fn unexported_name_is_not_importable() {
+    // A plain `fn`/`let` with no `export` is module-private under the new
+    // default (everything private unless exported).
+    let m = "export fn shown()\n  1\nend\nfn hidden()\n  2\nend";
+    let err = load_error(&[("m", m)], "import m: hidden");
+    assert!(err.contains("no export 'hidden'"), "got: {err}");
+    // The exports list should mention the one exported name.
+    assert!(err.contains("shown"), "error lists exports: {err}");
+}
+
+#[test]
+fn unexported_member_access_is_a_deferred_error() {
+    let m = "fn hidden()\n  99\nend";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env.load_program("import m\nprint(m.hidden())").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err();
+    assert!(err.contains("no export 'hidden'"), "got: {err}");
+}
+
+#[test]
 fn selective_collision_between_modules_is_a_compile_error() {
-    let a = "fn draw()\n  1\nend";
-    let b = "fn draw()\n  2\nend";
+    let a = "export fn draw()\n  1\nend";
+    let b = "export fn draw()\n  2\nend";
     let err = load_error(&[("a", a), ("b", b)], "import a: draw\nimport b: draw");
     assert!(
         err.contains("'draw' is imported from both 'a' and 'b'"),
@@ -230,7 +252,7 @@ fn private_member_access_is_a_deferred_error() {
 
 #[test]
 fn runtime_error_in_module_names_the_file() {
-    let bad = "fn boom(x)\n  x + nil\nend";
+    let bad = "export fn boom(x)\n  x + nil\nend";
     let mut env = Env::new();
     env.register_module("bad", bad);
     let pid = env.load_program("import bad\nbad.boom(1)").unwrap();
@@ -245,8 +267,8 @@ fn runtime_error_in_module_names_the_file() {
 
 #[test]
 fn same_state_name_in_two_modules_gets_distinct_slots() {
-    let m1 = "state scroll = 0\nscroll += 1\nfn get1()\n  scroll\nend";
-    let m2 = "state scroll = 0\nscroll += 10\nfn get2()\n  scroll\nend";
+    let m1 = "state scroll = 0\nscroll += 1\nexport fn get1()\n  scroll\nend";
+    let m2 = "state scroll = 0\nscroll += 10\nexport fn get2()\n  scroll\nend";
     check_output(
         &[("m1", m1), ("m2", m2)],
         "import m1\nimport m2\nprint(m1.get1())\nprint(m2.get2())",
@@ -280,7 +302,7 @@ fn entry_file_state_keys_stay_bare_named() {
 #[test]
 fn hot_reload_of_module_preserves_its_state() {
     let mut env = Env::new();
-    env.register_module("counter", "state n = 0\nn += 1\nfn get()\n  n\nend");
+    env.register_module("counter", "state n = 0\nn += 1\nexport fn get()\n  n\nend");
     let pid = env
         .load_program("import counter\nprint(counter.get())")
         .unwrap();
@@ -289,7 +311,7 @@ fn hot_reload_of_module_preserves_its_state() {
     assert_eq!(env.take_output(), vec!["1"]);
 
     // Edit the module (init unchanged, increment becomes +10) and reload.
-    env.register_module("counter", "state n = 0\nn += 10\nfn get()\n  n\nend");
+    env.register_module("counter", "state n = 0\nn += 10\nexport fn get()\n  n\nend");
     let new_program = env
         .compile_program(pid, "import counter\nprint(counter.get())")
         .unwrap();
@@ -304,7 +326,7 @@ fn hot_reload_of_module_preserves_its_state() {
 
 #[test]
 fn renaming_a_module_drops_its_state() {
-    let counter = "state n = 0\nn += 1\nfn get()\n  n\nend";
+    let counter = "state n = 0\nn += 1\nexport fn get()\n  n\nend";
     let mut env = Env::new();
     env.register_module("counter", counter);
     env.register_module("tally", counter);
@@ -393,8 +415,8 @@ fn module_manifest_lists_all_files() {
 
 #[test]
 fn imports_are_not_reexported() {
-    let base = "fn helper()\n  1\nend";
-    let mid = "import base: helper\nfn use_it()\n  helper()\nend";
+    let base = "export fn helper()\n  1\nend";
+    let mid = "import base: helper\nexport fn use_it()\n  helper()\nend";
     let err = load_error(&[("base", base), ("mid", mid)], "import mid: helper");
     assert!(err.contains("no export 'helper'"), "got: {err}");
 }
@@ -432,7 +454,7 @@ impl Drop for TempTree {
 #[test]
 fn imports_resolve_relative_to_the_importing_file() {
     let tree = TempTree::new("relative");
-    tree.write("lib/palette.ptl", "let bg = 3");
+    tree.write("lib/palette.ptl", "export let bg = 3");
     // panel.ptl imports its sibling, from a different working directory.
     let panel = tree.write("lib/panel.ptl", "import palette\nprint(palette.bg)");
     let source = std::fs::read_to_string(&panel).unwrap();
@@ -458,12 +480,12 @@ fn imports_resolve_relative_to_the_importing_file() {
 #[test]
 fn registered_module_beats_file_of_same_name() {
     let tree = TempTree::new("priority");
-    tree.write("dep.ptl", "let v = \"file\"");
+    tree.write("dep.ptl", "export let v = \"file\"");
     let entry = tree.write("main.ptl", "import dep\nprint(dep.v)");
     let source = std::fs::read_to_string(&entry).unwrap();
 
     let mut env = Env::new();
-    env.register_module("dep", "let v = \"memory\"");
+    env.register_module("dep", "export let v = \"memory\"");
     let pid = env.load_program_at(&source, &entry).unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
@@ -473,7 +495,7 @@ fn registered_module_beats_file_of_same_name() {
 #[test]
 fn module_search_paths_are_consulted_after_importer_dir() {
     let tree = TempTree::new("searchpath");
-    tree.write("libs/util.ptl", "let tag = \"from-libs\"");
+    tree.write("libs/util.ptl", "export let tag = \"from-libs\"");
 
     let mut env = Env::new();
     env.add_module_path(tree.root.join("libs"));
@@ -488,8 +510,8 @@ fn module_search_paths_are_consulted_after_importer_dir() {
 fn wasm_shaped_env_compiles_from_memory_only() {
     // No filesystem involvement at all: every module is registered.
     let mut env = Env::new();
-    env.register_module("a", "import b\nfn f()\n  b.g() + 1\nend");
-    env.register_module("b", "fn g()\n  41\nend");
+    env.register_module("a", "import b\nexport fn f()\n  b.g() + 1\nend");
+    env.register_module("b", "export fn g()\n  41\nend");
     let pid = env.load_program("import a\nprint(a.f())").unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();

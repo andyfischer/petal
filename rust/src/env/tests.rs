@@ -2372,6 +2372,62 @@ mod pending_render_chunk_m_tests {
             "the script must be able to index a host-pushed array of objects"
         );
     }
+
+    /// G5 history restore: a whole JSON state map captured from one visit is fed
+    /// back into a freshly (re-)initialized stack and its values win on the very
+    /// first frame. This is the linchpin of browser-style back/forward restore:
+    /// `get_state_json` → mutate → `set_state_map_from_json` → run, with the
+    /// `StateInit` skip letting the restored slots override the `= 0`
+    /// initializers before any frame commits the defaults.
+    #[test]
+    fn set_state_map_round_trips_and_restores_on_first_frame() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state x = 0\nstate y = 0\nx + y\n")
+            .unwrap();
+
+        // Stack A: run once so its state commits, then snapshot it to JSON.
+        let a = env.create_stack(pid).unwrap();
+        assert_eq!(env.run(a).unwrap(), Value::Int(0));
+        let mut snapshot = env.get_state_json(pid, a);
+        // Mutate the captured JSON, as a host restoring a saved history entry would.
+        snapshot.insert("x".to_string(), serde_json::json!(10));
+        snapshot.insert("y".to_string(), serde_json::json!(5));
+
+        // Stack B: seed the snapshot BEFORE its first frame, then run. The
+        // StateInit skip must let the restored values win over `= 0`.
+        let b = env.create_stack(pid).unwrap();
+        let applied = env.set_state_map_from_json(pid, b, &snapshot);
+        assert_eq!(applied, 2, "both known keys applied");
+        assert_eq!(
+            env.run(b).unwrap(),
+            Value::Int(15),
+            "first frame observes restored state, not the initializers"
+        );
+    }
+
+    /// A restore map carrying an unknown key alongside a known one applies the
+    /// known key, silently skips the unknown (no panic, no error), and reports
+    /// the count of keys actually applied — the skip-and-continue contract a
+    /// partially-compatible screen relies on.
+    #[test]
+    fn set_state_map_skips_unknown_keys_and_counts_applied() {
+        let mut env = Env::new();
+        let pid = env.load_program("state x = 0\nx\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        let mut map = serde_json::Map::new();
+        map.insert("x".to_string(), serde_json::json!(7));
+        map.insert("nope".to_string(), serde_json::json!(99));
+
+        let applied = env.set_state_map_from_json(pid, sid, &map);
+        assert_eq!(applied, 1, "only the known key is applied; unknown skipped");
+        assert_eq!(
+            env.run(sid).unwrap(),
+            Value::Int(7),
+            "the known key restored; the unknown key was silently ignored"
+        );
+    }
 }
 
 /// Chunk N of the pending-values feature: the frame pending report — a

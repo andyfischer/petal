@@ -80,4 +80,36 @@ impl Env {
         self.set_state(stack_id, state_key, val);
         Ok(())
     }
+
+    /// Restore a whole state map (as produced by [`Self::get_state_json`]) into a
+    /// stack, applying each entry via [`Self::set_state_from_json`]. Keys that
+    /// fail — an unknown top-level name, or a value that cannot be reconstructed —
+    /// are skipped and the rest still apply, so a partially-compatible screen
+    /// restores what it can. Returns the number of keys successfully applied.
+    ///
+    /// Two documented v1 limitations:
+    /// - Loop-indexed entries (serialized as `name[i]` by `get_state_json`) are
+    ///   not addressable: `set_state_from_json` matches top-level names only, so
+    ///   they are silently skipped.
+    /// - Non-serializable values (closures, native fns, handles, `Pending`) that
+    ///   `get_state_json` degraded to a display `String` or a structured `Map`
+    ///   round-trip *verbatim* rather than erroring — they are applied as those
+    ///   surrogate values, a known silent-corruption limitation, not an error.
+    pub fn set_state_map_from_json(
+        &mut self,
+        program_id: ProgramId,
+        stack_id: StackKey,
+        map: &serde_json::Map<String, serde_json::Value>,
+    ) -> usize {
+        let mut applied = 0;
+        for (name, json_val) in map {
+            if self
+                .set_state_from_json(program_id, stack_id, name, json_val)
+                .is_ok()
+            {
+                applied += 1;
+            }
+        }
+        applied
+    }
 }

@@ -1,10 +1,8 @@
-# Building Apps on Core and Integrations
+# Building Apps
 
-How to build an application on Petal. There are three paths, from lightest to
-heaviest:
+Tech outline to build a full application on Petal.
 
-1. **Write a pure Petal app** — just `.ptl` scripts, run by an existing
-   integration's host unchanged.
+1. **Write a pure Petal app** — just writing `.ptl` scripts. Uses an existing app or integration.
 2. **Extend an integration** — depend on an existing host as a library and add
    your app's delta (a custom renderer, extra native functions, an editor shell).
 3. **Embed Petal in a new host** — write a new integration for your platform,
@@ -32,15 +30,6 @@ Petal Core  →  Integrations  →  Sample Apps
 should not re-implement host code an integration already provides, and it
 should not embed Petal Core directly when an integration for its platform
 exists.
-
-### Why the rule matters
-
-The failure mode it prevents is **fork-and-drift**: an app starts as a copy of
-an integration's host code, then both evolve independently. The integration
-gains fixes and features; the copy goes stale and re-introduces bugs the
-integration already fixed. Depending on the integration instead of copying it
-makes that class of drift impossible — and keeps your app down to the code
-that is actually unique to it.
 
 ## Two shapes of app
 

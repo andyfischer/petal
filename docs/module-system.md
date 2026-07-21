@@ -1,40 +1,45 @@
-# The Petal module system
+# Module system
 
-Petal programs can be split across files (or embedder-provided sources) with
-`import`. Modules are resolved and **merged into one program at compile
-time** — there is no runtime linker and no separate compilation; the bytecode
-VM runs merged programs unchanged.
+Petal programs can be split across files with `import`.
 
-```petal
-import ui                       // qualified: ui.button(...), ui.palette
-import ui: button, clicked      // selective: bare button(...), clicked(...)
-import ui as u                  // alias: u.button(...)
-```
+Modules are resolved and merged into one program at compile
+time (there is no runtime linker and no separate compilation units)
 
 ## Syntax
 
-- `import` statements are only allowed **before any other statement** in a
-  file. This keeps resolution strictly ahead of the compiler's declaration
-  prescan and makes execution order obvious. An import after other
-  statements is a parse error.
-- Module names are identifiers. What a name resolves *to* is the resolver's
-  business (see Resolution below) — the language does not know about files.
-- `as` is contextual, not a keyword: `import ui as u`.
-- The selective form takes a comma-separated name list: `import ui: a, b`.
-- A module alias is a **compile-time binding, not a runtime value**.
-  `ui.button(rect)` is resolved statically in `ui`'s exports; using `ui`
-  where a value is expected is an error ("`ui` is a module, not a value").
-  A local binding of the same name (`let ui = ...`) shadows the alias, after
-  which `ui.x` is ordinary field access.
+Basic import - importing a module called 'ui':
+
+```petal
+import ui                       // qualified: ui.button(...), ui.palette
+
+ui.button(...)
+```
+
+Selective import:
+
+```petal
+import ui: button, clicked
+
+button(...)
+```
+
+Import into an alias:
+
+```petal
+import ui as u
+
+u.button(...)
+```
+
+### More details 
+
+Import statements (if any) must come before any other statements in the file.
 
 ## Exports
 
 Every top-level `fn`, `enum` (its variants), and `let`/`state` in a module is
 exported. Names starting with `_` are module-private: not resolvable via
-`m._helper` and not importable. Imports are **not re-exported** — importing
-`helper` into `mid.ptl` does not make it an export of `mid`.
-
-A `pub` keyword can tighten visibility later without breaking v1 programs.
+`m._helper` and not importable.
 
 ## Resolution
 

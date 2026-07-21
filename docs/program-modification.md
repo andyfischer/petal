@@ -1,19 +1,6 @@
 # Programmatic Program Modification
 
-How Petal programs can be **changed by code** — by tools, agents, and embedders —
-rather than only by a human typing into an editor.
-
-If you are building on Petal — an editor with a "change this setting" menu
-action that rewrites a config script, a visual tool that edits programs live, a
-front-end that emits Petal programs, or a host that hot-reloads scripts without
-losing state — this is the catalogue of the surfaces available to you. Everything
-here is shipped and testable.
-
-> Deeper reference: [Architecture.md](dev/Architecture.md) (the term graph),
-> [ir-as-target.md](dev/ir-as-target.md) (the IR emit contract),
-> and [debugging-visibility.md](dev/debugging-visibility.md) (agent surface).
-
----
+Documents the various ways that Petal code can be changed programatticaly.
 
 ## The three layers a program can be modified at
 
@@ -36,20 +23,7 @@ state is keyed structurally so it can migrate across an edit.
 
 ## Layer 1 — Source modification
 
-### 1a. The rebind operator `@` (source desugar)
-
-The narrowest form of programmatic edit is a **source-level rewrite baked into
-the language**. `something(@var)` desugars to `var = something(var)` — the
-immutable-value "call and assign back" pattern — entirely at parse time in
-[`rust/src/desugar.rs`](../rust/src/desugar.rs). It adds no runtime machinery;
-`append(@nums, 4)` compiles to exactly what `nums = append(nums, 4)` does.
-
-See [rebind-operator.md](rebind-operator.md). Relevant because it is a worked
-example of a purely syntactic transform with well-defined scoping rules (nearest
-enclosing call, lifted to nearest statement, refused in deferred/conditional
-positions) — the same discipline a larger refactoring engine needs.
-
-### 1b. Formatting-preserving tree splices (`rust/src/rewrite.rs`)
+### Formatting-preserving tree splices (`rust/src/rewrite.rs`)
 
 The AST is **lossy** — it carries spans but drops comments and whitespace — so
 rewriting through it would reformat the whole file. Instead, source edits go

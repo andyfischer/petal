@@ -96,6 +96,30 @@ fn arithmetic() {
 }
 
 #[test]
+fn list_scalar_broadcast() {
+    let all = OptFlags::all();
+    // list op scalar, element-wise
+    assert_eq!(run("[1, 2, 3] + 10", all).unwrap().0, "[11, 12, 13]");
+    assert_eq!(run("[1, 2, 3] - 1", all).unwrap().0, "[0, 1, 2]");
+    assert_eq!(run("[1, 2, 3] * 2", all).unwrap().0, "[2, 4, 6]");
+    assert_eq!(run("[2, 4, 6] / 2", all).unwrap().0, "[1, 2, 3]");
+    // scalar op list (broadcast from the left)
+    assert_eq!(run("2 * [1, 2, 3]", all).unwrap().0, "[2, 4, 6]");
+    assert_eq!(run("10 + [1, 2, 3]", all).unwrap().0, "[11, 12, 13]");
+    // float scalar promotes int elements
+    assert_eq!(run("[1, 3] * 0.5", all).unwrap().0, "[0.5, 1.5]");
+    // both engines agree
+    assert_parity("let x = [1, 2, 3] * 3");
+    assert_parity("let x = 4 - [1, 2, 3]");
+    // list op list is NOT supported yet
+    assert!(run("[1, 2] + [3, 4]", all).is_err());
+    // a non-numeric element is an error
+    assert!(run(r#"["a", "b"] + 1"#, all).is_err());
+    // division by zero still guarded per element
+    assert!(run("[1, 2] / 0", all).is_err());
+}
+
+#[test]
 fn comparisons_and_logic() {
     assert_parity("let x = 3 < 5");
     assert_parity("let x = 5 <= 5");

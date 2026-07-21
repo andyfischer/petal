@@ -79,8 +79,8 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 | equality | `==` `!=` | |
 | comparison | `<` `<=` `>` `>=` | |
 | concat | `++` | string concatenation |
-| additive | `+` `-` | |
-| multiplicative | `*` `/` `%` | |
+| additive | `+` `-` | scalar; also broadcasts a scalar over a list (`[1,2,3] + 10`) |
+| multiplicative | `*` `/` `%` | scalar; `*` and `/` also broadcast a scalar over a list |
 | unary | `-` `!` | negation, logical not |
 | postfix | `f(...)` `x[i]` `a.b` | call, index, field access |
 

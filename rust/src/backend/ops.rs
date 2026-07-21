@@ -42,7 +42,7 @@ pub fn constant_to_value(program: &Program, heap: &mut Heap, cid: ConstantId) ->
 /// Arithmetic on Int/Float pairs, with dual-number (forward-mode AD) and vec2
 /// operands delegated to their own handlers. `op` must be one of
 /// `Add`/`Sub`/`Mul`/`Div`/`Mod`.
-pub fn arithmetic(op: &TermOp, a: Value, b: Value, _heap: &mut Heap) -> Result<Value, String> {
+pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
     // Pending is strict-absorbing: any Pending operand short-circuits the whole
     // op to that Pending (leftmost wins). Checked before the div-by-zero guard
     // so `pending / 0` yields the Pending, not a spurious error. Mirrors the
@@ -62,6 +62,7 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, _heap: &mut Heap) -> Result<V
     match (a, b) {
         (Value::Dual { .. }, _) | (_, Value::Dual { .. }) => dual_arith(op, a, b),
         (Value::Vec2(..), _) | (_, Value::Vec2(..)) => vec2_arith(op, a, b),
+        (Value::List(..), _) | (_, Value::List(..)) => list_scalar_arith(op, a, b, heap),
         (Value::Int(x), Value::Int(y)) => int_arith(op, x, y).map(Value::Int),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_arith(op, x, y))),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(float_arith(op, x as f64, y))),
@@ -189,6 +190,48 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
         _ => return Err("Unsupported vec2 operation".into()),
     };
     Ok(val)
+}
+
+/// Broadcast a numeric scalar across a list element-wise: `[a, b, c] op s` or
+/// `s op [a, b, c]`. This is the initial linear-algebra support — only a list
+/// against a numeric scalar (Int/Float), for `+`/`-`/`*`/`/`. List-against-list
+/// and other array operations are deliberately unsupported (they fall through to
+/// the "Cannot ..." error, since neither operand is a numeric scalar).
+///
+/// Each element is combined via `arithmetic` itself, so Int/Float promotion and
+/// per-element division-by-zero behave exactly as they do for scalar operands.
+fn list_scalar_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
+    let is_scalar = |v: &Value| matches!(v, Value::Int(_) | Value::Float(_));
+    let (list_id, scalar, list_on_left) = match (a, b) {
+        (Value::List(id), s) if is_scalar(&s) => (id, s, true),
+        (s, Value::List(id)) if is_scalar(&s) => (id, s, false),
+        _ => {
+            return Err(format!(
+                "Cannot {} {} and {}",
+                binop_verb(op),
+                a.type_name(),
+                b.type_name()
+            ));
+        }
+    };
+    let elems = heap.get_list(list_id).to_vec();
+    let mut out = Vec::with_capacity(elems.len());
+    for el in elems {
+        if !is_scalar(&el) {
+            return Err(format!(
+                "Cannot {} a list containing {} by a scalar",
+                binop_verb(op),
+                el.type_name()
+            ));
+        }
+        let result = if list_on_left {
+            arithmetic(op, el, scalar, heap)?
+        } else {
+            arithmetic(op, scalar, el, heap)?
+        };
+        out.push(result);
+    }
+    Ok(Value::List(heap.alloc_list(out)))
 }
 
 /// Integer arithmetic with checked operators. A raw `+`/`*`/`%` would panic on

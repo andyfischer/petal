@@ -5,12 +5,12 @@
 //! (`is_ready` / `is_loading` / `is_error` / `??`). petal-query is the standard
 //! for the two ends of that channel:
 //!
-//! - **Providers** ([`App`], [`Reply`], [`CachePolicy`]) — the *native* side.
-//!   An [`App`] is a subprocess that ships a Petal UI script and answers the
-//!   script's queries. You declare `kind` → handler mappings and, per answer,
-//!   how cacheable it is; petal-query runs the whole panel-mode GPP loop
-//!   (handshake, script push, dispatch, `emit`, shutdown). This is the elegant
-//!   surface an app author writes against.
+//! - **Providers** ([`Provider`], [`Reply`], [`CachePolicy`]) — the *native*
+//!   side. A [`Provider`] is a transport-agnostic set of `kind` → handler
+//!   mappings over a per-run state; you declare each answer's value and how
+//!   cacheable it is. It owns no pane name and no UI script — those editor
+//!   concerns are the GPP layer's, supplied via [`gpp::PanelUi`](crate::gpp) when
+//!   an app runs a provider over the panel-mode GPP loop ([`gpp::serve`]).
 //! - **Hosts** ([`Cache`], [`CachePolicy`], [`Freshness`]) — the embedder side.
 //!   [`Cache`] is a keyed answer store with in-flight de-duplication, a request
 //!   outbox, and [`CachePolicy`]-driven freshness (fresh / stale-while-
@@ -38,12 +38,13 @@
 
 pub mod cache;
 pub mod cache_control;
+pub mod gpp;
 pub mod provider;
 pub mod wire;
 
 pub use cache::{Cache, Lookup};
 pub use cache_control::{CachePolicy, Freshness};
-pub use provider::{App, EmitContext, QueryContext, Reply};
+pub use provider::{EmitContext, Provider, QueryContext, Reply};
 
 /// Version of the petal-query provider/cache contract. Bump when the wire shapes
 /// or [`CachePolicy`] semantics change incompatibly.

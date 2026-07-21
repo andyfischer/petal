@@ -26,8 +26,10 @@ let x = 1   // trailing comment
 ### Identifiers and keywords
 
 Identifiers are letters/digits/underscore, not starting with a digit. A leading
-`_` marks a name as module-private (see [Module System](../module-system.md)),
-and a lone `_` is the wildcard pattern in `match`.
+`_` has no special meaning — module visibility is governed entirely by `export`
+(see [Module System](../module-system.md)); by convention it marks an
+intentionally-unused or internal name. A lone `_` is the wildcard pattern in
+`match`.
 
 Reserved keywords:
 

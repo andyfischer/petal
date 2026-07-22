@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::ast::{ImportDecl, Stmt, StmtKind};
+use crate::ast::{Expr, ExprKind, ExprVisitor, ImportDecl, Stmt, StmtKind, walk_expr};
 use crate::source_map::{ENTRY_FILE, FileId};
 
 /// Where a module's source came from.
@@ -53,6 +53,11 @@ pub struct ModuleRegistry {
     /// without ceremony. The entry file's own bindings still win, and an
     /// explicit `import m` is a no-op on top of this.
     pub implicit_imports: Vec<String>,
+    /// Implicit imports that come *before* [`implicit_imports`] and are not
+    /// touched by `set_implicit_imports`. The core prelude (`std`) lives here
+    /// so a host that replaces its own implicit imports can't drop it. Lowest
+    /// precedence of all, so both host preludes and user code shadow it.
+    pub base_implicit_imports: Vec<String>,
 }
 
 impl ModuleRegistry {
@@ -138,34 +143,30 @@ pub struct LoadedModule {
 ///
 /// A module name resolves at most once per load (diamond imports dedupe).
 /// Cycles and unresolvable names are errors.
+///
+/// Two flavours of implicit import compose here, both binding every export bare
+/// and weakly (the entry's own declarations shadow them):
+/// - `implicit_imports` — host preludes (e.g. `ui`), always merged.
+/// - `gated_imports` — the core prelude (`std`), merged *only when the program
+///   references one of its exports*. This keeps the prelude zero-cost: a script
+///   that never calls `sum`/`first`/… compiles byte-for-byte as if `std` didn't
+///   exist, so the standard library can grow without bloating every program.
+///   Gated modules sit at the lowest precedence (a host prelude and user code
+///   both shadow them).
 pub fn load_modules(
     entry_source: &str,
     entry_origin: Option<&Path>,
     resolver: &dyn ModuleResolver,
     implicit_imports: &[String],
+    gated_imports: &[String],
 ) -> Result<Vec<LoadedModule>, String> {
     let entry_display = entry_origin
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "<entry>".to_string());
     let stmts = parse_module(entry_source, ENTRY_FILE, None)?;
-    let (mut imports, stmts) = split_imports(stmts);
-
-    // Implicit imports come first so the entry's explicit imports (and its
-    // own declarations) land on top of them.
-    for name in implicit_imports.iter().rev() {
-        imports.insert(
-            0,
-            ResolvedImport {
-                decl: ImportDecl {
-                    module: name.clone(),
-                    alias: None,
-                    names: None,
-                },
-                implicit: true,
-            },
-        );
-    }
+    let (explicit_imports, stmts) = split_imports(stmts);
+    let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
 
     let mut walker = Walker {
         resolver,
@@ -174,26 +175,173 @@ pub fn load_modules(
         out: Vec::new(),
         next_file: 1,
     };
-    let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
-    for import in &imports {
+
+    // The always-merged imports, in precedence order (host implicit first, then
+    // the entry's explicit imports). The entry's own bindings land on top.
+    let mut ungated: Vec<ResolvedImport> = implicit_imports
+        .iter()
+        .map(|name| ResolvedImport {
+            decl: import_all(name),
+            implicit: true,
+        })
+        .collect();
+    ungated.extend(explicit_imports);
+    for import in &ungated {
         walker.visit(
             &import.decl.module,
             entry_module_origin.as_ref(),
             &entry_display,
         )?;
     }
+    let ungated_modules = std::mem::take(&mut walker.out);
 
-    let mut modules = walker.out;
+    // Reference-gate the core prelude: include a gated module only when the
+    // entry or one of the always-merged modules names one of its exports. An
+    // included prelude module's own references can pull in a further one, so
+    // iterate to a fixpoint.
+    let mut refs: HashSet<String> = HashSet::new();
+    collect_module_refs(&stmts, &mut refs);
+    for m in &ungated_modules {
+        collect_module_refs(&m.stmts, &mut refs);
+    }
+    let scanned: Vec<(String, Vec<String>, HashSet<String>)> = gated_imports
+        .iter()
+        .map(|name| {
+            let (exports, idents) =
+                scan_gated_module(resolver, name, entry_module_origin.as_ref())?;
+            Ok((name.clone(), exports, idents))
+        })
+        .collect::<Result<_, String>>()?;
+    let mut included: HashSet<String> = HashSet::new();
+    loop {
+        let mut progressed = false;
+        for (name, exports, idents) in &scanned {
+            if included.contains(name) {
+                continue;
+            }
+            if exports.iter().any(|e| refs.contains(e)) {
+                included.insert(name.clone());
+                refs.extend(idents.iter().cloned());
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    // Walk the referenced gated modules and bind them ahead of everything else
+    // (lowest precedence). Preserve the caller's order for determinism.
+    let mut gated_decls: Vec<ResolvedImport> = Vec::new();
+    for name in gated_imports.iter().filter(|n| included.contains(*n)) {
+        walker.visit(name, entry_module_origin.as_ref(), &entry_display)?;
+        gated_decls.push(ResolvedImport {
+            decl: import_all(name),
+            implicit: true,
+        });
+    }
+    let gated_modules = std::mem::take(&mut walker.out);
+
+    // Assemble: prelude modules run first, then the always-merged modules, then
+    // the entry. The entry's import list mirrors that precedence order.
+    let mut modules = gated_modules;
+    modules.extend(ungated_modules);
+    let mut entry_imports = gated_decls;
+    entry_imports.extend(ungated);
     modules.push(LoadedModule {
         name: None,
         display_name: entry_display,
         source: entry_source.to_string(),
         origin: entry_origin.map(Path::to_path_buf),
         stmts,
-        imports,
+        imports: entry_imports,
         file_id: ENTRY_FILE,
     });
     Ok(modules)
+}
+
+/// `import <name>` binding all of the module's exports (no alias, no selection).
+fn import_all(name: &str) -> ImportDecl {
+    ImportDecl {
+        module: name.to_string(),
+        alias: None,
+        names: None,
+    }
+}
+
+/// The top-level names a statement declares (`fn f`, `let x`, `state s`,
+/// `enum E`), for reading a module's exported surface.
+fn declared_name(kind: &StmtKind) -> Option<&str> {
+    match kind {
+        StmtKind::Let { name, .. }
+        | StmtKind::FnDecl { name, .. }
+        | StmtKind::State { name, .. }
+        | StmtKind::EnumDecl { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+/// Resolve and parse a gated (core-prelude) module without loading it, to learn
+/// its exported names (what a reference must name to pull it in) and the
+/// identifiers it itself references (so one prelude module can pull in another).
+fn scan_gated_module(
+    resolver: &dyn ModuleResolver,
+    name: &str,
+    importer: Option<&ModuleOrigin>,
+) -> Result<(Vec<String>, HashSet<String>), String> {
+    let resolved = resolver.resolve(name, importer).ok_or_else(|| {
+        format!("cannot find implicit prelude module '{name}': not registered or on a search path")
+    })?;
+    let display = match &resolved.origin {
+        ModuleOrigin::File(path) => path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("{name}.ptl")),
+        ModuleOrigin::Memory => name.to_string(),
+    };
+    let stmts = parse_module(&resolved.source, ENTRY_FILE, Some(&display))?;
+    let (_imports, stmts) = split_imports(stmts);
+    let exports = stmts
+        .iter()
+        .filter(|s| s.exported)
+        .filter_map(|s| declared_name(&s.kind).map(str::to_string))
+        .collect();
+    let mut idents = HashSet::new();
+    collect_module_refs(&stmts, &mut idents);
+    Ok((exports, idents))
+}
+
+/// The names a module references that could resolve to a *prelude* export: every
+/// bare identifier used (`ExprKind::Ident`), minus the names the module declares
+/// at its own top level. A top-level `let`/`fn`/`state`/`enum` of name `N`
+/// shadows the (weak) prelude binding of `N` throughout the module, so a use of
+/// `N` there is never the prelude's — dropping it keeps a variable that merely
+/// shares a stdlib name (e.g. `state count`) from pulling the prelude in.
+/// Nested/local declarations are deliberately *not* subtracted: they shadow only
+/// their own scope, so a sibling use of `N` may still want the prelude.
+fn collect_module_refs(stmts: &[Stmt], refs: &mut HashSet<String>) {
+    struct Collector<'a> {
+        names: &'a mut HashSet<String>,
+    }
+    impl ExprVisitor for Collector<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            if let ExprKind::Ident(name) = &e.kind {
+                self.names.insert(name.clone());
+            }
+            walk_expr(self, e);
+        }
+    }
+    let mut used = HashSet::new();
+    let mut c = Collector { names: &mut used };
+    for s in stmts {
+        c.visit_stmt(s);
+    }
+    for s in stmts {
+        if let Some(n) = declared_name(&s.kind) {
+            used.remove(n);
+        }
+    }
+    refs.extend(used);
 }
 
 struct Walker<'a> {

@@ -105,6 +105,30 @@ and an explicit `import ui` on top is a no-op. This replaces source
 concatenation entirely — same ergonomics, but with per-file error
 attribution and no namespace pollution beyond the exports.
 
+### The core prelude (`std`)
+
+`Env::new` ships one implicit import of its own: `std`, the standard library
+written in Petal (`rust/prelude/std.ptl` — `sum`, `first`, `count`, `find`,
+`take`, `clamp01`, …) over the native builtins. It is available bare in every
+program with no host and no ceremony. Two properties distinguish it from a
+host prelude:
+
+- **It survives `set_implicit_imports`.** `std` lives in a separate
+  `base_implicit_imports` list, so a host replacing the implicit-import list
+  for its own prelude (`set_implicit_imports(&["ui"])`) can't drop it. Precedence
+  is lowest of all: a host prelude and user code both shadow `std`.
+- **It is reference-gated — zero-cost when unused.** `std` is merged into a
+  program only when the program (or an always-merged module) names one of its
+  exports. A script that never calls a `std` function compiles byte-for-byte
+  as if `std` didn't exist, so the standard library can grow without bloating
+  every program or cluttering `show-ir`. A bare identifier that merely *shares*
+  a `std` name but is declared at a module's top level (`state count = 0`)
+  does not pull it in — a top-level declaration shadows the whole module.
+
+Timing/interaction helpers that need a host (a frame clock, a renderer) — like
+petal-ui's `elapsed` and `button` — stay in the host prelude, not `std`, since
+they only make sense under a frame loop.
+
 ## Semantics
 
 ### Merge-at-compile-time
@@ -208,7 +232,7 @@ is preserved.
 ```rust
 env.register_module("ui", source);          // in-memory module
 env.add_module_path(dir);                   // filesystem search path
-env.set_implicit_imports(&["ui"]);          // zero-ceremony prelude
+env.set_implicit_imports(&["ui"]);          // host prelude (std survives this)
 env.load_program_at(&source, &path)?;       // entry with importer-relative resolution
 env.compile_program_at(pid, &source, &path)?; // hot-reload recompile
 env.module_manifest(pid);                   // files → origins/hashes

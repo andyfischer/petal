@@ -424,6 +424,46 @@ fn explicit_import_of_implicit_module_is_a_noop() {
     assert_eq!(env.take_output(), vec!["[z]", "[q]"]);
 }
 
+// ── Core prelude (std) ───────────────────────────────────────────
+
+#[test]
+fn core_prelude_is_implicit_with_no_host() {
+    // A bare Env — no host, no register_module, no set_implicit_imports —
+    // still binds the `std` prelude helpers.
+    let mut env = Env::new();
+    let pid = env.load_program("print(sum([1, 2, 3, 4]))").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["10"]);
+}
+
+#[test]
+fn core_prelude_survives_host_implicit_imports() {
+    // A host replacing the implicit-import list for its own prelude must not
+    // drop `std`: both the host's `ui` and the core `std` bind bare.
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    env.set_implicit_imports(&["ui"]);
+    let pid = env
+        .load_program("print(button(\"z\"))\nprint(first([9, 8]))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["[z]", "9"]);
+}
+
+#[test]
+fn core_prelude_is_reference_gated_in_the_manifest() {
+    // Naming a `std` export pulls the prelude in; it then appears in the
+    // manifest ahead of the entry. (A program that names none — see
+    // `module_manifest_lists_all_files` — leaves it out entirely.)
+    let mut env = Env::new();
+    let pid = env.load_program("let x = sum([1, 2, 3])").unwrap();
+    let manifest = env.module_manifest(pid);
+    let names: Vec<&str> = manifest.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, vec!["<entry>", "std"]);
+}
+
 // ── Host-facing surfaces ─────────────────────────────────────────
 
 #[test]
@@ -447,6 +487,8 @@ fn module_manifest_lists_all_files() {
     let pid = env.load_program("import ui\nlet x = 1").unwrap();
     let manifest = env.module_manifest(pid);
     let names: Vec<&str> = manifest.iter().map(|e| e.name.as_str()).collect();
+    // The core `std` prelude is reference-gated: this entry names no `std`
+    // export, so it isn't merged and doesn't appear in the manifest.
     assert_eq!(names, vec!["<entry>", "ui"]);
     // In-memory modules have no filesystem origin.
     assert!(manifest.iter().all(|e| e.origin.is_none()));

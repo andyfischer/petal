@@ -58,6 +58,15 @@ pub struct Env {
     handle_classes: Vec<HandleClass>,
 }
 
+/// Name of the core prelude module: `import std`.
+pub const STD_MODULE: &str = "std";
+
+/// Petal source of the core prelude, standard-library helpers written in Petal
+/// over the native builtins. Compiled into the binary (works with no
+/// filesystem, e.g. wasm) and registered by [`Env::new`] as a permanent
+/// implicit import. See `rust/prelude/std.ptl`.
+pub const STD_PRELUDE: &str = include_str!("../../prelude/std.ptl");
+
 impl Env {
     /// Create a new environment
     pub fn new() -> Self {
@@ -66,6 +75,13 @@ impl Env {
         let default_context = ContextKey(1);
         let mut contexts = HashMap::new();
         contexts.insert(default_context, ExecutionContext::new());
+        let mut modules = ModuleRegistry::default();
+        // The core prelude ships in every program as an always-on implicit
+        // import. It lives in `base_implicit_imports` (not `implicit_imports`)
+        // so a host calling `set_implicit_imports` for its own prelude can't
+        // accidentally drop it.
+        modules.register(STD_MODULE, STD_PRELUDE);
+        modules.base_implicit_imports = vec![STD_MODULE.to_string()];
         Self {
             programs: HashMap::new(),
             stacks: HashMap::new(),
@@ -79,7 +95,7 @@ impl Env {
             next_stack_id: 1,
             opt_flags: Self::opt_flags_from_env(),
             bytecode: HashMap::new(),
-            modules: ModuleRegistry::default(),
+            modules,
             handle_classes: Vec::new(),
         }
     }
@@ -190,6 +206,7 @@ impl Env {
             origin,
             &self.modules,
             &self.modules.implicit_imports,
+            &self.modules.base_implicit_imports,
         )?;
         Compiler::new().compile_modules(&modules, program_id, &self.native_fns)
     }

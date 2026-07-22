@@ -9,7 +9,7 @@
 // Prose and examples live elsewhere (markdown), but the spine — what exists —
 // comes from here.
 //
-// Two registration tables are parsed:
+// Three registration sources are parsed:
 //
 //   1. Core builtins — `rust/src/builtins/mod.rs`'s `register_builtins()`,
 //      which is the canonical, append-only list of `table.register("name", …)`
@@ -17,7 +17,12 @@
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
 //
-//   2. Canvas builtins — the shared `petal-ui` crate's `register_draw` +
+//   2. Core prelude — `rust/prelude/std.ptl` (module `std`), the slice of the
+//      standard library written in Petal source rather than as Rust natives.
+//      `Env::new` loads it as an implicit import; its `export fn` declarations
+//      become the `prelude` group / `std` category.
+//
+//   3. Canvas builtins — the shared `petal-ui` crate's `register_draw` +
 //      `register_canvas` (drawing) and `register_input` (input/timing), the
 //      interactivity API that hosts like petal-web-canvas and petal-sdl expose
 //      to sketches.
@@ -46,6 +51,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
 const petalUiDrawRs = join(repoRoot, "petal-ui/src/draw.rs");
 const petalUiInputRs = join(repoRoot, "petal-ui/src/input.rs");
+const preludeStdPtl = join(repoRoot, "rust/prelude/std.ptl");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -61,8 +67,8 @@ export interface StdlibFunction {
   name: string;
   /** Category id, e.g. "math" or "drawing". */
   category: string;
-  /** Which runtime registers it. */
-  group: "core" | "canvas";
+  /** Which runtime registers it. `prelude` = Petal-source std, not a native. */
+  group: "core" | "canvas" | "prelude";
   /** Fixed argument count, or null when the function dispatches on arg count. */
   arity: number | null;
   /** True when the function accepts a variable number of arguments. */
@@ -84,7 +90,7 @@ export interface StdlibFunction {
 export interface StdlibCategory {
   id: string;
   title: string;
-  group: "core" | "canvas";
+  group: "core" | "canvas" | "prelude";
   /** First line of the module's `//!` doc comment, when available. */
   doc: string;
 }
@@ -109,6 +115,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   vec2: "Vectors (2D)",
   collections: "Collections",
   "higher-order": "Higher-Order Functions",
+  std: "Core Prelude",
   autodiff: "Automatic Differentiation",
   output: "Output & Symbols",
   handle: "Handles",
@@ -333,6 +340,59 @@ function extractCore(): {
   return { functions, categories };
 }
 
+// ── Prelude (Petal-source std) ───────────────────────────────────────────────
+
+/**
+ * The core prelude (`rust/prelude/std.ptl`, module `std`) is standard library
+ * written in Petal source rather than as Rust natives — `Env::new` loads it as
+ * a permanent implicit import, so every program calls its helpers bare. We parse
+ * its `export fn` declarations so these functions appear in the reference next
+ * to the native builtins instead of silently drifting out of the docs.
+ *
+ * Petal source carries no static types, so every parameter is reported as
+ * `any`; arity is simply the declared parameter count (none are variadic).
+ * Only `export`ed declarations are visible to importers, so private helpers
+ * (were any added) are correctly skipped.
+ */
+function extractPrelude(): {
+  functions: StdlibFunction[];
+  categories: StdlibCategory[];
+} {
+  const source = readFileSync(preludeStdPtl, "utf8");
+  const functions: StdlibFunction[] = [];
+  const re = /^[ \t]*export\s+fn\s+(\w+)\s*\(([^)]*)\)/gm;
+  for (let m; (m = re.exec(source)); ) {
+    const [, name, rawParams] = m;
+    const line = source.slice(0, m.index).split("\n").length;
+    const params: Param[] = rawParams
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+      .map((p) => ({ name: p, type: "any" as ParamType }));
+    functions.push({
+      name,
+      category: "std",
+      group: "prelude",
+      arity: params.length,
+      variadic: false,
+      params,
+      source: { file: "rust/prelude/std.ptl", line },
+    });
+  }
+
+  const categories: StdlibCategory[] = functions.length
+    ? [
+        {
+          id: "std",
+          title: CATEGORY_TITLES.std,
+          group: "prelude",
+          doc: "Standard-library helpers written in Petal source (module `std`), auto-imported into every program: list reductions, predicate queries, sublists, and number helpers.",
+        },
+      ]
+    : [];
+  return { functions, categories };
+}
+
 // ── Canvas builtins ──────────────────────────────────────────────────────────
 
 /**
@@ -489,15 +549,23 @@ function extractCanvas(): {
 
 export function buildManifest(): StdlibManifest {
   const core = extractCore();
+  const prelude = extractPrelude();
   const canvas = extractCanvas();
-  const functions = [...core.functions, ...canvas.functions];
-  const categories = [...core.categories, ...canvas.categories].sort(
-    (a, b) => CATEGORY_ORDER.indexOf(a.id) - CATEGORY_ORDER.indexOf(b.id),
-  );
+  const functions = [
+    ...core.functions,
+    ...prelude.functions,
+    ...canvas.functions,
+  ];
+  const categories = [
+    ...core.categories,
+    ...prelude.categories,
+    ...canvas.categories,
+  ].sort((a, b) => CATEGORY_ORDER.indexOf(a.id) - CATEGORY_ORDER.indexOf(b.id));
   return {
     generatedFrom: [
       "rust/src/builtins/mod.rs",
       "rust/src/builtins/*.rs",
+      "rust/prelude/std.ptl",
       "petal-ui/src/draw.rs",
       "petal-ui/src/input.rs",
     ],

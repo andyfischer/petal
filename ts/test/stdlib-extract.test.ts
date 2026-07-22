@@ -82,9 +82,53 @@ describe("stdlib extractor", () => {
     expect(byName.get("includes")!.aliasOf).toBe("contains");
   });
 
+  it("recovers the Petal-source std prelude (rust/prelude/std.ptl)", () => {
+    // Every `export fn` in the prelude should surface as a stdlib function.
+    for (const name of [
+      "first",
+      "is_empty",
+      "sum",
+      "product",
+      "mean",
+      "minimum",
+      "maximum",
+      "count",
+      "any",
+      "all",
+      "find",
+      "take",
+      "drop",
+      "clamp01",
+    ]) {
+      const fn = byName.get(name);
+      expect(fn, `missing prelude fn: ${name}`).toBeDefined();
+      expect(fn!.group).toBe("prelude");
+      expect(fn!.category).toBe("std");
+      expect(fn!.source.file).toBe("rust/prelude/std.ptl");
+      expect(fn!.source.line).toBeGreaterThan(0);
+    }
+  });
+
+  it("reads prelude parameter names + arity from the Petal source", () => {
+    const take = byName.get("take")!;
+    expect(take.arity).toBe(2);
+    expect(take.variadic).toBe(false);
+    expect(take.params.map((p) => p.name)).toEqual(["xs", "n"]);
+    // Petal source carries no static types, so params are untyped.
+    expect(take.params.every((p) => p.type === "any")).toBe(true);
+
+    expect(byName.get("clamp01")!.params.map((p) => p.name)).toEqual(["x"]);
+    expect(byName.get("find")!.params.map((p) => p.name)).toEqual([
+      "xs",
+      "pred",
+    ]);
+    expect(byName.get("sum")!.arity).toBe(1);
+  });
+
   it("points every function at a real source location", () => {
     for (const fn of manifest.functions) {
-      expect(fn.source.file, fn.name).toMatch(/\.rs$/);
+      // Native + canvas builtins live in Rust; the core prelude lives in Petal.
+      expect(fn.source.file, fn.name).toMatch(/\.(rs|ptl)$/);
       expect(fn.source.line, fn.name).toBeGreaterThan(0);
     }
   });

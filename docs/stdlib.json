@@ -2,6 +2,7 @@
   "generatedFrom": [
     "rust/src/builtins/mod.rs",
     "rust/src/builtins/*.rs",
+    "rust/prelude/std.ptl",
     "petal-ui/src/draw.rs",
     "petal-ui/src/input.rs"
   ],
@@ -53,6 +54,12 @@
       "title": "Higher-Order Functions",
       "group": "core",
       "doc": "List transforms that take a function: map, filter, reduce, forEach."
+    },
+    {
+      "id": "std",
+      "title": "Core Prelude",
+      "group": "prelude",
+      "doc": "Standard-library helpers written in Petal source (module `std`), auto-imported into every program: list reductions, predicate queries, sublists, and number helpers."
     },
     {
       "id": "autodiff",
@@ -1681,6 +1688,268 @@
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 160
+      }
+    },
+    {
+      "name": "first",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 21
+      }
+    },
+    {
+      "name": "is_empty",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 26
+      }
+    },
+    {
+      "name": "sum",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 31
+      }
+    },
+    {
+      "name": "product",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 36
+      }
+    },
+    {
+      "name": "mean",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 41
+      }
+    },
+    {
+      "name": "minimum",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 46
+      }
+    },
+    {
+      "name": "maximum",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 55
+      }
+    },
+    {
+      "name": "count",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 66
+      }
+    },
+    {
+      "name": "any",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 71
+      }
+    },
+    {
+      "name": "all",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 76
+      }
+    },
+    {
+      "name": "find",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 81
+      }
+    },
+    {
+      "name": "take",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "n",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 91
+      }
+    },
+    {
+      "name": "drop",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "n",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 96
+      }
+    },
+    {
+      "name": "clamp01",
+      "category": "std",
+      "group": "prelude",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 103
       }
     },
     {

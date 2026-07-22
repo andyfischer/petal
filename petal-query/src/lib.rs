@@ -44,7 +44,7 @@ pub mod wire;
 
 pub use cache::{Cache, Lookup};
 pub use cache_control::{CachePolicy, Freshness};
-pub use provider::{EmitContext, Provider, QueryContext, Reply};
+pub use provider::{EmitContext, MutateContext, Provider, QueryContext, Reply};
 
 /// Version of the petal-query provider/cache contract. Bump when the wire shapes
 /// or [`CachePolicy`] semantics change incompatibly.

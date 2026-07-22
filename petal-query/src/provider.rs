@@ -153,8 +153,26 @@ pub struct EmitContext<'a> {
     pub init: &'a InitializeParams,
 }
 
+/// The context handed to a `mutation` handler: the mutation `name` and its JSON
+/// `arg`, plus the handshake params.
+///
+/// A mutation is the effectful, response-carrying call — the fourth quadrant
+/// beside `query` (a cacheable pull) and `emit` (a fire-and-forget push). Like
+/// `emit` its handler takes `&mut S` and may have side effects; unlike `emit` it
+/// returns a [`Reply`], and unlike `query` its result is **never cached**. Use it
+/// for GraphQL-style writes: navigate to a screen, commit a change, run a command.
+pub struct MutateContext<'a> {
+    /// The mutation name (matches the registered handler).
+    pub name: &'a str,
+    /// The mutation argument — any JSON tree the caller passed.
+    pub arg: &'a serde_json::Value,
+    /// The handshake parameters.
+    pub init: &'a InitializeParams,
+}
+
 type QueryHandler<S> = Box<dyn FnMut(&mut S, &QueryContext) -> Reply>;
 type EmitHandler<S> = Box<dyn FnMut(&mut S, &EmitContext)>;
+type MutationHandler<S> = Box<dyn FnMut(&mut S, &MutateContext) -> Reply>;
 
 /// A query/response provider over a per-run state `S`: a set of `kind` → handler
 /// and `event` → handler registrations, plus a `build_state` that materializes
@@ -171,6 +189,7 @@ pub struct Provider<S> {
     pub(crate) build_state: Option<Box<dyn FnOnce(&InitializeParams) -> S>>,
     pub(crate) query_handlers: HashMap<String, QueryHandler<S>>,
     pub(crate) emit_handlers: HashMap<String, EmitHandler<S>>,
+    pub(crate) mutation_handlers: HashMap<String, MutationHandler<S>>,
 }
 
 impl Provider<()> {
@@ -188,6 +207,7 @@ impl<S: 'static> Provider<S> {
             build_state: Some(Box::new(build_state)),
             query_handlers: HashMap::new(),
             emit_handlers: HashMap::new(),
+            mutation_handlers: HashMap::new(),
         }
     }
 
@@ -211,6 +231,19 @@ impl<S: 'static> Provider<S> {
         handler: impl FnMut(&mut S, &EmitContext) + 'static,
     ) -> Provider<S> {
         self.emit_handlers.insert(event.into(), Box::new(handler));
+        self
+    }
+
+    /// Register a handler for a `mutation(name, …)` — an effectful, uncached call
+    /// that returns a [`Reply`]. The handler receives the state by `&mut` (so it
+    /// can record the effect) and the [`MutateContext`]. Fluent, like
+    /// [`query`](Self::query) / [`on_emit`](Self::on_emit).
+    pub fn on_mutation(
+        mut self,
+        name: impl Into<String>,
+        handler: impl FnMut(&mut S, &MutateContext) -> Reply + 'static,
+    ) -> Provider<S> {
+        self.mutation_handlers.insert(name.into(), Box::new(handler));
         self
     }
 
@@ -241,6 +274,24 @@ impl<S: 'static> Provider<S> {
     pub fn handle_emit(&mut self, state: &mut S, ctx: &EmitContext) {
         if let Some(handler) = self.emit_handlers.get_mut(ctx.event) {
             handler(state, ctx);
+        }
+    }
+
+    /// Whether a mutation `name` has a registered handler. Lets a transport fall
+    /// back to a built-in (e.g. `gpp`'s screen-serving `navigate`) only when the
+    /// app has not overridden it.
+    pub fn has_mutation(&self, name: &str) -> bool {
+        self.mutation_handlers.contains_key(name)
+    }
+
+    /// Run one `mutation(name, arg)` against `state`: dispatch to the registered
+    /// handler, or [`Reply::error`] for an unregistered name (a mutation is an
+    /// explicit request, so an unknown one is an error, not a silent null — unlike
+    /// [`answer`](Self::answer)). The generic entry point for the effectful channel.
+    pub fn mutate(&mut self, state: &mut S, ctx: &MutateContext) -> Reply {
+        match self.mutation_handlers.get_mut(ctx.name) {
+            Some(handler) => handler(state, ctx),
+            None => Reply::error(format!("no mutation handler for '{}'", ctx.name)),
         }
     }
 }
@@ -301,6 +352,38 @@ mod tests {
             &EmitContext { event: "ui_state", arg: &arg, init: &init },
         );
         assert_eq!(state, 300);
+    }
+
+    #[test]
+    fn mutation_dispatches_returns_a_reply_and_mutates_state() {
+        // A mutation is effectful (mutates `&mut S`) AND returns a value — the
+        // fourth quadrant beside query and emit.
+        let mut p = Provider::new(|_| 0i64).on_mutation("bump", |s: &mut i64, ctx| {
+            *s += ctx.arg["by"].as_i64().unwrap_or(0);
+            Reply::json(json!({ "total": *s }))
+        });
+        let init = init();
+        let mut state = p.build(&init);
+        assert!(p.has_mutation("bump"));
+        let arg = json!({ "by": 5 });
+        let reply = p.mutate(&mut state, &MutateContext { name: "bump", arg: &arg, init: &init });
+        let (v, e, _) = reply.into_parts();
+        assert_eq!(v.unwrap()["total"], 5);
+        assert!(e.is_none());
+        assert_eq!(state, 5);
+    }
+
+    #[test]
+    fn unregistered_mutation_is_an_error_not_null() {
+        let mut p = Provider::stateless();
+        let init = init();
+        let mut state = p.build(&init);
+        assert!(!p.has_mutation("nope"));
+        let arg = json!(null);
+        let reply = p.mutate(&mut state, &MutateContext { name: "nope", arg: &arg, init: &init });
+        let (v, e, _) = reply.into_parts();
+        assert!(v.is_none());
+        assert!(e.unwrap().contains("no mutation handler"));
     }
 
     #[test]

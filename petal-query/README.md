@@ -60,8 +60,18 @@ fn main() -> std::io::Result<()> {
   `.no_store()`, `.cache(..)`; default forever).
 - **`on_emit`** handlers receive the script's `emit(event, arg)` signals — the
   channel for persisting UI state, opening files, etc.
+- **`on_mutation`** handlers answer a **mutation** — an effectful, uncached
+  request/response call (the fourth quadrant beside `query` and `emit`: JSON-arg
+  like `emit`, response-carrying like `query`, but never cached). Use it for
+  GraphQL-style writes. The built-in `navigate` mutation powers multi-screen
+  panels — see below.
 - **`PanelUi::new(name, script)`** supplies the pane name and UI script;
-  **`PanelUi::title`** instead derives the pane name from the built state.
+  **`PanelUi::title`** instead derives the pane name from the built state;
+  **`PanelUi::screen(name, source)`** declares an extra navigable screen (the
+  declared set is the navigation allowlist). When the panel script calls
+  `navigate(name)`, the host fetches that screen's source via the built-in
+  `navigate` mutation and owns the browser-history stack; override with your own
+  `on_mutation("navigate", …)` to add effects.
 
 ## Cacheability
 

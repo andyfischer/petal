@@ -23,14 +23,23 @@
 //! The pane name may also be derived from the built state (a provider that
 //! titles the pane from what it just loaded) via [`PanelUi::title`].
 
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
-use crate::provider::Provider;
+use crate::provider::{MutateContext, Provider, Reply};
 use crate::wire::{
-    self, Envelope, EmitParams, InitializeParams, InitializeResult, QueryParams, QueryResult,
-    SetScriptParams, method,
+    self, Envelope, EmitParams, InitializeParams, InitializeResult, MutateParams, MutateResult,
+    QueryParams, QueryResult, SetScriptParams, method,
 };
 use crate::CachePolicy;
+
+/// The built-in mutation name for browser-style navigation between a panel's
+/// screens. When a subprocess panel app declares [`screens`](PanelUi::screen) and
+/// does not register its own `navigate` handler, the GPP layer answers a
+/// `navigate` mutation by returning the requested screen's UI source, letting the
+/// host swap screens and own the history stack. Its `arg` is `{ "screen": name }`
+/// and it returns `{ "screen": name, "source": <ptl source> }`.
+pub const NAVIGATE: &str = "navigate";
 
 /// The GPP presentation for a panel-mode app: the pane name (static, or derived
 /// from the built state) and the UI script the host runs. Supplied by the app —
@@ -39,15 +48,20 @@ pub struct PanelUi<S> {
     name: String,
     title_fn: Option<Box<dyn FnOnce(&S) -> String>>,
     script: String,
+    /// Additional navigable screens (name → UI source) beyond the home `script`.
+    /// The declared set doubles as the navigation allowlist: a `navigate` mutation
+    /// to an undeclared screen is refused. Empty means a single-screen app.
+    screens: HashMap<String, String>,
 }
 
 impl<S> PanelUi<S> {
-    /// A panel named `name`, running the UI `script`.
+    /// A panel named `name`, running the home UI `script`.
     pub fn new(name: impl Into<String>, script: impl Into<String>) -> PanelUi<S> {
         PanelUi {
             name: name.into(),
             title_fn: None,
             script: script.into(),
+            screens: HashMap::new(),
         }
     }
 
@@ -56,6 +70,21 @@ impl<S> PanelUi<S> {
     /// can title the pane from what it just loaded (e.g. `retro — <session id>`).
     pub fn title(mut self, title: impl FnOnce(&S) -> String + 'static) -> PanelUi<S> {
         self.title_fn = Some(Box::new(title));
+        self
+    }
+
+    /// Declare a navigable screen `name` served from `source`. The host's
+    /// browser-style navigation (`navigate(name)`) fetches this source via the
+    /// built-in [`NAVIGATE`] mutation; the set of declared screens is the
+    /// navigation allowlist. Fluent — chain one `.screen(...)` per screen.
+    ///
+    /// The home `script` from [`new`](Self::new) is screen 0 and need not be
+    /// re-declared here (the host already holds it); declare the screens it can
+    /// navigate *to*. An app that wants navigation effects (logging, priming data)
+    /// can instead register its own `navigate` handler with
+    /// [`Provider::on_mutation`], which takes precedence over this built-in.
+    pub fn screen(mut self, name: impl Into<String>, source: impl Into<String>) -> PanelUi<S> {
+        self.screens.insert(name.into(), source.into());
         self
     }
 }
@@ -96,6 +125,7 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
         name,
         title_fn,
         script,
+        screens,
     } = ui;
     let name = match title_fn {
         Some(title) => title(&state),
@@ -164,12 +194,56 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
                     init: &init,
                 },
             );
+        } else if env.is_method(method::MUTATE) {
+            let req_id = env.id.unwrap_or(0);
+            let m: MutateParams = match env.params_as() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("petal-query: bad mutate params: {e}");
+                    continue;
+                }
+            };
+            // An app-registered handler wins; otherwise the built-in `navigate`
+            // serves a declared screen's source. An unregistered, non-navigate
+            // mutation falls through to `provider.mutate`, which errors.
+            let reply = if !provider.has_mutation(&m.name) && m.name == NAVIGATE {
+                builtin_navigate(&screens, &m.arg)
+            } else {
+                provider.mutate(
+                    &mut state,
+                    &MutateContext {
+                        name: &m.name,
+                        arg: &m.arg,
+                        init: &init,
+                    },
+                )
+            };
+            let (value, error, _policy) = reply.into_parts();
+            wire::write_message(
+                writer,
+                &Envelope::response(req_id, MutateResult { name: m.name, value, error }),
+            )?;
         } else if env.is_method(method::SHUTDOWN) {
             return Ok(());
         }
         // `resize`, `invalidate`, and unknown notifications need no action.
     }
     Ok(())
+}
+
+/// Answer the built-in [`NAVIGATE`] mutation: look the requested `screen` up in
+/// the panel's declared `screens` and return its source. The declared set is the
+/// allowlist — an undeclared screen is an error, so a script can only navigate to
+/// screens the app shipped. `arg` is `{ "screen": name }`; on success the reply
+/// value is `{ "screen": name, "source": <ptl source> }`.
+fn builtin_navigate(screens: &HashMap<String, String>, arg: &serde_json::Value) -> Reply {
+    let Some(screen) = arg.get("screen").and_then(|v| v.as_str()) else {
+        return Reply::error("navigate: missing 'screen' argument".to_string());
+    };
+    match screens.get(screen) {
+        Some(source) => Reply::json(serde_json::json!({ "screen": screen, "source": source })),
+        None => Reply::error(format!("navigate: no such screen '{screen}'")),
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +351,61 @@ mod tests {
         let commit = msgs[3].result.as_ref().unwrap();
         assert_eq!(commit["value"]["hash"], "abc");
         assert!(commit.get("cacheControl").is_none());
+    }
+
+    fn mutate_req(id: u64, name: &str, arg: serde_json::Value) -> Envelope {
+        Envelope {
+            jsonrpc: "2.0".into(),
+            id: Some(id),
+            method: Some(method::MUTATE.into()),
+            params: Some(serde_json::to_value(MutateParams { name: name.into(), arg }).unwrap()),
+            result: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn builtin_navigate_serves_a_declared_screen_and_refuses_others() {
+        let mut r = input(vec![
+            init_req(),
+            mutate_req(7, NAVIGATE, json!({ "screen": "b.ptl" })),
+            mutate_req(8, NAVIGATE, json!({ "screen": "missing.ptl" })),
+            shutdown(),
+        ]);
+        let mut w: Vec<u8> = Vec::new();
+        let ui = PanelUi::new("home", "HOME").screen("b.ptl", "SOURCE_B");
+        serve_on(Provider::stateless(), ui, &mut r, &mut w).unwrap();
+        let msgs = output(&w);
+        // The declared screen resolves to its source; an undeclared one errors.
+        let ok = msgs[2].result.as_ref().unwrap();
+        assert_eq!(ok["name"], "navigate");
+        assert_eq!(ok["value"]["source"], "SOURCE_B");
+        assert_eq!(ok["value"]["screen"], "b.ptl");
+        assert!(ok.get("cacheControl").is_none(), "mutations are never cached");
+        let err = msgs[3].result.as_ref().unwrap();
+        assert!(err["error"].as_str().unwrap().contains("no such screen"));
+    }
+
+    #[test]
+    fn app_registered_mutation_takes_precedence_and_is_effectful() {
+        let mut r = input(vec![
+            init_req(),
+            mutate_req(9, "select", json!({ "row": 3 })),
+            query_req(10, "selected", ""),
+            shutdown(),
+        ]);
+        let mut w: Vec<u8> = Vec::new();
+        // A mutation mutates state; a following query observes the effect.
+        let provider = Provider::new(|_| 0i64)
+            .on_mutation("select", |s: &mut i64, ctx| {
+                *s = ctx.arg["row"].as_i64().unwrap_or(0);
+                Reply::json(json!({ "ok": true }))
+            })
+            .query("selected", |s: &mut i64, _ctx| Reply::json(*s));
+        serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
+        let msgs = output(&w);
+        assert_eq!(msgs[2].result.as_ref().unwrap()["value"]["ok"], true);
+        assert_eq!(msgs[3].result.as_ref().unwrap()["value"], 3);
     }
 
     #[test]

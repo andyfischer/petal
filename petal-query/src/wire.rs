@@ -31,6 +31,10 @@ pub mod method {
     pub const QUERY: &str = "query";
     /// Host → client notification: the script called `emit(event, arg)`.
     pub const EMIT: &str = "emit";
+    /// Host → client request: run an effectful `mutation(name, arg)` and return
+    /// its result. Uncached (unlike `query`) and response-carrying (unlike
+    /// `emit`). The built-in `navigate` mutation returns a screen's UI source.
+    pub const MUTATE: &str = "mutate";
     /// Client → host notification: proactively drop a cached `(kind, arg)`.
     pub const INVALIDATE: &str = "invalidate";
     /// Client → host notification: replace this pane with an editor on a path.
@@ -179,6 +183,29 @@ pub struct QueryResult {
 pub struct EmitParams {
     pub event: String,
     pub arg: serde_json::Value,
+}
+
+/// Params for a `mutate` request (host → client): an effectful call the host
+/// forwards on the script's behalf. `arg` is any JSON tree (like `emit`, unlike a
+/// `query`'s `&str`).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MutateParams {
+    pub name: String,
+    pub arg: serde_json::Value,
+}
+
+/// The `mutate` response (client → host): the mutation's result. Echoes `name`;
+/// exactly one of `value`/`error` is set. Deliberately carries **no**
+/// `cacheControl` — a mutation is effectful and never cached.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MutateResult {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Params for an `invalidate` notification (client → host): drop `(kind, arg)`.

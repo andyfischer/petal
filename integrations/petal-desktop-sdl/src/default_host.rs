@@ -80,7 +80,17 @@ impl Host for DefaultHost {
         // Bind proportional text metrics so `text_width()` matches rendered
         // glyphs (correct centering / right-alignment).
         if let Some(fonts) = &self.fonts {
-            petal_ui::draw::bind_text_advance_table(env, &fonts.ascii_advance_ratios());
+            let ratios = fonts.ascii_advance_ratios();
+            petal_ui::draw::bind_text_advance_table(env, &ratios);
+            // The one loaded face is also this host's `ui` role, so
+            // `text_width(s, size, "ui")` measures it rather than falling back
+            // to the monospace estimate. Roles this host can't offer (mono,
+            // serif) stay unregistered and degrade to the default font.
+            let metrics = petal_ui::draw::FontMetrics::proportional(
+                ratios,
+                petal_ui::draw::DEFAULT_TEXT_ADVANCE,
+            );
+            petal_ui::draw::bind_font_metrics(env, "ui", &metrics);
         }
         // (Re)bind the browser example list on every load — cheap and keeps the
         // browser's list correct after returning to it.

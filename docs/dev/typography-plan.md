@@ -1,6 +1,6 @@
 # petal-typography — Tech Plan
 
-Status: **proposed** · Author: investigation + plan, 2026-07-24
+Status: **in progress** (Phase 0 — see [typography-progress.md](typography-progress.md)) · Author: investigation + plan, 2026-07-24
 
 A new library for best-in-class text rendering in Petal apps: multiple fonts
 (faces, weights, styles), correct proportional measurement, and a lightweight

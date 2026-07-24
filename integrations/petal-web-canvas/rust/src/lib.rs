@@ -210,6 +210,29 @@ impl PetalRuntime {
         self.input.begin_frame(self.dt);
     }
 
+    // --- Text metrics ---
+    //
+    // The browser owns rasterization, so it also owns measurement: the TS side
+    // measures each glyph with `ctx.measureText` at startup and pushes the
+    // resulting advance ratios down here. Without this, `text_width()` assumed
+    // monospace (0.6 × size) while the canvas rendered a proportional face —
+    // every centered or right-aligned label was off.
+
+    /// Bind measured advance ratios (advance ÷ font size, indexed by
+    /// codepoint) for the *default* font — what `text_width(s, size)` uses.
+    /// `fallback` covers codepoints past the table's end.
+    pub fn set_default_font_metrics(&mut self, advances: &[f64], fallback: f64) {
+        petal_ui::draw::bind_text_metrics(&mut self.env, fallback);
+        petal_ui::draw::bind_text_advance_table(&mut self.env, advances);
+    }
+
+    /// Bind advance ratios for a *named* face (a role like `ui` / `mono` /
+    /// `serif`, or a family name) — what `text_width(s, size, font)` uses.
+    pub fn set_font_metrics(&mut self, name: &str, advances: &[f64], fallback: f64) {
+        let metrics = petal_ui::draw::FontMetrics::proportional(advances.to_vec(), fallback);
+        petal_ui::draw::bind_font_metrics(&mut self.env, name, &metrics);
+    }
+
     // --- Debug ---
 
     pub fn get_state_json(&self) -> Result<String, JsValue> {

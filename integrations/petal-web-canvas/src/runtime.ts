@@ -3,6 +3,7 @@
 import init, { PetalRuntime } from "../pkg/petal_web_canvas.js";
 import { renderCommands } from "./canvas-renderer.js";
 import { InputTracker } from "./input.js";
+import { bindFontMetrics } from "./text-metrics.js";
 
 export class PetalCanvas {
   runtime: PetalRuntime | null = null;
@@ -52,6 +53,9 @@ export class PetalCanvas {
     await init();
     this.runtime = new PetalRuntime();
     this.input.setRuntime(this.runtime);
+    // Teach the runtime what the browser's fonts actually measure, so
+    // `text_width()` agrees with what `fillText` draws.
+    bindFontMetrics(this.runtime);
   }
 
   /**

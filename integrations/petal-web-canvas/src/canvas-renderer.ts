@@ -5,6 +5,8 @@
  * (`a`), corner radius (`radius`), and stroke width (`width`) are optional and
  * omitted from the JSON when at their defaults (opaque / square / hairline). */
 
+import { DEFAULT_ROLE, FONT_STACKS } from "./text-metrics.js";
+
 export interface DrawCommand {
   op: string;
   // Color (shared)
@@ -138,7 +140,9 @@ function renderPrimitive(
 
     case "text":
       ctx.fillStyle = fillStyle(cmd);
-      ctx.font = `${cmd.size}px sans-serif`;
+      // The same stack the default advance table was measured from — drawing
+      // and `text_width()` must not disagree about the face.
+      ctx.font = `${cmd.size}px ${FONT_STACKS[DEFAULT_ROLE]}`;
       ctx.textBaseline = "top";
       ctx.fillText(cmd.text!, cmd.x!, cmd.y!);
       break;

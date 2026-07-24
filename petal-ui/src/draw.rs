@@ -42,6 +42,12 @@ pub const DEFAULT_TEXT_ADVANCE: f64 = 0.6;
 /// codepoint beyond the table's length falls back to [`SYM_TEXT_ADVANCE`].
 pub const SYM_TEXT_ADVANCES: &str = "text_advances";
 
+/// Per-font metrics read by `text_width(s, size, font)`: a record keyed by
+/// font name, each value a record `{advance: float, advances: [float]}` with
+/// the same meaning as the default-font [`SYM_TEXT_ADVANCE`] /
+/// [`SYM_TEXT_ADVANCES`] bindings. See [`bind_font_metrics`].
+pub const SYM_TEXT_FONTS: &str = "text_fonts";
+
 /// `skip_serializing_if` predicates that keep the JSON identical to the
 /// pre-alpha shape when a primitive is opaque / square-cornered / hairline, so
 /// existing draw-command consumers see no change unless a feature is used.
@@ -454,6 +460,80 @@ pub fn bind_text_advance_table(env: &mut Env, ratios: &[f64]) {
     env.set_binding(s, Value::List(id));
 }
 
+/// Measurement data for one font, as ratios of the font size (so one table
+/// serves every size — glyph advance scales linearly with size).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FontMetrics {
+    /// Advance ratio used for codepoints the table doesn't cover.
+    pub advance: f64,
+    /// `advances[codepoint]` = that glyph's advance ÷ font size. May be empty
+    /// (a monospace font is fully described by `advance` alone).
+    pub advances: Vec<f64>,
+}
+
+impl Default for FontMetrics {
+    /// A typical monospace face: every glyph advances 0.6× the size.
+    fn default() -> Self {
+        FontMetrics {
+            advance: DEFAULT_TEXT_ADVANCE,
+            advances: Vec::new(),
+        }
+    }
+}
+
+impl FontMetrics {
+    /// A proportional font described by a codepoint-indexed advance table,
+    /// with `advance` covering codepoints past the table's end.
+    pub fn proportional(advances: Vec<f64>, advance: f64) -> Self {
+        FontMetrics { advance, advances }
+    }
+
+    /// A monospace font: one advance ratio for every glyph.
+    pub fn monospace(advance: f64) -> Self {
+        FontMetrics {
+            advance,
+            advances: Vec::new(),
+        }
+    }
+
+    fn width_of(&self, text: &str, size: f64) -> f64 {
+        text.chars()
+            .map(|c| {
+                self.advances
+                    .get(c as usize)
+                    .copied()
+                    .unwrap_or(self.advance)
+                    * size
+            })
+            .sum()
+    }
+}
+
+/// Bind measurement data for a *named* font, so a script can measure text in a
+/// face other than the host's default: `text_width(s, size, "mono")`. Hosts
+/// register one entry per face they can render, under the role names scripts
+/// select by (`ui`, `mono`, `serif`) and/or concrete family names. The
+/// unnamed default font stays with [`bind_text_metrics`] /
+/// [`bind_text_advance_table`]; a name the host never bound falls back to it,
+/// so a script asking for a face this host lacks degrades instead of breaking.
+pub fn bind_font_metrics(env: &mut Env, font: &str, metrics: &FontMetrics) {
+    let advances: Vec<Value> = metrics.advances.iter().map(|r| Value::Float(*r)).collect();
+    let advances_id = env.heap_mut().alloc_list(advances);
+    let mut entry = indexmap::IndexMap::new();
+    entry.insert("advance".to_string(), Value::Float(metrics.advance));
+    entry.insert("advances".to_string(), Value::List(advances_id));
+    let entry_id = env.heap_mut().alloc_map(entry);
+
+    let sym = env.intern_symbol(SYM_TEXT_FONTS);
+    let mut fonts = match env.binding(sym) {
+        Some(Value::Map(id)) => env.heap().get_map(id).clone(),
+        _ => indexmap::IndexMap::new(),
+    };
+    fonts.insert(font.to_string(), Value::Map(entry_id));
+    let fonts_id = env.heap_mut().alloc_map(fonts);
+    env.set_binding(sym, Value::Map(fonts_id));
+}
+
 /// Reset the per-frame offscreen-canvas id counter so `create_canvas` hands
 /// out stable ids each frame. Call before each run (only needed with
 /// [`register_canvas`]).
@@ -700,46 +780,93 @@ fn native_clip_none(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
-/// `text_width(s, size) -> int`: width in logical px of `s` at font `size`.
-/// If the host bound a per-glyph advance table ([`bind_text_advance_table`]),
-/// the width is the sum of each glyph's advance × `size` — correct for
-/// proportional fonts. Otherwise it falls back to the monospace model
-/// `chars × size × ratio`, with the ratio from [`bind_text_metrics`]
-/// (default 0.6).
-fn native_text_width(state: &mut PetalCxt) -> NativeResult {
-    let text = state.get_string(1)?;
-    let size = state.get_int(2)? as f64;
-    let uniform = match state.binding_named(SYM_TEXT_ADVANCE) {
-        Value::Float(f) => f,
-        Value::Int(n) => n as f64,
-        _ => DEFAULT_TEXT_ADVANCE,
-    };
+/// Read a numeric `Value` as f64, or `default` if it isn't a number.
+fn num_or(v: &Value, default: f64) -> f64 {
+    match v {
+        Value::Float(f) => *f,
+        Value::Int(n) => *n as f64,
+        _ => default,
+    }
+}
 
-    // Proportional path: a bound advance table maps codepoint → advance ratio.
-    let table: Option<Vec<f64>> = match state.binding_named(SYM_TEXT_ADVANCES) {
+/// Decode a list `Value` of advance ratios into a table.
+fn advance_list(state: &mut PetalCxt, v: &Value, uniform: f64) -> Option<Vec<f64>> {
+    match v {
         Value::List(id) => Some(
             state
                 .heap()
-                .get_list(id)
+                .get_list(*id)
                 .iter()
-                .map(|v| match v {
-                    Value::Float(f) => *f,
-                    Value::Int(n) => *n as f64,
-                    _ => uniform,
-                })
+                .map(|r| num_or(r, uniform))
                 .collect(),
         ),
         _ => None,
+    }
+}
+
+/// The host's default-font metrics — the [`bind_text_metrics`] /
+/// [`bind_text_advance_table`] bindings every host has always used.
+fn default_font_metrics(state: &mut PetalCxt) -> FontMetrics {
+    let uniform = num_or(&state.binding_named(SYM_TEXT_ADVANCE), DEFAULT_TEXT_ADVANCE);
+    let table = state.binding_named(SYM_TEXT_ADVANCES);
+    let advances = advance_list(state, &table, uniform);
+    FontMetrics {
+        advance: uniform,
+        advances: advances.unwrap_or_default(),
+    }
+}
+
+/// Resolve a font spec — a name or a CSS-style fallback list (`"Inter, ui"`) —
+/// against the [`bind_font_metrics`] registry. The first name the host bound
+/// wins; if none did, the caller falls back to the default font.
+fn named_font_metrics(state: &mut PetalCxt, spec: &str) -> Option<FontMetrics> {
+    let fonts = match state.binding_named(SYM_TEXT_FONTS) {
+        Value::Map(id) => state.heap().get_map(id).clone(),
+        _ => return None,
+    };
+    for name in spec.split(',') {
+        let Some(Value::Map(entry_id)) = fonts.get(name.trim()) else {
+            continue;
+        };
+        let entry = state.heap().get_map(*entry_id).clone();
+        let advance = entry
+            .get("advance")
+            .map_or(DEFAULT_TEXT_ADVANCE, |v| num_or(v, DEFAULT_TEXT_ADVANCE));
+        let advances = entry
+            .get("advances")
+            .cloned()
+            .and_then(|v| advance_list(state, &v, advance));
+        return Some(FontMetrics {
+            advance,
+            advances: advances.unwrap_or_default(),
+        });
+    }
+    None
+}
+
+/// `text_width(s, size, [font]) -> int`: width in logical px of `s` at font
+/// `size`. If the host bound a per-glyph advance table
+/// ([`bind_text_advance_table`]), the width is the sum of each glyph's advance
+/// × `size` — correct for proportional fonts. Otherwise it falls back to the
+/// monospace model `chars × size × ratio`, with the ratio from
+/// [`bind_text_metrics`] (default 0.6).
+///
+/// The optional `font` selects a face registered with [`bind_font_metrics`],
+/// by role name or CSS-style fallback list (`"Inter, ui"`). A face this host
+/// doesn't offer measures with the default font.
+fn native_text_width(state: &mut PetalCxt) -> NativeResult {
+    let text = state.get_string(1)?;
+    let size = state.get_int(2)? as f64;
+
+    let metrics = match state.arg_count() >= 3 {
+        true => {
+            let spec = state.get_string(3)?;
+            named_font_metrics(state, &spec).unwrap_or_else(|| default_font_metrics(state))
+        }
+        false => default_font_metrics(state),
     };
 
-    let width = match table {
-        Some(ratios) => text
-            .chars()
-            .map(|c| ratios.get(c as usize).copied().unwrap_or(uniform) * size)
-            .sum::<f64>(),
-        None => text.chars().count() as f64 * size * uniform,
-    };
-    state.push_int(width.round() as i64);
+    state.push_int(metrics.width_of(&text, size).round() as i64);
     Ok(1)
 }
 
@@ -943,6 +1070,49 @@ mod tests {
             narrow != wide,
             "a proportional font must measure 'iii' and 'WWW' differently"
         );
+    }
+
+    #[test]
+    fn text_width_measures_a_named_font() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // Default font: proportional, narrow 'i'. A second face, "mono", is
+        // registered by name.
+        let mut ratios = vec![0.6f64; 128];
+        ratios['i' as usize] = 0.2;
+        bind_text_advance_table(&mut env, &ratios);
+        bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
+
+        // Two args → default (proportional) font: 3 × 10 × 0.2 = 6.
+        let v = env.run_source("text_width(\"iii\", 10)").expect("run");
+        assert_eq!(v, Value::Int(6));
+        // Three args → the named face: 3 × 10 × 0.5 = 15.
+        let v = env.run_source("text_width(\"iii\", 10, \"mono\")").expect("run");
+        assert_eq!(v, Value::Int(15));
+        // A fallback list picks the first registered name.
+        let v = env
+            .run_source("text_width(\"iii\", 10, \"Inter, mono\")")
+            .expect("run");
+        assert_eq!(v, Value::Int(15));
+        // A face this host never bound degrades to the default font.
+        let v = env.run_source("text_width(\"iii\", 10, \"serif\")").expect("run");
+        assert_eq!(v, Value::Int(6));
+    }
+
+    #[test]
+    fn named_fonts_accumulate_and_carry_tables() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        let mut ui = vec![0.6f64; 128];
+        ui['W' as usize] = 1.0;
+        bind_font_metrics(&mut env, "ui", &FontMetrics::proportional(ui, 0.6));
+        // A second registration must not drop the first.
+        bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
+
+        let v = env.run_source("text_width(\"WW\", 10, \"ui\")").expect("run");
+        assert_eq!(v, Value::Int(20));
+        let v = env.run_source("text_width(\"WW\", 10, \"mono\")").expect("run");
+        assert_eq!(v, Value::Int(10));
     }
 
     #[test]

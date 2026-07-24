@@ -4,7 +4,7 @@ Living status tracker for the typography work.
 **Design rationale lives in [`typography-plan.md`](typography-plan.md)** — read
 it first. This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-24 (Phase 0 landed in-repo) · Branch: `main`
+Last updated: 2026-07-24 (Phase 1 protocol + hosts landed) · Branch: `main`
 
 ---
 
@@ -13,7 +13,8 @@ Last updated: 2026-07-24 (Phase 0 landed in-repo) · Branch: `main`
 | Phase | Status | Summary |
 |-------|--------|---------|
 | 0 — metrics groundwork | ✅ done | keyed per-font tables + `text_width(s, size, font)`; web-canvas and Garden both measure real metrics; Garden honors `size` |
-| 1 — protocol + engine | ⬜ not started | optional `font`/`weight`/`italic`/`spacing` on `Text`; `petal-typography` crate |
+| 1a — protocol + hosts | ✅ done | optional `font`/`weight`/`italic`/`spacing` on `Text`; style records on `draw_text`/`text_width`; SDL, web-canvas and Garden all honor them |
+| 1b — `petal-typography` crate | ⬜ not started | `FontBook`, system-font enumeration, `font_list` / `font_metrics` / `measure` natives |
 | 2 — the `typo` module | ⬜ not started | spans, rich lines, `fit`, flow layout, layout cache |
 | 3 — raster + migration | ⬜ not started | swash glyph cache; port retro.ptl / git_panel.ptl |
 
@@ -73,6 +74,57 @@ default font).
   environment with a stale build.
 - Optionally: sample-apps/diagram-canvas inherits the web-canvas renderer work
   (it currently keeps its self-consistent monospace estimate).
+
+## Phase 1a — what's done
+
+- **petal-ui** (`petal-ui/src/draw.rs`)
+  - `DrawCommand::Text` grew `font` / `weight` / `italic` / `spacing`, each
+    `skip_serializing_if`-defaulted, so a plain text command serializes to the
+    exact pre-typography JSON and existing consumers see no change. Decoding
+    reads them from emitted args 8–11, which a pre-typography emitter simply
+    doesn't send.
+  - `TextStyle` — the script-facing style record (`{size, color, font, weight,
+    italic, spacing}`), any subset. `draw_text(text, x, y, style)` (natively)
+    and `draw_text(text, pos, style)` (prelude overload) emit it; the
+    typography args are appended *only* when non-default.
+  - `text_width(s, style)` measures the same record — face, weight/italic
+    variant, and letter-spacing — so measurement and rasterization agree.
+  - Variant registry: `bind_font_variant_metrics(env, name, weight, italic, …)`
+    stores under canonical keys (`ui@700`, `ui@i`, `ui@700i`); lookup walks a
+    family's variants most-specific-first before moving to the next family in a
+    fallback list (CSS's family-then-variant order).
+  - `bind_default_font_name(env, role)` — without it, a style with no `font`
+    would measure regular metrics for bold text while the host *drew* it bold.
+    Found by comparing `text_width` against `ctx.measureText` in Chrome.
+  - `DrawCommand::plain_text(…)` for hosts/tests building a command by hand.
+- **petal-sdl** — `FontBook` (roles `ui` + `mono`, each a size ladder) replaces
+  the single ladder; synthetic bold/italic via `TTF_SetFontStyle`; letter-
+  spacing by per-glyph placement; metrics bound per face × variant. Verified by
+  screenshot: seven styles, each underlined by a `text_width`-wide rule.
+- **petal-web-canvas** — style → CSS font shorthand (`italic 700 20px stack`),
+  `ctx.letterSpacing` where the browser has it, role→stack resolution with
+  fallback lists; tables measured for all four variants of every role. Verified
+  in Chrome: `text_width` vs `ctx.measureText` agrees within a pixel for all
+  seven styles (before the default-face fix, bold sans was off by 8%).
+- **Garden** (separate repo) — `PanelCmd::Text` and `Primitive::Text` carry the
+  axes; glyphon attrs get weight/slant; letter-spacing is applied host-side by
+  splitting a spaced run into per-glyph runs whose pen matches `text_width`
+  exactly. `/scene` reports the axes when a run uses one. Garden has one
+  embedded face, so **bold degrades to regular** (italic happens to resolve
+  through a system fallback); embedding JetBrains Mono Bold would light it up
+  with no protocol change.
+- **example** — `examples/typography.ptl` (shipped in both petal-sdl and
+  petal-web-canvas): a seven-row style ladder, each row underlined by a rule
+  drawn `text_width(label, style)` wide, so a measurement/rasterization
+  disagreement is visible as an overshooting or short rule.
+
+### Known gaps
+
+- `~/biz/experiment-todo-app` does not compile against current petal-ui — but
+  it already didn't before this phase (its `DrawCommand` patterns predate the
+  alpha/radius/width fields). Fixing it is 7 patterns plus a `..`.
+- Weight is only really two-valued in practice today: SDL synthesizes at
+  `>= 600`, the browser has whatever the family ships, Garden has one weight.
 
 ## Notes for the next phase
 

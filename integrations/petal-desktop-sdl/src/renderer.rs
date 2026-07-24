@@ -8,7 +8,7 @@ use sdl2::ttf::Font;
 use sdl2::video::Window;
 
 use crate::commands::DrawCommand;
-use crate::font::FontLadder;
+use crate::font::FontBook;
 
 /// Render targets that can also render TTF text. `texture_creator()` is not
 /// part of the generic `Canvas<T>` API — it is defined separately for
@@ -74,7 +74,7 @@ impl TextTarget for Surface<'_> {
 pub fn render<T: TextTarget>(
     canvas: &mut Canvas<T>,
     commands: Vec<DrawCommand>,
-    fonts: &FontLadder,
+    fonts: &mut FontBook,
 ) {
     // Offscreen canvases (PGraphics-style render targets), keyed by id. They are
     // rebuilt fresh from the command stream every frame, so the per-frame re-run
@@ -136,7 +136,7 @@ pub fn render<T: TextTarget>(
 
 /// Render a single primitive draw command onto a target canvas. `CreateCanvas`,
 /// `SetTarget`, and `DrawCanvas` are handled by `render` and never reach here.
-fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &FontLadder) {
+fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &mut FontBook) {
     match cmd {
         DrawCommand::Clear { r, g, b } => {
             canvas.set_draw_color(Color::RGB(r, g, b));
@@ -234,10 +234,34 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &F
             g,
             b,
             a,
+            font,
+            weight,
+            italic,
+            spacing,
         } => {
-            // Honor the command's size by rendering with the nearest ladder rung.
-            let font = fonts.nearest(size);
-            T::render_text(canvas, font, &text, x, y, Color::RGBA(r, g, b, a));
+            // Face first (a role this host lacks degrades to the default), then
+            // the command's size via the nearest ladder rung, then synthetic
+            // bold/italic on that rung.
+            let face = fonts.resolve(font.as_deref());
+            let font = face.nearest_styled(size, weight, italic);
+            let color = Color::RGBA(r, g, b, a);
+            match spacing == 0.0 {
+                // The common path: one texture for the whole run, so SDL_ttf
+                // keeps whatever kerning the face has.
+                true => T::render_text(canvas, font, &text, x, y, color),
+                // Letter-spacing has to place each glyph itself, which means
+                // giving up kerning — the same trade CSS `letter-spacing` makes.
+                false => {
+                    let mut pen = x as f32;
+                    for ch in text.chars() {
+                        let advance = font
+                            .find_glyph_metrics(ch)
+                            .map_or(0, |m| m.advance) as f32;
+                        T::render_text(canvas, font, &ch.to_string(), pen as i32, y, color);
+                        pen += advance + spacing;
+                    }
+                }
+            }
         }
         DrawCommand::Clip { x, y, w, h } => {
             canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
@@ -586,8 +610,8 @@ mod tests {
     /// Build a small font ladder for tests; returns None if no system font is
     /// available so tests stay robust in headless CI. Primitive-only frames
     /// don't need it.
-    fn load_test_ladder(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontLadder<'_>> {
-        FontLadder::load_system(ttf, DEFAULT_LADDER).ok()
+    fn load_test_fonts(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontBook<'_>> {
+        FontBook::load_system(ttf, DEFAULT_LADDER).ok()
     }
 
     /// Render a frame's commands into the persistent surface via the REAL
@@ -596,7 +620,7 @@ mod tests {
     fn render_frame(
         surface: Surface<'static>,
         commands: Vec<DrawCommand>,
-        fonts: &FontLadder,
+        fonts: &mut FontBook,
     ) -> Surface<'static> {
         let mut sc = surface.into_canvas().unwrap();
         render(&mut sc, commands, fonts);
@@ -630,7 +654,7 @@ mod tests {
     #[test]
     fn no_clear_accumulates() {
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2), NO clear.
@@ -647,7 +671,7 @@ mod tests {
                 a: 255,
                 radius: 0,
             }],
-            &fonts,
+            &mut fonts,
         );
         // Frame 2: white rect at (40,40), NO clear — should accumulate.
         surface = render_frame(
@@ -663,7 +687,7 @@ mod tests {
                 a: 255,
                 radius: 0,
             }],
-            &fonts,
+            &mut fonts,
         );
 
         assert!(
@@ -679,7 +703,7 @@ mod tests {
     #[test]
     fn clear_wipes() {
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2).
@@ -696,7 +720,7 @@ mod tests {
                 a: 255,
                 radius: 0,
             }],
-            &fonts,
+            &mut fonts,
         );
         // Frame 2: Clear(black) then white rect at (40,40).
         surface = render_frame(
@@ -715,7 +739,7 @@ mod tests {
                     radius: 0,
                 },
             ],
-            &fonts,
+            &mut fonts,
         );
 
         assert!(
@@ -734,20 +758,11 @@ mod tests {
         // renderer path) and is not silently dropped. We scan the text's
         // bounding box for any non-black pixel.
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
-            vec![DrawCommand::Text {
-                text: "Hi".to_string(),
-                x: 2,
-                y: 2,
-                size: 24,
-                r: 255,
-                g: 255,
-                b: 255,
-                a: 255,
-            }],
-            &fonts,
+            vec![DrawCommand::plain_text("Hi".to_string(), 2, 2, 24, 255, 255, 255, 255)],
+            &mut fonts,
         );
 
         let mut any_lit = false;
@@ -794,7 +809,7 @@ mod tests {
         // A width-6 horizontal line must light several rows; a hairline lights
         // ~1. (AA may add a faint fringe row, so compare thick vs thin.)
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let thin = render_frame(
             new_black_surface(),
             vec![DrawCommand::Line {
@@ -808,7 +823,7 @@ mod tests {
                 a: 255,
                 width: 1,
             }],
-            &fonts,
+            &mut fonts,
         );
         let thick = render_frame(
             new_black_surface(),
@@ -823,7 +838,7 @@ mod tests {
                 a: 255,
                 width: 8,
             }],
-            &fonts,
+            &mut fonts,
         );
         let thin_rows = lit_rows_in_column(&thin, 30);
         let thick_rows = lit_rows_in_column(&thick, 30);
@@ -842,7 +857,7 @@ mod tests {
         // A white disc on black must have partially-lit edge pixels (grays),
         // not a hard black/white boundary — proof of coverage antialiasing.
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Circle {
@@ -854,7 +869,7 @@ mod tests {
                 b: 255,
                 a: 255,
             }],
-            &fonts,
+            &mut fonts,
         );
         assert!(
             is_white(pixel_rgb(&surface, 30, 30)),
@@ -882,7 +897,7 @@ mod tests {
         // through) while its center is filled. A square rect would paint the
         // corner too.
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
@@ -896,7 +911,7 @@ mod tests {
                 a: 255,
                 radius: 12,
             }],
-            &fonts,
+            &mut fonts,
         );
         assert!(
             is_black(pixel_rgb(&surface, 1, 1)),
@@ -919,7 +934,7 @@ mod tests {
         // A 50%-opacity white rect over black should composite to mid-gray, not
         // overwrite to full white — proof that per-primitive alpha blends.
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
@@ -933,7 +948,7 @@ mod tests {
                 a: 128,
                 radius: 0,
             }],
-            &fonts,
+            &mut fonts,
         );
         let px = pixel_rgb(&surface, 5, 5);
         assert!(
@@ -952,26 +967,17 @@ mod tests {
         // ladder picks a bigger font rung. With size ignored (one baked font)
         // both would be identical and this fails.
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
 
         let big = 48u16;
         let small = 12u16;
-        let make = |size| {
+        let mut make = |size| {
             let mut surface = Surface::new(96, 96, PixelFormatEnum::RGB888).unwrap();
             surface.fill_rect(None, Color::RGB(0, 0, 0)).unwrap();
             render_frame(
                 surface,
-                vec![DrawCommand::Text {
-                    text: "Hg".to_string(),
-                    x: 4,
-                    y: 4,
-                    size,
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                    a: 255,
-                }],
-                &fonts,
+                vec![DrawCommand::plain_text("Hg", 4, 4, size, 255, 255, 255, 255)],
+                &mut fonts,
             )
         };
 
@@ -991,7 +997,7 @@ mod tests {
         // should appear; the rest of the framebuffer stays black (the canvas
         // is transparent where nothing was drawn).
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = load_test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
 
         let surface = render_frame(
             new_black_surface(),
@@ -1022,7 +1028,7 @@ mod tests {
                     y: 20,
                 },
             ],
-            &fonts,
+            &mut fonts,
         );
 
         // The blitted block should be white at (22, 22).
@@ -1040,6 +1046,105 @@ mod tests {
         assert!(
             is_black(pixel_rgb(&surface, 2, 2)),
             "untouched framebuffer stays black"
+        );
+    }
+
+    /// Horizontal extent (in columns) of any non-black pixel — a proxy for the
+    /// rendered width of a text run.
+    fn lit_width(surface: &Surface) -> u32 {
+        let (w, h) = surface.size();
+        let mut left: Option<u32> = None;
+        let mut right = 0u32;
+        for px in 0..w {
+            for py in 0..h {
+                if !is_black(pixel_rgb(surface, px, py)) {
+                    left.get_or_insert(px);
+                    right = px;
+                }
+            }
+        }
+        left.map_or(0, |l| right - l + 1)
+    }
+
+    /// Render one text command on a fresh black surface and return its width.
+    fn text_run_width(fonts: &mut FontBook, cmd: DrawCommand) -> u32 {
+        lit_width(&render_frame(new_black_surface(), vec![cmd], fonts))
+    }
+
+    #[test]
+    fn weight_italic_and_spacing_change_the_pixels() {
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let text = |weight, italic, spacing| DrawCommand::Text {
+            text: "nnn".to_string(),
+            x: 4,
+            y: 4,
+            size: 24,
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+            font: None,
+            weight,
+            italic,
+            spacing,
+        };
+
+        let regular = text_run_width(&mut fonts, text(400, false, 0.0));
+        let bold = text_run_width(&mut fonts, text(700, false, 0.0));
+        let italic = text_run_width(&mut fonts, text(400, true, 0.0));
+        let spaced = text_run_width(&mut fonts, text(400, false, 6.0));
+
+        assert!(regular > 0, "the regular run must draw something");
+        // Synthetic emboldening and shearing both widen the run; letter-spacing
+        // adds 6px between each of the three glyphs.
+        assert!(bold > regular, "bold ({bold}px) should be wider than regular ({regular}px)");
+        assert!(
+            italic > regular,
+            "italic ({italic}px) should be wider than regular ({regular}px)"
+        );
+        assert!(
+            spaced >= regular + 10,
+            "6px letter-spacing over 3 glyphs should widen the run well past {regular}px, got {spaced}px"
+        );
+    }
+
+    #[test]
+    fn a_named_role_selects_a_different_face() {
+        // `mono` is a real second face on a machine that has one; the run has to
+        // come out a different width than the proportional default. Where no
+        // fixed-pitch font exists the role degrades to the default face, which
+        // is also correct — so that machine is skipped rather than failing.
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        if !fonts.has_role("mono") {
+            return;
+        }
+        let run = |face: Option<&str>| DrawCommand::Text {
+            text: "illll".to_string(),
+            x: 2,
+            y: 2,
+            size: 24,
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+            font: face.map(str::to_string),
+            weight: 400,
+            italic: false,
+            spacing: 0.0,
+        };
+
+        let default = text_run_width(&mut fonts, run(None));
+        let mono = text_run_width(&mut fonts, run(Some("mono")));
+        let unknown = text_run_width(&mut fonts, run(Some("Papyrus")));
+        assert!(
+            mono > default,
+            "narrow glyphs are wider in a fixed-pitch face: mono {mono}px vs default {default}px"
+        );
+        assert_eq!(
+            unknown, default,
+            "a face this host lacks falls back to the default"
         );
     }
 }

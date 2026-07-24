@@ -1,6 +1,6 @@
 # petal-typography — Tech Plan
 
-Status: **in progress** (Phase 0 — see [typography-progress.md](typography-progress.md)) · Author: investigation + plan, 2026-07-24
+Status: **in progress** (Phase 1a done — see [typography-progress.md](typography-progress.md)) · Author: investigation + plan, 2026-07-24
 
 A new library for best-in-class text rendering in Petal apps: multiple fonts
 (faces, weights, styles), correct proportional measurement, and a lightweight
@@ -272,11 +272,14 @@ replaces `preview()`; `typo.fit` replaces every `cw`-budget truncation.
    table for the *default* font as today; tables become keyed). Bind real
    tables in web-canvas (fixes the centering mismatch) and Garden (replaces
    0.6). Garden honors `size`. No new API surface for scripts.
-2. **Phase 1 — protocol + engine.** Optional `font/weight/italic/spacing`
-   fields on `Text`; `petal-typography` crate with `FontBook`, roles,
-   `font_list` / `font_metrics` / `measure` natives; SDL + web-canvas +
-   Garden honor the new fields. Docs: a `docs/text-and-fonts.md` describing
-   the text protocol (today it's documented only in `draw.rs` comments).
+2. **Phase 1 — protocol + engine.** Split in two on delivery:
+   - *1a (done)* — optional `font/weight/italic/spacing` on `Text`, style
+     records on `draw_text` / `text_width`, and SDL + web-canvas + Garden
+     honoring them. The styled-draw API landed in **petal-ui** rather than the
+     typography crate, so every petal-ui host gets it without adopting a new
+     dependency; the crate is then purely about fonts and metrics.
+   - *1b* — the `petal-typography` crate: `FontBook`, system-font enumeration,
+     `font_list` / `font_metrics` / `measure` natives.
 3. **Phase 2 — the `typo` module.** Spans, rich lines, `fit`, flow layout
    with measure/draw split, layout cache. Headless tests via the petal-ui
    harness (layout is pure — assert line breaks/heights without a renderer).

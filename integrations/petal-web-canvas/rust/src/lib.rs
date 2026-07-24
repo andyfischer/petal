@@ -228,9 +228,18 @@ impl PetalRuntime {
 
     /// Bind advance ratios for a *named* face (a role like `ui` / `mono` /
     /// `serif`, or a family name) — what `text_width(s, size, font)` uses.
+    /// The name may be a variant key (`ui@700`, `ui@i`, `ui@700i`), which is
+    /// how a style's weight/italic finds the right table.
     pub fn set_font_metrics(&mut self, name: &str, advances: &[f64], fallback: f64) {
         let metrics = petal_ui::draw::FontMetrics::proportional(advances.to_vec(), fallback);
         petal_ui::draw::bind_font_metrics(&mut self.env, name, &metrics);
+    }
+
+    /// Name the role the default font is, so a style with no `font` still
+    /// resolves that face's bold/italic variants — matching the renderer,
+    /// which draws a font-less bold command in the default stack, bold.
+    pub fn set_default_font_name(&mut self, name: &str) {
+        petal_ui::draw::bind_default_font_name(&mut self.env, name);
     }
 
     // --- Debug ---

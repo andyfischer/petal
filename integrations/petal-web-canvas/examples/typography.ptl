@@ -1,0 +1,23 @@
+// Styled text: a face, a weight, italics, letter-spacing — and measurement
+// that agrees with all of them. Each label is underlined by a rule drawn
+// exactly `text_width(label, style)` wide, so any disagreement between what
+// the host rasterizes and what the script measured shows up as a rule that
+// overshoots or falls short.
+clear(18, 18, 22)
+
+let BODY = {size: 26, color: {r: 235, g: 235, b: 240}}
+
+fn row(label, style, y)
+  draw_text(label, {x: 20, y: y}, style)
+  // A rule exactly as wide as text_width claims: it must end flush with the
+  // text in every style, including bold, italic and letter-spaced.
+  draw_rect(20, y + 32, text_width(label, style), 2, 120, 200, 255)
+end
+
+row("Regular sans", BODY, 20)
+row("Bold sans", {...BODY, weight: 700}, 70)
+row("Italic sans", {...BODY, italic: true}, 120)
+row("Bold italic", {...BODY, weight: 700, italic: true}, 170)
+row("Monospace role", {...BODY, font: "mono"}, 220)
+row("Mono bold", {...BODY, font: "mono", weight: 700}, 270)
+row("Letter spaced", {...BODY, spacing: 6}, 320)

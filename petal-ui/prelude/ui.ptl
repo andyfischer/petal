@@ -130,6 +130,14 @@ end
 export fn draw_text(text, pos, size, c)
   _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b)
 end
+// Styled: a record of any subset of {size, color, font, weight, italic,
+// spacing}. Omitted fields mean plain text — the host's own font, upright,
+// regular — so a style is a diff against what draw_text always did. Measure
+// the same record with text_width(s, style) and the two agree.
+//   draw_text("#482", {x: 60, y: 20}, {size: 15, color: FG, weight: 700})
+export fn draw_text(text, pos, style)
+  _native_text(text, pos.x, pos.y, style)
+end
 
 // ── Text helpers ──────────────────────────────────────────────────────────
 

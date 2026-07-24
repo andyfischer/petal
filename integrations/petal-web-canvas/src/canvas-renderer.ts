@@ -5,7 +5,12 @@
  * (`a`), corner radius (`radius`), and stroke width (`width`) are optional and
  * omitted from the JSON when at their defaults (opaque / square / hairline). */
 
-import { DEFAULT_ROLE, FONT_STACKS } from "./text-metrics.js";
+import {
+  cssFont,
+  DEFAULT_ROLE,
+  FONT_STACKS,
+  REGULAR_WEIGHT,
+} from "./text-metrics.js";
 
 export interface DrawCommand {
   op: string;
@@ -38,6 +43,15 @@ export interface DrawCommand {
   // Text
   text?: string;
   size?: number;
+  /** Face: a role (`ui` / `mono` / `serif`) or a CSS-style fallback list.
+   * Absent = the default role, which is what plain text has always meant. */
+  font?: string;
+  /** CSS numeric weight; absent = 400 (regular). */
+  weight?: number;
+  /** Absent = upright. */
+  italic?: boolean;
+  /** Letter-spacing in px; absent = 0. */
+  spacing?: number;
   // Offscreen canvas (create_canvas / set_target / draw_canvas)
   id?: number;
 }
@@ -138,15 +152,44 @@ function renderPrimitive(
       break;
     }
 
-    case "text":
+    case "text": {
       ctx.fillStyle = fillStyle(cmd);
-      // The same stack the default advance table was measured from — drawing
-      // and `text_width()` must not disagree about the face.
-      ctx.font = `${cmd.size}px ${FONT_STACKS[DEFAULT_ROLE]}`;
+      // The same stack, weight and slant the matching advance table was
+      // measured from — drawing and `text_width()` must not disagree about the
+      // face. An unknown role falls back to the default one, exactly as the
+      // measurement side falls back to the default font.
+      const weight = cmd.weight ?? REGULAR_WEIGHT;
+      ctx.font = cssFont(
+        resolveStack(cmd.font),
+        cmd.size!,
+        weight,
+        cmd.italic ?? false,
+      );
       ctx.textBaseline = "top";
+      // `letterSpacing` is a recent 2D-context property; where it is missing
+      // the run simply draws unspaced rather than throwing.
+      const spacing = cmd.spacing ?? 0;
+      const spacingCapable = "letterSpacing" in ctx;
+      if (spacing !== 0 && spacingCapable) {
+        ctx.letterSpacing = `${spacing}px`;
+      }
       ctx.fillText(cmd.text!, cmd.x!, cmd.y!);
+      if (spacing !== 0 && spacingCapable) {
+        ctx.letterSpacing = "0px";
+      }
       break;
+    }
   }
+}
+
+/** The family stack a command's `font` selects: the first role in a CSS-style
+ * fallback list (`"Inter, mono"`) this host offers, else the default role. */
+function resolveStack(font: string | undefined): string {
+  for (const name of font?.split(",") ?? []) {
+    const stack = FONT_STACKS[name.trim()];
+    if (stack) return stack;
+  }
+  return FONT_STACKS[DEFAULT_ROLE];
 }
 
 /** Create an offscreen 2D rendering context of the given size. Uses the

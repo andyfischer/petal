@@ -150,9 +150,55 @@ fn record_draw_overloads_emit_flat_commands() {
                 r: 1,
                 g: 2,
                 b: 3,
-                a: 255
+                a: 255,
+                font: None,
+                weight: petal_ui::draw::REGULAR_WEIGHT,
+                italic: false,
+                spacing: 0.0,
             }
         );
+    });
+}
+
+#[test]
+fn styled_draw_text_reaches_the_command_stream_through_the_prelude() {
+    // The prelude shadows `draw_text`, so the styled overload has to be there
+    // too — otherwise a style record would be swallowed by the (text, pos,
+    // size, color) arity and never reach the native.
+    let src = "let BODY = {size: 15, color: {r: 200, g: 200, b: 200}, font: \"ui\"}\n\
+               draw_text(\"regular\", {x: 2, y: 4}, BODY)\n\
+               draw_text(\"bold\", {x: 2, y: 24}, {...BODY, weight: 700, italic: true})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        match &cmds[0] {
+            DrawCommand::Text {
+                text,
+                size,
+                font,
+                weight,
+                italic,
+                ..
+            } => {
+                assert_eq!((text.as_str(), *size), ("regular", 15));
+                assert_eq!(font.as_deref(), Some("ui"));
+                assert_eq!((*weight, *italic), (petal_ui::draw::REGULAR_WEIGHT, false));
+            }
+            other => panic!("expected a text command, got {other:?}"),
+        }
+        // Spread over a base style is the intended way to derive emphasis.
+        match &cmds[1] {
+            DrawCommand::Text {
+                text,
+                font,
+                weight,
+                italic,
+                ..
+            } => {
+                assert_eq!(text, "bold");
+                assert_eq!((font.as_deref(), *weight, *italic), (Some("ui"), 700, true));
+            }
+            other => panic!("expected a text command, got {other:?}"),
+        }
     });
 }
 

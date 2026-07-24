@@ -11,6 +11,7 @@ const EXAMPLES: Example[] = [
   { name: "Paint", path: "/examples/paint.ptl" },
   { name: "Flow Field", path: "/examples/flow_field.ptl" },
   { name: "Snake", path: "/examples/snake.ptl" },
+  { name: "Typography", path: "/examples/typography.ptl" },
 ];
 
 async function main() {

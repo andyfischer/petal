@@ -18,17 +18,23 @@ use petal::env::Env;
 use petal::stack::StackKey;
 
 use crate::commands::{DrawCommand, take_draw_commands, take_draw_commands_for};
-use crate::font::{self, FontLadder};
+use crate::font::{self, FontBook};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
 
+/// The (weight, italic) variants measured and bound for every face. SDL_ttf
+/// synthesizes exactly these two axes, so there is nothing to gain from a
+/// finer weight ladder: 700 is what `>= 600` embolden to.
+const VARIANTS: &[(u16, bool)] = &[(400, false), (700, false), (400, true), (700, true)];
+
 pub struct DefaultHost {
-    /// System fonts at a ladder of sizes; `None` if none could load (headless
-    /// on a machine with no TTF font — screenshots then fail informatively).
-    fonts: Option<FontLadder<'static>>,
+    /// The faces this host can render, each a ladder of baked sizes; `None` if
+    /// none could load (headless on a machine with no TTF font — screenshots
+    /// then fail informatively).
+    fonts: Option<FontBook<'static>>,
     /// When set, `petal-sdl` was launched with no script: run the example
     /// browser over the `.ptl` files in this directory.
     examples_dir: Option<PathBuf>,
@@ -51,7 +57,7 @@ impl DefaultHost {
         let fonts = match sdl2::ttf::init() {
             Ok(ttf) => {
                 let ttf: &'static Sdl2TtfContext = Box::leak(Box::new(ttf));
-                FontLadder::load_system(ttf, font::DEFAULT_LADDER).ok()
+                FontBook::load_system(ttf, font::DEFAULT_LADDER).ok()
             }
             Err(_) => None,
         };
@@ -79,18 +85,29 @@ impl Host for DefaultHost {
     fn on_program_loaded(&mut self, env: &mut Env, path: Option<&str>) {
         // Bind proportional text metrics so `text_width()` matches rendered
         // glyphs (correct centering / right-alignment).
-        if let Some(fonts) = &self.fonts {
-            let ratios = fonts.ascii_advance_ratios();
+        if let Some(fonts) = &mut self.fonts {
+            let ratios = fonts.default_face().ascii_advance_ratios();
             petal_ui::draw::bind_text_advance_table(env, &ratios);
-            // The one loaded face is also this host's `ui` role, so
-            // `text_width(s, size, "ui")` measures it rather than falling back
-            // to the monospace estimate. Roles this host can't offer (mono,
-            // serif) stay unregistered and degrade to the default font.
-            let metrics = petal_ui::draw::FontMetrics::proportional(
-                ratios,
-                petal_ui::draw::DEFAULT_TEXT_ADVANCE,
-            );
-            petal_ui::draw::bind_font_metrics(env, "ui", &metrics);
+            // The default font *is* the `ui` role here, so a style that names
+            // no face still resolves that face's bold/italic variants.
+            petal_ui::draw::bind_default_font_name(env, font::DEFAULT_ROLE);
+            // One entry per face × synthetic variant this host can actually
+            // draw, so a style's weight/italic measures the widths it will be
+            // rasterized at (emboldening widens glyphs). Roles the machine
+            // hasn't got (`serif`, and `mono` on a machine with no fixed-pitch
+            // face) stay unregistered and degrade to the default font.
+            for (role, face) in fonts.roles() {
+                for (weight, italic) in VARIANTS {
+                    let ratios = face.ascii_advance_ratios_styled(*weight, *italic);
+                    let metrics = petal_ui::draw::FontMetrics::proportional(
+                        ratios,
+                        petal_ui::draw::DEFAULT_TEXT_ADVANCE,
+                    );
+                    petal_ui::draw::bind_font_variant_metrics(
+                        env, role, *weight, *italic, &metrics,
+                    );
+                }
+            }
         }
         // (Re)bind the browser example list on every load — cheap and keeps the
         // browser's list correct after returning to it.
@@ -125,7 +142,7 @@ impl Host for DefaultHost {
         renderer::render(
             &mut sc,
             commands,
-            self.fonts.as_ref().expect("fonts for windowed present"),
+            self.fonts.as_mut().expect("fonts for windowed present"),
         );
         let surface = sc.into_surface();
 
@@ -149,7 +166,7 @@ impl Host for DefaultHost {
     ) -> Result<RgbImage, String> {
         let fonts = self
             .fonts
-            .as_ref()
+            .as_mut()
             .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
         let commands = take_draw_commands_for(env, stack);
         Ok(render_commands(&commands, width, height, fonts))
@@ -205,7 +222,7 @@ fn render_commands(
     commands: &[DrawCommand],
     width: u32,
     height: u32,
-    fonts: &FontLadder,
+    fonts: &mut FontBook,
 ) -> RgbImage {
     let mut surface = Surface::new(width.max(1), height.max(1), PixelFormatEnum::RGB888)
         .expect("create screenshot surface");
@@ -288,8 +305,8 @@ mod tests {
     use super::*;
     use crate::font::DEFAULT_LADDER;
 
-    fn test_ladder(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontLadder<'_>> {
-        FontLadder::load_system(ttf, DEFAULT_LADDER).ok()
+    fn test_fonts(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontBook<'_>> {
+        FontBook::load_system(ttf, DEFAULT_LADDER).ok()
     }
 
     /// A screenshot of text must contain real glyphs — lit strokes with black
@@ -297,21 +314,12 @@ mod tests {
     #[test]
     fn text_screenshot_has_glyphs_not_a_block() {
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = test_fonts(&ttf).expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
-            DrawCommand::Text {
-                text: "Hello".to_string(),
-                x: 10,
-                y: 10,
-                size: 40,
-                r: 255,
-                g: 255,
-                b: 255,
-                a: 255,
-            },
+            DrawCommand::plain_text("Hello", 10, 10, 40, 255, 255, 255, 255),
         ];
-        let img = render_commands(&commands, 200, 80, &fonts);
+        let img = render_commands(&commands, 200, 80, &mut fonts);
         let (mut lit, mut dark, mut total) = (0u32, 0u32, 0u32);
         for y in 10..55 {
             for x in 10..170 {
@@ -339,7 +347,7 @@ mod tests {
     #[test]
     fn rect_screenshot_reads_back_color() {
         let ttf = sdl2::ttf::init().unwrap();
-        let fonts = test_ladder(&ttf).expect("a system font for tests");
+        let mut fonts = test_fonts(&ttf).expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
             DrawCommand::Rect {
@@ -354,7 +362,7 @@ mod tests {
                 radius: 0,
             },
         ];
-        let img = render_commands(&commands, 64, 64, &fonts);
+        let img = render_commands(&commands, 64, 64, &mut fonts);
         let px = img.get_pixel(15, 15);
         assert_eq!(
             (px[0], px[1], px[2]),

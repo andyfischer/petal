@@ -1974,7 +1974,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 517
+        "line": 754
       }
     },
     {
@@ -2015,7 +2015,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 525
+        "line": 762
       }
     },
     {
@@ -2060,7 +2060,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 536
+        "line": 773
       }
     },
     {
@@ -2101,7 +2101,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 566
+        "line": 803
       }
     },
     {
@@ -2142,7 +2142,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 576
+        "line": 813
       }
     },
     {
@@ -2179,7 +2179,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 586
+        "line": 823
       }
     },
     {
@@ -2228,7 +2228,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 595
+        "line": 832
       }
     },
     {
@@ -2257,7 +2257,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 611
+        "line": 848
       }
     },
     {
@@ -2265,16 +2265,24 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
         }
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 672
+        "line": 1023
       }
     },
     {
@@ -2303,7 +2311,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 690
+        "line": 1051
       }
     },
     {
@@ -2315,7 +2323,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 697
+        "line": 1058
       }
     },
     {
@@ -2323,20 +2331,20 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "text",
           "type": "string"
         },
         {
-          "name": "size",
-          "type": "int"
+          "name": "style",
+          "type": "any"
         }
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 709
+        "line": 1152
       }
     },
     {
@@ -2357,7 +2365,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 746
+        "line": 1192
       }
     },
     {
@@ -2374,7 +2382,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 760
+        "line": 1206
       }
     },
     {
@@ -2386,7 +2394,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 767
+        "line": 1213
       }
     },
     {
@@ -2411,7 +2419,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 773
+        "line": 1219
       }
     },
     {

@@ -42,6 +42,13 @@ pub const DEFAULT_TEXT_ADVANCE: f64 = 0.6;
 /// codepoint beyond the table's length falls back to [`SYM_TEXT_ADVANCE`].
 pub const SYM_TEXT_ADVANCES: &str = "text_advances";
 
+/// The face name the host's *default* font is also registered under, so a
+/// style that names no `font` can still find the default face's bold or italic
+/// variant: `text_width(s, {weight: 700})` resolves `"<default>@700"`. Hosts
+/// set it with [`bind_default_font_name`]; without it, a font-less style
+/// measures the plain default metrics whatever its weight.
+pub const SYM_TEXT_DEFAULT_FONT: &str = "text_default_font";
+
 /// Per-font metrics read by `text_width(s, size, font)`: a record keyed by
 /// font name, each value a record `{advance: float, advances: [float]}` with
 /// the same meaning as the default-font [`SYM_TEXT_ADVANCE`] /
@@ -61,6 +68,22 @@ fn is_zero(v: &u32) -> bool {
 fn is_one(v: &u32) -> bool {
     *v == 1
 }
+fn is_regular(w: &u16) -> bool {
+    *w == REGULAR_WEIGHT
+}
+fn is_upright(i: &bool) -> bool {
+    !*i
+}
+fn is_no_spacing(s: &f32) -> bool {
+    *s == 0.0
+}
+
+/// CSS regular weight — the weight every pre-typography `text` command means.
+pub const REGULAR_WEIGHT: u16 = 400;
+
+/// Font size a style record without a `size` field draws at. Styles normally
+/// name their size; this only keeps `{color: FG}` from being an error.
+pub const DEFAULT_TEXT_SIZE: i64 = 14;
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -132,6 +155,21 @@ pub enum DrawCommand {
         b: u8,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
+        /// The face to render in: a role (`ui`, `mono`, `serif`) or a
+        /// CSS-style fallback list (`"Inter, ui"`). `None` = the host's
+        /// default font, which is what every pre-typography command means.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font: Option<String>,
+        /// CSS numeric weight, 100–900; 400 is regular, 700 bold. A host with
+        /// only one weight renders it as-is.
+        #[serde(default, skip_serializing_if = "is_regular")]
+        weight: u16,
+        #[serde(default, skip_serializing_if = "is_upright")]
+        italic: bool,
+        /// Letter-spacing in px, added after every glyph (CSS semantics).
+        /// Negative tightens.
+        #[serde(default, skip_serializing_if = "is_no_spacing")]
+        spacing: f32,
     },
     Triangle {
         x1: i32,
@@ -203,6 +241,16 @@ fn num_as_i64(v: &Value) -> Option<i64> {
     }
 }
 
+/// Read an optional numeric `Value` as f64 — for fractional args (letter
+/// spacing), where truncating to an integer would lose the point.
+fn num_as_f64(v: &Value) -> Option<f64> {
+    match v {
+        Value::Int(n) => Some(*n as f64),
+        Value::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+
 /// Read a numeric `Value` (int or float) as i64.
 fn as_i64(v: &Value) -> Result<i64, String> {
     match v {
@@ -216,6 +264,35 @@ fn as_i64(v: &Value) -> Result<i64, String> {
 }
 
 impl DrawCommand {
+    /// A text command in the host's own font — regular, upright, unspaced:
+    /// what every `text` command meant before typography, and what hosts and
+    /// tests want when they synthesize one by hand.
+    pub fn plain_text(
+        text: impl Into<String>,
+        x: i32,
+        y: i32,
+        size: u16,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    ) -> DrawCommand {
+        DrawCommand::Text {
+            text: text.into(),
+            x,
+            y,
+            size,
+            r,
+            g,
+            b,
+            a,
+            font: None,
+            weight: REGULAR_WEIGHT,
+            italic: false,
+            spacing: 0.0,
+        }
+    }
+
     /// Decode a draw command from a buffered-output `Value`. Native draw
     /// functions push each command as `Value::EnumVariant { tag, data }`
     /// where `data` is a flat list of arguments; this is the inverse mapping
@@ -360,6 +437,10 @@ impl DrawCommand {
                         ));
                     }
                 };
+                // Args 8–11 are the typography extension: a command emitted by
+                // a pre-typography script simply stops at the alpha, and every
+                // field below keeps its "the host's one font, upright, regular"
+                // default — the same thing that command has always meant.
                 DrawCommand::Text {
                     text,
                     x: i32_at(1)?,
@@ -369,6 +450,16 @@ impl DrawCommand {
                     g: u8_at(5)?,
                     b: u8_at(6)?,
                     a: opt_u8(7, 255),
+                    font: match data.get(8) {
+                        Some(Value::String(id)) => Some(heap.get_string(*id).to_string()),
+                        _ => None,
+                    },
+                    weight: data
+                        .get(9)
+                        .and_then(num_as_i64)
+                        .map_or(REGULAR_WEIGHT, |n| n as u16),
+                    italic: matches!(data.get(10), Some(Value::Bool(true))),
+                    spacing: data.get(11).and_then(num_as_f64).unwrap_or(0.0) as f32,
                 }
             }
             "clip" => DrawCommand::Clip {
@@ -532,6 +623,72 @@ pub fn bind_font_metrics(env: &mut Env, font: &str, metrics: &FontMetrics) {
     fonts.insert(font.to_string(), Value::Map(entry_id));
     let fonts_id = env.heap_mut().alloc_map(fonts);
     env.set_binding(sym, Value::Map(fonts_id));
+}
+
+/// Bind measurement data for one *variant* of a face — the bold, the italic,
+/// the bold-italic — so a style's `weight`/`italic` measures the metrics that
+/// will actually be rasterized (bold is wider than regular in most faces).
+/// Sugar over [`bind_font_metrics`] with the canonical variant key.
+///
+/// A host binds only the variants it really has. Measurement then degrades the
+/// way rendering does: a style asking for bold on a host with one weight
+/// measures — and draws — the regular face, rather than erroring or silently
+/// using another family's bold. See [`font_variant_key`] for the match order.
+pub fn bind_font_variant_metrics(
+    env: &mut Env,
+    font: &str,
+    weight: u16,
+    italic: bool,
+    metrics: &FontMetrics,
+) {
+    bind_font_metrics(env, &font_variant_key(font, weight, italic), metrics);
+}
+
+/// The key one face variant is registered under: `"ui"`, `"ui@700"`, `"ui@i"`,
+/// `"ui@700i"`. Regular upright is the bare name, so a host that binds one
+/// face per family writes exactly what it wrote before typography existed.
+///
+/// Lookup walks a family's variants most-specific first — `ui@700i`, `ui@700`,
+/// `ui@i`, `ui` — before moving to the next family in a fallback list, which
+/// is CSS's family-then-variant order.
+pub fn font_variant_key(font: &str, weight: u16, italic: bool) -> String {
+    match (weight == REGULAR_WEIGHT, italic) {
+        (true, false) => font.to_string(),
+        (true, true) => format!("{font}@i"),
+        (false, false) => format!("{font}@{weight}"),
+        (false, true) => format!("{font}@{weight}i"),
+    }
+}
+
+/// Name the role the host's default font *is*, so a style with no `font` can
+/// still resolve that face's variants. A host whose default font is its `ui`
+/// role calls `bind_default_font_name(env, "ui")`; then
+/// `text_width(s, {weight: 700})` — no face named — measures `ui@700` if the
+/// host bound one, instead of quietly measuring regular.
+///
+/// Drawing already behaves this way (a font-less bold command renders in the
+/// default face, bold), so without this the two sides disagree exactly where
+/// it is least visible: a bold label with no explicit face.
+pub fn bind_default_font_name(env: &mut Env, font: &str) {
+    let sym = env.intern_symbol(SYM_TEXT_DEFAULT_FONT);
+    let id = env.heap_mut().alloc_string(font.to_string());
+    env.set_binding(sym, Value::String(id));
+}
+
+/// The keys to try, in order, for one family at a given weight/style.
+fn font_variant_candidates(font: &str, weight: u16, italic: bool) -> Vec<String> {
+    let mut keys = Vec::new();
+    if weight != REGULAR_WEIGHT && italic {
+        keys.push(font_variant_key(font, weight, true));
+    }
+    if weight != REGULAR_WEIGHT {
+        keys.push(font_variant_key(font, weight, false));
+    }
+    if italic {
+        keys.push(font_variant_key(font, REGULAR_WEIGHT, true));
+    }
+    keys.push(font.to_string());
+    keys
 }
 
 /// Reset the per-frame offscreen-canvas id counter so `create_canvas` hands
@@ -748,20 +905,144 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
-// `draw_text(text, x, y, size, r, g, b, [a])`.
+/// One text style, as a script writes it: a record of any subset of
+/// `{size, color, font, weight, italic, spacing}`. Missing fields take the
+/// defaults that describe every pre-typography `draw_text` — the host's own
+/// font, upright, regular weight, no letter-spacing — so a partial style is a
+/// diff against "plain text", not a half-specified command.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextStyle {
+    pub size: i64,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+    pub font: Option<String>,
+    pub weight: u16,
+    pub italic: bool,
+    pub spacing: f64,
+}
+
+impl Default for TextStyle {
+    fn default() -> Self {
+        TextStyle {
+            size: DEFAULT_TEXT_SIZE,
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+            font: None,
+            weight: REGULAR_WEIGHT,
+            italic: false,
+            spacing: 0.0,
+        }
+    }
+}
+
+impl TextStyle {
+    /// Decode a style record from a script value. `color` is a `{r, g, b, [a]}`
+    /// record — the same shape the prelude's record draw overloads take — so a
+    /// theme color drops straight into a style.
+    fn from_value(state: &mut PetalCxt, v: &Value) -> Result<TextStyle, String> {
+        let Value::Map(id) = v else {
+            return Err(format!(
+                "text style must be a record, got {}",
+                v.type_name()
+            ));
+        };
+        let fields = state.heap().get_map(*id).clone();
+        let mut style = TextStyle::default();
+        if let Some(size) = fields.get("size").and_then(num_as_i64) {
+            style.size = size;
+        }
+        if let Some(Value::Map(color_id)) = fields.get("color") {
+            let color = state.heap().get_map(*color_id).clone();
+            let channel = |name: &str, default: u8| {
+                color
+                    .get(name)
+                    .and_then(num_as_i64)
+                    .map_or(default, |n| n as u8)
+            };
+            style.r = channel("r", 255);
+            style.g = channel("g", 255);
+            style.b = channel("b", 255);
+            style.a = channel("a", 255);
+        }
+        if let Some(Value::String(font_id)) = fields.get("font") {
+            style.font = Some(state.heap().get_string(*font_id).to_string());
+        }
+        if let Some(weight) = fields.get("weight").and_then(num_as_i64) {
+            style.weight = weight as u16;
+        }
+        style.italic = matches!(fields.get("italic"), Some(Value::Bool(true)));
+        if let Some(spacing) = fields.get("spacing").and_then(num_as_f64) {
+            style.spacing = spacing;
+        }
+        Ok(style)
+    }
+
+    /// The emitted arg list for a `text` command in this style. The
+    /// typography args are appended only when they differ from plain text, so
+    /// an unstyled draw emits the byte-identical 8-arg command it always has.
+    fn emit_args(&self, state: &mut PetalCxt, text: String, x: i64, y: i64) -> Vec<Value> {
+        let mut args = vec![
+            Value::String(state.heap_mut().alloc_string(text)),
+            Value::Int(x),
+            Value::Int(y),
+            Value::Int(self.size),
+            Value::Int(self.r as i64),
+            Value::Int(self.g as i64),
+            Value::Int(self.b as i64),
+            Value::Int(self.a as i64),
+        ];
+        if self.font.is_none()
+            && self.weight == REGULAR_WEIGHT
+            && !self.italic
+            && self.spacing == 0.0
+        {
+            return args;
+        }
+        args.push(match &self.font {
+            Some(font) => {
+                let id = state.heap_mut().alloc_string(font.clone());
+                Value::String(id)
+            }
+            None => Value::Nil,
+        });
+        args.push(Value::Int(self.weight as i64));
+        args.push(Value::Bool(self.italic));
+        args.push(Value::Float(self.spacing));
+        args
+    }
+}
+
+/// `draw_text(text, x, y, size, r, g, b, [a])` — the flat form every host has
+/// always had — or `draw_text(text, x, y, style)`, where `style` is a
+/// [`TextStyle`] record naming a face, weight, italic, and letter-spacing.
+/// The prelude wraps the styled form as `draw_text(text, pos, style)`.
 fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let a = opt_int(state, 8, 255)?;
-    let args = vec![
-        Value::String(state.heap_mut().alloc_string(text)),
-        Value::Int(state.get_int(2)?),
-        Value::Int(state.get_int(3)?),
-        Value::Int(state.get_int(4)?),
-        Value::Int(state.get_int(5)?),
-        Value::Int(state.get_int(6)?),
-        Value::Int(state.get_int(7)?),
-        Value::Int(a),
-    ];
+    let x = state.get_int(2)?;
+    let y = state.get_int(3)?;
+
+    let styled = state.arg_count() == 4 && matches!(state.get_value(4)?, Value::Map(_));
+    let args = match styled {
+        true => {
+            let style = TextStyle::from_value(state, &state.get_value(4)?)?;
+            style.emit_args(state, text, x, y)
+        }
+        false => {
+            let style = TextStyle {
+                size: state.get_int(4)?,
+                r: state.get_int(5)? as u8,
+                g: state.get_int(6)? as u8,
+                b: state.get_int(7)? as u8,
+                a: opt_int(state, 8, 255)? as u8,
+                ..TextStyle::default()
+            };
+            style.emit_args(state, text, x, y)
+        }
+    };
     emit_draw(state, "text", args);
     state.push_nil();
     Ok(1)
@@ -819,27 +1100,37 @@ fn default_font_metrics(state: &mut PetalCxt) -> FontMetrics {
 /// Resolve a font spec — a name or a CSS-style fallback list (`"Inter, ui"`) —
 /// against the [`bind_font_metrics`] registry. The first name the host bound
 /// wins; if none did, the caller falls back to the default font.
-fn named_font_metrics(state: &mut PetalCxt, spec: &str) -> Option<FontMetrics> {
+fn named_font_metrics(
+    state: &mut PetalCxt,
+    spec: &str,
+    weight: u16,
+    italic: bool,
+) -> Option<FontMetrics> {
     let fonts = match state.binding_named(SYM_TEXT_FONTS) {
         Value::Map(id) => state.heap().get_map(id).clone(),
         _ => return None,
     };
     for name in spec.split(',') {
-        let Some(Value::Map(entry_id)) = fonts.get(name.trim()) else {
-            continue;
-        };
-        let entry = state.heap().get_map(*entry_id).clone();
-        let advance = entry
-            .get("advance")
-            .map_or(DEFAULT_TEXT_ADVANCE, |v| num_or(v, DEFAULT_TEXT_ADVANCE));
-        let advances = entry
-            .get("advances")
-            .cloned()
-            .and_then(|v| advance_list(state, &v, advance));
-        return Some(FontMetrics {
-            advance,
-            advances: advances.unwrap_or_default(),
-        });
+        // Family first, then variant within it: a host that has this family's
+        // bold measures the bold; one that only has its regular measures that
+        // rather than jumping to the next family.
+        for key in font_variant_candidates(name.trim(), weight, italic) {
+            let Some(Value::Map(entry_id)) = fonts.get(&key) else {
+                continue;
+            };
+            let entry = state.heap().get_map(*entry_id).clone();
+            let advance = entry
+                .get("advance")
+                .map_or(DEFAULT_TEXT_ADVANCE, |v| num_or(v, DEFAULT_TEXT_ADVANCE));
+            let advances = entry
+                .get("advances")
+                .cloned()
+                .and_then(|v| advance_list(state, &v, advance));
+            return Some(FontMetrics {
+                advance,
+                advances: advances.unwrap_or_default(),
+            });
+        }
     }
     None
 }
@@ -854,19 +1145,47 @@ fn named_font_metrics(state: &mut PetalCxt, spec: &str) -> Option<FontMetrics> {
 /// The optional `font` selects a face registered with [`bind_font_metrics`],
 /// by role name or CSS-style fallback list (`"Inter, ui"`). A face this host
 /// doesn't offer measures with the default font.
+///
+/// `text_width(s, style)` measures a [`TextStyle`] record instead — the same
+/// record `draw_text` takes, so what you measure is what you draw: the style's
+/// face *and* weight/italic variant, plus its letter-spacing.
 fn native_text_width(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let size = state.get_int(2)? as f64;
-
-    let metrics = match state.arg_count() >= 3 {
-        true => {
-            let spec = state.get_string(3)?;
-            named_font_metrics(state, &spec).unwrap_or_else(|| default_font_metrics(state))
-        }
-        false => default_font_metrics(state),
+    let style = match state.get_value(2)? {
+        Value::Map(_) => TextStyle::from_value(state, &state.get_value(2)?)?,
+        _ => TextStyle {
+            size: state.get_int(2)?,
+            font: match state.arg_count() >= 3 {
+                true => Some(state.get_string(3)?),
+                false => None,
+            },
+            ..TextStyle::default()
+        },
     };
 
-    state.push_int(metrics.width_of(&text, size).round() as i64);
+    // A style with no face still has a weight and a slant, and the host draws
+    // those in its default face — so resolve that face's variants by the name
+    // the host published (see `bind_default_font_name`) rather than measuring
+    // regular metrics for bold text.
+    let spec = match &style.font {
+        Some(spec) => Some(spec.clone()),
+        None if style.weight != REGULAR_WEIGHT || style.italic => {
+            match state.binding_named(SYM_TEXT_DEFAULT_FONT) {
+                Value::String(id) => Some(state.heap().get_string(id).to_string()),
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    let metrics = match &spec {
+        Some(spec) => named_font_metrics(state, spec, style.weight, style.italic)
+            .unwrap_or_else(|| default_font_metrics(state)),
+        None => default_font_metrics(state),
+    };
+
+    let width = metrics.width_of(&text, style.size as f64)
+        + style.spacing * text.chars().count() as f64;
+    state.push_int(width.round() as i64);
     Ok(1)
 }
 
@@ -1097,6 +1416,166 @@ mod tests {
         // A face this host never bound degrades to the default font.
         let v = env.run_source("text_width(\"iii\", 10, \"serif\")").expect("run");
         assert_eq!(v, Value::Int(6));
+    }
+
+    #[test]
+    fn plain_text_commands_are_unchanged_by_typography() {
+        // The whole backward-compatibility claim in one place: a flat
+        // `draw_text` still emits exactly 8 args, decodes to the pre-typography
+        // defaults, and serializes without a single new key.
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source("draw_text(\"hi\", 1, 2, 14, 10, 20, 30)")
+            .expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Text {
+                text: "hi".into(),
+                x: 1,
+                y: 2,
+                size: 14,
+                r: 10,
+                g: 20,
+                b: 30,
+                a: 255,
+                font: None,
+                weight: REGULAR_WEIGHT,
+                italic: false,
+                spacing: 0.0,
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&cmds[0]).unwrap(),
+            r#"{"op":"text","text":"hi","x":1,"y":2,"size":14,"r":10,"g":20,"b":30}"#
+        );
+    }
+
+    #[test]
+    fn styled_text_carries_face_weight_italic_and_spacing() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source(
+            "draw_text(\"bold\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3, a: 128}, \
+             font: \"ui\", weight: 700, italic: true, spacing: 1.5})",
+        )
+        .expect("run");
+        // A style that names no typography at all is plain text: same command,
+        // same JSON, so styles are safe to use for ordinary labels too.
+        env.run_source("draw_text(\"plain\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3}})")
+            .expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Text {
+                text: "bold".into(),
+                x: 4,
+                y: 8,
+                size: 20,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 128,
+                font: Some("ui".into()),
+                weight: 700,
+                italic: true,
+                spacing: 1.5,
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&cmds[1]).unwrap(),
+            r#"{"op":"text","text":"plain","x":4,"y":8,"size":20,"r":1,"g":2,"b":3}"#
+        );
+    }
+
+    #[test]
+    fn text_width_measures_the_style_it_will_draw() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.5));
+        bind_font_variant_metrics(&mut env, "ui", 700, false, &FontMetrics::monospace(0.6));
+        bind_font_variant_metrics(&mut env, "ui", 400, true, &FontMetrics::monospace(0.55));
+        bind_font_variant_metrics(&mut env, "ui", 700, true, &FontMetrics::monospace(0.7));
+
+        let mut width = |src: &str| env.run_source(src).expect("run");
+        // Each variant measures its own metrics: 4 chars × 10 px × ratio.
+        assert_eq!(width("text_width(\"abcd\", {size: 10, font: \"ui\"})"), Value::Int(20));
+        assert_eq!(
+            width("text_width(\"abcd\", {size: 10, font: \"ui\", weight: 700})"),
+            Value::Int(24)
+        );
+        assert_eq!(
+            width("text_width(\"abcd\", {size: 10, font: \"ui\", italic: true})"),
+            Value::Int(22)
+        );
+        assert_eq!(
+            width("text_width(\"abcd\", {size: 10, font: \"ui\", weight: 700, italic: true})"),
+            Value::Int(28)
+        );
+        // Letter-spacing counts once per glyph, as CSS does.
+        assert_eq!(
+            width("text_width(\"abcd\", {size: 10, font: \"ui\", spacing: 2})"),
+            Value::Int(28)
+        );
+    }
+
+    #[test]
+    fn a_font_less_style_still_measures_its_weight() {
+        // Drawing a font-less bold command renders the default face's bold, so
+        // measuring it has to as well — otherwise the one style people write
+        // most (bold, no face named) is the one that measures wrong.
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_metrics(&mut env, 0.5);
+        bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.5));
+        bind_font_variant_metrics(&mut env, "ui", 700, false, &FontMetrics::monospace(0.8));
+
+        const BOLD: &str = "text_width(\"ab\", {size: 10, weight: 700})";
+        assert_eq!(
+            env.run_source(BOLD).expect("run"),
+            Value::Int(10),
+            "until the host says which face is the default, bold measures regular"
+        );
+        bind_default_font_name(&mut env, "ui");
+        assert_eq!(
+            env.run_source(BOLD).expect("run"),
+            Value::Int(16),
+            "with the default face named, a font-less bold finds ui@700"
+        );
+        assert_eq!(
+            env.run_source("text_width(\"ab\", {size: 10})").expect("run"),
+            Value::Int(10),
+            "regular text still measures the plain default metrics"
+        );
+    }
+
+    #[test]
+    fn a_missing_variant_degrades_within_its_family() {
+        // A host with one weight per family: bold must measure that family's
+        // regular, not another family's bold — the same face it will be drawn
+        // in. Only a family the host has never heard of falls through.
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_metrics(&mut env, 0.9);
+        bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.5));
+        bind_font_variant_metrics(&mut env, "mono", 700, false, &FontMetrics::monospace(0.8));
+
+        let mut width = |src: &str| env.run_source(src).expect("run");
+        assert_eq!(
+            width("text_width(\"ab\", {size: 10, font: \"ui\", weight: 700})"),
+            Value::Int(10),
+            "ui has no bold: measure ui regular"
+        );
+        assert_eq!(
+            width("text_width(\"ab\", {size: 10, font: \"ui, mono\", weight: 700})"),
+            Value::Int(10),
+            "family before variant: ui regular beats mono bold"
+        );
+        assert_eq!(
+            width("text_width(\"ab\", {size: 10, font: \"Papyrus\", weight: 700})"),
+            Value::Int(18),
+            "an unknown family falls back to the host's default font"
+        );
     }
 
     #[test]

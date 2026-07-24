@@ -72,3 +72,48 @@ describe("type-checker warnings via `petal run`", () => {
     expect(stderr).toContain("warning:");
   });
 });
+
+// Chunk F: discarded-result lint. A side-effect-free builtin call whose value
+// is thrown away does nothing — the value-semantics migration footgun where
+// statement-form `push(xs, x)` / `append(xs, x)` silently accumulate nothing.
+describe("discarded pure-builtin result lint", () => {
+  it("warns on statement-form push() with a capture hint", () => {
+    const out = checkJson("state xs = []\nfor i in range(0, 3) do\n  push(xs, i)\nend");
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`push`.*discarded/);
+    expect(out.warnings[0].message).toMatch(/xs = push/);
+  });
+
+  it("warns on statement-form append()", () => {
+    const out = checkJson("let a = [1]\nappend(a, 2)\nprint(len(a))");
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`append`.*discarded/);
+  });
+
+  it("stays silent when the result is captured", () => {
+    const out = checkJson("let a = [1]\na = append(a, 2)\nprint(len(a))");
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("does not warn on effectful calls (print, random)", () => {
+    const out = checkJson('print("hi")\nlet r = random(0.0, 1.0)\nr');
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("does not warn when a user fn shadows a builtin name", () => {
+    const out = checkJson('fn push(a, b)\n  print("fx")\n  a\nend\npush([1], 2)');
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("does not warn on a pure builtin as the program's final value", () => {
+    const out = checkJson("let a = [1]\nappend(a, 3)");
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("does not warn inside a value-position for-loop that collects results", () => {
+    const out = checkJson("let ys = for i in range(0, 3) do\n  append([], i)\nend\nprint(len(ys))");
+    expect(out.warnings).toEqual([]);
+  });
+});

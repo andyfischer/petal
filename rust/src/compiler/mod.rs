@@ -309,6 +309,8 @@ impl Compiler {
         self.prescan_declarations(&stmts);
         let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures);
         self.warnings.extend(diags);
+        self.warnings
+            .extend(crate::typecheck::unused::check_unused(&stmts));
         for stmt in &stmts {
             self.compile_stmt(stmt);
         }

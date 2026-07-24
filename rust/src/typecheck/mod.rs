@@ -8,6 +8,8 @@
 
 use std::collections::HashMap;
 
+pub mod unused;
+
 use crate::ast::{
     AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, Pattern, RecordField,
     Stmt, StmtKind, TypeAnn, UnaryOp,

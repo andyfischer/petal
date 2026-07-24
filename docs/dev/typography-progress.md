@@ -12,7 +12,7 @@ Last updated: 2026-07-24 (Phase 0 landed in-repo) · Branch: `main`
 
 | Phase | Status | Summary |
 |-------|--------|---------|
-| 0 — metrics groundwork | 🟡 in progress | keyed per-font tables + `text_width(s, size, font)`; web-canvas measures real metrics; Garden work outstanding |
+| 0 — metrics groundwork | ✅ done | keyed per-font tables + `text_width(s, size, font)`; web-canvas and Garden both measure real metrics; Garden honors `size` |
 | 1 — protocol + engine | ⬜ not started | optional `font`/`weight`/`italic`/`spacing` on `Text`; `petal-typography` crate |
 | 2 — the `typo` module | ⬜ not started | spans, rich lines, `fit`, flow layout, layout cache |
 | 3 — raster + migration | ⬜ not started | swash glyph cache; port retro.ptl / git_panel.ptl |
@@ -41,13 +41,16 @@ Last updated: 2026-07-24 (Phase 0 landed in-repo) · Branch: `main`
   addition to the default-font binding.
 - **docs** — [`docs/text-and-fonts.md`](../text-and-fonts.md) now documents the
   text protocol and metrics contract (previously only in `draw.rs` comments).
-
-### Phase 0 remainder
-
-- **Rebuild the web-canvas WASM** after pulling: `pkg/` is gitignored and
-  generated, and `bindFontMetrics` (called at runtime init) needs the two new
-  exports, so run `integrations/petal-web-canvas/build-wasm.sh` on any
-  environment with a stale build.
+- **Garden** (separate repo, `~/garden`, commit `2b0f1a7`):
+  `Primitive::Text` now carries a per-run `size` that the glyphon stack
+  applies (it was dropped, pinning every panel run to the editor's 14 px), and
+  `garden-render::ascii_advance_ratios()` measures the embedded JetBrains Mono
+  through cosmic-text. `garden_script::set_font_advance_ratios()` publishes
+  that table into the panel runtime — `garden-app` wires the two, since
+  sibling crates can't depend on each other. Roles `mono` and `ui` both
+  resolve to Garden's one face. Verified headless: a 10→40 px size ladder
+  renders at the requested sizes with `text_width`-wide rules ending flush
+  with their text.
 
 Verified in Chrome against the live canvas (throwaway page, `vite dev`), at
 size 20 — `text_width` vs `ctx.measureText`:
@@ -61,9 +64,13 @@ size 20 — `text_width` vs `ctx.measureText`:
 Residual error is sub-pixel (integer rounding). Roles resolve as designed:
 `text_width("iiiiiiiiii", 20, "mono")` → 120, an unregistered name → 44 (the
 default font).
-- **Garden** (separate repo, `~/garden`): stop dropping `size` in
-  `panel_view.rs`, and bind cosmic-text-measured advance tables instead of the
-  0.6 estimate. Biggest single win in the whole plan; untouched so far.
+
+### Phase 0 remainder
+
+- **Rebuild the web-canvas WASM** after pulling: `pkg/` is gitignored and
+  generated, and `bindFontMetrics` (called at runtime init) needs the two new
+  exports, so run `integrations/petal-web-canvas/build-wasm.sh` on any
+  environment with a stale build.
 - Optionally: sample-apps/diagram-canvas inherits the web-canvas renderer work
   (it currently keeps its self-consistent monospace estimate).
 

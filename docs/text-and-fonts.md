@@ -82,5 +82,5 @@ the binding path is the default, not a requirement.
 | petal-sdl | System sans, SDL_ttf size ladder | yes | measured ASCII advance table; also registered as role `ui` |
 | petal-web-canvas | `sans-serif` via `fillText` | yes | measured with `ctx.measureText` (roles `ui` / `mono` / `serif`) |
 | diagram-canvas / cube-browser | canvas, mono stack | yes | monospace estimate (self-consistent) |
-| Garden panels | JetBrains Mono via glyphon | no — fixed 14 px | monospace estimate |
+| Garden panels | JetBrains Mono via glyphon | yes — per run | measured through cosmic-text (roles `mono` / `ui`) |
 | petal-fps | 5×7 bitmap font (own command set) | scale | n/a |

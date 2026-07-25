@@ -329,6 +329,120 @@ fn state_mutation_is_stable_across_runs() {
     }
 }
 
+// ── Gap 6: the mutation loop sits inside a guard ────────────────────────────
+//
+// Real frame loops do not mutate unconditionally — they check an epoch, or a
+// cooling schedule, and skip the work when there is nothing to do. Wrapping a
+// loop in `if` puts a *branch* phi between the container's root and the loop
+// phi, so resolving the loop phi's init lands on a `Phi` rather than on the
+// fresh alloc or state read that roots the web, and the whole web is rejected
+// before any other rule runs.
+//
+// This is a precision gap, not a soundness one, and it is shared by every root
+// kind — `let`-bound and `state`-backed alike. It is also what makes the other
+// gaps moot in practice: a simulation whose every mutation loop is guarded gets
+// nothing from them.
+
+#[test]
+fn guarded_mutation_loop_is_copy_free() {
+    assert_copy_free(
+        "let-bound container, loop inside a guard",
+        &format!(
+            "let go = 1\nlet a = f64_array({N})\nif go == 1 then\n  for i in range(0, {N}) do\n    a[i] = a[i] + 1.0\n  end\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn guarded_state_mutation_loop_is_copy_free() {
+    // The friend-graph shape exactly: state arrays, mutation gated on a
+    // cooling schedule.
+    assert_copy_free(
+        "state-backed container, loop inside a guard",
+        &format!(
+            "state a = f64_array({N})\nstate alpha = 1.0\nif alpha > 0.001 then\n  for i in range(0, {N}) do\n    a[i] = a[i] + 1.0\n  end\n  alpha = alpha * 0.98\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn mutation_loop_in_else_arm_is_copy_free() {
+    assert_copy_free(
+        "loop in the else arm",
+        &format!(
+            "let go = 0\nlet a = f64_array({N})\nif go == 1 then\n  print(0)\nelse\n  for i in range(0, {N}) do\n    a[i] = a[i] + 1.0\n  end\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn mutation_loop_in_match_arm_is_copy_free() {
+    assert_copy_free(
+        "loop in a match arm",
+        &format!(
+            "let go = 1\nlet a = f64_array({N})\nmatch go\n  when 1 -> for i in range(0, {N}) do a[i] = a[i] + 1.0 end\n  when _ -> print(0)\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn nested_guards_are_copy_free() {
+    assert_copy_free(
+        "loop inside two nested guards",
+        &format!(
+            "let go = 1\nlet a = f64_array({N})\nif go == 1 then\n  if go > 0 then\n    for i in range(0, {N}) do\n      a[i] = a[i] + 1.0\n    end\n  end\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn container_allocated_inside_the_guard_is_copy_free() {
+    // Reallocating the buffer when the input changes, then filling it, is how a
+    // sim reacts to new data. The loop phi's init resolves to the `StateWrite`
+    // that committed the fresh array — a pass-through at runtime, but not
+    // currently a carrier.
+    assert_copy_free(
+        "container allocated inside the guard",
+        &format!(
+            "state a = f64_array(1)\nstate epoch = 0\nif epoch == 0 then\n  a = f64_array({N})\n  for i in range(0, {N}) do\n    a[i] = a[i] + 1.0\n  end\n  epoch = 1\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn sequential_state_mutation_loops_are_copy_free() {
+    // Two passes over one state slot — integrate, then clamp. Only the last
+    // loop fires today, because the backbone is built backward from the seed
+    // and an earlier loop never sees the later phi.
+    assert_copy_free(
+        "sequential mutation loops over one state slot",
+        &format!(
+            "state a = f64_array({N})\nfor i in range(0, {N}) do\n  a[i] = a[i] + 1.0\nend\nfor i in range(0, {N}) do\n  a[i] = a[i] * 2.0\nend\nprint(a[0])"
+        ),
+    );
+}
+
+// Guards for gap 6: a branch must not become a way to smuggle a live alias
+// past the analysis.
+
+#[test]
+fn alias_taken_in_a_sibling_arm_still_copies() {
+    // The other arm keeps a reference to the pre-mutation container. Only one
+    // arm runs per execution, but the analysis cannot know which.
+    assert_copies(
+        "alias taken in the sibling arm",
+        "let go = 1\nlet a = f64_array(4)\nlet keep = []\nif go == 1 then\n  for i in range(0, 4) do\n    a[i] = a[i] + 1.0\n  end\nelse\n  keep = a\nend\nprint(a[0], len(keep))",
+    );
+}
+
+#[test]
+fn alias_taken_before_a_guard_still_copies() {
+    assert_copies(
+        "alias taken before the guard, read after",
+        "let go = 1\nlet a = f64_array(4)\nlet snap = a\nif go == 1 then\n  for i in range(0, 4) do\n    a[i] = a[i] + 1.0\n  end\nend\nprint(a[0], snap[0])",
+    );
+}
+
 // ── Value-semantics guards ──────────────────────────────────────────────────
 
 #[test]

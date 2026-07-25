@@ -489,6 +489,18 @@ impl Env {
 
     /// Get the current value of a single top-level state variable.
     /// For per-iteration state, use `get_all_state` and filter by base key.
+    ///
+    /// # Contract: the returned `Value` is a snapshot, not a handle
+    /// Read it — or copy what you need out of it — **before the next run of this
+    /// stack**, and do not stash it. A container id in a state slot may be
+    /// mutated *in place* by a later run: the escape analysis
+    /// (`backend::bytecode::escape`, "the `state`-backed accumulator") proves the
+    /// slot's id is the program's alone and lets a frame-loop simulation update
+    /// its arrays without cloning them every write. A `Value` held across a run
+    /// would observe those updates instead of the values it was handed.
+    ///
+    /// In-tree this holds by construction: the only non-test caller is
+    /// [`Env::get_state_json`], which serializes immediately.
     pub fn get_state(&self, stack_id: StackKey, key: StateKey) -> Option<Value> {
         let stack = self.stacks.get(&stack_id)?;
         // Find the first entry with matching base key (top-level state has empty loop_indices)
@@ -500,11 +512,21 @@ impl Env {
     }
 
     /// Get all current state as a reference to the HashMap.
+    ///
+    /// The same snapshot contract as [`Env::get_state`] applies to every `Value`
+    /// in the map: read it before the next run of this stack, and do not retain
+    /// it — a later run may mutate a state container's backing store in place.
     pub fn get_all_state(&self, stack_id: StackKey) -> Option<&HashMap<RuntimeStateKey, Value>> {
         self.stacks.get(&stack_id).map(|s| &s.state)
     }
 
     /// Set a top-level state variable's value directly.
+    ///
+    /// The stack takes ownership of `value`: pass a container the caller does
+    /// not otherwise hold or share with another slot, since a later run may
+    /// mutate it in place (the counterpart of the [`Env::get_state`] contract).
+    /// The in-tree caller, [`Env::set_state_from_json`], allocates a fresh value
+    /// per call.
     pub fn set_state(&mut self, stack_id: StackKey, key: StateKey, value: Value) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             let runtime_key = RuntimeStateKey {

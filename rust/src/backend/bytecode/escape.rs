@@ -55,6 +55,41 @@
 //! append(next, row)`, `return xs`) are unrestricted: in-place mutation produces
 //! exactly the same final list, so any downstream observation is unaffected.
 //!
+//! ## The `state`-backed accumulator
+//! A frame-loop simulation keeps its arrays in `state` so they survive between
+//! runs, so the root is a `StateInit`/`StateRead`, not a fresh alloc — and the
+//! slot's id *outlives the run*, which is a strictly stronger obligation than
+//! the conditions above discharge. A state-rooted web additionally requires
+//! (see [`Analysis::state_web_ok`]):
+//!
+//! * **One slot, one reader.** The key must name a single runtime slot: no term
+//!   for it may be `in_loop` or carry an explicit `state(expr)` key, since
+//!   `RuntimeStateKey` mixes the *live* loop indices in at execution time — a
+//!   write from inside a deeper loop then commits to a different slot than the
+//!   one it just mutated, and one declaration inside a loop becomes a slot per
+//!   iteration. It must also have exactly one `StateInit`/`StateRead` term —
+//!   this web's root — so no second read hands the id elsewhere.
+//! * **Immediate commit.** Every mutation in the web feeds a `StateWrite` of
+//!   that same key directly. The slot therefore holds the mutated id at every
+//!   instruction boundary, which is exactly what value semantics commits there
+//!   too — so a run that errors partway leaves the same state behind either way.
+//! * **Unique writers.** Every value written into the key (each `StateWrite`
+//!   input and the `StateInit` init-block result) is either this web's own
+//!   accumulator or a value freshly allocated *at the write site* and aliased
+//!   nowhere — `state b = a` would otherwise put one id into two slots that both
+//!   outlive the run, and a hoisted allocation assigned inside a loop would put
+//!   one id into a slot the loop keeps overwriting.
+//! * **No retention past the region.** Out-of-region users of web terms must
+//!   observe rather than retain: `push_output(s, xs)` parks the id where the
+//!   host drains it *after* the run, and a second state slot or a closure keeps
+//!   it across runs. Plain reads of the finished value stay fine.
+//!
+//! The host side is an **API contract**, not an analysis: a `Value` from
+//! `Env::get_state`/`get_all_state` is a snapshot that must not be held across a
+//! run. `Env::fork_execution` is unaffected — it deep-copies the heap, so a
+//! fork mutates its own slots — and `Env::transfer_state` keeps the one stack it
+//! reshapes, so it never duplicates a slot into a second live stack.
+//!
 //! **Soundness.** The heap is immutable-by-construction, so a dataflow edge to a
 //! container's producing term is the *only* way any code observes it. The web
 //! enumerates every carrier; conditions 1–5 establish that within each iteration
@@ -75,7 +110,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::program::{BlockId, Program, Term, TermId, TermOp};
+use crate::program::{BlockId, Program, StateKey, Term, TermId, TermOp};
 
 /// Terms whose container input is provably unique + non-escaping, and may
 /// therefore be lowered to an in-place mutation.
@@ -144,6 +179,21 @@ struct Analysis<'p> {
     /// Each block's last term — its result value. Precomputed because the
     /// escape checks ask for it once per web term.
     block_last: HashMap<BlockId, TermId>,
+    /// Every value written into a base state key, as `(value term, home block)`.
+    /// A `StateWrite` contributes its input and its own block; a `StateInit`
+    /// contributes its init block's result and that block. `home` is the block
+    /// whose execution performs one write, so an allocation *in* it produces a
+    /// distinct id per write (see [`Analysis::writer_is_uniquely_fresh`]).
+    state_writers: HashMap<StateKey, Vec<(TermId, BlockId)>>,
+    /// How many `StateInit`/`StateRead` terms each base state key has. A
+    /// state-rooted web requires exactly one — its own root.
+    state_readers: HashMap<StateKey, usize>,
+    /// Base state keys that do **not** address one fixed runtime slot: some term
+    /// for them is `in_loop` (its `RuntimeStateKey` picks up the live loop
+    /// indices, so one declaration becomes a slot per iteration) or carries an
+    /// explicit `state(expr)` key (the slot depends on a runtime value). A base
+    /// key alone does not identify the slot for these, so no web may root on one.
+    multi_slot_keys: HashSet<StateKey>,
     /// Structural execution order: each term's position in a depth-first walk of
     /// the block tree (a term, then the child blocks it introduces, then the next
     /// term). Within one pass over a block this is exactly the order the VM runs
@@ -190,7 +240,58 @@ impl<'p> Analysis<'p> {
             block_children,
             block_last: Self::build_block_last(program),
             exec_index: Self::build_exec_index(program),
+            state_writers: HashMap::new(),
+            state_readers: HashMap::new(),
+            multi_slot_keys: HashSet::new(),
         };
+
+        // State-slot traffic, keyed by base key (needs `block_last` above).
+        let mut state_writers: HashMap<StateKey, Vec<(TermId, BlockId)>> = HashMap::new();
+        let mut state_readers: HashMap<StateKey, usize> = HashMap::new();
+        let mut multi_slot_keys: HashSet<StateKey> = HashSet::new();
+        for term in &program.terms {
+            let Some(key) = term.state_key else { continue };
+            // `in_loop` mixes the live loop indices into the runtime key, and an
+            // explicit `state(expr)` key hashes a runtime value into it. Either
+            // way the base key no longer names one slot — and a write executed at
+            // a *deeper* loop nest than the read then commits to a different slot
+            // than the one it just mutated.
+            let explicit_key = match term.op {
+                TermOp::StateInit => !term.inputs.is_empty(),
+                TermOp::StateWrite => term.inputs.len() > 1,
+                _ => false,
+            };
+            if term.in_loop || explicit_key {
+                multi_slot_keys.insert(key);
+            }
+            match term.op {
+                TermOp::StateWrite => {
+                    if let Some(&v) = term.inputs.first() {
+                        state_writers
+                            .entry(key)
+                            .or_default()
+                            .push((v, term.block_id));
+                    }
+                }
+                TermOp::StateInit => {
+                    *state_readers.entry(key).or_default() += 1;
+                    // The init block's result is committed to the slot on a
+                    // cache miss (the lowering emits the write for it).
+                    if let Some(&init_block) = term.child_blocks.first() {
+                        if let Some(v) = ctx.last_term_of(init_block) {
+                            state_writers.entry(key).or_default().push((v, init_block));
+                        }
+                    }
+                }
+                TermOp::StateRead => {
+                    *state_readers.entry(key).or_default() += 1;
+                }
+                _ => {}
+            }
+        }
+        ctx.state_writers = state_writers;
+        ctx.state_readers = state_readers;
+        ctx.multi_slot_keys = multi_slot_keys;
 
         // Build reverse edges now that `ctx` can classify carried inputs.
         let mut read_consumers: HashMap<TermId, Vec<TermId>> = HashMap::new();
@@ -488,6 +589,131 @@ impl<'p> Analysis<'p> {
         )
     }
 
+    /// The base state key `t` reads, when `t` is a state slot read — the root of
+    /// a web whose container lives in `state` and outlives the run.
+    fn state_root_key(&self, t: TermId) -> Option<StateKey> {
+        let term = self.program.get_term(t);
+        match term.op {
+            TermOp::StateInit | TermOp::StateRead => term.state_key,
+            _ => None,
+        }
+    }
+
+    /// Whether `u` commits a value into base state key `key`.
+    fn writes_state_key(&self, u: TermId, key: StateKey) -> bool {
+        let term = self.program.get_term(u);
+        matches!(term.op, TermOp::StateWrite) && term.state_key == Some(key)
+    }
+
+    /// The extra obligations a **state-rooted** web carries, on top of
+    /// conditions 1–5. The slot's id outlives the run, so uniqueness has to hold
+    /// across runs, not just within one: the value the slot hands us at the top
+    /// of *this* run must be unaliased, and nothing may keep it once the run
+    /// ends. See the module header for the four rules; each is one block below.
+    fn state_web_ok(
+        &self,
+        key: StateKey,
+        root: TermId,
+        web: &HashSet<TermId>,
+        region: &HashSet<BlockId>,
+    ) -> bool {
+        // (a) One slot, one reader. The key must name a single runtime slot
+        // (see `multi_slot_keys`), and read it in exactly one place — this web's
+        // root. A second `StateInit`/`StateRead` would be another term holding
+        // the same id, outside this web's reasoning.
+        if self.multi_slot_keys.contains(&key) {
+            return false;
+        }
+        if self.state_readers.get(&key).copied().unwrap_or(0) != 1 {
+            return false;
+        }
+        if self.state_root_key(root) != Some(key) {
+            return false;
+        }
+
+        // (b) Immediate commit. Every mutation hands its result straight to a
+        // `StateWrite` of this key, so the slot and the value-semantics slot
+        // agree at every instruction boundary — including the boundary a
+        // mid-run error stops at.
+        for &t in web {
+            if !self.is_mutation(self.program.get_term(t)) {
+                continue;
+            }
+            let committed = self
+                .users
+                .get(&t)
+                .into_iter()
+                .flatten()
+                .any(|&u| self.writes_state_key(u, key));
+            if !committed {
+                return false;
+            }
+        }
+
+        // (c) Unique writers. Anything else that lands in this slot must be
+        // freshly allocated where it is written and aliased nowhere, so the id
+        // we inherit next run is ours alone.
+        for &(value, home) in self.state_writers.get(&key).into_iter().flatten() {
+            if web.contains(&value) {
+                continue;
+            }
+            if !self.writer_is_uniquely_fresh(value, home, key) {
+                return false;
+            }
+        }
+
+        // (d) No retention past the region. Out-of-region users read the
+        // finished value, which is fine — but only if they *read* it. Anything
+        // holding the id when the run ends (an output buffer the host drains, a
+        // second slot, a closure kept in `functions`) would see the next run
+        // mutate it. `observation_index` recurses through copies, so a copy that
+        // is later retained is not an observation and rejects here.
+        for &t in web {
+            for &u in self.users.get(&t).into_iter().flatten() {
+                if region.contains(&self.program.get_term(u).block_id) {
+                    continue; // condition 4 governs in-region users
+                }
+                if web.contains(&u) || self.writes_state_key(u, key) {
+                    continue;
+                }
+                if self.observation_index(u, t).is_none() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Whether `value` is a container this program allocated *at the write site*
+    /// and handed to nothing else — the standard a value must meet to enter a
+    /// state slot that a web then mutates in place.
+    ///
+    /// `home` is the block whose execution performs one write. Requiring the
+    /// allocation to live in that same block is what separates `state c = [0,0]`
+    /// inside a loop (a fresh list per per-iteration slot) from `let shared =
+    /// [0,0]` hoisted above it and assigned to every slot — one id in many slots.
+    fn writer_is_uniquely_fresh(&self, value: TermId, home: BlockId, key: StateKey) -> bool {
+        let (alloc, copies) = self.copy_chain(value);
+        if !self.is_fresh_root(alloc) {
+            return false;
+        }
+        if self.program.get_term(alloc).block_id != home {
+            return false;
+        }
+        let chain: HashSet<TermId> = copies.iter().copied().chain([alloc]).collect();
+        for &t in &chain {
+            if self.phi_srcs.values().any(|srcs| srcs.contains(&t)) {
+                return false;
+            }
+            for &u in self.users.get(&t).into_iter().flatten() {
+                if !chain.contains(&u) && !self.writes_state_key(u, key) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Whether `t` may root a unique value-web: it produces a container that no
     /// other live value can reference.
     ///
@@ -695,9 +921,12 @@ impl<'p> Analysis<'p> {
         };
         let root = backbone.root;
 
-        // The root must be a fresh, uniquely-owned value (a param/capture/state
-        // root, or a call that could hand back an alias, is rejected).
-        if !self.is_fresh_root(root) {
+        // The root must be a uniquely-owned value: either freshly produced in
+        // this run (a param or capture root could alias anything, and is
+        // rejected), or a `state` slot this program alone owns — checked in full
+        // by `state_web_ok` once the web and region are known.
+        let anchor = self.state_root_key(root);
+        if anchor.is_none() && !self.is_fresh_root(root) {
             return false;
         }
 
@@ -822,6 +1051,9 @@ impl<'p> Analysis<'p> {
                 .copied()
                 .filter(|&u| region.contains(&self.program.get_term(u).block_id))
                 .filter(|&u| !self.observes_before_mutation(u, t, mutated_at))
+                // A commit back into the web's own state slot is the
+                // accumulator's write-back, not an escape (see `state_web_ok`).
+                .filter(|&u| !anchor.is_some_and(|k| self.writes_state_key(u, k)))
                 .collect();
             for &u in &in_region_users {
                 if !web.contains(&u) {
@@ -835,6 +1067,13 @@ impl<'p> Analysis<'p> {
                 .filter(|u| self.read_consumers.get(&t).is_some_and(|rc| rc.contains(u)))
                 .collect();
             if readers.len() > 1 && !self.all_mutually_exclusive(&readers) {
+                return false;
+            }
+        }
+
+        // A `state`-backed container outlives the run; prove the slot is ours.
+        if let Some(key) = anchor {
+            if !self.state_web_ok(key, root, &web, &region) {
                 return false;
             }
         }

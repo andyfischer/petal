@@ -654,14 +654,304 @@ fn inplace_does_not_fire_on_bystander_alias_of_carried_value() {
     assert_inplace_parity(code);
 }
 
+// -- M4 route B: the container lives in `state` -----------------------------
+//
+// This block replaces a former blanket exclusion (`state container must not be
+// in-place`). That rule was sound but far too coarse: it rejected the entire
+// frame-loop simulation shape, which keeps its arrays in `state` precisely so
+// they survive between runs — the programs that write the most paid a full
+// clone per write. What replaces it is a set of obligations specific to a slot
+// that outlives the run (`escape::Analysis::state_web_ok`): sole reader,
+// immediate commit, unique writers, and no retention past the region.
+//
+// Every test here uses `assert_stateful_parity`, which compares several
+// successive runs *and* the final state map — a single-run parity check cannot
+// see a slot that drifts one run later.
+
 #[test]
-fn inplace_does_not_fire_on_state_container() {
-    // A state-backed list is not a fresh unique alloc — never in-place.
-    let code = "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+fn inplace_fires_on_state_backed_accumulator() {
+    // The three shapes a frame-loop simulation is made of. Each must agree with
+    // clone-and-alloc across repeated runs, and must actually fire.
+    let code = "state xs = []\nfor i in range(0, 5) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    assert_stateful_parity(code, 3);
+    assert!(inplace_count(code) >= 1, "state accumulator should fire");
+    let code = "state a = f64_array(5)\nfor i in range(0, 5) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0], a[4])";
+    assert_stateful_parity(code, 3);
+    assert!(
+        inplace_count(code) >= 1,
+        "state read-modify-write should fire"
+    );
+    let code = "state pos = f64_array(4)\nstate vel = f64_array(4)\nfor i in range(0, 4) do\n  pos[i] = pos[i] + vel[i]\nend\nprint(pos[0])";
+    assert_stateful_parity(code, 3);
+    assert!(inplace_count(code) >= 1, "state integrator should fire");
+}
+
+#[test]
+fn inplace_does_not_fire_on_two_state_slots_sharing_an_id() {
+    // `state b = a` puts one id in two persistent slots, and both outlive the
+    // run — the sharpest hazard in the whole feature. `b`'s init block reads
+    // `a`'s root, which is a retention of a mid-build value, so the web rejects.
+    let code = "state a = f64_array(4)\nstate b = a\nfor i in range(0, 4) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0], b[0])";
+    assert_stateful_parity(code, 3);
     assert_eq!(
         inplace_count(code),
         0,
-        "state container must not be in-place"
+        "two state slots sharing an id must not be in-place"
+    );
+    // Aliased *after* the loop instead: the second slot then holds the finished
+    // id, which the next run would mutate under it.
+    let code = "state a = f64_array(4)\nfor i in range(0, 4) do\n  a[i] = a[i] + 1.0\nend\nstate b = a\nprint(a[0], b[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "a slot aliased after the loop must not be in-place either"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_the_state_container_is_emitted() {
+    // The output buffer is drained by the host *after* the run, so the id
+    // outlives the run with a live reader — in the loop or after it.
+    let code = "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(inplace_count(code), 0, "emitted mid-loop must not fire");
+    let code = "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\nend\npush_output(s, xs)\nprint(xs[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "emitted after the loop must not fire either"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_the_mutation_is_not_committed() {
+    // `b` is aliased out of the slot and mutated without ever being written
+    // back. In place, the slot's own id would grow; with value semantics `a`
+    // keeps its original contents. The immediate-commit rule rejects it.
+    let code = "state a = [7]\nlet b = a\nfor i in range(0, 3) do\n  b = append(b, i)\nend\nprint(len(a), len(b))";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "an uncommitted mutation of the slot's id must not fire"
+    );
+    // The same, without ever reading `a` again — nothing in *this* run observes
+    // the damage, so only the immediate-commit rule stands between the slot and
+    // silent corruption on the next run.
+    let code =
+        "state a = [7]\nlet b = a\nfor i in range(0, 3) do\n  b = append(b, i)\nend\nprint(len(b))";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "an unobserved uncommitted mutation must not fire either"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_a_hoisted_writer_of_per_iteration_state() {
+    // One `state` declaration inside a loop becomes one runtime slot per
+    // iteration. Seeding them from a container allocated *outside* the loop
+    // puts a single id in every slot, so mutating one in place would change all
+    // of them (and the hoisted list). The writer must be allocated at the write
+    // site; this one is not.
+    let code = "let shared = [0, 0]\nfor i in range(0, 2) do\n  state c = shared\n  for j in range(0, 2) do\n    c[j] = i\n  end\nend\nprint(shared[0], shared[1])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "per-iteration slots seeded from a hoisted alloc must not fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_per_iteration_state() {
+    // `state c` *inside* a loop is one runtime slot per iteration
+    // (`RuntimeStateKey` carries the live loop indices), and the write from the
+    // inner loop carries a longer index list than the read that created the
+    // slot — so it commits to a *different* slot than the one it mutated. Value
+    // semantics leaves the read slot untouched across runs; an in-place write
+    // would quietly accumulate into it. Found by the multi-run sweep below;
+    // a single-run parity check cannot see it.
+    let code = "for i in range(0, 2) do\n  state c = [0, 0]\n  for j in range(0, 2) do\n    c[j] = c[j] + i\n  end\n  print(c[0], c[1])\nend";
+    assert_stateful_parity(code, 4);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "per-iteration state must not be in-place"
+    );
+}
+
+#[test]
+fn state_shapes_agree_across_repeated_runs() {
+    // A broad multi-run differential over `state` shapes: each program runs four
+    // times under clone-and-alloc and under all optimizations, and both the
+    // output and the final state map must match. This is the sweep that caught
+    // the per-iteration slot bug above — the fuzzer runs each program once, so
+    // it cannot see a slot that only drifts on the second run.
+    let cases = [
+        // Accumulators and read-modify-write, the shapes that must fire.
+        "state xs = []\nfor i in range(0, 4) do\n  if i % 2 == 0 then xs = append(xs, i) end\nend\nprint(len(xs))",
+        "state a = f64_array(4)\nfor i in range(0, 4) do a[i] = a[i] + 1.0 end\nprint(a[0], a[3])",
+        "state xs = [0, 0, 0]\nfor i in range(0, 3) do xs[i] = xs[i] + 1 end\nprint(xs[0], xs[2])",
+        "state r = { a: 0, b: 0 }\nfor i in range(0, 3) do r.a = r.a + i end\nprint(r.a, r.b)",
+        "state pos = f64_array(3)\nstate vel = f64_array(3)\nfor i in range(0, 3) do\n  vel[i] = vel[i] + 1.0\n  pos[i] = pos[i] + vel[i]\nend\nprint(pos[0], vel[0])",
+        "state xs = []\nfor i in range(0, 3) do xs = append(xs, len(xs)) end\nprint(len(xs), xs[0])",
+        // The slot reassigned wholesale, before and after the loop.
+        "state xs = []\nxs = []\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(xs))",
+        "state a = f64_array(4)\nfor i in range(0, 4) do a[i] = a[i] + 1.0 end\na = f64_array(4)\nprint(a[0])",
+        "state xs = []\nif len(xs) > 5 then xs = [] end\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(xs))",
+        // Aliases of the slot, read before and after the mutations.
+        "state xs = [9]\nlet old = xs\nprint(len(old))\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(xs))",
+        "state xs = [9]\nlet old = xs\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(old), len(xs))",
+        // Retention forms that must keep copying.
+        "state xs = [0, 0, 0]\nlet s = symbol(\"p\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
+        "state xs = []\nlet log = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  log = append(log, xs)\nend\nprint(len(log[0]), len(xs))",
+        "state xs = []\nfor i in range(0, 3) do xs = append(xs, i) end\nlet peek = fn() -> len(xs)\nprint(peek())",
+        "fn probe(v)\n  len(v)\nend\nstate xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  print(probe(xs))\nend",
+        "state xs = []\nlet snaps = for i in range(0, 3) do\n  xs = append(xs, i)\n  xs\nend\nprint(len(snaps[0]), len(xs))",
+        "state a = f64_array(3)\nstate b = a\nfor i in range(0, 3) do a[i] = a[i] + 1.0 end\nprint(a[0], b[0])",
+        "state a = f64_array(3)\nfor i in range(0, 3) do a[i] = a[i] + 1.0 end\nstate b = a\nprint(a[0], b[0])",
+        "let shared = [0, 0]\nfor i in range(0, 2) do\n  state c = shared\n  for j in range(0, 2) do c[j] = i end\nend\nprint(shared[0], shared[1])",
+        // Control flow and nesting over a persistent slot.
+        "state xs = []\nfor i in range(0, 3) do xs = append(xs, i) end\nfor i in range(0, 3) do xs[i] = i * 2 end\nprint(xs[0], xs[2], len(xs))",
+        "state xs = []\nfor y in range(0, 2) do\n  for x in range(0, 2) do xs = append(xs, x) end\nend\nprint(len(xs))",
+        "state a = [0, 0, 0]\nfor i in range(0, 3) do\n  a[i] = a[i] + 1\n  if i == 1 then break end\nend\nprint(a[0], a[1], a[2])",
+        "state xs = [3, 1, 2]\nfor i in range(0, 3) do\n  let s = sort(xs)\n  xs[i] = s[0]\nend\nprint(xs[0], xs[1], xs[2])",
+        "state grid = [[0, 0], [0, 0]]\nfor i in range(0, 2) do\n  let row = grid[i]\n  grid[i] = append(row, i)\nend\nprint(len(grid[0]), len(grid[1]))",
+        "state total = 0\nstate xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  total = total + i\nend\nprint(total, len(xs))",
+    ];
+    for code in cases {
+        assert_stateful_parity(code, 4);
+    }
+}
+
+#[test]
+fn forking_a_stack_isolates_its_state_container() {
+    // `fork_execution` deep-copies the heap into a fresh context, so a fork that
+    // mutates its state slots in place must not touch the source's. Confirmed
+    // rather than assumed: both stacks run again after the fork and each must
+    // accumulate only its own writes, identically under both engines.
+    let code = "state xs = []\nfor i in range(0, 2) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    let run_forked = |opts: OptFlags| {
+        let mut env = Env::new();
+        env.set_opt_flags(opts);
+        let pid = env.load_program(code).expect("load");
+        let src = env.create_stack(pid).expect("stack");
+        env.run(src).expect("run");
+        let _ = env.take_output();
+        env.reset_stack(src).expect("reset");
+        let fork = env.fork_execution(src).expect("fork");
+        let mut out = Vec::new();
+        for _ in 0..2 {
+            env.run(fork).expect("run fork");
+            out.extend(env.take_output());
+            env.reset_stack(fork).expect("reset fork");
+        }
+        env.run(src).expect("run source");
+        out.extend(env.take_output());
+        out
+    };
+    assert_eq!(
+        run_forked(OptFlags::none()),
+        run_forked(OptFlags::all()),
+        "a fork's in-place writes must not reach the source stack's slots"
+    );
+}
+
+#[test]
+fn state_container_accumulates_the_same_across_a_resumed_run() {
+    // A run split across `run_bounded` budgets executes the same instruction
+    // stream, but the untouched-state sweep only fires on completion — so pin
+    // that a chopped-up run leaves the same slot contents as a whole one.
+    let code = "state xs = []\nfor i in range(0, 6) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    let stepped = |opts: OptFlags| {
+        let mut env = Env::new();
+        env.set_opt_flags(opts);
+        let pid = env.load_program(code).expect("load");
+        let sid = env.create_stack(pid).expect("stack");
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            while let crate::env::RunOutcome::Yielded { .. } =
+                env.run_bounded(sid, 3).expect("bounded run")
+            {}
+            out.extend(env.take_output());
+            env.reset_stack(sid).expect("reset");
+        }
+        let state = env.get_state_json(pid, sid);
+        let mut pairs: Vec<String> = state.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        pairs.sort();
+        (out, pairs.join(","))
+    };
+    assert_eq!(
+        stepped(OptFlags::none()),
+        stepped(OptFlags::all()),
+        "a resumed run must leave the same state as an unbroken one"
+    );
+}
+
+#[test]
+fn state_container_survives_a_hot_reload() {
+    // `transfer_state` reshapes one stack onto a new program, keeping the state
+    // map — so a slot mutated in place by v1 is inherited by v2, whose own
+    // analysis decides afresh. The existing transfer tests cover scalar state
+    // only; this is the container case the in-place path reaches.
+    let v1 = "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
+    let v2 =
+        "state xs = []\nfor i in range(0, 2) do\n  xs = append(xs, 9)\nend\nprint(len(xs), xs[0])";
+    let reload = |opts: OptFlags| {
+        let mut env = Env::new();
+        env.set_opt_flags(opts);
+        let pid = env.load_program(v1).expect("load");
+        let sid = env.create_stack(pid).expect("stack");
+        let mut out = Vec::new();
+        env.run(sid).expect("run v1");
+        out.extend(env.take_output());
+        env.reset_stack(sid).expect("reset");
+        env.run(sid).expect("run v1 again");
+        out.extend(env.take_output());
+        let next = env.compile_program(pid, v2).expect("compile v2");
+        env.transfer_state(sid, next).expect("transfer");
+        env.run(sid).expect("run v2");
+        out.extend(env.take_output());
+        out
+    };
+    assert_eq!(
+        reload(OptFlags::none()),
+        reload(OptFlags::all()),
+        "a hot-reloaded state container must carry the same values either way"
+    );
+}
+
+#[test]
+fn state_slot_survives_a_run_that_errors_partway() {
+    // The immediate-commit rule's payoff: the mutation and its `StateWrite` are
+    // adjacent, so a run that dies mid-loop leaves the slot holding exactly the
+    // writes that completed — the same slot contents clone-and-alloc leaves.
+    // `assert_stateful_parity` cannot check this: it compares nothing when both
+    // engines error, so the state map is compared explicitly here.
+    let code = "state a = [0, 0, 0]\nfor i in range(0, 3) do\n  a[i] = a[i] + 1\n  if i == 1 then\n    let boom = a[99]\n  end\nend\nprint(a[0])";
+    let state_after = |opts: OptFlags| {
+        let mut env = Env::new();
+        env.set_opt_flags(opts);
+        let pid = env.load_program(code).expect("load");
+        let sid = env.create_stack(pid).expect("stack");
+        for _ in 0..3 {
+            let _ = env.run(sid); // errors partway; state keeps what committed
+            let _ = env.take_output();
+            env.reset_stack(sid).expect("reset");
+        }
+        let state = env.get_state_json(pid, sid);
+        let mut pairs: Vec<String> = state.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        pairs.sort();
+        pairs.join(",")
+    };
+    assert_eq!(
+        state_after(OptFlags::none()),
+        state_after(OptFlags::all()),
+        "a partially-completed run must leave the same state either way"
     );
 }
 

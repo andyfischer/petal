@@ -208,6 +208,16 @@ struct Analysis<'p> {
     program: &'p Program,
     /// For each phi term, the `phi_out` back-edge source terms (dest == phi).
     phi_srcs: HashMap<TermId, Vec<TermId>>,
+    /// Every term that is the source of some `phi_out` — the terms whose value
+    /// leaves their block through a phi carry-out. Flattened from `phi_srcs`
+    /// because the escape checks ask the question per term.
+    phi_carry_srcs: HashSet<TermId>,
+    /// Reverse `phi_outs` edges: for each term, the phis it is carried into on a
+    /// block pop (see [`Analysis::phi_out_targets`]).
+    phi_out_targets: HashMap<TermId, Vec<TermId>>,
+    /// For each phi, the blocks that carry a value back into it on pop (see
+    /// [`Analysis::body_blocks_of`]).
+    phi_body_blocks: HashMap<TermId, Vec<BlockId>>,
     /// Reverse "read" edges: for each term `w`, the terms that read `w` as a
     /// *carried* input — a `Copy` source, a mutation's container, or a phi's
     /// init. Excludes phi back-edge sources (a carry-forward, not a live read).
@@ -251,9 +261,21 @@ struct Analysis<'p> {
 impl<'p> Analysis<'p> {
     fn build(program: &'p Program) -> Analysis<'p> {
         let mut phi_srcs: HashMap<TermId, Vec<TermId>> = HashMap::new();
+        let mut phi_carry_srcs: HashSet<TermId> = HashSet::new();
+        let mut phi_out_targets: HashMap<TermId, Vec<TermId>> = HashMap::new();
+        let mut phi_body_blocks: HashMap<TermId, Vec<BlockId>> = HashMap::new();
         for block in &program.blocks {
             for po in &block.phi_outs {
                 phi_srcs.entry(po.dest_term).or_default().push(po.src_term);
+                phi_carry_srcs.insert(po.src_term);
+                phi_out_targets
+                    .entry(po.src_term)
+                    .or_default()
+                    .push(po.dest_term);
+                let blocks = phi_body_blocks.entry(po.dest_term).or_default();
+                if blocks.last() != Some(&block.id) {
+                    blocks.push(block.id);
+                }
             }
         }
 
@@ -280,6 +302,9 @@ impl<'p> Analysis<'p> {
         let mut ctx = Analysis {
             program,
             phi_srcs,
+            phi_carry_srcs,
+            phi_out_targets,
+            phi_body_blocks,
             read_consumers: HashMap::new(),
             users: HashMap::new(),
             block_children,
@@ -368,8 +393,16 @@ impl<'p> Analysis<'p> {
         ctx
     }
 
-    /// The container input of a mutation term (`inputs[0]` for every kind), or
-    /// `None` if `term` is not a mutation.
+    /// Whether `t` is carried out of its block into a phi on pop. That write
+    /// happens through the *register*, so it never shows up as a user edge and
+    /// has to be asked about separately.
+    fn is_phi_carry_source(&self, t: TermId) -> bool {
+        self.phi_carry_srcs.contains(&t)
+    }
+
+    /// Whether `term` is a collection-mutating term — a `SetIndex`/`SetField`,
+    /// or a call to one of the mutating builtins. Its container input is
+    /// `inputs[0]` for every kind.
     fn is_mutation(&self, term: &Term) -> bool {
         match &term.op {
             TermOp::SetIndex | TermOp::SetField(_) => true,
@@ -515,9 +548,7 @@ impl<'p> Analysis<'p> {
                 // the value of an `if`/`match` arm, a `collect` loop's element, a
                 // function's return. Either hands the id to code the web does not
                 // enumerate, so neither is an observation.
-                if self.phi_srcs.values().any(|srcs| srcs.contains(&user))
-                    || self.escapes_as_block_result(user)
-                {
+                if self.is_phi_carry_source(user) || self.escapes_as_block_result(user) {
                     return None;
                 }
                 let mut last = here?;
@@ -570,7 +601,7 @@ impl<'p> Analysis<'p> {
         if self.users.get(&t).is_some_and(|u| !u.is_empty()) {
             return true;
         }
-        if self.phi_srcs.values().any(|srcs| srcs.contains(&t)) {
+        if self.is_phi_carry_source(t) {
             return true;
         }
         self.escapes_as_block_result(t)
@@ -852,7 +883,7 @@ impl<'p> Analysis<'p> {
         }
         let chain: HashSet<TermId> = copies.iter().copied().chain([alloc]).collect();
         for &t in &chain {
-            if self.phi_srcs.values().any(|srcs| srcs.contains(&t)) {
+            if self.is_phi_carry_source(t) {
                 return false;
             }
             for &u in self.users.get(&t).into_iter().flatten() {
@@ -886,10 +917,7 @@ impl<'p> Analysis<'p> {
     /// must be an alloc or a fresh builtin, never another user call).
     fn call_returns_fresh(&self, term: &Term) -> bool {
         match &term.op {
-            TermOp::BuiltinCall(cid) => self
-                .program
-                .get_string_constant(*cid)
-                .is_some_and(crate::builtins::returns_fresh_container),
+            TermOp::BuiltinCall(_) => self.call_returns_fresh_builtin(term),
             TermOp::Call => {
                 let Some(&callee) = term.inputs.first() else {
                     return false;
@@ -954,10 +982,7 @@ impl<'p> Analysis<'p> {
         }
         // A phi carry-out is a write into an enclosing frame's register, not a
         // `users` edge, so it has to be excluded separately.
-        !self
-            .phi_srcs
-            .values()
-            .any(|srcs| srcs.iter().any(|s| chain.contains(s)))
+        !chain.iter().any(|&t| self.is_phi_carry_source(t))
     }
 
     /// The builtin half of [`Self::call_returns_fresh`] — used where recursing
@@ -1001,29 +1026,16 @@ impl<'p> Analysis<'p> {
         }
     }
 
-    /// Backward cone of `seed` over *container* carrier inputs (copy sources,
-    /// mutation containers, phi inits, and phi back-edge sources). Forward
-    /// consumers are deliberately excluded, so the value is not followed once it
-    /// escapes the accumulator's loop — that keeps two independent accumulators
-    /// (`next` and the `particles` it feeds) from merging into one web.
-    fn backward_cone(&self, seed: TermId) -> HashSet<TermId> {
-        let mut seen = HashSet::new();
-        let mut queue = VecDeque::new();
-        seen.insert(seed);
-        queue.push_back(seed);
-        while let Some(w) = queue.pop_front() {
-            for n in self.carrier_inputs(self.program.get_term(w)) {
-                if seen.insert(n) {
-                    queue.push_back(n);
-                }
-            }
-        }
-        seen
-    }
-
-    /// All terms reachable backward from `seeds` over carrier inputs — the value
-    /// sources that feed into `seeds`. Used to test spine membership: whether a
-    /// mutation's result flows back into a loop phi's back edge.
+    /// All terms reachable backward from `seeds` over *container* carrier inputs
+    /// (copy sources, mutation containers, phi inits, and phi back-edge sources)
+    /// — the value sources that feed into `seeds`. Forward consumers are
+    /// deliberately excluded, so the value is not followed once it escapes the
+    /// accumulator's loop — that keeps two independent accumulators (`next` and
+    /// the `particles` it feeds) from merging into one web.
+    ///
+    /// Seeded with the mutation it gives that mutation's cone; seeded with a
+    /// phi's back-edge sources it tests spine membership, i.e. whether a
+    /// mutation's result flows back into that loop phi's back edge.
     fn backward_carrier_closure(&self, seeds: &[TermId]) -> HashSet<TermId> {
         let mut seen = HashSet::new();
         let mut queue: VecDeque<TermId> = VecDeque::new();
@@ -1065,7 +1077,7 @@ impl<'p> Analysis<'p> {
         // Locate the loop-carried phis behind the mutation via a backward
         // (producer-only) walk, so post-loop escapes never enter the picture,
         // and resolve them into a single accumulator backbone.
-        let cone = self.backward_cone(seed);
+        let cone = self.backward_carrier_closure(&[seed]);
         let Some(backbone) = self.build_backbone(&cone) else {
             return false;
         };
@@ -1535,24 +1547,13 @@ impl<'p> Analysis<'p> {
     /// one (the loop body); a branch/match merge phi has one per arm that
     /// rebinds the name.
     fn body_blocks_of(&self, phi: TermId) -> Vec<BlockId> {
-        self.program
-            .blocks
-            .iter()
-            .filter(|b| b.phi_outs.iter().any(|po| po.dest_term == phi))
-            .map(|b| b.id)
-            .collect()
+        self.phi_body_blocks.get(&phi).cloned().unwrap_or_default()
     }
 
     /// The phis `t` is carried into on a block pop (`phi_outs`), which is a
     /// value flow with no input edge to show for it.
     fn phi_out_targets(&self, t: TermId) -> Vec<TermId> {
-        self.program
-            .blocks
-            .iter()
-            .flat_map(|b| b.phi_outs.iter())
-            .filter(|po| po.src_term == t)
-            .map(|po| po.dest_term)
-            .collect()
+        self.phi_out_targets.get(&t).cloned().unwrap_or_default()
     }
 
     /// All blocks in the subtree rooted at `block` (inclusive), via child blocks.

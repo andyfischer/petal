@@ -7,7 +7,7 @@
 //! fetches host data is portable across embedders.
 //!
 //! A script calls `host_data(kind, arg)`; the host answers with a plain
-//! [`HostData`] value tree (`Nil`/`Bool`/`Int`/`Str`/`List`/`Record`), which
+//! [`HostData`] value tree (`Nil`/`Bool`/`Int`/`Float`/`Str`/`List`/`Record`), which
 //! the native converts into an ordinary Petal value. The host attaches a
 //! [`DataProvider`] — `Box<dyn FnMut(&str, &str) -> HostData>` — for the
 //! duration of each `env.run`; without one the native answers nil, so a script
@@ -49,11 +49,18 @@ use petal::value::Value;
 /// boundary; the conversion to a `Value` happens inside the native). A
 /// [`Record`](HostData::Record) becomes a Petal record (`Value::Map`) with its
 /// field order preserved.
+///
+/// [`Int`](HostData::Int) and [`Float`](HostData::Float) are distinct rungs, and
+/// a host must carry the distinction its source made: a fractional quantity that
+/// arrives as an `Int` has already lost its fraction, and no downstream code can
+/// recover it. Scripts that scale by a ratio (progress bars, meters, normalized
+/// gauges) read zero from a truncated `0.42`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostData {
     Nil,
     Bool(bool),
     Int(i64),
+    Float(f64),
     Str(String),
     List(Vec<HostData>),
     Record(Vec<(String, HostData)>),
@@ -121,6 +128,7 @@ fn data_to_value(cxt: &mut PetalCxt, data: &HostData) -> Value {
         HostData::Nil => Value::Nil,
         HostData::Bool(b) => Value::Bool(*b),
         HostData::Int(n) => Value::Int(*n),
+        HostData::Float(f) => Value::Float(*f),
         HostData::Str(s) => Value::String(cxt.heap_mut().alloc_string(s.clone())),
         HostData::List(items) => {
             let values: Vec<Value> = items.iter().map(|d| data_to_value(cxt, d)).collect();

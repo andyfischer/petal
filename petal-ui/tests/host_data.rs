@@ -91,6 +91,33 @@ fn host_data_answers_vary_by_arg_for_lazy_fetch() {
 }
 
 #[test]
+fn host_data_floats_arrive_as_floats_not_rounded_ints() {
+    // Int and Float are distinct rungs of the tree, and the fraction must
+    // survive the crossing: a host answering with a ratio must not hand the
+    // script a 0. Scripts scale by these (meters, progress bars, gauges), so a
+    // truncation here reads as "the value was zero", not "the value was coarse".
+    let mut ui = Headless::new(
+        "state fill = 0\n\
+         state scaled = 0\n\
+         state whole = 0\n\
+         fill = host_data(\"ratio\", \"\")\n\
+         scaled = fill * 100\n\
+         whole = host_data(\"count\", \"\")",
+    )
+    .unwrap();
+    ui.set_data_provider(Box::new(|kind, _arg| match kind {
+        "ratio" => HostData::Float(0.42),
+        "count" => HostData::Int(7),
+        _ => HostData::Nil,
+    }));
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("fill"), Some(0.42));
+    assert_eq!(ui.state_float("scaled"), Some(42.0));
+    // The Int rung is untouched by the addition.
+    assert_eq!(ui.state_int("whole"), Some(7));
+}
+
+#[test]
 fn provider_survives_across_frames_so_it_can_cache() {
     // The harness swaps the provider back out after each run, so its FnMut state
     // (a cache, a counter) persists — proving the swap round-trips ownership.

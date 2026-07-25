@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
 const petalUiDrawRs = join(repoRoot, "petal-ui/src/draw.rs");
+const petalUiTextRs = join(repoRoot, "petal-ui/src/text.rs");
 const petalUiInputRs = join(repoRoot, "petal-ui/src/input.rs");
 const preludeStdPtl = join(repoRoot, "rust/prelude/std.ptl");
 
@@ -478,9 +479,10 @@ function parseNativeRegistrations(block: string): Array<{ name: string; fnName: 
 
 /**
  * Extract the canvas builtins from the shared `petal-ui` crate. Drawing lives in
- * `draw.rs` (`register_draw` + the offscreen-canvas `register_canvas`); input +
- * timing lives in `input.rs` (`register_input`). Each register fn is a flat list
- * of `env.register_native(…)` calls, so the block a function is registered in —
+ * `draw.rs` (`register_draw` + the offscreen-canvas `register_canvas`), with the
+ * text-measurement natives implemented next door in `text.rs`; input + timing
+ * lives in `input.rs` (`register_input`). Each register fn is a flat list of
+ * `env.register_native(…)` calls, so the block a function is registered in —
  * not source order — decides its category.
  */
 function extractCanvas(): {
@@ -488,19 +490,26 @@ function extractCanvas(): {
   categories: StdlibCategory[];
 } {
   const drawSource = readFileSync(petalUiDrawRs, "utf8");
+  const textSource = readFileSync(petalUiTextRs, "utf8");
   const inputSource = readFileSync(petalUiInputRs, "utf8");
   const drawArgNames = loadDrawArgNames(drawSource);
 
   const functions: StdlibFunction[] = [];
 
+  // A native is *registered* in one file's `register_*` block but its body may
+  // live in a sibling module — text measurement is registered by `register_draw`
+  // and implemented in `text.rs`. So resolve the body across every candidate
+  // file and record the one it was actually found in.
   const addCanvasFn = (
     name: string,
     fnName: string,
     category: "drawing" | "input",
-    source: string,
-    file: string,
+    candidates: Array<{ file: string; source: string }>,
   ) => {
-    const fn = findFn(source, fnName);
+    const found = candidates
+      .map(({ file, source }) => ({ file, fn: findFn(source, fnName) }))
+      .find(({ fn }) => fn !== null);
+    const fn = found?.fn ?? null;
     const parsed = fn
       ? (bufferedDrawSignature(fn.body, drawArgNames) ?? parseFnBody(fn.body))
       : { arity: null, variadic: false, params: [] };
@@ -511,21 +520,28 @@ function extractCanvas(): {
       arity: parsed.arity,
       variadic: parsed.variadic,
       params: parsed.params,
-      source: { file, line: fn?.line ?? 0 },
+      source: { file: found?.file ?? candidates[0].file, line: fn?.line ?? 0 },
     });
   };
+
+  const drawFiles = [
+    { file: "petal-ui/src/draw.rs", source: drawSource },
+    { file: "petal-ui/src/text.rs", source: textSource },
+  ];
 
   // Drawing: register_draw + the offscreen-canvas register_canvas.
   for (const sig of [/pub fn register_draw\s*\(/, /pub fn register_canvas\s*\(/]) {
     for (const reg of parseNativeRegistrations(extractBlock(drawSource, sig))) {
-      addCanvasFn(reg.name, reg.fnName, "drawing", drawSource, "petal-ui/src/draw.rs");
+      addCanvasFn(reg.name, reg.fnName, "drawing", drawFiles);
     }
   }
   // Input + timing: register_input.
   for (const reg of parseNativeRegistrations(
     extractBlock(inputSource, /pub fn register_input\s*\(/),
   )) {
-    addCanvasFn(reg.name, reg.fnName, "input", inputSource, "petal-ui/src/input.rs");
+    addCanvasFn(reg.name, reg.fnName, "input", [
+      { file: "petal-ui/src/input.rs", source: inputSource },
+    ]);
   }
 
   const categories: StdlibCategory[] = [
@@ -567,6 +583,7 @@ export function buildManifest(): StdlibManifest {
       "rust/src/builtins/*.rs",
       "rust/prelude/std.ptl",
       "petal-ui/src/draw.rs",
+      "petal-ui/src/text.rs",
       "petal-ui/src/input.rs",
     ],
     categories,

@@ -170,6 +170,81 @@ fn build_then_update_in_second_loop_is_copy_free() {
     );
 }
 
+// ── Gap 4: the loop reads the container it is writing ───────────────────────
+//
+// Route B rejects a web whose container has any in-region reader that is not
+// itself a web term. That covers real escapes (a store into another container,
+// a closure capture) but also plain *observations* — reading an element, asking
+// for the length — which cannot alias the container's own backing store. The
+// read-modify-write loop is the single most common shape in a simulation, and
+// it is currently the most expensive.
+
+#[test]
+fn f64_array_read_modify_write_is_copy_free() {
+    // `a[i] = a[i] + 1.0`: the read yields a float, which cannot alias `a`.
+    assert_copy_free(
+        "f64 array read-modify-write",
+        &format!(
+            "let a = f64_array({N})\nfor i in range(0, {N}) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn integrator_over_two_arrays_is_copy_free() {
+    // `pos[i] = pos[i] + vel[i]`: the canonical physics step. `vel` is only
+    // read, so only `pos` is a mutation web at all.
+    assert_copy_free(
+        "position/velocity integrator",
+        &format!(
+            "let pos = f64_array({N})\nlet vel = f64_array({N})\nfor i in range(0, {N}) do\n  pos[i] = pos[i] + vel[i]\nend\nprint(pos[0])"
+        ),
+    );
+}
+
+#[test]
+fn list_read_modify_write_is_copy_free() {
+    assert_copy_free(
+        "list read-modify-write",
+        &format!(
+            "let xs = [0, 0, 0]\nfor i in range(0, {N}) do\n  xs[i % 3] = xs[i % 3] * 2\nend\nprint(xs[0])"
+        ),
+    );
+}
+
+#[test]
+fn record_field_read_modify_write_is_copy_free() {
+    // `r.a = r.a + i` has a parity test in backend::bytecode::tests, but parity
+    // only pins that the answer is right — it copied the whole entry table on
+    // every iteration while passing.
+    assert_copy_free(
+        "record field read-modify-write",
+        &format!("let r = {{ a: 0 }}\nfor i in range(0, {N}) do\n  r.a = r.a + i\nend\nprint(r.a)"),
+    );
+}
+
+#[test]
+fn reading_a_different_index_than_written_is_copy_free() {
+    assert_copy_free(
+        "read one index, write another",
+        &format!(
+            "let a = f64_array({N})\nfor i in range(0, {}) do\n  a[i] = a[i + 1]\nend\nprint(a[0])",
+            N - 1
+        ),
+    );
+}
+
+#[test]
+fn in_loop_length_query_is_copy_free() {
+    // `len(xs)` returns an int and retains nothing.
+    assert_copy_free(
+        "in-loop len() on the accumulator",
+        &format!(
+            "let xs = []\nfor i in range(0, {N}) do\n  if len(xs) < {N} then\n    xs = append(xs, i)\n  end\nend\nprint(len(xs))"
+        ),
+    );
+}
+
 // ── Value-semantics guards ──────────────────────────────────────────────────
 
 #[test]
@@ -179,6 +254,27 @@ fn aliased_container_still_copies() {
     assert_copies(
         "aliased accumulator",
         "let xs = []\nlet ys = xs\nfor i in range(0, 8) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))",
+    );
+}
+
+#[test]
+fn container_stored_into_another_container_still_copies() {
+    // The mutated list is pushed into `log` each iteration, so `log` holds
+    // references to intermediate states. Eliding would make every entry alias
+    // the same final buffer.
+    assert_copies(
+        "accumulator stored into another container",
+        "let xs = []\nlet log = []\nfor i in range(0, 6) do\n  xs = append(xs, i)\n  log = append(log, xs)\nend\nprint(len(log[0]), len(log[5]))",
+    );
+}
+
+#[test]
+fn container_captured_by_a_closure_still_copies() {
+    // The closure captures the container mid-loop and is called after it, so
+    // it observes a state the loop later moved past.
+    assert_copies(
+        "accumulator captured by a closure",
+        "let xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nlet snap = fn() -> len(xs)\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs), snap())",
     );
 }
 

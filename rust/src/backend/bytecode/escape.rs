@@ -24,12 +24,21 @@
 //!    result is provably a brand-new unaliased container (see
 //!    [`Analysis::is_fresh_root`]). A param, capture, or state read could alias
 //!    something else, so it is rejected.
-//! 2. **A single loop spine chain.** The web's loop-carried phis form one chain:
-//!    the first phi's init resolves to the root and each later phi's init
-//!    resolves to its predecessor, connected only by `Copy` carriers. Together
-//!    with the root and those copies they are the accumulator's *backbone*; the
-//!    union of their loop-body block subtrees is the *region* — the window over
-//!    which the accumulator is live and being built.
+//! 2. **One spine.** Every phi the seed reads back through — loop phis *and* the
+//!    merge phis of any `if`/`match` the loop sits in — must hang off the root:
+//!    each phi's init resolves, through `Copy` carriers, to the root or to
+//!    another spine phi. That makes the spine a *tree* (a loop nested in another
+//!    loop's body is a child, and so is a loop that runs after it), and together
+//!    with the root and the connecting copies it is the accumulator's
+//!    *backbone*. Each phi's region is the subtree of the blocks that carry a
+//!    value back into it — the loop body, or every arm of the merge — and their
+//!    union is the *region*, the window over which the accumulator is live.
+//!
+//!    A connecting `Copy` is a **snapshot** of the value where it stands, while
+//!    a phi's register is kept current by its construct's carry-outs. So a copy
+//!    is only a valid link when no mutation lands between it and the phi reading
+//!    it: `let a = xs` before a loop that mutates `xs`, with `a` then driving a
+//!    second loop, is two spines over one id and both would mutate it.
 //! 3. **All mutations in-region.** Every mutation in the web is inside the
 //!    region. (A post-loop mutation of the finished value could alias a
 //!    surviving reference, so it is rejected.)
@@ -44,12 +53,35 @@
 //!    which carry the argument. Anything that keeps the id (a store into another
 //!    container, a closure capture, a state write, a user-function argument)
 //!    breaks uniqueness and rejects the web.
-//! 5. **Closed backbone interior.** Every backbone term *except the last phi in
-//!    the chain* — the root, the connecting copies, and each earlier phi — has
-//!    all of its users inside the web (or observing it, per condition 4, before
-//!    the id is rewritten). Those terms hold a *mid-build* id that a later region
-//!    still mutates, so a retained outside reference (`let ys = xs` between two
-//!    loops, or before the first) would observe the in-place writes.
+//! 5. **Closed backbone interior.** Every backbone term *except the exempt phis*
+//!    — the root, the connecting copies, and each non-exempt phi — has all of
+//!    its users inside the web (or observing it, per condition 4, before the id
+//!    is rewritten). Those terms hold a *mid-build* id that a later region still
+//!    mutates, so a retained outside reference (`let ys = xs` between two loops,
+//!    or before the first) would observe the in-place writes. A phi is exempt —
+//!    its readers see the finished value — when every spine phi after it in
+//!    execution order has a region *inside* its own, which is exactly what makes
+//!    a guard's merge phi (whose arms contain the loop) readable after the `if`.
+//! 6. **Live spines stay separate.** Two spine phis with the same parent must
+//!    not have overlapping regions. A tree is how one container's spine branches
+//!    into a nested loop and a later one — regions disjoint in time — whereas two
+//!    phis over the same parent value whose regions overlap are two accumulators
+//!    aliasing one id (`let al = xs` at the top of a loop, then both appended in
+//!    it), and both would mutate it. Relatedly, a spine phi must *receive* the
+//!    mutations of any arm that performs them: an arm that mutates an alias and
+//!    carries the untouched original back into the merge leaves that merge a
+//!    live pre-mutation holder. Both conditions came from the fuzzer.
+//! 7. **No escape without an input edge.** Two value flows have no input edge to
+//!    show for them, and both are checked explicitly: a **block result** (an
+//!    `if` arm's value, a `collect` loop's element, a function's return) and a
+//!    **phi carry-out** into a phi that is not on the spine. The second is how a
+//!    branch smuggles an alias past the analysis — `if i == 1 then keep = xs
+//!    else xs = append(xs, i) end` copies the accumulator into `keep`'s phi,
+//!    which then watches later iterations mutate it. The one carry-out that is
+//!    not a second holder is the merge phi of the *state variable this web owns*
+//!    (`a = f64_array(n)` inside a guard, with the loop's result leaving in `a`'s
+//!    own register); that one is allowed, and what it carries the value on to is
+//!    checked in turn.
 //!
 //! Reads of the *final* value after the last loop (`len(xs)`, `next =
 //! append(next, row)`, `return xs`) are unrestricted: in-place mutation produces
@@ -92,7 +124,7 @@
 //!
 //! **Soundness.** The heap is immutable-by-construction, so a dataflow edge to a
 //! container's producing term is the *only* way any code observes it. The web
-//! enumerates every carrier; conditions 1–5 establish that within each iteration
+//! enumerates every carrier; conditions 1–6 establish that within each iteration
 //! the id in the governing phi is referenced solely by that iteration's linear
 //! mutation chain, and the back-edge writes the (identical) mutated id forward.
 //! No live observer ever sees a pre-mutation state. Fork safety is automatic:
@@ -154,12 +186,21 @@ pub fn analyze(program: &Program) -> InPlaceSet {
 struct Backbone {
     /// The unique fresh value the accumulator starts from.
     root: TermId,
-    /// The loop-carried phis in chain order: `phis[0]`'s init resolves to
-    /// `root`, and each later phi's init resolves to its predecessor. The last
-    /// one holds the finished value.
+    /// The spine's phis in execution order. Each one's init resolves to `root`
+    /// or to another spine phi, so together with `root` they form a tree: a
+    /// loop nested in another's body is a child, and so is a loop that runs
+    /// after it. Condition 5 uses the order plus region containment to decide
+    /// which of them may be read from outside.
     phis: Vec<TermId>,
     /// `root` ∪ `phis` ∪ the connecting `Copy` carriers.
     terms: HashSet<TermId>,
+    /// Each spine phi paired with the member its init resolves to (`root` or
+    /// another phi) — the tree's parent links.
+    parents: Vec<(TermId, TermId)>,
+    /// Each connecting `Copy` paired with the spine phi whose init reads it.
+    /// A copy is a *snapshot* of the value at its own position, so it is only a
+    /// valid spine link when no mutation lands between the two.
+    copy_links: Vec<(TermId, TermId)>,
 }
 
 /// Precomputed dataflow relations for the analysis, built once per program.
@@ -188,6 +229,10 @@ struct Analysis<'p> {
     /// How many `StateInit`/`StateRead` terms each base state key has. A
     /// state-rooted web requires exactly one — its own root.
     state_readers: HashMap<StateKey, usize>,
+    /// For each term, the phis whose *init* resolves to it through `Copy`
+    /// carriers — the forward direction of a spine link. Lets a state-rooted
+    /// backbone be extended past the seed's backward cone.
+    phi_by_init: HashMap<TermId, Vec<TermId>>,
     /// Base state keys that do **not** address one fixed runtime slot: some term
     /// for them is `in_loop` (its `RuntimeStateKey` picks up the live loop
     /// indices, so one declaration becomes a slot per iteration) or carries an
@@ -243,7 +288,21 @@ impl<'p> Analysis<'p> {
             state_writers: HashMap::new(),
             state_readers: HashMap::new(),
             multi_slot_keys: HashSet::new(),
+            phi_by_init: HashMap::new(),
         };
+
+        let mut phi_by_init: HashMap<TermId, Vec<TermId>> = HashMap::new();
+        for term in &program.terms {
+            if matches!(term.op, TermOp::Phi) {
+                if let Some(&init) = term.inputs.first() {
+                    phi_by_init
+                        .entry(ctx.strip_copies(init))
+                        .or_default()
+                        .push(term.id);
+                }
+            }
+        }
+        ctx.phi_by_init = phi_by_init;
 
         // State-slot traffic, keyed by base key (needs `block_last` above).
         let mut state_writers: HashMap<StateKey, Vec<(TermId, BlockId)>> = HashMap::new();
@@ -599,6 +658,89 @@ impl<'p> Analysis<'p> {
         }
     }
 
+    /// Every `(block, register)` the mutated value can occupy, following the web
+    /// forward: carrier reads move it into another term's register, and a phi
+    /// carry-out moves it into the enclosing frame's phi register. Used to ask
+    /// whether an arm's mutations reach the register the arm carries out.
+    fn web_value_locations(
+        &self,
+        from: TermId,
+        web: &HashSet<TermId>,
+    ) -> HashSet<(BlockId, crate::program::RegisterIndex)> {
+        let mut out = HashSet::new();
+        let mut seen = HashSet::from([from]);
+        let mut queue = VecDeque::from([from]);
+        while let Some(t) = queue.pop_front() {
+            let term = self.program.get_term(t);
+            out.insert((term.block_id, term.register));
+            // Carrier reads move the value into another term's register…
+            let mut onward: Vec<TermId> = self
+                .read_consumers
+                .get(&t)
+                .into_iter()
+                .flatten()
+                .copied()
+                .collect();
+            // …and a block pop copies *this register* into the parent's phi.
+            // Matching by register (not by `src_term`) is what the VM does, and
+            // is required here: a block's carry-out names the term that first
+            // bound the register, while the loop phi that later rewrote it is a
+            // different term with the same register.
+            for po in &self.program.get_block(term.block_id).phi_outs {
+                if self.program.get_term(po.src_term).register == term.register {
+                    onward.push(po.dest_term);
+                }
+            }
+            for n in onward {
+                if web.contains(&n) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether `p` is the merge phi of the state variable this web owns: its
+    /// init is a read of slot `key`, so `p` is where that variable's value lives
+    /// on both sides of the branch. Carrying our id into it is the container
+    /// leaving the construct in the register it already occupies, not a second
+    /// live holder.
+    fn phi_continues_state_slot(&self, p: TermId, key: StateKey) -> bool {
+        let term = self.program.get_term(p);
+        if !matches!(term.op, TermOp::Phi) {
+            return false;
+        }
+        let Some(&init) = term.inputs.first() else {
+            return false;
+        };
+        self.state_root_key(self.strip_copies(init)) == Some(key)
+    }
+
+    /// Whether the value leaving through continuation phi `p` is only *read*
+    /// from there on. Letting a carry-out reach `p` (see
+    /// [`Self::phi_continues_state_slot`]) would otherwise be a blind spot: the
+    /// id is live in `p`'s register, and `state_web_ok`'s retention check only
+    /// walks users of *web* terms, which `p` is not.
+    fn continuation_is_confined(&self, p: TermId, key: StateKey, web: &HashSet<TermId>) -> bool {
+        for &u in self.users.get(&p).into_iter().flatten() {
+            if web.contains(&u) || self.writes_state_key(u, key) {
+                continue;
+            }
+            // An arm's "unchanged" carry reads `p` only to hand the same value
+            // straight back into it — the same variable, not a second holder.
+            if self.phi_out_targets(u).contains(&p) {
+                continue;
+            }
+            if self.observation_index(u, p).is_none() {
+                return false;
+            }
+        }
+        // And it must not be carried on into yet another holder.
+        self.phi_out_targets(p)
+            .iter()
+            .all(|&q| web.contains(&q) || self.phi_continues_state_slot(q, key))
+    }
+
     /// Whether `u` commits a value into base state key `key`.
     fn writes_state_key(&self, u: TermId, key: StateKey) -> bool {
         let term = self.program.get_term(u);
@@ -627,7 +769,9 @@ impl<'p> Analysis<'p> {
         if self.state_readers.get(&key).copied().unwrap_or(0) != 1 {
             return false;
         }
-        if self.state_root_key(root) != Some(key) {
+        // The root either *is* this slot's read, or is a fresh value the web
+        // commits into it; a root reading some *other* slot is not our owner.
+        if self.state_root_key(root).is_some_and(|k| k != key) {
             return false;
         }
 
@@ -657,7 +801,7 @@ impl<'p> Analysis<'p> {
             if web.contains(&value) {
                 continue;
             }
-            if !self.writer_is_uniquely_fresh(value, home, key) {
+            if !self.writer_is_uniquely_fresh(value, home, key, web) {
                 return false;
             }
         }
@@ -692,7 +836,13 @@ impl<'p> Analysis<'p> {
     /// allocation to live in that same block is what separates `state c = [0,0]`
     /// inside a loop (a fresh list per per-iteration slot) from `let shared =
     /// [0,0]` hoisted above it and assigned to every slot — one id in many slots.
-    fn writer_is_uniquely_fresh(&self, value: TermId, home: BlockId, key: StateKey) -> bool {
+    fn writer_is_uniquely_fresh(
+        &self,
+        value: TermId,
+        home: BlockId,
+        key: StateKey,
+        web: &HashSet<TermId>,
+    ) -> bool {
         let (alloc, copies) = self.copy_chain(value);
         if !self.is_fresh_root(alloc) {
             return false;
@@ -706,7 +856,7 @@ impl<'p> Analysis<'p> {
                 return false;
             }
             for &u in self.users.get(&t).into_iter().flatten() {
-                if !chain.contains(&u) && !self.writes_state_key(u, key) {
+                if !chain.contains(&u) && !self.writes_state_key(u, key) && !web.contains(&u) {
                     return false;
                 }
             }
@@ -925,8 +1075,8 @@ impl<'p> Analysis<'p> {
         // this run (a param or capture root could alias anything, and is
         // rejected), or a `state` slot this program alone owns — checked in full
         // by `state_web_ok` once the web and region are known.
-        let anchor = self.state_root_key(root);
-        if anchor.is_none() && !self.is_fresh_root(root) {
+        let root_key = self.state_root_key(root);
+        if root_key.is_none() && !self.is_fresh_root(root) {
             return false;
         }
 
@@ -948,19 +1098,71 @@ impl<'p> Analysis<'p> {
         let mut per_phi: Vec<HashSet<BlockId>> = Vec::with_capacity(backbone.phis.len());
         let mut region: HashSet<BlockId> = HashSet::new();
         for &p in &backbone.phis {
-            let Some(body_block) = self.body_block_of(p) else {
+            let blocks = self.body_blocks_of(p);
+            if blocks.is_empty() {
                 return false;
-            };
-            let sub = self.block_subtree(body_block);
+            }
+            // A merge phi has one carry-in block per arm that rebinds the name;
+            // its region is all of them, which is what makes it *enclose* the
+            // loop nested inside one arm (and so exempt under condition 5).
+            let mut sub = HashSet::new();
+            for b in blocks {
+                sub.extend(self.block_subtree(b));
+            }
             region.extend(sub.iter().copied());
             per_phi.push(sub);
+        }
+
+        // Two spine phis with the *same parent* must not be live at once. A tree
+        // is how one container's spine branches into a nested loop and a later
+        // one — those regions are disjoint in time. Two phis over the same
+        // parent value whose regions *overlap* are two accumulators aliasing one
+        // id (`let al = xs` at the top of a loop, then both `xs` and `al`
+        // appended in it), and both would mutate it. (Fuzzer seed 132768.)
+        for (i, &(p, pp)) in backbone.parents.iter().enumerate() {
+            for &(q, qp) in &backbone.parents[i + 1..] {
+                if pp != qp {
+                    continue;
+                }
+                let (Some(pi), Some(qi)) = (
+                    backbone.phis.iter().position(|&x| x == p),
+                    backbone.phis.iter().position(|&x| x == q),
+                ) else {
+                    return false;
+                };
+                if !per_phi[pi].is_disjoint(&per_phi[qi]) {
+                    return false;
+                }
+            }
         }
 
         // Build the region-confined value-web: carriers connected to `seed`
         // within the region, plus the backbone itself. Only carriers (and the
         // root) are ever added — a non-carrier in-region reader is caught during
         // validation, not folded into the web.
-        let web = self.build_confined_web(seed, &backbone, &region);
+        let web = self.build_confined_web(seed, &backbone, &region, &cone);
+
+        // The web's `state` anchor: the slot it reads from, the slot it commits
+        // into, or both — and they must agree. A container allocated fresh but
+        // then parked in a slot (`a = f64_array(n)` inside a guard) outlives the
+        // run just as a state-read root does, so it carries the same
+        // obligations; a web committing into *two* slots is two owners and is
+        // rejected outright.
+        let mut anchor = root_key;
+        for &t in &web {
+            for &u in self.users.get(&t).into_iter().flatten() {
+                let user = self.program.get_term(u);
+                if !matches!(user.op, TermOp::StateWrite) {
+                    continue;
+                }
+                match (anchor, user.state_key) {
+                    (_, None) => return false,
+                    (None, k) => anchor = k,
+                    (Some(a), Some(k)) if a == k => {}
+                    _ => return false,
+                }
+            }
+        }
 
         // (1) Unique fresh root: the only non-carrier in the web is `root`.
         for &t in &web {
@@ -1002,8 +1204,73 @@ impl<'p> Analysis<'p> {
             }
             let mutated_at = self.first_mutation_index_after(t);
             for &u in self.users.get(&t).into_iter().flatten() {
-                if !web.contains(&u) && !self.observes_before_mutation(u, t, mutated_at) {
+                if web.contains(&u) || anchor.is_some_and(|k| self.writes_state_key(u, k)) {
+                    continue;
+                }
+                if !self.observes_before_mutation(u, t, mutated_at) {
                     return false;
+                }
+            }
+        }
+
+        // (5b) No stale spine link. A `Copy` on a spine link is a *snapshot* of
+        // the value where it stands, whereas a phi's register is kept current by
+        // its construct's carry-outs. So a copy is only a valid link when no
+        // mutation lands between it and the phi that reads it: `let a = xs`
+        // before a loop that mutates `xs`, with `a` then driving a second loop,
+        // is two spines over one id, not one spine — and both would mutate it.
+        for &(c, q) in &backbone.copy_links {
+            let (Some(&ci), Some(&qi)) = (self.exec_index.get(&c), self.exec_index.get(&q)) else {
+                return false;
+            };
+            for &t in &web {
+                if !self.is_mutation(self.program.get_term(t)) {
+                    continue;
+                }
+                let mi = self.exec_index.get(&t).copied().unwrap_or(0);
+                if ci < mi && mi < qi {
+                    return false;
+                }
+            }
+        }
+
+        // (5c) A spine phi must actually *receive* the mutations of any arm that
+        // performs them. Resolving the spine through merge phis makes the phi of
+        // an enclosing `if` a spine member, and condition 5 then treats it as
+        // holding the finished value — true only when the accumulator's mutated
+        // id flows back into it. `if c then let al = xs; <mutate al> end` mutates
+        // an *alias* and carries the untouched `xs` back into the merge, so the
+        // merge stays a live pre-mutation holder that the code after the `if`
+        // reads. (Fuzzer seed 113278.)
+        for &p in &backbone.phis {
+            for b in self.body_blocks_of(p) {
+                let sub = self.block_subtree(b);
+                let arm_mutations: Vec<TermId> = web
+                    .iter()
+                    .copied()
+                    .filter(|&t| {
+                        let term = self.program.get_term(t);
+                        self.is_mutation(term) && sub.contains(&term.block_id)
+                    })
+                    .collect();
+                if arm_mutations.is_empty() {
+                    continue; // an arm that changes nothing carries the value through
+                }
+                for po in &self.program.get_block(b).phi_outs {
+                    if po.dest_term != p {
+                        continue;
+                    }
+                    // A carry-out copies a *register*, not a term: what leaves
+                    // the arm is that register's last write. So ask whether any
+                    // of the arm's mutations actually lands there.
+                    let src = self.program.get_term(po.src_term);
+                    let landed = arm_mutations.iter().any(|&m| {
+                        self.web_value_locations(m, &web)
+                            .contains(&(src.block_id, src.register))
+                    });
+                    if !landed {
+                        return false;
+                    }
                 }
             }
         }
@@ -1038,6 +1305,32 @@ impl<'p> Analysis<'p> {
                 return false;
             }
 
+            // Nor through a *phi carry-out* into another variable's phi that
+            // lives inside the region — the other escape with no input edge.
+            // `if i == 1 then keep = xs else xs = append(xs, i) end` inside a
+            // loop copies the accumulator into `keep`'s in-loop phi, which then
+            // watches later iterations mutate it. A carry-out to a phi *outside*
+            // the region is the value simply leaving the construct (the `if`'s
+            // merge, the loop's result) and is the finished value, not a
+            // mid-build snapshot.
+            for p in self.phi_out_targets(t) {
+                if web.contains(&p) {
+                    continue;
+                }
+                // The one carry-out that is not a second holder: the merge phi
+                // of the very state variable this web owns. `a = f64_array(n)`
+                // inside a guard makes the loop's result leave the guard in
+                // `a`'s own register, which already tracks the slot we commit
+                // to. Any other phi is a different variable capturing our id
+                // (`if … then <mutate a> else keep = a end`) and rejects.
+                if anchor.is_some_and(|k| self.phi_continues_state_slot(p, k))
+                    && anchor.is_some_and(|k| self.continuation_is_confined(p, k, &web))
+                {
+                    continue;
+                }
+                return false;
+            }
+
             // Users that merely observe `t` — and finish doing so before any
             // mutation rewrites its id — neither escape it nor compete for it,
             // so they are dropped before both checks below. Everything else
@@ -1054,6 +1347,12 @@ impl<'p> Analysis<'p> {
                 // A commit back into the web's own state slot is the
                 // accumulator's write-back, not an escape (see `state_web_ok`).
                 .filter(|&u| !anchor.is_some_and(|k| self.writes_state_key(u, k)))
+                // Nor is the *next* spine phi reading this value as its init a
+                // competing reader: that is the hand-off from one loop of the
+                // chain to the next, which happens once, after this stage is
+                // finished. (Without an enclosing guard the same edge simply
+                // fell outside the region and was never counted.)
+                .filter(|&u| u == t || !backbone.phis.contains(&u))
                 .collect();
             for &u in &in_region_users {
                 if !web.contains(&u) {
@@ -1092,47 +1391,92 @@ impl<'p> Analysis<'p> {
     /// carrying an outer loop's accumulator) rather than by two independent
     /// spines that merge, which no per-region argument would cover.
     fn build_backbone(&self, cone: &HashSet<TermId>) -> Option<Backbone> {
-        let loop_phis: Vec<TermId> = cone
+        // Every phi the seed reads back through, not just the loop-carried
+        // ones: a mutation loop inside an `if`/`match` has the arm's *merge* phi
+        // between the root and the loop phi, and that merge is a carrier on the
+        // same spine. At least one loop phi must still be present — route B is
+        // about loop-carried accumulators; straight-line uniqueness is route A's.
+        let mut phis: Vec<TermId> = cone
             .iter()
             .copied()
-            .filter(|&t| self.is_loop_phi(t))
+            .filter(|&t| matches!(self.program.get_term(t).op, TermOp::Phi))
             .collect();
-        if loop_phis.is_empty() {
+        if !phis.iter().any(|&p| self.is_loop_phi(p)) {
             return None;
         }
-        let phi_set: HashSet<TermId> = loop_phis.iter().copied().collect();
 
-        let mut copies: Vec<TermId> = Vec::new();
-        let mut succ: HashMap<TermId, TermId> = HashMap::new();
-        let mut entry: Option<(TermId, TermId)> = None; // (first phi, root)
-        for &p in &loop_phis {
-            let init = *self.program.get_term(p).inputs.first()?;
-            let (target, chain) = self.copy_chain(init);
-            copies.extend(chain);
-            if phi_set.contains(&target) {
-                if succ.insert(target, p).is_some() {
-                    return None; // two phis fed by the same one — not a chain
+        // The root is the one init target that is not itself a spine phi.
+        let mut root: Option<TermId> = None;
+        {
+            let set: HashSet<TermId> = phis.iter().copied().collect();
+            for &p in &phis {
+                let init = *self.program.get_term(p).inputs.first()?;
+                let (target, _) = self.copy_chain(init);
+                if set.contains(&target) {
+                    continue;
                 }
-            } else if entry.replace((p, target)).is_some() {
-                return None; // two independent roots — not a chain
+                if root.replace(target).is_some_and(|r| r != target) {
+                    return None; // two independent roots — not one spine
+                }
             }
         }
-        let (first, root) = entry?;
+        let root = root?;
 
-        let mut phis = vec![first];
-        let mut cur = first;
-        while let Some(&next) = succ.get(&cur) {
-            phis.push(next);
-            cur = next;
+        // The cone only sees what feeds the *seed*, so with two mutation loops
+        // over one container the first loop's analysis never learns about the
+        // second and rejects its phi as an outside holder. For a `state` root
+        // the whole slot has to be reasoned about anyway (its id outlives the
+        // run), so extend the spine forward past the seed: every phi whose init
+        // resolves to a member joins it. Nested and sequential loops both show
+        // up here (`for i … for j … end; for k …` gives one parent two
+        // children), so the spine is a *tree*, not a chain.
+        if self.state_root_key(root).is_some() {
+            let mut seen: HashSet<TermId> = phis.iter().copied().collect();
+            let mut queue: VecDeque<TermId> = phis.iter().copied().collect();
+            queue.push_back(root);
+            while let Some(parent) = queue.pop_front() {
+                for &child in self.phi_by_init.get(&parent).into_iter().flatten() {
+                    if seen.insert(child) {
+                        phis.push(child);
+                        queue.push_back(child);
+                    }
+                }
+            }
         }
-        if phis.len() != loop_phis.len() {
-            return None; // a cycle or a fork left some phi unreachable
+
+        // Every phi must hang off the root through spine members, and each link
+        // records the `Copy` carriers it passes through — those copies are
+        // snapshots, and `route_b_ok` checks none of them goes stale.
+        let set: HashSet<TermId> = phis.iter().copied().collect();
+        let mut copies: Vec<TermId> = Vec::new();
+        let mut copy_links: Vec<(TermId, TermId)> = Vec::new();
+        let mut parents: Vec<(TermId, TermId)> = Vec::new();
+        for &p in &phis {
+            let init = *self.program.get_term(p).inputs.first()?;
+            let (target, chain) = self.copy_chain(init);
+            if target != root && !set.contains(&target) {
+                return None; // a phi merging in a value from outside the spine
+            }
+            parents.push((p, target));
+            for c in chain {
+                copies.push(c);
+                copy_links.push((c, p));
+            }
         }
+
+        // Execution order makes the containment test in condition 5 meaningful.
+        phis.sort_by_key(|p| self.exec_index.get(p).copied().unwrap_or(usize::MAX));
 
         let mut terms: HashSet<TermId> = phis.iter().copied().collect();
         terms.extend(copies);
         terms.insert(root);
-        Some(Backbone { root, phis, terms })
+        Some(Backbone {
+            root,
+            phis,
+            terms,
+            parents,
+            copy_links,
+        })
     }
 
     /// BFS the region-confined carrier web from `seed`, always including the
@@ -1144,6 +1488,7 @@ impl<'p> Analysis<'p> {
         seed: TermId,
         backbone: &Backbone,
         region: &HashSet<BlockId>,
+        cone: &HashSet<TermId>,
     ) -> HashSet<TermId> {
         let root = backbone.root;
         let mut web = HashSet::new();
@@ -1159,8 +1504,14 @@ impl<'p> Analysis<'p> {
                 neighbors.extend(rc.iter().copied()); // carrier readers
             }
             for (&phi, srcs) in &self.phi_srcs {
-                if srcs.contains(&w) {
-                    neighbors.push(phi); // phis w feeds on a back edge
+                // A phi `w` is carried into on a block pop — but only the
+                // spine's own phis (those the seed reads back, or the backbone)
+                // belong to this web. Absorbing any phi fed by a web term would
+                // pull a *different variable* that merely aliased the container
+                // into the web, and with it the very escape condition 4 exists
+                // to catch (`if … then keep = xs else xs = append(xs, i) end`).
+                if srcs.contains(&w) && (cone.contains(&phi) || backbone.terms.contains(&phi)) {
+                    neighbors.push(phi);
                 }
             }
             for n in neighbors {
@@ -1177,12 +1528,31 @@ impl<'p> Analysis<'p> {
 
     /// The block whose `phi_outs` carry a value back into `phi` (its loop body).
     fn body_block_of(&self, phi: TermId) -> Option<BlockId> {
-        for block in &self.program.blocks {
-            if block.phi_outs.iter().any(|po| po.dest_term == phi) {
-                return Some(block.id);
-            }
-        }
-        None
+        self.body_blocks_of(phi).into_iter().next()
+    }
+
+    /// Every block that carries a value back into `phi` on pop. A loop phi has
+    /// one (the loop body); a branch/match merge phi has one per arm that
+    /// rebinds the name.
+    fn body_blocks_of(&self, phi: TermId) -> Vec<BlockId> {
+        self.program
+            .blocks
+            .iter()
+            .filter(|b| b.phi_outs.iter().any(|po| po.dest_term == phi))
+            .map(|b| b.id)
+            .collect()
+    }
+
+    /// The phis `t` is carried into on a block pop (`phi_outs`), which is a
+    /// value flow with no input edge to show for it.
+    fn phi_out_targets(&self, t: TermId) -> Vec<TermId> {
+        self.program
+            .blocks
+            .iter()
+            .flat_map(|b| b.phi_outs.iter())
+            .filter(|po| po.src_term == t)
+            .map(|po| po.dest_term)
+            .collect()
     }
 
     /// All blocks in the subtree rooted at `block` (inclusive), via child blocks.

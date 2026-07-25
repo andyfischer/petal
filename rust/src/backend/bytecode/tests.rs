@@ -1323,6 +1323,218 @@ fn inplace_does_not_fire_on_retention_forms() {
     assert_eq!(inplace_count(code), 0, "mid-build return must not fire");
 }
 
+// -- M4 route B: the mutation loop sits inside a guard ----------------------
+//
+// A loop inside an `if`/`match` puts the arm's *merge* phi between the root and
+// the loop phi. Resolving the spine through merge phis (and treating the spine
+// as a tree, so nested and sequential loops over one container both hang off
+// it) is what makes a real frame loop — which checks an epoch or a cooling
+// schedule before doing any work — eligible at all.
+//
+// A branch is also a new way for a live alias to reach past the analysis, so
+// each negative below pins one of them: the sibling arm, the alias taken before
+// the guard, and the carry-out into another variable's phi.
+
+#[test]
+fn inplace_fires_on_a_guarded_mutation_loop() {
+    // `let`-bound and `state`-backed, `if`, `else`, `match`, and nested guards.
+    let code = "let go = 1\nlet a = f64_array(8)\nif go == 1 then\n  for i in range(0, 8) do a[i] = a[i] + 1.0 end\nend\nprint(a[0])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "guarded loop should fire");
+    let code = "let go = 0\nlet a = f64_array(8)\nif go == 1 then\n  print(0)\nelse\n  for i in range(0, 8) do a[i] = a[i] + 1.0 end\nend\nprint(a[0])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "else-arm loop should fire");
+    let code = "let go = 1\nlet a = f64_array(8)\nmatch go\n  when 1 -> for i in range(0, 8) do a[i] = a[i] + 1.0 end\n  when _ -> print(0)\nend\nprint(a[0])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "match-arm loop should fire");
+    let code = "let go = 1\nlet a = f64_array(8)\nif go == 1 then\n  if go > 0 then\n    for i in range(0, 8) do a[i] = a[i] + 1.0 end\n  end\nend\nprint(a[0])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "nested guards should fire");
+    let code = "state a = f64_array(8)\nstate alpha = 1.0\nif alpha > 0.001 then\n  for i in range(0, 8) do a[i] = a[i] + 1.0 end\n  alpha = alpha * 0.98\nend\nprint(a[0])";
+    assert_stateful_parity(code, 3);
+    assert!(inplace_count(code) >= 1, "guarded state loop should fire");
+}
+
+#[test]
+fn inplace_fires_on_a_container_allocated_inside_the_guard() {
+    // Reallocating the buffer when the input changes, then filling it: the
+    // fresh array is committed to the slot and the loop's result leaves the
+    // guard in that variable's own merge phi.
+    let code = "state a = f64_array(1)\nstate epoch = 0\nif epoch == 0 then\n  a = f64_array(8)\n  for i in range(0, 8) do a[i] = a[i] + 1.0 end\n  epoch = 1\nend\nprint(a[0], len(a))";
+    assert_stateful_parity(code, 3);
+    assert!(inplace_count(code) >= 1, "realloc-then-fill should fire");
+}
+
+#[test]
+fn inplace_fires_on_a_spine_tree_of_loops() {
+    // One container, several loops: nested inside each other and sequential
+    // after each other, all hanging off one spine. Only the last loop fired
+    // before, because the spine was built backward from the seed alone.
+    let code = "state v = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0, 4) do\n    for j in range(0, 4) do v[j] = v[j] - 1.0 end\n  end\n  for i in range(0, 4) do v[i] = v[i] * 2.0 end\nend\nprint(v[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(inplace_count(code), 2, "both loops of the tree should fire");
+    let code = "state v = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0, 4) do\n    if i > 0 then v[i] = v[i] + 1.0 end\n  end\n  for i in range(0, 4) do v[i] = v[i] * 2.0 end\nend\nprint(v[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(inplace_count(code), 2, "guarded write plus a second loop");
+}
+
+#[test]
+fn inplace_does_not_fire_on_an_alias_taken_through_a_branch() {
+    // The sibling arm keeps a reference to the pre-mutation container. Only one
+    // arm runs, but the analysis cannot know which — and the same shape inside a
+    // loop genuinely alternates.
+    let code = "let go = 1\nlet a = f64_array(4)\nlet keep = []\nif go == 1 then\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\nelse\n  keep = a\nend\nprint(a[0], len(keep))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "sibling-arm alias must not fire");
+    // Taken before the guard and read after it.
+    let code = "let go = 1\nlet a = f64_array(4)\nlet snap = a\nif go == 1 then\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\nend\nprint(a[0], snap[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "alias before the guard must not fire"
+    );
+    // A match arm that *yields* the container binds it to the match's result.
+    let code = "let go = 2\nlet a = f64_array(4)\nlet r = match go\n  when 1 -> for i in range(0, 4) do a[i] = a[i] + 1.0 end\n  when _ -> a\nend\nprint(a[0], len(r))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "match sibling-arm alias must not fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_an_arm_carries_the_id_into_another_variable() {
+    // Regression, and a bug this chunk found on the committed analysis: a web
+    // term's *phi carry-out* into another variable's phi is a value flow with no
+    // input edge, so nothing checked it — and the web BFS then absorbed that
+    // phi, hiding the escape completely. `keep` watches later iterations mutate
+    // the container it snapshotted; the two engines disagreed (`3 3` vs `3 1`).
+    let code = "let xs = []\nlet keep = []\nfor i in range(0, 4) do\n  if i == 1 then\n    keep = xs\n  else\n    xs = append(xs, i)\n  end\nend\nprint(len(xs), len(keep))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "carry-out into `keep` must not fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_a_stale_spine_link() {
+    // `a` snapshots the container before the first loop and then drives a second
+    // one. Both loops would mutate the same id, so this is two spines over one
+    // container, not one spine with two stages — the copy on the second link is
+    // stale by the time it is read.
+    let code = "let xs = []\nlet a = xs\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nfor i in range(0, 3) do\n  a = append(a, i)\nend\nprint(len(xs), len(a))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "a stale spine link must not fire");
+}
+
+#[test]
+fn inplace_does_not_fire_when_a_guarded_state_container_escapes() {
+    // The guard's continuation phi is where the container leaves the construct;
+    // anything retaining it from there outlives the run just as it would from
+    // inside the region.
+    let code = "state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])";
+    assert_stateful_parity(code, 3);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "emitted after the guard must not fire"
+    );
+    // A second slot fed from inside the guard.
+    let code = "state a = f64_array(1)\nstate n = 0\nstate other = []\nif n == 0 then\n  a = f64_array(4)\n  other = a\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\n  n = 1\nend\nprint(a[0], len(other))";
+    assert_stateful_parity(code, 3);
+    assert_eq!(inplace_count(code), 0, "a second slot must not fire");
+}
+
+#[test]
+fn inplace_does_not_fire_when_a_guard_arm_mutates_an_alias() {
+    // Fuzzer seed 113278, found while resolving spines through merge phis. The
+    // arm mutates `al`, an *alias*, and carries the untouched `xs` back into the
+    // merge — so the merge stays a live pre-mutation holder that the code after
+    // the `if` reads. The two engines disagreed on `len(xs)` (6 vs 3).
+    let code = "let xs = [7, 11, 1]\nif 1 == 1 then\n  let al = xs\n  let w = 3\n  while w > 0 do\n    w = w - 1\n    al = append(al, 5)\n  end\nelse\n  xs[2] = 3\nend\nprint(len(xs))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "a mutated alias must not fire");
+}
+
+#[test]
+fn inplace_does_not_fire_on_two_spines_live_at_once() {
+    // Fuzzer seed 132768, found while relaxing the spine from a chain to a tree.
+    // `al` aliases `xs` at the top of each outer iteration and both are appended
+    // in the same inner loop: two accumulators over one id, whose regions
+    // overlap. In place, the list grew twice as fast (23 vs 13).
+    let code = "let xs = [1, 6, 0]\nlet last = 0\nfor i in range(1, 6) do\n  let al = xs\n  let w = 2\n  while w > 0 do\n    w = w - 1\n    xs = append(xs, w)\n    al = append(al, 1)\n  end\n  last = len(al)\nend\nprint(len(xs), last)";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "two spines live at once must not fire"
+    );
+}
+
+/// A differential sweep over guard shapes: every mutation loop wrapped in an
+/// `if`/`match`, every way a branch can leak the container, and the `state`
+/// variants run four times each. The fuzzer generates statement `if`s but never
+/// binds a container from value-position control flow, so branch-related shapes
+/// are exactly where it is weakest — this table is the net that caught the
+/// spine-hand-off and stale-link cases while they were still wrong.
+#[test]
+fn guarded_shapes_agree_with_clone_and_alloc() {
+    // let-bound (single run) shapes
+    let plain = [
+        "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nprint(a[0])",
+        "let go = 0\nlet a = f64_array(4)\nif go == 1 then\n  print(0)\nelse\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nprint(a[0])",
+        "let go = 1\nlet a = f64_array(4)\nlet keep = []\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nelse\n  keep = a\nend\nprint(a[0], len(keep))",
+        "let go = 0\nlet a = f64_array(4)\nlet keep = []\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nelse\n  keep = a\nend\nprint(a[0], len(keep))",
+        "let go = 1\nlet a = f64_array(4)\nlet snap = a\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nprint(a[0], snap[0])",
+        "let xs = []\nlet keep = []\nfor i in range(0,4) do\n  if i == 1 then keep = xs else xs = append(xs, i) end\nend\nprint(len(xs), len(keep))",
+        "let xs = []\nlet keep = []\nfor i in range(0,4) do\n  if i % 2 == 0 then xs = append(xs, i) else keep = xs end\nend\nprint(len(xs), len(keep))",
+        "let a = f64_array(4)\nlet b = a\nfor i in range(0,4) do a[i] = a[i] + 1.0 end\nfor i in range(0,4) do b[i] = b[i] + 2.0 end\nprint(a[0], b[0])",
+        "let go = 1\nlet a = f64_array(4)\nmatch go\n  when 1 -> for i in range(0,4) do a[i] = a[i] + 1.0 end\n  when _ -> print(0)\nend\nprint(a[0])",
+        "let go = 2\nlet a = f64_array(4)\nlet r = match go\n  when 1 -> for i in range(0,4) do a[i] = a[i] + 1.0 end\n  when _ -> a\nend\nprint(a[0], len(r))",
+        "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  if go > 0 then\n    for i in range(0,4) do a[i] = a[i] + 1.0 end\n  end\nend\nprint(a[0])",
+        "let go = 1\nlet xs = []\nfor k in range(0,3) do\n  if k > 0 then\n    for i in range(0,2) do xs = append(xs, i) end\n  end\nend\nprint(len(xs))",
+        "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlet s = symbol(\"p\")\npush_output(s, a)\nprint(a[0])",
+        "let go = 1\nlet a = f64_array(4)\nlet log = []\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  log = append(log, a)\nend\nprint(a[0], len(log))",
+        "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlet peek = fn() -> a[0]\nprint(peek())",
+        "let go = 1\nlet a = f64_array(4)\nlet r = if go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  a\nelse\n  a\nend\nprint(r[0], a[0])",
+    ];
+    for code in plain {
+        // A snippet that fails to parse would pass parity vacuously (both
+        // engines error), so pin that each one actually runs.
+        assert!(
+            run(code, OptFlags::none()).is_ok(),
+            "sweep case failed:\n{code}"
+        );
+        assert_inplace_parity(code);
+    }
+    // state (multi-run) shapes
+    let stateful = [
+        "state a = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nprint(a[0])",
+        "state a = f64_array(4)\nstate alpha = 1.0\nif alpha > 0.001 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  alpha = alpha * 0.5\nend\nprint(a[0], alpha)",
+        "state a = f64_array(1)\nstate epoch = 0\nif epoch == 0 then\n  a = f64_array(4)\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  epoch = 1\nend\nprint(a[0], len(a))",
+        "state a = f64_array(4)\nfor i in range(0,4) do a[i] = a[i] + 1.0 end\nfor i in range(0,4) do a[i] = a[i] * 2.0 end\nprint(a[0])",
+        "state v = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do\n    for j in range(0,4) do v[j] = v[j] - 1.0 end\n  end\n  for i in range(0,4) do v[i] = v[i] * 2.0 end\nend\nprint(v[0])",
+        "state v = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do\n    if i > 0 then v[i] = v[i] + 1.0 end\n  end\n  for i in range(0,4) do v[i] = v[i] * 2.0 end\nend\nprint(v[0])",
+        "state a = f64_array(4)\nstate keep = []\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nelse\n  keep = a\nend\nprint(a[0], len(keep))",
+        "state a = f64_array(4)\nstate log = []\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlog = append(log, a[0])\nprint(a[0], len(log))",
+        "state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])",
+        "state a = f64_array(1)\nstate n = 0\nstate other = []\nif n == 0 then\n  a = f64_array(4)\n  other = a\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  n = 1\nend\nprint(a[0], len(other))",
+        "state px = f64_array(4)\nstate vx = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do vx[i] = vx[i] + 1.0 end\n  for i in range(0,4) do px[i] = px[i] + vx[i] end\nend\nprint(px[0], vx[0])",
+        "state xs = []\nstate go = 1\nif go == 1 then\n  for i in range(0,3) do\n    if i % 2 == 0 then xs = append(xs, i) end\n  end\nend\nprint(len(xs))",
+    ];
+    for code in stateful {
+        assert!(
+            run(code, OptFlags::none()).is_ok(),
+            "sweep case failed:\n{code}"
+        );
+        assert_stateful_parity(code, 4);
+    }
+}
+
 // -- M4 route A: straight-line last-use in-place mutation -------------------
 //
 // Route A rewrites mutations of freshly-allocated, dead-after containers on

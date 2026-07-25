@@ -37,14 +37,19 @@
 //!    themselves web terms and *linear*: at most one, unless they sit in
 //!    mutually-exclusive branch/match arms (which is how `game_of_life.ptl`'s
 //!    `if cell == 1 then row = append(row, …) else row = append(row, …) end`
-//!    lowers — two mutations, one per arm). A non-web in-region reader (an
-//!    in-loop `len(xs)`, a store into another container, a closure capture, a
-//!    state write) breaks uniqueness and rejects the web.
+//!    lowers — two mutations, one per arm). A non-web in-region user is allowed
+//!    only when it *observes* the container rather than *retaining* it — `xs[i]`,
+//!    `r.f`, `len(xs)` — and does so before the id is rewritten; see
+//!    [`Analysis::observation_index`] and [`Analysis::first_mutation_index_after`],
+//!    which carry the argument. Anything that keeps the id (a store into another
+//!    container, a closure capture, a state write, a user-function argument)
+//!    breaks uniqueness and rejects the web.
 //! 5. **Closed backbone interior.** Every backbone term *except the last phi in
 //!    the chain* — the root, the connecting copies, and each earlier phi — has
-//!    all of its users inside the web. Those terms hold a *mid-build* id that a
-//!    later region still mutates, so an outside reader (`let ys = xs` between
-//!    two loops, or before the first) would observe the in-place writes.
+//!    all of its users inside the web (or observing it, per condition 4, before
+//!    the id is rewritten). Those terms hold a *mid-build* id that a later region
+//!    still mutates, so a retained outside reference (`let ys = xs` between two
+//!    loops, or before the first) would observe the in-place writes.
 //!
 //! Reads of the *final* value after the last loop (`len(xs)`, `next =
 //! append(next, row)`, `return xs`) are unrestricted: in-place mutation produces
@@ -136,6 +141,16 @@ struct Analysis<'p> {
     users: HashMap<TermId, Vec<TermId>>,
     /// Block-subtree membership cache, filled lazily per region root.
     block_children: HashMap<BlockId, Vec<BlockId>>,
+    /// Each block's last term — its result value. Precomputed because the
+    /// escape checks ask for it once per web term.
+    block_last: HashMap<BlockId, TermId>,
+    /// Structural execution order: each term's position in a depth-first walk of
+    /// the block tree (a term, then the child blocks it introduces, then the next
+    /// term). Within one pass over a block this is exactly the order the VM runs
+    /// the terms in — the ordering [`Analysis::observation_index`] needs. Phantom
+    /// terms sit in no block's list and are absent, which reads as "unknown" and
+    /// rejects.
+    exec_index: HashMap<TermId, usize>,
 }
 
 impl<'p> Analysis<'p> {
@@ -173,6 +188,8 @@ impl<'p> Analysis<'p> {
             read_consumers: HashMap::new(),
             users: HashMap::new(),
             block_children,
+            block_last: Self::build_block_last(program),
+            exec_index: Self::build_exec_index(program),
         };
 
         // Build reverse edges now that `ctx` can classify carried inputs.
@@ -232,6 +249,233 @@ impl<'p> Analysis<'p> {
     /// non-carrier in a valid web is the fresh-alloc root.
     fn is_carrier(&self, term: &Term) -> bool {
         matches!(term.op, TermOp::Copy | TermOp::Phi) || self.is_mutation(term)
+    }
+
+    /// The last term of each non-empty block, following `entry` → `block_next`.
+    fn build_block_last(program: &Program) -> HashMap<BlockId, TermId> {
+        let mut out = HashMap::new();
+        for block in &program.blocks {
+            let mut cur = block.entry;
+            while let Some(t) = cur {
+                out.insert(block.id, t);
+                cur = program.get_term(t).block_next;
+            }
+        }
+        out
+    }
+
+    /// Number every term by its position in a depth-first walk of the block tree
+    /// (see [`Analysis::exec_index`]). The root block is walked first, then each
+    /// function body; a web never spans two of those, so only same-tree
+    /// comparisons are ever made.
+    fn build_exec_index(program: &Program) -> HashMap<TermId, usize> {
+        fn visit(
+            program: &Program,
+            block: BlockId,
+            next: &mut usize,
+            out: &mut HashMap<TermId, usize>,
+        ) {
+            let mut cur = program.get_block(block).entry;
+            while let Some(t) = cur {
+                out.insert(t, *next);
+                *next += 1;
+                let term = program.get_term(t);
+                // A term's child blocks run at the term's position, so they take
+                // the indices between it and the block's next term.
+                for &cb in &term.child_blocks {
+                    visit(program, cb, next, out);
+                }
+                if matches!(term.op, TermOp::Match) {
+                    if let Some(arms) = program.match_arms.get(&t) {
+                        for arm in arms {
+                            if let Some(g) = arm.guard_block {
+                                visit(program, g, next, out);
+                            }
+                            visit(program, arm.body_block, next, out);
+                        }
+                    }
+                }
+                cur = term.block_next;
+            }
+        }
+
+        let mut out = HashMap::new();
+        let mut next = 0;
+        visit(program, program.root_block, &mut next, &mut out);
+        for f in &program.functions {
+            visit(program, f.body_block, &mut next, &mut out);
+        }
+        out
+    }
+
+    /// The execution index at which `user` finishes reading `observed`'s id, if
+    /// `user` merely *observes* the container rather than retaining a reference
+    /// to it — otherwise `None`.
+    ///
+    /// `xs[i]` / `r.f` yield the element's or field's own id, `len(xs)` an int,
+    /// `get(a, i)` a float, `sort(xs)` a fresh list — an in-place write replaces
+    /// a slot in the container's store and cannot reach any of those. A `Copy`
+    /// whose own users are all observations is one too (the read of `a[i]` in
+    /// `a[i] = a[i] + 1` lowers as `Copy` → `GetIndex`); its index is the *last*
+    /// of those reads, since that is when it last touches the id. What is not an
+    /// observation, and stays rejected: storing the id into another container,
+    /// capturing it in a closure, writing it to state, returning it, feeding it
+    /// to a phi carry-out, or handing it to a user function, which could stash it
+    /// anywhere. `MethodCall` is rejected too — it may dispatch to a record field
+    /// holding an arbitrary closure.
+    ///
+    /// The index is what the caller needs to enforce ordering: an observation is
+    /// a snapshot taken where it runs, so it is only equivalent to the
+    /// value-semantics read if it runs *before* the mutation that rewrites that
+    /// id. See [`Self::first_mutation_index_after`].
+    fn observation_index(&self, user: TermId, observed: TermId) -> Option<usize> {
+        let term = self.program.get_term(user);
+        let here = self.exec_index.get(&user).copied();
+        match &term.op {
+            TermOp::GetField(_) if term.inputs.first() == Some(&observed) => here,
+            TermOp::GetIndex
+                if term.inputs.first() == Some(&observed)
+                    && term.inputs.get(1) != Some(&observed) =>
+            {
+                here
+            }
+            TermOp::BuiltinCall(cid)
+                if self
+                    .program
+                    .get_string_constant(*cid)
+                    .is_some_and(crate::builtins::retains_no_reference) =>
+            {
+                here
+            }
+            TermOp::Copy if term.inputs.first() == Some(&observed) => {
+                // Two retentions the `users` map cannot see, because both read
+                // the copy's *register* from the parent frame rather than naming
+                // it as an input. A phi carry-out writes it into the parent's phi
+                // slot on pop; and a block's last term is that block's result —
+                // the value of an `if`/`match` arm, a `collect` loop's element, a
+                // function's return. Either hands the id to code the web does not
+                // enumerate, so neither is an observation.
+                if self.phi_srcs.values().any(|srcs| srcs.contains(&user))
+                    || self.escapes_as_block_result(user)
+                {
+                    return None;
+                }
+                let mut last = here?;
+                for &u in self.users.get(&user).into_iter().flatten() {
+                    last = last.max(self.observation_index(u, user)?);
+                }
+                Some(last)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether `t`'s value leaves its block through the **block-result
+    /// register** — the one value flow the term graph does not spell out as an
+    /// input edge. A block's last term is its result: the value of an `if`/`match`
+    /// arm, one element of a `collect` loop, a function's return, the program's
+    /// result. If something reads that value, the id has escaped the web without
+    /// any user edge to show for it.
+    ///
+    /// A block result that nobody reads is not an escape, which is what keeps the
+    /// ordinary shapes alive: a statement `if` inside a loop body still ends its
+    /// arm with the accumulator's carry-`Copy`, and a plain (non-`collect`) loop
+    /// body's result is discarded.
+    fn escapes_as_block_result(&self, t: TermId) -> bool {
+        let block = self.program.get_term(t).block_id;
+        self.last_term_of(block) == Some(t) && self.block_result_is_read(block)
+    }
+
+    /// Whether anything reads `block`'s result value. Walks outward: the root
+    /// block (and a function body) yields to its caller; an arm block yields to
+    /// its control term, which is itself only observed if *its* value is read.
+    fn block_result_is_read(&self, block: BlockId) -> bool {
+        let Some(parent) = self.program.get_block(block).parent_term_id else {
+            return true; // program result / function return value
+        };
+        let term = self.program.get_term(parent);
+        if matches!(
+            term.op,
+            TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop
+        ) && !term.collect
+        {
+            return false; // a statement loop discards each iteration's value
+        }
+        self.value_is_read(parent)
+    }
+
+    /// Whether `t`'s value reaches any reader at all — a direct input edge, a phi
+    /// carry-out, or its own block's result.
+    fn value_is_read(&self, t: TermId) -> bool {
+        if self.users.get(&t).is_some_and(|u| !u.is_empty()) {
+            return true;
+        }
+        if self.phi_srcs.values().any(|srcs| srcs.contains(&t)) {
+            return true;
+        }
+        self.escapes_as_block_result(t)
+    }
+
+    /// Whether `user` only observes `observed`, and does so before `mutated_at`
+    /// (the first in-pass mutation of that id, if any) — the combination that
+    /// makes it invisible to the uniqueness argument.
+    fn observes_before_mutation(
+        &self,
+        user: TermId,
+        observed: TermId,
+        mutated_at: Option<usize>,
+    ) -> bool {
+        match self.observation_index(user, observed) {
+            Some(at) => mutated_at.is_none_or(|m| at < m),
+            None => false,
+        }
+    }
+
+    /// The earliest execution index at which the id held by `t` is rewritten in
+    /// place, or `None` if it never is. An observation of `t` is only equivalent
+    /// to the value-semantics read when it finishes strictly before this.
+    ///
+    /// Forward carrier edges (`Copy` source, mutation container, phi init) are
+    /// followed from `t`, since they are exactly the edges that hand `t`'s id to
+    /// something that may mutate it:
+    ///
+    /// * a mutation contributes its own index;
+    /// * a **phi** contributes the phi's index and stops the walk. Reaching a phi
+    ///   means `t` is that phi's *init*, i.e. `t`'s id is what enters the loop or
+    ///   branch the phi heads — so every mutation inside it rewrites `t`'s id,
+    ///   and the earliest point that can happen is where the phi sits (the VM
+    ///   emits it immediately before its control term). Charging the whole
+    ///   construct to that one index is what makes `let ys = xs` before a
+    ///   mutating loop, read after it, come out unsound-and-rejected.
+    ///
+    /// Phi *back* edges are not read edges, so the walk never runs forward into
+    /// the next iteration: within one pass each term reached here executes at
+    /// most once, which is what makes an index comparison meaningful.
+    fn first_mutation_index_after(&self, t: TermId) -> Option<usize> {
+        let mut best: Option<usize> = None;
+        let mut seen = HashSet::from([t]);
+        let mut queue = VecDeque::from([t]);
+        let note = |best: &mut Option<usize>, n: TermId| {
+            let idx = self.exec_index.get(&n).copied().unwrap_or(0);
+            *best = Some(best.map_or(idx, |b: usize| b.min(idx)));
+        };
+        while let Some(w) = queue.pop_front() {
+            for &n in self.read_consumers.get(&w).into_iter().flatten() {
+                if !seen.insert(n) {
+                    continue;
+                }
+                let term = self.program.get_term(n);
+                if matches!(term.op, TermOp::Phi) {
+                    note(&mut best, n);
+                    continue;
+                }
+                if self.is_mutation(term) {
+                    note(&mut best, n);
+                }
+                queue.push_back(n);
+            }
+        }
+        best
     }
 
     fn is_fresh_alloc(term: &Term) -> bool {
@@ -352,13 +596,7 @@ impl<'p> Analysis<'p> {
     /// The last term of `block` in execution order (`entry` → `block_next`) —
     /// the block's result value, mirroring the lowering's `block_result_reg`.
     fn last_term_of(&self, block: BlockId) -> Option<TermId> {
-        let mut cur = self.program.get_block(block).entry;
-        let mut last = None;
-        while let Some(t) = cur {
-            last = Some(t);
-            cur = self.program.get_term(t).block_next;
-        }
-        last
+        self.block_last.get(&block).copied()
     }
 
     /// Follow `Copy` chains backward to the first non-`Copy` term.
@@ -533,8 +771,9 @@ impl<'p> Analysis<'p> {
             if exempt.contains(&t) {
                 continue;
             }
+            let mutated_at = self.first_mutation_index_after(t);
             for &u in self.users.get(&t).into_iter().flatten() {
-                if !web.contains(&u) {
+                if !web.contains(&u) && !self.observes_before_mutation(u, t, mutated_at) {
                     return false;
                 }
             }
@@ -562,6 +801,19 @@ impl<'p> Analysis<'p> {
                 return false; // a post-loop mutation of the finished value
             }
 
+            // The mid-build id must not leave through a block-result register:
+            // `let snaps = for i in … do xs = append(xs, i); xs end` collects a
+            // reference to the accumulator on every iteration, and no input edge
+            // records it.
+            if region.contains(&term.block_id) && self.escapes_as_block_result(t) {
+                return false;
+            }
+
+            // Users that merely observe `t` — and finish doing so before any
+            // mutation rewrites its id — neither escape it nor compete for it,
+            // so they are dropped before both checks below. Everything else
+            // *retains* the id and has to be a web term.
+            let mutated_at = self.first_mutation_index_after(t);
             let in_region_users: Vec<TermId> = self
                 .users
                 .get(&t)
@@ -569,10 +821,11 @@ impl<'p> Analysis<'p> {
                 .flatten()
                 .copied()
                 .filter(|&u| region.contains(&self.program.get_term(u).block_id))
+                .filter(|&u| !self.observes_before_mutation(u, t, mutated_at))
                 .collect();
             for &u in &in_region_users {
                 if !web.contains(&u) {
-                    return false; // a non-carrier observes the container mid-build
+                    return false; // a non-carrier *retains* the container mid-build
                 }
             }
             // Linearity over the carrier readers (a phi's back-edge write is a

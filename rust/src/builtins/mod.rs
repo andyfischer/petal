@@ -57,6 +57,39 @@ pub fn returns_fresh_container(name: &str) -> bool {
     )
 }
 
+/// The builtins that **retain no reference to any argument**: after the call
+/// returns, nothing reachable from the result — or from anywhere else in the
+/// program — shares a backing store with an argument the caller passed in.
+///
+/// This is the property `backend::bytecode::escape` needs to let a term *observe*
+/// a container that is being mutated in place without breaking uniqueness:
+/// `len(xs)` yields an int, `get(a, i)` a float, `sort(xs)` a brand-new list.
+/// Sharing element *ids* with the argument is fine and is why the transforms
+/// qualify: an in-place write replaces a slot in the argument's own store and
+/// never touches an element's separate store.
+///
+/// Two exclusions worth naming, because they look like they belong:
+/// `min`/`max` return *one of their arguments* — handing back the container id
+/// itself — and `push_output` parks the value in an output buffer the host reads
+/// after the run. Both retain. Check for those two shapes before adding a name.
+pub fn retains_no_reference(name: &str) -> bool {
+    matches!(
+        name,
+        // Reads that yield a scalar, a string, or an element id.
+        "len" | "get" | "contains" | "includes" | "last" | "join" | "str" | "type" | "print"
+        // Transforms that allocate a fresh result (see `returns_fresh_container`).
+            | "keys"
+            | "values"
+            | "slice"
+            | "flat"
+            | "zip"
+            | "enumerate"
+            | "sort"
+            | "reverse"
+            | "split"
+    )
+}
+
 mod autodiff;
 mod collections;
 mod color;

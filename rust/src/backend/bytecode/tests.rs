@@ -857,6 +857,34 @@ fn inplace_does_not_fire_on_two_mutated_aliases_of_one_root() {
 }
 
 #[test]
+fn inplace_does_not_fire_when_the_id_leaves_via_a_block_result() {
+    // The one value flow with no input edge to show for it: a block's *result*
+    // register. An `if` arm that yields the accumulator hands the mid-build id
+    // to `keep`, and a `collect` loop whose body ends in the accumulator
+    // collects a reference per iteration. Both used to slip past the web
+    // (nothing "uses" the arm's copy) — `assert_inplace_parity` is the real
+    // assertion here; the counts pin which mutation is responsible.
+    let code = "let xs = []\nfor i in range(0, 4) do\n  let keep = if i > 0 then xs else [] end\n  xs = append(xs, i)\n  print(len(keep), len(xs))\nend";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "arm-result escape must not fire");
+    let code = "let xs = []\nlet snaps = for i in range(0, 4) do\n  xs = append(xs, i)\n  xs\nend\nprint(len(snaps[0]), len(snaps[3]), len(xs))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "collect-loop result escape must not fire"
+    );
+    // The same shapes with the result *discarded* stay eligible: a statement
+    // `if` inside the loop still ends its arm with the accumulator's carry-copy.
+    let code = "let xs = []\nfor i in range(0, 6) do\n  if i % 2 == 0 then\n    xs = append(xs, i)\n  else\n    xs = append(xs, -i)\n  end\nend\nprint(len(xs), xs[0], xs[1])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 2,
+        "a discarded arm result must stay eligible"
+    );
+}
+
+#[test]
 fn inplace_fires_on_nested_loop_carried_accumulator() {
     // The other chain shape: an inner loop carrying the outer loop's
     // accumulator. The inner phi's init is the outer phi, so they chain, and
@@ -870,17 +898,139 @@ fn inplace_fires_on_nested_loop_carried_accumulator() {
 }
 
 #[test]
-fn inplace_does_not_fire_when_read_between_nested_loop_spines() {
-    // Same nested shape, but the outer body reads the partially-built list
-    // between inner-loop passes — a live, non-carrier observer inside the
-    // region, so nothing may go in place.
-    let code = "let xs = []\nfor y in range(0, 3) do\n  for x in range(0, 2) do\n    xs = append(xs, x)\n  end\n  print(len(xs))\nend\nprint(len(xs))";
+fn inplace_does_not_fire_when_mid_build_value_escapes_a_nested_spine() {
+    // Same nested shape, but the outer body *retains* the partially-built list
+    // in another container between inner-loop passes, so `snapshots` holds live
+    // references to states the loop later moves past.
+    let code = "let snapshots = []\nlet xs = []\nfor y in range(0, 3) do\n  for x in range(0, 2) do\n    xs = append(xs, x)\n  end\n  snapshots = append(snapshots, xs)\nend\nprint(len(snapshots), len(snapshots[0]), len(xs))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        1,
+        "only `snapshots` (whose own ids never escape) may fire"
+    );
+}
+
+// -- M4 route B: observing the container being mutated ----------------------
+//
+// Condition 4 admits a non-web in-region user when it *observes* the container
+// (reads content that shares no backing store with it) and finishes before the
+// id is rewritten. Read-modify-write is the dominant simulation shape, so these
+// are the highest-value firings; the negative cases below enumerate the
+// retention forms that must still reject, plus the ordering hazard.
+
+#[test]
+fn inplace_fires_on_read_modify_write() {
+    // `a[i] = a[i] + 1.0`: the read yields a float, and it happens before the
+    // write. The same for a list element and a record field.
+    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0], a[7])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "f64 read-modify-write should fire"
+    );
+    let code = "let xs = [1, 2, 3]\nfor i in range(0, 9) do\n  xs[i % 3] = xs[i % 3] * 2\nend\nprint(xs[0], xs[1], xs[2])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "list read-modify-write should fire"
+    );
+    let code =
+        "let r = { a: 0, b: 1 }\nfor i in range(0, 5) do\n  r.a = r.a + i\nend\nprint(r.a, r.b)";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "record read-modify-write should fire"
+    );
+}
+
+#[test]
+fn inplace_fires_on_integrator_over_two_arrays() {
+    // `pos[i] = pos[i] + vel[i]`: `vel` is read-only, so only `pos` is a web at
+    // all — and reading a *second* container does not disturb the first.
+    let code = "let pos = f64_array(8)\nlet vel = f64_array(8)\nfor i in range(0, 8) do\n  pos[i] = pos[i] + vel[i]\nend\nprint(pos[0], vel[0])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "integrator step should fire");
+    // Reading a *different* index than the one written is the same argument.
+    let code =
+        "let a = f64_array(8)\nfor i in range(0, 7) do\n  a[i] = a[i + 1]\nend\nprint(a[0], a[7])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "cross-index read should fire");
+}
+
+#[test]
+fn inplace_fires_on_in_loop_observations() {
+    // `len(xs)` returns an int and retains nothing; here it also gates the
+    // mutation, so the observation sits in the parent block and the append in a
+    // branch arm below it.
+    let code = "let xs = []\nfor i in range(0, 20) do\n  if len(xs) < 5 then\n    xs = append(xs, i)\n  end\nend\nprint(len(xs))";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "gated append should fire");
+    // A named observation-only binding, read before the mutation.
+    let code = "let xs = []\nfor i in range(0, 6) do\n  let n = len(xs)\n  xs = append(xs, n)\nend\nprint(len(xs), xs[5])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "read-then-append should fire");
+}
+
+#[test]
+fn inplace_does_not_fire_when_an_alias_is_observed_after_the_mutation() {
+    // The ordering hazard, and the reason observations carry an execution
+    // index: `snap` aliases the *pre*-append id, and `len(snap)` runs after the
+    // append. Value semantics says the old length; an in-place append would
+    // report the new one.
+    let code = "let xs = []\nfor i in range(0, 4) do\n  let snap = xs\n  xs = append(xs, i)\n  print(len(snap), len(xs))\nend";
     assert_inplace_parity(code);
     assert_eq!(
         inplace_count(code),
         0,
-        "an in-region reader of the mid-build value must block the accumulator"
+        "an alias observed after the mutation must not be in-place"
     );
+    // Same hazard across the loop boundary: the alias is taken before the loop
+    // and read after it.
+    let code = "let xs = []\nlet ys = xs\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "an alias observed after the loop must not be in-place"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_retention_forms() {
+    // Every way of *keeping* the id, as opposed to observing it, still rejects.
+    // Stored into another container:
+    let code = "let xs = []\nlet log = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\n  log = append(log, xs)\nend\nprint(len(log[0]), len(log[3]))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        1,
+        "stored-into-container must not fire"
+    );
+    // Wrapped in a fresh list (an `AllocList` input is a store too):
+    let code = "let xs = []\nlet log = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\n  log = append(log, [xs])\nend\nprint(len(log[0][0]), len(xs))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 1, "wrapped-in-a-list must not fire");
+    // Captured by a closure:
+    let code = "let xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\n  let peek = fn() -> len(xs)\n  print(peek())\nend";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "closure-captured must not fire");
+    // Passed to a user function, which could stash it anywhere:
+    let code = "fn probe(v)\n  len(v)\nend\nlet xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\n  print(probe(xs))\nend";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "user-function argument must not fire"
+    );
+    // Written to state:
+    let code = "state saved = []\nlet xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\n  saved = xs\nend\nprint(len(xs), len(saved))";
+    assert_eq!(inplace_count(code), 0, "state write must not fire");
+    assert_stateful_parity(code, 3);
+    // Returned out of the region mid-build:
+    let code = "fn f()\n  let xs = []\n  for i in range(0, 4) do\n    xs = append(xs, i)\n    if i == 1 then\n      return xs\n    end\n  end\n  xs\nend\nprint(len(f()))";
+    assert_inplace_parity(code);
+    assert_eq!(inplace_count(code), 0, "mid-build return must not fire");
 }
 
 // -- M4 route A: straight-line last-use in-place mutation -------------------

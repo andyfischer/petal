@@ -91,7 +91,16 @@ pub fn apply(bc: &mut BytecodeProgram, program: &Program) -> usize {
 /// `type`). Everything not listed is conservatively treated as retaining —
 /// an unknown builtin (or a higher-order intrinsic whose closure could stash
 /// the value) blocks the rewrite, it never breaks it.
-fn is_pure_builtin(name: &str) -> bool {
+///
+/// This is the same *property* as [`crate::builtins::retains_no_reference`],
+/// but deliberately a narrower list: that predicate also covers the reads and
+/// fresh-allocating transforms (`get`, `join`, `slice`, `sort`, …), and route A
+/// has never been exercised over them. Widening this to call it would enable
+/// strictly more rewrites and is a plausible optimization — but it is an
+/// optimization, not a cleanup, so it wants its own change with its own
+/// copy-elision coverage. Kept local and named for what it means here so the
+/// two are not confused.
+fn retains_no_args(name: &str) -> bool {
     matches!(name, "len" | "last" | "print" | "str" | "type")
 }
 
@@ -333,7 +342,7 @@ fn push_succs(inst: &Inst, j: usize, exit: usize, out: &mut Vec<usize>) {
 /// - `GetField`/`GetIndex`, which copy an *element* `Value` out (interior
 ///   ids are distinct from the container's own id);
 /// - `ForEachInit`, which snapshots the element vector into the loop cursor;
-/// - whitelisted pure builtins ([`is_pure_builtin`]);
+/// - whitelisted pure builtins ([`retains_no_args`]);
 /// - the container slot of a **clone-semantics** mutation, which copies the
 ///   backing store into a fresh id. (The container slot of an *in-place*
 ///   mutation is retaining here: it mutates the id, so a second in-place
@@ -399,7 +408,7 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
                         f(*a, RETAIN); // stored into the (new) container
                     }
                 }
-                Some(n) if is_pure_builtin(n) => {
+                Some(n) if retains_no_args(n) => {
                     for a in args {
                         f(*a, PURE);
                     }

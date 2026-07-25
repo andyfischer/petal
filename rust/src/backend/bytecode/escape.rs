@@ -213,8 +213,9 @@ struct Analysis<'p> {
     /// because the escape checks ask the question per term.
     phi_carry_srcs: HashSet<TermId>,
     /// Reverse `phi_outs` edges: for each term, the phis it is carried into on a
-    /// block pop (see [`Analysis::phi_out_targets`]).
-    phi_out_targets: HashMap<TermId, Vec<TermId>>,
+    /// block pop. Read through [`Analysis::phi_out_targets`], which is named for
+    /// the question rather than the storage.
+    phi_outs_by_src: HashMap<TermId, Vec<TermId>>,
     /// For each phi, the blocks that carry a value back into it on pop (see
     /// [`Analysis::body_blocks_of`]).
     phi_body_blocks: HashMap<TermId, Vec<BlockId>>,
@@ -262,13 +263,13 @@ impl<'p> Analysis<'p> {
     fn build(program: &'p Program) -> Analysis<'p> {
         let mut phi_srcs: HashMap<TermId, Vec<TermId>> = HashMap::new();
         let mut phi_carry_srcs: HashSet<TermId> = HashSet::new();
-        let mut phi_out_targets: HashMap<TermId, Vec<TermId>> = HashMap::new();
+        let mut phi_outs_by_src: HashMap<TermId, Vec<TermId>> = HashMap::new();
         let mut phi_body_blocks: HashMap<TermId, Vec<BlockId>> = HashMap::new();
         for block in &program.blocks {
             for po in &block.phi_outs {
                 phi_srcs.entry(po.dest_term).or_default().push(po.src_term);
                 phi_carry_srcs.insert(po.src_term);
-                phi_out_targets
+                phi_outs_by_src
                     .entry(po.src_term)
                     .or_default()
                     .push(po.dest_term);
@@ -303,7 +304,7 @@ impl<'p> Analysis<'p> {
             program,
             phi_srcs,
             phi_carry_srcs,
-            phi_out_targets,
+            phi_outs_by_src,
             phi_body_blocks,
             read_consumers: HashMap::new(),
             users: HashMap::new(),
@@ -1553,7 +1554,7 @@ impl<'p> Analysis<'p> {
     /// The phis `t` is carried into on a block pop (`phi_outs`), which is a
     /// value flow with no input edge to show for it.
     fn phi_out_targets(&self, t: TermId) -> Vec<TermId> {
-        self.phi_out_targets.get(&t).cloned().unwrap_or_default()
+        self.phi_outs_by_src.get(&t).cloned().unwrap_or_default()
     }
 
     /// All blocks in the subtree rooted at `block` (inclusive), via child blocks.

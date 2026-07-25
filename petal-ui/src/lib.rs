@@ -11,6 +11,10 @@
 //!   [`draw::register_draw`] natives on the script side,
 //!   [`draw::take_draw_commands`] decoding into [`draw::DrawCommand`] on the
 //!   host side. Hosts implement only rasterization.
+//! - [`text`]: the font-metrics registry behind that vocabulary — what a host
+//!   publishes about the faces it can render ([`text::bind_font_metrics`] and
+//!   friends) so `text_width` measures what will actually be drawn. Its
+//!   public items are re-exported from [`draw`].
 //! - the `ui` Petal module (Layer 1): interaction primitives written in Petal
 //!   (`hovered`, `clicked`, `button`, `list_update`, …), a panel-global focus
 //!   registry (`focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
@@ -38,6 +42,7 @@ pub mod harness;
 pub mod host_data;
 pub mod input;
 pub mod pending;
+pub mod text;
 
 /// Version of the petal-ui contract, exposed to scripts as `ui_version()`.
 /// Bump when native signatures, binding names, or prelude semantics change

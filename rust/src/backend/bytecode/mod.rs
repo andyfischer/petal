@@ -22,6 +22,32 @@ pub use lastuse::apply as apply_last_use;
 pub use lower::{lower_program, lower_program_opt};
 pub use vm::{Vm, VmFrame};
 
+use crate::backend::OptFlags;
+use crate::program::Program;
+
+/// Lower `program` to bytecode under `flags` — the single definition of the
+/// optimization pipeline a run executes. Both `show-bytecode` and the embedder
+/// inspector go through it so a disassembly always matches the opcodes the VM
+/// would run.
+///
+/// Escape analysis (M4 route B) is a pure function of the program; honoring its
+/// in-place set is gated on the flag, so "opts off" reproduces the
+/// clone-and-alloc oracle byte-for-byte. Route A's straight-line last-use
+/// rewriting runs on the lowered code, after route B's opcode selection.
+pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
+    let in_place = if flags.in_place_mutation {
+        analyze_escapes(program)
+    } else {
+        InPlaceSet::default()
+    };
+    let mut bc = lower_program_opt(program, &in_place)
+        .map_err(|e| format!("bytecode lowering failed: {e}"))?;
+    if flags.in_place_straight_line {
+        apply_last_use(&mut bc, program);
+    }
+    Ok(bc)
+}
+
 #[cfg(test)]
 mod fuzz;
 #[cfg(test)]

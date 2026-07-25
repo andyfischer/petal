@@ -129,21 +129,7 @@ impl Env {
             return Ok(());
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
-        // Escape analysis (M4) is a pure function of the program; honoring its
-        // in-place set is gated on the flag, so "opts off" reproduces the
-        // clone-and-alloc oracle byte-for-byte.
-        let in_place = if self.opt_flags.in_place_mutation {
-            crate::backend::bytecode::analyze_escapes(program)
-        } else {
-            crate::backend::bytecode::InPlaceSet::default()
-        };
-        let mut bc = crate::backend::bytecode::lower_program_opt(program, &in_place)
-            .map_err(|e| format!("bytecode lowering failed: {e}"))?;
-        // Route A (M4): straight-line last-use rewriting runs on the lowered
-        // code, after route B's opcode selection.
-        if self.opt_flags.in_place_straight_line {
-            crate::backend::bytecode::apply_last_use(&mut bc, program);
-        }
+        let bc = crate::backend::bytecode::lower_with_flags(program, self.opt_flags)?;
         self.bytecode.insert(pid, (self.opt_flags, bc));
         Ok(())
     }

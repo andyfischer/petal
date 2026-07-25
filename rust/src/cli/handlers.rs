@@ -425,25 +425,14 @@ pub(super) fn handle_show_bytecode(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::backend::bytecode::{
-        InPlaceSet, analyze_escapes, apply_last_use, disasm, lower_program_opt,
-    };
+    use crate::backend::bytecode::{disasm, lower_with_flags};
     let program = compile_source(source, source_input, include_dirs);
-    // Mirror the runtime defaults: the disassembly shows the in-place
-    // opcodes a run would actually execute, for both M4 routes.
-    // `PETAL_OPT=off`/`none` shows the clone-and-alloc lowering;
-    // `PETAL_OPT=all` enables every opt.
+    // Lowered with the flags a run would use, so the disassembly shows the
+    // in-place opcodes it would actually execute: `PETAL_OPT=off`/`none` shows
+    // the clone-and-alloc lowering, `PETAL_OPT=all` enables every opt.
     let flags = crate::env::Env::opt_flags_from_env();
-    let in_place = if flags.in_place_mutation {
-        analyze_escapes(&program)
-    } else {
-        InPlaceSet::default()
-    };
-    match lower_program_opt(&program, &in_place) {
-        Ok(mut bc) => {
-            if flags.in_place_straight_line {
-                apply_last_use(&mut bc, &program);
-            }
+    match lower_with_flags(&program, flags) {
+        Ok(bc) => {
             if json {
                 println!(
                     "{}",
@@ -453,10 +442,7 @@ pub(super) fn handle_show_bytecode(
                 print!("{}", disasm::render_text(&bc, &program));
             }
         }
-        Err(e) => {
-            eprintln!("Error lowering to bytecode: {}", e);
-            process::exit(1);
-        }
+        Err(e) => die_plain(&e),
     }
 }
 

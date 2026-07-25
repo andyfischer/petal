@@ -8,9 +8,7 @@
 //! private [`Env`] internals or reproduce the fiddly bytecode opt-flag lowering.
 //! Each call compiles independently and retains nothing.
 
-use crate::backend::bytecode::{
-    analyze_escapes, apply_last_use, disasm, lower_program_opt, InPlaceSet,
-};
+use crate::backend::bytecode::{disasm, lower_with_flags};
 use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::program::ProgramId;
@@ -75,19 +73,7 @@ fn render_ir(source: &str) -> Result<String, String> {
 
 fn render_bytecode(source: &str) -> Result<String, String> {
     let program = Env::new().compile_program(ProgramId(0), source)?;
-    // Mirror the runtime defaults so the disassembly shows the opcodes a run
-    // would actually execute (see `cli::handlers::handle_show_bytecode`).
-    let flags = Env::opt_flags_from_env();
-    let in_place = if flags.in_place_mutation {
-        analyze_escapes(&program)
-    } else {
-        InPlaceSet::default()
-    };
-    let mut bc = lower_program_opt(&program, &in_place)
-        .map_err(|e| format!("bytecode lowering failed: {e}"))?;
-    if flags.in_place_straight_line {
-        apply_last_use(&mut bc, &program);
-    }
+    let bc = lower_with_flags(&program, Env::opt_flags_from_env())?;
     Ok(disasm::render_text(&bc, &program))
 }
 

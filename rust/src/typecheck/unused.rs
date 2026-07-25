@@ -8,10 +8,11 @@
 //! that into a compile-time warning pointing at the exact call.
 //!
 //! Precision over recall, by construction:
-//! - Only calls to a fixed set of **known-pure builtins** ([`PURE_BUILTINS`])
-//!   warn. Effectful natives (`print`, `draw_*`, `random`, `assert`, host input
-//!   readers) and higher-order builtins that run a user closure (`map`,
-//!   `filter`, `reduce`, `forEach`) are never in the set, so they never warn.
+//! - Only calls to a fixed set of **known-pure builtins**
+//!   ([`crate::builtins::is_pure_builtin`]) warn. Effectful natives (`print`,
+//!   `draw_*`, `random`, `assert`, host input readers) and higher-order
+//!   builtins that run a user closure (`map`, `filter`, `reduce`, `forEach`)
+//!   are never in the set, so they never warn.
 //! - A name shadowed by a local binding, or defined as a user `fn`, is treated
 //!   as user code of unknown effect and never warns.
 //! - Only *discarded* positions warn: a non-tail statement, or a block tail
@@ -22,42 +23,8 @@
 use std::collections::HashSet;
 
 use crate::ast::{self, AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind};
+use crate::builtins::{is_pure_builtin, looks_mutating};
 use crate::diagnostic::Diagnostic;
-
-/// Builtins whose only effect is the value they return — discarding that value
-/// makes the call dead. Deliberately excludes every effectful or
-/// closure-invoking native (see module docs).
-const PURE_BUILTINS: &[&str] = &[
-    // collections (value-semantic: return a new collection, mutate nothing)
-    "range", "len", "push", "append", "pop", "keys", "values", "contains",
-    "includes", "sort", "reverse", "join", "split", "enumerate", "zip",
-    "slice", "flat", "last", "drop_last", "remove", "get", "set", "swap",
-    "f64_array", "first", "is_empty", "take", "drop",
-    // math / numeric
-    "abs", "sqrt", "floor", "ceil", "float", "int", "min", "max", "round",
-    "sin", "cos", "tan", "atan2", "pi", "pow", "sign", "fract", "exp", "log",
-    "clamp", "clamp01", "lerp", "map_range", "distance", "mag", "smoothstep",
-    "radians", "degrees", "sum", "product", "mean", "minimum", "maximum",
-    // conversion / reflection
-    "str", "type",
-    // color
-    "hsv", "hsl", "color_lerp", "hsv_deg", "hsl_deg",
-    // vec2
-    "vec2", "normalize", "dot", "limit",
-    // autodiff (pure readers)
-    "value_of", "deriv_of",
-];
-
-/// The value-semantic collection ops whose statement form reads like an
-/// in-place mutation but is not — worth a targeted "capture the result" hint.
-const LOOKS_MUTATING: &[&str] = &[
-    "push", "append", "pop", "drop_last", "remove", "set", "swap", "sort",
-    "reverse",
-];
-
-fn is_pure_builtin(name: &str) -> bool {
-    PURE_BUILTINS.contains(&name)
-}
 
 /// Walk a module's statements and report each discarded pure-builtin call.
 pub fn check_unused(stmts: &[Stmt]) -> Vec<Diagnostic> {
@@ -249,7 +216,7 @@ impl Walker {
     }
 
     fn warn_discarded(&mut self, call: &Expr, name: &str) {
-        let message = if LOOKS_MUTATING.contains(&name) {
+        let message = if looks_mutating(name) {
             format!(
                 "result of `{name}` is discarded, so this call does nothing — \
                  `{name}` returns a new value and never mutates its argument. \

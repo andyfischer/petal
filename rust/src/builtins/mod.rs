@@ -10,90 +10,11 @@
 
 use crate::native_fn::{NativeClass, NativeFnTable, PetalCxt};
 
-/// The mutating builtins: those whose container is their first argument and
-/// whose result is the new (or in-place-updated) container. This is the single
-/// source of truth shared by the two backend in-place analyses
-/// (`backend::bytecode::escape` and `::lastuse`) and the `PetalCxt::in_place`
-/// consumers in [`collections`].
-pub fn is_mutating_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "append" | "push" | "drop_last" | "pop" | "remove" | "set" | "swap"
-    )
-}
-
-/// The builtins that return a **freshly allocated, unaliased container**: the
-/// returned id is created by that call, is not reachable from any pre-existing
-/// value, and no reference to it is retained anywhere else (not in the heap, not
-/// in the arguments, not in the native's own state). Each call therefore hands
-/// its caller sole ownership of the result.
-///
-/// This is the property `backend::bytecode::escape` needs to let a call result
-/// *root* a unique value-web — `f64_array(n)` is the only way to construct an
-/// f64 array, so without it no f64-array write can ever be in place. Every
-/// entry below allocates its result with a fresh `alloc_list` / `alloc_f64_array`
-/// on every path that yields a container (the absorb-a-`Pending` paths in
-/// `sort`/`join` return a `Pending` scalar, not a container, so they are not a
-/// counterexample). Elements *inside* the result may alias existing values; that
-/// is fine, since an in-place write replaces a slot in the fresh outer store and
-/// never touches an element's own store.
-///
-/// Add to this list only after checking the native for a path that returns an
-/// argument's id unchanged — such a builtin would make the caller's "unique
-/// owner" assumption false and silently corrupt data.
-pub fn returns_fresh_container(name: &str) -> bool {
-    matches!(
-        name,
-        "f64_array"
-            | "range"
-            | "slice"
-            | "flat"
-            | "zip"
-            | "enumerate"
-            | "keys"
-            | "values"
-            | "sort"
-            | "reverse"
-    )
-}
-
-/// The builtins that **retain no reference to any argument**: after the call
-/// returns, nothing reachable from the result — or from anywhere else in the
-/// program — shares a backing store with an argument the caller passed in.
-///
-/// This is the property `backend::bytecode::escape` needs to let a term *observe*
-/// a container that is being mutated in place without breaking uniqueness:
-/// `len(xs)` yields an int, `get(a, i)` a float, `sort(xs)` a brand-new list.
-/// Sharing element *ids* with the argument is fine and is why the transforms
-/// qualify: an in-place write replaces a slot in the argument's own store and
-/// never touches an element's separate store.
-///
-/// Two exclusions worth naming, because they look like they belong:
-/// `min`/`max` return *one of their arguments* — handing back the container id
-/// itself — and `push_output` parks the value in an output buffer the host reads
-/// after the run. Both retain. Check for those two shapes before adding a name.
-pub fn retains_no_reference(name: &str) -> bool {
-    matches!(
-        name,
-        // Reads that yield a scalar, a string, or an element id.
-        "len" | "get" | "contains" | "includes" | "last" | "join" | "str" | "type" | "print"
-        // Transforms that allocate a fresh result (see `returns_fresh_container`).
-            | "keys"
-            | "values"
-            | "slice"
-            | "flat"
-            | "zip"
-            | "enumerate"
-            | "sort"
-            | "reverse"
-            | "split"
-    )
-}
-
 mod autodiff;
 mod collections;
 mod color;
 mod creative_coding;
+mod effects;
 mod handle;
 mod io;
 mod math;
@@ -101,6 +22,11 @@ mod noise;
 mod output;
 mod pending;
 mod vec2;
+
+pub use effects::{
+    is_mutating_builtin, is_pure_builtin, looks_mutating, retains_no_reference,
+    returns_fresh_container,
+};
 
 // xorshift64* PRNG. The state lives per-run on `ExecutionContext::rng_state`
 // (seeded from `initial_seed()` at context creation) rather than in a process

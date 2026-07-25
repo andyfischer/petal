@@ -21,7 +21,7 @@
 
 use std::collections::HashSet;
 
-use crate::ast::{AssignTarget, ElseBranch, Expr, ExprKind, Stmt, StmtKind};
+use crate::ast::{self, AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind};
 use crate::diagnostic::Diagnostic;
 
 /// Builtins whose only effect is the value they return — discarding that value
@@ -200,20 +200,10 @@ impl Walker {
             }
         }
         // Descend into children, tracking used-ness so nested discarded pure
-        // calls are caught too.
+        // calls are caught too. Only the nodes that propagate used-ness or open
+        // a scope need custom handling; everything else evaluates its children
+        // in value position, which is exactly the default total walk.
         match &expr.kind {
-            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
-            ExprKind::BinaryOp { left, right, .. } => {
-                self.walk_expr(left, true);
-                self.walk_expr(right, true);
-            }
-            ExprKind::UnaryOp { operand, .. } => self.walk_expr(operand, true),
-            ExprKind::Call { function, args } => {
-                self.walk_expr(function, true);
-                for a in args {
-                    self.walk_expr(a, true);
-                }
-            }
             ExprKind::If {
                 condition,
                 then_body,
@@ -254,39 +244,7 @@ impl Walker {
                 self.walk_block(body, true);
                 self.pop_scope();
             }
-            ExprKind::List(items) => {
-                for it in items {
-                    self.walk_expr(it, true);
-                }
-            }
-            ExprKind::Record(fields) => {
-                for f in fields {
-                    match f {
-                        crate::ast::RecordField::Named(_, e) => self.walk_expr(e, true),
-                        crate::ast::RecordField::Spread(e) => self.walk_expr(e, true),
-                    }
-                }
-            }
-            ExprKind::FieldAccess { object, .. } => self.walk_expr(object, true),
-            ExprKind::IndexAccess { object, index } => {
-                self.walk_expr(object, true);
-                self.walk_expr(index, true);
-            }
-            ExprKind::StringInterp { exprs, .. } => {
-                for e in exprs {
-                    self.walk_expr(e, true);
-                }
-            }
-            ExprKind::Element { props, children, .. } => {
-                for (_, e) in props {
-                    self.walk_expr(e, true);
-                }
-                for c in children {
-                    if let crate::ast::JsxChild::Expr(e) = c {
-                        self.walk_expr(e, true);
-                    }
-                }
-            }
+            _ => ast::walk_expr(self, expr),
         }
     }
 
@@ -307,55 +265,38 @@ impl Walker {
     }
 }
 
-/// Collect every `fn` name declared anywhere in `stmts` (including nested
-/// bodies and lambdas don't declare names, so only `FnDecl`).
+/// The delegated half of [`Walker::walk_expr`]: nodes with no used-ness policy
+/// of their own evaluate every child in value position, so the default walk
+/// visits them all as used.
+impl ExprVisitor for Walker {
+    fn visit_expr(&mut self, e: &Expr) {
+        self.walk_expr(e, true);
+    }
+
+    fn visit_stmt(&mut self, s: &Stmt) {
+        self.walk_stmt(s);
+    }
+}
+
+/// Collect every `fn` name declared anywhere in `stmts` — lambdas declare no
+/// name, so only `FnDecl` contributes. The traversal is total, so a `fn` nested
+/// anywhere a statement can appear (a lambda passed as a call argument, a block
+/// inside a list element, …) is still found.
 fn collect_fn_names(stmts: &[Stmt], out: &mut HashSet<String>) {
+    struct Collector<'a> {
+        names: &'a mut HashSet<String>,
+    }
+    impl ExprVisitor for Collector<'_> {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::FnDecl { name, .. } = &s.kind {
+                self.names.insert(name.clone());
+            }
+            ast::walk_stmt(self, s);
+        }
+    }
+    let mut c = Collector { names: out };
     for stmt in stmts {
-        collect_fn_names_stmt(stmt, out);
-    }
-}
-
-fn collect_fn_names_stmt(stmt: &Stmt, out: &mut HashSet<String>) {
-    match &stmt.kind {
-        StmtKind::FnDecl { name, body, .. } => {
-            out.insert(name.clone());
-            collect_fn_names(body, out);
-        }
-        StmtKind::For { body, .. } | StmtKind::While { body, .. } => {
-            collect_fn_names(body, out);
-        }
-        StmtKind::Let { value, .. } => collect_fn_names_expr(value, out),
-        StmtKind::State { init, .. } => collect_fn_names_expr(init, out),
-        StmtKind::Assign { value, .. } => collect_fn_names_expr(value, out),
-        StmtKind::Expr(e) => collect_fn_names_expr(e, out),
-        StmtKind::Return(Some(e)) => collect_fn_names_expr(e, out),
-        _ => {}
-    }
-}
-
-fn collect_fn_names_expr(expr: &Expr, out: &mut HashSet<String>) {
-    match &expr.kind {
-        ExprKind::If {
-            then_body,
-            else_body,
-            ..
-        } => {
-            collect_fn_names(then_body, out);
-            match else_body {
-                Some(ElseBranch::Block(stmts)) => collect_fn_names(stmts, out),
-                Some(ElseBranch::ElseIf(e)) => collect_fn_names_expr(e, out),
-                None => {}
-            }
-        }
-        ExprKind::For { body, .. } | ExprKind::Block(body) | ExprKind::Lambda { body, .. } => {
-            collect_fn_names(body, out);
-        }
-        ExprKind::Match { arms, .. } => {
-            for arm in arms {
-                collect_fn_names_expr(&arm.body, out);
-            }
-        }
-        _ => {}
+        c.visit_stmt(stmt);
     }
 }
 
@@ -405,6 +346,18 @@ mod tests {
     #[test]
     fn user_fn_shadowing_a_builtin_is_silent() {
         assert!(messages("fn push(a, b)\n  print(\"fx\")\n  a\nend\npush([1], 2)").is_empty());
+    }
+
+    #[test]
+    fn user_fn_declared_under_a_list_element_is_silent() {
+        // `push` is declared inside an `if` that is a list element — a spot the
+        // fn-name collection only reaches with a total walk. Missing it would
+        // make the later `push` call look like the builtin and warn.
+        let m = messages(
+            "let xs = [if true then\n  fn push(a, b)\n    print(\"fx\")\n    a\n  end\n  0\nend]\n\
+             push([1], 2)\nprint(len(xs))",
+        );
+        assert!(m.is_empty(), "unexpected warnings: {m:?}");
     }
 
     #[test]

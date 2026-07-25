@@ -245,6 +245,90 @@ fn in_loop_length_query_is_copy_free() {
     );
 }
 
+// ── Gap 5: the container lives in `state` ───────────────────────────────────
+//
+// A frame-loop simulation keeps its arrays in `state` so they survive between
+// runs — which is exactly the shape route B excludes, because a state read is
+// not a fresh alloc. The result is that the one program shape the exclusion
+// most affects is also the one that writes the most.
+//
+// Eligibility rests on an API contract as well as the graph: a `Value` handed
+// out by `Env::get_state`/`get_all_state` is a snapshot that must not be held
+// across a run. Retention *inside* the script (a draw command, a store into
+// another container, a second state slot) is visible in the program graph and
+// must still reject.
+
+#[test]
+fn state_backed_read_modify_write_is_copy_free() {
+    assert_copy_free(
+        "state-backed read-modify-write",
+        &format!(
+            "state a = f64_array({N})\nfor i in range(0, {N}) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0])"
+        ),
+    );
+}
+
+#[test]
+fn state_backed_integrator_is_copy_free() {
+    // The friend-graph shape: every array a `state` slot, read and written each
+    // frame.
+    assert_copy_free(
+        "state-backed integrator",
+        &format!(
+            "state pos = f64_array({N})\nstate vel = f64_array({N})\nfor i in range(0, {N}) do\n  pos[i] = pos[i] + vel[i]\nend\nprint(pos[0])"
+        ),
+    );
+}
+
+#[test]
+fn state_backed_append_accumulator_is_copy_free() {
+    assert_copy_free(
+        "state-backed append accumulator",
+        &format!("state xs = []\nfor i in range(0, {N}) do\n  xs = append(xs, i)\nend\nprint(len(xs))"),
+    );
+}
+
+#[test]
+fn two_state_slots_sharing_one_id_still_copies() {
+    // `state b = a` puts the same id in two persistent slots. Mutating `a` in
+    // place would change `b`, and the slots outlive the run that aliased them.
+    assert_copies(
+        "two state slots aliasing one container",
+        "state a = f64_array(4)\nstate b = a\nfor i in range(0, 4) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0], b[0])",
+    );
+}
+
+#[test]
+fn state_container_emitted_as_output_still_copies() {
+    // The script hands the container to the host through the output buffer,
+    // which the host drains after the run — so the id outlives the run with a
+    // live reader. (Buffered output values are GC roots for this reason.)
+    assert_copies(
+        "state container pushed to output",
+        "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
+    );
+}
+
+#[test]
+fn state_mutation_is_stable_across_runs() {
+    // The property in-place mutation of a persistent slot must not break: each
+    // run sees the previous run's values and adds to them. Run the same stack
+    // repeatedly, the way an embedder drives a frame loop.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "state a = f64_array(4)\nfor i in range(0, 4) do\n  a[i] = a[i] + 1.0\nend\nprint(a[0], a[3])",
+        )
+        .expect("load");
+    let sid = env.create_stack(pid).expect("stack");
+    for expected in ["1.0 1.0", "2.0 2.0", "3.0 3.0"] {
+        env.run(sid).expect("run");
+        let out = env.take_output().join("\n");
+        assert_eq!(out, expected, "state must accumulate across runs");
+        env.reset_stack(sid).expect("reset");
+    }
+}
+
 // ── Value-semantics guards ──────────────────────────────────────────────────
 
 #[test]

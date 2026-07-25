@@ -2488,3 +2488,125 @@ mod pending_report_chunk_n_tests {
         );
     }
 }
+
+/// Garbage-collection pressure: the runtime must reclaim large short-lived
+/// payloads *cheaply*, and must pace collections against bytes allocated rather
+/// than object count.
+///
+/// The workload these pin is the reported one: a simulation frame that writes
+/// into a large `f64` array many times. Every write copy-on-writes the whole
+/// backing buffer (value semantics), so one frame produces megabytes of garbage
+/// from a handful of objects. Two defects made that pathological:
+///
+///  1. `sweep` called `Vec::clear()` on a reclaimed payload, which keeps the
+///     allocation. A swept 160 KB array sat on the free list still holding
+///     160 KB, and `Slab::alloc` overwrites `slot.data` wholesale — so that
+///     capacity was never even reused. Retained memory grew with the *burst*
+///     size, not the live set.
+///  2. The collection trigger counted allocations (1024 of them) regardless of
+///     size, while a collection is a full O(slots) trace. Big-array churn
+///     therefore traced the whole heap constantly, and the cost of each trace
+///     grew with the slab high-water mark — "slower the longer it runs".
+///
+/// Assertions are on heap accounting (`live_bytes`, `reserved_bytes`,
+/// `collections`), never wall-clock timing, so they are stable in CI.
+mod gc_pressure_tests {
+    use super::super::*;
+    use crate::backend::OptFlags;
+
+    /// Frames of a simulation that writes into a large array. `n` frames, each
+    /// doing `writes` copy-on-write element writes into a `len`-element array —
+    /// i.e. `writes` fresh arrays of `len * 8` bytes per frame, all but the last
+    /// immediately garbage. Returns the env and its context key.
+    fn run_array_churn(frames: usize, writes: usize, len: usize) -> (Env, ContextKey) {
+        let source = format!(
+            "state arr = f64_array({len})\n\
+             for f in range(0, {frames}) do\n\
+             \x20 for i in range(0, {writes}) do\n\
+             \x20   arr = set(arr, i, 1.0)\n\
+             \x20 end\n\
+             end\n"
+        );
+        let mut env = Env::new();
+        // The point of this workload is the garbage that copy-on-write produces,
+        // so disable the in-place optimizations that would elide the copies —
+        // otherwise the test measures the escape analysis, not the collector.
+        env.set_opt_flags(OptFlags::none());
+        let pid = env.load_program(&source).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        let ck = env.stacks.get(&sid).unwrap().context;
+        (env, ck)
+    }
+
+    /// Repeatedly allocating and dropping large arrays must not grow retained
+    /// memory. After a collection, the bytes the heap is *holding* (including
+    /// the free list) must be close to the bytes actually live. Pre-fix this
+    /// failed spectacularly: every swept array kept its full backing buffer, so
+    /// retained memory tracked peak churn instead of the live set.
+    #[test]
+    fn swept_array_buffers_release_their_backing_memory() {
+        let (mut env, ck) = run_array_churn(20, 64, 20_000);
+        // Force a final collection so we measure post-sweep state rather than
+        // whatever happened to be floating when the program ended.
+        env.collect_garbage(ck);
+        let heap = &env.ctx(ck).heap;
+        let (live, reserved) = (heap.live_bytes(), heap.reserved_bytes());
+        eprintln!("[gc bench] after sweep: live={live} reserved={reserved}");
+        // Slack for the program's own small objects; the failure mode this
+        // pins is off by two orders of magnitude (163 MB held for 160 KB live).
+        assert!(
+            reserved < live + 64 * 1024,
+            "reclaimed slots are still holding their buffers: \
+             live={live} reserved={reserved}"
+        );
+    }
+
+    /// End to end: a long run of large-array churn must not let retained memory
+    /// grow with the amount of garbage produced. This run allocates ~205 MB of
+    /// arrays with only one live at a time; pre-fix the heap ended up holding
+    /// 163 MB of it (41 MB uncollected plus 122 MB of freed-but-retained
+    /// buffers). The bound below is the GC budget floor plus generous slack —
+    /// what matters is that it is a constant, not a fraction of total churn.
+    #[test]
+    fn steady_large_array_churn_keeps_retained_memory_bounded() {
+        let (env, ck) = run_array_churn(20, 64, 20_000);
+        let heap = &env.ctx(ck).heap;
+        let (live, reserved, collections) =
+            (heap.live_bytes(), heap.reserved_bytes(), heap.collections());
+        eprintln!(
+            "[gc bench] end of run: live={live} reserved={reserved} collections={collections}"
+        );
+        assert!(
+            reserved < 8 * 1024 * 1024,
+            "retained memory grows with total churn, not the live set: \
+             live={live} reserved={reserved} after ~205 MB allocated"
+        );
+    }
+
+    /// Collections must be paced by bytes allocated, not by object count. Two
+    /// runs allocating the *same number of objects* 250x apart in bytes must not
+    /// collect the same number of times: the byte-heavy one legitimately needs
+    /// many cycles, while the byte-light one must not be dragged through a full
+    /// heap trace just for having made a thousand small objects.
+    #[test]
+    fn collection_count_tracks_bytes_not_object_count() {
+        // Same object count (20 * 64 = 1280 arrays), 250x apart in bytes.
+        let (big_env, big_ck) = run_array_churn(20, 64, 20_000);
+        let (small_env, small_ck) = run_array_churn(20, 64, 80);
+        let big = big_env.ctx(big_ck).heap.collections();
+        let small = small_env.ctx(small_ck).heap.collections();
+        eprintln!("[gc bench] collections: big-arrays={big} small-arrays={small}");
+        assert!(
+            big > 10 * small.max(1),
+            "collection count is driven by object count, not bytes: \
+             big={big} small={small}"
+        );
+        // ~1280 arrays of 640 bytes is under a megabyte of churn in total: the
+        // byte-light workload should not need to collect at all.
+        assert_eq!(
+            small, 0,
+            "a byte-light workload should not trigger a collection"
+        );
+    }
+}

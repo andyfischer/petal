@@ -130,6 +130,13 @@ impl<T> Slab<T> {
     /// Sweep: reclaim every unmarked-live slot (flip alive off, run `on_reclaim`
     /// on its payload to release backing memory / side-table entries, push to the
     /// free list); clear the mark on every surviving slot. Rebuilds `free`.
+    ///
+    /// `on_reclaim` must *release* the payload's heap allocation, not merely
+    /// empty it: `Vec::clear()` keeps the buffer, so a swept 160 KB array would
+    /// sit on the free list still holding its 160 KB. That memory can never be
+    /// reused for anything either, because [`alloc`](Self::alloc) overwrites
+    /// `slot.data` wholesale (dropping whatever buffer was there). Assign a
+    /// fresh empty value (`*v = Vec::new()`) instead.
     fn sweep_with(&mut self, mut on_reclaim: impl FnMut(&mut T)) {
         self.free.clear();
         for (i, slot) in self.slots.iter_mut().enumerate() {
@@ -155,8 +162,18 @@ pub struct Heap {
     elements: Slab<ElementPayload>,
     /// String intern table: content → existing StringId
     intern_table: HashMap<String, StringId>,
-    /// Allocation counter — GC triggers after this many allocations
-    alloc_count: u32,
+    /// Estimated collector work owed by everything allocated since the last
+    /// collection, in the "bytes" currency of [`Heap::collection_cost`]: each
+    /// allocation charges its payload size plus [`SLOT_TRACE_COST`]. Tracked
+    /// incrementally (an allocation must stay O(1)) and compared against
+    /// [`gc_budget`](Self::gc_budget) by [`should_collect`](Self::should_collect).
+    alloc_charge: u64,
+    /// How much may be charged to [`alloc_charge`](Self::alloc_charge) before
+    /// the next collection. Recomputed at the end of every sweep from the live
+    /// set; see [`should_collect`](Self::should_collect).
+    gc_budget: u64,
+    /// Mark-and-sweep cycles run so far — see [`collections`](Self::collections).
+    collections: u64,
     /// Value-duplication statistics. Records every copy-on-write and fork so we
     /// can track (and shrink) how much copying immutable values cost. Collected
     /// only in debug builds or with the `dup-stats` feature — see
@@ -168,8 +185,31 @@ pub struct Heap {
     alloc_stats: AllocStats,
 }
 
-/// Number of allocations between GC cycles
-const GC_THRESHOLD: u32 = 1024;
+/// What one slot costs a collection, expressed in the same "bytes" currency as
+/// payload sizes so the two can be added into a single work estimate. Every
+/// collection walks *every* slot of every slab (mark clears + sweep), live or
+/// free, so slot count is a real cost driver independent of payload size —
+/// without this term a heap of a million empty lists would look free to trace
+/// and get collected constantly. The exact value is a rough weighting, not a
+/// measurement: it says "visiting a slot costs about as much as copying 64
+/// bytes".
+const SLOT_TRACE_COST: u64 = 64;
+
+/// Floor on the work budget between collections. Below this the heap is small
+/// enough that collecting is pointless: a megabyte of floating garbage is
+/// cheaper to tolerate than the collections that would reclaim it. (The previous
+/// count-based rule collected every 1024 allocations no matter how tiny they
+/// were; for small-object programs this floor is the replacement, and it lets
+/// them run considerably further between traces.)
+const GC_MIN_BUDGET_BYTES: u64 = 1024 * 1024;
+
+/// How far the heap may grow, as a multiple of what tracing it costs, before
+/// the next collection. This is what keeps collection cost *proportional to
+/// live data*: a cycle costs O(live set), and we run one only after allocating
+/// `GC_HEAP_GROWTH` times that much, so the collector's amortized cost per
+/// allocated byte is a constant no matter how big the heap gets. Raising it
+/// trades peak memory for throughput.
+const GC_HEAP_GROWTH: u64 = 2;
 
 impl Heap {
     pub fn new() -> Self {
@@ -180,7 +220,9 @@ impl Heap {
             maps: Slab::new(),
             elements: Slab::new(),
             intern_table: HashMap::new(),
-            alloc_count: 0,
+            alloc_charge: 0,
+            gc_budget: GC_MIN_BUDGET_BYTES,
+            collections: 0,
             dup_stats: DupStats::new(),
             alloc_stats: AllocStats::new(),
         }
@@ -210,9 +252,57 @@ impl Heap {
         &mut self.alloc_stats
     }
 
+    /// How many mark-and-sweep cycles this heap has run. A diagnostic: paired
+    /// with [`live_bytes`](Self::live_bytes) it says whether collection is
+    /// keeping up with allocation, and whether the *number* of collections is
+    /// tracking bytes allocated (what we want) or object count (what the old
+    /// count-based trigger did).
+    pub fn collections(&self) -> u64 {
+        self.collections
+    }
+
+    /// Bytes of backing store this heap is *holding onto*, live or not: the
+    /// capacity of every slot's payload, including slots sitting on the free
+    /// list. Compare against [`live_bytes`](Self::live_bytes) to see how much
+    /// memory reclaimed-but-not-yet-reused slots are squatting on — the two
+    /// should stay close after a sweep. Approximate for maps (it prices the
+    /// entry table, not each key's own `String` buffer) — this is a diagnostic,
+    /// not an allocator accounting.
+    ///
+    /// O(slots) and only used by diagnostics/tests, never on an allocation path.
+    pub fn reserved_bytes(&self) -> u64 {
+        let strings: u64 = self
+            .strings
+            .slots
+            .iter()
+            .map(|s| s.data.capacity() as u64)
+            .sum();
+        let lists: u64 = self
+            .lists
+            .slots
+            .iter()
+            .map(|l| value_slice_bytes(l.data.capacity()))
+            .sum();
+        let f64s: u64 = self
+            .f64_arrays
+            .slots
+            .iter()
+            .map(|a| (a.data.capacity() * std::mem::size_of::<f64>()) as u64)
+            .sum();
+        let maps: u64 = self
+            .maps
+            .slots
+            .iter()
+            .map(|m| value_slice_bytes(m.data.capacity()))
+            .sum();
+        strings + lists + f64s + maps
+    }
+
     /// Total bytes of live payload this heap holds — the rough cost of cloning
-    /// it. Used to attribute a `Fork`'s byte count; also handy for diagnostics.
-    fn payload_bytes(&self) -> u64 {
+    /// it. Used to attribute a `Fork`'s byte count and to size the GC budget
+    /// (see [`should_collect`](Self::should_collect)); also handy for
+    /// diagnostics. O(slots): never call it on an allocation path.
+    pub fn live_bytes(&self) -> u64 {
         let strings: u64 = self
             .strings
             .slots
@@ -244,9 +334,41 @@ impl Heap {
         strings + lists + f64s + maps
     }
 
-    /// Returns true if the allocation counter has exceeded the GC threshold.
+    /// Estimated cost of running one collection right now: the live payload
+    /// this heap would have to trace, plus [`SLOT_TRACE_COST`] for every slot
+    /// the mark/sweep walks. O(slots) — only called at the end of a sweep,
+    /// which is already paying that walk.
+    fn collection_cost(&self) -> u64 {
+        let slots = (self.strings.slots.len()
+            + self.lists.slots.len()
+            + self.f64_arrays.slots.len()
+            + self.maps.slots.len()
+            + self.elements.slots.len()) as u64;
+        self.live_bytes() + SLOT_TRACE_COST * slots
+    }
+
+    /// Returns true when enough has been allocated since the last collection to
+    /// justify another one.
+    ///
+    /// "Enough" is measured in *work owed*, not objects created. A collection is
+    /// a full mark-and-sweep over every slab, so it costs O(live set + slots);
+    /// counting allocations instead (the old `alloc_count >= 1024` rule) meant
+    /// 1024 allocations of a 160 KB array — 160 MB of garbage — triggered the
+    /// same single trace as 1024 tiny strings, while a program churning large
+    /// arrays re-traced the whole heap every few frames and got steadily slower
+    /// as the slab high-water mark grew.
+    ///
+    /// So each allocation charges its own size (plus a fixed per-slot term) to
+    /// `alloc_charge`, and we collect once that reaches `gc_budget` — which the
+    /// previous sweep set to `GC_HEAP_GROWTH ×` the cost of tracing the live
+    /// set. Collection cost then stays proportional to live data: a program
+    /// allocating steadily pays a constant amortized price per byte, however
+    /// long it runs.
+    ///
+    /// Both sides are maintained incrementally, so this is O(1) — it is polled
+    /// after every VM instruction.
     pub fn should_collect(&self) -> bool {
-        self.alloc_count >= GC_THRESHOLD
+        self.alloc_charge >= self.gc_budget
     }
 
     /// Create an isolated clone of this heap for a forked execution. Because
@@ -269,14 +391,25 @@ impl Heap {
         // from the fork point.
         child.dup_stats.reset();
         child.alloc_stats.reset();
+        child.collections = 0;
+        // The GC counters themselves (`alloc_charge`, `gc_budget`) are *not*
+        // reset: they describe the state of the heap the child just inherited,
+        // not work done on anyone's behalf. The child owns that heap now — it
+        // holds the same live set and is the same distance from its next
+        // collection as the parent was.
         child
             .dup_stats
-            .record(DupKind::Fork, || self.payload_bytes());
+            .record(DupKind::Fork, || self.live_bytes());
         child
     }
 
-    fn tick_alloc(&mut self, kind: AllocKind) {
-        self.alloc_count += 1;
+    /// Account for one new heap object: charge the collector budget for the
+    /// work this object will cost to trace and reclaim (`payload_bytes` of
+    /// backing store plus one slot visit), and record it in the stats. The
+    /// charge is what makes the GC trigger size-aware — see
+    /// [`should_collect`](Self::should_collect).
+    fn tick_alloc(&mut self, kind: AllocKind, payload_bytes: u64) {
+        self.alloc_charge += payload_bytes + SLOT_TRACE_COST;
         self.alloc_stats.record(kind);
     }
 
@@ -292,7 +425,7 @@ impl Heap {
             // Stale entry — will be overwritten below
         }
 
-        self.tick_alloc(AllocKind::String);
+        self.tick_alloc(AllocKind::String, s.len() as u64);
         let id = StringId(self.strings.alloc(s.clone()));
         self.intern_table.insert(s, id);
         id
@@ -305,7 +438,7 @@ impl Heap {
     // --- List allocation ---
 
     pub fn alloc_list(&mut self, elements: Vec<Value>) -> ListId {
-        self.tick_alloc(AllocKind::List);
+        self.tick_alloc(AllocKind::List, value_slice_bytes(elements.len()));
         ListId(self.lists.alloc(elements))
     }
 
@@ -401,7 +534,10 @@ impl Heap {
     // --- F64 array allocation ---
 
     pub fn alloc_f64_array(&mut self, data: Vec<f64>) -> F64ArrayId {
-        self.tick_alloc(AllocKind::F64Array);
+        self.tick_alloc(
+            AllocKind::F64Array,
+            (data.len() * std::mem::size_of::<f64>()) as u64,
+        );
         F64ArrayId(self.f64_arrays.alloc(data))
     }
 
@@ -461,7 +597,7 @@ impl Heap {
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
-        self.tick_alloc(AllocKind::Map);
+        self.tick_alloc(AllocKind::Map, map_entries_bytes(&entries));
         MapId(self.maps.alloc(entries))
     }
 
@@ -516,7 +652,8 @@ impl Heap {
     // --- Element allocation ---
 
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
-        self.tick_alloc(AllocKind::Element);
+        // Three `Copy` ids: no backing store of its own beyond the slot.
+        self.tick_alloc(AllocKind::Element, 0);
         ElementId(self.elements.alloc(ElementPayload {
             tag,
             props,
@@ -621,17 +758,28 @@ impl Heap {
             intern_table,
             ..
         } = self;
+        //
+        // Each reclaim *replaces* the payload rather than clearing it: an
+        // emptied `Vec`/`String`/`IndexMap` keeps its buffer, which would leave
+        // a swept 160 KB array squatting on 160 KB while it sits on the free
+        // list — and `Slab::alloc` drops that buffer unread when it reuses the
+        // slot, so nothing is gained by keeping it. See `Slab::sweep_with`.
         strings.sweep_with(|s| {
             intern_table.remove(s.as_str());
-            s.clear();
+            *s = String::new();
         });
 
-        self.lists.sweep_with(|v| v.clear());
-        self.f64_arrays.sweep_with(|v| v.clear());
-        self.maps.sweep_with(|v| v.clear());
+        self.lists.sweep_with(|v| *v = Vec::new());
+        self.f64_arrays.sweep_with(|v| *v = Vec::new());
+        self.maps.sweep_with(|v| *v = IndexMap::new());
         self.elements.sweep_with(|_| {});
 
-        self.alloc_count = 0;
+        // Size the next collection's budget against what this collection would
+        // cost to repeat (see `should_collect`). Computed here, once per cycle,
+        // where an O(slots) walk is already being paid — never per allocation.
+        self.alloc_charge = 0;
+        self.gc_budget = GC_MIN_BUDGET_BYTES.max(GC_HEAP_GROWTH * self.collection_cost());
+        self.collections += 1;
     }
 }
 

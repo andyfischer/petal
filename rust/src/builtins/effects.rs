@@ -35,10 +35,36 @@ const PURE: Effects = 1 << 3;
 /// a lint-wording concern, not a soundness property.
 const LOOKS_MUT: Effects = 1 << 4;
 
-/// Every builtin with an effect property worth recording, listed once.
-/// A builtin absent from this table has no property set: every predicate
-/// answers `false`, which is the conservative answer for all of them.
-const BUILTIN_EFFECTS: &[(&str, Effects)] = &[
+/// Expand one list of rows into both the [`BUILTIN_EFFECTS`] table (which the
+/// tests enumerate) and [`effects_of`]'s lookup. Writing the names twice would
+/// defeat the point of the table, and a linear scan over it would be a
+/// regression: the predicates are called per-term by the backend in-place
+/// analyses, where the `matches!` trees they replaced compiled to a decision
+/// tree. A `match` over string literals gets that back — the compiler is free
+/// to switch on length and prefix instead of comparing every name in turn.
+macro_rules! builtin_effects {
+    ($(($name:literal, $flags:expr)),* $(,)?) => {
+        /// Every builtin with an effect property worth recording, listed once.
+        /// A builtin absent from this table has no property set: every
+        /// predicate answers `false`, the conservative answer for all of them.
+        ///
+        /// The rows reach the predicates through [`effects_of`]'s `match`, not
+        /// through this slice — it exists so the tests can enumerate the table
+        /// and pin each predicate's exact membership.
+        #[cfg_attr(not(test), allow(dead_code))]
+        const BUILTIN_EFFECTS: &[(&str, Effects)] = &[$(($name, $flags)),*];
+
+        /// The effect flags recorded for `name`, or none if it has no row.
+        fn effects_of(name: &str) -> Effects {
+            match name {
+                $($name => $flags,)*
+                _ => 0,
+            }
+        }
+    };
+}
+
+builtin_effects![
     // collections (value-semantic: return a new collection, mutate nothing)
     ("range", FRESH | PURE),
     ("len", NO_REF | PURE),
@@ -123,14 +149,6 @@ const BUILTIN_EFFECTS: &[(&str, Effects)] = &[
     ("print", NO_REF),
 ];
 
-/// The effect flags recorded for `name`, or none if it has no row.
-fn effects_of(name: &str) -> Effects {
-    BUILTIN_EFFECTS
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map_or(0, |(_, e)| *e)
-}
-
 /// The mutating builtins: those whose container is their first argument and
 /// whose result is the new (or in-place-updated) container. This is the single
 /// source of truth shared by the two backend in-place analyses
@@ -149,16 +167,17 @@ pub fn is_mutating_builtin(name: &str) -> bool {
 /// This is the property `backend::bytecode::escape` needs to let a call result
 /// *root* a unique value-web — `f64_array(n)` is the only way to construct an
 /// f64 array, so without it no f64-array write can ever be in place. Every
-/// entry below allocates its result with a fresh `alloc_list` / `alloc_f64_array`
+/// [`FRESH`] row allocates its result with a fresh `alloc_list` /
+/// `alloc_f64_array`
 /// on every path that yields a container (the absorb-a-`Pending` paths in
 /// `sort`/`join` return a `Pending` scalar, not a container, so they are not a
 /// counterexample). Elements *inside* the result may alias existing values; that
 /// is fine, since an in-place write replaces a slot in the fresh outer store and
 /// never touches an element's own store.
 ///
-/// Add to this list only after checking the native for a path that returns an
-/// argument's id unchanged — such a builtin would make the caller's "unique
-/// owner" assumption false and silently corrupt data.
+/// Set [`FRESH`] on a row only after checking the native for a path that
+/// returns an argument's id unchanged — such a builtin would make the caller's
+/// "unique owner" assumption false and silently corrupt data.
 pub fn returns_fresh_container(name: &str) -> bool {
     effects_of(name) & FRESH != 0
 }
@@ -177,7 +196,8 @@ pub fn returns_fresh_container(name: &str) -> bool {
 /// Two exclusions worth naming, because they look like they belong:
 /// `min`/`max` return *one of their arguments* — handing back the container id
 /// itself — and `push_output` parks the value in an output buffer the host reads
-/// after the run. Both retain. Check for those two shapes before adding a name.
+/// after the run. Both retain. Check for those two shapes before setting
+/// [`NO_REF`] on a row.
 pub fn retains_no_reference(name: &str) -> bool {
     effects_of(name) & NO_REF != 0
 }

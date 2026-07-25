@@ -34,10 +34,10 @@ pub const CANVAS_ID_COUNTER: &str = "canvas_id";
 /// it is re-exported here so a host reaches the whole draw contract — the
 /// commands and the measurements that feed them — through one path.
 pub use crate::text::{
-    bind_default_font_name, bind_font_metrics, bind_font_variant_metrics, bind_text_advance_table,
-    bind_text_metrics, font_variant_key, FontMetrics, TextStyle, DEFAULT_TEXT_ADVANCE,
-    DEFAULT_TEXT_SIZE, REGULAR_WEIGHT, SYM_TEXT_ADVANCE, SYM_TEXT_ADVANCES, SYM_TEXT_DEFAULT_FONT,
-    SYM_TEXT_FONTS,
+    DEFAULT_TEXT_ADVANCE, DEFAULT_TEXT_SIZE, FontMetrics, REGULAR_WEIGHT, SYM_TEXT_ADVANCE,
+    SYM_TEXT_ADVANCES, SYM_TEXT_DEFAULT_FONT, SYM_TEXT_FONTS, TextStyle, bind_default_font_name,
+    bind_font_metrics, bind_font_variant_metrics, bind_text_advance_table, bind_text_metrics,
+    font_variant_key,
 };
 
 /// `skip_serializing_if` predicates that keep the JSON identical to the

@@ -21,7 +21,11 @@ fn time_and_elapsed() {
 
     ui.time = 10.0;
     ui.frame().unwrap();
-    assert_eq!(ui.state_float("t"), Some(10.0), "time() reads the host clock");
+    assert_eq!(
+        ui.state_float("t"),
+        Some(10.0),
+        "time() reads the host clock"
+    );
     assert_eq!(
         ui.state_float("e"),
         Some(0.0),
@@ -539,7 +543,10 @@ fn preview_tiny_max_chars_is_safe() {
     run_headless(src, |ui| {
         ui.frame().unwrap();
         let st = ui.state();
-        assert!(ui.state_int("count").unwrap() <= 2, "never exceeds max_lines");
+        assert!(
+            ui.state_int("count").unwrap() <= 2,
+            "never exceeds max_lines"
+        );
         assert_eq!(st["trunc"], true);
     });
 }
@@ -662,7 +669,11 @@ fn ensure_visible_px_row_taller_than_viewport_pins_top() {
     run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("up"), Some(100), "scrolling up pins the top");
-        assert_eq!(ui.state_int("down"), Some(100), "scrolling down pins the top");
+        assert_eq!(
+            ui.state_int("down"),
+            Some(100),
+            "scrolling down pins the top"
+        );
     });
 }
 
@@ -680,7 +691,11 @@ fn wrap_edge_cases_and_newlines() {
     run_headless(src, |ui| {
         ui.frame().unwrap();
         let st = ui.state();
-        assert_eq!(ui.state_int("nempty"), Some(1), "empty string is one empty line");
+        assert_eq!(
+            ui.state_int("nempty"),
+            Some(1),
+            "empty string is one empty line"
+        );
         assert_eq!(st["empty"], "");
         assert_eq!(st["zero"], "hello world", "max_chars <= 0 returns [s]");
         // Explicit newlines split first; each segment wraps independently,

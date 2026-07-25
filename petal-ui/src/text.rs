@@ -456,8 +456,8 @@ pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
         None => default_font_metrics(state),
     };
 
-    let width = metrics.width_of(&text, style.size as f64)
-        + style.spacing * text.chars().count() as f64;
+    let width =
+        metrics.width_of(&text, style.size as f64) + style.spacing * text.chars().count() as f64;
     state.push_int(width.round() as i64);
     Ok(1)
 }
@@ -465,7 +465,7 @@ pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::{register_draw, take_draw_commands, DrawCommand};
+    use crate::draw::{DrawCommand, register_draw, take_draw_commands};
 
     #[test]
     fn variant_candidates_walk_most_specific_first() {
@@ -530,7 +530,9 @@ mod tests {
         let v = env.run_source("text_width(\"iii\", 10)").expect("run");
         assert_eq!(v, Value::Int(6));
         // Three args → the named face: 3 × 10 × 0.5 = 15.
-        let v = env.run_source("text_width(\"iii\", 10, \"mono\")").expect("run");
+        let v = env
+            .run_source("text_width(\"iii\", 10, \"mono\")")
+            .expect("run");
         assert_eq!(v, Value::Int(15));
         // A fallback list picks the first registered name.
         let v = env
@@ -538,7 +540,9 @@ mod tests {
             .expect("run");
         assert_eq!(v, Value::Int(15));
         // A face this host never bound degrades to the default font.
-        let v = env.run_source("text_width(\"iii\", 10, \"serif\")").expect("run");
+        let v = env
+            .run_source("text_width(\"iii\", 10, \"serif\")")
+            .expect("run");
         assert_eq!(v, Value::Int(6));
     }
 
@@ -623,7 +627,10 @@ mod tests {
 
         let mut width = |src: &str| env.run_source(src).expect("run");
         // Each variant measures its own metrics: 4 chars × 10 px × ratio.
-        assert_eq!(width("text_width(\"abcd\", {size: 10, font: \"ui\"})"), Value::Int(20));
+        assert_eq!(
+            width("text_width(\"abcd\", {size: 10, font: \"ui\"})"),
+            Value::Int(20)
+        );
         assert_eq!(
             width("text_width(\"abcd\", {size: 10, font: \"ui\", weight: 700})"),
             Value::Int(24)
@@ -667,7 +674,8 @@ mod tests {
             "with the default face named, a font-less bold finds ui@700"
         );
         assert_eq!(
-            env.run_source("text_width(\"ab\", {size: 10})").expect("run"),
+            env.run_source("text_width(\"ab\", {size: 10})")
+                .expect("run"),
             Value::Int(10),
             "regular text still measures the plain default metrics"
         );
@@ -712,9 +720,13 @@ mod tests {
         // A second registration must not drop the first.
         bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
 
-        let v = env.run_source("text_width(\"WW\", 10, \"ui\")").expect("run");
+        let v = env
+            .run_source("text_width(\"WW\", 10, \"ui\")")
+            .expect("run");
         assert_eq!(v, Value::Int(20));
-        let v = env.run_source("text_width(\"WW\", 10, \"mono\")").expect("run");
+        let v = env
+            .run_source("text_width(\"WW\", 10, \"mono\")")
+            .expect("run");
         assert_eq!(v, Value::Int(10));
     }
 

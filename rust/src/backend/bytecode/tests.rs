@@ -683,6 +683,206 @@ fn inplace_analysis_fires_on_accumulators() {
     );
 }
 
+// -- M4 route B relaxations: copy-chain roots, fresh calls, loop chains ------
+//
+// Each relaxation below widens what route B accepts, so each gets both a parity
+// case (the optimized engine must agree with clone-and-alloc) and a negative
+// case pinning that a live alias still blocks it. The end-to-end cost side —
+// that these shapes actually stop duplicating — lives in
+// `rust/tests/copy_elision.rs`.
+
+#[test]
+fn inplace_fires_on_bare_bound_accumulator() {
+    // `xs = []` and `let xs = []` are semantically identical; the bare form just
+    // lowers an extra `Copy` between the alloc and the loop phi's init. The
+    // backbone follows that copy chain, so a missing keyword is not a cliff.
+    let code = "xs = []\nfor i in range(0, 20) do\n  xs = append(xs, i)\nend\nprint(len(xs), xs[0], xs[19])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "bare-bound accumulator should fire"
+    );
+    let code =
+        "xs = [0, 0, 0]\nfor i in range(0, 9) do\n  xs[i % 3] = i\nend\nprint(xs[0], xs[1], xs[2])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "bare-bound indexed write should fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_aliased_bare_bound_accumulator() {
+    // The copy chain is part of the backbone, so it is held to the same
+    // "flows only into the accumulator" rule as the root itself: `ys = xs`
+    // reads the *same* `Copy` the phi's init reads, and would observe every
+    // in-place append.
+    let code = "xs = []\nlet ys = xs\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs), len(ys))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "aliased bare-bound accumulator must not be in-place"
+    );
+}
+
+#[test]
+fn inplace_fires_on_fresh_builtin_root() {
+    // `f64_array(n)` allocates a brand-new array and retains no reference to it,
+    // so its result roots a unique web exactly like an `AllocList` would. It is
+    // the only way to build an f64 array, so without this no f64-array write
+    // could ever be in place.
+    let code =
+        "let a = f64_array(8)\nfor i in range(0, 8) do\n  a[i] = i * 1.0\nend\nprint(a[0], a[7])";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "f64_array root should fire");
+    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a = set(a, i, i * 1.0)\nend\nprint(get(a, 0), get(a, 7))";
+    assert_inplace_parity(code);
+    assert!(inplace_count(code) >= 1, "set() on f64_array should fire");
+}
+
+#[test]
+fn inplace_does_not_fire_on_aliased_builtin_root() {
+    // A fresh call result is only unique until someone copies it: `b = a` is a
+    // live observer of the pre-write array, so the writes must clone.
+    let code = "let a = f64_array(4)\nlet b = a\nfor i in range(0, 4) do\n  a[i] = i * 1.0\nend\nprint(a[0], b[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "aliased f64_array must not be in-place"
+    );
+}
+
+#[test]
+fn inplace_fires_on_fresh_function_result_root() {
+    // `build()` allocates its result and lets nothing else observe it, so the
+    // caller holds the only reference — factoring setup into a helper must not
+    // cost the optimization.
+    let code = "fn build()\n  let a = f64_array(8)\n  a\nend\nlet a = build()\nfor i in range(0, 8) do\n  a[i] = i * 1.0\nend\nprint(a[0], a[7])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "fresh function result root should fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_non_fresh_function_result() {
+    // `get()` returns a *captured* container, not one it allocated: the caller
+    // shares it with `shared`. Writing in place would corrupt `shared` — the
+    // value-semantics guard for the call-result relaxation.
+    let code = "let shared = [0, 0, 0]\nfn get()\n  shared\nend\nlet a = get()\nfor i in range(0, 3) do\n  a[i] = i + 1\nend\nprint(shared[0], shared[2], a[0], a[2])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "a returned capture is not a fresh root"
+    );
+    // Same for a returned *parameter*: the argument's owner still holds it.
+    let code = "fn pass(v)\n  v\nend\nlet xs = [0, 0, 0]\nlet a = pass(xs)\nfor i in range(0, 3) do\n  a[i] = i + 1\nend\nprint(xs[0], xs[2], a[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "a returned parameter is not a fresh root"
+    );
+}
+
+#[test]
+fn inplace_fires_across_sequential_loop_spines() {
+    // Build in one loop, update in the next: two loop-carried phis chained
+    // init-to-init off one fresh root. Nothing between or after the loops
+    // observes a mid-build value, so both loops' mutations are in place.
+    let code = "let xs = []\nfor i in range(0, 10) do\n  xs = append(xs, 0)\nend\nfor i in range(0, 10) do\n  xs[i] = i * 2\nend\nprint(len(xs), xs[0], xs[9])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 2,
+        "both loop spines should fire ({} fired)",
+        inplace_count(code)
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_alias_taken_between_loop_spines() {
+    // `ys = xs` between the two loops observes the *mid-build* value that the
+    // second loop then overwrites — so the second loop's write must clone. The
+    // first loop's append still fires: `ys` is created after it, and reading a
+    // finished accumulator is always safe.
+    let code = "let xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nlet ys = xs\nfor i in range(0, 3) do\n  xs[i] = i * 10\nend\nprint(ys[0], ys[2], xs[0], xs[2])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        1,
+        "only the build loop may fire; the update loop is observed by `ys`"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_mid_build_value_is_stored_elsewhere() {
+    // The build loop stashes the accumulator's *current* id into `keep` on every
+    // iteration, so `keep` holds live references to mid-build states. Neither
+    // loop may mutate in place — the appends would grow the stashed lists and
+    // the second loop's writes would overwrite them.
+    let code = "let keep = []\nlet xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  keep = append(keep, xs)\nend\nfor i in range(0, 3) do\n  xs[i] = 99\nend\nprint(len(keep), len(keep[0]), keep[0][0], xs[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        1,
+        "only `keep` (whose own ids never escape) may fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_on_two_mutated_aliases_of_one_root() {
+    // Both names hold the *same* id, and both are mutated in a loop. If the
+    // chain rule mistook them for one accumulator, each in-place append would
+    // grow the store the other one reads. Two phis whose inits resolve to the
+    // same root are not a chain, and an alias taken after a loop leaves the
+    // first spine's phi with a user outside the web.
+    let code = "let xs = []\nlet ys = xs\nfor i in range(0, 3) do\n  ys = append(ys, i)\n  xs = append(xs, i * 10)\nend\nprint(len(xs), len(ys), xs[0], ys[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "two live aliases must not be in-place"
+    );
+    let code = "let xs = []\nfor i in range(0, 2) do\n  xs = append(xs, i)\nend\nlet ys = xs\nfor i in range(0, 2) do\n  ys = append(ys, i)\n  xs[i] = 9\nend\nprint(len(xs), len(ys), xs[0], ys[0])";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        1,
+        "only the first build loop (before the alias exists) may fire"
+    );
+}
+
+#[test]
+fn inplace_fires_on_nested_loop_carried_accumulator() {
+    // The other chain shape: an inner loop carrying the outer loop's
+    // accumulator. The inner phi's init is the outer phi, so they chain, and
+    // every mutation is inside the union of the two bodies.
+    let code = "let xs = []\nfor y in range(0, 4) do\n  for x in range(0, 3) do\n    xs = append(xs, x + y)\n  end\nend\nprint(len(xs), xs[0], xs[11])";
+    assert_inplace_parity(code);
+    assert!(
+        inplace_count(code) >= 1,
+        "nested loop-carried accumulator should fire"
+    );
+}
+
+#[test]
+fn inplace_does_not_fire_when_read_between_nested_loop_spines() {
+    // Same nested shape, but the outer body reads the partially-built list
+    // between inner-loop passes — a live, non-carrier observer inside the
+    // region, so nothing may go in place.
+    let code = "let xs = []\nfor y in range(0, 3) do\n  for x in range(0, 2) do\n    xs = append(xs, x)\n  end\n  print(len(xs))\nend\nprint(len(xs))";
+    assert_inplace_parity(code);
+    assert_eq!(
+        inplace_count(code),
+        0,
+        "an in-region reader of the mid-build value must block the accumulator"
+    );
+}
+
 // -- M4 route A: straight-line last-use in-place mutation -------------------
 //
 // Route A rewrites mutations of freshly-allocated, dead-after containers on

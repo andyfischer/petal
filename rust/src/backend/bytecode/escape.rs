@@ -20,14 +20,19 @@
 //! when:
 //!
 //! 1. **Unique fresh root.** Exactly one web term is not a carrier — it is a
-//!    fresh `Alloc*` in this function. (A param, capture, call result, or
-//!    state-read root could alias something else, so it is rejected.)
-//! 2. **One loop spine.** Exactly one web phi's init resolves to that root; it is
-//!    the loop-carried phi `P_loop`, and its loop body block defines the
-//!    *region* — the block subtree over which the accumulator is live.
-//! 3. **All mutations in-region.** Every mutation in the web is inside the loop
-//!    body. (A post-loop mutation of the finished value could alias a surviving
-//!    reference, so it is rejected.)
+//!    *fresh* value produced in this function: an `Alloc*` term, or a call whose
+//!    result is provably a brand-new unaliased container (see
+//!    [`Analysis::is_fresh_root`]). A param, capture, or state read could alias
+//!    something else, so it is rejected.
+//! 2. **A single loop spine chain.** The web's loop-carried phis form one chain:
+//!    the first phi's init resolves to the root and each later phi's init
+//!    resolves to its predecessor, connected only by `Copy` carriers. Together
+//!    with the root and those copies they are the accumulator's *backbone*; the
+//!    union of their loop-body block subtrees is the *region* — the window over
+//!    which the accumulator is live and being built.
+//! 3. **All mutations in-region.** Every mutation in the web is inside the
+//!    region. (A post-loop mutation of the finished value could alias a
+//!    surviving reference, so it is rejected.)
 //! 4. **Linear use inside the region.** Every web term's in-region readers are
 //!    themselves web terms and *linear*: at most one, unless they sit in
 //!    mutually-exclusive branch/match arms (which is how `game_of_life.ptl`'s
@@ -35,15 +40,20 @@
 //!    lowers — two mutations, one per arm). A non-web in-region reader (an
 //!    in-loop `len(xs)`, a store into another container, a closure capture, a
 //!    state write) breaks uniqueness and rejects the web.
+//! 5. **Closed backbone interior.** Every backbone term *except the last phi in
+//!    the chain* — the root, the connecting copies, and each earlier phi — has
+//!    all of its users inside the web. Those terms hold a *mid-build* id that a
+//!    later region still mutates, so an outside reader (`let ys = xs` between
+//!    two loops, or before the first) would observe the in-place writes.
 //!
-//! Reads of the *final* value after the loop (`len(xs)`, `next = append(next,
-//! row)`, `return xs`) are unrestricted: in-place mutation produces exactly the
-//! same final list, so any downstream observation is unaffected.
+//! Reads of the *final* value after the last loop (`len(xs)`, `next =
+//! append(next, row)`, `return xs`) are unrestricted: in-place mutation produces
+//! exactly the same final list, so any downstream observation is unaffected.
 //!
 //! **Soundness.** The heap is immutable-by-construction, so a dataflow edge to a
 //! container's producing term is the *only* way any code observes it. The web
-//! enumerates every carrier; conditions 1–4 establish that within each iteration
-//! the id in `P_loop` is referenced solely by that iteration's linear
+//! enumerates every carrier; conditions 1–5 establish that within each iteration
+//! the id in the governing phi is referenced solely by that iteration's linear
 //! mutation chain, and the back-edge writes the (identical) mutated id forward.
 //! No live observer ever sees a pre-mutation state. Fork safety is automatic:
 //! `Heap::fork` deep-copies the slot vectors, so a speculative child mutates its
@@ -96,6 +106,20 @@ pub fn analyze(program: &Program) -> InPlaceSet {
         }
     }
     InPlaceSet { terms }
+}
+
+/// The accumulator's *backbone*: the fresh root, the loop-carried phis that
+/// carry it, and the `Copy` aliases that connect them. Everything else in the
+/// value-web hangs off this inside the loop regions.
+struct Backbone {
+    /// The unique fresh value the accumulator starts from.
+    root: TermId,
+    /// The loop-carried phis in chain order: `phis[0]`'s init resolves to
+    /// `root`, and each later phi's init resolves to its predecessor. The last
+    /// one holds the finished value.
+    phis: Vec<TermId>,
+    /// `root` ∪ `phis` ∪ the connecting `Copy` carriers.
+    terms: HashSet<TermId>,
 }
 
 /// Precomputed dataflow relations for the analysis, built once per program.
@@ -220,14 +244,145 @@ impl<'p> Analysis<'p> {
         )
     }
 
-    /// Follow `Copy` (and single-input `Phi`… no) chains backward to the first
-    /// non-`Copy` term.
-    fn strip_copies(&self, mut t: TermId) -> TermId {
+    /// Whether `t` may root a unique value-web: it produces a container that no
+    /// other live value can reference.
+    ///
+    /// An `Alloc*` term is fresh by construction. A *call* is fresh only when the
+    /// callee is known to hand back sole ownership: a builtin on the
+    /// [`crate::builtins::returns_fresh_container`] list, or a user function whose
+    /// result is a container it allocated and let nothing else observe
+    /// ([`Self::function_returns_fresh`]). Everything else — a param, a capture, a
+    /// state read, an unknown call — could alias a value the caller still holds.
+    fn is_fresh_root(&self, t: TermId) -> bool {
+        let term = self.program.get_term(t);
+        if Self::is_fresh_alloc(term) {
+            return true;
+        }
+        self.call_returns_fresh(term)
+    }
+
+    /// [`Self::is_fresh_root`] for the call forms, split out so the recursion
+    /// into a callee body is explicitly one level deep (the callee's own result
+    /// must be an alloc or a fresh builtin, never another user call).
+    fn call_returns_fresh(&self, term: &Term) -> bool {
+        match &term.op {
+            TermOp::BuiltinCall(cid) => self
+                .program
+                .get_string_constant(*cid)
+                .is_some_and(crate::builtins::returns_fresh_container),
+            TermOp::Call => {
+                let Some(&callee) = term.inputs.first() else {
+                    return false;
+                };
+                // Only a directly-named function qualifies: a dynamic callable
+                // (a param, an overload set, a captured closure variable) could
+                // be any function at all.
+                let TermOp::MakeClosure(fid) = self.program.get_term(self.strip_copies(callee)).op
+                else {
+                    return false;
+                };
+                self.program
+                    .functions
+                    .iter()
+                    .find(|f| f.id == fid)
+                    .is_some_and(|def| self.function_returns_fresh(def))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether every call of `def` returns a container it freshly allocated and
+    /// leaked nowhere — a conservative intraprocedural check.
+    ///
+    /// The function's result is its body block's last term. That term's `Copy`
+    /// chain must bottom out in an `Alloc*` or a fresh builtin call *inside the
+    /// body*, and every user of every term on that chain must itself be on the
+    /// chain (no store into another container, no closure capture, no state
+    /// write, no phi carrying it into an enclosing scope). That makes the
+    /// allocation flow linearly to the `return` and nowhere else, so the caller
+    /// receives the sole reference. Any explicit `return` in the body rejects the
+    /// function outright: an early return could yield a different, possibly
+    /// aliased, value than the tail expression the check inspected.
+    fn function_returns_fresh(&self, def: &crate::program::FunctionDef) -> bool {
+        let body = self.block_subtree(def.body_block);
+        if self
+            .program
+            .terms
+            .iter()
+            .any(|t| body.contains(&t.block_id) && matches!(t.op, TermOp::Return))
+        {
+            return false;
+        }
+        let Some(result) = self.last_term_of(def.body_block) else {
+            return false;
+        };
+        let (alloc, copies) = self.copy_chain(result);
+        let alloc_term = self.program.get_term(alloc);
+        if !Self::is_fresh_alloc(alloc_term) && !self.call_returns_fresh_builtin(alloc_term) {
+            return false;
+        }
+        if !body.contains(&alloc_term.block_id) {
+            return false;
+        }
+        let chain: HashSet<TermId> = copies.iter().copied().chain([alloc]).collect();
+        for &t in &chain {
+            for &u in self.users.get(&t).into_iter().flatten() {
+                if !chain.contains(&u) {
+                    return false;
+                }
+            }
+        }
+        // A phi carry-out is a write into an enclosing frame's register, not a
+        // `users` edge, so it has to be excluded separately.
+        !self
+            .phi_srcs
+            .values()
+            .any(|srcs| srcs.iter().any(|s| chain.contains(s)))
+    }
+
+    /// The builtin half of [`Self::call_returns_fresh`] — used where recursing
+    /// into another user function would not be sound to assume.
+    fn call_returns_fresh_builtin(&self, term: &Term) -> bool {
+        matches!(&term.op, TermOp::BuiltinCall(cid) if self
+            .program
+            .get_string_constant(*cid)
+            .is_some_and(crate::builtins::returns_fresh_container))
+    }
+
+    /// The last term of `block` in execution order (`entry` → `block_next`) —
+    /// the block's result value, mirroring the lowering's `block_result_reg`.
+    fn last_term_of(&self, block: BlockId) -> Option<TermId> {
+        let mut cur = self.program.get_block(block).entry;
+        let mut last = None;
+        while let Some(t) = cur {
+            last = Some(t);
+            cur = self.program.get_term(t).block_next;
+        }
+        last
+    }
+
+    /// Follow `Copy` chains backward to the first non-`Copy` term.
+    fn strip_copies(&self, t: TermId) -> TermId {
+        self.copy_chain(t).0
+    }
+
+    /// Like [`Self::strip_copies`], but also returns the `Copy` terms traversed
+    /// (nearest-first). Those copies are pure aliases of the same id, so they
+    /// belong to the value-web alongside the term they resolve to.
+    fn copy_chain(&self, mut t: TermId) -> (TermId, Vec<TermId>) {
+        let mut copies = Vec::new();
         loop {
             let term = self.program.get_term(t);
-            match &term.op {
-                TermOp::Copy => t = term.inputs[0],
-                _ => return t,
+            // A capture / function-parameter placeholder lowers as an
+            // *input-less* `Copy`: its value comes from the frame, not from a
+            // dataflow edge, so the chain ends there (and it is not a fresh
+            // root, which is what rejects a returned capture).
+            match (&term.op, term.inputs.first()) {
+                (TermOp::Copy, Some(&src)) => {
+                    copies.push(t);
+                    t = src;
+                }
+                _ => return (t, copies),
             }
         }
     }
@@ -293,49 +448,52 @@ impl<'p> Analysis<'p> {
 
     /// Route B: is `seed` (a mutation term) a safe loop-carried accumulator?
     fn route_b_ok(&self, seed: TermId) -> bool {
-        // Locate the single loop-carried phi behind the mutation via a backward
-        // (producer-only) walk, so post-loop escapes never enter the picture.
+        // Locate the loop-carried phis behind the mutation via a backward
+        // (producer-only) walk, so post-loop escapes never enter the picture,
+        // and resolve them into a single accumulator backbone.
         let cone = self.backward_cone(seed);
-        let mut p_loop: Option<TermId> = None;
-        for &t in &cone {
-            if self.is_loop_phi(t) {
-                if p_loop.replace(t).is_some() {
-                    return false; // more than one loop spine — ambiguous
-                }
-            }
-        }
-        let Some(p_loop) = p_loop else { return false };
+        let Some(backbone) = self.build_backbone(&cone) else {
+            return false;
+        };
+        let root = backbone.root;
 
-        // The root is P_loop's init, which must be a fresh, uniquely-owned alloc
-        // (a param/capture/call/state root could already be aliased).
-        let root = self.strip_copies(self.program.get_term(p_loop).inputs[0]);
-        if !Self::is_fresh_alloc(self.program.get_term(root)) {
+        // The root must be a fresh, uniquely-owned value (a param/capture/state
+        // root, or a call that could hand back an alias, is rejected).
+        if !self.is_fresh_root(root) {
             return false;
         }
 
-        // `seed` must be *on the spine*: its result has to flow back into
-        // `p_loop`'s back edge. A mutation whose result is discarded — e.g.
+        // `seed` must be *on a spine*: its result has to flow back into some
+        // backbone phi's back edge. A mutation whose result is discarded — e.g.
         // `let ys = xs; ys = append(ys, v)` inside the loop, where `xs` is the
         // real carried value and `ys` a throwaway alias — is NOT the
         // accumulator; mutating it in place would corrupt the aliased `xs`.
-        let back_srcs: Vec<TermId> = self.phi_srcs.get(&p_loop).cloned().unwrap_or_default();
-        let spine = self.backward_carrier_closure(&back_srcs);
-        if !spine.contains(&seed) {
+        let on_spine = backbone.phis.iter().any(|p| {
+            let back_srcs: Vec<TermId> = self.phi_srcs.get(p).cloned().unwrap_or_default();
+            self.backward_carrier_closure(&back_srcs).contains(&seed)
+        });
+        if !on_spine {
             return false;
         }
 
-        // The region is the loop body subtree: the window over which the
-        // accumulator is live and being mutated.
-        let Some(body_block) = self.body_block_of(p_loop) else {
-            return false;
-        };
-        let region = self.block_subtree(body_block);
+        // The region is the union of the backbone loops' body subtrees: the
+        // window over which the accumulator is live and being mutated.
+        let mut per_phi: Vec<HashSet<BlockId>> = Vec::with_capacity(backbone.phis.len());
+        let mut region: HashSet<BlockId> = HashSet::new();
+        for &p in &backbone.phis {
+            let Some(body_block) = self.body_block_of(p) else {
+                return false;
+            };
+            let sub = self.block_subtree(body_block);
+            region.extend(sub.iter().copied());
+            per_phi.push(sub);
+        }
 
         // Build the region-confined value-web: carriers connected to `seed`
-        // within the region, plus the boundary spine (`p_loop`, `root`). Only
-        // carriers (and the root) are ever added — a non-carrier in-region
-        // reader is caught during validation, not folded into the web.
-        let web = self.build_confined_web(seed, p_loop, root, &region);
+        // within the region, plus the backbone itself. Only carriers (and the
+        // root) are ever added — a non-carrier in-region reader is caught during
+        // validation, not folded into the web.
+        let web = self.build_confined_web(seed, &backbone, &region);
 
         // (1) Unique fresh root: the only non-carrier in the web is `root`.
         for &t in &web {
@@ -345,14 +503,40 @@ impl<'p> Analysis<'p> {
             }
         }
 
-        // (1b) The fresh root must flow *only* into the accumulator spine. A
-        // reference taken before the loop (`let ys = xs`) aliases the initial
-        // container and would observe every in-place mutation, so any root user
-        // outside the web rejects the whole accumulator. (Post-loop reads are
-        // reads of the *final* value and stay safe; those never read the root.)
-        for &u in self.users.get(&root).into_iter().flatten() {
-            if !web.contains(&u) {
-                return false;
+        // (5) The backbone's *interior* holds a mid-build id that a later region
+        // still mutates in place, so it must flow only into the accumulator: a
+        // reference taken before the first loop (`let ys = xs`) or between two
+        // sequential loops would observe those mutations, and rejects the whole
+        // accumulator.
+        //
+        // A phi is exempt from that rule — its out-of-region readers see the
+        // *finished* value, which in-place mutation leaves value-identical —
+        // exactly when every later loop in the chain runs *inside* its own loop.
+        // Chain order is execution order (each phi's init reads its
+        // predecessor's value), so once `phis[i]`'s loop exits, every mutation
+        // from an earlier loop has already happened and every later one happened
+        // nested within it. The last phi is always exempt (vacuously); with
+        // sequential loops it is the *only* one, since a value read between them
+        // is still due to be rewritten.
+        let exempt: HashSet<TermId> = backbone
+            .phis
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| {
+                per_phi[i + 1..]
+                    .iter()
+                    .all(|later| later.is_subset(&per_phi[i]))
+            })
+            .map(|(_, &p)| p)
+            .collect();
+        for &t in &backbone.terms {
+            if exempt.contains(&t) {
+                continue;
+            }
+            for &u in self.users.get(&t).into_iter().flatten() {
+                if !web.contains(&u) {
+                    return false;
+                }
             }
         }
 
@@ -404,20 +588,75 @@ impl<'p> Analysis<'p> {
         true
     }
 
+    /// Resolve the loop-carried phis in `cone` into a single accumulator
+    /// backbone, or `None` when they do not form one chain.
+    ///
+    /// Each phi's init is followed through its `Copy` carriers; the result is
+    /// either the chain's root (a value produced outside every backbone loop) or
+    /// the phi's predecessor in the chain. Exactly one phi may have a non-phi
+    /// init, the predecessor edges must be injective, and following them from
+    /// that first phi must reach every phi — so the container is built by one
+    /// linear succession of loops (`for … end; for … end`, or an inner loop
+    /// carrying an outer loop's accumulator) rather than by two independent
+    /// spines that merge, which no per-region argument would cover.
+    fn build_backbone(&self, cone: &HashSet<TermId>) -> Option<Backbone> {
+        let loop_phis: Vec<TermId> = cone
+            .iter()
+            .copied()
+            .filter(|&t| self.is_loop_phi(t))
+            .collect();
+        if loop_phis.is_empty() {
+            return None;
+        }
+        let phi_set: HashSet<TermId> = loop_phis.iter().copied().collect();
+
+        let mut copies: Vec<TermId> = Vec::new();
+        let mut succ: HashMap<TermId, TermId> = HashMap::new();
+        let mut entry: Option<(TermId, TermId)> = None; // (first phi, root)
+        for &p in &loop_phis {
+            let init = *self.program.get_term(p).inputs.first()?;
+            let (target, chain) = self.copy_chain(init);
+            copies.extend(chain);
+            if phi_set.contains(&target) {
+                if succ.insert(target, p).is_some() {
+                    return None; // two phis fed by the same one — not a chain
+                }
+            } else if entry.replace((p, target)).is_some() {
+                return None; // two independent roots — not a chain
+            }
+        }
+        let (first, root) = entry?;
+
+        let mut phis = vec![first];
+        let mut cur = first;
+        while let Some(&next) = succ.get(&cur) {
+            phis.push(next);
+            cur = next;
+        }
+        if phis.len() != loop_phis.len() {
+            return None; // a cycle or a fork left some phi unreachable
+        }
+
+        let mut terms: HashSet<TermId> = phis.iter().copied().collect();
+        terms.extend(copies);
+        terms.insert(root);
+        Some(Backbone { root, phis, terms })
+    }
+
     /// BFS the region-confined carrier web from `seed`, always including the
-    /// spine boundary `p_loop`/`root`. Expansion visits carrier inputs, carrier
-    /// readers, and phis fed on a back edge, but only *adds* a term when it is a
-    /// carrier (or the root) that is in-region or is the spine boundary.
+    /// whole backbone. Expansion visits carrier inputs, carrier readers, and
+    /// phis fed on a back edge, but only *adds* a term when it is a carrier (or
+    /// the root) that is in-region or on the backbone.
     fn build_confined_web(
         &self,
         seed: TermId,
-        p_loop: TermId,
-        root: TermId,
+        backbone: &Backbone,
         region: &HashSet<BlockId>,
     ) -> HashSet<TermId> {
+        let root = backbone.root;
         let mut web = HashSet::new();
         let mut queue = VecDeque::new();
-        for t in [seed, p_loop, root] {
+        for t in std::iter::once(seed).chain(backbone.terms.iter().copied()) {
             if web.insert(t) {
                 queue.push_back(t);
             }
@@ -434,7 +673,7 @@ impl<'p> Analysis<'p> {
             }
             for n in neighbors {
                 let term = self.program.get_term(n);
-                let allowed = region.contains(&term.block_id) || n == p_loop || n == root;
+                let allowed = region.contains(&term.block_id) || backbone.terms.contains(&n);
                 let is_member = self.is_carrier(term) || n == root;
                 if allowed && is_member && web.insert(n) {
                     queue.push_back(n);

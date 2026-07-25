@@ -22,6 +22,41 @@ pub fn is_mutating_builtin(name: &str) -> bool {
     )
 }
 
+/// The builtins that return a **freshly allocated, unaliased container**: the
+/// returned id is created by that call, is not reachable from any pre-existing
+/// value, and no reference to it is retained anywhere else (not in the heap, not
+/// in the arguments, not in the native's own state). Each call therefore hands
+/// its caller sole ownership of the result.
+///
+/// This is the property `backend::bytecode::escape` needs to let a call result
+/// *root* a unique value-web — `f64_array(n)` is the only way to construct an
+/// f64 array, so without it no f64-array write can ever be in place. Every
+/// entry below allocates its result with a fresh `alloc_list` / `alloc_f64_array`
+/// on every path that yields a container (the absorb-a-`Pending` paths in
+/// `sort`/`join` return a `Pending` scalar, not a container, so they are not a
+/// counterexample). Elements *inside* the result may alias existing values; that
+/// is fine, since an in-place write replaces a slot in the fresh outer store and
+/// never touches an element's own store.
+///
+/// Add to this list only after checking the native for a path that returns an
+/// argument's id unchanged — such a builtin would make the caller's "unique
+/// owner" assumption false and silently corrupt data.
+pub fn returns_fresh_container(name: &str) -> bool {
+    matches!(
+        name,
+        "f64_array"
+            | "range"
+            | "slice"
+            | "flat"
+            | "zip"
+            | "enumerate"
+            | "keys"
+            | "values"
+            | "sort"
+            | "reverse"
+    )
+}
+
 mod autodiff;
 mod collections;
 mod color;

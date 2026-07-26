@@ -110,7 +110,7 @@ impl Walker {
                 }
                 self.bind(name);
             }
-            StmtKind::Assign { target, value } => {
+            StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
                 match target {
                     AssignTarget::Name(_) => {}
                     AssignTarget::Field(obj, _) => self.walk_expr(obj, true),

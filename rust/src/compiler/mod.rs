@@ -94,6 +94,21 @@ pub struct Compiler {
     // compile-time "latest" rebind term never ran in that iteration.
     carry_slots: Vec<(BlockId, HashMap<String, RegisterIndex>)>,
 
+    // Names declared `var` (mutable cells), one set per entry in `scopes` and
+    // pushed/popped in lockstep with it. Kept beside `scopes` rather than in
+    // it so that binding kind is looked up exactly like a binding is, and so
+    // shadowing works by construction: a `let x` inside a `var x` reports
+    // non-var, and vice versa. Rebinds propagate the flag explicitly via
+    // `scope_rebind` — a missed propagation loses var-ness and produces a loud
+    // "not a var" error rather than silently accepting `=` on a cell.
+    var_scopes: Vec<HashSet<String>>,
+
+    // Fatal compile errors, collected with their spans and drained into the
+    // `Err` of `compile_modules`. Distinct from `warnings`: these abort. The
+    // compiler's statement/expression walk returns `()`/`TermId` rather than
+    // `Result`, so errors accumulate here instead of threading `?` through it.
+    errors: Vec<crate::diagnostic::Diagnostic>,
+
     // Terms that stand in, inside some function, for a binding owned by an
     // enclosing function: the phis and seed copies that control-flow
     // compilation installs for a name assigned across a function boundary.
@@ -175,6 +190,8 @@ impl Compiler {
             carry_slots: Vec::new(),
             block_shadowed: HashMap::new(),
             cross_fn_terms: HashSet::new(),
+            var_scopes: Vec::new(),
+            errors: Vec::new(),
             state_inits: HashMap::new(),
             builtin_phantoms: HashMap::new(),
             current_module: None,
@@ -255,6 +272,25 @@ impl Compiler {
         let mut block_terms: HashMap<BlockId, Vec<TermId>> = HashMap::new();
         for term in &self.terms {
             block_terms.entry(term.block_id).or_default().push(term.id);
+        }
+
+        // Fatal errors abort here, after the whole program has been walked so
+        // every one of them has been found. The position suffix matches the
+        // parser's (`msg [line N, column M]`), which is what the CLI's phase
+        // classification and the error-position tests expect.
+        if !self.errors.is_empty() {
+            let msg = self
+                .errors
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{} [line {}, column {}]",
+                        d.message, d.span.start.line, d.span.start.column
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(msg);
         }
 
         let entry = modules
@@ -602,10 +638,12 @@ impl Compiler {
             self.function_boundaries.push(self.scopes.len());
         }
         self.scopes.push(HashMap::new());
+        self.var_scopes.push(HashSet::new());
     }
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
+        self.var_scopes.pop();
         if let Some(&boundary) = self.function_boundaries.last()
             && boundary >= self.scopes.len()
         {
@@ -626,6 +664,44 @@ impl Compiler {
             }
         }
         None
+    }
+
+    /// Bind `name` as a `var` — a mutable cell, written with `set`.
+    pub(super) fn scope_bind_var(&mut self, name: String, term_id: TermId) {
+        self.scope_bind(name.clone(), term_id);
+        if let Some(vars) = self.var_scopes.last_mut() {
+            vars.insert(name);
+        }
+    }
+
+    /// Rebind an existing name, preserving whether it was declared `var`.
+    /// Used by the paths that replace a binding without redeclaring it:
+    /// assignment `Copy`s, phis, and the loop/arm entry seeds.
+    pub(super) fn scope_rebind(&mut self, name: String, term_id: TermId) {
+        if self.binding_is_var(&name) {
+            self.scope_bind_var(name, term_id);
+        } else {
+            self.scope_bind(name, term_id);
+        }
+    }
+
+    /// Was the innermost binding of `name` declared `var`? Answered against
+    /// the scope that actually binds the name, so an inner `let` shadowing an
+    /// outer `var` (or the reverse) reports its own kind.
+    pub(super) fn binding_is_var(&self, name: &str) -> bool {
+        for (i, scope) in self.scopes.iter().enumerate().rev() {
+            if scope.contains_key(name) {
+                return self.var_scopes[i].contains(name);
+            }
+        }
+        false
+    }
+
+    /// Record a fatal compile error at `span`. Compilation continues so a
+    /// single run can report more than one, but `compile_modules` will fail.
+    pub(super) fn error_at(&mut self, span: SourceSpan, message: String) {
+        self.errors
+            .push(crate::diagnostic::Diagnostic { span, message });
     }
 
     // -----------------------------------------------------------------------

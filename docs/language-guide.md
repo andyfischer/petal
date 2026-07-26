@@ -25,6 +25,51 @@ let name = "Petal"
 x = 20
 ```
 
+### `var` and `set`
+
+`let` bindings are *dataflow* bindings: `x = 20` above does not overwrite a
+slot, it rebinds the name to a new value, and the compiler can trace exactly
+which earlier value each read came from. That is the default, and it is what
+makes a Petal program readable as a diagram.
+
+Some code genuinely wants a mutable slot instead — most often an accumulator
+written from inside a callback. Declare it `var` and write it with `set`:
+
+```petal
+var count = 0
+for i in [1, 2, 3] do
+  set count = count + i
+end
+print(count)   // 6
+```
+
+The two write keywords are disjoint in both directions. `=` writes a `let`,
+`set` writes a `var`, and each rejects the other:
+
+```petal ignore
+let a = 1
+var b = 1
+
+a = 2          // fine
+set b = 2      // fine
+
+set a = 2      // error: `a` is not a `var`; use `a = ...`
+b = 2          // error: `b` is a `var`; use `set b = ...` to write it
+```
+
+That is deliberate. In a language where `=` already means "rebind", letting it
+*also* mean "write through to a cell" would put two opposite operations behind
+one glyph, told apart only by a declaration that may be far away. Every `set`
+is a place the dataflow story goes dark, so it is written where it happens.
+
+`set` also takes field and index targets (`set r.a = 1`, `set xs[0] = 1`) and
+the compound forms (`set count += 1`), and never declares a binding — `set` on
+an unknown name is an error, not a declaration.
+
+Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
+provenance queries (`petal show-provenance`, `petal show-slice`) that can
+otherwise answer "what produced this value?".
+
 ## Types
 
 Petal has the following value types:
@@ -629,6 +674,14 @@ end
 
 State is preserved during hot reload — if you edit and save a file while it's running,
 existing state values carry over to the new code.
+
+`state var` combines the two: a mutable cell that also persists across calls.
+
+```petal
+state var hits = 0
+set hits = hits + 1
+print(hits)
+```
 
 ## JSX-like Elements
 

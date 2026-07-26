@@ -21,7 +21,7 @@ impl Compiler {
     /// current block). Updates the current scope and the per-block rebind
     /// log so the enclosing conditional can emit a phi term.
     pub(super) fn rebind_name_in_current_block(&mut self, name: String, new_tid: TermId) {
-        self.scope_bind(name.clone(), new_tid);
+        self.scope_rebind(name.clone(), new_tid);
         self.block_rebinds
             .entry(self.current_block)
             .or_default()
@@ -35,7 +35,7 @@ impl Compiler {
     fn rebind_parent(&mut self, name: String, new_tid: TermId, outer_tid: TermId) {
         let outer_block = self.terms[outer_tid.0 as usize].block_id;
         if outer_block == self.current_block {
-            self.scope_bind(name, new_tid);
+            self.scope_rebind(name, new_tid);
         } else {
             self.rebind_name_in_current_block(name, new_tid);
         }
@@ -243,7 +243,7 @@ impl Compiler {
             if let Some(init_tid) = self.find_state_init(*phi_tid) {
                 self.terms[in_tid.0 as usize].state_key = self.terms[init_tid.0 as usize].state_key;
             }
-            self.scope_bind(name.clone(), in_tid);
+            self.scope_rebind(name.clone(), in_tid);
             let reg = self.terms[in_tid.0 as usize].register;
             slots.insert(name.clone(), reg);
         }
@@ -497,7 +497,13 @@ impl ExprVisitor for AssignedNames<'_> {
                 }
                 self.bind(name);
             }
+            // `set` writes the same targets as `=` and, until cells land, is
+            // compiled the same way — so it needs the same phi treatment.
             StmtKind::Assign {
+                target: AssignTarget::Name(n),
+                value,
+            }
+            | StmtKind::Set {
                 target: AssignTarget::Name(n),
                 value,
             } => {
@@ -505,6 +511,10 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(value);
             }
             StmtKind::Assign {
+                target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
+                value,
+            }
+            | StmtKind::Set {
                 target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
                 value,
             } => {

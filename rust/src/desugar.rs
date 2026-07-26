@@ -96,7 +96,7 @@ fn desugar_stmts(stmts: &mut Vec<Stmt>) {
 fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
     match &mut stmt.kind {
         StmtKind::Let { value, .. } => lift_expr(value, hoisted),
-        StmtKind::Assign { target, value } => {
+        StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
             lift_expr(value, hoisted);
             match target {
                 AssignTarget::Name(_) => {}

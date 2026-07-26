@@ -177,7 +177,9 @@ impl Parser {
         self.skip_newlines();
         let start = self.pos;
         match self.peek().clone() {
-            Token::Let => self.parse_let(start, false),
+            Token::Let => self.parse_let(start, false, false),
+            Token::Var => self.parse_let(start, false, true),
+            Token::Set => self.parse_set(start),
             Token::Fn => self.parse_fn_decl(start, false),
             Token::For => self.parse_for(start),
             Token::While => self.parse_while(start),
@@ -210,29 +212,75 @@ impl Parser {
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),
-            Some(Token::Let) => self.parse_let(start, true),
+            Some(Token::Let) => self.parse_let(start, true, false),
+            Some(Token::Var) => self.parse_let(start, true, true),
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
             _ => Err(self.error_at_current(
-                "`export` must be followed by a fn, let, state, or enum declaration".to_string(),
+                "`export` must be followed by a fn, let, var, state, or enum declaration"
+                    .to_string(),
             )),
         }
     }
 
-    fn parse_let(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
+    /// `let x = …` and its mutable twin `var x = …`, which differ only in the
+    /// keyword and the `is_var` flag. The `var` token stays a direct child of
+    /// the `LetStmt` node so the CST projection can recover the flag the same
+    /// way it recovers `export`.
+    fn parse_let(&mut self, start: usize, exported: bool, is_var: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::LetStmt);
         if exported {
             self.advance(); // consume 'export'
         }
-        self.advance(); // consume 'let'
+        self.advance(); // consume 'let' / 'var'
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
         self.expect(&Token::Assign)?;
         let value = self.parse_expr()?;
         self.ev_close();
-        let mut stmt = self.mk_stmt(StmtKind::Let { name, ty, value }, start);
+        let mut stmt = self.mk_stmt(
+            StmtKind::Let {
+                name,
+                ty,
+                value,
+                is_var,
+            },
+            start,
+        );
         stmt.exported = exported;
         Ok(stmt)
+    }
+
+    /// `set x = …` / `set r.f = …` / `set xs[i] = …` — a write through a `var`
+    /// cell. The target is parsed as an ordinary expression and converted with
+    /// the same [`expr_to_assign_target`] the `=` form uses, so field and index
+    /// targets and their error message come free. Compound forms
+    /// (`set x += 1`) desugar exactly as `x += 1` does.
+    fn parse_set(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::SetStmt);
+        self.advance(); // consume 'set'
+        let target_expr = self.parse_expr()?;
+        let (target, value) = if let Some(op) = self.peek_compound_assign_op() {
+            self.advance(); // consume the compound operator
+            let rhs = self.parse_expr()?;
+            // `set x += 1` desugars like `x += 1`: the value spans the whole
+            // statement, which is what the CST projection reproduces.
+            let value = Expr {
+                kind: ExprKind::BinaryOp {
+                    op,
+                    left: Box::new(target_expr.clone()),
+                    right: Box::new(rhs),
+                },
+                span: self.span_from(start),
+            };
+            (expr_to_assign_target(target_expr)?, value)
+        } else {
+            self.expect(&Token::Assign)?;
+            let value = self.parse_expr()?;
+            (expr_to_assign_target(target_expr)?, value)
+        };
+        self.ev_close();
+        Ok(self.mk_stmt(StmtKind::Set { target, value }, start))
     }
 
     fn parse_state(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
@@ -252,6 +300,15 @@ impl Parser {
             None
         };
 
+        // `state(key) var name = init` — the `var` modifier follows the
+        // optional key group, mirroring the order they are written.
+        let is_var = if matches!(self.peek(), Token::Var) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         let name = self.expect_ident()?;
         self.expect(&Token::Assign)?;
         let init = self.parse_expr()?;
@@ -264,6 +321,7 @@ impl Parser {
                 init,
                 id,
                 key,
+                is_var,
             },
             start,
         );

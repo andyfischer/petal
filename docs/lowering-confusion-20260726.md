@@ -532,17 +532,56 @@ hand and remains valid as the malformed-IR guard.
 unnoticed: CI and editors call `check`, which today exits 0 on programs that
 cannot run.
 
-**Step 4 — Land `var` / `set`.** Lexer tokens; `parse_let`/`parse_state`
-(`rust/src/parse.rs:222,238`) plus the CST projection in `cst_project.rs`;
-`StmtKind::Let`/`State` gain an `is_var` flag and a new `StmtKind::Set`;
-`Value::Cell` + heap object; `CellNew`/`CellRead`/`CellWrite` in `TermOp` and
-the bytecode. Then: type checker (a `var`'s writes must stay assignable to its
-declared type), `petal lint` (formatter must preserve the keywords, and the
-IR-equivalence gate must hold), `transfer_state` (cells in state survive hot
-reload), `ir_serialize`/`ir_validate`, the in-place/COW uniqueness analysis
-(cell contents are aliased and never unique), and provenance (§6e). Per
-`bytecode-future-ideas.md`, new opcodes must earn a differential-fuzzer soak
-before going default-on.
+**Step 4 — Land `var` / `set`.** Additive: the syntax is new, so nothing
+existing breaks and it can land in chunks.
+
+- **4a — syntax and binding kinds.** ✅ done. `Token::Var`/`Token::Set`;
+  `parse_let` takes an `is_var` flag and `parse_state` accepts `state(key) var`;
+  a new `parse_set` reusing `expr_to_assign_target`, so field, index and
+  compound targets come free. `StmtKind::Let`/`State` gain `is_var`, plus a new
+  `StmtKind::Set`. The CST projection mirrors all of it — `var`-ness rides on a
+  token child of the `LetStmt`/`StateStmt` node exactly as `export` does, so no
+  new node kind was needed for it; `set` gets `SyntaxKind::SetStmt`. Binding
+  kind lives in `var_scopes`, a set per scope frame beside `scopes`, so
+  shadowing is right by construction and `scope_rebind` carries the kind
+  through the phis, seed copies and assignment `Copy`s that mint fresh terms.
+  Both disjointness errors (§6b) are fatal, via a new `Compiler::errors`
+  channel drained into the `Err` of `compile_modules`. **Cells do not exist
+  yet**, so a `var` still compiles exactly like a `let`: same phis, same
+  cross-function limitation. What 4a buys is the keyword discipline and the
+  errors, not new semantics.
+- **4b — cells at runtime.** `Value::Cell` + heap object; `CellNew`/`CellRead`/
+  `CellWrite` in `TermOp` and the graph interpreter. The containment invariant
+  (§6d) is what keeps this small.
+- **4c — bytecode.** New opcodes in `isa.rs`/`lower.rs`, plus `escape.rs` and
+  `lastuse.rs` (cell contents are aliased and never unique). Per
+  `bytecode-future-ideas.md`, new opcodes must earn a differential-fuzzer soak
+  before going default-on.
+- **4d — the long tail.** Type checker (a `var`'s writes must stay assignable to
+  its declared type), `transfer_state` (cells in state survive hot reload),
+  `ir_serialize`/`ir_validate`, `petal lint`'s rebind rule (§8: never propose
+  `@` on a `var`), and provenance (§6e) — which needs designing across its three
+  consumers (`trace_provenance`, `slice`, `ExplainTerm`) before it is written,
+  since "degrade honestly" has to mean the same thing in all of them.
+
+Two things 4a settled that the plan had not anticipated:
+
+- **`set` was already a builtin.** `set(list, i, v)`, the call form of
+  `a[i] = v` — documented, effect-tagged, and called from the corpus. Since
+  `set` has to be a hard keyword for the statement form to be unambiguous, the
+  builtin was renamed `set_at` (`1880035`). `var` was free: one occurrence
+  corpus-wide, inside a comment.
+- **The AST is built twice.** `parse.rs` and `cst_project.rs` both produce it,
+  reconciled by a `debug_assert_eq!` in `cst/driver.rs` and two whole-corpus
+  differential tests. Any syntax change must land in both in the same commit.
+  There are two further grammars with no automated tie to the lexer —
+  `editor-support/tree-sitter-petal` and the vim syntax file — which 4a updated
+  by hand.
+
+One wart left behind: `Compiler` errors reach the CLI as a plain `String`, so
+`classify_load_error` tags them `"phase": "parse"`. That predates this work (the
+import and overload-export errors have it too) and wants a real phase channel,
+not more string sniffing.
 
 **Step 5 — Flip the warning to an error, and migrate.** Corpus first, then
 downstream projects. Migration is per-site judgment, not mechanical: a silent

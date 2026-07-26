@@ -19,15 +19,28 @@ impl Compiler {
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         let stmt_span = stmt.span;
         match &stmt.kind {
-            StmtKind::Let { name, value, .. } => {
+            StmtKind::Let {
+                name,
+                value,
+                is_var,
+                ..
+            } => {
                 let val_tid = self.compile_expr(value);
                 self.terms[val_tid.0 as usize].name = Some(name.clone());
                 self.note_shadow(name);
-                self.scope_bind(name.clone(), val_tid);
+                if *is_var {
+                    self.scope_bind_var(name.clone(), val_tid);
+                } else {
+                    self.scope_bind(name.clone(), val_tid);
+                }
             }
 
             StmtKind::Assign { target, value } => {
-                self.compile_assign(target, value, stmt_span);
+                self.compile_assign(target, value, stmt_span, false);
+            }
+
+            StmtKind::Set { target, value } => {
+                self.compile_assign(target, value, stmt_span, true);
             }
 
             StmtKind::Expr(expr) => {
@@ -96,8 +109,9 @@ impl Compiler {
                 init,
                 id: _,
                 key,
+                is_var,
             } => {
-                self.compile_state_decl(name, init, key.as_ref());
+                self.compile_state_decl(name, init, key.as_ref(), *is_var);
             }
 
             // Imports are extracted and resolved by the module loader before
@@ -185,7 +199,7 @@ impl Compiler {
     /// is only entered the first time the (state_key, loop_indices) tuple is
     /// encountered. The explicit key (if any) is computed eagerly in the
     /// parent block — its value determines which slot to consult.
-    fn compile_state_decl(&mut self, name: &str, init: &Expr, key: Option<&Expr>) {
+    fn compile_state_decl(&mut self, name: &str, init: &Expr, key: Option<&Expr>, is_var: bool) {
         // Module state keys are module-qualified; the entry file keeps
         // bare-name hashing (see `state_key_for`). The term's display name is
         // qualified the same way so state JSON / diffs stay unambiguous when
@@ -215,7 +229,11 @@ impl Compiler {
         });
 
         self.note_shadow(name);
-        self.scope_bind(name.to_string(), state_tid);
+        if is_var {
+            self.scope_bind_var(name.to_string(), state_tid);
+        } else {
+            self.scope_bind(name.to_string(), state_tid);
+        }
     }
 
     /// If `iter` is literally a call to `range(...)` with 1 or 2 arguments,
@@ -254,7 +272,19 @@ impl Compiler {
     // Assignment compilation
     // -----------------------------------------------------------------------
 
-    fn compile_assign(&mut self, target: &AssignTarget, value: &Expr, span: SourceSpan) {
+    /// Compile `target = value` (`is_set` false) or `set target = value`
+    /// (`is_set` true). The two forms compile identically; what differs is
+    /// which binding kind each accepts, which is checked here.
+    fn compile_assign(
+        &mut self,
+        target: &AssignTarget,
+        value: &Expr,
+        span: SourceSpan,
+        is_set: bool,
+    ) {
+        if !self.check_write_keyword(target, span, is_set) {
+            return;
+        }
         self.warn_if_assigning_outer_function_binding(target, span);
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
@@ -275,6 +305,62 @@ impl Compiler {
         }
     }
 
+    /// Enforce that `=` and `set` are disjoint: `=` writes `let`/`state`
+    /// bindings, `set` writes `var` cells, and each rejects the other. Erroring
+    /// in only one direction would leave `=` meaning two different things
+    /// depending on a distant declaration, which is exactly the ambiguity `set`
+    /// exists to remove. See docs/lowering-confusion-20260726.md section 6b.
+    ///
+    /// Returns false when the statement is in error and should not be compiled.
+    fn check_write_keyword(
+        &mut self,
+        target: &AssignTarget,
+        span: SourceSpan,
+        is_set: bool,
+    ) -> bool {
+        let Some(root) = Self::assign_root_name(target) else {
+            return true;
+        };
+        // `set` never introduces a binding (section 6b), so an unknown target
+        // is an error rather than a declaration. A plain `=` on an unknown name
+        // keeps its existing behaviour.
+        if self.scope_lookup(root).is_none() {
+            if is_set {
+                self.error_at(span, format!("`{root}` is not defined"));
+                return false;
+            }
+            return true;
+        }
+        let root = root.to_string();
+        match (self.binding_is_var(&root), is_set) {
+            (true, false) => {
+                self.error_at(
+                    span,
+                    format!("`{root}` is a `var`; use `set {root} = ...` to write it"),
+                );
+                false
+            }
+            (false, true) => {
+                self.error_at(
+                    span,
+                    format!("`{root}` is not a `var`; use `{root} = ...`, or declare it `var {root} = ...`"),
+                );
+                false
+            }
+            _ => true,
+        }
+    }
+
+    /// The root variable name an assignment target writes, if it has one.
+    fn assign_root_name(target: &AssignTarget) -> Option<&str> {
+        match target {
+            AssignTarget::Name(name) => Some(name.as_str()),
+            AssignTarget::Field(object, _) | AssignTarget::Index(object, _) => {
+                Self::resolve_assign_target(object).map(|(root, _)| root)
+            }
+        }
+    }
+
     /// Warn when an assignment targets a name bound outside the function being
     /// compiled. Such an assignment does not modify that binding — it creates a
     /// function-local shadow — so the code reads as a dataflow edge that isn't
@@ -289,13 +375,9 @@ impl Compiler {
         target: &AssignTarget,
         span: SourceSpan,
     ) {
-        let root = match target {
-            AssignTarget::Name(name) => Some(name.as_str()),
-            AssignTarget::Field(object, _) | AssignTarget::Index(object, _) => {
-                Self::resolve_assign_target(object).map(|(root, _)| root)
-            }
-        };
-        let Some(root) = root.filter(|n| self.is_outer_function_binding(n)) else {
+        let Some(root) =
+            Self::assign_root_name(target).filter(|n| self.is_outer_function_binding(n))
+        else {
             return;
         };
         self.warnings.push(crate::diagnostic::Diagnostic {
@@ -480,12 +562,12 @@ impl Compiler {
                 .is_some_and(|m| m.contains_key(name))
                 && !self.is_shadowed_in_current_block(name);
             if existing_block == self.current_block && !already_rebound_here {
-                self.scope_bind(name.to_string(), assign_tid);
+                self.scope_rebind(name.to_string(), assign_tid);
             } else {
                 self.rebind_name_in_current_block(name.to_string(), assign_tid);
             }
         } else {
-            self.scope_bind(name.to_string(), assign_tid);
+            self.scope_rebind(name.to_string(), assign_tid);
         }
     }
 

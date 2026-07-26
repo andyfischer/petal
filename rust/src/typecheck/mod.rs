@@ -196,7 +196,9 @@ impl<'a> Checker<'a> {
     // ── statement walk ──────────────────────────────────────────────────
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::Let { name, ty, value } => {
+            StmtKind::Let {
+                name, ty, value, ..
+            } => {
                 if let Some(ann) = ty {
                     self.check_type_ann(ann, stmt.span);
                 }
@@ -205,7 +207,9 @@ impl<'a> Checker<'a> {
                 self.check_assignment(value.span, name, declared, inferred);
                 self.bind(name.clone(), declared, inferred);
             }
-            StmtKind::Assign { target, value } => match target {
+            // A `set` writes the same value into the same target shape as `=`;
+            // the declared type of a `var` constrains its writes identically.
+            StmtKind::Assign { target, value } | StmtKind::Set { target, value } => match target {
                 AssignTarget::Name(n) => {
                     let vt = self.check_expr(value);
                     let declared = self.lookup(n).and_then(|v| v.declared);

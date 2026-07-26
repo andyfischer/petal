@@ -11,6 +11,11 @@ pub enum Token {
     // Identifiers and keywords
     Ident(String),
     Let,
+    /// `var` — declares a mutable cell (see docs/lowering-confusion-20260726.md).
+    Var,
+    /// `set` — writes through a `var` cell. A hard keyword: the f64-array
+    /// builtin that used to own this name is now `set_at`.
+    Set,
     Fn,
     If,
     Else,
@@ -905,6 +910,8 @@ impl Lexer {
         let text: String = self.input[text_start..self.pos].iter().collect();
         let token = match text.as_str() {
             "let" => Token::Let,
+            "var" => Token::Var,
+            "set" => Token::Set,
             "fn" => Token::Fn,
             "if" => Token::If,
             "else" => Token::Else,
@@ -1010,12 +1017,14 @@ mod tests {
     #[test]
     fn lex_keywords() {
         let tokens = tokenize(
-            "let fn if else for in while match return break continue state enum end then do elsif when",
+            "let var set fn if else for in while match return break continue state enum end then do elsif when",
         );
         assert_eq!(
             tokens,
             vec![
                 Token::Let,
+                Token::Var,
+                Token::Set,
                 Token::Fn,
                 Token::If,
                 Token::Else,

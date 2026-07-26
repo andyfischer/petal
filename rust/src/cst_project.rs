@@ -238,9 +238,20 @@ impl Projector {
                     .find(|n| n.kind() != SyntaxKind::TypeAnnotation)
                     .ok_or("let binding missing its value expression")?;
                 let value = self.expr(&value_node)?;
-                StmtKind::Let { name, ty, value }
+                // `var x = …` keeps its keyword as a direct token child, the
+                // same way `export` does, so the flag survives the round trip.
+                let is_var = direct_tokens(node)
+                    .iter()
+                    .any(|t| matches!(t.token(), Some(Token::Var)));
+                StmtKind::Let {
+                    name,
+                    ty,
+                    value,
+                    is_var,
+                }
             }
-            SyntaxKind::AssignStmt => return self.assign_stmt(node, span),
+            SyntaxKind::AssignStmt => return self.assign_stmt(node, span, false),
+            SyntaxKind::SetStmt => return self.assign_stmt(node, span, true),
             SyntaxKind::ExprStmt => StmtKind::Expr(self.only_expr(node)?),
             SyntaxKind::FnDecl => {
                 let name = self.only_ident(node)?;
@@ -299,11 +310,15 @@ impl Projector {
                 let init = self.expr(init_node)?;
                 let id = self.next_state_id;
                 self.next_state_id += 1;
+                let is_var = direct_tokens(node)
+                    .iter()
+                    .any(|t| matches!(t.token(), Some(Token::Var)));
                 StmtKind::State {
                     name,
                     init,
                     id,
                     key,
+                    is_var,
                 }
             }
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
@@ -321,7 +336,14 @@ impl Projector {
         })
     }
 
-    fn assign_stmt(&mut self, node: &SyntaxNode, span: SourceSpan) -> Result<Stmt, String> {
+    /// Project an `AssignStmt` or a `SetStmt` — structurally identical, and
+    /// differing only in which `StmtKind` they produce.
+    fn assign_stmt(
+        &mut self,
+        node: &SyntaxNode,
+        span: SourceSpan,
+        is_set: bool,
+    ) -> Result<Stmt, String> {
         let nodes = child_nodes(node);
         let [target_node, value_node] = nodes.as_slice() else {
             return Err(format!("assignment with {} expression nodes", nodes.len()));
@@ -353,7 +375,11 @@ impl Projector {
             None => (expr_to_assign_target(target_expr)?, rhs),
         };
         Ok(Stmt {
-            kind: StmtKind::Assign { target, value },
+            kind: if is_set {
+                StmtKind::Set { target, value }
+            } else {
+                StmtKind::Assign { target, value }
+            },
             span,
             exported: false,
         })
@@ -1142,6 +1168,14 @@ mod tests {
             "for i in xs do\n  if i then\n    break\n  else\n    continue\n  end\nend\n",
         );
         assert_projects("state count = 0\nstate(key) slot = init()\n");
+        // `var` / `set` — the mutable-cell forms. `var`-ness rides on a token
+        // child of the LetStmt/StateStmt node, so the projection has to read it
+        // back the same way it reads `export`.
+        assert_projects("var x = 0\nset x = 1\n");
+        assert_projects("var x: int = 0\nset x += 1\n");
+        assert_projects("export var x = 0\n");
+        assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
+        assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r)\n  Point\n  Rect(w, h)\nend\n");
     }
 

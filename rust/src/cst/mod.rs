@@ -64,6 +64,10 @@ pub enum SyntaxKind {
     // === Statement nodes ===
     LetStmt,
     AssignStmt,
+    /// `set x = …` — a write through a `var` cell. Structurally an assignment
+    /// (target node, value node, optional compound-op token) under its own
+    /// kind, because it is a different statement.
+    SetStmt,
     ExprStmt,
     FnDecl,
     EnumDecl,

@@ -66,7 +66,7 @@ impl ExprVisitor for Rebinder<'_> {
             StmtKind::Let { value, .. } | StmtKind::Expr(value) | StmtKind::Return(Some(value)) => {
                 self.visit_expr(value)
             }
-            StmtKind::Assign { target, value } => {
+            StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
                 self.visit_expr(value);
                 match target {
                     AssignTarget::Name(_) => {}

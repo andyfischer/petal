@@ -119,3 +119,28 @@ import ui as u
   (import_statement
     module: (identifier)
     alias: (identifier)))
+
+==================
+Var and set
+==================
+
+var count = 0
+state var hits = 0
+set count = count + 1
+set count += 1
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (integer))
+  (state_declaration
+    name: (identifier)
+    value: (integer))
+  (set_statement
+    left: (identifier)
+    right: (binary_expression left: (identifier) right: (integer)))
+  (set_statement
+    left: (identifier)
+    right: (integer)))

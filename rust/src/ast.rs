@@ -221,8 +221,19 @@ pub enum StmtKind {
         /// [`TypeAnn`] with `resolved: None`.
         ty: Option<TypeAnn>,
         value: Expr,
+        /// Written `var x = …` rather than `let x = …`: a mutable cell, which
+        /// is written with `set` and rejects `=`.
+        /// See docs/lowering-confusion-20260726.md sections 5c and 6b.
+        is_var: bool,
     },
     Assign {
+        target: AssignTarget,
+        value: Expr,
+    },
+    /// `set x = …` — a write through a `var` cell. Distinct from [`Self::Assign`]
+    /// on purpose: `=` is a dataflow rebind and `set` is a mutation, and each
+    /// binding kind accepts exactly one of them.
+    Set {
         target: AssignTarget,
         value: Expr,
     },
@@ -259,6 +270,8 @@ pub enum StmtKind {
         id: usize,
         /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
         key: Option<Expr>,
+        /// Written `state var x = …`: a cell that persists across frames.
+        is_var: bool,
     },
     /// `import m` / `import m as u` / `import m: a, b`. Only allowed before
     /// any other statement in a file (the parser enforces this); consumed by
@@ -407,7 +420,7 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
 pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
     match &s.kind {
         StmtKind::Let { value, .. } => v.visit_expr(value),
-        StmtKind::Assign { target, value } => {
+        StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
             match target {
                 AssignTarget::Name(_) => {}
                 AssignTarget::Field(object, _) => v.visit_expr(object),
@@ -563,7 +576,7 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
 pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
     match &mut s.kind {
         StmtKind::Let { value, .. } => v.visit_expr(value),
-        StmtKind::Assign { target, value } => {
+        StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
             match target {
                 AssignTarget::Name(_) => {}
                 AssignTarget::Field(object, _) => v.visit_expr(object),

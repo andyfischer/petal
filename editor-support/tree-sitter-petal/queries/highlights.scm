@@ -15,6 +15,8 @@
   "import"
   "as"
   "let"
+  "var"
+  "set"
   "state"
   "fn"
   "enum"

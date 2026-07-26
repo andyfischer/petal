@@ -81,6 +81,7 @@ module.exports = grammar({
       $.break_statement,
       $.continue_statement,
       $.assignment,
+      $.set_statement,
       $._expression,
     ),
 
@@ -105,8 +106,9 @@ module.exports = grammar({
       )),
     ),
 
+    // `let x = v` and its mutable twin `var x = v`.
     let_declaration: $ => seq(
-      'let',
+      choice('let', 'var'),
       field('name', $.identifier),
       '=',
       field('value', $._expression),
@@ -116,6 +118,7 @@ module.exports = grammar({
     state_declaration: $ => seq(
       'state',
       optional(seq('(', field('key', $._expression), ')')),
+      optional('var'),
       field('name', $.identifier),
       '=',
       field('value', $._expression),
@@ -168,6 +171,15 @@ module.exports = grammar({
     continue_statement: _ => 'continue',
 
     assignment: $ => prec.right(PREC.assign, seq(
+      field('left', $._expression),
+      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=')),
+      field('right', $._expression),
+    )),
+
+    // `set x = v` — a write through a `var` cell. Same shape as `assignment`,
+    // under its own node because it is a different statement.
+    set_statement: $ => prec.right(PREC.assign, seq(
+      'set',
       field('left', $._expression),
       field('operator', choice('=', '+=', '-=', '*=', '/=', '%=')),
       field('right', $._expression),

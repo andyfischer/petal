@@ -77,11 +77,12 @@ pub enum AllocKind {
     F64Array,
     Map,
     Element,
+    Cell,
 }
 
 impl AllocKind {
     /// Number of distinct kinds — the width of the [`AllocStats`] backing array.
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 6;
 
     /// Every kind, in display order. Indexes line up with [`AllocKind::index`].
     pub const ALL: [AllocKind; Self::COUNT] = [
@@ -90,6 +91,7 @@ impl AllocKind {
         AllocKind::F64Array,
         AllocKind::Map,
         AllocKind::Element,
+        AllocKind::Cell,
     ];
 
     const fn index(self) -> usize {
@@ -99,6 +101,7 @@ impl AllocKind {
             AllocKind::F64Array => 2,
             AllocKind::Map => 3,
             AllocKind::Element => 4,
+            AllocKind::Cell => 5,
         }
     }
 
@@ -109,6 +112,7 @@ impl AllocKind {
             AllocKind::F64Array => "f64array",
             AllocKind::Map => "map",
             AllocKind::Element => "element",
+            AllocKind::Cell => "cell",
         }
     }
 }

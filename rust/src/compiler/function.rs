@@ -240,6 +240,13 @@ impl Compiler {
             return outer_tid;
         };
 
+        // A captured `var` stays a `var` inside the capturing function: the
+        // captured value is the cell id, so the phantom denotes the same box.
+        // Without this the phantom would bind as an ordinary `let` and `set x`
+        // inside the closure would be rejected as "not a `var`" — and, worse,
+        // a read would forward the raw cell instead of dereferencing it.
+        let is_var = self.var_scopes[binding_scope_idx].contains(name);
+
         // Every enclosing function whose boundary sits *inside* the binding
         // scope must capture the value and forward it inward.
         let mut source_tid = outer_tid;
@@ -248,7 +255,7 @@ impl Compiler {
                 // At or above the binding: this function sees it directly.
                 continue;
             }
-            source_tid = self.add_capture_at_level(level, name, source_tid);
+            source_tid = self.add_capture_at_level(level, name, source_tid, is_var);
         }
         source_tid
     }
@@ -257,7 +264,13 @@ impl Compiler {
     /// enclosing frame) on the function at stack `level`, returning the local
     /// phantom that stands in for the value inside that function. Reuses an
     /// existing capture for the same name when one is already present.
-    fn add_capture_at_level(&mut self, level: usize, name: &str, source_tid: TermId) -> TermId {
+    fn add_capture_at_level(
+        &mut self,
+        level: usize,
+        name: &str,
+        source_tid: TermId,
+        is_var: bool,
+    ) -> TermId {
         if let Some(cap) = self.capture_stack[level].iter().find(|c| c.name == name) {
             return cap.local_phantom;
         }
@@ -281,6 +294,9 @@ impl Compiler {
         // re-reaching the outer term.
         let boundary_scope = self.function_boundaries[level];
         self.scopes[boundary_scope].insert(name.to_string(), phantom);
+        if is_var {
+            self.var_scopes[boundary_scope].insert(name.to_string());
+        }
         phantom
     }
 }

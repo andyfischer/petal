@@ -374,6 +374,41 @@ impl<'a> Vm<'a> {
                 return Ok(self.deliver_value(value));
             }
 
+            // --- cells ---
+            Inst::CellNew { dst, init } => {
+                let init_v = self.reg(fi, *init);
+                let cell = self.heap.alloc_cell(init_v);
+                self.set(fi, *dst, Value::Cell(cell));
+            }
+            Inst::CellRead { dst, cell } => {
+                let v = match self.reg(fi, *cell) {
+                    Value::Cell(id) => self.heap.cell_read(id),
+                    // Only the compiler emits `CellRead`, and only against a
+                    // binding it declared `var` — a non-cell here means
+                    // hand-written or corrupted IR, not a user error.
+                    other => {
+                        return Err(format!(
+                            "internal error: cell_read on a {}",
+                            other.type_name()
+                        ));
+                    }
+                };
+                self.set(fi, *dst, v);
+            }
+            Inst::CellWrite { dst, cell, val } => {
+                let val_v = self.reg(fi, *val);
+                match self.reg(fi, *cell) {
+                    Value::Cell(id) => self.heap.cell_write(id, val_v),
+                    other => {
+                        return Err(format!(
+                            "internal error: cell_write on a {}",
+                            other.type_name()
+                        ));
+                    }
+                }
+                self.set(fi, *dst, val_v);
+            }
+
             // --- state ---
             Inst::StateRead { dst, base, in_loop } => {
                 let key = self.state_key(*base, *in_loop, None);

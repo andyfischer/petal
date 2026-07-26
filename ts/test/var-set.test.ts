@@ -2,17 +2,22 @@
 // keywords are disjoint in both directions: `=` rejects a var, `set` rejects
 // everything else. See docs/lowering-confusion-20260726.md sections 5c and 6b.
 //
-// This is chunk 1 — syntax, binding kinds, and the errors. Cells do not exist
-// yet, so a `var` still compiles exactly like a `let`; what a `var` buys today
-// is the keyword discipline, not new semantics.
+// A `var` binds a *cell*: a one-value mutable box on the heap. Reads
+// dereference it (`CellRead`), `set` writes through it (`CellWrite`), and a
+// closure that captures the name captures the box — so mutation crosses
+// function and control-flow boundaries, which plain `=` never could. See
+// sections 6c and 6d for cells and the containment invariant.
 
 import { describe, it, expect, beforeAll } from "vitest";
 import {
+  checkJson,
   ensureBuild,
   runPetal,
   runPetalError,
   showAstJson,
+  showIrJson,
   showTokensJson,
+  termsByOp,
 } from "./helpers";
 
 beforeAll(() => ensureBuild());
@@ -149,5 +154,168 @@ for i in [1] do
 end
 print(x)`),
     ).toBe("5");
+  });
+});
+
+describe("cells", () => {
+  it("mutates a binding from inside a function", () => {
+    // The §1a shape: with `let` this silently shadows and prints 11, 11, 10.
+    expect(
+      runPetal(`var i = 10
+fn f()
+  set i = i + 1
+  i
+end
+print(f())
+print(f())
+print(i)`),
+    ).toBe("11\n12\n12");
+  });
+
+  it("writes from inside a conditional inside a lambda", () => {
+    // The §1b shape — three SDL examples die at lowering on this with `=`,
+    // because the phi's init names a term in another function. A `var` needs
+    // no phi at all.
+    expect(
+      runPetal(`var score = 0
+var hit = false
+let doubled = map([1, 2, 3], fn(a)
+  if a > 1 then
+    set hit = true
+    set score += 10
+  end
+  a * 2
+end)
+print(doubled, score, hit)`),
+    ).toBe("[2, 4, 6] 20 true");
+  });
+
+  it("shares one cell between two closures", () => {
+    expect(
+      runPetal(`var n = 0
+let inc = fn() set n = n + 1 end
+let dec = fn() set n = n - 1 end
+inc()
+inc()
+inc()
+dec()
+print(n)`),
+    ).toBe("2");
+  });
+
+  it("gives each call of a factory its own cell", () => {
+    // The declaration allocates; two calls of `counter` are two boxes.
+    expect(
+      runPetal(`fn counter()
+  var c = 0
+  let bump = fn()
+    set c = c + 1
+    c
+  end
+  bump
+end
+let a = counter()
+let b = counter()
+print(a(), a(), a(), b())`),
+    ).toBe("1 2 3 1");
+  });
+
+  it("accumulates a list from inside a callback", () => {
+    // `invaders.ptl`'s shape, reduced: the reason the escape hatch exists.
+    expect(
+      runPetal(`var acc = []
+let _ = map([1, 2, 3], fn(x)
+  set acc = append(acc, x * x)
+  x
+end)
+print(acc)`),
+    ).toBe("[1, 4, 9]");
+  });
+
+  it("writes a field or index of an outer var from inside a function", () => {
+    expect(
+      runPetal(`var st = { items: [], n: 0 }
+fn add(v)
+  set st.items = append(st.items, v)
+  set st.n = st.n + 1
+end
+add(1)
+add(2)
+print(st)`),
+    ).toBe("{ items: [1, 2], n: 2 }");
+  });
+
+  it("does not warn about writing a var bound outside the function", () => {
+    // The cross-function warning is about `=`'s silent shadow. A `set` really
+    // does modify the outer binding, so there is nothing to warn about.
+    const out = checkJson(`var i = 0
+fn f() set i = 1 end`);
+    expect(JSON.stringify(out)).not.toContain("bound outside");
+  });
+});
+
+describe("cell containment", () => {
+  // §6d: no expression evaluates to a cell. Reads dereference, so storing or
+  // passing a `var` moves its *contents* — the box is never aliased except by
+  // closure capture.
+  it("stores contents, not the cell, into a record or list", () => {
+    expect(
+      runPetal(`var x = 1
+let r = { a: x }
+let xs = [x, x]
+set x = 2
+print(r, xs, x)`),
+    ).toBe("{ a: 1 } [1, 1] 2");
+  });
+
+  it("passes contents to a function", () => {
+    expect(
+      runPetal(`fn id(v) v end
+var x = 1
+let before = id(x)
+set x = 2
+print(before, id(x), type(x))`),
+    ).toBe("1 2 int");
+  });
+
+  it("keeps value semantics for a collection that a var also holds", () => {
+    // `box` takes the list's id at the time of the write; the later `xs[2] = 3`
+    // rebuilds rather than mutating, so `box` is unaffected. This is also the
+    // regression test for the in-place rewrite: a container stored into a cell
+    // is retained, so route A must decline to mutate it.
+    expect(
+      runPetal(`var box = []
+fn build()
+  let xs = [0, 0, 0]
+  xs[0] = 1
+  xs[1] = 2
+  set box = xs
+  xs[2] = 3
+  xs
+end
+print(build(), box)`),
+    ).toBe("[1, 2, 3] [1, 2, 0]");
+  });
+});
+
+describe("cell IR", () => {
+  it("compiles a var to CellNew / CellRead / CellWrite", () => {
+    const ir = showIrJson(`var x = 0
+set x = x + 1
+print(x)`);
+    expect(termsByOp(ir, "CellNew")).toHaveLength(1);
+    expect(termsByOp(ir, "CellWrite")).toHaveLength(1);
+    // One read for the `x + 1` operand, one for `print(x)`.
+    expect(termsByOp(ir, "CellRead")).toHaveLength(2);
+  });
+
+  it("emits no phi for a var written inside a conditional", () => {
+    // A cell's identity never changes, so there is nothing for a join to
+    // reconcile — which is exactly why a `set` works across a function
+    // boundary where an `=` cannot.
+    const ir = showIrJson(`var x = 0
+if true then set x = 1 end
+print(x)`);
+    expect(termsByOp(ir, "Phi")).toHaveLength(0);
   });
 });

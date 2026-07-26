@@ -224,3 +224,61 @@ fn lazy_init_does_not_overwrite_existing_value_across_runs() {
         val
     );
 }
+
+// ---------------------------------------------------------------------------
+// `state var` — the slot holds a cell (docs/lowering-confusion-20260726.md §6c)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn state_var_persists_across_runs_without_a_state_write() {
+    // A `state var`'s slot holds the *cell*, created once by the init block.
+    // Every `set` writes through it, so persistence needs no `StateWrite` at
+    // all — and works from inside a conditional, which is where the plain
+    // `state` + `=` form has to emit one.
+    let mut env = Env::new();
+    let pid = env
+        .load_program("state var count = 0\nif true then set count = count + 1 end")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    for _ in 0..3 {
+        env.run(sid).unwrap();
+        env.reset_stack(sid).unwrap();
+    }
+
+    let key = StateKey(petal::compiler::Compiler::hash_state_name("count"));
+    let cell = match env.get_state(sid, key).unwrap() {
+        petal::value::Value::Cell(id) => id,
+        other => panic!("a `state var` slot holds a cell, got {:?}", other),
+    };
+    assert_eq!(format!("{:?}", env.heap().cell_read(cell)), "Int(3)");
+}
+
+#[test]
+fn state_var_reads_and_writes_as_its_contents_over_json() {
+    // The slot holds a cell, but every serialization surface must show the
+    // *value*: a host inspecting `count` wants 2, and setting it must write
+    // through the cell rather than replacing it — replacing would strand every
+    // `CellRead` the script compiled against that slot.
+    let mut env = Env::new();
+    let pid = env
+        .load_program("state var count = 0\nset count = count + 1")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    env.run(sid).unwrap();
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+
+    let state = env.get_state_json(pid, sid);
+    assert_eq!(state.get("count"), Some(&serde_json::json!(2)));
+
+    env.set_state_from_json(pid, sid, "count", &serde_json::json!(40))
+        .unwrap();
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+
+    // 40 was written *through* the cell, so the next run incremented it.
+    let state = env.get_state_json(pid, sid);
+    assert_eq!(state.get("count"), Some(&serde_json::json!(41)));
+}

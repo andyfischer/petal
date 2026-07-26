@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::handle::HandleVal;
-use crate::heap::{ElementId, F64ArrayId, ListId, MapId, StringId};
+use crate::heap::{CellId, ElementId, F64ArrayId, ListId, MapId, StringId};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId, Program, TermId};
 use crate::resource_table::{ResourceState, ResourceTable};
@@ -39,6 +39,12 @@ pub enum Value {
         data: ListId,
     },
     Element(ElementId),
+    /// A mutable one-value box behind a `var` binding. Never escapes into user
+    /// code: every source-level read of a `var` dereferences it (`CellRead`),
+    /// so no expression evaluates to a `Cell`. The only way two holders share
+    /// one is closure capture, which is lexically visible. See the containment
+    /// invariant in docs/lowering-confusion-20260726.md §6d.
+    Cell(CellId),
     /// Dual number for forward-mode automatic differentiation.
     /// Carries a primal value and its derivative (tangent).
     Dual {
@@ -95,6 +101,7 @@ impl Value {
             Value::NativeFunction(_) => "function",
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
+            Value::Cell(_) => "cell",
             Value::Dual { .. } => "dual",
             Value::Vec2(_, _) => "vec2",
             Value::Symbol(_) => "symbol",
@@ -148,6 +155,7 @@ impl fmt::Debug for Value {
                 write!(f, "EnumVariant({:?}, {:?})", tag, data)
             }
             Value::Element(id) => write!(f, "Element({:?})", id),
+            Value::Cell(id) => write!(f, "Cell({:?})", id),
             Value::Dual { value, derivative } => {
                 write!(
                     f,
@@ -199,6 +207,11 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
             format!("{{ {} }}", parts.join(", "))
         }
         Value::Element(id) => element_to_display_string(*id, heap),
+        // Unreachable under the containment invariant (§6d): a `var` read
+        // dereferences, so no cell reaches a display path. Printed rather than
+        // panicked so a hypothetical leak shows up as a visible wart in output
+        // instead of taking down the run.
+        Value::Cell(id) => format!("<cell {}>", id.0),
         Value::Closure(_) => "<function>".to_string(),
         Value::OverloadSet(_) => "<function>".to_string(),
         Value::NativeFunction(_) => "<native>".to_string(),
@@ -490,6 +503,10 @@ pub fn value_to_json_ctx(
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
         Value::Element(id) => element_to_json(*id, heap, ctx),
+        // A `state var`'s slot holds the cell, so this is the one place a cell
+        // reaches a serialization surface. Report the *contents*: the box is an
+        // implementation detail, and someone inspecting `hits` wants `3`.
+        Value::Cell(id) => value_to_json_ctx(&heap.cell_read(*id), heap, ctx),
         Value::Symbol(id) => serde_json::json!({ "type": "symbol", "id": id.0 }),
         // A pending value renders richly when a context is available, else falls
         // back to its context-free string — never `null` or a bare handle.

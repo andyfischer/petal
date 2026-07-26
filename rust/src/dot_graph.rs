@@ -37,6 +37,9 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
             TermOp::Branch | TermOp::Match => "lightsalmon",
             TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop => "plum",
             TermOp::MakeClosure(_) => "lightcoral",
+            // Cells are the non-dataflow edges — colored apart so a `var`'s
+            // reads and writes stand out in a graph that is otherwise pure.
+            TermOp::CellNew | TermOp::CellRead | TermOp::CellWrite => "lightyellow",
             _ => "white",
         };
 

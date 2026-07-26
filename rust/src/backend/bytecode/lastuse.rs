@@ -484,6 +484,19 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
                 f(*k, RETAIN);
             }
         }
+        // A cell keeps whatever is stored in it reachable for as long as the
+        // cell lives, so anything written into one is retained — this is the
+        // one hole in "the heap is immutable-by-construction" that route A's
+        // soundness argument leans on, and closing it here is what keeps a
+        // container that ever enters a `var` out of the in-place rewrite.
+        Inst::CellNew { init, .. } => f(*init, RETAIN),
+        Inst::CellWrite { cell, val, .. } => {
+            f(*cell, RETAIN);
+            f(*val, RETAIN);
+        }
+        // The read hands out an interior value, but that value is *still* in
+        // the cell afterwards, so the cell register keeps it alive.
+        Inst::CellRead { cell, .. } => f(*cell, RETAIN),
         Inst::StateInit { key, .. } => {
             if let Some(k) = key {
                 f(*k, RETAIN);

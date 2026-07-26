@@ -232,6 +232,9 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         SetIndexInPlace { dst, obj, idx, val } => {
             format!("r{} = set_in_place r{}[r{}] = r{}", dst, obj, idx, val)
         }
+        CellNew { dst, init } => format!("r{} = cell_new r{}", dst, init),
+        CellRead { dst, cell } => format!("r{} = cell_read r{}", dst, cell),
+        CellWrite { dst, cell, val } => format!("r{} = cell_write r{} <- r{}", dst, cell, val),
         StateInit {
             dst,
             base,

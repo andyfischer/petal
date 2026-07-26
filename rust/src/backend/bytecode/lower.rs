@@ -328,6 +328,20 @@ impl<'p> FnLowerer<'p> {
                 init: false,
             },
 
+            TermOp::CellNew => Inst::CellNew {
+                dst,
+                init: self.flat(ins[0])?,
+            },
+            TermOp::CellRead => Inst::CellRead {
+                dst,
+                cell: self.flat(ins[0])?,
+            },
+            TermOp::CellWrite => Inst::CellWrite {
+                dst,
+                cell: self.flat(ins[0])?,
+                val: self.flat(ins[1])?,
+            },
+
             TermOp::Add => Inst::Add {
                 dst,
                 a: self.flat(ins[0])?,

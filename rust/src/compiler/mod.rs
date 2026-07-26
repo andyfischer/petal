@@ -373,8 +373,12 @@ impl Compiler {
         }
 
         if !is_entry {
+            // Pop both halves of the frame in lockstep — `binding_is_var`
+            // indexes `var_scopes` by `scopes` position, so leaving one behind
+            // would hand the next module's frame this module's binding kinds.
             let scope = self.scopes.pop().expect("module scope frame");
-            self.capture_exports(module, scope);
+            let vars = self.var_scopes.pop().expect("module scope var frame");
+            self.capture_exports(module, scope, vars);
         }
         self.current_module = None;
         Ok(())
@@ -473,7 +477,12 @@ impl Compiler {
     /// its qualified name (`"ui::button"`), which is how alias access, later
     /// importers, and `Env::call_function` reach it. A module with no `export`
     /// declarations exports nothing — the default is private.
-    fn capture_exports(&mut self, module: &LoadedModule, scope: HashMap<String, TermId>) {
+    fn capture_exports(
+        &mut self,
+        module: &LoadedModule,
+        scope: HashMap<String, TermId>,
+        vars: HashSet<String>,
+    ) {
         let module_name = module.name.as_deref().expect("not the entry file");
         let imported: std::collections::HashSet<&str> = module
             .imports
@@ -495,7 +504,17 @@ impl Compiler {
             let tid = scope[name];
             let qualified = format!("{module_name}::{name}");
             if let Some(global) = self.scopes.first_mut() {
-                global.insert(qualified, tid);
+                global.insert(qualified.clone(), tid);
+            }
+            // An exported `var` stays a `var` under its qualified name, so an
+            // importer's read of it dereferences the cell rather than
+            // forwarding the raw cell id. Only the owning module can `set` it:
+            // `set m.x = 1` is rooted at the module alias, which is not a
+            // binding, so there is no cross-module write syntax.
+            if vars.contains(name)
+                && let Some(global_vars) = self.var_scopes.first_mut()
+            {
+                global_vars.insert(qualified);
             }
         }
         self.module_exports.insert(module_name.to_string(), names);
@@ -682,6 +701,21 @@ impl Compiler {
             self.scope_bind_var(name, term_id);
         } else {
             self.scope_bind(name, term_id);
+        }
+    }
+
+    /// Resolve `name` to the term that carries its value *inside the function
+    /// currently being compiled*, adding closure captures along the way when
+    /// the binding lives in an enclosing function. `None` if unbound.
+    ///
+    /// For a `var` the resolved term holds the cell, not the contents — the
+    /// caller decides whether to dereference (a read) or write through it.
+    pub(super) fn resolve_local_term(&mut self, name: &str) -> Option<TermId> {
+        let tid = self.scope_lookup(name)?;
+        if self.needs_capture(name) {
+            Some(self.get_or_add_capture(name, tid))
+        } else {
+            Some(tid)
         }
     }
 

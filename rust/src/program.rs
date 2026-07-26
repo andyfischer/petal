@@ -161,6 +161,21 @@ pub enum TermOp {
     /// Write persistent state: inputs=[value], state_key set
     StateWrite,
 
+    // Cells (`var` bindings)
+    /// Allocate a cell holding the initial value: inputs=[init].
+    /// The term's *value* is the cell itself — the one place a `Value::Cell`
+    /// is produced. Emitted for `var x = init`; a `state var` wraps this in the
+    /// `StateInit` init block so the cell is created once and then persists.
+    CellNew,
+    /// Dereference a cell: inputs=[cell]. Every source-level read of a `var`
+    /// name compiles to this, which is what keeps the containment invariant
+    /// (§6d) — no other op forwards a cell into the value domain.
+    CellRead,
+    /// Write through a cell: inputs=[cell, value]. Emitted for `set x = ...`.
+    /// Yields the written value so the op has something to put in its register;
+    /// nothing reads it.
+    CellWrite,
+
     // Data structures
     /// Allocate a list: inputs=[elem0, elem1, ...]
     AllocList,

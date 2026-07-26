@@ -163,6 +163,9 @@ fn format_op(op: &TermOp) -> String {
         TermOp::StateInit => "StateInit".into(),
         TermOp::StateRead => "StateRead".into(),
         TermOp::StateWrite => "StateWrite".into(),
+        TermOp::CellNew => "CellNew".into(),
+        TermOp::CellRead => "CellRead".into(),
+        TermOp::CellWrite => "CellWrite".into(),
         TermOp::AllocList => "AllocList".into(),
         TermOp::AllocMap { fields } => {
             let ids: Vec<String> = fields.iter().map(|c| format!("c{}", c.0)).collect();

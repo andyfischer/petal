@@ -66,6 +66,50 @@ is a place the dataflow story goes dark, so it is written where it happens.
 the compound forms (`set count += 1`), and never declares a binding — `set` on
 an unknown name is an error, not a declaration.
 
+A `var` binds a *box*, not a value, and that is what makes it useful: a
+function or a closure that mentions the name shares the same box, so a write
+from inside one is visible outside. This is the case `=` cannot express — an
+`=` inside a function creates a function-local shadow and leaves the outer
+binding alone.
+
+```petal
+var score = 0
+let doubled = map([1, 2, 3], fn(a)
+  if a > 1 then set score += 10 end
+  a * 2
+end)
+print(doubled, score)   // [2, 4, 6] 20
+```
+
+Each *evaluation* of the declaration makes a new box, so a factory hands out
+independent counters:
+
+```petal
+fn counter()
+  var c = 0
+  let bump = fn()
+    set c = c + 1
+    c
+  end
+  bump
+end
+let a = counter()
+let b = counter()
+print(a(), a(), b())   // 1 2 1
+```
+
+Reading a `var` gives you its *contents*, never the box. Storing one in a
+record, passing it to a function, or printing it all move the value as of that
+moment; the only way to share a box is to capture it in a closure, which you
+can see in the source.
+
+```petal
+var x = 1
+let r = { a: x }
+set x = 2
+print(r, x)   // { a: 1 } 2
+```
+
 Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
 provenance queries (`petal show-provenance`, `petal show-slice`) that can
 otherwise answer "what produced this value?".

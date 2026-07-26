@@ -495,6 +495,26 @@ hatch and not the default, and it is the argument for making writes verbose:
 every `set` is a place the dataflow story goes dark, and the reader should be
 able to see them.
 
+**Measured after 4b**, so 4d starts from evidence rather than a prediction. The
+walk does not crash — it does something worse. For
+
+```petal
+var x = 0
+set x = x + 1
+let y = x * 2
+```
+
+`explain --term y` reports `y = 2` with a chain of `t97 CellRead → t92 CellNew
+x = <cell 0> → t91 = 0`, i.e. it walks *through* the read into the cell's
+**initial** value and presents the result as a complete chain. `y` came from
+the `CellWrite`, which does not appear. That is precisely the "silently return
+a partial graph" failure §6e forbids, and all three consumers
+(`trace_provenance`, `slice`, `ExplainTerm`) inherit it from the shared
+backward walk. Truncating at `CellRead` is not enough on its own — an
+unannounced truncation reads as "nothing further influenced this", which is the
+same lie shorter. The walk has to stop *and say so*, uniformly, which is why
+this is a design item and not a patch.
+
 ---
 
 ## 7. Plan
@@ -550,19 +570,65 @@ existing breaks and it can land in chunks.
   yet**, so a `var` still compiles exactly like a `let`: same phis, same
   cross-function limitation. What 4a buys is the keyword discipline and the
   errors, not new semantics.
-- **4b — cells at runtime.** `Value::Cell` + heap object; `CellNew`/`CellRead`/
-  `CellWrite` in `TermOp` and the graph interpreter. The containment invariant
-  (§6d) is what keeps this small.
-- **4c — bytecode.** New opcodes in `isa.rs`/`lower.rs`, plus `escape.rs` and
-  `lastuse.rs` (cell contents are aliased and never unique). Per
-  `bytecode-future-ideas.md`, new opcodes must earn a differential-fuzzer soak
-  before going default-on.
+- **4b — cells at runtime.** ✅ done. `Value::Cell(CellId)` plus a cell slab in
+  the heap, and `CellNew`/`CellRead`/`CellWrite` through `TermOp`, the
+  lowering, the ISA and the VM. **4b and 4c merged**: the plan assumed a graph
+  interpreter to land cells in first, but that backend was removed — bytecode
+  is the only engine, so "cells at runtime" *is* the opcodes. A `var` binds the
+  cell; `compile_ident` dereferences it, `rebind_name` writes through it, and
+  the binding is never rebound, so cells leave the SSA machinery entirely (the
+  phi pre-scan no longer treats `set` as an assignment — see below).
+  `state var` puts the `CellNew` inside the `StateInit` init block, so the slot
+  holds the cell and persistence needs no `StateWrite` at all.
+- **4c — bytecode.** ✅ folded into 4b. `escape.rs` needed nothing (a `CellRead`
+  is not a fresh root and `CellNew`/`CellWrite` are not carriers, so route B
+  declines by construction); `lastuse.rs` needed one rule — everything written
+  into a cell is *retaining*, which is the hole in route A's
+  "heap-is-immutable" soundness argument that cells open. The opcodes earned
+  their soak: 30k seeds across all three oracles, with `var`/`set` added to the
+  generator's statement mix.
 - **4d — the long tail.** Type checker (a `var`'s writes must stay assignable to
-  its declared type), `transfer_state` (cells in state survive hot reload),
-  `ir_serialize`/`ir_validate`, `petal lint`'s rebind rule (§8: never propose
-  `@` on a `var`), and provenance (§6e) — which needs designing across its three
-  consumers (`trace_provenance`, `slice`, `ExplainTerm`) before it is written,
-  since "degrade honestly" has to mean the same thing in all of them.
+  its declared type), `petal lint`'s rebind rule (§8: never propose `@` on a
+  `var` — already true, and now covered by a test), and provenance (§6e) —
+  which needs designing across its three consumers (`trace_provenance`,
+  `slice`, `ExplainTerm`) before it is written, since "degrade honestly" has to
+  mean the same thing in all of them.
+  Two items came off this list early, because deferring them would have been a
+  bug rather than a gap: `ir_serialize`/`ir_validate` (cell ops round-trip and
+  are arity-checked), and the state JSON boundary — a `state var`'s slot holds
+  a cell, so `get_state_json` reports its *contents* and `set_state` writes
+  *through* it. Replacing the slot instead would have stranded every `CellRead`
+  compiled against it. `transfer_state` needed nothing: it swaps the program
+  and keeps the context, so cell ids stay valid and a `state var` survives hot
+  reload with its value.
+
+Four things 4b settled that the plan had not anticipated:
+
+- **The phi pre-scan had to stop seeing `set`.** 4a left `set` in
+  `AssignedNames` because it compiled like `=`. With cells that is actively
+  wrong: a `set` inside a lambda would put a phi on the enclosing block
+  initialized from a term in another function — the exact §1b lowering failure
+  `var` exists to fix. The mapping is exact rather than approximate, because
+  `check_write_keyword` makes both directions fatal: `set` writes `var`s and
+  only `var`s.
+- **Captures had to carry binding kind.** `add_capture_at_level` inserts the
+  phantom straight into the boundary scope, bypassing `scope_bind_var`. Without
+  propagating var-ness a `set` inside a closure was rejected as "not a `var`" —
+  and a read would have forwarded the raw cell instead of dereferencing it,
+  breaking §6d.
+- **A pre-existing scope imbalance surfaced.** The module-scope pop dropped
+  `scopes` without `var_scopes`, so after one module the two stacks were
+  misaligned and a later module's `let x` could inherit an earlier module's
+  `var x`. Fixed, and exported `var`s now keep their kind under the qualified
+  name, so an importer's read dereferences. Only the owning module can write
+  one: `set m.x = 1` is rooted at a module alias, which is not a binding.
+- **Route B needed no change, route A needed one.** See 4c above.
+
+**Still true after 4b:** the three SDL examples do not run. They are written
+with `=` and migrating them is step 5. What changed is that the fix now exists
+— the shapes they fail on (`score += 10` inside an `if` inside a `map`
+callback; a list accumulated from a lambda) run correctly under `var`/`set`,
+and are covered as tests.
 
 Two things 4a settled that the plan had not anticipated:
 

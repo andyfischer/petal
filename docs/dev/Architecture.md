@@ -161,6 +161,7 @@ the important groups are:
 - **Control flow** — `Branch`, `ForLoop`, `NumericForLoop`, `WhileLoop`, `Break`, `Continue`, `Return`
 - **Data joins** — `Phi` (see below)
 - **State** — `StateInit`, `StateRead`, `StateWrite`
+- **Cells** — `CellNew`, `CellRead`, `CellWrite` (the `var` escape hatch)
 - **Functions** — `MakeClosure`, `MakeOverloadSet`, `Call`, `MethodCall`
 - **Data** — `AllocList`, `AllocMap`, `AllocMapSpread`, `AllocElement`, `MakeEnumVariant`
 - **Access** — `GetField`, `SetField`, `GetIndex`, `SetIndex`
@@ -179,6 +180,16 @@ control-flow term. The phi initializes from its `inputs[0]` (the
 pre-control-flow value) and gets updated by each child-frame pop via
 `Block.phi_outs`. Branches that don't rebind leave the init value in
 place; loop iterations read the latest value.
+
+The one deliberate exception is a **`var`** binding, which binds a heap
+*cell* rather than a value. Its reads lower to `CellRead` and its `set`
+writes to `CellWrite`, so the name is never rebound and never needs a phi —
+which is exactly what lets a `var` be written from inside a conditional or a
+closure, where a phi would have to initialize from a term in another
+function. The cost is that a cell read has no dataflow edge to walk back,
+so provenance stops there. See docs/lowering-confusion-20260726.md for the
+full argument, and §6d for the containment invariant that keeps cells out of
+the value domain (no expression evaluates to a `Value::Cell`).
 
 ### ConstantTable
 
@@ -240,6 +251,7 @@ pub enum Value {
     NativeFunction(NativeFnId),
     EnumVariant { tag: StringId, data: ListId },
     Element(ElementId),
+    Cell(CellId),
     Dual { value: f64, derivative: f64 },
     Vec2(f64, f64),
     Symbol(SymbolId),

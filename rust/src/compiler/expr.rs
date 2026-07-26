@@ -213,14 +213,17 @@ impl Compiler {
     /// names compile to an `Error` term (with a hint for common slips from
     /// other languages) that only fires if actually executed.
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
-        if let Some(tid) = self.scope_lookup(name) {
-            // Check if this reference crosses a function boundary (needs capture)
-            if self.needs_capture(name) {
-                let local_tid = self.get_or_add_capture(name, tid);
-                self.emit_term(TermOp::Copy, smallvec![local_tid], None)
+        if let Some(local_tid) = self.resolve_local_term(name) {
+            // A `var` binds the *cell*, so reading the name dereferences it.
+            // This is the only place reads of a var are turned into `CellRead`,
+            // which is what makes the containment invariant hold by
+            // construction: nothing else forwards a cell into the value domain.
+            let op = if self.binding_is_var(name) {
+                TermOp::CellRead
             } else {
-                self.emit_term(TermOp::Copy, smallvec![tid], None)
-            }
+                TermOp::Copy
+            };
+            self.emit_term(op, smallvec![local_tid], None)
         } else if let Some(module) = self.module_aliases.get(name) {
             // A module alias is not a runtime value.
             let msg = format!(

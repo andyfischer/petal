@@ -63,6 +63,9 @@ struct Var {
     /// Loop counters / loop variables must not be rebound by generated
     /// statements or loop termination could break.
     frozen: bool,
+    /// Declared `var` — a cell, written with `set` rather than `=`. The two
+    /// keywords are disjoint, so this decides which one a write must use.
+    is_var: bool,
 }
 
 struct Gen {
@@ -131,6 +134,14 @@ impl Gen {
 
     /// A random rebindable (non-frozen) int variable, if any.
     fn pick_mutable_int(&mut self) -> Option<String> {
+        self.pick_mutable_int_var().map(|(name, _)| name)
+    }
+
+    /// A random rebindable int variable plus whether it is a `var`. Writes have
+    /// to know: `=` on a cell and `set` on a `let` are both hard errors, so
+    /// picking the wrong keyword would fail every oracle identically and test
+    /// nothing.
+    fn pick_mutable_int_var(&mut self) -> Option<(String, bool)> {
         let matching: Vec<&Var> = self
             .vars
             .iter()
@@ -140,7 +151,13 @@ impl Gen {
             return None;
         }
         let i = self.rng.below(matching.len() as u64) as usize;
-        Some(matching[i].name.clone())
+        Some((matching[i].name.clone(), matching[i].is_var))
+    }
+
+    /// The write prefix and target for `name`: `("set ", n)` for a cell,
+    /// `("", n)` for a dataflow rebind.
+    fn write_prefix(is_var: bool) -> &'static str {
+        if is_var { "set " } else { "" }
     }
 
     // ── Expressions ─────────────────────────────────────────────
@@ -284,6 +301,7 @@ impl Gen {
                         name,
                         kind: Kind::List,
                         frozen: false,
+                        is_var: false,
                     });
                 }
             }
@@ -295,10 +313,11 @@ impl Gen {
                         name,
                         kind: Kind::Rec,
                         frozen: false,
+                        is_var: false,
                     });
                 }
             }
-            0 | 1 => {
+            0 => {
                 let name = self.fresh("v");
                 let e = self.int_expr(2);
                 self.line(&format!("let {name} = {e}"));
@@ -306,19 +325,38 @@ impl Gen {
                     name,
                     kind: Kind::Int,
                     frozen: false,
+                    is_var: false,
+                });
+            }
+            // A `var` — a heap cell rather than an SSA rebind. Worth its own
+            // slot because cells leave the phi machinery entirely: they must
+            // survive the nesting, `break`/`continue`, and loop-carry
+            // combinations that phis are lowered through, and a container that
+            // reaches one must drop out of the in-place rewrite.
+            1 => {
+                let name = self.fresh("c");
+                let e = self.int_expr(2);
+                self.line(&format!("var {name} = {e}"));
+                self.vars.push(Var {
+                    name,
+                    kind: Kind::Int,
+                    frozen: false,
+                    is_var: true,
                 });
             }
             2 => {
-                if let Some(v) = self.pick_mutable_int() {
+                if let Some((v, is_var)) = self.pick_mutable_int_var() {
                     let e = self.int_expr(2);
-                    self.line(&format!("{v} = {e}"));
+                    let w = Self::write_prefix(is_var);
+                    self.line(&format!("{w}{v} = {e}"));
                 }
             }
             3 => {
-                if let Some(v) = self.pick_mutable_int() {
+                if let Some((v, is_var)) = self.pick_mutable_int_var() {
                     let e = self.int_expr(1);
                     let op = ["+=", "-=", "*="][self.rng.below(3) as usize];
-                    self.line(&format!("{v} {op} {e}"));
+                    let w = Self::write_prefix(is_var);
+                    self.line(&format!("{w}{v} {op} {e}"));
                 }
             }
             4 => self.if_stmt(),
@@ -340,6 +378,7 @@ impl Gen {
                     name,
                     kind: Kind::Int,
                     frozen: false,
+                    is_var: false,
                 });
             }
             8 => {
@@ -352,6 +391,7 @@ impl Gen {
                     name,
                     kind: Kind::List,
                     frozen: false,
+                    is_var: false,
                 });
             }
             9 => {
@@ -376,6 +416,7 @@ impl Gen {
                     name,
                     kind: Kind::Rec,
                     frozen: false,
+                    is_var: false,
                 });
             }
             12 => {
@@ -427,6 +468,7 @@ impl Gen {
             name: iv,
             kind: Kind::Int,
             frozen: true,
+            is_var: false,
         });
         self.block(3);
         self.exit_scope();
@@ -450,6 +492,7 @@ impl Gen {
             name: w.clone(),
             kind: Kind::Int,
             frozen: true,
+            is_var: false,
         });
         self.block(3);
         self.exit_scope();
@@ -460,6 +503,7 @@ impl Gen {
             name: w,
             kind: Kind::Int,
             frozen: true,
+            is_var: false,
         });
     }
 
@@ -477,6 +521,7 @@ impl Gen {
                 name: p.clone(),
                 kind: Kind::Int,
                 frozen: false,
+                is_var: false,
             });
         }
         self.block(4);
@@ -585,6 +630,23 @@ fn assert_exact_parity(seed: u64, code: &str) {
         "in-place mutation (M4 A+B) divergence at seed {seed}; bytecode(no-opt) \
          vs bytecode(all opts) disagree — reproduce with \
          Gen::new({seed}).program()\n--- program ---\n{code}"
+    );
+}
+
+/// The generator must actually reach `var`/`set`, or the soak above proves
+/// nothing about cells. Guards the case against going dead if the statement
+/// mix is reshuffled later.
+#[test]
+fn the_generator_emits_cells() {
+    let with_cells = (0..200)
+        .filter(|&seed| {
+            let code = Gen::new(seed).program();
+            code.contains("var ") && code.contains("set ")
+        })
+        .count();
+    assert!(
+        with_cells > 20,
+        "only {with_cells}/200 generated programs declare and write a `var`"
     );
 }
 

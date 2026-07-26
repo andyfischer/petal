@@ -316,6 +316,24 @@ pub enum Inst {
         val: Reg,
     },
 
+    // --- cells (`var` bindings) ---
+    /// Allocate a cell holding `init` and put the cell in `dst`.
+    CellNew {
+        dst: Reg,
+        init: Reg,
+    },
+    /// Dereference the cell in `cell` into `dst`.
+    CellRead {
+        dst: Reg,
+        cell: Reg,
+    },
+    /// Write `val` through the cell in `cell`, mirroring it into `dst`.
+    CellWrite {
+        dst: Reg,
+        cell: Reg,
+        val: Reg,
+    },
+
     // --- state (nested keys resolved from the frame's loop-index context) ---
     /// Lazy state init. The init expression's block is lowered *inline*
     /// immediately after this op (followed by a `StateWrite` that commits it).
@@ -419,6 +437,9 @@ impl Inst {
             | Inst::StateInit { dst, .. }
             | Inst::StateRead { dst, .. }
             | Inst::StateWrite { dst, .. }
+            | Inst::CellNew { dst, .. }
+            | Inst::CellRead { dst, .. }
+            | Inst::CellWrite { dst, .. }
             | Inst::LoopCollectEnd { dst, .. } => Some(*dst),
             // Value delivered on frame return, not in this frame.
             Inst::Call { .. } | Inst::MethodCall { .. } => None,
@@ -488,6 +509,12 @@ impl Inst {
             Inst::AllocMap { vals, .. } => v.extend(vals.iter().copied()),
             Inst::MakeEnumVariant { fields, .. } => v.extend(fields.iter().copied()),
             Inst::StateWrite { val, .. } => v.push(*val),
+            Inst::CellNew { init, .. } => v.push(*init),
+            Inst::CellRead { cell, .. } => v.push(*cell),
+            Inst::CellWrite { cell, val, .. } => {
+                v.push(*cell);
+                v.push(*val);
+            }
             // Everything else contributes no simple input registers.
             _ => {}
         }
@@ -544,6 +571,9 @@ impl Inst {
             | Inst::StateInit { dst, .. }
             | Inst::StateRead { dst, .. }
             | Inst::StateWrite { dst, .. }
+            | Inst::CellNew { dst, .. }
+            | Inst::CellRead { dst, .. }
+            | Inst::CellWrite { dst, .. }
             | Inst::LoopCollectEnd { dst, .. } => f(*dst),
             Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
             Inst::MatchArm { term, arm, .. } => {

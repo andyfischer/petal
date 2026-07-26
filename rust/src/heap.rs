@@ -9,6 +9,12 @@
 //! untouched (value semantics). This is what makes sharing heap objects
 //! between executions safe — see the "Speculative execution" section of
 //! docs/program-modification.md.
+//!
+//! **One exception: [`CellId`]**, the box behind a `var` binding, which
+//! [`Heap::cell_write`] overwrites in place. It is confined by construction —
+//! no expression evaluates to a `Value::Cell`, so a cell id never enters a
+//! collection payload — and `fork` deep-copies the cell slab like every other,
+//! so speculative execution stays isolated.
 
 use std::collections::HashMap;
 
@@ -50,6 +56,20 @@ pub struct MapId(pub u32);
 /// Opaque handle to a heap-allocated element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ElementId(pub u32);
+
+/// Opaque handle to a heap-allocated **cell** — the one-value mutable box
+/// behind a `var` binding.
+///
+/// Cells are the sole exception to this module's immutable-by-construction
+/// rule: [`cell_write`](Heap::cell_write) overwrites the slot in place and
+/// keeps the id, which is the whole point (every holder of the id, including a
+/// closure that captured it, observes the write). What keeps that sound is the
+/// *containment invariant*: no expression evaluates to a `Value::Cell`, so a
+/// cell id never reaches a collection payload, a host, or user code. Reads
+/// dereference; only closure capture shares one. See
+/// docs/lowering-confusion-20260726.md §6d.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CellId(pub u32);
 
 /// Payload of a single heap element: three `Copy` ids referencing the element's
 /// tag string, props map, and children list. Stored as the `T` of an element
@@ -160,6 +180,8 @@ pub struct Heap {
     f64_arrays: Slab<Vec<f64>>,
     maps: Slab<IndexMap<String, Value>>,
     elements: Slab<ElementPayload>,
+    /// One-value mutable boxes behind `var` bindings. See [`CellId`].
+    cells: Slab<Value>,
     /// String intern table: content → existing StringId
     intern_table: HashMap<String, StringId>,
     /// Estimated collector work owed by everything allocated since the last
@@ -219,6 +241,7 @@ impl Heap {
             f64_arrays: Slab::new(),
             maps: Slab::new(),
             elements: Slab::new(),
+            cells: Slab::new(),
             intern_table: HashMap::new(),
             alloc_charge: 0,
             gc_budget: GC_MIN_BUDGET_BYTES,
@@ -343,7 +366,8 @@ impl Heap {
             + self.lists.slots.len()
             + self.f64_arrays.slots.len()
             + self.maps.slots.len()
-            + self.elements.slots.len()) as u64;
+            + self.elements.slots.len()
+            + self.cells.slots.len()) as u64;
         self.live_bytes() + SLOT_TRACE_COST * slots
     }
 
@@ -671,6 +695,32 @@ impl Heap {
         self.elements.get(id.0).children
     }
 
+    // --- Cell allocation (`var` bindings) ---
+
+    /// Allocate a cell holding `init`. The returned id is the *identity* a
+    /// `var` binding carries: capturing it in a closure shares the box, and
+    /// [`cell_write`](Self::cell_write) is visible through every copy of the id.
+    pub fn alloc_cell(&mut self, init: Value) -> CellId {
+        // One `Copy` Value: no backing store of its own beyond the slot.
+        self.tick_alloc(AllocKind::Cell, 0);
+        CellId(self.cells.alloc(init))
+    }
+
+    /// Read a cell's current contents.
+    pub fn cell_read(&self, id: CellId) -> Value {
+        *self.cells.get(id.0)
+    }
+
+    /// Overwrite a cell's contents in place, keeping its id. The one mutating
+    /// operation in this module — see [`CellId`] for why it is sound.
+    pub fn cell_write(&mut self, id: CellId, val: Value) {
+        debug_assert!(
+            self.cells.slots[id.0 as usize].alive,
+            "write to a collected cell"
+        );
+        *self.cells.get_mut(id.0) = val;
+    }
+
     // -----------------------------------------------------------------------
     // Garbage collection: mark-and-sweep
     // -----------------------------------------------------------------------
@@ -683,6 +733,7 @@ impl Heap {
             Value::F64Array(id) => self.mark_f64_array(id),
             Value::Map(id) => self.mark_map(id),
             Value::Element(id) => self.mark_element(id),
+            Value::Cell(id) => self.mark_cell(id),
             Value::EnumVariant { tag, data } => {
                 self.mark_string(tag);
                 self.mark_list(data);
@@ -745,6 +796,16 @@ impl Heap {
         }
     }
 
+    fn mark_cell(&mut self, id: CellId) {
+        if self.cells.mark(id.0) {
+            // A cell's contents are an ordinary value and may themselves be
+            // heap-backed (a `var` holding a list). The `mark` guard makes the
+            // recursion terminate even if a cell ever reached itself.
+            let contents = *self.cells.get(id.0);
+            self.mark_value(contents);
+        }
+    }
+
     /// Sweep phase: free all unmarked objects and reset marks.
     /// Call this after marking all roots.
     pub fn sweep(&mut self) {
@@ -771,6 +832,7 @@ impl Heap {
         self.f64_arrays.sweep_with(|v| *v = Vec::new());
         self.maps.sweep_with(|v| *v = IndexMap::new());
         self.elements.sweep_with(|_| {});
+        self.cells.sweep_with(|v| *v = Value::Nil);
 
         // Size the next collection's budget against what this collection would
         // cost to repeat (see `should_collect`). Computed here, once per cycle,
@@ -940,6 +1002,60 @@ mod tests {
         // …and the original map is untouched (value semantics).
         assert_eq!(heap.get_map(original).get("a"), Some(&Value::Int(1)));
         assert_eq!(heap.get_map(original).get("b"), Some(&Value::Int(2)));
+    }
+
+    #[test]
+    fn a_cell_write_is_visible_through_every_copy_of_its_id() {
+        // The one mutable object in the heap: a second holder of the id — which
+        // is what a closure capture is — observes the write.
+        let mut heap = Heap::new();
+        let cell = heap.alloc_cell(Value::Int(1));
+        let captured = cell;
+
+        heap.cell_write(cell, Value::Int(2));
+
+        assert_eq!(heap.cell_read(captured), Value::Int(2));
+    }
+
+    #[test]
+    fn gc_traces_through_a_cell_into_its_contents() {
+        // A `var` holding a list is the list's only root. Marking the cell has
+        // to reach the payload, or the list is swept out from under it.
+        let mut heap = Heap::new();
+        let list = heap.alloc_list(vec![Value::Int(7)]);
+        let cell = heap.alloc_cell(Value::List(list));
+
+        heap.mark_value(Value::Cell(cell));
+        heap.sweep();
+
+        assert_eq!(heap.get_list(list), &[Value::Int(7)]);
+    }
+
+    #[test]
+    fn an_unreachable_cell_is_reclaimed_with_its_contents() {
+        let mut heap = Heap::new();
+        let list = heap.alloc_list(vec![Value::Int(7)]);
+        let cell = heap.alloc_cell(Value::List(list));
+
+        // Nothing marked: both the cell and the list it holds are garbage.
+        heap.sweep();
+
+        assert!(!heap.cells.slots[cell.0 as usize].alive);
+        assert!(!heap.lists.slots[list.0 as usize].alive);
+    }
+
+    #[test]
+    fn a_fork_writes_its_own_copy_of_a_cell() {
+        // Speculative execution must not be able to reach back and mutate the
+        // parent's `var`s — `Heap::fork` deep-copies the cell slab, so it can't.
+        let mut parent = Heap::new();
+        let cell = parent.alloc_cell(Value::Int(1));
+
+        let mut child = parent.fork();
+        child.cell_write(cell, Value::Int(99));
+
+        assert_eq!(child.cell_read(cell), Value::Int(99));
+        assert_eq!(parent.cell_read(cell), Value::Int(1));
     }
 
     #[test]

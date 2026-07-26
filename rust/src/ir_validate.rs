@@ -104,6 +104,29 @@ impl Program {
             if is_state && term.state_key.is_none() {
                 return Err(format!("t{}: state op missing state_key", i));
             }
+            // Cell ops have fixed arity: the cell always comes first, so a
+            // malformed IR can't turn a `CellWrite` into a read of whatever
+            // happens to sit in input 0.
+            let cell_arity = match term.op {
+                TermOp::CellNew | TermOp::CellRead => Some(1),
+                TermOp::CellWrite => Some(2),
+                _ => None,
+            };
+            if let Some(n) = cell_arity
+                && term.inputs.len() != n
+            {
+                return Err(format!(
+                    "t{}: {} takes {} input(s), found {}",
+                    i,
+                    match term.op {
+                        TermOp::CellNew => "CellNew",
+                        TermOp::CellRead => "CellRead",
+                        _ => "CellWrite",
+                    },
+                    n,
+                    term.inputs.len()
+                ));
+            }
         }
 
         // Block back-references and phi_outs targets.

@@ -514,11 +514,24 @@ impl Env {
     /// The in-tree caller, [`Env::set_state_from_json`], allocates a fresh value
     /// per call.
     pub fn set_state(&mut self, stack_id: StackKey, key: StateKey, value: Value) {
+        let runtime_key = RuntimeStateKey {
+            base: key,
+            loop_indices: smallvec::SmallVec::new(),
+        };
+        // A `state var`'s slot holds a cell, and the script reads that cell —
+        // replacing the slot outright would strand every `CellRead` compiled
+        // against it. Write *through* the cell instead, which is also what the
+        // caller means: they are setting the variable, not the box.
+        let existing = self
+            .stacks
+            .get(&stack_id)
+            .and_then(|s| s.state.get(&runtime_key).copied());
+        if let Some(Value::Cell(cell)) = existing {
+            let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
+            self.ctx_mut(ck).heap.cell_write(cell, value);
+            return;
+        }
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
-            let runtime_key = RuntimeStateKey {
-                base: key,
-                loop_indices: smallvec::SmallVec::new(),
-            };
             stack.state.insert(runtime_key, value);
         }
     }

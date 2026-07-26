@@ -26,11 +26,18 @@ impl Compiler {
                 ..
             } => {
                 let val_tid = self.compile_expr(value);
-                self.terms[val_tid.0 as usize].name = Some(name.clone());
                 self.note_shadow(name);
                 if *is_var {
-                    self.scope_bind_var(name.clone(), val_tid);
+                    // The binding is the *cell*, not the initial value. Every
+                    // read of the name dereferences it and every `set` writes
+                    // through it, so the name is never rebound to a new term —
+                    // which is precisely why a `var` needs no phi and works
+                    // across function and control-flow boundaries.
+                    let cell_tid =
+                        self.emit_term(TermOp::CellNew, smallvec![val_tid], Some(name.clone()));
+                    self.scope_bind_var(name.clone(), cell_tid);
                 } else {
+                    self.terms[val_tid.0 as usize].name = Some(name.clone());
                     self.scope_bind(name.clone(), val_tid);
                 }
             }
@@ -225,7 +232,14 @@ impl Compiler {
         let init_block = self.new_block(Some(state_tid));
         self.terms[state_tid.0 as usize].child_blocks = smallvec![init_block];
         self.compile_in_block(init_block, |c| {
-            c.compile_expr(init);
+            let init_tid = c.compile_expr(init);
+            if is_var {
+                // `state var` persists the *cell*: the init block runs once, so
+                // the cell is allocated once and the slot holds it from then
+                // on. Reads and writes go through it, which is what makes
+                // persistence fall out with no `StateWrite` at all.
+                c.emit_term(TermOp::CellNew, smallvec![init_tid], None);
+            }
         });
 
         self.note_shadow(name);
@@ -375,8 +389,11 @@ impl Compiler {
         target: &AssignTarget,
         span: SourceSpan,
     ) {
-        let Some(root) =
-            Self::assign_root_name(target).filter(|n| self.is_outer_function_binding(n))
+        // A `var` is exempt: writing an outer binding from inside a function is
+        // exactly what the escape hatch is for, and a `set` really does modify
+        // it. The warning is about `=`'s silent local shadow.
+        let Some(root) = Self::assign_root_name(target)
+            .filter(|n| self.is_outer_function_binding(n) && !self.binding_is_var(n))
         else {
             return;
         };
@@ -502,6 +519,23 @@ impl Compiler {
     /// persists across runs, shares the loop carry slot, and records the
     /// rebind so an enclosing conditional / loop can emit a phi join.
     pub(super) fn rebind_name(&mut self, name: &str, val_tid: TermId) {
+        // A `var` is written through its cell, not rebound. Nothing below
+        // applies: no `StateWrite` (a `state var`'s slot already holds the
+        // cell, so the write lands in the persisted box), no carry slot and no
+        // `block_rebinds` entry (there is no phi to feed), and no
+        // `scope_rebind` (the binding still names the same cell).
+        if self.binding_is_var(name) {
+            let cell = self
+                .resolve_local_term(name)
+                .expect("a `var` binding resolves; check_write_keyword ran first");
+            self.emit_term(
+                TermOp::CellWrite,
+                smallvec![cell, val_tid],
+                Some(name.to_string()),
+            );
+            return;
+        }
+
         // Check if this is a state variable — if so, emit StateWrite.
         // Walk through Phi/Copy nodes so an assignment inside an
         // `if` / loop body, or a chain of repeat reassignments at

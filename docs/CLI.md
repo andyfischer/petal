@@ -429,6 +429,9 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
 | StateWrite | `"StateWrite"` | [value] or [value, explicit_key] | none | `state_key` set. Forwards the same `explicit_key` from the matching `StateInit` so the runtime resolves to the same `RuntimeStateKey`. |
+| CellNew | `"CellNew"` | [init] | none | Allocate the cell behind a `var`. The one op that produces a `Value::Cell`. |
+| CellRead | `"CellRead"` | [cell] | none | Dereference a cell — every source-level read of a `var`. |
+| CellWrite | `"CellWrite"` | [cell, value] | none | Write through a cell (`set x = …`). Yields the written value. |
 | AllocList | `"AllocList"` | [elem0, elem1, ...] | none | |
 | AllocMap | `{"AllocMap": {"fields": [cid, ...]}}` | [val0, val1, ...] | none | Field names as ConstantIds |
 | AllocMapSpread | `{"AllocMapSpread": {"entries": [...]}}` | [spread_src..., named_value...] | none | Record literal with `...spread`. Each entry is `Spread(idx)` or `Named{key, idx}` referencing positions in `inputs`. |

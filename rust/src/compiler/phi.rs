@@ -497,13 +497,20 @@ impl ExprVisitor for AssignedNames<'_> {
                 }
                 self.bind(name);
             }
-            // `set` writes the same targets as `=` and, until cells land, is
-            // compiled the same way — so it needs the same phi treatment.
-            StmtKind::Assign {
-                target: AssignTarget::Name(n),
-                value,
+            // `set` writes a cell, and a cell never needs a phi: the binding
+            // holds the cell's *identity*, which no write changes, so there is
+            // nothing for a join to reconcile. This is exact rather than
+            // approximate — `set` writes `var`s and only `var`s, `=` writes
+            // everything else, and `check_write_keyword` makes both directions
+            // a hard error. Leaving `set` in here would put a phi on a name the
+            // compiler never rebinds, and for a `set` inside a lambda that phi
+            // would be initialized from a term in another function: exactly the
+            // lowering failure `var` exists to fix.
+            // See docs/lowering-confusion-20260726.md §6c.
+            StmtKind::Set { value, .. } => {
+                self.visit_expr(value);
             }
-            | StmtKind::Set {
+            StmtKind::Assign {
                 target: AssignTarget::Name(n),
                 value,
             } => {
@@ -511,10 +518,6 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(value);
             }
             StmtKind::Assign {
-                target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
-                value,
-            }
-            | StmtKind::Set {
                 target: AssignTarget::Field(object, _) | AssignTarget::Index(object, _),
                 value,
             } => {

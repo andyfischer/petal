@@ -1,17 +1,148 @@
 # Proposal: FFI expansion for game-engine embedding (Unreal)
 
-Status: **M1 in progress**. Shipped so far: `Value::Handle(HandleVal)`
-(`rust/src/handle.rs`), `Env::register_handle_class` / `make_handle`
-(`rust/src/env/mod.rs`), the per-class `call_method` dispatcher (§5),
-`PetalCxt::get_handle` (`rust/src/native_fn.rs`), the `is_valid` builtin
+Status: **M1 code-complete but unexercised; M2–M4 not started; and the first
+real Unreal integration shipped without needing any of it.** Read
+[§0](#0-what-actually-shipped-in-unreal-first) before the rest of this document
+— it changes what the remaining milestones are for.
+
+Shipped in M1: `Value::Handle(HandleVal)` (`rust/src/handle.rs`),
+`Env::register_handle_class` / `make_handle` (`rust/src/env/mod.rs`), the
+per-class `call_method` dispatcher (§5), `PetalCxt::get_handle`
+(`rust/src/native_fn.rs`), the `is_valid` builtin
 (`rust/src/builtins/handle.rs`), handle-receiver method dispatch in the VM
 (`rust/src/backend/bytecode/vm/calls.rs`), and equality/hash by identity.
-Remaining in M1: `$handle` JSON state encoding and the Headless mock entity
-table; M2–M4 not started. Companion to [../ffi.md](../ffi.md), which
-documents the existing surface. The motivating scenario: Petal scripting game
-logic inside Unreal Engine 5 — retained references to engine objects, hot
-reload during play, and a safety story for the fact that engine objects are
-mutable while Petal's machinery assumes immutability.
+Not done: `$handle` JSON state encoding, and the mock-entity-table prototype
+that would be the design's first proof. **`register_handle_class` has zero
+callers anywhere** — in this repo or in any downstream project — so none of
+the shipped machinery has ever run outside its own unit tests.
+
+Companion to [../ffi.md](../ffi.md), which documents the existing surface.
+The motivating scenario: Petal scripting game logic inside Unreal Engine 5 —
+retained references to engine objects, hot reload during play, and a safety
+story for the fact that engine objects are mutable while Petal's machinery
+assumes immutability.
+
+## 0. What actually shipped in Unreal, first
+
+`~/game-prototypes/worldsfair` runs Petal inside Unreal Engine 5 today: every
+in-game UI element — HUD, tool belt, menus — is a Petal program, on screen when
+you press Play, with an unattended CI tier that grades the engine on *ui ran /
+ui drew / ui painted*. It got there **without one line of the handle
+machinery**, and its own README says so explicitly: "we do not need it, since
+the UI only ever sees a plain data model, and it should stay that way."
+
+The path it took instead is the one this document treats as background:
+
+| | |
+|---|---|
+| language, VM | `petal`, vendored unmodified |
+| input contract, draw vocabulary, `ui` prelude, `Headless` | `petal-ui`, vendored unmodified |
+| the game↔script seam | a C ABI (`wf_ui_bridge.h`): push model JSON + input, run a frame, drain draw commands and actions |
+| Unreal side | ~3 files — an RAII bridge, a Slate overlay turning one draw command into one `FSlateDrawElement`, and an actor that owns the tick |
+
+So the frame contract of §7 was validated verbatim, and the whole of §1–§5 was
+routed around. The reason is worth writing down, because it generalizes:
+**the direction of the data decided the design.** UI is a projection *out* of
+the game — the script is handed a plain immutable model and answers with draw
+commands and named actions, and the game applies them. Nothing the script
+touches is an engine object, so there is nothing to hold a reference to.
+Handles only start earning their cost when the script drives *gameplay*, where
+it must name a specific actor and mutate it.
+
+That is still a real scenario and this design is still the right answer for it.
+But it is no longer the *near* scenario, and the milestones below should be
+read as gated on someone actually wanting it — not as work in flight.
+
+### What the shipped integration proved and disproved
+
+Confirmed by contact with a real engine:
+
+- **The petal-ui layer is the integration surface**, not the language. The
+  Unreal host implements the same contract Garden implements, and that is
+  precisely why a fragment renders identically in an editor pane and in the
+  game. This is a stronger reuse story than §4's reflection-binding plan.
+- **§7's per-tick contract holds verbatim** — bind uniforms, run, drain
+  buffers, on the game thread.
+- **§2's "writes are effects" rule holds, in its strongest form.** The UI emits
+  named actions; the game decides. Nothing in the script changes anything. The
+  cost predicted in Rule 2 (a write is not visible until the next frame) is
+  paid in full and turned out to be a feature — the UI has no second copy of
+  the truth and replays deterministically.
+- **§6's hot reload works** — `wfui_reload` swaps the fragment in a running
+  game.
+
+Not confirmed by anything: `Value::Handle`, the pin/unpin lifetime story, the
+world-access-mode enum, the reflection-backed `call_method` dispatcher. Those
+remain a paper design.
+
+### What the integration wanted from the core and did not get
+
+These are the concrete, evidenced asks. None of them is about handles.
+
+1. **A compiler bug that cost them a workaround.** A module-level binding
+   reassigned inside control flow inside a function fails to lower:
+   `term tNN in block b0 not in this function`. It is **not** `state`-specific,
+   as their note guesses — plain `let` fails identically, and so does `while`:
+
+   ```petal
+   let i = 0
+   fn f()
+     if false then i = 0 end
+     i
+   end
+   print(f())      # Error: bytecode lowering failed
+   ```
+
+   Assigning without control flow lowers fine, so the fault is a phi built in
+   the function's block whose `inputs[0]` is the outer term — a capture, which
+   `Lower::flat` correctly refuses to resolve as a local. This should be a
+   capture read, not an error. Highest-value fix on this list: it is a
+   general-purpose bug that any embedder can hit.
+
+2. **Null-safe record reads.** `rec.field` on an absent field aborts the frame,
+   and `rec.field == nil` aborts identically, so the obvious guard is not one.
+   Every host that receives a model it does not control has rewritten the same
+   helper — worldsfair's is `wf_field(rec, key, fallback)` over
+   `contains(keys(rec), key)`, which is a linear scan per read, on every field,
+   every frame. `get(c, k)` exists but only accepts `F64Array`. Making `get`
+   accept records with an optional default (or adding `has_field`) is a small
+   change that deletes a workaround from every embedder at once.
+
+3. **A first-party bundler, or a way to ship modules to a remote host.**
+   Fragments are delivered as one flat concatenated source string with a
+   `wf_`-prefixed flat namespace, plus 374 lines of `bundle.rs` and a
+   bundle-line→file-line error translator. `Env::register_module` already
+   solves this for a host that owns its `Env` (as their engine host does); what
+   has no answer is a host that *pushes source over a pipe* to an `Env` it does
+   not own — the Garden panel case, which Garden's own GPP apps hit too. The
+   multi-module path already carries per-file `FileId` source maps, so fixing
+   the delivery would delete the line translator as well.
+
+4. **Floats over the host-data wire — since fixed upstream, and they don't know
+   it.** Their model is integers-only (percent 0–100, centimetres,
+   milliseconds), with a test enforcing it, because `HostData` had `Int` and no
+   `Float` and a JSON `0.34` arrived as `0` — "we found this the expensive way",
+   with every meter empty in the IDE. `HostData::Float` landed in `245cc17`,
+   one commit after the `75b85ef` they vendored. Re-vendoring lets them drop
+   the constraint; nothing more is needed from us.
+
+5. **Font metrics — already delivered.** They publish a per-codepoint advance
+   table through `wfui_set_font_metrics` into `bind_text_advance_table`, so
+   `text_width` is exact. Typography Phase 0/1 covers this; no gap.
+
+### Revised phasing
+
+1. **~~M1~~ — handles, engine-agnostic.** Code-complete, unproven. Do **not**
+   invest further until something wants them. The one cheap step that would
+   pay for itself is the `Headless` mock-entity-table prototype, purely because
+   it would tell us whether the design survives contact — and it gives
+   petal-sdl retained textures/sounds as a side benefit.
+2. **M1.5 — the asks above.** Items 1–3 are real, evidenced, and independent of
+   handles. They are what the one shipped Unreal integration would actually
+   spend our time on.
+3. **M2/M3/M4 — unchanged in content, deferred in priority.** These begin the
+   day a project wants Petal driving gameplay rather than presentation. Until
+   then §1–§6 are a design record, not a backlog.
 
 ## Grounding: how Unreal wants to be held
 
@@ -275,7 +406,7 @@ Petal's story already fits UE's Live Coding culture:
 - **Off-game-thread pure execution** — `Sealed` mode is the prerequisite;
   scheduling is future work.
 
-## Phasing
+## Phasing (original — superseded by [§0](#revised-phasing))
 
 1. **M1 — handles, engine-agnostic.** ✅ `Value::Handle`, ✅ `register_handle_class`
    (with per-class `call_method` dispatcher — §5), ✅ `make_handle`, ✅ `is_valid`

@@ -168,14 +168,36 @@ Two things follow.
 cannot run. That is a real gap on its own: `check` is what CI and editors call.
 Lowering belongs in `check`.
 
-**The blast radius of §1 is unmeasured, and a regex cannot measure it.** A
-text sweep produced hundreds of candidates that turned out to be top-level
+**The 4 lowering failures split across both bugs**, one each way:
+
+- `petal-ui/prelude/ui.ptl` is §2 (the shadowed-name phi).
+- **`invaders.ptl`, `platformer.ptl` and `tetris.ptl` are §1b** — and all three
+  are therefore *completely broken today*. They do not run; they abort before
+  the first frame.
+
+The shape in all three is the same, and it is worth quoting because it is the
+strongest argument for the escape hatch (`invaders.ptl:199`):
+
+```petal
+state score = 0
+// ...
+aliens = map(aliens, fn(a)
+  if a.alive && !hit && rects_collide(...) then
+    hit = true                    // capture, inside an `if`, inside a lambda
+    score += 10
+    explosions = append(explosions, { ... })
+```
+
+Accumulating into an outer binding from inside a `map` callback is exactly what
+`var`/`set` is for. These are not sites to rewrite as `let` locals — the intent
+is genuine mutation, there is no dataflow reading of them, and today the
+language offers no way to express it. They are the migration's first customers.
+
+**The blast radius of §1a is still unmeasured, and a regex cannot measure it.**
+A text sweep produced hundreds of candidates that turned out to be top-level
 assignments inside top-level `if`s — legal, common, and untouched by any
 proposal here. The only trustworthy sweep is the compiler check itself, which
-is why it is step 1 of the plan below. What the lowering sweep *does* establish
-is that the §1b control-flow form appears **nowhere** in the corpus: all 4
-lowering failures are §2. So the migration cost of erroring on §1b is
-approximately zero; the unknown is §1a, the silent shadow.
+is why it is step 1 of the plan below.
 
 ---
 

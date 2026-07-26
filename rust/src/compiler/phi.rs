@@ -49,7 +49,8 @@ impl Compiler {
     /// of an enclosing control-flow construct (if/match/for/while). A name
     /// qualifies if it's assigned inside any branch and is already bound in
     /// the current (parent) scope. Returns deduplicated names in insertion
-    /// order. Callers filter let-shadowed names per body if needed.
+    /// order. Names shadowed by a declaration inside the body are filtered by
+    /// the scan itself — see [`AssignedNames`].
     pub(super) fn detect_rebinds_stmts(&self, bodies: &[&[Stmt]]) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
@@ -83,14 +84,14 @@ impl Compiler {
     }
 
     fn collect_assigned_names_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
-        let mut v = AssignedNames { out };
+        let mut v = AssignedNames::new(out);
         for s in stmts {
             v.visit_stmt(s);
         }
     }
 
     fn collect_assigned_names_expr(e: &Expr, out: &mut Vec<String>) {
-        AssignedNames { out }.visit_expr(e);
+        AssignedNames::new(out).visit_expr(e);
     }
 
     /// Walk an index/field assignment-target object expression down to its
@@ -101,16 +102,6 @@ impl Compiler {
             ExprKind::FieldAccess { object, .. } => Self::assign_target_root(object),
             ExprKind::IndexAccess { object, .. } => Self::assign_target_root(object),
             _ => None,
-        }
-    }
-
-    fn collect_let_names(stmts: &[Stmt], out: &mut Vec<String>) {
-        for s in stmts {
-            if let StmtKind::Let { name, .. } = &s.kind
-                && !out.contains(name)
-            {
-                out.push(name.clone());
-            }
         }
     }
 
@@ -185,21 +176,15 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     /// Compute the set of loop-carry names for a for/while body: outer-bound
-    /// names assigned anywhere in `body`, minus those shadowed by a top-level
-    /// `let` in the body, plus any outer-bound names assigned inside an
-    /// optional condition expression (for `while` loops).
+    /// names assigned anywhere in `body`, plus any outer-bound names assigned
+    /// inside an optional condition expression (for `while` loops). Names the
+    /// body declares for itself are already excluded by the scan.
     pub(super) fn detect_loop_carries(
         &self,
         body: &[Stmt],
         extra_cond: Option<&Expr>,
     ) -> Vec<String> {
-        let mut let_bound: Vec<String> = Vec::new();
-        Self::collect_let_names(body, &mut let_bound);
-        let mut carries: Vec<String> = self
-            .detect_rebinds_stmts(&[body])
-            .into_iter()
-            .filter(|n| !let_bound.contains(n))
-            .collect();
+        let mut carries: Vec<String> = self.detect_rebinds_stmts(&[body]);
         if let Some(cond) = extra_cond {
             for n in self.detect_rebinds_exprs(&[cond]) {
                 if !carries.contains(&n) {
@@ -327,14 +312,89 @@ impl Compiler {
 /// the shared total traversal but overrides two nodes: `fn` declarations and
 /// lambda bodies are skipped because they open their own scopes, so their
 /// assignments must not be reported as carries of the enclosing scope.
+///
+/// The walk is **scope-aware**: a name declared by a `let`/`state`, a loop
+/// variable, or a match pattern anywhere inside the scanned region shadows the
+/// enclosing binding, so assignments to it are local and must not be reported.
+/// Without this, a nested `let` whose name happens to collide with an outer
+/// binding produces a phi initialized from that outer term — and when the outer
+/// term belongs to another function (the core prelude, say), lowering fails
+/// with `term tNN in block bN not in this function`. `petal-ui`'s
+/// `_wrap_segment` hit exactly that by naming a local `take`, which collides
+/// with `std::take`. See docs/lowering-confusion-20260726.md §2.
 struct AssignedNames<'a> {
     out: &'a mut Vec<String>,
+    /// Names shadowed by a declaration in an enclosing block of the scanned
+    /// region. Innermost scope last; the region itself is the first scope.
+    shadowed: Vec<Vec<String>>,
 }
 
-impl AssignedNames<'_> {
+impl<'a> AssignedNames<'a> {
+    fn new(out: &'a mut Vec<String>) -> Self {
+        AssignedNames {
+            out,
+            shadowed: vec![Vec::new()],
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.shadowed.push(Vec::new());
+    }
+
+    fn pop_scope(&mut self) {
+        self.shadowed.pop();
+    }
+
+    /// Declare `name` in the innermost scope. Assignments to it from here on
+    /// are local and are not reported.
+    fn bind(&mut self, name: &str) {
+        if let Some(scope) = self.shadowed.last_mut() {
+            scope.push(name.to_string());
+        }
+    }
+
+    fn is_shadowed(&self, name: &str) -> bool {
+        self.shadowed.iter().flatten().any(|n| n == name)
+    }
+
     fn push_unique(&mut self, name: &str) {
-        if !self.out.iter().any(|n| n == name) {
-            self.out.push(name.to_string());
+        if self.is_shadowed(name) || self.out.iter().any(|n| n == name) {
+            return;
+        }
+        self.out.push(name.to_string());
+    }
+
+    fn visit_body(&mut self, stmts: &[Stmt]) {
+        self.push_scope();
+        for s in stmts {
+            self.visit_stmt(s);
+        }
+        self.pop_scope();
+    }
+
+    /// Declare every name a match pattern binds.
+    fn bind_pattern(&mut self, p: &Pattern) {
+        match p {
+            Pattern::Variable(n) => self.bind(n),
+            Pattern::Variant { fields, .. } => {
+                for f in fields {
+                    self.bind_pattern(f);
+                }
+            }
+            Pattern::List { elements, rest } => {
+                for e in elements {
+                    self.bind_pattern(e);
+                }
+                if let Some(r) = rest {
+                    self.bind(r);
+                }
+            }
+            Pattern::Record(fields) => {
+                for (_, p) in fields {
+                    self.bind_pattern(p);
+                }
+            }
+            Pattern::Wildcard | Pattern::Literal(_) => {}
         }
     }
 }
@@ -342,6 +402,21 @@ impl AssignedNames<'_> {
 impl ExprVisitor for AssignedNames<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
+            // A declaration shadows from its initializer onward, not before —
+            // the initializer still reads (and may assign) the outer binding.
+            StmtKind::Let { name, value, .. } => {
+                self.visit_expr(value);
+                self.bind(name);
+            }
+            StmtKind::State {
+                name, init, key, ..
+            } => {
+                self.visit_expr(init);
+                if let Some(k) = key {
+                    self.visit_expr(k);
+                }
+                self.bind(name);
+            }
             StmtKind::Assign {
                 target: AssignTarget::Name(n),
                 value,
@@ -365,16 +440,64 @@ impl ExprVisitor for AssignedNames<'_> {
             }
             // A nested `fn` opens its own scope; its assignments don't carry out.
             StmtKind::FnDecl { .. } => {}
+            StmtKind::For { var, iter, body } => {
+                self.visit_expr(iter);
+                self.push_scope();
+                self.bind(var);
+                for s in body {
+                    self.visit_stmt(s);
+                }
+                self.pop_scope();
+            }
+            StmtKind::While { condition, body } => {
+                self.visit_expr(condition);
+                self.visit_body(body);
+            }
             _ => ast::walk_stmt(self, s),
         }
     }
 
     fn visit_expr(&mut self, e: &Expr) {
-        // Lambdas have their own scope — don't descend into their bodies.
-        if let ExprKind::Lambda { .. } = &e.kind {
-            return;
+        match &e.kind {
+            // Lambdas have their own scope — don't descend into their bodies.
+            ExprKind::Lambda { .. } => {}
+            ExprKind::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                self.visit_expr(condition);
+                self.visit_body(then_body);
+                match else_body {
+                    Some(ElseBranch::Block(stmts)) => self.visit_body(stmts),
+                    Some(ElseBranch::ElseIf(e)) => self.visit_expr(e),
+                    None => {}
+                }
+            }
+            ExprKind::Match { subject, arms } => {
+                self.visit_expr(subject);
+                for arm in arms {
+                    self.push_scope();
+                    self.bind_pattern(&arm.pattern);
+                    if let Some(g) = &arm.guard {
+                        self.visit_expr(g);
+                    }
+                    self.visit_expr(&arm.body);
+                    self.pop_scope();
+                }
+            }
+            ExprKind::For { var, iter, body } => {
+                self.visit_expr(iter);
+                self.push_scope();
+                self.bind(var);
+                for s in body {
+                    self.visit_stmt(s);
+                }
+                self.pop_scope();
+            }
+            ExprKind::Block(stmts) => self.visit_body(stmts),
+            _ => ast::walk_expr(self, e),
         }
-        ast::walk_expr(self, e);
     }
 }
 
@@ -418,5 +541,65 @@ mod walker_tests {
             assigned("while gt(n, 0) do\n  n = dec(n)\nend\n"),
             vec!["n"]
         );
+    }
+
+    // ---- shadowing (docs/lowering-confusion-20260726.md §2) ----
+
+    #[test]
+    fn a_let_in_the_scanned_region_shadows_the_outer_name() {
+        assert!(assigned("let x = 1\nx = f(x)\n").is_empty());
+    }
+
+    #[test]
+    fn a_let_in_a_nested_block_shadows_the_outer_name() {
+        // The ui.ptl `_wrap_segment` shape: the `let` is nested one block deep
+        // and the assignment one deeper still. Before the scope-aware walk this
+        // reported `take`, producing a phi against the outer binding.
+        assert!(
+            assigned("while c do\n  let take = 2\n  while d do\n    take = take + 1\n  end\nend\n")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_nested_shadow_does_not_hide_a_genuine_carry_of_the_same_name() {
+        // `s` is assigned unshadowed in the outer body *and* shadowed inside the
+        // `if`. It must still be reported — over-filtering would silently drop a
+        // real loop carry, which is worse than the bug being fixed.
+        assert_eq!(
+            assigned(
+                "for i in xs do\n  s = f(s)\n  if c then\n    let s = 0\n    s = g(s)\n  end\nend\n"
+            ),
+            vec!["s"]
+        );
+    }
+
+    #[test]
+    fn a_declaration_does_not_shadow_its_own_initializer() {
+        // `let x = f(x)` reads (and here reassigns) the *outer* x first.
+        assert_eq!(assigned("y = f(y)\nlet y = 1\n"), vec!["y"]);
+    }
+
+    #[test]
+    fn loop_variables_shadow() {
+        assert!(assigned("for w in xs do\n  w = f(w)\nend\n").is_empty());
+    }
+
+    #[test]
+    fn match_pattern_bindings_shadow() {
+        // `n` is bound by the arm pattern, so assigning it is arm-local.
+        // `outer` is not bound anywhere here, so it is still reported.
+        // (An arm body is an expression, so the assignments sit inside `if`s.)
+        assert_eq!(
+            assigned(
+                "match v\n  when Ok(n) -> if c then n = f(n) end\n  when Error(e) -> if c then outer = g(e) end\nend\n"
+            ),
+            vec!["outer"]
+        );
+    }
+
+    #[test]
+    fn state_declarations_shadow_too() {
+        assert!(assigned("state k = 0\nk = k + 1\n").is_empty());
     }
 }

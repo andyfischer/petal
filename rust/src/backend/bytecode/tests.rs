@@ -1774,6 +1774,33 @@ fn bytecode_trace_records_call_results() {
     assert_eq!(value::value_to_display_string(&ev.result, env.heap()), "42");
 }
 
+/// A local `let` whose name collides with an outer binding must not produce a
+/// phi against that outer binding. `petal-ui`'s `_wrap_segment` hit this by
+/// naming a local `take`, which collides with `std::take` from the auto-loaded
+/// core prelude: the phi was initialized from the prelude's root-block closure,
+/// so lowering failed with "not in this function" — and renaming the local was
+/// the only fix. See docs/lowering-confusion-20260726.md §2.
+#[test]
+fn a_local_shadowing_an_outer_name_lowers() {
+    // `outer` stands in for the prelude binding; the nesting is `_wrap_segment`'s.
+    let program = compile_program(
+        "let outer = 1\n\
+         fn f(words)\n\
+         \x20 for w in words do\n\
+         \x20   while len(w) > 2 do\n\
+         \x20     let outer = 2\n\
+         \x20     while outer < 3 do\n\
+         \x20       outer = outer + 1\n\
+         \x20     end\n\
+         \x20     w = slice(w, outer, len(w))\n\
+         \x20   end\n\
+         \x20 end\n\
+         end\n",
+    );
+    crate::backend::bytecode::lower_program(&program)
+        .expect("a shadowing local must not phi against the outer binding");
+}
+
 /// A term whose input edge points into another function's block is a malformed
 /// IR graph. Lowering must surface that as a `Result::Err` — which reaches the
 /// user as a clean "bytecode lowering failed" message — rather than panicking

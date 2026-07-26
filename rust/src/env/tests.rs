@@ -2523,7 +2523,7 @@ mod gc_pressure_tests {
             "state arr = f64_array({len})\n\
              for f in range(0, {frames}) do\n\
              \x20 for i in range(0, {writes}) do\n\
-             \x20   arr = set(arr, i, 1.0)\n\
+             \x20   arr = set_at(arr, i, 1.0)\n\
              \x20 end\n\
              end\n"
         );

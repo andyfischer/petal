@@ -364,11 +364,11 @@ mod tests {
         let out = apply(
             "",
             &[Goal::should_call(
-                "set",
+                "configure",
                 vec![StaticValue::str("size"), StaticValue::int(14)],
             )],
         );
-        assert_eq!(out, "set(\"size\", 14)\n");
+        assert_eq!(out, "configure(\"size\", 14)\n");
     }
 
     #[test]

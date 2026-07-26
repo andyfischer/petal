@@ -87,7 +87,7 @@ builtin_effects![
     ("drop_last", MUTATES | PURE | LOOKS_MUT),
     ("remove", MUTATES | PURE | LOOKS_MUT),
     ("get", NO_REF | PURE),
-    ("set", MUTATES | PURE | LOOKS_MUT),
+    ("set_at", MUTATES | PURE | LOOKS_MUT),
     ("swap", MUTATES | PURE | LOOKS_MUT),
     ("f64_array", FRESH | PURE),
     ("first", PURE),
@@ -261,7 +261,7 @@ mod tests {
                 "pop",
                 "push",
                 "remove",
-                "set",
+                "set_at",
                 "swap"
             ]
         );
@@ -374,7 +374,7 @@ mod tests {
                 "remove",
                 "reverse",
                 "round",
-                "set",
+                "set_at",
                 "sign",
                 "sin",
                 "slice",
@@ -407,7 +407,7 @@ mod tests {
                 "push",
                 "remove",
                 "reverse",
-                "set",
+                "set_at",
                 "sort",
                 "swap"
             ]

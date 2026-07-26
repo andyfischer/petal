@@ -1026,9 +1026,12 @@ fn inplace_fires_on_fresh_builtin_root() {
         "let a = f64_array(8)\nfor i in range(0, 8) do\n  a[i] = i * 1.0\nend\nprint(a[0], a[7])";
     assert_inplace_parity(code);
     assert!(inplace_count(code) >= 1, "f64_array root should fire");
-    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a = set(a, i, i * 1.0)\nend\nprint(get(a, 0), get(a, 7))";
+    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(get(a, 0), get(a, 7))";
     assert_inplace_parity(code);
-    assert!(inplace_count(code) >= 1, "set() on f64_array should fire");
+    assert!(
+        inplace_count(code) >= 1,
+        "set_at() on f64_array should fire"
+    );
 }
 
 #[test]

@@ -135,11 +135,11 @@ fn f64_array_indexed_write_is_copy_free() {
 
 #[test]
 fn f64_array_set_builtin_is_copy_free() {
-    // `set(a, i, v)` is the call form of `a[i] = v`; both must elide.
+    // `set_at(a, i, v)` is the call form of `a[i] = v`; both must elide.
     assert_copy_free(
-        "f64_array set() builtin",
+        "f64_array set_at() builtin",
         &format!(
-            "let a = f64_array({N})\nfor i in range(0, {N}) do\n  a = set(a, i, i * 1.0)\nend\nprint(get(a, 5))"
+            "let a = f64_array({N})\nfor i in range(0, {N}) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(get(a, 5))"
         ),
     );
 }

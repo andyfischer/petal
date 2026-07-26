@@ -97,11 +97,13 @@ pub(super) fn native_get(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-/// `set(arr, i, v)` returns a NEW f64-array with index `i` set to `v`. The
+/// `set_at(arr, i, v)` returns a NEW f64-array with index `i` set to `v`. The
 /// input array is never mutated (value semantics) — callers must rebind:
-/// `a = set(a, i, v)`. (Equivalent to the `a[i] = v` index-assign form.)
-pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 3, "set")?;
+/// `a = set_at(a, i, v)`. (Equivalent to the `a[i] = v` index-assign form.)
+///
+/// Named `set_at` because `set` is the mutable-cell write keyword.
+pub(super) fn native_set_at(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "set_at")?;
     let container = state.get_value(1)?;
     match container {
         Value::F64Array(id) => {
@@ -111,7 +113,7 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
                 Value::Int(n) => n as f64,
                 other => {
                     return Err(format!(
-                        "set() expects a number value, got {}",
+                        "set_at() expects a number value, got {}",
                         other.type_name()
                     ));
                 }
@@ -125,7 +127,7 @@ pub(super) fn native_set(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_value(Value::F64Array(new_id));
             Ok(1)
         }
-        _ => Err(format!("Cannot set() on {}", container.type_name())),
+        _ => Err(format!("Cannot set_at() on {}", container.type_name())),
     }
 }
 

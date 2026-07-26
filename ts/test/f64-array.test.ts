@@ -29,7 +29,7 @@ describe("f64_array — element access", () => {
   it("set then get round-trips a value", () => {
     expect(
       runPetal(`let a = f64_array(3)
-a = set(a, 1, 5.5)
+a = set_at(a, 1, 5.5)
 print(get(a, 1))`),
     ).toBe("5.5");
   });
@@ -38,7 +38,7 @@ print(get(a, 1))`),
     // `set` no longer mutates in place: the original handle still sees zeros…
     expect(
       runPetal(`let a = f64_array(2)
-let b = set(a, 0, 9.0)
+let b = set_at(a, 0, 9.0)
 print(a)`),
     ).toBe("[0.0, 0.0]");
   });
@@ -47,7 +47,7 @@ print(a)`),
     // …while the returned array carries the update.
     expect(
       runPetal(`let a = f64_array(2)
-let b = set(a, 0, 9.0)
+let b = set_at(a, 0, 9.0)
 print(b)`),
     ).toBe("[9.0, 0.0]");
   });
@@ -55,7 +55,7 @@ print(b)`),
   it("set accepts an int and stores it as a float", () => {
     expect(
       runPetal(`let a = f64_array(1)
-a = set(a, 0, 7)
+a = set_at(a, 0, 7)
 print(get(a, 0))`),
     ).toBe("7.0");
   });
@@ -63,8 +63,8 @@ print(get(a, 0))`),
   it("swap returns a new array with two elements exchanged", () => {
     expect(
       runPetal(`let a = f64_array(3)
-a = set(a, 0, 1.0)
-a = set(a, 2, 3.0)
+a = set_at(a, 0, 1.0)
+a = set_at(a, 2, 3.0)
 a = swap(a, 0, 2)
 print(a)`),
     ).toBe("[3.0, 0.0, 1.0]");
@@ -73,7 +73,7 @@ print(a)`),
   it("swap does not mutate the input array", () => {
     expect(
       runPetal(`let a = f64_array(3)
-a = set(a, 0, 1.0)
+a = set_at(a, 0, 1.0)
 let b = swap(a, 0, 2)
 print(a)`),
     ).toBe("[1.0, 0.0, 0.0]");
@@ -82,7 +82,7 @@ print(a)`),
   it("index read a[i] returns the element", () => {
     expect(
       runPetal(`let a = f64_array(2)
-a = set(a, 1, 4.0)
+a = set_at(a, 1, 4.0)
 print(a[1])`),
     ).toBe("4.0");
   });
@@ -100,6 +100,6 @@ print(a)`),
   });
 
   it("set out of bounds is an error", () => {
-    expect(runPetalError(`set(f64_array(2), 5, 1.0)`)).toMatch(/bounds|range/i);
+    expect(runPetalError(`set_at(f64_array(2), 5, 1.0)`)).toMatch(/bounds|range/i);
   });
 });

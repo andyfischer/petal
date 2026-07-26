@@ -29,6 +29,7 @@ How the implementation works and where it's headed:
 | [Building on Integrations](building-on-integrations.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
 | [Program Modification](program-modification.md) | Modifying programs programmatically — static (source) and live (running-state) editing — for tools, agents, and embedders |
 | [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |
+| [Config Files](config-files.md) | Using a `.ptl` file as an app's configuration format: reading values without running, writing them back |
 | [Goals](dev/goals.md) | Vision (the four pillars), remaining work, and sequencing |
 | [IR as a Target](dev/ir-as-target.md) | The IR import-format contract for external emitters (`run --ir`) |
 | [Debugging & Visibility](dev/debugging-visibility.md) | The three observability stacks (CLI, MCP, vitest) |

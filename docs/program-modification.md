@@ -46,6 +46,7 @@ Low-level primitives in [`rust/src/rewrite.rs`](../rust/src/rewrite.rs):
 |---|---|
 | `parse_ast(source)` | Parse to `(green tree, top-level Stmts)` for inspection/rewrite |
 | `find_call(stmts, name)` | Span of the first top-level `name(...)` statement call |
+| `find_binding(stmts, name)` | Span of the *value* of the last top-level `let name = …` / `name = …` binding |
 | `splice_node(tree, span, replacement)` | Tree-splice: replace a node, preserve surrounding trivia |
 | `splice(source, span, replacement)` | String-level fallback (char offsets; multi-byte safe) when the replacement isn't a single parseable expression |
 
@@ -61,17 +62,41 @@ should satisfy — and the module decides whether to insert or update in place.
 
 | Item | Purpose |
 |---|---|
-| `Goal::should_call(function, params)` | Goal: source should contain a top-level `function(params...)` call. `params` are structured `Arg` values (`&str`/`i64`/`f64`/`bool` coerce in via `From`). |
-| `Arg` | A structured argument: `Str`/`Int`/`Float`/`Bool`/`Nil`, plus composites `List`/`Record`/`Call`. Every variant renders to well-formed Petal (strings are quoted and escaped); there is no verbatim/raw-source variant. |
+| `Goal::should_call(function, params)` | Goal: source should contain a top-level `function(params...)` call. `params` are structured `StaticValue`s (`&str`/`i64`/`f64`/`bool` coerce in via `From`). |
+| `Goal::should_set_value(name, value)` | Goal: reading `name` out of the source should yield `value`. |
+| `StaticValue` | A structured value: `Str`/`Int`/`Float`/`Bool`/`Nil`, plus composites `List`/`Record`/`Call`. Every variant renders to well-formed Petal (strings are quoted and escaped); there is no verbatim/raw-source variant. |
 | `modify_source_with_goals(source, goals)` | Apply a list of goals in order; `Ok(String)` is the rewritten source, `Err(GoalError)` a typed failure. |
 
 `ShouldCall` updates the first existing top-level call to `function` (replacing
 its argument list, layout-flexibly) or appends the call if absent — the shape an
-app's user-config script wants for a "set the color scheme" menu action. Goals
-compose (apply several in one pass, later goals see earlier insertions), and
-`Goal` is the extension point for richer intents (ensure an import, remove a
+app's user-config script wants for a "set the color scheme" menu action.
+
+`ShouldSetValue` is the write half of **Petal-as-a-config-format**
+([config-files.md](config-files.md)): it replaces the right-hand side of the
+*last* top-level binding of `name` (the one that decides the program's value), or
+appends `let name = value` if the name is unbound. Replacing the whole right-hand
+side is what makes the change static even when the existing binding isn't — a
+`let x = if … end` collapses to the literal. Editing the branch actually taken
+rather than flattening is the natural next step, in `ensure_binding`.
+
+Goals compose (apply several in one pass, later goals see earlier insertions),
+and `Goal` is the extension point for richer intents (ensure an import, remove a
 call, set a field). This is the seam a broader structured-edit and goal-driven
 API grows from. **Usage guide:** [goal-based-editing.md](goal-based-editing.md).
+
+### Reading values back (`rust/src/static_value.rs`)
+
+The read counterpart: `get_static_value(source, name)` returns the `StaticValue`
+bound to a top-level `name` **without running the program** — no `Env`, no heap,
+no side effects — and `static_values(source)` returns every statically-known
+binding at once. Literals, lists, records, negation, references to names bound
+above, and (held unevaluated) calls are static; arithmetic, interpolation,
+`if`/`match`, `fn`, and `state` are not, and are reported as
+`StaticValueError::NotStatic` rather than silently skipped.
+
+Reading and writing share the `StaticValue` type, so a value round-trips: read
+it, adjust it, write it back with `should_set_value`, read the same value out.
+**Usage guide:** [config-files.md](config-files.md).
 
 ### `petal lint --fix` (normalize source in place)
 
@@ -217,6 +242,8 @@ direct-manipulation and goal-driven editing.
 | Capability | Read | Write | Where |
 |---|---|---|---|
 | Inspect source (tokens/AST/CST) | ✅ | — | `show-tokens/ast`, `rewrite::parse_ast` |
+| Read a config value without running | ✅ | — | `static_value::get_static_value` / `static_values` |
+| Set a config value (formatting-preserved) | — | ✅ | `Goal::should_set_value` |
 | Rewrite source, formatting-preserved | — | ✅ | `goal_based_editing.rs` (goals) over `rewrite.rs` primitives |
 | Normalize source (verified) | — | ✅ | `petal lint --fix` |
 | Hot reload (state-preserving) | — | ✅ | `transfer_state`, SDL watcher |

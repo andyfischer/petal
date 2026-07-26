@@ -22,7 +22,7 @@
 
 use std::rc::Rc;
 
-use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
+use crate::ast::{AssignTarget, Expr, ExprKind, Stmt, StmtKind};
 use crate::cst::{
     GreenChild, GreenNode, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, parse_cst,
     parse_source,
@@ -49,6 +49,29 @@ pub fn parse_ast(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
 pub fn find_call(stmts: &[Stmt], name: &str) -> Option<SourceSpan> {
     stmts.iter().find_map(|stmt| match &stmt.kind {
         StmtKind::Expr(expr) => call_span_if_named(expr, name),
+        _ => None,
+    })
+}
+
+/// Find the top-level binding of `name` — `let name = <value>` or a bare
+/// `name = <value>` rebinding — returning the source span of the **value
+/// expression** on its right-hand side (not the whole statement). Returns the
+/// **last** such binding in source order, since that is the one whose value the
+/// program ends up with; `None` if the name is never bound at top level.
+///
+/// Only top-level bindings are considered (the shape of a configuration file);
+/// a binding inside a function body or a loop belongs to that body's scope and
+/// is intentionally ignored. `state` declarations are also ignored — their value
+/// is runtime state, not configuration.
+pub fn find_binding(stmts: &[Stmt], name: &str) -> Option<SourceSpan> {
+    stmts.iter().rev().find_map(|stmt| match &stmt.kind {
+        StmtKind::Let {
+            name: bound, value, ..
+        } if bound == name => Some(value.span),
+        StmtKind::Assign {
+            target: AssignTarget::Name(bound),
+            value,
+        } if bound == name => Some(value.span),
         _ => None,
     })
 }
@@ -262,6 +285,71 @@ mod tests {
         let span = find_call(&stmts, "layout").unwrap();
         let out = splice(src, span, "layout(editor())");
         assert_eq!(out, "layout(editor())\nx = 2\n");
+    }
+
+    /// The source text `span` covers, for asserting on found spans.
+    fn text_at(src: &str, span: SourceSpan) -> String {
+        let chars: Vec<char> = src.chars().collect();
+        chars[span.start.offset as usize..span.end.offset as usize]
+            .iter()
+            .collect()
+    }
+
+    #[test]
+    fn finds_let_binding_value_span() {
+        let src = "// config\nlet size = 14 // points\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        let span = find_binding(&stmts, "size").expect("size bound");
+        // The span covers the value only, not the `let size = ` prefix.
+        assert_eq!(text_at(src, span), "14");
+    }
+
+    #[test]
+    fn finds_bare_assignment_binding() {
+        let src = "size = { tab_width: 4 }\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        let span = find_binding(&stmts, "size").unwrap();
+        assert_eq!(text_at(src, span), "{ tab_width: 4 }");
+    }
+
+    #[test]
+    fn finds_the_last_binding_not_the_first() {
+        // The last binding is the value the program ends up with, so that is
+        // the one an edit must change.
+        let src = "let size = 12\nlet size = 14\nsize = 16\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        let span = find_binding(&stmts, "size").unwrap();
+        assert_eq!(text_at(src, span), "16");
+    }
+
+    #[test]
+    fn ignores_bindings_that_are_not_top_level() {
+        // A binding inside a function body is that body's scope, not config.
+        let src = "fn f() let size = 14 end\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        assert!(find_binding(&stmts, "size").is_none());
+    }
+
+    #[test]
+    fn ignores_state_declarations_and_other_names() {
+        let src = "state count = 0\nlet size = 14\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        assert!(find_binding(&stmts, "count").is_none());
+        assert!(find_binding(&stmts, "missing").is_none());
+    }
+
+    #[test]
+    fn binding_value_span_tree_splices() {
+        // The RHS span resolves to a real tree node, so an edit to it keeps the
+        // surrounding comments — the property `should_set_value` relies on.
+        let src = "// config\nlet size = 12 // points\nlet other = 1\n";
+        let (tree, stmts) = parse_ast(src).unwrap();
+        let span = find_binding(&stmts, "size").unwrap();
+        let edited = splice_node(&tree, span, "14").expect("tree splice resolved");
+        assert_eq!(
+            edited.text(),
+            "// config\nlet size = 14 // points\nlet other = 1\n"
+        );
     }
 
     #[test]

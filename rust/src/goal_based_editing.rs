@@ -3,41 +3,52 @@
 //! Instead of imperative "replace this span with that text" calls, a caller
 //! describes **goals**: properties the edited source should satisfy. A goal is
 //! order-independent in intent ("there should be a call to `set_color_scheme`
-//! with these arguments") and leaves *how* to achieve it — insert a new call,
-//! or update an existing one in place — to this module. [`modify_source_with_goals`]
-//! applies a list of goals to a source string and returns the rewritten source.
+//! with these arguments", "`font_size` should be 14") and leaves *how* to
+//! achieve it — insert a new statement, or update an existing one in place — to
+//! this module. [`modify_source_with_goals`] applies a list of goals to a source
+//! string and returns the rewritten source.
 //!
 //! This is more expressive than a single-purpose rewrite helper: goals compose
 //! (apply several in one pass), and the [`Goal`] enum is the extension point for
 //! richer intents later (ensure an import, remove a call, set a field on a
-//! record literal, …). Today the only variant is [`Goal::ShouldCall`].
+//! record literal, …).
 //!
-//! Call arguments are **structured values** ([`Arg`]), not pre-rendered source:
-//! the caller passes `"dracula"` / `5` / `true` and this module renders each into
-//! a valid Petal literal (strings are quoted and escaped, so interpolation `{`,
-//! quotes, and backslashes can never leak). Composite arguments — nested calls
-//! ([`Arg::call`]), lists ([`Arg::list`]), records ([`Arg::record`]) — let an
-//! embedder express whole declarative trees, e.g. Garden's
-//! `layout(row([editor("a.rs")], [1.0]))`; a list of composite elements is
-//! pretty-printed one element per line so the generated source reads like
-//! hand-written config. Every argument is a structured value, so the rendered
-//! source is always well-formed — there is no verbatim/raw-source escape hatch.
+//! Values are **structured** ([`StaticValue`]), not pre-rendered source: the
+//! caller passes `"dracula"` / `5` / `true` and this module renders each into a
+//! valid Petal literal (strings are quoted and escaped, so interpolation `{`,
+//! quotes, and backslashes can never leak). Composite values — nested calls
+//! ([`StaticValue::call`]), lists ([`StaticValue::list`]), records
+//! ([`StaticValue::record`]) — let an embedder express whole declarative trees,
+//! e.g. Garden's `layout(row([editor("a.rs")], [1.0]))`; a list of composite
+//! elements is pretty-printed one element per line so the generated source reads
+//! like hand-written config. Every value is structured, so the rendered source
+//! is always well-formed — there is no verbatim/raw-source escape hatch.
+//!
+//! [`StaticValue`] is the same type [`crate::static_value::get_static_value`]
+//! returns when *reading* a config file, so a value round-trips: read it, adjust
+//! it, write it back.
 //!
 //! Edits go through the lossless CST primitives in [`crate::rewrite`]
-//! ([`parse_ast`], [`find_call`], [`splice_node`], [`splice`]), so comments and
-//! surrounding layout survive and the caller is not required to match any
-//! particular existing formatting.
+//! ([`parse_ast`], [`find_call`], [`find_binding`], [`splice_node`], [`splice`]),
+//! so comments and surrounding layout survive and the caller is not required to
+//! match any particular existing formatting.
 //!
 //! ```ignore
 //! use petal::goal_based_editing::{modify_source_with_goals, Goal};
 //!
-//! // Ensure the config selects the "dracula" scheme, whatever it selects now.
-//! // The &str is auto-wrapped as a string Arg and rendered as "dracula".
-//! let goals = [Goal::should_call("set_color_scheme", ["dracula"])];
+//! // Ensure the config selects the "dracula" scheme and a 14pt font, whatever
+//! // it selects now. The &str is auto-wrapped and rendered as "dracula".
+//! let goals = [
+//!     Goal::should_call("set_color_scheme", ["dracula"]),
+//!     Goal::should_set_value("font_size", 14),
+//! ];
 //! let updated = modify_source_with_goals(&source, &goals)?;
 //! ```
 
-use crate::rewrite::{find_call, parse_ast, splice, splice_node};
+use crate::rewrite::{find_binding, find_call, parse_ast, splice, splice_node};
+use crate::static_value::render_call_at;
+
+pub use crate::static_value::StaticValue;
 
 /// Why a goal batch could not be applied — the source didn't parse, or the
 /// rewrite machinery rejected an edit. A distinct type (rather than a bare
@@ -63,225 +74,6 @@ impl From<String> for GoalError {
     }
 }
 
-/// A structured call argument. Rendered into a Petal literal at edit time.
-///
-/// Use the typed variants (via the [`From`] impls or the constructors); strings
-/// are quoted/escaped for you and every variant renders to well-formed Petal.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Arg {
-    /// A string, rendered as a quoted-and-escaped Petal string literal.
-    Str(String),
-    /// An integer literal.
-    Int(i64),
-    /// A float literal (always rendered with a decimal point).
-    Float(f64),
-    /// A `true` / `false` literal.
-    Bool(bool),
-    /// The `nil` literal.
-    Nil,
-    /// A list literal `[a, b, c]`. Renders inline when every element is a
-    /// scalar; a list containing composite elements (calls, lists, records)
-    /// renders one element per line, indented — the shape of a declarative
-    /// layout tree.
-    List(Vec<Arg>),
-    /// A record literal `{ key: value, ... }`, rendered inline. Keys are
-    /// rendered bare, so they must be valid Petal identifiers.
-    Record(Vec<(String, Arg)>),
-    /// A nested call `function(args...)` — building block for declarative
-    /// call trees like `layout(row([editor("a")], [1.0]))`.
-    Call { function: String, args: Vec<Arg> },
-}
-
-impl Arg {
-    /// A string argument (quoted and escaped on render).
-    pub fn str(s: impl Into<String>) -> Arg {
-        Arg::Str(s.into())
-    }
-    /// An integer argument.
-    pub fn int(n: impl Into<i64>) -> Arg {
-        Arg::Int(n.into())
-    }
-    /// A float argument.
-    pub fn float(f: impl Into<f64>) -> Arg {
-        Arg::Float(f.into())
-    }
-    /// A boolean argument.
-    pub fn bool(b: bool) -> Arg {
-        Arg::Bool(b)
-    }
-    /// The `nil` argument.
-    pub fn nil() -> Arg {
-        Arg::Nil
-    }
-    /// A list argument. Elements coerce like call params do.
-    pub fn list<P, A>(items: P) -> Arg
-    where
-        P: IntoIterator<Item = A>,
-        A: Into<Arg>,
-    {
-        Arg::List(items.into_iter().map(Into::into).collect())
-    }
-    /// A record argument. Keys must be valid Petal identifiers (they render
-    /// bare); values coerce like call params do.
-    pub fn record<P, K, A>(fields: P) -> Arg
-    where
-        P: IntoIterator<Item = (K, A)>,
-        K: Into<String>,
-        A: Into<Arg>,
-    {
-        Arg::Record(
-            fields
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-        )
-    }
-    /// A nested call argument: `Arg::call("editor", ["a.rs"])` renders as
-    /// `editor("a.rs")`.
-    pub fn call<S, P, A>(function: S, args: P) -> Arg
-    where
-        S: Into<String>,
-        P: IntoIterator<Item = A>,
-        A: Into<Arg>,
-    {
-        Arg::Call {
-            function: function.into(),
-            args: args.into_iter().map(Into::into).collect(),
-        }
-    }
-
-    /// Render this argument as Petal source. `depth` is the current indent
-    /// level in two-space units; it only matters for multi-line lists (see
-    /// [`Arg::List`]) — scalars ignore it.
-    fn render(&self, depth: usize) -> String {
-        match self {
-            Arg::Str(s) => render_string_literal(s),
-            Arg::Int(n) => n.to_string(),
-            // `{:?}` on f64 always emits a decimal point (`1.0`, not `1`), so the
-            // result parses as a float rather than an int.
-            Arg::Float(f) => format!("{f:?}"),
-            Arg::Bool(true) => "true".to_string(),
-            Arg::Bool(false) => "false".to_string(),
-            Arg::Nil => "nil".to_string(),
-            Arg::List(items) => render_list(items, depth),
-            Arg::Record(fields) => render_record(fields, depth),
-            Arg::Call { function, args } => render_call_at(function, args, depth),
-        }
-    }
-
-    /// True for the composite variants whose rendering can span lines; a list
-    /// containing any of these is laid out one element per line.
-    fn is_composite(&self) -> bool {
-        matches!(self, Arg::List(_) | Arg::Record(_) | Arg::Call { .. })
-    }
-}
-
-/// Render a list literal at `depth`. All-scalar lists stay inline
-/// (`[0.7, 0.3]`); a list with composite elements puts each element on its own
-/// line at `depth + 1`, with the closing bracket back at `depth` — the layout a
-/// user would write for a tree of nested calls.
-fn render_list(items: &[Arg], depth: usize) -> String {
-    if !items.iter().any(Arg::is_composite) {
-        let rendered: Vec<String> = items.iter().map(|a| a.render(depth)).collect();
-        return format!("[{}]", rendered.join(", "));
-    }
-    let mut out = String::from("[\n");
-    let inner = indent(depth + 1);
-    for item in items {
-        out.push_str(&inner);
-        out.push_str(&item.render(depth + 1));
-        out.push_str(",\n");
-    }
-    out.push_str(&indent(depth));
-    out.push(']');
-    out
-}
-
-/// Render a record literal inline: `{ key: value, ... }` (`{}` when empty).
-fn render_record(fields: &[(String, Arg)], depth: usize) -> String {
-    if fields.is_empty() {
-        return "{}".to_string();
-    }
-    let rendered: Vec<String> = fields
-        .iter()
-        .map(|(k, v)| format!("{k}: {}", v.render(depth)))
-        .collect();
-    format!("{{ {} }}", rendered.join(", "))
-}
-
-/// Render a call `function(arg0, arg1, ...)` with its arguments at `depth`
-/// (multi-line lists among them indent their elements at `depth + 1`).
-fn render_call_at(function: &str, args: &[Arg], depth: usize) -> String {
-    let rendered: Vec<String> = args.iter().map(|a| a.render(depth)).collect();
-    format!("{function}({})", rendered.join(", "))
-}
-
-/// Two spaces per `depth` level.
-fn indent(depth: usize) -> String {
-    "  ".repeat(depth)
-}
-
-impl From<&str> for Arg {
-    fn from(s: &str) -> Arg {
-        Arg::Str(s.to_string())
-    }
-}
-impl From<String> for Arg {
-    fn from(s: String) -> Arg {
-        Arg::Str(s)
-    }
-}
-impl From<i64> for Arg {
-    fn from(n: i64) -> Arg {
-        Arg::Int(n)
-    }
-}
-impl From<i32> for Arg {
-    fn from(n: i32) -> Arg {
-        Arg::Int(n as i64)
-    }
-}
-impl From<f64> for Arg {
-    fn from(f: f64) -> Arg {
-        Arg::Float(f)
-    }
-}
-impl From<f32> for Arg {
-    fn from(f: f32) -> Arg {
-        // A plain `as f64` widening drags in garbage digits (0.7f32 becomes
-        // 0.7000000298023224); round-tripping through the shortest display
-        // form keeps the literal the user actually meant.
-        Arg::Float(format!("{f}").parse().unwrap_or(f as f64))
-    }
-}
-impl From<bool> for Arg {
-    fn from(b: bool) -> Arg {
-        Arg::Bool(b)
-    }
-}
-
-/// Render `s` as a Petal string literal: double-quoted, with `\`, `"`, and the
-/// interpolation opener `{` escaped (plus newlines/tabs), so no character of the
-/// content can change how the literal parses.
-fn render_string_literal(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            // `{` starts interpolation in a Petal string; escape it so the
-            // content is treated literally.
-            '{' => out.push_str("\\{"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 /// A declarative editing goal: a property the rewritten source should satisfy.
 ///
 /// Extend this enum (and [`apply_goal`]) with new intents as they are needed;
@@ -294,32 +86,64 @@ pub enum Goal {
     /// argument list is replaced with `params` (the rest of the call — and the
     /// rest of the file — is left untouched). If no such call exists, the call
     /// is appended as a new top-level statement.
-    ShouldCall { function: String, params: Vec<Arg> },
+    ShouldCall {
+        function: String,
+        params: Vec<StaticValue>,
+    },
+    /// Reading `name` out of the edited source should yield `value` — the
+    /// write half of Petal-as-a-config-format.
+    ///
+    /// The **last** top-level binding of `name` is the one that decides the
+    /// program's value, so that is the one edited: its right-hand side is
+    /// replaced with `value`, whatever it was before (a literal, a call, or a
+    /// whole `if` expression collapse to the literal). If `name` isn't bound at
+    /// top level, `let name = value` is appended.
+    ShouldSetValue { name: String, value: StaticValue },
 }
 
 impl Goal {
-    /// Construct a [`Goal::ShouldCall`]. `params` are structured [`Arg`] values;
-    /// bare `&str`/`String`/`i32`/`i64`/`f64`/`bool` are accepted directly via
-    /// [`From`] (a `&str` becomes a quoted string literal).
+    /// Construct a [`Goal::ShouldCall`]. `params` are structured
+    /// [`StaticValue`]s; bare `&str`/`String`/`i32`/`i64`/`f64`/`bool` are
+    /// accepted directly via [`From`] (a `&str` becomes a quoted string
+    /// literal).
     ///
     /// ```ignore
     /// Goal::should_call("set_color_scheme", ["dracula"]);       // set_color_scheme("dracula")
     /// Goal::should_call("resize", [800, 600]);                  // resize(800, 600)
-    /// Goal::should_call("configure", vec![Arg::str("dark"), Arg::bool(true)]);
+    /// Goal::should_call("configure", vec![StaticValue::str("dark"), StaticValue::bool(true)]);
     /// ```
     ///
     /// Arguments of differing types can't share one array literal (arrays are
-    /// homogeneous), so use a `Vec<Arg>` with the [`Arg`] constructors for mixed
-    /// calls, as in the third line above.
+    /// homogeneous), so use a `Vec<StaticValue>` with the [`StaticValue`]
+    /// constructors for mixed calls, as in the third line above.
     pub fn should_call<S, P, A>(function: S, params: P) -> Goal
     where
         S: Into<String>,
         P: IntoIterator<Item = A>,
-        A: Into<Arg>,
+        A: Into<StaticValue>,
     {
         Goal::ShouldCall {
             function: function.into(),
             params: params.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Construct a [`Goal::ShouldSetValue`]: after the edit, `name` is bound to
+    /// `value`. Scalars coerce via [`From`] just as call params do.
+    ///
+    /// ```ignore
+    /// Goal::should_set_value("color_scheme", "dracula");   // let color_scheme = "dracula"
+    /// Goal::should_set_value("font_size", 14);             // let font_size = 14
+    /// Goal::should_set_value("editor", StaticValue::record(vec![("tab_width", 4)]));
+    /// ```
+    pub fn should_set_value<S, V>(name: S, value: V) -> Goal
+    where
+        S: Into<String>,
+        V: Into<StaticValue>,
+    {
+        Goal::ShouldSetValue {
+            name: name.into(),
+            value: value.into(),
         }
     }
 }
@@ -341,48 +165,82 @@ pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, 
 fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
     match goal {
         Goal::ShouldCall { function, params } => ensure_call(source, function, params),
+        Goal::ShouldSetValue { name, value } => ensure_binding(source, name, value),
     }
 }
 
-/// Render a top-level call `function(arg0, arg1, ...)` from structured args.
+/// Render a top-level call `function(arg0, arg1, ...)` from structured values.
 /// The call starts at column 0, so its arguments render at depth 1.
-fn render_call(function: &str, params: &[Arg]) -> String {
+fn render_call(function: &str, params: &[StaticValue]) -> String {
     render_call_at(function, params, 1)
+}
+
+/// Append `statement` to `source` as a new top-level statement, separated by a
+/// blank line (or as the whole content of an empty file).
+fn append_statement(source: &str, statement: &str) -> String {
+    let trimmed = source.trim_end_matches('\n');
+    if trimmed.is_empty() {
+        format!("{statement}\n")
+    } else {
+        format!("{trimmed}\n\n{statement}\n")
+    }
+}
+
+/// Replace the node at `span` with `replacement`, preferring the lossless tree
+/// splice and falling back to a string-level span splice.
+///
+/// The fallback exists because rendered output only parses when the caller
+/// supplies valid Petal identifiers — record keys and fn names are rendered bare
+/// and are NOT validated against the grammar, so a contract-violating structured
+/// value (e.g. a record key with a space) reaches here and is string-spliced
+/// as-is, producing possibly-invalid source returned as `Ok`. Well-formed
+/// identifiers always take the tree-splice path.
+fn replace_span(
+    tree: &std::rc::Rc<crate::cst::GreenNode>,
+    source: &str,
+    span: crate::source_map::SourceSpan,
+    replacement: &str,
+) -> String {
+    match splice_node(tree, span, replacement) {
+        Some(edited) => edited.text(),
+        None => splice(source, span, replacement),
+    }
 }
 
 /// Ensure `source` has a top-level `function(params...)` call: update the first
 /// existing one's whole call expression in place, or append a fresh call.
 ///
-/// The update prefers a lossless tree splice (comments and layout around the
-/// call survive); if the rendered call doesn't parse as a single expression it
-/// falls back to a string-level span splice. Only top-level statement-position
-/// calls with a bare-identifier callee are matched (the shape of declarative
-/// config); a call nested in another expression is ignored, so ensuring it
-/// appends a new statement rather than editing the nested one.
-fn ensure_call(source: &str, function: &str, params: &[Arg]) -> Result<String, GoalError> {
+/// Only top-level statement-position calls with a bare-identifier callee are
+/// matched (the shape of declarative config); a call nested in another
+/// expression is ignored, so ensuring it appends a new statement rather than
+/// editing the nested one.
+fn ensure_call(source: &str, function: &str, params: &[StaticValue]) -> Result<String, GoalError> {
     let replacement = render_call(function, params);
     let (tree, stmts) = parse_ast(source)?;
     match find_call(&stmts, function) {
-        Some(span) => Ok(match splice_node(&tree, span, &replacement) {
-            Some(edited) => edited.text(),
-            // Fallback: the tree splice couldn't reparse the replacement as a
-            // single expression, so string-splice the span rather than drop the
-            // edit. Rendered output only parses when the caller supplies valid
-            // Petal identifiers — record keys and fn names are rendered bare and
-            // are NOT validated against the grammar, so a contract-violating
-            // structured arg (e.g. a record key with a space) reaches here and is
-            // string-spliced as-is, producing possibly-invalid source returned as
-            // Ok. Well-formed identifiers always take the tree-splice path above.
-            None => splice(source, span, &replacement),
-        }),
-        None => {
-            let trimmed = source.trim_end_matches('\n');
-            if trimmed.is_empty() {
-                Ok(format!("{replacement}\n"))
-            } else {
-                Ok(format!("{trimmed}\n\n{replacement}\n"))
-            }
-        }
+        Some(span) => Ok(replace_span(&tree, source, span, &replacement)),
+        None => Ok(append_statement(source, &replacement)),
+    }
+}
+
+/// Ensure reading `name` out of `source` yields `value`: replace the right-hand
+/// side of its last top-level binding, or append `let name = value`.
+///
+/// Replacing the whole right-hand side (rather than patching inside it) is what
+/// makes this a *static* change for non-trivial bindings too: a `name = if …`
+/// or `name = compute(…)` collapses to the literal, which satisfies the goal by
+/// construction. Everything around the value — the `let`, the name, comments,
+/// indentation — is untouched.
+fn ensure_binding(source: &str, name: &str, value: &StaticValue) -> Result<String, GoalError> {
+    let (tree, stmts) = parse_ast(source)?;
+    match find_binding(&stmts, name) {
+        // The value sits after `let name = ` at depth 1, so a multi-line
+        // composite indents its elements one level in.
+        Some(span) => Ok(replace_span(&tree, source, span, &value.render(1))),
+        None => Ok(append_statement(
+            source,
+            &format!("let {name} = {}", value.render(1)),
+        )),
     }
 }
 
@@ -415,12 +273,12 @@ mod tests {
         // expression. The tree splice fails and the string-splice fallback runs,
         // returning the (syntactically invalid) rendered source as Ok — this
         // pins that documented fallback behavior for a valid-but-contract-
-        // violating structured arg.
+        // violating structured value.
         let out = apply(
             "foo({})\n",
             &[Goal::should_call(
                 "foo",
-                [Arg::record(vec![("bad key", Arg::int(1))])],
+                [StaticValue::record(vec![("bad key", StaticValue::int(1))])],
             )],
         );
         assert_eq!(out, "foo({ bad key: 1 })\n");
@@ -489,7 +347,7 @@ mod tests {
             "",
             &[Goal::should_call(
                 "configure",
-                vec![Arg::bool(true), Arg::nil()],
+                vec![StaticValue::bool(true), StaticValue::nil()],
             )],
         );
         assert_eq!(out, "configure(true, nil)\n");
@@ -497,7 +355,7 @@ mod tests {
 
     #[test]
     fn renders_zero_params() {
-        let out = apply("", &[Goal::should_call("clear", Vec::<Arg>::new())]);
+        let out = apply("", &[Goal::should_call("clear", Vec::<StaticValue>::new())]);
         assert_eq!(out, "clear()\n");
     }
 
@@ -507,7 +365,7 @@ mod tests {
             "",
             &[Goal::should_call(
                 "set",
-                vec![Arg::str("size"), Arg::int(14)],
+                vec![StaticValue::str("size"), StaticValue::int(14)],
             )],
         );
         assert_eq!(out, "set(\"size\", 14)\n");
@@ -530,7 +388,10 @@ mod tests {
 
     #[test]
     fn renders_scalar_list_inline() {
-        let out = apply("", &[Goal::should_call("grid", [Arg::list([1, 2, 3])])]);
+        let out = apply(
+            "",
+            &[Goal::should_call("grid", [StaticValue::list([1, 2, 3])])],
+        );
         assert_eq!(out, "grid([1, 2, 3])\n");
     }
 
@@ -541,8 +402,8 @@ mod tests {
             &[Goal::should_call(
                 "configure",
                 vec![
-                    Arg::list(Vec::<Arg>::new()),
-                    Arg::record(Vec::<(String, Arg)>::new()),
+                    StaticValue::list(Vec::<StaticValue>::new()),
+                    StaticValue::record(Vec::<(String, StaticValue)>::new()),
                 ],
             )],
         );
@@ -555,9 +416,9 @@ mod tests {
             "",
             &[Goal::should_call(
                 "editor_config",
-                [Arg::record(vec![
-                    ("line_numbers", Arg::bool(true)),
-                    ("tab_width", Arg::int(4)),
+                [StaticValue::record(vec![
+                    ("line_numbers", StaticValue::bool(true)),
+                    ("tab_width", StaticValue::int(4)),
                 ])],
             )],
         );
@@ -568,7 +429,10 @@ mod tests {
     fn renders_nested_call() {
         let out = apply(
             "",
-            &[Goal::should_call("layout", [Arg::call("editor", ["a.rs"])])],
+            &[Goal::should_call(
+                "layout",
+                [StaticValue::call("editor", ["a.rs"])],
+            )],
         );
         assert_eq!(out, "layout(editor(\"a.rs\"))\n");
     }
@@ -587,20 +451,20 @@ mod tests {
             "",
             &[Goal::should_call(
                 "layout",
-                [Arg::call(
+                [StaticValue::call(
                     "row",
                     vec![
-                        Arg::list([
-                            Arg::call(
+                        StaticValue::list([
+                            StaticValue::call(
                                 "column",
-                                vec![Arg::list([
-                                    Arg::call("editor", ["a"]),
-                                    Arg::call("editor", ["b"]),
+                                vec![StaticValue::list([
+                                    StaticValue::call("editor", ["a"]),
+                                    StaticValue::call("editor", ["b"]),
                                 ])],
                             ),
-                            Arg::call("editor", ["c"]),
+                            StaticValue::call("editor", ["c"]),
                         ]),
-                        Arg::list([0.6f32, 0.4f32]),
+                        StaticValue::list([0.6f32, 0.4f32]),
                     ],
                 )],
             )],
@@ -625,11 +489,14 @@ layout(row([
             src,
             &[Goal::should_call(
                 "layout",
-                [Arg::call(
+                [StaticValue::call(
                     "column",
                     vec![
-                        Arg::list([Arg::call("editor", ["x"]), Arg::call("editor", ["y"])]),
-                        Arg::list([0.5f32, 0.5f32]),
+                        StaticValue::list([
+                            StaticValue::call("editor", ["x"]),
+                            StaticValue::call("editor", ["y"]),
+                        ]),
+                        StaticValue::list([0.5f32, 0.5f32]),
                     ],
                 )],
             )],
@@ -643,7 +510,7 @@ layout(row([
             &out,
             &[Goal::should_call(
                 "layout",
-                [Arg::call("editor", Vec::<Arg>::new())],
+                [StaticValue::call("editor", Vec::<StaticValue>::new())],
             )],
         );
         assert!(again.contains("layout(editor())"), "got: {again}");
@@ -684,10 +551,196 @@ layout(row([
 
     #[test]
     fn should_call_constructor_accepts_owned_and_borrowed() {
-        // &str, String, ints, floats, bools all coerce into Arg.
+        // &str, String, ints, floats, bools all coerce into StaticValue.
         let _ = Goal::should_call("f", ["a"]);
         let _ = Goal::should_call(String::from("f"), vec![String::from("a")]);
         let _ = Goal::should_call("f", [1, 2, 3]);
-        let _ = Goal::should_call("f", vec![Arg::float(1.5), Arg::bool(false)]);
+        let _ = Goal::should_call("f", vec![StaticValue::float(1.5), StaticValue::bool(false)]);
+    }
+
+    // ── ShouldSetValue ───────────────────────────────────────────────────
+
+    #[test]
+    fn should_set_value_updates_an_existing_let() {
+        let out = apply(
+            "let color_scheme = \"light\"\n",
+            &[Goal::should_set_value("color_scheme", "dracula")],
+        );
+        assert_eq!(out, "let color_scheme = \"dracula\"\n");
+    }
+
+    #[test]
+    fn should_set_value_updates_a_bare_assignment() {
+        let out = apply(
+            "font_size = 12\n",
+            &[Goal::should_set_value("font_size", 14)],
+        );
+        assert_eq!(out, "font_size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_appends_when_the_name_is_unbound() {
+        let out = apply(
+            "let color_scheme = \"light\"\n",
+            &[Goal::should_set_value("font_size", 14)],
+        );
+        assert_eq!(out, "let color_scheme = \"light\"\n\nlet font_size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_appends_to_empty_source() {
+        let out = apply("", &[Goal::should_set_value("font_size", 14)]);
+        assert_eq!(out, "let font_size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_edits_the_last_binding() {
+        // The last binding decides the program's value, so that is the one that
+        // has to change — editing the first would leave the goal unmet.
+        let out = apply(
+            "let size = 12\nlet size = 13\nsize = 14\n",
+            &[Goal::should_set_value("size", 20)],
+        );
+        assert_eq!(out, "let size = 12\nlet size = 13\nsize = 20\n");
+    }
+
+    #[test]
+    fn should_set_value_preserves_comments_and_layout() {
+        let out = apply(
+            "// user config\n\nlet font_size = 12 // points\nlet other = 1\n",
+            &[Goal::should_set_value("font_size", 14)],
+        );
+        assert_eq!(
+            out,
+            "// user config\n\nlet font_size = 14 // points\nlet other = 1\n"
+        );
+    }
+
+    #[test]
+    fn should_set_value_collapses_a_computed_binding_to_the_literal() {
+        // The whole right-hand side is replaced, so a conditional or a call
+        // becomes the literal — the static change that makes the goal hold.
+        let out = apply(
+            "let font_size = if wide_screen then 16 else 12 end\n",
+            &[Goal::should_set_value("font_size", 14)],
+        );
+        assert_eq!(out, "let font_size = 14\n");
+        let out = apply(
+            "let accent = rgb(255, 0, 0)\n",
+            &[Goal::should_set_value("accent", "red")],
+        );
+        assert_eq!(out, "let accent = \"red\"\n");
+    }
+
+    #[test]
+    fn should_set_value_writes_composites() {
+        let out = apply(
+            "let editor = {}\n",
+            &[Goal::should_set_value(
+                "editor",
+                StaticValue::record(vec![
+                    ("line_numbers", StaticValue::bool(true)),
+                    ("tab_width", StaticValue::int(4)),
+                ]),
+            )],
+        );
+        assert_eq!(out, "let editor = { line_numbers: true, tab_width: 4 }\n");
+
+        let out = apply(
+            "let panes = []\n",
+            &[Goal::should_set_value(
+                "panes",
+                StaticValue::list([
+                    StaticValue::call("editor", ["a.rs"]),
+                    StaticValue::call("editor", ["b.rs"]),
+                ]),
+            )],
+        );
+        // A composite list indents its elements one level in from the binding.
+        assert_eq!(
+            out,
+            "let panes = [\n    editor(\"a.rs\"),\n    editor(\"b.rs\"),\n  ]\n"
+        );
+    }
+
+    #[test]
+    fn should_set_value_ignores_a_binding_inside_a_function() {
+        // `size` inside `f` is that body's scope; the goal is about the
+        // top-level name, so a new top-level binding is appended.
+        let out = apply(
+            "fn f() let size = 1 end\n",
+            &[Goal::should_set_value("size", 14)],
+        );
+        assert_eq!(out, "fn f() let size = 1 end\n\nlet size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_result_reads_back_as_the_value() {
+        // The round-trip property that makes read-modify-write safe: what the
+        // goal writes is what `get_static_value` reads.
+        use crate::static_value::get_static_value;
+        let values = [
+            StaticValue::str("a\"b\\c{d}"),
+            StaticValue::int(-3),
+            StaticValue::float(1.5),
+            StaticValue::bool(false),
+            StaticValue::nil(),
+            StaticValue::list([1, 2]),
+            StaticValue::record(vec![("k", StaticValue::str("v"))]),
+            StaticValue::call("rgb", [1, 2, 3]),
+        ];
+        for value in values {
+            let out = apply(
+                "// config\nlet setting = 0 // note\n",
+                &[Goal::should_set_value("setting", value.clone())],
+            );
+            assert_eq!(get_static_value(&out, "setting").unwrap(), value);
+            // And the comments survived.
+            assert!(out.starts_with("// config\n"), "got: {out}");
+        }
+    }
+
+    #[test]
+    fn set_value_and_call_goals_compose() {
+        let out = apply(
+            "// config\nlet font_size = 12\n",
+            &[
+                Goal::should_set_value("font_size", 14),
+                Goal::should_call("set_color_scheme", ["dracula"]),
+                Goal::should_set_value("wrap", true),
+            ],
+        );
+        assert_eq!(
+            out,
+            "// config\nlet font_size = 14\n\nset_color_scheme(\"dracula\")\n\nlet wrap = true\n"
+        );
+    }
+
+    #[test]
+    fn later_set_value_goal_updates_one_an_earlier_goal_inserted() {
+        let out = apply(
+            "",
+            &[
+                Goal::should_set_value("font_size", 12),
+                Goal::should_set_value("font_size", 14),
+            ],
+        );
+        assert_eq!(out, "let font_size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_survives_multibyte_source() {
+        let out = apply(
+            "// café ☕ theme\nlet font_size = 12\n",
+            &[Goal::should_set_value("font_size", 14)],
+        );
+        assert_eq!(out, "// café ☕ theme\nlet font_size = 14\n");
+    }
+
+    #[test]
+    fn should_set_value_reports_unparseable_source() {
+        let err =
+            modify_source_with_goals("let x = \n", &[Goal::should_set_value("x", 1)]).unwrap_err();
+        assert!(!err.message.is_empty());
     }
 }

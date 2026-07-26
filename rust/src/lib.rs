@@ -34,6 +34,7 @@ pub mod resource_table;
 pub mod rewrite;
 pub mod source_map;
 pub mod stack;
+pub mod static_value;
 pub mod stats;
 pub mod symbol;
 pub mod trace;

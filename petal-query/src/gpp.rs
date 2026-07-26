@@ -26,12 +26,12 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
+use crate::CachePolicy;
 use crate::provider::{MutateContext, Provider, Reply};
 use crate::wire::{
-    self, Envelope, EmitParams, InitializeParams, InitializeResult, MutateParams, MutateResult,
+    self, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams, MutateResult,
     QueryParams, QueryResult, SetScriptParams, method,
 };
-use crate::CachePolicy;
 
 /// The built-in mutation name for browser-style navigation between a panel's
 /// screens. When a subprocess panel app declares [`screens`](PanelUi::screen) and
@@ -221,7 +221,14 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
             let (value, error, _policy) = reply.into_parts();
             wire::write_message(
                 writer,
-                &Envelope::response(req_id, MutateResult { name: m.name, value, error }),
+                &Envelope::response(
+                    req_id,
+                    MutateResult {
+                        name: m.name,
+                        value,
+                        error,
+                    },
+                ),
             )?;
         } else if env.is_method(method::SHUTDOWN) {
             return Ok(());
@@ -309,7 +316,13 @@ mod tests {
     fn handshake_pushes_panel_mode_and_script() {
         let mut r = input(vec![init_req(), shutdown()]);
         let mut w: Vec<u8> = Vec::new();
-        serve_on(Provider::stateless(), PanelUi::new("demo", "SCRIPT"), &mut r, &mut w).unwrap();
+        serve_on(
+            Provider::stateless(),
+            PanelUi::new("demo", "SCRIPT"),
+            &mut r,
+            &mut w,
+        )
+        .unwrap();
         let msgs = output(&w);
         assert_eq!(msgs[0].result.as_ref().unwrap()["mode"], "panel");
         assert_eq!(msgs[0].result.as_ref().unwrap()["name"], "demo");
@@ -324,7 +337,10 @@ mod tests {
         let provider = Provider::new(|init| init.repo_arg());
         let ui = PanelUi::new("static", "S").title(|repo: &String| format!("repo: {repo}"));
         serve_on(provider, ui, &mut r, &mut w).unwrap();
-        assert_eq!(output(&w)[0].result.as_ref().unwrap()["name"], "repo: /repo");
+        assert_eq!(
+            output(&w)[0].result.as_ref().unwrap()["name"],
+            "repo: /repo"
+        );
     }
 
     #[test]
@@ -341,7 +357,9 @@ mod tests {
                 Reply::json(json!({ "repo": repo.clone() }))
                     .max_age(std::time::Duration::from_secs(3))
             })
-            .query("commit", |_repo, ctx| Reply::json(json!({ "hash": ctx.arg })));
+            .query("commit", |_repo, ctx| {
+                Reply::json(json!({ "hash": ctx.arg }))
+            });
         serve_on(provider, PanelUi::new("git", "S"), &mut r, &mut w).unwrap();
 
         let msgs = output(&w);
@@ -358,7 +376,13 @@ mod tests {
             jsonrpc: "2.0".into(),
             id: Some(id),
             method: Some(method::MUTATE.into()),
-            params: Some(serde_json::to_value(MutateParams { name: name.into(), arg }).unwrap()),
+            params: Some(
+                serde_json::to_value(MutateParams {
+                    name: name.into(),
+                    arg,
+                })
+                .unwrap(),
+            ),
             result: None,
             error: None,
         }
@@ -381,7 +405,10 @@ mod tests {
         assert_eq!(ok["name"], "navigate");
         assert_eq!(ok["value"]["source"], "SOURCE_B");
         assert_eq!(ok["value"]["screen"], "b.ptl");
-        assert!(ok.get("cacheControl").is_none(), "mutations are never cached");
+        assert!(
+            ok.get("cacheControl").is_none(),
+            "mutations are never cached"
+        );
         let err = msgs[3].result.as_ref().unwrap();
         assert!(err["error"].as_str().unwrap().contains("no such screen"));
     }
@@ -417,7 +444,12 @@ mod tests {
                 arg: json!({ "left_frac": 300 }),
             },
         );
-        let mut r = input(vec![init_req(), emit, query_req(2, "state", ""), shutdown()]);
+        let mut r = input(vec![
+            init_req(),
+            emit,
+            query_req(2, "state", ""),
+            shutdown(),
+        ]);
         let mut w: Vec<u8> = Vec::new();
         let provider = Provider::new(|_| 0i64)
             .on_emit("ui_state", |s: &mut i64, ctx| {

@@ -188,7 +188,10 @@ mod tests {
         assert_eq!(p.freshness_at(Duration::from_secs(4)), Freshness::Fresh);
         assert_eq!(p.freshness_at(Duration::from_secs(5)), Freshness::Fresh);
         // One tick past max_age with no stale window -> straight to Expired.
-        assert_eq!(p.freshness_at(Duration::from_millis(5001)), Freshness::Expired);
+        assert_eq!(
+            p.freshness_at(Duration::from_millis(5001)),
+            Freshness::Expired
+        );
     }
 
     #[test]

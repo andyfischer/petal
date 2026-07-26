@@ -211,7 +211,13 @@ mod tests {
         let t = Instant::now();
         cache.lookup("commit", "abc", t);
         drain(&mut cache);
-        cache.resolve("commit".into(), "abc".into(), Ok(3), CachePolicy::forever(), t);
+        cache.resolve(
+            "commit".into(),
+            "abc".into(),
+            Ok(3),
+            CachePolicy::forever(),
+            t,
+        );
         assert_eq!(cache.lookup("commit", "abc", t), Lookup::Ready(3));
         // Forever policy never refetches.
         assert!(drain(&mut cache).is_empty());
@@ -229,7 +235,10 @@ mod tests {
             CachePolicy::forever(),
             t,
         );
-        assert_eq!(cache.lookup("log", "", t), Lookup::Errored("no repo".into()));
+        assert_eq!(
+            cache.lookup("log", "", t),
+            Lookup::Errored("no repo".into())
+        );
     }
 
     #[test]
@@ -260,7 +269,10 @@ mod tests {
             t0,
         );
         // Fresh within max_age.
-        assert_eq!(cache.lookup("log", "", t0 + Duration::from_secs(4)), Lookup::Ready(7));
+        assert_eq!(
+            cache.lookup("log", "", t0 + Duration::from_secs(4)),
+            Lookup::Ready(7)
+        );
         assert!(drain(&mut cache).is_empty());
         // Past max_age with no SWR window: hard-expire -> Loading + refetch.
         assert_eq!(

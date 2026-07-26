@@ -148,10 +148,7 @@ fn overloaded_module_fn_with_mixed_export_markers_is_a_compile_error() {
     // markers to be consistent across the whole overload group.
     let m = "export fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
     let err = load_error(&[("m", m)], "import m: f");
-    assert!(
-        err.contains("mixed export markers"),
-        "got: {err}"
-    );
+    assert!(err.contains("mixed export markers"), "got: {err}");
     assert!(err.contains("'f'"), "names the function: {err}");
 }
 
@@ -204,11 +201,7 @@ fn export_marks_underscore_name_importable() {
     // privacy meaning. An `export fn _helper` exports normally — both
     // selectively importable and reachable via qualified member access.
     let m = "export fn _helper()\n  1\nend";
-    check_output(
-        &[("m", m)],
-        "import m: _helper\nprint(_helper())",
-        &["1"],
-    );
+    check_output(&[("m", m)], "import m: _helper\nprint(_helper())", &["1"]);
     check_output(&[("m", m)], "import m\nprint(m._helper())", &["1"]);
 }
 

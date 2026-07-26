@@ -490,8 +490,8 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
             }
         }
         Inst::MatchArm { subject, .. } => f(*subject, RETAIN), // bindings may bind it
-        Inst::MatchFail { subject } => f(*subject, PURE), // formats + raises
-        Inst::LoopCollect { src, .. } => f(*src, RETAIN), // appended into the result list
+        Inst::MatchFail { subject } => f(*subject, PURE),      // formats + raises
+        Inst::LoopCollect { src, .. } => f(*src, RETAIN),      // appended into the result list
         Inst::LoadConst { .. }
         | Inst::LoadNil { .. }
         | Inst::LoadBool { .. }

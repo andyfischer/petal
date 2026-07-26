@@ -243,7 +243,8 @@ impl<S: 'static> Provider<S> {
         name: impl Into<String>,
         handler: impl FnMut(&mut S, &MutateContext) -> Reply + 'static,
     ) -> Provider<S> {
-        self.mutation_handlers.insert(name.into(), Box::new(handler));
+        self.mutation_handlers
+            .insert(name.into(), Box::new(handler));
         self
     }
 
@@ -314,12 +315,18 @@ mod tests {
     #[test]
     fn answer_dispatches_to_the_registered_handler() {
         let mut p = Provider::new(|init| init.args.first().cloned().unwrap_or_default())
-            .query("log", |repo: &mut String, _ctx| Reply::json(json!({ "repo": repo.clone() })));
+            .query("log", |repo: &mut String, _ctx| {
+                Reply::json(json!({ "repo": repo.clone() }))
+            });
         let init = init();
         let mut state = p.build(&init);
         let reply = p.answer(
             &mut state,
-            &QueryContext { kind: "log", arg: "", init: &init },
+            &QueryContext {
+                kind: "log",
+                arg: "",
+                init: &init,
+            },
         );
         let (v, e, _) = reply.into_parts();
         assert_eq!(v.unwrap()["repo"], "/repo");
@@ -333,7 +340,11 @@ mod tests {
         let mut state = p.build(&init);
         let reply = p.answer(
             &mut state,
-            &QueryContext { kind: "nope", arg: "", init: &init },
+            &QueryContext {
+                kind: "nope",
+                arg: "",
+                init: &init,
+            },
         );
         let (v, _, _) = reply.into_parts();
         assert_eq!(v.unwrap(), serde_json::Value::Null);
@@ -349,7 +360,11 @@ mod tests {
         let arg = json!({ "left_frac": 300 });
         p.handle_emit(
             &mut state,
-            &EmitContext { event: "ui_state", arg: &arg, init: &init },
+            &EmitContext {
+                event: "ui_state",
+                arg: &arg,
+                init: &init,
+            },
         );
         assert_eq!(state, 300);
     }
@@ -366,7 +381,14 @@ mod tests {
         let mut state = p.build(&init);
         assert!(p.has_mutation("bump"));
         let arg = json!({ "by": 5 });
-        let reply = p.mutate(&mut state, &MutateContext { name: "bump", arg: &arg, init: &init });
+        let reply = p.mutate(
+            &mut state,
+            &MutateContext {
+                name: "bump",
+                arg: &arg,
+                init: &init,
+            },
+        );
         let (v, e, _) = reply.into_parts();
         assert_eq!(v.unwrap()["total"], 5);
         assert!(e.is_none());
@@ -380,7 +402,14 @@ mod tests {
         let mut state = p.build(&init);
         assert!(!p.has_mutation("nope"));
         let arg = json!(null);
-        let reply = p.mutate(&mut state, &MutateContext { name: "nope", arg: &arg, init: &init });
+        let reply = p.mutate(
+            &mut state,
+            &MutateContext {
+                name: "nope",
+                arg: &arg,
+                init: &init,
+            },
+        );
         let (v, e, _) = reply.into_parts();
         assert!(v.is_none());
         assert!(e.unwrap().contains("no mutation handler"));

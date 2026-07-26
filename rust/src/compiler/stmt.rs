@@ -33,7 +33,9 @@ impl Compiler {
                 self.compile_expr(expr);
             }
 
-            StmtKind::FnDecl { name, params, body, .. } => {
+            StmtKind::FnDecl {
+                name, params, body, ..
+            } => {
                 // Declared parameter types are not yet used at compile time
                 // (checking lands in a later chunk); the compiler only needs the
                 // names.
@@ -125,9 +127,7 @@ impl Compiler {
         span: SourceSpan,
     ) -> TermId {
         let (op, loop_inputs) = match self.try_range_bounds(iter) {
-            Some((start_tid, end_tid)) => {
-                (TermOp::NumericForLoop, smallvec![start_tid, end_tid])
-            }
+            Some((start_tid, end_tid)) => (TermOp::NumericForLoop, smallvec![start_tid, end_tid]),
             None => (TermOp::ForLoop, smallvec![self.compile_expr(iter)]),
         };
 
@@ -137,8 +137,7 @@ impl Compiler {
         let body_block = self.new_block(None);
         self.blocks[body_block.0 as usize].param_names = vec![var.to_string()];
 
-        let for_tid =
-            self.emit_term_with_children(op, loop_inputs, None, smallvec![body_block]);
+        let for_tid = self.emit_term_with_children(op, loop_inputs, None, smallvec![body_block]);
         self.terms[for_tid.0 as usize].collect = collect;
         self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 

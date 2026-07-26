@@ -86,8 +86,8 @@ mod tests {
     #[test]
     fn renders_every_stage_to_nonempty_text() {
         for (_, stage) in stages() {
-            let out = render(SNIPPET, *stage)
-                .unwrap_or_else(|e| panic!("stage {stage:?} failed: {e}"));
+            let out =
+                render(SNIPPET, *stage).unwrap_or_else(|e| panic!("stage {stage:?} failed: {e}"));
             assert!(!out.trim().is_empty(), "stage {stage:?} rendered empty");
         }
     }

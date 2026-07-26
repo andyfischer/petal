@@ -11,8 +11,8 @@ use std::collections::HashMap;
 pub mod unused;
 
 use crate::ast::{
-    AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, Pattern, RecordField,
-    Stmt, StmtKind, TypeAnn, UnaryOp,
+    AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, Pattern,
+    RecordField, Stmt, StmtKind, TypeAnn, UnaryOp,
 };
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
@@ -65,11 +65,7 @@ pub fn check_module(
 /// Least-upper-bound used to type a branching expression: identical types keep
 /// their type, anything else collapses to `Any` (suppressing further checks).
 fn join(a: Type, b: Type) -> Type {
-    if a == b {
-        a
-    } else {
-        Type::Any
-    }
+    if a == b { a } else { Type::Any }
 }
 
 fn is_numeric(t: Type) -> bool {
@@ -276,7 +272,9 @@ impl<'a> Checker<'a> {
                 }
             }
             StmtKind::Break | StmtKind::Continue => {}
-            StmtKind::State { name, init, key, .. } => {
+            StmtKind::State {
+                name, init, key, ..
+            } => {
                 self.check_expr(init);
                 if let Some(k) = key {
                     self.check_expr(k);
@@ -681,7 +679,9 @@ mod tests {
     #[test]
     fn return_inside_lambda_not_checked_against_outer_fn() {
         // `return` is lambda-local; it must not be checked against `f`'s `-> int`.
-        assert!(warns("fn f() -> int\n  let g = fn(x)\n    return \"s\"\n  end\n  0\nend").is_empty());
+        assert!(
+            warns("fn f() -> int\n  let g = fn(x)\n    return \"s\"\n  end\n  0\nend").is_empty()
+        );
     }
 
     #[test]

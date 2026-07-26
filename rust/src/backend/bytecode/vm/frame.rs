@@ -88,11 +88,20 @@ impl VmFrame {
 #[derive(Clone)]
 pub enum LoopCursor {
     /// `for x in <list>`: the snapshotted elements and the next index.
-    ForEach { elems: Vec<Value>, i: usize, acc: Vec<Value> },
+    ForEach {
+        elems: Vec<Value>,
+        i: usize,
+        acc: Vec<Value>,
+    },
     /// `for i in range(a, b)`: the current value, exclusive end, and 0-based
     /// iteration count (the state-key index, which differs from the value when
     /// the range does not start at 0).
-    Range { cur: i64, end: i64, iter: usize, acc: Vec<Value> },
+    Range {
+        cur: i64,
+        end: i64,
+        iter: usize,
+        acc: Vec<Value>,
+    },
     /// A `while` loop tracks only its iteration counter (for state keying).
     While { iteration: usize, acc: Vec<Value> },
 }

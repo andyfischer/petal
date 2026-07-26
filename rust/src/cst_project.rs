@@ -583,7 +583,11 @@ impl Projector {
                 let iter = self.expr(nodes.first().ok_or("for expression missing iterable")?)?;
                 let body = self.block(node)?;
                 Ok(Expr {
-                    kind: ExprKind::For { var, iter: Box::new(iter), body },
+                    kind: ExprKind::For {
+                        var,
+                        iter: Box::new(iter),
+                        body,
+                    },
                     span: self.node_span(node)?,
                 })
             }
@@ -1160,8 +1164,8 @@ mod tests {
 
     #[test]
     fn parses_declared_types_onto_the_ast() {
-        let ast = projected_ast("let x: int = 5\nfn f(a: int, b, c: str)\n  a\nend\n")
-            .expect("parse");
+        let ast =
+            projected_ast("let x: int = 5\nfn f(a: int, b, c: str)\n  a\nend\n").expect("parse");
         let StmtKind::Let { ty, .. } = &ast[0].kind else {
             panic!("expected let");
         };

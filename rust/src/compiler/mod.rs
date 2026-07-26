@@ -839,9 +839,8 @@ mod prescan_tests {
 
     #[test]
     fn arity_overloads_get_distinct_entries() {
-        let table = sigs(
-            "fn g(x: int) -> int\n  x\nend\nfn g(x: int, y: int) -> int\n  x + y\nend",
-        );
+        let table =
+            sigs("fn g(x: int) -> int\n  x\nend\nfn g(x: int, y: int) -> int\n  x + y\nend");
         assert_eq!(table.len(), 2);
         assert_eq!(table[&("g".to_string(), 1)].params, vec![Some(Type::Int)]);
         assert_eq!(

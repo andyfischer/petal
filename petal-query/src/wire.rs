@@ -128,7 +128,10 @@ impl InitializeParams {
     /// The first launch arg, or the pane `cwd` when none was given — the common
     /// "which directory/target do I operate on?" resolution a file/git app wants.
     pub fn repo_arg(&self) -> String {
-        self.args.first().cloned().unwrap_or_else(|| self.cwd.clone())
+        self.args
+            .first()
+            .cloned()
+            .unwrap_or_else(|| self.cwd.clone())
     }
 }
 

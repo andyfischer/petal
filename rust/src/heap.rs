@@ -397,9 +397,7 @@ impl Heap {
         // not work done on anyone's behalf. The child owns that heap now — it
         // holds the same live set and is the same distance from its next
         // collection as the parent was.
-        child
-            .dup_stats
-            .record(DupKind::Fork, || self.live_bytes());
+        child.dup_stats.record(DupKind::Fork, || self.live_bytes());
         child
     }
 

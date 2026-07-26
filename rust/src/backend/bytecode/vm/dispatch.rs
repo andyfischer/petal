@@ -66,8 +66,11 @@ impl<'a> Vm<'a> {
                 };
                 let elems = self.heap.get_list(list_id).to_vec();
                 self.ensure_slot(fi, *slot);
-                self.stack.vm_frames[fi].loops[*slot as usize] =
-                    Some(LoopCursor::ForEach { elems, i: 0, acc: Vec::new() });
+                self.stack.vm_frames[fi].loops[*slot as usize] = Some(LoopCursor::ForEach {
+                    elems,
+                    i: 0,
+                    acc: Vec::new(),
+                });
                 if *idx_ctx {
                     self.stack.vm_frames[fi]
                         .loop_idx
@@ -144,8 +147,10 @@ impl<'a> Vm<'a> {
             }
             Inst::WhileInit { slot } => {
                 self.ensure_slot(fi, *slot);
-                self.stack.vm_frames[fi].loops[*slot as usize] =
-                    Some(LoopCursor::While { iteration: 0, acc: Vec::new() });
+                self.stack.vm_frames[fi].loops[*slot as usize] = Some(LoopCursor::While {
+                    iteration: 0,
+                    acc: Vec::new(),
+                });
                 self.stack.vm_frames[fi]
                     .loop_idx
                     .push(LoopKeyPart::Index(0));

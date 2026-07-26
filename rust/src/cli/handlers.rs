@@ -241,9 +241,7 @@ fn render_warnings_text(program: &Program) -> String {
             .source_map
             .source_for_span(&d.span)
             .unwrap_or(&program.source);
-        if let Some(snippet) =
-            crate::backend::errors::format_source_snippet(src, &d.span)
-        {
+        if let Some(snippet) = crate::backend::errors::format_source_snippet(src, &d.span) {
             out.push_str(&snippet);
             out.push('\n');
         }

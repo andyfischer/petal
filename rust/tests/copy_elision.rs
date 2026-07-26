@@ -80,7 +80,9 @@ fn let_bound_append_accumulator_is_copy_free() {
     // for. A guard against regressing the case that works.
     assert_copy_free(
         "let-bound append accumulator",
-        &format!("let xs = []\nfor i in range(0, {N}) do\n  xs = append(xs, i)\nend\nprint(len(xs))"),
+        &format!(
+            "let xs = []\nfor i in range(0, {N}) do\n  xs = append(xs, i)\nend\nprint(len(xs))"
+        ),
     );
 }
 
@@ -284,7 +286,9 @@ fn state_backed_integrator_is_copy_free() {
 fn state_backed_append_accumulator_is_copy_free() {
     assert_copy_free(
         "state-backed append accumulator",
-        &format!("state xs = []\nfor i in range(0, {N}) do\n  xs = append(xs, i)\nend\nprint(len(xs))"),
+        &format!(
+            "state xs = []\nfor i in range(0, {N}) do\n  xs = append(xs, i)\nend\nprint(len(xs))"
+        ),
     );
 }
 

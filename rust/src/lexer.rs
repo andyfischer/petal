@@ -346,10 +346,7 @@ impl Lexer {
                         self.advance_n(2);
                         self.push_token(Token::DotDot, start);
                     }
-                } else if self
-                    .peek_next()
-                    .is_some_and(|c| c.is_ascii_digit())
-                {
+                } else if self.peek_next().is_some_and(|c| c.is_ascii_digit()) {
                     // A leading-dot float like `.001` (no integer part).
                     self.read_number()?;
                 } else {
@@ -999,7 +996,10 @@ mod tests {
                 Token::Ident("b".into())
             ]
         );
-        assert_eq!(tokenize("1..3"), vec![Token::Int(1), Token::DotDot, Token::Int(3)]);
+        assert_eq!(
+            tokenize("1..3"),
+            vec![Token::Int(1), Token::DotDot, Token::Int(3)]
+        );
     }
 
     #[test]

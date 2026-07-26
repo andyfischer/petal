@@ -329,7 +329,15 @@ impl Parser {
         let body = self.parse_block_until(&[Token::End])?;
         self.expect(&Token::End)?;
         self.ev_close(); // FnDecl
-        let mut stmt = self.mk_stmt(StmtKind::FnDecl { name, params, ret, body }, start);
+        let mut stmt = self.mk_stmt(
+            StmtKind::FnDecl {
+                name,
+                params,
+                ret,
+                body,
+            },
+            start,
+        );
         stmt.exported = exported;
         Ok(stmt)
     }
@@ -386,7 +394,14 @@ impl Parser {
         self.ev_open(SyntaxKind::ForExpr);
         let (var, iter, body) = self.parse_for_inner()?;
         self.ev_close();
-        Ok(self.mk_expr(ExprKind::For { var, iter: Box::new(iter), body }, start))
+        Ok(self.mk_expr(
+            ExprKind::For {
+                var,
+                iter: Box::new(iter),
+                body,
+            },
+            start,
+        ))
     }
 
     /// Shared body of the statement and expression `for` forms: consumes

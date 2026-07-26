@@ -290,6 +290,18 @@ pub(super) fn handle_check(
     match load_into(&mut env, source, source_input) {
         Ok(pid) => {
             let program = env.get_program(pid);
+            // `check` answers "will this run?", so it must lower to bytecode as
+            // well as compile: a program can compile cleanly and still fail to
+            // lower, and `check` is what CI and editors call. Use the same flags
+            // a run would, so `check` and `run` agree on what lowers.
+            if let Some(program) = program
+                && let Err(e) = crate::backend::bytecode::lower_with_flags(
+                    program,
+                    crate::env::Env::opt_flags_from_env(),
+                )
+            {
+                die(json, &e, "lower");
+            }
             let warning_count = program.map_or(0, |p| p.warnings.len());
             if json {
                 let warnings = program

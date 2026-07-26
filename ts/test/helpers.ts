@@ -51,6 +51,14 @@ function capture(args: string[]): {
   };
 }
 
+/**
+ * `petal check --json -e <code>`, parsed, tolerating a non-zero exit — unlike
+ * [`checkJson`], which throws. Use when the failure object *is* the assertion.
+ */
+export function checkJsonAllowFail(code: string): any {
+  return JSON.parse(capture(["check", "--json", "-e", code]).stdout);
+}
+
 /** `petal check -e <code>` (text mode): capture stdout/stderr/exit code. */
 export function checkText(code: string): {
   stdout: string;

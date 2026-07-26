@@ -46,7 +46,7 @@ The same silent shadow applies to `state`, to lambda captures, and to a nested
 `fn` assigning its enclosing function's local. It also applies to three further
 syntactic forms:
 
-```petal
+```petal ignore
 let xs = [1,2,3]          let r = {a: 1}          let i = 0
 fn f() xs[0] = 99         fn f() r.a = 99         fn f() bump(@i)
        xs end                    r end                   i end
@@ -56,7 +56,7 @@ xs  -> [1, 2, 3]          r   -> { a: 1 }         i   -> 0
 
 ### 1b. One control-flow step away, it stops compiling
 
-```petal
+```petal ignore
 let i = 0
 fn f()
   if false then i = 1 end   // condition is never taken; still fails
@@ -73,7 +73,7 @@ for nested functions.
 None of these involve a function boundary. All are pure dataflow (a phi in the
 block that owns the binding), and all must be untouched by any fix:
 
-```petal
+```petal ignore
 fn f(n)                    fn f(n)                  fn f()                    let i = 0
   let i = 0                  if n > 0 then            state i = 0             if true then i = 1 end
   if n > 0 then i = 1 end      n = 100                if true then            print(i)   // 1
@@ -98,6 +98,10 @@ inside `f` and concludes "this accumulates" is wrong, and nothing tells them.
 
 ## 2. The second bug: a phi hoisted onto a shadowed outer name
 
+> **Fixed** in `1ff3aee` (step 2 of §7). The snippet below now compiles, and the
+> doc-snippet harness keeps it that way. The rest of this section is the
+> diagnosis, kept because it explains the fix.
+
 This one is not about assignment across functions at all. It was found by
 lowering the whole corpus, and it hits **`petal-ui/prelude/ui.ptl` — the
 shipped UI prelude.**
@@ -118,7 +122,7 @@ fn f(words)
   99
 end
 print(f(["abcd"]))
-// Error: bytecode lowering failed: term t269 in block b0 not in this function
+// was: Error: bytecode lowering failed: term t269 in block b0 not in this function
 ```
 
 Rename `take` to `zzz` and it compiles and runs. **The only difference is the
@@ -144,9 +148,16 @@ potential break of any user code that uses that name as a local, with an error
 message that points at neither the `let` nor the collision. It is also a
 silent tax on the prelude's namespace.
 
-This bug should be fixed regardless of what is decided about `mut`/`var`.
-It is not an escape-hatch case — there is nothing here anyone wanted to do
-differently.
+This bug was fixed independently of the `var`/`set` work. It is not an
+escape-hatch case — there is nothing here anyone wanted to do differently.
+
+**The fix:** the assigned-name pre-scan behind phi placement
+(`AssignedNames` in `rust/src/compiler/phi.rs`) is now scope-aware.
+`let`/`state` declarations, loop variables and match-pattern bindings shadow
+the enclosing binding, uniformly for all four callers (loop carries, `if`
+bodies, match arms, `while` conditions). A block's declarations are *hoisted*
+over the whole block rather than taking effect at their own line — see
+[§3a](#3a-the-limitation-that-remains).
 
 ---
 
@@ -158,15 +169,16 @@ differently.
 
 | | |
 |---|---|
-| `petal check` passes | 156 / 158 (2 failures are unimplemented syntax in `docs/examples/aspirational/`) |
-| `petal show-bytecode` passes | 152 / 158 |
+| parse+compile clean | 156 / 158 (2 failures are unimplemented syntax in `docs/examples/aspirational/`) |
+| lowers to bytecode | 152 / 158 |
 | fail **only** at lowering | 4 — `petal-ui/prelude/ui.ptl`, and the SDL `invaders` / `platformer` / `tetris` examples |
 
 Two things follow.
 
-**`petal check` does not lower to bytecode**, so it exits 0 on a program that
-cannot run. That is a real gap on its own: `check` is what CI and editors call.
-Lowering belongs in `check`.
+**`petal check` did not lower to bytecode**, so it exited 0 on a program that
+cannot run — and `check` is what CI and editors call, which is why §2 sat
+unnoticed in the shipped prelude. Fixed in step 3 of §7: `check` now lowers with
+the same opt flags a run would use, and reports failures with `"phase": "lower"`.
 
 **The 4 lowering failures split across both bugs**, one each way:
 
@@ -178,7 +190,7 @@ Lowering belongs in `check`.
 The shape in all three is the same, and it is worth quoting because it is the
 strongest argument for the escape hatch (`invaders.ptl:199`):
 
-```petal
+```petal ignore
 state score = 0
 // ...
 aliens = map(aliens, fn(a)
@@ -192,6 +204,35 @@ Accumulating into an outer binding from inside a `map` callback is exactly what
 `var`/`set` is for. These are not sites to rewrite as `let` locals — the intent
 is genuine mutation, there is no dataflow reading of them, and today the
 language offers no way to express it. They are the migration's first customers.
+
+After the §2 fix the corpus stands at **3 lowering failures, all §1b** — the
+three SDL examples, still broken, waiting on `var`/`set`.
+
+### 3a. The limitation that remains
+
+A block's `let`/`state` declarations shadow the *whole* block, not just from
+their own line onward. So an assignment that lexically precedes the declaration
+is still dropped rather than carried:
+
+```petal ignore
+let x = 1
+for i in [1, 2, 3] do
+  x = 5              // targets the outer x -- but is not detected
+  let x = i * 10
+  x = x + 1
+end
+print(x)             // 1, not 5
+```
+
+This is pre-existing, and pinned by the "let shadow disables carry detection"
+case in `ts/test/loop-carry-limitations.test.ts`. It was tempting to fix it in
+the same pass — detection alone is a one-line change — but detecting the name
+without also making `wire_phi_outs` scope-aware makes it *worse*: the shadowed
+local's final value (`31` here) carries out to the outer name instead of the
+assignment being dropped. Wrong-and-loud beats wrong-and-quiet only when the
+loudness is a diagnostic, and this one is a silent bad value. Lifting the
+limitation properly means scope-aware carry-out wiring, which is its own piece
+of work.
 
 **The blast radius of §1a is still unmeasured, and a regex cannot measure it.**
 A text sweep produced hundreds of candidates that turned out to be top-level
@@ -313,7 +354,7 @@ appropriate for an escape hatch.
 
 **Decided: `var x = 0` to declare, `set x = 1` to write.**
 
-```petal
+```petal ignore
 var count = 0
 state var hits = 0
 
@@ -425,7 +466,7 @@ a small change. Run it over all 158 corpus files and count real §1a sites.
 That number decides how much migration tooling step 4 needs. Nothing breaks
 during this step.
 
-**Step 2 — Fix §2, independently.** The hoisted-phi-onto-a-shadowed-name bug is
+**Step 2 — Fix §2, independently.** ✅ done (`1ff3aee`). The hoisted-phi-onto-a-shadowed-name bug is
 not an escape-hatch case and should not wait on any of this. Fix the phi
 placement so it initializes from the binding that is actually in scope at the
 `let`, add `ui.ptl`'s `_wrap_segment` shape as a regression test, and confirm
@@ -433,7 +474,7 @@ the 4 corpus failures drop to 0. Keep
 `lowering_reports_cross_function_term_reference_as_error` — it corrupts IR by
 hand and remains valid as the malformed-IR guard.
 
-**Step 3 — Lower in `petal check`.** One-line-ish, and it is why §2 went
+**Step 3 — Lower in `petal check`.** ✅ done. One-line-ish, and it is why §2 went
 unnoticed: CI and editors call `check`, which today exits 0 on programs that
 cannot run.
 

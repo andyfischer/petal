@@ -197,8 +197,20 @@ fn read_source(input: &SourceInput) -> String {
 /// Print an error and exit(1). In `--json` mode the error is emitted as a JSON
 /// object tagged with `phase`; otherwise as a plain `Error: …` line on stderr.
 fn die(json: bool, err: &str, phase: &str) -> ! {
+    die_with(json, err, phase, serde_json::Value::Null)
+}
+
+/// `die`, plus a `warnings` array on the JSON error object. Diagnostics
+/// describe the source and do not depend on the phase that failed, so a
+/// command that dies late (lowering, say) still reports them — otherwise a
+/// broken file measures as warning-free.
+fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> ! {
     if json {
-        println!("{}", error_to_json(err, phase));
+        let mut obj = error_json_value(err, phase);
+        if !warnings.is_null() {
+            obj["warnings"] = warnings;
+        }
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
     } else {
         eprintln!("Error: {}", err);
     }
@@ -284,7 +296,7 @@ pub fn execute(cli: CliArgs) {
 /// Parse an error string into a structured JSON object.
 /// Extracts `[line N, column M]`, `Caused by:` (provenance), and
 /// `Stack trace:` suffixes produced by the evaluator, lexer, and parser.
-fn error_to_json(err: &str, phase: &str) -> String {
+fn error_json_value(err: &str, phase: &str) -> serde_json::Value {
     // Split off stack trace first (always last)
     let (head, stack) = match err.split_once("\nStack trace:") {
         Some((h, rest)) => (h.to_string(), split_indented_lines(rest)),
@@ -300,7 +312,7 @@ fn error_to_json(err: &str, phase: &str) -> String {
     // Extract [line N, column M] from the primary message line
     let (message, line, column) = parse_line_column(&head);
 
-    let obj = serde_json::json!({
+    serde_json::json!({
         "error": true,
         "phase": phase,
         "message": message,
@@ -308,8 +320,7 @@ fn error_to_json(err: &str, phase: &str) -> String {
         "column": column,
         "caused_by": caused_by,
         "stack": stack,
-    });
-    serde_json::to_string_pretty(&obj).unwrap()
+    })
 }
 
 fn split_indented_lines(s: &str) -> Vec<String> {

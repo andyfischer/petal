@@ -99,12 +99,11 @@ print(visited)`);
   });
 });
 
-describe("known limitation: let shadow disables carry detection", () => {
-  it("assignment to outer name is lost when body has a let shadow", () => {
-    // `let x` anywhere at the top level of the body excludes `x` from
-    // carry detection entirely, so `x = 5` inside the loop never escapes.
-    // Fixing this requires in-order detection (compile-time tracking of
-    // currently-bound outer names).
+describe("a let shadow splits the name at the declaration", () => {
+  it("an assignment before the shadow still carries out", () => {
+    // `x = 5` lexically precedes `let x`, so it targets the outer `x` and
+    // carries out; everything after the declaration is body-local and does
+    // not. See docs/lowering-confusion-20260726.md §3a.
     const out = runPetal(`let x = 1
 for i in [1, 2, 3] do
   x = 5
@@ -112,7 +111,39 @@ for i in [1, 2, 3] do
   x = x + 1
 end
 print(x)`);
+    expect(out.trim()).toBe("5");
+  });
+
+  it("an assignment after the shadow stays local", () => {
+    const out = runPetal(`let x = 1
+for i in [1, 2, 3] do
+  let x = i * 10
+  x = x + 1
+end
+print(x)`);
     expect(out.trim()).toBe("1");
+  });
+
+  it("carries out of a nested block that precedes the shadow", () => {
+    const out = runPetal(`let x = 1
+for i in [1, 2, 3] do
+  if i > 1 then x = i end
+  let x = 99
+  x = x + 1
+end
+print(x)`);
+    expect(out.trim()).toBe("3");
+  });
+
+  it("splits the same way inside an if body", () => {
+    const out = runPetal(`let x = 1
+if true then
+  x = 5
+  let x = 2
+  x = x + 1
+end
+print(x)`);
+    expect(out.trim()).toBe("5");
   });
 
   it("without a let shadow, the assignment carries correctly", () => {

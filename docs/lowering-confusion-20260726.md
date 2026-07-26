@@ -155,23 +155,23 @@ escape-hatch case — there is nothing here anyone wanted to do differently.
 (`AssignedNames` in `rust/src/compiler/phi.rs`) is now scope-aware.
 `let`/`state` declarations, loop variables and match-pattern bindings shadow
 the enclosing binding, uniformly for all four callers (loop carries, `if`
-bodies, match arms, `while` conditions). A block's declarations are *hoisted*
-over the whole block rather than taking effect at their own line — see
-[§3a](#3a-the-limitation-that-remains).
+bodies, match arms, `while` conditions). Declarations take effect at their own
+line; the carry-out side of that is [§3a](#3a-shadowing-is-now-lexical).
 
 ---
 
 ## 3. Corpus evidence
 
-158 `.ptl` files across `~/petal`, `~/garden`, `~/game-prototypes/worldsfair`,
+`.ptl` files across `~/petal`, `~/garden`, `~/game-prototypes/worldsfair`,
 `~/biz/petal-lang.org`, `~/biz/experiment-cube-browser`,
-`~/biz/experiment-todo-app`, `~/biz/hotlaps`.
+`~/biz/experiment-todo-app`, `~/biz/hotlaps` — 158 when first measured, 178 now
+(the sweep recipe is in §3b; the growth is new files, not a wider net).
 
-| | |
-|---|---|
-| parse+compile clean | 156 / 158 (2 failures are unimplemented syntax in `docs/examples/aspirational/`) |
-| lowers to bytecode | 152 / 158 |
-| fail **only** at lowering | 4 — `petal-ui/prelude/ui.ptl`, and the SDL `invaders` / `platformer` / `tetris` examples |
+| | first measurement | now |
+|---|---|---|
+| parse+compile clean | 156 / 158 | 176 / 178 (the 2 are unimplemented syntax in `docs/examples/aspirational/`) |
+| lowers to bytecode | 152 / 158 | 173 / 178 |
+| fail **only** at lowering | 4 — `petal-ui/prelude/ui.ptl` + the SDL `invaders` / `platformer` / `tetris` examples | 3 — the SDL examples, all §1b |
 
 Two things follow.
 
@@ -208,37 +208,78 @@ language offers no way to express it. They are the migration's first customers.
 After the §2 fix the corpus stands at **3 lowering failures, all §1b** — the
 three SDL examples, still broken, waiting on `var`/`set`.
 
-### 3a. The limitation that remains
+### 3a. Shadowing is now lexical
 
-A block's `let`/`state` declarations shadow the *whole* block, not just from
-their own line onward. So an assignment that lexically precedes the declaration
-is still dropped rather than carried:
+> **Fixed.** A `let`/`state` shadows from its own line onward, and an assignment
+> that lexically precedes it targets the outer binding and carries out.
 
-```petal ignore
+```petal
 let x = 1
 for i in [1, 2, 3] do
-  x = 5              // targets the outer x -- but is not detected
+  x = 5              // targets the outer x, and reaches it
   let x = i * 10
-  x = x + 1
+  x = x + 1          // body-local
 end
-print(x)             // 1, not 5
+print(x)             // 5
 ```
 
-This is pre-existing, and pinned by the "let shadow disables carry detection"
-case in `ts/test/loop-carry-limitations.test.ts`. It was tempting to fix it in
-the same pass — detection alone is a one-line change — but detecting the name
-without also making `wire_phi_outs` scope-aware makes it *worse*: the shadowed
-local's final value (`31` here) carries out to the outer name instead of the
-assignment being dropped. Wrong-and-loud beats wrong-and-quiet only when the
-loudness is a diagnostic, and this one is a silent bad value. Lifting the
-limitation properly means scope-aware carry-out wiring, which is its own piece
-of work.
+The first attempt at this made the pre-scan lexical and stopped there, which
+was worse than the bug: `wire_phi_outs` reads the block's *final* binding, so
+the shadowed local's value (`31` here) carried out to the outer name — a silent
+wrong answer in place of a dropped assignment. The missing half is
+`Compiler::note_shadow`. At the declaration it freezes the value the block will
+carry out for that name, and from there the name is block-local: rebinds stop
+sharing the loop's carry slot and stop updating `block_rebinds`. So the
+pre-shadow assignment escapes, the post-shadow ones don't, and the two halves
+of the name never touch. Covered by `ts/test/loop-carry-limitations.test.ts`
+(loop body, nested block, and `if` body) and the walker tests in
+`rust/src/compiler/phi.rs`.
 
-**The blast radius of §1a is still unmeasured, and a regex cannot measure it.**
-A text sweep produced hundreds of candidates that turned out to be top-level
-assignments inside top-level `if`s — legal, common, and untouched by any
-proposal here. The only trustworthy sweep is the compiler check itself, which
-is why it is step 1 of the plan below.
+### 3b. Measuring §1a
+
+**A regex cannot measure the blast radius of §1a.** A text sweep produced
+hundreds of candidates that turned out to be top-level assignments inside
+top-level `if`s — legal, common, and untouched by any proposal here. The only
+trustworthy sweep is the compiler itself, which is why the warning (step 1) came
+before anything that breaks. To repeat the measurement:
+
+```sh
+find <roots> -name '*.ptl' -not -path '*/node_modules/*' -not -path '*/target/*' \
+  | xargs -n1 petal check --json \
+  | grep -c 'bound outside this function'
+```
+
+With the warning in, **178 corpus files hold 51 cross-function assignment sites,
+in 5 files** — all of them games:
+
+| file | sites | |
+|---|---|---|
+| `sample-apps/side-scroller/game.ptl` | 22 | runs today; the assignments do nothing |
+| `sample-apps/side-scroller/editor.ptl` | 8 | " |
+| SDL `tetris.ptl` | 13 | §1b — does not lower |
+| SDL `invaders.ptl` | 7 | " |
+| SDL `platformer.ptl` | 1 | " |
+
+Everything else — `petal-ui`, the Garden GPP apps, the website snippets, the
+worldsfair UI, the cube and todo experiments — is clean. The migration is small
+and it is concentrated where the doc predicted: imperative game loops.
+
+The side-scroller pair is the sharper finding, because those two *run*. `game.ptl`
+has whole functions that are no-ops:
+
+```petal ignore
+fn respawn_player()
+    let spawn = level.start
+    if checkpoint != nil then spawn = checkpoint end
+    px = spawn.x            // eleven assignments, none of which
+    py = spawn.y            // reach the module-level state
+    // ...
+end
+```
+
+`respawn_player()` and `restart_level()` do nothing at all, silently, and have
+presumably always done nothing. This is §1a's cost stated as a bug report rather
+than an argument, and it is the case for making the warning an error.
 
 ---
 
@@ -458,13 +499,26 @@ able to see them.
 
 ## 7. Plan
 
-**Step 1 — Measure (do this first).** Implement the §4 check in the compiler
-as a *warning* on the non-fatal `Diagnostic` channel (`rust/src/diagnostic.rs`
-+ `Program.warnings`, the same channel the type checker uses). `needs_capture`
-in `rust/src/compiler/function.rs:166` already answers the question; this is
-a small change. Run it over all 158 corpus files and count real §1a sites.
-That number decides how much migration tooling step 4 needs. Nothing breaks
-during this step.
+**Step 1 — Measure (do this first).** ✅ done. The §4 check is a *warning* on the
+non-fatal `Diagnostic` channel, raised at every assignment site whose target is
+bound outside the current function. Results in §3b: **51 sites in 5 files** out
+of 178, all games — small enough that step 5 needs no migration tooling, just
+per-site judgment. Nothing breaks in this step; `petal check --strict` is the
+only thing that goes red.
+
+Two wrinkles, both worth knowing before the check becomes an error:
+
+- `needs_capture` was not enough on its own. It answers "does this reference
+  need a capture *right now*", which goes false the moment the capture phantom
+  is bound into the function's boundary scope — and false again for every
+  assignment after the first, because control-flow compilation rebinds the name
+  to a phi. `is_outer_function_binding` adds the capture-phantom case and a
+  `cross_fn_terms` set that marks the phis and seed copies standing in for an
+  outer binding, so every site is reported and a local `let` still silences it.
+- Warnings had to survive a failed lowering. §1b programs compile, warn, and
+  then die in `lower` — so `check` reported them as warning-free, which would
+  have undercounted the three SDL examples by 21 sites. `check` now emits
+  diagnostics before it dies, in text and JSON alike.
 
 **Step 2 — Fix §2, independently.** ✅ done (`1ff3aee`). The hoisted-phi-onto-a-shadowed-name bug is
 not an escape-hatch case and should not wait on any of this. Fix the phi

@@ -22,11 +22,12 @@ impl Compiler {
             StmtKind::Let { name, value, .. } => {
                 let val_tid = self.compile_expr(value);
                 self.terms[val_tid.0 as usize].name = Some(name.clone());
+                self.note_shadow(name);
                 self.scope_bind(name.clone(), val_tid);
             }
 
             StmtKind::Assign { target, value } => {
-                self.compile_assign(target, value);
+                self.compile_assign(target, value, stmt_span);
             }
 
             StmtKind::Expr(expr) => {
@@ -213,6 +214,7 @@ impl Compiler {
             c.compile_expr(init);
         });
 
+        self.note_shadow(name);
         self.scope_bind(name.to_string(), state_tid);
     }
 
@@ -252,7 +254,8 @@ impl Compiler {
     // Assignment compilation
     // -----------------------------------------------------------------------
 
-    fn compile_assign(&mut self, target: &AssignTarget, value: &Expr) {
+    fn compile_assign(&mut self, target: &AssignTarget, value: &Expr, span: SourceSpan) {
+        self.warn_if_assigning_outer_function_binding(target, span);
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
             AssignTarget::Field(object, field) => match Self::resolve_assign_target(object) {
@@ -270,6 +273,39 @@ impl Compiler {
                 None => self.emit_dead_store_error(),
             },
         }
+    }
+
+    /// Warn when an assignment targets a name bound outside the function being
+    /// compiled. Such an assignment does not modify that binding — it creates a
+    /// function-local shadow — so the code reads as a dataflow edge that isn't
+    /// there. This is the measurement step for the planned `var`/`set` work: a
+    /// warning today, an error once the escape hatch exists.
+    /// See docs/lowering-confusion-20260726.md §4.
+    ///
+    /// Must run *before* the value expression is compiled: compiling it may
+    /// create the capture phantom for the same name.
+    fn warn_if_assigning_outer_function_binding(
+        &mut self,
+        target: &AssignTarget,
+        span: SourceSpan,
+    ) {
+        let root = match target {
+            AssignTarget::Name(name) => Some(name.as_str()),
+            AssignTarget::Field(object, _) | AssignTarget::Index(object, _) => {
+                Self::resolve_assign_target(object).map(|(root, _)| root)
+            }
+        };
+        let Some(root) = root.filter(|n| self.is_outer_function_binding(n)) else {
+            return;
+        };
+        self.warnings.push(crate::diagnostic::Diagnostic {
+            span,
+            message: format!(
+                "`{root}` is bound outside this function; this assignment creates a \
+                 local shadow and does not modify `{root}`. Use `let` for a new local, \
+                 or return the value"
+            ),
+        });
     }
 
     /// Walk an assignment-target object expression into a (root variable name,
@@ -427,6 +463,7 @@ impl Compiler {
             self.terms[assign_tid.0 as usize].register = slot;
         }
         if let Some(existing_tid) = self.scope_lookup(name) {
+            self.propagate_cross_fn(existing_tid, assign_tid);
             let existing_block = self.terms[existing_tid.0 as usize].block_id;
             // A name that already has a rebind logged in this block crossed a
             // block boundary on its first reassignment here. Subsequent
@@ -434,10 +471,14 @@ impl Compiler {
             // *latest* binding, otherwise the enclosing conditional's phi-out
             // wires from the first rebind and later writes are dropped (e.g.
             // two `append`s to a loop-carried var inside an `if`).
+            // …unless the block declared its own `let`/`state` for the name in
+            // the meantime, in which case this write targets that local and
+            // must not touch the block's carry-out (see `note_shadow`).
             let already_rebound_here = self
                 .block_rebinds
                 .get(&self.current_block)
-                .is_some_and(|m| m.contains_key(name));
+                .is_some_and(|m| m.contains_key(name))
+                && !self.is_shadowed_in_current_block(name);
             if existing_block == self.current_block && !already_rebound_here {
                 self.scope_bind(name.to_string(), assign_tid);
             } else {

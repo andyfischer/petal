@@ -14,7 +14,7 @@ use crate::lexer::Lexer;
 use crate::program::{Program, ProgramId, Term, TermId};
 use crate::source_map::ENTRY_FILE;
 
-use super::{SourceInput, die, die_plain};
+use super::{SourceInput, die, die_plain, die_with};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_run(
@@ -300,7 +300,13 @@ pub(super) fn handle_check(
                     crate::env::Env::opt_flags_from_env(),
                 )
             {
-                die(json, &e, "lower");
+                // Warnings are about the source, not the lowering, so report
+                // them even though the program can't run — a sweep over a
+                // corpus must not score a broken file as warning-free.
+                if !json {
+                    eprint_warnings(program);
+                }
+                die_with(json, &e, "lower", warnings_json(program));
             }
             let warning_count = program.map_or(0, |p| p.warnings.len());
             if json {

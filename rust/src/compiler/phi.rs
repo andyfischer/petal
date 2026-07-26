@@ -85,7 +85,6 @@ impl Compiler {
 
     fn collect_assigned_names_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
         let mut v = AssignedNames::new(out);
-        v.hoist_decls(stmts);
         for s in stmts {
             v.visit_stmt(s);
         }
@@ -127,8 +126,17 @@ impl Compiler {
                 Some(t) => t,
                 None => continue,
             };
+            // Before the phi takes over the binding, note whether this name
+            // belongs to an enclosing function — afterwards every lookup finds
+            // the phi and the fact is unrecoverable (see `cross_fn_terms`).
+            let crosses = self.is_outer_function_binding(name);
             let phi_tid = self.emit_term(TermOp::Phi, smallvec![outer_tid], Some(name.clone()));
             self.source_map.add(phi_tid, span);
+            if crosses {
+                self.cross_fn_terms.insert(phi_tid);
+            } else {
+                self.propagate_cross_fn(outer_tid, phi_tid);
+            }
             // If this phi is landing in an enclosing loop's body block and
             // joins an outer carry name, rewrite its register to the shared
             // carry slot so nested-branch rebinds propagate through to the
@@ -149,8 +157,26 @@ impl Compiler {
     /// callers (scope still live → read via `scope_lookup`). Branches
     /// that don't rebind a phi'd name don't get a phi_out, so the phi
     /// keeps its init value.
+    ///
+    /// A name the block shadowed with its own `let`/`state` carries out the
+    /// value frozen at the declaration, not whatever the shadowed local ended
+    /// up holding (see `note_shadow`).
     pub(super) fn wire_phi_outs(&mut self, body_block: BlockId, phis: &[(String, TermId)]) {
         for (name, phi_tid) in phis {
+            if let Some(frozen) = self
+                .block_shadowed
+                .get(&body_block)
+                .and_then(|m| m.get(name))
+                .copied()
+            {
+                if let Some(src_tid) = frozen {
+                    self.blocks[body_block.0 as usize].phi_outs.push(PhiOut {
+                        src_term: src_tid,
+                        dest_term: *phi_tid,
+                    });
+                }
+                continue;
+            }
             let src = self
                 .block_rebinds
                 .get(&body_block)
@@ -206,6 +232,7 @@ impl Compiler {
         let mut slots = HashMap::new();
         for (name, phi_tid) in phis {
             let in_tid = self.emit_term(TermOp::Copy, smallvec![*phi_tid], Some(name.clone()));
+            self.propagate_cross_fn(*phi_tid, in_tid);
             // If this carried name is a `state` variable, tag the body-entry
             // Copy with its state key. Without this, a reassignment inside the
             // loop body (`s = append(s, x)`) resolves via `find_state_init` to
@@ -245,6 +272,7 @@ impl Compiler {
                 continue;
             }
             let in_tid = self.emit_term(TermOp::Copy, smallvec![*phi_tid], Some(name.clone()));
+            self.propagate_cross_fn(*phi_tid, in_tid);
             // Keep state-variable reassignment resolvable through the seed
             // (same reasoning as the loop-body path above).
             if let Some(init_tid) = self.find_state_init(*phi_tid) {
@@ -264,10 +292,53 @@ impl Compiler {
     /// `phi_outs` on child-frame pop / arm exit.
     pub(super) fn carry_slot_for_current_block(&self, name: &str) -> Option<RegisterIndex> {
         let (body_block, slots) = self.carry_slots.last()?;
-        if self.current_block != *body_block {
+        if self.current_block != *body_block || self.is_shadowed_in_current_block(name) {
             return None;
         }
         slots.get(name).copied()
+    }
+
+    /// Carry the "stands in for an enclosing function's binding" mark from one
+    /// term to the term that replaces it as a name's binding.
+    pub(super) fn propagate_cross_fn(&mut self, from: TermId, to: TermId) {
+        if self.cross_fn_terms.contains(&from) {
+            self.cross_fn_terms.insert(to);
+        }
+    }
+
+    /// Has the current block redeclared `name` with its own `let`/`state`?
+    /// Once it has, the name is block-local: rebinds neither share the carry
+    /// slot nor update `block_rebinds`.
+    pub(super) fn is_shadowed_in_current_block(&self, name: &str) -> bool {
+        self.block_shadowed
+            .get(&self.current_block)
+            .is_some_and(|m| m.contains_key(name))
+    }
+
+    /// Record that a `let`/`state` in the current block is about to shadow
+    /// `name`, freezing the value the block should carry out for it.
+    ///
+    /// The pre-scan is lexical, so an assignment *preceding* the declaration is
+    /// detected as a rebind of the outer name and gets a phi. Without freezing,
+    /// `wire_phi_outs` would then read the block's final binding — the shadowed
+    /// local — and carry *its* value out to the outer name. Freezing here means
+    /// the pre-shadow assignment carries out and everything after the
+    /// declaration stays local, which is what the source says.
+    /// See docs/lowering-confusion-20260726.md §3a.
+    pub(super) fn note_shadow(&mut self, name: &str) {
+        // Only the value that lives in this block can be carried out of it; a
+        // binding from an enclosing block means the block contributed nothing
+        // before the shadow, so there is no phi_out to wire.
+        let frozen = self
+            .scope_lookup(name)
+            .filter(|tid| self.terms[tid.0 as usize].block_id == self.current_block);
+        self.block_shadowed
+            .entry(self.current_block)
+            .or_default()
+            // The first shadow wins: a second `let` of the same name in the
+            // block is redeclaring an already-local binding.
+            .entry(name.to_string())
+            .or_insert(frozen);
     }
 
     /// Compile the body of a for/while loop. Manages loop-depth tracking,
@@ -367,35 +438,17 @@ impl<'a> AssignedNames<'a> {
 
     /// Visit a statement list as its own scope.
     ///
-    /// Declarations are **hoisted**: every `let`/`state` in the list shadows for
-    /// the whole block, not just from its own line onward. That is deliberately
-    /// broader than lexical scoping — an assignment *preceding* the declaration
-    /// really does target the outer binding — but detecting it here is not
-    /// enough to make it work, because `wire_phi_outs` would then carry the
-    /// shadowed local's final value back out to the outer name. Reporting the
-    /// name only to mis-wire it is worse than not reporting it, so the
-    /// pre-existing limitation stands; see the "let shadow disables carry
-    /// detection" case in ts/test/loop-carry-limitations.test.ts. Lifting it
-    /// needs scope-aware carry-out wiring, not just a scope-aware pre-scan.
+    /// Declarations take effect **from their own line onward**, so an
+    /// assignment that lexically precedes a `let` of the same name still
+    /// targets the outer binding and is reported. The compiler freezes the
+    /// carry-out value at the declaration (`Compiler::note_shadow`), so the
+    /// shadowed local's final value never leaks back to the outer name.
     fn visit_stmts(&mut self, stmts: &[Stmt]) {
         self.push_scope();
-        self.hoist_decls(stmts);
         for s in stmts {
             self.visit_stmt(s);
         }
         self.pop_scope();
-    }
-
-    /// Declare every name this statement list binds with `let`/`state`, before
-    /// any of it is walked. Only the list's own top level — nested blocks hoist
-    /// their own when they are visited.
-    fn hoist_decls(&mut self, stmts: &[Stmt]) {
-        for s in stmts {
-            match &s.kind {
-                StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.bind(name),
-                _ => {}
-            }
-        }
     }
 
     /// Declare every name a match pattern binds.
@@ -428,14 +481,21 @@ impl<'a> AssignedNames<'a> {
 impl ExprVisitor for AssignedNames<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            // Already shadowed by `hoist_decls` for this whole block; only the
-            // initializer still needs walking.
-            StmtKind::Let { value, .. } => self.visit_expr(value),
-            StmtKind::State { init, key, .. } => {
+            // The initializer is walked in the *pre*-declaration scope (it can
+            // legitimately read the outer binding), then the name shadows for
+            // the rest of this block.
+            StmtKind::Let { name, value, .. } => {
+                self.visit_expr(value);
+                self.bind(name);
+            }
+            StmtKind::State {
+                name, init, key, ..
+            } => {
                 self.visit_expr(init);
                 if let Some(k) = key {
                     self.visit_expr(k);
                 }
+                self.bind(name);
             }
             StmtKind::Assign {
                 target: AssignTarget::Name(n),
@@ -464,7 +524,6 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
-                self.hoist_decls(body);
                 for s in body {
                     self.visit_stmt(s);
                 }
@@ -511,7 +570,6 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
-                self.hoist_decls(body);
                 for s in body {
                     self.visit_stmt(s);
                 }
@@ -597,14 +655,15 @@ mod walker_tests {
     }
 
     #[test]
-    fn declarations_are_hoisted_over_the_whole_block() {
-        // Lexically `y = f(y)` targets the OUTER y — the shadow starts on the
-        // next line — so a perfectly scope-aware scan would report it. It is
-        // deliberately not reported: `wire_phi_outs` would then carry the
-        // shadowed local's final value back out to the outer name, which is
-        // worse than dropping the assignment. Pinned by the "let shadow
-        // disables carry detection" case in loop-carry-limitations.test.ts.
-        assert!(assigned("y = f(y)\nlet y = 1\n").is_empty());
+    fn a_declaration_shadows_only_from_its_own_line_onward() {
+        // `y = f(y)` lexically targets the OUTER y — the shadow starts on the
+        // next line — so it is reported. `Compiler::note_shadow` freezes the
+        // carry-out at the `let`, so the shadowed local's later value cannot
+        // leak back out. See docs/lowering-confusion-20260726.md §3a.
+        assert_eq!(assigned("y = f(y)\nlet y = 1\n"), vec!["y"]);
+        assert_eq!(assigned("y = f(y)\nlet y = 1\ny = g(y)\n"), vec!["y"]);
+        // A declaration on the first line still shadows everything after it.
+        assert!(assigned("let y = 1\ny = f(y)\n").is_empty());
     }
 
     #[test]

@@ -178,6 +178,42 @@ impl Compiler {
         false
     }
 
+    /// Is `name` bound outside the function currently being compiled?
+    ///
+    /// Unlike [`Self::needs_capture`] this stays true after the capture has
+    /// been created. A capture phantom is bound *in* the function's boundary
+    /// scope (so later reads resolve to it directly), which makes
+    /// `needs_capture` report `false` from the second reference onward — fine
+    /// for capture bookkeeping, wrong for diagnosing assignment, which must
+    /// fire at every site regardless of what the body read first.
+    pub(super) fn is_outer_function_binding(&self, name: &str) -> bool {
+        let Some(&boundary) = self.function_boundaries.last() else {
+            return false;
+        };
+        // A phi / seed copy / reassignment standing in for the outer binding
+        // (see `cross_fn_terms`) is bound locally but is still that binding.
+        if self
+            .scope_lookup(name)
+            .is_some_and(|tid| self.cross_fn_terms.contains(&tid))
+        {
+            return true;
+        }
+        for (i, scope) in self.scopes.iter().enumerate().rev() {
+            if scope.contains_key(name) {
+                return i < boundary
+                    // At the boundary scope itself, params and locals sit
+                    // alongside capture phantoms; only the latter stand in for
+                    // a binding from an enclosing function.
+                    || (i == boundary
+                        && self
+                            .capture_stack
+                            .last()
+                            .is_some_and(|caps| caps.iter().any(|c| c.name == name)));
+            }
+        }
+        false
+    }
+
     /// Get or create a capture phantom for a cross-function variable reference.
     ///
     /// When the binding lives several function boundaries out from the

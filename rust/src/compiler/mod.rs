@@ -14,7 +14,7 @@ mod function;
 mod phi;
 mod stmt;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use smallvec::{SmallVec, smallvec};
 
@@ -94,6 +94,25 @@ pub struct Compiler {
     // compile-time "latest" rebind term never ran in that iteration.
     carry_slots: Vec<(BlockId, HashMap<String, RegisterIndex>)>,
 
+    // Terms that stand in, inside some function, for a binding owned by an
+    // enclosing function: the phis and seed copies that control-flow
+    // compilation installs for a name assigned across a function boundary.
+    // They keep `is_outer_function_binding` honest after the name has been
+    // rebound locally — without them only the first assignment in a branch
+    // would be diagnosed, since every later lookup finds the phi.
+    // See docs/lowering-confusion-20260726.md §4.
+    cross_fn_terms: HashSet<TermId>,
+
+    // Per-block local-shadow log: block → (name → the binding that was live in
+    // this block immediately before a `let`/`state` in it redeclared the name,
+    // or `None` if there was no such in-block binding). Populated by
+    // `note_shadow` when a declaration shadows a name the enclosing control
+    // flow is carrying. From that point on the name is block-local: rebinds
+    // stop sharing the carry slot and stop updating `block_rebinds`, and
+    // `wire_phi_outs` carries the *frozen* pre-shadow value out instead of the
+    // shadowed local's final value. See docs/lowering-confusion-20260726.md §3a.
+    block_shadowed: HashMap<BlockId, HashMap<String, Option<TermId>>>,
+
     // Map from a state variable's StateKey back to its `StateInit` term. Used
     // by `compile_assign` to emit a `StateWrite` even after the state name has
     // been rebound (which replaces its scope binding with a `Copy` term, so a
@@ -154,6 +173,8 @@ impl Compiler {
             overload_variants: HashMap::new(),
             block_rebinds: HashMap::new(),
             carry_slots: Vec::new(),
+            block_shadowed: HashMap::new(),
+            cross_fn_terms: HashSet::new(),
             state_inits: HashMap::new(),
             builtin_phantoms: HashMap::new(),
             current_module: None,

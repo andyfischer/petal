@@ -85,6 +85,7 @@ impl Compiler {
 
     fn collect_assigned_names_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
         let mut v = AssignedNames::new(out);
+        v.hoist_decls(stmts);
         for s in stmts {
             v.visit_stmt(s);
         }
@@ -364,12 +365,37 @@ impl<'a> AssignedNames<'a> {
         self.out.push(name.to_string());
     }
 
-    fn visit_body(&mut self, stmts: &[Stmt]) {
+    /// Visit a statement list as its own scope.
+    ///
+    /// Declarations are **hoisted**: every `let`/`state` in the list shadows for
+    /// the whole block, not just from its own line onward. That is deliberately
+    /// broader than lexical scoping — an assignment *preceding* the declaration
+    /// really does target the outer binding — but detecting it here is not
+    /// enough to make it work, because `wire_phi_outs` would then carry the
+    /// shadowed local's final value back out to the outer name. Reporting the
+    /// name only to mis-wire it is worse than not reporting it, so the
+    /// pre-existing limitation stands; see the "let shadow disables carry
+    /// detection" case in ts/test/loop-carry-limitations.test.ts. Lifting it
+    /// needs scope-aware carry-out wiring, not just a scope-aware pre-scan.
+    fn visit_stmts(&mut self, stmts: &[Stmt]) {
         self.push_scope();
+        self.hoist_decls(stmts);
         for s in stmts {
             self.visit_stmt(s);
         }
         self.pop_scope();
+    }
+
+    /// Declare every name this statement list binds with `let`/`state`, before
+    /// any of it is walked. Only the list's own top level — nested blocks hoist
+    /// their own when they are visited.
+    fn hoist_decls(&mut self, stmts: &[Stmt]) {
+        for s in stmts {
+            match &s.kind {
+                StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.bind(name),
+                _ => {}
+            }
+        }
     }
 
     /// Declare every name a match pattern binds.
@@ -402,20 +428,14 @@ impl<'a> AssignedNames<'a> {
 impl ExprVisitor for AssignedNames<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            // A declaration shadows from its initializer onward, not before —
-            // the initializer still reads (and may assign) the outer binding.
-            StmtKind::Let { name, value, .. } => {
-                self.visit_expr(value);
-                self.bind(name);
-            }
-            StmtKind::State {
-                name, init, key, ..
-            } => {
+            // Already shadowed by `hoist_decls` for this whole block; only the
+            // initializer still needs walking.
+            StmtKind::Let { value, .. } => self.visit_expr(value),
+            StmtKind::State { init, key, .. } => {
                 self.visit_expr(init);
                 if let Some(k) = key {
                     self.visit_expr(k);
                 }
-                self.bind(name);
             }
             StmtKind::Assign {
                 target: AssignTarget::Name(n),
@@ -444,6 +464,7 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
+                self.hoist_decls(body);
                 for s in body {
                     self.visit_stmt(s);
                 }
@@ -451,7 +472,7 @@ impl ExprVisitor for AssignedNames<'_> {
             }
             StmtKind::While { condition, body } => {
                 self.visit_expr(condition);
-                self.visit_body(body);
+                self.visit_stmts(body);
             }
             _ => ast::walk_stmt(self, s),
         }
@@ -467,9 +488,9 @@ impl ExprVisitor for AssignedNames<'_> {
                 else_body,
             } => {
                 self.visit_expr(condition);
-                self.visit_body(then_body);
+                self.visit_stmts(then_body);
                 match else_body {
-                    Some(ElseBranch::Block(stmts)) => self.visit_body(stmts),
+                    Some(ElseBranch::Block(stmts)) => self.visit_stmts(stmts),
                     Some(ElseBranch::ElseIf(e)) => self.visit_expr(e),
                     None => {}
                 }
@@ -490,12 +511,13 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
+                self.hoist_decls(body);
                 for s in body {
                     self.visit_stmt(s);
                 }
                 self.pop_scope();
             }
-            ExprKind::Block(stmts) => self.visit_body(stmts),
+            ExprKind::Block(stmts) => self.visit_stmts(stmts),
             _ => ast::walk_expr(self, e),
         }
     }
@@ -575,9 +597,14 @@ mod walker_tests {
     }
 
     #[test]
-    fn a_declaration_does_not_shadow_its_own_initializer() {
-        // `let x = f(x)` reads (and here reassigns) the *outer* x first.
-        assert_eq!(assigned("y = f(y)\nlet y = 1\n"), vec!["y"]);
+    fn declarations_are_hoisted_over_the_whole_block() {
+        // Lexically `y = f(y)` targets the OUTER y — the shadow starts on the
+        // next line — so a perfectly scope-aware scan would report it. It is
+        // deliberately not reported: `wire_phi_outs` would then carry the
+        // shadowed local's final value back out to the outer name, which is
+        // worse than dropping the assignment. Pinned by the "let shadow
+        // disables carry detection" case in loop-carry-limitations.test.ts.
+        assert!(assigned("y = f(y)\nlet y = 1\n").is_empty());
     }
 
     #[test]

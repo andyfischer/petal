@@ -44,52 +44,58 @@ enum Phase
 end
 
 // ----------------------------- STATE ----------------------------------
+//
+// The names respawn_player() / restart_level() / say() write are `state var`
+// and are written with `set`: a function cannot rebind a name from an
+// enclosing scope, so plain `=` in there only ever built a local shadow and
+// the reset never reached the player. The rest stay plain `state`, rebound
+// with `=` by the frame body below, where the rebind is a real dataflow edge.
 
-state phase         = Title
-state level_idx     = 0
-state level_loaded  = -1
-state level         = nil
-state level_files   = [
+state phase            = Title
+state level_idx        = 0
+state var level_loaded = -1
+state var level        = nil
+state level_files      = [
     "side-scroller/levels/01_first_steps.lvl",
     "side-scroller/levels/02_cavern.lvl",
     "side-scroller/levels/03_sky_ruins.lvl"
 ]
-state level_titles  = ["First Steps", "Cavern Dive", "Sky Ruins"]
-state best_times    = [9999.0, 9999.0, 9999.0]
-state best_coins    = [0, 0, 0]
+state level_titles     = ["First Steps", "Cavern Dive", "Sky Ruins"]
+state best_times       = [9999.0, 9999.0, 9999.0]
+state best_coins       = [0, 0, 0]
 
 // Player physics
-state px            = 100.0
-state py            = 400.0
-state vx            = 0.0
-state vy            = 0.0
-state on_ground     = false
-state facing        = 1
-state coyote        = 0.0
-state jump_buf      = 0.0
-state invul         = 0.0
-state squash        = 1.0          // height scale, < 1 = squashed
-state stretch       = 1.0          // width scale, < 1 = stretched (tall)
-state lives         = 3
-state coins_got     = 0
-state level_timer   = 0.0
-state checkpoint    = nil
+state var px           = 100.0
+state var py           = 400.0
+state var vx           = 0.0
+state var vy           = 0.0
+state var on_ground    = false
+state var facing       = 1
+state var coyote       = 0.0
+state var jump_buf     = 0.0
+state var invul        = 0.0
+state var squash       = 1.0          // height scale, < 1 = squashed
+state var stretch      = 1.0          // width scale, < 1 = stretched (tall)
+state lives            = 3
+state var coins_got    = 0
+state var level_timer  = 0.0
+state var checkpoint   = nil
 
 // Camera
-state cam_x         = 0.0
-state cam_target    = 0.0
-state shake         = 0.0
-state shake_dx      = 0.0
-state shake_dy      = 0.0
+state var cam_x        = 0.0
+state cam_target       = 0.0
+state var shake        = 0.0
+state shake_dx         = 0.0
+state shake_dy         = 0.0
 
 // Visual extras
-state particles     = []
-state floats        = []           // floating "+1" texts etc.
-state title_t       = 0.0
-state menu_idx      = 0
-state phase_t       = 0.0          // time spent in current phase
-state toast         = ""
-state toast_t       = 0.0
+state var particles    = []
+state var floats       = []           // floating "+1" texts etc.
+state title_t          = 0.0
+state menu_idx         = 0
+state phase_t          = 0.0          // time spent in current phase
+state var toast        = ""
+state var toast_t      = 0.0
 
 // ----------------------------- HELPERS --------------------------------
 
@@ -224,35 +230,35 @@ end
 fn respawn_player()
     let spawn = level.start
     if checkpoint != nil then spawn = checkpoint end
-    px = spawn.x
-    py = spawn.y
-    vx = 0.0
-    vy = 0.0
-    on_ground = false
-    facing = 1
-    coyote = 0.0
-    jump_buf = 0.0
-    invul = INVUL_MAX
-    squash = 1.0
-    stretch = 1.0
+    set px = spawn.x
+    set py = spawn.y
+    set vx = 0.0
+    set vy = 0.0
+    set on_ground = false
+    set facing = 1
+    set coyote = 0.0
+    set jump_buf = 0.0
+    set invul = INVUL_MAX
+    set squash = 1.0
+    set stretch = 1.0
 end
 
 fn restart_level()
-    level = load_level(level_idx)
-    level_loaded = level_idx
-    checkpoint = nil
-    coins_got = 0
-    level_timer = 0.0
-    particles = []
-    floats = []
-    cam_x = 0.0
-    shake = 0.0
+    set level = load_level(level_idx)
+    set level_loaded = level_idx
+    set checkpoint = nil
+    set coins_got = 0
+    set level_timer = 0.0
+    set particles = []
+    set floats = []
+    set cam_x = 0.0
+    set shake = 0.0
     respawn_player()
 end
 
 fn say(msg)
-    toast = msg
-    toast_t = 1.6
+    set toast = msg
+    set toast_t = 1.6
 end
 
 // ----------------------------- INPUT FRAME ----------------------------
@@ -260,7 +266,7 @@ end
 let dts = dt()
 phase_t += dts
 title_t += dts
-toast_t = max(0.0, toast_t - dts)
+set toast_t = max(0.0, toast_t - dts)
 
 // Lazy-load level when entering Playing if needed.
 if phase == Playing && level_loaded != level_idx then
@@ -283,7 +289,7 @@ end
 // ===================== PLAYING =======================================
 
 if phase == Playing then
-    level_timer += dts
+    set level_timer += dts
 
     // --- input ---
     let want_left  = key_down("left")  || key_down("a")
@@ -291,35 +297,35 @@ if phase == Playing then
     let want_jump  = key_pressed("space") || key_pressed("up") || key_pressed("w")
     let jump_held  = key_down("space") || key_down("up") || key_down("w")
 
-    if want_jump then jump_buf = JUMP_BUF_MAX end
-    jump_buf = max(0.0, jump_buf - dts)
+    if want_jump then set jump_buf = JUMP_BUF_MAX end
+    set jump_buf = max(0.0, jump_buf - dts)
 
     let target_vx = 0.0
-    if want_left  then target_vx = target_vx - MOVE_SPEED; facing = -1 end
-    if want_right then target_vx = target_vx + MOVE_SPEED; facing = 1 end
+    if want_left  then target_vx = target_vx - MOVE_SPEED; set facing = -1 end
+    if want_right then target_vx = target_vx + MOVE_SPEED; set facing = 1 end
 
     // accelerate towards target velocity
     let accel = if on_ground then GROUND_ACCEL else AIR_ACCEL end
     if target_vx == 0.0 then
         // friction
         let fr = if on_ground then FRICTION else AIR_ACCEL * 0.4 end
-        vx = approach(vx, 0.0, fr * dts)
+        set vx = approach(vx, 0.0, fr * dts)
     else
-        vx = approach(vx, target_vx, accel * dts)
+        set vx = approach(vx, target_vx, accel * dts)
     end
 
     // jump
     if jump_buf > 0.0 && (on_ground || coyote > 0.0) then
-        vy = JUMP_VY
-        on_ground = false
-        coyote = 0.0
-        jump_buf = 0.0
-        squash = 0.7
-        stretch = 1.25
+        set vy = JUMP_VY
+        set on_ground = false
+        set coyote = 0.0
+        set jump_buf = 0.0
+        set squash = 0.7
+        set stretch = 1.25
         // dust puff
         let i = 0
         while i < 8 do
-            particles = append(particles, {
+            set particles = append(particles, {
                 kind: "dust",
                 x: px + float(PLAYER_W)/2.0 + random(-6.0, 6.0),
                 y: py + float(PLAYER_H),
@@ -333,10 +339,10 @@ if phase == Playing then
     end
 
     // variable jump height
-    if !jump_held && vy < 0.0 then vy = vy * JUMP_CUT end
+    if !jump_held && vy < 0.0 then set vy = vy * JUMP_CUT end
 
     // gravity
-    vy = min(MAX_FALL, vy + GRAVITY * dts)
+    set vy = min(MAX_FALL, vy + GRAVITY * dts)
 
     // --- horizontal move + collision ---
     let new_px = px + vx * dts
@@ -347,14 +353,14 @@ if phase == Playing then
         let plw = float(p.w); let plh = float(p.h)
         if aabb(new_px, py, pw, ph, plx, ply, plw, plh) then
             if vx > 0.0 then new_px = plx - pw elsif vx < 0.0 then new_px = plx + plw end
-            vx = 0.0
+            set vx = 0.0
         end
     end
-    px = new_px
+    set px = new_px
 
     // --- vertical move + collision ---
     let new_py = py + vy * dts
-    on_ground = false
+    set on_ground = false
     for p in level.plats do
         let plx = float(p.x); let ply = float(p.y)
         let plw = float(p.w); let plh = float(p.h)
@@ -365,7 +371,7 @@ if phase == Playing then
                     // landing dust
                     let i = 0
                     while i < int(min(8.0, vy / 80.0)) do
-                        particles = append(particles, {
+                        set particles = append(particles, {
                             kind: "dust",
                             x: px + random(0.0, pw),
                             y: new_py + ph,
@@ -376,15 +382,15 @@ if phase == Playing then
                         })
                         i = i + 1
                     end
-                    if vy > 500.0 then shake = max(shake, 6.0) end
-                    squash = 0.75
-                    stretch = 1.15
+                    if vy > 500.0 then set shake = max(shake, 6.0) end
+                    set squash = 0.75
+                    set stretch = 1.15
                 end
-                on_ground = true
-                vy = 0.0
+                set on_ground = true
+                set vy = 0.0
             elsif vy < 0.0 then
                 new_py = ply + plh
-                vy = 0.0
+                set vy = 0.0
             end
         end
     end
@@ -394,17 +400,17 @@ if phase == Playing then
         if vy > 0.0 && py + ph <= oy + 1.0 then
             if aabb(px, new_py, pw, ph, ox, oy, ow, 8.0) then
                 new_py = oy - ph
-                vy = 0.0
-                on_ground = true
-                squash = 0.85
-                stretch = 1.07
+                set vy = 0.0
+                set on_ground = true
+                set squash = 0.85
+                set stretch = 1.07
             end
         end
     end
-    py = new_py
+    set py = new_py
 
     // coyote time
-    if on_ground then coyote = COYOTE_MAX else coyote = max(0.0, coyote - dts) end
+    if on_ground then set coyote = COYOTE_MAX else set coyote = max(0.0, coyote - dts) end
 
     // --- coin pickup ---
     for c in level.coins do
@@ -412,11 +418,11 @@ if phase == Playing then
             let cx = float(c.x); let cy = float(c.y)
             if abs(px + pw/2.0 - cx) < 18.0 && abs(py + ph/2.0 - cy) < 22.0 then
                 c.collected = true
-                coins_got = coins_got + 1
-                floats = append(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
+                set coins_got = coins_got + 1
+                set floats = append(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
                 let i = 0
                 while i < 10 do
-                    particles = append(particles, {
+                    set particles = append(particles, {
                         kind: "spark",
                         x: cx, y: cy,
                         vx: random(-180.0, 180.0),
@@ -446,12 +452,12 @@ if phase == Playing then
                 if vy > 50.0 && py + ph - 14.0 < e.y then
                     e.alive = false
                     e.squash = 1.0
-                    vy = JUMP_VY * 0.6
-                    coins_got = coins_got + 0   // no coin reward, just defeat
-                    floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
+                    set vy = JUMP_VY * 0.6
+                    set coins_got = coins_got + 0   // no coin reward, just defeat
+                    set floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
                     let i = 0
                     while i < 8 do
-                        particles = append(particles, {
+                        set particles = append(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
                             vx: random(-150.0, 150.0),
@@ -463,11 +469,11 @@ if phase == Playing then
                     end
                 else
                     // got hit
-                    invul = INVUL_MAX
+                    set invul = INVUL_MAX
                     lives = lives - 1
-                    shake = 14.0
-                    vx = float(-facing) * 220.0
-                    vy = -260.0
+                    set shake = 14.0
+                    set vx = float(-facing) * 220.0
+                    set vy = -260.0
                 end
             end
         elsif e.kind == "jumper" then
@@ -478,11 +484,11 @@ if phase == Playing then
             if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) then
                 if vy > 50.0 && py + ph - 14.0 < e.y then
                     e.alive = false
-                    vy = JUMP_VY * 0.6
-                    floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "BONK"})
+                    set vy = JUMP_VY * 0.6
+                    set floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "BONK"})
                     let i = 0
                     while i < 8 do
-                        particles = append(particles, {
+                        set particles = append(particles, {
                             kind: "puff",
                             x: e.x + 12.0, y: e.y + 11.0,
                             vx: random(-150.0, 150.0),
@@ -493,11 +499,11 @@ if phase == Playing then
                         i = i + 1
                     end
                 else
-                    invul = INVUL_MAX
+                    set invul = INVUL_MAX
                     lives = lives - 1
-                    shake = 14.0
-                    vx = float(-facing) * 220.0
-                    vy = -260.0
+                    set shake = 14.0
+                    set vx = float(-facing) * 220.0
+                    set vy = -260.0
                 end
             end
         end
@@ -507,12 +513,12 @@ if phase == Playing then
     for s in level.spikes do
         if invul <= 0.0 then
             if aabb(px, py, pw, ph, float(s.x), float(s.y), 24.0, 16.0) then
-                invul = INVUL_MAX
+                set invul = INVUL_MAX
                 lives = lives - 1
-                shake = 16.0
-                vy = -360.0
-                vx = float(-facing) * 200.0
-                floats = append(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
+                set shake = 16.0
+                set vy = -360.0
+                set vx = float(-facing) * 200.0
+                set floats = append(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
             end
         end
     end
@@ -521,7 +527,7 @@ if phase == Playing then
     for ck in level.checks do
         if aabb(px, py, pw, ph, float(ck.x) - 8.0, float(ck.y) - 30.0, 32.0, 50.0) then
             if checkpoint == nil || float(ck.x) > checkpoint.x then
-                checkpoint = {x: float(ck.x), y: float(ck.y) - float(PLAYER_H)}
+                set checkpoint = {x: float(ck.x), y: float(ck.y) - float(PLAYER_H)}
                 say("Checkpoint!")
             end
         end
@@ -543,9 +549,9 @@ if phase == Playing then
 
     // --- fall off world ---
     if py > 700.0 && phase == Playing then
-        invul = INVUL_MAX
+        set invul = INVUL_MAX
         lives = lives - 1
-        shake = 14.0
+        set shake = 14.0
         respawn_player()
     end
 
@@ -555,7 +561,7 @@ if phase == Playing then
         phase_t = 0.0
     end
 
-    invul = max(0.0, invul - dts)
+    set invul = max(0.0, invul - dts)
 
     // --- restart ---
     if key_pressed("r") then
@@ -570,11 +576,11 @@ if phase == Playing then
     let target = px + pw/2.0 - float(SCREEN_W)/2.0
     target = clamp(target, 0.0, float(level.width) - float(SCREEN_W))
     cam_target = target
-    cam_x = approach(cam_x, cam_target, abs(cam_target - cam_x) * 6.0 * dts + 50.0 * dts)
+    set cam_x = approach(cam_x, cam_target, abs(cam_target - cam_x) * 6.0 * dts + 50.0 * dts)
 
     // squash/stretch decay
-    squash = approach(squash, 1.0, 4.0 * dts)
-    stretch = approach(stretch, 1.0, 4.0 * dts)
+    set squash = approach(squash, 1.0, 4.0 * dts)
+    set stretch = approach(stretch, 1.0, 4.0 * dts)
 end
 
 // ===================== PAUSE / COMPLETE / OVER =======================
@@ -611,7 +617,7 @@ if phase == GameOver then
             lives = 3
             phase = Playing
             phase_t = 0.0
-            checkpoint = nil
+            set checkpoint = nil
             restart_level()
         end
         if key_pressed("q") then
@@ -632,7 +638,7 @@ end
 
 // ===================== UPDATE: PARTICLES, FLOATS, SHAKE ==============
 
-particles = map(particles, fn(p)
+set particles = map(particles, fn(p)
     {
         kind: p.kind,
         x: p.x + p.vx * dts,
@@ -643,15 +649,15 @@ particles = map(particles, fn(p)
         size: p.size
     }
 end)
-particles = filter(particles, fn(p) -> p.life > 0.0)
+set particles = filter(particles, fn(p) -> p.life > 0.0)
 
-floats = map(floats, fn(f)
+set floats = map(floats, fn(f)
     {x: f.x, y: f.y + f.vy * dts, vy: f.vy * 0.92, life: f.life - dts, text: f.text}
 end)
-floats = filter(floats, fn(f) -> f.life > 0.0)
+set floats = filter(floats, fn(f) -> f.life > 0.0)
 
 if shake > 0.0 then
-    shake = max(0.0, shake - 40.0 * dts)
+    set shake = max(0.0, shake - 40.0 * dts)
     shake_dx = random(-shake, shake)
     shake_dy = random(-shake, shake)
 else

@@ -8,7 +8,9 @@ state py = 400.0
 state vx = 0.0
 state vy = 0.0
 state on_ground = false
-state score = 0
+// A cell: the only writer is the coin-collision `map` callback below, which
+// cannot reach an ordinary `state` binding across the lambda boundary.
+state var score = 0
 state facing_right = true
 state jump_timer = 0.0
 
@@ -177,7 +179,7 @@ coins = map(coins, fn(c)
         let dist_x = px + float(pw) / 2.0 - cx
         let dist_y = py + float(ph) / 2.0 - cy
         if abs(dist_x) < 20.0 && abs(dist_y) < 20.0 then
-            score += 1
+            set score += 1
             {x: c.x, y: c.y, collected: true}
         else
             c

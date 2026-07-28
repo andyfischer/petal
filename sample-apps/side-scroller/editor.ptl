@@ -38,10 +38,13 @@ state slot_files  = [
     "side-scroller/levels/03_sky_ruins.lvl"
 ]
 state slot_titles = ["First Steps", "Cavern Dive", "Sky Ruins"]
-state level       = nil
+// `level` is the document being edited, and `delete_at` edits it from inside a
+// function; `say` is nothing but a write to the HUD banner. Both need a cell —
+// with plain `=` they wrote function-local shadows and neither ever took effect.
+state var level   = nil
 state loaded_slot = -1
-state msg         = ""
-state msg_t       = 0.0
+state var msg     = ""
+state var msg_t   = 0.0
 state drag_start  = nil          // {x,y} when dragging to size a plat/oneway
 state hover_world = {x: 0, y: 0}
 
@@ -60,7 +63,7 @@ fn snap(n)
 end
 
 fn say(s)
-    msg = s; msg_t = 2.0
+    set msg = s; set msg_t = 2.0
 end
 
 fn aabb(ax, ay, aw, ah, bx, by, bw, bh)
@@ -192,13 +195,13 @@ fn save_slot(idx)
     if ok then say("Saved {path}") else say("Save failed!") end
 end
 
-if level == nil then level = load_slot(slot); loaded_slot = slot end
-if loaded_slot != slot then level = load_slot(slot); loaded_slot = slot end
+if level == nil then set level = load_slot(slot); loaded_slot = slot end
+if loaded_slot != slot then set level = load_slot(slot); loaded_slot = slot end
 
 // ----------------------------- INPUT ----------------------------------
 
 let dts = dt()
-msg_t = max(0.0, msg_t - dts)
+set msg_t = max(0.0, msg_t - dts)
 
 // pan
 let pan_speed = if key_down("lshift") || key_down("rshift") || key_down("shift") then 900.0 else 350.0 end
@@ -223,11 +226,11 @@ if key_pressed("[") then slot = (slot + len(slot_files) - 1) % len(slot_files) e
 if key_pressed("]") then slot = (slot + 1) % len(slot_files) end
 
 if key_pressed("s") then save_slot(slot) end
-if key_pressed("l") then level = load_slot(slot); loaded_slot = slot end
+if key_pressed("l") then set level = load_slot(slot); loaded_slot = slot end
 if key_pressed("n") then
     let L = empty_level()
     L.name = slot_titles[slot]
-    level = L
+    set level = L
     say("Cleared")
 end
 
@@ -246,7 +249,7 @@ fn delete_at(wx, wy)
     while i >= 0 do
         let p = level.plats[i]
         if wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h then
-            level.plats = filter_index(level.plats, i)
+            set level.plats = filter_index(level.plats, i)
             return true
         end
         i = i - 1
@@ -255,7 +258,7 @@ fn delete_at(wx, wy)
     while j >= 0 do
         let o = level.oneways[j]
         if wx >= o.x && wx <= o.x + o.w && wy >= o.y - 4 && wy <= o.y + 10 then
-            level.oneways = filter_index(level.oneways, j)
+            set level.oneways = filter_index(level.oneways, j)
             return true
         end
         j = j - 1
@@ -264,7 +267,7 @@ fn delete_at(wx, wy)
     while k >= 0 do
         let c = level.coins[k]
         if abs(wx - c.x) < 14 && abs(wy - c.y) < 14 then
-            level.coins = filter_index(level.coins, k)
+            set level.coins = filter_index(level.coins, k)
             return true
         end
         k = k - 1
@@ -273,7 +276,7 @@ fn delete_at(wx, wy)
     while m >= 0 do
         let s = level.spikes[m]
         if wx >= s.x && wx <= s.x + 24 && wy >= s.y && wy <= s.y + 16 then
-            level.spikes = filter_index(level.spikes, m)
+            set level.spikes = filter_index(level.spikes, m)
             return true
         end
         m = m - 1
@@ -282,7 +285,7 @@ fn delete_at(wx, wy)
     while n >= 0 do
         let e = level.enemies[n]
         if abs(wx - int(e.x) - 12) < 16 && abs(wy - int(e.origin_y) - 11) < 16 then
-            level.enemies = filter_index(level.enemies, n)
+            set level.enemies = filter_index(level.enemies, n)
             return true
         end
         n = n - 1
@@ -291,7 +294,7 @@ fn delete_at(wx, wy)
     while cc >= 0 do
         let ck = level.checks[cc]
         if abs(wx - ck.x - 12) < 14 && wy > ck.y - 36 && wy < ck.y then
-            level.checks = filter_index(level.checks, cc)
+            set level.checks = filter_index(level.checks, cc)
             return true
         end
         cc = cc - 1
@@ -318,25 +321,25 @@ if mouse_pressed(1) then
     elsif tool == 2 then
         drag_start = {x: wx, y: wy}
     elsif tool == 3 then
-        level.coins = append(level.coins, {x: wx, y: wy, collected: false})
+        set level.coins = append(level.coins, {x: wx, y: wy, collected: false})
     elsif tool == 4 then
-        level.spikes = append(level.spikes, {x: wx, y: wy})
+        set level.spikes = append(level.spikes, {x: wx, y: wy})
     elsif tool == 5 then
-        level.enemies = append(level.enemies, {
+        set level.enemies = append(level.enemies, {
             kind: "goomba", x: float(wx), y: float(wy) - 22.0,
             origin_y: float(wy) - 22.0, patrol: 100.0
         })
     elsif tool == 6 then
-        level.enemies = append(level.enemies, {
+        set level.enemies = append(level.enemies, {
             kind: "jumper", x: float(wx), y: float(wy) - 24.0,
             origin_y: float(wy) - 24.0, patrol: 0.0
         })
     elsif tool == 7 then
-        level.checks = append(level.checks, {x: wx, y: wy})
+        set level.checks = append(level.checks, {x: wx, y: wy})
     elsif tool == 8 then
-        level.start = {x: float(wx), y: float(wy)}
+        set level.start = {x: float(wx), y: float(wy)}
     elsif tool == 9 then
-        level.goal = {x: float(wx), y: float(wy)}
+        set level.goal = {x: float(wx), y: float(wy)}
     end
 end
 
@@ -351,9 +354,9 @@ if mouse_down(1) == false && drag_start != nil then
     let w  = max(grid_size, x1 - x0)
     let h  = max(grid_size, y1 - y0)
     if tool == 1 then
-        level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
+        set level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
     elsif tool == 2 then
-        level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
+        set level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
     end
     drag_start = nil
 end

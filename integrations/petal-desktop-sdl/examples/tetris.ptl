@@ -144,19 +144,24 @@ fn draw_cell(px, py, sz, color_type)
 end
 
 // --- State ---
+// `grid`, `fall_timer` and `initialized` are only ever written at top level,
+// where `=` is an ordinary phi, so they stay plain `state` on the dataflow
+// path. The rest are cells: `spawn_piece` and `clear_lines` write them from
+// inside a function, which `=` cannot do — it would only shadow. `grid` is
+// threaded through parameters instead, as `lock_piece` already did.
 state grid = []
-state cur_type = 0
-state cur_rot = 0
-state cur_x = 0
-state cur_y = 0
-state score = 0
-state lines_cleared = 0
-state game_over = false
+state var cur_type = 0
+state var cur_rot = 0
+state var cur_x = 0
+state var cur_y = 0
+state var score = 0
+state var lines_cleared = 0
+state var game_over = false
 state fall_timer = 0.0
 state initialized = false
-state next_type = 0
-state flash_timer = 0.0
-state level = 1
+state var next_type = 0
+state var flash_timer = 0.0
+state var level = 1
 
 let fall_interval = max(0.1, 0.5 - float(level - 1) * 0.04)
 
@@ -206,14 +211,17 @@ fn ghost_y(grd, piece_type, rot, px, py)
     gy
 end
 
-fn spawn_piece()
-    cur_type = next_type
-    next_type = int(random(0.0, 7.0))
-    cur_rot = 0
-    cur_x = 3
-    cur_y = 0
-    if check_collision(grid, cur_type, cur_rot, cur_x, cur_y) then
-        game_over = true
+// Takes the grid for the same reason lock_piece does: a bare `grid` here reads
+// the capture taken when the frame's script reached this definition, which on
+// the first frame is still the empty initial slot.
+fn spawn_piece(g)
+    set cur_type = next_type
+    set next_type = int(random(0.0, 7.0))
+    set cur_rot = 0
+    set cur_x = 3
+    set cur_y = 0
+    if check_collision(g, cur_type, cur_rot, cur_x, cur_y) then
+        set game_over = true
     end
 end
 
@@ -271,16 +279,16 @@ fn clear_lines(g)
             y -= 1
         end
     end
-    if cleared == 1 then score += 100
-    elsif cleared == 2 then score += 300
-    elsif cleared == 3 then score += 500
-    elsif cleared == 4 then score += 800
+    if cleared == 1 then set score += 100
+    elsif cleared == 2 then set score += 300
+    elsif cleared == 3 then set score += 500
+    elsif cleared == 4 then set score += 800
     end
     if cleared > 0 then
-        flash_timer = 0.3
+        set flash_timer = 0.3
     end
-    lines_cleared += cleared
-    level = 1 + lines_cleared / 10
+    set lines_cleared += cleared
+    set level = 1 + lines_cleared / 10
     g
 end
 
@@ -292,36 +300,36 @@ if !initialized then
         grid = append(grid, 0)
         i += 1
     end
-    next_type = int(random(0.0, 7.0))
-    spawn_piece()
+    set next_type = int(random(0.0, 7.0))
+    spawn_piece(grid)
 end
 
 // --- Input ---
 if !game_over then
     if key_pressed("left") then
         if !check_collision(grid, cur_type, cur_rot, cur_x - 1, cur_y) then
-            cur_x -= 1
+            set cur_x -= 1
         end
     end
     if key_pressed("right") then
         if !check_collision(grid, cur_type, cur_rot, cur_x + 1, cur_y) then
-            cur_x += 1
+            set cur_x += 1
         end
     end
     if key_pressed("up") then
         let new_rot = (cur_rot + 1) % 4
         if !check_collision(grid, cur_type, new_rot, cur_x, cur_y) then
-            cur_rot = new_rot
+            set cur_rot = new_rot
         end
     end
 
     // Hard drop
     if key_pressed("space") then
         let gy = ghost_y(grid, cur_type, cur_rot, cur_x, cur_y)
-        cur_y = gy
+        set cur_y = gy
         grid = lock_piece(grid)
         grid = clear_lines(grid)
-        spawn_piece()
+        spawn_piece(grid)
         fall_timer = 0.0
     end
 
@@ -336,34 +344,34 @@ if !game_over then
     if fall_timer >= effective_interval then
         fall_timer = 0.0
         if !check_collision(grid, cur_type, cur_rot, cur_x, cur_y + 1) then
-            cur_y += 1
+            set cur_y += 1
         else
             grid = lock_piece(grid)
             grid = clear_lines(grid)
-            spawn_piece()
+            spawn_piece(grid)
         end
     end
 end
 
 // Flash timer countdown
 if flash_timer > 0.0 then
-    flash_timer -= dt()
-    if flash_timer < 0.0 then flash_timer = 0.0 end
+    set flash_timer -= dt()
+    if flash_timer < 0.0 then set flash_timer = 0.0 end
 end
 
 // Restart
 if game_over && key_pressed("return") then
-    game_over = false
-    score = 0
-    lines_cleared = 0
-    level = 1
+    set game_over = false
+    set score = 0
+    set lines_cleared = 0
+    set level = 1
     let i = 0
     while i < 200 do
         grid[i] = 0
         i += 1
     end
-    next_type = int(random(0.0, 7.0))
-    spawn_piece()
+    set next_type = int(random(0.0, 7.0))
+    spawn_piece(grid)
 end
 
 // --- Drawing ---

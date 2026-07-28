@@ -3,9 +3,11 @@
 
 // --- State ---
 state player_x = 380.0
-state lives = 3
-state score = 0
-state game_over = false
+// var: all three are written from inside a collision callback — `lives` and
+// `game_over` from the enemy-bullet `filter`, `score` from the alien `map`.
+state var lives = 3
+state var score = 0
+state var game_over = false
 
 // Alien grid: 5 rows x 8 cols
 state aliens = []
@@ -21,7 +23,9 @@ state shoot_cooldown = 0.0
 state enemy_shoot_timer = 0.0
 
 // Explosions
-state explosions = []
+// var: spawned from inside the bullet-alien `map` callback, which cannot
+// return them alongside the alien it is transforming.
+state var explosions = []
 
 // Shields
 state shields = []
@@ -135,8 +139,8 @@ stars = map(stars, fn(s)
 end)
 
 // --- Update explosions ---
-explosions = map(explosions, fn(e) -> { x: e.x, y: e.y, timer: e.timer - delta, r: e.r, g: e.g, b: e.b })
-explosions = filter(explosions, fn(e) -> e.timer > 0.0)
+set explosions = map(explosions, fn(e) -> { x: e.x, y: e.y, timer: e.timer - delta, r: e.r, g: e.g, b: e.b })
+set explosions = filter(explosions, fn(e) -> e.timer > 0.0)
 
 if !game_over then
   // --- Player input ---
@@ -195,11 +199,13 @@ if !game_over then
   // --- Bullet-alien collision ---
   let new_bullets = []
   for b in bullets do
-    let hit = false
+    // var: the callback reads it to stop at one alien per bullet, and the
+    // `if !hit` below consumes the bullet — both need the callback's write.
+    var hit = false
     aliens = map(aliens, fn(a)
       if a.alive && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) then
-        hit = true
-        score += 10
+        set hit = true
+        set score += 10
         // Spawn explosion
         let er = 255
         let eg = 200
@@ -207,7 +213,7 @@ if !game_over then
         if a.row == 0 then er = 255  eg = 80  eb = 80 end
         if a.row == 1 || a.row == 2 then er = 255  eg = 200  eb = 50 end
         if a.row == 3 || a.row == 4 then er = 80  eg = 255  eb = 80 end
-        explosions = append(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
+        set explosions = append(explosions, { x: a.x, y: a.y, timer: 0.4, r: er, g: eg, b: eb })
         { x: a.x, y: a.y, alive: false, row: a.row }
       else
         a
@@ -222,10 +228,10 @@ if !game_over then
   // --- Bullet-shield collision (player bullets) ---
   let new_bullets2 = []
   for b in bullets do
-    let hit = false
+    var hit = false
     shields = map(shields, fn(s)
       if s.health > 0 && !hit && rects_collide(b.x, b.y, bullet_w, bullet_h, s.x, s.y, 8.0, 8.0) then
-        hit = true
+        set hit = true
         { x: s.x, y: s.y, health: s.health - 1 }
       else
         s
@@ -240,10 +246,10 @@ if !game_over then
   // --- Enemy bullet-shield collision ---
   let new_enemy_bullets = []
   for b in enemy_bullets do
-    let hit = false
+    var hit = false
     shields = map(shields, fn(s)
       if s.health > 0 && !hit && rects_collide(b.x, b.y, 4.0, 12.0, s.x, s.y, 8.0, 8.0) then
-        hit = true
+        set hit = true
         { x: s.x, y: s.y, health: s.health - 1 }
       else
         s
@@ -273,9 +279,9 @@ if !game_over then
   // --- Enemy bullet-player collision ---
   enemy_bullets = filter(enemy_bullets, fn(b)
     if rects_collide(b.x, b.y, bullet_w, bullet_h, player_x, player_y, player_w, player_h) then
-      lives -= 1
+      set lives -= 1
       if lives <= 0 then
-        game_over = true
+        set game_over = true
       end
       false
     else
@@ -286,7 +292,7 @@ if !game_over then
   // --- Aliens reach bottom ---
   for a in aliens do
     if a.alive && a.y + alien_h > player_y then
-      game_over = true
+      set game_over = true
     end
   end
 

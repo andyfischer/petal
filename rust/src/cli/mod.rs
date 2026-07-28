@@ -71,6 +71,9 @@ pub enum Command {
     PendingReport {
         json: bool,
     },
+    /// Serve the language server over stdio. Takes no source file — documents
+    /// arrive over the protocol.
+    Lsp,
 }
 
 pub enum SourceInput {
@@ -161,6 +164,10 @@ Commands:
                                  resource (state, age, origin, absorbed count).
                                  --json emits the raw report array for tooling.
 
+  lsp                            Serve the language server over stdio
+                                 (Content-Length-framed JSON-RPC). Editors
+                                 spawn this; it takes no file.
+
   petal <file>                   Shorthand for 'run'
   version | --version | -V       Print the Petal version and exit
 
@@ -229,6 +236,14 @@ pub fn execute(cli: CliArgs) {
         source: source_input,
         include_dirs,
     } = cli;
+
+    // `lsp` has no source file to read — and reading stdin here would eat the
+    // very stream the server needs.
+    if let Command::Lsp = command {
+        handlers::handle_lsp();
+        return;
+    }
+
     let source = read_source(&source_input);
 
     match command {
@@ -290,6 +305,8 @@ pub fn execute(cli: CliArgs) {
         Command::ShowGraph { all } => {
             handlers::handle_show_graph(all, &source, &source_input, &include_dirs);
         }
+        // Handled above, before the source read.
+        Command::Lsp => unreachable!(),
     }
 }
 

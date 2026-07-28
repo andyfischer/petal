@@ -24,6 +24,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `run` | Execute a program |
 | `check` | Lex + parse + compile only (no execution) |
 | `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
+| `lsp` | Serve the language server over stdio (editors spawn this) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
 | `pending-report` | Run, then report every live pending resource |
 | `show-tokens` | Lexer output |
@@ -122,6 +123,28 @@ the pre- and post-lint sources must compile to **identical** IR (only the
 embedded source text and source spans may differ). If the file doesn't compile standalone
 (e.g. its imports need `-I` dirs not given), rebinds are skipped with a note
 and only formatting applies.
+
+### `lsp` — Serve the language server
+
+```
+petal lsp                        # speaks LSP on stdin/stdout; takes no file
+```
+
+Runs the Petal language server over the standard LSP stdio transport
+(Content-Length-framed JSON-RPC). It takes no source file — documents arrive
+over the protocol via `textDocument/didOpen` / `didChange`. Editors and IDEs
+spawn this as a child process; it is not meant to be run interactively.
+
+Capabilities: full-text document sync, diagnostics (published on open and
+change), hover, go-to-definition, and completion (triggered on `.`, otherwise
+prefix-filtered over the document's definitions plus the keyword list).
+
+The server core lives in `rust/src/lsp/` and is transport-agnostic
+(`Server::handle_message` takes a raw JSON-RPC string and returns the outgoing
+messages), so an embedder can drive it in-process without the stdio loop.
+
+The loop exits on an `exit` notification or at EOF; a broken pipe — the usual
+way an editor shuts a server down — exits quietly.
 
 ### `explain` — Walk the dataflow graph backward from a term
 

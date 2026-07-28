@@ -1,7 +1,7 @@
-use petal_lsp::lsp_types::*;
-use petal_lsp::protocol::*;
-use petal_lsp::server::Server;
-use serde_json::{json, Value};
+use petal::lsp::lsp_types::*;
+use petal::lsp::protocol::*;
+use petal::lsp::server::Server;
+use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -167,10 +167,7 @@ fn test_did_open_with_error() {
     init(&mut server);
     let msgs = open(&mut server, "file:///test.ptl", "let = \n");
     let diags = get_diagnostics(&msgs);
-    assert!(
-        !diags.is_empty(),
-        "Invalid code should produce diagnostics"
-    );
+    assert!(!diags.is_empty(), "Invalid code should produce diagnostics");
     assert_eq!(diags[0].severity, Some(DiagnosticSeverity::Error));
 }
 
@@ -182,11 +179,17 @@ fn test_did_change_updates_diagnostics() {
 
     let msgs = change(&mut server, "file:///test.ptl", 2, "let = \n");
     let diags = get_diagnostics(&msgs);
-    assert!(!diags.is_empty(), "After introducing an error, should have diagnostics");
+    assert!(
+        !diags.is_empty(),
+        "After introducing an error, should have diagnostics"
+    );
 
     let msgs = change(&mut server, "file:///test.ptl", 3, "let y = 10\n");
     let diags = get_diagnostics(&msgs);
-    assert!(diags.is_empty(), "After fixing, diagnostics should be cleared");
+    assert!(
+        diags.is_empty(),
+        "After fixing, diagnostics should be cleared"
+    );
 }
 
 #[test]
@@ -207,7 +210,11 @@ fn test_did_close_clears_diagnostics() {
 fn test_hover_on_variable() {
     let mut server = Server::new();
     init(&mut server);
-    open(&mut server, "file:///test.ptl", "let greeting = \"hello\"\n");
+    open(
+        &mut server,
+        "file:///test.ptl",
+        "let greeting = \"hello\"\n",
+    );
 
     let resp = hover(&mut server, "file:///test.ptl", 0, 5);
     let contents = &resp["result"]["contents"]["value"];
@@ -278,7 +285,10 @@ fn test_hover_on_nothing() {
     open(&mut server, "file:///test.ptl", "let x = 42\n");
 
     let resp = hover(&mut server, "file:///test.ptl", 0, 8);
-    assert!(resp["result"].is_null(), "Hover on a literal should return null");
+    assert!(
+        resp["result"].is_null(),
+        "Hover on a literal should return null"
+    );
 }
 
 #[test]
@@ -402,7 +412,10 @@ fn test_empty_document() {
     init(&mut server);
     let msgs = open(&mut server, "file:///test.ptl", "");
     let diags = get_diagnostics(&msgs);
-    assert!(diags.is_empty(), "Empty document should have no diagnostics");
+    assert!(
+        diags.is_empty(),
+        "Empty document should have no diagnostics"
+    );
 }
 
 #[test]
@@ -422,16 +435,20 @@ fn test_multiple_documents() {
     open(&mut server, "file:///b.ptl", "let b = 2\n");
 
     let resp_a = hover(&mut server, "file:///a.ptl", 0, 4);
-    assert!(resp_a["result"]["contents"]["value"]
-        .as_str()
-        .unwrap()
-        .contains("a"));
+    assert!(
+        resp_a["result"]["contents"]["value"]
+            .as_str()
+            .unwrap()
+            .contains("a")
+    );
 
     let resp_b = hover(&mut server, "file:///b.ptl", 0, 4);
-    assert!(resp_b["result"]["contents"]["value"]
-        .as_str()
-        .unwrap()
-        .contains("b"));
+    assert!(
+        resp_b["result"]["contents"]["value"]
+            .as_str()
+            .unwrap()
+            .contains("b")
+    );
 }
 
 #[test]
@@ -524,7 +541,7 @@ fn test_malformed_json() {
 
 #[test]
 fn test_identifier_at_position() {
-    use petal_lsp::document::identifier_at_position;
+    use petal::lsp::document::identifier_at_position;
 
     assert_eq!(
         identifier_at_position("let foo = 42", 0, 4),
@@ -545,7 +562,7 @@ fn test_identifier_at_position() {
 
 #[test]
 fn test_analyze_valid() {
-    use petal_lsp::document::analyze;
+    use petal::lsp::document::analyze;
 
     let result = analyze("let x = 1\nfn add(a, b)\n  return a + b\nend\n");
     assert!(result.diagnostics.is_empty());
@@ -558,7 +575,7 @@ fn test_analyze_valid() {
 
 #[test]
 fn test_analyze_error() {
-    use petal_lsp::document::analyze;
+    use petal::lsp::document::analyze;
 
     let result = analyze("let = bad syntax");
     assert!(!result.diagnostics.is_empty());

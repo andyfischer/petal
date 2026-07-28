@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use petal::ast::{Expr, ExprKind, Stmt, StmtKind};
-use petal::diagnostic::Diagnostic as PetalDiagnostic;
-use petal::source_map::SourceSpan;
+use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
+use crate::diagnostic::Diagnostic as PetalDiagnostic;
+use crate::source_map::SourceSpan;
 
-use crate::lsp_types;
+use crate::lsp::lsp_types;
 
 // ---------------------------------------------------------------------------
 // A single open document
@@ -107,18 +107,21 @@ pub fn analyze(source: &str) -> Analysis {
         return Analysis::empty();
     }
 
-    let mut env = petal::env::Env::new();
+    let mut env = crate::env::Env::new();
     match env.load_program(source) {
         Ok(pid) => {
             let program = env.get_program(pid);
             let mut diagnostics: Vec<lsp_types::Diagnostic> = Vec::new();
             if let Some(p) = program {
                 for w in &p.warnings {
-                    diagnostics.push(petal_diagnostic_to_lsp(w, lsp_types::DiagnosticSeverity::Warning));
+                    diagnostics.push(petal_diagnostic_to_lsp(
+                        w,
+                        lsp_types::DiagnosticSeverity::Warning,
+                    ));
                 }
             }
 
-            let definitions = match petal::cst::parse_source(source, petal::source_map::ENTRY_FILE)
+            let definitions = match crate::cst::parse_source(source, crate::source_map::ENTRY_FILE)
             {
                 Ok((_, stmts)) => collect_definitions(&stmts),
                 Err(_) => Vec::new(),
@@ -216,7 +219,9 @@ fn collect_definitions(stmts: &[Stmt]) -> Vec<Definition> {
 
 fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
     match &stmt.kind {
-        StmtKind::Let { name, ty, value } => {
+        StmtKind::Let {
+            name, ty, value, ..
+        } => {
             let detail = ty.as_ref().map(|t| format!(": {}", t.name));
             defs.push(Definition {
                 name: name.clone(),
@@ -303,7 +308,7 @@ fn collect_definitions_from_expr(expr: &Expr, defs: &mut Vec<Definition>) {
             for s in then_body {
                 collect_definitions_from_stmt(s, defs);
             }
-            if let Some(petal::ast::ElseBranch::Block(stmts)) = else_body {
+            if let Some(crate::ast::ElseBranch::Block(stmts)) = else_body {
                 for s in stmts {
                     collect_definitions_from_stmt(s, defs);
                 }
@@ -377,7 +382,7 @@ fn is_ident_char(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 pub const KEYWORDS: &[&str] = &[
-    "let", "fn", "if", "elsif", "else", "end", "for", "in", "do", "while",
-    "match", "when", "return", "break", "continue", "state", "import", "true",
-    "false", "nil", "and", "or", "not", "enum",
+    "let", "fn", "if", "elsif", "else", "end", "for", "in", "do", "while", "match", "when",
+    "return", "break", "continue", "state", "import", "true", "false", "nil", "and", "or", "not",
+    "enum",
 ];

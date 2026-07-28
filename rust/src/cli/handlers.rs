@@ -16,6 +16,17 @@ use crate::source_map::ENTRY_FILE;
 
 use super::{SourceInput, die, die_plain, die_with};
 
+/// `petal lsp` — serve the language server on stdin/stdout until the client
+/// disconnects. A broken pipe is how an editor normally shuts us down, so that
+/// exits quietly; anything else is a real I/O failure worth reporting.
+pub(super) fn handle_lsp() {
+    if let Err(e) = crate::lsp::stdio::serve()
+        && e.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        die_plain(&format!("lsp: {}", e));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_run(
     json: bool,

@@ -18,6 +18,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             process::exit(0);
         }
         "run" => parse_run_args(&args[1..]),
+        "lsp" => parse_lsp_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "explain" => {
@@ -101,6 +102,21 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             trace_pending,
         },
         source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `lsp` takes no source: the server is fed documents over the protocol, so
+/// the `source` slot is a placeholder that `execute` never reads.
+fn parse_lsp_args(args: &[String]) -> CliArgs {
+    if let Some(unexpected) = args.first() {
+        eprintln!("Unexpected argument '{}'. Usage: petal lsp", unexpected);
+        process::exit(1);
+    }
+
+    CliArgs {
+        command: Command::Lsp,
+        source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }
 }

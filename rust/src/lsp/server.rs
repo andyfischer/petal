@@ -2,11 +2,9 @@
 
 use serde_json::Value;
 
-use crate::document::{
-    self, identifier_at_position, DefinitionKind, DocumentStore, KEYWORDS,
-};
-use crate::lsp_types::*;
-use crate::protocol::*;
+use crate::lsp::document::{self, DefinitionKind, DocumentStore, KEYWORDS, identifier_at_position};
+use crate::lsp::lsp_types::*;
+use crate::lsp::protocol::*;
 
 pub struct Server {
     initialized: bool,
@@ -51,10 +49,7 @@ impl Server {
         match method {
             "initialize" => self.handle_initialize(id, params),
             "shutdown" => {
-                vec![OutgoingMessage::Response(RpcResponse::ok(
-                    id,
-                    Value::Null,
-                ))]
+                vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))]
             }
             "textDocument/hover" => {
                 if !self.initialized {
@@ -211,7 +206,7 @@ impl Server {
                     id,
                     INVALID_PARAMS,
                     "Invalid hover params".into(),
-                ))]
+                ))];
             }
         };
 
@@ -225,12 +220,7 @@ impl Server {
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
 
-        if let Some(def) = doc
-            .analysis
-            .definitions
-            .iter()
-            .find(|d| d.name == ident)
-        {
+        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
             let kind_str = match def.kind {
                 DefinitionKind::Variable => "variable",
                 DefinitionKind::Function => "function",
@@ -285,7 +275,7 @@ impl Server {
                     id,
                     INVALID_PARAMS,
                     "Invalid definition params".into(),
-                ))]
+                ))];
             }
         };
 
@@ -299,12 +289,7 @@ impl Server {
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
 
-        if let Some(def) = doc
-            .analysis
-            .definitions
-            .iter()
-            .find(|d| d.name == ident)
-        {
+        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
             let loc = Location {
                 uri: p.text_document.uri.clone(),
                 range: document::span_to_range(&def.span),
@@ -330,7 +315,7 @@ impl Server {
                     id,
                     INVALID_PARAMS,
                     "Invalid completion params".into(),
-                ))]
+                ))];
             }
         };
 
@@ -344,13 +329,12 @@ impl Server {
                         items: Vec::new(),
                     })
                     .unwrap(),
-                ))]
+                ))];
             }
         };
 
-        let prefix =
-            identifier_at_position(&doc.text, p.position.line, p.position.character)
-                .unwrap_or_default();
+        let prefix = identifier_at_position(&doc.text, p.position.line, p.position.character)
+            .unwrap_or_default();
 
         let mut items: Vec<CompletionItem> = Vec::new();
 

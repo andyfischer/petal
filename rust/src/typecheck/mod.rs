@@ -197,7 +197,10 @@ impl<'a> Checker<'a> {
     fn check_stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Let {
-                name, ty, value, ..
+                name,
+                ty,
+                value,
+                is_var,
             } => {
                 if let Some(ann) = ty {
                     self.check_type_ann(ann, stmt.span);
@@ -205,7 +208,19 @@ impl<'a> Checker<'a> {
                 let inferred = self.check_expr(value);
                 let declared = ty.as_ref().and_then(|t| t.resolved);
                 self.check_assignment(value.span, name, declared, inferred);
-                self.bind(name.clone(), declared, inferred);
+                // A `var` is a cell, and `set` reaches it from inside functions,
+                // closures and conditionals that this linear walk cannot
+                // correlate with the declaration
+                // (docs/lowering-confusion-20260726.md §6c). So the initializer
+                // says nothing about what a later *read* observes, and trusting
+                // it produces warnings on correct code — the one outcome this
+                // pass is built to avoid. Only a written annotation constrains a
+                // cell, and it earns that by constraining every `set` too.
+                self.bind(
+                    name.clone(),
+                    declared,
+                    if *is_var { Type::Any } else { inferred },
+                );
             }
             // A `set` writes the same value into the same target shape as `=`;
             // the declared type of a `var` constrains its writes identically.
@@ -215,6 +230,12 @@ impl<'a> Checker<'a> {
                     let declared = self.lookup(n).and_then(|v| v.declared);
                     self.check_assignment(value.span, n, declared, vt);
                 }
+                // Field and index writes are walked for nested diagnostics but
+                // the written value itself is unchecked, `var` or not: `Type` is
+                // unparameterized, so `record`/`list` carry no field or element
+                // type for it to conflict with. Blocked on parameterized types,
+                // a locked non-goal (type-declarations-plan.md §1) — not a
+                // `var`-specific hole.
                 AssignTarget::Field(object, _) => {
                     self.check_expr(object);
                     self.check_expr(value);
@@ -283,7 +304,10 @@ impl<'a> Checker<'a> {
                 if let Some(k) = key {
                     self.check_expr(k);
                 }
-                // Reactive binding: infer nothing (Any) and shadow any outer name.
+                // Reactive binding: infer nothing (Any) and shadow any outer
+                // name. `state var` needs no separate rule — `state` has no
+                // annotation slot, so a cell that persists across frames is
+                // already the fully-unconstrained case a plain `state` is.
                 self.bind(name.clone(), None, Type::Any);
             }
             StmtKind::Import(_) => {}
@@ -693,6 +717,81 @@ mod tests {
         let w = warns("fn a() -> int\n  fn b() -> string\n    return 7\n  end\n  0\nend");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("`b`"), "{w:?}");
+    }
+
+    // ── `var` cells: writes are checked, reads are not trusted ──────────────
+    // docs/lowering-confusion-20260726.md §7 step 4d.
+    #[test]
+    fn set_conflicting_with_declared_var_type_warns() {
+        let w = warns("var n: int = 0\nset n = \"hello\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(
+            w[0],
+            "type mismatch: `n` declared `int` but assigned `string`"
+        );
+    }
+
+    #[test]
+    fn set_matching_declared_var_type_no_warning() {
+        assert!(warns("var n: int = 0\nset n = 5").is_empty());
+    }
+
+    #[test]
+    fn set_int_promotes_to_float_var() {
+        assert!(warns("var n: float = 0.0\nset n = 5").is_empty());
+    }
+
+    #[test]
+    fn var_initializer_conflict_warns() {
+        let w = warns("var n: int = \"hi\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    #[test]
+    fn set_from_inside_a_function_is_checked() {
+        // The point of a cell: the write is nowhere near the declaration.
+        let w = warns("var n: int = 0\nfn f()\n  set n = \"s\"\nend\nf()");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("declared `int`"), "{w:?}");
+    }
+
+    #[test]
+    fn set_from_inside_a_closure_under_control_flow_is_checked() {
+        let w = warns("var n: int = 0\nlet g = fn(b)\n  if b then set n = \"s\" end\nend\ng(true)");
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    #[test]
+    fn unannotated_var_read_is_not_typed_by_its_initializer() {
+        // `set` may retype the cell from anywhere, so trusting the initializer
+        // would warn on a correct program.
+        assert!(warns("var n = 0\nset n = \"hi\"\nlet s: string = n").is_empty());
+        assert!(warns("fn g(s: string)\n  s\nend\nvar n = 0\nset n = \"hi\"\ng(n)").is_empty());
+        assert!(warns("var n = 0\nset n = \"hi\"\nfn f() -> string\n  n\nend").is_empty());
+    }
+
+    #[test]
+    fn annotated_var_read_uses_its_declared_type() {
+        let w = warns("var n: int = 0\nlet s: string = n");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`s` declared `string`"), "{w:?}");
+    }
+
+    #[test]
+    fn state_var_is_unconstrained_in_both_directions() {
+        // `state` has no annotation slot, so there is nothing to conflict with.
+        assert!(warns("state var n = 0\nset n = \"hi\"").is_empty());
+        assert!(warns("state var n = 0\nset n = \"hi\"\nlet s: string = n").is_empty());
+    }
+
+    #[test]
+    fn set_through_a_field_target_is_unchecked_but_walks_its_parts() {
+        // No field types exist to check the value against; the subexpressions
+        // are still visited, so a nested mismatch is still reported.
+        assert!(warns("var r: record = {a: 1}\nset r.a = \"s\"").is_empty());
+        let w = warns("fn g(s: string)\n  s\nend\nvar r: record = {a: 1}\nset r.a = g(1)");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument 1"), "{w:?}");
     }
 
     // ── Fix #3: `nil`/`enum` type names parse (checked via full pipeline) ────

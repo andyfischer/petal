@@ -117,3 +117,71 @@ describe("discarded pure-builtin result lint", () => {
     expect(out.warnings).toEqual([]);
   });
 });
+
+// Chunk 4d (docs/lowering-confusion-20260726.md §7): a `var` is a cell, so its
+// *writes* must stay assignable to its declared type — and its *reads* must not
+// be typed from the initializer, because a `set` can retype the cell from inside
+// any function or closure that captured it.
+describe("`var` cells and the type checker", () => {
+  it("warns on a `set` that conflicts with the var's declared type", () => {
+    const out = checkJson('var n: int = 0\nset n = "hello"\nprint(n)');
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    // The same diagnostic shape a conflicting `=` reassignment produces.
+    expect(out.warnings[0].message).toBe("type mismatch: `n` declared `int` but assigned `string`");
+    expect(out.warnings[0].line).toBe(2);
+  });
+
+  it("stays silent when the `set` value matches (int still promotes to float)", () => {
+    expect(checkJson("var n: int = 0\nset n = 5\nprint(n)").warnings).toEqual([]);
+    expect(checkJson("var n: float = 0.0\nset n = 5\nprint(n)").warnings).toEqual([]);
+  });
+
+  it("checks a `set` written inside a closure, under control flow", () => {
+    // The point of a cell: the write is nowhere near the declaration, and is
+    // somewhere plain `=` could never have reached.
+    const body = 'let g = fn(b)\n  if b then set n = "s" end\nend\ng(true)\nprint(n)';
+    const out = checkJson(`var n: int = 0\n${body}`);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`n` declared `int`/);
+    expect(out.warnings[0].line).toBe(3);
+  });
+
+  it("does not type an un-annotated var's reads from its initializer", () => {
+    // All three are correct programs — the cell really does hold a string by
+    // the time it is read. Trusting `var n = 0` would warn on every one.
+    const src = 'var n = 0\nset n = "hi"\n';
+    expect(checkJson(`${src}let s: string = n\nprint(s)`).warnings).toEqual([]);
+    expect(checkJson(`fn g(s: string)\n  s\nend\n${src}print(g(n))`).warnings).toEqual([]);
+    expect(checkJson(`${src}fn f() -> string\n  n\nend\nprint(f())`).warnings).toEqual([]);
+  });
+
+  it("does type an annotated var's reads from its annotation", () => {
+    const out = checkJson("var n: int = 0\nlet s: string = n\nprint(s)");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`s` declared `string` but assigned `int`/);
+  });
+
+  it("leaves `state var` unconstrained — `state` has no annotation slot", () => {
+    expect(checkJson('state var n = 0\nset n = "hi"\nprint(n)').warnings).toEqual([]);
+    const read = 'state var n = 0\nset n = "hi"\nlet s: string = n\nprint(s)';
+    expect(checkJson(read).warnings).toEqual([]);
+  });
+
+  it("does not check the value of a field or index `set`, but walks its parts", () => {
+    // `record`/`list` are opaque, so there is no field or element type for the
+    // written value to conflict with; nested expressions are still checked.
+    expect(checkJson('var r: record = {a: 1}\nset r.a = "s"\nprint(r)').warnings).toEqual([]);
+    expect(checkJson('var xs: list = [1]\nset xs[0] = "s"\nprint(xs)').warnings).toEqual([]);
+    const out = checkJson("fn g(s: string)\n  s\nend\nvar r: record = {a: 1}\nset r.a = g(1)\nr");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/argument 1 to `g`/);
+  });
+
+  it("is warning-only: the program still compiles and runs", () => {
+    const { stdout, stderr } = runWithStderr('var n: int = 0\nset n = "hello"\nprint(n)');
+    expect(stdout.trim()).toBe("hello");
+    expect(stderr).toContain("warning:");
+    expect(stderr).toMatch(/declared `int`/);
+  });
+});

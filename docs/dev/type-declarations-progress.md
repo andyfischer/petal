@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-14 (Chunks A–G complete — feature shipped) · Branch: `main`
+Last updated: 2026-07-26 (Chunks A–G shipped; `var`/`set` folded in) · Branch: `main`
 
 ---
 
@@ -142,6 +142,31 @@ un-annotated. Schema documented in [`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
   reconciled (🟡, user-writable + warning-only). `README.md` types line flipped
   to a shipped feature. `examples/typed.ptl` (+ `test/example-golden/typed.json`)
   runs clean and is in the manifest.
+
+### `var` / `set` cells — DONE
+Step 4d of [`../lowering-confusion-20260726.md`](../lowering-confusion-20260726.md).
+A `var` binds a heap cell, so it breaks the checker's usual assumption that a
+binding's initializer describes every later read.
+
+- **Writes are checked.** `set` shares the `Assign` arm, so a `set` whose value
+  conflicts with the var's *declared* type raises the same
+  ``type mismatch: `n` declared `int` but assigned `string` `` diagnostic a
+  conflicting `=` does — including from inside a function or a closure, under
+  control flow, which is the whole point of cells.
+- **Un-annotated reads infer `Any`.** `var n = 0` no longer types `n` as `int`,
+  because a `set` can retype the cell from anywhere and this pass cannot see it.
+  Trusting the initializer warned on *correct* programs (`var n = 0` / `set n =
+  "hi"` / `let s: string = n`), at all three read sites — binding, call argument,
+  fn return — which is the one outcome the pass is built to avoid. An annotated
+  `var` still types its reads, and earns that by constraining every `set`.
+- **`state var` needs no rule of its own.** `state` has no annotation slot, so a
+  `state` name was already bound `Any` in both directions. Giving `state` a
+  declared type is a syntax change, not a checker change.
+- **Field/index `set` targets are unchecked** — `set r.a = …` / `set xs[0] = …`
+  walk their subexpressions (so nested mismatches still report) but the written
+  value is not checked, because `record`/`list` are opaque: there is no field or
+  element type to conflict with. Blocked on parameterized types, a locked
+  non-goal. Not `var`-specific — `r.a = …` on a `let` is equally unchecked.
 
 ---
 

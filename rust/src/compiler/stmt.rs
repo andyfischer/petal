@@ -300,6 +300,7 @@ impl Compiler {
             return;
         }
         self.warn_if_assigning_outer_function_binding(target, span);
+        let prev_assign_span = self.assign_span.replace(span);
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
             AssignTarget::Field(object, field) => match Self::resolve_assign_target(object) {
@@ -317,6 +318,7 @@ impl Compiler {
                 None => self.emit_dead_store_error(),
             },
         }
+        self.assign_span = prev_assign_span;
     }
 
     /// Enforce that `=` and `set` are disjoint: `=` writes `let`/`state`
@@ -528,11 +530,16 @@ impl Compiler {
             let cell = self
                 .resolve_local_term(name)
                 .expect("a `var` binding resolves; check_write_keyword ran first");
-            self.emit_term(
+            let write_tid = self.emit_term(
                 TermOp::CellWrite,
                 smallvec![cell, val_tid],
                 Some(name.to_string()),
             );
+            // Only expressions record spans, so without this the write a
+            // provenance boundary points at would have no location.
+            if let Some(span) = self.assign_span {
+                self.source_map.add(write_tid, span);
+            }
             return;
         }
 

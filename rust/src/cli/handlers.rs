@@ -12,6 +12,7 @@ use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
 use crate::program::{Program, ProgramId, Term, TermId};
+use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
 
 use super::{SourceInput, die, die_plain, die_with};
@@ -202,17 +203,19 @@ pub(super) fn handle_explain(
     });
 
     if json {
-        let entries_json: Vec<_> = entries.iter().map(|e| e.to_json()).collect();
+        let entries_json: Vec<_> = entries.entries.iter().map(|e| e.to_json()).collect();
         let out = serde_json::json!({
             "term_id": target_id.0,
             "name": header_name,
             "chain": entries_json,
+            "complete": entries.complete,
+            "truncated": entries.truncated,
         });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
         println!("Explain t{} ({}):", target_id.0, header_name);
         println!("  Provenance chain:");
-        for (i, e) in entries.iter().enumerate() {
+        for (i, e) in entries.entries.iter().enumerate() {
             let loc = match (e.line, e.column) {
                 (Some(l), Some(c)) => format!("[line {}, column {}]", l, c),
                 _ => "[no location]".to_string(),
@@ -224,6 +227,34 @@ pub(super) fn handle_explain(
                 "    {} t{} {} {} = {}",
                 arrow, e.term_id.0, name, loc, value
             );
+            // The boundary is the whole point of stopping — an entry that
+            // just ends reads as a chain that finished (§6e).
+            if let Some(b) = &e.boundary {
+                println!("       ^ {}", b.summary());
+                if !b.writes.is_empty() {
+                    println!("         writes to '{}':", b.var.as_deref().unwrap_or("?"));
+                    for (n, w) in b.writes.iter().enumerate() {
+                        let wloc = match (w.line, w.column) {
+                            (Some(l), Some(c)) => format!("[line {}, column {}]", l, c),
+                            _ => "[no location]".to_string(),
+                        };
+                        println!(
+                            "           #{} t{} {} = {} (seq {})",
+                            n + 1,
+                            w.term_id.0,
+                            wloc,
+                            w.value,
+                            w.seq
+                        );
+                    }
+                }
+            }
+        }
+        if entries.truncated {
+            println!("  (chain truncated at depth {})", entries.entries.len());
+        }
+        if !entries.complete {
+            println!("  Incomplete: the chain crosses a cell the trace could not resolve.");
         }
     }
 }
@@ -485,7 +516,9 @@ pub(super) fn handle_show_provenance(
     let root_id = resolve_terms(&program, std::slice::from_ref(&term_query))[0];
 
     let root_term = program.get_term(root_id);
-    let (ancestor_ids, edges) = program.trace_provenance(root_id);
+    let prov = program.trace_provenance(root_id);
+    let ancestor_ids = &prov.ancestors;
+    let edges = &prov.edges;
 
     if json {
         let root_json = term_to_json(root_term);
@@ -493,11 +526,20 @@ pub(super) fn handle_show_provenance(
             .iter()
             .map(|&id| term_to_json(program.get_term(id)))
             .collect();
-        let edges_json = edges_to_json(&edges);
+        // Every edge a backward walk emits is a value edge by construction —
+        // identity edges are exactly the ones it refuses to cross.
+        let edges_json = edges_to_json(
+            &edges
+                .iter()
+                .map(|&(a, b)| (a, b, EdgeKind::Dataflow))
+                .collect::<Vec<_>>(),
+        );
         let output = serde_json::json!({
             "root": root_json,
             "ancestors": ancestors_json,
             "edges": edges_json,
+            "frontier": frontier_to_json(&program, &prov.frontier),
+            "complete": prov.is_complete(),
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -513,13 +555,77 @@ pub(super) fn handle_show_provenance(
         );
         println!();
         println!("Ancestors ({}):", ancestor_ids.len());
-        print_term_rows(&program, &ancestor_ids);
+        print_term_rows(&program, ancestor_ids);
         println!();
         println!("Edges ({}):", edges.len());
-        for (from, to) in &edges {
+        for (from, to) in edges {
             println!("  t{} -> t{}", from.0, to.0);
         }
+        if !prov.frontier.is_empty() {
+            println!();
+            print_frontier(&program, &prov.frontier);
+        }
     }
+}
+
+/// Render the cell frontier a backward walk stopped at. This command never
+/// runs the program, so the answer always degrades to the *static* one —
+/// "not traced, and here is the complete set of possible writers" — never to
+/// silence.
+fn print_frontier(program: &Program, frontier: &[crate::program_analysis::CellFrontier]) {
+    println!("Frontier ({}):", frontier.len());
+    for f in frontier {
+        println!("  t{}: {} (not traced)", f.read_term.0, f.describe());
+        if f.writes.is_empty() {
+            println!("    no write sites");
+        }
+        for &w in &f.writes {
+            println!("    possible write: {}", term_site(program, w));
+        }
+        if f.host_writable {
+            println!("    also writable by the host through set_state");
+        }
+    }
+}
+
+fn term_site(program: &Program, id: TermId) -> String {
+    match program.source_map.get(id) {
+        Some(s) if s.start.line > 0 => format!(
+            "t{} [line {}, column {}]",
+            id.0, s.start.line, s.start.column
+        ),
+        _ => format!("t{} [no location]", id.0),
+    }
+}
+
+fn frontier_to_json(
+    program: &Program,
+    frontier: &[crate::program_analysis::CellFrontier],
+) -> Vec<serde_json::Value> {
+    frontier
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "read_term": f.read_term.0,
+                "var": f.var_name,
+                "decl_term": f.cell_decl.map(|t| t.0),
+                "captured": f.captured,
+                "host_writable": f.host_writable,
+                // Compile-time only: this path never runs the program, so the
+                // dynamic writer is unavailable by construction, not missing.
+                "resolution": "not_traced",
+                "writes": f.writes.iter().map(|&w| {
+                    let span = program.source_map.get(w).filter(|s| s.start.line > 0);
+                    serde_json::json!({
+                        "term_id": w.0,
+                        "line": span.map(|s| s.start.line),
+                        "column": span.map(|s| s.start.column),
+                    })
+                }).collect::<Vec<_>>(),
+                "summary": f.describe(),
+            })
+        })
+        .collect()
 }
 
 pub(super) fn handle_show_dependents(
@@ -534,7 +640,10 @@ pub(super) fn handle_show_dependents(
     let root_id = resolve_terms(&program, std::slice::from_ref(&term_query))[0];
 
     let root_term = program.get_term(root_id);
-    let (dependent_ids, edges) = program.trace_dependents(root_id);
+    let deps = program.trace_dependents(root_id);
+    let dependent_ids = &deps.dependents;
+    let edges = &deps.edges;
+    let index = program.cell_index();
 
     if json {
         let root_json = term_to_json(root_term);
@@ -542,7 +651,7 @@ pub(super) fn handle_show_dependents(
             .iter()
             .map(|&id| term_to_json(program.get_term(id)))
             .collect();
-        let edges_json = edges_to_json(&edges);
+        let edges_json = edges_to_json(edges);
         let output = serde_json::json!({
             "root": root_json,
             "dependents": dependents_json,
@@ -558,13 +667,39 @@ pub(super) fn handle_show_dependents(
         println!("  op: {:?}", root_term.op);
         println!();
         println!("Downstream ({}):", dependent_ids.len());
-        print_term_rows(&program, &dependent_ids);
+        print_term_rows(&program, dependent_ids);
         println!();
         println!("Edges ({}):", edges.len());
-        for (from, to) in &edges {
-            println!("  t{} -> t{}", from.0, to.0);
+        for (from, to, kind) in edges {
+            match kind {
+                EdgeKind::Dataflow => println!("  t{} -> t{}", from.0, to.0),
+                // A may-edge is a possibility, not a fact; printing it the
+                // same way as a value edge would present one as the other.
+                EdgeKind::CellMay => {
+                    let var = cell_var_for_edge(&index, *from, *to)
+                        .map(|v| format!(" (cell '{}', may)", v))
+                        .unwrap_or_else(|| " (cell, may)".to_string());
+                    println!("  t{} ~> t{}{}", from.0, to.0, var);
+                }
+            }
         }
     }
+}
+
+/// The var name behind a `CellMay` edge, for display.
+fn cell_var_for_edge(
+    index: &crate::program_analysis::CellIndex,
+    from: TermId,
+    to: TermId,
+) -> Option<String> {
+    for cand in [from, to] {
+        if let Some(d) = index.decl_for_site(cand)
+            && let Some(n) = index.var_name(d)
+        {
+            return Some(n.to_string());
+        }
+    }
+    None
 }
 
 pub(super) fn handle_show_slice(
@@ -578,7 +713,11 @@ pub(super) fn handle_show_slice(
 
     let target_ids = resolve_terms(&program, &term_queries);
 
-    let slice_ids = program.slice(&target_ids);
+    // Conservative, not minimal: a slice that is too small silently computes a
+    // *different value*, while one that is too big only loses precision. The
+    // incompleteness is reported in-band rather than through the exit code —
+    // the type-level gate is `SliceResult`, not the process status.
+    let (slice_ids, frontier) = program.slice(&target_ids).conservative();
 
     if json {
         let terms_json: Vec<_> = slice_ids
@@ -588,6 +727,9 @@ pub(super) fn handle_show_slice(
         let output = serde_json::json!({
             "targets": target_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
             "slice": terms_json,
+            "minimal": frontier.is_empty(),
+            "complete": frontier.is_empty(),
+            "frontier": frontier_to_json(&program, &frontier),
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -602,6 +744,20 @@ pub(super) fn handle_show_slice(
         println!();
         println!("Terms ({}):", slice_ids.len());
         print_term_rows(&program, &slice_ids);
+        if !frontier.is_empty() {
+            println!();
+            println!(
+                "Not minimal — {} cell read{} crossed:",
+                frontier.len(),
+                if frontier.len() == 1 { "" } else { "s" }
+            );
+            print_frontier(&program, &frontier);
+            println!(
+                "  Every possible write is included, so the slice is sufficient in\n  \
+                 terms — but not faithful in order: it does not carry the control\n  \
+                 flow that selected among those writes."
+            );
+        }
     }
 }
 
@@ -706,12 +862,16 @@ fn resolve_terms(program: &Program, queries: &[String]) -> Vec<TermId> {
     ids
 }
 
-/// Render dataflow graph edges to the `[{ "from", "to" }]` JSON shape shared by
-/// the provenance and dependents outputs.
-fn edges_to_json(edges: &[(TermId, TermId)]) -> Vec<serde_json::Value> {
+/// Render dataflow graph edges to the `[{ "from", "to", "kind" }]` JSON shape
+/// shared by the provenance and dependents outputs. Backward-walk edges are
+/// uniformly `"dataflow"` — the walk refuses to cross anything else — so only
+/// the forward walk ever emits `"may"`.
+fn edges_to_json(edges: &[(TermId, TermId, EdgeKind)]) -> Vec<serde_json::Value> {
     edges
         .iter()
-        .map(|(from, to)| serde_json::json!({ "from": from.0, "to": to.0 }))
+        .map(|(from, to, kind)| {
+            serde_json::json!({ "from": from.0, "to": to.0, "kind": kind.as_str() })
+        })
         .collect()
 }
 

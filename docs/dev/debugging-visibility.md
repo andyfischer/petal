@@ -41,12 +41,50 @@ Every command takes `-e <code>` or a file path. Most support `--json`.
 | `show-ir [--json]` | Compiled IR (terms, ops, inputs, blocks) |
 | `show-provenance --term <name\|id> [--json]` | Backward dataflow slice (what does this term depend on?) |
 | `show-dependents --term <name\|id> [--json]` | Forward dataflow slice (what depends on this term?) |
-| `show-slice --term <a> [--term <b>...] [--json]` | Minimal subgraph for multiple targets |
+| `show-slice --term <a> [--term <b>...] [--json]` | Dataflow subgraph for multiple targets (minimal only when no `var` is read — see §1a) |
 | `show-graph` | Graphviz DOT output for visualization |
 | `pending-report [--json]` | Report pending/loading resource values after a run (see also `--trace-pending`) |
 | `lint [--fix\|--check]` | Formatter / source normalizer |
 
 Use `./ts/bin/run-petal.ts` to auto-rebuild the binary before invocation.
+
+### 1a. Cells stop the walk, and the walk says so
+
+A `var` binds a mutable heap cell, and a cell read has no dataflow edge back
+to whatever wrote it — that is a *dynamic* fact. All four dataflow queries
+therefore treat the cell operand of a `CellRead`, a `CellWrite` and a closure
+capture as an **identity** edge (which box) rather than a **value** edge
+(which value), and refuse to cross it.
+
+Refusing silently would be no better than crossing: an unannounced truncation
+reads as "nothing further influenced this". So every stop produces a
+**frontier** record — the var name, its declaration, and the complete static
+set of writes that could have supplied the value — and incompleteness is a
+field on the result rather than a convention:
+
+- `show-provenance`: `"frontier": [...]` and `"complete": false`. This command
+  never runs the program, so it always degrades to the static answer
+  (`"resolution": "not_traced"` plus the write sites).
+- `show-slice`: `"minimal": false`, and the slice is widened to include the
+  declaration and every `set` site transitively. `SliceResult` has no
+  "minimal" flag — a caller picks `minimal()` (fallible) or `conservative()`,
+  because too-small computes a *different value* while too-big only loses
+  precision.
+- `show-dependents`: gains `"kind": "may"` edges from the declaration and from
+  every `set` to every read. This direction was always a *may* question, so
+  over-approximating is the correct answer, and the previous `Downstream (0)`
+  on a `set` was not.
+- `explain`: runs the program, so it resolves the boundary to the exact write
+  (matched on `CellId`, so one declaration term minting several cells —
+  `state(key) var`, or a `var` in a loop body — does not confuse two of them)
+  and **continues the chain through it**, valuing everything after the hop as
+  of that write's execution. It also lists every recorded write in order, and
+  reports `truncated` when `max_depth` cuts the chain short.
+
+Runtime error messages ("Caused by:") share the same walk and print the
+frontier for the same reason.
+
+See `docs/lowering-confusion-20260726.md` §6e for the argument.
 
 ---
 

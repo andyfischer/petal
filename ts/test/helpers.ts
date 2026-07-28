@@ -37,6 +37,45 @@ export function checkJson(code: string): any {
   return JSON.parse(run(["check", "--json", "-e", shellEscape(code)]));
 }
 
+// ---------------------------------------------------------------------------
+// Dataflow-query helpers. Shared rather than redefined per suite so the cell
+// frontier (docs/lowering-confusion-20260726.md §6e) is asserted the same way
+// everywhere it surfaces.
+// ---------------------------------------------------------------------------
+
+/** `petal show-provenance --json --term <term>`, parsed. */
+export function showProvenanceJson(code: string, term: string): any {
+  return JSON.parse(
+    run(["show-provenance", "--json", "--term", term, "-e", shellEscape(code)])
+  );
+}
+
+/** `petal show-dependents --json --term <term>`, parsed. */
+export function showDependentsJson(code: string, term: string): any {
+  return JSON.parse(
+    run(["show-dependents", "--json", "--term", term, "-e", shellEscape(code)])
+  );
+}
+
+/** `petal show-slice --json --term <t>...`, parsed. */
+export function showSliceJson(code: string, terms: string[]): any {
+  const termArgs = terms.flatMap((t) => ["--term", t]);
+  return JSON.parse(run(["show-slice", "--json", ...termArgs, "-e", shellEscape(code)]));
+}
+
+/** `petal explain --json --term <term>`, parsed. Runs the program. */
+export function explainJson(code: string, term: string): any {
+  return JSON.parse(
+    run(["explain", "--json", "--term", term, "-e", shellEscape(code)])
+  );
+}
+
+/** `petal <cmd> --term <term>` in text mode, raw stdout. */
+export function dataflowText(cmd: string, code: string, terms: string[]): string {
+  const termArgs = terms.flatMap((t) => ["--term", t]);
+  return run([cmd, ...termArgs, "-e", shellEscape(code)]);
+}
+
 /** Run the built binary capturing stdout, stderr, and exit code separately. */
 function capture(args: string[]): {
   stdout: string;

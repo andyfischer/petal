@@ -47,6 +47,11 @@ pub struct Compiler {
 
     // Current compilation state
     current_block: BlockId,
+    /// Span of the assignment statement being compiled, so the `CellWrite` a
+    /// `set` emits carries a source location. Provenance names the write site
+    /// at every cell boundary (§6e), and a spanless write renders as
+    /// "writer unknown" — the exact silence the boundary exists to break.
+    assign_span: Option<SourceSpan>,
     last_term_in_block: HashMap<BlockId, TermId>,
     scopes: Vec<HashMap<String, TermId>>,
     enum_variants: HashMap<String, usize>, // variant name -> field count
@@ -174,6 +179,7 @@ impl Compiler {
             functions: Vec::new(),
             match_arms: HashMap::new(),
             current_block: BlockId(0),
+            assign_span: None,
             last_term_in_block: HashMap::new(),
             scopes: Vec::new(),
             enum_variants: HashMap::new(),

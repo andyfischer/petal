@@ -515,6 +515,46 @@ unannounced truncation reads as "nothing further influenced this", which is the
 same lie shorter. The walk has to stop *and say so*, uniformly, which is why
 this is a design item and not a patch.
 
+**Resolved in 4d.** The rule, stated once: *a cell operand is an identity edge,
+not a value edge.* The backward walk is defined over value edges only, so it
+terminates at every `CellRead`; and every stop carries a first-class
+`CellFrontier` — var name, declaration, complete static write set,
+`host_writable`. A result whose frontier is non-empty is *by definition*
+incomplete, and incompleteness lives in the return type rather than in a
+convention. Four points to record:
+
+- **There were four consumers, not three.** `backend/errors.rs::format_provenance`
+  feeds the "Caused by:" block of every runtime error and shares the same walk;
+  it prints the frontier too. `ExplainTerm` is `TraceBuffer::explain`, which
+  now returns `ExplainResult { entries, truncated, complete }`.
+- **Closure capture is an identity edge as well**, and this is the case the
+  feature exists for (§3's `invaders.ptl` shape). A `MakeClosure` input that
+  resolves to a cell declaration is the box, not a value; crossing it would
+  have reported `let y = bump()` as descending from `x`'s initializer, with
+  `complete: true` attached. Resolution runs phantom → `FunctionDef` →
+  capture slot → `MakeClosure` input, because the capture phantom is a `Copy`
+  with *empty* inputs and there is no edge to follow.
+- **The directions are asymmetric on purpose.** Backward is a *must* question,
+  so may-writes are inadmissible as edges and go in the frontier labelled as
+  possibilities. Forward is already a *may* question, so `EdgeKind::CellMay`
+  edges (decl → writes, decl → reads, write → reads) belong in it;
+  under-approximating there was the measured `Downstream (0)` on a `set`.
+- **Dynamic resolution matches on `CellId`, not on the declaration term.** One
+  declaration term mints a fresh cell per execution — `state(key) var` per key
+  (§8), and equally a `var` inside a function or loop body per entry — so a
+  static-only answer cannot tell two of them apart. With the trace on,
+  `explain` re-roots across the boundary and the chain is complete *and*
+  correct; the escape hatch's cost is paid only when the trace is off.
+
+`slice` returns a `SliceResult` with two named accessors rather than a flag,
+because the failure directions are not symmetric: `minimal()` is fallible and
+byte-identical to the old behaviour on cell-free programs, while
+`conservative()` closes over cells to a fixed point (one level was not enough —
+`set b = a + 1` needs `a`'s writes too). Conservative is sufficient in *terms*,
+not faithful in *order*: a pure-dataflow slice never carried the control flow
+that selects among the writes, so neither accessor yields an extractable
+program and neither is sold as one.
+
 ---
 
 ## 7. Plan
@@ -590,9 +630,10 @@ existing breaks and it can land in chunks.
 - **4d — the long tail.** Type checker (a `var`'s writes must stay assignable to
   its declared type), `petal lint`'s rebind rule (§8: never propose `@` on a
   `var` — already true, and now covered by a test), and provenance (§6e) —
-  which needs designing across its three consumers (`trace_provenance`,
-  `slice`, `ExplainTerm`) before it is written, since "degrade honestly" has to
-  mean the same thing in all of them.
+  ✅ done, across its **four** consumers (`trace_provenance`/`slice`,
+  `trace_dependents`, `TraceBuffer::explain`, and
+  `backend::errors::format_provenance`, which the plan had missed). The
+  resolution note is at the end of §6e.
   Two items came off this list early, because deferring them would have been a
   bug rather than a gap: `ir_serialize`/`ir_validate` (cell ops round-trip and
   are arity-checked), and the state JSON boundary — a `state var`'s slot holds

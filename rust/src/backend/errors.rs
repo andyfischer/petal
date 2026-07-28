@@ -69,10 +69,32 @@ pub fn annotate_error(
 
 /// Up to `max` nearest named ancestors of `failing` that carry a source span —
 /// the user-visible variables that fed the failure.
+///
+/// When the backward walk stopped at a cell the list would otherwise end
+/// without saying so, which is the §6e failure inside an error message: the
+/// most user-visible place a boundary can be dropped. So each frontier gets a
+/// line naming the var and its possible writers.
 fn format_provenance(program: &Program, failing: TermId, max: usize) -> Vec<String> {
-    let (ancestors, _edges) = program.trace_provenance(failing);
+    let prov = program.trace_provenance(failing);
     let mut out = Vec::new();
-    for aid in ancestors {
+    for f in &prov.frontier {
+        if out.len() >= max {
+            break;
+        }
+        let sites: Vec<String> = f
+            .writes
+            .iter()
+            .filter_map(|&w| program.source_map.get(w))
+            .filter(|s| s.start.line > 0)
+            .map(|s| format_position(program, s))
+            .collect();
+        let where_ = match sites.len() {
+            0 => "no write sites".to_string(),
+            _ => format!("written at {}", sites.join(", ")),
+        };
+        out.push(format!("{} — {}", f.describe(), where_));
+    }
+    for aid in prov.ancestors {
         if out.len() >= max {
             break;
         }

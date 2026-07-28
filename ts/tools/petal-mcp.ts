@@ -118,8 +118,10 @@ server.registerTool("ExplainTerm", {
   description:
     "Runs Petal code with execution tracing enabled, then walks the dataflow " +
     "graph backward from `term` and reports every recorded value (the target " +
-    "and its ancestors). For variables that get reassigned in a loop, also " +
-    "lists every write in order. Use this to answer 'why does X have value Y?'.",
+    "and its ancestors). At a `var` read the walk names the `set` that " +
+    "actually supplied the value, lists every write to that cell in order, " +
+    "and continues the chain through it. Use this to answer 'why does X have " +
+    "value Y?'.",
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
     term: z

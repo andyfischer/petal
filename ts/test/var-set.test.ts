@@ -18,6 +18,8 @@ import {
   showIrJson,
   showTokensJson,
   termsByOp,
+  explainJson,
+  showProvenanceJson,
 } from "./helpers";
 
 beforeAll(() => ensureBuild());
@@ -317,5 +319,25 @@ print(x)`);
 if true then set x = 1 end
 print(x)`);
     expect(termsByOp(ir, "Phi")).toHaveLength(0);
+  });
+});
+
+// The cost of the escape hatch, and the rule that keeps it honest: a backward
+// walk stops at every cell read AND SAYS SO (§6e). The full frontier contract
+// is exercised in provenance.test.ts and slicing.test.ts; these two pin that
+// `var`'s own suite fails if the tooling ever goes quiet about it.
+describe("var / set and provenance", () => {
+  it("a var read is a dead end for provenance unless it is announced", () => {
+    const prov = showProvenanceJson("var x = 0\nset x = x + 1\nlet y = x * 2\n", "y");
+    expect(prov.complete).toBe(false);
+    expect(prov.frontier[0].var).toBe("x");
+  });
+
+  it("the trace turns the dead end back into a chain", () => {
+    const out = explainJson("var x = 0\nset x = x + 1\nlet y = x * 2\n", "y");
+    expect(out.complete).toBe(true);
+    const boundary = out.chain.map((e: any) => e.boundary).filter(Boolean)[0];
+    expect(boundary.resolution).toBe("resolved");
+    expect(boundary.last_write.line).toBe(2);
   });
 });

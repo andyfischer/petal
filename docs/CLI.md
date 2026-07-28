@@ -33,7 +33,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `show-bytecode` | Bytecode lowering of the IR (see [Architecture.md](dev/Architecture.md) for the backend split) |
 | `show-provenance` | Backward dataflow slice from a term |
 | `show-dependents` | Forward dataflow slice from a term |
-| `show-slice` | Minimal dataflow subgraph for one or more targets |
+| `show-slice` | Dataflow subgraph for one or more targets |
 | `show-graph` | Graphviz DOT-format dataflow graph |
 
 All inspection commands support `--json` for machine-readable output. `run`
@@ -510,6 +510,11 @@ The remaining commands query the compiled dataflow graph without running
 the program (except `explain`, which needs execution for values). They
 all accept `--term <name|id>` with the same resolution rules as `explain`.
 
+All three stop at every `var` cell. See
+[Cells and the frontier](#cells-and-the-frontier) below — the short version is
+that none of them promises an unqualified "minimal" answer on a program that
+uses `var`, and each one says so in its output.
+
 ### `show-provenance` — Backward slice
 
 ```
@@ -519,7 +524,10 @@ petal show-provenance [--json] --term <name|id> <file.ptl>
 Returns the set of terms that feed into the target term, along with the
 edges connecting them. "What does this value depend on?"
 
-JSON shape: `{root: Term, ancestors: Term[], edges: [{from, to}, ...]}`.
+JSON shape:
+`{root: Term, ancestors: Term[], edges: [{from, to, kind}, ...], frontier: [...], complete: bool}`.
+`kind` is always `"dataflow"` here — a backward walk answers a *must* question,
+so the only edges it will cross are value edges.
 
 ### `show-dependents` — Forward slice
 
@@ -530,15 +538,62 @@ petal show-dependents [--json] --term <name|id> <file.ptl>
 Symmetric to `show-provenance`, but walks forward through the reverse
 `inputs` index. "What downstream values does this term influence?".
 
-### `show-slice` — Minimal subgraph for multiple targets
+This direction answers a *may* question, so it also carries `"kind": "may"`
+edges from a `var` declaration and from every `set` to every read of that
+cell (`t96 ~> t97 (cell 'x', may)` in text mode). Which write actually
+supplied a given read is a dynamic fact; over-approximating it is correct,
+while under-approximating it would mean reporting that a `set` affects
+nothing.
+
+### `show-slice` — Subgraph for multiple targets
 
 ```
 petal show-slice [--json] --term <a> [--term <b> ...] <file.ptl>
 ```
 
-Returns the smallest subgraph that connects one or more target terms back
-to their common ancestors. Useful for focused visualizations and for
-extracting the "interesting" part of a larger program.
+Returns a subgraph that connects one or more target terms back to their
+common ancestors. Useful for focused visualizations and for extracting the
+"interesting" part of a larger program.
+
+On a cell-free program this is the smallest such subgraph. On a program that
+reads a `var` it is deliberately **not** minimal: it also pulls in the
+declaration and every `set` site, transitively, and reports
+`"minimal": false` with a `Not minimal — N cell reads crossed:` block. Too
+small silently computes a *different value*; too big only loses precision.
+Even the conservative answer is sufficient in *terms*, not faithful in
+*order* — a dataflow slice never carried the control flow that selects among
+the writes.
+
+### Cells and the frontier
+
+A `var` binds a mutable heap cell (see
+`docs/lowering-confusion-20260726.md` §6c). The cell operand of a `CellRead`,
+a `CellWrite` or a closure capture is an *identity* edge — it names which box,
+not which value — so a backward walk never crosses one. Every stop is reported
+as a **frontier** entry naming the var, its declaration, and the complete set
+of writes that could have supplied the value:
+
+```
+Frontier (1):
+  t97: read of var 'x' (not traced)
+    possible write: t96 [line 2, column 1]
+```
+
+The write set is complete because no expression evaluates to a cell (§6d), so
+the only way to reach one is a name lexically bound to its declaration. The
+exception is a `state var`, whose slot the host can also write through
+`set_state`; that is printed rather than glossed.
+
+`show-*` commands never run the program, so they always degrade to this
+static answer (`"resolution": "not_traced"`) — never to silence. `explain`
+does run it, and therefore resolves the boundary to the exact write and
+continues the chain through it.
+
+Note that `--term x` on a `var` resolves to the *last* `CellWrite` on that
+name, since term lookup is last-name-wins. That is no longer worth special
+casing: `explain` from the write shows that write's own chain and the var
+header, and `show-dependents` from it shows every read the write may reach.
+Pass an explicit `--term tNN` to start somewhere else.
 
 ### `show-graph` — Graphviz DOT export
 

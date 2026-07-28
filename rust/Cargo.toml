@@ -25,6 +25,24 @@ wasm-bindgen = { version = "0.2", optional = true }
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# `wasm-opt` starts from the WebAssembly MVP plus a couple of extras, while
+# rustc has enabled a wider default feature set for wasm32-unknown-unknown
+# since 1.82 (`rustc --print cfg --target wasm32-unknown-unknown`). Anything
+# rustc emits that wasm-opt was not told to allow fails validation outright —
+# "Bulk memory operations require bulk memory [--enable-bulk-memory]" — so the
+# list below mirrors rustc's defaults. Keep the two in sync when the toolchain
+# moves; the alternative, `wasm-opt = false`, costs ~30% of the payload.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+    "-O",
+    "--enable-bulk-memory",
+    "--enable-multivalue",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-reference-types",
+    "--enable-sign-ext",
+]
+
 # Optimized profile for the binaries we ship in releases: smaller, faster.
 # (`strip` removes debug symbols; `lto`/`codegen-units=1` trade build time for
 # a leaner, faster binary.)

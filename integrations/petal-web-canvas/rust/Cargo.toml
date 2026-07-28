@@ -15,3 +15,16 @@ serde_json = "1"
 
 [lib]
 crate-type = ["cdylib"]
+
+# Mirrors `rust/Cargo.toml` — see the note there. wasm-pack reads this metadata
+# per crate, so the list has to be repeated rather than inherited.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+    "-O",
+    "--enable-bulk-memory",
+    "--enable-multivalue",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-reference-types",
+    "--enable-sign-ext",
+]

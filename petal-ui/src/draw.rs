@@ -66,6 +66,18 @@ fn is_no_spacing(s: &f32) -> bool {
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum DrawCommand {
+    /// A bitmap asset scaled into a destination rectangle.
+    ///
+    /// `source` is a host-resolved asset path or logical asset name.
+    Image {
+        source: String,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
     Clear {
         r: u8,
         g: u8,
@@ -312,6 +324,25 @@ impl DrawCommand {
         };
 
         let cmd = match tag.as_str() {
+            "image" => {
+                let source = match arg(0)? {
+                    Value::String(id) => heap.get_string(*id).to_string(),
+                    other => {
+                        return Err(format!(
+                            "image command needs a source string, got {}",
+                            other.type_name()
+                        ));
+                    }
+                };
+                DrawCommand::Image {
+                    source,
+                    x: i32_at(1)?,
+                    y: i32_at(2)?,
+                    w: u32_at(3)?,
+                    h: u32_at(4)?,
+                    a: opt_u8(5, 255),
+                }
+            }
             "clear" => DrawCommand::Clear {
                 r: u8_at(0)?,
                 g: u8_at(1)?,
@@ -520,6 +551,7 @@ pub fn reset_canvas_ids(env: &mut Env) {
 /// Register the core draw natives (everything except the optional offscreen
 /// canvas ops — see [`register_canvas`]).
 pub fn register_draw(env: &mut Env) {
+    env.register_native("draw_image", native_draw_image);
     env.register_native("clear", native_clear);
     env.register_native("draw_rect", native_draw_rect);
     env.register_native("draw_rect_rounded", native_draw_rect_rounded);
@@ -575,6 +607,20 @@ fn native_clear(state: &mut PetalCxt) -> NativeResult {
 }
 
 // `draw_rect(x, y, w, h, r, g, b, [a])` — trailing alpha is optional (opaque).
+/// `draw_image(source, x, y, w, h, [alpha])` — draw a host-resolved bitmap.
+fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
+    let source = state.get_string(1)?;
+    let source = Value::String(state.heap_mut().alloc_string(source));
+    let mut args = vec![source];
+    for index in 2..=5 {
+        args.push(Value::Int(state.get_int(index)?));
+    }
+    args.push(Value::Int(opt_int(state, 6, 255)?));
+    emit_draw(state, "image", args);
+    state.push_nil();
+    Ok(1)
+}
+
 fn native_draw_rect(state: &mut PetalCxt) -> NativeResult {
     let mut args = int_args(state, 7)?;
     args.push(Value::Int(opt_int(state, 8, 255)?)); // a
@@ -834,6 +880,38 @@ mod tests {
             other => panic!("expected Host command, got {other:?}"),
         }
         assert_eq!(cmds[2], DrawCommand::ClipNone);
+    }
+
+    #[test]
+    fn image_source_geometry_and_alpha_decode() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source(
+            "draw_image(\"assets/gauge.png\", 1, 2, 30, 40)\n\
+             draw_image(\"assets/glow.png\", 5, 6, 70, 80, 128)",
+        )
+        .expect("run");
+        assert_eq!(
+            take_draw_commands(&mut env),
+            vec![
+                DrawCommand::Image {
+                    source: "assets/gauge.png".into(),
+                    x: 1,
+                    y: 2,
+                    w: 30,
+                    h: 40,
+                    a: 255,
+                },
+                DrawCommand::Image {
+                    source: "assets/glow.png".into(),
+                    x: 5,
+                    y: 6,
+                    w: 70,
+                    h: 80,
+                    a: 128,
+                },
+            ]
+        );
     }
 
     #[test]

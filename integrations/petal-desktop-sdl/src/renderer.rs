@@ -269,6 +269,9 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         DrawCommand::ClipNone => {
             canvas.set_clip_rect(None);
         }
+        // Bitmap loading is host-specific and this integration has not opted
+        // into it yet. Unsupported standard commands are intentionally skipped.
+        DrawCommand::Image { .. } => {}
         // Host-extension tags this app doesn't define; nothing to draw.
         DrawCommand::Host { .. } => {}
         // Handled in `render`; unreachable here.

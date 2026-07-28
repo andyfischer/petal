@@ -48,6 +48,7 @@ end
 // The flat-int arities delegate to the captured natives, so scripts that use
 // the classic signatures keep working when these shadow the builtins.
 
+let _native_image = draw_image
 let _native_rect = draw_rect
 let _native_rect_rounded = draw_rect_rounded
 let _native_rect_outline = draw_rect_outline
@@ -58,6 +59,19 @@ let _native_text = draw_text
 // Every primitive takes an optional trailing alpha (0–255, 255 = opaque).
 // Lines and outlines also take an optional trailing stroke `width`. Rounded
 // rects add a `radius`. Each forwards to the native, which fills defaults.
+
+export fn draw_image(source, x, y, w, h)
+  _native_image(source, x, y, w, h)
+end
+export fn draw_image(source, x, y, w, h, a)
+  _native_image(source, x, y, w, h, a)
+end
+export fn draw_image(source, r)
+  _native_image(source, r.x, r.y, r.w, r.h)
+end
+export fn draw_image(source, r, a)
+  _native_image(source, r.x, r.y, r.w, r.h, a)
+end
 
 export fn draw_rect(x, y, w, h, r, g, b)
   _native_rect(x, y, w, h, r, g, b)

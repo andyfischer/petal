@@ -23,7 +23,7 @@ Two APIs cover the round trip:
 
 | Direction | API | Module |
 |---|---|---|
-| **Read** | `get_static_value(source, name)` / `static_values(source)` | [`rust/src/static_value.rs`](../rust/src/static_value.rs) |
+| **Read** | `get_static_value(source, name)` / `static_values(source)` / `static_bindings(source)` | [`rust/src/static_value.rs`](../rust/src/static_value.rs) |
 | **Write** | `Goal::should_set_value(name, value)` | [`rust/src/goal_based_editing.rs`](../rust/src/goal_based_editing.rs) |
 
 Both speak the same type, [`StaticValue`](#staticvalue), so a value read out of a
@@ -98,6 +98,43 @@ them.
 `static_values` instead **omits** non-static bindings rather than failing, so a
 config file that also declares functions still yields its readable settings.
 
+### Reading the whole file, including what it can't read
+
+`static_values` omitting a binding leaves a host unable to tell
+`let walk_speed = 3.0 + 1.5` — "you wrote this in a form I can't read" — from a
+file that simply never mentions `walk_speed`. Those need different messages, and
+a user given the wrong one loses an hour. `static_bindings` returns everything:
+
+```rust
+use petal::static_value::static_bindings;
+
+for binding in static_bindings(&source)? {
+    match binding.value {
+        Ok(value) => apply(&binding.name, value),
+        Err(reason) => warn!("`{}` is not static: {reason}", binding.name),
+    }
+}
+```
+
+Each `StaticBinding` carries:
+
+| Field | |
+|---|---|
+| `name` | the bound name |
+| `value` | `Ok(StaticValue)`, or `Err(reason)` — the same noun phrase `NotStatic` carries |
+| `text` | the right-hand side **exactly as written** (`None` for a `fn`/`state` declaration) |
+| `comment` | the comment block directly above the binding, markers stripped (`None` if there is none) |
+
+Bindings come back in source order, one entry per name, carrying the last
+binding's value — a host regenerating the file keeps its ordering.
+
+`text` is there because a number's spelling isn't recoverable from its `f64`:
+`0.020000` and `0.02` are the same value, so only the source text says which one
+the author typed. `comment` is there so a note a user wrote next to a value can
+be shown back to them in the host's own UI. A blank line, or any code, between a
+comment and a binding ends the block — a file header does not become the first
+binding's documentation.
+
 ---
 
 ## Writing
@@ -121,8 +158,13 @@ std::fs::write("config.ptl", updated)?;
 - **The name is bound** → the right-hand side of its **last** top-level binding is
   replaced. Everything else is untouched: the `let`, the name, comments, blank
   lines, indentation, and every other statement in the file.
-- **The name isn't bound** → `let name = value` is appended as a new top-level
-  statement.
+- **The name isn't bound** → `let name = value` is inserted as a new top-level
+  statement, at the end of the file or wherever a
+  [placement](goal-based-editing.md#placement) says.
+- **The goal already holds** → nothing is written at all. The source comes back
+  byte-identical, so a save that rewrites every field only touches the lines
+  that actually moved. That is what keeps `let drag = 0.020000` from becoming
+  `let drag = 0.02` on a save that changed nothing about it.
 
 Edits go through the lossless CST, so a file the user hand-wrote comes back
 looking hand-written:
@@ -202,7 +244,11 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
 - **`state` is not configuration.** Its value only exists while the program runs
   and changes as it runs; it reads as `NotStatic`.
 - **Writing flattens.** `should_set_value` replaces the whole right-hand side, so
-  a conditional binding loses its conditional (see above).
+  a conditional binding loses its conditional (see above) — unless the goal
+  already holds, in which case nothing is written.
+- **Whether a value is exactly representable is the host's problem.** A consumer
+  with a fixed-point grid or a bounded range rejects and rounds against its own
+  arithmetic; Petal reads and writes the number it was given.
 - **Modules aren't followed.** `import`ed files are not read; `get_static_value`
   looks only at the source you hand it.
 

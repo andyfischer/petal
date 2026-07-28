@@ -84,7 +84,10 @@ The write half of [Petal as a configuration format](config-files.md).
 - If `name` is bound at top level, the **right-hand side of its last binding** is
   replaced (the last binding is the one that decides the program's value). Both
   `let name = …` and a bare `name = …` rebinding count.
-- If `name` isn't bound at top level, `let name = value` is **appended**.
+- If `name` isn't bound at top level, `let name = value` is **inserted** — at
+  the end of the file, or wherever a [placement](#placement) says.
+- If reading `name` already yields `value`, **nothing is written**: the source
+  comes back byte-identical.
 
 ```rust
 Goal::should_set_value("color_scheme", "dracula");   // let color_scheme = "dracula"
@@ -112,6 +115,56 @@ next step for this goal, in `ensure_binding`.
 Only **top-level** bindings are considered — one inside a function body belongs
 to that body's scope, so the goal appends a new top-level binding instead of
 editing it.
+
+#### A goal that already holds writes nothing
+
+A goal states an outcome, so an outcome that already holds needs no edit and the
+source is returned unchanged, to the byte. This matters for a host that writes
+back **every** field on every save — the honest way to do it, since "differs
+from the default" and "differs from what the file says" are different questions.
+Without it, a save that changed one number would renormalize every other line it
+touched:
+
+```text
+let drag_axial = 0.020000    →    let drag_axial = 0.020000   (unchanged: same f64)
+let drag_axial = 0.020001    →    let drag_axial = 0.02       (changed: different f64)
+```
+
+The comparison is on the *value*, exactly: an `Int` is not a `Float` at the same
+magnitude, and a binding that isn't statically readable never compares equal, so
+it still collapses to the literal.
+
+### Placement
+
+Where a goal's statement goes **when one has to be inserted**. A goal editing an
+existing binding or call ignores placement — the statement stays where its author
+put it.
+
+```rust
+Goal::should_set_value("tether_slack_m", 0.5).after("tether_max_m")
+Goal::should_set_value("tether_slack_m", 0.5).before("tether_max_m")
+```
+
+| `Placement` | |
+|---|---|
+| `End` (default) | append to the end of the file |
+| `After(anchor)` | insert directly below the anchor's statement |
+| `Before(anchor)` | insert directly above the anchor — and above its doc comment |
+
+The anchor is a top-level binding name, or a statement-position call name. An
+anchor that isn't in the file falls back to appending: a placement can misplace
+a statement, never lose one.
+
+Insertion matches the spacing already in the file — a blank line between the
+anchor and its neighbour means the new statement gets one too, and a tightly
+packed file stays tightly packed. `Before` inserts above the anchor's comment
+block rather than between the comment and its binding, so a doc comment stays
+with the binding it describes.
+
+This is what lets a host that generates a config file from a table keep the
+file's ordering when a new field appears — anchor each field on the one before
+it — without regenerating the file and throwing away the user's comments and
+layout, which is the thing goal-based editing exists to protect.
 
 ### `StaticValue` — structured values
 

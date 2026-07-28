@@ -346,79 +346,200 @@ pub fn get_static_value(source: &str, name: &str) -> Result<StaticValue, StaticV
 /// Names whose final binding isn't static are omitted rather than failing the
 /// call: a config file that also declares functions or `state` still yields its
 /// readable settings. Use [`get_static_value`] when a specific name's
-/// unreadability is itself an error worth reporting.
+/// unreadability is itself an error worth reporting, or [`static_bindings`] when
+/// the *omitted* names matter too — telling "you wrote this in a form I can't
+/// read" apart from "you didn't write it" needs both halves.
 pub fn static_values(source: &str) -> Result<BTreeMap<String, StaticValue>, StaticValueError> {
     let bindings = eval_top_level(source)?;
     Ok(bindings
         .into_iter()
-        .filter_map(|(name, result)| result.ok().map(|value| (name, value)))
+        .filter_map(|binding| {
+            binding
+                .value
+                .ok()
+                .map(|value| (binding.name.clone(), value))
+        })
         .collect())
+}
+
+/// One top-level binding, with everything the source says about it: its value
+/// *or* why it has none, the right-hand side as written, and the comment block
+/// above it.
+///
+/// This is what [`static_bindings`] returns. It exists because a host reading a
+/// config file needs more than the readable values: it has to report the
+/// unreadable ones (a binding that is silently skipped looks exactly like a
+/// binding that was never written), it may want to show the author's note next
+/// to the value in its own UI, and it may want to re-render a number the way the
+/// author spelled it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticBinding {
+    /// The bound name.
+    pub name: String,
+    /// The static value, or the reason there isn't one — the same noun phrase
+    /// [`StaticValueError::NotStatic`] carries ("an arithmetic or comparison
+    /// expression, which needs evaluating").
+    pub value: Result<StaticValue, String>,
+    /// The right-hand side exactly as it was written, whitespace and all.
+    /// `None` for a `fn` or `state` declaration, which has no right-hand side
+    /// in this sense.
+    ///
+    /// Keeping the source text is what lets a host write a value back in the
+    /// author's own spelling: `0.020000` and `0.02` are the same `f64`, so
+    /// without the text a writer cannot tell them apart.
+    pub text: Option<String>,
+    /// The comment block immediately above the binding — the lines' `//`
+    /// markers and one following space stripped, joined with newlines. A blank
+    /// line or any code between the comment and the binding ends the block, so
+    /// a file header does not attach itself to the first binding. `None` when
+    /// there is no such comment.
+    pub comment: Option<String>,
+}
+
+/// Every top-level name `source` binds, in source order, each carrying either
+/// its static value or the reason it has none — plus the source text and
+/// leading comment of the binding (see [`StaticBinding`]).
+///
+/// The richer counterpart to [`static_values`]: same parse, same
+/// static-evaluation rules, nothing dropped on the way out. A name bound more
+/// than once appears once, at its first position, carrying its **last**
+/// binding — the value the program ends up with.
+///
+/// ```ignore
+/// for binding in static_bindings(&source)? {
+///     match binding.value {
+///         Ok(value) => apply(&binding.name, value),
+///         // Reportable, rather than indistinguishable from "not mentioned".
+///         Err(reason) => warn!("`{}` is not static: {reason}", binding.name),
+///     }
+/// }
+/// ```
+pub fn static_bindings(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> {
+    eval_top_level(source)
 }
 
 /// Every top-level name the source binds, in source order, each carrying either
 /// its static value or the reason it doesn't have one. A name bound more than
 /// once keeps only its last binding (later entries overwrite earlier ones), so
 /// the result describes the program's end state.
-fn eval_top_level(
-    source: &str,
-) -> Result<Vec<(String, Result<StaticValue, String>)>, StaticValueError> {
+fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> {
     let (_tree, stmts) = parse_source(source, ENTRY_FILE).map_err(StaticValueError::Parse)?;
-    let mut bindings: Vec<(String, Result<StaticValue, String>)> = Vec::new();
+    let chars: Vec<char> = source.chars().collect();
+    let mut bindings: Vec<StaticBinding> = Vec::new();
     for stmt in &stmts {
-        let (name, bound) = match &stmt.kind {
-            StmtKind::Let { name, value, .. } => (name.clone(), eval(value, &bindings)),
+        let (name, value, text) = match &stmt.kind {
+            StmtKind::Let { name, value, .. } => (
+                name.clone(),
+                eval(value, &bindings),
+                Some(span_text(&chars, value.span)),
+            ),
             StmtKind::Assign {
                 target: AssignTarget::Name(name),
                 value,
-            } => (name.clone(), eval(value, &bindings)),
+            } => (
+                name.clone(),
+                eval(value, &bindings),
+                Some(span_text(&chars, value.span)),
+            ),
             // A `fn` declares a name too, so report it as bound-but-not-static
             // rather than letting a lookup say "not found" about a name that is
             // plainly there in the file.
-            StmtKind::FnDecl { name, .. } => (name.clone(), Err("a function declaration".into())),
+            StmtKind::FnDecl { name, .. } => {
+                (name.clone(), Err("a function declaration".into()), None)
+            }
             // `state` is runtime state, not configuration: its value only exists
             // once the program runs, and it changes as the program runs.
             StmtKind::State { name, .. } => (
                 name.clone(),
                 Err("a `state` declaration, whose value only exists at run time".into()),
+                None,
             ),
             _ => continue,
         };
-        set_binding(&mut bindings, name, bound);
+        let comment = leading_comment(&chars, stmt.span.start.offset as usize);
+        set_binding(
+            &mut bindings,
+            StaticBinding {
+                name,
+                value,
+                text,
+                comment,
+            },
+        );
     }
     Ok(bindings)
 }
 
+/// The source text a span covers. Spans are **char** offsets (the lexer indexes
+/// source as `Vec<char>`), so this slices chars, not bytes.
+fn span_text(chars: &[char], span: crate::source_map::SourceSpan) -> String {
+    let start = (span.start.offset as usize).min(chars.len());
+    let end = (span.end.offset as usize).clamp(start, chars.len());
+    chars[start..end].iter().collect()
+}
+
+/// The comment block directly above the statement starting at `offset`: the run
+/// of whole-line `//` comments immediately preceding it, with markers stripped
+/// and lines joined by newlines.
+///
+/// The run stops at the first line that isn't a comment — including a blank one,
+/// so a file header separated by a blank line stays a file header rather than
+/// becoming the first binding's doc comment. A comment trailing code on its own
+/// line (`let a = 1 // note`) is not a whole-line comment and stops the run too.
+fn leading_comment(chars: &[char], offset: usize) -> Option<String> {
+    let mut line_start = line_start_at(chars, offset.min(chars.len()));
+    let mut lines: Vec<String> = Vec::new();
+    while line_start > 0 {
+        let prev_end = line_start - 1; // the '\n' ending the previous line
+        let prev_start = line_start_at(chars, prev_end);
+        let line: String = chars[prev_start..prev_end].iter().collect();
+        let trimmed = line.trim();
+        let Some(body) = trimmed.strip_prefix("//") else {
+            break;
+        };
+        lines.push(body.strip_prefix(' ').unwrap_or(body).to_string());
+        line_start = prev_start;
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    lines.reverse();
+    Some(lines.join("\n"))
+}
+
+/// Offset of the start of the line containing `offset`.
+fn line_start_at(chars: &[char], offset: usize) -> usize {
+    chars[..offset]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map(|i| i + 1)
+        .unwrap_or(0)
+}
+
 /// The current binding for `name`, or `None` if it isn't bound.
 fn lookup<'a>(
-    bindings: &'a [(String, Result<StaticValue, String>)],
+    bindings: &'a [StaticBinding],
     name: &str,
 ) -> Option<&'a Result<StaticValue, String>> {
     bindings
         .iter()
-        .find(|(bound, _)| bound == name)
-        .map(|(_, result)| result)
+        .find(|binding| binding.name == name)
+        .map(|binding| &binding.value)
 }
 
-/// Bind `name`, replacing any earlier binding of it in place (so the entry
+/// Bind a name, replacing any earlier binding of it in place (so the entry
 /// keeps its original source position but carries the latest value).
-fn set_binding(
-    bindings: &mut Vec<(String, Result<StaticValue, String>)>,
-    name: String,
-    value: Result<StaticValue, String>,
-) {
-    match bindings.iter_mut().find(|(bound, _)| *bound == name) {
-        Some(entry) => entry.1 = value,
-        None => bindings.push((name, value)),
+fn set_binding(bindings: &mut Vec<StaticBinding>, binding: StaticBinding) {
+    match bindings.iter_mut().find(|entry| entry.name == binding.name) {
+        Some(entry) => *entry = binding,
+        None => bindings.push(binding),
     }
 }
 
 /// Statically evaluate `expr` against the names bound above it, or explain why
 /// it has no static value. The `Err` string is a noun phrase that completes
 /// "`x` is not a static value: …".
-fn eval(
-    expr: &Expr,
-    bindings: &[(String, Result<StaticValue, String>)],
-) -> Result<StaticValue, String> {
+fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> {
     match &expr.kind {
         ExprKind::Literal(lit) => Ok(match lit {
             Literal::Nil => StaticValue::Nil,
@@ -756,6 +877,119 @@ let recent       = [\"a.rs\", \"b.rs\"]
             values["recent"],
             StaticValue::list([StaticValue::str("a.rs"), StaticValue::str("b.rs")])
         );
+    }
+
+    // ── static_bindings ──────────────────────────────────────────────────
+
+    /// The binding named `name`, for asserting on one entry of a read.
+    fn binding(source: &str, name: &str) -> StaticBinding {
+        static_bindings(source)
+            .unwrap()
+            .into_iter()
+            .find(|b| b.name == name)
+            .unwrap_or_else(|| panic!("`{name}` should be bound"))
+    }
+
+    #[test]
+    fn static_bindings_reports_the_names_static_values_omits() {
+        // The point of the richer read: a name bound to something unreadable is
+        // *present*, with a reason, so a host can say "your edit isn't taking
+        // effect and here is why" rather than "you never wrote it".
+        let src = "let size = 12 + 2\nstate count = 0\nfn f() 1 end\nlet ok = 3\n";
+        let names: Vec<String> = static_bindings(src)
+            .unwrap()
+            .into_iter()
+            .map(|b| b.name)
+            .collect();
+        assert_eq!(names, vec!["size", "count", "f", "ok"]);
+        assert_eq!(
+            binding(src, "size").value,
+            Err("an arithmetic or comparison expression, which needs evaluating".to_string())
+        );
+        assert!(binding(src, "count").value.is_err());
+        assert_eq!(
+            binding(src, "f").value,
+            Err("a function declaration".into())
+        );
+        assert_eq!(binding(src, "ok").value, Ok(StaticValue::int(3)));
+    }
+
+    #[test]
+    fn static_bindings_keeps_the_right_hand_side_as_written() {
+        // `0.020000` and `0.02` are the same f64, so only the text can tell a
+        // host what the author actually typed.
+        let src = "let drag = 0.020000\nlet size = 14\nfn f() 1 end\n";
+        assert_eq!(binding(src, "drag").text.as_deref(), Some("0.020000"));
+        assert_eq!(binding(src, "drag").value, Ok(StaticValue::float(0.02)));
+        assert_eq!(binding(src, "size").text.as_deref(), Some("14"));
+        // A declaration has no right-hand side in this sense.
+        assert_eq!(binding(src, "f").text, None);
+    }
+
+    #[test]
+    fn static_bindings_reads_the_comment_above_a_binding() {
+        let src = "\
+// How much the hull drags.
+// 0.0 to 1.0
+let drag = 0.02
+";
+        assert_eq!(
+            binding(src, "drag").comment.as_deref(),
+            Some("How much the hull drags.\n0.0 to 1.0")
+        );
+    }
+
+    #[test]
+    fn a_file_header_is_not_the_first_bindings_comment() {
+        // A blank line ends the comment block, which is what keeps a header
+        // from attaching itself to whatever binding happens to come first.
+        let src = "// movement config\n// generated\n\nlet drag = 0.02\n";
+        assert_eq!(binding(src, "drag").comment, None);
+
+        // And code on the line above ends it too, trailing comment or not.
+        let src = "let a = 1 // note\nlet b = 2\n";
+        assert_eq!(binding(src, "b").comment, None);
+    }
+
+    #[test]
+    fn a_binding_without_a_comment_has_none() {
+        assert_eq!(binding("let a = 1\n", "a").comment, None);
+    }
+
+    #[test]
+    fn static_bindings_keeps_the_last_binding_at_the_first_position() {
+        // Position is where the name first appears (a host regenerating the
+        // file keeps its order); the value, text and comment are the last
+        // binding's, since that is what the program ends up with.
+        let src = "let size = 12\nlet other = 1\n// later\nlet size = 14\n";
+        let names: Vec<String> = static_bindings(src)
+            .unwrap()
+            .into_iter()
+            .map(|b| b.name)
+            .collect();
+        assert_eq!(names, vec!["size", "other"]);
+        let size = binding(src, "size");
+        assert_eq!(size.value, Ok(StaticValue::int(14)));
+        assert_eq!(size.text.as_deref(), Some("14"));
+        assert_eq!(size.comment.as_deref(), Some("later"));
+    }
+
+    #[test]
+    fn static_bindings_survives_multibyte_source() {
+        // Spans are char offsets, so a multi-byte comment must not shift the
+        // text slice.
+        let src = "// café ☕ setting\nlet size = 14\n";
+        let size = binding(src, "size");
+        assert_eq!(size.text.as_deref(), Some("14"));
+        assert_eq!(size.comment.as_deref(), Some("café ☕ setting"));
+    }
+
+    #[test]
+    fn static_bindings_reports_a_parse_failure() {
+        assert!(matches!(
+            static_bindings("let size = \n").unwrap_err(),
+            StaticValueError::Parse(_)
+        ));
     }
 
     #[test]

@@ -63,7 +63,8 @@ should satisfy — and the module decides whether to insert or update in place.
 | Item | Purpose |
 |---|---|
 | `Goal::should_call(function, params)` | Goal: source should contain a top-level `function(params...)` call. `params` are structured `StaticValue`s (`&str`/`i64`/`f64`/`bool` coerce in via `From`). |
-| `Goal::should_set_value(name, value)` | Goal: reading `name` out of the source should yield `value`. |
+| `Goal::should_set_value(name, value)` | Goal: reading `name` out of the source should yield `value`. A goal that already holds writes nothing. |
+| `Goal::after(anchor)` / `Goal::before(anchor)` | Where a *newly inserted* statement goes, when appending at the end would land outside a generated file's shape. |
 | `StaticValue` | A structured value: `Str`/`Int`/`Float`/`Bool`/`Nil`, plus composites `List`/`Record`/`Call`. Every variant renders to well-formed Petal (strings are quoted and escaped); there is no verbatim/raw-source variant. |
 | `modify_source_with_goals(source, goals)` | Apply a list of goals in order; `Ok(String)` is the rewritten source, `Err(GoalError)` a typed failure. |
 
@@ -74,9 +75,12 @@ app's user-config script wants for a "set the color scheme" menu action.
 `ShouldSetValue` is the write half of **Petal-as-a-config-format**
 ([config-files.md](config-files.md)): it replaces the right-hand side of the
 *last* top-level binding of `name` (the one that decides the program's value), or
-appends `let name = value` if the name is unbound. Replacing the whole right-hand
-side is what makes the change static even when the existing binding isn't — a
-`let x = if … end` collapses to the literal. Editing the branch actually taken
+inserts `let name = value` if the name is unbound (at the end, or at a
+`Placement`). Replacing the whole right-hand side is what makes the change
+static even when the existing binding isn't — a `let x = if … end` collapses to
+the literal. A goal that *already holds* is a no-op, returning the source
+byte-identical, so a host that writes back every field only touches the lines
+that moved. Editing the branch actually taken
 rather than flattening is the natural next step, in `ensure_binding`.
 
 Goals compose (apply several in one pass, later goals see earlier insertions),
@@ -88,8 +92,10 @@ API grows from. **Usage guide:** [goal-based-editing.md](goal-based-editing.md).
 
 The read counterpart: `get_static_value(source, name)` returns the `StaticValue`
 bound to a top-level `name` **without running the program** — no `Env`, no heap,
-no side effects — and `static_values(source)` returns every statically-known
-binding at once. Literals, lists, records, negation, references to names bound
+no side effects — `static_values(source)` returns every statically-known
+binding at once, and `static_bindings(source)` returns every binding including
+the unreadable ones, each with its reason, its right-hand side as written, and
+the comment above it. Literals, lists, records, negation, references to names bound
 above, and (held unevaluated) calls are static; arithmetic, interpolation,
 `if`/`match`, `fn`, and `state` are not, and are reported as
 `StaticValueError::NotStatic` rather than silently skipped.
@@ -243,6 +249,7 @@ direct-manipulation and goal-driven editing.
 |---|---|---|---|
 | Inspect source (tokens/AST/CST) | ✅ | — | `show-tokens/ast`, `rewrite::parse_ast` |
 | Read a config value without running | ✅ | — | `static_value::get_static_value` / `static_values` |
+| Read a config file's bindings, comments and unreadable names | ✅ | — | `static_value::static_bindings` |
 | Set a config value (formatting-preserved) | — | ✅ | `Goal::should_set_value` |
 | Rewrite source, formatting-preserved | — | ✅ | `goal_based_editing.rs` (goals) over `rewrite.rs` primitives |
 | Normalize source (verified) | — | ✅ | `petal lint --fix` |

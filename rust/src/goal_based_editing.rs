@@ -46,7 +46,7 @@
 //! ```
 
 use crate::rewrite::{find_binding, find_call, parse_ast, splice, splice_node};
-use crate::static_value::render_call_at;
+use crate::static_value::{get_static_value, render_call_at};
 
 pub use crate::static_value::StaticValue;
 
@@ -89,6 +89,9 @@ pub enum Goal {
     ShouldCall {
         function: String,
         params: Vec<StaticValue>,
+        /// Where a *newly inserted* call goes. Ignored when the call already
+        /// exists, since then nothing is inserted.
+        placement: Placement,
     },
     /// Reading `name` out of the edited source should yield `value` — the
     /// write half of Petal-as-a-config-format.
@@ -97,8 +100,44 @@ pub enum Goal {
     /// program's value, so that is the one edited: its right-hand side is
     /// replaced with `value`, whatever it was before (a literal, a call, or a
     /// whole `if` expression collapse to the literal). If `name` isn't bound at
-    /// top level, `let name = value` is appended.
-    ShouldSetValue { name: String, value: StaticValue },
+    /// top level, `let name = value` is appended — at the end of the file, or
+    /// wherever `placement` says.
+    ///
+    /// A goal that already holds is a **no-op**: if reading `name` out of the
+    /// source already yields `value`, the source comes back byte-identical.
+    /// That is what keeps a save that rewrites every field from turning
+    /// `let drag = 0.020000` into `let drag = 0.02` — the same `f64`, spelled
+    /// differently, and a diff somebody has to read and dismiss.
+    ShouldSetValue {
+        name: String,
+        value: StaticValue,
+        /// Where the binding goes when it has to be inserted. Ignored when
+        /// `name` is already bound, since then the existing binding is edited
+        /// where it sits.
+        placement: Placement,
+    },
+}
+
+/// Where a goal's new statement goes when one has to be inserted.
+///
+/// A config file generated from a table has a shape — grouped, each binding
+/// under its own doc comment — and a new field appended at the bottom lands
+/// outside it. A host that knows its own ordering says so here, and keeps it
+/// without regenerating the file (which would throw away the user's comments
+/// and layout, the thing goal-based editing exists to protect).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Placement {
+    /// Append to the end of the file. The default.
+    #[default]
+    End,
+    /// Insert directly below the top-level binding (or statement-position call)
+    /// of this name, keeping the blank-line spacing around it. Falls back to
+    /// [`Placement::End`] if the anchor isn't in the file.
+    After(String),
+    /// Insert directly above the named anchor — above its doc comment, so the
+    /// comment stays with the binding it describes. Falls back to
+    /// [`Placement::End`] if the anchor isn't in the file.
+    Before(String),
 }
 
 impl Goal {
@@ -125,6 +164,7 @@ impl Goal {
         Goal::ShouldCall {
             function: function.into(),
             params: params.into_iter().map(Into::into).collect(),
+            placement: Placement::End,
         }
     }
 
@@ -144,6 +184,42 @@ impl Goal {
         Goal::ShouldSetValue {
             name: name.into(),
             value: value.into(),
+            placement: Placement::End,
+        }
+    }
+
+    /// Place this goal's statement directly below `anchor` if it has to be
+    /// inserted (see [`Placement::After`]).
+    ///
+    /// ```ignore
+    /// Goal::should_set_value("tether_slack_m", 0.5).after("tether_max_m")
+    /// ```
+    pub fn after(self, anchor: impl Into<String>) -> Goal {
+        self.with_placement(Placement::After(anchor.into()))
+    }
+
+    /// Place this goal's statement directly above `anchor` — and above
+    /// `anchor`'s doc comment — if it has to be inserted (see
+    /// [`Placement::Before`]).
+    pub fn before(self, anchor: impl Into<String>) -> Goal {
+        self.with_placement(Placement::Before(anchor.into()))
+    }
+
+    /// This goal with its insertion placement replaced.
+    pub fn with_placement(self, new: Placement) -> Goal {
+        match self {
+            Goal::ShouldCall {
+                function, params, ..
+            } => Goal::ShouldCall {
+                function,
+                params,
+                placement: new,
+            },
+            Goal::ShouldSetValue { name, value, .. } => Goal::ShouldSetValue {
+                name,
+                value,
+                placement: new,
+            },
         }
     }
 }
@@ -164,8 +240,16 @@ pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, 
 /// Rewrite `source` to satisfy a single `goal`.
 fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
     match goal {
-        Goal::ShouldCall { function, params } => ensure_call(source, function, params),
-        Goal::ShouldSetValue { name, value } => ensure_binding(source, name, value),
+        Goal::ShouldCall {
+            function,
+            params,
+            placement,
+        } => ensure_call(source, function, params, placement),
+        Goal::ShouldSetValue {
+            name,
+            value,
+            placement,
+        } => ensure_binding(source, name, value, placement),
     }
 }
 
@@ -173,6 +257,23 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
 /// The call starts at column 0, so its arguments render at depth 1.
 fn render_call(function: &str, params: &[StaticValue]) -> String {
     render_call_at(function, params, 1)
+}
+
+/// Insert `statement` into `source` as a new top-level statement, where
+/// `placement` says. An anchor that isn't in the file falls back to appending,
+/// so a placement can never lose the statement.
+fn insert_statement(
+    source: &str,
+    statement: &str,
+    placement: &Placement,
+    stmts: &[crate::ast::Stmt],
+) -> String {
+    let anchored = match placement {
+        Placement::End => None,
+        Placement::After(anchor) => insert_after(source, statement, anchor, stmts),
+        Placement::Before(anchor) => insert_before(source, statement, anchor, stmts),
+    };
+    anchored.unwrap_or_else(|| append_statement(source, statement))
 }
 
 /// Append `statement` to `source` as a new top-level statement, separated by a
@@ -184,6 +285,132 @@ fn append_statement(source: &str, statement: &str) -> String {
     } else {
         format!("{trimmed}\n\n{statement}\n")
     }
+}
+
+/// Insert `statement` on its own line just below the anchor's statement,
+/// matching the spacing already there: a blank line after the anchor means the
+/// file separates its bindings that way, so the new one is separated too.
+fn insert_after(
+    source: &str,
+    statement: &str,
+    anchor: &str,
+    stmts: &[crate::ast::Stmt],
+) -> Option<String> {
+    let chars: Vec<char> = source.chars().collect();
+    let span = anchor_span(stmts, anchor)?;
+    // Past the end of the anchor's own line, so a trailing comment stays with it.
+    let at = line_end_after(&chars, span.end.offset as usize);
+    let separated = starts_blank_line(&chars, at);
+    let inserted = if separated {
+        format!("\n{statement}\n")
+    } else {
+        format!("{statement}\n")
+    };
+    Some(splice_text(&chars, at, at, &inserted))
+}
+
+/// Insert `statement` above the anchor — above its leading comment block, so
+/// the comment stays attached to the binding it documents.
+fn insert_before(
+    source: &str,
+    statement: &str,
+    anchor: &str,
+    stmts: &[crate::ast::Stmt],
+) -> Option<String> {
+    let chars: Vec<char> = source.chars().collect();
+    let span = anchor_span(stmts, anchor)?;
+    let at = comment_block_start(&chars, span.start.offset as usize);
+    // Mirror the spacing on the other side: a blank line (or the top of the
+    // file) above the anchor means bindings here are separated by one.
+    let separated = at == 0 || ends_blank_line(&chars, at);
+    let inserted = if separated {
+        format!("{statement}\n\n")
+    } else {
+        format!("{statement}\n")
+    };
+    Some(splice_text(&chars, at, at, &inserted))
+}
+
+/// The span of the anchor's top-level statement: its binding if it has one,
+/// else a statement-position call of that name.
+fn anchor_span(stmts: &[crate::ast::Stmt], anchor: &str) -> Option<crate::source_map::SourceSpan> {
+    binding_stmt_span(stmts, anchor).or_else(|| find_call(stmts, anchor))
+}
+
+/// The span of the whole `let name = …` / `name = …` statement (not just its
+/// value), for the last top-level binding of `name`.
+fn binding_stmt_span(
+    stmts: &[crate::ast::Stmt],
+    name: &str,
+) -> Option<crate::source_map::SourceSpan> {
+    use crate::ast::{AssignTarget, StmtKind};
+    stmts.iter().rev().find_map(|stmt| match &stmt.kind {
+        StmtKind::Let { name: bound, .. } if bound == name => Some(stmt.span),
+        StmtKind::Assign {
+            target: AssignTarget::Name(bound),
+            ..
+        } if bound == name => Some(stmt.span),
+        _ => None,
+    })
+}
+
+/// Offset just past the newline ending the line that `offset` sits on (or the
+/// end of the source, when the last line has no newline — in which case one is
+/// implied by the caller writing a whole line).
+fn line_end_after(chars: &[char], offset: usize) -> usize {
+    chars[offset.min(chars.len())..]
+        .iter()
+        .position(|&c| c == '\n')
+        .map(|i| offset + i + 1)
+        .unwrap_or(chars.len())
+}
+
+/// Start of the comment block above the statement beginning at `offset` — or
+/// the start of that statement's own line when nothing documents it.
+fn comment_block_start(chars: &[char], offset: usize) -> usize {
+    let mut start = line_start_at(chars, offset.min(chars.len()));
+    while start > 0 {
+        let prev_start = line_start_at(chars, start - 1);
+        let line: String = chars[prev_start..start - 1].iter().collect();
+        if !line.trim_start().starts_with("//") {
+            break;
+        }
+        start = prev_start;
+    }
+    start
+}
+
+/// Offset of the start of the line containing `offset`.
+fn line_start_at(chars: &[char], offset: usize) -> usize {
+    chars[..offset]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map(|i| i + 1)
+        .unwrap_or(0)
+}
+
+/// Whether the line starting at `at` is blank (or the source ends there).
+fn starts_blank_line(chars: &[char], at: usize) -> bool {
+    chars[at.min(chars.len())..]
+        .iter()
+        .take_while(|&&c| c != '\n')
+        .all(|c| c.is_whitespace())
+}
+
+/// Whether the line *ending* at `at` (exclusive) is blank.
+fn ends_blank_line(chars: &[char], at: usize) -> bool {
+    let start = line_start_at(chars, at.saturating_sub(1));
+    chars[start..at.saturating_sub(1).max(start)]
+        .iter()
+        .all(|c| c.is_whitespace())
+}
+
+/// Replace `chars[start..end]` with `text`, rebuilding the source.
+fn splice_text(chars: &[char], start: usize, end: usize, text: &str) -> String {
+    let mut out: String = chars[..start].iter().collect();
+    out.push_str(text);
+    out.extend(chars[end..].iter());
+    out
 }
 
 /// Replace the node at `span` with `replacement`, preferring the lossless tree
@@ -214,12 +441,17 @@ fn replace_span(
 /// matched (the shape of declarative config); a call nested in another
 /// expression is ignored, so ensuring it appends a new statement rather than
 /// editing the nested one.
-fn ensure_call(source: &str, function: &str, params: &[StaticValue]) -> Result<String, GoalError> {
+fn ensure_call(
+    source: &str,
+    function: &str,
+    params: &[StaticValue],
+    placement: &Placement,
+) -> Result<String, GoalError> {
     let replacement = render_call(function, params);
     let (tree, stmts) = parse_ast(source)?;
     match find_call(&stmts, function) {
         Some(span) => Ok(replace_span(&tree, source, span, &replacement)),
-        None => Ok(append_statement(source, &replacement)),
+        None => Ok(insert_statement(source, &replacement, placement, &stmts)),
     }
 }
 
@@ -231,15 +463,31 @@ fn ensure_call(source: &str, function: &str, params: &[StaticValue]) -> Result<S
 /// or `name = compute(…)` collapses to the literal, which satisfies the goal by
 /// construction. Everything around the value — the `let`, the name, comments,
 /// indentation — is untouched.
-fn ensure_binding(source: &str, name: &str, value: &StaticValue) -> Result<String, GoalError> {
+///
+/// A goal that already holds writes nothing at all: the source is returned as
+/// it came in, down to the byte. A caller that rewrites every field of a config
+/// file on every save (the honest way to do it — "differs from the default" and
+/// "differs from what the file says" are different questions) therefore only
+/// touches the lines that actually moved.
+fn ensure_binding(
+    source: &str,
+    name: &str,
+    value: &StaticValue,
+    placement: &Placement,
+) -> Result<String, GoalError> {
+    if get_static_value(source, name).as_ref() == Ok(value) {
+        return Ok(source.to_string());
+    }
     let (tree, stmts) = parse_ast(source)?;
     match find_binding(&stmts, name) {
         // The value sits after `let name = ` at depth 1, so a multi-line
         // composite indents its elements one level in.
         Some(span) => Ok(replace_span(&tree, source, span, &value.render(1))),
-        None => Ok(append_statement(
+        None => Ok(insert_statement(
             source,
             &format!("let {name} = {}", value.render(1)),
+            placement,
+            &stmts,
         )),
     }
 }
@@ -735,6 +983,219 @@ layout(row([
             &[Goal::should_set_value("font_size", 14)],
         );
         assert_eq!(out, "// café ☕ theme\nlet font_size = 14\n");
+    }
+
+    // ── A goal that already holds ────────────────────────────────────────
+
+    #[test]
+    fn a_goal_that_already_holds_leaves_the_source_byte_identical() {
+        // The spelling of a float is not recoverable from its f64, so a save
+        // that rewrites every field would renormalize lines nobody touched.
+        // A goal is a statement about the outcome, and this outcome already
+        // holds, so there is nothing to write.
+        let src = "let drag_axial = 0.020000\n";
+        let out = apply(src, &[Goal::should_set_value("drag_axial", 0.02)]);
+        assert_eq!(out, src);
+
+        // Same for the layout of a composite and the spelling of a string.
+        let src = "let editor = {   line_numbers: true }\n";
+        let out = apply(
+            src,
+            &[Goal::should_set_value(
+                "editor",
+                StaticValue::record(vec![("line_numbers", StaticValue::bool(true))]),
+            )],
+        );
+        assert_eq!(out, src);
+    }
+
+    #[test]
+    fn a_goal_that_does_not_hold_still_writes() {
+        // The no-op is exact, not approximate: a value that differs at all is
+        // written, and a binding that can't be read statically is collapsed.
+        let out = apply(
+            "let drag_axial = 0.020001\n",
+            &[Goal::should_set_value("drag_axial", 0.02)],
+        );
+        assert_eq!(out, "let drag_axial = 0.02\n");
+
+        let out = apply("let size = 12 + 2\n", &[Goal::should_set_value("size", 14)]);
+        assert_eq!(out, "let size = 14\n");
+
+        // An int is not a float, even at the same numeric value: the file says
+        // which kind of number a field holds and a save must not change that.
+        let out = apply("let scale = 2\n", &[Goal::should_set_value("scale", 2.0)]);
+        assert_eq!(out, "let scale = 2.0\n");
+    }
+
+    #[test]
+    fn every_goal_holding_leaves_a_whole_file_untouched() {
+        // The property a config-file save depends on: writing back exactly what
+        // was read changes nothing, comments, spacing and spelling included.
+        let src = "\
+// movement — tuning
+//
+// generated
+
+// How much the hull drags.
+let drag_axial = 0.020000
+
+// Walking speed.
+let walk_speed  = 3.50
+";
+        let out = apply(
+            src,
+            &[
+                Goal::should_set_value("drag_axial", 0.02),
+                Goal::should_set_value("walk_speed", 3.5),
+            ],
+        );
+        assert_eq!(out, src);
+    }
+
+    // ── Placement ────────────────────────────────────────────────────────
+
+    #[test]
+    fn after_inserts_below_the_anchor_keeping_the_blank_line_style() {
+        let src = "\
+// The longest the tether pays out.
+let tether_max_m = 12.0
+
+// Something else.
+let other = 1
+";
+        let out = apply(
+            src,
+            &[Goal::should_set_value("tether_slack_m", 0.5).after("tether_max_m")],
+        );
+        assert_eq!(
+            out,
+            "\
+// The longest the tether pays out.
+let tether_max_m = 12.0
+
+let tether_slack_m = 0.5
+
+// Something else.
+let other = 1
+"
+        );
+    }
+
+    #[test]
+    fn after_a_tightly_packed_anchor_does_not_invent_a_blank_line() {
+        let out = apply(
+            "let a = 1\nlet b = 2\n",
+            &[Goal::should_set_value("c", 3).after("a")],
+        );
+        assert_eq!(out, "let a = 1\nlet c = 3\nlet b = 2\n");
+    }
+
+    #[test]
+    fn after_keeps_a_trailing_comment_with_its_own_binding() {
+        let out = apply(
+            "let a = 1 // note\nlet b = 2\n",
+            &[Goal::should_set_value("c", 3).after("a")],
+        );
+        assert_eq!(out, "let a = 1 // note\nlet c = 3\nlet b = 2\n");
+    }
+
+    #[test]
+    fn before_inserts_above_the_anchors_doc_comment() {
+        // Above the comment, not between it and its binding — otherwise the new
+        // binding steals the documentation of the one it was placed against.
+        let src = "\
+let first = 1
+
+// The longest the tether pays out.
+let tether_max_m = 12.0
+";
+        let out = apply(
+            src,
+            &[Goal::should_set_value("tether_slack_m", 0.5).before("tether_max_m")],
+        );
+        assert_eq!(
+            out,
+            "\
+let first = 1
+
+let tether_slack_m = 0.5
+
+// The longest the tether pays out.
+let tether_max_m = 12.0
+"
+        );
+    }
+
+    #[test]
+    fn before_the_first_binding_inserts_at_the_top() {
+        let out = apply("let a = 1\n", &[Goal::should_set_value("b", 2).before("a")]);
+        assert_eq!(out, "let b = 2\n\nlet a = 1\n");
+    }
+
+    #[test]
+    fn a_missing_anchor_falls_back_to_appending() {
+        // A placement can misplace a statement; it must never lose one.
+        let out = apply(
+            "let a = 1\n",
+            &[Goal::should_set_value("b", 2).after("nonexistent")],
+        );
+        assert_eq!(out, "let a = 1\n\nlet b = 2\n");
+    }
+
+    #[test]
+    fn placement_is_ignored_when_the_binding_already_exists() {
+        // Nothing is inserted, so there is nowhere to place it: the existing
+        // binding is edited where the author put it.
+        let out = apply(
+            "let b = 1\nlet a = 2\n",
+            &[Goal::should_set_value("b", 5).after("a")],
+        );
+        assert_eq!(out, "let b = 5\nlet a = 2\n");
+    }
+
+    #[test]
+    fn placement_works_for_calls_and_against_a_call_anchor() {
+        let out = apply(
+            "setup()\n\nteardown()\n",
+            &[Goal::should_call("middle", [1]).after("setup")],
+        );
+        assert_eq!(out, "setup()\n\nmiddle(1)\n\nteardown()\n");
+    }
+
+    #[test]
+    fn goals_placed_after_each_other_build_up_in_order() {
+        // How a host keeps a generated file's ordering: each field anchors on
+        // the one before it, including ones an earlier goal just inserted.
+        // Inserting past the end of the file separates with a blank line, the
+        // same as appending does.
+        let out = apply(
+            "let a = 1\n",
+            &[
+                Goal::should_set_value("b", 2).after("a"),
+                Goal::should_set_value("c", 3).after("b"),
+            ],
+        );
+        assert_eq!(out, "let a = 1\n\nlet b = 2\n\nlet c = 3\n");
+
+        // And in the middle of a file the anchor's own spacing decides.
+        let out = apply(
+            "let a = 1\nlet z = 9\n",
+            &[
+                Goal::should_set_value("b", 2).after("a"),
+                Goal::should_set_value("c", 3).after("b"),
+            ],
+        );
+        assert_eq!(out, "let a = 1\nlet b = 2\nlet c = 3\nlet z = 9\n");
+    }
+
+    #[test]
+    fn placement_survives_multibyte_source() {
+        let out = apply(
+            "// café ☕\nlet a = 1\n\nlet z = 2\n",
+            &[Goal::should_set_value("b", 2).after("a")],
+        );
+        assert_eq!(out, "// café ☕\nlet a = 1\n\nlet b = 2\n\nlet z = 2\n");
     }
 
     #[test]

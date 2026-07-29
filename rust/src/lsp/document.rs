@@ -107,38 +107,70 @@ pub fn analyze(source: &str) -> Analysis {
         return Analysis::empty();
     }
 
+    // Collected independently of compilation: a file that parses but fails a
+    // later phase still has usable symbols, so go-to-definition, document
+    // symbols and completion keep working while the error is being fixed.
+    let definitions = match crate::cst::parse_source(source, crate::source_map::ENTRY_FILE) {
+        Ok((_, stmts)) => collect_definitions(&stmts),
+        Err(_) => Vec::new(),
+    };
+
     let mut env = crate::env::Env::new();
-    match env.load_program(source) {
-        Ok(pid) => {
-            let program = env.get_program(pid);
-            let mut diagnostics: Vec<lsp_types::Diagnostic> = Vec::new();
-            if let Some(p) = program {
-                for w in &p.warnings {
-                    diagnostics.push(petal_diagnostic_to_lsp(
-                        w,
-                        lsp_types::DiagnosticSeverity::Warning,
-                    ));
+    let diagnostics = match env.load_program_diag(source, None) {
+        Ok(pid) => env
+            .get_program(pid)
+            .map(|p| {
+                p.warnings
+                    .iter()
+                    .map(|w| petal_diagnostic_to_lsp(w, lsp_types::DiagnosticSeverity::Warning))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        // One diagnostic per item: the front end reports every error it found
+        // in a single pass, and the editor should show all of them.
+        Err(err) => err
+            .items
+            .iter()
+            .map(|item| {
+                let range = match item.span {
+                    // Only a span in the file we are analyzing can be placed in
+                    // it. A diagnostic carrying another module's name, or one
+                    // with no span at all (an unresolvable import, say), has no
+                    // honest position here, so it goes to the top of the file
+                    // with the file name left in the message.
+                    Some(span)
+                        if item.file.is_none() && span.file == crate::source_map::ENTRY_FILE =>
+                    {
+                        span_to_range(&span)
+                    }
+                    _ => {
+                        let pos = lsp_types::Position {
+                            line: 0,
+                            character: 0,
+                        };
+                        lsp_types::Range {
+                            start: pos,
+                            end: pos,
+                        }
+                    }
+                };
+                let message = match &item.file {
+                    Some(file) => format!("{file}: {}", item.message),
+                    None => item.message.clone(),
+                };
+                lsp_types::Diagnostic {
+                    range,
+                    severity: Some(lsp_types::DiagnosticSeverity::Error),
+                    message,
+                    source: Some("petal".to_string()),
                 }
-            }
+            })
+            .collect(),
+    };
 
-            let definitions = match crate::cst::parse_source(source, crate::source_map::ENTRY_FILE)
-            {
-                Ok((_, stmts)) => collect_definitions(&stmts),
-                Err(_) => Vec::new(),
-            };
-
-            Analysis {
-                diagnostics,
-                definitions,
-            }
-        }
-        Err(e) => {
-            let diag = error_string_to_diagnostic(&e);
-            Analysis {
-                diagnostics: vec![diag],
-                definitions: Vec::new(),
-            }
-        }
+    Analysis {
+        diagnostics,
+        definitions,
     }
 }
 
@@ -152,44 +184,6 @@ fn petal_diagnostic_to_lsp(
         message: d.message.clone(),
         source: Some("petal".to_string()),
     }
-}
-
-fn error_string_to_diagnostic(msg: &str) -> lsp_types::Diagnostic {
-    let (line, col) = parse_error_position(msg);
-    let pos = lsp_types::Position {
-        line,
-        character: col,
-    };
-    lsp_types::Diagnostic {
-        range: lsp_types::Range {
-            start: pos,
-            end: pos,
-        },
-        severity: Some(lsp_types::DiagnosticSeverity::Error),
-        message: msg.to_string(),
-        source: Some("petal".to_string()),
-    }
-}
-
-fn parse_error_position(msg: &str) -> (u32, u32) {
-    // Petal errors look like: "[line 3, column 5] message"
-    if let Some(rest) = msg.strip_prefix("[line ") {
-        if let Some(comma) = rest.find(',') {
-            let line_str = &rest[..comma];
-            if let Ok(line) = line_str.parse::<u32>() {
-                if let Some(col_start) = rest.find("column ") {
-                    let after_col = &rest[col_start + 7..];
-                    if let Some(bracket) = after_col.find(']') {
-                        if let Ok(col) = after_col[..bracket].parse::<u32>() {
-                            return (line.saturating_sub(1), col.saturating_sub(1));
-                        }
-                    }
-                }
-                return (line.saturating_sub(1), 0);
-            }
-        }
-    }
-    (0, 0)
 }
 
 pub fn span_to_range(span: &SourceSpan) -> lsp_types::Range {

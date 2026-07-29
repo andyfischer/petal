@@ -586,6 +586,79 @@ fn test_analyze_error() {
 }
 
 #[test]
+fn test_analyze_compile_error_has_real_position() {
+    use petal::lsp::document::analyze;
+
+    // `x = 2` on a `var` must use `set`. The diagnostic belongs on line 2,
+    // column 1 (0-based 1, 0) — not at the top of the file.
+    let result = analyze("var x = 1\nx = 2\n");
+    assert_eq!(result.diagnostics.len(), 1);
+    let d = &result.diagnostics[0];
+    assert_eq!(d.severity, Some(DiagnosticSeverity::Error));
+    assert_eq!(
+        (d.range.start.line, d.range.start.character),
+        (1, 0),
+        "compiler diagnostic should be reported at its own span, got {:?}",
+        d.range
+    );
+    assert!(
+        !d.message.contains("[line "),
+        "message should not carry a position suffix: {}",
+        d.message
+    );
+}
+
+#[test]
+fn test_analyze_reports_every_compile_error() {
+    use petal::lsp::document::analyze;
+
+    let result = analyze("var x = 1\nvar y = 2\nx = 3\ny = 4\n");
+    assert_eq!(
+        result.diagnostics.len(),
+        2,
+        "two compile errors should yield two diagnostics: {:?}",
+        result
+            .diagnostics
+            .iter()
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+    );
+    let lines: Vec<u32> = result.diagnostics.iter().map(|d| d.range.start.line).collect();
+    assert_eq!(lines, vec![2, 3]);
+}
+
+#[test]
+fn test_analyze_keeps_definitions_after_compile_error() {
+    use petal::lsp::document::analyze;
+
+    let result = analyze("fn helper(a)\n  return a\nend\nvar x = 1\nx = 2\n");
+    assert!(!result.diagnostics.is_empty());
+    let names: Vec<&str> = result.definitions.iter().map(|d| d.name.as_str()).collect();
+    assert!(
+        names.contains(&"helper"),
+        "definitions should survive a semantic error, got {names:?}"
+    );
+    assert!(names.contains(&"x"));
+}
+
+#[test]
+fn test_goto_definition_after_compile_error() {
+    let mut server = Server::new();
+    init(&mut server);
+    open(
+        &mut server,
+        "file:///test.ptl",
+        "fn helper(a)\n  return a\nend\nvar x = 1\nx = 2\nhelper(1)\n",
+    );
+
+    let resp = definition(&mut server, "file:///test.ptl", 5, 1);
+    assert!(
+        !resp["result"].is_null(),
+        "go-to-definition should still work when the file has a compile error"
+    );
+}
+
+#[test]
 fn test_not_initialized_error() {
     let mut server = Server::new();
     let msgs = server.handle_message(&request(

@@ -116,6 +116,35 @@ impl Parser {
         }
     }
 
+    /// The `=` of a declaration is missing (`let x`, `var x`, `state x` with no
+    /// initializer). Every declaration form requires one, so name the mistake
+    /// instead of the token the generic `expect` stopped on.
+    fn expect_initializer(&mut self, keyword: &str, name: &str) -> Result<(), String> {
+        if matches!(self.peek(), Token::Assign) {
+            return self.expect(&Token::Assign);
+        }
+        Err(self.error_at_current(format!(
+            "`{keyword} {name}` needs an initializer; write `{keyword} {name} = ...`"
+        )))
+    }
+
+    /// The `=` of a `set` is missing (`set x`). Not a missing initializer —
+    /// `set` declares nothing — but a write with nothing to write, so it gets
+    /// its own wording. Field and index targets are not re-serialized; only a
+    /// plain name is echoed back.
+    fn expect_set_value(&mut self, target: &Expr) -> Result<(), String> {
+        if matches!(self.peek(), Token::Assign) {
+            return self.expect(&Token::Assign);
+        }
+        let msg = match &target.kind {
+            ExprKind::Ident(name) => {
+                format!("`set {name}` needs a value; write `set {name} = ...`")
+            }
+            _ => "`set` needs a value; write `set <target> = ...`".to_string(),
+        };
+        Err(self.error_at_current(msg))
+    }
+
     fn is_at_end(&self) -> bool {
         matches!(self.peek(), Token::Eof)
     }
@@ -235,7 +264,7 @@ impl Parser {
         self.advance(); // consume 'let' / 'var'
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
-        self.expect(&Token::Assign)?;
+        self.expect_initializer(if is_var { "var" } else { "let" }, &name)?;
         let value = self.parse_expr()?;
         self.ev_close();
         let mut stmt = self.mk_stmt(
@@ -275,7 +304,7 @@ impl Parser {
             };
             (expr_to_assign_target(target_expr)?, value)
         } else {
-            self.expect(&Token::Assign)?;
+            self.expect_set_value(&target_expr)?;
             let value = self.parse_expr()?;
             (expr_to_assign_target(target_expr)?, value)
         };
@@ -310,7 +339,7 @@ impl Parser {
         };
 
         let name = self.expect_ident()?;
-        self.expect(&Token::Assign)?;
+        self.expect_initializer(if is_var { "state var" } else { "state" }, &name)?;
         let init = self.parse_expr()?;
         let id = self.next_state_id;
         self.next_state_id += 1;

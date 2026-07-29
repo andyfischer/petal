@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import {
   checkJson,
+  checkJsonAllowFail,
   ensureBuild,
   runPetal,
   runPetalError,
@@ -156,6 +157,53 @@ for i in [1] do
 end
 print(x)`),
     ).toBe("5");
+  });
+});
+
+describe("a declaration with no initializer names the mistake", () => {
+  // Every declaration form requires a value, so the parser says so instead of
+  // reporting the token it stopped on ("Expected Assign, got Newline").
+  const expectMessage = (code: string, message: string) => {
+    const out = checkJsonAllowFail(code);
+    expect(out.error).toBe(true);
+    expect(out.message).toContain(message);
+    expect(out.message).not.toContain("Expected Assign");
+  };
+
+  it("reports a `var` with no initializer", () => {
+    expectMessage(`var x\nprint(1)`, "`var x` needs an initializer; write `var x = ...`");
+  });
+
+  it("reports a `let` with no initializer", () => {
+    expectMessage(`let x\nprint(1)`, "`let x` needs an initializer; write `let x = ...`");
+  });
+
+  it("reports a type-annotated `let` with no initializer", () => {
+    // The annotation is parsed before the `=`, so the message is unchanged.
+    expectMessage(
+      `let x: number\nprint(1)`,
+      "`let x` needs an initializer; write `let x = ...`",
+    );
+  });
+
+  it("reports a `state` with no initializer", () => {
+    expectMessage(`state s\nprint(1)`, "`state s` needs an initializer; write `state s = ...`");
+  });
+
+  it("reports a `state var` with no initializer", () => {
+    expectMessage(
+      `state var h\nprint(1)`,
+      "`state var h` needs an initializer; write `state var h = ...`",
+    );
+  });
+
+  it("reports a `set` with nothing to write", () => {
+    // `set x` is not a missing initializer — it is a write with no value.
+    expectMessage(`var x = 0\nset x\nprint(x)`, "`set x` needs a value; write `set x = ...`");
+  });
+
+  it("still reports the parse phase", () => {
+    expect(checkJsonAllowFail(`var x\nprint(1)`).phase).toBe("parse");
   });
 });
 

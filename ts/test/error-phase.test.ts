@@ -29,7 +29,7 @@ describe("check --json reports the phase that rejected the program", () => {
   });
 
   it('reports "parse" for a `let` with no initializer', () => {
-    expectPhase(`let x\nprint(1)`, "parse", "Expected Assign");
+    expectPhase(`let x\nprint(1)`, "parse", "`let x` needs an initializer");
   });
 
   it('reports "parse" for a malformed `fn` header', () => {

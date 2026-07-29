@@ -158,11 +158,12 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// Parse args for `check`: `--json` plus `--strict` (exit non-zero when
-/// warnings exist).
+/// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings
+/// exist), and `--ir` (read JSON IR instead of source, as `run --ir` does).
 fn parse_check_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut strict = false;
+    let mut ir = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -170,6 +171,7 @@ fn parse_check_args(args: &[String]) -> CliArgs {
         match args[i].as_str() {
             "--json" => json = true,
             "--strict" => strict = true,
+            "--ir" => ir = true,
             "-e" => {
                 i += 1;
                 if i >= args.len() {
@@ -186,12 +188,14 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal check [--json] [--strict] <file>  |  petal check -e <code>");
+        eprintln!(
+            "Usage: petal check [--json] [--strict] [--ir] <file>  |  petal check -e <code>"
+        );
         process::exit(1);
     });
 
     CliArgs {
-        command: Command::Check { json, strict },
+        command: Command::Check { json, strict, ir },
         source,
         include_dirs: Vec::new(),
     }

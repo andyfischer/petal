@@ -327,13 +327,27 @@ fn warnings_json(program: &Program) -> serde_json::Value {
 pub(super) fn handle_check(
     json: bool,
     strict: bool,
+    ir: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     let mut env = make_env(include_dirs);
     let is_empty = source.trim().is_empty();
-    match load_into(&mut env, source, source_input) {
+    // `--ir` swaps the front end for the IR deserializer, so a third-party
+    // emitter's IR can be CI-validated the same way source is. Everything below
+    // is unchanged: the lowering gate is the point of `check` either way.
+    // The IR loader is not a front-end phase and has no `LoadError`; it reports
+    // exactly as `run --ir` does (a plain string tagged `"parse"`).
+    let loaded = if ir {
+        match env.load_program_ir(source) {
+            Ok(pid) => Ok(pid),
+            Err(e) => die(json, &e, "parse"),
+        }
+    } else {
+        load_into(&mut env, source, source_input)
+    };
+    match loaded {
         Ok(pid) => {
             let program = env.get_program(pid);
             // `check` answers "will this run?", so it must lower to bytecode as

@@ -76,13 +76,17 @@ export function dataflowText(cmd: string, code: string, terms: string[]): string
   return run([cmd, ...termArgs, "-e", shellEscape(code)]);
 }
 
-/** Run the built binary capturing stdout, stderr, and exit code separately. */
-function capture(args: string[]): {
+/** Run the built binary capturing stdout, stderr, and exit code separately.
+ *  `input`, when given, is written to the child's stdin (for `--ir -`). */
+function capture(
+  args: string[],
+  input?: string
+): {
   stdout: string;
   stderr: string;
   code: number;
 } {
-  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000 });
+  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000, input });
   return {
     stdout: (r.stdout || "").toString(),
     stderr: (r.stderr || "").toString(),
@@ -128,6 +132,23 @@ export function runWithStderr(code: string): {
 /** Raw `show-ir --json` output as a JSON string (not parsed). */
 export function showIrJsonRaw(code: string): string {
   return run(["show-ir", "--json", "-e", shellEscape(code)]);
+}
+
+/**
+ * `petal check --json --ir -` on a JSON IR string (IR read from stdin),
+ * parsed, tolerating a non-zero exit — the failure object *is* the assertion.
+ */
+export function checkIrJsonAllowFail(irJson: string): any {
+  return JSON.parse(capture(["check", "--json", "--ir", "-"], irJson).stdout);
+}
+
+/** `petal check --ir -` (text mode) on a JSON IR string read from stdin. */
+export function checkIrText(irJson: string): {
+  stdout: string;
+  stderr: string;
+  code: number;
+} {
+  return capture(["check", "--ir", "-"], irJson);
 }
 
 /** Run a JSON IR string through `petal run --ir -` (IR read from stdin). */

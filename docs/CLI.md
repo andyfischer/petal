@@ -22,7 +22,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | Command | Purpose |
 |---------|---------|
 | `run` | Execute a program |
-| `check` | Lex + parse + compile only (no execution) |
+| `check` | Lex + parse + compile + lower only (no execution) |
 | `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
 | `lsp` | Serve the language server over stdio (editors spawn this) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
@@ -79,12 +79,28 @@ Flags:
 ### `check` — Validate without running
 
 ```
-petal check [--json] [--strict] <file.ptl>
+petal check [--json] [--strict] [--ir] <file.ptl>
 petal check [--json] [--strict] -e '<code>'
 ```
 
-Lex, parse, and compile the program but do not execute it. Exits 0 if
-compilation succeeds, 1 otherwise.
+Lex, parse, compile, and lower the program to bytecode but do not execute it.
+Exits 0 if all of that succeeds, 1 otherwise. Lowering is part of the check on
+purpose: a program can compile cleanly and still fail to lower, and `check` is
+what CI and editors call, so stopping at compile would report a green build for
+a program that aborts on first run.
+
+Flags:
+
+- `--strict` — see below.
+- `--ir` — check `<file>` as JSON IR (the output of `show-ir --json`) instead
+  of source; use `-` to read from stdin, exactly as
+  [`run --ir`](#run--execute-a-program) does. The IR is validated
+  structurally, then lowered — so a third-party IR emitter can be
+  CI-validated without running its output:
+  `emit-my-ir | petal check --json --ir -`. A load failure here comes from
+  the IR deserializer rather than the front end and is reported with
+  `"phase": "parse"`, matching `run --ir`; a graph that imports but cannot be
+  lowered is reported with `"phase": "lower"`.
 
 The compile step runs the optional type checker (see
 [Type Annotations](language-guide.md#type-annotations)). Its findings are

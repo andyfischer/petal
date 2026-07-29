@@ -5,17 +5,54 @@
 // first run. That is exactly how the shadowed-name phi bug survived in the
 // shipped `petal-ui` prelude. See docs/dev/var-next-steps.md (Lexical shadowing).
 //
-// NOTE: this file no longer asserts that `check` *fails* on a program that
-// lowers badly — the only such program in the repo was a cross-function
-// assignment, which is now a compile error and never reaches lowering. No
-// replacement shape is known. What remains is the positive direction: programs
-// that must lower, including the exact shape of the bug above. See
-// docs/dev/var-next-steps.md (Followups) — restoring the negative gate is open.
+// The negative direction is asserted on *injected IR*, not on a source program.
+// Lowering has exactly two failure sites, and neither is reachable from source
+// any more: the "unlowered op" arm is dead (every `TermOp` is handled), and
+// `FnLowerer::flat` ("term tN in block bN not in this function") needs an input
+// edge that crosses a function boundary. The compiler stopped emitting that
+// edge when cross-function assignment became a compile error (see
+// docs/dev/var-next-steps.md §2a); ~50 candidate shapes were probed — match-arm
+// phi, loop-carried closures, nested capture chains, `state var` in nested
+// scopes, an exported `var` written through a nested fn, break/continue phi
+// carry-outs — and every one lowers cleanly.
+//
+// So the gate builds the edge itself: take a real program's IR, repoint one
+// root-block term's input at a term inside a function body, and feed it to
+// `check --ir -`. `Program::validate` (rust/src/ir_validate.rs) only
+// range-checks ids and arities — it does not check function-boundary edges —
+// so the corrupted IR imports fine and dies in lowering, which is precisely
+// what the gate needs to observe. The IR is built here rather than checked in
+// as a blob so it can never drift from the IR format.
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, checkText } from "./helpers";
+import {
+  ensureBuild,
+  checkText,
+  checkIrText,
+  checkIrJsonAllowFail,
+  showIrJsonRaw,
+} from "./helpers";
 
 beforeAll(() => ensureBuild());
+
+const GOOD_SOURCE = `fn f()
+  1
+end
+let a = 2
+print(a + 3)`;
+
+/** IR with one root-block input edge repointed into `f`'s body block. */
+function badIr(): string {
+  const ir = JSON.parse(showIrJsonRaw(GOOD_SOURCE));
+  const fBody = ir.functions[0].body_block;
+  const foreign = ir.terms.find((t: any) => t.block_id === fBody).id;
+  const victim = ir.terms
+    .filter((t: any) => t.block_id === ir.root_block && t.inputs.length)
+    .pop();
+  // Term ids equal their index, enforced by ir_validate.rs.
+  ir.terms[victim.id].inputs[0] = foreign;
+  return JSON.stringify(ir);
+}
 
 describe("petal check lowers to bytecode", () => {
   it("still passes a program that lowers", () => {
@@ -43,5 +80,26 @@ print(i)`);
 end`);
     expect(stderr).toBe("");
     expect(code).toBe(0);
+  });
+
+  // The uncorrupted IR must pass, or the negative results below would only be
+  // proving that `--ir` import is broken.
+  it("accepts the uncorrupted IR via check --ir -", () => {
+    const { code, stderr } = checkIrText(showIrJsonRaw(GOOD_SOURCE));
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+  });
+
+  it("fails on IR that compiles but cannot lower", () => {
+    const { code, stderr } = checkIrText(badIr());
+    expect(stderr).toContain("bytecode lowering failed");
+    expect(code).toBe(1);
+  });
+
+  it("reports the lowering failure as phase 'lower' in --json", () => {
+    const result = checkIrJsonAllowFail(badIr());
+    expect(result.error).toBe(true);
+    expect(result.phase).toBe("lower");
+    expect(result.message).toContain("not in this function");
   });
 });

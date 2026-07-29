@@ -29,6 +29,9 @@ pub enum Command {
         /// Exit non-zero when type-checker warnings exist (for CI). Plain
         /// `check` always exits 0.
         strict: bool,
+        /// Load the input as JSON IR (`show-ir --json` output) instead of
+        /// source, then check it lowers — same flag as `run --ir`.
+        ir: bool,
     },
     Lint {
         fix: bool,
@@ -127,7 +130,11 @@ fn print_usage() {
 Usage: petal <command> [options] <file>
 
 Commands:
-  check [--json] <file>          Lex+parse+compile without executing (exit 0/1)
+  check [--json] [--strict] [--ir] <file>
+                                 Lex+parse+compile+lower without executing
+                                 (exit 0/1)
+                                 --ir: check <file> as JSON IR (show-ir --json
+                                 output) instead of source; use '-' for stdin
   run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] [--trace-pending] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
@@ -311,8 +318,8 @@ pub fn execute(cli: CliArgs) {
         Command::Explain { json, term } => {
             handlers::handle_explain(json, term, &source, &source_input, &include_dirs);
         }
-        Command::Check { json, strict } => {
-            handlers::handle_check(json, strict, &source, &source_input, &include_dirs);
+        Command::Check { json, strict, ir } => {
+            handlers::handle_check(json, strict, ir, &source, &source_input, &include_dirs);
         }
         Command::Lint { fix, check } => {
             handlers::handle_lint(fix, check, &source, &source_input, &include_dirs);

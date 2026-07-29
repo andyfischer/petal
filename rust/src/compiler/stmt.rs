@@ -299,7 +299,9 @@ impl Compiler {
         if !self.check_write_keyword(target, span, is_set) {
             return;
         }
-        self.warn_if_assigning_outer_function_binding(target, span);
+        if !self.check_assign_to_outer_function_binding(target, span) {
+            return;
+        }
         let prev_assign_span = self.assign_span.replace(span);
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),
@@ -396,38 +398,46 @@ impl Compiler {
         }
     }
 
-    /// Warn when an assignment targets a name bound outside the function being
+    /// Reject an assignment targeting a name bound outside the function being
     /// compiled. Such an assignment does not modify that binding — it creates a
     /// function-local shadow — so the code reads as a dataflow edge that isn't
-    /// there. The escape hatch it points at (`var`/`set`) has landed, so this
-    /// is a warning only until downstream projects are migrated; the decision
-    /// is that it becomes an error.
-    /// See docs/dev/var-next-steps.md (Remaining work 2a).
+    /// there, and one control-flow step further it did not even lower (the phi
+    /// would have had to initialize from a term in another function). The split
+    /// was an implementation detail showing through as a language rule; now
+    /// both halves fail, at the assignment site, and `var`/`set` is the escape
+    /// hatch for code that genuinely wanted mutation.
+    /// See docs/dev/var-next-steps.md (Why the feature exists).
+    ///
+    /// Returns false when the statement is in error and should not be compiled
+    /// — abandoning it is what keeps a rejected assignment from emitting the
+    /// phi that would fail to lower, so the program stops at compile.
     ///
     /// Must run *before* the value expression is compiled: compiling it may
     /// create the capture phantom for the same name.
-    fn warn_if_assigning_outer_function_binding(
+    fn check_assign_to_outer_function_binding(
         &mut self,
         target: &AssignTarget,
         span: SourceSpan,
-    ) {
+    ) -> bool {
         // A `var` is exempt: writing an outer binding from inside a function is
         // exactly what the escape hatch is for, and a `set` really does modify
-        // it. The warning is about `=`'s silent local shadow.
+        // it. The error is about `=`'s silent local shadow.
         let Some(root) = Self::assign_root_name(target)
             .filter(|n| self.is_outer_function_binding(n) && !self.binding_is_var(n))
         else {
-            return;
+            return true;
         };
-        self.warnings.push(crate::diagnostic::Diagnostic {
+        let root = root.to_string();
+        self.error_at(
             span,
-            message: format!(
+            format!(
                 "`{root}` is bound outside this function; this assignment creates a \
                  local shadow and does not modify `{root}`. Use `let` for a new local, \
                  return the value, or — if it really must be mutable — declare it \
                  `var {root} = ...` and write it with `set {root} = ...`"
             ),
-        });
+        );
+        false
     }
 
     /// Walk an assignment-target object expression into a (root variable name,

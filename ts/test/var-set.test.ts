@@ -247,11 +247,13 @@ print(st)`),
     ).toBe("{ items: [1, 2], n: 2 }");
   });
 
-  it("does not warn about writing a var bound outside the function", () => {
-    // The cross-function warning is about `=`'s silent shadow. A `set` really
-    // does modify the outer binding, so there is nothing to warn about.
+  it("does not reject writing a var bound outside the function", () => {
+    // The cross-function error is about `=`'s silent shadow. A `set` really
+    // does modify the outer binding — that is the whole point of the escape
+    // hatch — so it must pass cleanly, not merely avoid the message.
     const out = checkJson(`var i = 0
 fn f() set i = 1 end`);
+    expect(out.ok).toBe(true);
     expect(JSON.stringify(out)).not.toContain("bound outside");
   });
 });

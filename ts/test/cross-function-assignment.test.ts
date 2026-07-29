@@ -1,7 +1,8 @@
 // Assigning to a name bound outside the current function does not modify that
-// binding — it creates a function-local shadow, silently. The compiler warns at
-// every such site; the warning is the measurement step for the planned
-// `var`/`set` escape hatch, and becomes an error once that lands.
+// binding — it would create a function-local shadow, silently. That is a
+// compile error at the assignment site: the code reads as a dataflow edge that
+// is not there, and one control-flow step further it did not even lower. The
+// escape hatch for genuine mutation is `var` + `set`.
 // See docs/dev/var-next-steps.md (Why the feature exists).
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -9,28 +10,35 @@ import { ensureBuild, checkJson, checkJsonAllowFail } from "./helpers";
 
 beforeAll(() => ensureBuild());
 
-const outerAssignWarnings = (json: any): string[] =>
-  (json.warnings ?? [])
-    .map((w: any) => w.message as string)
+/**
+ * Every reported site. Compiler errors arrive newline-joined in a single
+ * `message`, each but the last carrying a `[line N, column M]` suffix — so a
+ * split is what counts sites, not the `warnings` array.
+ */
+const outerAssignErrors = (json: any): string[] =>
+  String(json.message ?? "")
+    .split("\n")
     .filter((m: string) => m.includes("bound outside this function"));
 
-describe("cross-function assignment warning", () => {
+describe("cross-function assignment is a compile error", () => {
   it("fires on assignment to a module-level let", () => {
-    const w = outerAssignWarnings(
-      checkJson(`let i = 10
+    const out = checkJsonAllowFail(`let i = 10
 fn f()
   i = i + 1
   i
 end
-print(f())`),
-    );
-    expect(w).toHaveLength(1);
-    expect(w[0]).toContain("`i` is bound outside this function");
+print(f())`);
+    expect(out.error).toBe(true);
+    const e = outerAssignErrors(out);
+    expect(e).toHaveLength(1);
+    expect(e[0]).toContain("`i` is bound outside this function");
+    // The message must name the escape hatch, not just refuse.
+    expect(e[0]).toContain("var i = ...");
+    expect(e[0]).toContain("set i = ...");
   });
 
   it("fires on state, captures, an enclosing fn's local, and path targets", () => {
-    const w = outerAssignWarnings(
-      checkJson(`state s = 0
+    const out = checkJsonAllowFail(`state s = 0
 let xs = [1, 2, 3]
 let r = { a: 1 }
 fn f()
@@ -47,30 +55,49 @@ fn g()
   local
 end
 f()
-print(g())`),
-    );
-    expect(w).toHaveLength(4);
+print(g())`);
+    expect(out.error).toBe(true);
+    // All four declaration sites (module state, module let via index and
+    // field, lambda capture of an enclosing fn's local) report.
+    expect(outerAssignErrors(out)).toHaveLength(4);
   });
 
-  it("fires once per site, not once per name", () => {
+  it("reports every site, and locates each one", () => {
     // Every later lookup finds the phi the `if` installed, so without
     // `cross_fn_terms` only the first assignment would be reported.
-    const w = outerAssignWarnings(
-      checkJsonAllowFail(`let x = 1
+    const out = checkJsonAllowFail(`let x = 1
 fn f(c)
   if c then
     x = 1
     x = 2
   end
 end
-f(true)`),
-    );
-    expect(w).toHaveLength(2);
+f(true)`);
+    expect(out.error).toBe(true);
+    const e = outerAssignErrors(out);
+    expect(e).toHaveLength(2);
+    // Earlier sites carry their own position; the last is the top-level one.
+    expect(e[0]).toContain("[line 4, column 5]");
+    expect(out.line).toBe(5);
+  });
+
+  it("fires on the `@` rebind operator, which desugars to `=`", () => {
+    // `bump(@n)` is `n = bump(n)` — the `=` form, so it is caught by the same
+    // check rather than sneaking past as sugar.
+    const out = checkJsonAllowFail(`let n = 1
+fn bump(v)
+  v + 1
+end
+fn f()
+  bump(@n)
+end
+print(f())`);
+    expect(out.error).toBe(true);
+    expect(outerAssignErrors(out)).toHaveLength(1);
   });
 
   it("is silent for same-function and top-level rebinds", () => {
-    const w = outerAssignWarnings(
-      checkJson(`let t = 0
+    const out = checkJson(`let t = 0
 if true then t = 1 end
 fn ok(n)
   let m = 0
@@ -78,28 +105,37 @@ fn ok(n)
   n = n + m
   n
 end
-print(t + ok(2))`),
-    );
-    expect(w).toEqual([]);
+print(t + ok(2))`);
+    expect(out.ok).toBe(true);
+    expect(outerAssignErrors(out)).toEqual([]);
   });
 
   it("is silent after a `let` in the function shadows the outer name", () => {
-    const w = outerAssignWarnings(
-      checkJson(`let x = 1
+    const out = checkJson(`let x = 1
 fn f(c)
   let x = 5
   if c then x = 6 end
   x
 end
-print(f(true))`),
-    );
-    expect(w).toEqual([]);
+print(f(true))`);
+    expect(out.ok).toBe(true);
+    expect(outerAssignErrors(out)).toEqual([]);
   });
 
-  it("is reported even when the program fails to lower", () => {
-    // The three shipped SDL examples are in exactly this state: they compile,
-    // they warn, and they abort at lowering. A sweep that only looked at
-    // programs which lower would score them as clean.
+  it("is silent for a `var` written with `set` — the escape hatch", () => {
+    const out = checkJson(`var i = 0
+fn f()
+  set i = i + 1
+end
+f()
+print(i)`);
+    expect(out.ok).toBe(true);
+    expect(outerAssignErrors(out)).toEqual([]);
+  });
+
+  it("does not emit code for the rejected assignment", () => {
+    // The statement is abandoned once reported, so a program whose only fault
+    // is the assignment fails at compile and never reaches lowering.
     const out = checkJsonAllowFail(`let i = 0
 fn f()
   if false then i = 1 end
@@ -107,7 +143,7 @@ fn f()
 end
 print(f())`);
     expect(out.error).toBe(true);
-    expect(out.phase).toBe("lower");
-    expect(outerAssignWarnings(out)).toHaveLength(1);
+    expect(out.message).not.toContain("bytecode lowering failed");
+    expect(outerAssignErrors(out)).toHaveLength(1);
   });
 });

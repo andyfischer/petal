@@ -623,7 +623,11 @@ fn test_analyze_reports_every_compile_error() {
             .map(|d| d.message.clone())
             .collect::<Vec<_>>()
     );
-    let lines: Vec<u32> = result.diagnostics.iter().map(|d| d.range.start.line).collect();
+    let lines: Vec<u32> = result
+        .diagnostics
+        .iter()
+        .map(|d| d.range.start.line)
+        .collect();
     assert_eq!(lines, vec![2, 3]);
 }
 

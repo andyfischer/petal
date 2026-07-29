@@ -188,9 +188,7 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!(
-            "Usage: petal check [--json] [--strict] [--ir] <file>  |  petal check -e <code>"
-        );
+        eprintln!("Usage: petal check [--json] [--strict] [--ir] <file>  |  petal check -e <code>");
         process::exit(1);
     });
 

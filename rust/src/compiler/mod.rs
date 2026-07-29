@@ -108,6 +108,15 @@ pub struct Compiler {
     // "not a var" error rather than silently accepting `=` on a cell.
     var_scopes: Vec<HashSet<String>>,
 
+    // Imported `var`s visible in the file being compiled, bare name → (owning
+    // module, the term that holds the cell). Populated by `bind_imports` for
+    // the two forms that bind a bare name (selective and implicit imports);
+    // alias access (`m.x`) resolves through the qualified name instead and is
+    // not recorded. Reads of these names dereference like any other `var`;
+    // the map exists so a `set` on one can say which module owns it, since
+    // only the declaring module may write a cell it exports.
+    imported_vars: HashMap<String, (String, TermId)>,
+
     // Fatal compile errors, collected with their spans and drained into the
     // `Err` of `compile_modules`. Distinct from `warnings`: these abort. The
     // compiler's statement/expression walk returns `()`/`TermId` rather than
@@ -120,7 +129,7 @@ pub struct Compiler {
     // They keep `is_outer_function_binding` honest after the name has been
     // rebound locally — without them only the first assignment in a branch
     // would be diagnosed, since every later lookup finds the phi.
-    // See docs/lowering-confusion-20260726.md §4.
+    // See docs/dev/var-next-steps.md (Why the feature exists).
     cross_fn_terms: HashSet<TermId>,
 
     // Per-block local-shadow log: block → (name → the binding that was live in
@@ -130,7 +139,7 @@ pub struct Compiler {
     // flow is carrying. From that point on the name is block-local: rebinds
     // stop sharing the carry slot and stop updating `block_rebinds`, and
     // `wire_phi_outs` carries the *frozen* pre-shadow value out instead of the
-    // shadowed local's final value. See docs/lowering-confusion-20260726.md §3a.
+    // shadowed local's final value. See docs/dev/var-next-steps.md (Lexical shadowing).
     block_shadowed: HashMap<BlockId, HashMap<String, Option<TermId>>>,
 
     // Map from a state variable's StateKey back to its `StateInit` term. Used
@@ -197,6 +206,7 @@ impl Compiler {
             block_shadowed: HashMap::new(),
             cross_fn_terms: HashSet::new(),
             var_scopes: Vec::new(),
+            imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
             builtin_phantoms: HashMap::new(),
@@ -359,6 +369,7 @@ impl Compiler {
         // not leak across module boundaries (prescan counts a module's own
         // declarations only).
         self.module_aliases.clear();
+        self.imported_vars.clear();
         self.overloaded_fns.clear();
         self.overload_variants.clear();
 
@@ -417,7 +428,7 @@ impl Compiler {
                     let tid = self
                         .scope_lookup(&format!("{m}::{name}"))
                         .expect("export is bound under its qualified name");
-                    self.scope_bind(name.clone(), tid);
+                    self.bind_imported_name(m, name, tid);
                 }
                 self.module_aliases.insert(m.clone(), m.clone());
                 continue;
@@ -470,11 +481,26 @@ impl Compiler {
                 let tid = self
                     .scope_lookup(&format!("{m}::{name}"))
                     .expect("export is bound under its qualified name");
-                self.scope_bind(name.clone(), tid);
+                self.bind_imported_name(m, name, tid);
                 selective.insert(name.clone(), m.clone());
             }
         }
         Ok(())
+    }
+
+    /// Bind an import under its bare name, carrying the binding kind over from
+    /// the qualified name. An exported `var` has to stay a `var` here: the
+    /// bound term holds the *cell*, so a binding that lost its kind would
+    /// forward the raw cell id to every read and break the containment
+    /// invariant (no expression ever evaluates to a cell — §6d).
+    fn bind_imported_name(&mut self, module: &str, name: &str, tid: TermId) {
+        if self.binding_is_var(&format!("{module}::{name}")) {
+            self.scope_bind_var(name.to_string(), tid);
+            self.imported_vars
+                .insert(name.to_string(), (module.to_string(), tid));
+        } else {
+            self.scope_bind(name.to_string(), tid);
+        }
     }
 
     /// Record a finished module's exports: every top-level binding declared

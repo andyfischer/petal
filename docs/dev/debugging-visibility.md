@@ -84,7 +84,7 @@ field on the result rather than a convention:
 Runtime error messages ("Caused by:") share the same walk and print the
 frontier for the same reason.
 
-See `docs/lowering-confusion-20260726.md` §6e for the argument.
+See [`var-next-steps.md`](var-next-steps.md) (Provenance) for the argument.
 
 ---
 

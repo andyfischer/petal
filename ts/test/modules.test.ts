@@ -84,6 +84,33 @@ describe("module imports across files", () => {
     expect(out).toBe("15\n255\n1");
   });
 
+  it("an exported `var` reads as its contents under an alias", () => {
+    const out = execSync(
+      `${PETAL} run -e 'import tally\nprint(tally.hits, type(tally.hits))\ntally.bump()\nprint(tally.hits + 1)' -I ${FIXTURES}`,
+      { encoding: "utf-8", timeout: 10000 }
+    ).trim();
+    expect(out).toBe("0 int\n2");
+  });
+
+  it("an exported `var` reads as its contents under a selective import", () => {
+    // The bare name binds the term that holds the cell, so losing the `var`
+    // kind here would forward the raw cell to every read (`<cell 0>`) and
+    // break the containment invariant.
+    const out = execSync(
+      `${PETAL} run -e 'import tally: hits, bump\nprint(hits, type(hits))\nbump()\nprint(hits + 1)' -I ${FIXTURES}`,
+      { encoding: "utf-8", timeout: 10000 }
+    ).trim();
+    expect(out).toBe("0 int\n2");
+  });
+
+  it("only the declaring module may `set` an exported `var`", () => {
+    const err = runFileError(
+      `run -e 'import tally: hits\nset hits = 5' -I ${FIXTURES}`
+    );
+    expect(err).toContain("exported by module `tally`");
+    expect(err).toContain("only `tally` can write it");
+  });
+
   it("runtime errors in a module name the module file", () => {
     const err = runFileError(
       `run -e 'import palette\nprint(palette.colors + 1)' -I ${FIXTURES}`

@@ -12,7 +12,7 @@
 //!   this binary unchanged.
 //! - Apps that need a **different renderer or native set** (e.g. `petal-fps`'s
 //!   software 3D rasterizer) implement their own [`Host`] and reuse everything
-//!   else from this crate — see `docs/building-on-integrations.md`.
+//!   else from this crate — see `docs/building-apps.md`.
 //!
 //! The reusable building blocks ([`input`] SDL translation, [`protocol`] agent
 //! JSON, [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,

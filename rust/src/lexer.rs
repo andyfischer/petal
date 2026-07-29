@@ -11,7 +11,7 @@ pub enum Token {
     // Identifiers and keywords
     Ident(String),
     Let,
-    /// `var` — declares a mutable cell (see docs/lowering-confusion-20260726.md).
+    /// `var` — declares a mutable cell (see docs/dev/var-next-steps.md).
     Var,
     /// `set` — writes through a `var` cell. A hard keyword: the f64-array
     /// builtin that used to own this name is now `set_at`.

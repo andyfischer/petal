@@ -382,7 +382,7 @@ fn is_ident_char(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 pub const KEYWORDS: &[&str] = &[
-    "let", "fn", "if", "elsif", "else", "end", "for", "in", "do", "while", "match", "when",
-    "return", "break", "continue", "state", "import", "true", "false", "nil", "and", "or", "not",
-    "enum",
+    "let", "var", "set", "fn", "if", "elsif", "else", "end", "for", "in", "do", "while", "match",
+    "when", "return", "break", "continue", "state", "import", "export", "true", "false", "nil",
+    "and", "or", "not", "enum",
 ];

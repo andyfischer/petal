@@ -2,7 +2,7 @@
 
 A hybrid Rust + Petal first-person-shooter experiment. petal-fps builds on the
 [`petal-sdl`](../../integrations/petal-desktop-sdl/) integration (Shape B — see
-[docs/building-on-integrations.md](../../docs/building-on-integrations.md)): it
+[docs/building-apps.md](../../docs/building-apps.md)): it
 reuses that crate's window, event loop, input, agent/headless/screenshot/record
 modes, and hot reload, and adds only its **delta** — a software z-buffered
 triangle rasterizer and the `triangle3d` native family. Everything else —

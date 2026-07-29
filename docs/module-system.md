@@ -52,9 +52,27 @@ end
 ```
 
 `export` goes immediately before the declaration keyword: `export fn`,
-`export let`, `export state`, `export enum`. An `export enum` exports the enum's
-variants. `export` is only meaningful at a module's top level — it has no effect
-in the entry file (nothing imports the entry) or on nested statements.
+`export let`, `export state`, `export var`, `export enum`. An `export enum`
+exports the enum's variants. `export` is only meaningful at a module's top level
+— it has no effect in the entry file (nothing imports the entry) or on nested
+statements.
+
+### An exported `var` is read-only to importers
+
+A `var` binds a cell, and the cell belongs to the module that declared it.
+Importers read it like any other export — through an alias (`m.hits`) or a
+selective import (`import m: hits`), both of which yield the cell's *contents*,
+never the cell — but they cannot write it:
+
+```petal ignore
+import tally: hits
+set hits = 5     // error: `hits` is a `var` exported by module `tally`;
+                 //        only `tally` can write it
+```
+
+Export a function that performs the write instead. This keeps every `set` on a
+cell in the file that owns it, which is also the only place a reader would think
+to look for one.
 
 `export` is the single privacy rule. A leading `_` carries no special privacy
 meaning: `export fn _helper` exports normally, and a plain `fn _helper` (no

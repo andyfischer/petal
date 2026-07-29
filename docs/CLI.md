@@ -85,7 +85,7 @@ Lex, parse, and compile the program but do not execute it. Exits 0 if
 compilation succeeds, 1 otherwise.
 
 The compile step runs the optional type checker (see
-[Type Annotations](Language_Guide.md#type-annotations)). Its findings are
+[Type Annotations](language-guide.md#type-annotations)). Its findings are
 **non-fatal warnings** and do not change the exit code: in text mode they print
 to stderr with a source caret; with `--json` they appear as a `warnings` array
 (`check` still exits 0). Pass `--strict` to make any warning force a non-zero
@@ -446,7 +446,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Continue | `"Continue"` | none | none | |
 | Return | `"Return"` | [value] or [] | none | |
 | MakeClosure | `{"MakeClosure": fid}` | [captured_values...] | none | Create closure for FunctionId |
-| MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [Function_Overloading.md](Function_Overloading.md). |
+| MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [function-overloading.md](function-overloading.md). |
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
 | MethodCall | `{"MethodCall": cid}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then scope/builtin lookup with `object` prepended. |
 | StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. |
@@ -567,7 +567,8 @@ the writes.
 ### Cells and the frontier
 
 A `var` binds a mutable heap cell (see
-`docs/lowering-confusion-20260726.md` §6c). The cell operand of a `CellRead`,
+[`var` and `set`](language-guide.md#var-and-set); the design rationale is in
+`docs/dev/var-next-steps.md`, Cells). The cell operand of a `CellRead`,
 a `CellWrite` or a closure capture is an *identity* edge — it names which box,
 not which value — so a backward walk never crosses one. Every stop is reported
 as a **frontier** entry naming the var, its declaration, and the complete set

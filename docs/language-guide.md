@@ -494,8 +494,10 @@ append(@nums, 4)   // same as: nums = append(nums, 4)
 print(nums)        // [1, 2, 3, 4]
 ```
 
-`@var` binds to the nearest enclosing call. See the
-[Rebind Operator](rebind-operator.md) doc for nesting, statement-level scope,
+`@` binds to the nearest enclosing call, and works on `let` bindings only — it
+desugars to `x = f(x)`, so on a [`var`](#var-and-set) it is an error and you
+write `set nums = append(nums, 4)`. See the
+[Rebind Operator](syntax/rebind-operator.md) doc for nesting, statement-level scope,
 and limits.
 
 ## Lists
@@ -555,22 +557,38 @@ let user = {
 print(user.address.city)  // "Portland"
 ```
 
-### Mutation
+### Field assignment
 
-Records are mutable. You can assign to a field directly, including nested
-fields and fields of records stored inside lists.
+You can assign to a field directly, including nested fields and fields of
+records stored inside lists.
 
 ```petal
 let p = {x: 1, y: 2}
-p.x = 10                     // direct field mutation
+p.x = 10                     // field assignment
 p.y = p.y + 1
 
 let pts = [{x: 0, y: 0}, {x: 0, y: 0}]
-pts[0].x = 100               // mutation inside a list
+pts[0].x = 100               // through a list element
 
 let user = {name: "Bob", address: {city: "Portland"}}
-user.address.city = "Seattle" // nested field mutation
+user.address.city = "Seattle" // nested field
 ```
+
+This is a *rebind of the name*, exactly like `p = ...`: it produces an updated
+record and points `p` at it. Records are values, so anything else holding the
+old one keeps it, and the compiler can still trace where each value came from.
+
+```petal
+let r = {a: 1}
+let s = r
+r.a = 2
+print(r, s)   // { a: 2 } { a: 1 }
+```
+
+The same is true across a call: a function that assigns to a field of its
+parameter updates its own local binding, not the caller's record. To share one
+record between writers, declare it [`var`](#var-and-set) and write it with
+`set r.a = ...`.
 
 ### Spread
 
@@ -582,9 +600,9 @@ let defaults = {x: 0, y: 0, color: "gray"}
 let moved = {...defaults, x: 100}    // {x: 100, y: 0, color: "gray"}
 ```
 
-Spread creates a new record; mutation modifies in place. Use whichever fits
-the call site — spread for values you want to keep immutable, mutation for
-loops that update the same object each iteration.
+Spread and field assignment both produce an updated record — spread names the
+fields it keeps, field assignment names the fields it changes. Use whichever
+reads better at the call site.
 
 ### Record Builtins
 
@@ -719,13 +737,36 @@ end
 State is preserved during hot reload — if you edit and save a file while it's running,
 existing state values carry over to the new code.
 
-`state var` combines the two: a mutable cell that also persists across calls.
+A `state` declaration can also be **keyed** — `state(key)` gives each distinct
+key its own slot, so one declaration site holds independent state per entity:
+
+```petal
+fn health(id, damage)
+    state(id) hp = 100
+    hp -= damage
+    hp
+end
+print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
+```
+
+Keys are hashed with the declaration's control-flow position, and a slot that
+goes untouched for a run is reclaimed.
+
+### `state var`
+
+`state var` combines persistence with a [mutable cell](#var-and-set): the slot
+holds the cell, so the value survives across calls and hot reloads *and* can be
+written with `set` from inside another function or a callback.
 
 ```petal
 state var hits = 0
 set hits = hits + 1
 print(hits)
 ```
+
+`state(key) var` works too — one cell per key, created on first touch. Reach for
+`state var` only when a plain `state` cannot express the write; a `state` read
+still carries its dataflow edges, and a cell read does not.
 
 ## JSX-like Elements
 
@@ -761,7 +802,7 @@ fn greet(name)   print("hi", name) end
 fn greet(a, b)   print("hi", a, b) end
 ```
 
-See [Function_Overloading.md](Function_Overloading.md) for the full rules.
+See [function-overloading.md](function-overloading.md) for the full rules.
 
 ## Assertions
 

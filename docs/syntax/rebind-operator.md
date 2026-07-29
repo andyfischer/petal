@@ -70,12 +70,18 @@ The operator is intentionally narrow in its first form:
 - **Deferred / conditional positions are left alone.** `@` inside a lambda body,
   a `match` arm, or a `while` *condition* is not rewritten, so it can never
   silently change evaluation order. Using it there is an error.
+- **`let` bindings only.** `@` desugars to `x = f(x)`, which is the `=` form and
+  therefore illegal on a [`var`](overview.md#var-and-set). Write the cell
+  explicitly instead: `set x = f(x)`.
 
 Each of these produces a clear error pointing at the `@`:
 
 ```text
 Error: `@a` can only be used as an argument to a call at statement level
 ```
+
+`petal lint`'s rebind rule follows the same rule — it proposes `@` for
+`x = f(x)` on a `let`, and never for `set x = f(x)`.
 
 ## See also
 

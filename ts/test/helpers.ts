@@ -39,7 +39,7 @@ export function checkJson(code: string): any {
 
 // ---------------------------------------------------------------------------
 // Dataflow-query helpers. Shared rather than redefined per suite so the cell
-// frontier (docs/lowering-confusion-20260726.md §6e) is asserted the same way
+// frontier (docs/dev/var-next-steps.md, Provenance) is asserted the same way
 // everywhere it surfaces.
 // ---------------------------------------------------------------------------
 

@@ -7,7 +7,7 @@ globals**.
 - **Primitives reference:** [ffi.md](ffi.md) — the native-fn API, `Value`, and the
   three symbol-keyed channels (bindings, output buffers, counters).
 - **Where embedding fits among the app-building paths:**
-  [building-on-integrations.md](building-on-integrations.md).
+  [Building Apps](building-apps.md).
 - **Persisting settings back to a script file:**
   [goal-based-editing.md](goal-based-editing.md).
 

@@ -33,6 +33,7 @@ Or run all examples with pass/fail reporting:
 | `pattern_matching.ptl` | Match expressions | Guards, list destructuring, nested patterns |
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |
 | `state.ptl` | Persistent state | `state` keyword, counters, accumulators |
+| `mutable_cells.ptl` | Mutable slots and where they're needed | `var`/`set`, writes from callbacks, shared boxes, `state var` |
 | `particles.ptl` | Multi-object simulation | Per-iteration keyed `state`, bounce physics |
 | `state_machine.ptl` | Traffic light controller | Enums + state, tick-based transitions |
 | `fibonacci.ptl` | Recursive and iterative Fibonacci | Recursion, iteration, string interpolation |

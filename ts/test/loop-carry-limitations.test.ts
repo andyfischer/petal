@@ -103,7 +103,7 @@ describe("a let shadow splits the name at the declaration", () => {
   it("an assignment before the shadow still carries out", () => {
     // `x = 5` lexically precedes `let x`, so it targets the outer `x` and
     // carries out; everything after the declaration is body-local and does
-    // not. See docs/lowering-confusion-20260726.md §3a.
+    // not. See docs/dev/var-next-steps.md (Lexical shadowing).
     const out = runPetal(`let x = 1
 for i in [1, 2, 3] do
   x = 5

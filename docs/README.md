@@ -7,13 +7,13 @@ Start here if you're learning or using the language:
 | Document | Description |
 |----------|-------------|
 | [Getting Started](Getting_Started.md) | Build instructions, running examples, CLI usage |
-| [Language Guide](Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
+| [Language Guide](language-guide.md) | Complete language reference: types, syntax, control flow, functions, state |
 | [Syntax Overview](syntax/overview.md) | Compact map of all lexical forms, statements, expressions, and operators |
 | [Builtins Reference](Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](CLI.md) | Full CLI command reference and JSON output schemas |
 | [Module System](module-system.md) | `import` syntax, module resolution, hot reload across files |
-| [Function Overloading](Function_Overloading.md) | Multi-arity dispatch rules |
-| [Rebind Operator](rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
+| [Function Overloading](function-overloading.md) | Multi-arity dispatch rules |
+| [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
 | [Optional Commas](syntax/optional-commas.md) | Comma-less lists and call arguments |
 | [Examples](examples/README.md) | Documentation code snippets (runnable demos live in [`../examples/`](../examples/README.md)) |
 
@@ -26,7 +26,7 @@ How the implementation works and where it's headed:
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: natives, values, host channels |
 | [Embedding Guide](embedding-guide.md) | Patterns for embedding without host globals: observing function calls, feeding inputs, per-run ids |
-| [Building on Integrations](building-on-integrations.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
+| [Building Apps](building-apps.md) | Building your own app on Petal: pure-Petal scripts, extending an integration, or embedding a new host |
 | [Program Modification](program-modification.md) | Modifying programs programmatically — static (source) and live (running-state) editing — for tools, agents, and embedders |
 | [Goal-Based Editing](goal-based-editing.md) | Declarative, formatting-preserving source edits via `Goal`/`modify_source_with_goals` |
 | [Config Files](config-files.md) | Using a `.ptl` file as an app's configuration format: reading values without running, writing them back |
@@ -47,6 +47,7 @@ working documents — expect internal shorthand and point-in-time status:
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
 | [Linter Plan](dev/linter-plan.md) | `petal lint` design; first slice shipped, normalization catalogue remains |
+| [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: flipping cross-function `=` to an error |
 | [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | Early, unfinished surface for constructing/transforming a program as IR data |

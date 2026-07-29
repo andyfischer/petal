@@ -1,0 +1,8 @@
+// An exported `var` — a cell that lives in this module. Importers read it
+// (through either import form) but only this module writes it.
+
+export var hits = 0
+
+export fn bump()
+    set hits = hits + 1
+end

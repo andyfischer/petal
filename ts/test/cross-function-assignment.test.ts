@@ -2,7 +2,7 @@
 // binding — it creates a function-local shadow, silently. The compiler warns at
 // every such site; the warning is the measurement step for the planned
 // `var`/`set` escape hatch, and becomes an error once that lands.
-// See docs/lowering-confusion-20260726.md sections 1a and 4.
+// See docs/dev/var-next-steps.md (Why the feature exists).
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { ensureBuild, checkJson, checkJsonAllowFail } from "./helpers";

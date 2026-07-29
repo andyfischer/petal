@@ -87,5 +87,5 @@ This crate is also a library (`petal_sdl`). Apps that need a different renderer
 or native set — like the `petal-fps` software 3D rasterizer — depend on it and
 implement the `Host` trait instead of copying the host code, reusing the window,
 event loop, agent protocol, screenshot/record modes, and hot reload. See
-[`docs/building-on-integrations.md`](../../docs/building-on-integrations.md) for
+[`docs/building-apps.md`](../../docs/building-apps.md) for
 the pattern.

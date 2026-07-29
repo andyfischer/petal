@@ -151,7 +151,7 @@ impl Type {
 - `Any` is compatible with any type in either direction (dynamic ↔ static).
 - Otherwise types must be equal, **except** the documented numeric promotion:
   an `int` is assignable to a `float` slot (mixed arithmetic promotes to float,
-  `Language_Guide.md:56`). `float`→`int` is **not** assignable (needs explicit
+  `language-guide.md:56`). `float`→`int` is **not** assignable (needs explicit
   `int()`), consistent with "no implicit casting."
 - Everything else: mismatch ⇒ one warning diagnostic.
 
@@ -231,7 +231,7 @@ They must remain callable as identifiers. Therefore type names are recognized
   to also collect declared `(param types, return type)` into a compile-time side
   table keyed by function/overload. This makes call-site checking possible even
   with forward references, and respects arity-based overloading
-  (`Function_Overloading.md:91`).
+  (`function-overloading.md:91`).
 - **Bindings:** the checker keeps its own scoped type environment mirroring the
   compiler's `scopes` stack (`compiler/mod.rs:50`) — no need to add a `ty` field
   to IR `Term` (`program.rs:242`) in phase 1.
@@ -313,7 +313,7 @@ Surfacing points:
 ---
 
 ## 9. Interactions to keep in mind
-- **Overloading is by arity** (`Function_Overloading.md:91`). The checker groups
+- **Overloading is by arity** (`function-overloading.md:91`). The checker groups
   candidates by arity and, for a given call, checks against the matching-arity
   overload's declared types. It does **not** introduce type-based dispatch.
 - **Pending / Dual / Vec2 / f64_array / Handle** are real runtime types with
@@ -323,7 +323,7 @@ Surfacing points:
 - **Immutability & reassignment:** `let` can be reassigned; an annotated binding
   keeps its declared type across reassignments and warns if a later value
   conflicts.
-- **Color literals** (`#f80`) desugar to records (`Language_Guide.md:34`), so
+- **Color literals** (`#f80`) desugar to records (`language-guide.md:34`), so
   they infer as `record`.
 
 ---
@@ -351,7 +351,7 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
   `compile_modules` → `env` → CLI; `petal check` runs the checker; JSON
   `warnings[]`; MCP `CheckSnippet`/`TestSnippet` wiring; caret rendering via
   `format_source_snippet`.
-- **Chunk G — Docs & examples.** `Language_Guide.md` Types section gains the
+- **Chunk G — Docs & examples.** `language-guide.md` Types section gains the
   annotation grammar; `Builtins.md` cross-links casts as the sanctioned
   conversions; update `goals.md` "Types as a projection"; add an
   `examples/typed.ptl`; update `README.md:13` from aspiration to reality.

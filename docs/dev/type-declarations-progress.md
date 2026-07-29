@@ -136,7 +136,7 @@ un-annotated. Schema documented in [`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
   `docs/dev/mcp-server.md` updated to say so.
 
 ### Chunk G — docs & examples — DONE
-- `Language_Guide.md` gained a **Type Annotations** section (syntax, warning-only,
+- `language-guide.md` gained a **Type Annotations** section (syntax, warning-only,
   promotion, explicit casts). `CLI.md` `check` documents warnings + `--strict`.
   `Builtins.md` cross-links the casts. `goals.md` "Types as a projection" rows
   reconciled (🟡, user-writable + warning-only). `README.md` types line flipped
@@ -144,7 +144,7 @@ un-annotated. Schema documented in [`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
   runs clean and is in the manifest.
 
 ### `var` / `set` cells — DONE
-Step 4d of [`../lowering-confusion-20260726.md`](../lowering-confusion-20260726.md).
+See [`var-next-steps.md`](var-next-steps.md) (Cells).
 A `var` binds a heap cell, so it breaks the checker's usual assumption that a
 binding's initializer describes every later read.
 

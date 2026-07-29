@@ -118,7 +118,7 @@ describe("discarded pure-builtin result lint", () => {
   });
 });
 
-// Chunk 4d (docs/lowering-confusion-20260726.md §7): a `var` is a cell, so its
+// (docs/dev/var-next-steps.md, Cells): a `var` is a cell, so its
 // *writes* must stay assignable to its declared type — and its *reads* must not
 // be typed from the initializer, because a `set` can retype the cell from inside
 // any function or closure that captured it.

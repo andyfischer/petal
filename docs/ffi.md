@@ -199,10 +199,16 @@ preserves state; renaming a variable or moving it between modules drops it
 
 Petal values are immutable **by construction**, not by runtime check:
 
-- The IR has no mutable variables — reassignment emits a new term and rebinds
-  the name (SSA/phi). There is no "set" op to police.
-- Collections are value types; `append`/`set`/`remove` return new collections
+- Ordinary bindings are not mutable variables — reassignment emits a new term
+  and rebinds the name (SSA/phi).
+- Collections are value types; `append`/`set_at`/`remove` return new collections
   (the `@` rebind operator is sugar: `append(@nums, 4)`).
+- The one mutable slot is a `var`, and it is contained: `CellNew`/`CellRead`/
+  `CellWrite` are the only ops that touch it, no expression ever *evaluates* to
+  a cell (reads dereference), and the cell slab lives in the heap, so
+  `Heap::fork` isolates it like any other object. Values reachable from a cell
+  are still immutable — a `set` replaces the cell's contents, it does not edit
+  a value in place.
 - The one exception is an optimization: when the VM's escape analysis proves a
   container uniquely owned and non-escaping, it sets `PetalCxt::in_place` and
   builtins mutate the backing store directly (`list_append_in_place` etc.).

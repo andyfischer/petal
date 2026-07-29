@@ -223,7 +223,7 @@ pub enum StmtKind {
         value: Expr,
         /// Written `var x = …` rather than `let x = …`: a mutable cell, which
         /// is written with `set` and rejects `=`.
-        /// See docs/lowering-confusion-20260726.md sections 5c and 6b.
+        /// See docs/dev/var-next-steps.md (Two write keywords).
         is_var: bool,
     },
     Assign {

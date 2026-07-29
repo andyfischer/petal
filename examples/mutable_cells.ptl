@@ -1,0 +1,81 @@
+// Mutable Cells
+// `let` bindings are dataflow bindings: `x = 1` rebinds the name, and an
+// assignment inside a function only shadows — the outer binding is untouched.
+// When you need a slot that a function or a callback really can write, declare
+// it `var` and write it with `set`.
+
+print("Accumulating in a loop")
+print("======================")
+
+var total = 0
+for i in [1, 2, 3, 4] do
+  set total = total + i
+end
+print("total:", total)
+
+// The case `=` cannot express: writing from inside a lambda. Without a cell
+// this would silently shadow, and `flagged` would still be 0 at the end.
+print("")
+print("Writing from inside a callback")
+print("==============================")
+
+var flagged = 0
+let doubled = map([1, 2, 3, 4], fn(n)
+  if n % 2 == 0 then set flagged += 1 end
+  n * 2
+end)
+print("doubled:", doubled)
+print("even values seen:", flagged)
+
+// A cell is a box, and each *evaluation* of the declaration makes a new one —
+// so this factory hands out independent counters that share nothing.
+print("")
+print("Closures share the box")
+print("======================")
+
+fn make_counter()
+  var count = 0
+  let bump = fn()
+    set count = count + 1
+    count
+  end
+  bump
+end
+
+let a = make_counter()
+let b = make_counter()
+print("a:", a(), a(), a())
+print("b:", b())
+
+// Reading a `var` gives its contents, never the box, so nothing aliases by
+// accident: the record below keeps the value as of the moment it was built.
+print("")
+print("Reads copy, they don't alias")
+print("===========================")
+
+var level = 1
+let snapshot = { level: level }
+set level = 99
+print("snapshot:", snapshot, "level:", level)
+
+// `set` also takes field and index targets.
+var player = { hp: 100, pos: [0, 0] }
+fn take_damage(amount)
+  set player.hp = player.hp - amount
+end
+take_damage(30)
+set player.pos[0] = 5
+print("player:", player)
+
+// `state var` persists across calls *and* accepts writes from elsewhere —
+// use it only when a plain `state` cannot express the write.
+print("")
+print("Persistent cells")
+print("================")
+
+fn record_hit()
+  state var hits = 0
+  set hits = hits + 1
+  hits
+end
+print("hits:", record_hit(), record_hit(), record_hit())

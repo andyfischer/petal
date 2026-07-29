@@ -1,6 +1,6 @@
 // `var x = …` declares a mutable cell and `set x = …` writes it. The two write
 // keywords are disjoint in both directions: `=` rejects a var, `set` rejects
-// everything else. See docs/lowering-confusion-20260726.md sections 5c and 6b.
+// everything else. See docs/dev/var-next-steps.md (Two write keywords).
 //
 // A `var` binds a *cell*: a one-value mutable box on the heap. Reads
 // dereference it (`CellRead`), `set` writes through it (`CellWrite`), and a

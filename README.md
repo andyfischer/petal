@@ -11,6 +11,7 @@ Petal is a programming language for creative coding.
  - **Differentiable** - supports back-propogation, make program modifications based on observed outputs.
  - Supports programmatic modification of source code with **goal based** editing semantics. 
  - **Optional type declarations** - annotate `let` bindings, parameters, and return types where you want them; a shallow checker reports mismatches as warnings without ever blocking the dynamically-typed runtime.
+ - **Mutation is opt-in and visible** - `let` bindings are dataflow edges; when you really need a mutable slot you declare it `var` and every write says `set`, so the places the dataflow story goes dark are the places you can see.
  - Comes with various other language features to help quick iteration. Hybrid functional/imperative design, immutable values.
 
 ### Project Status
@@ -52,7 +53,7 @@ print([1, 2, 3] |> map(square))   // [1, 4, 9]
 print("hello, {name}!")            // hello, Petal!
 ```
 
-See the [Language Guide](docs/Language_Guide.md) for the full tour.
+See the [Language Guide](docs/language-guide.md) for the full tour.
 
 ## Install
 
@@ -106,7 +107,7 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Build instructions, running examples, CLI usage |
-| [Language Guide](docs/Language_Guide.md) | Complete language reference: types, syntax, control flow, functions, state |
+| [Language Guide](docs/language-guide.md) | Complete language reference: types, syntax, control flow, functions, state |
 | [Builtins Reference](docs/Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](docs/CLI.md) | Full CLI command reference and JSON output schemas |
 | [Module System](docs/module-system.md) | `import` syntax, module resolution |

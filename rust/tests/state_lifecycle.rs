@@ -226,7 +226,7 @@ fn lazy_init_does_not_overwrite_existing_value_across_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// `state var` — the slot holds a cell (docs/lowering-confusion-20260726.md §6c)
+// `state var` — the slot holds a cell (docs/dev/var-next-steps.md, Cells)
 // ---------------------------------------------------------------------------
 
 #[test]

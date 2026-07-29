@@ -325,7 +325,7 @@ impl Compiler {
     /// bindings, `set` writes `var` cells, and each rejects the other. Erroring
     /// in only one direction would leave `=` meaning two different things
     /// depending on a distant declaration, which is exactly the ambiguity `set`
-    /// exists to remove. See docs/lowering-confusion-20260726.md section 6b.
+    /// exists to remove. See docs/dev/var-next-steps.md (Two write keywords).
     ///
     /// Returns false when the statement is in error and should not be compiled.
     fn check_write_keyword(
@@ -348,6 +348,25 @@ impl Compiler {
             return true;
         }
         let root = root.to_string();
+        // A `var` another module exported is readable here but not writable:
+        // its cell belongs to the declaring module, and the alias form
+        // (`set m.x = ...`) has no way to say this at all. Checked before the
+        // keyword match so the message names the owner instead of repeating
+        // "use `set`" at a `set` that is already correct.
+        if is_set
+            && let Some((owner, tid)) = self.imported_vars.get(&root)
+            && self.scope_lookup(&root) == Some(*tid)
+        {
+            let owner = owner.clone();
+            self.error_at(
+                span,
+                format!(
+                    "`{root}` is a `var` exported by module `{owner}`; only `{owner}` \
+                     can write it — call a function it exports instead"
+                ),
+            );
+            return false;
+        }
         match (self.binding_is_var(&root), is_set) {
             (true, false) => {
                 self.error_at(
@@ -380,9 +399,10 @@ impl Compiler {
     /// Warn when an assignment targets a name bound outside the function being
     /// compiled. Such an assignment does not modify that binding — it creates a
     /// function-local shadow — so the code reads as a dataflow edge that isn't
-    /// there. This is the measurement step for the planned `var`/`set` work: a
-    /// warning today, an error once the escape hatch exists.
-    /// See docs/lowering-confusion-20260726.md §4.
+    /// there. The escape hatch it points at (`var`/`set`) has landed, so this
+    /// is a warning only until downstream projects are migrated; the decision
+    /// is that it becomes an error.
+    /// See docs/dev/var-next-steps.md (Remaining work 2a).
     ///
     /// Must run *before* the value expression is compiled: compiling it may
     /// create the capture phantom for the same name.
@@ -404,7 +424,8 @@ impl Compiler {
             message: format!(
                 "`{root}` is bound outside this function; this assignment creates a \
                  local shadow and does not modify `{root}`. Use `let` for a new local, \
-                 or return the value"
+                 return the value, or — if it really must be mutable — declare it \
+                 `var {root} = ...` and write it with `set {root} = ...`"
             ),
         });
     }

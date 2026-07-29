@@ -1,0 +1,6 @@
+{
+  "example": "mutable_cells.ptl",
+  "status": 0,
+  "stdout": "Accumulating in a loop\n======================\ntotal: 10\n\nWriting from inside a callback\n==============================\ndoubled: [2, 4, 6, 8]\neven values seen: 2\n\nClosures share the box\n======================\na: 1 2 3\nb: 1\n\nReads copy, they don't alias\n===========================\nsnapshot: { level: 1 } level: 99\nplayer: { hp: 70, pos: [5, 0] }\n\nPersistent cells\n================\nhits: 1 2 3\n",
+  "stderr": ""
+}

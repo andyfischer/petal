@@ -3,7 +3,7 @@
 // still fail to lower, and `check` is what CI and editors call — so a check
 // that stops before lowering reports a green build for a program that aborts on
 // first run. That is exactly how the shadowed-name phi bug survived in the
-// shipped `petal-ui` prelude. See docs/lowering-confusion-20260726.md section 3.
+// shipped `petal-ui` prelude. See docs/dev/var-next-steps.md (Lexical shadowing).
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { ensureBuild, checkText, checkJsonAllowFail } from "./helpers";

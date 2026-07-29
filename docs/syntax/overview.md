@@ -3,7 +3,7 @@
 A compact map of Petal's surface syntax: every lexical form, statement, and
 expression the parser accepts. It is a reference, not a tutorial — for prose
 walkthroughs and worked examples see the
-[Language Guide](../Language_Guide.md). Two syntactic topics have their own
+[Language Guide](../language-guide.md). Two syntactic topics have their own
 deep dives: [Optional Commas](optional-commas.md) and the
 [Module System](../module-system.md).
 
@@ -34,8 +34,8 @@ intentionally-unused or internal name. A lone `_` is the wildcard pattern in
 Reserved keywords:
 
 ```
-let  fn  if  else  elsif  then  for  in  while  match  when  do  end
-return  break  continue  state  enum  import  true  false  nil
+let  var  set  fn  if  else  elsif  then  for  in  while  match  when  do  end
+return  break  continue  state  enum  import  export  true  false  nil
 ```
 
 `as` (in `import ui as u`) is **contextual** — recognised only after `import`,
@@ -91,7 +91,9 @@ parses as `(count ?? 0) > 5`.
 
 **Assignment** is a statement, not an operator: `x = e`, plus the compound forms
 `+=` `-=` `*=` `/=` `%=`. Assignment targets may be a variable, an index
-(`xs[0] = v`), or a field (`p.x = v`, including nested `a.b.c = v`).
+(`xs[0] = v`), or a field (`p.x = v`, including nested `a.b.c = v`). `set x = e`
+takes the same target and compound forms; which keyword a name accepts is fixed
+by its declaration (see [`var` and `set`](#var-and-set)).
 
 ### Sugar that desugars to calls
 
@@ -99,7 +101,7 @@ parses as `(count ?? 0) > 5`.
 |------|-------------|-----|
 | `x \|> f(a)` | `f(x, a)` | pipe |
 | `obj.method(a)` | `method(obj, a)` | method syntax |
-| `f(@x)` | `x = f(x, ...)` | [Rebind Operator](../rebind-operator.md) |
+| `f(@x)` | `x = f(x, ...)` | [Rebind Operator](rebind-operator.md) |
 | `#ff8800` | `{r: 255, g: 136, b: 0}` | color literal |
 
 ## Statements
@@ -129,6 +131,32 @@ x = 20                       // reassignment
 x += 5                       // compound assignment
 ```
 
+### `var` and `set`
+
+`var` declares a mutable cell instead of a dataflow binding, and `set` is the
+only way to write one. The two keywords are disjoint: `=` on a `var` and `set`
+on a `let` are both compile errors.
+
+```petal
+var count = 0
+for i in [1, 2, 3] do
+    set count = count + i     // also `set count += i`
+end
+print(count)                  // 6
+```
+
+A `var` binds a box, so a function or closure that mentions the name writes the
+*same* box — the one thing `=` cannot express, since an `=` inside a function
+only shadows. Reading a `var` yields its contents; no expression evaluates to
+the box itself, so the only way to share one is closure capture.
+
+`set` never declares: `set` on an unknown name is an error. Targets may be a
+name, a field, or an index (`set r.a = 1`, `set xs[0] = 1`). `@` is a `let`-only
+rebind and is rejected on a `var`.
+
+Prefer `let` — a `var` read has no dataflow edge behind it, so provenance
+queries stop there. See the [Language Guide](../language-guide.md#var-and-set).
+
 ### `state`
 
 Persistent variables that are initialised once and survive across calls (and
@@ -142,10 +170,21 @@ fn counter()
 end
 ```
 
+`state var` combines the two — a cell that persists — and `state(key) var`
+gives each key its own cell:
+
+```petal
+fn hit(id)
+    state(id) var hp = 100
+    set hp = hp - 10
+    hp
+end
+```
+
 ### `fn` (function declaration)
 
 The last expression is the implicit return; `return` exits early. Functions may
-be overloaded by arity (see [Function Overloading](../Function_Overloading.md)).
+be overloaded by arity (see [Function Overloading](../function-overloading.md)).
 
 ```petal
 fn add(a, b)
@@ -320,9 +359,9 @@ value's type name as a string.
 
 ## See also
 
-- [Language Guide](../Language_Guide.md) — the full tour with worked examples.
+- [Language Guide](../language-guide.md) — the full tour with worked examples.
 - [Optional Commas](optional-commas.md) — comma-less lists and the spacing-aware `-`.
 - [Module System](../module-system.md) — `import`, exports, resolution, hot reload.
-- [Function Overloading](../Function_Overloading.md) — multi-arity dispatch.
-- [Rebind Operator](../rebind-operator.md) — the `@` in-out argument operator.
+- [Function Overloading](../function-overloading.md) — multi-arity dispatch.
+- [Rebind Operator](rebind-operator.md) — the `@` in-out argument operator.
 - [Builtins Reference](../Builtins.md) — built-in functions.

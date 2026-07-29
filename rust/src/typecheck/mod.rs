@@ -211,7 +211,7 @@ impl<'a> Checker<'a> {
                 // A `var` is a cell, and `set` reaches it from inside functions,
                 // closures and conditionals that this linear walk cannot
                 // correlate with the declaration
-                // (docs/lowering-confusion-20260726.md §6c). So the initializer
+                // (docs/dev/var-next-steps.md, Cells). So the initializer
                 // says nothing about what a later *read* observes, and trusting
                 // it produces warnings on correct code — the one outcome this
                 // pass is built to avoid. Only a written annotation constrains a
@@ -720,7 +720,7 @@ mod tests {
     }
 
     // ── `var` cells: writes are checked, reads are not trusted ──────────────
-    // docs/lowering-confusion-20260726.md §7 step 4d.
+    // docs/dev/var-next-steps.md (Cells).
     #[test]
     fn set_conflicting_with_declared_var_type_warns() {
         let w = warns("var n: int = 0\nset n = \"hello\"");

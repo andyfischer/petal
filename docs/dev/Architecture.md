@@ -1,7 +1,7 @@
 # Petal Architecture
 
 This document describes the implementation of the Petal compiler and runtime.
-It's the internal counterpart to the [Language Guide](../Language_Guide.md) — read
+It's the internal counterpart to the [Language Guide](../language-guide.md) — read
 this if you're working on the compiler or debugging IR behavior.
 
 ```
@@ -187,9 +187,9 @@ writes to `CellWrite`, so the name is never rebound and never needs a phi —
 which is exactly what lets a `var` be written from inside a conditional or a
 closure, where a phi would have to initialize from a term in another
 function. The cost is that a cell read has no dataflow edge to walk back,
-so provenance stops there. See docs/lowering-confusion-20260726.md for the
-full argument, and §6d for the containment invariant that keeps cells out of
-the value domain (no expression evaluates to a `Value::Cell`).
+so provenance stops there. See [var-next-steps.md](var-next-steps.md) for the
+full argument, including the containment invariant that keeps cells out of the
+value domain (no expression evaluates to a `Value::Cell`).
 
 ### ConstantTable
 
@@ -221,7 +221,7 @@ pub struct FunctionDef {
 }
 ```
 
-Overloading (see [Function_Overloading.md](../Function_Overloading.md)) is
+Overloading (see [function-overloading.md](../function-overloading.md)) is
 compiled as one `MakeClosure` per variant plus one `MakeOverloadSet` that
 bundles them. Dispatch at runtime selects the variant by argument count.
 
@@ -501,10 +501,10 @@ package).
 
 ## Further Reading
 
-- [Language Guide](../Language_Guide.md) — user-facing language reference
+- [Language Guide](../language-guide.md) — user-facing language reference
 - [CLI Reference](../CLI.md) — full CLI command list + IR JSON schema
 - [Builtins Reference](../Builtins.md) — all built-in functions
-- [Function Overloading](../Function_Overloading.md) — multi-arity dispatch
+- [Function Overloading](../function-overloading.md) — multi-arity dispatch
 - [Debug Protocol](debug-protocol.md) — SDL / canvas agent protocol
 - [Debugging & Visibility](debugging-visibility.md) — observability stack
 - [Goals](goals.md) — vision, remaining work, and sequencing

@@ -101,7 +101,7 @@ describe("provenance queries", () => {
 });
 
 /**
- * The cell frontier (docs/lowering-confusion-20260726.md §6e). A backward walk
+ * The cell frontier (docs/dev/var-next-steps.md, Provenance). A backward walk
  * must stop at a cell read *and say so*: an unannounced truncation reads as
  * "nothing further influenced this", which is the same lie shorter.
  */

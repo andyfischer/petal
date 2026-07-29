@@ -47,7 +47,7 @@ working documents — expect internal shorthand and point-in-time status:
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
 | [Linter Plan](dev/linter-plan.md) | `petal lint` design; first slice shipped, normalization catalogue remains |
-| [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: flipping cross-function `=` to an error |
+| [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: a typed phase channel for compiler errors |
 | [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | Early, unfinished surface for constructing/transforming a program as IR data |

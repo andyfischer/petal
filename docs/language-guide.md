@@ -68,9 +68,11 @@ an unknown name is an error, not a declaration.
 
 A `var` binds a *box*, not a value, and that is what makes it useful: a
 function or a closure that mentions the name shares the same box, so a write
-from inside one is visible outside. This is the case `=` cannot express — an
-`=` inside a function creates a function-local shadow and leaves the outer
-binding alone.
+from inside one is visible outside. This is the case `=` cannot express, and
+the compiler says so: an `=` inside a function targeting a name bound outside
+it is an error, because it would create a function-local shadow and leave the
+outer binding alone. Reach for `var`/`set` when you meant the write to land;
+reach for `let` when you meant a new local.
 
 ```petal
 var score = 0

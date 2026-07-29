@@ -23,11 +23,12 @@ re-litigated without a reason.
 ### Why the feature exists
 
 Assigning to a name bound outside the current function does **not** modify that
-binding — it creates a function-local shadow, silently. One control-flow step
-further (inside an `if`, `while` or `for`) the same code did not even compile:
-the phi would have had to initialize from a term in another function. The split
-was an implementation detail showing through as a language rule, and the honest
-half was the half that failed.
+binding — it would create a function-local shadow, silently. One control-flow
+step further (inside an `if`, `while` or `for`) the same code did not even
+compile: the phi would have had to initialize from a term in another function.
+The split was an implementation detail showing through as a language rule, and
+the honest half was the half that failed. Both halves are now a compile error
+at the assignment site (§2a).
 
 Whole functions in the corpus were no-ops because of it. `var`/`set` is the
 escape hatch for the code that genuinely wanted mutation and could not have it;
@@ -134,35 +135,28 @@ in `compiler/phi.rs`, and the `_wrap_segment` shape in
 
 ## 2. Remaining work
 
-### 2a. Flip cross-function `=` from a warning to an error
+### 2a. Cross-function `=` is an error — **done**
 
-The decision (unchanged): assignment to a name bound outside the current
-function becomes a **compile error**, at the assignment site, uniformly across
-all four declaration sites (module `let`, module `state`, lambda capture,
-enclosing fn local) and all four syntactic forms (`x =`, `xs[i] =`, `r.f =`,
-`@x`).
+Assignment to a name bound outside the current function is a **compile error**,
+at the assignment site, uniformly across all four declaration sites (module
+`let`, module `state`, lambda capture, enclosing fn local) and all four
+syntactic forms (`x =`, `xs[i] =`, `r.f =`, `@x` — which desugars to `=` and so
+is caught by the same check). `var`/`set` is exempt: a `set` really does modify
+the outer binding, which is the entire point of the escape hatch.
 
-Today it is a warning on the non-fatal `Diagnostic` channel, and the message
-names the escape hatch:
+`Compiler::check_assign_to_outer_function_binding` returns false and the
+statement is abandoned, mirroring `check_write_keyword`. That matters beyond
+tidiness: a rejected assignment no longer emits the phi that would fail to
+lower, so the compiles-but-does-not-lower state is gone for this shape and the
+program stops at compile.
 
-```
-warning: `i` is bound outside this function; this assignment creates a local
-shadow and does not modify `i`. Use `let` for a new local, return the value,
-or — if it really must be mutable — declare it `var i = ...` and write it with
-`set i = ...`
-```
-
-**Status.** The in-repo corpus is migrated (`9ce440e`): the 51 sites across the
-five game files are gone, the three SDL examples lower and run, and a sweep of
-every `.ptl` under `~/petal` reports zero warnings and zero lowering failures
-(the two `docs/examples/aspirational/` files fail on unimplemented syntax, as
-they always have).
-
-**Blocking the flip:** downstream projects have not been swept — `~/garden`,
-`~/biz/hotlaps` and the other vendored-WASM consumers, `~/game-prototypes/worldsfair`,
-the cube and todo experiments. The measurement is the compiler, not a regex (a
-text sweep produces hundreds of false positives from top-level assignments
-inside top-level `if`s, which are legal and untouched):
+**Corpus.** In-repo migrated at `9ce440e` (51 sites across the five game files).
+Before the flip, a sweep of all 115 in-repo and 52 downstream `.ptl` files —
+`~/garden`, `~/biz/hotlaps`, `~/biz/experiment-cube-browser`,
+`~/biz/experiment-todo-app`, `~/biz/petal-lang.org` — reported zero sites. The
+measurement is the compiler, not a regex (a text sweep produces hundreds of
+false positives from top-level assignments inside top-level `if`s, which are
+legal and untouched):
 
 ```sh
 find <roots> -name '*.ptl' -not -path '*/node_modules/*' -not -path '*/target/*' \
@@ -170,12 +164,15 @@ find <roots> -name '*.ptl' -not -path '*/node_modules/*' -not -path '*/target/*'
   | grep -c 'bound outside this function'
 ```
 
-Migration is per-site judgment: a silent shadow becomes a `let` local, genuine
-intended mutation becomes `var` + `set`. Note the vendored WASM build means
-`petal-lang.org` and `hotlaps` only see the flip when they re-vendor
+Re-run it for any root not in that list. Migration is per-site judgment: a
+silent shadow becomes a `let` local, genuine intended mutation becomes `var` +
+`set`. Note the vendored WASM build means `petal-lang.org` and `hotlaps` only
+see the flip when they re-vendor
 (`~/biz/petal-lang.org/docs/how-to-update-petal.md`).
 
 ### 2b. A real phase channel for compiler errors
+
+Made much more visible by 2a, though it predates it.
 
 `Compiler` errors reach the CLI as a plain `String`, so `classify_load_error`
 tags them `"phase": "parse"` by sniffing text — including the `var`/`set`
@@ -198,6 +195,17 @@ Not scheduled, and each stands on its own.
   `cst_project.rs`, reconciled by a `debug_assert_eq!` in `cst/driver.rs` plus
   whole-corpus differential tests — so any syntax change must land in both in
   the same commit.
+- **`ts/test/check-lowers.test.ts` lost its negative case to 2a.** That file
+  exists to prove `petal check` runs *lowering* and not just compilation — it
+  is the CLI-level regression gate for the shadowed-name phi bug that shipped
+  in the `petal-ui` prelude. Its only compiles-but-does-not-lower program was a
+  cross-function assignment, which is now rejected at compile and never reaches
+  lowering; five other candidate shapes were probed (nested-closure phi, match
+  phi, `while` + closure capture, `var`/`set` in an `if`, param rebind in a
+  `for`) and all lower cleanly. The two negative tests were deleted and the
+  positive ones kept. **Removing this gate is how the original bug survived**,
+  so it wants restoring — either by finding another failing shape, or by a
+  test-only path that feeds hand-built bad IR through `check`.
 - **`var x` with no initializer reports `Expected Assign, got Newline`.**
   Consistent with `let x` (same message), and neither form exists, but the
   message names a token rather than the mistake.

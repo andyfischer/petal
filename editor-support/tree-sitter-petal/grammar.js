@@ -106,8 +106,16 @@ module.exports = grammar({
       )),
     ),
 
+    // `export` is a prefix on a declaration, not a wrapper node: the real
+    // parser (rust/src/parse.rs `parse_export`) dispatches straight into
+    // `parse_fn_decl` / `parse_let` / `parse_state` / `parse_enum_decl` with an
+    // `exported` flag, producing the same node with one extra leading token.
+    // Mirroring that keeps the tree shapes identical. Those five forms — fn,
+    // let, var, state, enum — are exactly what `export` may precede.
+
     // `let x = v` and its mutable twin `var x = v`.
     let_declaration: $ => seq(
+      optional('export'),
       choice('let', 'var'),
       field('name', $.identifier),
       '=',
@@ -116,6 +124,7 @@ module.exports = grammar({
 
     // `state name = init` or keyed `state(expr) name = init`.
     state_declaration: $ => seq(
+      optional('export'),
       'state',
       optional(seq('(', field('key', $._expression), ')')),
       optional('var'),
@@ -125,6 +134,7 @@ module.exports = grammar({
     ),
 
     function_declaration: $ => seq(
+      optional('export'),
       'fn',
       field('name', $.identifier),
       field('parameters', $.parameter_list),
@@ -135,6 +145,7 @@ module.exports = grammar({
     parameter_list: $ => seq('(', commaSep(field('parameter', $.identifier)), ')'),
 
     enum_declaration: $ => seq(
+      optional('export'),
       'enum',
       field('name', $.identifier),
       repeat($.enum_variant),

@@ -144,3 +144,35 @@ set count += 1
   (set_statement
     left: (identifier)
     right: (integer)))
+
+==================
+Export declarations
+==================
+
+export fn f()
+  1
+end
+
+export let a = 1
+export var b = 2
+export state c = 3
+
+export enum Color
+  Red
+  Green
+end
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block (integer)))
+  (let_declaration name: (identifier) value: (integer))
+  (let_declaration name: (identifier) value: (integer))
+  (state_declaration name: (identifier) value: (integer))
+  (enum_declaration
+    name: (identifier)
+    (enum_variant name: (identifier))
+    (enum_variant name: (identifier))))

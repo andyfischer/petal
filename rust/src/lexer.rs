@@ -100,6 +100,63 @@ pub enum Token {
     Eof,
 }
 
+/// Every word the lexer turns into a dedicated [`Token`] variant instead of an
+/// [`Token::Ident`]. This is the *authoritative* keyword set of the language;
+/// the LSP completion list, the tree-sitter grammar, the vim syntax file and
+/// the tree-sitter highlight queries are all checked against it by
+/// `rust/tests/keyword_sync.rs`.
+///
+/// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
+pub const KEYWORDS: &[&str] = &[
+    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for",
+    "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true", "var",
+    "when", "while",
+];
+
+/// Words the parser treats as keywords but the lexer emits as `Ident`.
+///
+/// `as` is only a keyword directly after the module name in an `import`, so it
+/// stays usable as an ordinary identifier everywhere else. Downstream tooling
+/// (highlighting, completion) should still treat these as keywords.
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as"];
+
+/// Map an identifier-shaped word to its keyword token, or `None` if it is an
+/// ordinary identifier.
+///
+/// This is the hottest path in the lexer: it must stay a plain `match` (which
+/// rustc compiles to a length switch plus memcmp chain), never a hash lookup or
+/// a scan over [`KEYWORDS`].
+pub fn keyword_token(text: &str) -> Option<Token> {
+    Some(match text {
+        "let" => Token::Let,
+        "var" => Token::Var,
+        "set" => Token::Set,
+        "fn" => Token::Fn,
+        "if" => Token::If,
+        "else" => Token::Else,
+        "for" => Token::For,
+        "in" => Token::In,
+        "while" => Token::While,
+        "match" => Token::Match,
+        "return" => Token::Return,
+        "break" => Token::Break,
+        "continue" => Token::Continue,
+        "state" => Token::State,
+        "enum" => Token::Enum,
+        "end" => Token::End,
+        "then" => Token::Then,
+        "do" => Token::Do,
+        "elsif" => Token::Elsif,
+        "when" => Token::When,
+        "import" => Token::Import,
+        "export" => Token::Export,
+        "true" => Token::True,
+        "false" => Token::False,
+        "nil" => Token::Nil,
+        _ => return None,
+    })
+}
+
 /// Lexer mode for JSX disambiguation.
 #[derive(Debug, Clone, PartialEq)]
 enum LexerMode {
@@ -908,34 +965,7 @@ impl Lexer {
         }
 
         let text: String = self.input[text_start..self.pos].iter().collect();
-        let token = match text.as_str() {
-            "let" => Token::Let,
-            "var" => Token::Var,
-            "set" => Token::Set,
-            "fn" => Token::Fn,
-            "if" => Token::If,
-            "else" => Token::Else,
-            "for" => Token::For,
-            "in" => Token::In,
-            "while" => Token::While,
-            "match" => Token::Match,
-            "return" => Token::Return,
-            "break" => Token::Break,
-            "continue" => Token::Continue,
-            "state" => Token::State,
-            "enum" => Token::Enum,
-            "end" => Token::End,
-            "then" => Token::Then,
-            "do" => Token::Do,
-            "elsif" => Token::Elsif,
-            "when" => Token::When,
-            "import" => Token::Import,
-            "export" => Token::Export,
-            "true" => Token::True,
-            "false" => Token::False,
-            "nil" => Token::Nil,
-            _ => Token::Ident(text),
-        };
+        let token = keyword_token(&text).unwrap_or(Token::Ident(text));
         self.push_token(token, start);
     }
 }
@@ -973,6 +1003,68 @@ mod tests {
             .into_iter()
             .filter(|t| !matches!(t, Token::Newline | Token::Eof))
             .collect()
+    }
+
+    // ---- KEYWORDS / keyword_token agreement -------------------------------
+    //
+    // `KEYWORDS` is a hand-written const sitting next to a hand-written
+    // `match`. A const that can drift from the match it documents would be no
+    // better than the five drifted lists `rust/tests/keyword_sync.rs` exists to
+    // police, so these two tests pin them together in both directions.
+
+    #[test]
+    fn keywords_const_agrees_with_keyword_token() {
+        for kw in KEYWORDS {
+            assert!(
+                keyword_token(kw).is_some(),
+                "KEYWORDS lists `{kw}` but keyword_token() does not recognize it"
+            );
+        }
+        for kw in CONTEXTUAL_KEYWORDS {
+            assert!(
+                keyword_token(kw).is_none(),
+                "`{kw}` is documented as contextual but the lexer hard-keywords it"
+            );
+        }
+        // Also lexes as a plain identifier end-to-end.
+        for kw in CONTEXTUAL_KEYWORDS {
+            assert_eq!(tokenize(kw), vec![Token::Ident((*kw).to_string())]);
+        }
+    }
+
+    /// The reverse direction: scrape the arms of `keyword_token` out of this
+    /// very file and assert the set matches `KEYWORDS` exactly. Deliberately
+    /// line-agnostic so rustfmt may reflow the match however it likes.
+    #[test]
+    fn keyword_token_arms_match_keywords_const() {
+        let src = include_str!("lexer.rs");
+        let body_start = src
+            .find("pub fn keyword_token")
+            .expect("keyword_token not found in lexer.rs");
+        let body = &src[body_start..];
+        let body_end = body.find("\n}").expect("keyword_token body not terminated");
+        let body = &body[..body_end];
+
+        // Arms look like `"let" => Token::Let,`. Splitting on `"` makes every
+        // odd-indexed chunk a string literal; keep it when the text that
+        // follows starts the `=> Token::` arrow.
+        let mut scraped = std::collections::BTreeSet::new();
+        let parts: Vec<&str> = body.split('"').collect();
+        for i in (1..parts.len()).step_by(2) {
+            let after = parts.get(i + 1).copied().unwrap_or("");
+            if after.trim_start().starts_with("=> Token::") {
+                scraped.insert(parts[i].to_string());
+            }
+        }
+
+        let expected: std::collections::BTreeSet<String> =
+            KEYWORDS.iter().map(|s| s.to_string()).collect();
+        assert!(
+            scraped.len() > 20,
+            "scraper found only {} arms — it has stopped working, not the code",
+            scraped.len()
+        );
+        assert_eq!(scraped, expected);
     }
 
     #[test]

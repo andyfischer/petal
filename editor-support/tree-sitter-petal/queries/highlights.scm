@@ -13,6 +13,7 @@
 
 [
   "import"
+  "export"
   "as"
   "let"
   "var"

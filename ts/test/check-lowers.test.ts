@@ -4,36 +4,20 @@
 // that stops before lowering reports a green build for a program that aborts on
 // first run. That is exactly how the shadowed-name phi bug survived in the
 // shipped `petal-ui` prelude. See docs/dev/var-next-steps.md (Lexical shadowing).
+//
+// NOTE: this file no longer asserts that `check` *fails* on a program that
+// lowers badly — the only such program in the repo was a cross-function
+// assignment, which is now a compile error and never reaches lowering. No
+// replacement shape is known. What remains is the positive direction: programs
+// that must lower, including the exact shape of the bug above. See
+// docs/dev/var-next-steps.md (Followups) — restoring the negative gate is open.
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, checkText, checkJsonAllowFail } from "./helpers";
+import { ensureBuild, checkText } from "./helpers";
 
 beforeAll(() => ensureBuild());
 
-// Assignment to a binding from an outer function, inside control flow: compiles,
-// does not lower. (Becoming a proper compile error is step 5 of the plan; until
-// then it is the most convenient program that compiles but cannot run.)
-const COMPILES_BUT_DOES_NOT_LOWER = `let i = 0
-fn f()
-  if false then i = 1 end
-  i
-end
-print(f())`;
-
 describe("petal check lowers to bytecode", () => {
-  it("fails on a program that compiles but does not lower", () => {
-    const { code, stderr } = checkText(COMPILES_BUT_DOES_NOT_LOWER);
-    expect(code).toBe(1);
-    expect(stderr).toContain("bytecode lowering failed");
-  });
-
-  it("reports the lowering failure as its own phase in JSON mode", () => {
-    const out = checkJsonAllowFail(COMPILES_BUT_DOES_NOT_LOWER);
-    expect(out.error).toBe(true);
-    expect(out.phase).toBe("lower");
-    expect(out.message).toContain("bytecode lowering failed");
-  });
-
   it("still passes a program that lowers", () => {
     const { code, stderr } = checkText(`let i = 0
 if true then i = 1 end

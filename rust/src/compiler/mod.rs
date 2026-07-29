@@ -20,6 +20,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::ast::*;
 use crate::constant_table::{ConstantTable, ConstantValue};
+use crate::error::{LoadError, Phase};
 use crate::module::LoadedModule;
 use crate::native_fn::NativeFnTable;
 use crate::program::*;
@@ -256,7 +257,7 @@ impl Compiler {
         modules: &[LoadedModule],
         program_id: ProgramId,
         native_fns: &NativeFnTable,
-    ) -> Result<Program, String> {
+    ) -> Result<Program, LoadError> {
         // Create root block
         let root_block = self.new_block(None);
         self.current_block = root_block;
@@ -291,22 +292,12 @@ impl Compiler {
         }
 
         // Fatal errors abort here, after the whole program has been walked so
-        // every one of them has been found. The position suffix matches the
-        // parser's (`msg [line N, column M]`), which is what the CLI's phase
-        // classification and the error-position tests expect.
+        // every one of them has been found. `LoadError`'s `Display` renders
+        // each one as `msg [line N, column M]`, joined by newlines — the same
+        // bytes this site used to format by hand, which the error-position
+        // tests pin.
         if !self.errors.is_empty() {
-            let msg = self
-                .errors
-                .iter()
-                .map(|d| {
-                    format!(
-                        "{} [line {}, column {}]",
-                        d.message, d.span.start.line, d.span.start.column
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            return Err(msg);
+            return Err(LoadError::from_diagnostics(Phase::Compile, &self.errors));
         }
 
         let entry = modules
@@ -357,7 +348,7 @@ impl Compiler {
     /// exactly as single-file compilation always has; for an imported module
     /// they land in a dedicated scope frame that is popped afterwards, its
     /// surviving bindings becoming the module's exports.
-    fn compile_module(&mut self, module: &LoadedModule) -> Result<(), String> {
+    fn compile_module(&mut self, module: &LoadedModule) -> Result<(), LoadError> {
         // Rewrite `@`-arguments (`f(@x)` → `x = f(x)`) before anything else, so
         // prescan and compilation only ever see the desugared form.
         let mut stmts = module.stmts.to_vec();
@@ -378,8 +369,13 @@ impl Compiler {
         }
 
         self.bind_imports(module, &stmts)?;
-        Self::check_overload_export_consistency(&stmts)
-            .map_err(|e| format!("{}: {}", module.display_name, e))?;
+        Self::check_overload_export_consistency(&stmts).map_err(|mut e| {
+            // Same bytes as the old `format!("{display_name}: {e}")`.
+            for item in &mut e.items {
+                item.file = Some(module.display_name.clone());
+            }
+            e
+        })?;
         self.prescan_declarations(&stmts);
         let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures);
         self.warnings.extend(diags);
@@ -405,7 +401,7 @@ impl Compiler {
     /// aliases become compile-time alias bindings, selective names become
     /// direct term bindings (loud on collision), implicit imports bind every
     /// export bare but weakly (the file's own bindings win, like builtins).
-    fn bind_imports(&mut self, module: &LoadedModule, stmts: &[Stmt]) -> Result<(), String> {
+    fn bind_imports(&mut self, module: &LoadedModule, stmts: &[Stmt]) -> Result<(), LoadError> {
         let declared = Self::declared_top_level_names(stmts);
         // Selectively-imported name → module it came from, for collision
         // provenance within this one file.
@@ -415,9 +411,9 @@ impl Compiler {
             let m = &import.decl.module;
             let Some(exports) = self.module_exports.get(m).cloned() else {
                 // load_modules compiles dependencies first; a miss is a bug.
-                return Err(format!(
-                    "internal error: module '{}' was not compiled before its importer",
-                    m
+                return Err(LoadError::message(
+                    Phase::Compile,
+                    format!("internal error: module '{m}' was not compiled before its importer"),
                 ));
             };
 
@@ -439,10 +435,13 @@ impl Compiler {
             if let Some(existing) = self.module_aliases.get(&alias)
                 && existing != m
             {
-                return Err(format!(
-                    "{}: '{}' is already an alias for module '{}' and cannot also \
-                     alias '{}'",
-                    module.display_name, alias, existing, m
+                return Err(LoadError::message(
+                    Phase::Compile,
+                    format!(
+                        "{}: '{}' is already an alias for module '{}' and cannot also \
+                         alias '{}'",
+                        module.display_name, alias, existing, m
+                    ),
                 ));
             }
             self.module_aliases.insert(alias, m.clone());
@@ -453,29 +452,38 @@ impl Compiler {
             };
             for name in names {
                 if !exports.contains(name) {
-                    return Err(format!(
-                        "{}: module '{}' has no export '{}' (exports: {})",
-                        module.display_name,
-                        m,
-                        name,
-                        if exports.is_empty() {
-                            "none".to_string()
-                        } else {
-                            exports.join(", ")
-                        }
+                    return Err(LoadError::message(
+                        Phase::Compile,
+                        format!(
+                            "{}: module '{}' has no export '{}' (exports: {})",
+                            module.display_name,
+                            m,
+                            name,
+                            if exports.is_empty() {
+                                "none".to_string()
+                            } else {
+                                exports.join(", ")
+                            }
+                        ),
                     ));
                 }
                 if let Some(other) = selective.get(name) {
-                    return Err(format!(
-                        "{}: '{}' is imported from both '{}' and '{}'",
-                        module.display_name, name, other, m
+                    return Err(LoadError::message(
+                        Phase::Compile,
+                        format!(
+                            "{}: '{}' is imported from both '{}' and '{}'",
+                            module.display_name, name, other, m
+                        ),
                     ));
                 }
                 if declared.contains(name) {
-                    return Err(format!(
-                        "{}: '{}' is imported from '{}' but is also declared in this \
-                         file",
-                        module.display_name, name, m
+                    return Err(LoadError::message(
+                        Phase::Compile,
+                        format!(
+                            "{}: '{}' is imported from '{}' but is also declared in this \
+                             file",
+                            module.display_name, name, m
+                        ),
                     ));
                 }
                 let tid = self
@@ -866,7 +874,7 @@ impl Compiler {
     /// marking a single arity `export` would silently export the whole set (and
     /// leak the unmarked arities). Rather than pick a winner, require the author
     /// to be explicit: mark every overload `export`, or none.
-    fn check_overload_export_consistency(stmts: &[Stmt]) -> Result<(), String> {
+    fn check_overload_export_consistency(stmts: &[Stmt]) -> Result<(), LoadError> {
         // name -> (any exported, any not exported), in first-seen order.
         let mut groups: Vec<String> = Vec::new();
         let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
@@ -886,9 +894,12 @@ impl Compiler {
         for name in groups {
             let (any_exported, any_plain) = seen[&name];
             if any_exported && any_plain {
-                return Err(format!(
-                    "overloaded function '{name}' has mixed export markers: \
-                     mark all overloads 'export' or none"
+                return Err(LoadError::message(
+                    Phase::Compile,
+                    format!(
+                        "overloaded function '{name}' has mixed export markers: \
+                         mark all overloads 'export' or none"
+                    ),
                 ));
             }
         }

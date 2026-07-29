@@ -53,8 +53,10 @@ Runs the program and prints any output to stdout. Exits with code 1 on error.
 
 Flags:
 
-- `--json` — emit runtime/parse errors as structured JSON instead of a
-  human-readable message. Shape: `{message, line, column, caused_by[], stack[], phase}`.
+- `--json` — emit errors as structured JSON instead of a human-readable
+  message. Shape: `{message, line, column, caused_by[], stack[], phase}`, plus
+  an `errors[]` array for front-end failures. See
+  [Error phases](#error-phases) for what `phase` can say.
 - `--trace` — write per-term execution events to stderr (inputs + result
   + source location) as they happen.
 - `--record-trace <path>` — write the full trace buffer to `<path>` as JSON
@@ -93,11 +95,53 @@ exit — useful for CI — while `run` and plain `check` stay 0.
 
 With `--json`, emits `{"ok": true, "warnings": [...]}` on success (each warning
 is `{message, line, column, file}`, where `file` is `null` for the entry file),
-or `{message, line, column, phase, ...}` on a hard failure (`phase` is
-`"parse"` or `"compile"`).
+or `{message, line, column, phase, errors, ...}` on a hard failure — see
+[Error phases](#error-phases).
 
 Faster than `run` when you only care about syntactic validity and type
 annotations.
+
+#### Error phases
+
+Every `--json` error object carries a `phase` saying which stage rejected the
+program. It is reported by the stage that raised the error, not inferred from
+the message text, so it is exact:
+
+| `phase` | Meaning |
+| --- | --- |
+| `lex` | Tokenizing failed — an unterminated string, an unexpected character, a bad color literal. |
+| `parse` | The token stream is not a valid program — a missing `=`, an unclosed construct, an unexpected token. |
+| `module` | An `import` could not be resolved, or the imports form a cycle. Lexing and parsing of the entry file already succeeded. |
+| `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export, inconsistent `export` markers on an overload set. |
+| `lower` | The term graph could not be lowered to bytecode. Only `check` reaches this; it is an internal limitation rather than a user error. |
+| `runtime` | The program compiled and ran, and failed during execution (`run` only). |
+
+The `message`, `line` and `column` fields are unchanged by this: `message` is
+the whole human-readable error and `line`/`column` locate its last diagnostic.
+Front-end failures additionally carry `errors`, one entry per diagnostic:
+
+```json
+{
+  "error": true,
+  "phase": "compile",
+  "message": "`x` is a `var`; use `set x = ...` to write it",
+  "line": 2,
+  "column": 1,
+  "errors": [
+    {
+      "message": "`x` is a `var`; use `set x = ...` to write it",
+      "line": 2,
+      "column": 1,
+      "file": null
+    }
+  ]
+}
+```
+
+Each entry's `message` has no position suffix and no file prefix; `file` is the
+module's display name, or `null` for the entry file. The compiler walks the
+whole program before aborting, so a program with several errors reports all of
+them here rather than only the last.
 
 ### `lint` — Normalize source
 

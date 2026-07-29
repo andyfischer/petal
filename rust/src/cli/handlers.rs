@@ -15,7 +15,7 @@ use crate::program::{Program, ProgramId, Term, TermId};
 use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
 
-use super::{SourceInput, die, die_plain, die_with};
+use super::{SourceInput, die, die_error, die_plain, die_with};
 
 /// `petal lsp` — serve the language server on stdin/stdout until the client
 /// disconnects. A broken pipe is how an editor normally shuts us down, so that
@@ -56,14 +56,18 @@ pub(super) fn handle_run(
     if record_trace.is_some() {
         env.trace_mut().enable();
     }
-    let load_result = if ir {
-        env.load_program_ir(source)
+    let pid = if ir {
+        // The IR loader is a deserializer, not the front end; it has no phase
+        // of its own, and reported "parse" before the phase channel existed.
+        match env.load_program_ir(source) {
+            Ok(pid) => pid,
+            Err(e) => die(json, &e, "parse"),
+        }
     } else {
-        load_into(&mut env, source, source_input)
-    };
-    let pid = match load_result {
-        Ok(pid) => pid,
-        Err(e) => die(json, &e, classify_load_error(&e)),
+        match load_into(&mut env, source, source_input) {
+            Ok(pid) => pid,
+            Err(e) => die_error(json, &e, serde_json::Value::Null),
+        }
     };
     // Surface type-checker warnings on stderr before running. Warnings go to
     // stderr even in --json mode, so JSON consumers of stdout are unaffected.
@@ -115,7 +119,7 @@ pub(super) fn handle_pending_report(
     let mut env = make_env(include_dirs);
     let pid = match load_into(&mut env, source, source_input) {
         Ok(pid) => pid,
-        Err(e) => die(json, &e, classify_load_error(&e)),
+        Err(e) => die_error(json, &e, serde_json::Value::Null),
     };
     let sid = match env.create_stack(pid) {
         Ok(sid) => sid,
@@ -178,7 +182,7 @@ pub(super) fn handle_explain(
     env.trace_mut().enable();
     let pid = match load_into(&mut env, source, source_input) {
         Ok(pid) => pid,
-        Err(e) => die_plain(&e),
+        Err(e) => die_plain(&e.to_string()),
     };
     let sid = env.create_stack(pid).unwrap_or_else(|e| die_plain(&e));
     // Run to completion (ignore errors — we still want the partial trace)
@@ -375,7 +379,7 @@ pub(super) fn handle_check(
                 process::exit(1);
             }
         }
-        Err(e) => die(json, &e, classify_load_error(&e)),
+        Err(e) => die_error(json, &e, serde_json::Value::Null),
     }
 }
 
@@ -811,25 +815,12 @@ fn compile_source(
 
 /// Load `source` into `env`, resolving imports relative to the input's path
 /// when it has one.
-fn load_into(env: &mut Env, source: &str, input: &SourceInput) -> Result<ProgramId, String> {
-    match source_origin(input) {
-        Some(path) => env.load_program_at(source, &path),
-        None => env.load_program(source),
-    }
-}
-
-/// Classify a load_program error into "lex" or "parse" based on the message
-/// shape. The lexer's error messages mention specific characters; parser
-/// errors mention tokens and grammar expectations.
-fn classify_load_error(e: &str) -> &'static str {
-    if e.contains("Unexpected character")
-        || e.contains("Unterminated")
-        || e.contains("braced expression")
-    {
-        "lex"
-    } else {
-        "parse"
-    }
+fn load_into(
+    env: &mut Env,
+    source: &str,
+    input: &SourceInput,
+) -> Result<ProgramId, crate::error::LoadError> {
+    env.load_program_diag(source, source_origin(input).as_deref())
 }
 
 /// Print a "not found" error for a `--term` lookup with a did-you-mean hint

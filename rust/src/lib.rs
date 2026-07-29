@@ -14,6 +14,7 @@ pub mod desugar;
 pub mod diagnostic;
 pub mod dot_graph;
 pub mod env;
+pub mod error;
 pub mod execution_context;
 pub mod extract;
 pub mod goal_based_editing;

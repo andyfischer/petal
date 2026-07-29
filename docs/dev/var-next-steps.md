@@ -170,15 +170,33 @@ silent shadow becomes a `let` local, genuine intended mutation becomes `var` +
 see the flip when they re-vendor
 (`~/biz/petal-lang.org/docs/how-to-update-petal.md`).
 
-### 2b. A real phase channel for compiler errors
+### 2b. A real phase channel for compiler errors — **done**
 
-Made much more visible by 2a, though it predates it.
+Made much more visible by 2a, though it predates it. `Compiler` errors reached
+the CLI as a plain `String`, so `classify_load_error` tagged them
+`"phase": "parse"` by sniffing text — including the `var`/`set` disjointness
+errors, which are neither parse nor lower.
 
-`Compiler` errors reach the CLI as a plain `String`, so `classify_load_error`
-tags them `"phase": "parse"` by sniffing text — including the `var`/`set`
-disjointness errors, which are neither parse nor lower. This predates the
-feature (import and overload-export errors have it too) and wants a typed phase
-on the error, not more string matching.
+`crate::error::{Phase, ErrorItem, LoadError}` now carries the phase from the
+site that raises the error (`lex` / `parse` / `module` / `compile` / `lower`),
+and `classify_load_error` is gone. The typed error is an **internal** channel:
+every public `Env` API keeps `Result<_, String>` and is the typed one plus
+`.to_string()`, so there is no caller ripple outside `rust/src/`. That works
+only because `LoadError`'s `Display` reproduces the old strings byte for byte
+(pinned by the `display_*` tests in `error.rs`); the internal typed entry points
+are `cst::parse_source_phased`, `module::load_modules`,
+`Compiler::compile_modules`, `Env::compile_source` and `Env::load_program_diag`.
+`petal --json` gains an additive `errors[]` array (one entry per diagnostic);
+`message`, `line` and `column` are unchanged. Coverage:
+`ts/test/error-phase.test.ts`; documented at
+[Error phases](../CLI.md#error-phases).
+
+Not done here, deliberately: the lexer (~15 raise sites) and parser (~60
+`Result<_, String>` methods) still format `" [line N, column M]"` into their
+messages, so `ErrorItem::from_legacy` parses it back out. That is the one
+remaining string-shape parser, isolated in one place so giving those two real
+spans — a much larger job — can delete it. The LSP still consumes the `String`
+facade and is the natural next consumer of the typed one.
 
 ---
 

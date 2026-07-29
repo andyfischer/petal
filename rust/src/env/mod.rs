@@ -186,7 +186,7 @@ impl Env {
         program_id: ProgramId,
         source: &str,
         origin: Option<&std::path::Path>,
-    ) -> Result<Program, String> {
+    ) -> Result<Program, crate::error::LoadError> {
         let modules = crate::module::load_modules(
             source,
             origin,
@@ -201,6 +201,7 @@ impl Env {
     /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(&self, program_id: ProgramId, source: &str) -> Result<Program, String> {
         self.compile_source(program_id, source, None)
+            .map_err(|e| e.to_string())
     }
 
     /// [`compile_program`](Self::compile_program) for source that lives at a
@@ -213,15 +214,13 @@ impl Env {
         origin: &std::path::Path,
     ) -> Result<Program, String> {
         self.compile_source(program_id, source, Some(origin))
+            .map_err(|e| e.to_string())
     }
 
     /// Load a program from source code
     pub fn load_program(&mut self, source: &str) -> Result<ProgramId, String> {
-        let id = ProgramId(self.next_program_id);
-        let program = self.compile_source(id, source, None)?;
-        self.next_program_id += 1;
-        self.programs.insert(id, program);
-        Ok(id)
+        self.load_program_diag(source, None)
+            .map_err(|e| e.to_string())
     }
 
     /// [`load_program`](Self::load_program) for source read from a file:
@@ -231,8 +230,22 @@ impl Env {
         source: &str,
         origin: &std::path::Path,
     ) -> Result<ProgramId, String> {
+        self.load_program_diag(source, Some(origin))
+            .map_err(|e| e.to_string())
+    }
+
+    /// [`load_program`](Self::load_program) with a *typed* error: which phase
+    /// of the front end rejected the program, and each diagnostic separately
+    /// (see [`crate::error::LoadError`]). The `String`-returning methods above
+    /// are this one plus `.to_string()`, so the public facade is unchanged;
+    /// only tools that need structure (the CLI's `--json` output) use this.
+    pub fn load_program_diag(
+        &mut self,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<ProgramId, crate::error::LoadError> {
         let id = ProgramId(self.next_program_id);
-        let program = self.compile_source(id, source, Some(origin))?;
+        let program = self.compile_source(id, source, origin)?;
         self.next_program_id += 1;
         self.programs.insert(id, program);
         Ok(id)

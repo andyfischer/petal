@@ -42,7 +42,7 @@ mod events;
 mod green;
 mod red;
 
-pub use driver::{parse_cst, parse_source};
+pub use driver::{parse_cst, parse_source, parse_source_phased};
 pub use events::{Checkpoint, Event, EventBuilder, build_lossless, build_tree};
 pub use green::{GreenChild, GreenNode, GreenNodeBuilder, GreenToken};
 pub use red::{SyntaxElement, SyntaxNode, SyntaxToken};

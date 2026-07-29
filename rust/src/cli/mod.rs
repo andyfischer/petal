@@ -224,6 +224,42 @@ fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> 
     process::exit(1);
 }
 
+/// [`die_with`] for a typed front-end failure ([`crate::error::LoadError`]).
+///
+/// The phase is read off the error rather than guessed from its text (the old
+/// `classify_load_error`, which tagged every compiler diagnostic `"parse"`).
+/// Everything else about the output is unchanged: `message`, `line` and
+/// `column` still come from rendering the error and stripping the trailing
+/// position suffix, so `line`/`column` name the *last* diagnostic exactly as
+/// the old `rfind` did. The one addition is `errors`, an array with one entry
+/// per diagnostic — the structure a caller needs when the compiler reports
+/// several at once.
+fn die_error(json: bool, err: &crate::error::LoadError, warnings: serde_json::Value) -> ! {
+    let text = err.to_string();
+    if !json {
+        die_with(json, &text, err.phase.as_str(), warnings);
+    }
+    let mut obj = error_json_value(&text, err.phase.as_str());
+    if !warnings.is_null() {
+        obj["warnings"] = warnings;
+    }
+    obj["errors"] = serde_json::Value::Array(
+        err.items
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "message": item.message,
+                    "line": item.span.map(|s| s.start.line),
+                    "column": item.span.map(|s| s.start.column),
+                    "file": item.file,
+                })
+            })
+            .collect(),
+    );
+    println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+    process::exit(1);
+}
+
 /// Print a plain `Error: …` line and exit(1), for commands with no JSON mode.
 fn die_plain(err: &str) -> ! {
     eprintln!("Error: {}", err);

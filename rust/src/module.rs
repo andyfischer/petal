@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{Expr, ExprKind, ExprVisitor, ImportDecl, Stmt, StmtKind, walk_expr};
+use crate::error::{LoadError, Phase};
 use crate::source_map::{ENTRY_FILE, FileId};
 
 /// Where a module's source came from.
@@ -159,7 +160,7 @@ pub fn load_modules(
     resolver: &dyn ModuleResolver,
     implicit_imports: &[String],
     gated_imports: &[String],
-) -> Result<Vec<LoadedModule>, String> {
+) -> Result<Vec<LoadedModule>, LoadError> {
     let entry_display = entry_origin
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
@@ -211,7 +212,7 @@ pub fn load_modules(
                 scan_gated_module(resolver, name, entry_module_origin.as_ref())?;
             Ok((name.clone(), exports, idents))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, LoadError>>()?;
     let mut included: HashSet<String> = HashSet::new();
     loop {
         let mut progressed = false;
@@ -288,9 +289,14 @@ fn scan_gated_module(
     resolver: &dyn ModuleResolver,
     name: &str,
     importer: Option<&ModuleOrigin>,
-) -> Result<(Vec<String>, HashSet<String>), String> {
+) -> Result<(Vec<String>, HashSet<String>), LoadError> {
     let resolved = resolver.resolve(name, importer).ok_or_else(|| {
-        format!("cannot find implicit prelude module '{name}': not registered or on a search path")
+        LoadError::message(
+            Phase::Module,
+            format!(
+                "cannot find implicit prelude module '{name}': not registered or on a search path"
+            ),
+        )
     })?;
     let display = match &resolved.origin {
         ModuleOrigin::File(path) => path
@@ -360,24 +366,30 @@ impl Walker<'_> {
         name: &str,
         importer_origin: Option<&ModuleOrigin>,
         importer_display: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), LoadError> {
         if self.loaded.contains(name) {
             return Ok(());
         }
         if let Some(pos) = self.in_progress.iter().position(|n| n == name) {
             let mut cycle: Vec<&str> = self.in_progress[pos..].iter().map(String::as_str).collect();
             cycle.push(name);
-            return Err(format!("import cycle: {}", cycle.join(" -> ")));
+            return Err(LoadError::message(
+                Phase::Module,
+                format!("import cycle: {}", cycle.join(" -> ")),
+            ));
         }
 
         let resolved = self
             .resolver
             .resolve(name, importer_origin)
             .ok_or_else(|| {
-                format!(
-                    "cannot find module '{}' (imported by {}): not registered, and no \
+                LoadError::message(
+                    Phase::Module,
+                    format!(
+                        "cannot find module '{}' (imported by {}): not registered, and no \
                  {}.ptl in the importing file's directory, module paths, or PETAL_PATH",
-                    name, importer_display, name
+                        name, importer_display, name
+                    ),
                 )
             })?;
 
@@ -389,10 +401,12 @@ impl Walker<'_> {
             ModuleOrigin::Memory => name.to_string(),
         };
         let file_id = FileId(self.next_file);
-        self.next_file = self
-            .next_file
-            .checked_add(1)
-            .ok_or("too many modules (file table limit is 65535)")?;
+        self.next_file = self.next_file.checked_add(1).ok_or_else(|| {
+            LoadError::message(
+                Phase::Module,
+                "too many modules (file table limit is 65535)",
+            )
+        })?;
 
         let stmts = parse_module(&resolved.source, file_id, Some(&display_name))?;
         let (imports, stmts) = split_imports(stmts);
@@ -427,12 +441,18 @@ fn parse_module(
     source: &str,
     file_id: FileId,
     display_name: Option<&str>,
-) -> Result<Vec<Stmt>, String> {
-    let annotate = |e: String| match display_name {
-        Some(name) => format!("{name}: {e}"),
-        None => e,
-    };
-    let (_tree, stmts) = crate::cst::parse_source(source, file_id).map_err(annotate)?;
+) -> Result<Vec<Stmt>, LoadError> {
+    let (_tree, stmts) = crate::cst::parse_source_phased(source, file_id).map_err(|mut e| {
+        // Tagging each item with the module's display name reproduces the
+        // old `format!("{name}: {e}")` annotation byte for byte; entry-file
+        // errors carry no file and so are unchanged.
+        if let Some(name) = display_name {
+            for item in &mut e.items {
+                item.file = Some(name.to_string());
+            }
+        }
+        e
+    })?;
     Ok(stmts)
 }
 

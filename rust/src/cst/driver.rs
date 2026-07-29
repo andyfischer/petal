@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use crate::ast::Stmt;
+use crate::error::{LoadError, Phase};
 use crate::lexer::Lexer;
 use crate::source_map::{ENTRY_FILE, FileId};
 
@@ -35,10 +36,31 @@ pub fn parse_cst(source: &str) -> Result<Rc<GreenNode>, String> {
 /// Returns the lexer's or parser's error if `source` does not parse; the tree
 /// is only built on success (an error leaves the event stream unbalanced).
 pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
+    parse_source_phased(source, file).map_err(|e| e.to_string())
+}
+
+/// [`parse_source`] with a typed error: the lexer's failures are tagged
+/// [`Phase::Lex`] and the parser's / projector's [`Phase::Parse`], so the CLI
+/// no longer has to sniff the message text to tell them apart. Positions are
+/// recovered from the legacy `" [line N, column M]"` suffix — see
+/// [`crate::error`] for why that is still the case here.
+pub fn parse_source_phased(
+    source: &str,
+    file: FileId,
+) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
+    let phased = |phase: Phase| {
+        move |e: String| {
+            let mut err = LoadError::legacy(phase, e);
+            if let Some(span) = err.items[0].span.as_mut() {
+                span.file = file;
+            }
+            err
+        }
+    };
     let mut lexer = Lexer::new_in_file(source, file);
-    lexer.tokenize()?;
+    lexer.tokenize().map_err(phased(Phase::Lex))?;
     let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
-    let direct = parser.parse_program()?;
+    let direct = parser.parse_program().map_err(phased(Phase::Parse))?;
     let green = build_tree(
         parser.cst_events(),
         &lexer.tokens,
@@ -46,8 +68,8 @@ pub fn parse_source(source: &str, file: FileId) -> Result<(Rc<GreenNode>, Vec<St
         &lexer.token_leading_trivia,
         source,
     );
-    let projected =
-        crate::cst_project::project_in_file(&SyntaxNode::new_root(green.clone()), file)?;
+    let projected = crate::cst_project::project_in_file(&SyntaxNode::new_root(green.clone()), file)
+        .map_err(phased(Phase::Parse))?;
     // The corpus tests prove projection ≡ direct parse; this catches drift on
     // inputs the corpus lacks.
     debug_assert_eq!(

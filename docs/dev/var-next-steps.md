@@ -195,38 +195,61 @@ Not done here, deliberately: the lexer (~15 raise sites) and parser (~60
 `Result<_, String>` methods) still format `" [line N, column M]"` into their
 messages, so `ErrorItem::from_legacy` parses it back out. That is the one
 remaining string-shape parser, isolated in one place so giving those two real
-spans — a much larger job — can delete it. The LSP still consumes the `String`
-facade and is the natural next consumer of the typed one.
+spans — a much larger job — can delete it.
+
+The LSP was the first consumer of the typed channel and the reason it was worth
+having. It used to re-derive positions from the message string, looking for a
+`[line N, column M]` *prefix* that no producer emits as a prefix — so every
+error landed at 0:0, and a multi-error compile collapsed into one diagnostic
+whose message was several lines of text. It now emits one diagnostic per
+`ErrorItem` at its own span, and collects definitions *before* compiling, so
+go-to-definition and document symbols survive a semantic error instead of dying
+with the whole file. Coverage: `rust/tests/lsp_tests.rs`.
 
 ---
 
 ## 3. Followups
 
-Not scheduled, and each stands on its own.
+The first two are done and are recorded here because *why* they are built the
+way they are is not evident from the code. The rest are not scheduled, and each
+stands on its own.
 
-- **Nothing ties the grammars to the lexer.** `editor-support/tree-sitter-petal`
-  and the vim syntax file were updated by hand for `var`/`set`, and nothing
-  fails if the next keyword misses them. The LSP's completion `KEYWORDS` list
-  had in fact drifted (missing `var`, `set`, `export`) until it was noticed by
-  reading it. A test asserting the lexer's keyword set against all three would
-  close the class. Note also that the AST is built twice — `parse.rs` and
-  `cst_project.rs`, reconciled by a `debug_assert_eq!` in `cst/driver.rs` plus
-  whole-corpus differential tests — so any syntax change must land in both in
-  the same commit.
-- **`ts/test/check-lowers.test.ts` lost its negative case to 2a.** That file
-  exists to prove `petal check` runs *lowering* and not just compilation — it
-  is the CLI-level regression gate for the shadowed-name phi bug that shipped
-  in the `petal-ui` prelude. Its only compiles-but-does-not-lower program was a
-  cross-function assignment, which is now rejected at compile and never reaches
-  lowering; five other candidate shapes were probed (nested-closure phi, match
-  phi, `while` + closure capture, `var`/`set` in an `if`, param rebind in a
-  `for`) and all lower cleanly. The two negative tests were deleted and the
-  positive ones kept. **Removing this gate is how the original bug survived**,
-  so it wants restoring — either by finding another failing shape, or by a
-  test-only path that feeds hand-built bad IR through `check`.
-- **`var x` with no initializer reports `Expected Assign, got Newline`.**
-  Consistent with `let x` (same message), and neither form exists, but the
-  message names a token rather than the mistake.
+- **The grammars are now tied to the lexer** by `rust/tests/keyword_sync.rs`
+  (done). The lexer exports `KEYWORDS` / `CONTEXTUAL_KEYWORDS` and that test
+  re-derives the four downstream lists — the LSP completion list, the generated
+  tree-sitter `src/grammar.json`, the vim syntax file, and the tree-sitter
+  `highlights.scm` — from their real source files and asserts set equality, so
+  a new keyword that misses one of them fails by name. Adding a keyword means
+  touching all five files in one commit. Note also that the AST is built twice
+  — `parse.rs` and `cst_project.rs`, reconciled by a `debug_assert_eq!` in
+  `cst/driver.rs` plus whole-corpus differential tests — so any syntax change
+  must land in both in the same commit.
+- **`ts/test/check-lowers.test.ts`'s negative case is restored, via injected
+  IR.** That file exists to prove `petal check` runs *lowering* and not just
+  compilation — it is the CLI-level regression gate for the shadowed-name phi
+  bug that shipped in the `petal-ui` prelude, and removing it is how that bug
+  survived. Its original compiles-but-does-not-lower program was a
+  cross-function assignment, which 2a made a compile error, so it stopped
+  reaching lowering. **No source program can replace it.** Lowering has exactly
+  two failure sites: the "unlowered op" arm in `lower.rs` is now unreachable
+  (every `TermOp` variant is handled), and `FnLowerer::flat`'s "term tN in
+  block bN not in this function" needs an input edge crossing a function
+  boundary, which the compiler no longer builds from any source — ~50 candidate
+  shapes were probed (match-arm phi, loop-carried closures, nested capture
+  chains, `state var` in nested scopes, an exported `var` written through a
+  nested fn, break/continue phi carry-outs, …) and every one lowers cleanly.
+  So the gate injects the edge instead: it takes a real program's
+  `show-ir --json`, repoints one root-block term's input at a term inside a
+  function body, and feeds it to `check --ir -`. `Program::validate`
+  (`rust/src/ir_validate.rs`) range-checks ids and arities but not
+  function-boundary edges, so the corrupted graph imports cleanly and dies in
+  lowering — which is the observation the gate needs. The IR is built in the
+  test rather than checked in as a blob, so it cannot drift from the IR format,
+  and the uncorrupted IR is asserted to pass first so the negative result is
+  about lowering and not about `--ir` import being broken. `check --ir` is a
+  real documented flag mirroring `run --ir` ([CLI](../CLI.md#check--validate-without-running)),
+  not a test hook: its production use is CI-validating IR from a third-party
+  emitter.
 - **No cross-module write syntax, by design.** `set m.x = 1` is rooted at a
   module alias, which is not a binding; the owning module exports a function
   instead. If a first-class *shared* cell is ever wanted (an OCaml-style `ref`

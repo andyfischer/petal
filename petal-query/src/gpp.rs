@@ -23,8 +23,10 @@
 //! The pane name may also be derived from the built state (a provider that
 //! titles the pane from what it just loaded) via [`PanelUi::title`].
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
+use std::sync::{Arc, Mutex};
 
 use crate::CachePolicy;
 use crate::provider::{MutateContext, Provider, Reply};
@@ -89,23 +91,133 @@ impl<S> PanelUi<S> {
     }
 }
 
+/// One place a message goes out, **one whole envelope at a time**.
+///
+/// The atomicity is the point. `serde_json::to_writer` makes many small writes
+/// per envelope, so a lock taken at the [`Write`] level would let a second
+/// thread's message interleave *inside* a line — and the transport is one
+/// compact JSON object per line. Every implementation here therefore serializes
+/// a complete envelope under one lock.
+trait Sink {
+    fn send(&self, env: &Envelope) -> io::Result<()>;
+}
+
+/// The single-threaded sink: an exclusive borrow of the caller's writer. Used by
+/// [`serve_on`], where nothing else can be writing.
+struct PlainSink<'a, W: Write>(RefCell<&'a mut W>);
+
+impl<W: Write> Sink for PlainSink<'_, W> {
+    fn send(&self, env: &Envelope) -> io::Result<()> {
+        wire::write_message(&mut *self.0.borrow_mut(), env)
+    }
+}
+
+/// A handle for pushing to the host **after** the handshake, from any thread.
+///
+/// The serve loop is otherwise the only writer, and it is blocked on the next
+/// host message — so an app that wants to say something unprompted (a dev-mode
+/// file watcher that has just seen a `.ptl` edit) needs a second way in. This is
+/// it: cloneable, `Send`, and safe to hold across threads because every send is
+/// one envelope under one lock.
+///
+/// Obtained from [`serve_with_reload`].
+#[derive(Clone)]
+pub struct ScriptSink {
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl Sink for ScriptSink {
+    fn send(&self, env: &Envelope) -> io::Result<()> {
+        let mut w = self
+            .writer
+            .lock()
+            .map_err(|_| io::Error::other("gpp sink poisoned"))?;
+        wire::write_message(&mut *w, env)
+    }
+}
+
+impl ScriptSink {
+    /// A sink over an arbitrary writer. [`serve_with_reload`] builds one over
+    /// stdout; the tests build one over a buffer they can read back.
+    fn to_writer(writer: Box<dyn Write + Send>) -> ScriptSink {
+        ScriptSink {
+            writer: Arc::new(Mutex::new(writer)),
+        }
+    }
+
+    /// Push a new UI script, replacing the one the panel is running.
+    ///
+    /// The host recompiles in place and **keeps its query cache**, so data the
+    /// panel already fetched is not re-requested — a script edit costs a
+    /// recompile, not a refetch. A source that fails to compile leaves the old
+    /// program running and surfaces the error in the pane, so pushing
+    /// mid-keystroke is safe.
+    pub fn set_script(&self, source: impl Into<String>) -> io::Result<()> {
+        self.send(&Envelope::notification(
+            method::SET_SCRIPT,
+            SetScriptParams {
+                source: source.into(),
+            },
+        ))
+    }
+}
+
 /// Run `provider` as a panel-mode GPP app on stdio until `shutdown` / EOF,
 /// presenting it with `ui` (pane name + UI script). Blocks the calling thread;
 /// this is an app's `main`.
 pub fn serve<S: 'static>(provider: Provider<S>, ui: PanelUi<S>) -> io::Result<()> {
+    serve_with_reload(provider, ui, |_| {})
+}
+
+/// [`serve`], handing the app a [`ScriptSink`] once the panel is up.
+///
+/// `on_ready` is called after the initial script has been pushed, with a sink
+/// the app can move into a background thread — the hot-reload seam. It must not
+/// block: the serve loop does not start answering queries until it returns.
+///
+/// ```no_run
+/// # use petal_query::{Provider, gpp::{self, PanelUi}};
+/// # fn bundle() -> String { String::new() }
+/// # let (provider, ui): (Provider<()>, PanelUi<()>) = (Provider::new(|_| ()), PanelUi::new("x", ""));
+/// gpp::serve_with_reload(provider, ui, |sink| {
+///     std::thread::spawn(move || loop {
+///         // …wait for a source change, then:
+///         let _ = sink.set_script(bundle());
+///     });
+/// })?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn serve_with_reload<S: 'static>(
+    provider: Provider<S>,
+    ui: PanelUi<S>,
+    on_ready: impl FnOnce(ScriptSink),
+) -> io::Result<()> {
     let stdin = io::stdin();
     let mut reader = io::BufReader::new(stdin.lock());
-    let stdout = io::stdout();
-    let mut writer = stdout.lock();
-    serve_on(provider, ui, &mut reader, &mut writer)
+    let sink = ScriptSink::to_writer(Box::new(io::stdout()));
+    let handed = sink.clone();
+    serve_core(provider, ui, &mut reader, &sink, move |_| on_ready(handed))
 }
 
 /// [`serve`] over explicit streams — the seam the tests drive.
 pub fn serve_on<S: 'static, R: BufRead, W: Write>(
-    mut provider: Provider<S>,
+    provider: Provider<S>,
     ui: PanelUi<S>,
     reader: &mut R,
     writer: &mut W,
+) -> io::Result<()> {
+    let sink = PlainSink(RefCell::new(writer));
+    serve_core(provider, ui, reader, &sink, |_| {})
+}
+
+/// The protocol loop, over any [`Sink`]. `on_ready` runs once the panel's script
+/// has been pushed.
+fn serve_core<S: 'static, R: BufRead, K: Sink>(
+    mut provider: Provider<S>,
+    ui: PanelUi<S>,
+    reader: &mut R,
+    writer: &K,
+    on_ready: impl FnOnce(&K),
 ) -> io::Result<()> {
     // 1. Handshake: read `initialize`, build state, reply in panel mode.
     let init_env = match wire::read_message(reader)? {
@@ -132,22 +244,22 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
         None => name,
     };
 
-    wire::write_message(
-        writer,
-        &Envelope::response(
-            id,
-            InitializeResult {
-                name,
-                mode: "panel".to_string(),
-            },
-        ),
-    )?;
+    writer.send(&Envelope::response(
+        id,
+        InitializeResult {
+            name,
+            mode: "panel".to_string(),
+        },
+    ))?;
 
     // 2. Push the UI script; the host compiles it into a panel.
-    wire::write_message(
-        writer,
-        &Envelope::notification(method::SET_SCRIPT, SetScriptParams { source: script }),
-    )?;
+    writer.send(&Envelope::notification(
+        method::SET_SCRIPT,
+        SetScriptParams { source: script },
+    ))?;
+
+    // The panel is up, so a hot-reload watcher can start pushing at any time.
+    on_ready(writer);
 
     // 3. Answer requests until shutdown / EOF.
     while let Some(env) = wire::read_message(reader)? {
@@ -177,7 +289,7 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
                 // Omit a forever policy so the wire is unchanged for the default.
                 cache_control: (policy != CachePolicy::forever()).then_some(policy),
             };
-            wire::write_message(writer, &Envelope::response(req_id, result))?;
+            writer.send(&Envelope::response(req_id, result))?;
         } else if env.is_method(method::EMIT) {
             let p: EmitParams = match env.params_as() {
                 Ok(p) => p,
@@ -219,17 +331,14 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
                 )
             };
             let (value, error, _policy) = reply.into_parts();
-            wire::write_message(
-                writer,
-                &Envelope::response(
-                    req_id,
-                    MutateResult {
-                        name: m.name,
-                        value,
-                        error,
-                    },
-                ),
-            )?;
+            writer.send(&Envelope::response(
+                req_id,
+                MutateResult {
+                    name: m.name,
+                    value,
+                    error,
+                },
+            ))?;
         } else if env.is_method(method::SHUTDOWN) {
             return Ok(());
         }
@@ -458,5 +567,69 @@ mod tests {
             .query("state", |s: &mut i64, _ctx| Reply::json(*s));
         serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
         assert_eq!(output(&w)[2].result.as_ref().unwrap()["value"], 300);
+    }
+
+    /// A writer several threads can hold, so a test can read what the sink and
+    /// the serve loop both wrote.
+    #[derive(Clone)]
+    struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedBuf {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_sink_push_replaces_the_script_after_the_handshake() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let sink = ScriptSink::to_writer(Box::new(buf.clone()));
+        let mut r = input(vec![init_req(), shutdown()]);
+        let provider: Provider<()> = Provider::new(|_| ());
+        serve_core(
+            provider,
+            PanelUi::new("demo", "FIRST"),
+            &mut r,
+            &sink,
+            |s| s.set_script("SECOND").unwrap(),
+        )
+        .unwrap();
+
+        let msgs = output(&buf.0.lock().unwrap());
+        // initialize response, the handshake's script, then the pushed one.
+        assert!(msgs[1].is_method(method::SET_SCRIPT));
+        assert_eq!(msgs[1].params.as_ref().unwrap()["source"], "FIRST");
+        assert!(msgs[2].is_method(method::SET_SCRIPT));
+        assert_eq!(msgs[2].params.as_ref().unwrap()["source"], "SECOND");
+    }
+
+    /// The reason [`Sink`] serializes whole envelopes rather than locking at the
+    /// [`Write`] level: two threads pushing at once must not interleave inside a
+    /// line, because the transport is one JSON object per line.
+    #[test]
+    fn concurrent_sink_pushes_stay_one_object_per_line() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let sink = ScriptSink::to_writer(Box::new(buf.clone()));
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let s = sink.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..25 {
+                        s.set_script(format!("script-{i}")).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        // Every line parses, and all 200 arrived.
+        let msgs = output(&buf.0.lock().unwrap());
+        assert_eq!(msgs.len(), 200);
+        assert!(msgs.iter().all(|m| m.is_method(method::SET_SCRIPT)));
     }
 }

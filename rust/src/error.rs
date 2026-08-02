@@ -188,6 +188,27 @@ impl LoadError {
                 .collect(),
         }
     }
+
+    /// The same, for diagnostics that each know which module they came from
+    /// (`None` being the entry file). Only the entry file's source is on hand
+    /// when a diagnostic is rendered, so an item that names a module is shown
+    /// without a caret rather than with one drawn against the wrong file.
+    pub fn from_attributed_diagnostics(
+        phase: Phase,
+        diagnostics: &[(Diagnostic, Option<String>)],
+    ) -> Self {
+        LoadError {
+            phase,
+            items: diagnostics
+                .iter()
+                .map(|(d, file)| ErrorItem {
+                    message: d.message.clone(),
+                    span: Some(d.span),
+                    file: file.clone(),
+                })
+                .collect(),
+        }
+    }
 }
 
 impl fmt::Display for LoadError {

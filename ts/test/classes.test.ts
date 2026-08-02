@@ -505,6 +505,15 @@ describe("classes across modules", () => {
     expect(stderr).toMatch(/dup_a\.ptl/);
     expect(stderr).toMatch(/dup_b\.ptl/);
   });
+
+  // The error is *in* dup_b.ptl, so it must say so — and it must not underline
+  // the entry file's line 1, which is what an unattributed span made it do:
+  // the caret pointed at a comment in a different file than the message named.
+  it("attributes a module's compile error to that module, not the entry file", () => {
+    const stderr = runFileError(`${FIXTURES}/dup/entry.ptl`);
+    expect(stderr).toContain("dup_b.ptl:");
+    expect(stderr).not.toMatch(/Two unrelated modules/);
+  });
 });
 
 // A class is a top-level, file-scoped declaration. It is hoisted like the type

@@ -129,7 +129,15 @@ pub struct Compiler {
     // `Err` of `compile_modules`. Distinct from `warnings`: these abort. The
     // compiler's statement/expression walk returns `()`/`TermId` rather than
     // `Result`, so errors accumulate here instead of threading `?` through it.
-    errors: Vec<crate::diagnostic::Diagnostic>,
+    // Each is paired with the module it was raised in (`None` for the entry
+    // file). A span's line/column are file-local, so an error carried out of a
+    // module unattributed renders a caret under the *entry* file's line of
+    // that number — a different file than the message names.
+    errors: Vec<(crate::diagnostic::Diagnostic, Option<String>)>,
+
+    // Display name of the module whose statements are being compiled, which is
+    // what the pairs above are tagged with. `None` while the entry file is.
+    error_file: Option<String>,
 
     // Terms that stand in, inside some function, for a binding owned by an
     // enclosing function: the phis and seed copies that control-flow
@@ -220,6 +228,7 @@ impl Compiler {
             state_inits: HashMap::new(),
             builtin_phantoms: HashMap::new(),
             current_module: None,
+            error_file: None,
             module_aliases: HashMap::new(),
             module_exports: HashMap::new(),
         }
@@ -305,7 +314,10 @@ impl Compiler {
         // bytes this site used to format by hand, which the error-position
         // tests pin.
         if !self.errors.is_empty() {
-            return Err(LoadError::from_diagnostics(Phase::Compile, &self.errors));
+            return Err(LoadError::from_attributed_diagnostics(
+                Phase::Compile,
+                &self.errors,
+            ));
         }
 
         let entry = modules
@@ -364,6 +376,9 @@ impl Compiler {
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
+        // Attribute this module's errors to it, so the caret is drawn against
+        // its own source rather than the entry file's.
+        self.error_file = (!is_entry).then(|| module.display_name.clone());
         // Aliases are file-scoped; overload grouping is per-compile and must
         // not leak across module boundaries (prescan counts a module's own
         // declarations only).
@@ -402,6 +417,7 @@ impl Compiler {
             self.capture_exports(module, scope, vars);
         }
         self.current_module = None;
+        self.error_file = None;
         Ok(())
     }
 
@@ -789,8 +805,9 @@ impl Compiler {
     /// Record a fatal compile error at `span`. Compilation continues so a
     /// single run can report more than one, but `compile_modules` will fail.
     pub(super) fn error_at(&mut self, span: SourceSpan, message: String) {
+        let file = self.error_file.clone();
         self.errors
-            .push(crate::diagnostic::Diagnostic { span, message });
+            .push((crate::diagnostic::Diagnostic { span, message }, file));
     }
 
     // -----------------------------------------------------------------------
@@ -927,7 +944,9 @@ impl Compiler {
     /// a type that does not exist has no reasonable code to generate.
     fn prescan_classes(&mut self, stmts: &[Stmt], module: Option<&str>) {
         let diags = collect_classes(&mut self.classes, stmts, module);
-        self.errors.extend(diags);
+        let file = self.error_file.clone();
+        self.errors
+            .extend(diags.into_iter().map(|d| (d, file.clone())));
     }
 
     /// The class names the file being compiled may spell — in an annotation or

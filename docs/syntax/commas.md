@@ -142,7 +142,7 @@ any argument slot: `f(a, -b)`.
 ## Tests
 
 Regression tests live in [`rust/tests/required_commas.rs`](../../rust/tests/required_commas.rs):
-juxtaposition is a hard error in each of the eight constructs, a newline is not
+juxtaposition is a hard error in each of the nine constructs, a newline is not
 a substitute, comma-separated and trailing-comma forms still parse, error
 positions point at the offending element, and `-` is subtraction or negation by
 grammar position alone.

@@ -467,6 +467,35 @@ pub(super) fn native_split(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `upper(s)` / `lower(s)` — Unicode-aware case conversion.
+///
+/// A UI that wants small-caps labels, or a comparison that wants to ignore case,
+/// otherwise has to carry an ASCII lookup table written in Petal — which is both
+/// slower and quietly wrong outside ASCII.
+pub(super) fn native_upper(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "upper")?;
+    match state.get_value(1)? {
+        Value::String(id) => {
+            let out = state.heap().get_string(id).to_uppercase();
+            state.push_string(out);
+            Ok(1)
+        }
+        _ => Err("upper() expects a string".into()),
+    }
+}
+
+pub(super) fn native_lower(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "lower")?;
+    match state.get_value(1)? {
+        Value::String(id) => {
+            let out = state.heap().get_string(id).to_lowercase();
+            state.push_string(out);
+            Ok(1)
+        }
+        _ => Err("lower() expects a string".into()),
+    }
+}
+
 pub(super) fn native_enumerate(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "enumerate")?;
     match state.get_value(1)? {

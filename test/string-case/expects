@@ -1,0 +1,12 @@
+# upper()/lower() — case conversion, including outside ASCII.
+# Expected console output:
+out: AERONAUT BELT
+out: fatigue 11%
+out: true
+out: HÉLLO WÖRLD
+out: éclair
+out: BELT-2 · 47%
+
+# Performance ceilings (strings allocate but aren't duplicated).
+max dup.total.count: 0
+max dup.total.bytes: 0

@@ -557,6 +557,17 @@ split("a,b,c", ",")     // ["a", "b", "c"]
 split("hello", "")       // ["h", "e", "l", "l", "o"]
 ```
 
+### `upper(string)` / `lower(string)`
+
+Case conversion, Unicode-aware — so a small-caps label or a case-insensitive
+compare does not need an ASCII lookup table written in Petal.
+
+```petal
+upper("aeronaut belt")    // "AERONAUT BELT"
+lower("ÉCLAIR")           // "éclair"
+lower(a) == lower(b)      // case-insensitive compare
+```
+
 ### `enumerate(list)`
 
 Returns a list of `[index, value]` pairs.

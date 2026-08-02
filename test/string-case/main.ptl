@@ -1,0 +1,10 @@
+// upper()/lower() — Unicode-aware, so they are not an ASCII lookup table.
+print(upper("aeronaut belt"))
+print(lower("FATIGUE 11%"))
+// Round-tripping through both is how a case-insensitive compare is written.
+print(lower("Crisis") == lower("CRISIS"))
+// Non-ASCII: the reason this is a builtin rather than a Petal loop.
+print(upper("héllo wörld"))
+print(lower("ÉCLAIR"))
+// Anything without a case of its own passes through unchanged.
+print(upper("belt-2 · 47%"))

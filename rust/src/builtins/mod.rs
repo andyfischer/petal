@@ -121,6 +121,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("reverse", collections::native_reverse);
     table.register("join", collections::native_join);
     table.register("split", collections::native_split);
+    table.register("upper", collections::native_upper);
+    table.register("lower", collections::native_lower);
     table.register("enumerate", collections::native_enumerate);
     table.register("zip", collections::native_zip);
     table.register("slice", collections::native_slice);

@@ -63,11 +63,11 @@ pub enum CastSlot {
     /// An operand of a larger expression. Parentheses must replace the call's:
     /// `2 * int(a + b)` becomes `2 * (a + b)`, never `2 * a + b`.
     Operand,
-    /// One element of a comma-*optional* list — a multi-argument call, a list
-    /// literal, a record value. Parentheses are not enough here, because
-    /// juxtaposition is a separator: `f((a + 1) (b + 1))` reads as a call, not
-    /// two arguments. The fix is only safe when the source shows real commas,
-    /// which only the rewriter can see.
+    /// One element of a comma-separated list — a multi-argument call, a list
+    /// literal, a record value. Commas are required between elements, so the
+    /// slot is always bounded by a real separator and the parens can simply go:
+    /// `f(int(a + 1), int(b + 1))` → `f(a + 1, b + 1)`, with no risk of a
+    /// neighbour binding across the boundary.
     ListElement,
 }
 
@@ -500,10 +500,12 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Call { function, args } => {
                 self.check_expr(function);
-                // A lone argument fills the call's parens on its own, so it is
-                // delimited too. With two or more, Petal's optional commas make
-                // dropping parentheses around an operator expression a parse
-                // question, so those slots stay undelimited.
+                // A lone argument fills the call's parens on its own; with two
+                // or more, each is an element of a comma-separated list. Since
+                // commas are required, both slots are bounded by real
+                // delimiters and neither needs parentheses kept — the two kinds
+                // are still distinguished so the rewriter can report which slot
+                // an edit came from.
                 let arg_slot = if args.len() == 1 {
                     CastSlot::Delimited
                 } else {

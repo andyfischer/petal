@@ -37,9 +37,9 @@ Import statements (if any) must come before any other statements in the file.
 
 ## Exports
 
-A module's top-level declarations are **private by default**. A `fn`, `enum`
-(its variants), `let`, or `state` is visible to importers only when it is marked
-with the `export` modifier:
+A module's top-level declarations are **private by default**. A `fn`, `class`
+(its constructor), `enum` (its variants), `let`, `var`, or `state` is visible to
+importers only when it is marked with the `export` modifier:
 
 ```petal ignore
 export fn button(label)      // importable: m.button, `import m: button`

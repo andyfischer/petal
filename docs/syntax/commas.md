@@ -82,11 +82,27 @@ end
 
 ### Not comma-separated
 
-Two constructs look adjacent but are *not* covered, because they are not
+Three constructs look adjacent but are *not* covered, because they are not
 comma-separated in the first place:
 
 - **Blocks** (`then … end`, `do … end`, function bodies) are newline-separated
   statement sequences. No commas.
+- **Class bodies** (`class Name … end`) are newline-separated *field
+  declarations*, not a list — so a comma between fields is allowed but optional.
+  Note the asymmetry with `enum`, which sits one row above in the table: a
+  multi-line `enum` body needs its commas, a multi-line `class` body does not.
+
+  ```petal
+  class Point
+      x: int
+      y: int      // no comma needed; `x: int, y: int` is equally fine
+  end
+  ```
+
+  A separator of *some* kind is still required between two fields, so putting
+  two on one line without a comma is an error
+  (`Expected a newline or ',' between class fields`). See
+  [Classes & Methods](../language-guide.md#classes--methods).
 - **JSX attributes** are HTML-style, separated by whitespace:
   `<div class="x" id={y}/>`.
 

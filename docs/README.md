@@ -7,12 +7,13 @@ Start here if you're learning or using the language:
 | Document | Description |
 |----------|-------------|
 | [Getting Started](Getting_Started.md) | Build instructions, running examples, CLI usage |
-| [Language Guide](language-guide.md) | Complete language reference: types, syntax, control flow, functions, state |
+| [Language Guide](language-guide.md) | Complete language reference: types and optional type annotations, syntax, control flow, functions, classes & methods, state |
 | [Syntax Overview](syntax/overview.md) | Compact map of all lexical forms, statements, expressions, and operators |
 | [Builtins Reference](Builtins.md) | All built-in functions with signatures and examples |
 | [CLI Reference](CLI.md) | Full CLI command reference and JSON output schemas |
 | [Module System](module-system.md) | `import` syntax, module resolution, hot reload across files |
-| [Function Overloading](function-overloading.md) | Multi-arity dispatch rules |
+| [Function Overloading](function-overloading.md) | Multi-arity dispatch rules, for functions and methods alike |
+| [Text & Fonts](text-and-fonts.md) | Drawing text: faces, sizes, metrics, and measurement |
 | [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
 | [Commas](syntax/commas.md) | Where commas are required, and how `-` is disambiguated |
 | [Examples](examples/README.md) | Documentation code snippets (runnable demos live in [`../examples/`](../examples/README.md)) |
@@ -45,6 +46,11 @@ working documents — expect internal shorthand and point-in-time status:
 | [Developer Scripts & Commands](dev/scripts.md) | Build, run, test, and benchmark commands for development |
 | [Testing](dev/testing.md) | How to write and run the test suites |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
+| [Releasing](dev/releasing.md) | How prebuilt `petal` binaries are built, published, and installed |
+| [Type Declarations Plan](dev/type-declarations-plan.md) | Design rationale for optional, warning-only type annotations (shipped) |
+| [Type Declarations Progress](dev/type-declarations-progress.md) | Chunk-by-chunk status board for the annotation work, through class names as types |
+| [Typography Plan](dev/typography-plan.md) | `petal-typography` design: faces, measurement, flow layout |
+| [Typography Progress](dev/typography-progress.md) | Status tracker for the typography phases |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
 | [Linter Plan](dev/linter-plan.md) | `petal lint` / `lint-fix` design; re-indent + identity-cast rules shipped, normalization catalogue remains |
 | [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: a typed phase channel for compiler errors |

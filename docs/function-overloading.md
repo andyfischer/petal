@@ -48,6 +48,39 @@ title("Smith")        // Dr. Smith
 title("Mr.", "Jones") // Mr. Jones
 ```
 
+## Methods Overload Too
+
+A [method](language-guide.md#methods) — `fn <Class>.<name>(receiver, …)` — is a
+named `fn` declaration, so it overloads by exactly the same arity rule. The
+receiver is an ordinary first parameter and **counts toward the arity**:
+
+```petal
+class Point
+  x: int
+  y: int
+end
+
+fn Point.shifted(p: Point, d: int)          // arity 2
+  Point(p.x + d, p.y + d)
+end
+fn Point.shifted(p: Point, dx: int, dy: int) // arity 3
+  Point(p.x + dx, p.y + dy)
+end
+
+print(Point(1, 2).shifted(5))     // { x: 6, y: 7 }
+print(Point(1, 2).shifted(5, 6))  // { x: 6, y: 8 }
+```
+
+Each overload set is keyed by the *qualified* name, so the sets are independent
+in both directions: `fn Other.shifted(…)` is a different set from
+`fn Point.shifted(…)`, and a plain `fn shifted(…)` global is different from
+both. The arity error names the method the same way:
+
+```petal ignore
+Point(1, 2).shifted(1, 2, 3)
+// Error: Point.shifted() expects 2 or 3 arguments, got 4
+```
+
 ## Error on Wrong Arity
 
 Calling an overloaded function with an argument count that doesn't match any variant

@@ -7,11 +7,11 @@ can use it to syntax-highlight `.ptl` files.
 
 The grammar models the surface syntax produced by the canonical lexer
 (`rust/src/lexer.rs`) and parser (`rust/src/parse.rs`): declarations (`let`,
-`state`, `fn`, `enum`), control flow (`if`/`elsif`/`else`, `for`, `while`,
-`match`/`when`), expressions with the full precedence ladder (`|>` → `||` → `&&`
-→ equality → comparison → `++` → additive → multiplicative → unary → postfix),
-records, lists, lambdas, patterns, string interpolation, color literals, and
-JSX elements.
+`var`/`set`, `state`, `fn`, `enum`, `class` and the `fn Class.method` form),
+control flow (`if`/`elsif`/`else`, `for`, `while`, `match`/`when`), expressions
+with the full precedence ladder (`|>` → `||` → `&&` → equality → comparison →
+`++` → additive → multiplicative → unary → postfix), records, lists, lambdas,
+patterns, string interpolation, color literals, and JSX elements.
 
 ## Layout
 

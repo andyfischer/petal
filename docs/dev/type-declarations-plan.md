@@ -1,6 +1,8 @@
 # Optional Static Type Declarations — Tech Plan
 
-Status: **proposed** · Author: investigation + plan, 2026-07-14
+Status: **shipped** (chunks A–K done, incl. class names as types — see
+[type-declarations-progress.md](type-declarations-progress.md)) · Author:
+investigation + plan, 2026-07-14
 
 Adds *optional* type declarations to Petal. Annotations are written by the
 programmer where they want them; everything else keeps working exactly as it

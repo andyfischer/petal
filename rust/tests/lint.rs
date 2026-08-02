@@ -701,9 +701,10 @@ fn comma_delimited_slots_drop_their_parens() {
     );
 }
 
-/// Petal's commas are optional, and juxtaposition is itself a separator, so
-/// nothing can replace the parens in a comma-less list — `print((n + 1) (n + 2))`
-/// reads as a call. The fix is skipped rather than made unsafe.
+/// Commas are required between elements, so a list or argument slot is always
+/// bounded by a real separator — `print(int(n + 1), int(n + 2))` cannot become
+/// a single juxtaposed element once the parens go. The fix therefore always
+/// applies here; it no longer has to inspect the source for real commas first.
 #[test]
 fn a_list_slot_drops_its_parens() {
     // Commas are required between elements, so a cast in a list/argument slot

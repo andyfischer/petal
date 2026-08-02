@@ -57,15 +57,42 @@ end
 constructor. `export` is only meaningful at a module's top level — it has no
 effect in the entry file (nothing imports the entry) or on nested statements.
 
-### Classes and methods are program-wide
+### Methods are program-wide; a class name follows `export`
 
-A [class](language-guide.md#classes--methods) is a compile-time *type* and a
-runtime dispatch table, and both span the whole compilation rather than one
-file. So a module may declare `fn Rect.area(r: Rect)` and an importer's rects
-gain that method; an importer may extend a class it imported; and a class name
-is usable in type position anywhere. What `export` controls is only the
-constructor *name* — an unexported `class Circle` is a type every file can
-annotate with, but only its own module can call `Circle(…)` to build one.
+Method dispatch spans the whole compilation: a module may declare
+`fn Rect.area(r: Rect)` and every importer's rects gain that method, and an
+importer may extend a class it imported.
+
+A [class](language-guide.md#classes--methods) *name*, though, is an ordinary
+binding governed by `export` — and it is one name, not two. `export` makes both
+halves visible together: the constructor `Circle(…)` **and** the type
+`Circle` in an annotation. An unexported `class Circle` is private to its own
+file in both positions; naming it in an importer's annotation is the same
+`unknown type name` warning as any other name nothing declares.
+
+```petal ignore
+// shapes.ptl
+class Hidden          // no `export`
+  a: int
+end
+export class Circle
+  radius: int
+end
+
+// app.ptl
+import shapes
+fn f(c: Circle) c.radius end   // fine — `Circle` is exported
+fn g(h: Hidden) h.a end        // warning: unknown type name `Hidden`
+```
+
+The class *namespace*, on the other hand, spans the compilation: a
+[`ClassId`](../rust/src/classes.rs) means the same thing everywhere, so two
+modules may not declare the same class name even if neither exports it. The
+error names both files:
+
+```
+class `Dup` is already declared in `dup_a.ptl`, so `dup_b.ptl` may not declare it too
+```
 
 ### An exported `var` is read-only to importers
 

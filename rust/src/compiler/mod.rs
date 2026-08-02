@@ -384,7 +384,7 @@ impl Compiler {
             }
             e
         })?;
-        self.prescan_declarations(&stmts);
+        self.prescan_declarations(module, &stmts);
         let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures, &self.classes);
         self.warnings.extend(diags);
         self.warnings
@@ -606,9 +606,11 @@ impl Compiler {
                 StmtKind::FnDecl { name, .. }
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
-                // A class's exported name is its constructor. The *type* is
-                // visible program-wide either way (the class table spans the
-                // compilation); `export` governs who may call `Point(…)`.
+                // A class exports *one* name covering both of its positions:
+                // the constructor `Point(…)` and the type `Point`. Importers
+                // get this set as their class scope too (see
+                // `visible_class_names`), so an unexported class is private in
+                // type position exactly as it is in call position.
                 | StmtKind::ClassDecl { name, .. } => {
                     names.insert(name.clone());
                 }
@@ -923,16 +925,55 @@ impl Compiler {
     /// them, before anything is compiled. Every diagnostic here is *fatal*
     /// (unlike the type checker's warnings): a duplicate field or a method on
     /// a type that does not exist has no reasonable code to generate.
-    fn prescan_classes(&mut self, stmts: &[Stmt]) {
-        let diags = collect_classes(&mut self.classes, stmts);
+    fn prescan_classes(&mut self, stmts: &[Stmt], module: Option<&str>) {
+        let diags = collect_classes(&mut self.classes, stmts, module);
         self.errors.extend(diags);
     }
 
-    fn prescan_declarations(&mut self, stmts: &[Stmt]) {
-        // Classes first: a signature may name one (`fn f(p: Point)`), and a
+    /// The class names the file being compiled may spell — in an annotation or
+    /// in call position, which are the same name. A file sees the classes it
+    /// declares plus the ones it imports; a module-private class is invisible
+    /// outside its own file, exactly as its constructor is. (Built-in classes
+    /// need no import and are added by [`ClassTable::lookup`] itself.)
+    ///
+    /// An *alias* import (`import shapes`) counts too, even though it binds no
+    /// bare name: the constructor is reachable as `shapes.Circle(…)` while a
+    /// type annotation has no qualified spelling, so restricting the type to
+    /// selective imports would make an exported class unusable in a signature.
+    fn visible_class_names(&self, module: &LoadedModule, stmts: &[Stmt]) -> HashSet<String> {
+        let mut names: HashSet<String> = stmts
+            .iter()
+            .filter_map(|s| match &s.kind {
+                StmtKind::ClassDecl { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        for import in &module.imports {
+            let Some(exports) = self.module_exports.get(&import.decl.module) else {
+                continue;
+            };
+            match &import.decl.names {
+                // `import m: A, B` — only the names asked for.
+                Some(selected) if !import.implicit => names.extend(selected.iter().cloned()),
+                // An alias or implicit import carries the module's whole
+                // exported surface.
+                _ => names.extend(exports.iter().cloned()),
+            }
+        }
+        names
+    }
+
+    fn prescan_declarations(&mut self, module: &LoadedModule, stmts: &[Stmt]) {
+        // Scope first: `collect_classes` resolves `fn Circle.diameter(...)`
+        // against what this file can see, so a method on another module's
+        // private class is an error rather than a silent extension.
+        let visible = self.visible_class_names(module, stmts);
+        self.classes.set_scope(visible);
+
+        // Classes next: a signature may name one (`fn f(p: Point)`), and a
         // method declaration has to find its class whichever order the file
         // declares them in.
-        self.prescan_classes(stmts);
+        self.prescan_classes(stmts, Some(module.display_name.as_str()));
 
         // Record declared signatures so the checker can verify call sites even
         // across forward references. Accumulates across modules.
@@ -957,7 +998,18 @@ impl Compiler {
 
         for stmt in stmts {
             match &stmt.kind {
-                StmtKind::FnDecl { name, .. } | StmtKind::ClassDecl { name, .. } => {
+                // A class is *hoisted*: its constructor is emitted here, ahead
+                // of every statement in the file, and `compile_stmt` leaves the
+                // declaration alone. The type name is already file-wide (the
+                // prescan above put it in the table), so the constructor has to
+                // be too — otherwise `Point(1, 2)` above `class Point` type-
+                // checks clean and then calls nil at runtime. A class body has
+                // nothing to evaluate, so there is no order to get wrong.
+                StmtKind::ClassDecl { name, fields } => {
+                    let ctor = self.compile_class_constructor(name, fields);
+                    self.scope_bind(name.clone(), ctor);
+                }
+                StmtKind::FnDecl { name, .. } => {
                     if self.scope_lookup(name).is_none() {
                         let tid = self.emit_phantom_term(name.clone());
                         self.scope_bind(name.clone(), tid);
@@ -978,19 +1030,35 @@ impl Compiler {
 }
 
 /// Fold every `class` declaration in `stmts`, and every method declared on one,
-/// into `classes`. Returns the fatal diagnostics found — a duplicate field, a
-/// redeclared class, a duplicate method, or a method on a type that does not
-/// exist. Pure over the class table so it is unit-testable without a live
-/// [`Compiler`], and so the checker's tests can build the same table the
-/// compiler would.
+/// into `classes`. `module` is the declaring file's display name, used to name
+/// both sides of a cross-module duplicate; `None` for a single-file
+/// compilation. Returns the fatal diagnostics found — a nested `class`, a
+/// duplicate field, a redeclared class, a name that collides with a built-in
+/// type, a duplicate method, or a method on a type that does not exist. Pure
+/// over the class table so it is unit-testable without a live [`Compiler`], and
+/// so the checker's tests can build the same table the compiler would.
 pub fn collect_classes(
     classes: &mut crate::classes::ClassTable,
     stmts: &[Stmt],
+    module: Option<&str>,
 ) -> Vec<crate::diagnostic::Diagnostic> {
     let mut diags = Vec::new();
     let mut err = |span: SourceSpan, message: String| {
         diags.push(crate::diagnostic::Diagnostic { span, message });
     };
+
+    // A `class` is a top-level declaration, so a nested one is rejected before
+    // anything else — it is never registered, and never becomes a second,
+    // invisible meaning for a name the table already holds.
+    for (span, name) in nested_class_decls(stmts) {
+        err(
+            span,
+            format!(
+                "class `{name}` must be declared at the top level of a file, not inside \
+                 a function or block"
+            ),
+        );
+    }
 
     for stmt in stmts {
         let StmtKind::ClassDecl { name, fields } = &stmt.kind else {
@@ -1011,12 +1079,15 @@ pub fn collect_classes(
                 ty: f.ty.as_ref().and_then(|t| t.resolved),
             });
         }
-        if let Err(msg) = classes.declare(crate::classes::ClassDef {
-            name: name.clone(),
-            fields: defs,
-            methods: Vec::new(),
-            builtin: false,
-        }) {
+        if let Err(msg) = classes.declare(
+            crate::classes::ClassDef {
+                name: name.clone(),
+                fields: defs,
+                methods: Vec::new(),
+                builtin: false,
+            },
+            module,
+        ) {
             err(stmt.span, msg);
         }
     }
@@ -1048,6 +1119,33 @@ pub fn collect_classes(
         }
     }
     diags
+}
+
+/// Every `class` declaration in `stmts` that is *not* at the top level, with
+/// the span to blame and the name it tried to declare.
+///
+/// Classes are top-level-only. The alternative — genuinely scoped, distinct
+/// nested classes — would need a scoped class table, per-scope heap tags and a
+/// scoped `type()`; without all of that a nested `class Inner` was simply a
+/// second, unregistered meaning for a name whose tag, dispatch and annotations
+/// all still pointed at the top-level `Inner`.
+fn nested_class_decls(stmts: &[Stmt]) -> Vec<(SourceSpan, String)> {
+    struct Collect(Vec<(SourceSpan, String)>);
+    impl crate::ast::ExprVisitor for Collect {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::ClassDecl { name, .. } = &s.kind {
+                self.0.push((s.span, name.clone()));
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+    let mut v = Collect(Vec::new());
+    // `walk_stmt` visits a statement's *children*, so a top-level `class` is
+    // skipped and everything nested underneath one is not.
+    for stmt in stmts {
+        crate::ast::walk_stmt(&mut v, stmt);
+    }
+    v.0
 }
 
 /// Collect declared function signatures from a statement list, keyed by

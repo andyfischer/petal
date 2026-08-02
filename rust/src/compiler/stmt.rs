@@ -78,12 +78,13 @@ impl Compiler {
                 }
             }
 
-            StmtKind::ClassDecl { name, fields } => {
-                // The class name binds to its constructor: `Point(1, 2)` is an
-                // ordinary call. Fields become the positional parameters, in
-                // declaration order.
-                let ctor = self.compile_class_constructor(name, fields);
-                self.scope_bind(name.clone(), ctor);
+            StmtKind::ClassDecl { .. } => {
+                // Nothing to emit: the class name binds to its constructor
+                // (`Point(1, 2)` is an ordinary call, its fields the positional
+                // parameters), and `prescan_declarations` already compiled and
+                // bound that constructor ahead of the file's first statement.
+                // A class declaration is hoisted, like the type name it
+                // introduces.
             }
 
             StmtKind::EnumDecl { name: _, variants } => {

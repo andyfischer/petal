@@ -194,7 +194,9 @@ lowercase: `any`, `nil`, `bool`, `int`, `float`, `string` (alias `str`), `list`,
 `float`, and `str` remain callable as the cast builtins everywhere else.
 
 The name of any [class](#classes--methods) — declared or built in — is a type
-name too, and is recognized wherever it is declared in the file.
+name too, anywhere in the file that declares it (a class declaration is
+hoisted) and in any file that imports it. These names are reserved: a class may
+not take one of the lowercase built-in type names above.
 
 A type is a single bare name. There are no parameterized types (`list<int>`),
 arrow types, structural record types, or user-defined aliases — `list` and
@@ -736,6 +738,17 @@ declarations, not a list, so it does not follow the
 [comma rule](syntax/commas.md)). Field annotations use the same grammar as a
 parameter's, and an un-annotated field is `any`.
 
+A `class` is a **top-level declaration**: it belongs at the top level of a file,
+not inside a function, a loop or an `if`. Nesting one is an error
+([below](#errors)). The declaration is also **hoisted** — the constructor and
+the type name are both available throughout the file, above the `class` line as
+well as below it — so declaration order within a file never matters.
+
+A class name may not be a [built-in type name](#type-annotations): `class int`
+and `class list` are errors. The built-in vocabulary wins in type position, so
+such a class could never be named in an annotation — `x: int` would keep meaning
+the primitive while `int(…)` built a record.
+
 An instance **is a record** — it carries a tag naming its class, and nothing
 else changes. `keys(r)`, `values(r)`, `r.x`, `r.x = 5` and printing all behave
 as they do for `{x: …, y: …}`, and any function that takes a plain rect-shaped
@@ -832,11 +845,16 @@ name, so every rect an app already passes around gains the methods.
 
 ### Classes across files
 
-A class is a compile-time type and a runtime dispatch table, and both span the
-whole program rather than one file. A module can declare `fn Rect.area(…)` and
-every file's rects gain it; a file can extend a class it imported. `export`
-governs only the constructor *name*, like any other binding — see the
-[Module System](module-system.md#classes-and-methods-are-program-wide).
+Method dispatch spans the whole program rather than one file: a module can
+declare `fn Rect.area(…)` and every file's rects gain it, and a file can extend
+a class it imported.
+
+The class *name* is an ordinary binding governed by `export`, and it is one
+name covering both positions — exporting a class exports the constructor
+`Point(…)` **and** the type `Point` in an annotation. A class its module does
+not export is private in both. Two modules still may not declare the same class
+name; the error names both files. See the
+[Module System](module-system.md#methods-are-program-wide-a-class-name-follows-export).
 
 ### Errors
 
@@ -846,6 +864,9 @@ generate for any of them:
 | Mistake | Message |
 |---------|---------|
 | `class Point` twice | `class \`Point\` is already declared` |
+| `class Point` in two modules | ``class `Point` is already declared in `a.ptl`, so `b.ptl` may not declare it too`` |
+| `class` inside a function or block | ``class `Point` must be declared at the top level of a file`` |
+| `class int` (a built-in type name) | ``class `int` collides with the built-in type name `int`` `` |
 | two fields named `x` | `duplicate field \`x\` in class \`Point\`` |
 | `fn Nope.thing(...)` | `cannot declare a method on \`Nope\`: no class of that name` |
 | two `fn Point.f(p)` | `method \`Point.f\` is already declared with 1 parameter` |

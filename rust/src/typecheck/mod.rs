@@ -685,7 +685,10 @@ impl<'a> Checker<'a> {
         if self.lookup(f).is_some() {
             return Type::Any;
         }
-        // Sanctioned cast builtins produce a concrete type.
+        // Sanctioned cast builtins produce a concrete type. These sit ahead of
+        // the class table only because a class may not take a built-in type
+        // name (`class int` is rejected at declaration), so nothing user-
+        // declared can ever be hidden here.
         match f.as_str() {
             "int" => return Type::Int,
             "float" => return Type::Float,
@@ -804,7 +807,7 @@ mod tests {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
         let mut classes = crate::classes::ClassTable::new();
-        crate::compiler::collect_classes(&mut classes, &stmts);
+        crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         check_module(&stmts, &sigs, &classes)
             .into_iter()

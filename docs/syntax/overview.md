@@ -206,6 +206,11 @@ becomes a usable type name; `fn <Class>.<name>(receiver, …)` declares a method
 on it. `Rect` (fields `x`, `y`, `w`, `h`) is built in. See the
 [Language Guide](../language-guide.md#classes--methods).
 
+A `class` is **top-level only** — declaring one inside a function or block is an
+error — and it is **hoisted**, so the constructor and the type name are both
+live throughout the file. Its name may not be a built-in type name (`class int`
+is an error), and it is visible to other files only when `export`ed.
+
 ```petal
 class Point
     x: int
@@ -385,7 +390,8 @@ annotations only.
 Recognised type names: `int`, `float`, `bool`, `string` (alias `str`), `list`,
 `record`, `function`, `enum`, `nil`, `any`, plus host/runtime types such as
 `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`, and the
-name of any [class](#class-declaration) in scope (`Rect` is built in). A type is
+name of any [class](#class-declaration) in scope — one this file declares or
+imports, or a built-in one such as `Rect`. A type is
 a single bare name — there are no parameterized (`list<int>`), arrow, or
 structural forms. An unknown name is kept, not rejected, and reported as an
 `unknown type name` warning. Type names are **contextual**, not reserved, so

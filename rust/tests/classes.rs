@@ -32,9 +32,15 @@ fn parse_err(src: &str) -> String {
 /// The class table a real compilation would build for `src`, plus the fatal
 /// diagnostics the prescan found. Mirrors `Compiler::prescan_classes`.
 fn classes_of(src: &str) -> (ClassTable, Vec<String>) {
+    classes_of_in(src, None)
+}
+
+/// The same, for `src` compiled as the named module — the file attribution a
+/// cross-module duplicate names.
+fn classes_of_in(src: &str, module: Option<&str>) -> (ClassTable, Vec<String>) {
     let stmts = parse(src);
     let mut table = ClassTable::new();
-    let diags = petal::compiler::collect_classes(&mut table, &stmts);
+    let diags = petal::compiler::collect_classes(&mut table, &stmts, module);
     (table, diags.into_iter().map(|d| d.message).collect())
 }
 
@@ -225,4 +231,124 @@ fn a_user_class_may_shadow_a_builtin_class() {
 fn a_user_method_may_override_a_builtin_method() {
     let errs = errors_of("fn Rect.center_x(r: Rect)\n  0\nend\n");
     assert!(errs.is_empty(), "{errs:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Scoping: a class is a top-level, file-scoped declaration
+// ---------------------------------------------------------------------------
+
+/// A `class` is a top-level declaration. Nesting one inside a function used to
+/// parse and compile while being invisible to the class table, so the inner
+/// name silently aliased an outer class of the same name (same heap tag, same
+/// method dispatch) — declared enough to dispatch, not declared enough to
+/// resolve as a type.
+#[test]
+fn a_nested_class_is_rejected() {
+    let errs = errors_of("fn f()\n  class Inner\n    a: int\n  end\n  Inner(1)\nend\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].contains("`Inner`"), "{errs:?}");
+    assert!(errs[0].contains("top level"), "{errs:?}");
+}
+
+/// Every nesting form, not just a function body.
+#[test]
+fn a_class_nested_in_control_flow_is_rejected() {
+    for src in [
+        "if true then\n  class A\n    a: int\n  end\nend\n",
+        "while false do\n  class A\n    a: int\n  end\nend\n",
+        "for i in [1] do\n  class A\n    a: int\n  end\nend\n",
+        "let f = fn()\n  class A\n    a: int\n  end\nend\n",
+    ] {
+        let errs = errors_of(src);
+        assert_eq!(errs.len(), 1, "{src:?} → {errs:?}");
+        assert!(errs[0].contains("top level"), "{src:?} → {errs:?}");
+    }
+}
+
+/// A nested class is *not* registered, so an outer class of the same name is
+/// left alone rather than being replaced by the inner shape.
+#[test]
+fn a_nested_class_does_not_redefine_the_outer_one() {
+    let (table, errs) = classes_of(
+        "class Inner\n  a: int\nend\nfn f()\n  class Inner\n    b: int\n    c: int\n  end\n  1\nend\n",
+    );
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    let def = table.get(table.lookup("Inner").unwrap());
+    assert!(def.field("a").is_some(), "the top-level shape survives");
+    assert!(def.field("b").is_none());
+}
+
+/// A class name may not collide with a built-in type name. `Type::resolve`
+/// puts the built-in vocabulary first, so `class int` could never be reached
+/// in type position — the annotation would silently mean the primitive while
+/// the constructor produced a record, and a diagnostic would read
+/// "expected `int`, found `int`".
+#[test]
+fn a_class_named_after_a_builtin_type_is_rejected() {
+    for name in [
+        "int", "float", "string", "str", "list", "record", "any", "bool",
+    ] {
+        let errs = errors_of(&format!("class {name}\n  a: int\nend\n"));
+        assert_eq!(errs.len(), 1, "class {name} → {errs:?}");
+        assert!(errs[0].contains("built-in type name"), "{errs:?}");
+        assert!(errs[0].contains(name), "{errs:?}");
+    }
+}
+
+/// A class name that merely collides with a built-in *function* is fine — the
+/// class wins in call position, as any user binding does.
+#[test]
+fn a_class_named_after_a_builtin_function_is_allowed() {
+    let (table, errs) = classes_of("class len\n  a: int\nend\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    assert!(table.lookup("len").is_some());
+}
+
+/// The class namespace spans the compilation, so two modules declaring the
+/// same class name still collide — but the error has to say *where*.
+#[test]
+fn a_cross_module_duplicate_names_both_files() {
+    let mut table = ClassTable::new();
+    let a = parse("class Dup\n  a: int\nend\n");
+    let b = parse("class Dup\n  b: int\nend\n");
+    assert!(petal::compiler::collect_classes(&mut table, &a, Some("ma.ptl")).is_empty());
+    let diags = petal::compiler::collect_classes(&mut table, &b, Some("mb.ptl"));
+    assert_eq!(diags.len(), 1);
+    let msg = &diags[0].message;
+    assert!(msg.contains("ma.ptl"), "{msg}");
+    assert!(msg.contains("mb.ptl"), "{msg}");
+}
+
+/// Only classes named in the scope are resolvable — that is how a
+/// module-private class stops being a type name in an importer.
+#[test]
+fn a_scope_hides_classes_it_does_not_name() {
+    let (mut table, errs) = classes_of("class Shown\n  a: int\nend\nclass Hidden\n  b: int\nend\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    table.set_scope(["Shown".to_string()].into_iter().collect());
+    assert!(table.lookup("Shown").is_some());
+    assert!(table.lookup("Hidden").is_none(), "not named by the scope");
+    assert!(
+        table.lookup("Rect").is_some(),
+        "built-ins are always visible"
+    );
+    table.clear_scope();
+    assert!(table.lookup("Hidden").is_some());
+}
+
+/// …and a method declaration obeys the same scope, so an importer cannot
+/// extend a class another module keeps private.
+#[test]
+fn a_method_on_an_out_of_scope_class_is_rejected() {
+    let mut table = ClassTable::new();
+    let owner = parse("class Hidden\n  a: int\nend\n");
+    assert!(petal::compiler::collect_classes(&mut table, &owner, Some("m.ptl")).is_empty());
+    table.set_scope(std::collections::HashSet::new()); // an importer, importing nothing
+    let importer = parse("fn Hidden.twice(h)\n  2 * h.a\nend\n");
+    let diags = petal::compiler::collect_classes(&mut table, &importer, Some("app.ptl"));
+    assert_eq!(diags.len(), 1);
+    assert!(
+        diags[0].message.contains("no class of that name"),
+        "{diags:?}"
+    );
 }

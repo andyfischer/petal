@@ -2,9 +2,13 @@
 //!
 //! The runtime registers builtins as plain natives with no static signature, so
 //! this table is the only place the checker learns that `len(xs)` is an `int`
-//! and `sqrt(x)` is a `float`. It is consulted *after* the module's own
-//! `fn` signatures, so a user function named `len` shadows the entry here — the
-//! same precedence the runtime uses.
+//! and `sqrt(x)` is a `float`. It is consulted *last* — after a local binding,
+//! after a `class` constructor of that name, and after the module's own `fn`
+//! signatures — so a user function or class named `len` shadows the entry here,
+//! the same precedence the runtime uses. (The `int`/`float`/`str` casts that
+//! [`super::Checker::check_call`] answers ahead of all of that are safe from a
+//! class: those are built-in *type* names, which a class may not take — see
+//! [`crate::classes::ClassTable::declare`].)
 //!
 //! Two rules govern what may be listed:
 //!

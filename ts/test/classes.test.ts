@@ -15,6 +15,27 @@ beforeAll(() => ensureBuild());
 const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 const FIXTURES = resolve(__dirname, "fixtures/classes");
 
+/// `petal check --json` on a real file, so module visibility is exercised.
+function checkFileJson(path: string): any {
+  return JSON.parse(
+    execSync(`${PETAL} check --json ${path}`, { encoding: "utf-8", timeout: 10000 })
+  );
+}
+
+/// The stderr of a run that is expected to fail.
+function runFileError(path: string): string {
+  try {
+    execSync(`${PETAL} run ${path}`, {
+      encoding: "utf-8",
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    throw new Error(`expected ${path} to fail, but it succeeded`);
+  } catch (e: any) {
+    return (e.stderr || "").trim();
+  }
+}
+
 // Classes & user-declared methods. See docs/language-guide.md (Classes &
 // Methods). A class is a named record type: instances are ordinary records
 // carrying a class tag, so every record operation still works on them.
@@ -314,15 +335,88 @@ describe("the built-in Rect class", () => {
 });
 
 describe("classes across modules", () => {
-  // Classes and methods are program-wide: the class table and the runtime
-  // method table span the whole compilation, so a module may declare a method
-  // on a built-in class and an importer may extend an imported one. `export`
-  // governs only the constructor *name*, like any other binding.
+  // The runtime method table is program-wide, so a module may declare a method
+  // on a built-in class and an importer may extend an imported one. The class
+  // *name* — constructor and type alike — follows `export`.
   it("dispatches methods declared in an imported module", () => {
     const out = execSync(`${PETAL} run ${FIXTURES}/main.ptl`, {
       encoding: "utf-8",
       timeout: 10000,
     }).trim();
     expect(out.split("\n")).toEqual(["40", "Circle 12", "4"]);
+  });
+
+  it("a module-private class is not a type name in an importer", () => {
+    const out = checkFileJson(`${FIXTURES}/private-type.ptl`);
+    expect(out.error).toBeFalsy();
+    expect(out.warnings.map((w: any) => w.message)).toContain(
+      "unknown type name `Secret`"
+    );
+  });
+
+  it("the private class still runs — the annotation is warning-only", () => {
+    const out = execSync(`${PETAL} run ${FIXTURES}/private-type.ptl`, {
+      encoding: "utf-8",
+      timeout: 10000,
+    }).trim();
+    expect(out).toBe("7");
+  });
+
+  it("names both files when two modules declare the same class", () => {
+    const stderr = runFileError(`${FIXTURES}/dup/entry.ptl`);
+    expect(stderr).toMatch(/class `Dup` is already declared/);
+    expect(stderr).toMatch(/dup_a\.ptl/);
+    expect(stderr).toMatch(/dup_b\.ptl/);
+  });
+});
+
+// A class is a top-level, file-scoped declaration. It is hoisted like the type
+// name it introduces, and it may not be nested, collide with a built-in type
+// name, or leak out of the module that declares it.
+describe("class scoping", () => {
+  it("hoists the constructor, like the type name", () => {
+    const out = runPetal("print(Later(1).a)\nclass Later\n  a: int\nend");
+    expect(out.trim()).toBe("1");
+  });
+
+  it("hoisting agrees with `check`", () => {
+    const out = checkJson("let l = Later(1)\nclass Later\n  a: int\nend\nprint(l.a)");
+    expect(out.warnings).toHaveLength(0);
+  });
+
+  it("rejects a class declared inside a function", () => {
+    const out = checkJsonAllowFail(
+      "fn f()\n  class Inner\n    a: int\n  end\n  Inner(1)\nend\nprint(f())"
+    );
+    expect(out.error).toBe(true);
+    expect(out.errors[0].message).toMatch(/`Inner`/);
+    expect(out.errors[0].message).toMatch(/top level/);
+  });
+
+  it("a nested class no longer aliases a top-level one of the same name", () => {
+    // Before: the inner `Inner` was invisible to the class table but shared the
+    // outer's heap tag, so the *outer* class's method ran on it.
+    const out = checkJsonAllowFail(
+      "class Inner\n  a: int\nend\n" +
+        "fn f()\n  class Inner\n    b: int\n    c: int\n  end\n  Inner(1, 2)\nend\n" +
+        'fn Inner.who(i: Inner)\n  "outer"\nend\n' +
+        "print(f().who())"
+    );
+    expect(out.error).toBe(true);
+    expect(out.errors[0].message).toMatch(/top level/);
+  });
+
+  it("rejects a class named after a built-in type", () => {
+    for (const name of ["int", "string", "list", "record"]) {
+      const out = checkJsonAllowFail(`class ${name}\n  a: any\nend`);
+      expect(out.error).toBe(true);
+      expect(out.errors[0].message).toMatch(/built-in type name/);
+      expect(out.errors[0].message).toContain(name);
+    }
+  });
+
+  it("allows a class that shadows a built-in function name", () => {
+    const out = runPetal("class len\n  a: int\nend\nprint(type(len(1)))");
+    expect(out.trim()).toBe("len");
   });
 });

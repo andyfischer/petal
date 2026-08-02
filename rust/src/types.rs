@@ -312,20 +312,26 @@ mod tests {
     fn distinct_classes_are_not_interchangeable() {
         let mut classes = crate::classes::ClassTable::new();
         let a = classes
-            .declare(crate::classes::ClassDef {
-                name: "A".into(),
-                fields: vec![],
-                methods: vec![],
-                builtin: false,
-            })
+            .declare(
+                crate::classes::ClassDef {
+                    name: "A".into(),
+                    fields: vec![],
+                    methods: vec![],
+                    builtin: false,
+                },
+                None,
+            )
             .unwrap();
         let b = classes
-            .declare(crate::classes::ClassDef {
-                name: "B".into(),
-                fields: vec![],
-                methods: vec![],
-                builtin: false,
-            })
+            .declare(
+                crate::classes::ClassDef {
+                    name: "B".into(),
+                    fields: vec![],
+                    methods: vec![],
+                    builtin: false,
+                },
+                None,
+            )
             .unwrap();
         assert!(!Type::Class(a).is_assignable_to(&Type::Class(b)));
         assert!(Type::Class(a).is_assignable_to(&Type::Class(a)));

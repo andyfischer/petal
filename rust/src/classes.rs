@@ -18,7 +18,7 @@
 //! are natives (`crate::builtins::classes`), and user-declared methods register
 //! into the VM's per-run table (`Stack::methods`) as the root block runs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -74,11 +74,30 @@ impl ClassDef {
     }
 }
 
-/// The classes visible to one compilation, by name.
+/// The classes of one compilation, by name.
+///
+/// The *namespace* spans the compilation — a [`ClassId`] means the same thing
+/// in every module, and two modules may not declare the same class name — but
+/// what a given file can *see* is narrower: a class name resolves only where
+/// its constructor does. [`ClassTable::set_scope`] installs that per-file view
+/// and [`ClassTable::lookup`] respects it, so a module-private class is not a
+/// type name in an importer either (built-in classes are always in scope).
 #[derive(Debug, Clone)]
 pub struct ClassTable {
     defs: Vec<ClassDef>,
     by_name: HashMap<String, ClassId>,
+    /// The names of the built-in classes, which no scope hides — captured at
+    /// construction so a user redeclaration of one (`class Rect … end`, which
+    /// clears the `builtin` flag on the entry) stays universally visible.
+    builtin_names: HashSet<String>,
+    /// The file each user class was declared in, for naming both sides of a
+    /// cross-module duplicate. Absent for built-ins and for a compilation that
+    /// passes no module name.
+    origins: HashMap<ClassId, String>,
+    /// The class names in scope for the file currently being compiled, or
+    /// `None` for "every declared class" — the default, which is what a
+    /// single-file compilation and the unit tests want.
+    scope: Option<HashSet<String>>,
 }
 
 impl Default for ClassTable {
@@ -95,11 +114,28 @@ impl ClassTable {
         let mut table = ClassTable {
             defs: Vec::new(),
             by_name: HashMap::new(),
+            builtin_names: HashSet::new(),
+            origins: HashMap::new(),
+            scope: None,
         };
         for def in builtin_classes() {
+            table.builtin_names.insert(def.name.clone());
             table.insert(def);
         }
         table
+    }
+
+    /// Restrict [`ClassTable::lookup`] to `names` (plus the built-in classes,
+    /// which no file has to import). Called once per module, with the class
+    /// names that module declares or imports — see
+    /// `Compiler::visible_class_names`.
+    pub fn set_scope(&mut self, names: HashSet<String>) {
+        self.scope = Some(names);
+    }
+
+    /// Drop the per-file view: every declared class resolves again.
+    pub fn clear_scope(&mut self) {
+        self.scope = None;
     }
 
     fn insert(&mut self, def: ClassDef) -> ClassId {
@@ -120,16 +156,51 @@ impl ClassTable {
     /// therefore wants its own methods too.)
     ///
     /// Declaring the same *user* class twice is an error: that is a mistake, not
-    /// an override.
-    pub fn declare(&mut self, def: ClassDef) -> Result<ClassId, String> {
+    /// an override. Because the namespace spans the compilation, "twice"
+    /// includes two different modules — so the error names both files when
+    /// `module` (the declaring file's display name) is known.
+    ///
+    /// A class may not take a **built-in type name** (`int`, `list`, `string`,
+    /// …). [`Type::resolve`] puts the built-in vocabulary first, so such a
+    /// class could never be reached in type position: the annotation would
+    /// keep meaning the primitive while the constructor produced a record, and
+    /// the mismatch would print as "expected `int`, found `int`".
+    pub fn declare(&mut self, def: ClassDef, module: Option<&str>) -> Result<ClassId, String> {
+        if Type::from_name(&def.name).is_some() {
+            return Err(format!(
+                "class `{}` collides with the built-in type name `{}`: pick another name",
+                def.name, def.name
+            ));
+        }
         if let Some(&existing) = self.by_name.get(&def.name) {
             if !self.defs[existing.0 as usize].builtin {
-                return Err(format!("class `{}` is already declared", def.name));
+                return Err(match (self.origins.get(&existing), module) {
+                    (Some(prev), Some(now)) if prev != now => format!(
+                        "class `{}` is already declared in `{prev}`, so `{now}` may not \
+                         declare it too",
+                        def.name
+                    ),
+                    _ => format!("class `{}` is already declared", def.name),
+                });
             }
             self.defs[existing.0 as usize] = def;
+            self.remember_origin(existing, module);
             return Ok(existing);
         }
-        Ok(self.insert(def))
+        let id = self.insert(def);
+        self.remember_origin(id, module);
+        Ok(id)
+    }
+
+    fn remember_origin(&mut self, id: ClassId, module: Option<&str>) {
+        match module {
+            Some(m) => {
+                self.origins.insert(id, m.to_string());
+            }
+            None => {
+                self.origins.remove(&id);
+            }
+        }
     }
 
     /// Record `fn Class.name(...)` on an already-declared class. Overriding a
@@ -163,7 +234,21 @@ impl ClassTable {
         Ok(())
     }
 
+    /// The class `name` refers to *in the current scope*. A name the scope
+    /// does not carry is `None` even though the table holds it — that is what
+    /// keeps a module-private class from resolving as a type in an importer.
     pub fn lookup(&self, name: &str) -> Option<ClassId> {
+        let id = self.by_name.get(name).copied()?;
+        match &self.scope {
+            Some(scope) if !scope.contains(name) && !self.builtin_names.contains(name) => None,
+            _ => Some(id),
+        }
+    }
+
+    /// The class `name` refers to anywhere in the compilation, ignoring the
+    /// current scope. Used where the question is "does this name already
+    /// belong to a class?" rather than "can this file see it?".
+    pub fn lookup_anywhere(&self, name: &str) -> Option<ClassId> {
         self.by_name.get(name).copied()
     }
 
@@ -309,8 +394,8 @@ mod tests {
     #[test]
     fn declaring_a_class_twice_is_an_error() {
         let mut t = ClassTable::new();
-        t.declare(user_class("Point", &["x"])).expect("first");
-        let err = t.declare(user_class("Point", &["y"])).unwrap_err();
+        t.declare(user_class("Point", &["x"]), None).expect("first");
+        let err = t.declare(user_class("Point", &["y"]), None).unwrap_err();
         assert!(err.contains("already declared"), "{err}");
     }
 
@@ -322,14 +407,16 @@ mod tests {
     fn redeclaring_a_builtin_class_replaces_it() {
         let mut t = ClassTable::new();
         let builtin = t.lookup("Rect").unwrap();
-        let id = t.declare(user_class("Rect", &["left", "top"])).unwrap();
+        let id = t
+            .declare(user_class("Rect", &["left", "top"]), None)
+            .unwrap();
         assert_eq!(id, builtin);
         let def = t.get(id);
         assert!(!def.builtin);
         assert!(def.field("left").is_some());
         assert!(def.field("w").is_none(), "the built-in fields are gone");
         // And redeclaring *that* is now an ordinary duplicate.
-        let err = t.declare(user_class("Rect", &["x"])).unwrap_err();
+        let err = t.declare(user_class("Rect", &["x"]), None).unwrap_err();
         assert!(err.contains("already declared"), "{err}");
     }
 
@@ -354,7 +441,7 @@ mod tests {
     #[test]
     fn duplicate_method_of_the_same_arity_is_an_error() {
         let mut t = ClassTable::new();
-        let id = t.declare(user_class("Point", &["x"])).unwrap();
+        let id = t.declare(user_class("Point", &["x"]), None).unwrap();
         t.declare_method(id, "shifted", 2).expect("first");
         // A different arity is a legal overload.
         t.declare_method(id, "shifted", 3).expect("overload");

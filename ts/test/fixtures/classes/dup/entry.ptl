@@ -1,0 +1,6 @@
+// Two unrelated modules declaring the same class name: still an error (the
+// class namespace spans the compilation), but the error names both files.
+import dup_a
+import dup_b
+
+print(1)

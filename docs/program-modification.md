@@ -176,6 +176,27 @@ item).
 **Known limitation:** renaming a `state` var — or moving/renaming its module —
 changes its `StateKey` and **drops the value** (it reads as remove + add).
 
+### Class instances across a reload
+
+A class instance is an ordinary record carrying an interned class *name* — a
+label, never a pointer into the program that built it. So a preserved instance
+holds nothing of the old code: no field list, no method table, no class id. It
+keeps the fields it was constructed with, and `type()` keeps reporting its
+label even if the class is gone.
+
+Petal does **not** migrate it. A field the edit adds is not invented on an
+older instance, and no live value is rewritten when a declaration changes —
+the same contract as changing a state variable's type on reload.
+
+What makes an edit *land* on such a value is that method calls are resolved
+against the new code wherever the compiler can tell which class the receiver
+is. Annotating the binding (`state c: C = C(1)`) pins it, so renaming a class
+or editing a method takes effect on instances that predate the edit; an
+un-annotated `state` is `any`, so its calls still dispatch on the label and an
+edit can leave them with nothing to find. See
+[Classes & Methods](language-guide.md#when-the-call-is-resolved-at-compile-time)
+for the rule and `rust/tests/class_live_edit.rs` for the pinned behaviour.
+
 ### Hosts that trigger reload
 
 - **Native SDL file-watcher** (shared by all SDL hosts) —

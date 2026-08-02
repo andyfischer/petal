@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-02 (chunk L: receiver, field and arity diagnostics) ·
+Last updated: 2026-08-02 (chunk M: annotations drive static dispatch) ·
 Branch: `main`
 
 ---
@@ -40,6 +40,7 @@ Branch: `main`
 | J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
 | K — class names as types | ✅ done | (classes) | `Type::Class(ClassId)` + `Type::resolve`; `fn f(r: Rect)` checks, field reads are typed |
 | L — receiver, field & arity diagnostics | ✅ done | (this) | fatal receiver-annotation check; undeclared-field warning; signatures carried on bindings; no-matching-arity warning for fns, constructors and methods |
+| M — annotations drive static dispatch | ✅ done | (this) | `check_module` also returns the method-call sites it pinned to one class; the compiler binds those straight to `fn Class.method`. An annotation is now what makes a class survive a live edit — see the note below |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -109,8 +110,11 @@ The runtime is untouched — annotations are stripped to names for codegen.
   `debug_assert_eq!` differential stays green.
 
 ### Checker — `rust/src/typecheck/mod.rs`, `diagnostic.rs`
-- `check_module(stmts, &fn_signatures, &classes) -> Vec<Diagnostic>`, invoked
-  from `compile_module` after `prescan_declarations`. Scoped
+- `check_module(stmts, &fn_signatures, &classes) -> (Vec<Diagnostic>,
+  MethodDispatch)`, invoked from `compile_module` after
+  `prescan_declarations`. The second product is chunk M's `span -> class name`
+  map of statically resolved method calls; the compiler keeps it and consumes
+  it in `compile_expr`. Scoped
   `Vec<HashMap<String, VarType>>` env; folded `check_expr` doing conservative
   shallow inference (any ambiguity ⇒ `Any`, which suppresses); check sites:
   unknown type name, typed `let`/`state`, reassignment, call args, fn return
@@ -308,3 +312,41 @@ $B check -e 'let xs: list<int> = [1]'                # "parameterized types are 
 - The `check` CLI command runs the type checker and prints warnings (stderr
   text / `--json warnings[]`), exiting 0; `check --strict` exits 1 when warnings
   exist. `run` prints warnings to stderr and always exits on runtime status.
+
+---
+
+## Chunk M — annotations drive static dispatch
+
+An annotation now buys something beyond a warning, which is worth knowing when
+weighing future checker work: it decides *where a method call is bound*.
+
+`typecheck::check_module` returns a second product alongside the diagnostics —
+`MethodDispatch`, a `span -> class name` map of the `recv.m()` sites whose
+receiver the pass pinned to exactly one class. `Compiler::compile_module` keeps
+it (replaced per module: spans are file-local) and `compile_expr`'s method-call
+arm binds those sites to the `fn Class.m` scope binding, emitting an ordinary
+`TermOp::Call` instead of a `TermOp::MethodCall`.
+
+**Why.** Runtime dispatch reads the class label the *receiver* carries, and a
+value in `state` outlives the edit that reshaped its class. Binding the call to
+the declaration is what lets a live edit take effect on values that predate it;
+the label stays a label. A slice also gets the exact callee rather than the
+`dispatch_targets` may-edge.
+
+**The guards are the design.** Resolution must never change what a working
+program does, so a site is left dispatched whenever the two mechanisms could
+disagree — a field of the same name (data beats declarations), a method the
+class does not declare (it can still reach a global native), an arity no
+overload accepts, and — the subtle one — *a declaration written below the call*.
+Nothing in Petal hoists, so binding to a later declaration would either read nil
+or, from inside a function body, reference a term the caller's block cannot
+see. `Compiler::declared_methods` records qualified names at emission order to
+enforce that; built-in class methods are exempt, being natives that exist before
+the program starts. Each guard has a test in `rust/tests/static_dispatch.rs`.
+
+**Consequence for the checker's binding rules.** An un-annotated `state`/`var`
+is `any` by deliberate decision, so it is *not* pinned — which is exactly the
+case where a live edit still fails (`No method 'get' on class C`). Inferring a
+class from a mutable binding's initializer would extend this, at the cost of
+being wrong when the binding is later assigned another class. Open question, not
+a bug.

@@ -104,7 +104,23 @@ impl Compiler {
     /// VM's per-run method table, which is what `value.method(...)` consults.
     /// A builtin call rather than an instruction of its own: registration is a
     /// side effect on runtime state, exactly what the native boundary is for.
+    /// Whether `class.method` is a language built-in rather than something a
+    /// `fn Class.method` statement declares. A built-in is a native registered
+    /// before the program starts, so a call may bind to it from anywhere.
+    pub(super) fn is_builtin_method(&self, class: &str, method: &str) -> bool {
+        self.classes
+            .lookup_anywhere(class)
+            .and_then(|id| self.classes.get(id).method(method))
+            .is_some_and(|m| m.builtin)
+    }
+
     pub(super) fn emit_declare_method(&mut self, class: &str, method: &str, func: TermId) {
+        // From here on, a `recv.method()` site the checker pinned to this class
+        // may bind straight to the declaration instead of dispatching on the
+        // receiver's tag. Recorded at *emission* order, which is source order,
+        // because nothing hoists.
+        self.declared_methods
+            .insert(crate::classes::qualified_method_name(class, method));
         let class_c = self
             .constants
             .intern(ConstantValue::String(class.to_string()));

@@ -224,14 +224,41 @@ describe("method dispatch is a dataflow edge", () => {
     ]);
   });
 
-  it("reaches the call site from the declaration, as a may-edge", () => {
+  it("reaches the call site from the declaration by an exact edge", () => {
+    // `base` is statically a Point, so the compiler binds `base.dist2()`
+    // straight to the declaration: an ordinary Call naming its callee, not a
+    // dispatch the analysis has to over-approximate.
     const result = showDependentsJson(METHOD, "Point.dist2");
+    expect(result.dependents.some((t: any) => isOp(t.op, "Call"))).toBe(true);
+    expect(result.edges.every((e: any) => e.kind === "dataflow")).toBe(true);
+  });
+
+  // A receiver the checker cannot pin to one class keeps runtime dispatch, and
+  // with it the may-edge: the call links to every method of that name, because
+  // which one runs is not knowable until the receiver arrives.
+  const DYNAMIC = [
+    "class Point",
+    "  x: int,",
+    "  y: int,",
+    "end",
+    "fn Point.dist2(p: Point) -> int",
+    "  p.x * p.x + p.y * p.y",
+    "end",
+    "fn go(p)",           // un-annotated parameter: type is `any`
+    "  p.dist2()",
+    "end",
+    "let d = go(Point(3, 4))",
+    "print(d)",
+  ].join("\n");
+
+  it("keeps a may-edge where the receiver's class is not statically known", () => {
+    const result = showDependentsJson(DYNAMIC, "Point.dist2");
     expect(result.dependents.some((t: any) => isOp(t.op, "MethodCall"))).toBe(true);
     expect(result.edges.some((e: any) => e.kind === "dispatch")).toBe(true);
   });
 
-  it("marks the dispatch edge as may in text mode", () => {
-    const text = dataflowText("show-dependents", METHOD, ["Point.dist2"]);
+  it("marks that dispatch edge as may in text mode", () => {
+    const text = dataflowText("show-dependents", DYNAMIC, ["Point.dist2"]);
     expect(text).toMatch(/~> t\d+ \(dispatch, may\)/);
   });
 

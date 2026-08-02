@@ -81,6 +81,15 @@ pub struct Compiler {
     // `class Point` still resolves). Also the checker's source of truth for
     // class-typed annotations and method lookup. Compile-time only.
     classes: crate::classes::ClassTable,
+    // Method-call sites the checker pinned to a single class, keyed by the call
+    // expression's span. Replaced per module (spans are file-local). Read by
+    // `compile_expr` to bind `r.m()` straight to `fn Class.m` — see
+    // `crate::typecheck::check_module`.
+    method_dispatch: crate::typecheck::MethodDispatch,
+    // Qualified names (`"Rect.inset"`) of the `fn Class.method` declarations
+    // compiled so far. Nothing hoists, so a call may only bind statically to a
+    // declaration that already ran; see `compile_expr`'s method-call arm.
+    declared_methods: HashSet<String>,
 
     // Non-fatal type-checker diagnostics, accumulated during compilation and
     // surfaced alongside the compiled program (a later chunk consumes them).
@@ -211,6 +220,8 @@ impl Compiler {
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
             classes: crate::classes::ClassTable::new(),
+            method_dispatch: crate::typecheck::MethodDispatch::new(),
+            declared_methods: HashSet::new(),
             warnings: Vec::new(),
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
@@ -400,8 +411,12 @@ impl Compiler {
             e
         })?;
         self.prescan_declarations(module, &stmts);
-        let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures, &self.classes);
+        let (diags, dispatch) =
+            crate::typecheck::check_module(&stmts, &self.fn_signatures, &self.classes);
         self.warnings.extend(diags);
+        // Spans are file-local, so this must be *replaced* per module rather
+        // than accumulated — two modules' spans collide freely.
+        self.method_dispatch = dispatch;
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
         for stmt in &stmts {

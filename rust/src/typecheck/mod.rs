@@ -93,6 +93,8 @@ struct Checker<'a> {
     ret_stack: Vec<Option<(Type, String)>>,
     diags: Vec<Diagnostic>,
     casts: Vec<RedundantCast>,
+    /// Method-call sites this pass pinned to one class. See [`MethodDispatch`].
+    dispatch: MethodDispatch,
     /// The slot the next expression walked will occupy. Set immediately before
     /// the `check_expr` call that enters it, and read (and reset to the
     /// [`CastSlot::Operand`] default) on entry, so it describes that one
@@ -106,7 +108,7 @@ fn run(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     classes: &ClassTable,
-) -> (Vec<Diagnostic>, Vec<RedundantCast>) {
+) -> Outcome {
     let mut checker = Checker {
         fn_signatures,
         classes,
@@ -114,23 +116,51 @@ fn run(
         ret_stack: Vec::new(),
         diags: Vec::new(),
         casts: Vec::new(),
+        dispatch: HashMap::new(),
         slot: CastSlot::Operand,
     };
     checker.bind_enum_variants(stmts);
     for stmt in stmts {
         checker.check_stmt(stmt);
     }
-    (checker.diags, checker.casts)
+    Outcome {
+        diags: checker.diags,
+        casts: checker.casts,
+        dispatch: checker.dispatch,
+    }
 }
 
+/// Everything one walk of a module produces.
+struct Outcome {
+    diags: Vec<Diagnostic>,
+    casts: Vec<RedundantCast>,
+    dispatch: MethodDispatch,
+}
+
+/// Which class each `recv.name(...)` site dispatches to, keyed by the span of
+/// the *call* expression, for the sites where this pass could pin the receiver
+/// down to one class. See [`check_module`].
+pub type MethodDispatch = HashMap<SourceSpan, String>;
+
 /// Type-check a module's statements against its (globally collected) function
-/// signatures, returning any non-fatal warnings. Never fails.
+/// signatures. Returns the non-fatal warnings and the statically resolved
+/// method-call sites. Never fails.
+///
+/// **Why the second product.** A `recv.name()` whose receiver class this pass
+/// pinned down does not need to be dispatched by the tag the receiver carries:
+/// the compiler can bind the call straight to `fn Class.name`, which is what
+/// [`Compiler::compile_expr`](crate::compiler::Compiler) does with this map.
+/// That matters most across a live edit, where the value in `state` predates
+/// the code now running — see `rust/tests/class_live_edit.rs`. Resolution is as
+/// shallow as the rest of the pass: a site it cannot pin down keeps the runtime
+/// dispatch it always had.
 pub fn check_module(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     classes: &ClassTable,
-) -> Vec<Diagnostic> {
-    run(stmts, fn_signatures, classes).0
+) -> (Vec<Diagnostic>, MethodDispatch) {
+    let out = run(stmts, fn_signatures, classes);
+    (out.diags, out.dispatch)
 }
 
 /// Every `int`/`float`/`str` call whose argument the checker already proved to
@@ -141,7 +171,7 @@ pub fn find_redundant_casts(
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     classes: &ClassTable,
 ) -> Vec<RedundantCast> {
-    run(stmts, fn_signatures, classes).1
+    run(stmts, fn_signatures, classes).casts
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -678,7 +708,7 @@ impl<'a> Checker<'a> {
                 match &function.kind {
                     ExprKind::FieldAccess { object, field } => {
                         let recv = self.check_expr(object);
-                        self.check_method_arity(recv, field, args.len(), expr.span);
+                        self.check_method_call(recv, field, args.len(), expr.span);
                     }
                     _ => {
                         self.check_expr(function);
@@ -864,14 +894,23 @@ impl<'a> Checker<'a> {
         });
     }
 
-    /// Warn when `recv.name(args)` supplies an argument count no declared
-    /// overload of that method accepts (site 7). Dispatch consults, in order, a
-    /// callable field, then the receiver class's methods, then the globals
+    /// Check a `recv.name(args)` site and, where possible, pin it to one class.
+    ///
+    /// Warns when the call supplies an argument count no declared overload of
+    /// that method accepts (site 7). Dispatch consults, in order, a callable
+    /// field, then the receiver class's methods, then the globals
     /// (docs/language-guide.md, Classes & Methods) — so this only fires when the
     /// receiver's class is statically known, declares no field of that name (it
     /// would win), and *does* declare the method under some other arity. Arities
     /// count the receiver, as the class table records them.
-    fn check_method_arity(&mut self, recv: Type, name: &str, args: usize, span: SourceSpan) {
+    ///
+    /// A site that survives every one of those guards *and* matches an arity is
+    /// recorded in [`Checker::dispatch`], letting the compiler call
+    /// `fn Class.name` directly instead of dispatching on the receiver's tag.
+    /// The guards are exactly the cases where the two would disagree: a field of
+    /// the same name outranks the method, and an unknown class or a
+    /// no-such-method site can still reach a global native.
+    fn check_method_call(&mut self, recv: Type, name: &str, args: usize, span: SourceSpan) {
         let Type::Class(id) = recv else { return };
         let def = self.classes.get(id);
         if def.field(name).is_some() {
@@ -886,7 +925,12 @@ impl<'a> Checker<'a> {
         // No method of that name: dispatch falls through to a global native
         // with the receiver prepended (`r.len()`), which this pass knows
         // nothing about.
-        if arities.is_empty() || arities.contains(&(args + 1)) {
+        if arities.is_empty() {
+            return;
+        }
+        if arities.contains(&(args + 1)) {
+            self.dispatch
+                .insert(span, self.classes.name_of(id).to_string());
             return;
         }
         arities.sort_unstable();
@@ -1081,6 +1125,7 @@ mod tests {
         crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         check_module(&stmts, &sigs, &classes)
+            .0
             .into_iter()
             .map(|d| d.message)
             .collect()

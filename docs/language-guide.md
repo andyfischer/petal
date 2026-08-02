@@ -885,6 +885,94 @@ An arity error counts the arguments you wrote. The receiver is supplied by the
 call site, so a two-parameter `fn C.foo(c: C, n: int)` called as `C(1).foo()`
 reports `C.foo() expects 1 argument, got 0` — the same wording a builtin uses.
 
+### When the call is resolved at compile time
+
+The order above is what happens *at runtime*, reading the class label the
+receiver carries. But when the compiler can already tell which class the
+receiver is, it skips the search and binds the call straight to that class's
+method — the same thing a plain function call does. The receiver is pinned when
+it is a constructor call, a `let` bound to one, or **any binding or parameter
+carrying a class annotation**:
+
+```petal
+class C
+  a: int,
+end
+fn C.get(c: C)
+  c.a
+end
+
+let pinned = C(1)             // pinned: the initializer says so
+state also: C = C(1)          // pinned: the annotation says so
+fn takes_one(c: C)            // pinned: the parameter is annotated
+  c.get()
+end
+
+state loose = C(1)            // not pinned — un-annotated, so `any`
+fn takes_any(c)               // not pinned
+  c.get()
+end
+
+print(pinned.get(), also.get(), takes_one(C(2)), loose.get(), takes_any(C(3)))
+```
+
+This never changes what a working program computes; it is the same method
+either way. What it changes is *when the choice is made*, and two things follow
+from that.
+
+**Live editing.** A value in `state` outlives the edit that reshaped its class:
+it keeps the fields it was built with and the label it was built under, because
+a class instance is a plain record plus a name — never a link back to the code
+that made it. Dispatching on that label means an old value can go looking for a
+class the program no longer has. A pinned call instead runs the method the code
+*now says*, so renaming a class or moving a method takes effect on the values
+already live:
+
+```petal
+// before the edit
+class C
+  x: int,
+end
+fn C.get(c: C)
+  c.x
+end
+state c: C = C(1)
+print(c.get())        // 1
+```
+
+```petal
+// after: the class is renamed and the method rewritten. `c` still holds the
+// instance built above, labelled `C` — but the call is bound to `D.get`, so
+// the edit lands on it.
+class D
+  x: int,
+end
+fn D.get(d: D)
+  d.x + 100
+end
+state c: D = D(1)
+print(c.get())        // 101, computed from the old value
+```
+
+Without the annotation the same edit reports `No method 'get' on class C` —
+the value in `state` is still labelled `C`, and there is no `C` any more.
+Annotating a `state` that holds an instance is the way to make a class
+survive being edited.
+
+Petal does **not** migrate state: a field the edit adds is not invented on an
+instance built before it existed (`No field 'y' on class C`), and no value is
+rewritten when a declaration changes. That is the same contract as changing a
+state variable's type on reload.
+
+**Dataflow.** A pinned call names its callee like any other call, so
+`show-slice`, `show-provenance` and `show-graph` get the exact function. An
+unpinned one is recovered as a *may*-edge to every method of that name, since
+which one runs is not knowable until the receiver arrives.
+
+One thing does not change: nothing in Petal hoists, so a call above its
+`fn Class.method` is never pinned to it — it keeps the runtime search, which
+finds the method by the time the call actually runs.
+
 ### The built-in `Rect`
 
 `Rect` is built into the language — no declaration and no import. Writing

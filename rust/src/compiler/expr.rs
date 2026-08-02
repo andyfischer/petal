@@ -95,7 +95,60 @@ impl Compiler {
                         }
                         return self.emit_term(TermOp::Call, inputs, None);
                     }
+                    // A site the checker pinned to one class calls that class's
+                    // method directly, as an ordinary `Call` whose callee is the
+                    // `fn Class.method` binding — the same term a plain function
+                    // call would name. What this buys:
+                    //
+                    //  - **Live editing.** Runtime dispatch reads the class tag
+                    //    the *receiver* carries, and a value in `state` outlives
+                    //    the edit that reshaped its class. Binding the call to
+                    //    the declaration means the code now running decides what
+                    //    runs, which is the whole point of a live edit; the tag
+                    //    stays a label, never a link back to the old program.
+                    //  - **Dataflow.** A `Call` names its callee in its inputs,
+                    //    so a slice gets the exact function instead of the
+                    //    over-approximating may-edge `dispatch_targets` recovers
+                    //    for a dispatched call.
+                    //
+                    // Only a declaration already *compiled* is a candidate.
+                    // Nothing in Petal hoists: the name a `fn` binds holds nil
+                    // until its declaration runs, so binding a call to a
+                    // declaration written below it would turn a program that
+                    // works today (dispatch looks the method up by name at call
+                    // time, by which point it is registered) into `Cannot call
+                    // nil` — or, from inside a function body, into a term the
+                    // callee's block cannot even reference. Resolving only
+                    // backwards keeps this change a pure optimization of what
+                    // already runs.
+                    //
+                    // A *built-in* class method has no declaration statement to
+                    // wait for — it is a native, registered under the same
+                    // dotted name before the program starts — so it is always a
+                    // candidate.
+                    let static_callee = self
+                        .method_dispatch
+                        .get(&span)
+                        .cloned()
+                        .filter(|class| {
+                            let qname = crate::classes::qualified_method_name(class, field);
+                            self.declared_methods.contains(&qname)
+                                || self.is_builtin_method(class, field)
+                        })
+                        .map(|class| crate::classes::qualified_method_name(&class, field))
+                        // Resolve the name the way any other reference to it
+                        // would be, so a call inside a function body captures
+                        // the declaration rather than pointing at a term in
+                        // someone else's block.
+                        .and_then(|qname| self.resolve_local_term(&qname));
                     let obj_tid = self.compile_expr(object);
+                    if let Some(callee) = static_callee {
+                        let mut inputs: SmallVec<[TermId; 4]> = smallvec![callee, obj_tid];
+                        for arg in args {
+                            inputs.push(self.compile_expr(arg));
+                        }
+                        return self.emit_term(TermOp::Call, inputs, None);
+                    }
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
                         inputs.push(self.compile_expr(arg));

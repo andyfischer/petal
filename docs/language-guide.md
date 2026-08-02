@@ -248,8 +248,8 @@ end
 f(1)            // warning: `f` expects 2 arguments, got 1
 
 class Point
-  x: int
-  y: int
+  x: int,
+  y: int,
 end
 Point(1)        // warning: `Point` expects 2 arguments, got 1
 ```

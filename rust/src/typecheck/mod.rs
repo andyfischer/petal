@@ -1500,7 +1500,8 @@ mod tests {
 
     #[test]
     fn method_arity_is_checked() {
-        let src = "class P\n  x: int,\n  y: int,\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
+        let src =
+            "class P\n  x: int,\n  y: int,\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
         let w = warns(&format!("{src}print(P(1, 2).shift())"));
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("shift"), "{w:?}");

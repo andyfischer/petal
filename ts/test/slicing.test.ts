@@ -237,9 +237,11 @@ describe("method dispatch is a dataflow edge", () => {
 
   it("gives the declarations a source position instead of [no location]", () => {
     const text = dataflowText("explain", METHOD, ["d"]);
-    expect(text).toContain("t120 Point.dist2 [line 5, column 1]");
+    // Term numbering is an implementation detail (it shifts whenever a
+    // declaration is hoisted); the position is what the reader needs.
+    expect(text).toMatch(/t\d+ Point\.dist2 \[line 5, column 1\]/);
     // …and the class constructor, which reported no location at all.
-    expect(text).toContain("t106 Point [line 1, column 1]");
+    expect(text).toMatch(/t\d+ Point \[line 1, column 1\]/);
     expect(text).not.toContain("[no location]");
   });
 });

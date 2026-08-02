@@ -21,6 +21,7 @@
   "state"
   "fn"
   "enum"
+  "class"
   "return"
   "if"
   "then"
@@ -49,6 +50,9 @@
 ; ---- Types & constructors (enums) ----
 
 (enum_declaration name: (identifier) @type)
+(class_declaration name: (identifier) @type)
+(class_field name: (identifier) @property)
+(function_declaration class: (identifier) @type)
 (enum_variant name: (identifier) @constructor)
 (variant_pattern name: (identifier) @constructor)
 

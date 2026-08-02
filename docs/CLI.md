@@ -350,8 +350,9 @@ the common variants but are not exhaustive.
 | `Let` | `{"Let": {"name": string, "ty": TypeAnn \| null, "value": Expr, "is_var": bool}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …` |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
-| `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "ret": TypeAnn \| null, "body": Stmt[]}}` — `ret` is the optional declared return-type annotation |
+| `FnDecl` | `{"FnDecl": {"name": string, "class": string \| null, "params": Param[], "ret": TypeAnn \| null, "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
+| `ClassDecl` | `{"ClassDecl": {"name": string, "fields": ClassField[]}}` — a `class Name … end` declaration; fields are in declaration (and constructor-argument) order |
 | `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |
 | `Return` | `{"Return": Expr \| null}` |
@@ -381,7 +382,9 @@ the common variants but are not exhaustive.
 
 **Param**: `{"name": string, "ty": TypeAnn | null}` — a function/lambda parameter with its optional declared type annotation.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Annotations appear on `Let`, `State`, `Param`, and `FnDecl.ret`; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
+**ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn | null}` — the same optional-annotation shape as a **Param**.
+
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries `resolved: null` in the AST dump; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
@@ -535,7 +538,7 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | CellRead | `"CellRead"` | [cell] | none | Dereference a cell — every source-level read of a `var`. |
 | CellWrite | `"CellWrite"` | [cell, value] | none | Write through a cell (`set x = …`). Yields the written value. |
 | AllocList | `"AllocList"` | [elem0, elem1, ...] | none | |
-| AllocMap | `{"AllocMap": {"fields": [cid, ...]}}` | [val0, val1, ...] | none | Field names as ConstantIds |
+| AllocMap | `{"AllocMap": {"fields": [cid, ...], "class": cid?}}` | [val0, val1, ...] | none | Field names as ConstantIds. `class` is present only for a class constructor's allocation, naming the class the record is tagged with (see [language-guide.md](language-guide.md#classes--methods)); it is omitted for a plain record literal. |
 | AllocMapSpread | `{"AllocMapSpread": {"entries": [...]}}` | [spread_src..., named_value...] | none | Record literal with `...spread`. Each entry is `Spread(idx)` or `Named{key, idx}` referencing positions in `inputs`. |
 | GetField | `{"GetField": cid}` | [object] | none | |
 | SetField | `{"SetField": cid}` | [object, value] | none | |

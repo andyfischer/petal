@@ -1,0 +1,57 @@
+// Classes
+// Named record types with typed fields, plus methods declared on them.
+// An instance is an ordinary record carrying its class name, so everything
+// that works on a record still works — the class buys a name in type
+// position and method dispatch.
+
+class Point
+  x: int
+  y: int
+end
+
+let p = Point(3, 4)
+print(p.x, p.y)
+print(type(p))
+
+// A method: `fn <Class>.<name>(receiver, ...)`. The receiver is the first
+// parameter and the call site supplies it — `p.dist2()` passes `p`.
+fn Point.dist2(p: Point) -> int
+  p.x * p.x + p.y * p.y
+end
+
+fn Point.shifted(p: Point, dx: int, dy: int) -> Point
+  Point(p.x + dx, p.y + dy)
+end
+
+print(p.dist2())
+print(p.shifted(10, 20).dist2())
+
+// The class name is a type name: passing anything else warns at check time
+// (`petal check classes.ptl`) and never blocks the run.
+fn describe(p: Point) -> string
+  "({p.x}, {p.y})"
+end
+
+print(describe(p))
+
+// `Rect` is built in — no declaration, no import. Its fields are x, y, w, h
+// and it comes with the geometry every layout keeps rewriting by hand.
+let card = Rect(0, 0, 100, 40)
+print(card.center_x(), card.center_y())
+print(card.right(), card.bottom())
+print(card.inset(5))
+print(card.offset(10, 10).right())
+
+// Methods are found on the receiver's class, so a user declaration extends a
+// built-in class exactly like a class of your own.
+fn Rect.area(r: Rect) -> int
+  r.w * r.h
+end
+
+print(card.area())
+print(card.inset(10).area())
+
+// Instances stay records: field reads, `keys`, and spread all behave. A spread
+// builds a *new* record rather than an instance — it is no longer that shape.
+print(keys(card))
+print(type({...card, label: "hi"}))

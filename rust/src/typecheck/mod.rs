@@ -15,6 +15,7 @@ use crate::ast::{
     AssignTarget, BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, Pattern,
     RecordField, Stmt, StmtKind, TypeAnn, UnaryOp,
 };
+use crate::classes::ClassTable;
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
 use crate::types::{FnSignature, Type};
@@ -72,6 +73,10 @@ pub enum CastSlot {
 
 struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
+    /// Classes in scope for this module — the built-ins plus every `class`
+    /// the compiler's prescan found. Resolves class names in type position,
+    /// types field reads, and answers "does this class have that method?".
+    classes: &'a ClassTable,
     scopes: Vec<HashMap<String, VarType>>,
     /// The declared return type of each enclosing function-like scope, innermost
     /// last. `Some((ty, name))` when the nearest `fn` declared a resolved return
@@ -93,9 +98,11 @@ struct Checker<'a> {
 fn run(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
+    classes: &ClassTable,
 ) -> (Vec<Diagnostic>, Vec<RedundantCast>) {
     let mut checker = Checker {
         fn_signatures,
+        classes,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
         diags: Vec::new(),
@@ -113,8 +120,9 @@ fn run(
 pub fn check_module(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
+    classes: &ClassTable,
 ) -> Vec<Diagnostic> {
-    run(stmts, fn_signatures).0
+    run(stmts, fn_signatures, classes).0
 }
 
 /// Every `int`/`float`/`str` call whose argument the checker already proved to
@@ -123,8 +131,9 @@ pub fn check_module(
 pub fn find_redundant_casts(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
+    classes: &ClassTable,
 ) -> Vec<RedundantCast> {
-    run(stmts, fn_signatures).1
+    run(stmts, fn_signatures, classes).1
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -162,9 +171,24 @@ impl<'a> Checker<'a> {
         self.diags.push(Diagnostic { span, message });
     }
 
-    /// Site 1: warn on a written-but-unrecognized type name.
+    /// The type an annotation denotes here. The parser resolves the built-in
+    /// vocabulary without context; a class name can only be resolved against
+    /// this module's [`ClassTable`], which is what this adds.
+    fn resolve_ann(&self, ann: &TypeAnn) -> Option<Type> {
+        ann.resolved
+            .or_else(|| self.classes.lookup(&ann.name).map(Type::Class))
+    }
+
+    /// How a type is spelled in a diagnostic — the class's own name for a
+    /// class, [`Type::name`] otherwise.
+    fn spell(&self, ty: Type) -> String {
+        ty.display(self.classes).into_owned()
+    }
+
+    /// Site 1: warn on a written-but-unrecognized type name. A class declared
+    /// anywhere in the module counts as recognized, wherever it is written.
     fn check_type_ann(&mut self, ann: &TypeAnn, span: SourceSpan) {
-        if ann.resolved.is_none() {
+        if self.resolve_ann(ann).is_none() {
             self.warn(span, format!("unknown type name `{}`", ann.name));
         }
     }
@@ -186,8 +210,8 @@ impl<'a> Checker<'a> {
                 format!(
                     "type mismatch: `{}` declared `{}` but assigned `{}`",
                     name,
-                    dt.name(),
-                    actual.name()
+                    self.spell(dt),
+                    self.spell(actual)
                 ),
             );
         }
@@ -208,8 +232,8 @@ impl<'a> Checker<'a> {
                 format!(
                     "return type mismatch: `{}` declares `{}` but returns `{}`",
                     name,
-                    rt.name(),
-                    actual.name()
+                    self.spell(rt),
+                    self.spell(actual)
                 ),
             );
         }
@@ -226,7 +250,7 @@ impl<'a> Checker<'a> {
             }
         }
         for p in params {
-            let declared = p.ty.as_ref().and_then(|t| t.resolved);
+            let declared = p.ty.as_ref().and_then(|t| self.resolve_ann(t));
             self.bind(p.name.clone(), declared, declared.unwrap_or(Type::Any));
         }
     }
@@ -272,7 +296,7 @@ impl<'a> Checker<'a> {
                 }
                 self.slot = CastSlot::Delimited;
                 let inferred = self.check_expr(value);
-                let declared = ty.as_ref().and_then(|t| t.resolved);
+                let declared = ty.as_ref().and_then(|t| self.resolve_ann(t));
                 self.check_assignment(value.span, name, declared, inferred);
                 // A `var` is a cell, and `set` reaches it from inside functions,
                 // closures and conditionals that this linear walk cannot
@@ -322,6 +346,7 @@ impl<'a> Checker<'a> {
                 params,
                 ret,
                 body,
+                ..
             } => {
                 self.push_scope();
                 // Site 1 for params + return.
@@ -333,7 +358,7 @@ impl<'a> Checker<'a> {
                 // and every explicit `return` in the body are checked against it.
                 let ctx = ret
                     .as_ref()
-                    .and_then(|ann| ann.resolved)
+                    .and_then(|ann| self.resolve_ann(ann))
                     .map(|rt| (rt, name.clone()));
                 self.ret_stack.push(ctx);
                 let (tail_ty, tail_span) = self.check_block_body(body);
@@ -342,6 +367,17 @@ impl<'a> Checker<'a> {
                 self.pop_scope();
             }
             StmtKind::EnumDecl { .. } => {}
+            // A class body declares no code — only field annotations, which
+            // get the same unknown-name check as a parameter's. Everything
+            // structural (duplicate fields, the class's own name) is the
+            // compiler prescan's job, and it errors rather than warning.
+            StmtKind::ClassDecl { fields, .. } => {
+                for f in fields {
+                    if let Some(ann) = &f.ty {
+                        self.check_type_ann(ann, stmt.span);
+                    }
+                }
+            }
             StmtKind::For { var, iter, body } => {
                 self.check_expr(iter);
                 self.push_scope();
@@ -382,7 +418,7 @@ impl<'a> Checker<'a> {
                     self.slot = CastSlot::Delimited;
                     self.check_expr(k);
                 }
-                let declared = ty.as_ref().and_then(|t| t.resolved);
+                let declared = ty.as_ref().and_then(|t| self.resolve_ann(t));
                 self.check_assignment(init.span, name, declared, inferred);
                 // A reactive binding infers *nothing* (`Any`), and shadows any
                 // outer name: the next frame re-runs the initializer against a
@@ -546,9 +582,20 @@ impl<'a> Checker<'a> {
                 }
                 Type::Record
             }
-            ExprKind::FieldAccess { object, .. } => {
-                self.check_expr(object);
-                Type::Any
+            ExprKind::FieldAccess { object, field } => {
+                let obj = self.check_expr(object);
+                // A class instance has declared field types; a plain record
+                // does not (`Type` is unparameterized), so everything else
+                // stays `Any`.
+                match obj {
+                    Type::Class(id) => self
+                        .classes
+                        .get(id)
+                        .field(field)
+                        .and_then(|f| f.ty)
+                        .unwrap_or(Type::Any),
+                    _ => Type::Any,
+                }
             }
             ExprKind::IndexAccess { object, index } => {
                 self.check_expr(object);
@@ -643,6 +690,31 @@ impl<'a> Checker<'a> {
             "str" => return Type::String,
             _ => {}
         }
+        // A class name is its constructor: `Point(1, 2)` builds an instance,
+        // and the declared field types check the arguments positionally — the
+        // same rule as a function's parameters, because that is what they are.
+        if let Some(id) = self.classes.lookup(f) {
+            let fields = self.classes.get(id).fields.clone();
+            for (i, fd) in fields.iter().enumerate() {
+                let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
+                    continue;
+                };
+                if ft != Type::Any && at != Type::Any && !at.is_assignable_to(&ft) {
+                    self.warn(
+                        args[i].span,
+                        format!(
+                            "argument {} to `{}`: field `{}` expects `{}`, found `{}`",
+                            i + 1,
+                            f,
+                            fd.name,
+                            self.spell(ft),
+                            self.spell(at)
+                        ),
+                    );
+                }
+            }
+            return Type::Class(id);
+        }
         let Some(sig) = self.fn_signatures.get(&(f.clone(), args.len())).cloned() else {
             // Not a module function: fall back to the builtin table. It knows
             // only result types (builtins declare no parameter types), so
@@ -662,8 +734,8 @@ impl<'a> Checker<'a> {
                         "argument {} to `{}`: expected `{}`, found `{}`",
                         i + 1,
                         f,
-                        pt.name(),
-                        at.name()
+                        self.spell(*pt),
+                        self.spell(at)
                     ),
                 );
             }
@@ -729,8 +801,10 @@ mod tests {
     fn warns(src: &str) -> Vec<String> {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
-        let sigs = crate::compiler::collect_fn_signatures(&stmts);
-        check_module(&stmts, &sigs)
+        let mut classes = crate::classes::ClassTable::new();
+        crate::compiler::collect_classes(&mut classes, &stmts);
+        let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
+        check_module(&stmts, &sigs, &classes)
             .into_iter()
             .map(|d| d.message)
             .collect()

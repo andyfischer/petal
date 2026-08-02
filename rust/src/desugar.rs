@@ -128,7 +128,11 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
             // recurse into the body.
             desugar_stmts(body);
         }
-        StmtKind::EnumDecl { .. } | StmtKind::Break | StmtKind::Continue | StmtKind::Import(_) => {}
+        StmtKind::EnumDecl { .. }
+        | StmtKind::ClassDecl { .. }
+        | StmtKind::Break
+        | StmtKind::Continue
+        | StmtKind::Import(_) => {}
     }
 }
 

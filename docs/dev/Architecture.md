@@ -48,7 +48,8 @@ populates the trace buffer that the graph-level introspection reads. See
 | `backend/bytecode/` | Register VM: `isa` (instructions), `lower` (graph→bytecode), `vm/` (`dispatch.rs`, `calls.rs`, `frame.rs`, `intrinsics.rs`, `native.rs`), `disasm` (`show-bytecode`), `escape` (in-place analysis), `lastuse` |
 | `stack.rs` | `Stack` — execution context (VM frames, persistent state) |
 | `value.rs` | `Value` enum (runtime values) |
-| `heap.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, maps, elements |
+| `heap.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, maps, elements. A map slot also carries an optional **class tag** (an interned name), which is what makes a record an instance |
+| `classes.rs` | `ClassTable` — the compile-time registry of `class` declarations (fields, methods) and the built-in classes (`Rect`) |
 | `env/` | `Env` — owns programs, stacks, contexts: `run.rs`, `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `mod.rs` |
 | `execution_context.rs` | `ExecutionContext` — one isolated execution's mutable runtime bundle (heap + closure/output/host registries) |
 | `native_fn.rs` | Native function FFI (`NativeFnTable`, `PetalCxt`) |

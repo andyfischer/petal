@@ -30,6 +30,7 @@ Or run all examples with pass/fail reporting:
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |
 | `records.ptl` | Record manipulation | Record literals, field access, nested records |
 | `enums.ptl` | Enum types | Enum variants, associated data, pattern matching |
+| `classes.ptl` | Classes and methods | `class … end`, typed fields, `fn Class.method`, the built-in `Rect` |
 | `pattern_matching.ptl` | Match expressions | Guards, list destructuring, nested patterns |
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |
 | `state.ptl` | Persistent state | `state` keyword, counters, accumulators |

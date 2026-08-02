@@ -115,6 +115,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   color: "Color",
   vec2: "Vectors (2D)",
   collections: "Collections",
+  classes: "Built-in Classes",
   "higher-order": "Higher-Order Functions",
   std: "Core Prelude",
   autodiff: "Automatic Differentiation",
@@ -265,12 +266,30 @@ function moduleSource(module: string): string {
   return moduleSourceCache.get(module)!;
 }
 
+/**
+ * Built-in class constructors, registered by `builtins/classes.rs`'s own
+ * `register()` rather than inline in `register_builtins()`. Only the bare
+ * constructors are picked up: the class *methods* are registered under dotted
+ * names in a loop and are not callable as bare functions, so they belong in
+ * the language guide, not in the function manifest.
+ */
+function parseClassRegistrations(): Registration[] {
+  const src = moduleSource("classes");
+  const block = extractBlock(src, /pub\(super\) fn register\s*\(/);
+  const out: Registration[] = [];
+  const re = /table\.register\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/g;
+  for (let m; (m = re.exec(block)); ) {
+    out.push({ name: m[1], module: "classes", fnName: m[2], aliasComment: null });
+  }
+  return out;
+}
+
 function extractCore(): {
   functions: StdlibFunction[];
   categories: StdlibCategory[];
 } {
   const modSource = readFileSync(coreModRs, "utf8");
-  const regs = parseCoreRegistrations(modSource);
+  const regs = [...parseCoreRegistrations(modSource), ...parseClassRegistrations()];
 
   // Map each impl fn name to the registered Petal name(s), so an alias whose
   // comment says "alias for contains" can be linked even without parsing prose:

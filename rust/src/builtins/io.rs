@@ -2,6 +2,7 @@
 
 use crate::native_fn::PetalCxt;
 use crate::value;
+use crate::value::Value;
 
 pub(super) fn native_print(state: &mut PetalCxt) -> Result<u32, String> {
     let parts: Vec<String> = (1..=state.arg_count())
@@ -27,7 +28,18 @@ pub(super) fn native_str(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 1, "type")?;
     let v = state.get_value(1)?;
-    state.push_string(v.type_name().to_string());
+    // A class instance reports its class rather than the underlying `record`:
+    // the class name is the more specific true answer, and it is what a
+    // `type(x) == "Rect"` test wants. Untagged records still say "record".
+    let name = match v {
+        Value::Map(id) => state
+            .heap()
+            .map_class_name(id)
+            .unwrap_or_else(|| v.type_name())
+            .to_string(),
+        _ => v.type_name().to_string(),
+    };
+    state.push_string(name);
     Ok(1)
 }
 

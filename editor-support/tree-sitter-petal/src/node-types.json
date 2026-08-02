@@ -587,6 +587,10 @@
           "named": true
         },
         {
+          "type": "class_declaration",
+          "named": true
+        },
+        {
           "type": "color",
           "named": true
         },
@@ -806,6 +810,58 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "class_declaration",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "class_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "class_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_annotation",
             "named": true
           }
         ]
@@ -1218,6 +1274,16 @@
         "types": [
           {
             "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "class": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -3525,6 +3591,10 @@
           "named": true
         },
         {
+          "type": "class_declaration",
+          "named": true
+        },
+        {
           "type": "color",
           "named": true
         },
@@ -4383,6 +4453,10 @@
   {
     "type": "break_statement",
     "named": true
+  },
+  {
+    "type": "class",
+    "named": false
   },
   {
     "type": "color",

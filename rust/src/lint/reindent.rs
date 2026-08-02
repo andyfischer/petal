@@ -9,7 +9,7 @@ use crate::lexer::{Lexer, Token};
 /// their contents once, and their closers (`])`) realign with the opening
 /// line.
 ///
-/// Constructs and their closers: `end` closes fn/enum/if/for/while/match,
+/// Constructs and their closers: `end` closes fn/enum/class/if/for/while/match,
 /// block lambdas, and `when … do` arms; `)` `]` `}` close their delimiters;
 /// `</tag>` closes a JSX element's children. Closers just pop the innermost
 /// entry — lint runs on parseable source, so they always correspond.
@@ -180,6 +180,14 @@ pub fn reindent(source: &str) -> Result<String, String> {
                     }
                 }
                 Token::Match | Token::Enum => stack.push(indent + 1),
+                // `class Name … end` — contextual, so it arrives as an
+                // identifier; only the declaration form (a name follows) opens
+                // a block, never a variable or a JSX `class=` attribute.
+                Token::Ident(w) if w == crate::parse::CLASS_KEYWORD => {
+                    if matches!(tokens.get(k + 1), Some(Token::Ident(_))) {
+                        stack.push(indent + 1);
+                    }
+                }
                 Token::Fn => {
                     if fn_takes_end(tokens, k) {
                         stack.push(indent + 1);
@@ -325,6 +333,25 @@ mod tests {
         let src = "let f = fn(x)\nx * 2\nend\n";
         let out = reindent(src).unwrap();
         assert_eq!(out, "let f = fn(x)\n  x * 2\nend\n");
+    }
+
+    #[test]
+    fn class_fields_indent() {
+        let src = "class Point\nx: int\ny: int\nend\n";
+        assert_eq!(
+            reindent(src).unwrap(),
+            "class Point\n  x: int\n  y: int\nend\n"
+        );
+    }
+
+    /// `class` is contextual, so an ordinary use of the word must not open a
+    /// block — that would indent the rest of the file.
+    #[test]
+    fn a_bare_class_identifier_does_not_open_a_block() {
+        let src = "let class = 5\nprint(class)\n";
+        assert_eq!(reindent(src).unwrap(), src);
+        let jsx = "let e = <div class=\"card\">hi</div>\nprint(e)\n";
+        assert_eq!(reindent(jsx).unwrap(), jsx);
     }
 
     #[test]

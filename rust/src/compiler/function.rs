@@ -8,7 +8,17 @@ impl Compiler {
     /// with several arities) compile each variant under an internal
     /// "name#arity" and are joined into an overload set once all variants
     /// have been seen.
-    pub(super) fn compile_fn_decl(&mut self, name: &str, params: &[String], body: &[Stmt]) {
+    /// Returns the term the name is now bound to, or `None` when this was one
+    /// variant of an overload set that is not complete yet (the set's term
+    /// appears only once every arity has been compiled). Callers that need the
+    /// *callable value* — method registration — must use the returned term, not
+    /// the individual variant.
+    pub(super) fn compile_fn_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        body: &[Stmt],
+    ) -> Option<TermId> {
         let Some(&expected_count) = self.overloaded_fns.get(name) else {
             let closure_tid = self.compile_function(Some(name.to_string()), params, body);
             // Module functions carry a qualified display name ("ui::button")
@@ -17,7 +27,7 @@ impl Compiler {
             // binding stays bare — in-module references are unqualified.
             self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
             self.scope_bind(name.to_string(), closure_tid);
-            return;
+            return Some(closure_tid);
         };
 
         // Overloaded function: compile with internal name "name#arity"
@@ -39,7 +49,78 @@ impl Compiler {
                 Some(self.qualified_name(name)),
             );
             self.scope_bind(name.to_string(), set_tid);
+            return Some(set_tid);
         }
+        None
+    }
+
+    /// `class Name` compiles to a constructor function taking one parameter per
+    /// declared field, in order, and allocating the record tagged with the
+    /// class name. Deliberately the same shape as an enum variant's
+    /// constructor ([`Compiler::compile_enum_constructor`]) — a class is a
+    /// named product type, and `Point(1, 2)` is an ordinary call.
+    ///
+    /// Built-in classes take the other road: their constructors are natives
+    /// (`crate::builtins::classes`), so a program that never mentions `Rect`
+    /// pays nothing for it.
+    pub(super) fn compile_class_constructor(
+        &mut self,
+        name: &str,
+        fields: &[ClassFieldDecl],
+    ) -> TermId {
+        let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+        let (body_block, saved_block) = self.begin_function_scope(&field_names);
+
+        let inputs: SmallVec<[TermId; 4]> = field_names
+            .iter()
+            .map(|f| self.scope_lookup(f).expect("constructor parameter"))
+            .collect();
+        let keys: Vec<ConstantId> = field_names
+            .iter()
+            .map(|f| self.constants.intern(ConstantValue::String(f.clone())))
+            .collect();
+        let class_const = self
+            .constants
+            .intern(ConstantValue::String(name.to_string()));
+        self.emit_term(
+            TermOp::AllocMap {
+                fields: keys,
+                class: Some(class_const),
+            },
+            inputs,
+            None,
+        );
+
+        self.end_function_scope(
+            Some(name.to_string()),
+            &field_names,
+            body_block,
+            saved_block,
+            None,
+        )
+    }
+
+    /// Emit the root-block statement that publishes `fn Class.method` into the
+    /// VM's per-run method table, which is what `value.method(...)` consults.
+    /// A builtin call rather than an instruction of its own: registration is a
+    /// side effect on runtime state, exactly what the native boundary is for.
+    pub(super) fn emit_declare_method(&mut self, class: &str, method: &str, func: TermId) {
+        let class_c = self
+            .constants
+            .intern(ConstantValue::String(class.to_string()));
+        let method_c = self
+            .constants
+            .intern(ConstantValue::String(method.to_string()));
+        let class_tid = self.emit_term(TermOp::Constant(class_c), smallvec![], None);
+        let method_tid = self.emit_term(TermOp::Constant(method_c), smallvec![], None);
+        let name_c = self
+            .constants
+            .intern(ConstantValue::String(DECLARE_METHOD_BUILTIN.to_string()));
+        self.emit_term(
+            TermOp::BuiltinCall(name_c),
+            smallvec![class_tid, method_tid, func],
+            None,
+        );
     }
 
     pub(super) fn compile_function(

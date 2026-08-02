@@ -78,8 +78,11 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let mut notes = Vec::new();
     let chars: Vec<char> = source.chars().collect();
 
-    let signatures = crate::compiler::collect_fn_signatures(&stmts);
-    let found = crate::typecheck::find_redundant_casts(&stmts, &signatures);
+    // Lint sees no `class` declarations of its own: identity-cast detection
+    // never consults one, and the built-in table is what resolves `Rect`.
+    let classes = crate::classes::ClassTable::new();
+    let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
+    let found = crate::typecheck::find_redundant_casts(&stmts, &signatures, &classes);
     let edits = plan_cast_edits(&found, &chars);
     let casts_removed = edits.len();
     let rewritten = if edits.is_empty() {

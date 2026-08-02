@@ -3,6 +3,13 @@ use crate::cst::{Checkpoint, Event, EventBuilder, SyntaxKind};
 use crate::lexer::Token;
 use crate::source_map::{SourceSpan, ZERO_SPAN};
 
+/// The word that opens a `class` declaration. Contextual rather than a
+/// reserved keyword: making it a hard keyword would break `class` as an
+/// ordinary identifier and, more sharply, the JSX attribute `<div class="x">`.
+/// Listed in [`crate::lexer::CONTEXTUAL_KEYWORDS`] so editor tooling still
+/// highlights it.
+pub const CLASS_KEYWORD: &str = "class";
+
 pub struct Parser {
     tokens: Vec<Token>,
     token_spans: Vec<SourceSpan>,
@@ -236,6 +243,12 @@ impl Parser {
             }
             Token::State => self.parse_state(start, false),
             Token::Enum => self.parse_enum_decl(start, false),
+            // `class` is contextual, not a reserved word: it stays usable as an
+            // identifier (and, crucially, as the JSX attribute `class="..."`).
+            // A declaration is the only place `class` is followed by a name.
+            Token::Ident(ref w) if w == CLASS_KEYWORD && self.starts_class_decl() => {
+                self.parse_class_decl(start, false)
+            }
             Token::Import => self.parse_import(start),
             Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
@@ -254,8 +267,9 @@ impl Parser {
             Some(Token::Var) => self.parse_let(start, true, true),
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
+            Some(Token::Ident(w)) if w == CLASS_KEYWORD => self.parse_class_decl(start, true),
             _ => Err(self.error_at_current(
-                "`export` must be followed by a fn, let, var, state, or enum declaration"
+                "`export` must be followed by a fn, let, var, state, enum, or class declaration"
                     .to_string(),
             )),
         }
@@ -417,7 +431,20 @@ impl Parser {
             self.advance(); // consume 'export'
         }
         self.advance(); // consume 'fn'
-        let name = self.expect_ident()?;
+        // `fn Rect.center_x(…)` declares a method: the name before the dot is
+        // the receiver's class, and the binding is the qualified name. A dot is
+        // otherwise impossible here, so no lookahead beyond one token.
+        let first = self.expect_ident()?;
+        let (class, name) = if matches!(self.peek(), Token::Dot) {
+            self.advance(); // consume '.'
+            let method = self.expect_ident()?;
+            (
+                Some(first.clone()),
+                crate::classes::qualified_method_name(&first, &method),
+            )
+        } else {
+            (None, first)
+        };
         self.ev_open(SyntaxKind::ParamList);
         self.expect(&Token::LParen)?;
         let params = self.parse_param_list()?;
@@ -431,12 +458,67 @@ impl Parser {
         let mut stmt = self.mk_stmt(
             StmtKind::FnDecl {
                 name,
+                class,
                 params,
                 ret,
                 body,
             },
             start,
         );
+        stmt.exported = exported;
+        Ok(stmt)
+    }
+
+    /// Whether the `class` identifier at the cursor opens a declaration —
+    /// i.e. the next token is a name. `class` alone (a variable called `class`,
+    /// a JSX `class=` attribute, `class.foo`) is left to expression parsing.
+    fn starts_class_decl(&self) -> bool {
+        matches!(self.tokens.get(self.pos + 1), Some(Token::Ident(_)))
+    }
+
+    /// `class Name` … `end`, one `field: type` per line. Field annotations are
+    /// optional and follow the same grammar as a parameter's, so an
+    /// un-annotated field is `any`. Commas between fields are accepted but not
+    /// required — a newline separates them, as in an `enum` body.
+    fn parse_class_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::ClassDecl);
+        if exported {
+            self.advance(); // consume 'export'
+        }
+        self.advance(); // consume the contextual `class`
+        let name = self.expect_ident()?;
+        self.skip_newlines();
+        let mut fields: Vec<ClassFieldDecl> = Vec::new();
+        while !matches!(self.peek(), Token::End | Token::Eof) {
+            self.ev_open(SyntaxKind::ClassField);
+            let field_name = self.expect_ident()?;
+            let ty = self.parse_type_annotation()?;
+            self.ev_close(); // ClassField
+            fields.push(ClassFieldDecl {
+                name: field_name,
+                ty,
+            });
+            // One field per line is the canonical form, so a newline separates
+            // them; a comma is accepted for a one-line class. (Unlike every
+            // delimited *list* in the language, which now requires commas — a
+            // class body is a block of declarations, not a list.)
+            match self.peek() {
+                Token::Comma => {
+                    self.advance();
+                    self.skip_newlines();
+                }
+                Token::Newline => self.skip_newlines(),
+                Token::End | Token::Eof => {}
+                _ => {
+                    return Err(self.error_at_current(
+                        "Expected a newline or ',' between class fields".to_string(),
+                    ));
+                }
+            }
+        }
+        self.expect(&Token::End)?;
+        self.ev_close(); // ClassDecl
+        let mut stmt = self.mk_stmt(StmtKind::ClassDecl { name, fields }, start);
         stmt.exported = exported;
         Ok(stmt)
     }

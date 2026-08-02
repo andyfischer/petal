@@ -1,0 +1,15 @@
+// A module that declares a class and extends a built-in one. Classes and
+// methods are program-wide: the *type* and the method table span the whole
+// compilation, while `export` governs who may call the constructor.
+
+export class Circle
+  radius: int
+end
+
+fn Circle.area(c: Circle) -> int
+  3 * c.radius * c.radius
+end
+
+export fn Rect.area(r: Rect) -> int
+  r.w * r.h
+end

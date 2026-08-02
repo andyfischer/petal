@@ -55,13 +55,35 @@ impl Compiler {
             }
 
             StmtKind::FnDecl {
-                name, params, body, ..
+                name,
+                class,
+                params,
+                body,
+                ..
             } => {
                 // Declared parameter types are not yet used at compile time
                 // (checking lands in a later chunk); the compiler only needs the
                 // names.
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-                self.compile_fn_decl(name, &param_names, body);
+                let bound = self.compile_fn_decl(name, &param_names, body);
+                // A method also has to be *findable* by the receiver's class at
+                // a `r.center_x()` call site, where the name in scope is not
+                // consulted at all. Registration is a statement in the root
+                // block, so it happens in source order exactly as the binding
+                // does — a method, like a function, is callable from the point
+                // its declaration runs.
+                if let (Some(class), Some(tid)) = (class, bound) {
+                    let method = crate::compiler::method_base_name(&stmt.kind).to_string();
+                    self.emit_declare_method(class, &method, tid);
+                }
+            }
+
+            StmtKind::ClassDecl { name, fields } => {
+                // The class name binds to its constructor: `Point(1, 2)` is an
+                // ordinary call. Fields become the positional parameters, in
+                // declaration order.
+                let ctor = self.compile_class_constructor(name, fields);
+                self.scope_bind(name.clone(), ctor);
             }
 
             StmtKind::EnumDecl { name: _, variants } => {

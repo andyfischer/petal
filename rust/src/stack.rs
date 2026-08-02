@@ -56,6 +56,16 @@ pub struct Stack {
     /// program. Refreshed each time the root frame completes; cleared on hot
     /// reload since the underlying closure IDs are invalidated.
     pub functions: HashMap<String, Value>,
+    /// User-declared methods, indexed `class name -> method name -> callable`.
+    /// Populated as the root block runs: a `fn Rect.area(...)` declaration
+    /// compiles to a closure plus a `__declare_method` builtin call that lands
+    /// the closure here, so a method — like a function — is callable from the
+    /// point its declaration runs. Consulted by `recv.method(...)` dispatch
+    /// after a callable record field and before the built-in class methods.
+    ///
+    /// Rebuilt by every run (the declarations re-execute), and cleared with
+    /// `functions` on hot reload, whose new program invalidates the closure ids.
+    pub methods: HashMap<String, HashMap<String, Value>>,
     /// Activation records for the bytecode VM. Stored on the stack (not on the
     /// VM, which is rebuilt per step) so execution state survives across steps
     /// and is reachable as GC roots.
@@ -90,6 +100,7 @@ impl Stack {
             last_pop_result: None,
             touched_state_keys: HashSet::new(),
             functions: HashMap::new(),
+            methods: HashMap::new(),
             vm_frames: Vec::new(),
             vm_started: false,
             vm_frame_pool: Vec::new(),

@@ -56,6 +56,7 @@ impl Env {
             // The old captured closures point into the now-cleared closures
             // vec; they get recaptured on the next run.
             stack.functions.clear();
+            stack.methods.clear();
         }
         // `reset_execution` cleared `vm_started`, so the VM re-pushes its root
         // frame (against the new program's lowering) on the next run.

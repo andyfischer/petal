@@ -150,6 +150,7 @@ impl Walker {
                 }
             }
             StmtKind::EnumDecl { .. }
+            | StmtKind::ClassDecl { .. }
             | StmtKind::Break
             | StmtKind::Continue
             | StmtKind::Import(_) => {}

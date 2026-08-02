@@ -5,6 +5,7 @@
 pub mod ast;
 pub mod backend;
 pub mod builtins;
+pub mod classes;
 pub mod cli;
 pub mod compiler;
 pub mod constant_table;

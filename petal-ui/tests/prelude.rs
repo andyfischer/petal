@@ -1209,3 +1209,51 @@ fn ellipsize_fits_the_pixel_budget_and_terminates() {
         assert!(uni.ends_with('…') && uni.is_char_boundary(uni.len() - '…'.len_utf8()));
     });
 }
+
+/// `rect()` builds the built-in `Rect` class, not a bare record: the geometry
+/// methods work on anything the prelude hands back, and `type()` says so. The
+/// record shape is unchanged, which is what keeps every hand-written
+/// `{x, y, w, h}` and every `r.x` read in existing apps working.
+#[test]
+fn rect_constructs_the_builtin_class() {
+    let src = "state kind = \"\"\n\
+               state cx = 0\n\
+               state right = 0\n\
+               state inset_w = 0\n\
+               let r = rect(10, 20, 100, 40)\n\
+               kind = type(r)\n\
+               cx = r.center_x()\n\
+               right = r.right()\n\
+               inset_w = r.inset(5).w";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_string("kind").as_deref(), Some("Rect"));
+        assert_eq!(ui.state_int("cx"), Some(60));
+        assert_eq!(ui.state_int("right"), Some(110));
+        assert_eq!(ui.state_int("inset_w"), Some(90));
+    });
+}
+
+/// The record-arg draw overloads keep taking a `rect()` result — the class tag
+/// changes nothing about field access, which is all they use.
+#[test]
+fn draw_overloads_still_accept_a_rect() {
+    let src = "draw_rect(rect(4, 6, 20, 10), {r: 10, g: 20, b: 30})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            matches!(
+                cmds[0],
+                DrawCommand::Rect {
+                    x: 4,
+                    y: 6,
+                    w: 20,
+                    h: 10,
+                    ..
+                }
+            ),
+            "unexpected command: {:?}",
+            cmds[0]
+        );
+    });
+}

@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-02 (audit pass: `state` annotations, tree-sitter, docs) · Branch: `main`
+Last updated: 2026-08-02 (chunk K: class names are type names) · Branch: `main`
 
 ---
 
@@ -37,6 +37,7 @@ Last updated: 2026-08-02 (audit pass: `state` annotations, tree-sitter, docs) ·
 | H — `state` annotations | ✅ done | (audit) | `state x: t = …` in all three spellings; checked like a `var` cell |
 | I — editor support | ✅ done | (audit) | tree-sitter models `type_annotation`/`return_type`/`parameter`; vim `petalType` |
 | J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
+| K — class names as types | ✅ done | (classes) | `Type::Class(ClassId)` + `Type::resolve`; `fn f(r: Rect)` checks, field reads are typed |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -69,14 +70,19 @@ The runtime is untouched — annotations are stripped to names for codegen.
 
 ### Type representation — `rust/src/types.rs`
 - `pub enum Type { Any, Nil, Bool, Int, Float, String, List, Record, Function,
-  Enum, Vec2, F64Array, Element, Symbol, Dual, Handle, Pending }`
+  Enum, Vec2, F64Array, Element, Symbol, Dual, Handle, Pending, Class(ClassId) }`
   (derives `Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize`).
 - `Type::from_name(&str) -> Option<Type>` — lowercase vocab + `str` alias;
-  unknown ⇒ `None`.
+  unknown ⇒ `None`. A **class name is `None` here**: resolving one needs the
+  compilation's `ClassTable`, so use `Type::resolve(name, classes)` (chunk K),
+  which is what the checker and `collect_fn_signatures` call.
 - `Type::name(&self) -> &'static str` — canonical spelling, == `Value::type_name`
-  for concretes, `"any"` for `Any`.
+  for concretes, `"any"` for `Any`, `"class"` for `Class` (which has no static
+  spelling). Diagnostics use `Type::display(&ClassTable) -> Cow<str>`, which
+  prints the class's real name.
 - `Type::is_assignable_to(&self, &Type) -> bool` — `Any` both ways; `Int`→`Float`
-  yes, `Float`→`Int` no; else equality.
+  yes, `Float`→`Int` no; `Class(_)`→`Record` yes (an instance *is* a record) but
+  not the reverse; else equality.
 - `pub struct FnSignature { params: Vec<Option<Type>>, ret: Option<Type> }` —
   a function's declared signature (resolved types only). Compile-time; not in IR.
 
@@ -211,6 +217,16 @@ binding's initializer describes every later read.
   bare type instead of a misleading downstream one (audit chunk J).
 - **Per-file `// @strict` pragma** to opt individual files into error-level
   enforcement (plan §12 Q3).
+- **Method return types in inference.** A `r.center_x()` call infers `any`, even
+  when the receiver's class is known and the method has a declared return type.
+  Deliberately conservative for now (a callable field of the same name would
+  make the inferred type wrong); the class table would need the method's
+  signature, not just its arity, to do better.
+- **Compile-time unknown-method warnings.** Calling a method a class does not
+  have is a *runtime* error (`No method 'nope' on class Rect`). A check-time
+  warning was considered and dropped: dispatch also reaches every global native,
+  including ones an embedder registers that the checker cannot see, so the
+  warning would fire on working code — the one outcome this pass avoids.
 - **Enum variant field annotations** (`Circle(radius: float)`) — the shared
   param parser already *parses* these; `EnumVariant.fields` is `Vec<String>`, so
   the types are dropped. Keeping them is the remaining work (plan §12 Q4).

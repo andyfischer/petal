@@ -229,9 +229,14 @@ impl<'a> Vm<'a> {
                 let v = ops::alloc_list(self.heap, &vals);
                 self.set(fi, *dst, v);
             }
-            Inst::AllocMap { dst, fields, vals } => {
+            Inst::AllocMap {
+                dst,
+                fields,
+                vals,
+                class,
+            } => {
                 let inputs = self.regs(fi, vals);
-                let v = ops::alloc_map(self.program, self.heap, fields, &inputs)?;
+                let v = ops::alloc_map(self.program, self.heap, fields, &inputs, *class)?;
                 self.set(fi, *dst, v);
             }
             Inst::AllocMapSpread { dst, entries, ins } => {

@@ -33,6 +33,14 @@ impl<'a> Vm<'a> {
             Some(id) => id,
             None => return Err(format!("Unknown builtin: {}", name)),
         };
+        // `__declare_method` publishes a method into the running stack, which
+        // is state no native can reach through `PetalCxt` — so it is handled
+        // here rather than dispatched. The compiler is its only caller.
+        if self.native_fns.intrinsic_declare_method == Some(nid) {
+            let v = self.declare_method(args)?;
+            self.set(fi, dst, v);
+            return Ok(());
+        }
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
         // in-place flag only reaches `call_native_fn`.
         let v = if in_place {
@@ -107,6 +115,25 @@ impl<'a> Vm<'a> {
         } else {
             self.call_native_fn(nid, args, origin)
         }
+    }
+
+    /// Record `fn Class.method` in the stack's per-run method table.
+    /// `args` is `[class name, method name, callable]`, all emitted by the
+    /// compiler — a malformed call can only come from hand-written IR.
+    fn declare_method(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [Value::String(class), Value::String(method), func] = args else {
+            return Err(
+                "internal error: __declare_method expects (class, method, function)".into(),
+            );
+        };
+        let class = self.heap.get_string(*class).to_string();
+        let method = self.heap.get_string(*method).to_string();
+        self.stack
+            .methods
+            .entry(class)
+            .or_default()
+            .insert(method, *func);
+        Ok(Value::Nil)
     }
 
     /// Call a non-intrinsic native function via `PetalCxt` (clone-and-alloc).

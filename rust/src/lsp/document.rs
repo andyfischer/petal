@@ -230,6 +230,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
             params,
             body,
             ret,
+            ..
         } => {
             let param_list = params
                 .iter()
@@ -381,5 +382,5 @@ fn is_ident_char(c: char) -> bool {
 pub const KEYWORDS: &[&str] = &[
     "let", "var", "set", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do", "while",
     "match", "when", "return", "break", "continue", "state", "import", "export", "as", "true",
-    "false", "nil", "enum",
+    "false", "nil", "enum", "class",
 ];

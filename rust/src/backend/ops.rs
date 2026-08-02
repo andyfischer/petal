@@ -391,6 +391,7 @@ pub fn alloc_map(
     heap: &mut Heap,
     fields: &[ConstantId],
     inputs: &[Value],
+    class: Option<ConstantId>,
 ) -> Result<Value, String> {
     let mut map = IndexMap::new();
     for (i, field_cid) in fields.iter().enumerate() {
@@ -399,7 +400,13 @@ pub fn alloc_map(
             map.insert(key.to_string(), val);
         }
     }
-    Ok(Value::Map(heap.alloc_map(map)))
+    // A class instance is the same entry table plus a tag naming its class;
+    // the name is interned so every instance shares one heap string.
+    let Some(class) = class.and_then(|c| program.get_string_constant(c)) else {
+        return Ok(Value::Map(heap.alloc_map(map)));
+    };
+    let tag = heap.alloc_string(class.to_string());
+    Ok(Value::Map(heap.alloc_class_instance(map, tag)))
 }
 
 /// `{ ...spread, field: val }` — entries are applied in order.

@@ -171,13 +171,26 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             None => "return".to_string(),
         },
         AllocList { dst, elems } => format!("r{} = list {}", dst, reglist(elems)),
-        AllocMap { dst, fields, vals } => {
+        AllocMap {
+            dst,
+            fields,
+            vals,
+            class,
+        } => {
             let pairs: Vec<String> = fields
                 .iter()
                 .zip(vals.iter())
                 .map(|(f, v)| format!("{}: r{}", kconst(program, *f), v))
                 .collect();
-            format!("r{} = map {{{}}}", dst, pairs.join(", "))
+            match class {
+                Some(c) => format!(
+                    "r{} = {} {{{}}}",
+                    dst,
+                    kconst(program, *c),
+                    pairs.join(", ")
+                ),
+                None => format!("r{} = map {{{}}}", dst, pairs.join(", ")),
+            }
         }
         AllocMapSpread { dst, ins, .. } => format!("r{} = map_spread {}", dst, reglist(ins)),
         AllocElement { dst, tag, ins, .. } => {

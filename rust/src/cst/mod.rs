@@ -71,6 +71,8 @@ pub enum SyntaxKind {
     ExprStmt,
     FnDecl,
     EnumDecl,
+    /// `class Name … end` — a named record type declaration.
+    ClassDecl,
     ForStmt,
     WhileStmt,
     ReturnStmt,
@@ -121,6 +123,8 @@ pub enum SyntaxKind {
     Pattern,
     /// One field of a record literal (`key: value` or `...spread`).
     RecordField,
+    /// One `name: type` field of a [`SyntaxKind::ClassDecl`].
+    ClassField,
     /// An `elsif …` / `else …` tail of an if-expression.
     ElseBranch,
     /// One `name="value"` / `name={expr}` attribute of a JSX element.

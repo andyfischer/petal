@@ -52,10 +52,20 @@ end
 ```
 
 `export` goes immediately before the declaration keyword: `export fn`,
-`export let`, `export state`, `export var`, `export enum`. An `export enum`
-exports the enum's variants. `export` is only meaningful at a module's top level
-— it has no effect in the entry file (nothing imports the entry) or on nested
-statements.
+`export let`, `export state`, `export var`, `export enum`, `export class`. An
+`export enum` exports the enum's variants; an `export class` exports its
+constructor. `export` is only meaningful at a module's top level — it has no
+effect in the entry file (nothing imports the entry) or on nested statements.
+
+### Classes and methods are program-wide
+
+A [class](language-guide.md#classes--methods) is a compile-time *type* and a
+runtime dispatch table, and both span the whole compilation rather than one
+file. So a module may declare `fn Rect.area(r: Rect)` and an importer's rects
+gain that method; an importer may extend a class it imported; and a class name
+is usable in type position anywhere. What `export` controls is only the
+constructor *name* — an unexported `class Circle` is a type every file can
+annotate with, but only its own module can call `Circle(…)` to build one.
 
 ### An exported `var` is read-only to importers
 

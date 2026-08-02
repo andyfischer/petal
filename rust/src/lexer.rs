@@ -111,9 +111,12 @@ pub const KEYWORDS: &[&str] = &[
 /// Words the parser treats as keywords but the lexer emits as `Ident`.
 ///
 /// `as` is only a keyword directly after the module name in an `import`, so it
-/// stays usable as an ordinary identifier everywhere else. Downstream tooling
-/// (highlighting, completion) should still treat these as keywords.
-pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as"];
+/// stays usable as an ordinary identifier everywhere else. `class` opens a
+/// declaration only when a name follows it, which keeps it usable as an
+/// ordinary identifier and — the sharper constraint — as the JSX attribute
+/// `<div class="…">`. Downstream tooling (highlighting, completion) should
+/// still treat these as keywords.
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class"];
 
 /// Map an identifier-shaped word to its keyword token, or `None` if it is an
 /// ordinary identifier.

@@ -53,6 +53,15 @@ pub struct NativeFnTable {
     pub intrinsic_filter: Option<NativeFnId>,
     pub intrinsic_reduce: Option<NativeFnId>,
     pub intrinsic_for_each: Option<NativeFnId>,
+    /// `__declare_method`, which the VM intercepts instead of calling: it
+    /// publishes a user-declared `fn Class.method` into the running stack's
+    /// method table, which no native can reach through [`PetalCxt`].
+    pub intrinsic_declare_method: Option<NativeFnId>,
+    /// Built-in class methods, indexed `class -> method -> native`. The same
+    /// natives are in `entries` under their qualified names (`Rect.inset`);
+    /// this index exists so method dispatch is a two-hop lookup on borrowed
+    /// `&str`s rather than a formatted name per call.
+    class_methods: HashMap<String, HashMap<String, NativeFnId>>,
 }
 
 impl NativeFnTable {
@@ -63,7 +72,23 @@ impl NativeFnTable {
             intrinsic_filter: None,
             intrinsic_reduce: None,
             intrinsic_for_each: None,
+            intrinsic_declare_method: None,
+            class_methods: HashMap::new(),
         }
+    }
+
+    /// Index an already-registered native as the built-in implementation of
+    /// `class.method`. See [`NativeFnTable::class_methods`].
+    pub fn register_class_method(&mut self, class: &str, method: &str, id: NativeFnId) {
+        self.class_methods
+            .entry(class.to_string())
+            .or_default()
+            .insert(method.to_string(), id);
+    }
+
+    /// The built-in native implementing `class.method`, if any.
+    pub fn lookup_class_method(&self, class: &str, method: &str) -> Option<NativeFnId> {
+        self.class_methods.get(class)?.get(method).copied()
     }
 
     /// Register a native function, returning its ID.

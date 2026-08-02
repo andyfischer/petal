@@ -1,0 +1,14 @@
+import shapes: Circle
+
+// A method declared in the module dispatches here, on a built-in class...
+print(Rect(0, 0, 10, 4).area())
+
+// ...and on the module's own class, constructed through its exported name.
+let c = Circle(2)
+print(type(c), c.area())
+
+// The importer may extend an imported class too.
+fn Circle.diameter(c: Circle) -> int
+  2 * c.radius
+end
+print(c.diameter())

@@ -167,9 +167,12 @@ fn format_op(op: &TermOp) -> String {
         TermOp::CellRead => "CellRead".into(),
         TermOp::CellWrite => "CellWrite".into(),
         TermOp::AllocList => "AllocList".into(),
-        TermOp::AllocMap { fields } => {
+        TermOp::AllocMap { fields, class } => {
             let ids: Vec<String> = fields.iter().map(|c| format!("c{}", c.0)).collect();
-            format!("AllocMap({})", ids.join(", "))
+            match class {
+                Some(c) => format!("AllocMap[c{}]({})", c.0, ids.join(", ")),
+                None => format!("AllocMap({})", ids.join(", ")),
+            }
         }
         TermOp::AllocMapSpread { entries } => {
             let parts: Vec<String> = entries

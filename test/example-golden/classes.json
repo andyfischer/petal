@@ -1,0 +1,6 @@
+{
+  "example": "classes.ptl",
+  "status": 0,
+  "stdout": "3 4\nPoint\n25\n745\n(3, 4)\n50 20\n100 40\n{ x: 5, y: 5, w: 90, h: 30 }\n110\n4000\n1600\n[\"x\", \"y\", \"w\", \"h\"]\nrecord\n",
+  "stderr": ""
+}

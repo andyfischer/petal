@@ -131,8 +131,10 @@ Petal has the following value types:
 | `record` | `{name: "Alice", age: 30}` |
 | `color` | `#ff8800`, `#f80` (desugars to record) |
 | `enum` | `Some(42)`, `None` |
+| a class | `Rect(0, 0, 8, 8)` (a record tagged with its [class](#classes--methods)) |
 
-Use `type(value)` to get the type name as a string at runtime.
+Use `type(value)` to get the type name as a string at runtime. For a class
+instance that is the class's own name (`"Rect"`), not `"record"`.
 
 ## Type Annotations
 
@@ -190,6 +192,9 @@ lowercase: `any`, `nil`, `bool`, `int`, `float`, `string` (alias `str`), `list`,
 `record`, `function`, `enum`, `vec2`, `f64_array`, `element`, `symbol`, `dual`,
 `handle`, `pending`. They are recognized only in type position, so `int`,
 `float`, and `str` remain callable as the cast builtins everywhere else.
+
+The name of any [class](#classes--methods) — declared or built in — is a type
+name too, and is recognized wherever it is declared in the file.
 
 A type is a single bare name. There are no parameterized types (`list<int>`),
 arrow types, structural record types, or user-defined aliases — `list` and
@@ -520,6 +525,9 @@ let alice = {name: "Alice"}
 alice.greet()  // same as greet(alice)
 ```
 
+This is the last of four things `value.name(...)` can resolve to; a callable
+record field and a [class's methods](#resolution-order) are tried first.
+
 ### Rebind Operator
 
 Prefixing a call argument with `@` assigns the call's result back to that
@@ -704,6 +712,143 @@ end
 let c = Red
 let pink = Custom(255, 192, 203)
 ```
+
+## Classes & Methods
+
+A `class` declares a **named record type**: fields with optional types, and a
+constructor bound to the class's name.
+
+```petal
+class Rect
+  x: int
+  y: int
+  w: int
+  h: int
+end
+
+let r = Rect(0, 0, 100, 40)
+print(r.x)        // 0 — field access, exactly as on a record
+print(type(r))    // "Rect"
+```
+
+One field per line; a comma between them is optional (a class body is a block of
+declarations, not a list, so it does not follow the
+[comma rule](syntax/commas.md)). Field annotations use the same grammar as a
+parameter's, and an un-annotated field is `any`.
+
+An instance **is a record** — it carries a tag naming its class, and nothing
+else changes. `keys(r)`, `values(r)`, `r.x`, `r.x = 5` and printing all behave
+as they do for `{x: …, y: …}`, and any function that takes a plain rect-shaped
+record accepts one. Values stay immutable: `r.x = 5` produces a *new* instance
+(still a `Rect`) rather than mutating this one. A spread, though, builds a plain
+record — `{...r, label: "hi"}` is no longer that class's shape, so it loses the
+tag.
+
+### The class name as a type
+
+The name works in every type position ([Type Annotations](#type-annotations)),
+and checking follows the same warning-only rules:
+
+```petal
+fn center_x(r: Rect) -> int
+  r.x + r.w / 2
+end
+
+center_x("nope")   // warning: argument 1 to `center_x`: expected `Rect`, found `string`
+```
+
+A field read is typed by its declaration, so `Rect(0, 0, 4, 2).w` is an `int`.
+Two classes are never interchangeable, however alike their fields. An instance
+*is* assignable to a `record` slot; a plain record is not assignable to a class
+slot.
+
+### Methods
+
+`fn <Class>.<name>(receiver, ...)` declares a method. The receiver is an
+ordinary first parameter — the call site supplies it:
+
+```petal
+fn Rect.center_x(rect: Rect) -> int
+  rect.x + rect.w / 2
+end
+
+fn Rect.shifted(rect: Rect, dx: int, dy: int) -> Rect
+  Rect(rect.x + dx, rect.y + dy, rect.w, rect.h)
+end
+
+let r = Rect(0, 0, 100, 40)
+print(r.center_x())            // 50
+print(r.shifted(10, 0).center_x())   // 60
+```
+
+Methods may be declared on your own classes and on the built-in ones alike.
+Like a function, a method becomes callable when its declaration runs, so declare
+it before the top-level code that calls it. Two methods may share a name on one
+class only if their arities differ (the same rule as
+[function overloading](function-overloading.md)); the same name on *different*
+classes is entirely independent.
+
+### Resolution order
+
+`value.name(args...)` tries, in order, and takes the first match:
+
+1. **A callable record field** — `r.f()` where `f` is a field holding a
+   function. Data beats declarations, and an instance is a record.
+2. **A user-declared method** for the receiver's class — `fn Rect.area(...)`.
+3. **A built-in method** of that class — `Rect.center_x` and friends. A user
+   declaration therefore overrides a built-in method of the same name.
+4. **A global builtin**, with the receiver passed as its first argument — this
+   is the [method syntax](#method-syntax) that makes `[1,2,3].len()` work.
+
+Calling something none of these resolve reports the class by name:
+`No method 'nope' on class Rect`.
+
+### The built-in `Rect`
+
+`Rect` is built into the language — no declaration and no import. Writing
+`class Rect … end` yourself is allowed and *replaces* it for that program, the
+same way a user binding shadows a builtin anywhere else. Its fields are
+`x`, `y`, `w`, `h`, and it carries the geometry that layout code otherwise
+rewrites by hand. See [Builtins.md](Builtins.md#built-in-classes) for the
+methods.
+
+```petal
+let card = Rect(0, 0, 100, 40)
+card.center_x()        // 50
+card.right()           // 100  (x + w)
+card.inset(5)          // Rect(5, 5, 90, 30)
+card.offset(10, 10)    // Rect(10, 10, 100, 40)
+```
+
+In `petal-ui`, `rect(x, y, w, h)` builds one of these, so every rect an app
+already passes around gains the methods.
+
+### Classes across files
+
+A class is a compile-time type and a runtime dispatch table, and both span the
+whole program rather than one file. A module can declare `fn Rect.area(…)` and
+every file's rects gain it; a file can extend a class it imported. `export`
+governs only the constructor *name*, like any other binding — see the
+[Module System](module-system.md#classes-and-methods-are-program-wide).
+
+### Errors
+
+These are hard compile errors, not warnings — there is no reasonable code to
+generate for any of them:
+
+| Mistake | Message |
+|---------|---------|
+| `class Point` twice | `class \`Point\` is already declared` |
+| two fields named `x` | `duplicate field \`x\` in class \`Point\`` |
+| `fn Nope.thing(...)` | `cannot declare a method on \`Nope\`: no class of that name` |
+| two `fn Point.f(p)` | `method \`Point.f\` is already declared with 1 parameter` |
+
+### Not supported
+
+There is no inheritance, no `self`/`this` (the receiver is a named parameter),
+no private fields, no static methods, no constructor body, and no
+`Rect{x: 0, …}` literal form — construct with the positional call. Classes are
+a naming and dispatch feature over records, not an object system.
 
 ## Pattern Matching
 

@@ -66,6 +66,7 @@ module.exports = grammar({
       $.state_declaration,
       $.function_declaration,
       $.enum_declaration,
+      $.class_declaration,
       $.for_statement,
       $.while_statement,
       $.return_statement,
@@ -128,9 +129,12 @@ module.exports = grammar({
       field('value', $._expression),
     ),
 
+    // `fn name(...)` or the method form `fn Class.name(...)`, whose receiver
+    // class is the name before the dot (rust/src/parse.rs `parse_fn_decl`).
     function_declaration: $ => seq(
       optional('export'),
       'fn',
+      optional(seq(field('class', $.identifier), '.')),
       field('name', $.identifier),
       field('parameters', $.parameter_list),
       optional(field('return_type', $.return_type)),
@@ -154,6 +158,22 @@ module.exports = grammar({
     parameter_list: $ => seq('(', commaSep($.parameter), ')'),
 
     parameter: $ => seq(
+      field('name', $.identifier),
+      optional(field('type', $.type_annotation)),
+    ),
+
+    // `class Name` … `end`, one `field: type` per line. `class` is a
+    // *contextual* keyword in the real lexer (it stays usable as an identifier
+    // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
+    // can treat it as a literal.
+    class_declaration: $ => seq(
+      'class',
+      field('name', $.identifier),
+      repeat(seq($.class_field, optional(','))),
+      'end',
+    ),
+
+    class_field: $ => seq(
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
     ),

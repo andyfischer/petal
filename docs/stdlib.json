@@ -51,6 +51,12 @@
       "doc": "List and record manipulation: range, len, push, append, pop, keys, values, contains, sort, reverse, join, split, enumerate, zip, slice, flat."
     },
     {
+      "id": "classes",
+      "title": "Built-in Classes",
+      "group": "core",
+      "doc": "The built-in classes: constructors and methods implemented in Rust.  Petal has no source-level prelude, so a class that every program should see without an import has to be registered here. Today that is `Rect` — the rectangle every UI and drawing program passes around — declared in [`crate::classes`] (fields and method list) and implemented below.  Two registration shapes: - The **constructor** is a plain native named after the class (`Rect`), so `Rect(0, 0, 100, 40)` is an ordinary call and the name can be shadowed like any other builtin. - Each **method** is a native registered under the qualified name `Rect.center_x`. The dot makes it unreachable as a bare identifier — the only way in is method dispatch on a receiver tagged with that class, which is exactly the scoping a method should have.  A user-declared `fn Rect.area(r: Rect)` extends the same class through the *other* half of dispatch (the VM's per-run method table); the two never collide, because a user declaration is consulted first."
+    },
+    {
       "id": "higher-order",
       "title": "Higher-Order Functions",
       "group": "core",
@@ -109,7 +115,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/io.rs",
-        "line": 6
+        "line": 7
       }
     },
     {
@@ -176,7 +182,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
-        "line": 19
+        "line": 20
       }
     },
     {
@@ -286,7 +292,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
-        "line": 27
+        "line": 28
       }
     },
     {
@@ -533,6 +539,30 @@
       }
     },
     {
+      "name": "upper",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 475
+      }
+    },
+    {
+      "name": "lower",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/collections.rs",
+        "line": 487
+      }
+    },
+    {
       "name": "enumerate",
       "category": "collections",
       "group": "core",
@@ -541,7 +571,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 470
+        "line": 499
       }
     },
     {
@@ -562,7 +592,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 491
+        "line": 520
       }
     },
     {
@@ -587,7 +617,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 534
+        "line": 563
       }
     },
     {
@@ -599,7 +629,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 603
+        "line": 632
       }
     },
     {
@@ -1194,7 +1224,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 244
+        "line": 261
       }
     },
     {
@@ -1206,7 +1236,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 244
+        "line": 261
       },
       "aliasOf": "map"
     },
@@ -1219,7 +1249,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 244
+        "line": 261
       },
       "aliasOf": "map"
     },
@@ -1232,7 +1262,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 244
+        "line": 261
       },
       "aliasOf": "map"
     },
@@ -1254,7 +1284,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
-        "line": 34
+        "line": 46
       }
     },
     {
@@ -1275,7 +1305,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
-        "line": 60
+        "line": 72
       }
     },
     {
@@ -1689,6 +1719,35 @@
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 160
+      }
+    },
+    {
+      "name": "Rect",
+      "category": "classes",
+      "group": "core",
+      "arity": 4,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "int"
+        },
+        {
+          "name": "y",
+          "type": "int"
+        },
+        {
+          "name": "w",
+          "type": "int"
+        },
+        {
+          "name": "h",
+          "type": "int"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/classes.rs",
+        "line": 69
       }
     },
     {

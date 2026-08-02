@@ -254,7 +254,19 @@ impl Projector {
             SyntaxKind::SetStmt => return self.assign_stmt(node, span, true),
             SyntaxKind::ExprStmt => StmtKind::Expr(self.only_expr(node)?),
             SyntaxKind::FnDecl => {
-                let name = self.only_ident(node)?;
+                // A method declaration writes two direct identifier tokens
+                // around a `.` (`fn Rect.center_x`); a plain function writes
+                // one. The AST stores the qualified name either way.
+                let idents: Vec<String> =
+                    direct_tokens(node).iter().filter_map(ident_value).collect();
+                let (class, name) = match idents.as_slice() {
+                    [only] => (None, only.clone()),
+                    [class, method, ..] => (
+                        Some(class.clone()),
+                        crate::classes::qualified_method_name(class, method),
+                    ),
+                    [] => return Err("fn declaration missing its name".to_string()),
+                };
                 let params = self.param_list(node)?;
                 let ret = child_nodes(node)
                     .iter()
@@ -263,12 +275,35 @@ impl Projector {
                 let body = self.block(node)?;
                 StmtKind::FnDecl {
                     name,
+                    class,
                     params,
                     ret,
                     body,
                 }
             }
             SyntaxKind::EnumDecl => self.enum_decl(node)?,
+            SyntaxKind::ClassDecl => {
+                // `class` is contextual, so it is an `Ident` token like the
+                // class's own name — the declared name is the *second* one.
+                let name = direct_tokens(node)
+                    .iter()
+                    .filter_map(ident_value)
+                    .nth(1)
+                    .ok_or("class declaration missing its name")?;
+                let fields = child_nodes(node)
+                    .iter()
+                    .filter(|n| n.kind() == SyntaxKind::ClassField)
+                    .map(|f| {
+                        let fname = self.only_ident(f)?;
+                        let ty = child_nodes(f)
+                            .iter()
+                            .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
+                            .and_then(type_from_annotation_node);
+                        Ok(ClassFieldDecl { name: fname, ty })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                StmtKind::ClassDecl { name, fields }
+            }
             SyntaxKind::ForStmt => {
                 let var = self.only_ident(node)?;
                 let nodes = child_nodes(node);
@@ -1185,6 +1220,22 @@ mod tests {
         assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");
+    }
+
+    /// `class` declarations and the method form of `fn`. Both introduce new
+    /// node kinds (`ClassDecl`/`ClassField`) and, for a method, a *second*
+    /// identifier token under `FnDecl` — the projection has to reassemble the
+    /// qualified name from it, not just take the first ident it finds.
+    #[test]
+    fn projects_class_and_method_declarations() {
+        assert_projects("class Point\n  x: int\n  y: int\nend\n");
+        assert_projects("class Bag\n  a\n  b: int\nend\n"); // un-annotated field
+        assert_projects("class P\n  x: int, y: int\nend\n"); // comma-separated
+        assert_projects("class Unit\nend\n"); // no fields
+        assert_projects("fn Rect.center_x(r: Rect)\n  r.x\nend\n");
+        assert_projects("fn Rect.inset(r: Rect, n: int) -> Rect\n  r\nend\n");
+        // `class` as an ordinary identifier still projects as an expression.
+        assert_projects("let class = 5\n");
     }
 
     #[test]

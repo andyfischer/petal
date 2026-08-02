@@ -116,9 +116,20 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    /// Method-call syntax `recv.name(args...)`: a callable field on a record
-    /// receiver, else the handle class's `call_method` on a handle receiver,
-    /// else a native function with `recv` prepended to the args.
+    /// Method-call syntax `recv.name(args...)`. Resolution order, first match
+    /// wins (docs/language-guide.md, Classes & Methods):
+    ///
+    /// 1. a **callable record field** — `r.f()` where `f` is a field holding a
+    ///    function. Data beats declarations: a record that carries its own
+    ///    behavior is the older feature, and a class instance is a record.
+    /// 2. a **user-declared method** for the receiver's class —
+    ///    `fn Rect.area(r: Rect)`, published into `stack.methods` when its
+    ///    declaration ran. Ahead of the built-ins so a program can extend, or
+    ///    override, a built-in class method.
+    /// 3. a **built-in class method** — `Rect.center_x` and friends, registered
+    ///    as natives under their qualified names.
+    /// 4. a **handle method**, for a handle receiver.
+    /// 5. a **global native** with `recv` prepended — `[1,2,3].len()`.
     pub(super) fn do_method_call(
         &mut self,
         fi: usize,
@@ -152,7 +163,31 @@ impl<'a> Vm<'a> {
             }
         }
 
-        // 2) Handle receiver: dispatch through the handle class's own method
+        // 2/3) The receiver's class, when it has one: a user-declared method
+        //      first, then the class's built-in methods. Both are keyed by the
+        //      class tag the instance carries, so an untagged record — and any
+        //      non-record — skips straight past.
+        if let Value::Map(map_id) = recv
+            && let Some(class) = self.heap.map_class_name(map_id)
+        {
+            if let Some(func) = self
+                .stack
+                .methods
+                .get(class)
+                .and_then(|m| m.get(method_name))
+                .copied()
+            {
+                return self.do_call(fi, dst, func, &with_receiver(recv, args), call_site);
+            }
+            if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
+                let v =
+                    self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
+                self.set(fi, dst, v);
+                return Ok(());
+            }
+        }
+
+        // 4) Handle receiver: dispatch through the handle class's own method
         //    table. This runs before the native-table lookup so class methods
         //    win over same-named globals (e.g. the builtin `get`).
         if let Value::Handle(h) = recv {
@@ -161,12 +196,9 @@ impl<'a> Vm<'a> {
             return Ok(());
         }
 
-        // 3) Native function with `recv` prepended.
+        // 5) Native function with `recv` prepended.
         if let Some(nid) = self.native_fns.lookup_name(method_name) {
-            let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
-            full_args.push(recv);
-            full_args.extend_from_slice(args);
-            let v = self.call_native_or_intrinsic(nid, &full_args, call_site)?;
+            let v = self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
             self.set(fi, dst, v);
             Ok(())
         } else {
@@ -177,14 +209,18 @@ impl<'a> Vm<'a> {
                 "concat" => Some("use the ++ operator to concatenate lists or strings"),
                 _ => None,
             };
+            // Name the *class* when the receiver has one: "no method 'nope' on
+            // type record" is useless next to "on class Rect".
+            let what = match recv {
+                Value::Map(id) => match self.heap.map_class_name(id) {
+                    Some(class) => format!("class {class}"),
+                    None => "type record".to_string(),
+                },
+                _ => format!("type {}", recv.type_name()),
+            };
             Err(match hint {
-                Some(hint) => format!(
-                    "No method '{}' on type {} — {}",
-                    method_name,
-                    recv.type_name(),
-                    hint
-                ),
-                None => format!("No method '{}' on type {}", method_name, recv.type_name()),
+                Some(hint) => format!("No method '{}' on {} — {}", method_name, what, hint),
+                None => format!("No method '{}' on {}", method_name, what),
             })
         }
     }
@@ -237,4 +273,14 @@ impl<'a> Vm<'a> {
         self.stack.vm_frames.push(frame);
         Ok(())
     }
+}
+
+/// A method's real argument list: the receiver, then the written arguments.
+/// Every dispatch path but the callable-field one passes the receiver
+/// explicitly, since `r.f(a)` supplies it implicitly at the call site.
+fn with_receiver(recv: Value, args: &[Value]) -> SmallVec<[Value; 8]> {
+    let mut full: SmallVec<[Value; 8]> = SmallVec::with_capacity(args.len() + 1);
+    full.push(recv);
+    full.extend_from_slice(args);
+    full
 }

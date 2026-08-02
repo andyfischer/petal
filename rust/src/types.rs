@@ -7,7 +7,11 @@
 //! dynamic escape hatch: it is compatible with every type in both directions and
 //! suppresses checking.
 
+use std::borrow::Cow;
+
 use serde::Serialize;
+
+use crate::classes::{ClassId, ClassTable};
 
 /// A declared or inferred static type.
 ///
@@ -38,6 +42,11 @@ pub enum Type {
     Dual,
     Handle,
     Pending,
+    /// An instance of a declared `class` — a record carrying that class's tag.
+    /// The payload indexes the [`ClassTable`](crate::classes::ClassTable) of the
+    /// compilation that produced it, which is why printing one needs that table
+    /// ([`Type::display`]) and [`Type::name`] cannot spell it.
+    Class(ClassId),
 }
 
 impl Type {
@@ -48,8 +57,11 @@ impl Type {
     /// - `"str"` is accepted as an alias for `"string"` (the cast builtin is
     ///   `str()` while the runtime type name is `string`).
     ///
-    /// Returns `None` for an unknown name; the checker turns that into a warning
-    /// and treats the annotation as `Any`.
+    /// Returns `None` for an unknown name; a class name is *also* `None` here,
+    /// because resolving one needs the compilation's
+    /// [`ClassTable`](crate::classes::ClassTable) — see [`Type::resolve`], the
+    /// context-aware form the checker uses. An unresolved name becomes a
+    /// warning and is treated as `Any`.
     pub fn from_name(name: &str) -> Option<Type> {
         let ty = match name {
             "any" => Type::Any,
@@ -74,9 +86,30 @@ impl Type {
         Some(ty)
     }
 
+    /// Resolve a type-position name against a class table: the built-in
+    /// vocabulary first (so a class may not shadow `int`), then declared
+    /// classes. This is what turns `rect: Rect` into [`Type::Class`].
+    pub fn resolve(name: &str, classes: &ClassTable) -> Option<Type> {
+        Type::from_name(name).or_else(|| classes.lookup(name).map(Type::Class))
+    }
+
+    /// How this type is spelled in a diagnostic. Identical to [`Type::name`]
+    /// except for [`Type::Class`], whose name lives in `classes`.
+    pub fn display<'a>(&self, classes: &'a ClassTable) -> Cow<'a, str> {
+        match self {
+            Type::Class(id) => Cow::Borrowed(classes.name_of(*id)),
+            other => Cow::Borrowed(other.name()),
+        }
+    }
+
     /// The canonical spelling of this type. For every concrete variant this
     /// equals the corresponding [`Value::type_name`](crate::value::Value::type_name);
     /// [`Type::Any`] spells `"any"`.
+    ///
+    /// [`Type::Class`] has no static spelling — its name lives in the
+    /// [`ClassTable`](crate::classes::ClassTable) — so it reports `"class"`
+    /// here. Diagnostics should use [`Type::display`], which prints the real
+    /// name.
     pub fn name(&self) -> &'static str {
         match self {
             Type::Any => "any",
@@ -96,6 +129,7 @@ impl Type {
             Type::Dual => "dual",
             Type::Handle => "handle",
             Type::Pending => "pending",
+            Type::Class(_) => "class",
         }
     }
 
@@ -108,11 +142,16 @@ impl Type {
     /// - `int` is assignable to a `float` slot (documented numeric promotion),
     ///   but `float` is **not** assignable to `int` — that needs an explicit
     ///   `int()` cast (no implicit casting).
-    /// - Otherwise the types must be equal.
+    /// - A class instance *is* a record at runtime, so `Class(_)` satisfies a
+    ///   `record` slot. The reverse is not true: a bare `{x: 1}` carries no
+    ///   class tag, so it cannot fill a `Rect` slot.
+    /// - Otherwise the types must be equal — two distinct classes are never
+    ///   interchangeable, however alike their fields.
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
             (Type::Any, _) | (_, Type::Any) => true,
             (Type::Int, Type::Float) => true,
+            (Type::Class(_), Type::Record) => true,
             _ => self == other,
         }
     }
@@ -239,6 +278,57 @@ mod tests {
         for ty in concrete_types() {
             assert!(ty.is_assignable_to(&ty), "{ty:?} -> {ty:?}");
         }
+    }
+
+    #[test]
+    fn class_names_resolve_only_through_the_class_table() {
+        let classes = crate::classes::ClassTable::new();
+        assert_eq!(Type::from_name("Rect"), None);
+        let rect = classes.lookup("Rect").unwrap();
+        assert_eq!(Type::resolve("Rect", &classes), Some(Type::Class(rect)));
+        assert_eq!(Type::resolve("int", &classes), Some(Type::Int));
+        assert_eq!(Type::resolve("Nope", &classes), None);
+    }
+
+    #[test]
+    fn a_class_displays_its_declared_name() {
+        let classes = crate::classes::ClassTable::new();
+        let rect = Type::Class(classes.lookup("Rect").unwrap());
+        assert_eq!(rect.display(&classes), "Rect");
+        assert_eq!(Type::Int.display(&classes), "int");
+    }
+
+    #[test]
+    fn a_class_instance_is_a_record_but_not_the_reverse() {
+        let classes = crate::classes::ClassTable::new();
+        let rect = Type::Class(classes.lookup("Rect").unwrap());
+        assert!(rect.is_assignable_to(&Type::Record));
+        assert!(!Type::Record.is_assignable_to(&rect));
+        assert!(rect.is_assignable_to(&rect));
+        assert!(!Type::Int.is_assignable_to(&rect));
+    }
+
+    #[test]
+    fn distinct_classes_are_not_interchangeable() {
+        let mut classes = crate::classes::ClassTable::new();
+        let a = classes
+            .declare(crate::classes::ClassDef {
+                name: "A".into(),
+                fields: vec![],
+                methods: vec![],
+                builtin: false,
+            })
+            .unwrap();
+        let b = classes
+            .declare(crate::classes::ClassDef {
+                name: "B".into(),
+                fields: vec![],
+                methods: vec![],
+                builtin: false,
+            })
+            .unwrap();
+        assert!(!Type::Class(a).is_assignable_to(&Type::Class(b)));
+        assert!(Type::Class(a).is_assignable_to(&Type::Class(a)));
     }
 
     #[test]

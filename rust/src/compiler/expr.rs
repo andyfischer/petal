@@ -461,6 +461,7 @@ impl Compiler {
             self.emit_term(
                 TermOp::AllocMap {
                     fields: field_names,
+                    class: None,
                 },
                 inputs,
                 None,

@@ -1,0 +1,347 @@
+//! Classes — named record types with typed fields and methods.
+//!
+//! A `class` declares a *shape*, not a new runtime kind: an instance is an
+//! ordinary record ([`Value::Map`](crate::value::Value::Map)) that carries a
+//! class tag in the heap, so every record operation (`keys`, `len`, field
+//! access, spread) keeps working on it. What the tag buys is
+//!
+//! - a name in type position (`fn f(r: Rect)` checks, see [`crate::types`]), and
+//! - method dispatch: `r.center_x()` finds `fn Rect.center_x(r: Rect)`.
+//!
+//! This table is the compile-time registry of that knowledge. It is built per
+//! compilation, pre-seeded with the built-in classes (see [`ClassTable::new`]),
+//! then extended by the compiler's prescan with the module's own `class`
+//! declarations — so forward references (`fn f(p: Point)` above `class Point`)
+//! resolve.
+//!
+//! The runtime half lives in two places: the constructor and built-in methods
+//! are natives (`crate::builtins::classes`), and user-declared methods register
+//! into the VM's per-run table (`Stack::methods`) as the root block runs.
+
+use std::collections::HashMap;
+
+use serde::Serialize;
+
+use crate::types::Type;
+
+/// Index of a class in a [`ClassTable`]. Small and `Copy` so [`Type`] stays
+/// `Copy`; the name and fields live in the table entry it points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub struct ClassId(pub u32);
+
+/// One declared field: a name and its optional declared type. `ty` is `None`
+/// for an un-annotated field (`any`) or an unrecognized type name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassField {
+    pub name: String,
+    pub ty: Option<Type>,
+}
+
+/// One method known to be callable on a class: `fn Rect.inset(r: Rect, n: int)`
+/// is `MethodDef { name: "inset", arity: 2 }` — the arity *includes* the
+/// receiver, which is what the call site `r.inset(4)` supplies implicitly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDef {
+    pub name: String,
+    /// Parameter count including the receiver.
+    pub arity: usize,
+    /// Whether this method is built into the language rather than declared by
+    /// a `fn Class.name(...)` statement. A user declaration of the same name
+    /// and arity replaces a built-in one — which is also what runtime dispatch
+    /// does, consulting user methods before built-ins.
+    pub builtin: bool,
+}
+
+/// A declared class: its name, its fields in declaration order (which is also
+/// constructor-argument order), and the methods declared on it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDef {
+    pub name: String,
+    pub fields: Vec<ClassField>,
+    pub methods: Vec<MethodDef>,
+    /// Whether this class is built into the language (no `class` statement
+    /// declared it). Built-ins may not be redeclared.
+    pub builtin: bool,
+}
+
+impl ClassDef {
+    pub fn field(&self, name: &str) -> Option<&ClassField> {
+        self.fields.iter().find(|f| f.name == name)
+    }
+
+    pub fn method(&self, name: &str) -> Option<&MethodDef> {
+        self.methods.iter().find(|m| m.name == name)
+    }
+}
+
+/// The classes visible to one compilation, by name.
+#[derive(Debug, Clone)]
+pub struct ClassTable {
+    defs: Vec<ClassDef>,
+    by_name: HashMap<String, ClassId>,
+}
+
+impl Default for ClassTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ClassTable {
+    /// A table holding only the built-in classes. Every compilation starts
+    /// here — there is no Petal-source prelude, so `Rect` is available to every
+    /// program without an import.
+    pub fn new() -> Self {
+        let mut table = ClassTable {
+            defs: Vec::new(),
+            by_name: HashMap::new(),
+        };
+        for def in builtin_classes() {
+            table.insert(def);
+        }
+        table
+    }
+
+    fn insert(&mut self, def: ClassDef) -> ClassId {
+        let id = ClassId(self.defs.len() as u32);
+        self.by_name.insert(def.name.clone(), id);
+        self.defs.push(def);
+        id
+    }
+
+    /// Declare a user class.
+    ///
+    /// Declaring one that shadows a **built-in** class replaces it, keeping the
+    /// same [`ClassId`] — the same rule the rest of the language follows, where
+    /// a user binding shadows a builtin of the same name. So a program may spell
+    /// out `class Rect … end` even though `Rect` is built in, and gets its own
+    /// definition. (The built-in *methods* stay registered and remain reachable
+    /// on instances tagged with that name; a redeclaration with different fields
+    /// therefore wants its own methods too.)
+    ///
+    /// Declaring the same *user* class twice is an error: that is a mistake, not
+    /// an override.
+    pub fn declare(&mut self, def: ClassDef) -> Result<ClassId, String> {
+        if let Some(&existing) = self.by_name.get(&def.name) {
+            if !self.defs[existing.0 as usize].builtin {
+                return Err(format!("class `{}` is already declared", def.name));
+            }
+            self.defs[existing.0 as usize] = def;
+            return Ok(existing);
+        }
+        Ok(self.insert(def))
+    }
+
+    /// Record `fn Class.name(...)` on an already-declared class. Overriding a
+    /// *built-in* method replaces it (dispatch prefers user methods, so the
+    /// table has to agree); declaring the same *user* method twice is an error.
+    pub fn declare_method(&mut self, id: ClassId, name: &str, arity: usize) -> Result<(), String> {
+        let def = &mut self.defs[id.0 as usize];
+        let new = MethodDef {
+            name: name.to_string(),
+            arity,
+            builtin: false,
+        };
+        if let Some(existing) = def
+            .methods
+            .iter_mut()
+            .find(|m| m.name == name && m.arity == arity)
+        {
+            if !existing.builtin {
+                return Err(format!(
+                    "method `{}.{}` is already declared with {} parameter{}",
+                    def.name,
+                    name,
+                    arity,
+                    if arity == 1 { "" } else { "s" }
+                ));
+            }
+            *existing = new;
+            return Ok(());
+        }
+        def.methods.push(new);
+        Ok(())
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<ClassId> {
+        self.by_name.get(name).copied()
+    }
+
+    pub fn get(&self, id: ClassId) -> &ClassDef {
+        &self.defs[id.0 as usize]
+    }
+
+    /// The declared name of `id` — what a diagnostic prints for
+    /// [`Type::Class`](crate::types::Type::Class).
+    pub fn name_of(&self, id: ClassId) -> &str {
+        &self.defs[id.0 as usize].name
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ClassId, &ClassDef)> {
+        self.defs
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (ClassId(i as u32), d))
+    }
+}
+
+/// The `Rect` field names, in constructor order. Shared by the class
+/// definition and the native constructor so the two cannot drift.
+pub const RECT_FIELDS: [&str; 4] = ["x", "y", "w", "h"];
+
+/// The built-in `Rect` methods as `(name, arity-including-receiver)`. The
+/// native implementations are registered under the qualified names
+/// `Rect.<name>` in `crate::builtins::classes`; a unit test there asserts this
+/// list and that registration agree.
+pub const RECT_METHODS: [(&str, usize); 6] = [
+    ("center_x", 1),
+    ("center_y", 1),
+    ("right", 1),
+    ("bottom", 1),
+    ("inset", 2),
+    ("offset", 3),
+];
+
+/// Every class built into the language. Ordering is load-bearing only in that
+/// [`ClassId`]s are positional within one table; nothing serializes them.
+fn builtin_classes() -> Vec<ClassDef> {
+    vec![ClassDef {
+        name: "Rect".to_string(),
+        fields: RECT_FIELDS
+            .iter()
+            .map(|f| ClassField {
+                name: f.to_string(),
+                ty: Some(Type::Int),
+            })
+            .collect(),
+        methods: RECT_METHODS
+            .iter()
+            .map(|(name, arity)| MethodDef {
+                name: name.to_string(),
+                arity: *arity,
+                builtin: true,
+            })
+            .collect(),
+        builtin: true,
+    }]
+}
+
+/// The builtin the compiler emits to publish `fn Class.method` at runtime.
+/// Underscore-prefixed and never documented as callable — it is an internal
+/// declaration form, not an API. The VM intercepts it (see the native table's
+/// `intrinsic_declare_method`).
+pub const DECLARE_METHOD_BUILTIN: &str = "__declare_method";
+
+/// The name a built-in class method's native is registered under: `Rect.inset`.
+/// Dotted, so it is unreachable as a bare identifier from Petal source and can
+/// only be found through method dispatch.
+pub fn qualified_method_name(class: &str, method: &str) -> String {
+    format!("{class}.{method}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_class(name: &str, fields: &[&str]) -> ClassDef {
+        ClassDef {
+            name: name.to_string(),
+            fields: fields
+                .iter()
+                .map(|f| ClassField {
+                    name: f.to_string(),
+                    ty: None,
+                })
+                .collect(),
+            methods: Vec::new(),
+            builtin: false,
+        }
+    }
+
+    #[test]
+    fn rect_is_present_without_declaration() {
+        let t = ClassTable::new();
+        let id = t.lookup("Rect").expect("Rect is built in");
+        let def = t.get(id);
+        assert_eq!(
+            def.fields
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            RECT_FIELDS.to_vec()
+        );
+        assert!(def.builtin);
+        assert_eq!(def.field("w").unwrap().ty, Some(Type::Int));
+    }
+
+    #[test]
+    fn rect_declares_its_builtin_methods() {
+        let t = ClassTable::new();
+        let def = t.get(t.lookup("Rect").unwrap());
+        for (name, arity) in RECT_METHODS {
+            let m = def.method(name).unwrap_or_else(|| panic!("Rect.{name}"));
+            assert_eq!(m.arity, arity);
+        }
+    }
+
+    #[test]
+    fn declaring_a_class_twice_is_an_error() {
+        let mut t = ClassTable::new();
+        t.declare(user_class("Point", &["x"])).expect("first");
+        let err = t.declare(user_class("Point", &["y"])).unwrap_err();
+        assert!(err.contains("already declared"), "{err}");
+    }
+
+    /// A user `class Rect … end` shadows the built-in rather than colliding
+    /// with it, so a program is free to spell out a class it could have got for
+    /// free. The id is stable, so an annotation resolved before the
+    /// redeclaration still points at the right entry.
+    #[test]
+    fn redeclaring_a_builtin_class_replaces_it() {
+        let mut t = ClassTable::new();
+        let builtin = t.lookup("Rect").unwrap();
+        let id = t.declare(user_class("Rect", &["left", "top"])).unwrap();
+        assert_eq!(id, builtin);
+        let def = t.get(id);
+        assert!(!def.builtin);
+        assert!(def.field("left").is_some());
+        assert!(def.field("w").is_none(), "the built-in fields are gone");
+        // And redeclaring *that* is now an ordinary duplicate.
+        let err = t.declare(user_class("Rect", &["x"])).unwrap_err();
+        assert!(err.contains("already declared"), "{err}");
+    }
+
+    /// A user method may override a built-in one, matching what dispatch does.
+    #[test]
+    fn a_user_method_overrides_a_builtin_method() {
+        let mut t = ClassTable::new();
+        let rect = t.lookup("Rect").unwrap();
+        t.declare_method(rect, "center_x", 1).expect("override");
+        let def = t.get(rect);
+        let m = def.method("center_x").unwrap();
+        assert!(!m.builtin);
+        assert_eq!(
+            def.methods.iter().filter(|m| m.name == "center_x").count(),
+            1,
+            "the built-in entry was replaced, not duplicated"
+        );
+        // Doing it twice is now an ordinary duplicate.
+        assert!(t.declare_method(rect, "center_x", 1).is_err());
+    }
+
+    #[test]
+    fn duplicate_method_of_the_same_arity_is_an_error() {
+        let mut t = ClassTable::new();
+        let id = t.declare(user_class("Point", &["x"])).unwrap();
+        t.declare_method(id, "shifted", 2).expect("first");
+        // A different arity is a legal overload.
+        t.declare_method(id, "shifted", 3).expect("overload");
+        let err = t.declare_method(id, "shifted", 2).unwrap_err();
+        assert!(err.contains("already declared"), "{err}");
+    }
+
+    #[test]
+    fn qualified_names_are_dotted() {
+        assert_eq!(qualified_method_name("Rect", "inset"), "Rect.inset");
+    }
+}

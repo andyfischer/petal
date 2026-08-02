@@ -71,6 +71,28 @@ pub struct ElementId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CellId(pub u32);
 
+/// Payload of a single heap map: its entry table plus an optional **class
+/// tag**.
+///
+/// The tag is what makes a record an *instance*: `Rect(0, 0, 10, 4)` allocates
+/// an ordinary entry table and stamps it with the interned name `"Rect"`, so
+/// the value keeps behaving exactly like `{x: 0, y: 0, w: 10, h: 4}` for every
+/// record operation while method dispatch and `type()` can still tell which
+/// class it came from. See `crate::classes`.
+///
+/// The tag rides along through the copy-on-write updates that keep an
+/// instance's identity (`map_set`, `map_remove` — a field write on a `Rect` is
+/// still a `Rect`) and is *not* carried by anything that builds a fresh record
+/// from parts (a `{...r, extra: 1}` spread allocates an untagged record,
+/// because the result is no longer that class's shape).
+#[derive(Clone)]
+struct MapObj {
+    entries: IndexMap<String, Value>,
+    /// The interned class name, or `None` for a plain record. Marked by the
+    /// collector so the name outlives every instance that carries it.
+    class: Option<StringId>,
+}
+
 /// Payload of a single heap element: three `Copy` ids referencing the element's
 /// tag string, props map, and children list. Stored as the `T` of an element
 /// slab; the `gc_mark`/`alive` bits live in the enclosing [`Slot`].
@@ -178,7 +200,7 @@ pub struct Heap {
     strings: Slab<String>,
     lists: Slab<Vec<Value>>,
     f64_arrays: Slab<Vec<f64>>,
-    maps: Slab<IndexMap<String, Value>>,
+    maps: Slab<MapObj>,
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
     cells: Slab<Value>,
@@ -316,7 +338,7 @@ impl Heap {
             .maps
             .slots
             .iter()
-            .map(|m| value_slice_bytes(m.data.capacity()))
+            .map(|m| value_slice_bytes(m.data.entries.capacity()))
             .sum();
         strings + lists + f64s + maps
     }
@@ -352,7 +374,7 @@ impl Heap {
             .slots
             .iter()
             .filter(|m| m.alive)
-            .map(|m| map_entries_bytes(&m.data))
+            .map(|m| map_entries_bytes(&m.data.entries))
             .sum();
         strings + lists + f64s + maps
     }
@@ -619,33 +641,65 @@ impl Heap {
     // --- Map allocation ---
 
     pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
+        self.alloc_map_tagged(entries, None)
+    }
+
+    /// Allocate a record tagged as an instance of the class interned at
+    /// `class`. The entry table is an ordinary record; only the tag differs.
+    /// See [`MapObj`].
+    pub fn alloc_class_instance(
+        &mut self,
+        entries: IndexMap<String, Value>,
+        class: StringId,
+    ) -> MapId {
+        self.alloc_map_tagged(entries, Some(class))
+    }
+
+    fn alloc_map_tagged(
+        &mut self,
+        entries: IndexMap<String, Value>,
+        class: Option<StringId>,
+    ) -> MapId {
         self.tick_alloc(AllocKind::Map, map_entries_bytes(&entries));
-        MapId(self.maps.alloc(entries))
+        MapId(self.maps.alloc(MapObj { entries, class }))
     }
 
     pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
-        self.maps.get(id.0)
+        &self.maps.get(id.0).entries
+    }
+
+    /// The interned class name tagging `id`, or `None` for a plain record.
+    pub fn map_class(&self, id: MapId) -> Option<StringId> {
+        self.maps.get(id.0).class
+    }
+
+    /// The class name tagging `id` as a string, or `None` for a plain record.
+    /// The borrow is of the heap's own string storage — no allocation.
+    pub fn map_class_name(&self, id: MapId) -> Option<&str> {
+        self.map_class(id).map(|s| self.get_string(s))
     }
 
     /// Return a new map equal to `id` with `key` set to `val`. `id` is
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
-        let mut entries = self.maps.get(id.0).clone();
+        let class = self.maps.get(id.0).class;
+        let mut entries = self.maps.get(id.0).entries.clone();
         self.dup_stats
             .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
-        self.alloc_map(entries)
+        self.alloc_map_tagged(entries, class)
     }
 
     /// Return a new map equal to `id` with `key` removed. `id` is unchanged
     /// (value semantics). Insertion order of the remaining keys is preserved.
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
-        let mut entries = self.maps.get(id.0).clone();
+        let class = self.maps.get(id.0).class;
+        let mut entries = self.maps.get(id.0).entries.clone();
         self.dup_stats
             .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
-        self.alloc_map(entries)
+        self.alloc_map_tagged(entries, class)
     }
 
     /// In-place [`map_set`](Self::map_set): insert/overwrite `key` in `id`'s
@@ -656,7 +710,7 @@ impl Heap {
             self.maps.slots[id.0 as usize].alive,
             "in-place set on a dead map"
         );
-        self.maps.get_mut(id.0).insert(key, val);
+        self.maps.get_mut(id.0).entries.insert(key, val);
         id
     }
 
@@ -667,7 +721,7 @@ impl Heap {
             self.maps.slots[id.0 as usize].alive,
             "in-place remove on a dead map"
         );
-        self.maps.get_mut(id.0).shift_remove(key);
+        self.maps.get_mut(id.0).entries.shift_remove(key);
         id
     }
 
@@ -780,9 +834,14 @@ impl Heap {
     fn mark_map(&mut self, id: MapId) {
         if self.maps.mark(id.0) {
             // Copy values to avoid borrow conflict
-            let values: Vec<Value> = self.maps.get(id.0).values().copied().collect();
+            let values: Vec<Value> = self.maps.get(id.0).entries.values().copied().collect();
             for val in values {
                 self.mark_value(val);
+            }
+            // The class tag names a heap string. Marking it here is what keeps
+            // the name alive for exactly as long as some instance carries it.
+            if let Some(class) = self.maps.get(id.0).class {
+                self.mark_string(class);
             }
         }
     }
@@ -830,7 +889,10 @@ impl Heap {
 
         self.lists.sweep_with(|v| *v = Vec::new());
         self.f64_arrays.sweep_with(|v| *v = Vec::new());
-        self.maps.sweep_with(|v| *v = IndexMap::new());
+        self.maps.sweep_with(|v| {
+            v.entries = IndexMap::new();
+            v.class = None;
+        });
         self.elements.sweep_with(|_| {});
         self.cells.sweep_with(|v| *v = Value::Nil);
 
@@ -897,6 +959,67 @@ mod tests {
             heap.get_list(original),
             &[Value::Int(1), Value::Int(2), Value::Int(3)]
         );
+    }
+
+    /// A class instance is an ordinary entry table plus a tag: the entries are
+    /// indistinguishable from a record's, and the tag is what dispatch and
+    /// `type()` read. See [`MapObj`].
+    #[test]
+    fn a_class_instance_is_a_record_with_a_tag() {
+        let mut heap = Heap::new();
+        let tag = heap.alloc_string("Rect".to_string());
+        let mut entries = IndexMap::new();
+        entries.insert("x".to_string(), Value::Int(1));
+        let instance = heap.alloc_class_instance(entries.clone(), tag);
+        let plain = heap.alloc_map(entries);
+
+        assert_eq!(heap.get_map(instance), heap.get_map(plain));
+        assert_eq!(heap.map_class_name(instance), Some("Rect"));
+        assert_eq!(heap.map_class_name(plain), None);
+    }
+
+    /// A copy-on-write field update keeps the instance an instance: `r.x = 5`
+    /// on a `Rect` must not silently demote it to a plain record.
+    #[test]
+    fn map_set_and_remove_carry_the_class_tag() {
+        let mut heap = Heap::new();
+        let tag = heap.alloc_string("Rect".to_string());
+        let mut entries = IndexMap::new();
+        entries.insert("x".to_string(), Value::Int(1));
+        entries.insert("y".to_string(), Value::Int(2));
+        let r = heap.alloc_class_instance(entries, tag);
+
+        let moved = heap.map_set(r, "x".to_string(), Value::Int(5));
+        assert_ne!(moved.0, r.0, "value semantics: a new map");
+        assert_eq!(heap.map_class_name(moved), Some("Rect"));
+        assert_eq!(heap.get_map(moved).get("x"), Some(&Value::Int(5)));
+
+        let shrunk = heap.map_remove(r, "y");
+        assert_eq!(heap.map_class_name(shrunk), Some("Rect"));
+
+        // The in-place forms keep the id, so they keep the tag by construction.
+        let same = heap.map_set_in_place(r, "x".to_string(), Value::Int(9));
+        assert_eq!(same.0, r.0);
+        assert_eq!(heap.map_class_name(r), Some("Rect"));
+    }
+
+    /// The tag names a heap string, so the collector has to trace it — an
+    /// instance that survives a sweep must not be left pointing at a reclaimed
+    /// (and possibly reused) string slot.
+    #[test]
+    fn the_class_tag_survives_a_collection() {
+        let mut heap = Heap::new();
+        let tag = heap.alloc_string("Rect".to_string());
+        let mut entries = IndexMap::new();
+        entries.insert("x".to_string(), Value::Int(1));
+        let r = heap.alloc_class_instance(entries, tag);
+        // Garbage the collector should reclaim, so the sweep really runs.
+        heap.alloc_string("unreferenced".to_string());
+
+        heap.mark_value(Value::Map(r));
+        heap.sweep();
+
+        assert_eq!(heap.map_class_name(r), Some("Rect"));
     }
 
     #[test]

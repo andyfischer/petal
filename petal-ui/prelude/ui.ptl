@@ -11,8 +11,13 @@
 
 // ── Geometry + hit testing ────────────────────────────────────────────────
 
+// A rect is a `Rect` — the built-in class (fields x, y, w, h). It is still an
+// ordinary record, so every `{x, y, w, h}` written by hand keeps working
+// everywhere a rect is taken; going through the class is what earns the
+// geometry methods (`r.center_x()`, `r.inset(4)`, `r.right()` …) and makes
+// `type(r)` say "Rect". See docs/language-guide.md (Classes & Methods).
 export fn rect(x, y, w, h)
-  {x: x, y: y, w: w, h: h}
+  Rect(x, y, w, h)
 end
 
 export fn point_in(px, py, r)

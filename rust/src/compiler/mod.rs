@@ -19,7 +19,8 @@ use std::collections::{HashMap, HashSet};
 use smallvec::{SmallVec, smallvec};
 
 use crate::ast::*;
-use crate::constant_table::{ConstantTable, ConstantValue};
+use crate::classes::DECLARE_METHOD_BUILTIN;
+use crate::constant_table::{ConstantId, ConstantTable, ConstantValue};
 use crate::error::{LoadError, Phase};
 use crate::module::LoadedModule;
 use crate::native_fn::NativeFnTable;
@@ -74,6 +75,12 @@ pub struct Compiler {
     // arity overloads keep distinct entries. Populated by `prescan_declarations`
     // and consulted by the type checker at call sites. Compile-time only.
     fn_signatures: HashMap<(String, usize), FnSignature>,
+
+    // Classes visible to this compilation: the built-ins, plus every `class`
+    // declaration found by `prescan_declarations` (so a `fn f(p: Point)` above
+    // `class Point` still resolves). Also the checker's source of truth for
+    // class-typed annotations and method lookup. Compile-time only.
+    classes: crate::classes::ClassTable,
 
     // Non-fatal type-checker diagnostics, accumulated during compilation and
     // surfaced alongside the compiled program (a later chunk consumes them).
@@ -195,6 +202,7 @@ impl Compiler {
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
+            classes: crate::classes::ClassTable::new(),
             warnings: Vec::new(),
             function_boundaries: Vec::new(),
             capture_stack: Vec::new(),
@@ -377,7 +385,7 @@ impl Compiler {
             e
         })?;
         self.prescan_declarations(&stmts);
-        let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures);
+        let diags = crate::typecheck::check_module(&stmts, &self.fn_signatures, &self.classes);
         self.warnings.extend(diags);
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
@@ -560,15 +568,16 @@ impl Compiler {
         self.module_exports.insert(module_name.to_string(), names);
     }
 
-    /// Top-level names a module declares (fn, enum variants, let, state) —
-    /// the set a selective import may collide with.
+    /// Top-level names a module declares (fn, enum variants, let, state, and a
+    /// class's constructor) — the set a selective import may collide with.
     fn declared_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
         for stmt in stmts {
             match &stmt.kind {
                 StmtKind::FnDecl { name, .. }
                 | StmtKind::Let { name, .. }
-                | StmtKind::State { name, .. } => {
+                | StmtKind::State { name, .. }
+                | StmtKind::ClassDecl { name, .. } => {
                     names.insert(name.clone());
                 }
                 StmtKind::EnumDecl { variants, .. } => {
@@ -583,7 +592,7 @@ impl Compiler {
     }
 
     /// Top-level names a module explicitly `export`s (fn, enum variants, let,
-    /// state) — the set that importers may see. Everything else is private.
+    /// state, class) — the set that importers may see. Everything else is private.
     /// `export` is the single privacy rule: a name is exported iff its
     /// declaration is marked `export`, regardless of a leading underscore
     /// (`export fn _helper` exports normally).
@@ -596,7 +605,11 @@ impl Compiler {
             match &stmt.kind {
                 StmtKind::FnDecl { name, .. }
                 | StmtKind::Let { name, .. }
-                | StmtKind::State { name, .. } => {
+                | StmtKind::State { name, .. }
+                // A class's exported name is its constructor. The *type* is
+                // visible program-wide either way (the class table spans the
+                // compilation); `export` governs who may call `Point(…)`.
+                | StmtKind::ClassDecl { name, .. } => {
                     names.insert(name.clone());
                 }
                 StmtKind::EnumDecl { variants, .. } => {
@@ -906,10 +919,25 @@ impl Compiler {
         Ok(())
     }
 
+    /// Register this module's `class` declarations and the methods declared on
+    /// them, before anything is compiled. Every diagnostic here is *fatal*
+    /// (unlike the type checker's warnings): a duplicate field or a method on
+    /// a type that does not exist has no reasonable code to generate.
+    fn prescan_classes(&mut self, stmts: &[Stmt]) {
+        let diags = collect_classes(&mut self.classes, stmts);
+        self.errors.extend(diags);
+    }
+
     fn prescan_declarations(&mut self, stmts: &[Stmt]) {
+        // Classes first: a signature may name one (`fn f(p: Point)`), and a
+        // method declaration has to find its class whichever order the file
+        // declares them in.
+        self.prescan_classes(stmts);
+
         // Record declared signatures so the checker can verify call sites even
         // across forward references. Accumulates across modules.
-        self.fn_signatures.extend(collect_fn_signatures(stmts));
+        self.fn_signatures
+            .extend(collect_fn_signatures(stmts, &self.classes));
 
         // Detect overloaded function names (same name, different arities)
         let mut fn_arities: HashMap<String, std::collections::HashSet<usize>> = HashMap::new();
@@ -929,7 +957,7 @@ impl Compiler {
 
         for stmt in stmts {
             match &stmt.kind {
-                StmtKind::FnDecl { name, .. } => {
+                StmtKind::FnDecl { name, .. } | StmtKind::ClassDecl { name, .. } => {
                     if self.scope_lookup(name).is_none() {
                         let tid = self.emit_phantom_term(name.clone());
                         self.scope_bind(name.clone(), tid);
@@ -949,13 +977,89 @@ impl Compiler {
     }
 }
 
+/// Fold every `class` declaration in `stmts`, and every method declared on one,
+/// into `classes`. Returns the fatal diagnostics found — a duplicate field, a
+/// redeclared class, a duplicate method, or a method on a type that does not
+/// exist. Pure over the class table so it is unit-testable without a live
+/// [`Compiler`], and so the checker's tests can build the same table the
+/// compiler would.
+pub fn collect_classes(
+    classes: &mut crate::classes::ClassTable,
+    stmts: &[Stmt],
+) -> Vec<crate::diagnostic::Diagnostic> {
+    let mut diags = Vec::new();
+    let mut err = |span: SourceSpan, message: String| {
+        diags.push(crate::diagnostic::Diagnostic { span, message });
+    };
+
+    for stmt in stmts {
+        let StmtKind::ClassDecl { name, fields } = &stmt.kind else {
+            continue;
+        };
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut defs = Vec::new();
+        for f in fields {
+            if !seen.insert(f.name.as_str()) {
+                err(
+                    stmt.span,
+                    format!("duplicate field `{}` in class `{}`", f.name, name),
+                );
+                continue;
+            }
+            defs.push(crate::classes::ClassField {
+                name: f.name.clone(),
+                ty: f.ty.as_ref().and_then(|t| t.resolved),
+            });
+        }
+        if let Err(msg) = classes.declare(crate::classes::ClassDef {
+            name: name.clone(),
+            fields: defs,
+            methods: Vec::new(),
+            builtin: false,
+        }) {
+            err(stmt.span, msg);
+        }
+    }
+
+    // Methods second: a class declared anywhere in the file is now known, so
+    // `fn Point.shifted(...)` above `class Point` is fine.
+    for stmt in stmts {
+        let StmtKind::FnDecl {
+            class: Some(class),
+            params,
+            ..
+        } = &stmt.kind
+        else {
+            continue;
+        };
+        let Some(id) = classes.lookup(class) else {
+            err(
+                stmt.span,
+                format!(
+                    "cannot declare a method on `{class}`: no class of that name \
+                     (declare it with `class {class} … end`)"
+                ),
+            );
+            continue;
+        };
+        let method = method_base_name(&stmt.kind);
+        if let Err(msg) = classes.declare_method(id, method, params.len()) {
+            err(stmt.span, msg);
+        }
+    }
+    diags
+}
+
 /// Collect declared function signatures from a statement list, keyed by
 /// `(name, arity)`. Only the *resolved* types are kept — an un-annotated or
 /// unrecognized-name parameter/return becomes `None` (checked as `any`). Later
 /// declarations of the same `(name, arity)` win. Pure so it is unit-testable
 /// without a live [`Compiler`]; `prescan_declarations` folds the result into
 /// [`Compiler::fn_signatures`].
-pub(crate) fn collect_fn_signatures(stmts: &[Stmt]) -> HashMap<(String, usize), FnSignature> {
+pub(crate) fn collect_fn_signatures(
+    stmts: &[Stmt],
+    classes: &crate::classes::ClassTable,
+) -> HashMap<(String, usize), FnSignature> {
     let mut sigs = HashMap::new();
     for stmt in stmts {
         if let StmtKind::FnDecl {
@@ -965,14 +1069,40 @@ pub(crate) fn collect_fn_signatures(stmts: &[Stmt]) -> HashMap<(String, usize), 
             let sig = FnSignature {
                 params: params
                     .iter()
-                    .map(|p| p.ty.as_ref().and_then(|t| t.resolved))
+                    .map(|p| resolve_ann(p.ty.as_ref(), classes))
                     .collect(),
-                ret: ret.as_ref().and_then(|t| t.resolved),
+                ret: resolve_ann(ret.as_ref(), classes),
             };
             sigs.insert((name.clone(), params.len()), sig);
         }
     }
     sigs
+}
+
+/// Resolve a written annotation, falling back to the class table for a name the
+/// parser could not resolve on its own (class names need context — see
+/// [`crate::types::Type::resolve`]). `None` means "no annotation, or a name
+/// nothing recognizes", which the checker treats as `any`.
+pub(crate) fn resolve_ann(
+    ann: Option<&crate::ast::TypeAnn>,
+    classes: &crate::classes::ClassTable,
+) -> Option<crate::types::Type> {
+    let ann = ann?;
+    ann.resolved
+        .or_else(|| classes.lookup(&ann.name).map(crate::types::Type::Class))
+}
+
+/// The bare method name of a method declaration — `center_x` for
+/// `fn Rect.center_x(...)`, whose [`StmtKind::FnDecl::name`] is the qualified
+/// `Rect.center_x`. Returns the whole name for a plain function.
+pub(crate) fn method_base_name(kind: &StmtKind) -> &str {
+    let StmtKind::FnDecl { name, class, .. } = kind else {
+        return "";
+    };
+    match class {
+        Some(c) => &name[c.len() + 1..],
+        None => name,
+    }
 }
 
 #[cfg(test)]
@@ -983,7 +1113,7 @@ mod prescan_tests {
 
     fn sigs(src: &str) -> std::collections::HashMap<(String, usize), FnSignature> {
         let (_, stmts) = parse_ast(src).expect("parse");
-        collect_fn_signatures(&stmts)
+        collect_fn_signatures(&stmts, &crate::classes::ClassTable::new())
     }
 
     #[test]

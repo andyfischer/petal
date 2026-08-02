@@ -179,9 +179,14 @@ pub enum TermOp {
     // Data structures
     /// Allocate a list: inputs=[elem0, elem1, ...]
     AllocList,
-    /// Allocate a map/record: inputs=[val0, val1, ...], field names stored here
+    /// Allocate a map/record: inputs=[val0, val1, ...], field names stored here.
+    /// `class` names the class this record instantiates (a `class` declaration's
+    /// generated constructor sets it); `None` for an ordinary record literal.
+    /// See `crate::classes`.
     AllocMap {
         fields: Vec<ConstantId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        class: Option<ConstantId>,
     },
     /// Allocate a map with spread: entries describe the order of spreads and named fields.
     /// inputs = [spread_source_0, ..., named_value_0, ...]
@@ -231,7 +236,11 @@ impl TermOp {
             | TermOp::MethodCall(c)
             | TermOp::BuiltinCall(c)
             | TermOp::MakeEnumVariant(c) => vec![*c],
-            TermOp::AllocMap { fields } => fields.clone(),
+            TermOp::AllocMap { fields, class } => {
+                let mut v = fields.clone();
+                v.extend(class.iter().copied());
+                v
+            }
             TermOp::AllocElement { tag, prop_keys } => {
                 let mut v = vec![*tag];
                 v.extend(prop_keys.iter().copied());

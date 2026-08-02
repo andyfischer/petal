@@ -745,3 +745,48 @@ let a = f64_array(3)
 set_at(a, 0, 1.0)
 swap(a, 0, 2)    // a is now [0.0, 0.0, 1.0]
 ```
+
+## Built-in Classes
+
+Classes built into the language: available with no declaration and no import.
+See the [Language Guide](language-guide.md#classes--methods) for declaring your
+own, and for how `value.method(...)` resolves.
+
+### `Rect(x, y, w, h)`
+
+A rectangle: fields `x`, `y`, `w`, `h`. The constructor takes them positionally.
+An instance is an ordinary record carrying the class tag, so everything that
+takes a `{x, y, w, h}` record takes a `Rect` — including every `petal-ui` draw
+call, whose `rect(x, y, w, h)` helper builds one.
+
+```petal
+let r = Rect(10, 20, 100, 40)
+r.x            // 10
+type(r)        // "Rect"
+keys(r)        // ["x", "y", "w", "h"]
+```
+
+Its methods are the arithmetic layout code otherwise repeats by hand. All take
+and return `int`s (screen geometry), and the two that return a rect return a
+`Rect`, so calls chain.
+
+| Method | Result | Equivalent |
+|--------|--------|------------|
+| `r.center_x()` | `int` | `r.x + r.w / 2` |
+| `r.center_y()` | `int` | `r.y + r.h / 2` |
+| `r.right()` | `int` | `r.x + r.w` (half-open, like the hit tests) |
+| `r.bottom()` | `int` | `r.y + r.h` |
+| `r.inset(n)` | `Rect` | pulled in by `n` on all four sides; a negative `n` grows it, and `w`/`h` clamp at 0 |
+| `r.offset(dx, dy)` | `Rect` | moved by a delta, same size |
+
+```petal
+let card = Rect(0, 0, 100, 40)
+card.center_x()             // 50
+card.right()                // 100
+card.inset(5)               // Rect(5, 5, 90, 30)
+card.inset(5).center_x()    // 50
+card.offset(10, 10).right() // 110
+```
+
+Declare more with `fn Rect.<name>(r: Rect, …)`; a user declaration wins over a
+built-in method of the same name.

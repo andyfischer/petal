@@ -417,10 +417,11 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 elems: self.regs(ins)?,
             },
-            TermOp::AllocMap { fields } => Inst::AllocMap {
+            TermOp::AllocMap { fields, class } => Inst::AllocMap {
                 dst,
                 fields: fields.clone(),
                 vals: self.regs(ins)?,
+                class: *class,
             },
             TermOp::AllocMapSpread { entries } => Inst::AllocMapSpread {
                 dst,

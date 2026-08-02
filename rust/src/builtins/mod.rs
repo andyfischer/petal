@@ -11,6 +11,7 @@
 use crate::native_fn::{NativeClass, NativeFnTable, PetalCxt};
 
 mod autodiff;
+mod classes;
 mod collections;
 mod color;
 mod creative_coding;
@@ -236,6 +237,20 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.set_class(error_of_id, NativeClass::AllowPending);
     table.set_class(or_else_id, NativeClass::AllowPending);
     table.set_class(resource_key_id, NativeClass::AllowPending);
+
+    // --- Classes (append-only to preserve phantom term indices) ---
+    // Built-in class constructors and methods; see `builtins::classes`.
+    classes::register(table);
+
+    // Method declaration (`fn Class.method`). Registered so the compiler can
+    // emit an ordinary `BuiltinCall` for it, but never actually called: the VM
+    // intercepts the id below, because publishing a method touches runtime
+    // state that `PetalCxt` deliberately does not expose.
+    let declare_method_id = table.register(
+        crate::classes::DECLARE_METHOD_BUILTIN,
+        native_intrinsic_placeholder,
+    );
+    table.intrinsic_declare_method = Some(declare_method_id);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);

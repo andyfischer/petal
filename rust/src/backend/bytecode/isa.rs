@@ -259,6 +259,9 @@ pub enum Inst {
         dst: Reg,
         fields: Vec<ConstantId>,
         vals: SmallVec<[Reg; 4]>,
+        /// The class name constant when this allocates a class instance (see
+        /// `crate::classes`); `None` for a plain record.
+        class: Option<ConstantId>,
     },
     AllocMapSpread {
         dst: Reg,

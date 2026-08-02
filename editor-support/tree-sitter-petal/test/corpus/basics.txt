@@ -233,3 +233,42 @@ let d = fn(n: int) -> n * 2
       body: (binary_expression
         left: (identifier)
         right: (integer)))))
+
+==================
+Class and method declaration
+==================
+
+class Rect2
+  x: int
+  w: int
+end
+
+fn Rect2.center_x(r: Rect2) -> int
+  r.x + r.w / 2
+end
+
+---
+
+(source_file
+  (class_declaration
+    name: (identifier)
+    (class_field
+      name: (identifier)
+      type: (type_annotation type: (type_name (identifier))))
+    (class_field
+      name: (identifier)
+      type: (type_annotation type: (type_name (identifier)))))
+  (function_declaration
+    class: (identifier)
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (type_annotation type: (type_name (identifier)))))
+    return_type: (return_type type: (type_name (identifier)))
+    body: (block
+      (binary_expression
+        left: (field_access object: (identifier) field: (identifier))
+        right: (binary_expression
+          left: (field_access object: (identifier) field: (identifier))
+          right: (integer))))))

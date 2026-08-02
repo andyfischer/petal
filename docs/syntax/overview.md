@@ -38,8 +38,10 @@ let  var  set  fn  if  else  elsif  then  for  in  while  match  when  do  end
 return  break  continue  state  enum  import  export  true  false  nil
 ```
 
-`as` (in `import ui as u`) is **contextual** — recognised only after `import`,
-not globally reserved.
+`as` (in `import ui as u`) and `class` (in `class Rect … end`) are
+**contextual** — recognised only in those positions, not globally reserved.
+`class` in particular stays usable as an ordinary identifier and as the JSX
+attribute `<div class="…">`.
 
 ### Literals
 
@@ -194,6 +196,27 @@ fn abs(x: int) -> int        // optional param/return type annotations
     if x < 0 then return -x end
     x
 end
+```
+
+### `class` (declaration)
+
+A named record type: fields with optional annotations, one per line (a comma
+between them is optional). The class name binds to a positional constructor and
+becomes a usable type name; `fn <Class>.<name>(receiver, …)` declares a method
+on it. `Rect` (fields `x`, `y`, `w`, `h`) is built in. See the
+[Language Guide](../language-guide.md#classes--methods).
+
+```petal
+class Point
+    x: int
+    y: int
+end
+
+fn Point.shifted(p: Point, dx: int, dy: int) -> Point
+    Point(p.x + dx, p.y + dy)
+end
+
+let p = Point(1, 2).shifted(10, 0)   // an instance is a record with a class tag
 ```
 
 ### `enum` (declaration)
@@ -361,7 +384,8 @@ annotations only.
 
 Recognised type names: `int`, `float`, `bool`, `string` (alias `str`), `list`,
 `record`, `function`, `enum`, `nil`, `any`, plus host/runtime types such as
-`vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`. A type is
+`vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`, and the
+name of any [class](#class-declaration) in scope (`Rect` is built in). A type is
 a single bare name — there are no parameterized (`list<int>`), arrow, or
 structural forms. An unknown name is kept, not rejected, and reported as an
 `unknown type name` warning. Type names are **contextual**, not reserved, so

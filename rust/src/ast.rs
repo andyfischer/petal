@@ -190,6 +190,15 @@ impl TypeAnn {
     }
 }
 
+/// One field of a `class` declaration: `x: int`. The annotation is optional
+/// (an un-annotated field is `any`) and is kept verbatim even when the name is
+/// unrecognized, exactly like a parameter's.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClassFieldDecl {
+    pub name: String,
+    pub ty: Option<TypeAnn>,
+}
+
 /// A function/lambda parameter with an optional declared type.
 /// `ty` is `None` when the parameter is un-annotated. A written annotation is
 /// preserved even when its name is unrecognized (`resolved: None`).
@@ -239,7 +248,15 @@ pub enum StmtKind {
     },
     Expr(Expr),
     FnDecl {
+        /// The bound name. For a method declaration this is the *qualified*
+        /// name `Class.method` — the same string the class's method table and
+        /// the runtime dispatcher key on — so every existing path that binds,
+        /// overloads or captures a function keeps working unchanged.
         name: String,
+        /// `Some("Rect")` for `fn Rect.center_x(...)`: this declaration is a
+        /// method on that class, and the first parameter is its receiver.
+        /// `None` for an ordinary function.
+        class: Option<String>,
         params: Vec<Param>,
         /// Optional declared return type (`fn f(…) -> int`). `None` when
         /// un-annotated; a written but unrecognized name is preserved as a
@@ -251,6 +268,13 @@ pub enum StmtKind {
     EnumDecl {
         name: String,
         variants: Vec<EnumVariant>,
+    },
+    /// `class Rect ... end` — a named record type. The fields are in
+    /// declaration order, which is also the order the generated constructor
+    /// takes them in. See docs/language-guide.md (Classes & Methods).
+    ClassDecl {
+        name: String,
+        fields: Vec<ClassFieldDecl>,
     },
     For {
         var: String,
@@ -441,7 +465,7 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
                 v.visit_stmt(s);
             }
         }
-        StmtKind::EnumDecl { .. } => {}
+        StmtKind::EnumDecl { .. } | StmtKind::ClassDecl { .. } => {}
         StmtKind::For { iter, body, .. } => {
             v.visit_expr(iter);
             for s in body {
@@ -597,7 +621,7 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_stmt(s);
             }
         }
-        StmtKind::EnumDecl { .. } => {}
+        StmtKind::EnumDecl { .. } | StmtKind::ClassDecl { .. } => {}
         StmtKind::For { iter, body, .. } => {
             v.visit_expr(iter);
             for s in body.iter_mut() {

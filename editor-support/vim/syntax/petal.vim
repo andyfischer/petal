@@ -20,7 +20,7 @@ syn keyword petalTodo contained TODO FIXME XXX NOTE
 syn match   petalComment "//.*$" contains=petalTodo,@Spell
 
 " ---- Keywords ----
-syn keyword petalKeyword     import export as let var set state fn enum return for in while do match when
+syn keyword petalKeyword     import export as let var set state fn enum class return for in while do match when
 syn keyword petalKeyword     break continue
 syn keyword petalConditional if then elsif else end
 syn keyword petalBoolean     true false
@@ -29,6 +29,10 @@ syn keyword petalConstant    nil
 " ---- Function declarations ----
 syn match petalFunction "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 syn match petalFunction "\<enum\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+" `class Name` names a type; `fn Rect.method(...)` names the class it extends.
+syn match petalType     "\<class\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+syn match petalType     "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*\ze\." contains=NONE
+syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 
 " ---- Type annotations ----
 " `: type` on a let/var/state binding or a parameter, `-> type` on a named fn.

@@ -426,8 +426,8 @@ pub(super) fn handle_lint(
         unreachable!()
     };
     let summary = format!(
-        "{}: {} line(s) reformatted, {} rebind rewrite(s)",
-        path, outcome.reindented_lines, outcome.rebinds
+        "{}: {} line(s) reformatted, {} redundant cast(s) removed",
+        path, outcome.reindented_lines, outcome.casts_removed
     );
     if check {
         // CI mode: no output on success, one stderr line on failure.

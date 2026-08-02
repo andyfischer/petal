@@ -80,8 +80,10 @@ Each of these produces a clear error pointing at the `@`:
 Error: `@a` can only be used as an argument to a call at statement level
 ```
 
-`petal lint`'s rebind rule follows the same rule — it proposes `@` for
-`x = f(x)` on a `let`, and never for `set x = f(x)`.
+`petal lint` does **not** propose `@`. It used to rewrite `x = f(x)` into
+`f(@x)`; that rule was removed (see [dev/linter-plan.md](../dev/linter-plan.md))
+because a linter that forces the sugar makes code harder to read for anyone who
+hasn't learned it yet. `@` stays a language feature you reach for deliberately.
 
 ## See also
 

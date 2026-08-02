@@ -24,6 +24,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `run` | Execute a program |
 | `check` | Lex + parse + compile + lower only (no execution) |
 | `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
+| `lint-fix` | `lint --fix <file>` under its own name |
 | `lsp` | Serve the language server over stdio (editors spawn this) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
 | `pending-report` | Run, then report every live pending resource |
@@ -166,7 +167,14 @@ petal lint <file.ptl>            # report; exit 1 if changes needed
 petal lint --fix <file.ptl>      # rewrite the file in place
 petal lint --check <file.ptl>    # CI mode: exit 0/1, no output on success
 petal lint -e '<code>'           # lint inline code, print result to stdout
+
+petal lint-fix <file.ptl>        # same as 'lint --fix <file.ptl>'
 ```
+
+`lint-fix` exists because rewriting in place is the common case and `--fix` is
+easy to forget. It takes a path only (there is no file to rewrite for `-e`
+code), and it makes **no change at all** when the file doesn't parse: the lint
+pipeline reports the parse error and exits non-zero with the file untouched.
 
 Two kinds of normalization (see [dev/linter-plan.md](dev/linter-plan.md)):
 
@@ -174,15 +182,26 @@ Two kinds of normalization (see [dev/linter-plan.md](dev/linter-plan.md)):
   trailing-whitespace trim and a single trailing newline. Only leading/trailing
   whitespace outside tokens is touched, so comments, string contents, and JSX
   text are preserved exactly.
-- **Rebind** — rewrites `x = f(x)` to `f(@x)` (and `nums = append(nums, 4)` to
-  `append(@nums, 4)`) when the rewrite is unambiguous, via minimal splices that
-  keep comments intact.
+- **Identity casts** — deletes `int(n)` where `n` is already an `int`, and
+  likewise `float()` on a float and `str()` on a string. Petal's `/` on two
+  ints yields an int, so `int(w / 2)` is a no-op; `int(w * 0.6)` is not, and is
+  left alone. Candidates come from the type checker, which infers `any` for
+  anything it cannot prove, so an un-annotated parameter or a `var` cell is
+  never touched.
 
-Because rebind changes tokens, `lint` verifies it with an IR-equivalence gate:
-the pre- and post-lint sources must compile to **identical** IR (only the
-embedded source text and source spans may differ). If the file doesn't compile standalone
-(e.g. its imports need `-I` dirs not given), rebinds are skipped with a note
-and only formatting applies.
+The cast rule removes a call, so there is no IR to hold equal. Its correctness
+rests on the detection rule — `int()` on an `int` is the identity — with a
+compile gate behind it: if the original source compiles here, the rewritten
+source must too, or `lint` refuses to produce any output.
+
+Parentheses follow the slot. `let m = int(a + 1)` becomes `let m = a + 1`;
+`2 * int(a + 1)` becomes `2 * (a + 1)`; and because Petal's commas are
+optional, an operator argument in a comma-less list (`f(int(a + 1) b)`) is
+skipped entirely — no grouping can be added there that means the same thing.
+
+There is deliberately **no** rebind rule: an earlier version rewrote `x = f(x)`
+to `f(@x)`. The `@` operator is still part of the language, but it reads as
+sugar you have to learn, so the linter no longer pushes code into it.
 
 ### `lsp` — Serve the language server
 

@@ -151,11 +151,14 @@ Commands:
                                  --trace: emit per-term events to stderr
                                  (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
-  lint [--fix | --check] <file>  Normalize source (2-space indent, rebind `x = f(x)` -> `f(@x)`)
+  lint [--fix | --check] <file>  Normalize source (2-space indent, drop identity
+                                 casts like int(n) where n is already an int)
                                  default: report and exit 1 if changes needed
                                  --fix: rewrite the file in place
                                  --check: CI mode, exit 0/1 with no output on success
   lint -e <code>                 Lint inline code, print result to stdout
+  lint-fix <file>                Same as 'lint --fix <file>': rewrite in place.
+                                 Makes no change if the file fails to parse.
   show-ir [--json] [--all] <file> Display compiled IR (--all to include builtin phantoms)
   show-bytecode [--json] <file>  Display the bytecode lowering of the compiled IR
   show-ast [--json] <file>       Display parsed AST

@@ -46,7 +46,7 @@ working documents — expect internal shorthand and point-in-time status:
 | [Testing](dev/testing.md) | How to write and run the test suites |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to introspect Petal programs |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
-| [Linter Plan](dev/linter-plan.md) | `petal lint` design; first slice shipped, normalization catalogue remains |
+| [Linter Plan](dev/linter-plan.md) | `petal lint` / `lint-fix` design; re-indent + identity-cast rules shipped, normalization catalogue remains |
 | [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: a typed phase channel for compiler errors |
 | [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |

@@ -12,31 +12,36 @@
 //!    construction. Petal is newline-significant but not
 //!    indentation-significant, so this cannot change semantics.
 //!
-//! 2. **Rebind** ([`find_rebinds`]) — the semantics-preserving idiom rewrite
-//!    `x = f(x)` → `f(@x)`. Candidates are detected on the AST and applied as
-//!    two minimal string splices (delete the `x = ` prefix, insert `@` before
-//!    the matching argument) — no reprinting, so comments inside the call
-//!    survive.
+//! 2. **Identity casts** ([`casts`]) — delete `int(n)` where `n` is already an
+//!    `int` (likewise `float`/`str`). Candidates come from the type checker,
+//!    which is deliberately conservative — anything it cannot prove infers
+//!    `any` and is left alone — and are applied as two minimal string splices
+//!    per cast, so comments and layout inside the argument survive.
 //!
-//! Because rebind changes tokens (not just whitespace), [`lint_source`] gates
-//! it behind an **IR-equivalence check**: the pre- and post-lint sources must
-//! compile to structurally identical IR (modulo source text and spans). If
-//! the original doesn't compile (e.g. imports unresolvable here), rebinds are
-//! skipped and only formatting applies; if the gate ever reports a real
-//! difference, lint refuses to produce output — that's a linter bug, not a
-//! user error.
+//! Because the cast rule changes tokens (not just whitespace), [`lint_source`]
+//! gates it: if the original source compiles, the rewritten source must compile
+//! too, or lint refuses to produce output. That is a weaker gate than
+//! full IR equality — removing a call *does* change the IR, which is the point
+//! — so the real guarantee comes from the detection rule: an `int` cast is only
+//! dropped when its argument's static type is `int`, and `int()` on an `int` is
+//! the identity (`rust/src/builtins/math.rs`).
+//!
+//! A note on what is *not* here: an earlier slice rewrote `x = f(x)` to the
+//! rebind form `f(@x)`. That rule is gone. The `@` operator remains a language
+//! feature, but it reads as sugar that has to be learned, so the linter no
+//! longer pushes code into it.
 
 use std::path::PathBuf;
 
 use crate::env::Env;
 
-mod rebind;
+mod casts;
 mod reindent;
 
-use rebind::{apply_rebinds, find_rebinds};
+use casts::{apply_cast_edits, plan_cast_edits};
 pub use reindent::reindent;
 
-/// Context the IR-equivalence gate needs to compile the source the same way
+/// Context the compile gate needs to compile the source the same way
 /// `petal run` would: module search dirs and the file's own path (imports
 /// resolve relative to it).
 #[derive(Default)]
@@ -51,10 +56,9 @@ pub struct LintOutcome {
     pub output: String,
     /// Lines whose text changed in the formatting pass.
     pub reindented_lines: usize,
-    /// Rebind rewrites applied (post-gate).
-    pub rebinds: usize,
-    /// Human-readable notes (e.g. rebinds skipped because the IR gate was
-    /// unavailable).
+    /// Identity casts removed.
+    pub casts_removed: usize,
+    /// Human-readable notes.
     pub notes: Vec<String>,
 }
 
@@ -64,48 +68,46 @@ impl LintOutcome {
     }
 }
 
-/// Normalize `source`: apply rebind rewrites (IR-gated), then re-indent.
-/// Errors if the source doesn't parse, or if a rewrite fails the equivalence
-/// gate outright (which indicates a lint bug and refuses all output).
+/// Normalize `source`: drop identity casts (compile-gated), then re-indent.
+/// Errors if the source doesn't parse, or if a rewrite fails the gate outright
+/// (which indicates a lint bug and refuses all output).
 pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, String> {
     // Lint operates on valid programs only.
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
 
     let mut notes = Vec::new();
     let chars: Vec<char> = source.chars().collect();
-    let candidates = find_rebinds(&stmts, &chars);
-    let mut rebinds = candidates.len();
-    let mut rebound = if candidates.is_empty() {
+
+    let signatures = crate::compiler::collect_fn_signatures(&stmts);
+    let found = crate::typecheck::find_redundant_casts(&stmts, &signatures);
+    let edits = plan_cast_edits(&found, &chars);
+    let casts_removed = edits.len();
+    let rewritten = if edits.is_empty() {
         source.to_string()
     } else {
-        apply_rebinds(&chars, &candidates)
+        apply_cast_edits(&chars, &edits)
     };
 
-    if rebinds > 0 {
-        match ir_gate(source, &rebound, opts) {
-            Gate::Equivalent => {}
-            Gate::Different(detail) => {
-                return Err(format!(
-                    "lint bug: the rebind rewrite changed the compiled IR — refusing to \
-                     produce output ({detail})"
-                ));
-            }
-            Gate::Unavailable(reason) => {
-                notes.push(format!(
-                    "skipped {rebinds} rebind rewrite(s): can't verify IR equivalence ({reason})"
-                ));
-                rebinds = 0;
-                rebound = source.to_string();
-            }
+    if casts_removed > 0 {
+        // Only meaningful when the original compiles here at all; a file whose
+        // imports don't resolve outside its app gets the detection rule alone.
+        if compile_ir(source, opts).is_ok()
+            && let Err(e) = compile_ir(&rewritten, opts)
+        {
+            return Err(format!(
+                "lint bug: removing an identity cast broke compilation — refusing to \
+                 produce output ({e})"
+            ));
         }
+        notes.push(format!("removed {casts_removed} redundant cast(s)"));
     }
 
-    let output = reindent(&rebound)?;
-    let reindented_lines = count_changed_lines(&rebound, &output);
+    let output = reindent(&rewritten)?;
+    let reindented_lines = count_changed_lines(&rewritten, &output);
     Ok(LintOutcome {
         output,
         reindented_lines,
-        rebinds,
+        casts_removed,
         notes,
     })
 }
@@ -119,38 +121,9 @@ fn count_changed_lines(before: &str, after: &str) -> usize {
     n
 }
 
-// ---------------------------------------------------------------------------
-// IR-equivalence gate
-// ---------------------------------------------------------------------------
-
-enum Gate {
-    Equivalent,
-    Different(String),
-    Unavailable(String),
-}
-
-/// Compile both sources and compare the entry programs' full serialized IR —
-/// term ids, blocks, registers, constants, everything except the source text
-/// and the source map (whitespace edits move spans). No structural slack:
-/// statement-level `f(@x)` desugars to exactly `x = f(x)`
-/// ([`crate::desugar`]), so the rebind rewrite must produce an identical
-/// program.
-fn ir_gate(before: &str, after: &str, opts: &LintOptions) -> Gate {
-    let pre = match compile_ir(before, opts) {
-        Ok(v) => v,
-        Err(e) => return Gate::Unavailable(e),
-    };
-    let post = match compile_ir(after, opts) {
-        Ok(v) => v,
-        Err(e) => return Gate::Different(format!("rewritten source fails to compile: {e}")),
-    };
-    if pre == post {
-        Gate::Equivalent
-    } else {
-        Gate::Different("compiled IR differs".to_string())
-    }
-}
-
+/// Compile `source` and return its entry program's serialized IR, minus the
+/// source text and source map (whitespace edits move spans). Used as a
+/// does-it-still-compile gate, and by the corpus test to compare programs.
 fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, String> {
     let mut env = Env::new();
     for dir in &opts.include_dirs {
@@ -175,8 +148,6 @@ fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, Str
 mod tests {
     use super::*;
 
-    // ---- IR gate + corpus property test ----
-
     fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -198,12 +169,11 @@ mod tests {
     }
 
     /// The linter-plan safeguard, as a property test over the whole repo
-    /// corpus: for every program that compiles, `lint` output must compile to
-    /// structurally identical IR. (Programs that parse but don't compile in
-    /// isolation — e.g. import-dependent files — get formatting only, which
-    /// `lint_source` guarantees by skipping unverifiable rebinds.)
+    /// corpus: every program that compiles must still compile after linting,
+    /// and linting must be a fixed point. (A program with no casts to remove
+    /// gets formatting only, which cannot change semantics at all.)
     #[test]
-    fn lint_preserves_ir_over_repo_corpus() {
+    fn lint_preserves_compilation_over_repo_corpus() {
         let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("repo root");
@@ -224,14 +194,18 @@ mod tests {
             if compile_ir(&src, &opts).is_err() {
                 continue; // formatting-only file; nothing to compare
             }
-            match ir_gate(&src, &outcome.output, &opts) {
-                Gate::Equivalent => {}
-                Gate::Different(d) => {
-                    panic!("lint changed IR for {}: {}", path.display(), d)
-                }
-                Gate::Unavailable(e) => {
-                    panic!("IR gate unavailable for {}: {}", path.display(), e)
-                }
+            if let Err(e) = compile_ir(&outcome.output, &opts) {
+                panic!("lint broke compilation for {}: {}", path.display(), e);
+            }
+            // A file the rules leave alone must be byte-identical in IR too,
+            // which pins the formatting pass as semantics-free.
+            if outcome.casts_removed == 0 {
+                assert_eq!(
+                    compile_ir(&src, &opts).ok(),
+                    compile_ir(&outcome.output, &opts).ok(),
+                    "formatting changed IR for {}",
+                    path.display()
+                );
             }
             // And linting again must be a fixed point.
             let again = lint_source(&outcome.output, &opts).expect("relint");

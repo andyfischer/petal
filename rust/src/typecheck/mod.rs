@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+pub mod builtin_types;
 pub mod unused;
 
 use crate::ast::{
@@ -32,6 +33,43 @@ impl VarType {
     }
 }
 
+/// A call to a cast builtin whose argument is *already* that type, so the cast
+/// is the identity — `int(n)` on an `int`, `float(f)` on a `float`, `str(s)` on
+/// a `string`. Reported with the spans [`crate::lint`] needs to delete the cast
+/// without reprinting the argument.
+#[derive(Debug, Clone, Copy)]
+pub struct RedundantCast {
+    /// The whole `int(...)` call expression.
+    pub call: SourceSpan,
+    /// Just the argument expression, which is what remains after the fix.
+    pub arg: SourceSpan,
+    /// The cast builtin's name, for the report line.
+    pub name: &'static str,
+    /// Whether the argument is a single term, so it stands alone with no
+    /// parentheses at all. False for operator expressions and block forms.
+    pub arg_is_atomic: bool,
+    /// Where the cast sits, which decides what has to replace its parentheses.
+    pub slot: CastSlot,
+}
+
+/// The syntactic position of a cast call, as far as removing it is concerned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastSlot {
+    /// The expression fills a slot with unambiguous edges of its own: an
+    /// assignment's right-hand side, a `return` value, a statement, the lone
+    /// argument of a call. `let e = int(a + 1)` becomes `let e = a + 1`.
+    Delimited,
+    /// An operand of a larger expression. Parentheses must replace the call's:
+    /// `2 * int(a + b)` becomes `2 * (a + b)`, never `2 * a + b`.
+    Operand,
+    /// One element of a comma-*optional* list — a multi-argument call, a list
+    /// literal, a record value. Parentheses are not enough here, because
+    /// juxtaposition is a separator: `f((a + 1) (b + 1))` reads as a call, not
+    /// two arguments. The fix is only safe when the source shows real commas,
+    /// which only the rewriter can see.
+    ListElement,
+}
+
 struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     scopes: Vec<HashMap<String, VarType>>,
@@ -42,6 +80,32 @@ struct Checker<'a> {
     /// a `return` inside a lambda is unchecked (its `None` frame).
     ret_stack: Vec<Option<(Type, String)>>,
     diags: Vec<Diagnostic>,
+    casts: Vec<RedundantCast>,
+    /// The slot the next expression walked will occupy. Set immediately before
+    /// the `check_expr` call that enters it, and read (and reset to the
+    /// [`CastSlot::Operand`] default) on entry, so it describes that one
+    /// expression and never leaks into its subexpressions.
+    slot: CastSlot,
+}
+
+/// Walk a module once, returning both products of the pass: the warnings and
+/// the identity casts found along the way.
+fn run(
+    stmts: &[Stmt],
+    fn_signatures: &HashMap<(String, usize), FnSignature>,
+) -> (Vec<Diagnostic>, Vec<RedundantCast>) {
+    let mut checker = Checker {
+        fn_signatures,
+        scopes: vec![HashMap::new()],
+        ret_stack: Vec::new(),
+        diags: Vec::new(),
+        casts: Vec::new(),
+        slot: CastSlot::Operand,
+    };
+    for stmt in stmts {
+        checker.check_stmt(stmt);
+    }
+    (checker.diags, checker.casts)
 }
 
 /// Type-check a module's statements against its (globally collected) function
@@ -50,16 +114,17 @@ pub fn check_module(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
 ) -> Vec<Diagnostic> {
-    let mut checker = Checker {
-        fn_signatures,
-        scopes: vec![HashMap::new()],
-        ret_stack: Vec::new(),
-        diags: Vec::new(),
-    };
-    for stmt in stmts {
-        checker.check_stmt(stmt);
-    }
-    checker.diags
+    run(stmts, fn_signatures).0
+}
+
+/// Every `int`/`float`/`str` call whose argument the checker already proved to
+/// be that type. Same inference as [`check_module`], so it inherits the pass's
+/// conservatism: anything ambiguous is `Any` and yields no result here.
+pub fn find_redundant_casts(
+    stmts: &[Stmt],
+    fn_signatures: &HashMap<(String, usize), FnSignature>,
+) -> Vec<RedundantCast> {
+    run(stmts, fn_signatures).1
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -205,6 +270,7 @@ impl<'a> Checker<'a> {
                 if let Some(ann) = ty {
                     self.check_type_ann(ann, stmt.span);
                 }
+                self.slot = CastSlot::Delimited;
                 let inferred = self.check_expr(value);
                 let declared = ty.as_ref().and_then(|t| t.resolved);
                 self.check_assignment(value.span, name, declared, inferred);
@@ -226,6 +292,7 @@ impl<'a> Checker<'a> {
             // the declared type of a `var` constrains its writes identically.
             StmtKind::Assign { target, value } | StmtKind::Set { target, value } => match target {
                 AssignTarget::Name(n) => {
+                    self.slot = CastSlot::Delimited;
                     let vt = self.check_expr(value);
                     let declared = self.lookup(n).and_then(|v| v.declared);
                     self.check_assignment(value.span, n, declared, vt);
@@ -247,6 +314,7 @@ impl<'a> Checker<'a> {
                 }
             },
             StmtKind::Expr(e) => {
+                self.slot = CastSlot::Delimited;
                 self.check_expr(e);
             }
             StmtKind::FnDecl {
@@ -289,6 +357,7 @@ impl<'a> Checker<'a> {
             }
             StmtKind::Return(value) => {
                 if let Some(e) = value {
+                    self.slot = CastSlot::Delimited;
                     let ty = self.check_expr(e);
                     // Check the returned value against the enclosing fn's
                     // declared return type (bare `return` → nil is left
@@ -323,6 +392,7 @@ impl<'a> Checker<'a> {
         for (i, stmt) in stmts.iter().enumerate() {
             if i == last {
                 if let StmtKind::Expr(e) = &stmt.kind {
+                    self.slot = CastSlot::Delimited;
                     let t = self.check_expr(e);
                     tail = (t, Some(e.span));
                     continue;
@@ -345,6 +415,10 @@ impl<'a> Checker<'a> {
     /// Walk an expression (emitting nested diagnostics, incl. call-arg checks)
     /// and return its conservatively inferred [`Type`].
     fn check_expr(&mut self, expr: &Expr) -> Type {
+        // Consume the caller's "this slot is already delimited" hint: it
+        // describes *this* expression, and every subexpression is nested inside
+        // something and so is not delimited.
+        let slot = std::mem::replace(&mut self.slot, CastSlot::Operand);
         match &expr.kind {
             ExprKind::Literal(lit) => match lit {
                 Literal::Nil => Type::Nil,
@@ -376,7 +450,23 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Call { function, args } => {
                 self.check_expr(function);
-                let arg_types: Vec<Type> = args.iter().map(|a| self.check_expr(a)).collect();
+                // A lone argument fills the call's parens on its own, so it is
+                // delimited too. With two or more, Petal's optional commas make
+                // dropping parentheses around an operator expression a parse
+                // question, so those slots stay undelimited.
+                let arg_slot = if args.len() == 1 {
+                    CastSlot::Delimited
+                } else {
+                    CastSlot::ListElement
+                };
+                let arg_types: Vec<Type> = args
+                    .iter()
+                    .map(|a| {
+                        self.slot = arg_slot;
+                        self.check_expr(a)
+                    })
+                    .collect();
+                self.note_redundant_cast(expr, function, args, &arg_types, slot);
                 self.check_call(function, args, &arg_types)
             }
             ExprKind::If {
@@ -426,6 +516,7 @@ impl<'a> Checker<'a> {
             }
             ExprKind::List(items) => {
                 for it in items {
+                    self.slot = CastSlot::ListElement;
                     self.check_expr(it);
                 }
                 Type::List
@@ -434,6 +525,7 @@ impl<'a> Checker<'a> {
                 for f in fields {
                     match f {
                         RecordField::Named(_, e) | RecordField::Spread(e) => {
+                            self.slot = CastSlot::ListElement;
                             self.check_expr(e);
                         }
                     }
@@ -472,16 +564,51 @@ impl<'a> Checker<'a> {
                 props, children, ..
             } => {
                 for (_, e) in props {
+                    self.slot = CastSlot::ListElement;
                     self.check_expr(e);
                 }
                 for c in children {
                     if let JsxChild::Expr(e) = c {
+                        self.slot = CastSlot::ListElement;
                         self.check_expr(e);
                     }
                 }
                 Type::Element
             }
         }
+    }
+
+    /// Record `int(n)` / `float(f)` / `str(s)` calls whose argument already has
+    /// the cast's own type. Only the builtin counts: a local binding or a
+    /// module `fn` of the same name shadows it and could do anything.
+    fn note_redundant_cast(
+        &mut self,
+        call: &Expr,
+        function: &Expr,
+        args: &[Expr],
+        arg_types: &[Type],
+        slot: CastSlot,
+    ) {
+        let ExprKind::Ident(f) = &function.kind else {
+            return;
+        };
+        let [arg] = args else { return };
+        if self.lookup(f).is_some() || self.fn_signatures.contains_key(&(f.clone(), 1)) {
+            return;
+        }
+        let name = match (f.as_str(), arg_types[0]) {
+            ("int", Type::Int) => "int",
+            ("float", Type::Float) => "float",
+            ("str", Type::String) => "str",
+            _ => return,
+        };
+        self.casts.push(RedundantCast {
+            call: call.span,
+            arg: arg.span,
+            name,
+            arg_is_atomic: is_atomic(&arg.kind),
+            slot,
+        });
     }
 
     /// Resolve a call's result type and, for a statically-known named function,
@@ -503,7 +630,10 @@ impl<'a> Checker<'a> {
             _ => {}
         }
         let Some(sig) = self.fn_signatures.get(&(f.clone(), args.len())).cloned() else {
-            return Type::Any;
+            // Not a module function: fall back to the builtin table. It knows
+            // only result types (builtins declare no parameter types), so
+            // there is nothing to check the arguments against.
+            return builtin_types::builtin_return_type(f, arg_types).unwrap_or(Type::Any);
         };
         for (i, pt) in sig.params.iter().enumerate() {
             let Some(pt) = pt else { continue };
@@ -526,6 +656,25 @@ impl<'a> Checker<'a> {
         }
         sig.ret.unwrap_or(Type::Any)
     }
+}
+
+/// Whether an expression keeps its meaning with no parentheses around it, so a
+/// wrapping call's parens can simply be deleted. Anything with an operator or a
+/// block form keeps them.
+fn is_atomic(kind: &ExprKind) -> bool {
+    matches!(
+        kind,
+        ExprKind::Literal(_)
+            | ExprKind::Ident(_)
+            | ExprKind::AtVar(_)
+            | ExprKind::Call { .. }
+            | ExprKind::FieldAccess { .. }
+            | ExprKind::IndexAccess { .. }
+            | ExprKind::List(_)
+            | ExprKind::Record(_)
+            | ExprKind::StringInterp { .. }
+            | ExprKind::Element { .. }
+    )
 }
 
 /// Conservative result type of a binary operator given operand types.

@@ -21,6 +21,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "lsp" => parse_lsp_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
+        "lint-fix" => parse_lint_fix_args(&args[1..]),
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
         }
@@ -153,6 +154,39 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Lint { fix, check },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `lint-fix <file>` — `lint --fix` under its own name, because rewriting a
+/// file in place is the thing most callers want and a flag is easy to forget.
+/// It takes a path only: there is no file to rewrite for inline `-e` code.
+fn parse_lint_fix_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal lint-fix <file>";
+    let mut source: Option<SourceInput> = None;
+    for arg in args {
+        if arg.starts_with('-') {
+            eprintln!("Unexpected option '{}'. {}", arg, usage);
+            process::exit(1);
+        }
+        if source.is_some() {
+            eprintln!("lint-fix takes a single file. {}", usage);
+            process::exit(1);
+        }
+        source = Some(SourceInput::File(arg.clone()));
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("{}", usage);
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::Lint {
+            fix: true,
+            check: false,
+        },
         source,
         include_dirs: Vec::new(),
     }

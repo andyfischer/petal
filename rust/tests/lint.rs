@@ -1,7 +1,7 @@
 // Source→source regression tests for `petal lint` (rust/src/lint.rs).
 //
 // Every case asserts the exact linted output for a given input source, so any
-// behavior change in the re-indenter or the rebind rewrite shows up as a
+// behavior change in the re-indenter or the cast rewrite shows up as a
 // readable string diff. `assert_lints_to` also re-lints its own output and
 // asserts a fixed point, so idempotence is pinned by every positive case.
 //
@@ -595,361 +595,158 @@ run([
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Pass 2 — rebind: `x = f(x)` → `f(@x)`
+// Pass 2 — identity casts: `int(n)` where `n` is already an `int`
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn rebind_basic_user_function() {
+fn identity_cast_on_a_typed_local_is_dropped() {
     assert_lints_to(
         "\
-fn double(n)
-n * 2
-end
-let x = 3
-x = double(x)
-print(x)
+let n = 5
+let m = int(n)
+print(m)
 ",
         "\
-fn double(n)
-  n * 2
-end
-let x = 3
-double(@x)
-print(x)
+let n = 5
+let m = n
+print(m)
 ",
     );
 }
 
 #[test]
-fn rebind_builtin_append() {
+fn each_cast_builtin_drops_on_its_own_type() {
     assert_lints_to(
-        "\
-let nums = [1, 2, 3]
-nums = append(nums, 4)
-print(nums)
-",
-        "\
-let nums = [1, 2, 3]
-append(@nums, 4)
-print(nums)
-",
+        "let a = int(1)\nlet b = float(1.5)\nlet c = str(\"hi\")\nprint([a, b, c])\n",
+        "let a = 1\nlet b = 1.5\nlet c = \"hi\"\nprint([a, b, c])\n",
     );
 }
 
+/// The whole point of the rule: int arithmetic stays int (`7 / 2` is `3`), so
+/// wrapping it is a no-op — while a float operand anywhere makes the cast real.
 #[test]
-fn rebind_matches_any_argument_position() {
+fn int_arithmetic_needs_no_int_cast_but_float_arithmetic_does() {
     assert_lints_to(
-        "\
-fn first(a, b)
-a
-end
-fn second(a, b)
-b
-end
-let u = 1
-let v = 2
-u = first(u, 9)
-v = second(9, v)
-print(u, v)
-",
-        "\
-fn first(a, b)
-  a
-end
-fn second(a, b)
-  b
-end
-let u = 1
-let v = 2
-first(@u, 9)
-second(9, @v)
-print(u, v)
-",
+        "let w = 100\nprint(int(w / 2))\n",
+        "let w = 100\nprint(w / 2)\n",
     );
+    assert_fixed_point("let w = 100\nprint(int(w * 0.6))\n");
 }
 
+/// `clamp` coerces to f64 and returns a float even for all-int arguments, so
+/// the `float` here is redundant and the `int` is not.
 #[test]
-fn rebind_inside_fn_body() {
+fn builtin_result_types_drive_the_rule() {
     assert_lints_to(
-        "\
-fn grow()
-let items = [1]
-items = append(items, 2)
-items
-end
-print(grow())
-",
-        "\
-fn grow()
-  let items = [1]
-  append(@items, 2)
-  items
-end
-print(grow())
-",
+        "let v = clamp(3, 0, 10)\nprint(float(v))\n",
+        "let v = clamp(3, 0, 10)\nprint(v)\n",
     );
-}
-
-#[test]
-fn rebind_inside_for_body() {
+    assert_fixed_point("let v = clamp(3, 0, 10)\nprint(int(v))\n");
+    // `len` is an int; `sqrt` is a float.
     assert_lints_to(
-        "\
-let out = []
-for i in range(0, 3) do
-out = append(out, i)
-end
-print(out)
-",
-        "\
-let out = []
-for i in range(0, 3) do
-  append(@out, i)
-end
-print(out)
-",
+        "let xs = [1, 2]\nprint(int(len(xs)))\n",
+        "let xs = [1, 2]\nprint(len(xs))\n",
     );
+    assert_fixed_point("print(int(sqrt(2.0)))\n");
 }
 
+/// `round`/`floor`/`ceil`/`abs` preserve int-ness rather than producing one, so
+/// the cast is redundant on an int and load-bearing on a float.
 #[test]
-fn rebind_inside_while_body() {
+fn type_preserving_math_builtins_follow_their_argument() {
     assert_lints_to(
-        "\
-let i = 0
-let acc = []
-while i < 3 do
-acc = append(acc, i)
-i = i + 1
-end
-print(acc)
-",
-        "\
-let i = 0
-let acc = []
-while i < 3 do
-  append(@acc, i)
-  i = i + 1
-end
-print(acc)
-",
+        "let n = 5\nprint(int(round(n)))\n",
+        "let n = 5\nprint(round(n))\n",
     );
+    assert_fixed_point("print(int(round(2.5)))\n");
 }
 
 #[test]
-fn rebind_inside_if_and_else_bodies() {
+fn nested_identity_casts_all_collapse() {
     assert_lints_to(
-        "\
-let xs = [1]
-if len(xs) > 0 then
-xs = append(xs, 2)
-else
-xs = append(xs, 3)
-end
-print(xs)
-",
-        "\
-let xs = [1]
-if len(xs) > 0 then
-  append(@xs, 2)
-else
-  append(@xs, 3)
-end
-print(xs)
-",
+        "let n = 5\nprint(int(int(int(n))))\n",
+        "let n = 5\nprint(n)\n",
     );
 }
 
 #[test]
-fn rebind_inside_block_lambda_body() {
+fn parens_are_kept_where_precedence_needs_them() {
+    // Operand of a binary op: the argument must stay grouped.
     assert_lints_to(
-        "\
-let g = fn(n)
-let acc = [n]
-acc = append(acc, n)
-acc
-end
-print(g(1))
-",
-        "\
-let g = fn(n)
-  let acc = [n]
-  append(@acc, n)
-  acc
-end
-print(g(1))
-",
+        "let n = 5\nprint(2 * int(n + 1))\n",
+        "let n = 5\nprint(2 * (n + 1))\n",
     );
-}
-
-#[test]
-fn rebind_on_state_variable() {
+    // Already-delimited slots drop the parens entirely.
     assert_lints_to(
-        "\
-fn tick()
-state acc = []
-acc = append(acc, 1)
-len(acc)
-end
-print(tick())
-",
-        "\
-fn tick()
-  state acc = []
-  append(@acc, 1)
-  len(acc)
-end
-print(tick())
-",
+        "let n = 5\nlet m = int(n + 1)\nprint(m)\n",
+        "let n = 5\nlet m = n + 1\nprint(m)\n",
     );
-}
-
-#[test]
-fn rebind_keeps_trailing_comment() {
     assert_lints_to(
-        "\
-let n = [1]
-n = append(n, 2) // grow the list
-print(n)
-",
-        "\
-let n = [1]
-append(@n, 2) // grow the list
-print(n)
-",
+        "let n = 5\nprint(int(n + 1))\n",
+        "let n = 5\nprint(n + 1)\n",
     );
 }
 
+/// An argument with an explicit comma on each side is unambiguous, so the
+/// grouping goes away with the cast.
 #[test]
-fn rebind_multiline_call_keeps_interior_comments() {
+fn comma_delimited_slots_drop_their_parens() {
     assert_lints_to(
-        "\
-fn push2(xs, a, b)
-append(append(xs, a), b)
-end
-let xs = [1]
-xs = push2(
-xs, // keep me
-2,
-3
-)
-print(xs)
-",
-        "\
-fn push2(xs, a, b)
-  append(append(xs, a), b)
-end
-let xs = [1]
-push2(
-  @xs, // keep me
-  2,
-  3
-)
-print(xs)
-",
+        "let n = 5\nprint(int(n + 1), int(n + 2))\n",
+        "let n = 5\nprint(n + 1, n + 2)\n",
+    );
+    assert_lints_to(
+        "let n = 5\nprint([1, int(n + 1)])\n",
+        "let n = 5\nprint([1, n + 1])\n",
+    );
+}
+
+/// Petal's commas are optional, and juxtaposition is itself a separator, so
+/// nothing can replace the parens in a comma-less list — `print((n + 1) (n + 2))`
+/// reads as a call. The fix is skipped rather than made unsafe.
+#[test]
+fn juxtaposed_operator_argument_is_left_alone() {
+    assert_fixed_point("let n = 5\nprint(int(n + 1) int(n + 2))\n");
+    // A single-term argument has nothing to regroup, so it still applies.
+    assert_lints_to(
+        "let n = 5\nprint(int(n) int(n))\n",
+        "let n = 5\nprint(n n)\n",
     );
 }
 
 #[test]
-fn multiple_rebinds_in_one_program() {
-    let outcome = lint_outcome(
-        "\
-let a = [1]
-let b = [2]
-a = append(a, 10)
-b = append(b, 20)
-print(a, b)
-",
-    );
-    assert_eq!(
-        outcome.output,
-        "\
-let a = [1]
-let b = [2]
-append(@a, 10)
-append(@b, 20)
-print(a, b)
-",
-    );
-    assert_eq!(outcome.rebinds, 2);
-}
-
-// ── Rebind skip cases: each must survive lint byte-for-byte (mod formatting) ──
-
-#[test]
-fn no_rebind_when_var_appears_twice_in_args() {
-    assert_fixed_point("let x = 1\nx = add(x, x)\n");
-}
-
-#[test]
-fn no_rebind_when_var_also_used_outside_the_arg() {
-    assert_fixed_point("let x = 1\nx = add(x, x + 1)\n");
-}
-
-#[test]
-fn no_rebind_when_var_does_not_appear_in_call() {
-    assert_fixed_point("let x = 1\nlet y = 2\nx = double(y)\nprint(x)\n");
-}
-
-#[test]
-fn no_rebind_when_callee_is_the_var_itself() {
-    assert_fixed_point("let x = double\nx = x(1)\n");
-}
-
-#[test]
-fn no_rebind_when_rhs_is_not_a_call() {
-    assert_fixed_point("let x = 1\nx = x + 1\nprint(x)\n");
-}
-
-#[test]
-fn no_rebind_on_let_bindings() {
-    // `let` introduces a new binding; the RHS var is a different variable.
-    assert_fixed_point("let x = 1\nlet y = double(x)\nprint(y)\n");
-}
-
-#[test]
-fn no_rebind_when_callee_is_a_field_access() {
-    assert_fixed_point("let x = 1\nx = obj.push(x)\n");
-}
-
-#[test]
-fn no_rebind_on_field_or_index_targets() {
-    assert_fixed_point(
-        "\
-let p = { x: 1 }
-p.x = double(p.x)
-let xs = [1]
-xs[0] = double(xs[0])
-",
+fn a_trailing_comment_survives_the_rewrite() {
+    assert_lints_to(
+        "let n = 5\nlet m = int(n) // keep me\nprint(m)\n",
+        "let n = 5\nlet m = n // keep me\nprint(m)\n",
     );
 }
 
+/// A comment between the argument and the closing paren would be inside the
+/// text the fix deletes, so the span check rejects the edit and the cast stays.
 #[test]
-fn no_rebind_when_value_already_contains_at_marker() {
-    // An existing `@` in the value could become a second marker on the same
-    // call, which the desugarer refuses to lift.
-    assert_fixed_point("let x = 1\nlet y = 2\nx = wrap(@y, x)\n");
+fn a_comment_inside_the_call_parens_blocks_the_fix() {
+    assert_fixed_point("let n = 5\nlet m = int(n // why\n)\nprint(m)\n");
 }
 
 #[test]
-fn no_rebind_when_var_is_captured_by_a_nested_lambda() {
-    assert_fixed_point("let x = 1\nx = run(x, fn() -> x)\n");
+fn casts_are_left_alone_when_the_type_is_unknown() {
+    // A parameter with no annotation infers `any`: nothing is provable.
+    assert_fixed_point("fn f(x)\n  int(x)\nend\nprint(f(1))\n");
+    // A `var` cell may be re-`set` from anywhere, so its initializer says
+    // nothing about what a read observes.
+    assert_fixed_point("var n = 5\nprint(int(n))\n");
+    // A user function of the same name shadows the builtin.
+    assert_fixed_point("fn int(v)\n  v * 2\nend\nlet n = 5\nprint(int(n))\n");
+    // So does a local binding.
+    assert_fixed_point("let n = 5\nlet int = fn(v)\n  v\nend\nprint(int(n))\n");
 }
 
 #[test]
-fn no_rebind_inside_match_arm_bodies() {
-    // The desugarer doesn't lift `@` out of match arms, so the linter must
-    // not rewrite assignments there.
-    assert_fixed_point(
-        "\
-let x = [1]
-let r = match len(x)
-  when 1 do
-    x = append(x, 2)
-    \"one\"
-  end
-  when _ -> \"other\"
-end
-print(r)
-",
+fn declared_types_make_the_rule_fire() {
+    assert_lints_to(
+        "fn f(x: int) -> int\n  int(x)\nend\nprint(f(1))\n",
+        "fn f(x: int) -> int\n  x\nend\nprint(f(1))\n",
     );
 }
 
@@ -958,31 +755,31 @@ print(r)
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn rebind_and_reindent_compose_in_one_pass() {
+fn casts_and_reindent_compose_in_one_pass() {
     assert_lints_to(
         "\
-fn collect(items)
+fn widths()
+let w = 640
+let cols = 4
 let out = []
-for item in items do
-if item > 0 then
-out = append(out, item)
-end
+for i in range(0, cols) do
+out = append(out, int(w / cols))
 end
 out
 end
-print(collect([1, -2, 3]))
+print(widths())
 ",
         "\
-fn collect(items)
+fn widths()
+  let w = 640
+  let cols = 4
   let out = []
-  for item in items do
-    if item > 0 then
-      append(@out, item)
-    end
+  for i in range(0, cols) do
+    out = append(out, w / cols)
   end
   out
 end
-print(collect([1, -2, 3]))
+print(widths())
 ",
     );
 }
@@ -992,49 +789,52 @@ fn outcome_reports_no_change_for_clean_source() {
     let src = "let x = 1\nprint(x)\n";
     let outcome = lint_outcome(src);
     assert!(!outcome.changed(src));
-    assert_eq!(outcome.rebinds, 0);
+    assert_eq!(outcome.casts_removed, 0);
     assert_eq!(outcome.reindented_lines, 0);
     assert!(outcome.notes.is_empty());
 }
 
 #[test]
-fn outcome_counts_reindented_lines() {
+fn outcome_counts_reindented_lines_and_casts() {
     let src = "fn f()\nlet x = 1\nx\nend\n";
     let outcome = lint_outcome(src);
     assert!(outcome.changed(src));
     assert_eq!(outcome.reindented_lines, 2); // the two body lines
-    assert_eq!(outcome.rebinds, 0);
-}
+    assert_eq!(outcome.casts_removed, 0);
 
-#[test]
-fn unverifiable_rebind_is_skipped_with_a_note_but_formatting_still_applies() {
-    // The import can't resolve here, so the IR gate is unavailable: the
-    // rebind must be skipped (never applied unverified) while re-indentation
-    // still runs.
-    let src = "\
-import nosuchmodule
-fn f()
-let a = [1]
-a = append(a, 2)
-a
-end
-";
-    let outcome = lint_outcome(src);
-    assert_eq!(outcome.rebinds, 0);
+    let outcome = lint_outcome("let n = 5\nprint(int(n) + int(n))\n");
+    assert_eq!(outcome.casts_removed, 2);
     assert_eq!(outcome.notes.len(), 1);
     assert!(
-        outcome.notes[0].contains("skipped 1 rebind"),
-        "unexpected note: {}",
-        outcome.notes[0]
+        outcome.notes[0].contains("2 redundant cast"),
+        "{:?}",
+        outcome.notes
     );
+}
+
+/// A file whose imports can't resolve here still gets both passes: the cast
+/// rule is a source-level analysis and needs no compile step. Names that come
+/// from the unresolved import simply infer `any`, so nothing is proposed for
+/// them.
+#[test]
+fn unresolvable_import_does_not_block_the_rules() {
+    let outcome = lint_outcome(
+        "\
+import nosuchmodule
+fn f()
+let n = 5
+int(n)
+end
+",
+    );
+    assert_eq!(outcome.casts_removed, 1);
     assert_eq!(
         outcome.output,
         "\
 import nosuchmodule
 fn f()
-  let a = [1]
-  a = append(a, 2)
-  a
+  let n = 5
+  n
 end
 ",
     );
@@ -1044,26 +844,4 @@ end
 fn unparseable_source_is_an_error() {
     assert!(lint_source("fn (", &LintOptions::default()).is_err());
     assert!(lint_source("let = 3\n", &LintOptions::default()).is_err());
-}
-
-#[test]
-fn no_rebind_on_pipe_operator_rhs() {
-    // `x = x |> double` is call-shaped after desugaring, but the rebind
-    // rewrite must only fire on a literal call expression in the source.
-    assert_fixed_point(
-        "\
-fn double(n)
-  n * 2
-end
-let x = 1
-x = x |> double
-print(x)
-",
-    );
-}
-
-#[test]
-fn no_rebind_on_method_call_rhs() {
-    // `xs.append(4)` has a field-access callee, which the rebind rule skips.
-    assert_fixed_point("let xs = [1]\nxs = xs.append(4)\nprint(xs)\n");
 }

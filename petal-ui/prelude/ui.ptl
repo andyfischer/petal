@@ -111,6 +111,12 @@ end
 export fn draw_rect_outline(r, c)
   _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
 end
+export fn draw_rect_outline(r, c, a)
+  _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)
+end
+export fn draw_rect_outline(r, c, a, width)
+  _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a, width)
+end
 
 export fn draw_line(x1, y1, x2, y2, r, g, b)
   _native_line(x1, y1, x2, y2, r, g, b)
@@ -134,6 +140,9 @@ end
 export fn draw_circle(center, radius, c)
   _native_circle(center.x, center.y, radius, c.r, c.g, c.b)
 end
+export fn draw_circle(center, radius, c, a)
+  _native_circle(center.x, center.y, radius, c.r, c.g, c.b, a)
+end
 
 export fn draw_text(text, x, y, size, r, g, b)
   _native_text(text, x, y, size, r, g, b)
@@ -143,6 +152,9 @@ export fn draw_text(text, x, y, size, r, g, b, a)
 end
 export fn draw_text(text, pos, size, c)
   _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b)
+end
+export fn draw_text(text, pos, size, c, a)
+  _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b, a)
 end
 // Styled: a record of any subset of {size, color, font, weight, italic,
 // spacing}. Omitted fields mean plain text — the host's own font, upright,
@@ -268,6 +280,34 @@ end
 // Right-aligned text: the right edge sits at `right_x`.
 export fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
+end
+
+// Centered text: the run's midpoint sits at `cx`.
+export fn draw_text_center(text, cx, y, size, c)
+  _native_text(text, cx - text_width(text, size) / 2, y, size, c.r, c.g, c.b)
+end
+
+// Shorten `s` until it fits `avail_px` at font `size`, with a trailing "…".
+//
+// The pixel-measured counterpart to truncate_head, for anything carrying text
+// of unknown length into a fixed box. Returns `s` untouched when it already
+// fits.
+//
+// The ellipsis is appended once, at the end, and never measured back into the
+// string being trimmed. That is not tidiness: **len and slice are byte-indexed**
+// while text_width counts characters, and "…" is three bytes. A loop that
+// trimmed bytes off a string *already ending* in an ellipsis got them snapped
+// back to the character boundary, dropping the whole ellipsis and re-adding it —
+// a fixed point, and a frame that never returned.
+export fn ellipsize(s, avail_px, size)
+  if text_width(s, size) <= avail_px then return s end
+  let out = s
+  // slice snaps down to a character boundary, so each pass drops one whole
+  // character and the loop is bounded by the length of the string.
+  while len(out) > 0 && text_width(out ++ "…", size) > avail_px do
+    out = slice(out, 0, len(out) - 1)
+  end
+  out ++ "…"
 end
 
 // Join `parts` left to right with "   ·   " separators, keeping only the leading

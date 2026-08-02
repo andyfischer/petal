@@ -178,4 +178,9 @@ impl Headless {
     pub fn state_float(&self, name: &str) -> Option<f64> {
         self.state().get(name)?.as_f64()
     }
+
+    /// Convenience: a string `state` variable by name.
+    pub fn state_string(&self, name: &str) -> Option<String> {
+        Some(self.state().get(name)?.as_str()?.to_string())
+    }
 }

@@ -1098,3 +1098,114 @@ fn section_label_underlines_and_accents_only_when_active() {
         );
     });
 }
+
+#[test]
+fn record_overloads_carry_alpha_and_width() {
+    // The record forms used to stop short of alpha, so every translucent UI had
+    // to fall back to the flat 8- and 9-argument calls. These overloads are what
+    // let a whole panel vocabulary stay in record form.
+    let src = "let R = rect(4, 6, 20, 10)\n\
+               let C = {r: 10, g: 20, b: 30}\n\
+               draw_rect_outline(R, C, 128)\n\
+               draw_rect_outline(R, C, 128, 3)\n\
+               draw_circle({x: 5, y: 7}, 9, C, 64)\n\
+               draw_text(\"hi\", {x: 1, y: 2}, 12, C, 200)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            matches!(
+                cmds[0],
+                DrawCommand::RectOutline {
+                    x: 4,
+                    y: 6,
+                    a: 128,
+                    width: 1,
+                    ..
+                }
+            ),
+            "outline takes alpha, keeping the default width: {cmds:?}"
+        );
+        assert!(
+            matches!(
+                cmds[1],
+                DrawCommand::RectOutline {
+                    a: 128,
+                    width: 3,
+                    ..
+                }
+            ),
+            "outline takes alpha and width: {cmds:?}"
+        );
+        assert!(
+            matches!(
+                cmds[2],
+                DrawCommand::Circle {
+                    cx: 5,
+                    cy: 7,
+                    radius: 9,
+                    a: 64,
+                    ..
+                }
+            ),
+            "circle takes alpha: {cmds:?}"
+        );
+        assert!(
+            matches!(cmds[3], DrawCommand::Text { a: 200, .. }),
+            "text takes alpha: {cmds:?}"
+        );
+    });
+}
+
+#[test]
+fn draw_text_center_puts_the_midpoint_at_cx() {
+    // The counterpart to draw_text_right. Both measure with text_width, so the
+    // run's own width — not a guess at it — decides the origin.
+    let src = "draw_text_center(\"abcd\", 100, 20, 10, {r: 1, g: 2, b: 3})\n\
+               state w = 0\n\
+               w = text_width(\"abcd\", 10)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let width = ui.state_int("w").expect("text_width recorded");
+        match &cmds[0] {
+            DrawCommand::Text { x, y, .. } => {
+                assert_eq!((*x, *y), (100 - (width as i32) / 2, 20));
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn ellipsize_fits_the_pixel_budget_and_terminates() {
+    // The loop appends its "…" once at the end and never measures it back into
+    // the string being trimmed — doing so is a fixed point that never returns,
+    // because len/slice are byte-indexed while text_width counts characters.
+    let src = "state short = \"\"\n\
+               state long = \"\"\n\
+               state empty = \"\"\n\
+               state uni = \"\"\n\
+               short = ellipsize(\"ab\", 1000, 10)\n\
+               long = ellipsize(\"abcdefghijklmnop\", 30, 10)\n\
+               empty = ellipsize(\"abcdefghijklmnop\", 0, 10)\n\
+               uni = ellipsize(\"héllo wörld ünïcode\", 30, 10)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state_string("short").as_deref(),
+            Some("ab"),
+            "a string that already fits is returned untouched"
+        );
+        let long = ui.state_string("long").expect("long");
+        assert!(long.ends_with('…'), "clipped text is marked: {long:?}");
+        assert!(long.len() < "abcdefghijklmnop".len(), "it actually shrank");
+        assert_eq!(
+            ui.state_string("empty").as_deref(),
+            Some("…"),
+            "a zero budget trims to the bare ellipsis rather than looping"
+        );
+        // The real hazard: trimming multi-byte characters must land on
+        // character boundaries, not split a codepoint.
+        let uni = ui.state_string("uni").expect("uni");
+        assert!(uni.ends_with('…') && uni.is_char_boundary(uni.len() - '…'.len_utf8()));
+    });
+}

@@ -61,15 +61,10 @@ fn plan_one(cast: &RedundantCast, chars: &[char]) -> Option<CastEdit> {
         match cast.slot {
             CastSlot::Delimited => false,
             CastSlot::Operand => true,
-            // Parentheses cannot rescue a juxtaposed list slot — `f((a) (b))`
-            // is a call, not two arguments — so the fix applies only where the
-            // source shows real separators, and is skipped otherwise.
-            CastSlot::ListElement => {
-                if !is_separated_slot(chars, call_start, call_end) {
-                    return None;
-                }
-                false
-            }
+            // Commas are required between elements, so a list/argument slot is
+            // always bounded by a real separator: dropping the parens cannot
+            // let a neighbouring element bind across the boundary.
+            CastSlot::ListElement => false,
         }
     };
 
@@ -78,17 +73,6 @@ fn plan_one(cast: &RedundantCast, chars: &[char]) -> Option<CastEdit> {
         tail: (arg_end, call_end),
         keep_parens,
     })
-}
-
-/// Whether the call sits between explicit separators — `f(a, int(x + 1), b)`,
-/// `[1, int(x + 1)]`, `{k: int(x + 1)}`. An opening bracket, `,` or `:` before
-/// and a `,` or closing bracket after means no neighbouring element can bind
-/// across the boundary once the call's own parens are gone.
-fn is_separated_slot(chars: &[char], start: usize, end: usize) -> bool {
-    let before = chars[..start].iter().rev().find(|c| !c.is_whitespace());
-    let after = chars[end..].iter().find(|c| !c.is_whitespace());
-    matches!(before, Some(',' | '(' | '[' | '{' | ':'))
-        && matches!(after, Some(',' | ')' | ']' | '}'))
 }
 
 /// Apply the edits, highest offset first so earlier positions stay valid.

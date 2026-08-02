@@ -1,8 +1,8 @@
 // Enum construction + match destructuring to evaluate an expression tree.
 enum Expr
-  Num(value)
-  Add(left, right)
-  Mul(left, right)
+  Num(value),
+  Add(left, right),
+  Mul(left, right),
 end
 fn eval(e)
   match e

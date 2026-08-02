@@ -41,8 +41,8 @@ Enum and match
 ==================
 
 enum Shape
-  Circle(radius)
-  Square
+  Circle(radius),
+  Square,
 end
 
 match s
@@ -67,10 +67,10 @@ end
       body: (integer))))
 
 ==================
-Comma-less list juxtaposition
+List literal with a trailing comma
 ==================
 
-let m = [1 2 3]
+let m = [1, 2, 3,]
 
 ---
 
@@ -158,8 +158,8 @@ export var b = 2
 export state c = 3
 
 export enum Color
-  Red
-  Green
+  Red,
+  Green,
 end
 
 ---

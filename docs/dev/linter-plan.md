@@ -54,13 +54,14 @@ Parenthesization is decided by the cast's slot (`typecheck::CastSlot`):
 | --- | --- | --- |
 | `Delimited` — whole RHS, `return` value, statement, lone call argument | `let m = int(a + 1)` | `let m = a + 1` |
 | `Operand` — operand of a larger expression | `2 * int(a + 1)` | `2 * (a + 1)` |
-| `ListElement` — element of a comma-*optional* list | `f(int(a + 1), b)` | `f(a + 1, b)` |
-| `ListElement`, no separator in the source | `f(int(a + 1) b)` | *skipped* |
+| `ListElement` — element of a comma-separated list | `f(int(a + 1), b)` | `f(a + 1, b)` |
 
-That last row is the one that matters, and the compile gate is what found it:
-Petal's commas are optional and juxtaposition is itself a separator, so
-`f((a + 1) (b + 1))` parses as a *call*, not two arguments. Parentheses cannot
-rescue that slot, so the fix is skipped there rather than made unsafe.
+`ListElement` needs no parentheses: commas are required between elements
+(see `docs/syntax/commas.md`), so a neighbouring element can never bind across
+the boundary once the call's own parens are gone. An earlier revision of this
+rule had to skip unseparated slots, because juxtaposition made
+`f((a + 1) (b + 1))` parse as a *call* rather than two arguments; requiring
+commas removed that hazard along with the special case.
 
 **Safeguard.** The rule removes a call, so there is no IR to hold equal.
 Correctness rests on the detection rule, with a compile gate behind it: if the
@@ -149,9 +150,6 @@ Formatting (Pass 1 / whitespace-only, always safe):
 - Space after commas; no space before.
 
 Semantic / idiom rules (each needs a gate — see the safeguard above):
-- Optional-comma normalization: pick one house style for list/arg separators
-  (see `docs/syntax/optional-commas.md`) — either always-comma or the
-  juxtaposition style, consistently.
 - `if c then true else false end` → `c`; `if c then x else x end` → `x`.
 - Redundant `return` of the last expression in a fn body → implicit return.
 - `#f80` vs `#ff8800` color literal casing/length — normalize to one form.

@@ -121,7 +121,7 @@ fn module_top_level_runs_once_before_importer_diamond() {
 
 #[test]
 fn enum_variants_export_and_match_across_modules() {
-    let shapes = "export enum Shape\n  Circle(r)\n  Dot\nend";
+    let shapes = "export enum Shape\n  Circle(r),\n  Dot,\nend";
     check_output(
         &[("shapes", shapes)],
         "import shapes: Circle, Dot\n\

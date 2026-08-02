@@ -55,15 +55,14 @@ regenerated `src/`.
 
 - **Newlines are insignificant** (treated as whitespace, along with `;`). The
   real parser uses them as statement separators, but statement boundaries are
-  recoverable from structure in practice, and ignoring them keeps comma-less
-  juxtaposition (`[1 2 3]`, `color(0 1 2)`) simple. All non-aspirational
-  `.ptl` files in this repo parse without errors.
-- **Spacing-sensitive minus** (`lexer.rs`'s `MinusPrefix`: a `-` with space
-  before but not after begins a new negated element in comma-less lists, so
-  `[1 -2]` is two elements). This grammar does not model it — it would need an
-  external scanner — so `[1 -2]` parses as the subtraction `1 - 2`. This has **no
-  effect on highlighting** (both color `1`, `-`, `2` identically). Lists that
-  use commas (`[1, -2]`) are unaffected.
+  recoverable from structure in practice. All non-aspirational `.ptl` files in
+  this repo parse without errors, except those using type annotations
+  (`let x: int = …`) or the `@` rebind operator, which this grammar does not
+  model yet.
+- **Commas are required** between the elements of every delimited list, matching
+  the real parser (see `docs/syntax/commas.md`); a trailing comma before the
+  closing delimiter is allowed. Because a comma always ends an element, `-` is
+  unambiguous here too — no external scanner needed.
 - **JSX** is highlighted but not deeply validated: a `<tag` / `</tag` opening is
   recognized as a single token (a `<` immediately followed by a letter, matching
   the lexer), so comparisons must be written with a space (`a < b`) — again

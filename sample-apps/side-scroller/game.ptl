@@ -34,13 +34,13 @@ let SCREEN_H       = 600
 // ----------------------------- PHASES ---------------------------------
 
 enum Phase
-    Title
-    Playing
-    Paused
-    Dying
-    Complete
-    GameOver
-    AllDone
+    Title,
+    Playing,
+    Paused,
+    Dying,
+    Complete,
+    GameOver,
+    AllDone,
 end
 
 // ----------------------------- STATE ----------------------------------

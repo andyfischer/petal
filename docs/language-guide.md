@@ -516,6 +516,24 @@ Lists are immutable values: `append` produces a new list rather than changing
 the original, so `let b = append(a, x)` leaves `a` untouched. Grow an
 accumulator by rebinding the variable (`xs = append(xs, x)`).
 
+**Commas are required** between elements — here and in every other
+comma-separated construct (call arguments, parameters, record literals, enum
+declarations, and the matching patterns). Neither whitespace nor a newline
+separates elements: `[1 2]` is a parse error. A trailing comma before the
+closing delimiter is always allowed, so a list may be written one element per
+line:
+
+```petal
+let xs = [
+    1,
+    2,
+    3,
+]
+print(len(xs))    // 3
+```
+
+See [Commas](syntax/commas.md) for the full rule.
+
 ### List Builtins
 
 ```petal
@@ -641,10 +659,10 @@ Enums define named variants, optionally with associated data:
 
 ```petal
 enum Color
-    Red
-    Green
-    Blue
-    Custom(r, g, b)
+    Red,
+    Green,
+    Blue,
+    Custom(r, g, b),
 end
 
 let c = Red
@@ -669,8 +687,8 @@ end
 
 ```petal
 enum Shape
-    Circle(radius)
-    Rect(w, h)
+    Circle(radius),
+    Rect(w, h),
 end
 
 fn area(shape)

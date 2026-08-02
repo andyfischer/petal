@@ -145,7 +145,7 @@ describe("index access", () => {
 describe("enums", () => {
   it("emits MakeEnumVariant for enum construction", () => {
     const ir = showIrJson(
-      "enum Color\n  Red\n  Green\n  Blue\nend\nlet c = Color.Red()"
+      "enum Color\n  Red,\n  Green,\n  Blue,\nend\nlet c = Color.Red()"
     );
     const variants = termsByOp(ir, "MakeEnumVariant");
     expect(variants.length).toBeGreaterThanOrEqual(1);

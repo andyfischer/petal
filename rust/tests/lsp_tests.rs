@@ -458,7 +458,7 @@ fn test_enum_definition() {
     open(
         &mut server,
         "file:///test.ptl",
-        "enum Color\n  Red\n  Green\n  Blue\nend\n",
+        "enum Color\n  Red,\n  Green,\n  Blue,\nend\n",
     );
 
     let resp = hover(&mut server, "file:///test.ptl", 0, 6);

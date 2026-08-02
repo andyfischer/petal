@@ -4,7 +4,7 @@ A compact map of Petal's surface syntax: every lexical form, statement, and
 expression the parser accepts. It is a reference, not a tutorial — for prose
 walkthroughs and worked examples see the
 [Language Guide](../language-guide.md). Two syntactic topics have their own
-deep dives: [Optional Commas](optional-commas.md) and the
+deep dives: [Commas](commas.md) and the
 [Module System](../module-system.md).
 
 Petal is a hybrid functional/imperative language. **Almost everything is an
@@ -61,12 +61,11 @@ holes: `"2 + 2 = {2 + 2}"`. Triple-quoted **raw** strings capture their contents
 verbatim — `{`/`}` are literal, backslashes are not escapes, and newlines are
 allowed — which makes them ideal for embedding source or brace-heavy text.
 
-**Optional commas.** In every comma-separated construct (list literals, call
+**Commas are required.** In every comma-separated construct (list literals, call
 arguments, function parameters, record literals, enum declarations, and the
-matching patterns) commas are optional; elements may be separated by newlines or
-plain whitespace. This is the intended form for dense numeric grids like
-`[0 0 1 0]` or `color(0 1 2)`. The rules — especially the spacing-aware `-` — are
-subtle; see [Optional Commas](optional-commas.md).
+matching patterns) adjacent elements must be separated by a comma. Whitespace and
+newlines are not separators — `[1 2]` is a parse error — while a trailing comma
+before the closing delimiter is always allowed. See [Commas](commas.md).
 
 ## Operators
 
@@ -203,9 +202,9 @@ Named variants, optionally carrying positional data:
 
 ```petal
 enum Shape
-    Circle(radius)
-    Rect(w, h)
-    Unit
+    Circle(radius),
+    Rect(w, h),
+    Unit,
 end
 ```
 
@@ -360,7 +359,7 @@ value's type name as a string.
 ## See also
 
 - [Language Guide](../language-guide.md) — the full tour with worked examples.
-- [Optional Commas](optional-commas.md) — comma-less lists and the spacing-aware `-`.
+- [Commas](commas.md) — where commas are required, and how `-` is disambiguated.
 - [Module System](../module-system.md) — `import`, exports, resolution, hot reload.
 - [Function Overloading](../function-overloading.md) — multi-arity dispatch.
 - [Rebind Operator](rebind-operator.md) — the `@` in-out argument operator.

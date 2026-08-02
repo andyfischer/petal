@@ -511,7 +511,7 @@ impl Projector {
                 let op = direct_tokens(node)
                     .iter()
                     .find_map(|t| match t.token() {
-                        Some(Token::Minus | Token::MinusPrefix) => Some(UnaryOp::Neg),
+                        Some(Token::Minus) => Some(UnaryOp::Neg),
                         Some(Token::Bang) => Some(UnaryOp::Not),
                         _ => None,
                     })
@@ -922,15 +922,13 @@ impl Projector {
             Some(Token::True) => Ok(Pattern::Literal(Literal::Bool(true))),
             Some(Token::False) => Ok(Pattern::Literal(Literal::Bool(false))),
             Some(Token::Nil) => Ok(Pattern::Literal(Literal::Nil)),
-            Some(Token::Minus | Token::MinusPrefix) => {
-                match tokens.get(1).and_then(|t| t.token().cloned()) {
-                    Some(Token::Int(n)) => Ok(Pattern::Literal(Literal::Int(-n))),
-                    Some(Token::Float(f)) => Ok(Pattern::Literal(Literal::Float(-f))),
-                    other => Err(format!(
-                        "expected number after '-' in pattern, got {other:?}"
-                    )),
-                }
-            }
+            Some(Token::Minus) => match tokens.get(1).and_then(|t| t.token().cloned()) {
+                Some(Token::Int(n)) => Ok(Pattern::Literal(Literal::Int(-n))),
+                Some(Token::Float(f)) => Ok(Pattern::Literal(Literal::Float(-f))),
+                other => Err(format!(
+                    "expected number after '-' in pattern, got {other:?}"
+                )),
+            },
             Some(Token::LBracket) => {
                 let elements = child_nodes(node)
                     .iter()
@@ -1090,7 +1088,7 @@ impl Projector {
 fn bin_op(tok: &Token) -> Option<BinOp> {
     Some(match tok {
         Token::Plus => BinOp::Add,
-        Token::Minus | Token::MinusPrefix => BinOp::Sub,
+        Token::Minus => BinOp::Sub,
         Token::Star => BinOp::Mul,
         Token::Slash => BinOp::Div,
         Token::Percent => BinOp::Mod,
@@ -1176,7 +1174,7 @@ mod tests {
         assert_projects("export var x = 0\n");
         assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
-        assert_projects("enum Shape\n  Circle(r)\n  Point\n  Rect(w, h)\nend\n");
+        assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");
     }
 
     #[test]
@@ -1287,7 +1285,7 @@ mod tests {
         assert_projects("f(a, b)(c)\n");
         assert_projects("f()\n");
         assert_projects("obj.field.nested[i + 1](arg)\n");
-        assert_projects("[1, 2, 3]\n[1 -2 3]\n[]\n");
+        assert_projects("[1, 2, 3]\n[1, -2, 3]\n[]\n");
         assert_projects("{ a: 1, b: f(2), ...rest }\n");
         assert_projects("nil\ntrue\nfalse\n1.5\n\"plain\"\n");
         assert_projects("f(@x, y)\n");

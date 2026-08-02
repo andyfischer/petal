@@ -3,9 +3,9 @@
 
 // Simple enum (no associated data)
 enum Color
-  Red
-  Green
-  Blue
+  Red,
+  Green,
+  Blue,
 end
 
 let favorite = Blue
@@ -13,9 +13,9 @@ print("Favorite color:", favorite)
 
 // Enum with associated data
 enum Shape
-  Circle(radius)
-  Rectangle(width, height)
-  Triangle(base, height)
+  Circle(radius),
+  Rectangle(width, height),
+  Triangle(base, height),
 end
 
 fn area(shape)
@@ -38,8 +38,8 @@ end
 
 // Result type for error handling
 enum Result
-  Ok(value)
-  Error(message)
+  Ok(value),
+  Error(message),
 end
 
 fn safe_divide(a, b)

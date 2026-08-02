@@ -4,9 +4,9 @@
 // persists across render frames.
 
 enum Event
-  None()
-  Add(text)
-  Clear()
+  None(),
+  Add(text),
+  Clear(),
 end
 
 fn button(label, clicked)
@@ -15,9 +15,9 @@ fn button(label, clicked)
     click_count = click_count + 1
   end
   {
-    type: "button"
-    label: "{label} ({click_count})"
-    clicks: click_count
+    type: "button",
+    label: "{label} ({click_count})",
+    clicks: click_count,
   }
 end
 

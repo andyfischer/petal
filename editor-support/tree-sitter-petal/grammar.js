@@ -9,8 +9,7 @@
  *
  * Newlines are treated as insignificant (part of `extras`): the real parser
  * uses them as statement separators, but statement boundaries are recoverable
- * from grammar structure in practice, and ignoring them keeps comma-less
- * juxtaposition (`[1 2 3]`, `color(0 1 2)`) simple. See the README.
+ * from grammar structure in practice. See the README.
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
@@ -35,13 +34,13 @@ const PREC = {
 };
 
 /**
- * A delimited list whose separating commas are optional: elements may be
- * separated by commas, newlines, or plain whitespace (juxtaposition).
- * See docs/syntax/optional-commas.md.
+ * A delimited list. A comma is required between adjacent elements; a trailing
+ * comma before the closing delimiter is allowed.
+ * See docs/syntax/commas.md.
  * @param {RuleOrLiteral} rule
  */
 function commaSep(rule) {
-  return optional(seq(rule, repeat(seq(optional(','), rule)), optional(',')));
+  return optional(seq(rule, repeat(seq(',', rule)), optional(',')));
 }
 
 module.exports = grammar({
@@ -54,14 +53,6 @@ module.exports = grammar({
     // insignificant, both are simply ignorable here.
     /[ \t\r\n;]/,
     $.comment,
-  ],
-
-  conflicts: $ => [
-    // In comma-less juxtaposition (`[a (b)]`, `f(a)(b)`), a `(` after an
-    // expression could open a call's args or a new parenthesized element. The
-    // real parser is greedy: it always binds as a call (see the dynamic
-    // precedence on `call`).
-    [$.argument_list, $.parenthesized_expression],
   ],
 
   rules: {
@@ -148,7 +139,7 @@ module.exports = grammar({
       optional('export'),
       'enum',
       field('name', $.identifier),
-      repeat($.enum_variant),
+      commaSep($.enum_variant),
       'end',
     ),
 
@@ -263,10 +254,10 @@ module.exports = grammar({
       field('right', $._expression),
     )),
 
-    call: $ => prec.dynamic(1, prec(PREC.postfix, seq(
+    call: $ => prec(PREC.postfix, seq(
       field('function', $._expression),
       field('arguments', $.argument_list),
-    ))),
+    )),
 
     argument_list: $ => seq('(', commaSep($._expression), ')'),
 
@@ -277,8 +268,8 @@ module.exports = grammar({
     )),
 
     // The `[` is immediate (no whitespace before it) so that real indexing
-    // (`arr[i]`) is distinguished from two juxtaposed bracket-lists on adjacent
-    // lines (`[..]` `[..]`), which the comma-less list syntax allows.
+    // (`arr[i]`) is distinguished from an expression statement followed by a
+    // list literal on the next line — newlines being insignificant here.
     index_access: $ => prec(PREC.postfix, seq(
       field('object', $._expression),
       token.immediate('['),

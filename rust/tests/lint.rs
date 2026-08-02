@@ -234,16 +234,16 @@ fn enum_variants_indent_one_level() {
     assert_lints_to(
         "\
 enum Light
-Red
-Yellow
-Green(brightness)
+Red,
+Yellow,
+Green(brightness),
 end
 ",
         "\
 enum Light
-  Red
-  Yellow
-  Green(brightness)
+  Red,
+  Yellow,
+  Green(brightness),
 end
 ",
     );
@@ -259,7 +259,7 @@ let xs = [
 3
 ]
 let point = {
-x: 1
+x: 1,
 y: 2
 }
 ",
@@ -270,7 +270,7 @@ let xs = [
   3
 ]
 let point = {
-  x: 1
+  x: 1,
   y: 2
 }
 ",
@@ -518,8 +518,8 @@ fn well_formatted_program_is_a_fixed_point() {
         "\
 // A realistic program already in house style.
 enum Shape
-  Circle(r)
-  Square(s)
+  Circle(r),
+  Square(s),
 end
 
 fn area(shape)
@@ -545,8 +545,8 @@ fn kitchen_sink_reindent() {
     assert_lints_to(
         "\
 enum Op
-Inc
-Dec
+Inc,
+Dec,
 end
 fn apply(op, n)
     match op
@@ -569,8 +569,8 @@ Dec
 ",
         "\
 enum Op
-  Inc
-  Dec
+  Inc,
+  Dec,
 end
 fn apply(op, n)
   match op
@@ -705,12 +705,20 @@ fn comma_delimited_slots_drop_their_parens() {
 /// nothing can replace the parens in a comma-less list — `print((n + 1) (n + 2))`
 /// reads as a call. The fix is skipped rather than made unsafe.
 #[test]
-fn juxtaposed_operator_argument_is_left_alone() {
-    assert_fixed_point("let n = 5\nprint(int(n + 1) int(n + 2))\n");
-    // A single-term argument has nothing to regroup, so it still applies.
+fn a_list_slot_drops_its_parens() {
+    // Commas are required between elements, so a cast in a list/argument slot
+    // is always separated from its neighbours: the parens can always go.
     assert_lints_to(
-        "let n = 5\nprint(int(n) int(n))\n",
-        "let n = 5\nprint(n n)\n",
+        "let n = 5\nprint(int(n + 1), int(n + 2))\n",
+        "let n = 5\nprint(n + 1, n + 2)\n",
+    );
+    assert_lints_to(
+        "let n = 5\nlet xs = [int(n + 1), 2]\nprint(xs)\n",
+        "let n = 5\nlet xs = [n + 1, 2]\nprint(xs)\n",
+    );
+    assert_lints_to(
+        "let n = 5\nlet r = { k: int(n + 1) }\nprint(r)\n",
+        "let n = 5\nlet r = { k: n + 1 }\nprint(r)\n",
     );
 }
 

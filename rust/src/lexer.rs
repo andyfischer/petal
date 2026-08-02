@@ -39,11 +39,6 @@ pub enum Token {
     // Operators
     Plus,
     Minus,
-    /// A `-` with whitespace before but none after (e.g. the `-2` in `[1 -2]`).
-    /// Treated as subtraction in normal contexts, but as the start of a new
-    /// negated element inside comma-less list/argument juxtaposition.
-    /// See docs/syntax/optional-commas.md.
-    MinusPrefix,
     Star,
     Slash,
     Percent,
@@ -436,20 +431,11 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::MinusAssign, start);
                 } else {
-                    // Spacing-aware: a `-` with whitespace before but none
-                    // after (e.g. the `-2` in `[1 -2]`) becomes a MinusPrefix
-                    // so it can begin a new negated element in comma-less
-                    // juxtaposition. See docs/syntax/optional-commas.md.
-                    let space_before =
-                        self.pos == 0 || matches!(self.input[self.pos - 1], ' ' | '\t' | '\n');
-                    let space_after =
-                        matches!(self.peek_next(), Some(' ') | Some('\t') | Some('\n') | None);
+                    // `-` is not spacing-aware: whether it negates or subtracts
+                    // is decided by the grammar position alone.
+                    // See docs/syntax/commas.md.
                     self.advance_char();
-                    if space_before && !space_after {
-                        self.push_token(Token::MinusPrefix, start);
-                    } else {
-                        self.push_token(Token::Minus, start);
-                    }
+                    self.push_token(Token::Minus, start);
                 }
             }
             '*' => {

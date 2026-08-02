@@ -2,9 +2,9 @@
 // Identifier-keyed objects with field access.
 
 let user = {
-  name: "Alice"
-  age: 30
-  city: "Portland"
+  name: "Alice",
+  age: 30,
+  city: "Portland",
 }
 
 print("Name:", user.name)
@@ -13,27 +13,27 @@ print("City:", user.city)
 
 // Nested records
 let company = {
-  name: "Acme"
+  name: "Acme",
   ceo: {
-    name: "Bob"
-    title: "CEO"
-  }
-  founded: 2020
+    name: "Bob",
+    title: "CEO",
+  },
+  founded: 2020,
 }
 print("Company:", company.name)
 print("CEO:", company.ceo.name)
 
 // Records with enum values
 enum Role
-  Admin
-  Editor
-  Viewer
+  Admin,
+  Editor,
+  Viewer,
 end
 
 let account = {
-  user: user
-  role: Admin
-  active: true
+  user: user,
+  role: Admin,
+  active: true,
 }
 print(account.user.name, "is an", account.role)
 

@@ -53,9 +53,9 @@ print(data.items)`;
 
   it("preserves enum variants through GC", () => {
     const code = `enum Color
-  Red
-  Green
-  Blue
+  Red,
+  Green,
+  Blue,
 end
 let c = Green
 for i in range(0, 2000) do

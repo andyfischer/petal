@@ -195,9 +195,9 @@ compile gate behind it: if the original source compiles here, the rewritten
 source must too, or `lint` refuses to produce any output.
 
 Parentheses follow the slot. `let m = int(a + 1)` becomes `let m = a + 1`;
-`2 * int(a + 1)` becomes `2 * (a + 1)`; and because Petal's commas are
-optional, an operator argument in a comma-less list (`f(int(a + 1) b)`) is
-skipped entirely — no grouping can be added there that means the same thing.
+`2 * int(a + 1)` becomes `2 * (a + 1)`; and a list or argument element
+(`f(int(a + 1), b)`) becomes `f(a + 1, b)` — commas are required between
+elements, so nothing can bind across the boundary once the parens are gone.
 
 There is deliberately **no** rebind rule: an earlier version rewrote `x = f(x)`
 to `f(@x)`. The `@` operator is still part of the language, but it reads as

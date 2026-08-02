@@ -437,7 +437,7 @@ mod tests {
         assert_parse_round_trips("fn add(a, b)\n    a + b // sum\nend\n");
         assert_parse_round_trips("if x > 1 then\n  y\nelsif x > 0 then\n  z\nelse\n  w\nend\n");
         assert_parse_round_trips("match v\nwhen Some(x) -> x\nwhen _ -> 0\nend\n");
-        assert_parse_round_trips("let r = { a: 1, ...rest }\nlet l = [1 -2 3]\n");
+        assert_parse_round_trips("let r = { a: 1, ...rest }\nlet l = [1, -2, 3]\n");
         assert_parse_round_trips("state count = 0\ncount += 1\n");
         assert_parse_round_trips("xs |> map(fn(x) -> x * 2) |> sum\n");
         assert_parse_round_trips("let e = <div class=\"x\">hi {name}<br/></div>\n");

@@ -90,9 +90,9 @@ describe("match", () => {
   it("enum variant pattern only matches the variant, not any value", () => {
     const result = runPetal(`
       enum Color
-        Red
-        Blue
-        Green
+        Red,
+        Blue,
+        Green,
       end
       let v = "hello"
       let result = match v
@@ -108,9 +108,9 @@ describe("match", () => {
   it("enum variant pattern matches the correct variant", () => {
     const result = runPetal(`
       enum Color
-        Red
-        Blue
-        Green
+        Red,
+        Blue,
+        Green,
       end
       let v = Blue
       let result = match v

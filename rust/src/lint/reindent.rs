@@ -299,11 +299,11 @@ mod tests {
 
     #[test]
     fn multiline_collections_indent_one_level() {
-        let src = "let xs = [\n1,\n2\n]\nlet r = {\na: 1\nb: 2\n}\n";
+        let src = "let xs = [\n1,\n2\n]\nlet r = {\na: 1,\nb: 2\n}\n";
         let out = reindent(src).unwrap();
         assert_eq!(
             out,
-            "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1\n  b: 2\n}\n"
+            "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1,\n  b: 2\n}\n"
         );
     }
 
@@ -329,10 +329,10 @@ mod tests {
 
     #[test]
     fn enum_variants_indent() {
-        let src = "enum Event\nNone()\nAdd(text)\nend\n";
+        let src = "enum Event\nNone(),\nAdd(text),\nend\n";
         assert_eq!(
             reindent(src).unwrap(),
-            "enum Event\n  None()\n  Add(text)\nend\n"
+            "enum Event\n  None(),\n  Add(text),\nend\n"
         );
     }
 

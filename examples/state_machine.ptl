@@ -2,9 +2,9 @@
 // Using enums and state to model a traffic light controller.
 
 enum Light
-  Red
-  Yellow
-  Green
+  Red,
+  Yellow,
+  Green,
 end
 
 fn traffic_light()

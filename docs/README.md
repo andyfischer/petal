@@ -14,7 +14,7 @@ Start here if you're learning or using the language:
 | [Module System](module-system.md) | `import` syntax, module resolution, hot reload across files |
 | [Function Overloading](function-overloading.md) | Multi-arity dispatch rules |
 | [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
-| [Optional Commas](syntax/optional-commas.md) | Comma-less lists and call arguments |
+| [Commas](syntax/commas.md) | Where commas are required, and how `-` is disambiguated |
 | [Examples](examples/README.md) | Documentation code snippets (runnable demos live in [`../examples/`](../examples/README.md)) |
 
 ## Design & internals

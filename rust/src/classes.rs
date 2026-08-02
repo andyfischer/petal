@@ -189,6 +189,17 @@ impl ClassTable {
 /// definition and the native constructor so the two cannot drift.
 pub const RECT_FIELDS: [&str; 4] = ["x", "y", "w", "h"];
 
+/// The declared type of a `Rect` field.
+///
+/// A rect edge is a *number* — `int` for the pixel geometry most UI code
+/// writes, `float` for the sub-pixel geometry layout and animation produce.
+/// The language has no type naming "int or float" today (see
+/// docs/dev/type-declarations-plan.md), and declaring `int` would be a lie the
+/// constructor could only keep by truncating its argument — an implicit cast,
+/// which Petal does not do. So the fields are un-annotated (`any`) until a
+/// numeric type exists, and the constructor checks numeric-ness at runtime.
+const RECT_FIELD_TYPE: Option<Type> = None;
+
 /// The built-in `Rect` methods as `(name, arity-including-receiver)`. The
 /// native implementations are registered under the qualified names
 /// `Rect.<name>` in `crate::builtins::classes`; a unit test there asserts this
@@ -211,7 +222,7 @@ fn builtin_classes() -> Vec<ClassDef> {
             .iter()
             .map(|f| ClassField {
                 name: f.to_string(),
-                ty: Some(Type::Int),
+                ty: RECT_FIELD_TYPE,
             })
             .collect(),
         methods: RECT_METHODS
@@ -271,7 +282,18 @@ mod tests {
             RECT_FIELDS.to_vec()
         );
         assert!(def.builtin);
-        assert_eq!(def.field("w").unwrap().ty, Some(Type::Int));
+    }
+
+    /// A rect edge may be an int or a float, and the checker has no type for
+    /// "either" — so the fields carry no annotation rather than one the
+    /// constructor would have to break (see [`RECT_FIELD_TYPE`]).
+    #[test]
+    fn rect_fields_are_not_declared_int() {
+        let t = ClassTable::new();
+        let def = t.get(t.lookup("Rect").unwrap());
+        for f in &def.fields {
+            assert_eq!(f.ty, None, "field `{}`", f.name);
+        }
     }
 
     #[test]

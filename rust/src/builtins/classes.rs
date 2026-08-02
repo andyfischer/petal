@@ -20,27 +20,50 @@
 
 use indexmap::IndexMap;
 
+use crate::backend::ops::arithmetic;
 use crate::classes::{RECT_FIELDS, qualified_method_name};
 use crate::native_fn::{NativeFnTable, PetalCxt};
+use crate::program::TermOp;
 use crate::value::Value;
 
 use super::require_args;
 
 /// Build a `Rect` instance from four already-computed edges.
-fn push_rect(state: &mut PetalCxt, x: i64, y: i64, w: i64, h: i64) {
+///
+/// The edges are `Value`s, not `i64`s, because a rect holds whatever numbers it
+/// was given: `Rect(10.5, …)` is a float rect and stays one. Petal has no
+/// implicit casting (docs/dev/type-declarations-plan.md), so a constructor that
+/// truncated its argument would be losing data the caller never asked to lose —
+/// and sub-pixel layout and animation lose their precision with it. Screen
+/// coordinates become integers at the draw call, which is the only place that
+/// has to decide.
+fn push_rect(state: &mut PetalCxt, edges: [Value; 4]) {
     let mut entries = IndexMap::new();
-    for (name, value) in RECT_FIELDS.iter().zip([x, y, w, h]) {
-        entries.insert((*name).to_string(), Value::Int(value));
+    for (name, value) in RECT_FIELDS.iter().zip(edges) {
+        entries.insert((*name).to_string(), value);
     }
     let tag = state.heap_mut().alloc_string("Rect".to_string());
     let id = state.heap_mut().alloc_class_instance(entries, tag);
     state.push_value(Value::Map(id));
 }
 
-/// Read one integer field of the receiver. Methods take the receiver as
+/// Accept a number (int or float) and keep it as it came, or say what was
+/// wrong. `what` names the position for the message — a field for the
+/// constructor, a parameter for a method.
+fn number(value: Value, callee: &str, what: &str) -> Result<Value, String> {
+    match value {
+        Value::Int(_) | Value::Float(_) => Ok(value),
+        other => Err(format!(
+            "{callee}(): {what} expects a number, got {}",
+            other.type_name()
+        )),
+    }
+}
+
+/// Read one numeric field of the receiver. Methods take the receiver as
 /// argument 1 (the VM prepends it), so this is where a non-`Rect` receiver is
 /// caught.
-fn field(state: &PetalCxt, method: &str, name: &str) -> Result<i64, String> {
+fn field(state: &PetalCxt, method: &str, name: &str) -> Result<Value, String> {
     let recv = state.get_value(1)?;
     let Value::Map(id) = recv else {
         return Err(format!(
@@ -48,60 +71,114 @@ fn field(state: &PetalCxt, method: &str, name: &str) -> Result<i64, String> {
             recv.type_name()
         ));
     };
-    match state.heap().get_map(id).get(name) {
-        Some(Value::Int(n)) => Ok(*n),
-        Some(Value::Float(f)) => Ok(*f as i64),
-        _ => Err(format!("Rect.{method}(): receiver has no `{name}` field")),
-    }
+    let Some(&value) = state.heap().get_map(id).get(name) else {
+        return Err(format!("Rect.{method}(): receiver has no `{name}` field"));
+    };
+    number(value, &format!("Rect.{method}"), &format!("field `{name}`"))
 }
 
 /// The receiver's four edges.
-fn rect_of(state: &PetalCxt, method: &str) -> Result<(i64, i64, i64, i64), String> {
-    Ok((
+fn rect_of(state: &PetalCxt, method: &str) -> Result<[Value; 4], String> {
+    Ok([
         field(state, method, "x")?,
         field(state, method, "y")?,
         field(state, method, "w")?,
         field(state, method, "h")?,
+    ])
+}
+
+/// One arithmetic step on rect geometry, run through the same evaluator the
+/// language uses for `+`, `-`, `*` and `/`. That is what makes each method's
+/// documented equivalent (`r.center_x()` is `r.x + r.w / 2`) exactly true: int
+/// operands stay int — including `/`, which truncates on ints — and a float
+/// anywhere makes the result a float, with the same overflow reporting.
+fn arith(state: &mut PetalCxt, op: TermOp, a: Value, b: Value) -> Result<Value, String> {
+    arithmetic(&op, a, b, state.heap_mut())
+}
+
+/// A width or height clamped at zero, keeping the number's own kind so a float
+/// rect stays a float rect.
+fn clamp_at_zero(v: Value) -> Value {
+    match v {
+        Value::Int(n) if n < 0 => Value::Int(0),
+        Value::Float(f) if f < 0.0 => Value::Float(0.0),
+        other => other,
+    }
+}
+
+/// Validate a *method* call's argument count and report it as the call site
+/// writes it. Natives see the receiver as argument 1, but nobody types it —
+/// `r.inset(1, 2)` passed 2 arguments, not 3, and the message has to agree or
+/// it reads as nonsense.
+fn require_method_args(state: &PetalCxt, arity: usize, name: &str) -> Result<(), String> {
+    if state.arg_count() == arity {
+        return Ok(());
+    }
+    let plural = |n: usize| match n {
+        0 => "no arguments".to_string(),
+        1 => "1 argument".to_string(),
+        n => format!("{n} arguments"),
+    };
+    Err(format!(
+        "{name}() expects {}, got {}",
+        plural(arity - 1),
+        state.arg_count().saturating_sub(1)
     ))
 }
 
-/// `Rect(x, y, w, h)` — the constructor.
+/// `Rect(x, y, w, h)` — the constructor. Each edge is taken as the number it
+/// is (int or float) rather than coerced, so the four arguments are read
+/// untyped and checked here.
 fn native_rect(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 4, "Rect")?;
-    let x = state.get_int(1)?;
-    let y = state.get_int(2)?;
-    let w = state.get_int(3)?;
-    let h = state.get_int(4)?;
-    push_rect(state, x, y, w, h);
+    let x = state.get_value(1)?;
+    let y = state.get_value(2)?;
+    let w = state.get_value(3)?;
+    let h = state.get_value(4)?;
+    let edges = [x, y, w, h];
+    for (value, name) in edges.iter().zip(RECT_FIELDS) {
+        number(*value, "Rect", &format!("field `{name}`"))?;
+    }
+    push_rect(state, edges);
     Ok(1)
 }
 
 /// `r.center_x()` — the horizontal midpoint, `r.x + r.w / 2`.
 fn native_rect_center_x(state: &mut PetalCxt) -> Result<u32, String> {
-    let (x, _, w, _) = rect_of(state, "center_x")?;
-    state.push_int(x + w / 2);
+    require_method_args(state, 1, "Rect.center_x")?;
+    let [x, _, w, _] = rect_of(state, "center_x")?;
+    let half = arith(state, TermOp::Div, w, Value::Int(2))?;
+    let center = arith(state, TermOp::Add, x, half)?;
+    state.push_value(center);
     Ok(1)
 }
 
 /// `r.center_y()` — the vertical midpoint.
 fn native_rect_center_y(state: &mut PetalCxt) -> Result<u32, String> {
-    let (_, y, _, h) = rect_of(state, "center_y")?;
-    state.push_int(y + h / 2);
+    require_method_args(state, 1, "Rect.center_y")?;
+    let [_, y, _, h] = rect_of(state, "center_y")?;
+    let half = arith(state, TermOp::Div, h, Value::Int(2))?;
+    let center = arith(state, TermOp::Add, y, half)?;
+    state.push_value(center);
     Ok(1)
 }
 
 /// `r.right()` — the x just past the right edge (`x + w`), the half-open
 /// convention the hit tests already use.
 fn native_rect_right(state: &mut PetalCxt) -> Result<u32, String> {
-    let (x, _, w, _) = rect_of(state, "right")?;
-    state.push_int(x + w);
+    require_method_args(state, 1, "Rect.right")?;
+    let [x, _, w, _] = rect_of(state, "right")?;
+    let right = arith(state, TermOp::Add, x, w)?;
+    state.push_value(right);
     Ok(1)
 }
 
 /// `r.bottom()` — the y just past the bottom edge (`y + h`).
 fn native_rect_bottom(state: &mut PetalCxt) -> Result<u32, String> {
-    let (_, y, _, h) = rect_of(state, "bottom")?;
-    state.push_int(y + h);
+    require_method_args(state, 1, "Rect.bottom")?;
+    let [_, y, _, h] = rect_of(state, "bottom")?;
+    let bottom = arith(state, TermOp::Add, y, h)?;
+    state.push_value(bottom);
     Ok(1)
 }
 
@@ -109,20 +186,33 @@ fn native_rect_bottom(state: &mut PetalCxt) -> Result<u32, String> {
 /// `n` grows it. Width and height are clamped at zero rather than going
 /// negative, which is what every drawing backend wants.
 fn native_rect_inset(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 2, "Rect.inset")?;
-    let (x, y, w, h) = rect_of(state, "inset")?;
-    let n = state.get_int(2)?;
-    push_rect(state, x + n, y + n, (w - 2 * n).max(0), (h - 2 * n).max(0));
+    require_method_args(state, 2, "Rect.inset")?;
+    let [x, y, w, h] = rect_of(state, "inset")?;
+    let n = number(state.get_value(2)?, "Rect.inset", "the margin")?;
+    let twice = arith(state, TermOp::Mul, n, Value::Int(2))?;
+    let edges = [
+        arith(state, TermOp::Add, x, n)?,
+        arith(state, TermOp::Add, y, n)?,
+        clamp_at_zero(arith(state, TermOp::Sub, w, twice)?),
+        clamp_at_zero(arith(state, TermOp::Sub, h, twice)?),
+    ];
+    push_rect(state, edges);
     Ok(1)
 }
 
 /// `r.offset(dx, dy)` — the same size moved by a delta.
 fn native_rect_offset(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 3, "Rect.offset")?;
-    let (x, y, w, h) = rect_of(state, "offset")?;
-    let dx = state.get_int(2)?;
-    let dy = state.get_int(3)?;
-    push_rect(state, x + dx, y + dy, w, h);
+    require_method_args(state, 3, "Rect.offset")?;
+    let [x, y, w, h] = rect_of(state, "offset")?;
+    let dx = number(state.get_value(2)?, "Rect.offset", "`dx`")?;
+    let dy = number(state.get_value(3)?, "Rect.offset", "`dy`")?;
+    let edges = [
+        arith(state, TermOp::Add, x, dx)?,
+        arith(state, TermOp::Add, y, dy)?,
+        w,
+        h,
+    ];
+    push_rect(state, edges);
     Ok(1)
 }
 

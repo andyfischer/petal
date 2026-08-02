@@ -1234,6 +1234,73 @@ fn rect_constructs_the_builtin_class() {
     });
 }
 
+/// A bad argument to `rect()` is the *app author's* mistake, so it is reported
+/// at their call. `rect` is the constructor itself rather than a prelude
+/// function wrapping it — a wrapper puts the caret on a line of ui.ptl and
+/// leaves the author reading library source for a typo in their own file.
+#[test]
+fn a_bad_rect_argument_is_reported_at_the_call_site() {
+    let mut ui = Headless::new("let r = rect(\"a\", 0, 0, 0)").expect("compiles");
+    let err = ui.frame().unwrap_err();
+    let head = err.lines().next().unwrap_or_default().to_string();
+    assert!(head.contains("field `x`"), "{err}");
+    assert!(
+        head.contains("[line 1, column 9]"),
+        "the caret should sit on the caller's own rect(...): {err}"
+    );
+}
+
+/// Sub-pixel geometry survives `rect()`. Layout and animation compute
+/// fractional positions all the time; the constructor stores what it was
+/// given, so nothing is quantized on the way in. Truncation happens once, at
+/// the draw call, where pixels actually are integers.
+#[test]
+fn rect_keeps_fractional_geometry() {
+    let src = "state x = 0.0\n\
+               state w = 0.0\n\
+               state cx = 0.0\n\
+               state right = 0.0\n\
+               state moved = 0.0\n\
+               let r = rect(10.5, 20.9, 100.4, 40.6)\n\
+               x = r.x\n\
+               w = r.w\n\
+               cx = r.center_x()\n\
+               right = r.right()\n\
+               moved = r.offset(0.25, 0.0).x";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_float("x"), Some(10.5), "rect() kept x");
+        assert_eq!(ui.state_float("w"), Some(100.4), "rect() kept w");
+        assert_eq!(ui.state_float("cx"), Some(10.5 + 100.4 / 2.0));
+        assert_eq!(ui.state_float("right"), Some(10.5 + 100.4));
+        assert_eq!(ui.state_float("moved"), Some(10.75));
+    });
+}
+
+/// A fractional rect still draws: the draw layer is where a coordinate becomes
+/// a pixel, and it truncates there (as it always has for float args).
+#[test]
+fn draw_overloads_accept_a_fractional_rect() {
+    let src = "draw_rect(rect(4.5, 6.5, 20.5, 10.5), {r: 10, g: 20, b: 30})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            matches!(
+                cmds[0],
+                DrawCommand::Rect {
+                    x: 4,
+                    y: 6,
+                    w: 20,
+                    h: 10,
+                    ..
+                }
+            ),
+            "{:?}",
+            cmds[0]
+        );
+    });
+}
+
 /// The record-arg draw overloads keep taking a `rect()` result — the class tag
 /// changes nothing about field access, which is all they use.
 #[test]

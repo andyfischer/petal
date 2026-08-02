@@ -757,7 +757,9 @@ own, and for how `value.method(...)` resolves.
 A rectangle: fields `x`, `y`, `w`, `h`. The constructor takes them positionally.
 An instance is an ordinary record carrying the class tag, so everything that
 takes a `{x, y, w, h}` record takes a `Rect` — including every `petal-ui` draw
-call, whose `rect(x, y, w, h)` helper builds one.
+call. `petal-ui`'s `rect(x, y, w, h)` *is* this constructor under the prelude's
+own name, so a bad argument is reported at the app's call, not inside the
+prelude.
 
 ```petal
 let r = Rect(10, 20, 100, 40)
@@ -766,16 +768,24 @@ type(r)        // "Rect"
 keys(r)        // ["x", "y", "w", "h"]
 ```
 
-Its methods are the arithmetic layout code otherwise repeats by hand. All take
-and return `int`s (screen geometry), and the two that return a rect return a
-`Rect`, so calls chain.
+Each edge is a **number** — an `int` for the pixel geometry most UI code writes,
+a `float` for the sub-pixel geometry that layout and animation produce. A field
+holds exactly what it was given: `Rect(10.5, 20.9, 100.4, 40.6).x` is `10.5`, not
+`10`. Petal has no implicit casting, so nothing is rounded on the way in;
+coordinates become whole pixels at the draw call, which is the only place that
+has to decide. A non-numeric argument is an error naming the field.
+
+Its methods are the arithmetic layout code otherwise repeats by hand. Each is
+exactly its equivalent expression, so an int rect gives int answers (`/` on two
+ints truncates) and a float rect gives float ones. The two that return a rect
+return a `Rect`, so calls chain.
 
 | Method | Result | Equivalent |
 |--------|--------|------------|
-| `r.center_x()` | `int` | `r.x + r.w / 2` |
-| `r.center_y()` | `int` | `r.y + r.h / 2` |
-| `r.right()` | `int` | `r.x + r.w` (half-open, like the hit tests) |
-| `r.bottom()` | `int` | `r.y + r.h` |
+| `r.center_x()` | number | `r.x + r.w / 2` |
+| `r.center_y()` | number | `r.y + r.h / 2` |
+| `r.right()` | number | `r.x + r.w` (half-open, like the hit tests) |
+| `r.bottom()` | number | `r.y + r.h` |
 | `r.inset(n)` | `Rect` | pulled in by `n` on all four sides; a negative `n` grows it, and `w`/`h` clamp at 0 |
 | `r.offset(dx, dy)` | `Rect` | moved by a delta, same size |
 
@@ -786,7 +796,14 @@ card.right()                // 100
 card.inset(5)               // Rect(5, 5, 90, 30)
 card.inset(5).center_x()    // 50
 card.offset(10, 10).right() // 110
+
+let sub = Rect(0.0, 0.0, 101.0, 40.0)
+sub.center_x()              // 50.5, not 50
 ```
+
+Every method checks its argument count, and the count in the message is the one
+you write — the receiver is implicit. `Rect(0, 0, 10, 10).center_x(1)` reports
+`Rect.center_x() expects no arguments, got 1`.
 
 Declare more with `fn Rect.<name>(r: Rect, …)`; a user declaration wins over a
 built-in method of the same name.

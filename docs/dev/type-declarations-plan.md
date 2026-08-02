@@ -388,6 +388,14 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
    designed so this is a small future addition.
 4. Enum variant field annotations (`Circle(radius: float)`) — deferred, but the
    shared param parser makes it a cheap future add. Confirm deferral.
+5. A `num` type meaning "int or float"? There is no way to *declare* the most
+   common numeric contract in the language — every arithmetic builtin takes
+   either. The built-in `Rect` is the live example: its edges are ints in pixel
+   layout and floats in sub-pixel layout, and "no implicit casting" forbids the
+   constructor from picking one, so the fields are left un-annotated (`any`) and
+   checked at runtime (`classes.rs`, `RECT_FIELD_TYPE`). `any` is honest but
+   gives up the static catch on `Rect("a", …)`. A `Type::Num` — assignable from
+   `int` and `float`, and to neither — would restore it.
 
 ---
 

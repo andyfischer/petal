@@ -757,8 +757,10 @@ end
 center_x("nope")   // warning: argument 1 to `center_x`: expected `Rect`, found `string`
 ```
 
-A field read is typed by its declaration, so `Rect(0, 0, 4, 2).w` is an `int`.
-Two classes are never interchangeable, however alike their fields. An instance
+A field read is typed by its declaration, so with `class Point x: int end`,
+`Point(4).x` is an `int`. An un-annotated field is `any` and reads as `any` —
+which is what the built-in `Rect`'s fields are, since an edge may be an `int` or
+a `float`. Two classes are never interchangeable, however alike their fields. An instance
 *is* assignable to a `record` slot; a plain record is not assignable to a class
 slot.
 
@@ -820,8 +822,13 @@ card.inset(5)          // Rect(5, 5, 90, 30)
 card.offset(10, 10)    // Rect(10, 10, 100, 40)
 ```
 
-In `petal-ui`, `rect(x, y, w, h)` builds one of these, so every rect an app
-already passes around gains the methods.
+An edge may be an `int` or a `float`, and stays the one it was given: there is
+no implicit casting in Petal, so the constructor never truncates. A method's
+result follows the same arithmetic the language does — `Rect(0, 0, 101, 40)`
+centers at `50` (int division), `Rect(0.0, 0.0, 101.0, 40.0)` at `50.5`.
+
+In `petal-ui`, `rect` is this same constructor exported under the prelude's own
+name, so every rect an app already passes around gains the methods.
 
 ### Classes across files
 

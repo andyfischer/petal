@@ -16,9 +16,15 @@
 // everywhere a rect is taken; going through the class is what earns the
 // geometry methods (`r.center_x()`, `r.inset(4)`, `r.right()` …) and makes
 // `type(r)` say "Rect". See docs/language-guide.md (Classes & Methods).
-export fn rect(x, y, w, h)
-  Rect(x, y, w, h)
-end
+//
+// Coordinates are kept exactly as passed — `rect(10.5, …)` is a sub-pixel rect,
+// not a truncated one — so animated and fractional layout stays smooth. The
+// draw natives are where a coordinate becomes a whole pixel.
+//
+// `rect` *is* the constructor rather than a function wrapping it, so a bad
+// argument is reported at the caller's own `rect(...)` — a wrapper would put
+// the caret on this file's line and leave the app author reading the prelude.
+export let rect = Rect
 
 export fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h

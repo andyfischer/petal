@@ -1730,24 +1730,24 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "any"
         }
       ],
       "source": {
         "file": "rust/src/builtins/classes.rs",
-        "line": 69
+        "line": 132
       }
     },
     {

@@ -213,6 +213,92 @@ describe("the built-in Rect class", () => {
     expect(out.trim()).toBe("50");
   });
 
+  // Fractional geometry. A Rect field holds whatever number it was given —
+  // Petal has no implicit casting, so a constructor may not quietly truncate
+  // its argument. Sub-pixel layout and animation depend on this.
+  it("keeps float arguments as floats", () => {
+    const out = runPetal("print(Rect(10.5, 20.9, 100.4, 40.6))");
+    expect(out.trim()).toBe("{ x: 10.5, y: 20.9, w: 100.4, h: 40.6 }");
+  });
+
+  it("keeps a float that only arrives at runtime", () => {
+    const out = runPetal("fn mk(a)\n  Rect(a, a, a * 2, a * 2)\nend\nprint(mk(10.5))");
+    expect(out.trim()).toBe("{ x: 10.5, y: 10.5, w: 21.0, h: 21.0 }");
+  });
+
+  it("does not warn on a float argument", () => {
+    const out = checkJson("let r = Rect(10.5, 20.9, 100.4, 40.6)");
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("still rejects a non-numeric argument, naming the field", () => {
+    const { stderr } = runWithStderr('let r = Rect("a", 0, 0, 0)');
+    expect(stderr).toMatch(/Rect/);
+    expect(stderr).toMatch(/`x`/);
+    expect(stderr).toMatch(/string/);
+  });
+
+  it("computes float geometry without truncating", () => {
+    const out = runPetal(
+      "let r = Rect(10.5, 20.5, 101.0, 41.0)\n" +
+        "print(r.center_x())\nprint(r.center_y())\nprint(r.right())\nprint(r.bottom())"
+    );
+    expect(out.trim().split("\n")).toEqual(["61.0", "41.0", "111.5", "61.5"]);
+  });
+
+  it("insets and offsets float geometry", () => {
+    const out = runPetal(
+      "let r = Rect(0.5, 0.5, 100.0, 40.0).inset(2.5)\nprint([r.x, r.y, r.w, r.h])\n" +
+        "let o = Rect(1, 2, 3, 4).offset(0.5, 0.5)\nprint([o.x, o.y, o.w, o.h])"
+    );
+    expect(out.trim().split("\n")).toEqual([
+      "[3.0, 3.0, 95.0, 35.0]",
+      "[1.5, 2.5, 3, 4]",
+    ]);
+  });
+
+  it("clamps an over-inset float rect at zero, still a float", () => {
+    const out = runPetal("let r = Rect(0.0, 0.0, 4.0, 4.0).inset(10.0)\nprint([r.w, r.h])");
+    expect(out.trim()).toBe("[0.0, 0.0]");
+  });
+
+  it("keeps int geometry integral", () => {
+    // `/` on two ints truncates in Petal, and `r.x + r.w / 2` is the
+    // documented equivalent of center_x — so an int rect stays an int rect.
+    const out = runPetal(
+      "let r = Rect(0, 0, 101, 41)\nprint(r.center_x())\nprint(type(r.center_x()))"
+    );
+    expect(out.trim().split("\n")).toEqual(["50", "int"]);
+  });
+
+  // Arity. Every built-in method checks it, so a stray argument is a mistake
+  // reported at the call rather than silently ignored. The count in the
+  // message is the one written at the call site — the receiver is implicit.
+  it("rejects extra arguments to the zero-argument methods", () => {
+    for (const call of [
+      "center_x(1, 2, 3, 4, 5)",
+      "center_y(1)",
+      'right("nonsense")',
+      "bottom(0)",
+    ]) {
+      const { stderr } = runWithStderr(`print(Rect(0, 0, 10, 10).${call})`);
+      expect(stderr, `Rect(0, 0, 10, 10).${call}`).toMatch(/expects no arguments/);
+    }
+  });
+
+  it("rejects the wrong argument count to inset / offset", () => {
+    const inset = runWithStderr("print(Rect(0, 0, 10, 10).inset(1, 2))");
+    expect(inset.stderr).toMatch(/Rect\.inset\(\) expects 1 argument, got 2/);
+    const offset = runWithStderr("print(Rect(0, 0, 10, 10).offset(1))");
+    expect(offset.stderr).toMatch(/Rect\.offset\(\) expects 2 arguments, got 1/);
+  });
+
+  it("rejects a non-numeric argument to inset / offset", () => {
+    const { stderr } = runWithStderr('print(Rect(0, 0, 10, 10).inset("wide"))');
+    expect(stderr).toMatch(/Rect.inset/);
+    expect(stderr).toMatch(/string/);
+  });
+
   it("checks a Rect annotation", () => {
     const out = checkJson('fn cx(r: Rect) -> int\n  r.center_x()\nend\nprint(cx("nope"))');
     expect(out.warnings).toHaveLength(1);

@@ -34,7 +34,7 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
         let color = match &term.op {
             TermOp::Constant(_) => "lightblue",
             TermOp::StateInit | TermOp::StateRead | TermOp::StateWrite => "lightyellow",
-            TermOp::Call | TermOp::MethodCall(_) => "lightgreen",
+            TermOp::Call | TermOp::MethodCall { .. } => "lightgreen",
             TermOp::Branch | TermOp::Match => "lightsalmon",
             TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop => "plum",
             TermOp::MakeClosure(_) => "lightcoral",
@@ -64,7 +64,7 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
         // `MethodCall` finds its function by name at runtime — so it is drawn
         // as a labelled may-edge rather than a plain value edge. Without it
         // the graph has no path from `fn Point.dist2` to `p.dist2()` at all.
-        if let TermOp::MethodCall(name) = term.op
+        if let TermOp::MethodCall { name, .. } = term.op
             && let Some(targets) = dispatch.get(&name)
         {
             for &func in targets {

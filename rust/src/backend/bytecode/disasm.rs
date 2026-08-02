@@ -132,13 +132,19 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             recv,
             name,
             args,
+            hint,
         } => {
+            let hint = match hint {
+                Some(h) => format!(" ?{}", kconst(program, *h)),
+                None => String::new(),
+            };
             format!(
-                "r{} = r{}.{}{}",
+                "r{} = r{}.{}{}{}",
                 dst,
                 recv,
                 kconst(program, *name),
-                reglist(args)
+                reglist(args),
+                hint
             )
         }
         BuiltinCall {

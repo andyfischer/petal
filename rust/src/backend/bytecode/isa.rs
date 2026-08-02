@@ -225,6 +225,9 @@ pub enum Inst {
         recv: Reg,
         name: ConstantId,
         args: SmallVec<[Reg; 4]>,
+        /// Class to fall back on when the receiver's own label answers
+        /// nothing — see [`crate::program::TermOp::MethodCall`].
+        hint: Option<ConstantId>,
     },
     /// `dst = name(args…)`. `in_place` is set by escape analysis (M4) when the
     /// builtin is a mutation (`append`/`set`/…) whose container argument is

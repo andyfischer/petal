@@ -189,13 +189,22 @@ older instance, and no live value is rewritten when a declaration changes —
 the same contract as changing a state variable's type on reload.
 
 What makes an edit *land* on such a value is that method calls are resolved
-against the new code wherever the compiler can tell which class the receiver
-is. Annotating the binding (`state c: C = C(1)`) pins it, so renaming a class
-or editing a method takes effect on instances that predate the edit; an
-un-annotated `state` is `any`, so its calls still dispatch on the label and an
-edit can leave them with nothing to find. See
+against the new code, by two mechanisms that answer different questions:
+
+- **Pinning.** Where the compiler can tell which class the receiver is — a
+  constructor call, a `let` bound to one, or any binding or parameter carrying
+  a class annotation — the call is bound to `fn Class.method` at compile time
+  and never dispatches at all.
+- **The stale-label fallback.** Where it cannot, the call still dispatches on
+  the label, but carries the class its declaration named. That is consulted
+  only when the label means nothing in the program now running: it names no
+  class here, or the value carries none. `Program.class_names` is what answers
+  that at runtime, since the class table is compile-time only.
+
+A label naming a live class always wins, so a binding that holds different
+classes over time is unaffected. See
 [Classes & Methods](language-guide.md#when-the-call-is-resolved-at-compile-time)
-for the rule and `rust/tests/class_live_edit.rs` for the pinned behaviour.
+for both rules and `rust/tests/class_live_edit.rs` for the pinned behaviour.
 
 ### Hosts that trigger reload
 

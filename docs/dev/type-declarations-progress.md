@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-02 (chunk M: annotations drive static dispatch) ·
+Last updated: 2026-08-02 (chunk N: the stale-label fallback) ·
 Branch: `main`
 
 ---
@@ -40,7 +40,8 @@ Branch: `main`
 | J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
 | K — class names as types | ✅ done | (classes) | `Type::Class(ClassId)` + `Type::resolve`; `fn f(r: Rect)` checks, field reads are typed |
 | L — receiver, field & arity diagnostics | ✅ done | (this) | fatal receiver-annotation check; undeclared-field warning; signatures carried on bindings; no-matching-arity warning for fns, constructors and methods |
-| M — annotations drive static dispatch | ✅ done | (this) | `check_module` also returns the method-call sites it pinned to one class; the compiler binds those straight to `fn Class.method`. An annotation is now what makes a class survive a live edit — see the note below |
+| M — annotations drive static dispatch | ✅ done | `dc652e1` | `check_module` also returns the method-call sites it pinned to one class; the compiler binds those straight to `fn Class.method` |
+| N — stale-label fallback | ✅ done | (this) | an unpinned call carries its declaration's class, consulted only when the receiver's label names no class in this program; `Program.class_names` answers that at runtime |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -345,8 +346,41 @@ enforce that; built-in class methods are exempt, being natives that exist before
 the program starts. Each guard has a test in `rust/tests/static_dispatch.rs`.
 
 **Consequence for the checker's binding rules.** An un-annotated `state`/`var`
-is `any` by deliberate decision, so it is *not* pinned — which is exactly the
-case where a live edit still fails (`No method 'get' on class C`). Inferring a
-class from a mutable binding's initializer would extend this, at the cost of
-being wrong when the binding is later assigned another class. Open question, not
-a bug.
+is `any` by deliberate decision, so it is *not* pinned. Chunk N covers that gap
+without touching the rule.
+
+---
+
+## Chunk N — the stale-label fallback
+
+Pinning left one case failing: an un-annotated `state c = C(1)` kept
+dispatching on the label, so renaming `C` reported `No method 'get' on class C`
+against a value that had outlived its class.
+
+The fix deliberately did **not** widen what the checker types. Inferring a class
+from a mutable binding's initializer would break polymorphism through a single
+binding, which works today and is pinned by
+`class_live_edit.rs::a_live_label_still_wins_over_the_declarations_class` —
+`state shape = Circle(2)` then `shape = Square(3)` must run `Square.area`.
+
+Instead the class travels with the call as a *last resort*:
+
+- `VarType::class_hint` records the class a declaration named for bindings the
+  pass types as `any`. It is **not a type**: nothing is checked against it and
+  it produces no warning.
+- `MethodDispatch` gained a second map, `hints`, beside `pinned`. Both are
+  guarded identically (a field of that name outranks the method; an arity no
+  overload accepts is not a candidate).
+- `TermOp::MethodCall` became a struct variant carrying `hint:
+  Option<ConstantId>`, threaded through `Inst::MethodCall` to `do_method_call`,
+  which consults it at step 3.5 — after the receiver's own class, before the
+  handle and global-native fallbacks.
+- `Program.class_names` (a `BTreeSet`, so IR serialization stays byte-stable
+  for the lint round-trip) is what lets the VM ask the one question the class
+  table cannot answer at runtime: *is this label a class that still exists
+  here?* Only a label that fails that test — or an absent label — reaches the
+  hint, so a live class always wins.
+
+**Degradation:** IR loaded from JSON without `class_names` (`#[serde(default)]`)
+treats every label as live, so hints never fire and dispatch behaves exactly as
+it did before this chunk.

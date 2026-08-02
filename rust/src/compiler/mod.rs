@@ -371,6 +371,11 @@ impl Compiler {
             match_arms: self.match_arms,
             block_terms,
             warnings: self.warnings,
+            class_names: self
+                .classes
+                .iter()
+                .map(|(_, def)| def.name.clone())
+                .collect(),
         })
     }
 

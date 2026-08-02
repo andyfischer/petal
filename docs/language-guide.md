@@ -869,13 +869,16 @@ classes is entirely independent.
 2. **A user-declared method** for the receiver's class — `fn Rect.area(...)`.
 3. **A built-in method** of that class — `Rect.center_x` and friends. A user
    declaration therefore overrides a built-in method of the same name.
-4. **A global builtin**, with the receiver passed as its first argument — this
+4. **The declaring slot's class**, when the label the receiver carries means
+   nothing here — see [stale labels](#when-a-label-outlives-its-class) below.
+   This is a last resort, reached only after 2 and 3 have found nothing.
+5. **A global builtin**, with the receiver passed as its first argument — this
    is the [method syntax](#method-syntax) that makes `[1,2,3].len()` work.
    `p.str()` and `p.keys()` reach a class instance this way too, since an
    instance is a record.
 
 Calling something none of these resolve reports the class by name:
-`No method 'nope' on class Rect`. So does step 4 *failing* on a class
+`No method 'nope' on class Rect`. So does step 5 *failing* on a class
 instance: `P(1).get()` is a call to a method that does not exist, not a call to
 the global `get`, so it reports `No method 'get' on class P` rather than the
 builtin's own complaint. That is what a live edit which deletes `fn P.get`
@@ -954,15 +957,50 @@ state c: D = D(1)
 print(c.get())        // 101, computed from the old value
 ```
 
-Without the annotation the same edit reports `No method 'get' on class C` —
-the value in `state` is still labelled `C`, and there is no `C` any more.
-Annotating a `state` that holds an instance is the way to make a class
-survive being edited.
-
 Petal does **not** migrate state: a field the edit adds is not invented on an
 instance built before it existed (`No field 'y' on class C`), and no value is
 rewritten when a declaration changes. That is the same contract as changing a
 state variable's type on reload.
+
+### When a label outlives its class
+
+Without the annotation the call above is not pinned, so it dispatches on the
+label — and after the rename, `C` names nothing. Rather than dead-end there,
+dispatch falls back to the class the *declaration* named (step 4 of the
+[resolution order](#resolution-order)), and the edit lands anyway.
+
+The fallback is deliberately a last resort, not a preference. It applies only
+when the receiver's label is meaningless in the program now running: it names
+no class here, or there is no label at all because the value predates the
+class. A label naming a class that really exists always wins, so one binding
+holding different classes over time keeps working:
+
+```petal
+class Circle
+  r: int,
+end
+class Square
+  s: int,
+end
+fn Circle.area(c: Circle)
+  3 * c.r * c.r
+end
+fn Square.area(q: Square)
+  q.s * q.s
+end
+
+state shape = Circle(2)
+print(shape.area())        // 12 — dispatches on the label
+shape = Square(3)
+print(shape.area())        // 9  — still the label, not the declaration
+```
+
+So the two mechanisms answer different questions. An annotation says *this slot
+is a C*, and the call is bound before it ever runs — predictable, and it gives
+the dataflow tools an exact edge. The fallback says *nothing else could
+answer*, and only rescues a value whose class has been edited out from under
+it. Annotating is still worth doing; it just is not the difference between a
+live edit working and failing any more.
 
 **Dataflow.** A pinned call names its callee like any other call, so
 `show-slice`, `show-provenance` and `show-graph` get the exact function. An

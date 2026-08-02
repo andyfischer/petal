@@ -189,7 +189,10 @@ fn format_op(op: &TermOp) -> String {
         TermOp::GetIndex => "GetIndex".into(),
         TermOp::SetIndex => "SetIndex".into(),
         TermOp::MakeEnumVariant(cid) => format!("MakeEnumVariant(c{})", cid.0),
-        TermOp::MethodCall(cid) => format!("MethodCall(c{})", cid.0),
+        TermOp::MethodCall { name, hint } => match hint {
+            Some(h) => format!("MethodCall(c{}, hint c{})", name.0, h.0),
+            None => format!("MethodCall(c{})", name.0),
+        },
         TermOp::BuiltinCall(cid) => format!("BuiltinCall(c{})", cid.0),
         TermOp::Match => "Match".into(),
         TermOp::AllocElement { tag, prop_keys } => {

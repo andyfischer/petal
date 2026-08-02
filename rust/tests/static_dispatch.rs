@@ -29,7 +29,7 @@ fn dispatches(src: &str) -> bool {
         .expect("program")
         .terms
         .iter()
-        .any(|t| matches!(t.op, TermOp::MethodCall(_)))
+        .any(|t| matches!(t.op, TermOp::MethodCall { .. }))
 }
 
 fn resolves(src: &str) -> bool {
@@ -159,4 +159,61 @@ fn an_arity_overload_resolves_to_the_matching_variant() {
     let src = "class C\n  a: int,\nend\nfn C.plus(c: C)\n  c.a\nend\nfn C.plus(c: C, n)\n  c.a + n\nend\nlet c = C(1)\nprint(c.plus())\nprint(c.plus(10))\n";
     assert!(resolves(src));
     assert_eq!(run(src), ["1", "11"]);
+}
+
+// ── The dispatch hint ──────────────────────────────────────────────────────
+//
+// A site that cannot be pinned still carries the class its declaration named,
+// used only when the label the receiver arrives with means nothing in this
+// program. These pin the *shape* — the behaviour it buys is in
+// `class_live_edit.rs`, which is the only place the two can disagree.
+
+/// Whether the program's method calls carry a fallback class.
+fn has_hint(src: &str) -> bool {
+    let mut env = Env::new();
+    let pid = env
+        .load_program(src)
+        .unwrap_or_else(|e| panic!("compiles: {e}\n{src}"));
+    env.get_program(pid)
+        .expect("program")
+        .terms
+        .iter()
+        .any(|t| matches!(t.op, TermOp::MethodCall { hint: Some(_), .. }))
+}
+
+#[test]
+fn an_unpinned_binding_carries_its_declarations_class_as_a_hint() {
+    for form in ["state c = C(1)", "var c = C(1)"] {
+        let src = format!("{CLS}{form}\nprint(c.get())\n");
+        assert!(dispatches(&src), "{form}");
+        assert!(has_hint(&src), "{form}");
+    }
+}
+
+/// A receiver with no declaration to speak for it has nothing to hint.
+#[test]
+fn a_parameter_and_an_expression_receiver_carry_no_hint() {
+    let param = format!("{CLS}fn f(c)\n  c.get()\nend\nprint(f(C(1)))\n");
+    assert!(dispatches(&param) && !has_hint(&param));
+
+    let expr = format!("{CLS}let xs = [C(1)]\nprint(xs[0].get())\n");
+    assert!(!has_hint(&expr), "an index expression has no declaration");
+}
+
+/// The hint obeys the same guards as the pin: a field of that name outranks
+/// the method, and an arity no overload accepts is not a candidate.
+#[test]
+fn the_hint_obeys_the_same_guards_as_the_pin() {
+    let shadowed = "class C\n  get: any,\nend\nfn C.get(c: C)\n  1\nend\nstate c = C(fn() -> 9)\nprint(c.get())\n";
+    assert!(!has_hint(shadowed), "a field of that name wins");
+
+    let wrong_arity = format!("{CLS}state c = C(1)\nprint(c.get(1, 2, 3))\n");
+    assert!(!has_hint(&wrong_arity), "no overload accepts three args");
+}
+
+/// A pinned site needs no hint — it does not dispatch at all.
+#[test]
+fn a_pinned_site_carries_no_hint() {
+    let src = format!("{CLS}state c: C = C(1)\nprint(c.get())\n");
+    assert!(resolves(&src) && !has_hint(&src));
 }

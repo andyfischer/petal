@@ -128,6 +128,7 @@ impl Compiler {
                     // candidate.
                     let static_callee = self
                         .method_dispatch
+                        .pinned
                         .get(&span)
                         .cloned()
                         .filter(|class| {
@@ -154,7 +155,23 @@ impl Compiler {
                         inputs.push(self.compile_expr(arg));
                     }
                     let field_const = self.constants.intern(ConstantValue::String(field.clone()));
-                    self.emit_term(TermOp::MethodCall(field_const), inputs, None)
+                    // The call still dispatches on the receiver, but carries the
+                    // class its declaration named, for the case where the label
+                    // the receiver arrives with names nothing in this program.
+                    let hint = self
+                        .method_dispatch
+                        .hints
+                        .get(&span)
+                        .cloned()
+                        .map(|class| self.constants.intern(ConstantValue::String(class)));
+                    self.emit_term(
+                        TermOp::MethodCall {
+                            name: field_const,
+                            hint,
+                        },
+                        inputs,
+                        None,
+                    )
                 } else {
                     // A bare identifier that currently resolves in scope to
                     // exactly the builtin's phantom term (i.e. not shadowed by a

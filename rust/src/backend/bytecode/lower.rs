@@ -482,11 +482,12 @@ impl<'p> FnLowerer<'p> {
                 callee: self.flat(ins[0])?,
                 args: self.regs(&ins[1..])?,
             },
-            TermOp::MethodCall(name) => Inst::MethodCall {
+            TermOp::MethodCall { name, hint } => Inst::MethodCall {
                 dst,
                 recv: self.flat(ins[0])?,
                 name: *name,
                 args: self.regs(&ins[1..])?,
+                hint: *hint,
             },
             TermOp::BuiltinCall(name) => Inst::BuiltinCall {
                 dst,

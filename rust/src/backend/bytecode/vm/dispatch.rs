@@ -360,10 +360,11 @@ impl<'a> Vm<'a> {
                 recv,
                 name,
                 args,
+                hint,
             } => {
                 let receiver = self.reg(fi, *recv);
                 let argv = self.regs(fi, args);
-                self.do_method_call(fi, *dst, receiver, *name, &argv, origin)?;
+                self.do_method_call(fi, *dst, receiver, *name, &argv, *hint, origin)?;
             }
             Inst::BuiltinCall {
                 dst,

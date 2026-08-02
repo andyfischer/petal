@@ -145,15 +145,46 @@ fn deleting_a_method_reports_the_class_not_the_builtin_it_collides_with() {
     assert!(!err.contains("expects 2 arguments"), "{err}");
 }
 
-/// The same rename as the headline test, but with nothing to pin the receiver
-/// down: an un-annotated `state` is `any`, so the call still dispatches on the
-/// tag the old value carries and reports the class it names.
+/// The same rename with nothing to pin the receiver down. An un-annotated
+/// `state` is `any`, so the call still dispatches on the label — which names a
+/// class this program no longer has. Rather than dead-end there, dispatch
+/// falls back to the class the *declaration* named, and the edit lands.
 #[test]
-fn an_unpinned_receiver_still_dispatches_on_its_label() {
-    let err = after_reload(
+fn a_stale_label_falls_back_to_the_declarations_class() {
+    let out = after_reload(
         "class C\n  x: int,\nend\nfn C.get(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.get())\n",
-        "class D\n  x: int,\nend\nfn D.get(d: D)\n  d.x\nend\nstate c = D(1)\nprint(c.get())\n",
+        "class D\n  x: int,\nend\nfn D.get(d: D)\n  d.x + 100\nend\nstate c = D(1)\nprint(c.get())\n",
     )
-    .expect_err("the instance in state is still a C");
-    assert!(err.contains("No method 'get' on class C"), "{err}");
+    .expect("the label is stale, so the declaration answers");
+    assert_eq!(out, ["101"]);
+}
+
+/// The fallback is a *last* resort, not a preference. A label naming a class
+/// that really is here wins, so one binding holding different classes over
+/// time keeps dispatching to each one's own method — the behaviour that ruled
+/// out simply pinning an un-annotated binding to its initializer.
+#[test]
+fn a_live_label_still_wins_over_the_declarations_class() {
+    let out = after_reload(
+        "class Circle\n  r: int,\nend\nclass Square\n  s: int,\nend\nfn Circle.area(c: Circle)\n  3 * c.r * c.r\nend\nfn Square.area(q: Square)\n  q.s * q.s\nend\nstate shape = Circle(2)\nshape = Square(3)\nprint(shape.area())\n",
+        "class Circle\n  r: int,\nend\nclass Square\n  s: int,\nend\nfn Circle.area(c: Circle)\n  3 * c.r * c.r\nend\nfn Square.area(q: Square)\n  q.s * q.s\nend\nstate shape = Circle(2)\nprint(shape.area())\n",
+    )
+    .expect("runs");
+    // `shape` survives as the Square the first run left there. Its declaration
+    // says Circle, but the label is live, so `Square.area` runs — 3*3, not
+    // Circle.area reading a field a Square does not have.
+    assert_eq!(out, ["9"]);
+}
+
+/// A method genuinely deleted still reports against the class on the value:
+/// the label resolves (class `P` is still declared), so the fallback is never
+/// consulted and the diagnostic is the class-aware one.
+#[test]
+fn a_live_label_missing_the_method_still_reports_its_own_class() {
+    let err = after_reload(
+        "class P\n  a: int,\nend\nfn P.get(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.get())\n",
+        "class P\n  a: int,\nend\nfn P.other(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.get())\n",
+    )
+    .expect_err("the method is gone and the class is not");
+    assert!(err.contains("No method 'get' on class P"), "{err}");
 }

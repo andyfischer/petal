@@ -145,9 +145,21 @@ pub enum TermOp {
     MakeOverloadSet,
     /// Dynamic call: inputs=[callable, arg0, arg1, ...]
     Call,
-    /// Method call: inputs=[object, arg0, arg1, ...], method name as constant
-    /// At runtime: tries record field first, then builtin/scope lookup with obj prepended
-    MethodCall(ConstantId),
+    /// Method call: inputs=[object, arg0, arg1, ...], method name as constant.
+    /// At runtime: tries record field first, then the receiver's class, then a
+    /// builtin with the receiver prepended.
+    ///
+    /// `hint` is an optional class name for the last-resort case: the receiver
+    /// carries a class label naming nothing in *this* program (or carries none
+    /// at all), while the declaration of the slot it came from named a class.
+    /// That is what a live edit looks like from the inside — the value predates
+    /// the code — and the hint is how the call reaches the method anyway. It is
+    /// consulted only after the label has failed, so it never overrides the
+    /// receiver's own class. See `crate::typecheck::MethodDispatch`.
+    MethodCall {
+        name: ConstantId,
+        hint: Option<ConstantId>,
+    },
     /// Static builtin call: inputs=[arg0, arg1, ...], builtin name as constant.
     /// Emitted when a bare, unshadowed builtin (e.g. `print`) is called directly,
     /// replacing the dynamic `Call` through a phantom `Copy` of the builtin.
@@ -233,9 +245,13 @@ impl TermOp {
             | TermOp::Error(c)
             | TermOp::GetField(c)
             | TermOp::SetField(c)
-            | TermOp::MethodCall(c)
             | TermOp::BuiltinCall(c)
             | TermOp::MakeEnumVariant(c) => vec![*c],
+            TermOp::MethodCall { name, hint } => {
+                let mut v = vec![*name];
+                v.extend(hint.iter().copied());
+                v
+            }
             TermOp::AllocMap { fields, class } => {
                 let mut v = fields.clone();
                 v.extend(class.iter().copied());
@@ -417,6 +433,21 @@ pub struct Program {
     /// artifact, NOT part of the portable IR — skipped in (de)serialization.
     #[serde(skip)]
     pub warnings: Vec<crate::diagnostic::Diagnostic>,
+    /// Every class name this program declares, built-ins included.
+    ///
+    /// The class *table* is compile-time only, but the VM needs one question
+    /// answered at runtime: is the label on this value a class that still
+    /// exists here? A value can outlive the program that built it — that is
+    /// what `transfer_state` is for — so a label alone does not prove its class
+    /// is real. This is what tells a live instance apart from a leftover one,
+    /// and it gates the `hint` on [`TermOp::MethodCall`].
+    ///
+    /// A `BTreeSet` rather than a `HashSet`: this is part of the serialized IR,
+    /// and the lint round-trip asserts that formatting a file leaves its IR
+    /// byte-identical — which a hash set's iteration order would break at
+    /// random.
+    #[serde(default)]
+    pub class_names: std::collections::BTreeSet<String>,
 }
 
 impl Program {

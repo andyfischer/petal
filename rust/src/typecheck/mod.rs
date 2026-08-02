@@ -33,6 +33,17 @@ struct VarType {
     /// be checked by carrying the signature alongside the type — see
     /// [`Checker::fn_candidates`].
     fns: Vec<FnSignature>,
+    /// The class this binding's *declaration* implies, when the type system
+    /// deliberately refuses to say so. A `state`/`var` binds `any` because the
+    /// initializer describes at most the first read — the next frame re-runs
+    /// against a persisted value and a `set` can replace it from anywhere. That
+    /// is the right call for typing, and this is emphatically **not** a type:
+    /// nothing is checked against it and it produces no warning. It is a *hint*
+    /// for the one question the type cannot answer — when the class label a
+    /// value carries names nothing in the program now running, which class did
+    /// the code that declared the slot have in mind? See
+    /// [`MethodDispatch::hints`].
+    class_hint: Option<Type>,
 }
 
 impl VarType {
@@ -116,7 +127,7 @@ fn run(
         ret_stack: Vec::new(),
         diags: Vec::new(),
         casts: Vec::new(),
-        dispatch: HashMap::new(),
+        dispatch: MethodDispatch::new(),
         slot: CastSlot::Operand,
     };
     checker.bind_enum_variants(stmts);
@@ -137,10 +148,26 @@ struct Outcome {
     dispatch: MethodDispatch,
 }
 
-/// Which class each `recv.name(...)` site dispatches to, keyed by the span of
-/// the *call* expression, for the sites where this pass could pin the receiver
-/// down to one class. See [`check_module`].
-pub type MethodDispatch = HashMap<SourceSpan, String>;
+/// What this pass learned about each `recv.name(...)` site, keyed by the span
+/// of the *call* expression. See [`check_module`].
+#[derive(Debug, Default)]
+pub struct MethodDispatch {
+    /// Sites whose receiver was pinned to exactly one class. The compiler binds
+    /// these straight to `fn Class.name`, skipping runtime dispatch entirely.
+    pub pinned: HashMap<SourceSpan, String>,
+    /// Sites whose receiver has no knowable type — an un-annotated `state` or
+    /// `var` — but whose *declaration* named a class ([`VarType::class_hint`]).
+    /// These keep runtime dispatch; the class travels with the call only as a
+    /// last resort, for when the label the receiver carries names nothing in
+    /// the program now running. See `rust/src/backend/bytecode/vm/calls.rs`.
+    pub hints: HashMap<SourceSpan, String>,
+}
+
+impl MethodDispatch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 /// Type-check a module's statements against its (globally collected) function
 /// signatures. Returns the non-fatal warnings and the statically resolved
@@ -213,8 +240,20 @@ impl<'a> Checker<'a> {
                 declared,
                 inferred,
                 fns,
+                class_hint: None,
             },
         );
+    }
+
+    /// Record the class a just-bound name's declaration implies, for the
+    /// bindings whose *type* is deliberately `any`. See [`VarType::class_hint`].
+    fn set_class_hint(&mut self, name: &str, hint: Option<Type>) {
+        let Some(hint @ Type::Class(_)) = hint else {
+            return;
+        };
+        if let Some(vt) = self.scopes.last_mut().expect("a scope").get_mut(name) {
+            vt.class_hint = Some(hint);
+        }
     }
 
     fn lookup(&self, name: &str) -> Option<&VarType> {
@@ -446,6 +485,11 @@ impl<'a> Checker<'a> {
                     if *is_var { Type::Any } else { inferred },
                     fns,
                 );
+                // The cell's type stays `any`, but the declaration still names a
+                // class, and that is worth keeping for dispatch alone.
+                if *is_var {
+                    self.set_class_hint(name, Some(inferred));
+                }
             }
             // A `set` writes the same value into the same target shape as `=`;
             // the declared type of a `var` constrains its writes identically.
@@ -567,6 +611,10 @@ impl<'a> Checker<'a> {
                 // it earns that by constraining every write to it, exactly as a
                 // `var` cell does (docs/dev/var-next-steps.md, Cells).
                 self.bind(name.clone(), declared, Type::Any);
+                // …but the initializer still says which class the slot was
+                // meant to hold, and that is the only thing that can answer a
+                // stale label after a live edit reshapes the class.
+                self.set_class_hint(name, Some(inferred));
             }
             StmtKind::Import(_) => {}
         }
@@ -709,6 +757,15 @@ impl<'a> Checker<'a> {
                     ExprKind::FieldAccess { object, field } => {
                         let recv = self.check_expr(object);
                         self.check_method_call(recv, field, args.len(), expr.span);
+                        // The receiver has no knowable type, but its declaration
+                        // named a class. Not enough to bind the call — the slot
+                        // may legitimately hold another class by now — but
+                        // enough to answer a label that has gone stale.
+                        if recv == Type::Any
+                            && let Some(hint) = self.receiver_hint(object)
+                        {
+                            self.note_dispatch_hint(hint, field, args.len(), expr.span);
+                        }
                     }
                     _ => {
                         self.check_expr(function);
@@ -894,6 +951,41 @@ impl<'a> Checker<'a> {
         });
     }
 
+    /// The class a receiver *expression*'s declaration implied, for a receiver
+    /// this pass could not type. Only a bare name has one: anything else is an
+    /// expression whose value came from somewhere the declaration cannot speak
+    /// for. See [`VarType::class_hint`].
+    fn receiver_hint(&self, object: &Expr) -> Option<Type> {
+        let ExprKind::Ident(name) = &object.kind else {
+            return None;
+        };
+        self.lookup(name)?.class_hint
+    }
+
+    /// Record the fallback class for a `recv.name(args)` whose receiver is
+    /// untypeable. Guarded exactly like [`Checker::check_method_call`]'s pin,
+    /// and for the same reasons — a field of that name outranks the method, and
+    /// a name the class does not declare can still reach a global native — with
+    /// one addition: a hint is only useful if some overload actually accepts
+    /// this call, since dispatch has already failed by the time it is consulted.
+    fn note_dispatch_hint(&mut self, hint: Type, name: &str, args: usize, span: SourceSpan) {
+        let Type::Class(id) = hint else { return };
+        let def = self.classes.get(id);
+        if def.field(name).is_some() {
+            return;
+        }
+        if !def
+            .methods
+            .iter()
+            .any(|m| m.name == name && m.arity == args + 1)
+        {
+            return;
+        }
+        self.dispatch
+            .hints
+            .insert(span, self.classes.name_of(id).to_string());
+    }
+
     /// Check a `recv.name(args)` site and, where possible, pin it to one class.
     ///
     /// Warns when the call supplies an argument count no declared overload of
@@ -930,6 +1022,7 @@ impl<'a> Checker<'a> {
         }
         if arities.contains(&(args + 1)) {
             self.dispatch
+                .pinned
                 .insert(span, self.classes.name_of(id).to_string());
             return;
         }

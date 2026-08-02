@@ -218,7 +218,7 @@ impl CellIndex {
     /// The function terms a `MethodCall` may dispatch to; empty for every other
     /// op. A may-edge, and the one dataflow edge that is not an operand.
     pub fn dispatch_inputs(&self, term: &Term) -> Vec<TermId> {
-        let TermOp::MethodCall(name) = term.op else {
+        let TermOp::MethodCall { name, .. } = term.op else {
             return Vec::new();
         };
         self.dispatch.get(&name).cloned().unwrap_or_default()
@@ -730,6 +730,7 @@ mod tests {
             match_arms: HashMap::new(),
             block_terms: HashMap::new(),
             warnings: Vec::new(),
+            class_names: Default::default(),
         }
     }
 
@@ -775,7 +776,15 @@ mod tests {
             make_term(3, TermOp::BuiltinCall(declare), vec![1, 2, 0], None),
             // t4: the receiver; t5: `recv.dist2()`.
             make_term(4, TermOp::Constant(class), vec![], Some("base")),
-            make_term(5, TermOp::MethodCall(method), vec![4], Some("d")),
+            make_term(
+                5,
+                TermOp::MethodCall {
+                    name: method,
+                    hint: None,
+                },
+                vec![4],
+                Some("d"),
+            ),
         ]);
         prog.constants = constants;
 

@@ -116,6 +116,26 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    /// Whether the class label this receiver carries means nothing in the
+    /// program now running — either there is no label, or it names a class this
+    /// program does not declare.
+    ///
+    /// Both are shapes a live edit produces. A record built before its class
+    /// existed has no label; an instance built as `C` and kept across an edit
+    /// that renamed `C` has one that no longer resolves. Anything else — a
+    /// label naming a class that is really here — is a live value whose own
+    /// class must win, which is what keeps polymorphism through a single
+    /// binding working.
+    fn receiver_label_is_stale(&self, recv: Value) -> bool {
+        match recv {
+            Value::Map(id) => match self.heap.map_class_name(id) {
+                Some(label) => !self.program.class_names.contains(label),
+                None => true,
+            },
+            _ => false,
+        }
+    }
+
     /// Method-call syntax `recv.name(args...)`. Resolution order, first match
     /// wins (docs/language-guide.md, Classes & Methods):
     ///
@@ -130,6 +150,17 @@ impl<'a> Vm<'a> {
     ///    as natives under their qualified names.
     /// 4. a **handle method**, for a handle receiver.
     /// 5. a **global native** with `recv` prepended — `[1,2,3].len()`.
+    ///
+    /// Between 3 and 4 sits the `hint`: the class the *declaration* of the slot
+    /// this receiver came from named, supplied by the compiler for receivers
+    /// whose type it could not pin down (`crate::typecheck::MethodDispatch`).
+    /// It is consulted only when steps 2–3 found nothing *and* the receiver's
+    /// own label is meaningless in this program — it names no class here, or
+    /// there is no label at all. That is what a live edit leaves behind: a
+    /// value built by code that no longer exists, labelled `C` after `C` was
+    /// renamed, or an untagged record from before the class existed. Since the
+    /// label has already failed, deferring to what the code says cannot
+    /// override a live class, so polymorphism through one binding is untouched.
     ///
     /// Step 5 is where a class instance can go wrong. `P(1).get()` is almost
     /// always a call to a method that does not exist, but `get` is also a
@@ -148,6 +179,7 @@ impl<'a> Vm<'a> {
         recv: Value,
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
+        hint_cid: Option<crate::constant_table::ConstantId>,
         call_site: Option<TermId>,
     ) -> Result<(), String> {
         let program = self.program;
@@ -191,6 +223,31 @@ impl<'a> Vm<'a> {
                 return self.do_call(fi, dst, func, &with_receiver(recv, args), call_site);
             }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
+                let v =
+                    self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
+                self.set(fi, dst, v);
+                return Ok(());
+            }
+        }
+
+        // 3.5) The declaration's class, when the receiver's own label cannot
+        //      answer. Only reached if 2/3 found nothing, and only when the
+        //      label is meaningless *here* — absent, or naming a class this
+        //      program does not declare. A live-edited value is exactly that.
+        if let Some(hint_cid) = hint_cid
+            && let Some(hint) = program.get_string_constant(hint_cid)
+            && self.receiver_label_is_stale(recv)
+        {
+            if let Some(func) = self
+                .stack
+                .methods
+                .get(hint)
+                .and_then(|m| m.get(method_name))
+                .copied()
+            {
+                return self.do_call(fi, dst, func, &with_receiver(recv, args), call_site);
+            }
+            if let Some(nid) = self.native_fns.lookup_class_method(hint, method_name) {
                 let v =
                     self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
                 self.set(fi, dst, v);

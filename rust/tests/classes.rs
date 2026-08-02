@@ -214,6 +214,43 @@ fn a_duplicate_method_is_rejected_but_an_arity_overload_is_not() {
     assert!(errs[0].contains("`P.f` is already declared"), "{errs:?}");
 }
 
+/// The receiver of `fn A.go(...)` is an `A`. Annotating it as some other class
+/// describes a call that can never happen — the declaration is malformed, not
+/// merely suspect, so it is a hard error rather than a warning.
+#[test]
+fn a_receiver_annotated_as_another_class_is_rejected() {
+    let errs =
+        errors_of("class A\n  a: int\nend\nclass B\n  b: int\nend\nfn A.go(x: B)\n  x.a\nend\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].contains("`A.go`"), "{errs:?}");
+    assert!(errs[0].contains('B') && errs[0].contains('A'), "{errs:?}");
+}
+
+/// Same for a receiver annotated with a non-class type.
+#[test]
+fn a_receiver_annotated_as_a_builtin_type_is_rejected() {
+    let errs = errors_of("class A\n  a: int\nend\nfn A.go(x: int)\n  x\nend\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].contains("`A.go`"), "{errs:?}");
+}
+
+/// The receiver annotation is optional, and any slot an instance *fits* is
+/// fine: its own class, `any`, `record` (an instance is a record), or nothing.
+#[test]
+fn a_receiver_slot_that_accepts_an_instance_is_accepted() {
+    for src in [
+        "class A\n  a: int\nend\nfn A.go(x: A)\n  x.a\nend\n",
+        "class A\n  a: int\nend\nfn A.go(x)\n  x.a\nend\n",
+        "class A\n  a: int\nend\nfn A.go(x: any)\n  x.a\nend\n",
+        "class A\n  a: int\nend\nfn A.go(x: record)\n  x\nend\n",
+        // An unrecognized name is already reported as a warning by the checker;
+        // it must not also be read as a conflicting receiver.
+        "class A\n  a: int\nend\nfn A.go(x: banana)\n  x\nend\n",
+    ] {
+        assert!(errors_of(src).is_empty(), "{src:?}");
+    }
+}
+
 /// A user `class Rect` shadows the built-in rather than colliding with it —
 /// the same rule that lets a user binding shadow a builtin function.
 #[test]

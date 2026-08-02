@@ -110,6 +110,11 @@ to stderr with a source caret; with `--json` they appear as a `warnings` array
 (`check` still exits 0). Pass `--strict` to make any warning force a non-zero
 exit — useful for CI — while `run` and plain `check` stay 0.
 
+That includes calls the program could never resolve — `f(1)` where every `f`
+takes two arguments — which `run` reports as a hard error the moment the call
+executes. `check` reports them up front, so `--strict` catches them without
+running the program.
+
 With `--json`, emits `{"ok": true, "warnings": [...]}` on success (each warning
 is `{message, line, column, file}`, where `file` is `null` for the entry file),
 or `{message, line, column, phase, errors, ...}` on a hard failure — see

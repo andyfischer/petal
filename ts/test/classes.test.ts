@@ -201,6 +201,75 @@ describe("class and method diagnostics", () => {
     expect(out.error).toBe(true);
     expect(out.errors[0].message).toMatch(/`Point.f` is already declared/);
   });
+
+  // A method's receiver is always an instance of the class it is declared on,
+  // so an annotation that cannot accept one describes a call that can never
+  // happen — fatal, not a warning.
+  it("rejects a receiver annotated as a different class", () => {
+    const out = checkJsonAllowFail(
+      "class A\n  a: int\nend\nclass B\n  b: int\nend\nfn A.go(x: B)\n  x.a\nend"
+    );
+    expect(out.error).toBe(true);
+    expect(out.errors[0].message).toMatch(/`A.go`/);
+    expect(out.errors[0].message).toMatch(/receiver `x` as `B`/);
+    expect(out.errors[0].line).toBe(7);
+  });
+
+  it("accepts any receiver slot an instance fits, including none", () => {
+    for (const src of [
+      "class A\n  a: int\nend\nfn A.go(x: A)\n  x.a\nend\nprint(A(1).go())",
+      "class A\n  a: int\nend\nfn A.go(x)\n  x.a\nend\nprint(A(1).go())",
+      "class A\n  a: int\nend\nfn A.go(x: any)\n  x.a\nend\nprint(A(1).go())",
+    ]) {
+      expect(checkJson(src).warnings).toEqual([]);
+    }
+  });
+});
+
+describe("field and method checks on a class-typed value", () => {
+  it("warns on a field the declared class does not have", () => {
+    const out = checkJson("class B\n  b: int\nend\nfn f(x: B)\n  x.nosuch\nend\nprint(f(B(1)))");
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("class `B` has no field `nosuch`");
+    expect(out.warnings[0].line).toBe(5);
+  });
+
+  it("stays quiet on declared fields, plain records and `any`", () => {
+    for (const src of [
+      "class B\n  b: int\nend\nfn f(x: B)\n  x.b\nend\nprint(f(B(1)))",
+      "let r = {a: 1}\nprint(r.nosuch)",
+      "fn f(x)\n  x.nosuch\nend\nprint(f({a: 1}))",
+      "fn f(x: record)\n  x.nosuch\nend\nprint(f({a: 1}))",
+    ]) {
+      expect(checkJson(src).warnings).toEqual([]);
+    }
+  });
+
+  it("does not read a method name as a field", () => {
+    const out = checkJson(
+      "class B\n  b: int\nend\nfn B.go(x: B)\n  x.b\nend\nprint(B(1).go())\nprint(B(1).keys())"
+    );
+    expect(out.warnings).toEqual([]);
+  });
+
+  it("warns when no overload of a method takes that many arguments", () => {
+    const src =
+      "class P\n  x: int\n  y: int\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
+    const out = checkJson(`${src}print(P(1, 2).shift())`);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("method `P.shift` expects 1 argument, got 0");
+    // The same call is a hard error at runtime — that is the gap `check` closes.
+    const { stderr } = runWithStderr(`${src}print(P(1, 2).shift())`);
+    expect(stderr).toMatch(/P.shift\(\) expected 2 arguments/);
+    expect(checkJson(`${src}print(P(1, 2).shift(3))`).warnings).toEqual([]);
+  });
+
+  it("warns when a constructor is given the wrong number of fields", () => {
+    const out = checkJson("class P\n  x: int\n  y: int\nend\nprint(P(1))");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("`P` expects 2 arguments, got 1");
+  });
 });
 
 describe("the built-in Rect class", () => {

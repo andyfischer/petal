@@ -4,7 +4,8 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-02 (chunk K: class names are type names) · Branch: `main`
+Last updated: 2026-08-02 (chunk L: receiver, field and arity diagnostics) ·
+Branch: `main`
 
 ---
 
@@ -38,6 +39,7 @@ Last updated: 2026-08-02 (chunk K: class names are type names) · Branch: `main`
 | I — editor support | ✅ done | (audit) | tree-sitter models `type_annotation`/`return_type`/`parameter`; vim `petalType` |
 | J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
 | K — class names as types | ✅ done | (classes) | `Type::Class(ClassId)` + `Type::resolve`; `fn f(r: Rect)` checks, field reads are typed |
+| L — receiver, field & arity diagnostics | ✅ done | (this) | fatal receiver-annotation check; undeclared-field warning; signatures carried on bindings; no-matching-arity warning for fns, constructors and methods |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -107,12 +109,23 @@ The runtime is untouched — annotations are stripped to names for codegen.
   `debug_assert_eq!` differential stays green.
 
 ### Checker — `rust/src/typecheck/mod.rs`, `diagnostic.rs`
-- `check_module(stmts, &fn_signatures) -> Vec<Diagnostic>`, invoked from
-  `compile_module` after `prescan_declarations`. Scoped
+- `check_module(stmts, &fn_signatures, &classes) -> Vec<Diagnostic>`, invoked
+  from `compile_module` after `prescan_declarations`. Scoped
   `Vec<HashMap<String, VarType>>` env; folded `check_expr` doing conservative
-  shallow inference (any ambiguity ⇒ `Any`, which suppresses); five check sites
-  (unknown type name, typed `let`, reassignment, call args, fn return tail).
-  Never errors. 18 unit tests; the entire un-annotated corpus stays silent.
+  shallow inference (any ambiguity ⇒ `Any`, which suppresses); check sites:
+  unknown type name, typed `let`/`state`, reassignment, call args, fn return
+  tail, a field read on a class-typed value, and the argument *count* of a call
+  (fn, constructor, method). Never errors. The entire un-annotated corpus stays
+  silent — `petal check` over every `.ptl` in the repo must not gain a warning.
+- `VarType.fns: Vec<FnSignature>` carries what a *binding* may be called with,
+  one entry per arity: `Type::Function` has no arrow inside it, so `let f =
+  fn(n: int) -> n` / `let h = g` would otherwise lose the signature. Filled by
+  `fn_candidates` (lambda literal, bound name, un-shadowed module fn), cleared
+  on re-assignment, and empty for anything unknown — which is what keeps
+  builtins, parameters and imported callables unchecked. Nested `fn`
+  declarations are bound into the block's scope by `bind_nested_fns`, so an
+  inner declaration shadows a same-named module one instead of being checked
+  against it.
 - `pub(crate) collect_fn_signatures(&[Stmt]) -> HashMap<(String,usize),
   FnSignature>` (`compiler/mod.rs`) → `Compiler.fn_signatures` side table.
 - `Diagnostic { span: SourceSpan, message }`; carried on
@@ -226,7 +239,11 @@ binding's initializer describes every later read.
   have is a *runtime* error (`No method 'nope' on class Rect`). A check-time
   warning was considered and dropped: dispatch also reaches every global native,
   including ones an embedder registers that the checker cannot see, so the
-  warning would fire on working code — the one outcome this pass avoids.
+  warning would fire on working code — the one outcome this pass avoids. The
+  *arity* of a method the class **does** declare is checked (chunk L): dispatch
+  matches a user method by name alone, so a mismatched count cannot fall through
+  to a global and is always a runtime error. A callable field of the same name
+  wins over the method, so a class that declares such a field is skipped.
 - **Enum variant field annotations** (`Circle(radius: float)`) — the shared
   param parser already *parses* these; `EnumVariant.fields` is `Vec<String>`, so
   the types are dropped. Keeping them is the remaining work (plan §12 Q4).

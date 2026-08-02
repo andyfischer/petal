@@ -26,6 +26,13 @@ use crate::types::{FnSignature, Type};
 struct VarType {
     declared: Option<Type>,
     inferred: Type,
+    /// The signatures this name may be *called* with, when it is known to hold
+    /// a function: one entry per arity. Empty whenever the callee is unknown,
+    /// which is what keeps every check below conservative. [`Type`] is a bare
+    /// `function` with no arrow inside it, so a call through a binding can only
+    /// be checked by carrying the signature alongside the type — see
+    /// [`Checker::fn_candidates`].
+    fns: Vec<FnSignature>,
 }
 
 impl VarType {
@@ -109,6 +116,7 @@ fn run(
         casts: Vec::new(),
         slot: CastSlot::Operand,
     };
+    checker.bind_enum_variants(stmts);
     for stmt in stmts {
         checker.check_stmt(stmt);
     }
@@ -157,14 +165,96 @@ impl<'a> Checker<'a> {
     }
 
     fn bind(&mut self, name: String, declared: Option<Type>, inferred: Type) {
-        self.scopes
-            .last_mut()
-            .expect("at least one scope")
-            .insert(name, VarType { declared, inferred });
+        self.bind_callable(name, declared, inferred, Vec::new());
+    }
+
+    /// Bind a name that is known to hold a function, carrying the signatures it
+    /// may be called with (see [`VarType::fns`]).
+    fn bind_callable(
+        &mut self,
+        name: String,
+        declared: Option<Type>,
+        inferred: Type,
+        fns: Vec<FnSignature>,
+    ) {
+        self.scopes.last_mut().expect("at least one scope").insert(
+            name,
+            VarType {
+                declared,
+                inferred,
+                fns,
+            },
+        );
     }
 
     fn lookup(&self, name: &str) -> Option<&VarType> {
         self.scopes.iter().rev().find_map(|s| s.get(name))
+    }
+
+    /// Replace the callable signatures recorded for an already-bound name, in
+    /// the innermost scope that binds it. A re-assignment puts a *different*
+    /// function in the slot, so the old signature must not outlive it.
+    fn rebind_fns(&mut self, name: &str, fns: Vec<FnSignature>) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(vt) = scope.get_mut(name) {
+                vt.fns = fns;
+                return;
+            }
+        }
+    }
+
+    /// The signatures a callee expression may be invoked with, or empty when
+    /// nothing is known — which suppresses every call-site check. Three things
+    /// are knowable: a lambda written in place, a name bound to a function
+    /// (including a chain of aliases, since each binding carries the same list
+    /// forward), and an un-shadowed module function, whose overloads are one
+    /// candidate per declared arity.
+    fn fn_candidates(&self, expr: &Expr) -> Vec<FnSignature> {
+        match &expr.kind {
+            ExprKind::Lambda { params, .. } => vec![FnSignature {
+                params: params
+                    .iter()
+                    .map(|p| p.ty.as_ref().and_then(|t| self.resolve_ann(t)))
+                    .collect(),
+                // Lambdas have no return-type slot (type-declarations-plan §2).
+                ret: None,
+            }],
+            // A bare class name has no signature here — a constructor is
+            // checked on its own path, against the class's fields.
+            ExprKind::Ident(name) => match self.lookup(name) {
+                Some(vt) => vt.fns.clone(),
+                None => self.module_signatures(name),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every declared overload of a module-level function, by arity.
+    fn module_signatures(&self, name: &str) -> Vec<FnSignature> {
+        let mut sigs: Vec<FnSignature> = self
+            .fn_signatures
+            .iter()
+            .filter(|((n, _), _)| n == name)
+            .map(|(_, sig)| sig.clone())
+            .collect();
+        sigs.sort_by_key(|s| s.params.len());
+        sigs
+    }
+
+    /// Warn that no candidate accepts `got` arguments. `expected` is every
+    /// arity that would have worked — Petal overloads by arity
+    /// (docs/function-overloading.md), so a call is wrong only when it matches
+    /// *none* of them.
+    fn warn_arity(&mut self, span: SourceSpan, what: &str, expected: &[usize], got: usize) {
+        let list: Vec<String> = expected.iter().map(|a| a.to_string()).collect();
+        self.warn(
+            span,
+            format!(
+                "{what} expects {} argument{}, got {got}",
+                list.join(" or "),
+                if expected == [1] { "" } else { "s" },
+            ),
+        );
     }
 
     fn warn(&mut self, span: SourceSpan, message: String) {
@@ -306,10 +396,16 @@ impl<'a> Checker<'a> {
                 // it produces warnings on correct code — the one outcome this
                 // pass is built to avoid. Only a written annotation constrains a
                 // cell, and it earns that by constraining every `set` too.
-                self.bind(
+                let fns = if *is_var {
+                    Vec::new()
+                } else {
+                    self.fn_candidates(value)
+                };
+                self.bind_callable(
                     name.clone(),
                     declared,
                     if *is_var { Type::Any } else { inferred },
+                    fns,
                 );
             }
             // A `set` writes the same value into the same target shape as `=`;
@@ -320,6 +416,10 @@ impl<'a> Checker<'a> {
                     let vt = self.check_expr(value);
                     let declared = self.lookup(n).and_then(|v| v.declared);
                     self.check_assignment(value.span, n, declared, vt);
+                    // The slot holds a different value now: whatever signature
+                    // the old one had says nothing about the new one.
+                    let fns = self.fn_candidates(value);
+                    self.rebind_fns(n, fns);
                 }
                 // Field and index writes are walked for nested diagnostics but
                 // the written value itself is unchecked, `var` or not: `Type` is
@@ -437,6 +537,7 @@ impl<'a> Checker<'a> {
     /// the block's tail-expression type and span: the last statement's expression
     /// when it is a bare `Expr`, else `Any`/none.
     fn check_block_body(&mut self, stmts: &[Stmt]) -> (Type, Option<SourceSpan>) {
+        self.bind_nested_fns(stmts);
         let mut tail = (Type::Any, None);
         let last = stmts.len().wrapping_sub(1);
         for (i, stmt) in stmts.iter().enumerate() {
@@ -451,6 +552,68 @@ impl<'a> Checker<'a> {
             self.check_stmt(stmt);
         }
         tail
+    }
+
+    /// Bind every `fn` declared directly in a *nested* block, before walking it,
+    /// so a call anywhere in the block sees the local declaration rather than a
+    /// same-named module function. Only [`Self::fn_signatures`] knows the
+    /// top-level ones, and a nested declaration shadows them; binding it here is
+    /// what stops the outer signature being checked against the inner function.
+    /// Method declarations are excluded — their name is qualified, so they are
+    /// never called as a bare identifier.
+    fn bind_nested_fns(&mut self, stmts: &[Stmt]) {
+        self.bind_enum_variants(stmts);
+        let mut sigs: HashMap<&str, Vec<FnSignature>> = HashMap::new();
+        for stmt in stmts {
+            let StmtKind::FnDecl {
+                name,
+                class: None,
+                params,
+                ret,
+                ..
+            } = &stmt.kind
+            else {
+                continue;
+            };
+            let sig = FnSignature {
+                params: params
+                    .iter()
+                    .map(|p| p.ty.as_ref().and_then(|t| self.resolve_ann(t)))
+                    .collect(),
+                ret: ret.as_ref().and_then(|t| self.resolve_ann(t)),
+            };
+            let entry = sigs.entry(name.as_str()).or_default();
+            // Same name, same arity: the later declaration wins, as in
+            // `collect_fn_signatures`.
+            entry.retain(|s| s.params.len() != sig.params.len());
+            entry.push(sig);
+        }
+        for (name, mut fns) in sigs {
+            fns.sort_by_key(|s| s.params.len());
+            self.bind_callable(name.to_string(), None, Type::Function, fns);
+        }
+    }
+
+    /// Bind every variant an `enum` in these statements declares, as an
+    /// unknown value. A variant name is an ordinary binding at runtime, and it
+    /// shadows anything else of that name — including a class constructor, which
+    /// `enum Shape … Rect(w, h) … end` really does shadow. Binding it is what
+    /// stops the class's fields being checked against `Rect(3, 4)`. Nothing is
+    /// inferred: a fieldless variant is a value and a variant with fields is a
+    /// constructor, and the pass has no type for either.
+    fn bind_enum_variants(&mut self, stmts: &[Stmt]) {
+        let names: Vec<String> = stmts
+            .iter()
+            .filter_map(|s| match &s.kind {
+                StmtKind::EnumDecl { variants, .. } => Some(variants),
+                _ => None,
+            })
+            .flatten()
+            .map(|v| v.name.clone())
+            .collect();
+        for name in names {
+            self.bind(name, None, Type::Any);
+        }
     }
 
     /// Push a fresh scope, walk a nested block, pop, and yield its tail type.
@@ -499,7 +662,19 @@ impl<'a> Checker<'a> {
                 }
             }
             ExprKind::Call { function, args } => {
-                self.check_expr(function);
+                // `recv.name(...)` is method syntax, not a field read followed
+                // by a call: `name` is looked up among the receiver's methods
+                // (and, failing those, the globals), so walking it as a field
+                // would report every method as a missing field.
+                match &function.kind {
+                    ExprKind::FieldAccess { object, field } => {
+                        let recv = self.check_expr(object);
+                        self.check_method_arity(recv, field, args.len(), expr.span);
+                    }
+                    _ => {
+                        self.check_expr(function);
+                    }
+                }
                 // A lone argument fills the call's parens on its own; with two
                 // or more, each is an element of a comma-separated list. Since
                 // commas are required, both slots are bounded by real
@@ -519,7 +694,7 @@ impl<'a> Checker<'a> {
                     })
                     .collect();
                 self.note_redundant_cast(expr, function, args, &arg_types, slot);
-                self.check_call(function, args, &arg_types)
+                self.check_call(function, args, &arg_types, expr.span)
             }
             ExprKind::If {
                 condition,
@@ -589,14 +764,20 @@ impl<'a> Checker<'a> {
                 // A class instance has declared field types; a plain record
                 // does not (`Type` is unparameterized), so everything else
                 // stays `Any`.
-                match obj {
-                    Type::Class(id) => self
-                        .classes
-                        .get(id)
-                        .field(field)
-                        .and_then(|f| f.ty)
-                        .unwrap_or(Type::Any),
-                    _ => Type::Any,
+                let Type::Class(id) = obj else {
+                    return Type::Any;
+                };
+                match self.classes.get(id).field(field) {
+                    Some(f) => f.ty.unwrap_or(Type::Any),
+                    None => {
+                        // The class table lists this class's fields exactly, so
+                        // a name that is not among them cannot be read off an
+                        // instance. (Method syntax never lands here — the call
+                        // arm above intercepts it.)
+                        let class = self.spell(obj);
+                        self.warn(expr.span, format!("class `{class}` has no field `{field}`"));
+                        Type::Any
+                    }
                 }
             }
             ExprKind::IndexAccess { object, index } => {
@@ -674,57 +855,138 @@ impl<'a> Checker<'a> {
         });
     }
 
-    /// Resolve a call's result type and, for a statically-known named function,
-    /// check each argument against its declared parameter type (site 5). Assumes
-    /// the args were already visited; `arg_types` are their inferred types.
-    fn check_call(&mut self, function: &Expr, args: &[Expr], arg_types: &[Type]) -> Type {
-        let ExprKind::Ident(f) = &function.kind else {
+    /// Warn when `recv.name(args)` supplies an argument count no declared
+    /// overload of that method accepts (site 7). Dispatch consults, in order, a
+    /// callable field, then the receiver class's methods, then the globals
+    /// (docs/language-guide.md, Classes & Methods) — so this only fires when the
+    /// receiver's class is statically known, declares no field of that name (it
+    /// would win), and *does* declare the method under some other arity. Arities
+    /// count the receiver, as the class table records them.
+    fn check_method_arity(&mut self, recv: Type, name: &str, args: usize, span: SourceSpan) {
+        let Type::Class(id) = recv else { return };
+        let def = self.classes.get(id);
+        if def.field(name).is_some() {
+            return;
+        }
+        let mut arities: Vec<usize> = def
+            .methods
+            .iter()
+            .filter(|m| m.name == name)
+            .map(|m| m.arity)
+            .collect();
+        // No method of that name: dispatch falls through to a global native
+        // with the receiver prepended (`r.len()`), which this pass knows
+        // nothing about.
+        if arities.is_empty() || arities.contains(&(args + 1)) {
+            return;
+        }
+        arities.sort_unstable();
+        // Report what the call site writes, which excludes the receiver the
+        // method syntax supplies for you.
+        let written: Vec<usize> = arities.iter().map(|a| a - 1).collect();
+        let what = format!("method `{}.{}`", self.spell(recv), name);
+        self.warn_arity(span, &what, &written, args);
+    }
+
+    /// Resolve a call's result type and check the call against whatever the
+    /// callee's signature is known to be: each argument against its declared
+    /// parameter type (site 5), and the argument *count* against every declared
+    /// arity (site 6 — Petal overloads by arity, so a call is wrong only when it
+    /// matches none of them). Assumes the args were already visited;
+    /// `arg_types` are their inferred types.
+    fn check_call(
+        &mut self,
+        function: &Expr,
+        args: &[Expr],
+        arg_types: &[Type],
+        call_span: SourceSpan,
+    ) -> Type {
+        if let ExprKind::Ident(f) = &function.kind
+            && self.lookup(f).is_none()
+        {
+            // Sanctioned cast builtins produce a concrete type. These sit
+            // ahead of the class table only because a class may not take a
+            // built-in type name (`class int` is rejected at declaration), so
+            // nothing user-declared can ever be hidden here.
+            match f.as_str() {
+                "int" => return Type::Int,
+                "float" => return Type::Float,
+                "str" => return Type::String,
+                _ => {}
+            }
+            // A class name is its constructor: `Point(1, 2)` builds an
+            // instance, and the declared field types check the arguments
+            // positionally — the same rule as a function's parameters, because
+            // that is what they are. The field count is the only arity there
+            // is; a class declares no overloads.
+            // …unless a `fn` of that name shadows it, the way a user binding
+            // shadows any builtin: the declaration wins at runtime, so the
+            // constructor's shape must not be checked against its calls.
+            if let Some(id) = self.classes.lookup(f)
+                && self.module_signatures(f).is_empty()
+            {
+                let fields = self.classes.get(id).fields.clone();
+                if fields.len() != args.len() {
+                    let what = format!("`{f}`");
+                    self.warn_arity(call_span, &what, &[fields.len()], args.len());
+                    return Type::Class(id);
+                }
+                for (i, fd) in fields.iter().enumerate() {
+                    let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
+                        continue;
+                    };
+                    if ft != Type::Any && at != Type::Any && !at.is_assignable_to(&ft) {
+                        self.warn(
+                            args[i].span,
+                            format!(
+                                "argument {} to `{}`: field `{}` expects `{}`, found `{}`",
+                                i + 1,
+                                f,
+                                fd.name,
+                                self.spell(ft),
+                                self.spell(at)
+                            ),
+                        );
+                    }
+                }
+                return Type::Class(id);
+            }
+        }
+        // Everything else callable that this pass can pin down: a module
+        // function, a name bound to one, or a lambda. `fn_candidates` returns
+        // one signature per arity, and empty when nothing is known — which is
+        // every builtin, every parameter, and every value that merely happens
+        // to hold a function.
+        let candidates = self.fn_candidates(function);
+        if candidates.is_empty() {
+            if let ExprKind::Ident(f) = &function.kind
+                && self.lookup(f).is_none()
+            {
+                // Not a module function: fall back to the builtin table. It
+                // knows only result types (builtins declare no parameter
+                // types), so there is nothing to check the arguments against.
+                return builtin_types::builtin_return_type(f, arg_types).unwrap_or(Type::Any);
+            }
+            return Type::Any;
+        }
+        let Some(sig) = candidates
+            .iter()
+            .find(|s| s.params.len() == args.len())
+            .cloned()
+        else {
+            // No overload takes this many arguments — the call cannot resolve
+            // at runtime, whatever the argument types are.
+            if let ExprKind::Ident(f) = &function.kind {
+                let expected: Vec<usize> = candidates.iter().map(|s| s.params.len()).collect();
+                let what = format!("`{f}`");
+                self.warn_arity(call_span, &what, &expected, args.len());
+            }
             return Type::Any;
         };
-        // A local binding shadows the function/builtin name.
-        if self.lookup(f).is_some() {
-            return Type::Any;
-        }
-        // Sanctioned cast builtins produce a concrete type. These sit ahead of
-        // the class table only because a class may not take a built-in type
-        // name (`class int` is rejected at declaration), so nothing user-
-        // declared can ever be hidden here.
-        match f.as_str() {
-            "int" => return Type::Int,
-            "float" => return Type::Float,
-            "str" => return Type::String,
-            _ => {}
-        }
-        // A class name is its constructor: `Point(1, 2)` builds an instance,
-        // and the declared field types check the arguments positionally — the
-        // same rule as a function's parameters, because that is what they are.
-        if let Some(id) = self.classes.lookup(f) {
-            let fields = self.classes.get(id).fields.clone();
-            for (i, fd) in fields.iter().enumerate() {
-                let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
-                    continue;
-                };
-                if ft != Type::Any && at != Type::Any && !at.is_assignable_to(&ft) {
-                    self.warn(
-                        args[i].span,
-                        format!(
-                            "argument {} to `{}`: field `{}` expects `{}`, found `{}`",
-                            i + 1,
-                            f,
-                            fd.name,
-                            self.spell(ft),
-                            self.spell(at)
-                        ),
-                    );
-                }
-            }
-            return Type::Class(id);
-        }
-        let Some(sig) = self.fn_signatures.get(&(f.clone(), args.len())).cloned() else {
-            // Not a module function: fall back to the builtin table. It knows
-            // only result types (builtins declare no parameter types), so
-            // there is nothing to check the arguments against.
-            return builtin_types::builtin_return_type(f, arg_types).unwrap_or(Type::Any);
+        // A lambda invoked in place has no name to blame the argument on.
+        let callee = match &function.kind {
+            ExprKind::Ident(f) => format!(" to `{f}`"),
+            _ => String::new(),
         };
         for (i, pt) in sig.params.iter().enumerate() {
             let Some(pt) = pt else { continue };
@@ -736,9 +998,9 @@ impl<'a> Checker<'a> {
                 self.warn(
                     args[i].span,
                     format!(
-                        "argument {} to `{}`: expected `{}`, found `{}`",
+                        "argument {}{}: expected `{}`, found `{}`",
                         i + 1,
-                        f,
+                        callee,
                         self.spell(*pt),
                         self.spell(at)
                     ),
@@ -1109,5 +1371,176 @@ mod tests {
         assert!(warns("let x: nil = nil").is_empty());
         let w = warns("let x: nil = 5");
         assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    // ── Field reads on a class-typed value are checked ──────────────────────
+    const B: &str = "class B\n  b: int\nend\n";
+
+    #[test]
+    fn field_not_on_the_declared_class_warns() {
+        let w = warns(&format!("{B}fn f(x: B)\n  x.nosuch\nend"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("nosuch") && w[0].contains('B'), "{w:?}");
+    }
+
+    #[test]
+    fn a_declared_field_does_not_warn() {
+        assert!(warns(&format!("{B}fn f(x: B)\n  x.b\nend")).is_empty());
+        // Also through a locally inferred instance, and on a built-in class.
+        assert!(warns(&format!("{B}let v = B(1)\nprint(v.b)")).is_empty());
+        assert!(warns("let r = Rect(0, 0, 1, 1)\nprint(r.w)").is_empty());
+    }
+
+    #[test]
+    fn field_check_does_not_fire_on_records_or_any() {
+        // A plain record has no declared fields to check against, and an
+        // un-annotated parameter is `any`.
+        assert!(warns("let r = {a: 1}\nprint(r.nosuch)").is_empty());
+        assert!(warns("fn f(x)\n  x.nosuch\nend").is_empty());
+        assert!(warns("fn f(x: record)\n  x.nosuch\nend").is_empty());
+    }
+
+    #[test]
+    fn a_method_name_is_not_read_as_a_field() {
+        // `x.go()` is method syntax, and dispatch reaches user methods,
+        // built-in class methods and globals — none of which are fields.
+        assert!(warns(&format!("{B}fn B.go(x: B)\n  x.b\nend\nprint(B(1).go())")).is_empty());
+        assert!(warns("let r = Rect(0, 0, 4, 4)\nprint(r.center_x())").is_empty());
+        assert!(warns(&format!("{B}print(B(1).str())")).is_empty());
+    }
+
+    // ── Lambda / bound-function parameter types are checked at call sites ───
+    #[test]
+    fn calling_a_lambda_binding_checks_its_parameter_types() {
+        let w = warns("let f = fn(n: int) -> n\nprint(f(\"hi\"))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument 1"), "{w:?}");
+        assert!(warns("let f = fn(n: int) -> n\nprint(f(5))").is_empty());
+    }
+
+    #[test]
+    fn calling_a_function_through_a_binding_checks_it() {
+        let w = warns("fn g(s: string)\n  s\nend\nlet h = g\nprint(h(1))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument 1"), "{w:?}");
+        // The alias chains, and a matching call stays silent.
+        let c = warns("fn g(s: string)\n  s\nend\nlet h = g\nlet i = h\nprint(i(1))");
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert!(warns("fn g(s: string)\n  s\nend\nlet h = g\nprint(h(\"x\"))").is_empty());
+    }
+
+    #[test]
+    fn a_bound_functions_declared_return_type_flows_out() {
+        let w = warns("fn g(n: int) -> string\n  str(n)\nend\nlet h = g\nlet x: int = h(1)");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`x` declared `int`"), "{w:?}");
+    }
+
+    #[test]
+    fn a_lambda_immediately_invoked_is_checked() {
+        let w = warns("print((fn(n: int) -> n)(\"hi\"))");
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    #[test]
+    fn rebinding_a_function_name_drops_its_old_signature() {
+        // The binding now holds a different function, so the old parameter
+        // types say nothing about the new one.
+        assert!(warns("let f = fn(n: int) -> n\nf = fn(s) -> s\nprint(f(\"hi\"))").is_empty());
+        // A `var` cell is never trusted in the first place.
+        assert!(warns("var f = fn(n: int) -> n\nprint(f(\"hi\"))").is_empty());
+    }
+
+    #[test]
+    fn a_nested_function_shadows_a_top_level_one() {
+        // The inner `f` is the one being called, so the outer signature must
+        // not be used against it.
+        assert!(
+            warns("fn f(n: int)\n  n\nend\nfn outer()\n  fn f(s: string)\n    s\n  end\n  f(\"x\")\nend")
+                .is_empty()
+        );
+        // …and the inner signature *is* used.
+        let w = warns("fn outer()\n  fn f(s: string)\n    s\n  end\n  f(1)\nend");
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    // ── Arity: no overload matches (finding B5) ─────────────────────────────
+    #[test]
+    fn a_call_with_no_matching_arity_warns() {
+        let w = warns("fn f(a, b)\n  a\nend\nprint(f(1))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`f`") && w[0].contains('2'), "{w:?}");
+    }
+
+    #[test]
+    fn arity_overloads_are_all_candidates() {
+        assert!(warns("fn f(a)\n  a\nend\nfn f(a, b)\n  a\nend\nf(1)\nf(1, 2)").is_empty());
+        let w = warns("fn f(a)\n  a\nend\nfn f(a, b)\n  a\nend\nf(1, 2, 3)");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("1 or 2"), "{w:?}");
+    }
+
+    #[test]
+    fn constructor_arity_is_checked() {
+        let w = warns("class P\n  x: int\n  y: int\nend\nprint(P(1))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`P`"), "{w:?}");
+        assert!(warns("class P\n  x: int\n  y: int\nend\nprint(P(1, 2))").is_empty());
+        assert!(warns("print(Rect(0, 0, 1, 1))").is_empty());
+    }
+
+    #[test]
+    fn method_arity_is_checked() {
+        let src = "class P\n  x: int\n  y: int\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
+        let w = warns(&format!("{src}print(P(1, 2).shift())"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("shift"), "{w:?}");
+        assert!(warns(&format!("{src}print(P(1, 2).shift(3))")).is_empty());
+        // A method overloaded by arity accepts either.
+        let two =
+            "class Q\n  x: int\nend\nfn Q.f(q: Q)\n  1\nend\nfn Q.f(q: Q, n: int)\n  n\nend\n";
+        assert!(warns(&format!("{two}print(Q(1).f())\nprint(Q(1).f(2))")).is_empty());
+    }
+
+    #[test]
+    fn a_lambda_binding_called_with_the_wrong_count_warns() {
+        let w = warns("let f = fn(a) -> a\nprint(f(1, 2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`f`"), "{w:?}");
+    }
+
+    #[test]
+    fn arity_checks_stay_off_unknown_callables() {
+        // Builtins take flexible argument counts and declare no signature.
+        assert!(warns("print(1, 2, 3)\nprint()").is_empty());
+        // A name the module never declares says nothing.
+        assert!(warns("mystery(1, 2)").is_empty());
+        // Nor does a method the class does not declare — dispatch can still
+        // reach a global native with the receiver prepended.
+        assert!(warns("class P\n  x: int\nend\nprint(P(1).keys())").is_empty());
+        // A field holding a function is called through the field, not a method.
+        assert!(warns("class P\n  f: function\nend\nprint(P(fn(a) -> a).f(1))").is_empty());
+    }
+
+    #[test]
+    fn an_enum_variant_shadowing_a_class_name_is_not_a_constructor() {
+        // `enum Shape … Rect(w, h) … end` shadows the built-in `Rect`, so its
+        // four fields say nothing about `Rect(3, 4)`.
+        let src = "enum Shape\n  Circle(radius),\n  Rect(w, h),\nend\n";
+        assert!(warns(&format!("{src}print(Rect(3, 4))")).is_empty());
+        assert!(warns(&format!("{src}print(Circle(1))")).is_empty());
+        // Inside a function body too, where the walk binds the block's own
+        // declarations.
+        assert!(warns(&format!("fn f()\n  {src}  Rect(3, 4)\nend\nprint(f())")).is_empty());
+    }
+
+    #[test]
+    fn a_fn_shadowing_a_class_name_is_checked_as_the_fn() {
+        // `fn Rect(a, b)` wins over the built-in constructor at runtime, so the
+        // class's four fields say nothing about this call.
+        assert!(warns("fn Rect(a, b)\n  a + b\nend\nprint(Rect(1, 2))").is_empty());
+        let w = warns("fn Rect(a, b)\n  a + b\nend\nprint(Rect(1))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("expects 2 arguments"), "{w:?}");
     }
 }

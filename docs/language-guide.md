@@ -218,6 +218,50 @@ un-annotated (dynamic) code is trusted. Unrecognized type names are kept as
 written and reported too — `let x: banana = 5` warns `unknown type name
 \`banana\`` rather than failing to compile.
 
+**Calls through a binding.** A parameter annotation travels with the function,
+not just with its name, so calling one through a binding is checked the same way
+a direct call is:
+
+```petal
+let double = fn(n: int) -> n * 2
+double("hi")              // warning: argument 1 to `double`: expected `int`, found `string`
+
+fn greet(who: string)
+  print("Hello, {who}!")
+end
+let hello = greet
+hello(7)                  // warning: argument 1 to `hello`: expected `string`, found `int`
+```
+
+Re-assigning the binding drops what was known about it — the slot holds a
+different function now. A function that merely *arrives* as an argument
+(`fn apply(f, x) f(x) end`) is unknown, and unknown callables are never checked.
+
+**Argument counts.** A call that no declaration can accept is reported without
+running the program, since Petal [overloads by arity](function-overloading.md)
+and such a call cannot resolve at runtime:
+
+```petal
+fn f(a, b)
+  a
+end
+f(1)            // warning: `f` expects 2 arguments, got 1
+
+class Point
+  x: int
+  y: int
+end
+Point(1)        // warning: `Point` expects 2 arguments, got 1
+```
+
+Every declared arity counts as a candidate — with `fn f(a)` and `fn f(a, b)`
+both declared, `f(1, 2, 3)` warns `` `f` expects 1 or 2 arguments, got 3 ``.
+Methods are checked the same way, counted as the call site writes them (the
+receiver is not one of them): with `fn Point.shift(p: Point, dx: int)`,
+`p.shift()` warns `` method `Point.shift` expects 1 argument, got 0 ``. Builtins
+take flexible argument counts and declare no signature, so they are never
+checked.
+
 Inference is deliberately shallow and local (literals and the signatures of
 called functions); anything else infers `any` and so reports nothing. The pass
 prefers missing a mismatch to inventing one.
@@ -777,6 +821,19 @@ a `float`. Two classes are never interchangeable, however alike their fields. An
 *is* assignable to a `record` slot; a plain record is not assignable to a class
 slot.
 
+The declared fields are also the *only* ones the checker expects, so reading a
+name the class does not declare is a warning:
+
+```petal
+fn label(r: Rect) -> string
+  r.caption          // warning: class `Rect` has no field `caption`
+end
+```
+
+A plain `record` or an un-annotated (`any`) value has no declared shape, so
+neither warns. Method names are not fields, and never warn — `r.center_x()` is
+resolved by [method dispatch](#resolution-order), not a field read.
+
 ### Methods
 
 `fn <Class>.<name>(receiver, ...)` declares a method. The receiver is an
@@ -870,6 +927,12 @@ generate for any of them:
 | two fields named `x` | `duplicate field \`x\` in class \`Point\`` |
 | `fn Nope.thing(...)` | `cannot declare a method on \`Nope\`: no class of that name` |
 | two `fn Point.f(p)` | `method \`Point.f\` is already declared with 1 parameter` |
+| `fn Point.f(p: Other)` | `method \`Point.f\` declares its receiver \`p\` as \`Other\`, but a method on \`Point\` always receives an instance of \`Point\`` |
+
+The last one is the receiver rule: `p.f(…)` only ever dispatches on a `Point`,
+so annotating the receiver with anything a `Point` cannot fill describes a call
+that can never happen. `Point`, `record`, `any` and no annotation at all are all
+fine.
 
 ### Not supported
 

@@ -238,3 +238,76 @@ describe("`state` annotations and the type checker", () => {
     expect(stderr).toMatch(/declared `int`/);
   });
 });
+
+// A `function` type carries no arrow, so a call through a binding is only
+// checkable if the binding remembers the signature it was given. These pin
+// that a lambda's parameter annotations, and a named fn's, survive the
+// binding — the checker treated only direct calls to named fns before.
+describe("calls through a function-valued binding", () => {
+  it("checks a lambda's parameter annotations at the call site", () => {
+    const out = checkJson('let f = fn(n: int) -> n\nprint(f("hi"))');
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("argument 1 to `f`: expected `int`, found `string`");
+    expect(checkJson("let f = fn(n: int) -> n\nprint(f(5))").warnings).toEqual([]);
+  });
+
+  it("checks a named function called through an alias", () => {
+    const out = checkJson("fn g(s: string)\n  s\nend\nlet h = g\nprint(h(1))");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/argument 1 to `h`/);
+  });
+
+  it("carries the aliased function's return type", () => {
+    const out = checkJson(
+      "fn g(n: int) -> string\n  str(n)\nend\nlet h = g\nlet x: int = h(1)\nprint(x)"
+    );
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`x` declared `int` but assigned `string`/);
+  });
+
+  it("forgets the signature once the binding is re-assigned", () => {
+    expect(
+      checkJson('let f = fn(n: int) -> n\nf = fn(s) -> s\nprint(f("hi"))').warnings
+    ).toEqual([]);
+  });
+});
+
+// `check` is "lex+parse+compile+lower without executing", so a call that can
+// never resolve should not have to wait for the runtime to say so. Petal
+// overloads by arity (docs/function-overloading.md): the call is wrong only
+// when *no* declared arity matches.
+describe("statically-known arity errors", () => {
+  it("warns on a call no overload can take, which `run` rejects outright", () => {
+    const out = checkJson("fn f(a, b)\n  a\nend\nprint(f(1))");
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("`f` expects 2 arguments, got 1");
+    const { stderr } = runWithStderr("fn f(a, b)\n  a\nend\nprint(f(1))");
+    expect(stderr).toMatch(/f\(\) expected 2 arguments, got 1/);
+  });
+
+  it("accepts any declared arity and names them all when none matches", () => {
+    const overloads = "fn f(a)\n  a\nend\nfn f(a, b)\n  b\nend\n";
+    expect(checkJson(`${overloads}print(f(1))\nprint(f(1, 2))`).warnings).toEqual([]);
+    const out = checkJson(`${overloads}print(f(1, 2, 3))`);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("`f` expects 1 or 2 arguments, got 3");
+  });
+
+  it("counts a lambda binding's parameters too", () => {
+    const out = checkJson("let f = fn(a) -> a\nprint(f(1, 2))");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("`f` expects 1 argument, got 2");
+  });
+
+  it("says nothing about builtins or undeclared names", () => {
+    expect(checkJson("print(1, 2, 3)").warnings).toEqual([]);
+    expect(checkJson("print(len([1, 2]))").warnings).toEqual([]);
+  });
+
+  it("`check --strict` now fails on one", () => {
+    const { code, stderr } = checkStrict("fn f(a, b)\n  a\nend\nprint(f(1))");
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/expects 2 arguments/);
+  });
+});

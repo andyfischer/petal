@@ -1114,6 +1114,25 @@ pub fn collect_classes(
             continue;
         };
         let method = method_base_name(&stmt.kind);
+        // The receiver is whatever `recv.method(...)` dispatched on, so it is
+        // always an instance of the class the method is declared on. An
+        // annotation that such an instance cannot fill describes a call that
+        // can never happen: the declaration is malformed, not merely suspect,
+        // so this is fatal rather than one of the checker's warnings.
+        if let Some(recv) = params.first()
+            && let Some(declared) = resolve_ann(recv.ty.as_ref(), classes)
+            && !crate::types::Type::Class(id).is_assignable_to(&declared)
+        {
+            err(
+                stmt.span,
+                format!(
+                    "method `{class}.{method}` declares its receiver `{}` as `{}`, \
+                     but a method on `{class}` always receives an instance of `{class}`",
+                    recv.name,
+                    declared.display(classes),
+                ),
+            );
+        }
         if let Err(msg) = classes.declare_method(id, method, params.len()) {
             err(stmt.span, msg);
         }

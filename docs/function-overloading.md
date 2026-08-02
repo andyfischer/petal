@@ -93,6 +93,12 @@ fn add(a, b, c) a + b + c end
 add(1)  // Error: add() expects 2 or 3 arguments, got 1
 ```
 
+The arity of a call is statically known, so `petal check` reports it before the
+program runs — `` warning: `add` expects 2 or 3 arguments, got 1 `` — and
+`petal check --strict` fails on it. Running is still what turns it into an
+error; the check is a pre-flight, and it covers constructors and methods on the
+same rule (a method's count excludes the receiver the call site does not write).
+
 ## Compilation
 
 During compilation, the compiler prescans declarations to detect names with multiple

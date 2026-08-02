@@ -522,7 +522,15 @@ pub fn get_field(
     let val = match obj {
         Value::Map(map_id) => match heap.get_map(map_id).get(field_name).copied() {
             Some(v) => v,
-            None => return Err(format!("No field '{}' on record", field_name)),
+            // Name the class when the instance carries one — a class declares
+            // its fields, so "on class B" tells the reader exactly which
+            // declaration to go and read.
+            None => {
+                return Err(match heap.map_class_name(map_id) {
+                    Some(class) => format!("No field '{field_name}' on class {class}"),
+                    None => format!("No field '{field_name}' on record"),
+                });
+            }
         },
         Value::Element(elem_id) => match field_name {
             "tag" => Value::String(heap.get_element_tag(elem_id)),

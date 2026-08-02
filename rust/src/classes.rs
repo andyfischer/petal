@@ -335,6 +335,19 @@ pub fn qualified_method_name(class: &str, method: &str) -> String {
     format!("{class}.{method}")
 }
 
+/// The `(class, method)` a qualified method name spells, or `None` for an
+/// ordinary function name. The inverse of [`qualified_method_name`], and the
+/// one test for "does this function's first parameter come from a receiver the
+/// call site supplied implicitly?" — a module-qualified function uses `::`, so
+/// the dot is unambiguous.
+pub fn split_qualified_method_name(name: &str) -> Option<(&str, &str)> {
+    let (class, method) = name.split_once('.')?;
+    if class.is_empty() || method.is_empty() || method.contains('.') {
+        return None;
+    }
+    Some((class, method))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

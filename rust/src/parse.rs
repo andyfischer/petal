@@ -10,6 +10,95 @@ use crate::source_map::{SourceSpan, ZERO_SPAN};
 /// highlights it.
 pub const CLASS_KEYWORD: &str = "class";
 
+/// How a token is spelled in a diagnostic: the source text a reader would
+/// recognize (`','`, `']'`, `` `end` ``), never the Rust variant name. Parse
+/// errors used to leak `Debug` output — "Expected RBracket, got Comma" names
+/// two things that appear nowhere in the program.
+/// Exhaustive by construction: every arm is listed, so adding a [`Token`]
+/// variant is a compile error here rather than a mystery message at runtime.
+/// Keywords read best in backticks, punctuation in quotes.
+pub(crate) fn token_desc(tok: &Token) -> String {
+    // A word the reader typed.
+    let kw = |s: &str| format!("`{s}`");
+    // Punctuation the reader typed.
+    let op = |s: &str| format!("'{s}'");
+    match tok {
+        Token::Int(n) => kw(&n.to_string()),
+        Token::Float(f) => kw(&f.to_string()),
+        Token::String(_) => "a string literal".to_string(),
+        Token::Ident(name) | Token::JsxTagName(name) => kw(name),
+        Token::JsxText(_) => "text".to_string(),
+        Token::Color(hex) => kw(&format!("#{hex}")),
+        Token::Newline => "a line break".to_string(),
+        Token::Eof => "end of input".to_string(),
+        Token::InterpStart | Token::InterpEnd => "a string interpolation".to_string(),
+        Token::True => kw("true"),
+        Token::False => kw("false"),
+        Token::Nil => kw("nil"),
+        Token::Let => kw("let"),
+        Token::Var => kw("var"),
+        Token::Set => kw("set"),
+        Token::Fn => kw("fn"),
+        Token::If => kw("if"),
+        Token::Else => kw("else"),
+        Token::For => kw("for"),
+        Token::In => kw("in"),
+        Token::While => kw("while"),
+        Token::Match => kw("match"),
+        Token::Return => kw("return"),
+        Token::Break => kw("break"),
+        Token::Continue => kw("continue"),
+        Token::State => kw("state"),
+        Token::Enum => kw("enum"),
+        Token::End => kw("end"),
+        Token::Then => kw("then"),
+        Token::Do => kw("do"),
+        Token::Elsif => kw("elsif"),
+        Token::When => kw("when"),
+        Token::Import => kw("import"),
+        Token::Export => kw("export"),
+        Token::Plus => op("+"),
+        Token::Minus => op("-"),
+        Token::Star => op("*"),
+        Token::Slash => op("/"),
+        Token::Percent => op("%"),
+        Token::PlusPlus => op("++"),
+        Token::Eq => op("=="),
+        Token::Ne => op("!="),
+        Token::Lt => op("<"),
+        Token::Le => op("<="),
+        Token::Gt => op(">"),
+        Token::Ge => op(">="),
+        Token::And => op("&&"),
+        Token::Or => op("||"),
+        Token::DoubleQuestion => op("??"),
+        Token::Bang => op("!"),
+        Token::Assign => op("="),
+        Token::PlusAssign => op("+="),
+        Token::MinusAssign => op("-="),
+        Token::StarAssign => op("*="),
+        Token::SlashAssign => op("/="),
+        Token::PercentAssign => op("%="),
+        Token::LParen => op("("),
+        Token::RParen => op(")"),
+        Token::LBrace => op("{"),
+        Token::RBrace => op("}"),
+        Token::LBracket => op("["),
+        Token::RBracket => op("]"),
+        Token::Comma => op(","),
+        Token::Dot => op("."),
+        Token::Colon => op(":"),
+        Token::At => op("@"),
+        Token::Pipe => op("|>"),
+        Token::Arrow => op("->"),
+        Token::DotDot => op(".."),
+        Token::DotDotDot => op("..."),
+        Token::JsxOpenStart => op("<"),
+        Token::JsxSelfClose => op("/>"),
+        Token::JsxCloseStart => op("</"),
+    }
+}
+
 pub struct Parser {
     tokens: Vec<Token>,
     token_spans: Vec<SourceSpan>,
@@ -110,7 +199,11 @@ impl Parser {
                 (Token::RParen, Token::Eof) => "Missing closing ')'".to_string(),
                 (Token::RBracket, Token::Eof) => "Missing closing ']'".to_string(),
                 _ => {
-                    format!("Expected {:?}, got {:?}", expected, got)
+                    format!(
+                        "Expected {}, got {}",
+                        token_desc(expected),
+                        token_desc(&got)
+                    )
                 }
             };
             Err(self.error_at_current(msg))
@@ -166,6 +259,20 @@ impl Parser {
     ///
     /// `what` names the elements for the error message ("list elements").
     fn expect_element_separator(&mut self, close: &Token, what: &str) -> Result<(), String> {
+        self.expect_element_separator_of(close, what, None)
+    }
+
+    /// [`Parser::expect_element_separator`] for a construct closed by a
+    /// *keyword* rather than a bracket. `closes` names it ("class `Point`") so
+    /// the error can say what is missing: a body that runs off the end of its
+    /// declaration is a forgotten `end`, and blaming the comma alone never
+    /// mentions the word the reader has to type.
+    fn expect_element_separator_of(
+        &mut self,
+        close: &Token,
+        what: &str,
+        closes: Option<&str>,
+    ) -> Result<(), String> {
         self.skip_newlines();
         if matches!(self.peek(), Token::Comma) {
             self.advance();
@@ -174,8 +281,41 @@ impl Parser {
         } else if self.peek() == close || matches!(self.peek(), Token::Eof) {
             Ok(())
         } else {
-            Err(self.error_at_current(format!("Expected ',' between {what}")))
+            Err(self.error_at_current(match closes {
+                Some(closes) => format!(
+                    "Expected ',' between {what}, or {} to close {closes}",
+                    token_desc(close)
+                ),
+                None => format!("Expected ',' between {what}"),
+            }))
         }
+    }
+
+    /// The name of the next member of an `end`-delimited body (a class field,
+    /// an enum variant). Same as [`Parser::expect_ident`] but names the two
+    /// things that could legally appear here, so `class C … <no end>` says so
+    /// instead of "Expected identifier, got Let".
+    fn expect_member_name(&mut self, what: &str, closes: &str) -> Result<String, String> {
+        if let Token::Ident(_) = self.peek() {
+            return self.expect_ident();
+        }
+        let got = self.peek().clone();
+        Err(self.error_at_current(format!(
+            "Expected {what} or {} to close {closes}, got {}",
+            token_desc(&Token::End),
+            token_desc(&got)
+        )))
+    }
+
+    /// Reject a comma where an element is expected — a leading comma (`[,1]`),
+    /// a doubled one (`f(1,,2)`), or a stray one after the separator was already
+    /// consumed. Naming the construct beats the bare "Unexpected token: Comma"
+    /// that `parse_primary` would otherwise produce.
+    fn expect_element_start(&mut self, what: &str) -> Result<(), String> {
+        if matches!(self.peek(), Token::Comma) {
+            return Err(self.error_at_current(format!("Expected {what}, got ','")));
+        }
+        Ok(())
     }
 
     /// Get the span of the token at position - 1 (the last consumed token).
@@ -476,10 +616,13 @@ impl Parser {
         matches!(self.tokens.get(self.pos + 1), Some(Token::Ident(_)))
     }
 
-    /// `class Name` … `end`, one `field: type` per line. Field annotations are
-    /// optional and follow the same grammar as a parameter's, so an
-    /// un-annotated field is `any`. Commas between fields are accepted but not
-    /// required — a newline separates them, as in an `enum` body.
+    /// `class Name` … `end`, a comma-separated list of `field: type`. Field
+    /// annotations are optional and follow the same grammar as a parameter's,
+    /// so an un-annotated field is `any`.
+    ///
+    /// Fields follow the same comma rule as every other delimited,
+    /// comma-separated construct, `enum` bodies included (docs/syntax/commas.md):
+    /// a newline is not a separator, and a trailing comma before `end` is fine.
     fn parse_class_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ClassDecl);
         if exported {
@@ -487,34 +630,21 @@ impl Parser {
         }
         self.advance(); // consume the contextual `class`
         let name = self.expect_ident()?;
+        let closes = format!("class `{name}`");
         self.skip_newlines();
         let mut fields: Vec<ClassFieldDecl> = Vec::new();
         while !matches!(self.peek(), Token::End | Token::Eof) {
+            let field_start = self.pos;
             self.ev_open(SyntaxKind::ClassField);
-            let field_name = self.expect_ident()?;
+            let field_name = self.expect_member_name("a field name", &closes)?;
             let ty = self.parse_type_annotation()?;
             self.ev_close(); // ClassField
             fields.push(ClassFieldDecl {
                 name: field_name,
                 ty,
+                span: self.span_from(field_start),
             });
-            // One field per line is the canonical form, so a newline separates
-            // them; a comma is accepted for a one-line class. (Unlike every
-            // delimited *list* in the language, which now requires commas — a
-            // class body is a block of declarations, not a list.)
-            match self.peek() {
-                Token::Comma => {
-                    self.advance();
-                    self.skip_newlines();
-                }
-                Token::Newline => self.skip_newlines(),
-                Token::End | Token::Eof => {}
-                _ => {
-                    return Err(self.error_at_current(
-                        "Expected a newline or ',' between class fields".to_string(),
-                    ));
-                }
-            }
+            self.expect_element_separator_of(&Token::End, "class fields", Some(&closes))?;
         }
         self.expect(&Token::End)?;
         self.ev_close(); // ClassDecl
@@ -530,10 +660,11 @@ impl Parser {
         }
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
+        let closes = format!("enum `{name}`");
         self.skip_newlines();
         let mut variants = Vec::new();
         while !matches!(self.peek(), Token::End | Token::Eof) {
-            let variant_name = self.expect_ident()?;
+            let variant_name = self.expect_member_name("a variant name", &closes)?;
             let fields = if matches!(self.peek(), Token::LParen) {
                 self.ev_open(SyntaxKind::ParamList);
                 self.advance(); // consume '('
@@ -550,7 +681,7 @@ impl Parser {
                 name: variant_name,
                 fields,
             });
-            self.expect_element_separator(&Token::End, "enum variants")?;
+            self.expect_element_separator_of(&Token::End, "enum variants", Some(&closes))?;
         }
         self.expect(&Token::End)?;
         self.ev_close();
@@ -689,6 +820,7 @@ impl Parser {
         let mut params = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
+            self.expect_element_start("a parameter name")?;
             let name = self.expect_ident()?;
             let ty = self.parse_type_annotation()?;
             params.push(Param { name, ty });
@@ -712,9 +844,10 @@ impl Parser {
         }
         self.ev_open(SyntaxKind::TypeAnnotation);
         self.expect(&Token::Colon)?;
+        let name_pos = self.pos;
         let name = self.expect_type_name()?;
         self.ev_close();
-        Ok(Some(TypeAnn::new(name)))
+        Ok(Some(TypeAnn::at(name, self.span_from(name_pos))))
     }
 
     /// Parse an optional `-> type` return annotation on a named `fn`. Returns
@@ -730,9 +863,10 @@ impl Parser {
         }
         self.ev_open(SyntaxKind::ReturnType);
         self.expect(&Token::Arrow)?;
+        let name_pos = self.pos;
         let name = self.expect_type_name()?;
         self.ev_close();
-        Ok(Some(TypeAnn::new(name)))
+        Ok(Some(TypeAnn::at(name, self.span_from(name_pos))))
     }
 
     /// Get the span of the current token (the one at self.pos).
@@ -778,7 +912,10 @@ impl Parser {
         let pos = self.pos;
         match self.advance() {
             Token::Ident(name) => Ok(name),
-            other => Err(self.error_at(pos, format!("Expected identifier, got {:?}", other))),
+            other => Err(self.error_at(
+                pos,
+                format!("Expected an identifier, got {}", token_desc(&other)),
+            )),
         }
     }
 
@@ -795,7 +932,10 @@ impl Parser {
             Token::Nil => "nil".to_string(),
             Token::Enum => "enum".to_string(),
             other => {
-                return Err(self.error_at(pos, format!("Expected type name, got {:?}", other)));
+                return Err(self.error_at(
+                    pos,
+                    format!("Expected a type name, got {}", token_desc(&other)),
+                ));
             }
         };
         // A type is a single bare name; `list<int>` and friends are not a thing
@@ -1123,6 +1263,17 @@ impl Parser {
                 Token::LBracket => {
                     self.advance();
                     let index = self.parse_expr()?;
+                    // `[[1,2] [3,4]]` parses as an *index* — the `[` after the
+                    // first element is postfix. Blaming the `,` inside the
+                    // second bracket ("Expected ']', got ','") points at the
+                    // wrong place entirely, so name the real mistake.
+                    if matches!(self.peek(), Token::Comma) {
+                        return Err(self.error_at_current(
+                            "Expected ']' to close the index, got ',' — an index takes one \
+                             expression; separate two list elements with a ','"
+                                .to_string(),
+                        ));
+                    }
                     self.expect(&Token::RBracket)?;
                     self.ev_wrap(cp, SyntaxKind::IndexAccessExpr);
                     expr = Expr {
@@ -1296,7 +1447,9 @@ impl Parser {
                 Ok(self.mk_expr(ExprKind::Record(record_fields), start))
             }
             Token::JsxOpenStart => self.parse_jsx_element(),
-            other => Err(self.error_at_current(format!("Unexpected token: {:?}", other))),
+            other => {
+                Err(self.error_at_current(format!("Unexpected token: {}", token_desc(&other))))
+            }
         }
     }
 
@@ -1307,6 +1460,7 @@ impl Parser {
         let mut elements = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RBracket | Token::Eof) {
+            self.expect_element_start("a list element")?;
             let elem = self.parse_expr()?;
             elements.push(elem);
             self.expect_element_separator(&Token::RBracket, "list elements")?;
@@ -1323,6 +1477,7 @@ impl Parser {
         let mut fields = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+            self.expect_element_start("a record field")?;
             self.ev_open(SyntaxKind::RecordField);
             if matches!(self.peek(), Token::DotDotDot) {
                 self.advance(); // consume '...'
@@ -1475,6 +1630,7 @@ impl Parser {
                     let mut fields = Vec::new();
                     self.skip_newlines();
                     while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                        self.expect_element_start("a variant field pattern")?;
                         let field_pat = self.parse_pattern()?;
                         fields.push(field_pat);
                         self.expect_element_separator(&Token::RParen, "variant fields")?;
@@ -1528,7 +1684,10 @@ impl Parser {
                     }
                 }
             }
-            other => Err(self.error_at_current(format!("Expected pattern, got {:?}", other))),
+            other => {
+                Err(self
+                    .error_at_current(format!("Expected a pattern, got {}", token_desc(&other))))
+            }
         }
     }
 
@@ -1539,6 +1698,7 @@ impl Parser {
         self.skip_newlines();
 
         while !matches!(self.peek(), Token::RBracket | Token::Eof) {
+            self.expect_element_start("a list pattern element")?;
             if matches!(self.peek(), Token::DotDotDot) {
                 self.advance();
                 let name = self.expect_ident()?;
@@ -1561,6 +1721,7 @@ impl Parser {
         self.skip_newlines();
 
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+            self.expect_element_start("a record pattern field")?;
             let key = self.expect_ident()?;
             self.expect(&Token::Colon)?;
             let pat = self.parse_pattern()?;
@@ -1775,6 +1936,7 @@ impl Parser {
         let mut args = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
+            self.expect_element_start("an argument")?;
             let arg = self.parse_expr()?;
             args.push(arg);
             self.expect_element_separator(&Token::RParen, "arguments")?;

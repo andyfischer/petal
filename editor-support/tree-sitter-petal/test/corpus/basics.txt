@@ -239,8 +239,8 @@ Class and method declaration
 ==================
 
 class Rect2
-  x: int
-  w: int
+  x: int,
+  w: int,
 end
 
 fn Rect2.center_x(r: Rect2) -> int

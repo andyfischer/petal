@@ -66,7 +66,7 @@ pub(super) fn handle_run(
     } else {
         match load_into(&mut env, source, source_input) {
             Ok(pid) => pid,
-            Err(e) => die_error(json, &e, serde_json::Value::Null),
+            Err(e) => die_error(json, &e, serde_json::Value::Null, source),
         }
     };
     // Surface type-checker warnings on stderr before running. Warnings go to
@@ -119,7 +119,7 @@ pub(super) fn handle_pending_report(
     let mut env = make_env(include_dirs);
     let pid = match load_into(&mut env, source, source_input) {
         Ok(pid) => pid,
-        Err(e) => die_error(json, &e, serde_json::Value::Null),
+        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
     };
     let sid = match env.create_stack(pid) {
         Ok(sid) => sid,
@@ -393,7 +393,7 @@ pub(super) fn handle_check(
                 process::exit(1);
             }
         }
-        Err(e) => die_error(json, &e, serde_json::Value::Null),
+        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
     }
 }
 
@@ -698,6 +698,11 @@ pub(super) fn handle_show_dependents(
                         .map(|v| format!(" (cell '{}', may)", v))
                         .unwrap_or_else(|| " (cell, may)".to_string());
                     println!("  t{} ~> t{}{}", from.0, to.0, var);
+                }
+                // Likewise for method dispatch: the call finds the function by
+                // name at runtime, so this is a possibility, not an operand.
+                EdgeKind::DispatchMay => {
+                    println!("  t{} ~> t{} (dispatch, may)", from.0, to.0)
                 }
             }
         }

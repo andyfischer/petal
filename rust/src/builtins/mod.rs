@@ -77,13 +77,18 @@ pub(super) fn rng_next_f64(state: &mut u64) -> f64 {
 }
 
 /// Validate that a native function received exactly `n` arguments.
+///
+/// Worded exactly as the user-function arity error (`Vm::push_closure_frame`) —
+/// "expects N arguments, got M" — so a reader never has to wonder whether the
+/// difference in tense means a difference in kind.
 pub(super) fn require_args(state: &PetalCxt, n: usize, name: &str) -> Result<(), String> {
     if state.arg_count() != n {
         return Err(format!(
-            "{}() expects {} argument{}",
+            "{}() expects {} argument{}, got {}",
             name,
             n,
-            if n == 1 { "" } else { "s" }
+            if n == 1 { "" } else { "s" },
+            state.arg_count()
         ));
     }
     Ok(())

@@ -445,4 +445,46 @@ impl Program {
             _ => None,
         }
     }
+
+    /// Method name -> the function terms a `fn Class.name` declaration
+    /// publishes under it, keyed by the same interned constant a
+    /// [`TermOp::MethodCall`] carries.
+    ///
+    /// **Why this exists.** A user method is dispatched at runtime by name, so
+    /// `base.dist2()` has no operand naming the function it calls — its inputs
+    /// are the receiver and the arguments, nothing else. Every dataflow answer
+    /// (`show-provenance`, `show-slice`, `explain`, `show-graph`) would then
+    /// omit the code that computes the value, which is the one thing a slice
+    /// must never do. This recovers the edge from the registration statement
+    /// the compiler emits for each declaration
+    /// (`__declare_method(class, name, func)`).
+    ///
+    /// It is a **may**-edge, like a cell's: dispatch is by name, so a call
+    /// links to every method of that name in the program, not only the one the
+    /// receiver's class would pick. Over-approximating is the safe direction —
+    /// a slice that is too big loses precision, one that is too small computes
+    /// a different value.
+    pub fn dispatch_targets(&self) -> HashMap<ConstantId, Vec<TermId>> {
+        let mut out: HashMap<ConstantId, Vec<TermId>> = HashMap::new();
+        for term in &self.terms {
+            let TermOp::BuiltinCall(name) = term.op else {
+                continue;
+            };
+            if self.get_string_constant(name) != Some(crate::classes::DECLARE_METHOD_BUILTIN) {
+                continue;
+            }
+            // inputs = [class name, method name, function] (`emit_declare_method`).
+            let (Some(&method_tid), Some(&func)) = (term.inputs.get(1), term.inputs.get(2)) else {
+                continue;
+            };
+            let TermOp::Constant(method_cid) = self.get_term(method_tid).op else {
+                continue;
+            };
+            let slot = out.entry(method_cid).or_default();
+            if !slot.contains(&func) {
+                slot.push(func);
+            }
+        }
+        out
+    }
 }

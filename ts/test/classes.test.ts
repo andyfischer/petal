@@ -43,40 +43,40 @@ function runFileError(path: string): string {
 describe("class declarations", () => {
   it("declares a class and constructs it positionally", () => {
     const out = runPetal(
-      "class Point\n  x: int\n  y: int\nend\nlet p = Point(3, 4)\nprint(p.x)\nprint(p.y)"
+      "class Point\n  x: int,\n  y: int,\nend\nlet p = Point(3, 4)\nprint(p.x)\nprint(p.y)"
     );
     expect(out.trim().split("\n")).toEqual(["3", "4"]);
   });
 
   it("an instance is a record — record builtins still work", () => {
     const out = runPetal(
-      "class Point\n  x: int\n  y: int\nend\nlet p = Point(1, 2)\nprint(keys(p))\nprint(p)"
+      "class Point\n  x: int,\n  y: int,\nend\nlet p = Point(1, 2)\nprint(keys(p))\nprint(p)"
     );
     expect(out.trim().split("\n")).toEqual(['["x", "y"]', "{ x: 1, y: 2 }"]);
   });
 
   it("type() reports the class name", () => {
-    const out = runPetal("class Point\n  x: int\n  y: int\nend\nprint(type(Point(1, 2)))");
+    const out = runPetal("class Point\n  x: int,\n  y: int,\nend\nprint(type(Point(1, 2)))");
     expect(out.trim()).toBe("Point");
   });
 
   it("a field write keeps the class tag", () => {
     const out = runPetal(
-      "class Point\n  x: int\n  y: int\nend\nlet p = Point(1, 2)\nlet q = {...p, x: 9}\nprint(type(q))\nlet r = Point(1, 2)\nr.x = 5\nprint(type(r))\nprint(r.x)"
+      "class Point\n  x: int,\n  y: int,\nend\nlet p = Point(1, 2)\nlet q = {...p, x: 9}\nprint(type(q))\nlet r = Point(1, 2)\nr.x = 5\nprint(type(r))\nprint(r.x)"
     );
     expect(out.trim().split("\n")).toEqual(["record", "Point", "5"]);
   });
 
   it("reports the constructor arity in an error", () => {
     const { stderr } = runWithStderr(
-      "class Point\n  x: int\n  y: int\nend\nlet p = Point(1)"
+      "class Point\n  x: int,\n  y: int,\nend\nlet p = Point(1)"
     );
     expect(stderr).toMatch(/Point/);
     expect(stderr).toMatch(/2/);
   });
 
   it("appears in the AST as a ClassDecl", () => {
-    const ast = showAstJson("class Point\n  x: int\n  y: int\nend");
+    const ast = showAstJson("class Point\n  x: int,\n  y: int,\nend");
     const decl = ast.find((s: any) => s.kind && s.kind.ClassDecl);
     expect(decl).toBeTruthy();
     expect(decl.kind.ClassDecl.name).toBe("Point");
@@ -87,7 +87,7 @@ describe("class declarations", () => {
 describe("class names as type annotations", () => {
   it("accepts a matching argument with no warning", () => {
     const out = checkJson(
-      "class Point\n  x: int\n  y: int\nend\nfn px(p: Point) -> int\n  p.x\nend\nprint(px(Point(1, 2)))"
+      "class Point\n  x: int,\n  y: int,\nend\nfn px(p: Point) -> int\n  p.x\nend\nprint(px(Point(1, 2)))"
     );
     expect(out.ok).toBe(true);
     expect(out.warnings).toEqual([]);
@@ -95,7 +95,7 @@ describe("class names as type annotations", () => {
 
   it("warns when a non-instance is passed", () => {
     const out = checkJson(
-      "class Point\n  x: int\n  y: int\nend\nfn px(p: Point) -> int\n  p.x\nend\nprint(px(7))"
+      "class Point\n  x: int,\n  y: int,\nend\nfn px(p: Point) -> int\n  p.x\nend\nprint(px(7))"
     );
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toMatch(/Point/);
@@ -104,14 +104,14 @@ describe("class names as type annotations", () => {
 
   it("infers a field's declared type", () => {
     const out = checkJson(
-      "class Point\n  x: int\n  y: int\nend\nlet s: string = Point(1, 2).x"
+      "class Point\n  x: int,\n  y: int,\nend\nlet s: string = Point(1, 2).x"
     );
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toMatch(/mismatch/);
   });
 
   it("does not warn on an unknown-type-name for a declared class", () => {
-    const out = checkJson("class Point\n  x: int\nend\nlet p: Point = Point(1)");
+    const out = checkJson("class Point\n  x: int,\nend\nlet p: Point = Point(1)");
     expect(out.warnings).toEqual([]);
   });
 });
@@ -119,7 +119,7 @@ describe("class names as type annotations", () => {
 describe("user-declared methods", () => {
   it("declares and dispatches a method", () => {
     const out = runPetal(
-      "class Rect2\n  x: int\n  y: int\n  w: int\n  h: int\nend\n" +
+      "class Rect2\n  x: int,\n  y: int,\n  w: int,\n  h: int,\nend\n" +
         "fn Rect2.center_x(r: Rect2)\n  r.x + r.w / 2\nend\n" +
         "let r = Rect2(0, 0, 100, 40)\nprint(r.center_x())"
     );
@@ -128,7 +128,7 @@ describe("user-declared methods", () => {
 
   it("passes extra arguments after the receiver", () => {
     const out = runPetal(
-      "class Point\n  x: int\n  y: int\nend\n" +
+      "class Point\n  x: int,\n  y: int,\nend\n" +
         "fn Point.shifted(p: Point, dx: int, dy: int) -> Point\n  Point(p.x + dx, p.y + dy)\nend\n" +
         "let p = Point(1, 2).shifted(10, 20)\nprint(p.x)\nprint(p.y)"
     );
@@ -137,7 +137,7 @@ describe("user-declared methods", () => {
 
   it("dispatches per class for the same method name", () => {
     const out = runPetal(
-      "class A\n  v: int\nend\nclass B\n  v: int\nend\n" +
+      "class A\n  v: int,\nend\nclass B\n  v: int,\nend\n" +
         'fn A.describe(a: A)\n  "A" ++ str(a.v)\nend\n' +
         'fn B.describe(b: B)\n  "B" ++ str(b.v)\nend\n' +
         "print(A(1).describe())\nprint(B(2).describe())"
@@ -147,7 +147,7 @@ describe("user-declared methods", () => {
 
   it("a callable record field still wins over a method", () => {
     const out = runPetal(
-      "class Point\n  x: int\n  f: any\nend\n" +
+      "class Point\n  x: int,\n  f: any,\nend\n" +
         'fn Point.f(p: Point)\n  "method"\nend\n' +
         'print(Point(1, fn() -> "field").f())'
     );
@@ -156,7 +156,7 @@ describe("user-declared methods", () => {
 
   it("errors when calling an undefined method on an instance", () => {
     const { stderr } = runWithStderr(
-      "class Point\n  x: int\nend\nprint(Point(1).nope())"
+      "class Point\n  x: int,\nend\nprint(Point(1).nope())"
     );
     expect(stderr).toMatch(/nope/);
     expect(stderr).toMatch(/Point/);
@@ -172,16 +172,29 @@ describe("class and method diagnostics", () => {
     expect(out.errors[0].line).toBe(1);
   });
 
-  it("rejects duplicate class fields", () => {
-    const out = checkJsonAllowFail("class Point\n  x: int\n  x: int\nend");
+  it("rejects duplicate class fields, at the second field", () => {
+    const out = checkJsonAllowFail("class Point\n  x: int,\n  x: int,\nend");
     expect(out.error).toBe(true);
     expect(out.errors[0].message).toMatch(/duplicate field `x`/);
+    // Every field-level diagnostic used to land on line 1, column 1: the
+    // class's span, because `ClassFieldDecl` carried no span of its own.
+    expect(out.errors[0].line).toBe(3);
+    expect(out.errors[0].column).toBe(3);
+  });
+
+  it("underlines a field's own type annotation, not the class", () => {
+    const out = checkJsonAllowFail("class Point\n  x: int,\n  y: nosuchtype,\nend");
+    const warning = out.warnings.find((w: any) =>
+      /unknown type name `nosuchtype`/.test(w.message)
+    );
+    expect(warning, JSON.stringify(out)).toBeTruthy();
+    expect([warning.line, warning.column]).toEqual([3, 6]);
   });
 
   it("lets a user `class Rect` shadow the built-in of that name", () => {
     // The whole target syntax, spelled out, even though `Rect` is built in.
     const out = runPetal(
-      "class Rect\n  x: int\n  y: int\n  w: int\n  h: int\nend\n" +
+      "class Rect\n  x: int,\n  y: int,\n  w: int,\n  h: int,\nend\n" +
         "fn Rect.center_x(rect: Rect)\n  rect.x + rect.w / 2\nend\n" +
         "let r = Rect(0, 0, 100, 40)\nprint(r.center_x())"
     );
@@ -189,14 +202,14 @@ describe("class and method diagnostics", () => {
   });
 
   it("rejects a duplicate class declaration", () => {
-    const out = checkJsonAllowFail("class Point\n  x: int\nend\nclass Point\n  y: int\nend");
+    const out = checkJsonAllowFail("class Point\n  x: int,\nend\nclass Point\n  y: int,\nend");
     expect(out.error).toBe(true);
     expect(out.errors[0].message).toMatch(/class `Point` is already declared/);
   });
 
   it("rejects two methods with the same name and arity", () => {
     const out = checkJsonAllowFail(
-      "class Point\n  x: int\nend\nfn Point.f(p: Point)\n  1\nend\nfn Point.f(p: Point)\n  2\nend"
+      "class Point\n  x: int,\nend\nfn Point.f(p: Point)\n  1\nend\nfn Point.f(p: Point)\n  2\nend"
     );
     expect(out.error).toBe(true);
     expect(out.errors[0].message).toMatch(/`Point.f` is already declared/);
@@ -269,6 +282,59 @@ describe("field and method checks on a class-typed value", () => {
     const out = checkJson("class P\n  x: int\n  y: int\nend\nprint(P(1))");
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toBe("`P` expects 2 arguments, got 1");
+  });
+});
+
+// An undefined method whose name collides with a global builtin used to fall
+// through to "global native with the receiver prepended" and report the
+// builtin's own complaint — which never mentions the class, and which is what
+// a live edit that deletes `fn P.get` fails with.
+describe("an undefined method on a class instance names the class", () => {
+  const P = "class P\n  a: int,\nend\n";
+
+  it.each([
+    ["get", "P(1).get()"],
+    ["len", "P(1).len()"],
+    ["upper", "P(1).upper()"],
+    ["nope", "P(1).nope()"],
+  ])("reports 'No method %s on class P'", (name, call) => {
+    const { stderr } = runWithStderr(`${P}print(${call})`);
+    expect(stderr).toContain(`No method '${name}' on class P`);
+  });
+
+  // The fallback keeps working when it works — an instance is still a record.
+  it("still routes a builtin that accepts the receiver", () => {
+    expect(runPetal(`${P}print(P(1).str())`).trim()).toBe("{ a: 1 }");
+    expect(runPetal(`${P}print(P(1).keys())`).trim()).toBe('["a"]');
+    // And a plain record keeps the builtin's own message.
+    const { stderr } = runWithStderr("print({a: 1}.upper())");
+    expect(stderr).toContain("upper() expects a string");
+  });
+
+  it("names the class when a field does not exist either", () => {
+    const { stderr } = runWithStderr(`class B\n  a: int,\nend\nprint(B(1).b)`);
+    expect(stderr).toContain("No field 'b' on class B");
+  });
+});
+
+// Arity messages count what the user wrote. The receiver is a parameter the
+// *call site* supplies, so `C(1).foo()` wrote zero arguments, not one.
+describe("arity errors", () => {
+  it("excludes the receiver from a method's argument count", () => {
+    const { stderr } = runWithStderr(
+      "class C\n  a: int,\nend\nfn C.foo(c: C, n: int)\n  n\nend\nprint(C(1).foo())"
+    );
+    expect(stderr).toContain("C.foo() expects 1 argument, got 0");
+  });
+
+  it("counts a plain function's arguments as written", () => {
+    const { stderr } = runWithStderr("fn f(a, b)\n  a\nend\nprint(f(1))");
+    expect(stderr).toContain("f() expects 2 arguments, got 1");
+  });
+
+  it("words a builtin's arity error the same way", () => {
+    const { stderr } = runWithStderr("print(len())");
+    expect(stderr).toContain("len() expects 1 argument, got 0");
   });
 });
 

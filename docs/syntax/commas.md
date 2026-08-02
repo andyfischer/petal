@@ -44,12 +44,14 @@ let e = [              // ERROR: a newline is not a comma
 ```
 
 The diagnostic names the construct and points at the element that should have
-been preceded by a comma:
+been preceded by a comma, with the same caret block a type warning and a
+runtime error carry:
 
 ```text
-Error: Expected ',' between list elements [line 2, column 5]
-    2
-    ^
+Error: Expected ',' between list elements [line 3, column 5]
+  |
+3 |     2
+  |     ^
 ```
 
 ## Where it applies
@@ -66,11 +68,13 @@ Uniformly, across every delimited, comma-separated construct in the language:
 | List patterns         | `[a, b, ...rest]`      | `parse_list_pattern`            |
 | Enum variant patterns | `Point(x, y)`          | `parse_pattern`                 |
 | Enum declarations     | `enum E A, B, C end`   | `parse_enum_decl`               |
+| Class declarations    | `class P x: int, end`  | `parse_class_decl`              |
 
 All of them share one helper, `Parser::expect_element_separator`, so the rule
 cannot drift between constructs.
 
-Enum declarations are included, so a multi-line `enum` body carries commas too:
+The two keyword-delimited bodies are included, and they read alike — a
+multi-line `enum` body and a multi-line `class` body both carry their commas:
 
 ```petal
 enum Shape
@@ -78,31 +82,25 @@ enum Shape
     Rect(w, h),
     Unit,
 end
+
+class Point
+    x: int,
+    y: int,
+end
 ```
+
+Because `end` closes them rather than a bracket, their diagnostic names it: a
+body that runs past its `end` reports
+``Expected ',' between class fields, or `end` to close class `Point` `` instead
+of blaming whatever line the parser eventually choked on.
 
 ### Not comma-separated
 
-Three constructs look adjacent but are *not* covered, because they are not
+Two constructs look adjacent but are *not* covered, because they are not
 comma-separated in the first place:
 
 - **Blocks** (`then … end`, `do … end`, function bodies) are newline-separated
   statement sequences. No commas.
-- **Class bodies** (`class Name … end`) are newline-separated *field
-  declarations*, not a list — so a comma between fields is allowed but optional.
-  Note the asymmetry with `enum`, which sits one row above in the table: a
-  multi-line `enum` body needs its commas, a multi-line `class` body does not.
-
-  ```petal
-  class Point
-      x: int
-      y: int      // no comma needed; `x: int, y: int` is equally fine
-  end
-  ```
-
-  A separator of *some* kind is still required between two fields, so putting
-  two on one line without a comma is an error
-  (`Expected a newline or ',' between class fields`). See
-  [Classes & Methods](../language-guide.md#classes--methods).
 - **JSX attributes** are HTML-style, separated by whitespace:
   `<div class="x" id={y}/>`.
 

@@ -47,4 +47,19 @@ describe("show-graph", () => {
     const dot = showGraph("if true then 1 else 2 end");
     expect(dot).toContain("lightsalmon");
   });
+
+  // A `MethodCall` has no operand naming the function it dispatches to, so
+  // the graph used to have no path at all from `fn Point.dist2` to
+  // `base.dist2()`. It is a may-edge, and drawn as one.
+  it("draws the method-dispatch edge from a declaration to its call site", () => {
+    const dot = showGraph(
+      "class Point\n  x: int,\nend\nfn Point.twice(p: Point)\n  p.x * 2\nend\nlet d = Point(3).twice()\n"
+    );
+    const decl = dot.match(/t(\d+) \[label="t\d+: Point\.twice \(MakeClosure/);
+    const call = dot.match(/t(\d+) \[label="t\d+: d \(MethodCall/);
+    expect(decl && call, dot).toBeTruthy();
+    expect(dot).toContain(
+      `t${decl![1]} -> t${call![1]} [style=dashed, color=darkgreen, label="dispatch"];`
+    );
+  });
 });

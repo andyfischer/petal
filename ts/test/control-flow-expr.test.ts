@@ -214,8 +214,9 @@ end`;
   });
 
   it("while in value position is a parse error", () => {
+    // The token is named the way it is written, not by its Rust variant.
     expect(runPetalError("x = while true do 1 end\nprint(x)")).toContain(
-      "While"
+      "Unexpected token: `while`"
     );
   });
 });

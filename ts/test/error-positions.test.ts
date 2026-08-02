@@ -104,4 +104,53 @@ let c = a - "bad"`);
     // And a caret line under it.
     expect(err).toMatch(/\^/);
   });
+
+  // Type warnings and runtime errors have always carried a caret block; parse
+  // errors were the odd one out, reporting a bare `[line N, column M]`.
+  // See docs/syntax/commas.md.
+  describe("parse errors carry the same caret block", () => {
+    it("underlines the element that needed a comma", () => {
+      const err = runPetalError("let e = [\n    1\n    2\n]");
+      expect(err).toContain(
+        "Error: Expected ',' between list elements [line 3, column 5]"
+      );
+      expect(err).toContain("3 |     2");
+      expect(err).toMatch(/\n\s*\|\s+\^/);
+    });
+
+    it("underlines a compile-phase diagnostic too", () => {
+      const err = runPetalError("class C\n  x: int,\n  x: int,\nend\nprint(1)");
+      expect(err).toContain(
+        "duplicate field `x` in class `C` [line 3, column 3]"
+      );
+      expect(err).toContain("3 |   x: int,");
+    });
+  });
+
+  // Message cleanups: the parser names tokens the way they are written, and
+  // names the construct whose element is missing.
+  describe("parse errors name what the reader wrote", () => {
+    it("blames the index, not the closing bracket, for a missing comma", () => {
+      const err = runPetalError("print([[1,2] [3,4]])");
+      expect(err).toContain("Expected ']' to close the index, got ','");
+      expect(err).not.toContain("RBracket");
+    });
+
+    it("names the construct a stray comma appears in", () => {
+      expect(runPetalError("print([,])")).toContain(
+        "Expected a list element, got ','"
+      );
+      expect(runPetalError("print(1,,2)")).toContain(
+        "Expected an argument, got ','"
+      );
+      expect(runPetalError("let a = [\n ,1]\nprint(a)")).toContain(
+        "Expected a list element, got ','"
+      );
+    });
+
+    it("spells tokens as source text, not as Rust variant names", () => {
+      const err = runPetalError("let x = ;");
+      expect(err).not.toMatch(/Comma|RBracket|LParen|Assign\b/);
+    });
+  });
 });

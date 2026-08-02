@@ -175,18 +175,43 @@ pub struct EnumVariant {
 /// A written type annotation: the source name plus its resolution.
 /// `resolved` is `None` when `name` is not a recognized type — the checker
 /// warns on that but treats it as `any`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+///
+/// `span` covers the *name as written* (`nosuch` in `fn f(a: nosuch)`), which is
+/// what a diagnostic about the annotation should underline. It is deliberately
+/// outside `PartialEq`: two annotations are the same annotation when they spell
+/// the same type, wherever they were written.
+#[derive(Debug, Clone, Serialize)]
 pub struct TypeAnn {
     /// The type name exactly as written (`int`, `str`, `banana`).
     pub name: String,
     /// The resolved static type, or `None` for an unrecognized name.
     pub resolved: Option<crate::types::Type>,
+    /// Where the type name was written. [`ZERO_SPAN`] when synthesized.
+    #[serde(skip)]
+    pub span: SourceSpan,
+}
+
+impl PartialEq for TypeAnn {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.resolved == other.resolved
+    }
 }
 
 impl TypeAnn {
+    /// An annotation with no recorded position — for synthesized annotations
+    /// and for tests. Real parses go through [`TypeAnn::at`].
     pub fn new(name: String) -> Self {
+        Self::at(name, crate::source_map::ZERO_SPAN)
+    }
+
+    /// The annotation `name` as written at `span`.
+    pub fn at(name: String, span: SourceSpan) -> Self {
         let resolved = crate::types::Type::from_name(&name);
-        TypeAnn { name, resolved }
+        TypeAnn {
+            name,
+            resolved,
+            span,
+        }
     }
 }
 
@@ -197,6 +222,11 @@ impl TypeAnn {
 pub struct ClassFieldDecl {
     pub name: String,
     pub ty: Option<TypeAnn>,
+    /// The whole field declaration, `x: int` — what a diagnostic about *this
+    /// field* (a duplicate name, say) underlines. Without it every field-level
+    /// message fell back to the class's own span, i.e. line 1, column 1.
+    #[serde(skip)]
+    pub span: SourceSpan,
 }
 
 /// A function/lambda parameter with an optional declared type.

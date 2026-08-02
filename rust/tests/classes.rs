@@ -54,7 +54,7 @@ fn errors_of(src: &str) -> Vec<String> {
 
 #[test]
 fn parses_a_class_with_typed_fields() {
-    let stmts = parse("class Point\n  x: int\n  y: float\nend\n");
+    let stmts = parse("class Point\n  x: int,\n  y: float,\nend\n");
     let StmtKind::ClassDecl { name, fields } = &stmts[0].kind else {
         panic!("expected a ClassDecl, got {:?}", stmts[0].kind);
     };
@@ -69,7 +69,7 @@ fn parses_a_class_with_typed_fields() {
 
 #[test]
 fn field_annotations_are_optional() {
-    let stmts = parse("class Bag\n  a\n  b: int\nend\n");
+    let stmts = parse("class Bag\n  a,\n  b: int,\nend\n");
     let StmtKind::ClassDecl { fields, .. } = &stmts[0].kind else {
         panic!("expected a ClassDecl");
     };
@@ -77,13 +77,14 @@ fn field_annotations_are_optional() {
     assert!(fields[1].ty.is_some());
 }
 
-/// A class body is a block of declarations, not a delimited list, so it does
-/// not follow the comma rule — but a comma is accepted for a one-liner.
+/// A class body follows the comma rule (docs/syntax/commas.md), exactly like
+/// the `enum` body it looks identical to: a comma between fields, on one line
+/// or many, with a trailing comma allowed before `end`.
 #[test]
-fn fields_separate_on_newlines_or_commas() {
+fn fields_are_comma_separated_on_one_line_or_many() {
     for src in [
-        "class P\n  x: int\n  y: int\nend\n",
         "class P\n  x: int, y: int\nend\n",
+        "class P\n  x: int,\n  y: int\nend\n",
         "class P\n  x: int,\n  y: int,\nend\n",
     ] {
         let StmtKind::ClassDecl { fields, .. } = &parse(src)[0].kind else {
@@ -91,6 +92,38 @@ fn fields_separate_on_newlines_or_commas() {
         };
         assert_eq!(fields.len(), 2, "{src:?}");
     }
+}
+
+/// The asymmetry this replaced: a newline used to separate class fields while
+/// every other construct, `enum` included, required the comma.
+#[test]
+fn a_newline_is_not_a_field_separator() {
+    for src in [
+        "class P\n  x: int\n  y: int\nend\n",
+        "class P\n  x: int y: int\nend\n",
+    ] {
+        let err = parse_err(src);
+        assert!(err.contains("Expected ',' between class fields"), "{err}");
+    }
+    // Same rule, same wording, for the construct it now matches.
+    let enum_err = parse_err("enum E\n  A\n  B\nend\n");
+    assert!(
+        enum_err.contains("Expected ',' between enum variants"),
+        "{enum_err}"
+    );
+}
+
+/// A body that runs past its `end` used to be reported as a separator problem
+/// on whatever line the parser choked on, never naming the missing keyword.
+#[test]
+fn a_class_missing_its_end_says_so() {
+    let err = parse_err("class C\n  x: int,\n  y: int,\nlet z = 1\n");
+    assert!(err.contains("`end` to close class `C`"), "{err}");
+    // …including when the run-on line is field-shaped and only fails later.
+    let err = parse_err("class C\n  x: int,\n  y: int,\nprint(1)\n");
+    assert!(err.contains("`end` to close class `C`"), "{err}");
+    let enum_err = parse_err("enum E\n  A,\n  B,\nlet z = 1\n");
+    assert!(enum_err.contains("`end` to close enum `E`"), "{enum_err}");
 }
 
 #[test]
@@ -101,10 +134,43 @@ fn an_empty_class_is_allowed() {
     assert!(fields.is_empty());
 }
 
+/// Field-level diagnostics point at the field, not at line 1 column 1 of the
+/// class — `ClassFieldDecl` carries its own span.
 #[test]
-fn a_junk_field_separator_is_named() {
-    let err = parse_err("class P\n  x: int y: int\nend\n");
-    assert!(err.contains("between class fields"), "{err}");
+fn a_field_carries_its_own_span() {
+    let StmtKind::ClassDecl { fields, .. } = &parse("class P\n  x: int,\n  y: int,\nend\n")[0].kind
+    else {
+        panic!("expected a ClassDecl");
+    };
+    assert_eq!(
+        (fields[0].span.start.line, fields[0].span.start.column),
+        (2, 3)
+    );
+    assert_eq!(
+        (fields[1].span.start.line, fields[1].span.start.column),
+        (3, 3)
+    );
+
+    let stmts = parse("class P\n  x: int,\n  x: int,\nend\n");
+    let mut table = ClassTable::new();
+    let diags = petal::compiler::collect_classes(&mut table, &stmts, None);
+    assert_eq!(diags.len(), 1);
+    assert_eq!(
+        (diags[0].span.start.line, diags[0].span.start.column),
+        (3, 3),
+        "the duplicate is reported at the second `x`"
+    );
+}
+
+/// A field's type annotation carries its own span too, so `unknown type name`
+/// underlines the name rather than the whole declaration.
+#[test]
+fn a_field_annotation_carries_its_own_span() {
+    let StmtKind::ClassDecl { fields, .. } = &parse("class P\n  x: nosuch,\nend\n")[0].kind else {
+        panic!("expected a ClassDecl");
+    };
+    let ann = fields[0].ty.as_ref().expect("annotation");
+    assert_eq!((ann.span.start.line, ann.span.start.column), (2, 6));
 }
 
 /// `class` is contextual: it stays an ordinary identifier, which is what keeps
@@ -166,7 +232,7 @@ fn rect_is_available_with_no_declaration() {
 
 #[test]
 fn a_declared_class_becomes_a_type_name() {
-    let (table, errs) = classes_of("class Point\n  x: int\nend\n");
+    let (table, errs) = classes_of("class Point\n  x: int,\nend\n");
     assert!(errs.is_empty());
     let id = table.lookup("Point").expect("Point");
     assert_eq!(Type::resolve("Point", &table), Some(Type::Class(id)));
@@ -178,7 +244,7 @@ fn a_declared_class_becomes_a_type_name() {
 #[test]
 fn methods_resolve_against_classes_declared_later() {
     let (table, errs) =
-        classes_of("fn Point.norm(p: Point)\n  p.x\nend\nclass Point\n  x: int\nend\n");
+        classes_of("fn Point.norm(p: Point)\n  p.x\nend\nclass Point\n  x: int,\nend\n");
     assert!(errs.is_empty(), "{errs:?}");
     let def = table.get(table.lookup("Point").unwrap());
     assert_eq!(def.method("norm").map(|m| m.arity), Some(1));
@@ -186,14 +252,29 @@ fn methods_resolve_against_classes_declared_later() {
 
 #[test]
 fn duplicate_fields_are_rejected() {
-    let errs = errors_of("class P\n  x: int\n  x: int\nend\n");
+    let errs = errors_of("class P\n  x: int,\n  x: int,\nend\n");
     assert_eq!(errs.len(), 1);
     assert!(errs[0].contains("duplicate field `x`"), "{errs:?}");
 }
 
+/// The call site supplies the receiver, so a method with no parameters can
+/// never be called — every call would be an arity mismatch against a function
+/// that takes nothing. Rejected at the declaration, where the mistake is.
+#[test]
+fn a_method_with_no_receiver_parameter_is_rejected() {
+    let errs = errors_of("class P\n  x: int,\nend\nfn P.f()\n  1\nend\n");
+    assert_eq!(errs.len(), 1);
+    assert!(
+        errs[0].contains("declares no receiver parameter"),
+        "{errs:?}"
+    );
+    // One parameter is enough — it *is* the receiver.
+    assert!(errors_of("class P\n  x: int,\nend\nfn P.f(p: P)\n  1\nend\n").is_empty());
+}
+
 #[test]
 fn a_duplicate_class_is_rejected() {
-    let errs = errors_of("class P\n  x: int\nend\nclass P\n  y: int\nend\n");
+    let errs = errors_of("class P\n  x: int,\nend\nclass P\n  y: int,\nend\n");
     assert_eq!(errs.len(), 1);
     assert!(errs[0].contains("already declared"), "{errs:?}");
 }
@@ -208,7 +289,7 @@ fn a_method_on_an_unknown_type_is_rejected() {
 #[test]
 fn a_duplicate_method_is_rejected_but_an_arity_overload_is_not() {
     let errs = errors_of(
-        "class P\n  x: int\nend\nfn P.f(p)\n  1\nend\nfn P.f(p, n)\n  2\nend\nfn P.f(p)\n  3\nend\n",
+        "class P\n  x: int,\nend\nfn P.f(p)\n  1\nend\nfn P.f(p, n)\n  2\nend\nfn P.f(p)\n  3\nend\n",
     );
     assert_eq!(errs.len(), 1, "only the same-arity redeclaration: {errs:?}");
     assert!(errs[0].contains("`P.f` is already declared"), "{errs:?}");
@@ -255,7 +336,7 @@ fn a_receiver_slot_that_accepts_an_instance_is_accepted() {
 /// the same rule that lets a user binding shadow a builtin function.
 #[test]
 fn a_user_class_may_shadow_a_builtin_class() {
-    let (table, errs) = classes_of("class Rect\n  left: int\nend\n");
+    let (table, errs) = classes_of("class Rect\n  left: int,\nend\n");
     assert!(errs.is_empty(), "{errs:?}");
     let def = table.get(table.lookup("Rect").unwrap());
     assert!(def.field("left").is_some());
@@ -307,7 +388,7 @@ fn a_class_nested_in_control_flow_is_rejected() {
 #[test]
 fn a_nested_class_does_not_redefine_the_outer_one() {
     let (table, errs) = classes_of(
-        "class Inner\n  a: int\nend\nfn f()\n  class Inner\n    b: int\n    c: int\n  end\n  1\nend\n",
+        "class Inner\n  a: int,\nend\nfn f()\n  class Inner\n    b: int,\n    c: int,\n  end\n  1\nend\n",
     );
     assert_eq!(errs.len(), 1, "{errs:?}");
     let def = table.get(table.lookup("Inner").unwrap());

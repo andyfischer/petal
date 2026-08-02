@@ -14,10 +14,10 @@ use crate::program::{FunctionId, Program, Term, TermId, TermOp};
 // Cells: identity edges, and the frontier a backward walk stops at
 // ---------------------------------------------------------------------------
 
-/// How a forward edge got into the graph. Backward walks only ever produce
-/// [`EdgeKind::Dataflow`]; the forward walk also emits `CellMay`, because
-/// "what could this affect" is a *may* question and answering it with only
-/// the must-edges would under-report every `set` (§6e).
+/// How a forward edge got into the graph. Backward walks report their edges
+/// untyped; the forward walk distinguishes the must-edges from the two *may*
+/// kinds, because "what could this affect" answered with only the must-edges
+/// would under-report every `set` (§6e) and every method call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EdgeKind {
     /// A real value edge: `from` is an input whose value `to` consumed.
@@ -26,6 +26,11 @@ pub enum EdgeKind {
     /// that `to` reads. Which write actually supplied a given read is a
     /// dynamic fact, so every write reaches every read.
     CellMay,
+    /// A possible edge through method dispatch: `from` is a function declared
+    /// as `fn Class.name`, `to` a `.name(…)` call it may dispatch to. Dispatch
+    /// is by name at runtime, so every method of that name reaches every call
+    /// on it. See [`Program::dispatch_targets`].
+    DispatchMay,
 }
 
 impl EdgeKind {
@@ -33,6 +38,7 @@ impl EdgeKind {
         match self {
             EdgeKind::Dataflow => "dataflow",
             EdgeKind::CellMay => "may",
+            EdgeKind::DispatchMay => "dispatch",
         }
     }
 }
@@ -166,6 +172,9 @@ pub struct CellIndex {
     /// A `CellRead`/`CellWrite`/capturing `MakeClosure` term -> its declaration.
     /// (`decl_of` is keyed by the cell *operand*; this is keyed by the site.)
     site_decl: HashMap<TermId, TermId>,
+    /// Method name constant -> the function terms a `MethodCall` on that name
+    /// may dispatch to. See [`Program::dispatch_targets`].
+    dispatch: HashMap<crate::constant_table::ConstantId, Vec<TermId>>,
 }
 
 impl CellIndex {
@@ -189,13 +198,30 @@ impl CellIndex {
     }
 
     /// The inputs of `term` a backward walk may follow.
+    ///
+    /// For a `MethodCall` this includes the method's *function* term, which is
+    /// not an operand — user-method dispatch is by name, so without it a slice
+    /// over class-using code would omit the code that computes the value. See
+    /// [`Program::dispatch_targets`].
     pub fn value_inputs(&self, term: &Term) -> Vec<TermId> {
-        term.inputs
+        let mut out: Vec<TermId> = term
+            .inputs
             .iter()
             .enumerate()
             .filter(|(i, _)| !self.is_identity_input(term, *i))
             .map(|(_, &id)| id)
-            .collect()
+            .collect();
+        out.extend(self.dispatch_inputs(term));
+        out
+    }
+
+    /// The function terms a `MethodCall` may dispatch to; empty for every other
+    /// op. A may-edge, and the one dataflow edge that is not an operand.
+    pub fn dispatch_inputs(&self, term: &Term) -> Vec<TermId> {
+        let TermOp::MethodCall(name) = term.op else {
+            return Vec::new();
+        };
+        self.dispatch.get(&name).cloned().unwrap_or_default()
     }
 
     /// The inputs of `term` that name a cell. Empty for every op but
@@ -308,7 +334,10 @@ impl Program {
     /// `CellWrite` and closure capture to the declaration its cell operand
     /// resolves to.
     pub fn cell_index(&self) -> CellIndex {
-        let mut idx = CellIndex::default();
+        let mut idx = CellIndex {
+            dispatch: self.dispatch_targets(),
+            ..CellIndex::default()
+        };
 
         // Pass 1 — declarations. A `state var` puts its `CellNew` inside the
         // `StateInit`'s init block so the cell is created once and persists
@@ -542,6 +571,14 @@ impl Program {
                     .or_default()
                     .push((term.id, EdgeKind::Dataflow));
             }
+            // A user method reaches its call sites the same way a cell's
+            // writes reach its reads: by name, not by operand.
+            for target in index.dispatch_inputs(term) {
+                users
+                    .entry(target)
+                    .or_default()
+                    .push((term.id, EdgeKind::DispatchMay));
+            }
         }
         for &decl in &index.decls {
             let reads = index.reads_of(decl);
@@ -663,7 +700,7 @@ fn sorted(ids: &HashSet<TermId>) -> Vec<TermId> {
 #[cfg(test)]
 mod tests {
     use super::EdgeKind;
-    use crate::constant_table::{ConstantId, ConstantTable};
+    use crate::constant_table::{ConstantId, ConstantTable, ConstantValue};
     use crate::program::*;
     use crate::source_map::SourceMap;
     use smallvec::SmallVec;
@@ -711,6 +748,61 @@ mod tests {
             in_loop: false,
             collect: false,
         }
+    }
+
+    /// A `MethodCall` reaches the function it dispatches to through the
+    /// registration statement, not through an operand. See
+    /// [`Program::dispatch_targets`].
+    #[test]
+    fn method_dispatch_is_a_backward_dataflow_edge() {
+        let mut constants = ConstantTable::new();
+        let declare = constants.intern(ConstantValue::String(
+            crate::classes::DECLARE_METHOD_BUILTIN.to_string(),
+        ));
+        let class = constants.intern(ConstantValue::String("Point".to_string()));
+        let method = constants.intern(ConstantValue::String("dist2".to_string()));
+
+        let mut prog = test_program(vec![
+            // t0..t2: the declaration and its registration.
+            make_term(
+                0,
+                TermOp::MakeClosure(FunctionId(0)),
+                vec![],
+                Some("Point.dist2"),
+            ),
+            make_term(1, TermOp::Constant(class), vec![], None),
+            make_term(2, TermOp::Constant(method), vec![], None),
+            make_term(3, TermOp::BuiltinCall(declare), vec![1, 2, 0], None),
+            // t4: the receiver; t5: `recv.dist2()`.
+            make_term(4, TermOp::Constant(class), vec![], Some("base")),
+            make_term(5, TermOp::MethodCall(method), vec![4], Some("d")),
+        ]);
+        prog.constants = constants;
+
+        assert_eq!(
+            prog.dispatch_targets().get(&method).map(Vec::as_slice),
+            Some([TermId(0)].as_slice())
+        );
+
+        let index = prog.cell_index();
+        let call = prog.get_term(TermId(5));
+        assert!(
+            index.value_inputs(call).contains(&TermId(0)),
+            "the method's function term is a backward edge of the call"
+        );
+        // …and nothing else gains one.
+        assert!(index.dispatch_inputs(prog.get_term(TermId(3))).is_empty());
+
+        let prov = prog.trace_provenance(TermId(5));
+        assert!(prov.ancestors.contains(&TermId(0)), "{:?}", prov.ancestors);
+
+        let deps = prog.trace_dependents(TermId(0));
+        assert!(deps.dependents.contains(&TermId(5)));
+        assert!(
+            deps.edges
+                .iter()
+                .any(|&(f, t, k)| f == TermId(0) && t == TermId(5) && k == EdgeKind::DispatchMay)
+        );
     }
 
     #[test]

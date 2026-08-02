@@ -337,10 +337,10 @@ mod tests {
 
     #[test]
     fn class_fields_indent() {
-        let src = "class Point\nx: int\ny: int\nend\n";
+        let src = "class Point\nx: int,\ny: int,\nend\n";
         assert_eq!(
             reindent(src).unwrap(),
-            "class Point\n  x: int\n  y: int\nend\n"
+            "class Point\n  x: int,\n  y: int,\nend\n"
         );
     }
 

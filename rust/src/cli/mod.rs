@@ -244,10 +244,35 @@ fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> 
 /// the old `rfind` did. The one addition is `errors`, an array with one entry
 /// per diagnostic — the structure a caller needs when the compiler reports
 /// several at once.
-fn die_error(json: bool, err: &crate::error::LoadError, warnings: serde_json::Value) -> ! {
+fn die_error(
+    json: bool,
+    err: &crate::error::LoadError,
+    warnings: serde_json::Value,
+    source: &str,
+) -> ! {
     let text = err.to_string();
     if !json {
-        die_with(json, &text, err.phase.as_str(), warnings);
+        // Human output gets the same caret block a runtime error and a type
+        // warning get. A parse error used to be the odd one out: a bare
+        // `[line N, column M]` with nothing to look at.
+        //
+        // Only entry-file items can be underlined — a module's own source is
+        // not what was handed to this command, and the span indexes it.
+        let mut rendered = String::new();
+        for (i, item) in err.items.iter().enumerate() {
+            if i > 0 {
+                rendered.push('\n');
+            }
+            rendered.push_str(&item.to_string());
+            if item.file.is_none()
+                && let Some(span) = &item.span
+                && let Some(snippet) = crate::backend::errors::format_source_snippet(source, span)
+            {
+                rendered.push('\n');
+                rendered.push_str(&snippet);
+            }
+        }
+        die_with(json, &rendered, err.phase.as_str(), warnings);
     }
     let mut obj = error_json_value(&text, err.phase.as_str());
     if !warnings.is_null() {

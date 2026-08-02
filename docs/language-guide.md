@@ -766,10 +766,10 @@ constructor bound to the class's name.
 
 ```petal
 class Rect
-  x: int
-  y: int
-  w: int
-  h: int
+  x: int,
+  y: int,
+  w: int,
+  h: int,
 end
 
 let r = Rect(0, 0, 100, 40)
@@ -777,10 +777,10 @@ print(r.x)        // 0 — field access, exactly as on a record
 print(type(r))    // "Rect"
 ```
 
-One field per line; a comma between them is optional (a class body is a block of
-declarations, not a list, so it does not follow the
-[comma rule](syntax/commas.md)). Field annotations use the same grammar as a
-parameter's, and an un-annotated field is `any`.
+Fields are comma-separated, on one line or many, and follow the
+[comma rule](syntax/commas.md) exactly as an `enum` body does — a newline is not
+a separator, and a trailing comma before `end` is fine. Field annotations use
+the same grammar as a parameter's, and an un-annotated field is `any`.
 
 A `class` is a **top-level declaration**: it belongs at the top level of a file,
 not inside a function, a loop or an `if`. Nesting one is an error
@@ -871,9 +871,19 @@ classes is entirely independent.
    declaration therefore overrides a built-in method of the same name.
 4. **A global builtin**, with the receiver passed as its first argument — this
    is the [method syntax](#method-syntax) that makes `[1,2,3].len()` work.
+   `p.str()` and `p.keys()` reach a class instance this way too, since an
+   instance is a record.
 
 Calling something none of these resolve reports the class by name:
-`No method 'nope' on class Rect`.
+`No method 'nope' on class Rect`. So does step 4 *failing* on a class
+instance: `P(1).get()` is a call to a method that does not exist, not a call to
+the global `get`, so it reports `No method 'get' on class P` rather than the
+builtin's own complaint. That is what a live edit which deletes `fn P.get`
+now reports.
+
+An arity error counts the arguments you wrote. The receiver is supplied by the
+call site, so a two-parameter `fn C.foo(c: C, n: int)` called as `C(1).foo()`
+reports `C.foo() expects 1 argument, got 0` — the same wording a builtin uses.
 
 ### The built-in `Rect`
 
@@ -927,12 +937,17 @@ generate for any of them:
 | two fields named `x` | `duplicate field \`x\` in class \`Point\`` |
 | `fn Nope.thing(...)` | `cannot declare a method on \`Nope\`: no class of that name` |
 | two `fn Point.f(p)` | `method \`Point.f\` is already declared with 1 parameter` |
+| `fn Point.f()` | `method \`Point.f\` declares no receiver parameter` |
 | `fn Point.f(p: Other)` | `method \`Point.f\` declares its receiver \`p\` as \`Other\`, but a method on \`Point\` always receives an instance of \`Point\`` |
 
-The last one is the receiver rule: `p.f(…)` only ever dispatches on a `Point`,
-so annotating the receiver with anything a `Point` cannot fill describes a call
-that can never happen. `Point`, `record`, `any` and no annotation at all are all
-fine.
+Each is reported at the field or declaration that is wrong, with the source
+line and a caret under it.
+
+The last two are the receiver rule. A method's first parameter *is* the
+receiver, and the call site supplies it, so a method must declare one. `p.f(…)`
+then only ever dispatches on a `Point`, so annotating that receiver with
+anything a `Point` cannot fill describes a call that can never happen. `Point`,
+`record`, `any` and no annotation at all are all fine.
 
 ### Not supported
 

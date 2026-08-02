@@ -129,18 +129,6 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
-/// Read the declared [`TypeAnn`] from a `TypeAnnotation` (or `ReturnType`)
-/// node — the type-name identifier it wraps, preserved raw and resolved via
-/// [`Type::from_name`], mirroring the parser (see `parse_type_annotation`). An
-/// unrecognized name is kept with `resolved: None`.
-fn type_from_annotation_node(ann: &SyntaxNode) -> Option<TypeAnn> {
-    let name = direct_tokens(ann)
-        .iter()
-        .filter_map(type_name_value)
-        .next()?;
-    Some(TypeAnn::new(name))
-}
-
 /// The type-name spelling of a token in type position: a plain identifier, or
 /// the two vocabulary names that lex as keywords (`nil`/`enum`). Mirrors the
 /// parser's `expect_type_name`; the `:`/`->` leaders yield `None` and are
@@ -154,30 +142,46 @@ fn type_name_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
-/// Project the parameters of a `ParamList` node, pairing each parameter name
-/// with a following `TypeAnnotation` node (if any). Un-annotated params get
-/// `ty: None`.
-fn projected_params(param_list: &SyntaxNode) -> Vec<Param> {
-    let mut params: Vec<Param> = Vec::new();
-    for el in param_list.children() {
-        match el {
-            SyntaxElement::Token(t) => {
-                if let Some(name) = ident_value(&t) {
-                    params.push(Param { name, ty: None });
-                }
-            }
-            SyntaxElement::Node(n) if n.kind() == SyntaxKind::TypeAnnotation => {
-                if let Some(last) = params.last_mut() {
-                    last.ty = type_from_annotation_node(&n);
-                }
-            }
-            SyntaxElement::Node(_) => {}
-        }
-    }
-    params
-}
-
 impl Projector {
+    // ---- Annotations and parameters ----
+    //
+    // Methods rather than free functions because a `TypeAnn` carries the span
+    // of the name as written, which only the projector can reconstruct.
+
+    /// Read the declared [`TypeAnn`] from a `TypeAnnotation` (or `ReturnType`)
+    /// node — the type-name identifier it wraps, preserved raw and resolved via
+    /// [`Type::from_name`], mirroring the parser (see `parse_type_annotation`). An
+    /// unrecognized name is kept with `resolved: None`.
+    fn type_from_annotation_node(&self, ann: &SyntaxNode) -> Option<TypeAnn> {
+        let t = direct_tokens(ann)
+            .into_iter()
+            .find(|t| type_name_value(t).is_some())?;
+        Some(TypeAnn::at(type_name_value(&t)?, self.token_span(&t)))
+    }
+
+    /// Project the parameters of a `ParamList` node, pairing each parameter name
+    /// with a following `TypeAnnotation` node (if any). Un-annotated params get
+    /// `ty: None`.
+    fn projected_params(&self, param_list: &SyntaxNode) -> Vec<Param> {
+        let mut params: Vec<Param> = Vec::new();
+        for el in param_list.children() {
+            match el {
+                SyntaxElement::Token(t) => {
+                    if let Some(name) = ident_value(&t) {
+                        params.push(Param { name, ty: None });
+                    }
+                }
+                SyntaxElement::Node(n) if n.kind() == SyntaxKind::TypeAnnotation => {
+                    if let Some(last) = params.last_mut() {
+                        last.ty = self.type_from_annotation_node(&n);
+                    }
+                }
+                SyntaxElement::Node(_) => {}
+            }
+        }
+        params
+    }
+
     // ---- Span reconstruction ----
 
     fn pos_at(&self, offset: u32) -> SourcePosition {
@@ -231,7 +235,7 @@ impl Projector {
                 let ty = child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
-                    .and_then(type_from_annotation_node);
+                    .and_then(|n| self.type_from_annotation_node(n));
                 // The value is the sole child node that isn't the type annotation.
                 let value_node = child_nodes(node)
                     .into_iter()
@@ -271,7 +275,7 @@ impl Projector {
                 let ret = child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::ReturnType)
-                    .and_then(type_from_annotation_node);
+                    .and_then(|n| self.type_from_annotation_node(n));
                 let body = self.block(node)?;
                 StmtKind::FnDecl {
                     name,
@@ -298,8 +302,12 @@ impl Projector {
                         let ty = child_nodes(f)
                             .iter()
                             .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
-                            .and_then(type_from_annotation_node);
-                        Ok(ClassFieldDecl { name: fname, ty })
+                            .and_then(|n| self.type_from_annotation_node(n));
+                        Ok(ClassFieldDecl {
+                            name: fname,
+                            ty,
+                            span: self.node_span(f)?,
+                        })
                     })
                     .collect::<Result<Vec<_>, String>>()?;
                 StmtKind::ClassDecl { name, fields }
@@ -332,7 +340,7 @@ impl Projector {
                 let ty = child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
-                    .and_then(type_from_annotation_node);
+                    .and_then(|n| self.type_from_annotation_node(n));
                 // The annotation is not an expression node; what remains is the
                 // init, optionally preceded by an explicit key
                 // (`state(key) name: t = init`).
@@ -510,7 +518,7 @@ impl Projector {
             .into_iter()
             .find(|n| n.kind() == SyntaxKind::ParamList)
             .ok_or_else(|| format!("{:?} missing its ParamList child", parent.kind()))?;
-        Ok(projected_params(&params))
+        Ok(self.projected_params(&params))
     }
 
     /// The first direct identifier token — the declared name of a let / fn /
@@ -1228,8 +1236,8 @@ mod tests {
     /// qualified name from it, not just take the first ident it finds.
     #[test]
     fn projects_class_and_method_declarations() {
-        assert_projects("class Point\n  x: int\n  y: int\nend\n");
-        assert_projects("class Bag\n  a\n  b: int\nend\n"); // un-annotated field
+        assert_projects("class Point\n  x: int,\n  y: int,\nend\n");
+        assert_projects("class Bag\n  a,\n  b: int,\nend\n"); // un-annotated field
         assert_projects("class P\n  x: int, y: int\nend\n"); // comma-separated
         assert_projects("class Unit\nend\n"); // no fields
         assert_projects("fn Rect.center_x(r: Rect)\n  r.x\nend\n");
@@ -1293,32 +1301,14 @@ mod tests {
         let StmtKind::Let { ty, .. } = &ast[0].kind else {
             panic!("expected let");
         };
-        assert_eq!(
-            *ty,
-            Some(TypeAnn {
-                name: "int".into(),
-                resolved: Some(Type::Int),
-            })
-        );
+        assert_eq!(*ty, Some(TypeAnn::new("int".into())));
 
         let StmtKind::FnDecl { params, .. } = &ast[1].kind else {
             panic!("expected fn");
         };
-        assert_eq!(
-            params[0].ty,
-            Some(TypeAnn {
-                name: "int".into(),
-                resolved: Some(Type::Int),
-            })
-        );
+        assert_eq!(params[0].ty, Some(TypeAnn::new("int".into())));
         assert_eq!(params[1].ty, None); // bare param
-        assert_eq!(
-            params[2].ty,
-            Some(TypeAnn {
-                name: "str".into(),
-                resolved: Some(Type::String),
-            })
-        ); // `str` alias
+        assert_eq!(params[2].ty, Some(TypeAnn::new("str".into()))); // `str` alias
     }
 
     #[test]
@@ -1328,13 +1318,7 @@ mod tests {
         let StmtKind::FnDecl { ret, .. } = &ast[0].kind else {
             panic!("expected fn");
         };
-        assert_eq!(
-            *ret,
-            Some(TypeAnn {
-                name: "float".into(),
-                resolved: Some(Type::Float),
-            })
-        );
+        assert_eq!(*ret, Some(TypeAnn::new("float".into())));
         let StmtKind::FnDecl { ret: bare_ret, .. } = &ast[1].kind else {
             panic!("expected fn");
         };
@@ -1350,13 +1334,7 @@ mod tests {
             panic!();
         };
         assert_eq!(*y_ty, None);
-        assert_eq!(
-            *z_ty,
-            Some(TypeAnn {
-                name: "banana".into(),
-                resolved: None,
-            })
-        );
+        assert_eq!(*z_ty, Some(TypeAnn::new("banana".into())));
     }
 
     #[test]

@@ -1007,6 +1007,11 @@ impl Compiler {
                 // nothing to evaluate, so there is no order to get wrong.
                 StmtKind::ClassDecl { name, fields } => {
                     let ctor = self.compile_class_constructor(name, fields);
+                    // The constructor's term is where the class is written.
+                    // Hoisting moves *when* it is emitted, never where it came
+                    // from — without this every `Point(...)` in a provenance
+                    // chain reads `[no location]`, or worse, line 1.
+                    self.source_map.add(ctor, stmt.span);
                     self.scope_bind(name.clone(), ctor);
                 }
                 StmtKind::FnDecl { name, .. } => {
@@ -1068,8 +1073,14 @@ pub fn collect_classes(
         let mut defs = Vec::new();
         for f in fields {
             if !seen.insert(f.name.as_str()) {
+                // The *second* `x`, not the class — a field-level mistake is
+                // reported at the field (see `ClassFieldDecl::span`).
                 err(
-                    stmt.span,
+                    if f.span.start.line > 0 {
+                        f.span
+                    } else {
+                        stmt.span
+                    },
                     format!("duplicate field `{}` in class `{}`", f.name, name),
                 );
                 continue;
@@ -1114,13 +1125,26 @@ pub fn collect_classes(
             continue;
         };
         let method = method_base_name(&stmt.kind);
-        // The receiver is whatever `recv.method(...)` dispatched on, so it is
+        // The receiver is the first parameter and the call site supplies it, so
+        // a method with no parameters can never be called: `c.f()` passes one
+        // argument to a function that takes none. Reject the declaration rather
+        // than let every call site report a baffling arity mismatch.
+        let Some(recv) = params.first() else {
+            err(
+                stmt.span,
+                format!(
+                    "method `{class}.{method}` declares no receiver parameter \
+                     (write `fn {class}.{method}(self: {class}, …)`)"
+                ),
+            );
+            continue;
+        };
+        // That receiver is whatever `recv.method(...)` dispatched on, so it is
         // always an instance of the class the method is declared on. An
         // annotation that such an instance cannot fill describes a call that
         // can never happen: the declaration is malformed, not merely suspect,
         // so this is fatal rather than one of the checker's warnings.
-        if let Some(recv) = params.first()
-            && let Some(declared) = resolve_ann(recv.ty.as_ref(), classes)
+        if let Some(declared) = resolve_ann(recv.ty.as_ref(), classes)
             && !crate::types::Type::Class(id).is_assignable_to(&declared)
         {
             err(

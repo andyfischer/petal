@@ -155,6 +155,55 @@ fn newline_does_not_separate_enum_variants() {
     );
 }
 
+/// A class body is a delimited, comma-separated construct like any other — it
+/// used to be the one exception, accepting a bare newline between fields.
+#[test]
+fn newline_does_not_separate_class_fields() {
+    let err = parse_err("class P\n  x: int\n  y: int\nend");
+    assert!(
+        err.contains("Expected ',' between class fields"),
+        "unexpected message: {err}"
+    );
+}
+
+#[test]
+fn juxtaposed_class_fields_are_an_error() {
+    let err = parse_err("class P\n  x: int y: int\nend");
+    assert!(
+        err.contains("Expected ',' between class fields"),
+        "unexpected message: {err}"
+    );
+}
+
+/// A stray comma where an element belongs names the construct instead of
+/// producing a bare "Unexpected token: Comma".
+#[test]
+fn a_comma_in_element_position_names_the_construct() {
+    for (src, what) in [
+        ("[,]", "a list element"),
+        ("[\n ,1]", "a list element"),
+        ("f(1,,2)", "an argument"),
+        ("{,}", "a record field"),
+    ] {
+        let err = parse_err(src);
+        assert!(
+            err.contains(&format!("Expected {what}, got ','")),
+            "{src:?}: unexpected message: {err}"
+        );
+    }
+}
+
+/// `[[1,2] [3,4]]` parses the second bracket as an *index*, so the failure
+/// surfaces inside it. Blaming the closing bracket points at the wrong place.
+#[test]
+fn a_missing_comma_between_lists_blames_the_index_not_the_bracket() {
+    let err = parse_err("print([[1,2] [3,4]])");
+    assert!(
+        err.contains("Expected ']' to close the index, got ','"),
+        "unexpected message: {err}"
+    );
+}
+
 // ---- Error position points at the element that needed a comma ----
 
 #[test]
@@ -203,6 +252,8 @@ fn trailing_comma_is_allowed_everywhere() {
     }
     parse("fn f(a, b,)\n  a\nend");
     parse("enum E\n  A,\n  B,\nend");
+    parse("class P\n  x: int,\n  y: int,\nend");
+    parse("class P\n  x: int, y: int\nend");
 }
 
 #[test]

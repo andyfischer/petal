@@ -200,8 +200,8 @@ end
 
 ### `class` (declaration)
 
-A named record type: fields with optional annotations, one per line (a comma
-between them is optional). The class name binds to a positional constructor and
+A named record type: comma-separated fields with optional annotations (the same
+[comma rule](commas.md) as every other list). The class name binds to a positional constructor and
 becomes a usable type name; `fn <Class>.<name>(receiver, …)` declares a method
 on it. `Rect` (fields `x`, `y`, `w`, `h`) is built in. See the
 [Language Guide](../language-guide.md#classes--methods).
@@ -213,8 +213,8 @@ is an error), and it is visible to other files only when `export`ed.
 
 ```petal
 class Point
-    x: int
-    y: int
+    x: int,
+    y: int,
 end
 
 fn Point.shifted(p: Point, dx: int, dy: int) -> Point

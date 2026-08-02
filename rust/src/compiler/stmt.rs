@@ -66,6 +66,12 @@ impl Compiler {
                 // names.
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
                 let bound = self.compile_fn_decl(name, &param_names, body);
+                // A declaration's term is where the declaration is written.
+                // Without this every `<function>` in a provenance chain reads
+                // `[no location]` — the one entry a reader most needs to find.
+                if let Some(tid) = bound {
+                    self.source_map.add(tid, stmt_span);
+                }
                 // A method also has to be *findable* by the receiver's class at
                 // a `r.center_x()` call site, where the name in scope is not
                 // consulted at all. Registration is a statement in the root
@@ -84,7 +90,8 @@ impl Compiler {
                 // parameters), and `prescan_declarations` already compiled and
                 // bound that constructor ahead of the file's first statement.
                 // A class declaration is hoisted, like the type name it
-                // introduces.
+                // introduces. The prescan records the constructor's span too,
+                // so a provenance chain still points at the `class` line.
             }
 
             StmtKind::EnumDecl { name: _, variants } => {
@@ -99,10 +106,12 @@ impl Compiler {
                             smallvec![],
                             Some(variant.name.clone()),
                         );
+                        self.source_map.add(tid, stmt_span);
                         self.scope_bind(variant.name.clone(), tid);
                     } else {
                         // Variant with fields — create a constructor function
                         let constructor_tid = self.compile_enum_constructor(variant);
+                        self.source_map.add(constructor_tid, stmt_span);
                         self.scope_bind(variant.name.clone(), constructor_tid);
                     }
                 }

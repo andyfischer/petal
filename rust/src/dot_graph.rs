@@ -7,6 +7,7 @@ use crate::program::{Program, TermOp};
 
 /// Generate a DOT-format graph representation of the program's dataflow.
 pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
+    let dispatch = program.dispatch_targets();
     let mut dot = String::new();
     writeln!(dot, "digraph dataflow {{").unwrap();
     writeln!(dot, "  rankdir=TB;").unwrap();
@@ -57,6 +58,26 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
                 continue;
             }
             writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap();
+        }
+
+        // Method-dispatch edges (function -> call site). Not an operand — a
+        // `MethodCall` finds its function by name at runtime — so it is drawn
+        // as a labelled may-edge rather than a plain value edge. Without it
+        // the graph has no path from `fn Point.dist2` to `p.dist2()` at all.
+        if let TermOp::MethodCall(name) = term.op
+            && let Some(targets) = dispatch.get(&name)
+        {
+            for &func in targets {
+                if hide_phantoms && is_phantom(program, program.get_term(func)) {
+                    continue;
+                }
+                writeln!(
+                    dot,
+                    "  t{} -> t{} [style=dashed, color=darkgreen, label=\"dispatch\"];",
+                    func.0, term.id.0
+                )
+                .unwrap();
+            }
         }
 
         // Control flow edges (term -> child blocks, dashed)

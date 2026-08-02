@@ -130,6 +130,17 @@ impl<'a> Vm<'a> {
     ///    as natives under their qualified names.
     /// 4. a **handle method**, for a handle receiver.
     /// 5. a **global native** with `recv` prepended — `[1,2,3].len()`.
+    ///
+    /// Step 5 is where a class instance can go wrong. `P(1).get()` is almost
+    /// always a call to a method that does not exist, but `get` is also a
+    /// global builtin, so the fallback used to run it and report the builtin's
+    /// own complaint (`get() expects 2 arguments`) — a message that never
+    /// mentions the class and is actively misleading during a live edit, where
+    /// deleting `fn P.get` makes the reload fail with the builtin's words. So
+    /// when the receiver is a class instance and the fallback *fails*, the
+    /// class-aware "No method 'get' on class P" is reported instead. The
+    /// fallback keeps working when it works: `p.str()` and `p.keys()` are
+    /// unchanged.
     pub(super) fn do_method_call(
         &mut self,
         fi: usize,
@@ -196,32 +207,38 @@ impl<'a> Vm<'a> {
             return Ok(());
         }
 
+        // The receiver's class, for the diagnostics below.
+        let class = match recv {
+            Value::Map(id) => self.heap.map_class_name(id).map(str::to_string),
+            _ => None,
+        };
+
         // 5) Native function with `recv` prepended.
         if let Some(nid) = self.native_fns.lookup_name(method_name) {
-            let v = self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
-            self.set(fi, dst, v);
-            Ok(())
+            match self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site) {
+                Ok(v) => {
+                    self.set(fi, dst, v);
+                    Ok(())
+                }
+                // A class instance that reaches the global-native fallback and
+                // fails there was asking for a method of its class, not for
+                // the builtin of the same name.
+                Err(e) => Err(match &class {
+                    Some(class) => no_method(method_name, &format!("class {class}")),
+                    None => e,
+                }),
+            }
         } else {
-            let hint = match method_name {
-                "toString" => Some("use str() or the str() method instead"),
-                "log" => Some("use print() instead of console.log()"),
-                "indexOf" => Some("use contains() to check membership"),
-                "concat" => Some("use the ++ operator to concatenate lists or strings"),
-                _ => None,
-            };
             // Name the *class* when the receiver has one: "no method 'nope' on
             // type record" is useless next to "on class Rect".
-            let what = match recv {
-                Value::Map(id) => match self.heap.map_class_name(id) {
-                    Some(class) => format!("class {class}"),
-                    None => "type record".to_string(),
+            let what = match &class {
+                Some(class) => format!("class {class}"),
+                None => match recv {
+                    Value::Map(_) => "type record".to_string(),
+                    _ => format!("type {}", recv.type_name()),
                 },
-                _ => format!("type {}", recv.type_name()),
             };
-            Err(match hint {
-                Some(hint) => format!("No method '{}' on {} — {}", method_name, what, hint),
-                None => format!("No method '{}' on {}", method_name, what),
-            })
+            Err(no_method(method_name, &what))
         }
     }
 
@@ -243,12 +260,21 @@ impl<'a> Vm<'a> {
         let func = &program.functions[fn_id.0 as usize];
         if args.len() != func.params.len() {
             let name = func.name.as_deref().unwrap_or("<anonymous>");
+            // A method's receiver is a parameter the *call site* supplies:
+            // `c.foo()` passes `c` even though the user wrote no arguments.
+            // Counting it would report `C.foo() expects 2 arguments, got 1` at
+            // a call that wrote none of either. Saturating because the count is
+            // only a message: the prescan rejects a receiverless method, but
+            // hand-written IR reaches here without passing through it.
+            let hidden = usize::from(crate::classes::split_qualified_method_name(name).is_some());
+            let want = func.params.len().saturating_sub(hidden);
+            let got = args.len().saturating_sub(hidden);
             return Err(format!(
-                "{}() expected {} argument{}, got {}",
+                "{}() expects {} argument{}, got {}",
                 name,
-                func.params.len(),
-                if func.params.len() == 1 { "" } else { "s" },
-                args.len()
+                want,
+                if want == 1 { "" } else { "s" },
+                got
             ));
         }
 
@@ -272,6 +298,23 @@ impl<'a> Vm<'a> {
         }
         self.stack.vm_frames.push(frame);
         Ok(())
+    }
+}
+
+/// "No method 'x' on class C" — the one wording for an unresolved method call,
+/// with the JS-habit hints attached. `what` is already spelled ("class Rect",
+/// "type record", "type list").
+fn no_method(method_name: &str, what: &str) -> String {
+    let hint = match method_name {
+        "toString" => Some("use str() or the str() method instead"),
+        "log" => Some("use print() instead of console.log()"),
+        "indexOf" => Some("use contains() to check membership"),
+        "concat" => Some("use the ++ operator to concatenate lists or strings"),
+        _ => None,
+    };
+    match hint {
+        Some(hint) => format!("No method '{method_name}' on {what} — {hint}"),
+        None => format!("No method '{method_name}' on {what}"),
     }
 }
 

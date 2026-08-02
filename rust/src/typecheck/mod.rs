@@ -277,8 +277,17 @@ impl<'a> Checker<'a> {
 
     /// Site 1: warn on a written-but-unrecognized type name. A class declared
     /// anywhere in the module counts as recognized, wherever it is written.
-    fn check_type_ann(&mut self, ann: &TypeAnn, span: SourceSpan) {
+    ///
+    /// The warning underlines the annotation itself — `nosuch` in
+    /// `fn f(a: nosuch)`, not the whole `fn … end`. `fallback` is used only for
+    /// a synthesized annotation that carries no span of its own.
+    fn check_type_ann(&mut self, ann: &TypeAnn, fallback: SourceSpan) {
         if self.resolve_ann(ann).is_none() {
+            let span = if ann.span.start.line > 0 {
+                ann.span
+            } else {
+                fallback
+            };
             self.warn(span, format!("unknown type name `{}`", ann.name));
         }
     }
@@ -1482,23 +1491,23 @@ mod tests {
 
     #[test]
     fn constructor_arity_is_checked() {
-        let w = warns("class P\n  x: int\n  y: int\nend\nprint(P(1))");
+        let w = warns("class P\n  x: int,\n  y: int,\nend\nprint(P(1))");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("`P`"), "{w:?}");
-        assert!(warns("class P\n  x: int\n  y: int\nend\nprint(P(1, 2))").is_empty());
+        assert!(warns("class P\n  x: int,\n  y: int,\nend\nprint(P(1, 2))").is_empty());
         assert!(warns("print(Rect(0, 0, 1, 1))").is_empty());
     }
 
     #[test]
     fn method_arity_is_checked() {
-        let src = "class P\n  x: int\n  y: int\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
+        let src = "class P\n  x: int,\n  y: int,\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
         let w = warns(&format!("{src}print(P(1, 2).shift())"));
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("shift"), "{w:?}");
         assert!(warns(&format!("{src}print(P(1, 2).shift(3))")).is_empty());
         // A method overloaded by arity accepts either.
         let two =
-            "class Q\n  x: int\nend\nfn Q.f(q: Q)\n  1\nend\nfn Q.f(q: Q, n: int)\n  n\nend\n";
+            "class Q\n  x: int,\nend\nfn Q.f(q: Q)\n  1\nend\nfn Q.f(q: Q, n: int)\n  n\nend\n";
         assert!(warns(&format!("{two}print(Q(1).f())\nprint(Q(1).f(2))")).is_empty());
     }
 

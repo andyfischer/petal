@@ -5,8 +5,8 @@
 // position and method dispatch.
 
 class Point
-  x: int
-  y: int
+  x: int,
+  y: int,
 end
 
 let p = Point(3, 4)

@@ -56,8 +56,8 @@ receiver is an ordinary first parameter and **counts toward the arity**:
 
 ```petal
 class Point
-  x: int
-  y: int
+  x: int,
+  y: int,
 end
 
 fn Point.shifted(p: Point, d: int)          // arity 2

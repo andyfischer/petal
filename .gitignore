@@ -26,3 +26,6 @@ apps/petal-diagram-canvas/dist/
 
 .vite
 CLAUDE.local.md
+
+# Agent worktrees (each is its own git repo)
+.claude/worktrees/

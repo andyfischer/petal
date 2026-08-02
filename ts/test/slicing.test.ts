@@ -172,3 +172,74 @@ describe("cells and dataflow slicing", () => {
     });
   });
 });
+
+
+// A user method is dispatched by name at runtime, so a `MethodCall` term has
+// no operand naming the function it calls. Without the dispatch edge, every
+// dataflow answer over class-using code silently omitted the code that
+// computes the value — the one thing a slice must never do.
+describe("method dispatch is a dataflow edge", () => {
+  const METHOD = [
+    "class Point",
+    "  x: int,",
+    "  y: int,",
+    "end",
+    "fn Point.dist2(p: Point) -> int",
+    "  p.x * p.x + p.y * p.y",
+    "end",
+    "let base = Point(3, 4)",
+    "let d = base.dist2()",
+    "print(d)",
+  ].join("\n");
+
+  // The same program written with a plain function, whose slice has always
+  // included the MakeClosure.
+  const PLAIN = METHOD.replace("fn Point.dist2(", "fn dist2(").replace(
+    "base.dist2()",
+    "dist2(base)"
+  );
+
+  /** Ops serialize as `"Copy"` or `{ MakeClosure: 1 }`; match either. */
+  const isOp = (op: any, name: string) =>
+    op === name || (op !== null && typeof op === "object" && name in op);
+
+  const closureNames = (slice: any[]) =>
+    slice.filter((t: any) => isOp(t.op, "MakeClosure")).map((t: any) => t.name);
+
+  it("puts the method's function term in the slice", () => {
+    const slice = showSliceJson(METHOD, ["d"]).slice;
+    const closure = slice.find((t: any) => t.name === "Point.dist2");
+    expect(closure, JSON.stringify(slice)).toBeTruthy();
+    expect(isOp(closure.op, "MakeClosure")).toBe(true);
+  });
+
+  it("agrees with the plain-function spelling of the same program", () => {
+    expect(closureNames(showSliceJson(METHOD, ["d"]).slice)).toEqual([
+      "Point",
+      "Point.dist2",
+    ]);
+    expect(closureNames(showSliceJson(PLAIN, ["d"]).slice)).toEqual([
+      "Point",
+      "dist2",
+    ]);
+  });
+
+  it("reaches the call site from the declaration, as a may-edge", () => {
+    const result = showDependentsJson(METHOD, "Point.dist2");
+    expect(result.dependents.some((t: any) => isOp(t.op, "MethodCall"))).toBe(true);
+    expect(result.edges.some((e: any) => e.kind === "dispatch")).toBe(true);
+  });
+
+  it("marks the dispatch edge as may in text mode", () => {
+    const text = dataflowText("show-dependents", METHOD, ["Point.dist2"]);
+    expect(text).toMatch(/~> t\d+ \(dispatch, may\)/);
+  });
+
+  it("gives the declarations a source position instead of [no location]", () => {
+    const text = dataflowText("explain", METHOD, ["d"]);
+    expect(text).toContain("t120 Point.dist2 [line 5, column 1]");
+    // …and the class constructor, which reported no location at all.
+    expect(text).toContain("t106 Point [line 1, column 1]");
+    expect(text).not.toContain("[no location]");
+  });
+});

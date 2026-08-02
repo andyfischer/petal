@@ -162,14 +162,15 @@ module.exports = grammar({
       optional(field('type', $.type_annotation)),
     ),
 
-    // `class Name` … `end`, one `field: type` per line. `class` is a
+    // `class Name` … `end`, comma-separated `field: type` declarations — the
+    // same comma rule as `enum` (docs/syntax/commas.md). `class` is a
     // *contextual* keyword in the real lexer (it stays usable as an identifier
     // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
     // can treat it as a literal.
     class_declaration: $ => seq(
       'class',
       field('name', $.identifier),
-      repeat(seq($.class_field, optional(','))),
+      commaSep($.class_field),
       'end',
     ),
 

@@ -1,11 +1,17 @@
 // Typed
-// Optional type annotations on let bindings, parameters, and return types.
+// Optional type annotations on bindings, parameters, and return types.
 // Types are checked at compile time (warnings only) and ignored at runtime —
 // run `petal check typed.ptl` to see any mismatches reported.
 
 // Annotated let bindings.
 let count: int = 3
 let name: string = "Petal"
+
+// `var` cells and `state` bindings take the same `: type` slot. There it does
+// real work: it types every read *and* constrains every write, wherever the
+// write is. Un-annotated, both read as `any` and are never checked.
+var total: float = 0.0
+state hits: int = 0
 
 // Parameter and return-type annotations. `str` is accepted for `string`.
 fn greet(who: string) -> string
@@ -21,7 +27,16 @@ fn scale(v, factor: float) -> float
   v * factor
 end
 
+// Lambda parameters annotate too. A lambda's `->` introduces its body, so a
+// lambda has no return-type annotation.
+let double = fn(n: int) -> n * 2
+
+set total = area(2.0)
+hits = count
+
 print(greet(name))
 print(count)
-print(area(2.0))
+print(total)
 print(scale(count, 1.5))
+print(double(count))
+print(hits)

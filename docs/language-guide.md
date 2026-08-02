@@ -136,11 +136,12 @@ Use `type(value)` to get the type name as a string at runtime.
 
 ## Type Annotations
 
-Petal is dynamically typed, but you can *optionally* annotate `let` bindings,
-function parameters, and function return types. Annotations are checked at
-compile time and are **advisory only**: a mismatch is a warning, never an error,
-and annotations have no effect at runtime. Run `petal check <file>` to see the
-warnings (see [CLI.md](CLI.md#check--validate-without-running)).
+Petal is dynamically typed, but you can *optionally* annotate every binding form
+(`let`, `var`, `state`), function and lambda parameters, and a named function's
+return type. Annotations are checked at compile time and are **advisory only**: a
+mismatch is a warning, never an error, and annotations have no effect at runtime.
+Run `petal check <file>` to see the warnings, or `petal check --strict` to make
+them fail the exit code (see [CLI.md](CLI.md#check--validate-without-running)).
 
 ```petal
 let count: int = 0
@@ -159,11 +160,41 @@ end
 fn scale(v, factor: float) -> float
   v * factor
 end
+
+let double = fn(n: int) -> n * 2  // lambda params take annotations too
 ```
 
+A lambda's `->` already introduces its body, so a lambda has **no** return-type
+annotation — write `fn(n: int) -> n * 2`, not `fn(n: int) -> int -> n * 2`.
+
+**Cells and reactive bindings.** `var` and `state` take the same `: type` slot,
+and it means more there than on a `let`:
+
+```petal
+var total: int = 0
+set total = "oops"        // warning: `total` declared `int` but assigned `string`
+
+state count: int = 0
+state var seen: list = []
+state(row.id) hovered: bool = false   // the annotation follows the name
+```
+
+A `var` is a heap cell and a `state` is a reactive binding, so their initializers
+say nothing about what a *later* read observes — a `set` or the next frame can
+replace the value from anywhere. Un-annotated, both read as `any`, and the
+checker stays quiet about them. An annotation is what makes them checkable: it
+types every read *and* constrains every write, wherever the write is.
+
 The type names are exactly the ones `type(value)` reports (plus `any`), written
-lowercase. They are recognized only in type position, so `int`, `float`, and
-`str` remain callable as the cast builtins everywhere else.
+lowercase: `any`, `nil`, `bool`, `int`, `float`, `string` (alias `str`), `list`,
+`record`, `function`, `enum`, `vec2`, `f64_array`, `element`, `symbol`, `dual`,
+`handle`, `pending`. They are recognized only in type position, so `int`,
+`float`, and `str` remain callable as the cast builtins everywhere else.
+
+A type is a single bare name. There are no parameterized types (`list<int>`),
+arrow types, structural record types, or user-defined aliases — `list` and
+`record` are opaque, which is why a write through a field or index
+(`set r.a = …`, `xs[0] = …`) is never checked against an element type.
 
 **Assignability.** An `int` may be used where a `float` is expected (the same
 promotion arithmetic already does), but the reverse is not allowed — there is no
@@ -176,8 +207,13 @@ let x: float = 5          // ok — int promotes to float
 ```
 
 `any` on either side of a check is always compatible, so a value flowing in from
-un-annotated (dynamic) code is trusted. Unrecognized type names (e.g. a typo)
-are reported as warnings too.
+un-annotated (dynamic) code is trusted. Unrecognized type names are kept as
+written and reported too — `let x: banana = 5` warns `unknown type name
+\`banana\`` rather than failing to compile.
+
+Inference is deliberately shallow and local (literals and the signatures of
+called functions); anything else infers `any` and so reports nothing. The pass
+prefers missing a mismatch to inventing one.
 
 ## Arithmetic
 

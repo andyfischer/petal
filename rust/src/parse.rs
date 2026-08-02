@@ -348,6 +348,8 @@ impl Parser {
         };
 
         let name = self.expect_ident()?;
+        // `state x: int = …` takes the same annotation slot `let`/`var` do.
+        let ty = self.parse_type_annotation()?;
         self.expect_initializer(if is_var { "state var" } else { "state" }, &name)?;
         let init = self.parse_expr()?;
         let id = self.next_state_id;
@@ -356,6 +358,7 @@ impl Parser {
         let mut stmt = self.mk_stmt(
             StmtKind::State {
                 name,
+                ty,
                 init,
                 id,
                 key,
@@ -705,12 +708,31 @@ impl Parser {
     /// docs/dev/type-declarations-plan.md §2 grammar).
     fn expect_type_name(&mut self) -> Result<String, String> {
         let pos = self.pos;
-        match self.advance() {
-            Token::Ident(name) => Ok(name),
-            Token::Nil => Ok("nil".to_string()),
-            Token::Enum => Ok("enum".to_string()),
-            other => Err(self.error_at(pos, format!("Expected type name, got {:?}", other))),
+        let name = match self.advance() {
+            Token::Ident(name) => name,
+            Token::Nil => "nil".to_string(),
+            Token::Enum => "enum".to_string(),
+            other => {
+                return Err(self.error_at(pos, format!("Expected type name, got {:?}", other)));
+            }
+        };
+        // A type is a single bare name; `list<int>` and friends are not a thing
+        // (type-declarations-plan.md §1). Nothing valid follows a type name with
+        // `<`, so claim the token and say what is actually wrong — otherwise the
+        // mistake surfaces as whatever the *next* construct complains about,
+        // which differs by position (a missing initializer for `let`/`state`, a
+        // missing comma in a param list, and an unclosed JSX element for a
+        // return type, since `<int>` lexes as a tag).
+        if matches!(self.peek(), Token::Lt | Token::JsxOpenStart) {
+            return Err(self.error_at(
+                self.pos,
+                format!(
+                    "parameterized types are not supported; write `{name}` on its own \
+                     (see docs/language-guide.md#type-annotations)"
+                ),
+            ));
         }
+        Ok(name)
     }
 
     // ---- Expression Parsing (Pratt parser) ----

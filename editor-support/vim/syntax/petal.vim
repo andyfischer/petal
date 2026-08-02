@@ -30,6 +30,13 @@ syn keyword petalConstant    nil
 syn match petalFunction "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 syn match petalFunction "\<enum\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 
+" ---- Type annotations ----
+" `: type` on a let/var/state binding or a parameter, `-> type` on a named fn.
+" Only the known type vocabulary is highlighted, and only in type position, so
+" record keys (`{a: 1}`) and cast calls (`fn(x) -> int(x)`) are left alone.
+" `nil` and `enum` stay Constant/Keyword — syn keyword outranks syn match.
+syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|string\|str\|list\|record\|function\|enum\|vec2\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
+
 " ---- Numbers ----
 syn match petalFloat  "\<\d\+\.\d\+\>"
 syn match petalNumber "\<\d\+\>"
@@ -60,6 +67,7 @@ hi def link petalConditional Conditional
 hi def link petalBoolean     Boolean
 hi def link petalConstant    Constant
 hi def link petalFunction    Function
+hi def link petalType        Type
 hi def link petalFloat       Float
 hi def link petalNumber      Number
 hi def link petalColor       Constant

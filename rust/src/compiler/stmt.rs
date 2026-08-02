@@ -113,6 +113,9 @@ impl Compiler {
 
             StmtKind::State {
                 name,
+                // Annotations are compile-time only; codegen drops them, as it
+                // does for `let`/`fn`.
+                ty: _,
                 init,
                 id: _,
                 key,

@@ -54,7 +54,8 @@
 
 ; ---- Parameters & record keys ----
 
-(parameter_list (identifier) @variable.parameter)
+(parameter name: (identifier) @variable.parameter)
+(type_name) @type
 (record_field key: (identifier) @property)
 (record_pattern_field key: (identifier) @property)
 (field_access field: (identifier) @property)

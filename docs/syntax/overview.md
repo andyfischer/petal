@@ -339,22 +339,37 @@ expression; text between tags is a string child; `<Tag />` self-closes.
 
 ## Types (optional annotations)
 
-Type annotations are **optional** and currently **advisory** (they drive
-warnings, not runtime casts). A `:` annotates a `let` binding or a parameter; an
-`->` annotates a function's return:
+Type annotations are **optional** and **advisory** (they drive warnings, not
+runtime casts). A `:` annotates a binding — `let`, `var`, or `state` — or a
+parameter; an `->` annotates a *named* function's return type:
 
 ```petal
 let n: int = 0
+var total: float = 0.0
+state count: int = 0
+state(id) var seen: list = []      // the annotation follows the name, before `=`
+
 fn scale(v: float, k: float) -> float
     v * k
 end
+
+let double = fn(n: int) -> n * 2   // lambda params, but no lambda return type
 ```
+
+A lambda's `->` already introduces its body, so lambdas take parameter
+annotations only.
 
 Recognised type names: `int`, `float`, `bool`, `string` (alias `str`), `list`,
 `record`, `function`, `enum`, `nil`, `any`, plus host/runtime types such as
-`vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`. Unknown
-names are ignored rather than rejected. At runtime, `type(value)` returns a
-value's type name as a string.
+`vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`. A type is
+a single bare name — there are no parameterized (`list<int>`), arrow, or
+structural forms. An unknown name is kept, not rejected, and reported as an
+`unknown type name` warning. Type names are **contextual**, not reserved, so
+`int` / `float` / `str` remain callable as the cast builtins everywhere else. At
+runtime, `type(value)` returns a value's type name as a string.
+
+See the [Language Guide](../language-guide.md#type-annotations) for
+assignability rules and `petal check`.
 
 ## See also
 

@@ -11,7 +11,7 @@ end
 (source_file
   (function_declaration
     name: (identifier)
-    parameters: (parameter_list parameter: (identifier))
+    parameters: (parameter_list (parameter name: (identifier)))
     body: (block
       (binary_expression
         left: (identifier)
@@ -55,7 +55,7 @@ end
 (source_file
   (enum_declaration
     name: (identifier)
-    (enum_variant name: (identifier) fields: (parameter_list parameter: (identifier)))
+    (enum_variant name: (identifier) fields: (parameter_list (parameter name: (identifier))))
     (enum_variant name: (identifier)))
   (match_expression
     subject: (identifier)
@@ -176,3 +176,60 @@ end
     name: (identifier)
     (enum_variant name: (identifier))
     (enum_variant name: (identifier))))
+
+================================================================================
+Type annotations
+================================================================================
+
+let x: int = 1
+var y: float = 2.0
+state n: int = 0
+state var s: str = "a"
+
+fn scale(v, factor: float) -> float
+  v * factor
+end
+
+let d = fn(n: int) -> n * 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (integer))
+  (let_declaration
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (float))
+  (state_declaration
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (integer))
+  (state_declaration
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (string (string_content)))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter name: (identifier))
+      (parameter
+        name: (identifier)
+        type: (type_annotation type: (type_name (identifier)))))
+    return_type: (return_type type: (type_name (identifier)))
+    body: (block
+      (binary_expression
+        left: (identifier)
+        right: (identifier))))
+  (let_declaration
+    name: (identifier)
+    value: (lambda
+      parameters: (parameter_list
+        (parameter
+          name: (identifier)
+          type: (type_annotation type: (type_name (identifier)))))
+      body: (binary_expression
+        left: (identifier)
+        right: (integer)))))

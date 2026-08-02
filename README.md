@@ -10,7 +10,7 @@ Petal is a programming language for creative coding.
  - **Speculative execution** - safely re-run a program in exploration modes. 
  - **Differentiable** - supports back-propogation, make program modifications based on observed outputs.
  - Supports programmatic modification of source code with **goal based** editing semantics. 
- - **Optional type declarations** - annotate `let` bindings, parameters, and return types where you want them; a shallow checker reports mismatches as warnings without ever blocking the dynamically-typed runtime.
+ - **Optional type declarations** - annotate any binding (`let`, `var`, `state`), function and lambda parameters, and return types where you want them; a shallow checker reports mismatches as warnings without ever blocking the dynamically-typed runtime.
  - **Mutation is opt-in and visible** - `let` bindings are dataflow edges; when you really need a mutable slot you declare it `var` and every write says `set`, so the places the dataflow story goes dark are the places you can see.
  - Comes with various other language features to help quick iteration. Hybrid functional/imperative design, immutable values.
 

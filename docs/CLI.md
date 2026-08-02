@@ -347,7 +347,7 @@ the common variants but are not exhaustive.
 
 | Variant | Shape |
 |---------|-------|
-| `Let` | `{"Let": {"name": string, "ty": TypeAnn \| null, "value": Expr}}` — `ty` is the optional declared type annotation |
+| `Let` | `{"Let": {"name": string, "ty": TypeAnn \| null, "value": Expr, "is_var": bool}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …` |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
 | `FnDecl` | `{"FnDecl": {"name": string, "params": Param[], "ret": TypeAnn \| null, "body": Stmt[]}}` — `ret` is the optional declared return-type annotation |
@@ -357,7 +357,7 @@ the common variants but are not exhaustive.
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
 | `Continue` | `"Continue"` |
-| `State` | `{"State": {"name": string, "init": Expr, "id": number, "key": Expr \| null}}` — `key` set when the source uses the `state(expr) name = init` per-iteration form |
+| `State` | `{"State": {"name": string, "ty": TypeAnn \| null, "init": Expr, "id": number, "key": Expr \| null, "is_var": bool}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
 
 **ExprKind** (expressions):
 
@@ -381,7 +381,7 @@ the common variants but are not exhaustive.
 
 **Param**: `{"name": string, "ty": TypeAnn | null}` — a function/lambda parameter with its optional declared type annotation.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Optional annotations are parsed and their raw names preserved, but not yet type-checked.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Annotations appear on `Let`, `State`, `Param`, and `FnDecl.ret`; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 

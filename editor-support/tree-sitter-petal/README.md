@@ -56,9 +56,14 @@ regenerated `src/`.
 - **Newlines are insignificant** (treated as whitespace, along with `;`). The
   real parser uses them as statement separators, but statement boundaries are
   recoverable from structure in practice. All non-aspirational `.ptl` files in
-  this repo parse without errors, except those using type annotations
-  (`let x: int = …`) or the `@` rebind operator, which this grammar does not
-  model yet.
+  this repo parse without errors, except those using the `@` rebind operator,
+  which this grammar does not model yet.
+- **Type annotations** (`let x: int = …`, `state n: int = 0`, `fn f(a: int) ->
+  int`) are modelled as `type_annotation` / `return_type` wrapping a
+  `type_name`. Type names are contextual identifiers, not a closed keyword set,
+  so an unrecognized name still parses — matching the real parser, where the
+  *checker* warns about it. Lambdas take parameter annotations but no return
+  annotation, since their `->` introduces the body.
 - **Commas are required** between the elements of every delimited list, matching
   the real parser (see `docs/syntax/commas.md`); a trailing comma before the
   closing delimiter is allowed. Because a comma always ends an element, `-` is

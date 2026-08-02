@@ -104,22 +104,26 @@ module.exports = grammar({
     // Mirroring that keeps the tree shapes identical. Those five forms — fn,
     // let, var, state, enum — are exactly what `export` may precede.
 
-    // `let x = v` and its mutable twin `var x = v`.
+    // `let x = v` and its mutable twin `var x = v`, each with an optional
+    // `: type` annotation.
     let_declaration: $ => seq(
       optional('export'),
       choice('let', 'var'),
       field('name', $.identifier),
+      optional(field('type', $.type_annotation)),
       '=',
       field('value', $._expression),
     ),
 
-    // `state name = init` or keyed `state(expr) name = init`.
+    // `state name = init` or keyed `state(expr) name = init`, with the same
+    // optional `: type` annotation `let`/`var` take.
     state_declaration: $ => seq(
       optional('export'),
       'state',
       optional(seq('(', field('key', $._expression), ')')),
       optional('var'),
       field('name', $.identifier),
+      optional(field('type', $.type_annotation)),
       '=',
       field('value', $._expression),
     ),
@@ -129,11 +133,30 @@ module.exports = grammar({
       'fn',
       field('name', $.identifier),
       field('parameters', $.parameter_list),
+      optional(field('return_type', $.return_type)),
       optional(field('body', $.block)),
       'end',
     ),
 
-    parameter_list: $ => seq('(', commaSep(field('parameter', $.identifier)), ')'),
+    // Optional static type declarations (docs/syntax/types.md). Type names are
+    // *contextual* — `int`/`float`/`str` stay callable builtins elsewhere — so
+    // a type is just an identifier here, plus the two vocabulary names that lex
+    // as keywords (`nil`, `enum`). Unrecognized names parse fine; the real
+    // checker warns about them.
+    type_annotation: $ => seq(':', field('type', $.type_name)),
+
+    // `-> t` on a *named* fn only. A lambda's `->` introduces its body, so
+    // lambdas take no return annotation (type-declarations-plan.md §2).
+    return_type: $ => seq('->', field('type', $.type_name)),
+
+    type_name: $ => choice($.identifier, 'nil', 'enum'),
+
+    parameter_list: $ => seq('(', commaSep($.parameter), ')'),
+
+    parameter: $ => seq(
+      field('name', $.identifier),
+      optional(field('type', $.type_annotation)),
+    ),
 
     enum_declaration: $ => seq(
       optional('export'),

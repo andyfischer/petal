@@ -162,7 +162,7 @@ describe("`var` cells and the type checker", () => {
     expect(out.warnings[0].message).toMatch(/`s` declared `string` but assigned `int`/);
   });
 
-  it("leaves `state var` unconstrained — `state` has no annotation slot", () => {
+  it("leaves an un-annotated `state var` unconstrained in both directions", () => {
     expect(checkJson('state var n = 0\nset n = "hi"\nprint(n)').warnings).toEqual([]);
     const read = 'state var n = 0\nset n = "hi"\nlet s: string = n\nprint(s)';
     expect(checkJson(read).warnings).toEqual([]);
@@ -182,6 +182,59 @@ describe("`var` cells and the type checker", () => {
     const { stdout, stderr } = runWithStderr('var n: int = 0\nset n = "hello"\nprint(n)');
     expect(stdout.trim()).toBe("hello");
     expect(stderr).toContain("warning:");
+    expect(stderr).toMatch(/declared `int`/);
+  });
+});
+
+// `state` annotations. A reactive binding has no useful inferred type — a
+// re-render or a `set` from anywhere can replace it — so the *annotation* is the
+// only thing that lets the checker say anything at all about a state name.
+describe("`state` annotations and the type checker", () => {
+  it("warns when the initializer conflicts with the declared type", () => {
+    const out = checkJson('state n: int = "hi"\nprint(n)');
+    expect(out.ok).toBe(true);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("type mismatch: `n` declared `int` but assigned `string`");
+    expect(out.warnings[0].line).toBe(1);
+  });
+
+  it("stays silent when the initializer matches (int promotes to float)", () => {
+    expect(checkJson("state n: int = 0\nprint(n)").warnings).toEqual([]);
+    expect(checkJson("state n: float = 0\nprint(n)").warnings).toEqual([]);
+    expect(checkJson('state var s: string = "a"\nprint(s)').warnings).toEqual([]);
+  });
+
+  it("warns on an unknown type name in a state annotation", () => {
+    const out = checkJson("state n: banana = 0\nprint(n)");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toBe("unknown type name `banana`");
+  });
+
+  it("checks a `set` against an annotated `state var`, wherever it is written", () => {
+    const out = checkJson('state var n: int = 0\nset n = "hi"\nprint(n)');
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`n` declared `int`/);
+    expect(out.warnings[0].line).toBe(2);
+    const closure = 'state var n: int = 0\nlet g = fn(b)\n  if b then set n = "s" end\nend\ng(true)';
+    expect(checkJson(closure).warnings).toHaveLength(1);
+  });
+
+  it("types an annotated state's reads", () => {
+    const out = checkJson("state n: int = 0\nlet s: string = n\nprint(s)");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`s` declared `string` but assigned `int`/);
+  });
+
+  it("checks a keyed state and still walks the key expression", () => {
+    expect(checkJson("state(1) n: int = 0\nprint(n)").warnings).toEqual([]);
+    const out = checkJson("fn g(s: string)\n  s\nend\nstate(g(1)) n: int = 0\nprint(n)");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/argument 1 to `g`/);
+  });
+
+  it("is warning-only: an annotated state still runs", () => {
+    const { stdout, stderr } = runWithStderr('state n: int = 0\nn = "hello"\nprint(n)');
+    expect(stdout.trim()).toBe("hello");
     expect(stderr).toMatch(/declared `int`/);
   });
 });

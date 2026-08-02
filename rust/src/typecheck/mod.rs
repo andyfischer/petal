@@ -367,17 +367,31 @@ impl<'a> Checker<'a> {
             }
             StmtKind::Break | StmtKind::Continue => {}
             StmtKind::State {
-                name, init, key, ..
+                name,
+                ty,
+                init,
+                key,
+                ..
             } => {
-                self.check_expr(init);
+                if let Some(ann) = ty {
+                    self.check_type_ann(ann, stmt.span);
+                }
+                self.slot = CastSlot::Delimited;
+                let inferred = self.check_expr(init);
                 if let Some(k) = key {
+                    self.slot = CastSlot::Delimited;
                     self.check_expr(k);
                 }
-                // Reactive binding: infer nothing (Any) and shadow any outer
-                // name. `state var` needs no separate rule — `state` has no
-                // annotation slot, so a cell that persists across frames is
-                // already the fully-unconstrained case a plain `state` is.
-                self.bind(name.clone(), None, Type::Any);
+                let declared = ty.as_ref().and_then(|t| t.resolved);
+                self.check_assignment(init.span, name, declared, inferred);
+                // A reactive binding infers *nothing* (`Any`), and shadows any
+                // outer name: the next frame re-runs the initializer against a
+                // persisted value, and a `set` on a `state var` can replace it
+                // from anywhere — so the initializer describes at most the first
+                // read. Only a written annotation constrains a state name, and
+                // it earns that by constraining every write to it, exactly as a
+                // `var` cell does (docs/dev/var-next-steps.md, Cells).
+                self.bind(name.clone(), declared, Type::Any);
             }
             StmtKind::Import(_) => {}
         }
@@ -927,10 +941,77 @@ mod tests {
     }
 
     #[test]
-    fn state_var_is_unconstrained_in_both_directions() {
-        // `state` has no annotation slot, so there is nothing to conflict with.
+    fn unannotated_state_var_is_unconstrained_in_both_directions() {
+        // Without an annotation there is nothing to conflict with: a reactive
+        // binding infers nothing, exactly like an un-annotated `var` cell.
         assert!(warns("state var n = 0\nset n = \"hi\"").is_empty());
         assert!(warns("state var n = 0\nset n = \"hi\"\nlet s: string = n").is_empty());
+        assert!(warns("state n = 0\nn = \"hi\"").is_empty());
+    }
+
+    // ── `state` annotations: `state n: int = 0` behaves like `var n: int = 0` ─
+    #[test]
+    fn state_annotation_matching_type_no_warning() {
+        assert!(warns("state n: int = 0").is_empty());
+        assert!(warns("state var n: float = 0.0").is_empty());
+        // int still promotes into a float slot.
+        assert!(warns("state n: float = 0").is_empty());
+    }
+
+    #[test]
+    fn state_initializer_conflict_warns() {
+        let w = warns("state n: int = \"hi\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("`n` declared `int`") && w[0].contains("string"),
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn state_unknown_type_name_warns() {
+        let w = warns("state n: banana = 0");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("banana"), "{w:?}");
+    }
+
+    #[test]
+    fn annotated_state_read_uses_its_declared_type() {
+        let w = warns("state n: int = 0\nlet s: string = n");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`s` declared `string`"), "{w:?}");
+    }
+
+    #[test]
+    fn annotated_state_var_constrains_every_set() {
+        // The point of a cell: the write is far from the declaration. An
+        // annotated `state var` earns its typed reads by checking every `set`.
+        let w = warns("state var n: int = 0\nset n = \"hi\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`n` declared `int`"), "{w:?}");
+        assert!(warns("state var n: int = 0\nset n = 5").is_empty());
+        let inner = warns(
+            "state var n: int = 0\nlet g = fn(b)\n  if b then set n = \"s\" end\nend\ng(true)",
+        );
+        assert_eq!(inner.len(), 1, "{inner:?}");
+    }
+
+    #[test]
+    fn annotated_state_with_an_explicit_key_is_checked() {
+        assert!(warns("state(1) n: int = 0").is_empty());
+        let w = warns("state(1) n: int = \"hi\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+        // The key expression is still walked for nested diagnostics.
+        let k = warns("fn g(s: string)\n  s\nend\nstate(g(1)) n: int = 0");
+        assert_eq!(k.len(), 1, "{k:?}");
+        assert!(k[0].contains("argument 1"), "{k:?}");
+    }
+
+    #[test]
+    fn annotated_state_reassignment_is_checked() {
+        let w = warns("state n: int = 0\nn = \"hi\"");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`n` declared `int`"), "{w:?}");
     }
 
     #[test]

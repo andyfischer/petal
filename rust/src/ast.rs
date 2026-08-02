@@ -266,6 +266,10 @@ pub enum StmtKind {
     Continue,
     State {
         name: String,
+        /// Optional `state x: int = …` annotation. A reactive binding has no
+        /// trustworthy inferred type (a later frame or `set` can replace it), so
+        /// this is the only thing that lets the checker constrain a state name.
+        ty: Option<TypeAnn>,
         init: Expr,
         id: usize,
         /// Optional explicit key expression for per-iteration state: `state(expr) name = init`

@@ -4,7 +4,7 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-26 (Chunks A–G shipped; `var`/`set` folded in) · Branch: `main`
+Last updated: 2026-08-02 (audit pass: `state` annotations, tree-sitter, docs) · Branch: `main`
 
 ---
 
@@ -34,8 +34,27 @@ Last updated: 2026-07-26 (Chunks A–G shipped; `var`/`set` folded in) · Branch
 | E3 — surface (run/check) | ✅ done | `a9bf3e3` | `Program.warnings`; `check`/`run` stderr carets + `check --json warnings[]` |
 | F — surface + MCP + strict | ✅ done | `fada42e`,`f638449` | run/check text+JSON+carets; `check --strict`; MCP CheckSnippet/TestSnippet warnings |
 | G — docs & examples | ✅ done | `4b3d9d7` | Language_Guide Types section, CLI/Builtins/goals reconcile, `examples/typed.ptl`, README |
+| H — `state` annotations | ✅ done | (audit) | `state x: t = …` in all three spellings; checked like a `var` cell |
+| I — editor support | ✅ done | (audit) | tree-sitter models `type_annotation`/`return_type`/`parameter`; vim `petalType` |
+| J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
+
+### Audit pass (2026-08-02)
+
+The feature was re-verified end-to-end against the real binary. Everything the
+board claimed for A–G held: `fn add(a: int, b: int) -> int`, `let x: int = 1`,
+`var x: float = 1.0` + `set`, lambda *parameter* annotations, unknown names
+preserved-and-warned, and warnings surfaced with correct carets through
+`petal check`, `petal run`, `check --json`, `check --strict`, and the MCP
+`CheckSnippet`/`TestSnippet` tools. Three gaps were found and closed (H/I/J
+above). Two apparent gaps were confirmed as *intended*, not bugs:
+
+- **No lambda return type.** `fn(n: int) -> int -> n * 2` is rejected. A
+  lambda's `->` introduces its body, so this needs two arrows (plan §2). Pinned
+  by `rust/tests/type_annotations.rs::lambdas_take_param_annotations_but_no_return_type`.
+- **No parameterized types.** A type is a single bare name; `list` and `record`
+  are opaque. Locked non-goal (plan §1) — what changed is only the *error*.
 
 > **Ordering note:** the unknown-type-name decision (Chunk E spec) was resolved by
 > *preserving the raw name* — landed as its own commit (E1) ahead of D, since it
@@ -66,9 +85,10 @@ The runtime is untouched — annotations are stripped to names for codegen.
   annotation: the raw name plus its resolution (`resolved: None` = unrecognized
   name, preserved for diagnostics, not dropped). `TypeAnn::new(name)` builds it.
 - `pub struct Param { pub name: String, pub ty: Option<TypeAnn> }`
-- `StmtKind::Let { name, ty: Option<TypeAnn>, value }`
+- `StmtKind::Let { name, ty: Option<TypeAnn>, value, is_var }`
+- `StmtKind::State { name, ty: Option<TypeAnn>, init, id, key, is_var }`
 - `StmtKind::FnDecl { name, params: Vec<Param>, ret: Option<TypeAnn>, body }`
-- `ExprKind::Lambda { params: Vec<Param>, body }` (no return type)
+- `ExprKind::Lambda { params: Vec<Param>, body }` (no return type — plan §2)
 - `EnumVariant.fields` stays `Vec<String>` (field types deferred).
 
 ### Parser / CST — `rust/src/parse.rs`, `cst/mod.rs`, `cst_project.rs`
@@ -159,9 +179,14 @@ binding's initializer describes every later read.
   "hi"` / `let s: string = n`), at all three read sites — binding, call argument,
   fn return — which is the one outcome the pass is built to avoid. An annotated
   `var` still types its reads, and earns that by constraining every `set`.
-- **`state var` needs no rule of its own.** `state` has no annotation slot, so a
-  `state` name was already bound `Any` in both directions. Giving `state` a
-  declared type is a syntax change, not a checker change.
+- **`state` now has an annotation slot** (audit chunk H), and it behaves exactly
+  like a `var` cell, for the same reason: a reactive binding's initializer
+  describes at most its *first* read — the next frame re-runs against a persisted
+  value, and a `set` on a `state var` can replace it from anywhere. So an
+  un-annotated `state` still binds `Any` in both directions, and an annotated one
+  types every read *and* checks every write, including the initializer, an `=`
+  reassignment, and a `set` from inside a closure under control flow. The key
+  expression of `state(k) n: t = …` is still walked for nested diagnostics.
 - **Field/index `set` targets are unchecked** — `set r.a = …` / `set xs[0] = …`
   walk their subexpressions (so nested mismatches still report) but the written
   value is not checked, because `record`/`list` are opaque: there is no field or
@@ -180,16 +205,20 @@ binding's initializer describes every later read.
 - **Structured warnings in `run --json`.** `run` prints warnings as stderr text
   only; a `warnings[]` channel on `run --json` (reusing `warnings_json`) would
   let `TestSnippet` return them as data, not just text.
-- **`return`-statement return checks.** The checker only compares a function's
-  *tail expression* to its declared `ret`; explicit `return e` mid-body isn't
-  checked yet.
 - **Parameterized / richer types** — `list<int>`, arrow types, structural
   records, user type aliases, deeper (non-local) inference. All explicitly
-  deferred by the plan.
+  deferred by the plan; writing one now gets a targeted parse error naming the
+  bare type instead of a misleading downstream one (audit chunk J).
 - **Per-file `// @strict` pragma** to opt individual files into error-level
   enforcement (plan §12 Q3).
 - **Enum variant field annotations** (`Circle(radius: float)`) — the shared
-  param parser makes this a cheap future add (plan §12 Q4).
+  param parser already *parses* these; `EnumVariant.fields` is `Vec<String>`, so
+  the types are dropped. Keeping them is the remaining work (plan §12 Q4).
+
+> `return`-statement checks are **done**, not pending: `check_return_type` is
+> called from both the body's tail expression and every explicit `return e`
+> (`typecheck::early_return_mismatch_warns` and friends). An earlier revision of
+> this list said otherwise.
 
 ---
 
@@ -197,14 +226,18 @@ binding's initializer describes every later read.
 
 ```bash
 # Rust: unit + CST/AST differential over the repo corpus
-cd rust && cargo test --lib            # expect: all pass (375 as of Chunk G)
+cd rust && cargo test --lib            # expect: all pass (587 as of the audit)
 cargo test --lib typecheck::           # checker unit tests
 cargo test --lib prescan_tests         # signature side-table tests
+cargo test --test type_annotations     # the annotation *grammar* (all binding forms)
 
 # TS integration (builds the binary via global-setup)
 cd ts && npx vitest run test/type-annotations.test.ts test/type-warnings.test.ts
-npx vitest run                         # full suite; expect no regressions (526)
-cd .. && npm run test-examples         # example goldens incl. typed.ptl (26)
+npx vitest run                         # full suite; expect no regressions
+cd .. && ./ts/bin/test-examples.ts     # example goldens incl. typed.ptl (27)
+
+# Editor support (the grammar must keep up with the parser)
+cd editor-support/tree-sitter-petal && npx tree-sitter generate && npx tree-sitter test
 
 # End-to-end spot checks
 B=rust/target/debug/petal
@@ -212,6 +245,9 @@ $B run examples/typed.ptl                            # runs clean, no warnings
 $B check --json -e 'let x: int = "hi"'               # {"ok":true,"warnings":[…]}
 $B check --strict -e 'let x: int = "hi"'; echo $?    # exit 1
 $B show-ast --json -e 'let x: banana = 5'            # ty: {name:"banana",resolved:null}
+$B check -e 'state var n: int = 0
+set n = "hi"'                                        # warns on the cell write
+$B check -e 'let xs: list<int> = [1]'                # "parameterized types are not supported"
 ```
 
 ---
@@ -227,6 +263,11 @@ $B show-ast --json -e 'let x: banana = 5'            # ty: {name:"banana",resolv
   callable builtins; only recognized in type position (after `:` / `->`).
 - **`parse_param_list` is shared** by fn/lambda/enum. Changing it ripples;
   enum keeps names only.
+- **A fifth place: the tree-sitter grammar.** `editor-support/tree-sitter-petal`
+  is the reference editor implementation and must model any new syntax, or `.ptl`
+  files using it stop highlighting. Edit `grammar.js`, re-run `tree-sitter
+  generate`, and commit the regenerated `src/`. `editor-support/vim/syntax` is a
+  stock-Vim mirror of the same thing.
 - **Unknown type names** are now preserved as `TypeAnn { name, resolved: None }`
   (Chunk E1) and warned on by the checker — no longer dropped.
 - **Serde:** AST types derive `Serialize` only (not `Deserialize`); `Type` must

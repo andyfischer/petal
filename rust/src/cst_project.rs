@@ -294,8 +294,17 @@ impl Projector {
             SyntaxKind::ContinueStmt => StmtKind::Continue,
             SyntaxKind::StateStmt => {
                 let name = self.only_ident(node)?;
-                let nodes = child_nodes(node);
-                // Two child nodes means an explicit key: `state(key) name = init`.
+                let ty = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
+                    .and_then(type_from_annotation_node);
+                // The annotation is not an expression node; what remains is the
+                // init, optionally preceded by an explicit key
+                // (`state(key) name: t = init`).
+                let nodes: Vec<SyntaxNode> = child_nodes(node)
+                    .into_iter()
+                    .filter(|n| n.kind() != SyntaxKind::TypeAnnotation)
+                    .collect();
                 let (key_node, init_node) = match nodes.len() {
                     1 => (None, &nodes[0]),
                     2 => (Some(&nodes[0]), &nodes[1]),
@@ -315,6 +324,7 @@ impl Projector {
                     .any(|t| matches!(t.token(), Some(Token::Var)));
                 StmtKind::State {
                     name,
+                    ty,
                     init,
                     id,
                     key,
@@ -1192,6 +1202,37 @@ mod tests {
         assert_projects("fn area(r: float) -> float\n  r\nend\n");
         assert_projects("fn greet(n)\n  n\nend\n"); // no return type
         assert_projects("fn f() -> bool\n  true\nend\n");
+        // `state` bindings take the same `: type` slot as `let`/`var`, in all
+        // three spellings (plain, `var` cell, explicit key).
+        assert_projects("state n: int = 0\n");
+        assert_projects("state var n: float = 0.0\n");
+        assert_projects("state(1) n: string = \"a\"\n");
+        assert_projects("state n = 0\n"); // un-annotated
+        assert_projects("state s: banana = 0\n"); // unknown type name
+        assert_projects("export state n: int = 0\n");
+    }
+
+    #[test]
+    fn projects_state_type_annotations_onto_the_ast() {
+        let ast =
+            projected_ast("state a: int = 0\nstate var b: float = 1.0\nstate c = 2\n").unwrap();
+        let tys: Vec<Option<(String, Option<Type>)>> = ast
+            .iter()
+            .map(|s| {
+                let StmtKind::State { ref ty, .. } = s.kind else {
+                    panic!("expected state stmt");
+                };
+                ty.as_ref().map(|t| (t.name.clone(), t.resolved))
+            })
+            .collect();
+        assert_eq!(
+            tys,
+            vec![
+                Some(("int".to_string(), Some(Type::Int))),
+                Some(("float".to_string(), Some(Type::Float))),
+                None,
+            ]
+        );
     }
 
     #[test]

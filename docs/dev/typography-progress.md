@@ -4,7 +4,8 @@ Living status tracker for the typography work.
 **Design rationale lives in [`typography-plan.md`](typography-plan.md)** — read
 it first. This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-07-24 (Phase 1 protocol + hosts landed) · Branch: `main`
+Last updated: 2026-08-02 (prelude pixel-budget helpers + Garden migration) ·
+Branch: `main`
 
 ---
 
@@ -15,8 +16,8 @@ Last updated: 2026-07-24 (Phase 1 protocol + hosts landed) · Branch: `main`
 | 0 — metrics groundwork | ✅ done | keyed per-font tables + `text_width(s, size, font)`; web-canvas and Garden both measure real metrics; Garden honors `size` |
 | 1a — protocol + hosts | ✅ done | optional `font`/`weight`/`italic`/`spacing` on `Text`; style records on `draw_text`/`text_width`; SDL, web-canvas and Garden all honor them |
 | 1b — `petal-typography` crate | ⬜ not started | `FontBook`, system-font enumeration, `font_list` / `font_metrics` / `measure` natives |
-| 2 — the `typo` module | ⬜ not started | spans, rich lines, `fit`, flow layout, layout cache |
-| 3 — raster + migration | ⬜ not started | swash glyph cache; port retro.ptl / git_panel.ptl |
+| 2 — the `typo` module | ⬜ not started | spans, rich lines, `fit`, flow layout, layout cache — but see "pixel budgets in the prelude" below, which took the two cheapest items early |
+| 3 — raster + migration | ⬜ not started | swash glyph cache; port retro.ptl / git_panel.ptl (their *single-line* clipping is already ported) |
 
 ## Phase 0 — what's done
 
@@ -125,6 +126,46 @@ default font).
   alpha/radius/width fields). Fixing it is 7 patterns plus a `..`.
 - Weight is only really two-valued in practice today: SDL synthesizes at
   `>= 600`, the browser has whatever the family ships, Garden has one weight.
+
+## Pixel budgets in the prelude (out of phase order)
+
+Plan §1 item 1 — every app converting a pixel width into a character count via
+`cw = text_width("0000000000", FS) / 10` — was slated for the `typo` module's
+`fit`. It turned out to need no crate and no new protocol, only helpers that
+take a **pixel** budget and measure, so it landed in `ui.ptl` ahead of Phase 1b.
+Item 2 (centering) came along with it.
+
+- **`ellipsize(s, avail_px, size)`** — the measured counterpart to
+  `truncate_head`: trims until the run plus its "…" fits.
+- **`ellipsize_tail(s, avail_px, size)`** — the mirror, keeping the *tail* under
+  a leading "…". This is what a file path wants; head-keeping spends the box on
+  the directories every row shares. Both append/prepend the ellipsis **once, at
+  the end**, never measuring it back into the string being trimmed — that is a
+  fixed point that never returns, because `len`/`slice` are byte-indexed while
+  `text_width` counts characters. Trimming from the front is nonetheless safe:
+  `slice` snaps a *start* index up to a character boundary (an end index down),
+  so each pass drops a whole character and the loop strictly shrinks.
+- **`draw_text_center`** — the counterpart to `draw_text_right`.
+- **Record draw overloads carrying alpha** on outlines, circles and text, so a
+  translucent UI stops re-wrapping the flat arg-list forms.
+
+**Garden migrated** (separate repo, commit `63fb391`): `cw` is gone from
+`git_panel`, `db_view` and `garden_diff` entirely, and survives in `retro` only
+where the budget genuinely is in characters — `wrap` / `preview`, and the prompt
+text bound for a monospace `text_view` grid. Measuring instead of estimating
+surfaced three latent bugs in the process: a pane-local error string sized to
+the whole window, a focus underline measuring a *separately* truncated copy of
+the heading drawn above it, and a text caret placed at `len(s) * cw` — a byte
+count times an average width, which drifted on proportional text and jumped
+outright on non-ASCII.
+
+### What this does *not* cover
+
+Multi-line work is still character-budgeted: `wrap` and `preview` take character
+counts, so any app wrapping a paragraph still needs a `cw`. A pixel-measured
+word-wrap is the natural next helper, and is the part that genuinely wants the
+`typo` module's line breaker rather than another prelude loop. Plan §1 items 3–5
+(rich runs, flow layout, sub-line color) are untouched.
 
 ## Notes for the next phase
 

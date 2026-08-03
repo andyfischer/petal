@@ -13,6 +13,12 @@ engine crate that supplies metrics and (optionally) rasterization.
 
 ## 1. Where text rendering stands today
 
+> **Snapshot, 2026-07-24.** This section records the state that motivated the
+> plan and is deliberately *not* rewritten as work lands — the per-host table
+> and the hand-rolling list below both describe the starting point, and several
+> rows have since moved. [typography-progress.md](typography-progress.md) is the
+> living record of what shipped; annotations here point at the big ones.
+
 ### The contract (petal-ui, Layer 2)
 
 `DrawCommand::Text { text, x, y, size, r, g, b, a }` (`petal-ui/src/draw.rs:119`)
@@ -51,7 +57,13 @@ hand-roll, over and over:
 
 1. px↔char conversion — `cw = text_width("0000000000", FS) / 10` then
    `int(avail / cw)` (git_panel, db_view, retro, garden-diff).
+   → **addressed**: `ellipsize` / `ellipsize_tail` take a pixel budget and
+   measure. All four apps migrated; `cw` survives only where the budget really
+   is in characters (`wrap` / `preview`, and text bound for a monospace
+   `text_view` grid).
 2. Centering — `x + (w - text_width(s, size)) / 2` at every call site.
+   → **addressed** for the common case by `draw_text_center`. Call sites
+   wanting more than centering (a minimum-padding clamp, say) still wrap it.
 3. Multi-color lines — draw a run, `x += text_width(run)`, draw the next run
    (retro.ptl:230, git_panel.ptl:437). No rich-text primitive exists.
 4. Variable-height wrapped rows — parallel `row_lines`/`row_y`/`row_h` arrays
@@ -59,7 +71,9 @@ hand-roll, over and over:
 5. Line-granular color via the host `text_view` widget + parallel style array
    (git_panel.ptl:631) — anything finer than per-line is impossible today.
 
-These are exactly the operations petal-typography should own.
+Items 3–5 are exactly the operations petal-typography should own. 1 and 2 turned
+out to be cheap enough to fix in the prelude ahead of the crate, which is worth
+noting for the rest: not every line here needs a new library.
 
 ---
 

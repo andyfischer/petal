@@ -1210,6 +1210,53 @@ fn ellipsize_fits_the_pixel_budget_and_terminates() {
     });
 }
 
+#[test]
+fn ellipsize_tail_keeps_the_end_and_terminates() {
+    // The mirror of ellipsize: the "…" goes in front and the *tail* survives,
+    // which is what a file path wants. Trimming from the front is where slice
+    // snapping a start index **up** earns its keep — each pass drops a whole
+    // character, so the loop shrinks even through multi-byte text.
+    let src = "state short = \"\"\n\
+               state long = \"\"\n\
+               state empty = \"\"\n\
+               state uni = \"\"\n\
+               short = ellipsize_tail(\"ab\", 1000, 10)\n\
+               long = ellipsize_tail(\"src/panels/git_panel.ptl\", 60, 10)\n\
+               empty = ellipsize_tail(\"abcdefghijklmnop\", 0, 10)\n\
+               uni = ellipsize_tail(\"héllo wörld ünïcode\", 30, 10)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state_string("short").as_deref(),
+            Some("ab"),
+            "a string that already fits is returned untouched"
+        );
+        let long = ui.state_string("long").expect("long");
+        assert!(long.starts_with('…'), "clipped text is marked: {long:?}");
+        assert!(
+            long.len() < "src/panels/git_panel.ptl".len(),
+            "it actually shrank"
+        );
+        assert!(
+            "src/panels/git_panel.ptl".ends_with(long.trim_start_matches('…')),
+            "the tail is what survived, not the head: {long:?}"
+        );
+        assert_eq!(
+            ui.state_string("empty").as_deref(),
+            Some("…"),
+            "a zero budget trims to the bare ellipsis rather than looping"
+        );
+        // Trimming from the front must land on character boundaries: a start
+        // index inside "é" snaps up to the next whole character.
+        let uni = ui.state_string("uni").expect("uni");
+        assert!(uni.starts_with('…'));
+        assert!(
+            "héllo wörld ünïcode".ends_with(uni.trim_start_matches('…')),
+            "multi-byte text kept a whole-character tail: {uni:?}"
+        );
+    });
+}
+
 /// `rect()` builds the built-in `Rect` class, not a bare record: the geometry
 /// methods work on anything the prelude hands back, and `type()` says so. The
 /// record shape is unchanged, which is what keeps every hand-written

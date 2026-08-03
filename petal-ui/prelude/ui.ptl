@@ -321,6 +321,29 @@ export fn ellipsize(s, avail_px, size)
   out ++ "…"
 end
 
+// Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
+// the mirror of ellipsize, keeping the rightmost text instead of the leftmost.
+//
+// The pixel-measured counterpart to truncate_tail, and what a file path wants:
+// "…/panel/src/git_panel.ptl" says which file this is, while the head-keeping
+// ellipsize would spend the whole box on the directories it shares with every
+// other row. Returns `s` untouched when it already fits.
+//
+// The ellipsis is prepended once, at the end, and never measured back into the
+// string being trimmed — the same discipline ellipsize documents above, for the
+// same reason. Trimming from the front is safe where trimming a string that
+// already carries its ellipsis is not: slice snaps a *start* index **up** to a
+// character boundary (an end index down), so `slice(out, 1, len(out))` always
+// drops one whole character and the loop strictly shrinks toward "".
+export fn ellipsize_tail(s, avail_px, size)
+  if text_width(s, size) <= avail_px then return s end
+  let out = s
+  while len(out) > 0 && text_width("…" ++ out, size) > avail_px do
+    out = slice(out, 1, len(out))
+  end
+  "…" ++ out
+end
+
 // Join `parts` left to right with "   ·   " separators, keeping only the leading
 // run that fits `avail_px` (measured with text_width at font `size`): it stops
 // at the first part whose addition would overflow and drops that part and every

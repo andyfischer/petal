@@ -1371,3 +1371,184 @@ fn draw_overloads_still_accept_a_rect() {
         );
     });
 }
+
+// ── Context menu ────────────────────────────────────────────────────────────
+
+/// A row at (0,0)-(200,40) that opens a three-item menu (with a separator and
+/// one disabled entry) on right-click. `chose` records the last index taken and
+/// `took` the label, so a test can assert what the menu resolved to.
+const MENU_SRC: &str = "state menu = menu_state()\n\
+                        state chose = -1\n\
+                        state took = \"\"\n\
+                        state tag = \"\"\n\
+                        state clicks = 0\n\
+                        let r = {x: 0, y: 0, w: 200, h: 40}\n\
+                        if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
+                          clicks = clicks + 1\n\
+                        end\n\
+                        menu = menu_open_on_right_click(menu, r, \"row-7\")\n\
+                        let res = context_menu(menu, [menu_item(\"Only this commit\"), menu_sep(), menu_item(\"Revert\", false), menu_item(\"Copy SHA\")])\n\
+                        menu = res.menu\n\
+                        if res.index >= 0 then\n\
+                          chose = res.index\n\
+                          took = res.label\n\
+                          tag = res.tag\n\
+                        end";
+
+/// Right-click opens the menu at the pointer; a left click on a row resolves to
+/// that row's index, label and the tag the menu was opened with, and closes.
+#[test]
+fn context_menu_opens_on_right_click_and_resolves_a_choice() {
+    run_headless(MENU_SRC, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state().get("menu").unwrap()["open"], false);
+
+        // Right press inside the row opens it at (30, 20).
+        ui.mouse_move(30, 20);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+        let menu = ui.state().get("menu").unwrap().clone();
+        assert_eq!(menu["open"], true, "right-click opens the menu");
+        assert_eq!(menu["x"], 30);
+        assert_eq!(menu["y"], 20);
+
+        // Rows start 6px below the menu top and are 24px tall, so item 0 spans
+        // y 26..50 and the first click lands squarely in it.
+        ui.click(60, 35).unwrap();
+        assert_eq!(ui.state_int("chose"), Some(0));
+        assert_eq!(ui.state_string("took").as_deref(), Some("Only this commit"));
+        assert_eq!(
+            ui.state_string("tag").as_deref(),
+            Some("row-7"),
+            "the choice carries the tag the menu was opened with"
+        );
+        assert_eq!(
+            ui.state().get("menu").unwrap()["open"],
+            false,
+            "choosing closes the menu"
+        );
+        assert_eq!(
+            ui.state_int("clicks"),
+            Some(0),
+            "the click that picked a menu item must not also reach the row under it"
+        );
+    });
+}
+
+/// A click outside dismisses without choosing, and — the point of
+/// `menu_blocking` — the underlying widget does not act on that press either.
+#[test]
+fn context_menu_dismisses_without_choosing() {
+    run_headless(MENU_SRC, |ui| {
+        ui.frame().unwrap();
+        ui.mouse_move(30, 20);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+
+        // Far outside the menu, but still inside the row that opened it.
+        ui.click(180, 10).unwrap();
+        assert_eq!(ui.state_int("chose"), Some(-1), "nothing was chosen");
+        assert_eq!(ui.state().get("menu").unwrap()["open"], false);
+        assert_eq!(
+            ui.state_int("clicks"),
+            Some(0),
+            "the dismissing click is swallowed, not passed through to the row"
+        );
+
+        // With the menu closed, the row takes clicks normally again.
+        ui.click(180, 10).unwrap();
+        assert_eq!(ui.state_int("clicks"), Some(1));
+    });
+}
+
+/// Escape closes it, and a disabled row cannot be picked by pointer or by
+/// keyboard — Down skips straight past it to the next choosable entry.
+#[test]
+fn context_menu_skips_disabled_rows_and_closes_on_escape() {
+    run_headless(MENU_SRC, |ui| {
+        ui.frame().unwrap();
+        ui.mouse_move(30, 20);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+
+        // Item 2 ("Revert") is disabled: item 0 spans 26..50, the separator
+        // 50..59, item 2 spans 59..83. Clicking it chooses nothing but still
+        // dismisses, like any other click that hits no row.
+        ui.click(60, 70).unwrap();
+        assert_eq!(ui.state_int("chose"), Some(-1));
+        assert_eq!(ui.state().get("menu").unwrap()["open"], false);
+
+        // Reopen and drive it from the keyboard: Down lands on item 0, a second
+        // Down skips the separator *and* the disabled row to reach item 3.
+        ui.mouse_move(30, 20);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        // Park the pointer off the menu so hover doesn't override the keyboard.
+        ui.mouse_move(400, 400);
+        ui.frame().unwrap();
+        ui.key("down").unwrap();
+        assert_eq!(ui.state().get("menu").unwrap()["hover"], 0);
+        ui.key("down").unwrap();
+        assert_eq!(
+            ui.state().get("menu").unwrap()["hover"],
+            3,
+            "Down skips the separator and the disabled row"
+        );
+        ui.key("return").unwrap();
+        assert_eq!(ui.state_string("took").as_deref(), Some("Copy SHA"));
+
+        // Escape dismisses an open menu without choosing.
+        ui.mouse_move(30, 20);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+        assert_eq!(ui.state().get("menu").unwrap()["open"], true);
+        ui.key("escape").unwrap();
+        assert_eq!(ui.state().get("menu").unwrap()["open"], false);
+    });
+}
+
+/// A menu opened near an edge flips to the other side of the pointer rather
+/// than being clipped: the harness screen is 800×600, so a right-click at the
+/// bottom-right corner must place the menu above and left of it.
+#[test]
+fn context_menu_flips_away_from_the_screen_edges() {
+    // A trigger rect covering the whole 800x600 screen, so the corner press
+    // that would clip a naively-placed menu still opens one.
+    let src = MENU_SRC.replace(
+        "let r = {x: 0, y: 0, w: 200, h: 40}",
+        "let r = {x: 0, y: 0, w: 800, h: 600}",
+    );
+    run_headless(&src, |ui| {
+        ui.frame().unwrap();
+        ui.mouse_move(790, 590);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        let cmds = ui.frame().unwrap().to_vec();
+        // The menu's own frame is the last opaque rect drawn; every one of its
+        // rows must sit inside the screen.
+        let rects: Vec<(i32, i32, u32, u32)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Rect { x, y, w, h, .. } => Some((*x, *y, *w, *h)),
+                _ => None,
+            })
+            .collect();
+        assert!(!rects.is_empty(), "an open menu draws something");
+        for (x, y, w, h) in rects {
+            assert!(
+                x >= 0 && y >= 0 && x + w as i32 <= 800 && y + h as i32 <= 600,
+                "menu geometry {x},{y} {w}x{h} escapes the 800x600 screen"
+            );
+        }
+    });
+}

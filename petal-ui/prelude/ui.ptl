@@ -701,3 +701,243 @@ export fn text_field(fc, id, r, buf)
   _draw_text_field(r, text, has)
   {focus: f, text: text, submitted: submitted}
 end
+
+// ── Context menu (immediate-mode dropdown) ─────────────────────────────────
+// A right-click menu. State is an explicit record so several menus coexist and
+// it survives hot reload:
+//
+//   state menu = menu_state()
+//   ...
+//   // near the TOP of the frame, before the app's own click handling:
+//   if !menu_blocking(menu) then ...normal left-click handling... end
+//   menu = menu_open_on_right_click(menu, row_rect, "row:{i}")
+//   ...
+//   // near the BOTTOM, so it draws over everything else:
+//   let picked = context_menu(menu, [menu_item("Copy"), menu_sep(),
+//                                    menu_item("Delete", false)])
+//   menu = picked.menu
+//   if picked.index >= 0 then ...act on picked.label / picked.tag... end
+//
+// The two-call shape (`menu_blocking` early, `context_menu` late) is what an
+// immediate-mode pass can do about z-order: the menu must be *drawn* last to
+// sit on top, but its click must be claimed *before* the widgets underneath
+// react to the same press. So while a menu is open the rest of the UI simply
+// stands down for the frame, and the menu resolves the click at the end.
+//
+// `tag` is any value you want handed back with the choice — the row the menu
+// was opened on, typically. It is never interpreted here.
+
+// One menu row. `enabled: false` draws dim and cannot be chosen.
+export fn menu_item(label)
+  menu_item(label, true)
+end
+
+export fn menu_item(label, enabled)
+  {label: label, enabled: enabled, sep: false}
+end
+
+// A divider rule between groups of items. Never hoverable or choosable.
+export fn menu_sep()
+  {label: "", enabled: false, sep: true}
+end
+
+// `at` is the frame the menu opened on. The press that opens a menu is still
+// a live `mouse_pressed` edge when `context_menu` runs later in the *same*
+// frame, and a menu that resolved that edge would dismiss itself the instant it
+// appeared. So the opening frame is recorded and skipped when input is
+// resolved — the menu starts listening on the next one.
+export fn menu_state()
+  {open: false, x: 0, y: 0, tag: "", hover: -1, at: -1}
+end
+
+// True while the menu owns the pointer. Guard the rest of the panel's own
+// click handling with this so one press is not acted on twice.
+export fn menu_blocking(m)
+  m.open
+end
+
+export fn menu_close(m)
+  {open: false, x: 0, y: 0, tag: m.tag, hover: -1, at: -1}
+end
+
+// Open (or move) the menu to `(x, y)`, remembering `tag`. Hover starts on
+// nothing, so a menu opened under the pointer highlights only once it moves.
+export fn menu_show(m, x, y, tag)
+  {open: true, x: x, y: y, tag: tag, hover: -1, at: frame_count()}
+end
+
+// The common trigger: a right press inside `r` opens the menu at the pointer.
+// Any other frame leaves the state alone, so this is safe to call every frame
+// for every row.
+export fn menu_open_on_right_click(m, r, tag)
+  if mouse_pressed(1) && point_in(mouse_x(), mouse_y(), r) then
+    menu_show(m, mouse_x(), mouse_y(), tag)
+  else
+    m
+  end
+end
+
+let _MENU_ROW_H = 24
+let _MENU_SEP_H = 9
+let _MENU_PAD = 6
+let _MENU_SIZE = 14
+
+fn _menu_row_h(item)
+  if item.sep then _MENU_SEP_H else _MENU_ROW_H end
+end
+
+// Total height of `items` plus the frame's own vertical padding.
+fn _menu_h(items)
+  let h = _MENU_PAD * 2
+  for it in items do
+    h = h + _menu_row_h(it)
+  end
+  h
+end
+
+// Width that fits the widest label, clamped so a very long one does not run
+// off the screen and a very short menu is still comfortably clickable.
+fn _menu_w(items)
+  let widest = 0
+  for it in items do
+    let tw = text_width(it.label, _MENU_SIZE)
+    if !it.sep && tw > widest then
+      widest = tw
+    end
+  end
+  // `_clamp`, not the `clamp` builtin: that one yields a float, and this feeds
+  // pixel geometry that has to stay integral.
+  _clamp(widest + 28, 120, max(140, screen_width() - 24))
+end
+
+// Where the menu actually lands: it prefers down-and-right of the click, and
+// flips to the other side of the pointer when that would put it off-screen —
+// so a right-click near the bottom edge opens upward instead of being clipped.
+fn _menu_rect(m, items)
+  let w = _menu_w(items)
+  let h = _menu_h(items)
+  let x = m.x
+  let y = m.y
+  if x + w > screen_width() then
+    x = max(0, m.x - w)
+  end
+  if y + h > screen_height() then
+    y = max(0, m.y - h)
+  end
+  {x: x, y: y, w: w, h: h}
+end
+
+// Index of the choosable item at pane-local `(px, py)`, or -1. Separators and
+// disabled rows are transparent to this, so neither can be picked.
+fn _menu_hit(r, items, px, py)
+  let hit = -1
+  let y = r.y + _MENU_PAD
+  for i in range(0, len(items)) do
+    let it = items[i]
+    let rh = _menu_row_h(it)
+    if !it.sep && it.enabled && px >= r.x && px < r.x + r.w && py >= y && py < y + rh then
+      hit = i
+    end
+    y = y + rh
+  end
+  hit
+end
+
+// Step the keyboard highlight `from` by `step`, skipping separators and
+// disabled rows, and stopping at the ends rather than wrapping (a menu is
+// short enough that wrapping reads as a glitch). -1 means "nothing yet", so
+// the first Down lands on the first choosable row.
+fn _menu_step(items, from, step)
+  let i = from + step
+  if from < 0 && step < 0 then
+    i = len(items) - 1
+  end
+  let found = from
+  while i >= 0 && i < len(items) && found == from do
+    if !items[i].sep && items[i].enabled then
+      found = i
+    end
+    i = i + step
+  end
+  found
+end
+
+// Draw the menu and resolve this frame's input. Returns
+// {menu, index, label, tag}: `index` is -1 unless something was chosen, and
+// `tag` is whatever was passed to `menu_show` / `menu_open_on_right_click`.
+// A closed menu draws nothing and always returns index -1.
+export fn context_menu(m, items)
+  if !m.open || len(items) == 0 then
+    {menu: m, index: -1, label: "", tag: m.tag}
+  else
+    let r = _menu_rect(m, items)
+    let mx = mouse_x()
+    let my = mouse_y()
+    let inside = point_in(mx, my, r)
+    // The opening press is not the menu's to act on — see `menu_state`.
+    let live = m.at != frame_count()
+
+    // Pointer hover wins over the keyboard highlight the moment it is over a
+    // row — the two share one `hover`, so the menu never shows two of them.
+    let hover = m.hover
+    let over = _menu_hit(r, items, mx, my)
+    if inside && over >= 0 then
+      hover = over
+    end
+    if key_pressed("down") then
+      hover = _menu_step(items, hover, 1)
+    end
+    if key_pressed("up") then
+      hover = _menu_step(items, hover, -1)
+    end
+
+    // Resolve: a click on a choosable row takes it, Return takes the
+    // highlighted one, and anything else — a click outside, Escape, a second
+    // right-click — dismisses without choosing.
+    let chosen = -1
+    let close = false
+    if live then
+      if mouse_pressed(0) || mouse_pressed(1) then
+        if inside && over >= 0 then
+          chosen = over
+        end
+        close = true
+      end
+      if key_pressed("return") && hover >= 0 then
+        chosen = hover
+        close = true
+      end
+      if key_pressed("escape") then
+        close = true
+      end
+    end
+
+    // Drawn after the input so the highlight reflects this frame's pointer.
+    // A soft drop shadow lifts the menu off whatever it covers; without it a
+    // dark menu over a dark panel reads as part of the background.
+    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, #000000, 0.35)
+    draw_rect(r, theme.panel)
+    draw_rect_outline(r, theme.outline)
+    let y = r.y + _MENU_PAD
+    for i in range(0, len(items)) do
+      let it = items[i]
+      let rh = _menu_row_h(it)
+      if it.sep then
+        let sy = y + rh / 2
+        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, theme.outline)
+      else
+        let fg = if it.enabled then theme.text else theme.dim end
+        if i == hover then
+          draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, theme.selection)
+          fg = theme.text
+        end
+        draw_text(it.label, {x: r.x + 12, y: y + (rh - _MENU_SIZE) / 2}, _MENU_SIZE, fg)
+      end
+      y = y + rh
+    end
+
+    let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at} end
+    let label = if chosen >= 0 then items[chosen].label else "" end
+    {menu: next, index: chosen, label: label, tag: m.tag}
+  end
+end

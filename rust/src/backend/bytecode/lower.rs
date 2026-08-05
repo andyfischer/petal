@@ -784,7 +784,7 @@ impl<'p> FnLowerer<'p> {
                 to_next.push(jf);
             }
 
-            self.emit_arm(*body_block, dst)?;
+            self.emit_arm(*body_block, term.id, dst)?;
             to_end.push(self.emit_placeholder(Inst::Jump { to: 0 }));
         }
 
@@ -953,13 +953,13 @@ impl<'p> FnLowerer<'p> {
         let jpend = self.emit_placeholder(Inst::JumpIfPending { cond, to: 0 });
         let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
-        self.emit_arm(term.child_blocks[0], dst)?;
+        self.emit_arm(term.child_blocks[0], term.id, dst)?;
         let jend = self.emit_placeholder(Inst::Jump { to: 0 });
 
         let else_label = self.here();
         self.patch(jif, else_label);
         if let Some(&else_block) = term.child_blocks.get(1) {
-            self.emit_arm(else_block, dst)?;
+            self.emit_arm(else_block, term.id, dst)?;
         }
         // Both real arms jump over the pending arm to `end`.
         let jelse = self.emit_placeholder(Inst::Jump { to: 0 });
@@ -995,7 +995,7 @@ impl<'p> FnLowerer<'p> {
 
         let rhs_label = self.here();
         self.patch(to_rhs, rhs_label);
-        self.emit_arm(term.child_blocks[0], dst)?;
+        self.emit_arm(term.child_blocks[0], term.id, dst)?;
 
         let end_label = self.here();
         self.patch(jend, end_label);
@@ -1016,7 +1016,7 @@ impl<'p> FnLowerer<'p> {
         let left = self.flat(term.inputs[0])?;
         self.push(Inst::Move { dst, src: left });
         let to_end = self.emit_placeholder(Inst::JumpIfPresent { cond: dst, to: 0 });
-        self.emit_arm(term.child_blocks[0], dst)?;
+        self.emit_arm(term.child_blocks[0], term.id, dst)?;
         let end_label = self.here();
         self.patch(to_end, end_label);
         Ok(())
@@ -1024,10 +1024,17 @@ impl<'p> FnLowerer<'p> {
 
     /// Emit a child region and join its result: the block's instructions, its
     /// phi carry-outs, then `dst = <block result>` (the control term's value).
-    fn emit_arm(&mut self, block: BlockId, dst: Reg) -> Result<(), String> {
+    fn emit_arm(&mut self, block: BlockId, owner: TermId, dst: Reg) -> Result<(), String> {
         self.emit_block(block)?;
         self.emit_phi_outs(block)?;
         if let Some(src) = self.block_result_reg(block)? {
+            // Recursion into the arm moved cur_origin; restore it so the join
+            // is attributed to the control term whose register it writes. That
+            // term is the one carrying the source name (`let x = if … end`), so
+            // anything reading values back per-term — observation, and `explain`
+            // — would otherwise credit the arm's last expression instead, and
+            // report the value `x` held *before* the arm ran.
+            self.cur_origin = Some(owner);
             self.push(Inst::Move { dst, src });
         }
         Ok(())
@@ -1048,6 +1055,11 @@ impl<'p> FnLowerer<'p> {
         for (src, dest) in outs {
             let dst = self.flat(dest)?;
             let src = self.flat(src)?;
+            // The carry-out *is* the phi's write, so attribute it to the phi
+            // rather than to whatever the arm happened to lower last: the phi
+            // is the term the rebound name resolves to, and a per-term reader
+            // asking "what is `total` now" must land on this instruction.
+            self.cur_origin = Some(dest);
             self.push(Inst::Move { dst, src });
         }
         Ok(())

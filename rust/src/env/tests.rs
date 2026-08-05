@@ -2708,6 +2708,60 @@ mod observation_tests {
         );
     }
 
+    /// A binding whose value arrives from a *child block* — every value-position
+    /// `if`, `&&`, `||` and `??` — must report the value the program actually
+    /// computed.
+    ///
+    /// These lower to a join `Move` into the control term's register, and that
+    /// move used to inherit the arm's origin rather than the control term's. So
+    /// the named term was credited with whatever it held *before* the arm ran
+    /// (`nil` for `??`/`if`) or never recorded at all (the `&&`/`||` rhs paths) —
+    /// an observation that silently disagreed with the program's own output.
+    /// Every value here is asserted against what the expression evaluates to.
+    #[test]
+    fn values_joined_from_a_child_block_are_observed() {
+        let map = observe(
+            "let t = true\n\
+             let f = false\n\
+             let or_taken = f || \"right\"\n\
+             let or_short = t || \"skipped\"\n\
+             let and_taken = t && \"right\"\n\
+             let and_short = f && \"skipped\"\n\
+             let coalesced = nil ?? \"fallback\"\n\
+             let present = \"kept\" ?? \"unused\"\n\
+             let if_val = if t then \"then\" else \"else\" end\n",
+        );
+        // The short-circuit paths always worked; the joined ones did not.
+        assert_eq!(map.get("or_taken"), Some(&serde_json::json!("right")));
+        assert_eq!(map.get("or_short"), Some(&serde_json::json!(true)));
+        assert_eq!(map.get("and_taken"), Some(&serde_json::json!("right")));
+        assert_eq!(map.get("and_short"), Some(&serde_json::json!(false)));
+        assert_eq!(map.get("coalesced"), Some(&serde_json::json!("fallback")));
+        assert_eq!(map.get("present"), Some(&serde_json::json!("kept")));
+        assert_eq!(map.get("if_val"), Some(&serde_json::json!("then")));
+    }
+
+    /// The same join, one level down: a name *rebound* inside a branch or a loop
+    /// body reaches the reader through the block's phi carry-out, so the phi —
+    /// not the arm's last expression — has to own that write.
+    #[test]
+    fn a_name_rebound_inside_a_block_reports_the_rebound_value() {
+        let map = observe(
+            "let mode = \"split\"\n\
+             if 1 > 0 then\n\
+             \x20 mode = \"unified\"\n\
+             end\n\
+             let total = 0\n\
+             for i in range(0, 4) do\n\
+             \x20 total = total + i\n\
+             end\n\
+             print(mode)\n\
+             print(total)\n",
+        );
+        assert_eq!(map.get("mode"), Some(&serde_json::json!("unified")));
+        assert_eq!(map.get("total"), Some(&serde_json::json!(6)));
+    }
+
     /// 4. Documented last-write-wins: a loop temp reports its final iteration.
     #[test]
     fn loop_temp_reports_its_final_iteration() {

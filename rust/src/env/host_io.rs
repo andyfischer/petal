@@ -54,6 +54,22 @@ impl Env {
         self.ctx(self.default_context).output_buffer(sym)
     }
 
+    /// Drain the call-site attribution of `sym`'s buffer: element `i` is the
+    /// term that emitted element `i` of the matching
+    /// [`take_output_buffer`](Self::take_output_buffer). Empty unless
+    /// [`enable_emit_trace`](Self::enable_emit_trace) is on.
+    ///
+    /// Resolve a term to source with [`crate::provenance`]. Drain this in the
+    /// same breath as the values, or what's left over gets misattributed to the
+    /// next frame's emits.
+    pub fn take_output_origins(
+        &mut self,
+        sym: SymbolId,
+    ) -> Vec<crate::execution_context::EmitSite> {
+        let ck = self.default_context;
+        self.ctx_mut(ck).take_output_origins(sym)
+    }
+
     /// [`take_output_buffer`](Self::take_output_buffer) for a specific stack's
     /// context. The drained `Value`s reference *that* context's heap — decode
     /// them with [`heap_for`](Self::heap_for), not [`heap`](Self::heap). This is

@@ -278,6 +278,7 @@ fn make_vm<'a>(
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
     let trace_pending = ctx.trace_pending;
+    let trace_emit = ctx.trace_emit;
     Vm {
         program,
         bc,
@@ -290,6 +291,8 @@ fn make_vm<'a>(
         output: &mut ctx.output,
         symbols,
         output_buffers: &mut ctx.output_buffers,
+        trace_emit,
+        emit_origins: &mut ctx.emit_origins,
         bindings: &mut ctx.bindings,
         counters: &mut ctx.counters,
         rng_state: &mut ctx.rng_state,

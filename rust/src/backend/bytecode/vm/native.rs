@@ -12,6 +12,30 @@ use crate::handle::HandleVal;
 use crate::native_fn::PetalCxt;
 
 impl<'a> Vm<'a> {
+    /// The call chain reaching a native: its own call site, then the return
+    /// address of each enclosing frame, innermost first. Empty unless emit
+    /// tracing is on — building it is the one per-native-call cost tracing adds,
+    /// so no run that will never read it pays for one.
+    ///
+    /// The leaf alone is not enough for source attribution. A drawing "builtin"
+    /// is often a Petal function in a prelude wrapping the real native, so the
+    /// leaf is a line of library code and the line the *user* wrote is a frame or
+    /// two further out. Recording the chain lets a reader pick the frame in the
+    /// file it is showing ([`crate::provenance::pick_frame`]) instead of being
+    /// stuck with whichever frame happened to be innermost.
+    fn emit_call_chain(&self, origin: Option<TermId>) -> SmallVec<[TermId; 4]> {
+        let mut chain: SmallVec<[TermId; 4]> = SmallVec::new();
+        if !self.trace_emit {
+            return chain;
+        }
+        chain.extend(origin);
+        // The innermost frame is last in `vm_frames`, so walk it backwards. The
+        // root frame's `call_site` is `None` — nothing called it — which ends
+        // the chain naturally.
+        chain.extend(self.stack.vm_frames.iter().rev().filter_map(|f| f.call_site));
+        chain
+    }
+
     /// Static builtin call `name(args...)` (unshadowed builtin called directly).
     pub(super) fn do_builtin_call(
         &mut self,
@@ -179,12 +203,16 @@ impl<'a> Vm<'a> {
             return Ok(v);
         }
         let func = self.native_fns.get_func(nid);
+        let chain = self.emit_call_chain(origin);
         let mut cxt = PetalCxt::new(
             args,
             self.heap,
             self.output,
             self.symbols,
             self.output_buffers,
+            self.trace_emit,
+            self.emit_origins,
+            &chain,
             self.bindings,
             self.counters,
             self.rng_state,
@@ -239,12 +267,16 @@ impl<'a> Vm<'a> {
         let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
         full_args.push(Value::Handle(h));
         full_args.extend_from_slice(args);
+        let chain = self.emit_call_chain(origin);
         let mut cxt = PetalCxt::new(
             &full_args,
             self.heap,
             self.output,
             self.symbols,
             self.output_buffers,
+            self.trace_emit,
+            self.emit_origins,
+            &chain,
             self.bindings,
             self.counters,
             self.rng_state,

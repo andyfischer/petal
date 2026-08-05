@@ -219,6 +219,71 @@ way to see what keys a given script will produce. See
 
 ---
 
+## Tracing an emitted value back to its code (provenance)
+
+Observation reads *values*. **Provenance** answers a different question, the one
+a direct-manipulation editor asks: given something a script emitted — a drawn
+shape, a log line, a row — *which code produced it?*
+
+The runtime already knows. The bytecode lowerer stamps every instruction with
+the IR term it was lowered from, and the VM hands that term to each native it
+calls. So an emitting native can record its own call site as it pushes:
+
+```rust
+env.enable_emit_trace(true);                // off by default; enable before the run
+env.run(stack_id)?;
+
+let sym = env.intern_symbol("draw_commands");
+let values = env.take_output_buffer(sym);
+let sites  = env.take_output_origins(sym);  // one per value, index-aligned
+```
+
+Each `EmitSite` holds a **call chain**: the native's own call site, then the
+return address of each enclosing call, innermost first. Resolve it with
+`petal::provenance`:
+
+```rust
+let program = env.get_program(program_id).unwrap();
+let term = provenance::pick_frame(program, &sites[i].chain, source_map::ENTRY_FILE)?;
+let site = provenance::CallSite::resolve(program, term)?;
+
+site.span;              // where the call is written
+site.callee;            // "draw_circle"
+site.args[0].literal;   // the argument's value, if it is a literal
+site.args[0].kind;      // Literal | Binding | Computed
+site.args[0].editable_span(program);  // the text a rewrite must replace
+```
+
+### Things to get right
+
+- **Enable before the run**, like observation — recording happens at the emit.
+- **A chain, not a site.** Most vocabularies wrap their natives in library
+  functions (every `draw_*` in `petal-ui` is a Petal fn), so the innermost call
+  site is library code. `pick_frame` walks out to the innermost frame in the file
+  you are showing; that is the line a person means.
+- **Drain origins with values.** They are index-aligned. Taking only the values
+  leaves the origins behind to be misattributed to the next run's emits.
+- **Resolve against the program that ran.** Term ids are indices, so an id
+  recorded before a recompile would resolve happily against unrelated code.
+  `CallSite::resolve` rejects an out-of-range id rather than guessing — treat
+  `None` as "stale, discard", not as an error.
+- **Resolution is lazy on purpose.** Recording is one short id list per emit;
+  everything else — spans, argument classification, literal values — is computed
+  from the ids when something asks. A 60fps host that traces every shape but
+  queries one per mouse move pays for exactly that.
+
+Why not the two designs that suggest themselves first? *Re-running with tracing
+bindings* needs the second run to reproduce the first exactly — same `random()`,
+same clock, same input — so it is only as sound as the program is deterministic.
+*Extra callbacks per native in trace mode* is sound, but makes the hot path pay
+dispatch for a feature almost no run uses. Recording an id the VM already
+computed costs a push, and a run with tracing off pays nothing at all.
+
+Garden's Petal IDE is built on this: hover a shape on the canvas and the
+`draw_*` call that drew it highlights in the editor beside it.
+
+---
+
 ## Related patterns
 
 ### Feeding inputs in (host → script)

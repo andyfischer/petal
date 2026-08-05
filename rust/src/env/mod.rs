@@ -392,6 +392,24 @@ impl Env {
         }
     }
 
+    /// Turn call-site attribution of buffered output on or off for the default
+    /// context (see
+    /// [`ExecutionContext::enable_emit_trace`](crate::execution_context::ExecutionContext::enable_emit_trace)).
+    ///
+    /// A host turns this on when it wants to map emitted values — draw commands,
+    /// most usefully — back to the code that produced them, and reads the result
+    /// with [`take_output_origins`](Self::take_output_origins). Off by default,
+    /// so a production run never pays for it.
+    pub fn enable_emit_trace(&mut self, on: bool) {
+        let ck = self.default_context;
+        self.ctx_mut(ck).enable_emit_trace(on);
+    }
+
+    /// Whether emit tracing is on for the default context.
+    pub fn emit_trace_enabled(&self) -> bool {
+        self.ctx(self.default_context).trace_emit
+    }
+
     /// A structured, per-frame report of every live pending resource in the
     /// context `stack_id` runs in: a JSON array of
     /// `{ id, key, state, age_frames, origin, absorbed_count }` objects (see

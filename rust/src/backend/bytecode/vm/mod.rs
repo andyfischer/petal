@@ -59,6 +59,14 @@ pub struct Vm<'a> {
     pub output: &'a mut Vec<String>,
     pub symbols: &'a mut SymbolTable,
     pub output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    /// Whether emits record their call site (copied from the owning
+    /// `ExecutionContext`), handed to each `PetalCxt` this run builds.
+    pub trace_emit: bool,
+    /// The owning context's call-site attribution for buffered output, borrowed
+    /// so an emitting native can stamp its origin term onto the value it pushes
+    /// while `trace_emit` is on. See
+    /// [`crate::execution_context::ExecutionContext::emit_origins`].
+    pub emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
     pub counters: &'a mut HashMap<SymbolId, u64>,
     /// Per-run PRNG state and noise seed, borrowed from the `ExecutionContext`

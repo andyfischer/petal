@@ -67,6 +67,48 @@ pub struct ExecutionContext {
     /// [`reset_frame_absorption`](Self::reset_frame_absorption) at the stack
     /// reset, unlike the cross-frame [`resources`](Self::resources) table.
     pub absorption_log: Vec<(Option<TermId>, PendingId)>,
+    /// Whether [`emit_origins`](Self::emit_origins) records. Off by default — a
+    /// host flips it on with [`enable_emit_trace`](Self::enable_emit_trace) when
+    /// it wants to attribute buffered output back to source. When off an emit
+    /// pays one bool check and never touches the map.
+    pub trace_emit: bool,
+    /// Call-site attribution for buffered output, parallel to
+    /// [`output_buffers`](Self::output_buffers): `emit_origins[sym][i]` is the
+    /// term that pushed `output_buffers[sym][i]`, when the caller had an origin
+    /// to attribute. Recorded only while [`trace_emit`](Self::trace_emit) is on,
+    /// and drained/cleared in lockstep with the values so the two stay aligned.
+    ///
+    /// This is what lets a drawn shape point back at the code that drew it: the
+    /// recorded terms resolve through the program's
+    /// [`SourceMap`](crate::source_map) to spans, and through their `inputs` to
+    /// each argument's own span (see [`crate::provenance`]). Keeping that
+    /// resolution lazy — done off the recorded ids, not at emit time — is why
+    /// the on-cost here is one short id list per emit.
+    pub emit_origins: HashMap<SymbolId, Vec<EmitSite>>,
+}
+
+/// Where one buffered value was emitted from: the native's own call site,
+/// followed by the return address of each enclosing call, innermost first.
+///
+/// A chain rather than a single site because the call a *user* means is rarely
+/// the innermost one. `draw_circle` in the `petal-ui` prelude is a Petal
+/// function wrapping the native, so the leaf call site is a line in the prelude;
+/// the line the user wrote is one frame further out. With the whole chain
+/// recorded, a host picks the frame it cares about
+/// ([`crate::provenance::pick_frame`]) instead of being handed the wrong one.
+///
+/// Four inline slots covers a draw call through a wrapper or two without
+/// allocating, which is the shape essentially every frame has.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EmitSite {
+    pub chain: smallvec::SmallVec<[TermId; 4]>,
+}
+
+impl EmitSite {
+    /// The innermost call site — the native call itself.
+    pub fn leaf(&self) -> Option<TermId> {
+        self.chain.first().copied()
+    }
 }
 
 impl ExecutionContext {
@@ -86,6 +128,8 @@ impl ExecutionContext {
             frame: 0,
             trace_pending: false,
             absorption_log: Vec::new(),
+            trace_emit: false,
+            emit_origins: HashMap::new(),
         }
     }
 
@@ -118,6 +162,12 @@ impl ExecutionContext {
             // its absorptions are its own, captured separately from the source's.
             trace_pending: self.trace_pending,
             absorption_log: Vec::new(),
+            // Likewise for emit attribution: the setting is inherited, but the
+            // recorded origins belong to whichever context did the emitting —
+            // and the fork's output buffers start empty, so its origins must too
+            // or the two would be misaligned from the first push.
+            trace_emit: self.trace_emit,
+            emit_origins: HashMap::new(),
         }
     }
 
@@ -137,6 +187,17 @@ impl ExecutionContext {
     /// `--trace-pending` flag, or the debug protocol flips it on.
     pub fn enable_pending_trace(&mut self) {
         self.trace_pending = true;
+    }
+
+    /// Turn call-site attribution of buffered output on or off (see
+    /// [`emit_origins`](Self::emit_origins)). Turning it *off* drops what was
+    /// recorded, so a later drain can't hand back origins that no longer line up
+    /// with the values still in the buffers.
+    pub fn enable_emit_trace(&mut self, on: bool) {
+        self.trace_emit = on;
+        if !on {
+            self.emit_origins.clear();
+        }
     }
 
     /// Clear the per-frame absorption state at the start of a frame: empty the
@@ -183,6 +244,20 @@ impl ExecutionContext {
             .unwrap_or_default()
     }
 
+    /// Drain the call-site origins recorded for `sym`'s buffer (see
+    /// [`emit_origins`](Self::emit_origins)). Empty when tracing is off.
+    ///
+    /// Element `i` attributes element `i` of the matching
+    /// [`take_output_buffer`](Self::take_output_buffer), so a caller that wants
+    /// both must drain both — draining only the values would leave stale origins
+    /// to be misattributed to the next frame's emits.
+    pub fn take_output_origins(&mut self, sym: SymbolId) -> Vec<EmitSite> {
+        self.emit_origins
+            .get_mut(&sym)
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
     /// Peek at the buffer bound to `sym` without draining it.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
         self.output_buffers
@@ -191,10 +266,15 @@ impl ExecutionContext {
             .unwrap_or(&[])
     }
 
-    /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
+    /// Clear the buffer bound to `sym` (e.g. at the top of a frame), along with
+    /// any origins recorded for it — the two are index-aligned, so clearing one
+    /// without the other would misattribute every value that follows.
     pub fn clear_output_buffer(&mut self, sym: SymbolId) {
         if let Some(buf) = self.output_buffers.get_mut(&sym) {
             buf.clear();
+        }
+        if let Some(origins) = self.emit_origins.get_mut(&sym) {
+            origins.clear();
         }
     }
 

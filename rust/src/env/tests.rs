@@ -127,6 +127,117 @@ mod call_function_tests {
         assert!(env.take_output_buffer(sym).is_empty());
     }
 
+    /// Emit tracing attributes each buffered value to the *call site* that
+    /// pushed it — the fact the whole direct-manipulation story rests on. Three
+    /// pushes on three lines must come back pointing at those three lines, in
+    /// the same order as the values.
+    #[test]
+    fn emit_trace_attributes_each_value_to_its_own_call_site() {
+        let mut env = Env::new();
+        env.enable_emit_trace(true);
+        let pid = env
+            .load_program(
+                "let s = symbol(\"draw\")\n\
+                 push_output(s, 1)\n\
+                 push_output(s, 2)\n\
+                 push_output(s, 3)\n",
+            )
+            .unwrap();
+        let stack = env.create_stack(pid).unwrap();
+        env.run(stack).unwrap();
+
+        let sym = env.intern_symbol("draw");
+        let values = env.take_output_buffer(sym);
+        let origins = env.take_output_origins(sym);
+        assert_eq!(values.len(), 3);
+        assert_eq!(origins.len(), values.len(), "one origin per emitted value");
+
+        let program = env.get_program(pid).unwrap();
+        let lines: Vec<u32> = origins
+            .iter()
+            .map(|o| {
+                let term = o.leaf().expect("every push has a call site");
+                let site =
+                    crate::provenance::CallSite::resolve(program, term).expect("site resolves");
+                assert_eq!(site.callee.as_deref(), Some("push_output"));
+                site.span.expect("a mapped span").start.line
+            })
+            .collect();
+        assert_eq!(lines, vec![2, 3, 4]);
+
+        // Draining took the origins with the values, so the next frame starts
+        // clean rather than inheriting this frame's attribution.
+        assert!(env.take_output_origins(sym).is_empty());
+    }
+
+    /// An emit from inside a function records the *chain*: the call site in the
+    /// function, then the call that entered it. This is what lets a reader pick
+    /// the frame in the file it is showing — without it, a `draw_*` that a
+    /// library wraps in a Petal function always attributes to the library.
+    #[test]
+    fn emit_trace_records_the_whole_call_chain() {
+        let mut env = Env::new();
+        env.enable_emit_trace(true);
+        let pid = env
+            .load_program(
+                "let s = symbol(\"draw\")\n\
+                 fn shape()\n\
+                   push_output(s, 1)\n\
+                 end\n\
+                 shape()\n",
+            )
+            .unwrap();
+        let stack = env.create_stack(pid).unwrap();
+        env.run(stack).unwrap();
+
+        let sym = env.intern_symbol("draw");
+        let _ = env.take_output_buffer(sym);
+        let sites = env.take_output_origins(sym);
+        assert_eq!(sites.len(), 1);
+
+        let program = env.get_program(pid).unwrap();
+        let lines: Vec<u32> = sites[0]
+            .chain
+            .iter()
+            .filter_map(|t| program.source_map.get(*t))
+            .map(|s| s.start.line)
+            .collect();
+        assert!(
+            lines.starts_with(&[3]),
+            "the innermost frame is the push on line 3, got {lines:?}"
+        );
+        assert!(
+            lines.contains(&5),
+            "and the chain reaches the call on line 5, got {lines:?}"
+        );
+    }
+
+    /// Tracing is off by default: the values still flow, the attribution costs
+    /// nothing and records nothing.
+    #[test]
+    fn emit_trace_records_nothing_when_disabled() {
+        let mut env = Env::new();
+        env.run_source("let s = symbol(\"draw\")\npush_output(s, 1)\n")
+            .unwrap();
+        let sym = env.intern_symbol("draw");
+        assert_eq!(env.take_output_buffer(sym).len(), 1);
+        assert!(env.take_output_origins(sym).is_empty());
+    }
+
+    /// Clearing a buffer must clear its attribution too, or the next frame's
+    /// first value inherits the previous frame's call site.
+    #[test]
+    fn clearing_a_buffer_clears_its_origins() {
+        let mut env = Env::new();
+        env.enable_emit_trace(true);
+        env.run_source("let s = symbol(\"draw\")\npush_output(s, 1)\n")
+            .unwrap();
+        let sym = env.intern_symbol("draw");
+        env.clear_output_buffer(sym);
+        assert!(env.take_output_buffer(sym).is_empty());
+        assert!(env.take_output_origins(sym).is_empty());
+    }
+
     #[test]
     fn output_buffer_values_survive_gc() {
         // A heap-backed value pushed into a buffer must survive a collection

@@ -34,6 +34,7 @@ pub mod observe;
 pub mod parse;
 pub mod program;
 pub mod program_analysis;
+pub mod provenance;
 pub mod resource_table;
 pub mod rewrite;
 pub mod source_map;

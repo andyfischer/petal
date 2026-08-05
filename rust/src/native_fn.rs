@@ -152,6 +152,19 @@ pub struct PetalCxt<'a> {
     output: &'a mut Vec<String>,
     symbols: &'a mut SymbolTable,
     output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    /// Whether emits record their call site (copied from the owning
+    /// `ExecutionContext`). Gates the push in [`push_output`](Self::push_output).
+    trace_emit: bool,
+    /// The owning context's call-site attribution for buffered output, borrowed
+    /// so [`push_output`](Self::push_output) can stamp this call's
+    /// [`origin`](Self::origin) onto the value it emits while `trace_emit` is on.
+    /// See [`crate::execution_context::ExecutionContext::emit_origins`].
+    emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
+    /// The call chain that reached this native — its own call site, then the
+    /// return address of each enclosing call, innermost first. Built by the VM
+    /// only while `trace_emit` is on, and copied onto each value this call
+    /// emits. Empty otherwise.
+    emit_chain: &'a [crate::program::TermId],
     bindings: &'a mut HashMap<SymbolId, Value>,
     counters: &'a mut HashMap<SymbolId, u64>,
     /// Per-run xorshift64* PRNG state, borrowed from the owning
@@ -197,6 +210,9 @@ impl<'a> PetalCxt<'a> {
         output: &'a mut Vec<String>,
         symbols: &'a mut SymbolTable,
         output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+        trace_emit: bool,
+        emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
+        emit_chain: &'a [crate::program::TermId],
         bindings: &'a mut HashMap<SymbolId, Value>,
         counters: &'a mut HashMap<SymbolId, u64>,
         rng_state: &'a mut u64,
@@ -215,6 +231,9 @@ impl<'a> PetalCxt<'a> {
             output,
             symbols,
             output_buffers,
+            trace_emit,
+            emit_origins,
+            emit_chain,
             bindings,
             counters,
             rng_state,
@@ -438,8 +457,26 @@ impl<'a> PetalCxt<'a> {
 
     /// Push a value into the buffered-output channel bound to `sym`.
     /// The host pulls it later via `Env::take_output_buffer`.
+    ///
+    /// While the owning context has emit tracing on, this also records the
+    /// call's [`origin`](Self::origin) at the same index, so the host can
+    /// attribute the emitted value back to the code that produced it
+    /// (`Env::take_output_origins`). Off — the default — it is the same single
+    /// push it always was.
     pub fn push_output(&mut self, sym: SymbolId, value: Value) {
         self.output_buffers.entry(sym).or_default().push(value);
+        if self.trace_emit {
+            // Pad rather than assume alignment: tracing can be switched on
+            // mid-frame, leaving values already in the buffer with no origin.
+            // Padding keeps index i of the origins the attribution of index i
+            // of the values, which is the whole contract.
+            let origins = self.emit_origins.entry(sym).or_default();
+            let values_len = self.output_buffers[&sym].len();
+            origins.resize_with(values_len.saturating_sub(1), Default::default);
+            origins.push(crate::execution_context::EmitSite {
+                chain: self.emit_chain.into(),
+            });
+        }
     }
 
     /// Convenience: build a `Value::EnumVariant { tag, data }` on the heap and

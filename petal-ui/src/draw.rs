@@ -18,6 +18,7 @@
 use petal::env::Env;
 use petal::heap::Heap;
 use petal::native_fn::{NativeResult, PetalCxt};
+use petal::execution_context::EmitSite;
 use petal::stack::StackKey;
 use petal::value::Value;
 use serde::Serialize;
@@ -506,6 +507,43 @@ pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
     for v in &values {
         match DrawCommand::from_value(v, env.heap()) {
             Ok(cmd) => out.push(cmd),
+            Err(e) => eprintln!("[petal-ui draw] {}", e),
+        }
+    }
+    out
+}
+
+/// [`take_draw_commands`], but each command paired with the call chain that drew
+/// it — the source attribution behind hit-testing a rendered scene back to the
+/// code that produced it.
+///
+/// The chain is empty for any command the runtime could not attribute, and for
+/// *every* command unless the host turned tracing on first
+/// (`env.enable_emit_trace(true)`); this is a drain, not a switch, so a host that
+/// forgets gets an untraced list rather than an error.
+///
+/// It is a chain rather than a single site because most `draw_*` names in the
+/// `ui` prelude are Petal functions wrapping the natives — so the innermost call
+/// site is prelude code, not the sketch. Pick the frame you want with
+/// [`petal::provenance::pick_frame`], then resolve it with
+/// [`petal::provenance::CallSite`]. Resolve against the program that was
+/// *running* when the frame drew: an id survives neither a recompile nor a hot
+/// reload, which is why `CallSite::resolve` rejects an out-of-range id rather
+/// than guessing.
+pub fn take_draw_commands_traced(env: &mut Env) -> Vec<(DrawCommand, EmitSite)> {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer(sym);
+    let mut origins = env.take_output_origins(sym);
+    let mut out = Vec::with_capacity(values.len());
+    for (i, v) in values.iter().enumerate() {
+        match DrawCommand::from_value(v, env.heap()) {
+            // Index into `origins` rather than zipping: a command that fails to
+            // decode is skipped, and zipping would silently shift every later
+            // command's attribution onto the wrong call site.
+            Ok(cmd) => {
+                let site = origins.get_mut(i).map(std::mem::take).unwrap_or_default();
+                out.push((cmd, site));
+            }
             Err(e) => eprintln!("[petal-ui draw] {}", e),
         }
     }

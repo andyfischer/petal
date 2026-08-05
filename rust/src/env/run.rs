@@ -45,6 +45,10 @@ impl Env {
         let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         let pid = self.stacks.get(&stack_id).unwrap().program_id;
         self.ensure_bytecode(pid)?;
+        // Observed values are ids into *this* context's heap; moving execution
+        // to another context invalidates whatever is buffered. Cheap: one
+        // `Option<ContextKey>` compare per batch dispatch.
+        self.observations.enter_context(ck);
 
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
@@ -60,6 +64,7 @@ impl Env {
             &self.handle_classes,
             &mut self.symbols,
             &mut self.trace,
+            &mut self.observations,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -78,6 +83,9 @@ impl Env {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.start_run_tracking();
         }
+        // Each run reports its own bindings: clear at the start, so a name the
+        // program no longer reaches can't report a value from a previous run.
+        self.observations.start_run(ck);
         loop {
             match self.step_n(stack_id, Self::BYTECODE_BATCH)?.0 {
                 StepResult::Continue => {
@@ -126,11 +134,21 @@ impl Env {
         // Start run tracking only on a fresh entry, not when resuming a
         // previously-yielded run (which would clear the touched-key set and
         // defeat the sweep). reset_stack/create_stack leave the stack `Ready`.
+        let mut fresh_entry = false;
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             if matches!(stack.status, StackStatus::Ready) {
                 stack.start_run_tracking();
                 stack.status = StackStatus::Running;
+                fresh_entry = true;
             }
+        }
+        // Observations follow the same fresh-entry rule, and for the same
+        // reason: a resume is the *middle* of one run, so clearing here would
+        // discard everything observed before the yield. A host driving a frame
+        // in small budgets (an editor at 60fps) takes the resume path on nearly
+        // every call.
+        if fresh_entry {
+            self.observations.start_run(ck);
         }
 
         let mut steps = 0;
@@ -201,6 +219,7 @@ impl Env {
         let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
         let pid = self.stacks.get(&stack_id).unwrap().program_id;
         self.ensure_bytecode(pid)?;
+        self.observations.enter_context(ck);
 
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
@@ -216,6 +235,7 @@ impl Env {
             &self.handle_classes,
             &mut self.symbols,
             &mut self.trace,
+            &mut self.observations,
         )
         .call_closure_sync(callable, args)
     }
@@ -253,6 +273,7 @@ fn make_vm<'a>(
     handle_classes: &'a [HandleClass],
     symbols: &'a mut SymbolTable,
     trace: &'a mut TraceBuffer,
+    observations: &'a mut Observations,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
@@ -279,6 +300,7 @@ fn make_vm<'a>(
         absorption_log: &mut ctx.absorption_log,
         echo: ctx.echo,
         trace,
+        observations,
         error_already_annotated: false,
     }
 }

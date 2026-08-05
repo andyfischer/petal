@@ -48,6 +48,16 @@ impl<'a> Vm<'a> {
                     self.trace.push(call_site, &[], value);
                 }
             }
+            // Likewise for observation: `let x = f()` binds its value here, not
+            // in `step`, so without this the whole call-valued half of a
+            // program's named terms would be missing.
+            if self.observations.enabled {
+                if let Some(call_site) = frame.call_site {
+                    if self.is_observable(call_site) {
+                        self.observations.record(call_site, value);
+                    }
+                }
+            }
             StepResult::Continue
         };
         if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {

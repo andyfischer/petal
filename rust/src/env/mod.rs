@@ -13,6 +13,7 @@ use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeClass, NativeFn, NativeFnId, NativeFnTable};
+use crate::observe::Observations;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{RuntimeStateKey, Stack, StackKey};
 use crate::stats::{AllocStats, DupStats};
@@ -23,6 +24,7 @@ use crate::value::Value;
 mod fork;
 mod gc;
 mod host_io;
+mod observations_json;
 mod run;
 mod state_json;
 
@@ -41,6 +43,9 @@ pub struct Env {
     default_context: ContextKey,
     next_context_id: u32,
     trace: TraceBuffer,
+    /// Last value bound to each named IR term. Off by default; see
+    /// [`crate::observe`].
+    observations: Observations,
     next_program_id: u32,
     next_stack_id: u32,
     /// Per-run optimization toggles for the bytecode VM.
@@ -91,6 +96,7 @@ impl Env {
             default_context,
             next_context_id: 2,
             trace: TraceBuffer::new(),
+            observations: Observations::new(),
             next_program_id: 1,
             next_stack_id: 1,
             opt_flags: Self::opt_flags_from_env(),
@@ -322,6 +328,20 @@ impl Env {
     /// Mutable access to the trace buffer (to enable/clear/configure).
     pub fn trace_mut(&mut self) -> &mut TraceBuffer {
         &mut self.trace
+    }
+
+    /// Access the observation buffer — the last value bound to each named IR
+    /// term. Read it by name with
+    /// [`get_observations_json`](Self::get_observations_json).
+    pub fn observations(&self) -> &Observations {
+        &self.observations
+    }
+
+    /// Mutable access to the observation buffer (to enable/clear it). Recording
+    /// is off by default: `env.observations_mut().enable()` turns it on for
+    /// every subsequent run.
+    pub fn observations_mut(&mut self) -> &mut Observations {
+        &mut self.observations
     }
 
     /// Get a reference to a loaded program

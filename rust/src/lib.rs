@@ -30,6 +30,7 @@ pub mod lint;
 pub mod lsp;
 pub mod module;
 pub mod native_fn;
+pub mod observe;
 pub mod parse;
 pub mod program;
 pub mod program_analysis;

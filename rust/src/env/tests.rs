@@ -2610,3 +2610,242 @@ mod gc_pressure_tests {
         );
     }
 }
+
+/// Observation (`crate::observe`): the runtime's "read any named value by name"
+/// facility. These run real programs — the facts under test are which terms the
+/// VM actually retires and what the qualified-name walk makes of their blocks,
+/// so a synthetic buffer would be asserting the fixture rather than the code.
+mod observation_tests {
+    use super::super::*;
+
+    /// Run `source` with observation on and return the qualified-name map.
+    fn observe(source: &str) -> serde_json::Map<String, serde_json::Value> {
+        let (env, pid, sid) = run_observed(source);
+        env.get_observations_json(pid, sid)
+    }
+
+    fn run_observed(source: &str) -> (Env, ProgramId, StackKey) {
+        let mut env = Env::new();
+        env.observations_mut().enable();
+        let pid = env.load_program(source).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        (env, pid, sid)
+    }
+
+    /// 1. Top-level `let`s are readable by their plain source name, with the
+    ///    JSON shape their Petal type implies.
+    #[test]
+    fn top_level_lets_are_observable_by_plain_name() {
+        let map = observe(
+            "let count = 42\n\
+             let label = \"hello\"\n\
+             let ready = true\n\
+             let nums = [1, 2, 3]\n\
+             let point = { x: 1, y: 2 }\n",
+        );
+        assert_eq!(map.get("count"), Some(&serde_json::json!(42)));
+        assert_eq!(map.get("label"), Some(&serde_json::json!("hello")));
+        assert_eq!(map.get("ready"), Some(&serde_json::json!(true)));
+        assert_eq!(map.get("nums"), Some(&serde_json::json!([1, 2, 3])));
+        assert_eq!(
+            map.get("point"),
+            Some(&serde_json::json!({ "x": 1, "y": 2 }))
+        );
+    }
+
+    /// 2. The collision this facility exists to fix: a binding inside `fn foo`
+    ///    and a same-named top-level binding are two different values, and both
+    ///    are readable — the function-local one under `foo.<name>`.
+    #[test]
+    fn function_local_and_top_level_names_coexist() {
+        let map = observe(
+            "fn foo(n)\n  let total = n * 10\n  total\nend\n\
+             let total = 1\n\
+             print(foo(5))\n",
+        );
+        assert_eq!(map.get("total"), Some(&serde_json::json!(1)));
+        assert_eq!(map.get("foo.total"), Some(&serde_json::json!(50)));
+    }
+
+    /// A function nested inside a function qualifies with both, outermost
+    /// first.
+    #[test]
+    fn nested_functions_qualify_outermost_first() {
+        let map = observe(
+            "fn outer(n)\n\
+             \x20 fn inner(m)\n\
+             \x20   let deep = m + 1\n\
+             \x20   deep\n\
+             \x20 end\n\
+             \x20 inner(n)\n\
+             end\n\
+             print(outer(1))\n",
+        );
+        assert_eq!(map.get("outer.inner.deep"), Some(&serde_json::json!(2)));
+    }
+
+    /// 3. Non-function child blocks do not qualify: a binding in a top-level
+    ///    `if` branch reads under its plain name. A binding in the branch that
+    ///    never ran is absent rather than stale or null.
+    #[test]
+    fn if_branches_key_under_plain_names() {
+        let map = observe(
+            "let n = 1\n\
+             if n > 0 then\n\
+             \x20 let taken = \"yes\"\n\
+             \x20 print(taken)\n\
+             else\n\
+             \x20 let skipped = \"no\"\n\
+             \x20 print(skipped)\n\
+             end\n",
+        );
+        assert_eq!(map.get("taken"), Some(&serde_json::json!("yes")));
+        assert!(
+            !map.contains_key("skipped"),
+            "a branch that never ran must not report a value: {:?}",
+            map
+        );
+    }
+
+    /// 4. Documented last-write-wins: a loop temp reports its final iteration.
+    #[test]
+    fn loop_temp_reports_its_final_iteration() {
+        let map = observe(
+            "for i in range(0, 5) do\n\
+             \x20 let doubled = i * 2\n\
+             \x20 print(doubled)\n\
+             end\n",
+        );
+        assert_eq!(map.get("doubled"), Some(&serde_json::json!(8)));
+    }
+
+    /// 5. The ~70 synthetic builtin-table terms are named but have no source
+    ///    location; they must never surface as observable values.
+    #[test]
+    fn builtin_phantom_terms_are_never_observed() {
+        let map = observe("let n = len([1, 2, 3])\nprint(n)\n");
+        assert_eq!(map.get("n"), Some(&serde_json::json!(3)));
+        for phantom in ["print", "range", "len", "abs", "push"] {
+            assert!(
+                !map.contains_key(phantom),
+                "phantom builtin '{}' leaked into the observation map",
+                phantom
+            );
+        }
+    }
+
+    /// 6. Nothing eliminates a binding that is never read — observation reports
+    ///    what the program bound, not what it used.
+    #[test]
+    fn unused_bindings_are_still_observed() {
+        let map = observe("let rows = [1, 2, 3]\nprint(\"done\")\n");
+        assert_eq!(map.get("rows"), Some(&serde_json::json!([1, 2, 3])));
+    }
+
+    /// 7. Observed values are heap ids. A collection that did not treat the
+    ///    buffer as a root would sweep them and leave the reader decoding a
+    ///    recycled slot.
+    #[test]
+    fn observed_values_survive_a_collection() {
+        let (mut env, pid, sid) = run_observed(
+            "let words = [\"alpha\", \"beta\"]\n\
+             let greeting = \"hello world\"\n",
+        );
+        let ck = env.stacks.get(&sid).unwrap().context;
+        env.collect_garbage(ck);
+        let map = env.get_observations_json(pid, sid);
+        assert_eq!(
+            map.get("words"),
+            Some(&serde_json::json!(["alpha", "beta"]))
+        );
+        assert_eq!(map.get("greeting"), Some(&serde_json::json!("hello world")));
+    }
+
+    /// 8. Off by default: recording costs nothing and reports nothing until a
+    ///    host asks for it.
+    #[test]
+    fn observation_is_off_by_default() {
+        let mut env = Env::new();
+        let pid = env.load_program("let count = 42\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert!(env.get_observations_json(pid, sid).is_empty());
+    }
+
+    /// 9. The per-run clear must fire on a fresh entry only. A run driven in
+    ///    tiny `run_bounded` budgets (how an editor drives a frame) must not
+    ///    wipe its own observations on every resume.
+    #[test]
+    fn stepped_runs_observe_what_a_single_run_does() {
+        let src = "let total = 0\n\
+                   for i in range(0, 50) do\n\
+                   \x20 total = total + i\n\
+                   end\n\
+                   let final_total = total\n";
+        let mut env = Env::new();
+        env.observations_mut().enable();
+        let pid = env.load_program(src).unwrap();
+
+        let reference = env.create_stack(pid).unwrap();
+        env.run(reference).unwrap();
+        let expected = env.get_observations_json(pid, reference);
+        assert_eq!(expected.get("final_total"), Some(&serde_json::json!(1225)));
+
+        let sid = env.create_stack(pid).unwrap();
+        let mut guard = 0;
+        loop {
+            guard += 1;
+            assert!(guard < 10_000, "run never completed");
+            if let RunOutcome::Done(_) = env.run_bounded(sid, 5).unwrap() {
+                break;
+            }
+        }
+        assert_eq!(env.get_observations_json(pid, sid), expected);
+    }
+
+    /// 10. `state` variables are named terms too, so one uniform read covers
+    ///     both plain bindings and persistent state.
+    #[test]
+    fn state_variables_are_observable() {
+        let map = observe(
+            "state tick = 0\n\
+             let tick_plus = tick + 1\n",
+        );
+        assert_eq!(map.get("tick"), Some(&serde_json::json!(0)));
+        assert_eq!(map.get("tick_plus"), Some(&serde_json::json!(1)));
+    }
+
+    /// Observation is a read-only side channel: turning it on must not change
+    /// what the program computes or prints.
+    #[test]
+    fn observation_does_not_perturb_the_program() {
+        let src = "fn tri(n)\n\
+                   \x20 let acc = 0\n\
+                   \x20 for i in range(0, n) do\n\
+                   \x20   acc = acc + i\n\
+                   \x20 end\n\
+                   \x20 acc\n\
+                   end\n\
+                   for k in range(1, 6) do\n\
+                   \x20 print(tri(k))\n\
+                   end\n";
+
+        let mut plain = Env::new();
+        let pid = plain.load_program(src).unwrap();
+        let sid = plain.create_stack(pid).unwrap();
+        let plain_result = plain.run(sid).unwrap();
+        let plain_output = plain.take_output();
+
+        let mut observed = Env::new();
+        observed.observations_mut().enable();
+        let opid = observed.load_program(src).unwrap();
+        let osid = observed.create_stack(opid).unwrap();
+        let observed_result = observed.run(osid).unwrap();
+        let observed_output = observed.take_output();
+
+        assert_eq!(observed_output, plain_output);
+        assert_eq!(observed_result, plain_result);
+        assert!(!observed.get_observations_json(opid, osid).is_empty());
+    }
+}

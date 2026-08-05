@@ -57,6 +57,18 @@ impl Env {
         //    it. Mark those payloads as roots.
         ctx.resources.gc_roots(|val| heap.mark_value(val));
 
+        // 6. Observed values (`crate::observe`) outlive the instruction that
+        //    produced them — the whole point is that a host can read them
+        //    afterwards — so an unrooted buffer would hand back ids into swept,
+        //    possibly recycled slots. Only when the buffer's stamped context is
+        //    the one being collected: its ids index *that* heap, and marking
+        //    them into a fork's heap would resurrect unrelated objects there.
+        if self.observations.context() == Some(ck) {
+            for (_, val) in self.observations.iter() {
+                heap.mark_value(val);
+            }
+        }
+
         // Sweep phase
         heap.sweep();
     }

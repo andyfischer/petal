@@ -89,6 +89,11 @@ pub struct Vm<'a> {
     /// [`Vm::deliver_value`]. Best-effort: in-place mutation and register reuse
     /// can thin coverage relative to the graph engine.
     pub trace: &'a mut crate::trace::TraceBuffer,
+    /// Last-value-per-named-term observation buffer (off by default). Recorded
+    /// at the same two points as the trace — [`Vm::step`] for instructions that
+    /// retire in their own frame, [`Vm::deliver_value`] for call results — but
+    /// filtered to terms a reader could name (see [`Vm::is_observable`]).
+    pub observations: &'a mut crate::observe::Observations,
     /// Set by `call_closure_sync` when a synchronous closure call (map/filter/
     /// reduce/forEach, or the host `Env::call_function`) unwinds with an error
     /// that `step` already annotated. The intrinsic returns that error via `?`,
@@ -113,6 +118,15 @@ impl<'a> Vm<'a> {
             }
         }
         self.stack.vm_frames.push(frame);
+    }
+
+    /// Whether a term's value is worth observing: it must carry a source name
+    /// (an unnamed temp has nothing to key on) and must not be one of the ~70
+    /// synthetic builtin-table terms, which *are* named but stand for `print`,
+    /// `range`, `len` and friends rather than for anything the program bound.
+    fn is_observable(&self, term_id: TermId) -> bool {
+        let term = self.program.get_term(term_id);
+        term.name.is_some() && !crate::ir_display::is_phantom(self.program, term)
     }
 
     /// Execute one instruction and advance. Returns the same [`StepResult`]
@@ -152,6 +166,18 @@ impl<'a> Vm<'a> {
         } else {
             None
         };
+        // Observation needs only `(origin term, dst)` — no input gathering — and
+        // has its own gate, so a host can leave it on without paying for the
+        // trace. The name/phantom filter runs here rather than at read time so
+        // the buffer never holds an entry no reader could address.
+        let observe_dst: Option<(TermId, Reg)> = if self.observations.enabled {
+            match (origin, inst.dst()) {
+                (Some(term), Some(dst)) if self.is_observable(term) => Some((term, dst)),
+                _ => None,
+            }
+        } else {
+            None
+        };
         match self.exec_inst(frame_idx, inst, origin) {
             Ok(sr) => {
                 // Record the retired instruction's result, but only if it stayed
@@ -161,6 +187,15 @@ impl<'a> Vm<'a> {
                     if self.stack.vm_frames.len() == frame_idx + 1 {
                         let result = self.reg(frame_idx, dst);
                         self.trace.push(term, &inputs, result);
+                    }
+                }
+                // Same same-frame guard, same reason: a pushed call frame means
+                // `dst` holds the caller's stale value, and the real result
+                // arrives later via `deliver_value`.
+                if let Some((term, dst)) = observe_dst {
+                    if self.stack.vm_frames.len() == frame_idx + 1 {
+                        let result = self.reg(frame_idx, dst);
+                        self.observations.record(term, result);
                     }
                 }
                 sr

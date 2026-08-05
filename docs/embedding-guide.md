@@ -282,6 +282,9 @@ computed costs a push, and a run with tracing off pays nothing at all.
 Garden's Petal IDE is built on this: hover a shape on the canvas and the
 `draw_*` call that drew it highlights in the editor beside it.
 
+Full how-to — picking the right frame, classifying arguments for rewriting, and
+building a hit test — in [direct-manipulation.md](direct-manipulation.md).
+
 ---
 
 ## Related patterns

@@ -162,6 +162,63 @@ they `emit` into the `draw_commands` buffer, and the host decodes it each frame.
 
 ---
 
+## Reading arbitrary named values (observation)
+
+Output buffers observe what a script *declares* — calls it makes on purpose, to
+be seen. **Observation** is the other direction: reading a value the script
+never offered. If a host wants to know what `body_top` currently is, the buffer
+pattern would have you edit the script to push it, adding a call that exists
+only to feed the host. Observation reads it directly.
+
+The runtime already knows: every binding is a named IR term and the VM writes
+its value on every pass. Turn recording on, run, read the map back:
+
+```rust
+env.observations_mut().enable();          // off by default; enable before the run
+env.run(stack_id)?;
+let values = env.get_observations_json(program_id, stack_id);
+// { "body_top": 48, "list_row.sel": 2, "theme": {...} }
+```
+
+Keys are **function-qualified source names**: a top-level `sel` is `sel`, one
+inside `fn list_row` is `list_row.sel`, a nested fn composes (`outer.inner.x`),
+an anonymous fn contributes `fn<id>`. Only function bodies qualify — an `if` arm
+or loop body is not a scope a reader would confuse. One slot per term, **last
+write wins**, so a loop temp reports its final iteration. A binding whose term
+never executed is *absent* from the map, not null.
+
+`env.observations()` / `observations_mut()` also expose the raw buffer
+(`get(TermId) -> Option<Value>`, `iter`, `len`, `clear`, `disable`) when you
+want `Value`s rather than JSON.
+
+### Things to get right
+
+- **Enable before the run.** Recording happens as values are written; a buffer
+  switched on afterwards is empty. It is off by default and costs one bool
+  check when off, so a debugging host can simply leave it on.
+- **Cleared per run, not per resume.** The buffer clears at the *start* of a
+  run and never on resuming a yielded one, so a host driving frames in small
+  budgets sees one frame's bindings rather than a fragment of them.
+- **Scoped to one execution context.** The stored values are heap ids, and
+  `fork_execution` runs against a different heap. The buffer stamps itself with
+  the context its contents came from and clears when execution moves; readers
+  check the stamp, so `get_observations_json` returns an **empty map** rather
+  than decoding a fork's ids against this stack's heap. Pass the stack you
+  actually ran.
+- **Values are GC roots.** While a run is in progress everything observed is
+  marked live (`env/gc.rs`), so an observed value is not swept out from under
+  the id you are about to read.
+- **It is a snapshot, not a handle.** Same contract as `get_state_json`: the map
+  reflects the moment it was read, and a container observed here may be mutated
+  *in place* by a later run (escape analysis). Read it when you want the answer;
+  don't compute it once and hold it across a run.
+
+`petal run --observe` is the same facility from the command line — the fastest
+way to see what keys a given script will produce. See
+[CLI.md](CLI.md#run--execute-a-program).
+
+---
+
 ## Related patterns
 
 ### Feeding inputs in (host → script)

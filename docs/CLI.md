@@ -46,8 +46,8 @@ per-term execution trace.
 ### `run` — Execute a program
 
 ```
-petal run [--json] [--trace] [--record-trace <path>] [--ir] [--no-opt] [--dup-stats] [--trace-pending] <file.ptl>
-petal run [--json] [--trace] [--record-trace <path>] [--no-opt] [--dup-stats] [--trace-pending] -e '<code>'
+petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--no-opt] [--dup-stats] [--trace-pending] <file.ptl>
+petal run [--json] [--trace] [--record-trace <path>] [--observe] [--no-opt] [--dup-stats] [--trace-pending] -e '<code>'
 ```
 
 Runs the program and prints any output to stdout. Exits with code 1 on error.
@@ -64,6 +64,21 @@ Flags:
   after the run completes. Useful for offline analysis and for feeding
   `petal explain`. Environment variable `PETAL_DEBUG=1` enables tracing
   without the flag.
+- `--observe` — after the run, dump the last value bound to every named
+  variable. Names are function-qualified: a top-level `sel` is `sel`, a `sel`
+  inside `fn list_row` is `list_row.sel`, so the two are separate keys rather
+  than one shadowing the other. Only function bodies qualify — an `if` arm or a
+  loop body does not. One slot per binding, last write wins, so a loop temp
+  reports its **final** iteration; use `--record-trace` / `explain` when you
+  need the history instead. A binding whose term never executed is absent, not
+  null.
+
+  The dump goes to stdout after a blank line and an `Observed values (N):`
+  header, one aligned `name = value` line each, sorted by name. With `--json`
+  it is a single object instead. It is printed **even when the program fails**
+  — the values bound before the error are the point — and in `--json` mode it
+  rides on the error object as an `observations` field, keeping stdout a single
+  JSON document. A failing run still exits 1.
 - `--ir` — load `<file>` as JSON IR (the output of `show-ir --json`) instead
   of source; use `-` to read from stdin, e.g.
   `petal show-ir --json -e '<code>' | petal run --ir -`.

@@ -15,7 +15,7 @@ use crate::program::{Program, ProgramId, Term, TermId};
 use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
 
-use super::{SourceInput, die, die_error, die_plain, die_with};
+use super::{SourceInput, die, die_error, die_plain, die_with, error_json_value};
 
 /// `petal lsp` — serve the language server on stdin/stdout until the client
 /// disconnects. A broken pipe is how an editor normally shuts us down, so that
@@ -37,6 +37,7 @@ pub(super) fn handle_run(
     dup_stats: bool,
     no_opt: bool,
     trace_pending: bool,
+    observe: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -55,6 +56,11 @@ pub(super) fn handle_run(
     }
     if record_trace.is_some() {
         env.trace_mut().enable();
+    }
+    // Enable before the run, not after: observation records writes as they
+    // happen, so a buffer switched on afterwards has nothing in it.
+    if observe {
+        env.observations_mut().enable();
     }
     let pid = if ir {
         // The IR loader is a deserializer, not the front end; it has no phase
@@ -83,6 +89,11 @@ pub(super) fn handle_run(
     }
     let run_result = env.run(sid);
 
+    // Snapshot the observed values now. The map is a snapshot by contract, and
+    // reading it here — before anything else touches the env — keeps the
+    // reported values the ones the run finished (or died) with.
+    let observed = observe.then(|| env.get_observations_json(pid, sid));
+
     if let Some(path) = &record_trace {
         write_trace_to_file(&env, pid, path);
     }
@@ -100,8 +111,56 @@ pub(super) fn handle_run(
         );
     }
 
-    if let Err(e) = run_result {
-        die(json, &e, "runtime");
+    // The dump comes before the error report, in both modes and for the same
+    // reason: the values are what the run *did*, the error is how it ended.
+    // Reading them in that order is reading the program's story forward.
+    match (run_result, observed) {
+        (Err(e), Some(map)) if json => {
+            // One JSON document on stdout, not two: the observed values ride on
+            // the error object rather than being printed beside it.
+            let mut obj = error_json_value(&e, "runtime");
+            obj["observations"] = serde_json::Value::Object(map);
+            println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+            process::exit(1);
+        }
+        (run_result, observed) => {
+            if let Some(map) = observed {
+                print_observations(json, &map);
+            }
+            if let Err(e) = run_result {
+                die(json, &e, "runtime");
+            }
+        }
+    }
+}
+
+/// Print the `--observe` dump: a JSON object under `--json`, otherwise a blank
+/// line, a header, and one aligned `name = value` line per observed binding.
+///
+/// The blank line and header matter — the dump shares stdout with whatever the
+/// program itself printed, and an unheralded list of assignments would read as
+/// more program output. Names are sorted so two runs of the same program diff
+/// cleanly; values are compact JSON, so a string is quoted and cannot be
+/// mistaken for a bare name.
+fn print_observations(json: bool, map: &serde_json::Map<String, serde_json::Value>) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(map).unwrap());
+        return;
+    }
+    println!();
+    if map.is_empty() {
+        println!("Observed values: none.");
+        return;
+    }
+    let mut entries: Vec<(&String, String)> = map
+        .iter()
+        .map(|(k, v)| (k, serde_json::to_string(v).unwrap_or_default()))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    let width = entries.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+    println!("Observed values ({}):", entries.len());
+    for (name, value) in entries {
+        println!("  {:<width$} = {}", name, value, width = width);
     }
 }
 

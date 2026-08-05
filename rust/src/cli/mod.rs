@@ -23,6 +23,10 @@ pub enum Command {
         /// Turn on the pending absorption trace and print the frame pending
         /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
         trace_pending: bool,
+        /// Record the last value bound to every named term and dump the lot
+        /// after the run — "what is everything right now", including after a
+        /// runtime error.
+        observe: bool,
     },
     Check {
         json: bool,
@@ -135,10 +139,15 @@ Commands:
                                  (exit 0/1)
                                  --ir: check <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
-  run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] [--trace-pending] <file>
+  run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--dup-stats] [--trace-pending] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
+                                 --observe: after the run, dump the last value
+                                 bound to every named variable, keyed by
+                                 function-qualified name (fn-local 'x' inside
+                                 'fn f' reads as 'f.x'). Dumped even when the
+                                 run errors; --json emits it as an object
                                  --dup-stats: print value-duplication and heap
                                  allocation stats to stderr after the run (debug
                                  builds / dup-stats feature)
@@ -326,6 +335,7 @@ pub fn execute(cli: CliArgs) {
             dup_stats,
             no_opt,
             trace_pending,
+            observe,
         } => {
             handlers::handle_run(
                 json,
@@ -335,6 +345,7 @@ pub fn execute(cli: CliArgs) {
                 dup_stats,
                 no_opt,
                 trace_pending,
+                observe,
                 &source,
                 &source_input,
                 &include_dirs,
@@ -384,7 +395,7 @@ pub fn execute(cli: CliArgs) {
 /// Parse an error string into a structured JSON object.
 /// Extracts `[line N, column M]`, `Caused by:` (provenance), and
 /// `Stack trace:` suffixes produced by the evaluator, lexer, and parser.
-fn error_json_value(err: &str, phase: &str) -> serde_json::Value {
+pub(super) fn error_json_value(err: &str, phase: &str) -> serde_json::Value {
     // Split off stack trace first (always last)
     let (head, stack) = match err.split_once("\nStack trace:") {
         Some((h, rest)) => (h.to_string(), split_indented_lines(rest)),

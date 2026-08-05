@@ -34,6 +34,7 @@ Every command takes `-e <code>` or a file path. Most support `--json`.
 | Command | Purpose |
 |---------|---------|
 | `run [--json] [--trace] [--record-trace <path>] [file\|-e code]` | Execute; `--json` = structured errors; `--trace` = per-term stderr events; `--record-trace` writes a JSON trace file |
+| `run --observe [--json] [file\|-e code]` | Execute, then dump the last value bound to every named variable, function-qualified (`list_row.sel`). Survives a runtime error — see §1b |
 | `check [--json] [file\|-e code]` | Lex+parse+compile only, exit 0/1 |
 | `explain --term <name\|id> [--json] [file\|-e code]` | Run with trace, show value chain (target + ancestors + recorded values). Accepts either a variable name (`total`), a bare numeric term id (`72`), or the `t`-prefixed form (`t72`). |
 | `show-tokens [--json]` | Lexer output |
@@ -85,6 +86,65 @@ Runtime error messages ("Caused by:") share the same walk and print the
 frontier for the same reason.
 
 See [`var-next-steps.md`](var-next-steps.md) (Provenance) for the argument.
+
+### 1b. Observation: every named value, right now
+
+`run --observe` answers a different question from everything above. The
+dataflow queries and the trace answer *"how did this value come to be"* — a
+walk backward through a bounded history. Observation answers *"what is
+everything, right now"*: one slot per named IR term, overwritten on every
+write, dumped after the run.
+
+```
+$ petal run --observe app.ptl
+row-0
+row-3
+row-6
+
+Observed values (6):
+  cell             = 6
+  counter          = 1
+  row_label        = "<function>"
+  row_label.prefix = "row-"
+  scale            = 3
+  total            = 30
+```
+
+Three rules make the dump readable:
+
+- **Names are function-qualified.** A top-level `sel` and a `sel` inside
+  `fn list_row` are `sel` and `list_row.sel` — two keys, not one silently
+  shadowing the other. Nesting composes (`outer.inner.x`); an anonymous
+  function contributes `fn<id>`. Only *function* bodies qualify: an `if` arm is
+  not a scope a reader would confuse, so a `let` inside a top-level `if` still
+  reads as its bare name.
+- **Last write wins.** A loop temp reports its final iteration, a
+  repeatedly-called function's local its last call. History is the trace
+  buffer's job.
+- **Absent ≠ null.** A binding whose term never executed is missing from the
+  dump. "The `else` arm didn't run" and "the `else` arm bound nil" are
+  different facts and stay different.
+
+Which to reach for:
+
+| Question | Tool |
+|----------|------|
+| "What is everything right now?" | `run --observe` |
+| "Why does `total` have *this* value?" | `explain --term total` |
+| "What happened, in order?" | `--trace` / `--record-trace` |
+
+Observation is off by default and costs a single bool check when off, so a host
+can leave it on for a whole session; the trace buffer records every retired
+instruction and is bounded for exactly that reason. `--observe` also works when
+the program dies partway — the bindings made before the error are the ones a
+user debugging it wants, so they are dumped and *then* the error is reported
+(under `--json`, as an `observations` field on the error object).
+
+For an embedder this is the supported way to read an arbitrary named value out
+of a script **without the program cooperating** — no `push_output` call added
+to a script just so the host can see `body_top`. See
+[embedding-guide.md](../embedding-guide.md#reading-arbitrary-named-values-observation)
+for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 
 ---
 
@@ -243,4 +303,5 @@ variable name when a term's result was bound to one, or `null` otherwise.
 | Unit-test IR shape | `showIrJson` + `termByName` / `termsByOp` |
 | Validate without running | `petal check` |
 | "Why does this variable have this value?" | `petal explain --term <name>` |
+| "What is every variable right now?" (incl. after an error) | `petal run --observe` |
 | Post-mortem analysis / offline trace review | `petal run --record-trace trace.json` |

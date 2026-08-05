@@ -45,6 +45,7 @@ Key entry points, all on `Env` (`rust/src/env/mod.rs`):
 | Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines) |
 | Id allocation | `reset_counter`, `next_counter` |
 | State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `diff_state` |
+| Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every *named* term, not just `state` (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
 | Speculation | `fork_execution`, `run_speculative`, `drop_fork` |
 | Hot reload | `module_manifest`, `transfer_state` |
 

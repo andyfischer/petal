@@ -53,6 +53,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut dup_stats = false;
     let mut no_opt = false;
     let mut trace_pending = false;
+    let mut observe = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -60,6 +61,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
         match args[i].as_str() {
             "--json" => json = true,
             "--trace" => trace = true,
+            "--observe" => observe = true,
             "--ir" => ir = true,
             "--dup-stats" => dup_stats = true,
             "--no-opt" => no_opt = true,
@@ -88,7 +90,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--ir] [--dup-stats] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--dup-stats] <file>");
         process::exit(1);
     });
 
@@ -101,6 +103,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             dup_stats,
             no_opt,
             trace_pending,
+            observe,
         },
         source,
         include_dirs: Vec::new(),

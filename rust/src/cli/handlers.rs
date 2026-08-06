@@ -38,6 +38,7 @@ pub(super) fn handle_run(
     no_opt: bool,
     trace_pending: bool,
     observe: bool,
+    trace_emits: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -61,6 +62,10 @@ pub(super) fn handle_run(
     // happen, so a buffer switched on afterwards has nothing in it.
     if observe {
         env.observations_mut().enable();
+    }
+    // Same rule for emit attribution — recording happens at the emit.
+    if trace_emits {
+        env.enable_emit_trace(true);
     }
     let pid = if ir {
         // The IR loader is a deserializer, not the front end; it has no phase
@@ -109,6 +114,15 @@ pub(super) fn handle_run(
             "pending report: {}",
             serde_json::to_string_pretty(&report).unwrap()
         );
+    }
+
+    if trace_emits {
+        let report = emit_trace_report(&env, pid);
+        if json {
+            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        } else {
+            print_emit_trace_text(&report);
+        }
     }
 
     // The dump comes before the error report, in both modes and for the same
@@ -227,6 +241,346 @@ fn print_pending_report_text(report: &serde_json::Value) {
             .and_then(|t| t.as_str())
             .unwrap_or("<unknown origin>");
         println!("  {state} {age}f  absorbed {absorbed}x  {origin}");
+    }
+}
+
+/// Build the `--trace-emits` report: for every channel the run emitted into,
+/// each value with its resolved attribution — the frame `pick_frame` chose,
+/// the callee name, the call span, and per-argument edit info. This is the
+/// "observe" half of the direct-manipulation protocol
+/// (docs/direct-manipulation.md); `propose-edit` is the "act" half, and the
+/// `emit` indices in this report are what it addresses.
+fn emit_trace_report(env: &Env, pid: ProgramId) -> serde_json::Value {
+    use crate::provenance::{self, CallSite};
+
+    let Some(program) = env.get_program(pid) else {
+        return serde_json::json!({ "channels": {} });
+    };
+    let mut channels = serde_json::Map::new();
+    for sym in env.output_channels() {
+        let name = env.symbol_name(sym).unwrap_or("<unnamed>").to_string();
+        let values = env.output_buffer(sym);
+        let origins = env.output_origins(sym);
+        let emits: Vec<serde_json::Value> = values
+            .iter()
+            .enumerate()
+            .map(|(i, value)| {
+                let mut entry = serde_json::json!({
+                    "index": i,
+                    "value": crate::value::value_to_json(value, env.heap()),
+                });
+                // Origins are index-aligned with values; a run with tracing
+                // off (or an emit with nothing to attribute) reports the value
+                // alone, which is a legitimate answer.
+                let site = origins
+                    .get(i)
+                    .and_then(|o| provenance::pick_frame(program, &o.chain, ENTRY_FILE))
+                    .and_then(|term| CallSite::resolve(program, term));
+                if let Some(site) = site {
+                    entry["term"] = serde_json::json!(site.term.0);
+                    entry["callee"] = serde_json::json!(site.callee);
+                    entry["span"] = span_json(&site.span);
+                    entry["args"] = serde_json::Value::Array(
+                        site.args
+                            .iter()
+                            .map(|a| arg_site_json(program, a))
+                            .collect(),
+                    );
+                }
+                entry
+            })
+            .collect();
+        channels.insert(name, serde_json::Value::Array(emits));
+    }
+    serde_json::json!({ "channels": channels })
+}
+
+/// One argument of a resolved call, as the report's JSON: where it is written,
+/// how editable it is, and where an edit would land.
+fn arg_site_json(program: &Program, arg: &crate::provenance::ArgSite) -> serde_json::Value {
+    use crate::provenance::ArgKind;
+    serde_json::json!({
+        "index": arg.index,
+        "kind": match arg.kind {
+            ArgKind::Literal => "literal",
+            ArgKind::Binding => "binding",
+            ArgKind::Computed => "computed",
+        },
+        "value": arg.value.as_ref().map(static_value_json),
+        "span": span_json(&arg.span),
+        "editable_span": span_json(&arg.editable_span(program)),
+    })
+}
+
+/// A `SourceSpan` as JSON (`null` for an unmapped one): 1-based line/column
+/// plus char offsets, both ends.
+fn span_json(span: &Option<crate::source_map::SourceSpan>) -> serde_json::Value {
+    match span {
+        Some(s) => serde_json::json!({
+            "start": { "line": s.start.line, "column": s.start.column, "offset": s.start.offset },
+            "end": { "line": s.end.line, "column": s.end.column, "offset": s.end.offset },
+        }),
+        None => serde_json::Value::Null,
+    }
+}
+
+/// A scalar `StaticValue` as a JSON value; composites render as source text.
+fn static_value_json(v: &crate::static_value::StaticValue) -> serde_json::Value {
+    use crate::static_value::StaticValue;
+    match v {
+        StaticValue::Str(s) => serde_json::json!(s),
+        StaticValue::Int(n) => serde_json::json!(n),
+        StaticValue::Float(f) => serde_json::json!(f),
+        StaticValue::Bool(b) => serde_json::json!(b),
+        StaticValue::Nil => serde_json::Value::Null,
+        other => serde_json::json!(other.to_source()),
+    }
+}
+
+/// Human-readable `--trace-emits` output: a header per channel, one line per
+/// emit with its callee and line, and an indented line per editable argument.
+fn print_emit_trace_text(report: &serde_json::Value) {
+    let empty = serde_json::Map::new();
+    let channels = report
+        .get("channels")
+        .and_then(|c| c.as_object())
+        .unwrap_or(&empty);
+    println!();
+    if channels.is_empty() {
+        println!("Emitted values: none.");
+        return;
+    }
+    for (name, emits) in channels {
+        let emits = emits.as_array().map(Vec::as_slice).unwrap_or(&[]);
+        println!(
+            "Channel '{}' ({} emit{}):",
+            name,
+            emits.len(),
+            if emits.len() == 1 { "" } else { "s" }
+        );
+        for e in emits {
+            let idx = e.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            let callee = e
+                .get("callee")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unattributed>");
+            let line = e
+                .pointer("/span/start/line")
+                .and_then(|v| v.as_u64())
+                .map(|l| format!(" [line {}]", l))
+                .unwrap_or_default();
+            let value = e.get("value").map(|v| v.to_string()).unwrap_or_default();
+            println!("  [{}] {}{} <- {}", idx, callee, line, value);
+            for a in e
+                .get("args")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let ai = a.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                let kind = a.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+                let av = a.get("value").filter(|v| !v.is_null());
+                let at = a
+                    .pointer("/editable_span/start/line")
+                    .and_then(|v| v.as_u64())
+                    .map(|l| format!(" (edit line {})", l))
+                    .unwrap_or_default();
+                match av {
+                    Some(v) => println!("      arg {}: {} = {}{}", ai, kind, v, at),
+                    None => println!("      arg {}: {}", ai, kind),
+                }
+            }
+        }
+    }
+}
+
+/// `petal propose-edit` — the goal half of direct manipulation: run the
+/// program with emit tracing, pick the call that produced the addressed emit,
+/// and propose source edits that make its argument evaluate to the requested
+/// value. See docs/direct-manipulation.md for the protocol this implements.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn handle_propose_edit(
+    json: bool,
+    channel: &str,
+    emit: usize,
+    arg: usize,
+    to: &str,
+    configurable: &[String],
+    pinned: &[String],
+    apply: bool,
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    use crate::direct_manipulation::{ManipulationGoal, VarPolicy, propose_edits};
+    use crate::provenance;
+
+    let mut env = make_env(include_dirs);
+    env.enable_emit_trace(true);
+    // The per-term trace supplies the values the arithmetic solver inverts
+    // against; without it only statically-known siblings can be used.
+    env.trace_mut().enable();
+    let pid = match load_into(&mut env, source, source_input) {
+        Ok(pid) => pid,
+        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
+    };
+    let sid = match env.create_stack(pid) {
+        Ok(sid) => sid,
+        Err(e) => die(json, &e, "compile"),
+    };
+    if let Err(e) = env.run(sid) {
+        die(json, &e, "runtime");
+    }
+
+    let sym = env.intern_symbol(channel);
+    let origins = env.output_origins(sym);
+    if origins.is_empty() {
+        let known: Vec<String> = env
+            .output_channels()
+            .iter()
+            .filter_map(|&s| env.symbol_name(s).map(str::to_string))
+            .collect();
+        die(
+            json,
+            &format!(
+                "channel '{}' recorded no emits; channels with emits: {}",
+                channel,
+                if known.is_empty() {
+                    "none".to_string()
+                } else {
+                    known.join(", ")
+                }
+            ),
+            "goal",
+        );
+    }
+    let Some(origin) = origins.get(emit) else {
+        die(
+            json,
+            &format!(
+                "channel '{}' has {} emit(s), no index {}",
+                channel,
+                origins.len(),
+                emit
+            ),
+            "goal",
+        );
+    };
+
+    let program = env.get_program(pid).expect("program");
+    let Some(term) = provenance::pick_frame(program, &origin.chain, ENTRY_FILE) else {
+        die(json, "the emit carries no attributable call chain", "goal");
+    };
+
+    let goal = ManipulationGoal {
+        term,
+        arg_index: arg,
+        new_value: parse_goal_value(to),
+    };
+    let mut policy = std::collections::HashMap::new();
+    for name in pinned {
+        policy.insert(name.clone(), VarPolicy::Static);
+    }
+    // Configurable wins on conflict: naming a variable both ways means the
+    // caller most recently decided to tune it.
+    for name in configurable {
+        policy.insert(name.clone(), VarPolicy::Configurable);
+    }
+
+    let proposals = match propose_edits(program, &goal, Some(env.trace()), &policy) {
+        Ok(ps) => ps,
+        Err(e) => die(json, &e.message, "goal"),
+    };
+
+    let proposals_json: Vec<serde_json::Value> = proposals
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "description": p.description,
+                "variable": p.variable,
+                "shared": p.shared,
+                "span": span_json(&Some(p.edit.span)),
+                "new_text": p.edit.new_text,
+            })
+        })
+        .collect();
+
+    let applied = if apply {
+        match (&proposals[..], source_input) {
+            ([p], SourceInput::File(path)) if path != "-" => {
+                let edited = crate::rewrite::splice(source, p.edit.span, &p.edit.new_text);
+                if let Err(e) = fs::write(path, &edited) {
+                    die(json, &format!("writing '{}': {}", path, e), "apply");
+                }
+                true
+            }
+            ([_], _) => die(json, "--apply needs a file path, not inline code", "apply"),
+            ([], _) => die(json, "no proposal to apply", "apply"),
+            _ => die(
+                json,
+                &format!(
+                    "{} proposals remain; narrow with --configurable / --static before --apply",
+                    proposals.len()
+                ),
+                "apply",
+            ),
+        }
+    } else {
+        false
+    };
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "channel": channel,
+                "emit": emit,
+                "arg": arg,
+                "goal": to,
+                "proposals": proposals_json,
+                "applied": applied,
+            }))
+            .unwrap()
+        );
+    } else if proposals.is_empty() {
+        println!("No edit can satisfy this goal: the argument does not trace to editable text.");
+    } else {
+        println!(
+            "{} proposal{}:",
+            proposals.len(),
+            if proposals.len() == 1 { "" } else { "s" }
+        );
+        for (i, p) in proposals.iter().enumerate() {
+            let shared = if p.shared {
+                "  [shared: other code reads this]"
+            } else {
+                ""
+            };
+            println!("  {}. {}{}", i + 1, p.description, shared);
+        }
+        if applied {
+            println!("Applied.");
+        } else if proposals.len() > 1 {
+            println!("Narrow with --configurable <var> / --static <var>, or apply one by hand.");
+        }
+    }
+}
+
+/// Parse the `--to` goal value the way a config file would read it: int, then
+/// float, then `true`/`false`/`nil`, else a string.
+fn parse_goal_value(to: &str) -> crate::static_value::StaticValue {
+    use crate::static_value::StaticValue;
+    if let Ok(n) = to.parse::<i64>() {
+        return StaticValue::Int(n);
+    }
+    if let Ok(f) = to.parse::<f64>() {
+        return StaticValue::Float(f);
+    }
+    match to {
+        "true" => StaticValue::Bool(true),
+        "false" => StaticValue::Bool(false),
+        "nil" => StaticValue::Nil,
+        s => StaticValue::Str(s.to_string()),
     }
 }
 

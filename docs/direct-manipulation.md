@@ -1,13 +1,16 @@
 # Programming by direct manipulation
 
-Point at something a program drew, and find the code that drew it.
+Point at something a program drew, and find the code that drew it. Then say
+what it *should* have been, and get back the edit that makes it so.
 
 That is the whole idea, and Petal supports it at the language level: any value a
 script *emits* — a draw command, a log line, a row — can be traced back to the
 call that produced it, and from there to each argument's source span and literal
 value. A host wires that into a pointer and gets an editor where the canvas is
 navigable: hover a shape, the code lights up; and with the argument information,
-drag a shape and the code can be rewritten.
+drag a shape and the code can be rewritten. The second half is goal-based: the
+host states the outcome ("this argument should be 55") and the runtime answers
+with candidate source mutations ([The goal-based protocol](#the-goal-based-protocol)).
 
 This document is the how-to. For the surrounding embedding patterns (output
 buffers, observation, bindings) see [embedding-guide.md](embedding-guide.md); the
@@ -21,6 +24,8 @@ API reference lives in `petal::provenance`.
 - [Resolving: from an id to source](#resolving-from-an-id-to-source)
 - [Picking the right frame](#picking-the-right-frame)
 - [Arguments, literals, and rewriting](#arguments-literals-and-rewriting)
+- [The goal-based protocol](#the-goal-based-protocol)
+- [Tracing live code from the CLI and MCP](#tracing-live-code-from-the-cli-and-mcp)
 - [Building a hit test](#building-a-hit-test)
 - [Rules that keep it correct](#rules-that-keep-it-correct)
 - [Cost](#cost)
@@ -191,6 +196,7 @@ pub struct ArgSite {
     pub kind: ArgKind,
     pub literal: Option<Literal>,
     pub literal_term: Option<TermId>,
+    pub value: Option<StaticValue>,   // any constant type: string, bool, nil too
 }
 
 pub enum ArgKind { Literal, Binding, Computed }
@@ -201,6 +207,12 @@ pub struct Literal {
     pub negated: bool,   // `-5`; `value` is already negative
 }
 ```
+
+Resolution is not number-only: a string, bool, or `nil` written in the call (or
+behind a binding) resolves too, reported through `value` as a
+[`StaticValue`](../rust/src/static_value.rs) — the same type goal-based editing
+renders back into source. `literal` stays the numeric view, carrying the
+spelling data (`is_int`, `negated`) a live drag needs.
 
 ### The three kinds
 
@@ -240,6 +252,143 @@ Identity copies (a name reference, `StateInit`) are followed up to 16 hops, so a
 short alias chain still finds its literal. `Phi` is deliberately **not** followed:
 its value depends on control flow, so the literal reachable through one is not the
 value this call actually saw.
+
+## The goal-based protocol
+
+Everything above answers *where a value came from*. The other direction — the
+one a drag, a color picker, or an inspector field actually needs — is a
+**goal**: "this thing the program emitted should have been X instead. What do I
+change?" The runtime answers with source mutations, and the exchange is
+designed to be a conversation, because the honest answer is often plural.
+
+The shape of a full round:
+
+```
+  host / IDE                                  Petal runtime
+  ──────────                                  ─────────────
+  1. run the script with tracing on ────────► values + EmitSites per channel
+  2. user grabs something
+     (drag, drop, inspector edit)
+  3. state a goal:
+     "emit #7, arg 2, should be 55" ────────► propose_edits(goal, trace, policy)
+                                    ◄──────── one proposal…    → apply it
+                                              …or several      → step 4
+  4. refine: mark variables
+     configurable / static          ────────► propose_edits(same goal, policy)
+                                    ◄──────── narrowed (ideally to one)
+  5. apply the edit, re-run, re-trace ──────► fresh values, fresh ids
+```
+
+The pieces, and where they live:
+
+1. **Observe.** Run with `enable_emit_trace(true)` (and, if computed arguments
+   should be solvable, the per-term `TraceBuffer`). Every emitted value now has
+   an address: *(channel, index)*, plus its resolved call and arguments.
+2. **State a goal.** `direct_manipulation::propose_edits` takes a
+   `ManipulationGoal { term, arg_index, new_value }` — the term from
+   `pick_frame`, the value as a `StaticValue`. The goal describes the
+   *outcome*, never the edit; which text changes is the runtime's answer, in
+   the same spirit as `goal_based_editing` for config files.
+3. **Read the proposals.** Each `EditProposal` is one concrete replacement
+   (span + new text) plus what a chooser needs: the `variable` it edits (or
+   none, for a call-site literal), and `shared` — whether other code reads
+   that binding, so the edit moves more than the grabbed thing.
+   - A literal argument yields exactly one proposal.
+   - A binding yields one, at the definition, possibly flagged `shared`.
+   - A computed argument (`x + offset`) yields **one per contributing
+     variable**, each solved with the values the traced run actually saw:
+     making `x + offset` equal 42.5 by moving `x`, and by moving `offset`,
+     are both offered.
+4. **Refine.** The host narrows with `VarPolicy`: `Static` ("never touch
+   `x` — it's the layout grid") removes proposals; `Configurable` ("`offset`
+   is the tunable") makes its proposals win over unpinned ones. Policy can
+   come from anywhere — a per-sketch settings panel, a `// @config` comment
+   convention, or the IDE asking the user the first time a goal comes back
+   plural: *"Dragging this changes either `x` or `offset` — which did you
+   mean?"* The answer is worth remembering; it is the user teaching the
+   editor the sketch's intent.
+5. **Apply, re-run, re-trace.** Applying is the host's move (the runtime never
+   writes files from `propose_edits`). Term ids are indices into the compiled
+   program, so after any edit the old ids are stale by design —
+   `CallSite::resolve` returns `None` for them — and the re-run's fresh trace
+   is the only source of truth. This is also what keeps the arithmetic solver
+   honest: it inverts against *last-seen* values, so a loop-varying operand can
+   produce a proposal that lands slightly off; the immediate re-trace shows
+   the actual result and the next drag frame corrects it, the same way any
+   iterative direct-manipulation loop converges.
+
+What the solver deliberately refuses: an argument that flows through a call, a
+comparison, or anything else non-invertible produces *no* proposal for that
+branch. A guess that silently rewrites code to mean something else is worse
+than a refusal the IDE can render as "this value isn't directly editable —
+open the function?"
+
+### Where this can grow
+
+- **Multi-goal requests.** A drag changes x *and* y in one gesture; a batch of
+  `ManipulationGoal`s that must resolve consistently (and share one policy
+  round-trip) is the natural extension, mirroring how `goal_based_editing`
+  already applies goal lists.
+- **Goals about the emitted value itself**, not an argument — "this row should
+  be 'label'" — resolvable when the emitting call passes the value through
+  (arg-level goal derived automatically), refusable when it's constructed.
+- **Language-level configurability.** Today policy lives host-side. The
+  language is open to carrying it in-source — e.g. a `config` modifier
+  (`config let offset = 10`) declaring "this binding is the tuning knob";
+  `propose_edits` would then default `Configurable` to config bindings and
+  `Static` to the rest, so a bare drag resolves to one edit with no dialog.
+  That also gives Garden-style hosts an honest place to render sliders. Not
+  built yet; the `VarPolicy` map is deliberately the same shape so the feature
+  slots in without changing the protocol.
+- **Insertion goals.** "There should be a circle here" (paste, palette drop) is
+  `Goal::should_call` territory — `goal_based_editing` already inserts calls
+  with placement control; wiring it into the same channel-addressed protocol
+  makes create and adjust one API.
+
+## Tracing live code from the CLI and MCP
+
+The protocol is exercisable without writing a host. Both halves ship as CLI
+commands, and the dev MCP server exposes them to agents as `TraceEmits` and
+`ProposeEdit` (see [dev/mcp-server.md](dev/mcp-server.md)).
+
+**Observe** — run a script and dump every emitted value with its attribution:
+
+```
+$ petal run --trace-emits sketch.ptl
+
+Channel 'shapes' (2 emits):
+  [0] push_output [line 4] <- 30
+      arg 1: computed
+  [1] push_output [line 5] <- "label"
+      arg 1: literal = "label" (edit line 5)
+```
+
+`--json` emits the structured report: per channel, each emit's value, the
+resolved call (`term`, `callee`, `span`) and per-argument
+`kind` / `value` / `span` / `editable_span`. The `index` within a channel is
+the emit address `propose-edit` takes.
+
+**Act** — state a goal against one of those emits:
+
+```
+$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
+2 proposals:
+  1. set `x` to 32.5 (line 1)
+  2. set `offset` to 22.5 (line 2)
+Narrow with --configurable <var> / --static <var>, or apply one by hand.
+
+$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 \
+    --static x --apply sketch.ptl
+1 proposal:
+  1. set `offset` to 22.5 (line 2)
+Applied.
+```
+
+`--json` returns the proposals with exact spans (line/column/offset both ends)
+and replacement text for a harness that applies edits itself; `--apply`
+rewrites the file only when policy has narrowed the answer to exactly one
+proposal, and refuses otherwise — ambiguity is the caller's to resolve, never
+the tool's to guess through.
 
 ## Building a hit test
 
@@ -378,6 +527,9 @@ reporting the position as `Computed` at this frame.
 
 - [embedding-guide.md](embedding-guide.md) — output buffers, observation, and the
   host↔script channels this builds on.
-- `petal::provenance` — the API reference.
+- `petal::provenance` — the API reference for attribution.
+- `petal::direct_manipulation` — the goal-based proposal API.
+- `petal::goal_based_editing` — declarative, formatting-preserving edits for
+  config-shaped files; the insertion machinery the protocol will grow into.
 - Garden's `docs/petal-ide-mode.md` — a complete host implementation: hover a
   shape on the canvas, see the code highlight in the editor beside it.

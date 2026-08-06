@@ -204,6 +204,87 @@ server.registerTool("ShowTokens", {
   },
 }, ({ code }) => runPetalCommand(["show-tokens", "--json", "-e", code]));
 
+server.registerTool("TraceEmits", {
+  title: "Trace Emitted Values",
+  description:
+    "Runs Petal code with emit tracing and returns, per output channel " +
+    "(anything pushed with push_output / draw commands), every emitted value " +
+    "with its attribution: the call that produced it (callee, span, term id) " +
+    "and per-argument edit info (kind literal|binding|computed, resolved " +
+    "constant value, span, editable span). This is the observation half of " +
+    "direct manipulation (docs/direct-manipulation.md): use it to see what a " +
+    "live script emitted and which source text each value traces to, then " +
+    "use ProposeEdit to turn a change request into concrete source edits.",
+  inputSchema: {
+    code: z.string().describe("The Petal source code to run"),
+  },
+}, async ({ code }) => {
+  const buildErr = await ensureBuild();
+  if (buildErr) return buildErr;
+  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
+  await writeFile(tmpFile, code);
+  try {
+    const result = await runCommand(petalBin, ["run", "--trace-emits", "--json", tmpFile]);
+    return {
+      content: [{ type: "text", text: result.stdout || result.stderr }],
+      isError: result.exitCode !== 0,
+    };
+  } finally {
+    await unlink(tmpFile).catch(() => {});
+  }
+});
+
+server.registerTool("ProposeEdit", {
+  title: "Propose Goal-Based Source Edit",
+  description:
+    "The goal-based direct-manipulation query (docs/direct-manipulation.md). " +
+    "Runs Petal code with emit tracing, finds the call that produced emit " +
+    "number `emit` on `channel`, and returns source-edit proposals that make " +
+    "argument `arg` of that call evaluate to `to`. A literal argument yields " +
+    "one direct edit; a computed argument (e.g. `x + offset`) yields one " +
+    "proposal per contributing variable, solved with the values the run " +
+    "actually saw. Narrow multiple proposals by naming variables in " +
+    "`configurable` (prefer editing these) or `static` (never edit these). " +
+    "Each proposal carries the span (line/column/offset) and replacement " +
+    "text; nothing is written — applying is the caller's move. Use TraceEmits " +
+    "first to find channel / emit / arg indices.",
+  inputSchema: {
+    code: z.string().describe("The Petal source code to run"),
+    channel: z.string().describe("Output channel name (e.g. 'draw_commands')"),
+    emit: z.number().int().min(0).describe("0-based emit index within the channel"),
+    arg: z.number().int().min(0).describe("0-based argument position in the emitting call"),
+    to: z.string().describe("Goal value as source-ish text: 55, 2.5, true, hello"),
+    configurable: z.array(z.string()).optional()
+      .describe("Variables to prefer editing"),
+    static: z.array(z.string()).optional()
+      .describe("Variables that must not be edited"),
+  },
+}, async ({ code, channel, emit, arg, to, configurable, static: pinned }) => {
+  const buildErr = await ensureBuild();
+  if (buildErr) return buildErr;
+  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
+  await writeFile(tmpFile, code);
+  try {
+    const args = [
+      "propose-edit", "--json",
+      "--channel", channel,
+      "--emit", String(emit),
+      "--arg", String(arg),
+      "--to", to,
+    ];
+    for (const name of configurable ?? []) args.push("--configurable", name);
+    for (const name of pinned ?? []) args.push("--static", name);
+    args.push(tmpFile);
+    const result = await runCommand(petalBin, args);
+    return {
+      content: [{ type: "text", text: result.stdout || result.stderr }],
+      isError: result.exitCode !== 0,
+    };
+  } finally {
+    await unlink(tmpFile).catch(() => {});
+  }
+});
+
 server.registerTool("PendingReport", {
   title: "Pending Report",
   description:

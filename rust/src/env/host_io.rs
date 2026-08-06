@@ -87,6 +87,34 @@ impl Env {
             .unwrap_or(&[])
     }
 
+    /// Every symbol with a non-empty output buffer, sorted by name — the
+    /// channels a run actually emitted into. This is how a generic host (the
+    /// CLI's `--trace-emits`, a debugger) discovers what to drain without
+    /// knowing an embedding's channel names in advance.
+    pub fn output_channels(&self) -> Vec<SymbolId> {
+        let ctx = self.ctx(self.default_context);
+        let mut syms: Vec<SymbolId> = ctx
+            .output_buffers
+            .iter()
+            .filter(|(_, buf)| !buf.is_empty())
+            .map(|(&sym, _)| sym)
+            .collect();
+        syms.sort_by_key(|&s| self.symbol_name(s).map(str::to_string));
+        syms
+    }
+
+    /// Peek at the call-site attribution of `sym`'s buffer without draining it
+    /// — index-aligned with [`output_buffer`](Self::output_buffer). Empty
+    /// unless [`enable_emit_trace`](Self::enable_emit_trace) was on during the
+    /// run.
+    pub fn output_origins(&self, sym: SymbolId) -> &[crate::execution_context::EmitSite] {
+        self.ctx(self.default_context)
+            .emit_origins
+            .get(&sym)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
     /// Clear the buffer bound to `sym` (e.g. at the top of a frame).
     pub fn clear_output_buffer(&mut self, sym: SymbolId) {
         let ck = self.default_context;

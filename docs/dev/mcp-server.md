@@ -15,6 +15,8 @@ quickly test Petal snippets without shelling out manually.
 | `ShowAST({code})` | Return the parsed AST as JSON. |
 | `ShowTokens({code})` | Return the token stream as JSON. |
 | `PendingReport({code})` | Run the code and return the frame pending report as JSON: every live pending resource with its state, age, origin, and this-frame absorption count. Debug "why is this region blank". |
+| `TraceEmits({code})` | Run with emit tracing; per output channel, every emitted value with the call that produced it and per-argument edit info. The observation half of direct manipulation (see docs/direct-manipulation.md). |
+| `ProposeEdit({code, channel, emit, arg, to, configurable?, static?})` | Goal-based edit query: propose source edits that make argument `arg` of the call behind emit `emit` on `channel` evaluate to `to`. Multiple proposals when several variables feed the value; narrow with `configurable`/`static`. |
 
 ```
 TestSnippet({ code: 'print("hello")' })

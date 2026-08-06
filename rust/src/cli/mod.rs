@@ -27,6 +27,10 @@ pub enum Command {
         /// after the run — "what is everything right now", including after a
         /// runtime error.
         observe: bool,
+        /// Trace every buffered emit back to its call site and dump the values
+        /// with their resolved source attribution after the run — the
+        /// observation half of direct manipulation (docs/direct-manipulation.md).
+        trace_emits: bool,
     },
     Check {
         json: bool,
@@ -77,6 +81,28 @@ pub enum Command {
     /// live pending resource). The observability counterpart to `run`.
     PendingReport {
         json: bool,
+    },
+    /// Run the program with emit tracing, then answer a manipulation goal —
+    /// "this argument of the call that produced emit N should be VALUE" — with
+    /// candidate source edits (see `crate::direct_manipulation`).
+    ProposeEdit {
+        json: bool,
+        /// Output channel the emit was pushed into (e.g. "draw_commands").
+        channel: String,
+        /// 0-based index of the emit within the channel's buffer.
+        emit: usize,
+        /// 0-based argument position within the emitting call.
+        arg: usize,
+        /// The value the argument should evaluate to, as source-ish text
+        /// (`55`, `2.5`, `true`, `hello`).
+        to: String,
+        /// Variables the host prefers to edit (`--configurable name`).
+        configurable: Vec<String>,
+        /// Variables that must not be edited (`--static name`).
+        pinned: Vec<String>,
+        /// Apply the edit to the file in place — only when exactly one
+        /// proposal remains after policy filtering.
+        apply: bool,
     },
     /// Serve the language server over stdio. Takes no source file — documents
     /// arrive over the protocol.
@@ -139,7 +165,7 @@ Commands:
                                  (exit 0/1)
                                  --ir: check <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
-  run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--dup-stats] [--trace-pending] <file>
+  run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--trace-pending] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
@@ -154,6 +180,20 @@ Commands:
                                  --trace-pending: record pending absorptions and
                                  print the frame pending report to stderr after
                                  the run (PETAL_TRACE_PENDING=1 also enables it)
+                                 --trace-emits: attribute every buffered emit
+                                 (push_output / draw commands) to the call that
+                                 produced it and dump values + call sites +
+                                 per-argument edit info after the run; --json
+                                 emits the structured report
+  propose-edit --channel <name> --emit <n> --arg <k> --to <value>
+               [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>
+                                 Run with emit tracing, then propose source
+                                 edits that make argument <k> of the call that
+                                 produced emit <n> evaluate to <value>. Several
+                                 proposals may come back when several variables
+                                 feed the value; narrow with --configurable /
+                                 --static. --apply rewrites the file when
+                                 exactly one proposal remains.
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -336,6 +376,7 @@ pub fn execute(cli: CliArgs) {
             no_opt,
             trace_pending,
             observe,
+            trace_emits,
         } => {
             handlers::handle_run(
                 json,
@@ -346,6 +387,31 @@ pub fn execute(cli: CliArgs) {
                 no_opt,
                 trace_pending,
                 observe,
+                trace_emits,
+                &source,
+                &source_input,
+                &include_dirs,
+            );
+        }
+        Command::ProposeEdit {
+            json,
+            channel,
+            emit,
+            arg,
+            to,
+            configurable,
+            pinned,
+            apply,
+        } => {
+            handlers::handle_propose_edit(
+                json,
+                &channel,
+                emit,
+                arg,
+                &to,
+                &configurable,
+                &pinned,
+                apply,
                 &source,
                 &source_input,
                 &include_dirs,

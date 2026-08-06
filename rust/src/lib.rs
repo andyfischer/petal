@@ -13,6 +13,7 @@ pub mod cst;
 pub mod cst_project;
 pub mod desugar;
 pub mod diagnostic;
+pub mod direct_manipulation;
 pub mod dot_graph;
 pub mod env;
 pub mod error;

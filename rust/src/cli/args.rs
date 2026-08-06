@@ -30,6 +30,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "show-provenance" => parse_provenance_args(&args[1..]),
+        "propose-edit" => parse_propose_edit_args(&args[1..]),
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| {
             Command::ShowDependents { json, term }
         }),
@@ -54,6 +55,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut no_opt = false;
     let mut trace_pending = false;
     let mut observe = false;
+    let mut trace_emits = false;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -62,6 +64,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--json" => json = true,
             "--trace" => trace = true,
             "--observe" => observe = true,
+            "--trace-emits" => trace_emits = true,
             "--ir" => ir = true,
             "--dup-stats" => dup_stats = true,
             "--no-opt" => no_opt = true,
@@ -90,7 +93,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--dup-stats] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] <file>");
         process::exit(1);
     });
 
@@ -104,6 +107,92 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             no_opt,
             trace_pending,
             observe,
+            trace_emits,
+        },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// Parse args for `propose-edit`, the goal-based direct-manipulation query:
+/// `--channel <name> --emit <n> --arg <k> --to <value>` are required;
+/// `--configurable <var>` / `--static <var>` repeat; `--apply` rewrites the
+/// file when the goal resolves to a single proposal.
+fn parse_propose_edit_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal propose-edit --channel <name> --emit <n> --arg <k> --to <value> \
+                 [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>";
+    let mut json = false;
+    let mut apply = false;
+    let mut channel: Option<String> = None;
+    let mut emit: Option<usize> = None;
+    let mut arg_index: Option<usize> = None;
+    let mut to: Option<String> = None;
+    let mut configurable: Vec<String> = Vec::new();
+    let mut pinned: Vec<String> = Vec::new();
+    let mut source: Option<SourceInput> = None;
+
+    fn take<'a>(args: &'a [String], i: &mut usize, flag: &str, usage: &str) -> &'a str {
+        *i += 1;
+        if *i >= args.len() {
+            eprintln!("Expected a value after {flag}. {usage}");
+            process::exit(1);
+        }
+        &args[*i]
+    }
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--apply" => apply = true,
+            "--channel" => channel = Some(take(args, &mut i, "--channel", usage).to_string()),
+            "--emit" => {
+                emit = take(args, &mut i, "--emit", usage).parse().ok();
+                if emit.is_none() {
+                    eprintln!("--emit takes a 0-based index. {usage}");
+                    process::exit(1);
+                }
+            }
+            "--arg" => {
+                arg_index = take(args, &mut i, "--arg", usage).parse().ok();
+                if arg_index.is_none() {
+                    eprintln!("--arg takes a 0-based index. {usage}");
+                    process::exit(1);
+                }
+            }
+            "--to" => to = Some(take(args, &mut i, "--to", usage).to_string()),
+            "--configurable" => {
+                configurable.push(take(args, &mut i, "--configurable", usage).to_string())
+            }
+            "--static" => pinned.push(take(args, &mut i, "--static", usage).to_string()),
+            "-e" => {
+                let code = take(args, &mut i, "-e", usage).to_string();
+                source = Some(SourceInput::Inline(code));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    let (Some(channel), Some(emit), Some(arg), Some(to), Some(source)) =
+        (channel, emit, arg_index, to, source)
+    else {
+        eprintln!("{usage}");
+        process::exit(1);
+    };
+
+    CliArgs {
+        command: Command::ProposeEdit {
+            json,
+            channel,
+            emit,
+            arg,
+            to,
+            configurable,
+            pinned,
+            apply,
         },
         source,
         include_dirs: Vec::new(),

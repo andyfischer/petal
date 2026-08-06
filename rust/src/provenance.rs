@@ -40,6 +40,7 @@
 use crate::constant_table::ConstantValue;
 use crate::program::{Program, TermId, TermOp};
 use crate::source_map::{FileId, SourceSpan};
+use crate::static_value::StaticValue;
 
 /// A literal number written in the source, and therefore directly editable: the
 /// argument value together with how it was spelled, so a rewrite can put back
@@ -85,11 +86,18 @@ pub struct ArgSite {
     pub span: Option<SourceSpan>,
     /// How directly it traces to something editable.
     pub kind: ArgKind,
-    /// The literal it resolves to, when it resolves to one. Present for both
-    /// [`ArgKind::Literal`] and [`ArgKind::Binding`]; the difference between
-    /// them is what [`span`](Self::span) points at — the call for the first, the
-    /// definition for the second.
+    /// The literal it resolves to, when it resolves to a *numeric* one. Present
+    /// for both [`ArgKind::Literal`] and [`ArgKind::Binding`]; the difference
+    /// between them is what [`span`](Self::span) points at — the call for the
+    /// first, the definition for the second. Non-numeric constants (strings,
+    /// bools, `nil`) appear in [`value`](Self::value) instead — this field keeps
+    /// the number-specific spelling data (`is_int`, `negated`) a drag needs.
     pub literal: Option<Literal>,
+    /// The constant this argument resolves to, for *any* constant type: a
+    /// string, bool, or `nil` as well as a number. `Some` exactly when
+    /// [`kind`](Self::kind) is [`ArgKind::Literal`] or [`ArgKind::Binding`];
+    /// what a goal-based edit compares against and replaces.
+    pub value: Option<StaticValue>,
     /// For [`ArgKind::Binding`], the term the literal was actually found on (the
     /// definition), whose span is what a rewrite must edit. Equal to
     /// [`term`](Self::term) for a plain literal, `None` when nothing resolved.
@@ -214,31 +222,35 @@ fn resolve_arg(program: &Program, index: usize, arg: TermId) -> ArgSite {
         kind: ArgKind::Computed,
         literal: None,
         literal_term: None,
+        value: None,
     };
 
-    // A literal written right here in the call — including a negated one, which
-    // is two terms deep but still text the user typed at this spot.
-    if let Some(lit) = literal_at(program, arg) {
+    // A constant written right here in the call — a number (including a negated
+    // one, which is two terms deep but still text the user typed at this spot),
+    // a string, a bool, or `nil`.
+    if let Some(value) = constant_at(program, arg) {
         site.kind = ArgKind::Literal;
-        site.literal = Some(lit);
+        site.literal = literal_at(program, arg);
         site.literal_term = Some(arg);
+        site.value = Some(value);
         return site;
     }
 
     // Otherwise follow identity copies (a name reference compiles to `Copy` of
-    // the term that bound it) to see whether a literal sits at the end.
+    // the term that bound it) to see whether a constant sits at the end.
     let mut cur = arg;
     for _ in 0..MAX_ALIAS_HOPS {
         let Some(next) = alias_target(program, cur) else {
             break;
         };
-        if let Some(lit) = literal_at(program, next) {
+        if let Some(value) = constant_at(program, next) {
             site.kind = ArgKind::Binding;
-            site.literal = Some(lit);
-            // `next` is the term the literal sits on — a `Neg` when the source
+            site.literal = literal_at(program, next);
+            // `next` is the term the constant sits on — a `Neg` when the source
             // wrote a negative, whose span covers the `-` as well as the digits,
             // so replacing that range keeps the sign.
             site.literal_term = Some(next);
+            site.value = Some(value);
             return site;
         }
         cur = next;
@@ -250,7 +262,7 @@ fn resolve_arg(program: &Program, index: usize, arg: TermId) -> ArgSite {
 /// The term an identity op forwards from, or `None` if this op isn't one.
 /// `Phi` is deliberately *not* followed: its value depends on control flow, so
 /// the literal reached through one is not the value this call saw.
-fn alias_target(program: &Program, id: TermId) -> Option<TermId> {
+pub(crate) fn alias_target(program: &Program, id: TermId) -> Option<TermId> {
     let t = program.terms.get(id.0 as usize)?;
     match t.op {
         TermOp::Copy | TermOp::StateInit => t.inputs.first().copied(),
@@ -258,8 +270,33 @@ fn alias_target(program: &Program, id: TermId) -> Option<TermId> {
     }
 }
 
+/// The constant `id` denotes — of any type, unwrapping a unary minus on a
+/// number — or `None` when `id` is not a constant. The generic counterpart of
+/// [`literal_at`], for arguments a drag doesn't cover but a goal-based edit
+/// does: strings, bools, `nil`.
+pub(crate) fn constant_at(program: &Program, id: TermId) -> Option<StaticValue> {
+    if let Some(lit) = literal_at(program, id) {
+        return Some(if lit.is_int {
+            StaticValue::Int(lit.value as i64)
+        } else {
+            StaticValue::Float(lit.value)
+        });
+    }
+    let t = program.terms.get(id.0 as usize)?;
+    let TermOp::Constant(c) = t.op else {
+        return None;
+    };
+    match program.constants.get(c) {
+        ConstantValue::String(s) => Some(StaticValue::Str(s.clone())),
+        ConstantValue::Bool(b) => Some(StaticValue::Bool(*b)),
+        ConstantValue::Nil => Some(StaticValue::Nil),
+        // Numbers were already covered by `literal_at` above.
+        _ => None,
+    }
+}
+
 /// The literal `id` denotes, unwrapping a unary minus, or `None`.
-fn literal_at(program: &Program, id: TermId) -> Option<Literal> {
+pub(crate) fn literal_at(program: &Program, id: TermId) -> Option<Literal> {
     let t = program.terms.get(id.0 as usize)?;
     match t.op {
         TermOp::Constant(c) => number_constant(program, c).map(|(value, is_int)| Literal {
@@ -406,6 +443,50 @@ mod tests {
         let site = CallSite::resolve(program, call.id).expect("resolves");
         assert_eq!(site.args[0].kind, ArgKind::Computed);
         assert!(site.args[0].literal.is_none());
+    }
+
+    /// Non-numeric constants — strings, bools, `nil` — resolve too, through
+    /// `value`, both written in place and through a binding. This is what a
+    /// goal-based edit of `draw_text(x, y, "hello")` reads.
+    #[test]
+    fn resolves_string_and_bool_constants() {
+        let (env, pid) = compile("let label = \"hi\"\nprint(\"lo\", true, label)\n");
+        let program = env.get_program(pid).unwrap();
+        let call = program
+            .terms
+            .iter()
+            .find(|t| matches!(t.op, TermOp::BuiltinCall(_)))
+            .expect("a builtin call");
+
+        let site = CallSite::resolve(program, call.id).expect("resolves");
+        assert_eq!(site.args[0].kind, ArgKind::Literal);
+        assert_eq!(site.args[0].value, Some(StaticValue::Str("lo".into())));
+        assert!(site.args[0].literal.is_none(), "not a number");
+
+        assert_eq!(site.args[1].kind, ArgKind::Literal);
+        assert_eq!(site.args[1].value, Some(StaticValue::Bool(true)));
+
+        assert_eq!(site.args[2].kind, ArgKind::Binding);
+        assert_eq!(site.args[2].value, Some(StaticValue::Str("hi".into())));
+        // The span to edit is the definition's string on line 1.
+        let span = site.args[2].editable_span(program).expect("a span");
+        assert_eq!(start(&span).0, 1);
+    }
+
+    /// Numeric args carry both the generic `value` and the spelling-preserving
+    /// `literal` — the two views must agree.
+    #[test]
+    fn numeric_value_and_literal_agree() {
+        let (env, pid) = compile("print(10, 2.5)\n");
+        let program = env.get_program(pid).unwrap();
+        let call = program
+            .terms
+            .iter()
+            .find(|t| matches!(t.op, TermOp::BuiltinCall(_)))
+            .expect("a builtin call");
+        let site = CallSite::resolve(program, call.id).expect("resolves");
+        assert_eq!(site.args[0].value, Some(StaticValue::Int(10)));
+        assert_eq!(site.args[1].value, Some(StaticValue::Float(2.5)));
     }
 
     /// A negative literal is two terms deep (`Neg` over `Constant`) but is still

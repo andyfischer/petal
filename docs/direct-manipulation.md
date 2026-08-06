@@ -25,6 +25,8 @@ API reference lives in `petal::provenance`.
 - [Picking the right frame](#picking-the-right-frame)
 - [Arguments, literals, and rewriting](#arguments-literals-and-rewriting)
 - [The goal-based protocol](#the-goal-based-protocol)
+  - [Multi-goal batches](#multi-goal-batches)
+  - [`config let`: in-source policy](#config-let-in-source-policy)
 - [Tracing live code from the CLI and MCP](#tracing-live-code-from-the-cli-and-mcp)
 - [Building a hit test](#building-a-hit-test)
 - [Rules that keep it correct](#rules-that-keep-it-correct)
@@ -288,7 +290,9 @@ The pieces, and where they live:
    `ManipulationGoal { term, arg_index, new_value }` — the term from
    `pick_frame`, the value as a `StaticValue`. The goal describes the
    *outcome*, never the edit; which text changes is the runtime's answer, in
-   the same spirit as `goal_based_editing` for config files.
+   the same spirit as `goal_based_editing` for config files. A gesture that
+   changes several values at once states them all —
+   [a batch](#multi-goal-batches) through `propose_edits_batch`.
 3. **Read the proposals.** Each `EditProposal` is one concrete replacement
    (span + new text) plus what a chooser needs: the `variable` it edits (or
    none, for a call-site literal), and `shared` — whether other code reads
@@ -302,11 +306,13 @@ The pieces, and where they live:
 4. **Refine.** The host narrows with `VarPolicy`: `Static` ("never touch
    `x` — it's the layout grid") removes proposals; `Configurable` ("`offset`
    is the tunable") makes its proposals win over unpinned ones. Policy can
-   come from anywhere — a per-sketch settings panel, a `// @config` comment
-   convention, or the IDE asking the user the first time a goal comes back
-   plural: *"Dragging this changes either `x` or `offset` — which did you
-   mean?"* The answer is worth remembering; it is the user teaching the
-   editor the sketch's intent.
+   come from anywhere — a per-sketch settings panel, or the IDE asking the
+   user the first time a goal comes back plural: *"Dragging this changes
+   either `x` or `offset` — which did you mean?"* The answer is worth
+   remembering; it is the user teaching the editor the sketch's intent. Best
+   of all, the sketch can carry the answer itself: a
+   [`config let` binding](#config-let-in-source-policy) is a default policy
+   written in the source, and often removes this step entirely.
 5. **Apply, re-run, re-trace.** Applying is the host's move (the runtime never
    writes files from `propose_edits`). Term ids are indices into the compiled
    program, so after any edit the old ids are stale by design —
@@ -323,23 +329,72 @@ branch. A guess that silently rewrites code to mean something else is worse
 than a refusal the IDE can render as "this value isn't directly editable —
 open the function?"
 
+### Multi-goal batches
+
+A drag changes x *and* y in one gesture. Stating the two as separate
+`propose_edits` calls would resolve each in a vacuum; `propose_edits_batch`
+takes the list and resolves it **consistently**, under one policy:
+
+```rust
+let per_goal = direct_manipulation::propose_edits_batch(
+    program, &goals, Some(env.trace()), &policy)?;
+```
+
+The result is index-aligned with the goals, and each goal's candidate list is
+filtered so that only proposals which can *hold together* survive: a proposal
+is kept only if one proposal per goal can be chosen alongside it with no two
+edits rewriting overlapping text to different things. The classic case this
+catches is two goals whose expressions share a variable — "make `a + 1` equal
+12" can move `a`, but if the second goal pins `a` to 15, the batch drops the
+first goal's `a` branch and keeps its call-site literal instead.
+
+Two goals choosing the *identical* edit (same span, same text) are compatible
+— that is one edit, chosen twice, and `apply_edits` collapses it:
+
+```rust
+let edited = direct_manipulation::apply_edits(source, &chosen_edits)?;
+```
+
+`apply_edits` splices a chosen set back-to-front (so earlier spans stay
+valid), deduplicates identical edits, and errors on collisions — which a
+filtered batch never produces.
+
+Two deliberate edges: a goal whose argument refuses (flows through a call)
+contributes an *empty* list without vetoing the others — the refusal is that
+goal's honest answer; and a goal that cannot be evaluated at all (stale term,
+bad index) fails the whole batch, because that is the caller addressing the
+wrong program, not an unlucky argument.
+
+### `config let`: in-source policy
+
+Everything above lets the *host* decide which variables are tunable. The
+language can also say it in the source:
+
+```petal
+config let offset = 10
+let x = 20
+draw_circle(x + offset, 110, 60)
+```
+
+`config` is a contextual modifier on `let` (usable as an ordinary name
+elsewhere; composes as `export config let`; rejected on `var` — a mutable
+cell is not a knob). It changes nothing about evaluation. What it changes is
+the *default policy*: when a program declares any config binding,
+`propose_edits` treats config bindings as `Configurable` and every other
+named binding as `Static` — so a bare drag on the sketch above resolves to
+"set `offset`", one proposal, no dialog. Call-site literals carry no variable
+and stay directly editable either way, and a program with no config bindings
+behaves exactly as before. Explicit `VarPolicy` entries always override the
+defaults: the host's word beats the source's.
+
+Each returned `EditProposal` carries `config: bool`, which is also the signal
+a Garden-style host needs to render a slider per declared knob.
+
 ### Where this can grow
 
-- **Multi-goal requests.** A drag changes x *and* y in one gesture; a batch of
-  `ManipulationGoal`s that must resolve consistently (and share one policy
-  round-trip) is the natural extension, mirroring how `goal_based_editing`
-  already applies goal lists.
 - **Goals about the emitted value itself**, not an argument — "this row should
   be 'label'" — resolvable when the emitting call passes the value through
   (arg-level goal derived automatically), refusable when it's constructed.
-- **Language-level configurability.** Today policy lives host-side. The
-  language is open to carrying it in-source — e.g. a `config` modifier
-  (`config let offset = 10`) declaring "this binding is the tuning knob";
-  `propose_edits` would then default `Configurable` to config bindings and
-  `Static` to the rest, so a bare drag resolves to one edit with no dialog.
-  That also gives Garden-style hosts an honest place to render sliders. Not
-  built yet; the `VarPolicy` map is deliberately the same shape so the feature
-  slots in without changing the protocol.
 - **Insertion goals.** "There should be a circle here" (paste, palette drop) is
   `Goal::should_call` territory — `goal_based_editing` already inserts calls
   with placement control; wiring it into the same channel-addressed protocol
@@ -384,11 +439,28 @@ $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 \
 Applied.
 ```
 
+A multi-goal batch is stated by repeating the `--arg <k> --to <value>` pair —
+each `--to` binds to the `--arg` before it — and reports per goal:
+
+```
+$ petal propose-edit --channel shapes --emit 0 \
+    --arg 1 --to 42.5 --arg 2 --to 90 sketch.ptl
+goal: arg 1 -> 42.5
+  1 proposal:
+    1. set `x` to 32.5 (line 1)
+goal: arg 2 -> 90
+  1 proposal:
+    1. set `h` to 45 (line 2)
+```
+
 `--json` returns the proposals with exact spans (line/column/offset both ends)
-and replacement text for a harness that applies edits itself; `--apply`
-rewrites the file only when policy has narrowed the answer to exactly one
-proposal, and refuses otherwise — ambiguity is the caller's to resolve, never
-the tool's to guess through.
+and replacement text for a harness that applies edits itself — one entry per
+goal under `"goals"`, with the original flat keys kept alongside when there is
+exactly one. `--apply` rewrites the file only when policy has narrowed *every*
+goal to exactly one proposal, and refuses otherwise — ambiguity is the
+caller's to resolve, never the tool's to guess through. A script that declares
+its knobs with [`config let`](#config-let-in-source-policy) usually arrives
+narrowed already, no flags needed.
 
 ## Building a hit test
 

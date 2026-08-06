@@ -82,20 +82,21 @@ pub enum Command {
     PendingReport {
         json: bool,
     },
-    /// Run the program with emit tracing, then answer a manipulation goal —
-    /// "this argument of the call that produced emit N should be VALUE" — with
-    /// candidate source edits (see `crate::direct_manipulation`).
+    /// Run the program with emit tracing, then answer one or more
+    /// manipulation goals — "this argument of the call that produced emit N
+    /// should be VALUE" — with candidate source edits (see
+    /// `crate::direct_manipulation`). Repeated `--arg`/`--to` pairs form a
+    /// batch that must resolve consistently (a drag changes x and y at once).
     ProposeEdit {
         json: bool,
         /// Output channel the emit was pushed into (e.g. "draw_commands").
         channel: String,
         /// 0-based index of the emit within the channel's buffer.
         emit: usize,
-        /// 0-based argument position within the emitting call.
-        arg: usize,
-        /// The value the argument should evaluate to, as source-ish text
+        /// The goals, one per `--arg <k> --to <value>` pair: 0-based argument
+        /// position and the value it should evaluate to, as source-ish text
         /// (`55`, `2.5`, `true`, `hello`).
-        to: String,
+        goals: Vec<(usize, String)>,
         /// Variables the host prefers to edit (`--configurable name`).
         configurable: Vec<String>,
         /// Variables that must not be edited (`--static name`).
@@ -185,15 +186,19 @@ Commands:
                                  produced it and dump values + call sites +
                                  per-argument edit info after the run; --json
                                  emits the structured report
-  propose-edit --channel <name> --emit <n> --arg <k> --to <value>
+  propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+
                [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>
                                  Run with emit tracing, then propose source
                                  edits that make argument <k> of the call that
-                                 produced emit <n> evaluate to <value>. Several
-                                 proposals may come back when several variables
-                                 feed the value; narrow with --configurable /
-                                 --static. --apply rewrites the file when
-                                 exactly one proposal remains.
+                                 produced emit <n> evaluate to <value>. Repeat
+                                 --arg/--to pairs to state a multi-goal batch
+                                 (one gesture changing several arguments),
+                                 resolved consistently. Several proposals may
+                                 come back when several variables feed a value;
+                                 narrow with --configurable / --static, or
+                                 declare knobs in-source with `config let`.
+                                 --apply rewrites the file when every goal
+                                 resolves to exactly one proposal.
   explain [--json] --term <name> <file>
                                  Run with trace, show value chain for a term
                                  --json: emit errors as structured JSON
@@ -397,8 +402,7 @@ pub fn execute(cli: CliArgs) {
             json,
             channel,
             emit,
-            arg,
-            to,
+            goals,
             configurable,
             pinned,
             apply,
@@ -407,8 +411,7 @@ pub fn execute(cli: CliArgs) {
                 json,
                 &channel,
                 emit,
-                arg,
-                &to,
+                &goals,
                 &configurable,
                 &pinned,
                 apply,

@@ -458,6 +458,7 @@ impl<'a> Checker<'a> {
                 ty,
                 value,
                 is_var,
+                ..
             } => {
                 if let Some(ann) = ty {
                     self.check_type_ann(ann, stmt.span);

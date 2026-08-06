@@ -10,6 +10,10 @@ use crate::source_map::{SourceSpan, ZERO_SPAN};
 /// highlights it.
 pub const CLASS_KEYWORD: &str = "class";
 
+/// The contextual `config` modifier (`config let x = …`), only recognized
+/// immediately before a binding keyword so it stays usable as an identifier.
+pub const CONFIG_KEYWORD: &str = "config";
+
 /// How a token is spelled in a diagnostic: the source text a reader would
 /// recognize (`','`, `']'`, `` `end` ``), never the Rust variant name. Parse
 /// errors used to leak `Debug` output — "Expected RBracket, got Comma" names
@@ -362,8 +366,8 @@ impl Parser {
         self.skip_newlines();
         let start = self.pos;
         match self.peek().clone() {
-            Token::Let => self.parse_let(start, false, false),
-            Token::Var => self.parse_let(start, false, true),
+            Token::Let => self.parse_let(start, false, false, false),
+            Token::Var => self.parse_let(start, false, true, false),
             Token::Set => self.parse_set(start),
             Token::Fn => self.parse_fn_decl(start, false),
             Token::For => self.parse_for(start),
@@ -389,6 +393,17 @@ impl Parser {
             Token::Ident(ref w) if w == CLASS_KEYWORD && self.starts_class_decl() => {
                 self.parse_class_decl(start, false)
             }
+            // `config` is contextual too: only special immediately before a
+            // `let`/`var` keyword, so it stays usable as an ordinary name.
+            Token::Ident(ref w) if w == CONFIG_KEYWORD && self.starts_config_decl() => {
+                if matches!(self.tokens.get(self.pos + 1), Some(Token::Var)) {
+                    return Err(self.error_at_current(
+                        "`config` marks a `let` binding; a mutable `var` cell cannot be config"
+                            .to_string(),
+                    ));
+                }
+                self.parse_let(start, false, false, true)
+            }
             Token::Import => self.parse_import(start),
             Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
@@ -403,8 +418,15 @@ impl Parser {
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),
-            Some(Token::Let) => self.parse_let(start, true, false),
-            Some(Token::Var) => self.parse_let(start, true, true),
+            Some(Token::Let) => self.parse_let(start, true, false, false),
+            Some(Token::Var) => self.parse_let(start, true, true, false),
+            // `export config let x = …` — both modifiers, export first.
+            Some(Token::Ident(w))
+                if w == CONFIG_KEYWORD
+                    && matches!(self.tokens.get(self.pos + 2), Some(Token::Let)) =>
+            {
+                self.parse_let(start, true, false, true)
+            }
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
             Some(Token::Ident(w)) if w == CLASS_KEYWORD => self.parse_class_decl(start, true),
@@ -419,10 +441,21 @@ impl Parser {
     /// keyword and the `is_var` flag. The `var` token stays a direct child of
     /// the `LetStmt` node so the CST projection can recover the flag the same
     /// way it recovers `export`.
-    fn parse_let(&mut self, start: usize, exported: bool, is_var: bool) -> Result<Stmt, String> {
+    fn parse_let(
+        &mut self,
+        start: usize,
+        exported: bool,
+        is_var: bool,
+        is_config: bool,
+    ) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::LetStmt);
         if exported {
             self.advance(); // consume 'export'
+        }
+        if is_config {
+            // The `config` ident stays a direct child of the LetStmt node so
+            // the CST projection can recover the flag, like `export`/`var`.
+            self.advance(); // consume 'config'
         }
         self.advance(); // consume 'let' / 'var'
         let name = self.expect_ident()?;
@@ -436,6 +469,7 @@ impl Parser {
                 ty,
                 value,
                 is_var,
+                is_config,
             },
             start,
         );
@@ -614,6 +648,15 @@ impl Parser {
     /// a JSX `class=` attribute, `class.foo`) is left to expression parsing.
     fn starts_class_decl(&self) -> bool {
         matches!(self.tokens.get(self.pos + 1), Some(Token::Ident(_)))
+    }
+
+    /// `config` starts a declaration only when the very next token is a
+    /// binding keyword — `config` on its own line stays an expression.
+    fn starts_config_decl(&self) -> bool {
+        matches!(
+            self.tokens.get(self.pos + 1),
+            Some(Token::Let | Token::Var)
+        )
     }
 
     /// `class Name` … `end`, a comma-separated list of `field: type`. Field

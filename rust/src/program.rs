@@ -307,6 +307,11 @@ pub struct Term {
     /// a bare statement loop leaves this false so it allocates nothing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collect: bool,
+    /// The binding this term defines was declared `config let` — a tuning
+    /// knob. Direct manipulation defaults to editing config bindings and
+    /// pinning the rest (see `direct_manipulation::propose_edits`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_config: bool,
 }
 
 // ---------------------------------------------------------------------------

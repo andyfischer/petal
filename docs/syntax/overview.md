@@ -38,10 +38,10 @@ let  var  set  fn  if  else  elsif  then  for  in  while  match  when  do  end
 return  break  continue  state  enum  import  export  true  false  nil
 ```
 
-`as` (in `import ui as u`) and `class` (in `class Rect … end`) are
-**contextual** — recognised only in those positions, not globally reserved.
-`class` in particular stays usable as an ordinary identifier and as the JSX
-attribute `<div class="…">`.
+`as` (in `import ui as u`), `class` (in `class Rect … end`), and `config` (in
+`config let x = …`) are **contextual** — recognised only in those positions,
+not globally reserved. `class` in particular stays usable as an ordinary
+identifier and as the JSX attribute `<div class="…">`.
 
 ### Literals
 
@@ -130,7 +130,12 @@ let x = 10
 let name: string = "Petal"   // optional type annotation (see Types)
 x = 20                       // reassignment
 x += 5                       // compound assignment
+config let offset = 4        // a declared tuning knob (see the Language Guide)
 ```
+
+The contextual `config` modifier marks a binding as the value direct
+manipulation should edit (docs/direct-manipulation.md). It composes with
+`export` (`export config let`) and is rejected on `var`.
 
 ### `var` and `set`
 

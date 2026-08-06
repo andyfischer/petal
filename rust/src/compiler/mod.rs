@@ -859,6 +859,7 @@ impl Compiler {
             child_blocks: SmallVec::new(),
             in_loop: false,
             collect: false,
+            is_config: false,
         };
 
         self.terms.push(term);
@@ -906,6 +907,7 @@ impl Compiler {
             child_blocks: SmallVec::new(),
             in_loop: false,
             collect: false,
+            is_config: false,
         });
         term_id
     }

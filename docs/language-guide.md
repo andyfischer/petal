@@ -116,6 +116,25 @@ Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
 provenance queries (`petal show-provenance`, `petal show-slice`) that can
 otherwise answer "what produced this value?".
 
+### `config let` — declaring a tuning knob
+
+A `config` modifier marks a `let` binding as the value a person is *meant* to
+adjust:
+
+```petal
+config let offset = 10
+let x = 20
+draw_circle(x + offset, 40, 12)
+```
+
+The binding evaluates exactly as a plain `let`; what changes is how tools
+treat it. Goal-based editing (docs/direct-manipulation.md) prefers rewriting
+config bindings and leaves the rest of the program alone — dragging the circle
+above edits `offset`, never `x` — and a live-editing host has an honest place
+to render a slider per knob. `config` is contextual (only special immediately
+before `let`), so it remains usable as an ordinary name, and it composes with
+`export` as `export config let`. A mutable `var` cell cannot be `config`.
+
 ## Types
 
 Petal has the following value types:

@@ -396,15 +396,15 @@ fn print_emit_trace_text(report: &serde_json::Value) {
 
 /// `petal propose-edit` — the goal half of direct manipulation: run the
 /// program with emit tracing, pick the call that produced the addressed emit,
-/// and propose source edits that make its argument evaluate to the requested
-/// value. See docs/direct-manipulation.md for the protocol this implements.
+/// and propose source edits that make each addressed argument evaluate to its
+/// requested value. Several `--arg`/`--to` pairs form a batch resolved
+/// consistently. See docs/direct-manipulation.md for the protocol.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_propose_edit(
     json: bool,
     channel: &str,
     emit: usize,
-    arg: usize,
-    to: &str,
+    goals: &[(usize, String)],
     configurable: &[String],
     pinned: &[String],
     apply: bool,
@@ -412,7 +412,9 @@ pub(super) fn handle_propose_edit(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::direct_manipulation::{ManipulationGoal, VarPolicy, propose_edits};
+    use crate::direct_manipulation::{
+        ManipulationGoal, VarPolicy, apply_edits, propose_edits_batch,
+    };
     use crate::provenance;
 
     let mut env = make_env(include_dirs);
@@ -472,11 +474,14 @@ pub(super) fn handle_propose_edit(
         die(json, "the emit carries no attributable call chain", "goal");
     };
 
-    let goal = ManipulationGoal {
-        term,
-        arg_index: arg,
-        new_value: parse_goal_value(to),
-    };
+    let manipulation_goals: Vec<ManipulationGoal> = goals
+        .iter()
+        .map(|(arg_index, to)| ManipulationGoal {
+            term,
+            arg_index: *arg_index,
+            new_value: parse_goal_value(to),
+        })
+        .collect();
     let mut policy = std::collections::HashMap::new();
     for name in pinned {
         policy.insert(name.clone(), VarPolicy::Static);
@@ -487,82 +492,129 @@ pub(super) fn handle_propose_edit(
         policy.insert(name.clone(), VarPolicy::Configurable);
     }
 
-    let proposals = match propose_edits(program, &goal, Some(env.trace()), &policy) {
+    let per_goal = match propose_edits_batch(program, &manipulation_goals, Some(env.trace()), &policy)
+    {
         Ok(ps) => ps,
         Err(e) => die(json, &e.message, "goal"),
     };
 
-    let proposals_json: Vec<serde_json::Value> = proposals
-        .iter()
-        .map(|p| {
-            serde_json::json!({
-                "description": p.description,
-                "variable": p.variable,
-                "shared": p.shared,
-                "span": span_json(&Some(p.edit.span)),
-                "new_text": p.edit.new_text,
-            })
-        })
-        .collect();
-
     let applied = if apply {
-        match (&proposals[..], source_input) {
-            ([p], SourceInput::File(path)) if path != "-" => {
-                let edited = crate::rewrite::splice(source, p.edit.span, &p.edit.new_text);
-                if let Err(e) = fs::write(path, &edited) {
-                    die(json, &format!("writing '{}': {}", path, e), "apply");
-                }
-                true
-            }
-            ([_], _) => die(json, "--apply needs a file path, not inline code", "apply"),
-            ([], _) => die(json, "no proposal to apply", "apply"),
-            _ => die(
-                json,
-                &format!(
-                    "{} proposals remain; narrow with --configurable / --static before --apply",
-                    proposals.len()
+        // Every goal has to be narrowed to exactly one proposal — ambiguity
+        // is the caller's to resolve, and a refused goal has nothing to write.
+        let mut chosen = Vec::new();
+        for ((arg_index, _), ps) in goals.iter().zip(&per_goal) {
+            match &ps[..] {
+                [p] => chosen.push(p.edit.clone()),
+                [] => die(
+                    json,
+                    &format!("--arg {} has no proposal to apply", arg_index),
+                    "apply",
                 ),
-                "apply",
-            ),
+                _ => die(
+                    json,
+                    &format!(
+                        "--arg {} still has {} proposals; narrow with --configurable / --static before --apply",
+                        arg_index,
+                        ps.len()
+                    ),
+                    "apply",
+                ),
+            }
         }
+        let SourceInput::File(path) = source_input else {
+            die(json, "--apply needs a file path, not inline code", "apply");
+        };
+        if path == "-" {
+            die(json, "--apply needs a file path, not inline code", "apply");
+        }
+        let edited = match apply_edits(source, &chosen) {
+            Ok(s) => s,
+            Err(e) => die(json, &e.message, "apply"),
+        };
+        if let Err(e) = fs::write(path, &edited) {
+            die(json, &format!("writing '{}': {}", path, e), "apply");
+        }
+        true
     } else {
         false
     };
 
+    let proposals_json = |ps: &[crate::direct_manipulation::EditProposal]| -> Vec<serde_json::Value> {
+        ps.iter()
+            .map(|p| {
+                serde_json::json!({
+                    "description": p.description,
+                    "variable": p.variable,
+                    "shared": p.shared,
+                    "config": p.config,
+                    "span": span_json(&Some(p.edit.span)),
+                    "new_text": p.edit.new_text,
+                })
+            })
+            .collect()
+    };
+
     if json {
+        let goals_json: Vec<serde_json::Value> = goals
+            .iter()
+            .zip(&per_goal)
+            .map(|((arg_index, to), ps)| {
+                serde_json::json!({
+                    "arg": arg_index,
+                    "goal": to,
+                    "proposals": proposals_json(ps),
+                })
+            })
+            .collect();
+        let mut out = serde_json::json!({
+            "channel": channel,
+            "emit": emit,
+            "goals": goals_json,
+            "applied": applied,
+        });
+        // A single goal also reports through the original flat keys, so
+        // existing harnesses keep parsing.
+        if let ([(arg_index, to)], [ps]) = (goals, &per_goal[..]) {
+            out["arg"] = serde_json::json!(arg_index);
+            out["goal"] = serde_json::json!(to);
+            out["proposals"] = serde_json::Value::Array(proposals_json(ps));
+        }
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return;
+    }
+
+    let multi = goals.len() > 1;
+    let mut any_ambiguous = false;
+    for ((arg_index, to), ps) in goals.iter().zip(&per_goal) {
+        if multi {
+            println!("goal: arg {} -> {}", arg_index, to);
+        }
+        let indent = if multi { "  " } else { "" };
+        if ps.is_empty() {
+            println!(
+                "{indent}No edit can satisfy this goal: the argument does not trace to editable text."
+            );
+            continue;
+        }
         println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "channel": channel,
-                "emit": emit,
-                "arg": arg,
-                "goal": to,
-                "proposals": proposals_json,
-                "applied": applied,
-            }))
-            .unwrap()
+            "{indent}{} proposal{}:",
+            ps.len(),
+            if ps.len() == 1 { "" } else { "s" }
         );
-    } else if proposals.is_empty() {
-        println!("No edit can satisfy this goal: the argument does not trace to editable text.");
-    } else {
-        println!(
-            "{} proposal{}:",
-            proposals.len(),
-            if proposals.len() == 1 { "" } else { "s" }
-        );
-        for (i, p) in proposals.iter().enumerate() {
+        for (i, p) in ps.iter().enumerate() {
             let shared = if p.shared {
                 "  [shared: other code reads this]"
             } else {
                 ""
             };
-            println!("  {}. {}{}", i + 1, p.description, shared);
+            println!("{indent}  {}. {}{}", i + 1, p.description, shared);
         }
-        if applied {
-            println!("Applied.");
-        } else if proposals.len() > 1 {
-            println!("Narrow with --configurable <var> / --static <var>, or apply one by hand.");
-        }
+        any_ambiguous |= ps.len() > 1;
+    }
+    if applied {
+        println!("Applied.");
+    } else if any_ambiguous {
+        println!("Narrow with --configurable <var> / --static <var>, or apply one by hand.");
     }
 }
 

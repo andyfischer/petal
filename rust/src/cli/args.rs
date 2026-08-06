@@ -115,18 +115,20 @@ fn parse_run_args(args: &[String]) -> CliArgs {
 }
 
 /// Parse args for `propose-edit`, the goal-based direct-manipulation query:
-/// `--channel <name> --emit <n> --arg <k> --to <value>` are required;
-/// `--configurable <var>` / `--static <var>` repeat; `--apply` rewrites the
-/// file when the goal resolves to a single proposal.
+/// `--channel <name> --emit <n>` and at least one `--arg <k> --to <value>`
+/// pair are required. The pair repeats to state a multi-goal batch (one
+/// gesture changing several arguments), each `--to` binding to the `--arg`
+/// before it. `--configurable <var>` / `--static <var>` repeat; `--apply`
+/// rewrites the file when every goal resolves to a single proposal.
 fn parse_propose_edit_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal propose-edit --channel <name> --emit <n> --arg <k> --to <value> \
+    let usage = "Usage: petal propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+ \
                  [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>";
     let mut json = false;
     let mut apply = false;
     let mut channel: Option<String> = None;
     let mut emit: Option<usize> = None;
-    let mut arg_index: Option<usize> = None;
-    let mut to: Option<String> = None;
+    let mut goals: Vec<(usize, String)> = Vec::new();
+    let mut pending_arg: Option<usize> = None;
     let mut configurable: Vec<String> = Vec::new();
     let mut pinned: Vec<String> = Vec::new();
     let mut source: Option<SourceInput> = None;
@@ -154,13 +156,23 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                 }
             }
             "--arg" => {
-                arg_index = take(args, &mut i, "--arg", usage).parse().ok();
-                if arg_index.is_none() {
+                if pending_arg.is_some() {
+                    eprintln!("--arg given twice without a --to between them. {usage}");
+                    process::exit(1);
+                }
+                pending_arg = take(args, &mut i, "--arg", usage).parse().ok();
+                if pending_arg.is_none() {
                     eprintln!("--arg takes a 0-based index. {usage}");
                     process::exit(1);
                 }
             }
-            "--to" => to = Some(take(args, &mut i, "--to", usage).to_string()),
+            "--to" => {
+                let Some(arg_index) = pending_arg.take() else {
+                    eprintln!("--to needs an --arg before it. {usage}");
+                    process::exit(1);
+                };
+                goals.push((arg_index, take(args, &mut i, "--to", usage).to_string()));
+            }
             "--configurable" => {
                 configurable.push(take(args, &mut i, "--configurable", usage).to_string())
             }
@@ -176,20 +188,25 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
         i += 1;
     }
 
-    let (Some(channel), Some(emit), Some(arg), Some(to), Some(source)) =
-        (channel, emit, arg_index, to, source)
-    else {
+    if pending_arg.is_some() {
+        eprintln!("--arg without a matching --to. {usage}");
+        process::exit(1);
+    }
+    let (Some(channel), Some(emit), Some(source)) = (channel, emit, source) else {
         eprintln!("{usage}");
         process::exit(1);
     };
+    if goals.is_empty() {
+        eprintln!("At least one --arg <k> --to <value> pair is required. {usage}");
+        process::exit(1);
+    }
 
     CliArgs {
         command: Command::ProposeEdit {
             json,
             channel,
             emit,
-            arg,
-            to,
+            goals,
             configurable,
             pinned,
             apply,

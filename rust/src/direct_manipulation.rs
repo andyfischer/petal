@@ -36,8 +36,16 @@
 //! else.
 //!
 //! Proposals carry spans plus replacement text and do **not** touch the file;
-//! applying (and re-running, and re-tracing) is the host's move. See
+//! applying (and re-running, and re-tracing) is the host's move — with
+//! [`apply_edits`] doing the mechanical splice for hosts that want it. See
 //! `docs/direct-manipulation.md` for the full protocol.
+//!
+//! Two extensions ride on the same shapes: [`propose_edits_batch`] resolves a
+//! *list* of goals consistently (a drag changes x and y in one gesture), and a
+//! `config let` binding in the source acts as a default [`VarPolicy`] — config
+//! bindings are the preferred edit targets, everything else is pinned — so a
+//! bare drag on a script that declares its tuning knobs needs no policy
+//! round-trip at all.
 
 use std::collections::HashMap;
 
@@ -80,6 +88,11 @@ pub struct EditProposal {
     /// more than the value the goal named. Always `false` for a call-site
     /// literal.
     pub shared: bool,
+    /// The edited binding was declared `config let` — the source itself names
+    /// it as a tuning knob. Hosts can render these as sliders; when a program
+    /// declares any config binding, [`propose_edits`] already prefers them
+    /// (see the policy rules on that function).
+    pub config: bool,
     /// Human-readable summary ("set `offset` to 12.5 (line 3)").
     pub description: String,
 }
@@ -158,14 +171,16 @@ pub fn propose_edits(
             let span = arg
                 .editable_span(program)
                 .ok_or_else(|| err("the argument has no source span to edit"))?;
-            let variable = (arg.kind == ArgKind::Binding)
-                .then(|| binding_name(program, arg.term))
+            let info = (arg.kind == ArgKind::Binding)
+                .then(|| binding_info(program, arg.term))
                 .flatten();
+            let config = info.as_ref().is_some_and(|i| i.1) || term_is_config(program, literal_term);
             vec![make_proposal(
                 program,
                 span,
                 literal_term,
-                variable,
+                info.map(|i| i.0),
+                config,
                 render_matching(arg.literal, &goal.new_value),
             )]
         }
@@ -180,26 +195,164 @@ pub fn propose_edits(
         }
     };
 
-    // Policy: drop Static, and let Configurable proposals displace the rest.
-    proposals.retain(|p| {
-        p.variable
-            .as_deref()
-            .is_none_or(|v| policy.get(v) != Some(&VarPolicy::Static))
-    });
-    let any_configurable = proposals.iter().any(|p| {
-        p.variable
-            .as_deref()
-            .is_some_and(|v| policy.get(v) == Some(&VarPolicy::Configurable))
-    });
-    if any_configurable {
-        proposals.retain(|p| {
-            p.variable
-                .as_deref()
-                .is_some_and(|v| policy.get(v) == Some(&VarPolicy::Configurable))
-        });
+    apply_policy(program, &mut proposals, policy);
+    Ok(proposals)
+}
+
+/// The policy filter shared by single and batch proposal calls: drop Static
+/// proposals, and let Configurable ones displace the rest.
+///
+/// Explicit host policy (by variable name) always wins. When the program
+/// declares any `config let` binding, undeclared variables get a *default*
+/// from the source itself: config bindings are Configurable and every other
+/// named binding is Static — so a bare drag on a script with declared tuning
+/// knobs resolves to the knob with no dialog. Call-site literals carry no
+/// variable and stay unpinned either way. A program with no config bindings
+/// gets no defaults, which is the pre-`config` behavior.
+fn apply_policy(
+    program: &Program,
+    proposals: &mut Vec<EditProposal>,
+    policy: &HashMap<String, VarPolicy>,
+) {
+    let source_declares_knobs = program.terms.iter().any(|t| t.is_config);
+    let policy_of = |p: &EditProposal| -> Option<VarPolicy> {
+        let name = p.variable.as_deref()?;
+        if let Some(&explicit) = policy.get(name) {
+            return Some(explicit);
+        }
+        source_declares_knobs.then(|| {
+            if p.config {
+                VarPolicy::Configurable
+            } else {
+                VarPolicy::Static
+            }
+        })
+    };
+    proposals.retain(|p| policy_of(p) != Some(VarPolicy::Static));
+    if proposals
+        .iter()
+        .any(|p| policy_of(p) == Some(VarPolicy::Configurable))
+    {
+        proposals.retain(|p| policy_of(p) == Some(VarPolicy::Configurable));
+    }
+}
+
+/// Propose edits for several goals that must hold *together* — the multi-goal
+/// form of [`propose_edits`], for gestures that change more than one value at
+/// once (a drag moves x and y in one motion).
+///
+/// Each goal is resolved with the same trace and the same policy (one policy
+/// round-trip covers the whole gesture), then the per-goal candidate lists are
+/// filtered for **consistency**: a proposal survives only if one proposal per
+/// goal can be chosen alongside it such that no two chosen edits collide.
+/// Two edits collide when they touch overlapping source ranges with different
+/// replacement text; identical edits (two goals both moving the same `config
+/// let` to the same value) are compatible and deduplicated at apply time by
+/// [`apply_edits`].
+///
+/// The result is index-aligned with `goals`. A goal whose argument doesn't
+/// trace to editable text yields an empty list — that refusal stands on its
+/// own and does not veto the other goals' proposals. A goal that can't be
+/// evaluated at all (stale term, bad index) fails the whole batch, since the
+/// caller's addressing is wrong, not just unlucky.
+pub fn propose_edits_batch(
+    program: &Program,
+    goals: &[ManipulationGoal],
+    trace: Option<&TraceBuffer>,
+    policy: &HashMap<String, VarPolicy>,
+) -> Result<Vec<Vec<EditProposal>>, ManipulationError> {
+    if goals.is_empty() {
+        return Err(err("a batch needs at least one goal"));
+    }
+    let mut per_goal: Vec<Vec<EditProposal>> = Vec::with_capacity(goals.len());
+    for (i, goal) in goals.iter().enumerate() {
+        let ps = propose_edits(program, goal, trace, policy)
+            .map_err(|e| err(format!("goal {}: {}", i, e.message)))?;
+        per_goal.push(ps);
     }
 
-    Ok(proposals)
+    // Consistency: keep a proposal only if a full, collision-free selection
+    // (one proposal per non-empty goal) exists that includes it. Candidate
+    // lists are a handful long and gestures carry two or three goals, so an
+    // exhaustive search is the simple and honest check.
+    let survives = |goal_idx: usize, prop_idx: usize| -> bool {
+        let mut chosen: Vec<&EditProposal> = vec![&per_goal[goal_idx][prop_idx]];
+        fn pick<'a>(
+            per_goal: &'a [Vec<EditProposal>],
+            skip: usize,
+            next: usize,
+            chosen: &mut Vec<&'a EditProposal>,
+        ) -> bool {
+            let Some(candidates) = per_goal.get(next) else {
+                return true;
+            };
+            if next == skip || candidates.is_empty() {
+                return pick(per_goal, skip, next + 1, chosen);
+            }
+            for c in candidates {
+                if chosen.iter().all(|p| edits_compatible(&p.edit, &c.edit)) {
+                    chosen.push(c);
+                    if pick(per_goal, skip, next + 1, chosen) {
+                        return true;
+                    }
+                    chosen.pop();
+                }
+            }
+            false
+        }
+        pick(&per_goal, goal_idx, 0, &mut chosen)
+    };
+
+    let keep: Vec<Vec<bool>> = per_goal
+        .iter()
+        .enumerate()
+        .map(|(gi, ps)| (0..ps.len()).map(|pi| survives(gi, pi)).collect())
+        .collect();
+    for (ps, keep) in per_goal.iter_mut().zip(keep) {
+        let mut it = keep.into_iter();
+        ps.retain(|_| it.next().unwrap());
+    }
+    Ok(per_goal)
+}
+
+/// Whether two edits can both apply: identical (same range, same text) or
+/// touching disjoint ranges. Overlapping ranges with different text collide.
+fn edits_compatible(a: &SourceEdit, b: &SourceEdit) -> bool {
+    let (sa, sb) = (a.span, b.span);
+    if sa.start.offset == sb.start.offset && sa.end.offset == sb.end.offset {
+        return a.new_text == b.new_text;
+    }
+    sa.end.offset <= sb.start.offset || sb.end.offset <= sa.start.offset
+}
+
+/// Apply a set of chosen edits to `source` in one pass: duplicates (the same
+/// edit chosen by two goals) collapse to one, and the survivors are spliced
+/// back-to-front so earlier spans stay valid. Colliding edits are an error —
+/// a batch filtered by [`propose_edits_batch`] never produces them, so hitting
+/// this means the caller mixed proposals from different batches.
+pub fn apply_edits(source: &str, edits: &[SourceEdit]) -> Result<String, ManipulationError> {
+    let mut unique: Vec<&SourceEdit> = Vec::new();
+    for e in edits {
+        if unique
+            .iter()
+            .any(|u| u.span.start.offset == e.span.start.offset && u.span.end.offset == e.span.end.offset && u.new_text == e.new_text)
+        {
+            continue;
+        }
+        if let Some(clash) = unique.iter().find(|u| !edits_compatible(u, e)) {
+            return Err(err(format!(
+                "edits collide: two different replacements for overlapping text ({:?} vs {:?})",
+                clash.new_text, e.new_text
+            )));
+        }
+        unique.push(e);
+    }
+    unique.sort_by(|a, b| b.span.start.offset.cmp(&a.span.start.offset));
+    let mut out = source.to_string();
+    for e in unique {
+        out = crate::rewrite::splice(&out, e.span, &e.new_text);
+    }
+    Ok(out)
 }
 
 /// Build one proposal, computing `shared` from how many terms read the edited
@@ -210,6 +363,7 @@ fn make_proposal(
     span: SourceSpan,
     literal_term: TermId,
     variable: Option<String>,
+    config: bool,
     new_text: String,
 ) -> EditProposal {
     let shared = variable.is_some() && reader_count(program, literal_term) > 1;
@@ -227,6 +381,7 @@ fn make_proposal(
         variable,
         term: literal_term,
         shared,
+        config,
         description,
     }
 }
@@ -241,18 +396,27 @@ fn reader_count(program: &Program, id: TermId) -> usize {
         .count()
 }
 
-/// The name the binding behind `arg` was declared with, walking the identity
-/// chain a name reference compiles to and taking the first named term.
-fn binding_name(program: &Program, arg: TermId) -> Option<String> {
+/// The name the binding behind `arg` was declared with (walking the identity
+/// chain a name reference compiles to and taking the first named term), plus
+/// whether that declaration carried the `config` modifier.
+fn binding_info(program: &Program, arg: TermId) -> Option<(String, bool)> {
     let mut cur = arg;
     for _ in 0..16 {
         let t = program.terms.get(cur.0 as usize)?;
         if let Some(name) = &t.name {
-            return Some(name.rsplit("::").next().unwrap_or(name).to_string());
+            return Some((
+                name.rsplit("::").next().unwrap_or(name).to_string(),
+                t.is_config,
+            ));
         }
         cur = provenance::alias_target(program, cur)?;
     }
     None
+}
+
+/// Whether `id` is a term whose binding was declared `config let`.
+fn term_is_config(program: &Program, id: TermId) -> bool {
+    program.terms.get(id.0 as usize).is_some_and(|t| t.is_config)
 }
 
 /// Render `new_value` the way the argument was already spelled: an integer slot
@@ -284,7 +448,7 @@ fn solve(
     trace: Option<&TraceBuffer>,
     term: TermId,
     target: f64,
-    var: Option<String>,
+    var: Option<(String, bool)>,
     depth: usize,
     out: &mut Vec<EditProposal>,
 ) {
@@ -298,11 +462,17 @@ fn solve(
 
     // Carry the innermost binding name seen on the way down — the definition's
     // constant often carries the name itself — so a proposal at the leaf can
-    // say *which variable* it edits.
+    // say *which variable* it edits. The `config` flag rides along: it may sit
+    // on a named intermediate (`config let n = 5 + 2`) rather than the leaf.
     let var_here = t
         .name
         .as_ref()
-        .map(|n| n.rsplit("::").next().unwrap_or(n).to_string())
+        .map(|n| {
+            (
+                n.rsplit("::").next().unwrap_or(n).to_string(),
+                t.is_config,
+            )
+        })
         .or(var);
 
     // A literal leaf — written here or reached through a binding chain.
@@ -316,7 +486,15 @@ fn solve(
                     StaticValue::Float(target)
                 },
             );
-            out.push(make_proposal(program, span, term, var_here, new_text));
+            let config = var_here.as_ref().is_some_and(|v| v.1) || t.is_config;
+            out.push(make_proposal(
+                program,
+                span,
+                term,
+                var_here.map(|v| v.0),
+                config,
+                new_text,
+            ));
         }
         return;
     }
@@ -595,6 +773,245 @@ mod tests {
         let (env, pid) = run_traced(src);
         let ps = propose(&env, pid, 0, StaticValue::Int(10), &HashMap::new());
         assert!(ps.is_empty(), "got {ps:?}");
+    }
+
+    /// All builtin-call terms, in program order — for tests that address a
+    /// specific call among several.
+    fn call_terms(program: &Program) -> Vec<TermId> {
+        program
+            .terms
+            .iter()
+            .filter(|t| matches!(t.op, TermOp::BuiltinCall(_)))
+            .map(|t| t.id)
+            .collect()
+    }
+
+    #[test]
+    fn a_config_binding_wins_with_no_policy_at_all() {
+        // The whole point of `config let`: the source names its tuning knob,
+        // so a bare goal resolves to one edit with no dialog.
+        let src = "config let offset = 10\nlet x = 20\nprint(x + offset)\n";
+        let (env, pid) = run_traced(src);
+        let ps = propose(&env, pid, 0, StaticValue::Float(42.5), &HashMap::new());
+        assert_eq!(ps.len(), 1);
+        assert_eq!(ps[0].variable.as_deref(), Some("offset"));
+        assert!(ps[0].config);
+        assert_eq!(
+            apply(src, &ps[0]),
+            "config let offset = 22.5\nlet x = 20\nprint(x + offset)\n"
+        );
+    }
+
+    #[test]
+    fn explicit_policy_overrides_config_defaults() {
+        // The host pins the knob and frees `x`: its word beats the source's.
+        let src = "config let offset = 10\nlet x = 20\nprint(x + offset)\n";
+        let (env, pid) = run_traced(src);
+        let policy = HashMap::from([
+            ("offset".to_string(), VarPolicy::Static),
+            ("x".to_string(), VarPolicy::Configurable),
+        ]);
+        let ps = propose(&env, pid, 0, StaticValue::Float(42.5), &policy);
+        assert_eq!(ps.len(), 1);
+        assert_eq!(ps[0].variable.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn config_defaults_do_not_touch_call_site_literals() {
+        // A program that declares a knob elsewhere: the direct literal in this
+        // call carries no variable, so it stays editable.
+        let src = "config let k = 1\nprint(120)\n";
+        let (env, pid) = run_traced(src);
+        let ps = propose(&env, pid, 0, StaticValue::Int(55), &HashMap::new());
+        assert_eq!(ps.len(), 1);
+        assert!(ps[0].variable.is_none());
+    }
+
+    #[test]
+    fn a_non_config_binding_is_pinned_once_the_source_declares_knobs() {
+        // `r` feeds the argument, but the script declared `k` as the knob, so
+        // a bare goal on `r + k` must not offer to move `r`.
+        let src = "config let k = 1\nlet r = 30\nprint(r + k)\n";
+        let (env, pid) = run_traced(src);
+        let ps = propose(&env, pid, 0, StaticValue::Int(40), &HashMap::new());
+        assert_eq!(ps.len(), 1);
+        assert_eq!(ps[0].variable.as_deref(), Some("k"));
+        assert_eq!(
+            apply(src, &ps[0]),
+            "config let k = 10\nlet r = 30\nprint(r + k)\n"
+        );
+    }
+
+    #[test]
+    fn a_binding_argument_reports_its_config_flag() {
+        let src = "config let r = 30\nprint(r)\n";
+        let (env, pid) = run_traced(src);
+        let ps = propose(&env, pid, 0, StaticValue::Int(40), &HashMap::new());
+        assert_eq!(ps.len(), 1);
+        assert!(ps[0].config);
+        assert_eq!(apply(src, &ps[0]), "config let r = 40\nprint(r)\n");
+    }
+
+    #[test]
+    fn a_batch_resolves_two_goals_against_one_policy() {
+        // The x+y drag: one gesture, two arguments, one policy round-trip.
+        let src = "let x = 20\nlet y = 30\nlet dx = 1\nlet dy = 2\nprint(x + dx, y + dy)\n";
+        let (env, pid) = run_traced(src);
+        let program = env.get_program(pid).unwrap();
+        let term = call_term(program);
+        let goals = vec![
+            ManipulationGoal {
+                term,
+                arg_index: 0,
+                new_value: StaticValue::Int(31),
+            },
+            ManipulationGoal {
+                term,
+                arg_index: 1,
+                new_value: StaticValue::Int(42),
+            },
+        ];
+        let policy = HashMap::from([
+            ("x".to_string(), VarPolicy::Static),
+            ("y".to_string(), VarPolicy::Static),
+        ]);
+        let per_goal = propose_edits_batch(program, &goals, Some(env.trace()), &policy).unwrap();
+        assert_eq!(per_goal.len(), 2);
+        assert_eq!(per_goal[0].len(), 1);
+        assert_eq!(per_goal[0][0].variable.as_deref(), Some("dx"));
+        assert_eq!(per_goal[1].len(), 1);
+        assert_eq!(per_goal[1][0].variable.as_deref(), Some("dy"));
+
+        let edits: Vec<SourceEdit> = per_goal.iter().map(|ps| ps[0].edit.clone()).collect();
+        assert_eq!(
+            apply_edits(src, &edits).unwrap(),
+            "let x = 20\nlet y = 30\nlet dx = 11\nlet dy = 12\nprint(x + dx, y + dy)\n"
+        );
+    }
+
+    #[test]
+    fn inconsistent_batch_candidates_are_filtered() {
+        // Goal 1 can only be met by moving `a` (to 15). Goal 0 could move `a`
+        // (to 11) or the literal `1` — but `a` can't be both 11 and 15, so the
+        // batch drops goal 0's `a` branch and keeps the literal.
+        let src = "let a = 10\nprint(a + 1, a)\n";
+        let (env, pid) = run_traced(src);
+        let program = env.get_program(pid).unwrap();
+        let term = call_term(program);
+        let goals = vec![
+            ManipulationGoal {
+                term,
+                arg_index: 0,
+                new_value: StaticValue::Int(12),
+            },
+            ManipulationGoal {
+                term,
+                arg_index: 1,
+                new_value: StaticValue::Int(15),
+            },
+        ];
+        let per_goal =
+            propose_edits_batch(program, &goals, Some(env.trace()), &HashMap::new()).unwrap();
+        // Goal 0: only the call-site literal branch survives, retargeted so
+        // `a + 1` still hits 12 pairing with... no — the literal keeps its own
+        // solve (a stayed 10 in the traced run): 1 -> 2.
+        assert_eq!(per_goal[0].len(), 1);
+        assert!(per_goal[0][0].variable.is_none());
+        assert_eq!(per_goal[0][0].edit.new_text, "2");
+        // Goal 1: the binding edit stands.
+        assert_eq!(per_goal[1].len(), 1);
+        assert_eq!(per_goal[1][0].variable.as_deref(), Some("a"));
+        assert_eq!(per_goal[1][0].edit.new_text, "15");
+    }
+
+    #[test]
+    fn identical_edits_from_two_goals_are_compatible_and_dedupe() {
+        // Both goals move the same binding to the same value — one edit.
+        let src = "let a = 10\nprint(a, a)\n";
+        let (env, pid) = run_traced(src);
+        let program = env.get_program(pid).unwrap();
+        let term = call_term(program);
+        let goal = |arg_index| ManipulationGoal {
+            term,
+            arg_index,
+            new_value: StaticValue::Int(25),
+        };
+        let per_goal =
+            propose_edits_batch(program, &[goal(0), goal(1)], Some(env.trace()), &HashMap::new())
+                .unwrap();
+        assert_eq!(per_goal[0].len(), 1);
+        assert_eq!(per_goal[1].len(), 1);
+        let edits: Vec<SourceEdit> = per_goal.iter().map(|ps| ps[0].edit.clone()).collect();
+        assert_eq!(apply_edits(src, &edits).unwrap(), "let a = 25\nprint(a, a)\n");
+    }
+
+    #[test]
+    fn a_refused_goal_does_not_veto_the_rest_of_the_batch() {
+        // Goal 1's argument flows through a call — no proposals, which is its
+        // own honest answer; goal 0 keeps its edit.
+        let src = "fn f(n) n * 2 end\nlet x = 3\nprint(120, f(x))\n";
+        let (env, pid) = run_traced(src);
+        let program = env.get_program(pid).unwrap();
+        let term = *call_terms(program).last().expect("the print call");
+        let goals = vec![
+            ManipulationGoal {
+                term,
+                arg_index: 0,
+                new_value: StaticValue::Int(55),
+            },
+            ManipulationGoal {
+                term,
+                arg_index: 1,
+                new_value: StaticValue::Int(10),
+            },
+        ];
+        let per_goal =
+            propose_edits_batch(program, &goals, Some(env.trace()), &HashMap::new()).unwrap();
+        assert_eq!(per_goal[0].len(), 1);
+        assert!(per_goal[1].is_empty());
+    }
+
+    #[test]
+    fn an_empty_batch_is_an_error() {
+        let (env, pid) = run_traced("print(1)\n");
+        let program = env.get_program(pid).unwrap();
+        assert!(propose_edits_batch(program, &[], Some(env.trace()), &HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn apply_edits_splices_back_to_front_and_rejects_collisions() {
+        let src = "let a = 1\nlet b = 2\n";
+        let span = |start: u32, end: u32| {
+            let mut s = SourceSpan::default();
+            s.start.offset = start;
+            s.end.offset = end;
+            s
+        };
+        // "1" is at offset 8, "2" at offset 18.
+        let e1 = SourceEdit {
+            span: span(8, 9),
+            new_text: "10".into(),
+        };
+        let e2 = SourceEdit {
+            span: span(18, 19),
+            new_text: "20".into(),
+        };
+        assert_eq!(
+            apply_edits(src, &[e1.clone(), e2.clone()]).unwrap(),
+            "let a = 10\nlet b = 20\n"
+        );
+        // Same edits in the other order: back-to-front splicing makes order
+        // irrelevant.
+        assert_eq!(
+            apply_edits(src, &[e2.clone(), e1.clone()]).unwrap(),
+            "let a = 10\nlet b = 20\n"
+        );
+        // Overlap with different text is a collision.
+        let clash = SourceEdit {
+            span: span(8, 9),
+            new_text: "99".into(),
+        };
+        assert!(apply_edits(src, &[e1, clash]).is_err());
     }
 
     #[test]

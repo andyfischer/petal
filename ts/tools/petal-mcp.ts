@@ -244,22 +244,41 @@ server.registerTool("ProposeEdit", {
     "one direct edit; a computed argument (e.g. `x + offset`) yields one " +
     "proposal per contributing variable, solved with the values the run " +
     "actually saw. Narrow multiple proposals by naming variables in " +
-    "`configurable` (prefer editing these) or `static` (never edit these). " +
-    "Each proposal carries the span (line/column/offset) and replacement " +
-    "text; nothing is written — applying is the caller's move. Use TraceEmits " +
-    "first to find channel / emit / arg indices.",
+    "`configurable` (prefer editing these) or `static` (never edit these) — " +
+    "or declare knobs in the source itself with `config let x = …`, which " +
+    "makes config bindings the default edit targets and pins the rest. " +
+    "Pass `goals` instead of `arg`/`to` to state a multi-goal batch (one " +
+    "gesture changing several arguments of the same call), resolved so all " +
+    "goals can hold together. Each proposal carries the span " +
+    "(line/column/offset) and replacement text; nothing is written — " +
+    "applying is the caller's move. Use TraceEmits first to find channel / " +
+    "emit / arg indices.",
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
     channel: z.string().describe("Output channel name (e.g. 'draw_commands')"),
     emit: z.number().int().min(0).describe("0-based emit index within the channel"),
-    arg: z.number().int().min(0).describe("0-based argument position in the emitting call"),
-    to: z.string().describe("Goal value as source-ish text: 55, 2.5, true, hello"),
+    arg: z.number().int().min(0).optional()
+      .describe("0-based argument position in the emitting call (single-goal form)"),
+    to: z.string().optional()
+      .describe("Goal value as source-ish text: 55, 2.5, true, hello (single-goal form)"),
+    goals: z.array(z.object({
+      arg: z.number().int().min(0).describe("0-based argument position"),
+      to: z.string().describe("Goal value as source-ish text"),
+    })).optional()
+      .describe("Multi-goal batch: several arguments of the same emit that must change together"),
     configurable: z.array(z.string()).optional()
       .describe("Variables to prefer editing"),
     static: z.array(z.string()).optional()
       .describe("Variables that must not be edited"),
   },
-}, async ({ code, channel, emit, arg, to, configurable, static: pinned }) => {
+}, async ({ code, channel, emit, arg, to, goals, configurable, static: pinned }) => {
+  const pairs = goals ?? (arg !== undefined && to !== undefined ? [{ arg, to }] : []);
+  if (pairs.length === 0) {
+    return {
+      content: [{ type: "text" as const, text: "Provide either arg+to or a non-empty goals array." }],
+      isError: true,
+    };
+  }
   const buildErr = await ensureBuild();
   if (buildErr) return buildErr;
   const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
@@ -269,9 +288,8 @@ server.registerTool("ProposeEdit", {
       "propose-edit", "--json",
       "--channel", channel,
       "--emit", String(emit),
-      "--arg", String(arg),
-      "--to", to,
     ];
+    for (const g of pairs) args.push("--arg", String(g.arg), "--to", g.to);
     for (const name of configurable ?? []) args.push("--configurable", name);
     for (const name of pinned ?? []) args.push("--static", name);
     args.push(tmpFile);

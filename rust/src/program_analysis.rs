@@ -748,6 +748,7 @@ mod tests {
             child_blocks: SmallVec::new(),
             in_loop: false,
             collect: false,
+            is_config: false,
         }
     }
 

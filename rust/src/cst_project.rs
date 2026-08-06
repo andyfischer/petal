@@ -231,7 +231,20 @@ impl Projector {
         let span = self.node_span(node)?;
         let kind = match node.kind() {
             SyntaxKind::LetStmt => {
-                let name = self.only_ident(node)?;
+                // `config let x = …` puts *two* ident tokens under the node:
+                // the contextual `config` modifier, then the bound name. A
+                // plain binding has one. (`let config = …` also has one — the
+                // name — so the modifier is only read when a second follows.)
+                let idents: Vec<String> = direct_tokens(node).iter().filter_map(ident_value).collect();
+                let (is_config, name) = match idents.as_slice() {
+                    [modifier, name, ..] if modifier == crate::parse::CONFIG_KEYWORD => {
+                        (true, name.clone())
+                    }
+                    [name, ..] => (false, name.clone()),
+                    [] => {
+                        return Err(format!("{:?} missing an identifier token", node.kind()));
+                    }
+                };
                 let ty = child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
@@ -252,6 +265,7 @@ impl Projector {
                     ty,
                     value,
                     is_var,
+                    is_config,
                 }
             }
             SyntaxKind::AssignStmt => return self.assign_stmt(node, span, false),
@@ -1225,6 +1239,12 @@ mod tests {
         assert_projects("var x = 0\nset x = 1\n");
         assert_projects("var x: int = 0\nset x += 1\n");
         assert_projects("export var x = 0\n");
+        // `config` — the tuning-knob modifier, plus its non-modifier uses:
+        // as a binding name, and combined with `export`.
+        assert_projects("config let offset = 10\n");
+        assert_projects("config let scale: float = 1.5\n");
+        assert_projects("let config = 1\nprint(config)\n");
+        assert_projects("export config let margin = 4\n");
         assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");

@@ -264,6 +264,11 @@ pub enum StmtKind {
         /// is written with `set` and rejects `=`.
         /// See docs/dev/var-next-steps.md (Two write keywords).
         is_var: bool,
+        /// Written `config let x = …`: the binding is declared as a tuning
+        /// knob. Direct manipulation prefers editing config bindings and
+        /// leaves the rest alone (docs/direct-manipulation.md); hosts may
+        /// also render them as sliders. No effect on evaluation.
+        is_config: bool,
     },
     Assign {
         target: AssignTarget,

@@ -23,6 +23,7 @@ impl Compiler {
                 name,
                 value,
                 is_var,
+                is_config,
                 ..
             } => {
                 let val_tid = self.compile_expr(value);
@@ -38,6 +39,10 @@ impl Compiler {
                     self.scope_bind_var(name.clone(), cell_tid);
                 } else {
                     self.terms[val_tid.0 as usize].name = Some(name.clone());
+                    // The flag rides on the binding's value term — for a
+                    // `config let` with a literal initializer that is exactly
+                    // the term a proposal edits.
+                    self.terms[val_tid.0 as usize].is_config = *is_config;
                     self.scope_bind(name.clone(), val_tid);
                 }
             }

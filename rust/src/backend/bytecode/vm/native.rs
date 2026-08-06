@@ -32,7 +32,13 @@ impl<'a> Vm<'a> {
         // The innermost frame is last in `vm_frames`, so walk it backwards. The
         // root frame's `call_site` is `None` — nothing called it — which ends
         // the chain naturally.
-        chain.extend(self.stack.vm_frames.iter().rev().filter_map(|f| f.call_site));
+        chain.extend(
+            self.stack
+                .vm_frames
+                .iter()
+                .rev()
+                .filter_map(|f| f.call_site),
+        );
         chain
     }
 

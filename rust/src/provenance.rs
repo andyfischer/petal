@@ -179,10 +179,7 @@ impl CallSite {
             // prelude defines. The callee has no name constant, so recover it
             // from the term the callable resolves to: a name reference compiles
             // to a `Copy` of the binding, and the binding carries the name.
-            TermOp::Call => (
-                t.inputs.first().and_then(|c| callable_name(program, *c)),
-                1,
-            ),
+            TermOp::Call => (t.inputs.first().and_then(|c| callable_name(program, *c)), 1),
             // Not a call at all. Still resolvable as a site — an emitting native
             // can be reached through ops this doesn't enumerate — just with no
             // callee name and every input treated as an argument.
@@ -312,7 +309,10 @@ fn string_constant(program: &Program, id: crate::constant_table::ConstantId) -> 
 }
 
 /// A numeric constant as `(value, was_written_as_int)`, if `id` names one.
-fn number_constant(program: &Program, id: crate::constant_table::ConstantId) -> Option<(f64, bool)> {
+fn number_constant(
+    program: &Program,
+    id: crate::constant_table::ConstantId,
+) -> Option<(f64, bool)> {
     match program.constants.get(id) {
         ConstantValue::Int(n) => Some((*n as f64, true)),
         ConstantValue::Float(bits) => Some((f64::from_bits(*bits), false)),

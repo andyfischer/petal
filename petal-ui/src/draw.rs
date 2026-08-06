@@ -16,9 +16,9 @@
 //! Colors are 0–255 sRGB components.
 
 use petal::env::Env;
+use petal::execution_context::EmitSite;
 use petal::heap::Heap;
 use petal::native_fn::{NativeResult, PetalCxt};
-use petal::execution_context::EmitSite;
 use petal::stack::StackKey;
 use petal::value::Value;
 use serde::Serialize;

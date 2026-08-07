@@ -653,10 +653,7 @@ impl Parser {
     /// `config` starts a declaration only when the very next token is a
     /// binding keyword — `config` on its own line stays an expression.
     fn starts_config_decl(&self) -> bool {
-        matches!(
-            self.tokens.get(self.pos + 1),
-            Some(Token::Let | Token::Var)
-        )
+        matches!(self.tokens.get(self.pos + 1), Some(Token::Let | Token::Var))
     }
 
     /// `class Name` … `end`, a comma-separated list of `field: type`. Field

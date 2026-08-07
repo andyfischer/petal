@@ -235,7 +235,8 @@ impl Projector {
                 // the contextual `config` modifier, then the bound name. A
                 // plain binding has one. (`let config = …` also has one — the
                 // name — so the modifier is only read when a second follows.)
-                let idents: Vec<String> = direct_tokens(node).iter().filter_map(ident_value).collect();
+                let idents: Vec<String> =
+                    direct_tokens(node).iter().filter_map(ident_value).collect();
                 let (is_config, name) = match idents.as_slice() {
                     [modifier, name, ..] if modifier == crate::parse::CONFIG_KEYWORD => {
                         (true, name.clone())

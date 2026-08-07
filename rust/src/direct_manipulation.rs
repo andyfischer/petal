@@ -174,7 +174,8 @@ pub fn propose_edits(
             let info = (arg.kind == ArgKind::Binding)
                 .then(|| binding_info(program, arg.term))
                 .flatten();
-            let config = info.as_ref().is_some_and(|i| i.1) || term_is_config(program, literal_term);
+            let config =
+                info.as_ref().is_some_and(|i| i.1) || term_is_config(program, literal_term);
             vec![make_proposal(
                 program,
                 span,
@@ -333,10 +334,11 @@ fn edits_compatible(a: &SourceEdit, b: &SourceEdit) -> bool {
 pub fn apply_edits(source: &str, edits: &[SourceEdit]) -> Result<String, ManipulationError> {
     let mut unique: Vec<&SourceEdit> = Vec::new();
     for e in edits {
-        if unique
-            .iter()
-            .any(|u| u.span.start.offset == e.span.start.offset && u.span.end.offset == e.span.end.offset && u.new_text == e.new_text)
-        {
+        if unique.iter().any(|u| {
+            u.span.start.offset == e.span.start.offset
+                && u.span.end.offset == e.span.end.offset
+                && u.new_text == e.new_text
+        }) {
             continue;
         }
         if let Some(clash) = unique.iter().find(|u| !edits_compatible(u, e)) {
@@ -416,7 +418,10 @@ fn binding_info(program: &Program, arg: TermId) -> Option<(String, bool)> {
 
 /// Whether `id` is a term whose binding was declared `config let`.
 fn term_is_config(program: &Program, id: TermId) -> bool {
-    program.terms.get(id.0 as usize).is_some_and(|t| t.is_config)
+    program
+        .terms
+        .get(id.0 as usize)
+        .is_some_and(|t| t.is_config)
 }
 
 /// Render `new_value` the way the argument was already spelled: an integer slot
@@ -467,12 +472,7 @@ fn solve(
     let var_here = t
         .name
         .as_ref()
-        .map(|n| {
-            (
-                n.rsplit("::").next().unwrap_or(n).to_string(),
-                t.is_config,
-            )
-        })
+        .map(|n| (n.rsplit("::").next().unwrap_or(n).to_string(), t.is_config))
         .or(var);
 
     // A literal leaf — written here or reached through a binding chain.
@@ -936,13 +936,20 @@ mod tests {
             arg_index,
             new_value: StaticValue::Int(25),
         };
-        let per_goal =
-            propose_edits_batch(program, &[goal(0), goal(1)], Some(env.trace()), &HashMap::new())
-                .unwrap();
+        let per_goal = propose_edits_batch(
+            program,
+            &[goal(0), goal(1)],
+            Some(env.trace()),
+            &HashMap::new(),
+        )
+        .unwrap();
         assert_eq!(per_goal[0].len(), 1);
         assert_eq!(per_goal[1].len(), 1);
         let edits: Vec<SourceEdit> = per_goal.iter().map(|ps| ps[0].edit.clone()).collect();
-        assert_eq!(apply_edits(src, &edits).unwrap(), "let a = 25\nprint(a, a)\n");
+        assert_eq!(
+            apply_edits(src, &edits).unwrap(),
+            "let a = 25\nprint(a, a)\n"
+        );
     }
 
     #[test]

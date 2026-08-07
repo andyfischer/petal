@@ -492,11 +492,11 @@ pub(super) fn handle_propose_edit(
         policy.insert(name.clone(), VarPolicy::Configurable);
     }
 
-    let per_goal = match propose_edits_batch(program, &manipulation_goals, Some(env.trace()), &policy)
-    {
-        Ok(ps) => ps,
-        Err(e) => die(json, &e.message, "goal"),
-    };
+    let per_goal =
+        match propose_edits_batch(program, &manipulation_goals, Some(env.trace()), &policy) {
+            Ok(ps) => ps,
+            Err(e) => die(json, &e.message, "goal"),
+        };
 
     let applied = if apply {
         // Every goal has to be narrowed to exactly one proposal — ambiguity
@@ -539,20 +539,21 @@ pub(super) fn handle_propose_edit(
         false
     };
 
-    let proposals_json = |ps: &[crate::direct_manipulation::EditProposal]| -> Vec<serde_json::Value> {
-        ps.iter()
-            .map(|p| {
-                serde_json::json!({
-                    "description": p.description,
-                    "variable": p.variable,
-                    "shared": p.shared,
-                    "config": p.config,
-                    "span": span_json(&Some(p.edit.span)),
-                    "new_text": p.edit.new_text,
+    let proposals_json =
+        |ps: &[crate::direct_manipulation::EditProposal]| -> Vec<serde_json::Value> {
+            ps.iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "description": p.description,
+                        "variable": p.variable,
+                        "shared": p.shared,
+                        "config": p.config,
+                        "span": span_json(&Some(p.edit.span)),
+                        "new_text": p.edit.new_text,
+                    })
                 })
-            })
-            .collect()
-    };
+                .collect()
+        };
 
     if json {
         let goals_json: Vec<serde_json::Value> = goals

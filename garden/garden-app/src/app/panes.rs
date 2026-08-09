@@ -42,6 +42,9 @@ impl App {
         // borrow on `self` ends (like `spawned`, but their first data comes from
         // the query round-trip rather than an initial `render`).
         let mut spawned_clients: Vec<usize> = Vec::new();
+        // Panel scripts that failed to compile/load this rebuild, reported once
+        // the borrow on `self` ends.
+        let mut panel_errors: Vec<String> = Vec::new();
         for (idx, PaneSlot { rect, content }) in slots.into_iter().enumerate() {
             let pane = match content {
                 PaneContent::Editor {
@@ -139,11 +142,17 @@ impl App {
                             }
                             Err(err) => {
                                 // Never crash: show the error in a plain editor.
+                                // Also report it everywhere a failure is looked
+                                // for — the pane title, the status bar, and the
+                                // launch log — because the fallback pane is
+                                // otherwise indistinguishable from an empty
+                                // buffer, and a headless/scripted client reading
+                                // `status_error` would see a clean start.
+                                let msg = format!("could not load panel {script}: {err}");
                                 let mut view = EditorView::open(None);
-                                view.set_external_content(
-                                    &format!("could not load panel {script}: {err}"),
-                                    None,
-                                );
+                                view.set_external_content(&msg, None);
+                                view.set_external_title(Some(format!("panel error: {script}")));
+                                panel_errors.push(msg);
                                 Pane::editor(rect, None, view)
                             }
                         }
@@ -154,6 +163,14 @@ impl App {
         }
 
         self.panes = new_panes;
+        // A panel that doesn't compile is the single most common authoring
+        // error; make it loud rather than leaving a blank-looking pane.
+        if let Some(first) = panel_errors.first() {
+            for msg in &panel_errors {
+                eprintln!("garden: {msg}");
+            }
+            self.status_error = Some(first.clone());
+        }
         self.focus = self.focus.min(self.panes.len().saturating_sub(1));
         self.drag = None;
         self.window_cmd_pending = false;

@@ -3985,3 +3985,63 @@ fn a_region_search_that_misses_says_so() {
         Some("E: pattern not found: zzz")
     );
 }
+
+/// A panel script that doesn't compile must announce itself. The fallback pane
+/// is an ordinary editor holding the error text, which on its own is
+/// indistinguishable from an empty buffer: `kind` reads `editor`, `panel` is
+/// null, and nothing else changes. Before this was reported, a syntax error and
+/// a wrong script path looked identical, and a headless client polling
+/// `status_error` saw a clean start — so the error has to reach the status bar
+/// and the pane title, not just the buffer.
+#[test]
+fn a_panel_that_does_not_compile_reports_the_error() {
+    let dir = temp_dir("panel-broken");
+    // Unbalanced parens: a parse error, not a runtime one.
+    let script = file_with(&dir, "broken.ptl", "clear(0,0,0)\nlet x = (((\n");
+    let app = app_with_panel(&script);
+
+    // The fallback pane really is a plain editor, not a panel.
+    assert!(
+        app.panes[0].panel.is_none(),
+        "a script that fails to compile must not produce a live panel"
+    );
+
+    let err = app
+        .status_error
+        .as_deref()
+        .expect("a failed panel load must set status_error");
+    assert!(
+        err.contains("could not load panel") && err.contains("broken.ptl"),
+        "status_error should name the failing script: {err}"
+    );
+
+    // The title distinguishes this pane from an untitled scratch buffer.
+    assert_eq!(app.panes[0].view.title(), format!("panel error: {script}"));
+
+    // The buffer still carries the full message, including the compiler's
+    // position, which is what a human reads in the pane.
+    let body = app.panes[0].view.buffer.to_string();
+    assert!(
+        body.contains("could not load panel") && body.contains("line 2"),
+        "the pane body should hold the compiler error with its position: {body}"
+    );
+}
+
+/// A panel whose script is simply missing must report just as loudly — this is
+/// the other half of the same confusion (bad path vs bad syntax).
+#[test]
+fn a_panel_with_a_missing_script_reports_the_error() {
+    let dir = temp_dir("panel-missing");
+    let missing = dir.join("nope.ptl").display().to_string();
+    let app = app_with_panel(&missing);
+
+    assert!(app.panes[0].panel.is_none());
+    let err = app
+        .status_error
+        .as_deref()
+        .expect("a missing panel script must set status_error");
+    assert!(
+        err.contains("could not load panel") && err.contains("nope.ptl"),
+        "status_error should name the missing script: {err}"
+    );
+}

@@ -31,9 +31,10 @@ pub struct ExecutionContext {
     pub bindings: HashMap<SymbolId, Value>,
     pub counters: HashMap<SymbolId, u64>,
     /// When true, `print` echoes to real stdout (the sole stdout path for
-    /// `petal run`, which never drains `output`). A speculative [`fork`](Self::fork)
-    /// clears this so its output stays captured in the buffer and never leaks to
-    /// the primary run's stdout.
+    /// `petal run`, which never drains `output`). Inherited by [`fork`](Self::fork)
+    /// like every other setting — a caller that wants a silent execution (e.g.
+    /// speculative execution, which discards its results) turns it off with
+    /// [`set_echo`](Self::set_echo).
     pub echo: bool,
     /// Per-context xorshift64* PRNG state (see [`crate::builtins`]). Owned here so
     /// each run/fork has isolated randomness instead of sharing a process global.
@@ -133,6 +134,11 @@ impl ExecutionContext {
     /// Fork this context into an isolated copy. Heap + registries are deep-cloned
     /// (pre-fork ids resolve to equal objects in both); output sinks start fresh
     /// so the fork's output is captured separately from the source's.
+    ///
+    /// Settings — including [`echo`](Self::echo) — are inherited unchanged. A
+    /// fork is not inherently speculative or silent; a caller that wants that
+    /// (see [`Env::run_speculative`](crate::env::Env::run_speculative)) applies
+    /// the policy itself via [`set_echo`](Self::set_echo).
     pub fn fork(&self) -> ExecutionContext {
         ExecutionContext {
             heap: self.heap.fork(),
@@ -142,8 +148,9 @@ impl ExecutionContext {
             counters: self.counters.clone(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
-            // A speculative fork must not print to real stdout.
-            echo: false,
+            // Whether stdout is echoed is the caller's policy, not the fork's:
+            // a fork inherits it and the caller turns it off if it wants silence.
+            echo: self.echo,
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,
             // Snapshot resource state so a fork observes the same resolution
@@ -173,6 +180,13 @@ impl ExecutionContext {
     /// resource ages (`current_frame - frame_started`) grow over time.
     pub fn advance_frame(&mut self) {
         self.frame += 1;
+    }
+
+    /// Turn stdout echoing of `print` on or off (see [`echo`](Self::echo)).
+    /// Output is always accumulated in [`output`](Self::output) either way, so
+    /// turning this off only suppresses the write to the real stdout stream.
+    pub fn set_echo(&mut self, on: bool) {
+        self.echo = on;
     }
 
     /// Turn on the debug-gated absorption log (see
@@ -347,7 +361,16 @@ mod tests {
         let ctx = ExecutionContext::new();
         assert!(ctx.echo);
         assert_eq!(ctx.noise_seed, 0);
-        // A fork never echoes to real stdout.
-        assert!(!ctx.fork().echo);
+    }
+
+    /// A fork inherits the echo setting rather than forcing it off — silencing
+    /// a fork is the caller's policy (`run_speculative` applies it).
+    #[test]
+    fn fork_inherits_echo_setting() {
+        let mut parent = ExecutionContext::new();
+        assert!(parent.fork().echo, "an echoing context forks as echoing");
+
+        parent.set_echo(false);
+        assert!(!parent.fork().echo, "a silent context forks as silent");
     }
 }

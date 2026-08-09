@@ -250,8 +250,15 @@ impl Env {
     /// implementation left the source stack reset and leaked the speculative
     /// run's print output into the shared buffer; the fork-based version does
     /// neither.) The fork's own side effects are discarded when it is dropped.
+    ///
+    /// Silencing stdout is this function's policy, not `fork_execution`'s: a
+    /// speculative run's output is thrown away, so echoing it would print lines
+    /// the program never committed. A host driving a fork by hand keeps whatever
+    /// echo setting the source had.
     pub fn run_speculative(&mut self, stack_id: StackKey) -> Result<Value, String> {
         let fork = self.fork_execution(stack_id)?;
+        let ck = self.ctx_for(fork).ok_or("Stack not found")?;
+        self.ctx_mut(ck).set_echo(false);
         self.reset_stack(fork)?;
         let result = self.run(fork);
         self.drop_fork(fork);

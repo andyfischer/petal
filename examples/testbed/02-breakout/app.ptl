@@ -1,0 +1,840 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  BREAKOUT — a Garden panel app written in Petal.
+//
+//  Exercises: a large, mutable object population (a 99-cell brick grid, a
+//  multi-ball list, falling power-ups, a particle system and a ball trail),
+//  O(1) grid-indexed collision resolution, spawning and destruction every
+//  frame, and a four-layout level generator.
+//
+//  Designed for a 1100x780 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG     = #080a11
+let C_COURT  = #12151f
+let C_FIELD  = #0d101a
+let C_LINE   = #1f2434
+let C_EDGE   = #2b3247
+let C_TEXT   = #e7ebf5
+let C_DIM    = #78849b
+let C_MUTE   = #495164
+let C_CHIP   = #161a26
+let C_PADDLE = #7fd0ff
+let C_BALL   = #f7f9ff
+let C_WARN   = #e0576b
+
+// Brick rows are sampled from this ramp, hot at the top (toughest) to cool
+// at the bottom, so a row's value is readable from its hue alone.
+let BRICK_STOPS = [#e0576b, #e5854e, #d4bd5c, #5fbf9b, #4f8fd6]
+
+// ── Type scale ───────────────────────────────────────────────────────────
+// Six sizes in the whole app: 10 / 12 / 15 / 20 / 30 / 44.
+
+let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
+let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
+let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
+let S_STAT  = {size: 20, color: C_TEXT}
+let S_STATD = {size: 20, color: C_MUTE}
+let S_SCORE = {size: 44, color: C_TEXT}
+let S_CAP   = {size: 12, color: C_TEXT}
+let S_HINT  = {size: 12, color: C_DIM}
+let S_BIG   = {size: 30, color: C_TEXT, spacing: 7}
+let S_SUB   = {size: 12, color: C_DIM}
+let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
+
+// ── Tunables ─────────────────────────────────────────────────────────────
+
+config let start_lives   = 3
+config let ball_speed_0  = 340.0
+config let ball_speed_max = 690.0
+config let drop_chance   = 0.17
+config let power_secs    = 11.0
+config let tap_hold      = 0.10
+
+let COLS = 11
+let ROWS = 9
+let GAP  = 6
+let BR   = 7            // ball radius
+let PADH = 14           // paddle height
+let PADW = 116          // paddle width, normal
+let PADW_WIDE = 182
+let PAD  = 30
+let HEAD = 112
+let FOOT = 60
+
+let LAYOUTS = ["SOLID WALL", "OPEN ARCH", "WEAVE", "PILLARS"]
+
+let POWERS = [
+  {key: "wide",  name: "WIDE PADDLE", short: "WIDE",  c: #6fd6ff},
+  {key: "multi", name: "MULTIBALL",   short: "MULTI", c: #ffd166},
+  {key: "slow",  name: "SLOW BALL",   short: "SLOW",  c: #a58cf0},
+  {key: "life",  name: "EXTRA LIFE",  short: "+LIFE", c: #6fe0a0},
+]
+
+// ── Persistent state ─────────────────────────────────────────────────────
+// Declared before the helpers so closures see the live cells.
+
+state var ready     = false
+state var phase     = "title"   // title | serve | play | paused | cleared | over
+state var level     = 1
+state var score     = 0
+state var lives     = start_lives
+state var combo     = 0
+state var best_combo = 0
+state var bricks    = []        // ROWS*COLS ints: remaining hit points, 0 = gone
+state var brick_hit = []        // ROWS*COLS floats: per-brick impact flash
+state var left      = 0         // bricks remaining
+state var balls     = []        // {x, y, vx, vy}
+state var drops     = []        // {x, y, vy, k, spin}
+state var bits       = []       // particles
+state var trail     = []        // {x, y, life}
+state var speed     = ball_speed_0
+state var padx      = 0.0
+state var pad_target = 0.0
+state var wide_t    = 0.0
+state var slow_t    = 0.0
+state var hold_l    = 0.0
+state var hold_r    = 0.0
+state var last_mx   = -1
+state var last_my   = -1
+state var flash_pad = 0.0
+state var flash_top = 0.0
+state var shake     = 0.0
+state var banner    = ""
+state var subbanner = ""
+state var toast     = ""
+state var toast_t   = 0.0
+state var toast_c   = C_TEXT
+state var pulse     = 0.0
+state var broken    = 0         // bricks broken this run
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
+fn tx(s, x, y, style)
+  draw_text(s, {x: int(x), y: int(y)}, style)
+end
+
+fn tx_right(s, right_x, y, style)
+  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+end
+
+fn tx_center(s, cx, y, style)
+  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+end
+
+fn mix(a, b, t)
+  {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
+   g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+   b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+end
+
+// Sample the brick ramp at row `row` of `rows`.
+fn row_color(row, rows)
+  let f = if rows <= 1 then 0.0 else float(row) / float(rows - 1) end
+  let n = len(BRICK_STOPS) - 1
+  let s = f * float(n)
+  let i = min(n - 1, int(s))
+  mix(BRICK_STOPS[i], BRICK_STOPS[i + 1], s - float(i))
+end
+
+// Starting hit points for one grid cell — 0 means the layout leaves a hole.
+fn cell_hp(lvl, row, col)
+  let p = lvl % 4
+  let solid = if p == 0 then true
+    elsif p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
+    elsif p == 2 then (row + col) % 3 != 0
+    else !(col % 4 == 1 && row % 3 != 0)
+    end
+  if !solid then 0 else 3 - row / 3 end
+end
+
+fn brick_value(row)
+  (3 - row / 3) * 25
+end
+
+// `n` sparks at (x, y), thrown along `dirx`/`diry`.
+fn burst(lst, x, y, n, col, dirx, diry, power)
+  var out = lst
+  for i in range(0, n) do
+    let ang = random(0.0, 6.2832)
+    let sp = random(50.0, 260.0) * power
+    set out = append(out, {
+      x: x,
+      y: y,
+      vx: cos(ang) * sp + dirx * 90.0 * power,
+      vy: sin(ang) * sp + diry * 90.0 * power,
+      life: random(0.24, 0.60),
+      max: 0.60,
+      c: col,
+      sz: random(1.5, 3.4),
+    })
+  end
+  out
+end
+
+fn power_by_key(k)
+  var found = POWERS[0]
+  for p in POWERS do
+    if p.key == k then set found = p end
+  end
+  found
+end
+
+// ── Geometry ─────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let court = rect(PAD, HEAD, W - PAD * 2, H - HEAD - FOOT - PAD)
+let cx = court.x + court.w / 2
+
+let fl = float(court.x + 14)                    // play-field left wall
+let fr = float(court.x + court.w - 14)          // right wall
+let ft = float(court.y + 14)                    // ceiling
+let fb = float(court.y + court.h - 12)          // the floor you must defend
+
+let CW = (int(fr - fl) - 24) / COLS             // brick cell width
+let CH = 27                                     // brick cell height
+let GX = int(fl) + 12 + (int(fr - fl) - 24 - CW * COLS) / 2
+let GY = int(ft) + 44
+let pad_y = int(fb) - 34
+
+fn brick_rect(row, col)
+  rect(GX + col * CW, GY + row * CH, CW - GAP, CH - GAP)
+end
+
+// ── Level / life plumbing ────────────────────────────────────────────────
+
+fn build_level(lvl)
+  var grid = []
+  var flashes = []
+  var n = 0
+  for row in range(0, ROWS) do
+    for col in range(0, COLS) do
+      let hp = cell_hp(lvl, row, col)
+      set grid = append(grid, hp)
+      set flashes = append(flashes, 0.0)
+      if hp > 0 then set n = n + 1 end
+    end
+  end
+  set bricks = grid
+  set brick_hit = flashes
+  set left = n
+end
+
+fn pad_w()
+  if wide_t > 0.0 then PADW_WIDE else PADW end
+end
+
+fn park_ball()
+  set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
+  set trail = []
+end
+
+fn say(msg, col)
+  set toast = msg
+  set toast_t = 1.9
+  set toast_c = col
+end
+
+fn new_game()
+  set level = 1
+  set score = 0
+  set lives = start_lives
+  set combo = 0
+  set best_combo = 0
+  set broken = 0
+  set speed = ball_speed_0
+  set wide_t = 0.0
+  set slow_t = 0.0
+  set drops = []
+  set bits = []
+  set padx = float(cx) - float(PADW) / 2.0
+  set pad_target = padx
+  build_level(level)
+  park_ball()
+  set phase = "title"
+  set banner = "BREAKOUT"
+  set subbanner = "press SPACE or click to launch"
+end
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+
+if !ready then
+  set ready = true
+  new_game()
+end
+
+let raw_dt = dt()
+let sdt = min(raw_dt, 0.06)
+set pulse = pulse + sdt
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+if key_pressed("left") || key_pressed("a") then set hold_l = tap_hold end
+if key_pressed("right") || key_pressed("d") then set hold_r = tap_hold end
+
+if key_pressed("r") then
+  new_game()
+end
+
+// SPACE is the one-button verb; a left click inside the court does the same,
+// so the game is fully playable with the mouse alone.
+let advance = key_pressed("space") || (mouse_pressed(0) && point_in(mouse_x(), mouse_y(), court))
+if advance then
+  if phase == "title" || phase == "serve" then
+    set phase = "play"
+    let ang = random(-0.55, 0.55) - 1.5708
+    set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0,
+                  vx: speed * cos(ang), vy: speed * sin(ang)}]
+    set bits = burst(bits, balls[0].x, balls[0].y, 12, C_BALL, 0.0, -1.0, 1.0)
+  elsif phase == "play" then
+    set phase = "paused"
+    set banner = "PAUSED"
+    set subbanner = "press SPACE or click to resume"
+  elsif phase == "paused" then
+    set phase = "play"
+  elsif phase == "cleared" then
+    set level = level + 1
+    set speed = min(ball_speed_0 + float(level - 1) * 22.0, ball_speed_max)
+    set wide_t = 0.0
+    set slow_t = 0.0
+    set drops = []
+    set combo = 0
+    build_level(level)
+    park_ball()
+    set phase = "serve"
+    set banner = "LEVEL {level}"
+    set subbanner = LAYOUTS[level % 4] ++ "  ·  press SPACE or click to launch"
+  elsif phase == "over" then
+    new_game()
+  end
+end
+
+// Paddle: held keys, tap impulses, or the pointer when it is over the court.
+let live = phase == "play" || phase == "serve" || phase == "title"
+let k_l = key_down("left") || key_down("a") || hold_l > 0.0
+let k_r = key_down("right") || key_down("d") || hold_r > 0.0
+let kdir = (if k_l then -1.0 else 0.0 end) + (if k_r then 1.0 else 0.0 end)
+set hold_l = max(0.0, hold_l - sdt)
+set hold_r = max(0.0, hold_r - sdt)
+
+if kdir != 0.0 && live then
+  set pad_target = pad_target + kdir * 900.0 * sdt
+end
+
+let mx = mouse_x()
+let my = mouse_y()
+if (mx != last_mx || my != last_my) && last_mx >= 0 && live && point_in(mx, my, court) then
+  set pad_target = float(mx) - float(pad_w()) / 2.0
+end
+set last_mx = mx
+set last_my = my
+
+set pad_target = clamp(pad_target, fl, fr - float(pad_w()))
+// Eased follow, so a mouse jump reads as a swipe rather than a teleport.
+set padx = padx + (pad_target - padx) * min(1.0, sdt * 26.0)
+set padx = clamp(padx, fl, fr - float(pad_w()))
+
+if phase == "title" || phase == "serve" then
+  set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
+end
+
+// ── Simulation ───────────────────────────────────────────────────────────
+
+let slowf = if slow_t > 0.0 then 0.62 else 1.0 end
+
+if phase == "play" then
+  var t_left = sdt
+  while t_left > 0.0 do
+    let h = min(t_left, 0.004)
+    set t_left = t_left - h
+    let step = h * slowf
+
+    for i in range(0, len(balls)) do
+      let b = balls[i]
+      var x = b.x + b.vx * step
+      var y = b.y + b.vy * step
+      var vx = b.vx
+      var vy = b.vy
+
+      // Walls
+      if x - float(BR) < fl && vx < 0.0 then
+        set x = fl + float(BR)
+        set vx = -vx
+      end
+      if x + float(BR) > fr && vx > 0.0 then
+        set x = fr - float(BR)
+        set vx = -vx
+      end
+      if y - float(BR) < ft && vy < 0.0 then
+        set y = ft + float(BR)
+        set vy = -vy
+        set flash_top = 1.0
+      end
+
+      // Bricks — the ball's bounding box maps straight onto grid cells, so
+      // only the handful of bricks it could possibly touch are tested.
+      let c0 = max(0, (int(x - float(BR)) - GX) / CW)
+      let c1 = min(COLS - 1, (int(x + float(BR)) - GX) / CW)
+      let r0 = max(0, (int(y - float(BR)) - GY) / CH)
+      let r1 = min(ROWS - 1, (int(y + float(BR)) - GY) / CH)
+      var done = false
+      for row in range(r0, r1 + 1) do
+        for col in range(c0, c1 + 1) do
+          let idx = row * COLS + col
+          if !done && idx >= 0 && idx < len(bricks) && bricks[idx] > 0 then
+            let q = brick_rect(row, col)
+            let ox = min(x + float(BR), float(q.x + q.w)) - max(x - float(BR), float(q.x))
+            let oy = min(y + float(BR), float(q.y + q.h)) - max(y - float(BR), float(q.y))
+            if ox > 0.0 && oy > 0.0 then
+              set done = true
+              let hp = bricks[idx] - 1
+              set bricks[idx] = hp
+              set brick_hit[idx] = 1.0
+              let bc = row_color(row, ROWS)
+              if ox < oy then
+                set vx = -vx
+                set x = if x < float(q.x) + float(q.w) / 2.0 then float(q.x) - float(BR) else float(q.x + q.w) + float(BR) end
+              else
+                set vy = -vy
+                set y = if y < float(q.y) + float(q.h) / 2.0 then float(q.y) - float(BR) else float(q.y + q.h) + float(BR) end
+              end
+              if hp <= 0 then
+                set left = left - 1
+                set broken = broken + 1
+                set combo = combo + 1
+                set best_combo = max(best_combo, combo)
+                let mult = 1 + combo / 6
+                set score = score + brick_value(row) * mult
+                set shake = min(1.0, shake + 0.35)
+                set bits = burst(bits, float(q.x + q.w / 2), float(q.y + q.h / 2), 12, bc, 0.0, 0.0, 1.0)
+                if random(0.0, 1.0) < drop_chance then
+                  let pk = choose(POWERS)
+                  set drops = append(drops, {x: float(q.x + q.w / 2), y: float(q.y + q.h / 2),
+                                             vy: 132.0, k: pk.key, spin: random(0.0, 3.0)})
+                end
+              else
+                set bits = burst(bits, x, y, 5, bc, 0.0, 0.0, 0.55)
+              end
+            end
+          end
+        end
+      end
+
+      // Paddle
+      let pw = float(pad_w())
+      if vy > 0.0 && y + float(BR) >= float(pad_y) && y - float(BR) < float(pad_y + PADH) then
+        if x >= padx - float(BR) && x <= padx + pw + float(BR) then
+          set y = float(pad_y) - float(BR)
+          let rel = clamp((x - (padx + pw / 2.0)) / (pw / 2.0), -1.0, 1.0)
+          set speed = min(speed * 1.018 + 3.0, ball_speed_max)
+          let ang = rel * 1.05 - 1.5708
+          set vx = speed * cos(ang)
+          set vy = speed * sin(ang)
+          set combo = 0
+          set flash_pad = 1.0
+        end
+      end
+
+      set balls[i].x = x
+      set balls[i].y = y
+      set balls[i].vx = vx
+      set balls[i].vy = vy
+    end
+
+    // Balls that fell past the floor are dropped from the list.
+    set balls = for b in balls do
+      if b.y - float(BR) > fb then continue end
+      b
+    end
+
+    if len(balls) == 0 || left == 0 then
+      set t_left = 0.0
+    end
+  end
+end
+
+// Life lost / level cleared
+if phase == "play" && left == 0 then
+  set phase = "cleared"
+  set banner = "LEVEL {level} CLEAR"
+  set subbanner = "press SPACE or click for level {level + 1}"
+  set score = score + 250 + lives * 100
+  set bits = burst(bits, float(cx), float(court.y + court.h / 2), 60, #ffd166, 0.0, 0.0, 2.0)
+end
+
+if phase == "play" && len(balls) == 0 then
+  set lives = lives - 1
+  set combo = 0
+  set wide_t = 0.0
+  set slow_t = 0.0
+  set drops = []
+  set flash_pad = 0.0
+  set shake = 1.0
+  set speed = min(ball_speed_0 + float(level - 1) * 22.0, ball_speed_max)
+  if lives <= 0 then
+    set lives = 0
+    set phase = "over"
+    set banner = "GAME OVER"
+    set subbanner = "press SPACE or click to play again"
+    park_ball()
+  else
+    set phase = "serve"
+    set banner = "BALL LOST"
+    set subbanner = "{lives} left  ·  press SPACE or click to launch"
+    park_ball()
+    say("BALL LOST", C_WARN)
+  end
+end
+
+// Power-up drops: fall, get caught, or leave the field.
+if phase == "play" || phase == "serve" then
+  var caught = []
+  set drops = for d in drops do
+    let ny = d.y + d.vy * sdt
+    if ny > fb + 12.0 then continue end
+    let in_y = ny + 9.0 >= float(pad_y) && ny - 9.0 <= float(pad_y + PADH)
+    let in_x = d.x >= padx - 10.0 && d.x <= padx + float(pad_w()) + 10.0
+    if in_y && in_x then
+      set caught = append(caught, d.k)
+      continue
+    end
+    {...d, y: ny, spin: d.spin + sdt * 2.4}
+  end
+  for k in caught do
+    let p = power_by_key(k)
+    say(p.name, p.c)
+    set bits = burst(bits, padx + float(pad_w()) / 2.0, float(pad_y), 18, p.c, 0.0, -1.0, 1.2)
+    if k == "wide" then
+      set wide_t = power_secs
+    elsif k == "slow" then
+      set slow_t = power_secs
+    elsif k == "life" then
+      set lives = min(6, lives + 1)
+    else
+      // Multiball: every live ball splits in two.
+      var extra = []
+      for b in balls do
+        let a1 = atan2(b.vy, b.vx)
+        for s in [-0.42, 0.42] do
+          set extra = append(extra, {x: b.x, y: b.y,
+                                     vx: speed * cos(a1 + s), vy: speed * sin(a1 + s)})
+        end
+      end
+      for e in extra do
+        if len(balls) < 9 then set balls = append(balls, e) end
+      end
+    end
+  end
+end
+
+set wide_t = max(0.0, wide_t - sdt)
+set slow_t = max(0.0, slow_t - sdt)
+set toast_t = max(0.0, toast_t - sdt)
+
+// Trail + particles + decay
+if phase == "play" then
+  for b in balls do
+    set trail = append(trail, {x: b.x, y: b.y, life: 0.30})
+  end
+  if len(trail) > 90 then
+    set trail = slice(trail, len(trail) - 90, len(trail))
+  end
+end
+
+set trail = for p in trail do
+  let nl = p.life - sdt
+  if nl <= 0.0 then continue end
+  {...p, life: nl}
+end
+
+set bits = for p in bits do
+  let nl = p.life - sdt
+  if nl <= 0.0 then continue end
+  {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt,
+   vx: p.vx * 0.92, vy: p.vy * 0.92 + 210.0 * sdt, life: nl}
+end
+
+let decay = min(1.0, sdt * 4.5)
+set flash_pad = flash_pad - flash_pad * decay
+set flash_top = flash_top - flash_top * decay
+set shake = max(0.0, shake - sdt * 3.2)
+set brick_hit = for f in brick_hit do
+  max(0.0, f - sdt * 4.0)
+end
+
+// ── Draw: chrome ─────────────────────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+tx("BREAKOUT", PAD, 24, S_TITLE)
+tx("PETAL / GARDEN TESTBED 02", PAD + 3, 62, S_KICK)
+
+// Score, centred, with the life pips beneath it.
+tx_center(str(score), cx, 16, S_SCORE)
+tx_center("SCORE", cx, 72, S_LABEL)
+for i in range(0, 6) do
+  let px = cx - 34 + i * 14
+  if i < lives then
+    draw_circle({x: px, y: 96}, 4, C_BALL)
+  else
+    draw_circle({x: px, y: 96}, 3, C_LINE)
+  end
+end
+
+// Right-hand stat cells — three short numbers on one baseline grid.
+let cell3 = W - PAD
+let cell2 = cell3 - 116
+let cell1 = cell2 - 116
+tx_right("LEVEL", cell1, 30, S_LABEL)
+tx_right(str(level), cell1, 46, S_STAT)
+tx_right("BRICKS LEFT", cell2, 30, S_LABEL)
+tx_right(str(left), cell2, 46, if left > 0 then S_STAT else S_STATD end)
+let cmult = 1 + combo / 6
+tx_right("COMBO", cell3, 30, S_LABEL)
+tx_right(if combo == 0 then "—" elsif cmult > 1 then "{combo}  ×{cmult}" else str(combo) end,
+         cell3, 46,
+         if cmult > 1 then {...S_STAT, color: #ffd166} elsif combo > 0 then S_STAT else S_STATD end)
+tx_right("BEST COMBO {best_combo}   ·   {broken} BRICKS BROKEN", cell3, 76, S_HINT)
+
+// ── Draw: court ──────────────────────────────────────────────────────────
+
+let sx = if shake > 0.0 then int(sin(pulse * 84.0) * shake * 3.0) else 0 end
+let sy = if shake > 0.0 then int(cos(pulse * 71.0) * shake * 3.0) else 0 end
+
+draw_rect_rounded(court, 16, C_COURT)
+draw_rect_rounded(court.inset(1), 15, C_FIELD)
+draw_rect_outline(court, C_EDGE, 255, 1)
+
+// The three rails the ball bounces off; the ceiling lights on impact.
+draw_rect(rect(int(fl) - 3, int(ft) - 3, int(fr - fl) + 6, 2), C_LINE)
+draw_rect(rect(int(fl) - 3, int(ft) - 3, int(fr - fl) + 6, 2), C_TEXT, int(flash_top * 200.0))
+draw_rect(rect(int(fl) - 3, int(ft) - 3, 2, int(fb - ft) + 6), C_LINE)
+draw_rect(rect(int(fr) + 1, int(ft) - 3, 2, int(fb - ft) + 6), C_LINE)
+// The floor is a warning line, not a wall.
+for i in range(0, (int(fr - fl)) / 16) do
+  draw_rect(rect(int(fl) + i * 16, int(fb) + 2, 9, 2), C_WARN, 60)
+end
+
+clip(court.x + 2, court.y + 2, court.w - 4, court.h - 4)
+
+// Column guides: the brick grid continued as a whisper down the empty half of
+// the court, so the play area reads as one ruled surface rather than a void.
+let guide_top = GY + ROWS * CH + 6
+for col in range(0, COLS + 1) do
+  draw_rect(rect(GX + col * CW - GAP / 2, guide_top, 1, pad_y - guide_top - 16), C_LINE, 70)
+end
+
+// Bricks
+for row in range(0, ROWS) do
+  for col in range(0, COLS) do
+    let idx = row * COLS + col
+    let hp = bricks[idx]
+    if hp > 0 then
+      let q = brick_rect(row, col).offset(sx, sy)
+      let full = 3 - row / 3
+      let hue = row_color(row, ROWS)
+      // Armour reads as a fill level: the brick is drawn spent, then the
+      // remaining hit points are painted back over it from the left.
+      let spent = mix(hue, C_FIELD, 0.66)
+      draw_rect_rounded(q, 4, spent)
+      let lit = q.w * hp / full
+      if lit > 4 then
+        draw_rect_rounded(rect(q.x, q.y, lit, q.h), 4, hue)
+      end
+      if hp < full then
+        // A hairline where the armour ran out, so a chipped brick is legible
+        // even where the two tones are close.
+        draw_rect(rect(q.x + lit, q.y + 2, 1, q.h - 4), #000000, 90)
+      end
+      // A bevel across the top gives the row a lit edge.
+      draw_rect_rounded(rect(q.x + 3, q.y + 2, q.w - 6, 2), 1, #ffffff, 40)
+      let f = brick_hit[idx]
+      if f > 0.0 then
+        draw_rect_rounded(q, 4, #ffffff, int(f * 190.0))
+      end
+    end
+  end
+end
+
+// Ball trail
+for p in trail do
+  let f = p.life / 0.30
+  draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(float(BR) * f * 0.85)),
+              C_BALL, int(70.0 * f * f))
+end
+
+// Particles
+for p in bits do
+  let f = p.life / p.max
+  draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(p.sz * f + 0.5)),
+              p.c, int(225.0 * f))
+end
+
+// Falling power-ups
+for d in drops do
+  let p = power_by_key(d.k)
+  let bob = sin(d.spin * 2.0) * 2.0
+  let box = rect(int(d.x) - 22, int(d.y + bob) - 9, 44, 18)
+  draw_rect_rounded(box.inset(-4), 10, p.c, 26)
+  draw_rect_rounded(box, 6, C_COURT)
+  draw_rect_outline(box, p.c, 220, 1)
+  tx_center(p.short, box.center_x(), box.y + 4, {...S_BADGE, color: p.c})
+end
+
+// Paddle
+let pw = pad_w()
+let pr = rect(int(padx) + sx, pad_y + sy, pw, PADH)
+draw_rect_rounded(pr.inset(-7), 13, C_PADDLE, int(16.0 + flash_pad * 55.0))
+draw_rect_rounded(pr.inset(-3), 10, C_PADDLE, int(26.0 + flash_pad * 80.0))
+draw_rect_rounded(pr, 7, C_PADDLE)
+draw_rect_rounded(rect(pr.x + 10, pr.y + 4, pr.w - 20, 3), 2, #ffffff, 90)
+// Grip marks, so the paddle centre (the flat return) is readable.
+draw_rect(rect(pr.center_x() - 1, pr.y + 9, 2, 3), #0b1018, 150)
+
+// Balls
+for b in balls do
+  let bx = int(b.x) + sx
+  let by = int(b.y) + sy
+  draw_circle({x: bx, y: by}, BR + 12, C_BALL, 12)
+  draw_circle({x: bx, y: by}, BR + 5, C_BALL, 34)
+  draw_circle({x: bx, y: by}, BR, C_BALL)
+  draw_circle({x: bx - 2, y: by - 2}, 2, #ffffff, 230)
+end
+
+// Aim guide while the ball is parked between balls (the title card carries
+// its own legend in that space, so it is not drawn there).
+if phase == "serve" then
+  let ax = padx + float(pad_w()) / 2.0
+  let ay = float(pad_y) - float(BR) - 2.0
+  for i in range(0, 5) do
+    let d = 20.0 + float(i) * 14.0
+    draw_circle({x: int(ax) + sx, y: int(ay - d) + sy}, 2, C_PADDLE, 110 - i * 18)
+  end
+end
+
+// Which wall you are looking at, top-left inside the court.
+tx("LEVEL {level}  ·  " ++ LAYOUTS[level % 4], int(fl) + 2, int(ft) + 12,
+   {...S_BADGE, color: C_MUTE})
+
+// Active power-ups, laid out right-to-left along the same rail.
+var badges = []
+if wide_t > 0.0 then
+  set badges = append(badges, {t: "WIDE", s: "{int(wide_t) + 1}s", c: power_by_key("wide").c})
+end
+if slow_t > 0.0 then
+  set badges = append(badges, {t: "SLOW", s: "{int(slow_t) + 1}s", c: power_by_key("slow").c})
+end
+if len(balls) > 1 then
+  set badges = append(badges, {t: "{len(balls)} BALLS", s: "", c: power_by_key("multi").c})
+end
+var brail = int(fr) - 2
+for bg in badges do
+  let sw = if len(bg.s) > 0 then text_width(bg.s, S_BADGE) + 8 else 0 end
+  let bw = text_width(bg.t, S_BADGE) + sw + 18
+  let box = rect(brail - bw, int(ft) + 6, bw, 19)
+  draw_rect_rounded(box, 6, bg.c, 30)
+  draw_rect_outline(box, bg.c, 90, 1)
+  tx(bg.t, box.x + 9, box.y + 5, {...S_BADGE, color: bg.c})
+  if len(bg.s) > 0 then
+    tx_right(bg.s, box.x + bw - 9, box.y + 5, {...S_BADGE, color: C_DIM})
+  end
+  set brail = brail - bw - 7
+end
+
+// Toast — the last thing that happened, fading out over the field.
+if toast_t > 0.0 then
+  let a = min(1.0, toast_t / 0.7)
+  let tw = text_width(toast, S_CAP) + 34
+  let tr = rect(cx - tw / 2, int(fb) - 116, tw, 26)
+  draw_rect_rounded(tr, 8, C_COURT, int(a * 235.0))
+  draw_rect_outline(tr, toast_c, int(a * 190.0), 1)
+  tx_center(toast, cx, tr.y + 7, {...S_CAP, color: toast_c})
+end
+
+clip_none()
+
+// ── Draw: overlay card ───────────────────────────────────────────────────
+
+if phase != "play" then
+  draw_rect_rounded(court.inset(1), 15, C_BG, 170)
+  let ccy = court.y + court.h / 2
+  let bw = max(text_width(banner, S_BIG), text_width(subbanner, S_SUB)) + 76
+  let card = rect(cx - bw / 2, ccy - 62, bw, 124)
+  draw_rect_rounded(card, 14, C_COURT)
+  draw_rect_outline(card, C_EDGE, 255, 1)
+  let accent = if phase == "over" then C_WARN
+    elsif phase == "cleared" then #ffd166
+    elsif phase == "paused" then C_DIM
+    else C_PADDLE end
+  draw_rect_rounded(rect(card.x + 22, ccy - 28, 3, 56), 2, accent, 200)
+  tx_center(banner, cx + 9, ccy - 36, {...S_BIG, color: accent})
+  tx_center(subbanner, cx + 9, ccy + 14, S_SUB)
+
+  if phase == "title" then
+    tx_center("bounce the ball  ·  clear every brick  ·  catch what falls",
+              cx, ccy + 84, {size: 12, color: C_MUTE})
+    // The drop legend: what each falling pill does, in its own colour.
+    var total = 0
+    for p in POWERS do
+      set total = total + text_width(p.short, S_BADGE) + 22 + 10
+    end
+    var lx = cx - (total - 10) / 2
+    for p in POWERS do
+      let pwid = text_width(p.short, S_BADGE) + 22
+      let box = rect(lx, ccy + 114, pwid, 20)
+      draw_rect_rounded(box, 6, p.c, 26)
+      draw_rect_outline(box, p.c, 80, 1)
+      tx_center(p.short, box.center_x(), box.y + 5, {...S_BADGE, color: p.c})
+      set lx = lx + pwid + 10
+    end
+  end
+  if phase == "over" then
+    tx_center("FINAL {score}   ·   LEVEL {level}   ·   {broken} BRICKS",
+              cx, ccy + 82, {size: 12, color: C_MUTE})
+  end
+end
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn chip(x, y, cap, desc)
+  let cw = text_width(cap, S_CAP) + 20
+  let box = rect(int(x), int(y), cw, 24)
+  draw_rect_rounded(box, 7, C_CHIP)
+  draw_rect_outline(box, C_LINE, 255, 1)
+  tx(cap, x + 10, y + 6, S_CAP)
+  tx(desc, x + cw + 10, y + 6, S_HINT)
+  cw + 10 + text_width(desc, S_HINT) + 24
+end
+
+let fy = court.y + court.h + 18
+var fx = PAD
+set fx = fx + chip(fx, fy, "← →  ·  A D", "move the paddle")
+set fx = fx + chip(fx, fy, "MOUSE", "track")
+set fx = fx + chip(fx, fy, "SPACE", "launch · pause")
+set fx = fx + chip(fx, fy, "R", "restart")
+
+let status = if phase == "play" then "IN PLAY"
+  elsif phase == "paused" then "PAUSED"
+  elsif phase == "over" then "GAME OVER"
+  elsif phase == "cleared" then "LEVEL CLEAR"
+  else "READY TO LAUNCH"
+  end
+tx_right("{int(speed * slowf)} px/s   ·   {status}", W - PAD, fy + 7, S_HINT)
+
+// ── Observation mirrors (readable in /state → panel.values) ──────────────
+
+let obs_phase = phase
+let obs_level = level
+let obs_score = score
+let obs_lives = lives
+let obs_left = left
+let obs_balls = len(balls)
+let obs_drops = len(drops)
+let obs_bits = len(bits)
+let obs_combo = combo
+let obs_padx = int(padx)
+let obs_speed = int(speed)
+let obs_ball0 = if len(balls) > 0 then [int(balls[0].x), int(balls[0].y)] else [] end
+let obs_powers = [int(wide_t), int(slow_t)]

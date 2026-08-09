@@ -1,0 +1,1576 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  VECTOR — a vector graphics editor as a Garden Petal panel.
+//
+//  The document is a z-ordered list of shape records living in artboard
+//  coordinates (760 × 540 pt). Every shape carries a full affine box —
+//  position, size and rotation about its own center — so selection handles,
+//  scaling, rotation and layering all operate on the same four numbers.
+//
+//  Designed for a 1400x940 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+let TAU = 6.28318530718
+
+// ── Chrome palette ───────────────────────────────────────────────────────
+let BG      = #0a0c11
+let PANEL   = #11141c
+let ELEV    = #191d27
+let HOVER   = #232936
+let OUTLINE = #2a3140
+let HAIR    = #1d2230
+let TEXT    = #e9edf6
+let DIM     = #8b95a9
+let FAINT   = #58627a
+let ACCENT  = #7aa2ff
+let MINT    = #4de0c0
+let BOARD   = #f2f0ec
+
+// ── Fill palette (what you paint shapes with) ────────────────────────────
+let FILLS = [
+  #0f1e38, #1d3a5f, #2f6fed, #7aa2ff, #4de0c0, #79c46b,
+  #f6e7b8, #f0a83c, #e2603f, #c0435f, #8b5cf6, #f2f0ec,
+]
+
+let TOOLS = [
+  {id: "select",  name: "Select",    key: "v", hint: "click · drag · marquee"},
+  {id: "rect",    name: "Rectangle", key: "r", hint: "drag to draw"},
+  {id: "ellipse", name: "Ellipse",   key: "e", hint: "drag to draw"},
+  {id: "tri",     name: "Triangle",  key: "t", hint: "drag to draw"},
+  {id: "star",    name: "Star",      key: "s", hint: "drag to draw"},
+  {id: "line",    name: "Line",      key: "l", hint: "drag endpoint to endpoint"},
+]
+
+let DOC_W = 760.0
+let DOC_H = 540.0
+
+// ── Tiny helpers ─────────────────────────────────────────────────────────
+
+fn n0(v)
+  str(int(round(v)))
+end
+
+fn seg(x1, y1, x2, y2, c, a, wd)
+  draw_line(int(x1), int(y1), int(x2), int(y2), c.r, c.g, c.b, a, max(1, int(wd)))
+end
+
+fn dot(x, y, rad, c, a)
+  draw_circle(int(x), int(y), max(1, int(rad)), c.r, c.g, c.b, a)
+end
+
+fn caps(s, x, y, c)
+  draw_text(s, {x: x, y: y}, {size: 10, color: c, spacing: 2})
+end
+
+fn hex_digit(n)
+  slice("0123456789abcdef", n, n + 1)
+end
+
+fn hex2(n)
+  hex_digit(n / 16) ++ hex_digit(n % 16)
+end
+
+fn hex_of(c)
+  "#" ++ hex2(c.r) ++ hex2(c.g) ++ hex2(c.b)
+end
+
+// Garden draws every text run above every quad, so text painted before an
+// open context menu shows through it. The prelude keeps its menu rect
+// private, so estimate it and skip the text bands it will cover.
+let MENU_ITEMS = ["Bring to front", "Bring forward", "Send backward",
+                  "Send to back", "Duplicate", "Toggle visibility",
+                  "Toggle lock", "Delete"]
+
+fn menu_est(m)
+  if !m.open then
+    rect(0, 0, 0, 0)
+  else
+    let widest = 0
+    for s in MENU_ITEMS do
+      widest = max(widest, text_width(s, 14))
+    end
+    let w = clamp(widest + 28, 120, max(140, screen_width() - 24))
+    let h = 12 + len(MENU_ITEMS) * 24 + 2 * 9
+    let x = m.x
+    let y = m.y
+    if x + w > screen_width() then x = max(0, m.x - w) end
+    if y + h > screen_height() then y = max(0, m.y - h) end
+    rect(x, y, w, h)
+  end
+end
+
+// True when a text band at [y, y+h) is clear of the open menu.
+fn clear_of(mr, y, h)
+  !(y < mr.y + mr.h && mr.y < y + h)
+end
+
+fn snapv(v, step, on)
+  if on then float(int(round(v / step))) * step else v end
+end
+
+// ── Shape model ──────────────────────────────────────────────────────────
+//  {id, name, kind, x, y, w, h, rot, fill, alpha, vis, text, sp}
+//  x/y is the top-left of the *unrotated* box; rot is degrees about center.
+
+fn mk(id, name, kind, x, y, w, h, rot, fill, alpha)
+  {id: id, name: name, kind: kind, x: float(x), y: float(y),
+   w: float(w), h: float(h), rot: float(rot), fill: fill, alpha: alpha,
+   vis: true, lock: false, text: "", sp: 0}
+end
+
+fn mktext(id, name, x, y, w, h, fill, txt, sp)
+  {id: id, name: name, kind: "text", x: float(x), y: float(y),
+   w: float(w), h: float(h), rot: 0.0, fill: fill, alpha: 255,
+   vis: true, lock: false, text: txt, sp: sp}
+end
+
+fn centerof(s)
+  {x: s.x + s.w / 2.0, y: s.y + s.h / 2.0}
+end
+
+fn tool_hint(id)
+  let out = ""
+  for t in TOOLS do
+    if t.id == id then
+      out = t.hint
+    end
+  end
+  out
+end
+
+fn kind_label(k)
+  if k == "rect" then "Rectangle"
+  elsif k == "ellipse" then "Ellipse"
+  elsif k == "tri" then "Triangle"
+  elsif k == "star" then "Star"
+  elsif k == "line" then "Line"
+  else "Text"
+  end
+end
+
+// Unit outline in [-1, 1]^2, later scaled by the half-extents and rotated.
+fn unit_pts(kind)
+  if kind == "tri" then
+    [[0.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
+  elsif kind == "ellipse" then
+    let out = []
+    for i in range(0, 44) do
+      let a = float(i) * TAU / 44.0
+      out = append(out, [cos(a), sin(a)])
+    end
+    out
+  elsif kind == "star" then
+    let out = []
+    for i in range(0, 10) do
+      let a = 0.0 - TAU / 4.0 + float(i) * TAU / 10.0
+      let rr = if i % 2 == 0 then 1.0 else 0.44 end
+      out = append(out, [cos(a) * rr, sin(a) * rr])
+    end
+    out
+  else
+    [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
+  end
+end
+
+// Outline points in panel pixels, for the artboard pinned at (ox, oy).
+fn world_pts(s, ox, oy)
+  let c = centerof(s)
+  let a = radians(s.rot)
+  let co = cos(a)
+  let si = sin(a)
+  let hw = s.w / 2.0
+  let hh = s.h / 2.0
+  let out = for p in unit_pts(s.kind) do
+    let lx = p[0] * hw
+    let ly = p[1] * hh
+    [ox + c.x + lx * co - ly * si, oy + c.y + lx * si + ly * co]
+  end
+  out
+end
+
+// Mouse (panel px) → shape-local offsets from the shape's center.
+fn to_local(s, ox, oy, mx, my)
+  let c = centerof(s)
+  let a = radians(s.rot)
+  let co = cos(a)
+  let si = sin(a)
+  let dx = float(mx) - (ox + c.x)
+  let dy = float(my) - (oy + c.y)
+  {x: dx * co + dy * si, y: 0.0 - dx * si + dy * co}
+end
+
+fn hit_shape(s, ox, oy, mx, my)
+  let l = to_local(s, ox, oy, mx, my)
+  let pad = if s.kind == "line" then 4.0 else 0.0 end
+  abs(l.x) <= s.w / 2.0 + pad && abs(l.y) <= s.h / 2.0 + pad
+end
+
+// Axis-aligned bounds of the rotated box, in artboard coordinates.
+fn bounds(s)
+  let c = centerof(s)
+  let a = radians(s.rot)
+  let ex = abs(cos(a)) * s.w / 2.0 + abs(sin(a)) * s.h / 2.0
+  let ey = abs(sin(a)) * s.w / 2.0 + abs(cos(a)) * s.h / 2.0
+  rect(c.x - ex, c.y - ey, ex * 2.0, ey * 2.0)
+end
+
+// ── Document helpers (pure — every one returns a new list) ───────────────
+
+fn idx_of(doc, id)
+  let found = -1
+  for i in range(0, len(doc)) do
+    if found < 0 && doc[i].id == id then
+      found = i
+    end
+  end
+  found
+end
+
+fn put(doc, i, s)
+  let out = []
+  for j in range(0, len(doc)) do
+    out = append(out, if j == i then s else doc[j] end)
+  end
+  out
+end
+
+fn selected_idx(doc, sel)
+  let out = []
+  for i in range(0, len(doc)) do
+    if contains(sel, doc[i].id) then
+      out = append(out, i)
+    end
+  end
+  out
+end
+
+// Union of the selection's bounds, in artboard coordinates.
+fn sel_bounds(doc, sel)
+  let first = true
+  let x0 = 0.0
+  let y0 = 0.0
+  let x1 = 0.0
+  let y1 = 0.0
+  for s in doc do
+    if contains(sel, s.id) then
+      let b = bounds(s)
+      if first then
+        x0 = b.x
+        y0 = b.y
+        x1 = b.x + b.w
+        y1 = b.y + b.h
+        first = false
+      else
+        x0 = min(x0, b.x)
+        y0 = min(y0, b.y)
+        x1 = max(x1, b.x + b.w)
+        y1 = max(y1, b.y + b.h)
+      end
+    end
+  end
+  rect(x0, y0, x1 - x0, y1 - y0)
+end
+
+// ── The seeded document ──────────────────────────────────────────────────
+
+fn seed_doc()
+  let d = []
+  let bg = mk(1, "Night backdrop", "rect", 0, 0, 760, 540, 0, #0f1e38, 255)
+  bg.lock = true
+  d = append(d, bg)
+  d = append(d, mk(2, "Glow · outer", "ellipse", 471, 11, 240, 240, 0, #f6e7b8, 4))
+  d = append(d, mk(3, "Glow · mid", "ellipse", 491, 31, 200, 200, 0, #f6e7b8, 5))
+  d = append(d, mk(4, "Glow · inner", "ellipse", 510, 50, 162, 162, 0, #f6e7b8, 7))
+  d = append(d, mk(5, "Moon", "ellipse", 528, 68, 126, 126, 0, #f6e7b8, 255))
+  d = append(d, mk(6, "Ridge · far", "tri", -40, 174, 560, 256, 0, #1d3a5f, 255))
+  d = append(d, mk(7, "Ridge · near", "tri", 286, 222, 520, 208, 0, #14283f, 255))
+  d = append(d, mk(8, "Lake", "rect", 0, 422, 760, 118, 0, #0a1729, 255))
+  d = append(d, mk(9, "Moonpath · near", "rect", 545, 432, 92, 14, 0, #f6e7b8, 12))
+  d = append(d, mk(10, "Moonpath · mid", "rect", 555, 466, 72, 11, 0, #f6e7b8, 9))
+  d = append(d, mk(11, "Moonpath · far", "rect", 564, 498, 54, 9, 0, #f6e7b8, 6))
+  d = append(d, mk(12, "Star · alpha", "star", 108, 66, 30, 30, 12, #f6e7b8, 220))
+  d = append(d, mk(13, "Star · beta", "star", 236, 40, 20, 20, -8, #f6e7b8, 170))
+  d = append(d, mk(14, "Star · gamma", "star", 402, 96, 15, 15, 20, #f6e7b8, 140))
+  d = append(d, mk(15, "Pine", "tri", 198, 320, 64, 102, 0, #071c12, 255))
+  d = append(d, mk(16, "Rule", "line", 48, 452, 214, 3, 0, #4de0c0, 255))
+  d = append(d, mktext(17, "Title", 46, 384, 300, 54, #f2f0ec, "AURORA", 6))
+  d = append(d, mktext(18, "Caption", 48, 468, 300, 18, #4de0c0, "field notes · vol. 04", 2))
+  d = append(d, mk(19, "Seal", "star", 630, 342, 88, 88, 18, #e2603f, 230))
+  d
+end
+
+// ── Drawing a shape ──────────────────────────────────────────────────────
+
+fn fill_fan(pts, cx, cy, c, a)
+  for i in range(0, len(pts)) do
+    let p = pts[i]
+    let q = pts[(i + 1) % len(pts)]
+    fill_triangle(int(cx), int(cy), int(p[0]), int(p[1]), int(q[0]), int(q[1]),
+                  c.r, c.g, c.b, a)
+  end
+end
+
+fn outline_pts(pts, c, a, wd)
+  for i in range(0, len(pts)) do
+    let p = pts[i]
+    let q = pts[(i + 1) % len(pts)]
+    seg(p[0], p[1], q[0], q[1], c, a, wd)
+  end
+end
+
+fn text_style(s)
+  let size = max(8, int(s.h * 0.80))
+  let st = {size: size, color: s.fill, spacing: s.sp}
+  let tw = text_width(s.text, st)
+  if tw > s.w && tw > 0 then
+    size = max(8, int(float(size) * s.w / float(tw)))
+    st = {size: size, color: s.fill, spacing: s.sp}
+  end
+  st
+end
+
+fn draw_shape(s, ox, oy)
+  if s.kind == "text" then
+    let st = text_style(s)
+    draw_text(s.text, {x: int(ox + s.x), y: int(oy + s.y + (s.h - float(st.size) * 1.4) / 2.0)}, st)
+  elsif (s.kind == "rect" || s.kind == "line") && s.rot == 0.0 then
+    draw_rect(int(ox + s.x), int(oy + s.y), max(1, int(s.w)), max(1, int(s.h)),
+              s.fill.r, s.fill.g, s.fill.b, s.alpha)
+  else
+    let c = centerof(s)
+    fill_fan(world_pts(s, ox, oy), ox + c.x, oy + c.y, s.fill, s.alpha)
+  end
+end
+
+// ── Selection handles ────────────────────────────────────────────────────
+//  0 nw  1 n  2 ne  3 e  4 se  5 s  6 sw  7 w   ·  8 = rotate
+
+let HDIR = [[-1.0, -1.0], [0.0, -1.0], [1.0, -1.0], [1.0, 0.0],
+            [1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [-1.0, 0.0]]
+
+fn local_to_panel(s, ox, oy, lx, ly)
+  let c = centerof(s)
+  let a = radians(s.rot)
+  let co = cos(a)
+  let si = sin(a)
+  {x: ox + c.x + lx * co - ly * si, y: oy + c.y + lx * si + ly * co}
+end
+
+fn handle_pts(s, ox, oy)
+  let out = []
+  for d in HDIR do
+    out = append(out, local_to_panel(s, ox, oy, d[0] * s.w / 2.0, d[1] * s.h / 2.0))
+  end
+  out = append(out, local_to_panel(s, ox, oy, 0.0, 0.0 - s.h / 2.0 - 30.0))
+  out
+end
+
+fn handle_hit(s, ox, oy, mx, my, rotatable)
+  let hs = handle_pts(s, ox, oy)
+  let hit = -1
+  let n = if rotatable then 9 else 8
+  end
+  for i in range(0, n) do
+    let p = hs[i]
+    if hit < 0 && abs(float(mx) - p.x) <= 7.0 && abs(float(my) - p.y) <= 7.0 then
+      hit = i
+    end
+  end
+  hit
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state doc = seed_doc()
+state sel = [17]
+state hist = []
+state fut = []
+state next_id = 20
+state tool = "select"
+state grid = true
+state snap = true
+state drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
+              doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+state scrub = {field: "", x0: 0.0, v0: 0.0, doc0: []}
+state lscroll = 0
+state menu = menu_state()
+state ops = 0
+state alpha_grab = false
+
+// ── Frame ────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let mx = mouse_x()
+let my = mouse_y()
+
+let HEADER_H = 68
+let STATUS_H = 34
+let RAIL_W = 74
+let INSP_W = 324
+
+let canvas = rect(RAIL_W, HEADER_H, W - RAIL_W - INSP_W, H - HEADER_H - STATUS_H)
+let ox = float(canvas.x) + (float(canvas.w) - DOC_W) / 2.0
+let oy = float(canvas.y) + (float(canvas.h) - DOC_H) / 2.0
+let board = rect(int(ox), int(oy), int(DOC_W), int(DOC_H))
+
+let px = W - INSP_W + 22
+let pw = INSP_W - 44
+let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
+
+// header pills
+let ph = 30
+let py = (HEADER_H - ph) / 2
+let btn_snap = rect(W - 24 - 74, py, 74, ph)
+let btn_grid = rect(btn_snap.x - 8 - 66, py, 66, ph)
+let btn_redo = rect(btn_grid.x - 8 - 68, py, 68, ph)
+let btn_undo = rect(btn_redo.x - 8 - 68, py, 68, ph)
+
+// tool rail
+let tool_rects = []
+let ty = HEADER_H + 22
+for i in range(0, len(TOOLS)) do
+  tool_rects = append(tool_rects, rect(RAIL_W / 2 - 25, ty, 50, 50))
+  ty = ty + 58
+end
+
+// inspector geometry
+let iy = HEADER_H + 20
+let lbl_sel = iy
+let name_y = iy + 18
+let kind_y = iy + 42
+let div1 = iy + 66
+let fw = (pw - 10) / 2
+let f_x = rect(px, div1 + 24, fw, 34)
+let f_y = rect(px + fw + 10, div1 + 24, fw, 34)
+let f_w = rect(px, div1 + 24 + 42, fw, 34)
+let f_h = rect(px + fw + 10, div1 + 24 + 42, fw, 34)
+let f_r = rect(px, div1 + 24 + 84, fw, 34)
+let f_a = rect(px + fw + 10, div1 + 24 + 84, fw, 34)
+let fill_lbl = div1 + 24 + 84 + 34 + 22
+let sw_w = (pw - 5 * 6) / 6
+let swatches = []
+for i in range(0, len(FILLS)) do
+  swatches = append(swatches,
+    rect(px + (i % 6) * (sw_w + 6), fill_lbl + 18 + (i / 6) * (26 + 6), sw_w, 26))
+end
+let align_lbl = fill_lbl + 18 + 58 + 16
+let align_rects = []
+for i in range(0, 6) do
+  align_rects = append(align_rects, rect(px + i * ((pw - 25) / 6 + 5), align_lbl + 18, (pw - 25) / 6, 28))
+end
+let div2 = align_lbl + 18 + 28 + 20
+let order_rects = []
+for i in range(0, 4) do
+  order_rects = append(order_rects, rect(px + i * ((pw - 18) / 4 + 6), div2 + 40, (pw - 18) / 4, 26))
+end
+let layers_lbl = div2 + 18
+let list_y = div2 + 40 + 26 + 14
+let list_r = rect(px, list_y, pw, insp.y + insp.h - 20 - list_y)
+let ROW_H = 30
+let vis_rows = max(1, list_r.h / ROW_H)
+
+let ALIGN = ["left", "hcenter", "right", "top", "vcenter", "bottom"]
+let ORDERS = [{id: "back", t: "Back"}, {id: "backward", t: "↓"},
+              {id: "forward", t: "↑"}, {id: "front", t: "Front"}]
+
+let over_canvas = point_in(mx, my, canvas)
+let blocked = menu_blocking(menu)
+let one = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
+let cur = if one >= 0 then doc[one] else nil end
+let rotatable = one >= 0 && doc[one].kind != "text"
+
+// ── Undo bookkeeping ─────────────────────────────────────────────────────
+
+fn push_hist(hist, doc0)
+  let h = append(hist, doc0)
+  if len(h) > 60 then
+    h = slice(h, len(h) - 60, len(h))
+  end
+  h
+end
+
+// ── Keyboard ─────────────────────────────────────────────────────────────
+
+for i in range(0, len(TOOLS)) do
+  if key_pressed(TOOLS[i].key) && !mod_cmd() then
+    tool = TOOLS[i].id
+  end
+end
+if key_pressed("g") then grid = !grid end
+if key_pressed("n") then snap = !snap end
+if key_pressed("k") && len(sel) > 0 then
+  hist = push_hist(hist, doc)
+  fut = []
+  let nd = []
+  for s in doc do
+    if contains(sel, s.id) then s.lock = !s.lock end
+    nd = append(nd, s)
+  end
+  doc = nd
+  ops = ops + 1
+end
+if key_pressed("escape") then
+  sel = []
+  drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
+          doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+end
+if key_pressed("a") then
+  sel = for s in doc do s.id end
+end
+
+let want_undo = key_pressed("u") || (key_pressed("z") && mod_cmd() && !mod_shift())
+let want_redo = key_pressed("y") || (key_pressed("z") && mod_cmd() && mod_shift())
+
+// Arrow nudge
+let nudge_x = 0.0
+let nudge_y = 0.0
+let step = if mod_shift() then 10.0 else 1.0 end
+if key_pressed("left") then nudge_x = 0.0 - step end
+if key_pressed("right") then nudge_x = step end
+if key_pressed("up") then nudge_y = 0.0 - step end
+if key_pressed("down") then nudge_y = step end
+if (nudge_x != 0.0 || nudge_y != 0.0) && len(sel) > 0 then
+  hist = push_hist(hist, doc)
+  fut = []
+  let nd = []
+  for s in doc do
+    if contains(sel, s.id) then
+      s.x = s.x + nudge_x
+      s.y = s.y + nudge_y
+    end
+    nd = append(nd, s)
+  end
+  doc = nd
+  ops = ops + 1
+end
+
+// Rotate by 15° / reset
+if key_pressed("[") && mod_shift() then
+  // handled below with layer order
+end
+
+// ── Selection-editing operations (shared by keys, buttons and the menu) ──
+
+fn apply_order(doc, sel, mode)
+  let idxs = selected_idx(doc, sel)
+  if len(idxs) == 0 then
+    doc
+  else
+    let d = doc
+    if mode == "front" then
+      let picked = []
+      for i in idxs do
+        picked = append(picked, d[i])
+      end
+      let rest = []
+      for j in range(0, len(d)) do
+        if !contains(sel, d[j].id) then
+          rest = append(rest, d[j])
+        end
+      end
+      for s in picked do
+        rest = append(rest, s)
+      end
+      rest
+    elsif mode == "back" then
+      let picked = []
+      for i in idxs do
+        picked = append(picked, d[i])
+      end
+      for j in range(0, len(d)) do
+        if !contains(sel, d[j].id) then
+          picked = append(picked, d[j])
+        end
+      end
+      picked
+    elsif mode == "forward" then
+      // walk from the top so a run of selected shapes keeps its order
+      let k = len(d) - 2
+      while k >= 0 do
+        if contains(sel, d[k].id) && !contains(sel, d[k + 1].id) then
+          let a = d[k]
+          let b = d[k + 1]
+          d = put(d, k, b)
+          d = put(d, k + 1, a)
+        end
+        k = k - 1
+      end
+      d
+    else
+      let k = 1
+      while k < len(d) do
+        if contains(sel, d[k].id) && !contains(sel, d[k - 1].id) then
+          let a = d[k]
+          let b = d[k - 1]
+          d = put(d, k, b)
+          d = put(d, k - 1, a)
+        end
+        k = k + 1
+      end
+      d
+    end
+  end
+end
+
+fn apply_align(doc, sel, mode, b)
+  let out = []
+  for s in doc do
+    if contains(sel, s.id) then
+      let sb = bounds(s)
+      if mode == "left" then
+        s.x = s.x + (b.x - sb.x)
+      elsif mode == "right" then
+        s.x = s.x + (b.x + b.w - (sb.x + sb.w))
+      elsif mode == "hcenter" then
+        s.x = s.x + (b.x + b.w / 2.0 - (sb.x + sb.w / 2.0))
+      elsif mode == "top" then
+        s.y = s.y + (b.y - sb.y)
+      elsif mode == "bottom" then
+        s.y = s.y + (b.y + b.h - (sb.y + sb.h))
+      else
+        s.y = s.y + (b.y + b.h / 2.0 - (sb.y + sb.h / 2.0))
+      end
+    end
+    out = append(out, s)
+  end
+  out
+end
+
+fn apply_fill(doc, sel, c)
+  let out = []
+  for s in doc do
+    if contains(sel, s.id) then
+      s.fill = c
+    end
+    out = append(out, s)
+  end
+  out
+end
+
+fn dup_sel(doc, sel, start_id)
+  let out = doc
+  let ids = []
+  let nid = start_id
+  for s in doc do
+    if contains(sel, s.id) then
+      let c = s
+      c.id = nid
+      c.name = s.name ++ " copy"
+      c.x = s.x + 16.0
+      c.y = s.y + 16.0
+      out = append(out, c)
+      ids = append(ids, nid)
+      nid = nid + 1
+    end
+  end
+  {doc: out, sel: ids, next: nid}
+end
+
+fn del_sel(doc, sel)
+  let out = []
+  for s in doc do
+    if !contains(sel, s.id) then
+      out = append(out, s)
+    end
+  end
+  out
+end
+
+// ── Pointer: inspector scrubbers ─────────────────────────────────────────
+
+fn scrub_fields(cur, f_x, f_y, f_w, f_h, f_r, f_a, mx, my)
+  let hit = ""
+  if point_in(mx, my, f_x) then hit = "x" end
+  if point_in(mx, my, f_y) then hit = "y" end
+  if point_in(mx, my, f_w) then hit = "w" end
+  if point_in(mx, my, f_h) then hit = "h" end
+  if point_in(mx, my, f_r) then hit = "rot" end
+  if point_in(mx, my, f_a) then hit = "alpha" end
+  hit
+end
+
+let scrub_over = if one >= 0 then scrub_fields(cur, f_x, f_y, f_w, f_h, f_r, f_a, mx, my) else "" end
+
+if !blocked && one >= 0 && mouse_pressed(0) && scrub_over != "" then
+  let s = doc[one]
+  let v = if scrub_over == "x" then s.x
+    elsif scrub_over == "y" then s.y
+    elsif scrub_over == "w" then s.w
+    elsif scrub_over == "h" then s.h
+    elsif scrub_over == "rot" then s.rot
+    else float(s.alpha)
+    end
+  scrub = {field: scrub_over, x0: float(mx), v0: v, doc0: doc}
+end
+if scrub.field != "" && !mouse_down(0) then
+  if scrub.doc0 != doc then
+    hist = push_hist(hist, scrub.doc0)
+    fut = []
+    ops = ops + 1
+  end
+  scrub = {field: "", x0: 0.0, v0: 0.0, doc0: []}
+end
+if scrub.field != "" && one >= 0 then
+  let d = (float(mx) - scrub.x0) * (if scrub.field == "rot" then 0.5 else 1.0 end)
+  let s = doc[one]
+  if scrub.field == "x" then s.x = scrub.v0 + d end
+  if scrub.field == "y" then s.y = scrub.v0 + d end
+  if scrub.field == "w" then s.w = max(4.0, scrub.v0 + d) end
+  if scrub.field == "h" then s.h = max(4.0, scrub.v0 + d) end
+  if scrub.field == "rot" then s.rot = scrub.v0 + d end
+  if scrub.field == "alpha" then s.alpha = int(clamp(scrub.v0 + d, 10.0, 255.0)) end
+  doc = put(doc, one, s)
+end
+
+// ── Pointer: canvas — press ──────────────────────────────────────────────
+
+let scrubbing = scrub.field != ""
+
+if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
+  if tool == "select" then
+    let hh = if one >= 0 then handle_hit(doc[one], ox, oy, mx, my, rotatable) else -1 end
+    if hh >= 0 then
+      let s = doc[one]
+      let c = centerof(s)
+      drag = {mode: if hh == 8 then "rotate" else "scale" end, h: hh,
+              sx: float(mx), sy: float(my),
+              ang0: degrees(atan2(float(my) - (oy + c.y), float(mx) - (ox + c.x))) - s.rot,
+              base: [s], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+    else
+      // topmost visible shape under the pointer
+      let hitid = -1
+      for i in range(0, len(doc)) do
+        if doc[i].vis && !doc[i].lock && hit_shape(doc[i], ox, oy, mx, my) then
+          hitid = doc[i].id
+        end
+      end
+      if hitid >= 0 then
+        if mod_shift() then
+          if contains(sel, hitid) then
+            let ns = []
+            for id in sel do
+              if id != hitid then ns = append(ns, id) end
+            end
+            sel = ns
+          else
+            sel = append(sel, hitid)
+          end
+        elsif !contains(sel, hitid) then
+          sel = [hitid]
+        end
+        let base = []
+        for s in doc do
+          if contains(sel, s.id) then base = append(base, s) end
+        end
+        drag = {mode: "move", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
+                base: base, doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+      else
+        if !mod_shift() then sel = [] end
+        drag = {mode: "marquee", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
+                base: [], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+      end
+    end
+  else
+    drag = {mode: "create", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
+            base: [], doc0: doc, moved: false, kind: tool, nx: 0.0, ny: 0.0}
+  end
+end
+
+// ── Pointer: canvas — drag ───────────────────────────────────────────────
+
+if drag.mode != "none" && mouse_down(0) then
+  if abs(float(mx) - drag.sx) + abs(float(my) - drag.sy) > 1.0 then
+    drag.moved = true
+  end
+end
+
+if drag.mode == "move" && mouse_down(0) && drag.moved then
+  let dx = float(mx) - drag.sx
+  let dy = float(my) - drag.sy
+  let nd = doc
+  for b in drag.base do
+    let i = idx_of(nd, b.id)
+    if i >= 0 then
+      let s = nd[i]
+      s.x = snapv(b.x + dx, 8.0, snap && !mod_alt())
+      s.y = snapv(b.y + dy, 8.0, snap && !mod_alt())
+      nd = put(nd, i, s)
+    end
+  end
+  doc = nd
+end
+
+if drag.mode == "scale" && mouse_down(0) && drag.moved && one >= 0 then
+  let b = drag.base[0]
+  let d = HDIR[drag.h]
+  let l = to_local(b, ox, oy, mx, my)
+  let hw = b.w / 2.0
+  let hh = b.h / 2.0
+  // the anchor is the opposite handle, in local coordinates
+  let ax = 0.0 - d[0] * hw
+  let ay = 0.0 - d[1] * hh
+  let nw = b.w
+  let nh = b.h
+  let cx = 0.0
+  let cy = 0.0
+  if d[0] != 0.0 then
+    nw = max(6.0, abs(l.x - ax))
+    cx = (l.x + ax) / 2.0
+    if mod_alt() then
+      nw = max(6.0, abs(l.x) * 2.0)
+      cx = 0.0
+    end
+  end
+  if d[1] != 0.0 then
+    nh = max(6.0, abs(l.y - ay))
+    cy = (l.y + ay) / 2.0
+    if mod_alt() then
+      nh = max(6.0, abs(l.y) * 2.0)
+      cy = 0.0
+    end
+  end
+  if mod_shift() && d[0] != 0.0 && d[1] != 0.0 && b.h > 0.0 then
+    let ar = b.w / b.h
+    nh = nw / ar
+    cy = ay + (if d[1] > 0.0 then nh / 2.0 else 0.0 - nh / 2.0 end)
+    if mod_alt() then cy = 0.0 end
+  end
+  let wc = local_to_panel(b, ox, oy, cx, cy)
+  let s = doc[one]
+  s.w = nw
+  s.h = nh
+  s.x = wc.x - ox - nw / 2.0
+  s.y = wc.y - oy - nh / 2.0
+  doc = put(doc, one, s)
+end
+
+if drag.mode == "rotate" && mouse_down(0) && drag.moved && one >= 0 then
+  let b = drag.base[0]
+  let c = centerof(b)
+  let a = degrees(atan2(float(my) - (oy + c.y), float(mx) - (ox + c.x))) - drag.ang0
+  if mod_shift() then
+    a = float(int(round(a / 15.0))) * 15.0
+  end
+  let s = doc[one]
+  s.rot = a
+  doc = put(doc, one, s)
+end
+
+// ── Pointer: release ─────────────────────────────────────────────────────
+
+if drag.mode != "none" && !mouse_down(0) then
+  if drag.mode == "marquee" && drag.moved then
+    let rx0 = min(drag.sx, float(mx))
+    let ry0 = min(drag.sy, float(my))
+    let rx1 = max(drag.sx, float(mx))
+    let ry1 = max(drag.sy, float(my))
+    let hits = sel
+    for s in doc do
+      if s.vis && !s.lock then
+        let b = bounds(s)
+        let bx0 = ox + b.x
+        let by0 = oy + b.y
+        if bx0 < rx1 && rx0 < bx0 + b.w && by0 < ry1 && ry0 < by0 + b.h then
+          if !contains(hits, s.id) then
+            hits = append(hits, s.id)
+          end
+        end
+      end
+    end
+    sel = hits
+  end
+  if drag.mode == "create" && drag.moved then
+    let x0 = min(drag.sx, float(mx)) - ox
+    let y0 = min(drag.sy, float(my)) - oy
+    let x1 = max(drag.sx, float(mx)) - ox
+    let y1 = max(drag.sy, float(my)) - oy
+    let s = nil
+    if drag.kind == "line" then
+      let dx = float(mx) - drag.sx
+      let dy = float(my) - drag.sy
+      let ln = max(6.0, sqrt(dx * dx + dy * dy))
+      let cx = (drag.sx + float(mx)) / 2.0 - ox
+      let cy = (drag.sy + float(my)) / 2.0 - oy
+      s = mk(next_id, "Line {next_id}", "line", cx - ln / 2.0, cy - 1.5, ln, 3, 0, MINT, 255)
+      s.rot = degrees(atan2(dy, dx))
+    else
+      s = mk(next_id, "{kind_label(drag.kind)} {next_id}", drag.kind,
+             snapv(x0, 8.0, snap), snapv(y0, 8.0, snap),
+             max(6.0, x1 - x0), max(6.0, y1 - y0), 0, FILLS[3], 255)
+    end
+    hist = push_hist(hist, drag.doc0)
+    fut = []
+    doc = append(doc, s)
+    sel = [next_id]
+    next_id = next_id + 1
+    tool = "select"
+    ops = ops + 1
+  end
+  if (drag.mode == "move" || drag.mode == "scale" || drag.mode == "rotate") && drag.moved then
+    hist = push_hist(hist, drag.doc0)
+    fut = []
+    ops = ops + 1
+  end
+  drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
+          doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+end
+
+// ── Pointer: rail, header, inspector, layer rows ─────────────────────────
+
+for i in range(0, len(TOOLS)) do
+  if !blocked && clicked(tool_rects[i]) then
+    tool = TOOLS[i].id
+  end
+end
+if !blocked && clicked(btn_grid) then grid = !grid end
+if !blocked && clicked(btn_snap) then snap = !snap end
+
+let hit_undo = !blocked && clicked(btn_undo) && len(hist) > 0
+let hit_redo = !blocked && clicked(btn_redo) && len(fut) > 0
+
+for i in range(0, len(FILLS)) do
+  if !blocked && len(sel) > 0 && clicked(swatches[i]) then
+    hist = push_hist(hist, doc)
+    fut = []
+    doc = apply_fill(doc, sel, FILLS[i])
+    ops = ops + 1
+  end
+end
+
+let group_b = if len(sel) > 0 then sel_bounds(doc, sel) else rect(0, 0, 0, 0) end
+for i in range(0, len(ALIGN)) do
+  if !blocked && len(sel) > 1 && clicked(align_rects[i]) then
+    hist = push_hist(hist, doc)
+    fut = []
+    doc = apply_align(doc, sel, ALIGN[i], group_b)
+    ops = ops + 1
+  end
+end
+
+let order_now = ""
+for i in range(0, len(ORDERS)) do
+  if !blocked && len(sel) > 0 && clicked(order_rects[i]) then
+    order_now = ORDERS[i].id
+  end
+end
+if key_pressed("]") && len(sel) > 0 then
+  order_now = if mod_shift() then "front" else "forward" end
+end
+if key_pressed("[") && len(sel) > 0 then
+  order_now = if mod_shift() then "back" else "backward" end
+end
+if order_now != "" then
+  hist = push_hist(hist, doc)
+  fut = []
+  doc = apply_order(doc, sel, order_now)
+  ops = ops + 1
+end
+
+// layer rows (top of the list = top of the z-stack)
+lscroll = scroll_update(lscroll, len(doc), vis_rows, list_r)
+let row_rects = []
+for i in range(0, min(vis_rows, len(doc) - lscroll)) do
+  row_rects = append(row_rects, rect(list_r.x, list_r.y + i * ROW_H, list_r.w, ROW_H - 3))
+end
+fn row_shape_index(doc, lscroll, i)
+  len(doc) - 1 - (lscroll + i)
+end
+
+for i in range(0, len(row_rects)) do
+  let si = row_shape_index(doc, lscroll, i)
+  if si >= 0 && si < len(doc) then
+    let r = row_rects[i]
+    let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
+    let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
+    if !blocked && clicked(eye) then
+      hist = push_hist(hist, doc)
+      fut = []
+      let s = doc[si]
+      s.vis = !s.vis
+      doc = put(doc, si, s)
+      ops = ops + 1
+    elsif !blocked && clicked(lockr) then
+      hist = push_hist(hist, doc)
+      fut = []
+      let s = doc[si]
+      s.lock = !s.lock
+      doc = put(doc, si, s)
+      ops = ops + 1
+    elsif !blocked && clicked(r) then
+      let id = doc[si].id
+      if mod_shift() then
+        if contains(sel, id) then
+          let ns = []
+          for q in sel do
+            if q != id then ns = append(ns, q) end
+          end
+          sel = ns
+        else
+          sel = append(sel, id)
+        end
+      else
+        sel = [id]
+      end
+    end
+    menu = menu_open_on_right_click(menu, r, doc[si].id)
+  end
+end
+
+// duplicate / delete
+let want_dup = key_pressed("d") && len(sel) > 0
+let want_del = (key_pressed("backspace") || key_pressed("delete")) && len(sel) > 0
+if want_dup then
+  hist = push_hist(hist, doc)
+  fut = []
+  let res = dup_sel(doc, sel, next_id)
+  doc = res.doc
+  sel = res.sel
+  next_id = res.next
+  ops = ops + 1
+end
+if want_del then
+  hist = push_hist(hist, doc)
+  fut = []
+  doc = del_sel(doc, sel)
+  sel = []
+  ops = ops + 1
+end
+
+// ── Undo / redo ──────────────────────────────────────────────────────────
+
+if (want_undo || hit_undo) && len(hist) > 0 then
+  fut = append(fut, doc)
+  doc = last(hist)
+  hist = drop_last(hist)
+  ops = ops + 1
+end
+if (want_redo || hit_redo) && len(fut) > 0 then
+  hist = push_hist(hist, doc)
+  doc = last(fut)
+  fut = drop_last(fut)
+  ops = ops + 1
+end
+
+// prune a selection that no longer exists
+let live = []
+for id in sel do
+  if idx_of(doc, id) >= 0 then live = append(live, id) end
+end
+sel = live
+let one2 = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
+
+// ═════════════════════════════════════════════════════════════════════════
+//  DRAW
+// ═════════════════════════════════════════════════════════════════════════
+
+let mr = menu_est(menu)
+
+clear(BG.r, BG.g, BG.b)
+
+// ── Canvas well ──────────────────────────────────────────────────────────
+draw_rect(canvas, #070910)
+
+// dotted work-surface texture
+let dgx = canvas.x + 16
+while dgx < canvas.x + canvas.w do
+  let dgy = canvas.y + 16
+  while dgy < canvas.y + canvas.h do
+    draw_rect(dgx, dgy, 1, 1, 40, 47, 62, 150)
+    dgy = dgy + 32
+  end
+  dgx = dgx + 32
+end
+
+// artboard
+draw_rect(board.x - 2, board.y + 8, board.w + 4, board.h, 0, 0, 0, 110)
+draw_rect(board, BOARD)
+clip(board.x, board.y, board.w, board.h)
+for s in doc do
+  if s.vis then
+    draw_shape(s, ox, oy)
+  end
+end
+
+// live create preview
+if drag.mode == "create" && drag.moved then
+  let x0 = min(drag.sx, float(mx))
+  let y0 = min(drag.sy, float(my))
+  let x1 = max(drag.sx, float(mx))
+  let y1 = max(drag.sy, float(my))
+  if drag.kind == "line" then
+    seg(drag.sx, drag.sy, mx, my, MINT, 220, 3)
+  else
+    let ghost = mk(0, "", drag.kind, x0 - ox, y0 - oy, max(4.0, x1 - x0), max(4.0, y1 - y0),
+                   0, FILLS[3], 150)
+    draw_shape(ghost, ox, oy)
+  end
+  draw_rect_outline(int(x0), int(y0), int(x1 - x0), int(y1 - y0), ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
+end
+clip_none()
+
+if grid then
+  clip(board.x, board.y, board.w, board.h)
+  let gx = board.x + 40
+  while gx < board.x + board.w do
+    let major = (gx - board.x) % 200 == 0
+    seg(gx, board.y, gx, board.y + board.h, #ffffff, if major then 20 else 9 end, 1)
+    gx = gx + 40
+  end
+  let gy = board.y + 40
+  while gy < board.y + board.h do
+    let major = (gy - board.y) % 200 == 0
+    seg(board.x, gy, board.x + board.w, gy, #ffffff, if major then 20 else 9 end, 1)
+    gy = gy + 40
+  end
+  clip_none()
+end
+draw_rect_outline(board.x, board.y, board.w, board.h, 0, 0, 0, 70)
+
+// ── Selection chrome ─────────────────────────────────────────────────────
+
+// hover affordance: the shape a click would pick
+let hover_id = -1
+if over_canvas && tool == "select" && drag.mode == "none" && !blocked && !scrubbing then
+  for i in range(0, len(doc)) do
+    if doc[i].vis && !doc[i].lock && hit_shape(doc[i], ox, oy, mx, my) then
+      hover_id = doc[i].id
+    end
+  end
+end
+if hover_id >= 0 && !contains(sel, hover_id) then
+  let hi = idx_of(doc, hover_id)
+  outline_pts(world_pts(doc[hi], ox, oy), ACCENT, 90, 1)
+end
+
+// every selected shape gets its rotated bounding box
+for s in doc do
+  if contains(sel, s.id) then
+    let hs = handle_pts(s, ox, oy)
+    seg(hs[0].x, hs[0].y, hs[2].x, hs[2].y, ACCENT, 210, 1)
+    seg(hs[2].x, hs[2].y, hs[4].x, hs[4].y, ACCENT, 210, 1)
+    seg(hs[4].x, hs[4].y, hs[6].x, hs[6].y, ACCENT, 210, 1)
+    seg(hs[6].x, hs[6].y, hs[0].x, hs[0].y, ACCENT, 210, 1)
+  end
+end
+
+// group box for a multi-selection
+if len(sel) > 1 then
+  let b = sel_bounds(doc, sel)
+  let gx0 = int(ox + b.x) - 6
+  let gy0 = int(oy + b.y) - 6
+  let gw = int(b.w) + 12
+  let gh = int(b.h) + 12
+  let dashx = gx0
+  while dashx < gx0 + gw do
+    seg(dashx, gy0, min(dashx + 6, gx0 + gw), gy0, ACCENT, 150, 1)
+    seg(dashx, gy0 + gh, min(dashx + 6, gx0 + gw), gy0 + gh, ACCENT, 150, 1)
+    dashx = dashx + 12
+  end
+  let dashy = gy0
+  while dashy < gy0 + gh do
+    seg(gx0, dashy, gx0, min(dashy + 6, gy0 + gh), ACCENT, 150, 1)
+    seg(gx0 + gw, dashy, gx0 + gw, min(dashy + 6, gy0 + gh), ACCENT, 150, 1)
+    dashy = dashy + 12
+  end
+end
+
+// handles for a single selection
+if one2 >= 0 then
+  let s = doc[one2]
+  let hs = handle_pts(s, ox, oy)
+  let rot_ok = s.kind != "text"
+  if rot_ok then
+    seg(hs[1].x, hs[1].y, hs[8].x, hs[8].y, ACCENT, 200, 1)
+    dot(hs[8].x, hs[8].y, 6, #0a0c11, 255)
+    dot(hs[8].x, hs[8].y, 5, ACCENT, 255)
+  end
+  for i in range(0, 8) do
+    let p = hs[i]
+    let hot = drag.mode == "scale" && drag.h == i
+    let over = abs(float(mx) - p.x) <= 7.0 && abs(float(my) - p.y) <= 7.0
+    let fillc = if hot || over then ACCENT else #ffffff end
+    draw_rect(int(p.x) - 4, int(p.y) - 4, 9, 9, 10, 14, 22, 255)
+    draw_rect(int(p.x) - 3, int(p.y) - 3, 7, 7, fillc.r, fillc.g, fillc.b, 255)
+  end
+end
+
+// marquee
+if drag.mode == "marquee" && drag.moved then
+  let x0 = int(min(drag.sx, float(mx)))
+  let y0 = int(min(drag.sy, float(my)))
+  let x1 = int(max(drag.sx, float(mx)))
+  let y1 = int(max(drag.sy, float(my)))
+  draw_rect(x0, y0, x1 - x0, y1 - y0, ACCENT.r, ACCENT.g, ACCENT.b, 34)
+  draw_rect_outline(x0, y0, x1 - x0, y1 - y0, ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
+end
+
+// ── Header ───────────────────────────────────────────────────────────────
+draw_rect(0, 0, W, HEADER_H, PANEL.r, PANEL.g, PANEL.b)
+seg(0, HEADER_H, W, HEADER_H, #000000, 150, 1)
+
+fill_poly([[26, 20], [42, 20], [34, 44]], ACCENT.r, ACCENT.g, ACCENT.b, 235)
+dot(34, 24, 5, MINT, 255)
+
+caps("VECTOR", 58, 15, DIM)
+draw_text("aurora-poster.ptl", {x: 58, y: 31}, 17, TEXT)
+let meta = "{int(DOC_W)} × {int(DOC_H)} pt   ·   {len(doc)} objects   ·   {len(sel)} selected"
+draw_text(meta, {x: 58 + text_width("aurora-poster.ptl", 17) + 18, y: 36}, 11, FAINT)
+
+fn pill(r, label, keycap, on, enabled)
+  let hov = enabled && hovered(r)
+  let fill = if on then ACCENT elsif hov then HOVER else ELEV end
+  draw_rect_rounded(r.inset(-1), 8, if on then ACCENT else OUTLINE end)
+  draw_rect_rounded(r, 7, fill)
+  let fg = if on then #0b0d12 elsif enabled then TEXT else FAINT end
+  let kc = if on then #0b0d12 elsif enabled then FAINT else #333b4a end
+  let tw = text_width(label, 12)
+  let kw = text_width(keycap, 10)
+  let tx = r.x + (r.w - (tw + 7 + kw)) / 2
+  draw_text(label, {x: tx, y: r.y + (r.h - 12) / 2 - 1}, 12, fg)
+  draw_text(keycap, {x: tx + tw + 7, y: r.y + (r.h - 10) / 2}, 10, kc)
+end
+
+pill(btn_undo, "Undo", "U", false, len(hist) > 0)
+pill(btn_redo, "Redo", "Y", false, len(fut) > 0)
+pill(btn_grid, "Grid", "G", grid, true)
+pill(btn_snap, "Snap", "N", snap, true)
+
+// ── Tool rail ────────────────────────────────────────────────────────────
+draw_rect(0, HEADER_H, RAIL_W, H - HEADER_H - STATUS_H, PANEL.r, PANEL.g, PANEL.b)
+seg(RAIL_W, HEADER_H, RAIL_W, H - STATUS_H, #000000, 150, 1)
+
+fn tool_icon(id, r, c)
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  if id == "select" then
+    fill_poly([[cx - 6, cy - 9], [cx + 7, cy + 2], [cx + 1, cy + 2], [cx - 1, cy + 9]],
+              c.r, c.g, c.b, 245)
+  elsif id == "rect" then
+    draw_rect_outline(cx - 10, cy - 7, 20, 15, c.r, c.g, c.b, 255, 2)
+  elsif id == "ellipse" then
+    draw_circle(cx, cy, 9, c.r, c.g, c.b, 60)
+    draw_circle(cx, cy, 9, c.r, c.g, c.b, 255)
+    draw_circle(cx, cy, 7, if hovered(r) then HOVER.r else PANEL.r end,
+                if hovered(r) then HOVER.g else PANEL.g end,
+                if hovered(r) then HOVER.b else PANEL.b end, 255)
+  elsif id == "tri" then
+    fill_poly([[cx, cy - 9], [cx + 10, cy + 8], [cx - 10, cy + 8]], c.r, c.g, c.b, 235)
+  elsif id == "star" then
+    let pts = []
+    for i in range(0, 10) do
+      let a = 0.0 - TAU / 4.0 + float(i) * TAU / 10.0
+      let rr = if i % 2 == 0 then 10.0 else 4.4 end
+      pts = append(pts, [float(cx) + cos(a) * rr, float(cy) + sin(a) * rr])
+    end
+    for i in range(0, 10) do
+      let p = pts[i]
+      let q = pts[(i + 1) % 10]
+      fill_triangle(cx, cy, int(p[0]), int(p[1]), int(q[0]), int(q[1]), c.r, c.g, c.b, 235)
+    end
+  else
+    seg(cx - 9, cy + 8, cx + 9, cy - 8, c, 255, 2)
+    dot(cx - 9, cy + 8, 2.5, c, 255)
+    dot(cx + 9, cy - 8, 2.5, c, 255)
+  end
+end
+
+let tip = -1
+for i in range(0, len(TOOLS)) do
+  let r = tool_rects[i]
+  let t = TOOLS[i]
+  let on = t.id == tool
+  let hov = hovered(r)
+  if hov then tip = i end
+  draw_rect_rounded(r, 10, if on then ELEV elsif hov then HOVER else PANEL end)
+  if on then
+    draw_rect_rounded(r.x - 12, r.y + 13, 4, r.h - 26, 2, ACCENT.r, ACCENT.g, ACCENT.b)
+  end
+  tool_icon(t.id, r, if on || hov then TEXT else DIM end)
+  draw_text(upper(t.key), {x: r.x + r.w - 11, y: r.y + r.h - 14}, 9,
+            if on then ACCENT else FAINT end)
+end
+
+// ── Inspector ────────────────────────────────────────────────────────────
+draw_rect(insp, PANEL)
+seg(insp.x, insp.y, insp.x, insp.y + insp.h, #000000, 150, 1)
+
+fn field(r, label, value, active, hot, showtext)
+  draw_rect_rounded(r, 7, if active then (if hot then HOVER else ELEV end) else #14171f end)
+  draw_rect_rounded(r.inset(-1), 8, if hot then ACCENT else OUTLINE end)
+  draw_rect_rounded(r, 7, if active then (if hot then HOVER else ELEV end) else #14171f end)
+  if showtext then
+    draw_text(label, {x: r.x + 10, y: r.y + 10}, 11, if active then FAINT else #333b4a end)
+    draw_text_right(value, r.x + r.w - 10, r.y + 9, 14, if active then TEXT else #3a4354 end)
+  end
+end
+
+caps("SELECTION", px, lbl_sel, FAINT)
+if one2 >= 0 then
+  let s = doc[one2]
+  draw_text(ellipsize(s.name, pw, 17), {x: px, y: name_y}, 17, TEXT)
+  draw_text("{kind_label(s.kind)}   ·   #{s.id}   ·   layer {one2 + 1} of {len(doc)}",
+            {x: px, y: kind_y}, 11, DIM)
+elsif len(sel) > 1 then
+  draw_text("{len(sel)} objects", {x: px, y: name_y}, 17, TEXT)
+  draw_text("multiple selection   ·   align & stack", {x: px, y: kind_y}, 11, DIM)
+else
+  draw_text("Nothing selected", {x: px, y: name_y}, 17, FAINT)
+  draw_text("click a shape, or drag a marquee", {x: px, y: kind_y}, 11, #444d5f)
+end
+seg(px, div1, px + pw, div1, HAIR, 255, 1)
+
+let act = one2 >= 0
+let sv = if act then doc[one2] else nil end
+field(f_x, "X", if act then n0(sv.x) else "—" end, act, scrub.field == "x" || (act && scrub_over == "x"), clear_of(mr, f_x.y, f_x.h))
+field(f_y, "Y", if act then n0(sv.y) else "—" end, act, scrub.field == "y" || (act && scrub_over == "y"), clear_of(mr, f_y.y, f_y.h))
+field(f_w, "W", if act then n0(sv.w) else "—" end, act, scrub.field == "w" || (act && scrub_over == "w"), clear_of(mr, f_w.y, f_w.h))
+field(f_h, "H", if act then n0(sv.h) else "—" end, act, scrub.field == "h" || (act && scrub_over == "h"), clear_of(mr, f_h.y, f_h.h))
+field(f_r, "ROTATION", if act then n0(sv.rot) ++ "°" else "—" end, act,
+      scrub.field == "rot" || (act && scrub_over == "rot"), clear_of(mr, f_r.y, f_r.h))
+field(f_a, "OPACITY", if act then n0(float(sv.alpha) * 100.0 / 255.0) ++ "%" else "—" end, act,
+      scrub.field == "alpha" || (act && scrub_over == "alpha"), clear_of(mr, f_a.y, f_a.h))
+
+if clear_of(mr, fill_lbl, 14) then caps("FILL", px, fill_lbl, FAINT) end
+let cur_fill = if act then hex_of(sv.fill) else "" end
+if act then
+  if clear_of(mr, fill_lbl, 14) then draw_text_right(cur_fill, px + pw, fill_lbl - 1, 11, DIM) end
+end
+for i in range(0, len(FILLS)) do
+  let r = swatches[i]
+  let c = FILLS[i]
+  let on = act && hex_of(c) == cur_fill
+  if on then
+    draw_rect_rounded(r.inset(-3), 8, TEXT)
+  elsif hovered(r) && len(sel) > 0 then
+    draw_rect_rounded(r.inset(-2), 7, OUTLINE)
+  end
+  draw_rect_rounded(r, 5, c)
+end
+
+if clear_of(mr, align_lbl, 14) then caps("ALIGN", px, align_lbl, if len(sel) > 1 then FAINT else #333b4a end) end
+if len(sel) <= 1 then
+  if clear_of(mr, align_lbl, 14) then draw_text_right("needs 2+", px + pw, align_lbl - 1, 11, #333b4a) end
+end
+for i in range(0, len(ALIGN)) do
+  let r = align_rects[i]
+  let on = len(sel) > 1
+  let hov = on && hovered(r)
+  draw_rect_rounded(r, 6, if hov then HOVER else #14171f end)
+  draw_rect_rounded(r.inset(-1), 7, OUTLINE)
+  draw_rect_rounded(r, 6, if hov then HOVER else #14171f end)
+  let c = if on then (if hov then TEXT else DIM end) else #333b4a end
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  let m = ALIGN[i]
+  if m == "left" then
+    draw_rect(cx - 8, cy - 8, 2, 16, c.r, c.g, c.b, 255)
+    draw_rect(cx - 4, cy - 5, 11, 4, c.r, c.g, c.b, 220)
+    draw_rect(cx - 4, cy + 2, 7, 4, c.r, c.g, c.b, 220)
+  elsif m == "hcenter" then
+    draw_rect(cx - 1, cy - 8, 2, 16, c.r, c.g, c.b, 255)
+    draw_rect(cx - 6, cy - 5, 12, 4, c.r, c.g, c.b, 220)
+    draw_rect(cx - 4, cy + 2, 8, 4, c.r, c.g, c.b, 220)
+  elsif m == "right" then
+    draw_rect(cx + 6, cy - 8, 2, 16, c.r, c.g, c.b, 255)
+    draw_rect(cx - 7, cy - 5, 11, 4, c.r, c.g, c.b, 220)
+    draw_rect(cx - 3, cy + 2, 7, 4, c.r, c.g, c.b, 220)
+  elsif m == "top" then
+    draw_rect(cx - 8, cy - 8, 16, 2, c.r, c.g, c.b, 255)
+    draw_rect(cx - 5, cy - 4, 4, 11, c.r, c.g, c.b, 220)
+    draw_rect(cx + 2, cy - 4, 4, 7, c.r, c.g, c.b, 220)
+  elsif m == "vcenter" then
+    draw_rect(cx - 8, cy - 1, 16, 2, c.r, c.g, c.b, 255)
+    draw_rect(cx - 5, cy - 6, 4, 12, c.r, c.g, c.b, 220)
+    draw_rect(cx + 2, cy - 4, 4, 8, c.r, c.g, c.b, 220)
+  else
+    draw_rect(cx - 8, cy + 6, 16, 2, c.r, c.g, c.b, 255)
+    draw_rect(cx - 5, cy - 7, 4, 11, c.r, c.g, c.b, 220)
+    draw_rect(cx + 2, cy - 3, 4, 7, c.r, c.g, c.b, 220)
+  end
+end
+
+seg(px, div2, px + pw, div2, HAIR, 255, 1)
+if clear_of(mr, layers_lbl, 14) then
+  caps("LAYERS", px, layers_lbl, FAINT)
+  draw_text_right("top first", px + pw, layers_lbl - 1, 11, #444d5f)
+end
+
+for i in range(0, len(ORDERS)) do
+  let r = order_rects[i]
+  let on = len(sel) > 0
+  let hov = on && hovered(r)
+  draw_rect_rounded(r, 6, if hov then HOVER else #14171f end)
+  draw_rect_rounded(r.inset(-1), 7, OUTLINE)
+  draw_rect_rounded(r, 6, if hov then HOVER else #14171f end)
+  let c = if on then (if hov then TEXT else DIM end) else #333b4a end
+  if clear_of(mr, r.y, r.h) then
+    draw_text_center(ORDERS[i].t, r.x + r.w / 2, r.y + 7, 12, c)
+  end
+end
+
+clip(list_r.x, list_r.y, list_r.w, list_r.h)
+for i in range(0, len(row_rects)) do
+  let si = row_shape_index(doc, lscroll, i)
+  if si >= 0 && si < len(doc) then
+    let s = doc[si]
+    let r = row_rects[i]
+    let on = contains(sel, s.id)
+    let hov = hovered(r)
+    if on then
+      draw_rect_rounded(r, 6, #1e2a44)
+      draw_rect_rounded(rect(r.x, r.y, 3, r.h), 2, ACCENT)
+    elsif hov then
+      draw_rect_rounded(r, 6, HOVER)
+    end
+    // kind chip
+    let ch = rect(r.x + 10, r.y + 6, 16, 16)
+    if s.kind == "ellipse" then
+      dot(ch.x + 8, ch.y + 8, 7, s.fill, if s.vis then 255 else 90 end)
+    elsif s.kind == "tri" then
+      fill_poly([[ch.x + 8, ch.y + 1], [ch.x + 15, ch.y + 15], [ch.x + 1, ch.y + 15]],
+                s.fill.r, s.fill.g, s.fill.b, if s.vis then 255 else 90 end)
+    elsif s.kind == "text" then
+      if clear_of(mr, r.y, r.h) then
+        draw_text("T", {x: ch.x + 4, y: ch.y + 2}, 13, if s.vis then s.fill else FAINT end)
+      end
+    elsif s.kind == "line" then
+      draw_rect(ch.x + 1, ch.y + 7, 14, 3, s.fill.r, s.fill.g, s.fill.b, if s.vis then 255 else 90 end)
+    elsif s.kind == "star" then
+      let pl = []
+      for k in range(0, 10) do
+        let a = 0.0 - TAU / 4.0 + float(k) * TAU / 10.0
+        let rr = if k % 2 == 0 then 8.0 else 3.5 end
+        pl = append(pl, [float(ch.x + 8) + cos(a) * rr, float(ch.y + 8) + sin(a) * rr])
+      end
+      for k in range(0, 10) do
+        let p = pl[k]
+        let q = pl[(k + 1) % 10]
+        fill_triangle(ch.x + 8, ch.y + 8, int(p[0]), int(p[1]), int(q[0]), int(q[1]),
+                      s.fill.r, s.fill.g, s.fill.b, if s.vis then 235 else 80 end)
+      end
+    else
+      draw_rect(ch.x + 1, ch.y + 3, 14, 11, s.fill.r, s.fill.g, s.fill.b,
+                if s.vis then 255 else 90 end)
+    end
+    let namec = if !s.vis then #4a5468 elsif on then TEXT else #c3ccdb end
+    if clear_of(mr, r.y, r.h) then
+      draw_text(ellipsize(s.name, r.w - 112, 13), {x: r.x + 34, y: r.y + 7}, 13, namec)
+    end
+    // eye toggle
+    let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
+    let ec = if hovered(eye) then TEXT elsif s.vis then DIM else #3d4658 end
+    if s.vis then
+      draw_circle(eye.x + 11, eye.y + 10, 6, ec.r, ec.g, ec.b, 200)
+      draw_circle(eye.x + 11, eye.y + 10, 3, PANEL.r, PANEL.g, PANEL.b, 255)
+    else
+      draw_circle(eye.x + 11, eye.y + 10, 6, ec.r, ec.g, ec.b, 140)
+      seg(eye.x + 5, eye.y + 15, eye.x + 17, eye.y + 5, ec, 220, 2)
+    end
+    // lock toggle
+    let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
+    let lc = if hovered(lockr) then TEXT elsif s.lock then #f0a83c else #3d4658 end
+    draw_rect_rounded(lockr.x + 5, lockr.y + 9, 12, 8, 2, lc.r, lc.g, lc.b,
+                      if s.lock then 235 else 120 end)
+    if s.lock then
+      draw_rect_outline(lockr.x + 7, lockr.y + 4, 8, 6, lc.r, lc.g, lc.b, 235, 2)
+    else
+      draw_rect_outline(lockr.x + 9, lockr.y + 4, 8, 6, lc.r, lc.g, lc.b, 110, 2)
+    end
+  end
+end
+clip_none()
+draw_scrollbar(list_r, len(doc), vis_rows, lscroll)
+
+// ── Status bar ───────────────────────────────────────────────────────────
+draw_rect(0, H - STATUS_H, W, STATUS_H, PANEL.r, PANEL.g, PANEL.b)
+seg(0, H - STATUS_H, W, H - STATUS_H, #000000, 150, 1)
+
+let hint = if drag.mode == "scale" then "Scaling — ⇧ keeps the aspect, ⌥ scales about the center"
+  elsif drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
+  elsif drag.mode == "move" then "Moving — ⌥ ignores the snap grid"
+  elsif drag.mode == "marquee" then "Marquee — release to select what it touches"
+  elsif drag.mode == "create" then "Drag out the shape, release to place it"
+  elsif tool != "select" then tool_hint(tool)
+  elsif len(sel) == 0 then "Click to select  ·  drag a marquee over the locked backdrop  ·  ⇧-click adds"
+  elsif len(sel) == 1 then "Drag to move  ·  handles scale  ·  the top knob rotates  ·  [ ] restack  ·  D duplicates"
+  else "{len(sel)} objects  ·  align from the inspector  ·  arrows nudge  ·  [ ] restack"
+  end
+if clear_of(mr, H - STATUS_H, STATUS_H) then
+  draw_text(hint, {x: 22, y: H - STATUS_H + 11}, 12, DIM)
+end
+
+let curx = clamp(float(mx) - ox, 0.0, DOC_W)
+let cury = clamp(float(my) - oy, 0.0, DOC_H)
+let snaptxt = if snap then "8 pt" else "off" end
+let right = "{ops} edits   ·   {len(hist)} undo   ·   snap {snaptxt}   ·   {n0(curx)}, {n0(cury)}"
+if clear_of(mr, H - STATUS_H, STATUS_H) then
+  draw_text_right(right, W - 22, H - STATUS_H + 11, 12, FAINT)
+end
+
+// tool tooltip, drawn last so it floats above the rail
+if tip >= 0 && drag.mode == "none" then
+  let t = TOOLS[tip]
+  let r = tool_rects[tip]
+  let tw = max(text_width(t.name, 13), text_width(t.hint, 11)) + 24
+  let tr = rect(RAIL_W + 12, r.y + 4, tw, 44)
+  draw_rect_rounded(rect(tr.x + 2, tr.y + 3, tr.w, tr.h), 8, #000000, 90)
+  draw_rect_rounded(tr.inset(-1), 9, OUTLINE)
+  draw_rect_rounded(tr, 8, ELEV)
+  draw_text(t.name, {x: tr.x + 12, y: tr.y + 7}, 13, TEXT)
+  draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 11, DIM)
+end
+
+// ── Context menu ─────────────────────────────────────────────────────────
+
+let picked = context_menu(menu, [
+  menu_item("Bring to front"),
+  menu_item("Bring forward"),
+  menu_item("Send backward"),
+  menu_item("Send to back"),
+  menu_sep(),
+  menu_item("Duplicate"),
+  menu_item("Toggle visibility"),
+  menu_item("Toggle lock"),
+  menu_sep(),
+  menu_item("Delete"),
+])
+menu = picked.menu
+if picked.index >= 0 then
+  let tag = picked.tag
+  if !contains(sel, tag) then
+    sel = [tag]
+  end
+  hist = push_hist(hist, doc)
+  fut = []
+  if picked.index == 0 then doc = apply_order(doc, sel, "front") end
+  if picked.index == 1 then doc = apply_order(doc, sel, "forward") end
+  if picked.index == 2 then doc = apply_order(doc, sel, "backward") end
+  if picked.index == 3 then doc = apply_order(doc, sel, "back") end
+  if picked.index == 5 then
+    let res = dup_sel(doc, sel, next_id)
+    doc = res.doc
+    sel = res.sel
+    next_id = res.next
+  end
+  if picked.index == 6 then
+    let nd = []
+    for s in doc do
+      if contains(sel, s.id) then s.vis = !s.vis end
+      nd = append(nd, s)
+    end
+    doc = nd
+  end
+  if picked.index == 7 then
+    let nd = []
+    for s in doc do
+      if contains(sel, s.id) then s.lock = !s.lock end
+      nd = append(nd, s)
+    end
+    doc = nd
+  end
+  if picked.index == 9 then
+    doc = del_sel(doc, sel)
+    sel = []
+  end
+  ops = ops + 1
+end

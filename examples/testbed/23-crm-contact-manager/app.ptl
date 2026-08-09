@@ -1,0 +1,858 @@
+// ── Meridian CRM ────────────────────────────────────────────────────────────
+// A contact manager: a sortable / filterable / searchable table of contacts on
+// the left, an inspector-and-edit-form on the right.
+//
+// Exercises: a real data table (five columns, click-to-sort headers with a
+// direction toggle), segment filtering, incremental search, keyboard + mouse
+// selection, wheel + scrollbar scrolling, and an editable multi-field form
+// with its own focus ring that writes back into the record store.
+//
+// Designed for a 1280x850 panel.
+
+// ── palette ─────────────────────────────────────────────────────────────────
+let BG      = #14181e   // table / page ground
+let RAIL    = #0f1319   // left rail, one step darker
+let SURFACE = #181d25   // right inspector
+let CARD    = #1c222b   // raised chips, fields, headers
+let CARD_HI = #232a35
+let LINE    = #262d38
+let LINE_SOFT = #1f2530
+let TEXT    = #e7ecf3
+let DIM     = #93a0b2
+let FAINT   = #626e7e
+let ACCENT  = #6d8dff
+let TEAL    = #2fc0a0
+let AMBER   = #e3a83f
+let ROSE    = #e8607c
+let VIOLET  = #a884f5
+let WHITE   = #ffffff
+
+let AV = [#6d8dff, #2fc0a0, #e3a83f, #e8607c, #a884f5, #48b7e8]
+
+// ── metrics ─────────────────────────────────────────────────────────────────
+let W = screen_width()
+let H = screen_height()
+
+let RAIL_W   = 212
+let DETAIL_W = 356
+let TOP_H    = 60
+let ROW_H    = 46
+let FOOT_H   = 40
+
+let FS_MICRO = 10
+let FS_LABEL = 11
+let FS_SM    = 12
+let FS       = 13
+let FS_ROW   = 14
+let FS_H     = 17
+let FS_XL    = 21
+
+let TABLE_X = RAIL_W
+let TABLE_W = W - RAIL_W - DETAIL_W
+let DETAIL_X = W - DETAIL_W
+
+let HEAD_Y   = TOP_H + 14
+let HEAD_H   = 26
+let ROWS_TOP = HEAD_Y + HEAD_H + 8
+let ROWS_H   = H - FOOT_H - ROWS_TOP
+let VISIBLE  = int(ROWS_H / ROW_H)
+
+let STAGES = ["Lead", "Qualified", "Proposal", "Customer", "Churned"]
+
+// ── seed data ───────────────────────────────────────────────────────────────
+state contacts = [
+  {id: 1,  name: "Alina Moreau",     title: "VP Engineering",     company: "Northwind Labs",   email: "alina@northwind.dev",   phone: "+1 415 555 0132", stage: "Proposal",  value: 84000,  days: 2,  owner: "R. Okafor", tags: ["enterprise", "self-hosted"], notes: "Wants an on-prem trial before the security review. Legal is the long pole; her CISO signs off in March."},
+  {id: 2,  name: "Desmond Achebe",   title: "Head of Data",       company: "Halcyon Freight",  email: "d.achebe@halcyon.co",   phone: "+1 312 555 0198", stage: "Customer",  value: 132000, days: 9,  owner: "R. Okafor", tags: ["logistics", "expansion"],    notes: "Renewed for two years. Warm intro to their Rotterdam office is on the table once the Q1 rollout lands."},
+  {id: 3,  name: "Priya Raghavan",   title: "Founder",            company: "Tessellate",       email: "priya@tessellate.io",   phone: "+1 650 555 0174", stage: "Qualified", value: 22000,  days: 1,  owner: "M. Lindqvist", tags: ["seed", "design-led"],      notes: "Small team, very fast to decide. Asked twice about the audit log — that is the feature that closes this."},
+  {id: 4,  name: "Tomas Berg",       title: "CTO",                company: "Kalevala Systems", email: "tberg@kalevala.fi",     phone: "+358 40 555 21",  stage: "Lead",      value: 41000,  days: 21, owner: "M. Lindqvist", tags: ["nordics", "inbound"],      notes: "Came in through the changelog post. Has not replied to the second follow-up; try the engineering blog angle."},
+  {id: 5,  name: "Ruth Okonjo",      title: "Director of Ops",    company: "Marigold Health",  email: "r.okonjo@marigold.care",phone: "+1 206 555 0117", stage: "Customer",  value: 96000,  days: 4,  owner: "J. Weaver", tags: ["healthcare", "hipaa"],       notes: "Champion. Presented our rollout at their internal ops summit and asked for slide assets afterwards."},
+  {id: 6,  name: "Henrik Vasquez",   title: "Procurement Lead",   company: "Orillion Energy",  email: "hv@orillion.com",       phone: "+1 713 555 0166", stage: "Proposal",  value: 210000, days: 6,  owner: "J. Weaver", tags: ["enterprise", "rfp"],         notes: "Formal RFP, response due the 14th. Pricing needs a volume tier we do not publish — approvals pending."},
+  {id: 7,  name: "Mei-Ling Chow",    title: "Platform Architect", company: "Cinder & Co",      email: "mchow@cinder.co",       phone: "+1 917 555 0143", stage: "Qualified", value: 57000,  days: 13, owner: "R. Okafor", tags: ["fintech", "compliance"],     notes: "Deep technical evaluation. Ran our benchmark suite herself and shared the numbers with her team."},
+  {id: 8,  name: "Óscar Delgado",    title: "COO",                company: "Puerto Verde",     email: "oscar@puertoverde.mx",  phone: "+52 55 5555 12",  stage: "Churned",   value: 18000,  days: 148,owner: "M. Lindqvist", tags: ["latam", "budget"],         notes: "Lost to an in-house build after their funding round slipped. Worth a check-in next fiscal year."},
+  {id: 9,  name: "Freya Lindgren",   title: "Product Manager",    company: "Aurora Mapping",   email: "freya@auroramaps.se",   phone: "+46 8 555 0091",  stage: "Lead",      value: 30000,  days: 34, owner: "J. Weaver", tags: ["geospatial", "inbound"],     notes: "Downloaded the whitepaper and booked a demo, then went quiet. Her team is mid-reorg."},
+  {id: 10, name: "Amara Nwosu",      title: "CFO",                company: "Ledgerline",       email: "amara@ledgerline.com",  phone: "+1 646 555 0188", stage: "Proposal",  value: 74000,  days: 3,  owner: "R. Okafor", tags: ["fintech", "exec"],           notes: "Cares about total cost, not features. Send the three-year model with the support tier broken out."},
+  {id: 11, name: "Jonas Kirchner",   title: "Head of IT",         company: "Bergwerk GmbH",    email: "j.kirchner@bergwerk.de",phone: "+49 30 555 447",  stage: "Customer",  value: 61000,  days: 17, owner: "M. Lindqvist", tags: ["dach", "manufacturing"],   notes: "Quiet but steady. Two seats added last quarter without being asked; upsell path is more seats, not tiers."},
+  {id: 12, name: "Sofia Barone",     title: "Design Director",    company: "Vellum Studio",    email: "sofia@vellum.studio",   phone: "+39 02 555 33",   stage: "Qualified", value: 16000,  days: 8,  owner: "J. Weaver", tags: ["agency", "design-led"],      notes: "Wants the shared-workspace feature. Will refer two other studios if the pilot goes well."},
+  {id: 13, name: "Wesley Tran",      title: "Staff Engineer",     company: "Halcyon Freight",  email: "w.tran@halcyon.co",     phone: "+1 312 555 0121", stage: "Customer",  value: 44000,  days: 11, owner: "R. Okafor", tags: ["logistics", "champion"],     notes: "Technical champion inside Halcyon. Files thoughtful bug reports; the person to ask for a case study."},
+  {id: 14, name: "Ingrid Sørensen",  title: "VP Revenue",         company: "Fjordline",        email: "ingrid@fjordline.no",   phone: "+47 22 555 08",   stage: "Lead",      value: 52000,  days: 27, owner: "J. Weaver", tags: ["nordics", "outbound"],       notes: "Cold outbound that actually landed. Asked for a reference in her industry before committing to a call."},
+  {id: 15, name: "Caleb Whitfield",  title: "Security Lead",      company: "Ironvale",         email: "cwhitfield@ironvale.io",phone: "+1 512 555 0155", stage: "Proposal",  value: 118000, days: 5,  owner: "M. Lindqvist", tags: ["security", "enterprise"],  notes: "Sent a 92-question security questionnaire. Answered 88; the last four need the SOC 2 renewal to land."},
+  {id: 16, name: "Nadia Haddad",     title: "Chief of Staff",     company: "Solstice Media",   email: "nadia@solstice.tv",     phone: "+1 323 555 0102", stage: "Qualified", value: 38000,  days: 15, owner: "R. Okafor", tags: ["media", "exec"],             notes: "Runs the evaluation on behalf of a CEO who will never join a call. Keep every update to one page."},
+  {id: 17, name: "Bartek Nowak",     title: "Engineering Manager",company: "Wisla Robotics",   email: "b.nowak@wisla.pl",      phone: "+48 22 555 76",   stage: "Lead",      value: 26000,  days: 45, owner: "J. Weaver", tags: ["robotics", "inbound"],       notes: "Evaluating three vendors at once. Price-sensitive, and honest about it, which is refreshing."},
+  {id: 18, name: "Yuki Tanabe",      title: "Director, Platform", company: "Kōhaku Interactive",email: "tanabe@kohaku.jp",     phone: "+81 3 5555 21",   stage: "Customer",  value: 155000, days: 7,  owner: "M. Lindqvist", tags: ["apac", "gaming"],          notes: "Largest APAC account. Their localisation request is now on the roadmap for the summer release."},
+  {id: 19, name: "Grace Adeyemi",    title: "Head of Analytics",  company: "Baobab Retail",    email: "grace@baobab.ng",       phone: "+234 1 555 09",   stage: "Qualified", value: 47000,  days: 19, owner: "R. Okafor", tags: ["retail", "africa"],          notes: "Needs a data-residency answer before procurement will open a file. Region support ships in Q3."},
+  {id: 20, name: "Elliot Marsh",     title: "Operations Manager", company: "Tidewater Foods",  email: "emarsh@tidewater.com",  phone: "+1 904 555 0179", stage: "Churned",   value: 12000,  days: 96, owner: "J. Weaver", tags: ["smb", "price"],              notes: "Downgraded, then left for a cheaper tool. Cited onboarding friction — worth revisiting after the redesign."},
+  {id: 21, name: "Zainab Qureshi",   title: "VP Engineering",     company: "Meridian Health",  email: "zq@meridianhealth.org", phone: "+1 415 555 0190", stage: "Proposal",  value: 88000,  days: 1,  owner: "M. Lindqvist", tags: ["healthcare", "urgent"],    notes: "Wants to sign before their fiscal close on the 31st. Everything hinges on the BAA turnaround."},
+  {id: 22, name: "Marcus Feld",      title: "Founder",            company: "Quarry Analytics",  email: "marcus@quarry.dev",    phone: "+1 718 555 0164", stage: "Lead",      value: 19000,  days: 39, owner: "R. Okafor", tags: ["seed", "developer-tools"],   notes: "Two-person team building on our API already. Convert the free usage into a paid plan conversation."},
+  {id: 23, name: "Leila Farhadi",    title: "Head of Support",    company: "Cinder & Co",      email: "leila@cinder.co",       phone: "+1 917 555 0128", stage: "Customer",  value: 34000,  days: 23, owner: "J. Weaver", tags: ["fintech", "support"],        notes: "Uses us daily and files the most detailed feature requests we get. Invite her to the design partner call."},
+  {id: 24, name: "Peter Sandoval",   title: "IT Director",        company: "Coastal Union",    email: "psandoval@coastal.bank",phone: "+1 619 555 0146", stage: "Qualified", value: 69000,  days: 12, owner: "M. Lindqvist", tags: ["banking", "compliance"],   notes: "Regulated buyer, slow but reliable. Their security team has already cleared two of our subprocessors."},
+]
+
+// ── view state ──────────────────────────────────────────────────────────────
+state seg      = "All"        // segment filter (a stage name, or "All")
+state q        = ""           // search query
+state sort_key = "days"       // name | company | stage | value | days
+state sort_dir = 1            // 1 ascending, -1 descending
+state sel_id   = 1            // selected contact id (stable across sorts)
+state scroll   = 0            // first visible row
+state focus    = ""           // focused text field id, "" = none
+state editing  = false        // inspector is in form mode
+state ed_id    = 0
+state ed_name  = ""
+state ed_title = ""
+state ed_co    = ""
+state ed_email = ""
+state ed_phone = ""
+state ed_stage = "Lead"
+state ed_value = ""
+state saves    = 0            // count of form saves (observable in /state)
+
+// ── small helpers ───────────────────────────────────────────────────────────
+fn stage_color(s)
+  if s == "Lead" then VIOLET
+  elsif s == "Qualified" then ACCENT
+  elsif s == "Proposal" then AMBER
+  elsif s == "Customer" then TEAL
+  else ROSE
+  end
+end
+
+fn stage_rank(s)
+  if s == "Lead" then 0
+  elsif s == "Qualified" then 1
+  elsif s == "Proposal" then 2
+  elsif s == "Customer" then 3
+  else 4
+  end
+end
+
+fn money(v)
+  if v >= 1000 then "${int(v / 1000)}k" else "${v}" end
+end
+
+fn money_big(v)
+  if v >= 1000000 then
+    "${int(v / 1000000)}.{int((v % 1000000) / 100000)}M"
+  else
+    money(v)
+  end
+end
+
+fn ago(d)
+  if d == 0 then "today"
+  elsif d == 1 then "yesterday"
+  elsif d < 7 then "{d}d ago"
+  elsif d < 60 then "{int(d / 7)}w ago"
+  else "{int(d / 30)}mo ago"
+  end
+end
+
+// How warm a contact is, as a 0..1 fraction of a 45-day window plus the color
+// the table paints it in.
+fn freshness(days)
+  let f = clamp(1.0 - float(days) / 45.0, 0.0, 1.0)
+  let c = if days <= 7 then TEAL
+    elsif days <= 30 then AMBER
+    else ROSE
+    end
+  {frac: f, color: c}
+end
+
+// Keep only ASCII digits — the deal-value field is numeric, and this is the
+// closest Petal gets to an input mask.
+fn digits(s)
+  var out = ""
+  for i in range(0, len(s)) do
+    let ch = slice(s, i, i + 1)
+    if contains("0123456789", ch) && len(ch) > 0 then set out = out ++ ch end
+  end
+  out
+end
+
+fn initials(name)
+  var out = ""
+  for part in split(name, " ") do
+    if len(part) > 0 && len(out) < 2 then
+      // slice is byte-indexed and snaps DOWN to a char boundary, so a leading
+      // multi-byte letter ("Ó") makes slice(part, 0, 1) empty — widen until a
+      // whole character comes out.
+      var ch = slice(part, 0, 1)
+      var n = 1
+      while len(ch) == 0 && n < 5 do
+        set n = n + 1
+        set ch = slice(part, 0, n)
+      end
+      set out = out ++ upper(ch)
+    end
+  end
+  out
+end
+
+// A short, deterministic history for a contact: the newest entry reflects the
+// stage the deal is actually in, the older two are the same for everyone.
+fn activity(c)
+  let head = if c.stage == "Lead" then "Inbound enquiry received"
+    elsif c.stage == "Qualified" then "Discovery call completed"
+    elsif c.stage == "Proposal" then "Proposal sent for review"
+    elsif c.stage == "Customer" then "Contract countersigned"
+    else "Cancellation confirmed"
+    end
+  [
+    {label: head, ago_days: c.days},
+    {label: "Follow-up email from {c.owner}", ago_days: c.days + 6 + c.id % 9},
+    {label: "Added to the pipeline", ago_days: c.days + 74 + c.id % 60},
+  ]
+end
+
+// A rounded panel with a 1px border, since draw_rect_outline is square-cornered.
+fn rr(r, radius, fill, border)
+  draw_rect_rounded(r, radius, border)
+  draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius - 1, fill)
+end
+
+fn chip(x, y, label, c)
+  let tw = text_width(label, FS_MICRO)
+  let r = rect(x, y, tw + 16, 18)
+  draw_rect_rounded(r, 9, c, 38)
+  draw_text(label, {x: x + 8, y: y + 4}, {size: FS_MICRO, color: c, spacing: 0.4})
+  r.w
+end
+
+fn btn(r, label, kind, on)
+  // kind: 0 = quiet, 1 = primary
+  let hov = hovered(r)
+  if kind == 1 then
+    let bg = if hov then #829eff else ACCENT end
+    draw_rect_rounded(r, 8, bg)
+    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, #10141a)
+  else
+    let bg = if hov then CARD_HI else CARD end
+    rr(r, 8, bg, LINE)
+    let fg = if on then TEXT else DIM end
+    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, fg)
+  end
+  hov && mouse_pressed(0)
+end
+
+// ── sorting ─────────────────────────────────────────────────────────────────
+fn sort_val(c, key)
+  if key == "name" then lower(c.name)
+  elsif key == "company" then lower(c.company)
+  elsif key == "stage" then stage_rank(c.stage)
+  elsif key == "value" then c.value
+  else c.days
+  end
+end
+
+fn row_less(a, b, key, dir)
+  let av = sort_val(a, key)
+  let bv = sort_val(b, key)
+  if av == bv then
+    lower(a.name) < lower(b.name)
+  elsif dir == 1 then
+    av < bv
+  else
+    av > bv
+  end
+end
+
+fn sort_rows(rows, key, dir)
+  var out = []
+  for r in rows do
+    var placed = false
+    var res = []
+    for x in out do
+      if !placed && row_less(r, x, key, dir) then
+        set res = append(res, r)
+        set placed = true
+      end
+      set res = append(res, x)
+    end
+    if !placed then set res = append(res, r) end
+    set out = res
+  end
+  out
+end
+
+fn matches(c, needle)
+  let hay = lower("{c.name} {c.company} {c.title} {c.email} {join(c.tags, " ")}")
+  contains(hay, needle)
+end
+
+// ── derived data ────────────────────────────────────────────────────────────
+let needle = lower(q)
+let filtered = for c in contacts do
+  if seg != "All" && c.stage != seg then continue end
+  if len(needle) > 0 && !matches(c, needle) then continue end
+  c
+end
+let rows = sort_rows(filtered, sort_key, sort_dir)
+let n_rows = len(rows)
+
+let pipeline = reduce(rows, 0, fn(acc, c) -> acc + c.value)
+
+fn count_stage(cs, s)
+  var n = 0
+  for c in cs do
+    if s == "All" || c.stage == s then set n = n + 1 end
+  end
+  n
+end
+
+// index of the selected id within the current row order (-1 when filtered out)
+fn index_of_id(rs, id)
+  var found = -1
+  for i in range(0, len(rs)) do
+    if rs[i].id == id then set found = i end
+  end
+  found
+end
+let sel_ix = index_of_id(rows, sel_id)
+// A filter that hides the selected contact hands the selection to the first
+// visible row rather than leaving the inspector blank.
+if sel_ix < 0 && n_rows > 0 then
+  sel_id = rows[0].id
+  sel_ix = 0
+end
+
+// ── geometry ────────────────────────────────────────────────────────────────
+let mx = mouse_x()
+let my = mouse_y()
+
+let search_r = rect(RAIL_W + 24, 14, 330, 32)
+
+let cx0 = TABLE_X + 22
+let inner = TABLE_W - 44 - 10
+let w_name  = int(inner * 0.33)
+let w_co    = int(inner * 0.23)
+let w_stage = int(inner * 0.15)
+let w_val   = int(inner * 0.13)
+let w_last  = inner - w_name - w_co - w_stage - w_val
+
+let cols = [
+  {key: "name",    label: "CONTACT",      x: cx0,                                 w: w_name,  right: false},
+  {key: "company", label: "COMPANY",      x: cx0 + w_name,                        w: w_co,    right: false},
+  {key: "stage",   label: "STAGE",        x: cx0 + w_name + w_co,                 w: w_stage, right: false},
+  {key: "value",   label: "DEAL",         x: cx0 + w_name + w_co + w_stage,       w: w_val,   right: true},
+  {key: "days",    label: "LAST CONTACT", x: cx0 + w_name + w_co + w_stage + w_val, w: w_last, right: true},
+]
+
+let rows_rect = rect(TABLE_X, ROWS_TOP, TABLE_W, ROWS_H)
+
+// ── input ───────────────────────────────────────────────────────────────────
+// Focus ring: the search box on its own, or the five form fields while editing.
+let ring = if editing then ["name", "title", "co", "email", "phone", "value"] else ["q"] end
+
+// A press anywhere that is not a field clears the keyboard focus.
+let grabbed = false
+
+if mouse_pressed(0) && point_in(mx, my, search_r) then
+  focus = "q"
+  grabbed = true
+end
+
+// `/` jumps to the search box (only when nothing else owns the keyboard).
+if len(focus) == 0 && key_pressed("/") then
+  focus = "q"
+  grabbed = true
+end
+
+// Column headers: click to sort, click again to flip the direction.
+if mouse_pressed(0) then
+  for c in cols do
+    let hr = rect(c.x - 8, HEAD_Y, c.w, HEAD_H)
+    if point_in(mx, my, hr) then
+      if sort_key == c.key then
+        sort_dir = -sort_dir
+      else
+        sort_key = c.key
+        sort_dir = if c.key == "value" || c.key == "days" then 1 else 1 end
+      end
+      scroll = 0
+    end
+  end
+end
+
+// Segment rail.
+let seg_top = TOP_H + 54
+for i in range(0, len(STAGES) + 1) do
+  let label = if i == 0 then "All" else STAGES[i - 1] end
+  let r = rect(12, seg_top + i * 34, RAIL_W - 24, 30)
+  if mouse_pressed(0) && point_in(mx, my, r) then
+    seg = label
+    scroll = 0
+    focus = ""
+  end
+end
+
+// Row selection by click.
+if mouse_pressed(0) && point_in(mx, my, rows_rect) then
+  let ix = scroll + int((my - ROWS_TOP) / ROW_H)
+  if ix >= 0 && ix < n_rows then
+    sel_id = rows[ix].id
+    editing = false
+  end
+  focus = ""
+end
+
+// Wheel over the table.
+if point_in(mx, my, rows_rect) then
+  scroll = int(clamp(int(scroll + scroll_y()), 0, max(0, n_rows - VISIBLE)))
+end
+
+// Keyboard navigation — only when no text field owns the keyboard.
+if len(focus) == 0 then
+  if n_rows > 0 then
+    var want = sel_ix
+    if key_pressed("down") || key_pressed("j") then set want = want + 1 end
+    if key_pressed("up") || key_pressed("k") then set want = want - 1 end
+    if key_pressed("pagedown") then set want = want + VISIBLE end
+    if key_pressed("pageup") then set want = want - VISIBLE end
+    if key_pressed("home") then set want = 0 end
+    if key_pressed("end") then set want = n_rows - 1 end
+    if want != sel_ix then
+      let w2 = int(clamp(want, 0, n_rows - 1))
+      sel_id = rows[w2].id
+      scroll = ensure_visible(scroll, w2, VISIBLE)
+    end
+  end
+end
+
+// Clamp scroll after any filter change, and keep the selection on screen.
+scroll = int(clamp(scroll, 0, max(0, n_rows - VISIBLE)))
+
+// Tab cycles the focus ring.
+if key_pressed("tab") && len(focus) > 0 then
+  var j = 0
+  for i in range(0, len(ring)) do
+    if ring[i] == focus then set j = i end
+  end
+  let step = if mod_shift() then len(ring) - 1 else 1 end
+  focus = ring[(j + step) % len(ring)]
+  grabbed = true
+end
+
+let selected = if sel_ix >= 0 then rows[sel_ix] else nil end
+let has_sel = sel_ix >= 0
+
+// ── inspector controls ──────────────────────────────────────────────────────
+let pad = 22
+let dx = DETAIL_X + pad
+let dw = DETAIL_W - pad * 2
+
+let act_y = H - 62
+let act1 = rect(dx, act_y, int((dw - 10) / 2), 34)
+let act2 = rect(dx + int((dw - 10) / 2) + 10, act_y, dw - int((dw - 10) / 2) - 10, 34)
+
+// Stage picker rects (edit mode) — five chips on two rows.
+fn stage_pick_rect(i, x, y, w)
+  let cw = int((w - 8) / 3)
+  rect(x + (i % 3) * (cw + 4), y + int(i / 3) * 30, cw, 26)
+end
+
+// Text field rects, laid out top-down in the form.
+let form_top = TOP_H + 118
+fn field_rect(i, x, y, w)
+  rect(x, y + i * 52 + 18, w, 32)
+end
+
+// ── field editing (state writes must live at top level) ─────────────────────
+let typed = if grabbed then "" else text_input() end
+let backsp = key_pressed("backspace")
+let submitted = key_pressed("return")
+
+fn edited(cur, typed, backsp)
+  var t = cur
+  if backsp && len(t) > 0 then set t = slice(t, 0, len(t) - 1) end
+  if len(typed) > 0 then set t = t ++ typed end
+  t
+end
+
+if focus == "q" then q = edited(q, typed, backsp) end
+if focus == "name" then ed_name = edited(ed_name, typed, backsp) end
+if focus == "title" then ed_title = edited(ed_title, typed, backsp) end
+if focus == "co" then ed_co = edited(ed_co, typed, backsp) end
+if focus == "email" then ed_email = edited(ed_email, typed, backsp) end
+if focus == "phone" then ed_phone = edited(ed_phone, typed, backsp) end
+if focus == "value" then ed_value = digits(edited(ed_value, typed, backsp)) end
+
+if key_pressed("escape") then
+  if len(focus) > 0 then
+    focus = ""
+  elsif editing then
+    editing = false
+  elsif len(q) > 0 then
+    q = ""
+  end
+end
+
+// Clicking a form field focuses it.
+if editing && mouse_pressed(0) then
+  for i in range(0, len(ring)) do
+    if point_in(mx, my, field_rect(i, dx, form_top, dw)) then
+      focus = ring[i]
+      grabbed = true
+    end
+  end
+end
+
+// Stage chips in the form.
+if editing && mouse_pressed(0) then
+  for i in range(0, len(STAGES)) do
+    if point_in(mx, my, stage_pick_rect(i, dx, form_top + 6 * 52 + 22, dw)) then
+      ed_stage = STAGES[i]
+    end
+  end
+end
+
+// Action buttons: Edit / Advance in read mode, Save / Cancel in form mode.
+let hit1 = has_sel && mouse_pressed(0) && point_in(mx, my, act1)
+let hit2 = has_sel && mouse_pressed(0) && point_in(mx, my, act2)
+let do_save = editing && (hit1 || (submitted && len(focus) > 0))
+
+if has_sel && !editing && hit1 then
+  editing = true
+  ed_id = selected.id
+  ed_name = selected.name
+  ed_title = selected.title
+  ed_co = selected.company
+  ed_email = selected.email
+  ed_phone = selected.phone
+  ed_value = "{selected.value}"
+  ed_stage = selected.stage
+  focus = "name"
+  grabbed = true
+end
+
+// Advance the deal one step along the pipeline. Customer is the end of the
+// road and Churned is off it, so neither advances — the button draws dim there.
+if has_sel && !editing && hit2 && stage_rank(selected.stage) < 3 then
+  let nxt = stage_rank(selected.stage) + 1
+  contacts = for c in contacts do
+    if c.id == selected.id then {...c, stage: STAGES[nxt], days: 0} else c end
+  end
+end
+
+if do_save then
+  contacts = for c in contacts do
+    if c.id == ed_id then
+      {...c, name: ed_name, title: ed_title, company: ed_co, email: ed_email,
+             phone: ed_phone, stage: ed_stage,
+             value: if len(ed_value) > 0 then int(ed_value) else 0 end}
+    else
+      c
+    end
+  end
+  editing = false
+  focus = ""
+  saves = saves + 1
+end
+
+if editing && hit2 then
+  editing = false
+  focus = ""
+end
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw
+// ═════════════════════════════════════════════════════════════════════════════
+clear(BG.r, BG.g, BG.b)
+
+// ── left rail ───────────────────────────────────────────────────────────────
+draw_rect(rect(0, 0, RAIL_W, H), RAIL)
+draw_rect(rect(RAIL_W, 0, 1, H), LINE)
+
+// brand
+draw_rect_rounded(rect(24, 19, 22, 22), 6, ACCENT)
+draw_text("M", {x: 31, y: 24}, {size: FS, color: #0f1319})
+draw_text("meridian", {x: 56, y: 21}, {size: FS_H, color: TEXT, spacing: 0.2})
+
+draw_text("SEGMENTS", {x: 24, y: TOP_H + 26}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
+
+for i in range(0, len(STAGES) + 1) do
+  let label = if i == 0 then "All" else STAGES[i - 1] end
+  let r = rect(12, seg_top + i * 34, RAIL_W - 24, 30)
+  let on = seg == label
+  let hov = point_in(mx, my, r)
+  if on then
+    draw_rect_rounded(r, 8, CARD_HI)
+    draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), 2, ACCENT)
+  elsif hov then
+    draw_rect_rounded(r, 8, CARD, 140)
+  end
+  let dot = if i == 0 then FAINT else stage_color(label) end
+  draw_circle({x: r.x + 18, y: r.y + 15}, 3.5, dot)
+  let fg = if on then TEXT else DIM end
+  draw_text(label, {x: r.x + 30, y: r.y + 8}, {size: FS, color: fg})
+  let cnt = count_stage(contacts, label)
+  draw_text_right("{cnt}", r.x + r.w - 12, r.y + 8, FS_SM, if on then DIM else FAINT end)
+end
+
+// pipeline card at the foot of the rail
+let card_y = H - 130
+rr(rect(12, card_y, RAIL_W - 24, 106), 10, CARD, LINE)
+draw_text("OPEN PIPELINE", {x: 26, y: card_y + 16}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+draw_text(money_big(pipeline), {x: 26, y: card_y + 34}, {size: FS_XL, color: TEXT})
+draw_line({x: 26, y: card_y + 68}, {x: RAIL_W - 26, y: card_y + 68}, LINE)
+draw_text("{n_rows} shown", {x: 26, y: card_y + 78}, {size: FS_SM, color: DIM})
+draw_text_right("of {len(contacts)}", RAIL_W - 26, card_y + 78, FS_SM, FAINT)
+
+// ── top bar ─────────────────────────────────────────────────────────────────
+draw_rect(rect(0, TOP_H, W, 1), LINE)
+
+// search box
+let q_focus = focus == "q"
+rr(search_r, 9, if q_focus then #10141b else CARD end, if q_focus then ACCENT else LINE end)
+draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5, FAINT, 0)
+draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5.5, if q_focus then ACCENT else FAINT end)
+draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 3.6, if q_focus then #10141b else CARD end)
+draw_line({x: search_r.x + 21, y: search_r.y + 18}, {x: search_r.x + 25, y: search_r.y + 22},
+          if q_focus then ACCENT else FAINT end)
+let qx = search_r.x + 34
+if len(q) == 0 && !q_focus then
+  draw_text("Search contacts, companies, tags…", {x: qx, y: search_r.y + 9}, {size: FS, color: FAINT})
+else
+  draw_text(q, {x: qx, y: search_r.y + 9}, {size: FS, color: TEXT})
+end
+if q_focus && int(time() * 2) % 2 == 0 then
+  let cxp = qx + text_width(q, FS) + 1
+  draw_line({x: cxp, y: search_r.y + 8}, {x: cxp, y: search_r.y + 24}, ACCENT)
+end
+if !q_focus then
+  draw_text("/", {x: search_r.x + search_r.w - 18, y: search_r.y + 9}, {size: FS_SM, color: FAINT})
+end
+
+let sort_label = if sort_key == "days" then "last contact"
+  elsif sort_key == "value" then "deal size"
+  else sort_key
+  end
+let dir_label = if sort_dir == 1 then "ascending" else "descending" end
+draw_text_right("sorted by {sort_label} · {dir_label}", TABLE_X + TABLE_W - 22, 22, FS_SM, FAINT)
+
+// ── table header ────────────────────────────────────────────────────────────
+for c in cols do
+  let on = sort_key == c.key
+  let hr = rect(c.x - 8, HEAD_Y, c.w, HEAD_H)
+  if point_in(mx, my, hr) then
+    draw_rect_rounded(hr, 6, CARD, 120)
+  end
+  let fg = if on then ACCENT else FAINT end
+  let st = {size: FS_MICRO, color: fg, spacing: 1.0}
+  let lw = text_width(c.label, st)
+  let lx = if c.right then c.x + c.w - lw - 4 else c.x end
+  draw_text(c.label, {x: lx, y: HEAD_Y + 8}, st)
+  if on then
+    let ax = if c.right then lx - 12 else lx + lw + 7 end
+    let ay = HEAD_Y + 12
+    if sort_dir == 1 then
+      fill_triangle(ax, ay + 3, ax + 7, ay + 3, ax + 3.5, ay - 2, fg.r, fg.g, fg.b)
+    else
+      fill_triangle(ax, ay - 2, ax + 7, ay - 2, ax + 3.5, ay + 3, fg.r, fg.g, fg.b)
+    end
+  end
+end
+draw_rect(rect(TABLE_X, HEAD_Y + HEAD_H + 3, TABLE_W, 1), LINE)
+
+// ── rows ────────────────────────────────────────────────────────────────────
+clip(TABLE_X, ROWS_TOP, TABLE_W, ROWS_H)
+let shown = min(VISIBLE, max(0, n_rows - scroll))
+for i in range(0, shown) do
+  let idx = scroll + i
+  let c = rows[idx]
+  let y = ROWS_TOP + i * ROW_H
+  let r = rect(TABLE_X + 10, y + 2, TABLE_W - 20, ROW_H - 4)
+  let on = c.id == sel_id
+  let hov = point_in(mx, my, r)
+  if on then
+    draw_rect_rounded(r, 8, CARD_HI)
+    draw_rect_rounded(rect(TABLE_X + 10, y + 8, 3, ROW_H - 16), 2, ACCENT)
+  elsif hov then
+    draw_rect_rounded(r, 8, CARD, 150)
+  end
+
+  // avatar + name + title
+  let acol = AV[c.id % len(AV)]
+  let ax = cx0 + 14
+  draw_circle({x: ax, y: y + ROW_H / 2}, 14, acol, 46)
+  draw_text_center(initials(c.name), ax, y + ROW_H / 2 - 6, FS_SM, acol)
+  let nm_x = cx0 + 34
+  let nm_w = w_name - 46
+  draw_text(ellipsize(c.name, nm_w, FS_ROW), {x: nm_x, y: y + 8},
+            {size: FS_ROW, color: if on then WHITE else TEXT end})
+  draw_text(ellipsize(c.title, nm_w, FS_SM), {x: nm_x, y: y + 26}, {size: FS_SM, color: FAINT})
+
+  // company + owner
+  draw_text(ellipsize(c.company, w_co - 16, FS), {x: cols[1].x, y: y + 9}, {size: FS, color: DIM})
+  draw_text(c.owner, {x: cols[1].x, y: y + 27}, {size: FS_SM, color: FAINT})
+
+  // stage chip
+  chip(cols[2].x, y + 13, c.stage, stage_color(c.stage))
+
+  // deal value
+  draw_text_right(money(c.value), cols[3].x + cols[3].w - 4, y + 16, FS_ROW,
+                  if on then TEXT else DIM end)
+
+  // last contact: a freshness dot and the phrase, on the row's centre line
+  let fresh = freshness(c.days)
+  let last_r = cols[4].x + cols[4].w - 4
+  let last_s = ago(c.days)
+  draw_text_right(last_s, last_r, y + 16, FS, fresh.color)
+  draw_circle({x: last_r - text_width(last_s, FS) - 11, y: y + 23}, 3.5, fresh.color, 210)
+
+  if !on && i < shown - 1 then
+    draw_rect(rect(cx0, y + ROW_H - 1, TABLE_W - 54, 1), LINE_SOFT)
+  end
+end
+clip_none()
+
+if n_rows == 0 then
+  draw_text("No contacts match this filter.", {x: cx0, y: ROWS_TOP + 40}, {size: FS_ROW, color: DIM})
+  draw_text("Clear the search with Escape, or pick a different segment.",
+            {x: cx0, y: ROWS_TOP + 64}, {size: FS, color: FAINT})
+end
+
+// scrollbar
+if n_rows > VISIBLE then
+  let track = rect(TABLE_X + TABLE_W - 13, ROWS_TOP + 2, 6, ROWS_H - 6)
+  draw_rect_rounded(track, 3, LINE)
+  let th = max(28, int(track.h * VISIBLE / n_rows))
+  let ty = track.y + int((track.h - th) * scroll / max(1, n_rows - VISIBLE))
+  draw_rect_rounded(rect(track.x, ty, track.w, th), 3, #4c5768)
+end
+
+// ── footer ──────────────────────────────────────────────────────────────────
+draw_rect(rect(TABLE_X, H - FOOT_H, TABLE_W, 1), LINE)
+let foot = if n_rows == 0 then "no results" else "{n_rows} contacts · {money_big(pipeline)} in view" end
+draw_text(foot, {x: cx0, y: H - 26}, {size: FS_SM, color: FAINT})
+draw_text_right("click a header to sort  ·  ↑↓ select  ·  / search", TABLE_X + TABLE_W - 22, H - 26,
+                FS_SM, FAINT)
+
+// ── inspector ───────────────────────────────────────────────────────────────
+draw_rect(rect(DETAIL_X, 0, DETAIL_W, H), SURFACE)
+draw_rect(rect(DETAIL_X, 0, 1, H), LINE)
+
+if !has_sel then
+  draw_text("Nothing selected", {x: dx, y: TOP_H + 40}, {size: FS_ROW, color: DIM})
+  draw_text("Pick a row to see the full record.", {x: dx, y: TOP_H + 64}, {size: FS, color: FAINT})
+else
+  let acol = AV[selected.id % len(AV)]
+  let hy = TOP_H + 30
+  draw_circle({x: dx + 26, y: hy + 26}, 26, acol, 40)
+  draw_text_center(initials(selected.name), dx + 26, hy + 17, FS_H, acol)
+
+  if editing then
+    draw_text("EDIT RECORD", {x: dx + 66, y: hy + 12}, {size: FS_MICRO, color: ACCENT, spacing: 1.4})
+    draw_text(ellipsize(ed_name, dw - 70, FS_H), {x: dx + 66, y: hy + 28}, {size: FS_H, color: TEXT})
+
+    let labels = ["FULL NAME", "TITLE", "COMPANY", "EMAIL", "PHONE", "DEAL VALUE (USD)"]
+    let vals = [ed_name, ed_title, ed_co, ed_email, ed_phone, ed_value]
+    for i in range(0, 6) do
+      let fr = field_rect(i, dx, form_top, dw)
+      let f_on = focus == ring[i]
+      draw_text(labels[i], {x: dx, y: fr.y - 15}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+      rr(fr, 8, if f_on then #10141b else CARD end, if f_on then ACCENT else LINE end)
+      draw_text(ellipsize(vals[i], dw - 22, FS), {x: fr.x + 10, y: fr.y + 9}, {size: FS, color: TEXT})
+      if f_on && int(time() * 2) % 2 == 0 then
+        let cxp = fr.x + 10 + text_width(vals[i], FS) + 1
+        draw_line({x: cxp, y: fr.y + 8}, {x: cxp, y: fr.y + 24}, ACCENT)
+      end
+    end
+
+    let sy = form_top + 6 * 52 + 22
+    draw_text("STAGE", {x: dx, y: sy - 15}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    for i in range(0, len(STAGES)) do
+      let pr = stage_pick_rect(i, dx, sy, dw)
+      let s = STAGES[i]
+      let sc = stage_color(s)
+      let on = ed_stage == s
+      if on then
+        draw_rect_rounded(pr, 7, sc, 52)
+        draw_rect_rounded(rect(pr.x, pr.y, pr.w, pr.h), 7, sc, 52)
+      elsif hovered(pr) then
+        draw_rect_rounded(pr, 7, CARD_HI)
+      else
+        draw_rect_rounded(pr, 7, CARD)
+      end
+      draw_text_center(s, pr.x + pr.w / 2, pr.y + 7, FS_SM, if on then sc else DIM end)
+    end
+
+    // Everything the form does not own, shown so the record still reads whole.
+    let ry2 = sy + 78
+    draw_line({x: dx, y: ry2 - 16}, {x: dx + dw, y: ry2 - 16}, LINE)
+    draw_text("NOT EDITABLE HERE", {x: dx, y: ry2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    draw_text("Owner", {x: dx, y: ry2 + 20}, {size: FS, color: FAINT})
+    draw_text_right(selected.owner, dx + dw, ry2 + 20, FS, DIM)
+    draw_text("Last contact", {x: dx, y: ry2 + 42}, {size: FS, color: FAINT})
+    draw_text_right(ago(selected.days), dx + dw, ry2 + 42, FS, DIM)
+    draw_text("Tags", {x: dx, y: ry2 + 64}, {size: FS, color: FAINT})
+    draw_text_right(join(selected.tags, " · "), dx + dw, ry2 + 64, FS, DIM)
+
+    draw_text("Tab moves between fields · Return saves", {x: dx, y: act_y - 26},
+              {size: FS_SM, color: FAINT})
+    if btn(act1, "Save changes", 1, true) then end
+    if btn(act2, "Cancel", 0, false) then end
+  else
+    draw_text(ellipsize(selected.name, dw - 70, FS_XL), {x: dx + 66, y: hy + 6},
+              {size: FS_XL, color: TEXT})
+    draw_text(ellipsize(selected.title, dw - 70, FS), {x: dx + 66, y: hy + 34},
+              {size: FS, color: DIM})
+    chip(dx + 66, hy + 56, selected.stage, stage_color(selected.stage))
+
+    let by = hy + 96
+    draw_line({x: dx, y: by - 12}, {x: dx + dw, y: by - 12}, LINE)
+
+    fn detail_row(x, y, w, label, value, color)
+      draw_text(label, {x: x, y: y}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+      draw_text(ellipsize(value, w, FS), {x: x, y: y + 16}, {size: FS, color: color})
+    end
+
+    detail_row(dx, by, dw, "COMPANY", selected.company, TEXT)
+    detail_row(dx, by + 46, dw, "EMAIL", selected.email, ACCENT)
+    detail_row(dx, by + 92, int(dw / 2) - 8, "PHONE", selected.phone, TEXT)
+    detail_row(dx + int(dw / 2) + 8, by + 92, int(dw / 2) - 8, "OWNER", selected.owner, TEXT)
+    detail_row(dx, by + 138, int(dw / 2) - 8, "DEAL VALUE", money(selected.value), TEAL)
+    detail_row(dx + int(dw / 2) + 8, by + 138, int(dw / 2) - 8, "LAST CONTACT",
+               ago(selected.days), if selected.days > 30 then AMBER else TEXT end)
+
+    let ty2 = by + 188
+    draw_text("TAGS", {x: dx, y: ty2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    var tagx = dx
+    for t in selected.tags do
+      let adv = chip(tagx, ty2 + 16, t, DIM)
+      set tagx = tagx + adv + 6
+    end
+
+    let ny = ty2 + 54
+    draw_text("NOTES", {x: dx, y: ny}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    let lines = preview(selected.notes, int(dw / 7), 5).lines
+    for i in range(0, len(lines)) do
+      draw_text(lines[i], {x: dx, y: ny + 18 + i * 19}, {size: FS, color: DIM})
+    end
+
+    // Activity timeline — synthesized from the record so every contact has a
+    // plausible history behind it.
+    let ay2 = ny + 132
+    draw_line({x: dx, y: ay2 - 16}, {x: dx + dw, y: ay2 - 16}, LINE)
+    draw_text("ACTIVITY", {x: dx, y: ay2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    let acts = activity(selected)
+    for i in range(0, len(acts)) do
+      let a = acts[i]
+      let ry = ay2 + 24 + i * 34
+      if i < len(acts) - 1 then
+        draw_line({x: dx + 4, y: ry + 10}, {x: dx + 4, y: ry + 34}, LINE)
+      end
+      let dotc = if i == 0 then stage_color(selected.stage) else FAINT end
+      draw_circle({x: dx + 4, y: ry + 5}, 4, dotc, if i == 0 then 255 else 150 end)
+      draw_text(ellipsize(a.label, dw - 90, FS), {x: dx + 18, y: ry}, {size: FS, color: TEXT})
+      draw_text_right(ago(a.ago_days), dx + dw, ry + 1, FS_SM, FAINT)
+    end
+
+    if btn(act1, "Edit record", 1, true) then end
+    let last_stage = selected.stage == "Customer" || selected.stage == "Churned"
+    if btn(act2, "Advance stage", 0, !last_stage) then end
+  end
+end
+
+// ── observable summary (read from /state → panes[].panel.values) ────────────
+let visible_rows = n_rows
+let selection = if has_sel then selected.name else "" end
+let focus_id = focus

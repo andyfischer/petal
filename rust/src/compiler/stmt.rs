@@ -16,8 +16,25 @@ enum CompiledStep {
 }
 
 impl Compiler {
+    /// Compile a statement list. `value_used` says the list's final statement
+    /// produces the enclosing construct's value — a function body (implicit
+    /// return), a branch of an `if` whose value is consumed, or the body of a
+    /// collecting `for`. Only there does a trailing bare `for` collect into a
+    /// list; everywhere else it stays a zero-allocation side-effect loop.
+    pub(super) fn compile_stmts(&mut self, stmts: &[Stmt], value_used: bool) {
+        let saved = self.stmt_value_used;
+        for (i, s) in stmts.iter().enumerate() {
+            self.stmt_value_used = value_used && i + 1 == stmts.len();
+            self.compile_stmt(s);
+        }
+        self.stmt_value_used = saved;
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         let stmt_span = stmt.span;
+        // Taken here so it applies only to this statement: any nested list
+        // compiled below re-establishes its own value positions.
+        let stmt_value_used = std::mem::take(&mut self.stmt_value_used);
         match &stmt.kind {
             StmtKind::Let {
                 name,
@@ -56,6 +73,10 @@ impl Compiler {
             }
 
             StmtKind::Expr(expr) => {
+                // A statement-level expression's value is discarded unless the
+                // statement is in tail position; an `if`/`match`/block passes
+                // that on to its own branches.
+                self.value_used = stmt_value_used;
                 self.compile_expr(expr);
             }
 
@@ -123,8 +144,11 @@ impl Compiler {
             }
 
             StmtKind::For { var, iter, body } => {
-                // Statement form: no collection (side-effect loop).
-                self.compile_for(var, iter, body, false, stmt_span);
+                // Statement form: a side-effect loop that allocates nothing,
+                // unless it sits in tail position — an implicit return or the
+                // last statement of a value-position branch — where the
+                // documented value-position rule makes it a mapping.
+                self.compile_for(var, iter, body, stmt_value_used, stmt_span);
             }
 
             StmtKind::While { condition, body } => {
@@ -203,7 +227,7 @@ impl Compiler {
         self.terms[for_tid.0 as usize].collect = collect;
         self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-        self.compile_loop_body(body_block, body, &phis, Some(var));
+        self.compile_loop_body(body_block, body, &phis, Some(var), collect);
         for_tid
     }
 
@@ -236,7 +260,9 @@ impl Compiler {
             c.compile_expr(condition);
         });
 
-        self.compile_loop_body(body_block, body, &phis, None);
+        // `while` has no collecting form, so its body's last statement is never
+        // in value position.
+        self.compile_loop_body(body_block, body, &phis, None, false);
         while_tid
     }
 

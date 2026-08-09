@@ -13,6 +13,9 @@ impl Compiler {
     }
 
     fn compile_expr_kind(&mut self, expr: &ExprKind, span: SourceSpan) -> TermId {
+        // Taken here, so every sub-expression compiled below is back in value
+        // position; only a discarded statement-level expression sees false.
+        let value_used = std::mem::replace(&mut self.value_used, true);
         match expr {
             ExprKind::Literal(lit) => {
                 let cv = match lit {
@@ -209,7 +212,7 @@ impl Compiler {
                 condition,
                 then_body,
                 else_body,
-            } => self.compile_if(condition, then_body, else_body.as_ref(), span),
+            } => self.compile_if(condition, then_body, else_body.as_ref(), value_used, span),
 
             ExprKind::Match { subject, arms } => self.compile_match(subject, arms, span),
 
@@ -249,12 +252,15 @@ impl Compiler {
                 self.push_scope(false);
                 let nil_cid = self.constants.intern(ConstantValue::Nil);
                 let mut last_tid = self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
-                for s in stmts {
+                for (i, s) in stmts.iter().enumerate() {
+                    let is_last = i + 1 == stmts.len();
                     match &s.kind {
                         StmtKind::Expr(e) => {
+                            self.value_used = value_used && is_last;
                             last_tid = self.compile_expr(e);
                         }
                         _ => {
+                            self.stmt_value_used = value_used && is_last;
                             self.compile_stmt(s);
                         }
                     }
@@ -362,11 +368,14 @@ impl Compiler {
         Some(self.emit_term(TermOp::Error(msg_cid), smallvec![], None))
     }
 
+    /// `value_used` is threaded down to the branch bodies: an `if` whose value
+    /// is consumed puts each branch's last statement in value position.
     fn compile_if(
         &mut self,
         condition: &Expr,
         then_body: &[Stmt],
         else_body: Option<&ElseBranch>,
+        value_used: bool,
         span: SourceSpan,
     ) -> TermId {
         let cond_tid = self.compile_expr(condition);
@@ -406,9 +415,7 @@ impl Compiler {
         // carries the names' latest values out (see `seed_arm_entry_copies`).
         self.compile_in_block(then_block, |c| {
             c.seed_arm_entry_copies(then_block, &phis);
-            for s in then_body {
-                c.compile_stmt(s);
-            }
+            c.compile_stmts(then_body, value_used);
             c.carry_slots.pop();
         });
 
@@ -417,11 +424,10 @@ impl Compiler {
             c.seed_arm_entry_copies(else_block, &phis);
             match else_body {
                 Some(ElseBranch::Block(stmts)) => {
-                    for s in stmts {
-                        c.compile_stmt(s);
-                    }
+                    c.compile_stmts(stmts, value_used);
                 }
                 Some(ElseBranch::ElseIf(expr)) => {
+                    c.value_used = value_used;
                     c.compile_expr(expr);
                 }
                 None => {

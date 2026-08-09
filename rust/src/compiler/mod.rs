@@ -71,6 +71,18 @@ pub struct Compiler {
     // Track loop nesting depth so state terms know if they're inside a loop
     loop_depth: u32,
 
+    // Value-position tracking, so a `for` in a position whose value is used
+    // collects into a list (see `compile_stmts`).
+    //
+    // `stmt_value_used` is set by `compile_stmts` for the final statement of a
+    // value-producing list and taken by `compile_stmt`. `value_used` says the
+    // expression about to be compiled has its value consumed; it defaults to
+    // true (nearly every expression is compiled in value position) and is
+    // taken — reset to true — at the top of `compile_expr_kind`, so only a
+    // discarded statement-level expression ever sees it false.
+    stmt_value_used: bool,
+    value_used: bool,
+
     // Declared type signatures of named functions, keyed by (name, arity) so
     // arity overloads keep distinct entries. Populated by `prescan_declarations`
     // and consulted by the type checker at call sites. Compile-time only.
@@ -227,6 +239,8 @@ impl Compiler {
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
             loop_depth: 0,
+            stmt_value_used: false,
+            value_used: true,
             overloaded_fns: HashMap::new(),
             overload_variants: HashMap::new(),
             block_rebinds: HashMap::new(),

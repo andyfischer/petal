@@ -446,6 +446,17 @@ fn doubled(xs)
 end
 ```
 
+**Tail positions count as value positions.** A loop that is the last statement
+of a function body (the implicit return), of a value-position `if` branch, or of
+a collecting loop's body collects just the same — no `return` or intermediate
+binding needed:
+
+```petal
+fn doubled(xs)
+    for x in xs do x * 2 end    // implicit return: [2, 4, 6] for [1, 2, 3]
+end
+```
+
 A `for` loop only produces a list when its value is actually used ("captured").
 A **bare `for` statement** runs purely for its side effects and allocates no
 list — so existing loops keep their zero-overhead behavior:
@@ -453,6 +464,17 @@ list — so existing loops keep their zero-overhead behavior:
 ```petal
 for i in range(0, 3) do
     print(i)          // side effects only, no list built
+end
+```
+
+A side-effect loop that happens to end a function is in tail position, so it
+does collect. Add a trailing `nil` when the caller has no use for the list and
+the allocation is worth avoiding:
+
+```petal
+fn draw_all(items)
+    for it in items do draw(it) end
+    nil               // side effects only again
 end
 ```
 
@@ -469,21 +491,17 @@ end
 // odds == [1, 3, 5, 7, 9]
 ```
 
-To build a nested list, **bind the inner loop** so its value is captured, then
-make it the body's last expression:
+Loops nest directly — the inner loop is in the outer body's tail position, so it
+collects and each outer iteration contributes a row:
 
 ```petal
 let grid = for row in range(0, 3) do
-    let cells = for col in range(0, 3) do
+    for col in range(0, 3) do
         row * 10 + col
     end
-    cells
 end
 // grid == [[0,1,2], [10,11,12], [20,21,22]]
 ```
-
-An inner loop written as a bare statement is *not* captured, so each outer
-iteration would collect `nil` — bind it (as above) when you want a nested list.
 
 `while` loops are statement-only: they have no collecting expression form.
 

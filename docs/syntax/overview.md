@@ -310,9 +310,10 @@ end
 
 Iterates over a list or range with `in … do … end`. A **bare** `for` statement
 runs for side effects only and allocates nothing. Used in **value position**
-(assigned, returned, passed as an argument, or as a list element) the same loop
-becomes a **mapping** that collects the last expression of each iteration into a
-list:
+(assigned, returned, passed as an argument, a list element, or sitting in a
+**tail position** — the last statement of a function body, of a value-position
+`if` branch, or of a collecting loop's body) the same loop becomes a **mapping**
+that collects the last expression of each iteration into a list:
 
 ```petal
 for item in [1, 2, 3] do print(item) end   // statement: side effects only
@@ -322,8 +323,8 @@ let squares = for i in range(1, 6) do i * i end
 ```
 
 Inside a collecting loop, `continue` filters (contributes nothing) and `break`
-ends collection, yielding what was gathered so far. To nest, **bind** the inner
-loop so its list value is captured as the body's last expression.
+ends collection, yielding what was gathered so far. Loops nest directly: an
+inner loop in the outer body's tail position collects, giving a list of lists.
 
 ### `while` (loop)
 

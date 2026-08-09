@@ -156,10 +156,10 @@ impl Compiler {
             None
         };
 
-        // Compile body (this may discover captures)
-        for s in body {
-            self.compile_stmt(s);
-        }
+        // Compile body (this may discover captures). The last statement is in
+        // value position: a function with no explicit `return` yields its body
+        // block's last term.
+        self.compile_stmts(body, true);
 
         self.end_function_scope(name, params, body_block, saved_block, self_ref_register)
     }

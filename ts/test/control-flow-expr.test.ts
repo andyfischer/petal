@@ -162,6 +162,35 @@ print(total)`;
   });
 });
 
+describe("for in tail position", () => {
+  it("a function's trailing for is its implicit return value", () => {
+    const src = `fn doubled(xs)
+  for x in xs do x * 2 end
+end
+print(doubled([1, 2, 3]))`;
+    expect(runPetal(src).trim()).toBe("[2, 4, 6]");
+  });
+
+  it("a trailing for in a value-position if branch collects", () => {
+    const src = `xs = if true then
+  for i in range(3) do i end
+else
+  []
+end
+print(xs)`;
+    expect(runPetal(src).trim()).toBe("[0, 1, 2]");
+  });
+
+  it("a trailing for in a discarded if branch stays a side-effect loop", () => {
+    const stmtIr = showIrJson(
+      "if true then\n  for i in range(3) do i end\nend",
+    );
+    for (const t of termsByOp(stmtIr, "NumericForLoop")) {
+      expect(t.collect ?? false).toBe(false);
+    }
+  });
+});
+
 describe("for as a statement (no collection)", () => {
   it("a bare for statement runs for side effects and allocates no list", () => {
     const src = `for i in range(3) do
@@ -184,17 +213,17 @@ end`;
   });
 });
 
-describe("nested for (strict collection: inner loop must be bound)", () => {
-  it("an unbound inner loop yields nil per outer iteration", () => {
-    // Documented behavior: a loop only collects when its value is bound. The
-    // inner loop here is a bare statement, so each outer iteration collects nil.
+describe("nested for", () => {
+  it("an inner loop in the outer body's tail position collects", () => {
+    // The last statement of a collecting loop's body is in value position, so
+    // the inner loop is a mapping too — no intermediate binding needed.
     const src = `print(for r in range(2) do
   for c in range(2) do r * 10 + c end
 end)`;
-    expect(runPetal(src).trim()).toBe("[nil, nil]");
+    expect(runPetal(src).trim()).toBe("[[0, 1], [10, 11]]");
   });
 
-  it("binding the inner loop produces a nested list (the idiom)", () => {
+  it("binding the inner loop produces the same nested list", () => {
     const src = `print(for r in range(2) do
   row = for c in range(2) do r * 10 + c end
   row

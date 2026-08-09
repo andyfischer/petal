@@ -346,12 +346,16 @@ impl Compiler {
     /// finalization. Optionally binds a loop variable phantom at the start
     /// of the body so `for` loops can name their iterator binding — pass
     /// `None` for `while` bodies.
+    ///
+    /// `collects` is set for a mapping `for`, whose body's last statement is in
+    /// value position (it becomes the element gathered for that iteration).
     pub(super) fn compile_loop_body(
         &mut self,
         body_block: BlockId,
         body: &[Stmt],
         phis: &[(String, TermId)],
         loop_var: Option<&str>,
+        collects: bool,
     ) {
         self.loop_depth += 1;
         let saved = self.set_block(body_block);
@@ -365,9 +369,7 @@ impl Compiler {
         let slots = self.emit_body_phi_ins(phis);
         self.carry_slots.push((body_block, slots));
 
-        for s in body {
-            self.compile_stmt(s);
-        }
+        self.compile_stmts(body, collects);
 
         self.wire_phi_outs(body_block, phis);
         self.carry_slots.pop();

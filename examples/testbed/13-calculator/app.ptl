@@ -1,0 +1,729 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Calculator — a Garden panel app.
+//
+// A full infix expression calculator: the keypad and the keyboard both build an
+// expression string, which is tokenized, converted to RPN by a shunting-yard
+// pass, and evaluated — live, every frame, so the readout previews the answer
+// while you are still typing it. Committed results land on a scrolling tape
+// that you can click to reuse.
+//
+// Run:  garden --headless --debug-port 0 --init layout.ptl
+// See README.md for controls.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────────
+let BG        = #0e1014
+let CARD      = #171a21
+let CARD_EDGE = #232833
+let KEY       = #1e222b
+let KEY_HOVER = #282e39
+let KEY_FN    = #171b22
+let KEY_FN_HI = #212632
+let TEXT      = #e8ecf3
+let DIM       = #7e8899
+let FAINT     = #4c5563
+let RULE      = #232833
+let AMBER     = #f2a65a
+let AMBER_HI  = #ffc98a
+let TEAL      = #6fb7c9
+let RED       = #e0776b
+let GREEN     = #7ec894
+let INK       = #14161b
+let SCROLL    = #3b4351
+
+// ── Type scale ───────────────────────────────────────────────────────────────
+// Four sizes, and only four. Bold degrades to regular in a Garden panel, so the
+// hierarchy is carried by size, color and spacing — and a tight scale is also a
+// workaround for a host glyph-atlas bug (see README / debrief) that mis-renders
+// newly-seen glyphs once a frame mixes many distinct font sizes.
+let T_MICRO = 11
+let T_SMALL = 15
+let T_BODY  = 22
+let T_HERO  = 40
+
+// ── Number parsing ───────────────────────────────────────────────────────────
+// `float("3.5")` rejects strings (only `int()` parses one), so decimals are
+// assembled by hand from the two sides of the dot.
+
+fn parse_num(s)
+  let parts = split(s, ".")
+  let ip = parts[0]
+  let v = 0.0
+  if len(ip) > 0 then
+    v = float(int(ip))
+  end
+  if len(parts) > 1 && len(parts[1]) > 0 then
+    let fs = parts[1]
+    if len(fs) > 15 then
+      fs = slice(fs, 0, 15)
+    end
+    let scale = 1.0
+    for i in range(0, len(fs)) do
+      scale = scale * 10.0
+    end
+    v = v + float(int(fs)) / scale
+  end
+  v
+end
+
+// ── Number formatting ────────────────────────────────────────────────────────
+
+fn fmt(v)
+  let a = abs(v)
+  if v == floor(v) && a < 1000000000000000.0 then
+    return str(int(v))
+  end
+  if a >= 1000000000.0 then
+    return str(v)
+  end
+  let s = str(round(v * 1000000000.0) / 1000000000.0)
+  if contains(s, ".") then
+    while len(s) > 1 && slice(s, len(s) - 1, len(s)) == "0" do
+      s = slice(s, 0, len(s) - 1)
+    end
+    if slice(s, len(s) - 1, len(s)) == "." then
+      s = slice(s, 0, len(s) - 1)
+    end
+  end
+  s
+end
+
+// Thousands separators, for display only — the grouped form is never parsed back.
+fn group(s)
+  let neg = false
+  let t = s
+  if len(t) > 0 && slice(t, 0, 1) == "-" then
+    neg = true
+    t = slice(t, 1, len(t))
+  end
+  let parts = split(t, ".")
+  let ip = parts[0]
+  let n = len(ip)
+  let out = ""
+  for i in range(0, n) do
+    if i > 0 && (n - i) % 3 == 0 then
+      out = out ++ ","
+    end
+    out = out ++ slice(ip, i, i + 1)
+  end
+  if len(parts) > 1 then
+    out = out ++ "." ++ parts[1]
+  end
+  if neg then
+    out = "-" ++ out
+  end
+  out
+end
+
+// ── Tokenizer ────────────────────────────────────────────────────────────────
+// Emits {t: "num"|"op"|"lp"|"rp", s, v}. A leading `-`/`+` — at the start of the
+// expression, after another operator, or after `(` — is unary; `u+` is dropped
+// outright and `u-` becomes a right-associative prefix operator.
+
+let DIGITS = "0123456789."
+let OPS = "+-*/%"
+
+fn tokenize(src)
+  let toks = []
+  let err = ""
+  let i = 0
+  let prev = "start"
+  while i < len(src) do
+    let c = slice(src, i, i + 1)
+    if contains(DIGITS, c) then
+      let num = ""
+      let dots = 0
+      while i < len(src) && contains(DIGITS, slice(src, i, i + 1)) do
+        let d = slice(src, i, i + 1)
+        if d == "." then
+          dots = dots + 1
+        end
+        num = num ++ d
+        i = i + 1
+      end
+      if dots > 1 then
+        err = "malformed number"
+      end
+      toks = append(toks, {t: "num", s: num, v: parse_num(num)})
+      prev = "num"
+    elsif c == "(" then
+      toks = append(toks, {t: "lp", s: "(", v: 0.0})
+      i = i + 1
+      prev = "lp"
+    elsif c == ")" then
+      toks = append(toks, {t: "rp", s: ")", v: 0.0})
+      i = i + 1
+      prev = "rp"
+    elsif contains(OPS, c) then
+      let op = c
+      if (c == "-" || c == "+") && (prev == "start" || prev == "op" || prev == "lp") then
+        op = if c == "-" then "u-" else "u+" end
+      end
+      if op != "u+" then
+        toks = append(toks, {t: "op", s: op, v: 0.0})
+      end
+      i = i + 1
+      prev = "op"
+    elsif c == " " then
+      i = i + 1
+    else
+      err = "unexpected '" ++ c ++ "'"
+      i = i + 1
+    end
+  end
+  {toks: toks, err: err}
+end
+
+// ── Shunting yard ────────────────────────────────────────────────────────────
+
+fn prec(op)
+  if op == "u-" then 3
+  elsif op == "*" || op == "/" || op == "%" then 2
+  else 1
+  end
+end
+
+fn to_rpn(toks)
+  let out = []
+  let ops = []
+  let err = ""
+  for tok in toks do
+    if err == "" then
+      if tok.t == "num" then
+        out = append(out, tok)
+      elsif tok.t == "lp" then
+        ops = append(ops, tok)
+      elsif tok.t == "rp" then
+        let closed = false
+        while !closed && len(ops) > 0 do
+          let top = ops[len(ops) - 1]
+          ops = slice(ops, 0, len(ops) - 1)
+          if top.t == "lp" then
+            closed = true
+          else
+            out = append(out, top)
+          end
+        end
+        if !closed then
+          err = "unbalanced )"
+        end
+      else
+        let go = true
+        while go && len(ops) > 0 do
+          let top = ops[len(ops) - 1]
+          if top.t == "op" && (prec(top.s) > prec(tok.s) || (prec(top.s) == prec(tok.s) && tok.s != "u-")) then
+            ops = slice(ops, 0, len(ops) - 1)
+            out = append(out, top)
+          else
+            go = false
+          end
+        end
+        ops = append(ops, tok)
+      end
+    end
+  end
+  while err == "" && len(ops) > 0 do
+    let top = ops[len(ops) - 1]
+    ops = slice(ops, 0, len(ops) - 1)
+    if top.t == "lp" then
+      err = "unclosed ("
+    else
+      out = append(out, top)
+    end
+  end
+  {rpn: out, err: err}
+end
+
+fn eval_rpn(rpn)
+  let st = []
+  let err = ""
+  for tok in rpn do
+    if err == "" then
+      if tok.t == "num" then
+        st = append(st, tok.v)
+      elsif tok.s == "u-" then
+        if len(st) < 1 then
+          err = "incomplete"
+        else
+          let a = st[len(st) - 1]
+          st = slice(st, 0, len(st) - 1)
+          st = append(st, -a)
+        end
+      else
+        if len(st) < 2 then
+          err = "incomplete"
+        else
+          let b = st[len(st) - 1]
+          let a = st[len(st) - 2]
+          st = slice(st, 0, len(st) - 2)
+          let r = 0.0
+          if tok.s == "+" then
+            r = a + b
+          elsif tok.s == "-" then
+            r = a - b
+          elsif tok.s == "*" then
+            r = a * b
+          elsif tok.s == "/" then
+            if b == 0.0 then
+              err = "divide by zero"
+            else
+              r = a / b
+            end
+          else
+            if b == 0.0 then
+              err = "divide by zero"
+            else
+              r = a - floor(a / b) * b
+            end
+          end
+          st = append(st, r)
+        end
+      end
+    end
+  end
+  if err == "" && len(st) != 1 then
+    err = "incomplete"
+  end
+  let v = 0.0
+  if len(st) > 0 then
+    v = st[len(st) - 1]
+  end
+  {ok: err == "", v: v, err: err}
+end
+
+fn eval_str(src)
+  if len(src) == 0 then
+    return {ok: true, v: 0.0, err: ""}
+  end
+  let tk = tokenize(src)
+  if tk.err != "" then
+    return {ok: false, v: 0.0, err: tk.err}
+  end
+  let rp = to_rpn(tk.toks)
+  if rp.err != "" then
+    return {ok: false, v: 0.0, err: rp.err}
+  end
+  eval_rpn(rp.rpn)
+end
+
+// Drop trailing operators so a half-typed "12 * " can still preview 12.
+fn trim_ops(src)
+  let out = src
+  while len(out) > 0 && contains(OPS, slice(out, len(out) - 1, len(out))) do
+    out = slice(out, 0, len(out) - 1)
+  end
+  out
+end
+
+// ── Expression editing helpers ───────────────────────────────────────────────
+
+fn last_char(s)
+  if len(s) == 0 then "" else slice(s, len(s) - 1, len(s)) end
+end
+
+// Toggle the sign of the number literal the caret is sitting on.
+fn toggle_sign(src)
+  if len(src) == 0 then
+    return "-"
+  end
+  if contains(OPS ++ "(", last_char(src)) then
+    return src ++ "(-"
+  end
+  let i = len(src)
+  while i > 0 && contains(DIGITS, slice(src, i - 1, i)) do
+    i = i - 1
+  end
+  let head = slice(src, 0, i)
+  let tail = slice(src, i, len(src))
+  if i > 0 && slice(src, i - 1, i) == "-" then
+    // Strip the minus, unless it is a binary subtraction between two operands.
+    let before = if i >= 2 then slice(src, i - 2, i - 1) else "" end
+    if i == 1 || contains(OPS ++ "(", before) then
+      return slice(src, 0, i - 1) ++ tail
+    end
+  end
+  head ++ "-" ++ tail
+end
+
+// ── Keypad model ─────────────────────────────────────────────────────────────
+// kind: digit | op | fn | mem | eq. `a` is the action id applied below.
+
+let KEYS = [
+  {l: "AC",   k: "clr", a: "clear"},
+  {l: "(",    k: "fn",  a: "("},
+  {l: ")",    k: "fn",  a: ")"},
+  {l: "DEL",  k: "fn",  a: "back"},
+  {l: "÷",    k: "op",  a: "/"},
+
+  {l: "7",    k: "digit", a: "7"},
+  {l: "8",    k: "digit", a: "8"},
+  {l: "9",    k: "digit", a: "9"},
+  {l: "mod",  k: "fn",    a: "%"},
+  {l: "×",    k: "op",    a: "*"},
+
+  {l: "4",    k: "digit", a: "4"},
+  {l: "5",    k: "digit", a: "5"},
+  {l: "6",    k: "digit", a: "6"},
+  {l: "M+",   k: "mem",   a: "mplus"},
+  {l: "−",    k: "op",    a: "-"},
+
+  {l: "1",    k: "digit", a: "1"},
+  {l: "2",    k: "digit", a: "2"},
+  {l: "3",    k: "digit", a: "3"},
+  {l: "M−",   k: "mem",   a: "mminus"},
+  {l: "+",    k: "op",    a: "+"},
+
+  {l: "0",    k: "digit", a: "0"},
+  {l: ".",    k: "digit", a: "."},
+  {l: "+/−",  k: "fn",    a: "sign"},
+  {l: "MR",   k: "mem",   a: "mrecall"},
+  {l: "=",    k: "eq",    a: "eq"},
+]
+
+// ── Persistent state ─────────────────────────────────────────────────────────
+
+state expr = "1920 / 1080"
+state err = ""
+state ans = ""
+state memory = 0.0
+state mem_set = false
+state tape = [
+  {e: "1440 * 0.75",        v: "1080"},
+  {e: "(96 + 240) / 4",     v: "84"},
+  {e: "18.5 * 3 + 12",      v: "67.5"},
+  {e: "365 * 24 * 60",      v: "525600"},
+  {e: "2 * 3.14159 * 6371", v: "40030.1738"},
+  {e: "1048576 / 1024",     v: "1024"},
+  {e: "(72 - 40) * 1.5",    v: "48"},
+]
+state tape_scroll = 0
+state flash_key = ""
+state flash_t = 0.0
+state presses = 0
+// Set the moment `=` lands: `src_line` is the expression that produced the
+// answer (shown above it), and `fresh` makes the next digit start a new entry
+// while an operator keeps building on the answer — the usual calculator feel.
+state src_line = ""
+state fresh = false
+
+// ── Layout ───────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let PAD = 26
+let GAP = 22
+let TAPE_W = 300
+let COL_W = W - PAD * 2 - GAP - TAPE_W
+let TOP = 74
+let FOOT = H - 44
+let DISP_H = 128
+let PADY = TOP + DISP_H + 22
+let PAD_H = FOOT - PADY - 8
+let KGAP = 11
+let KW = (COL_W - KGAP * 4) / 5
+let KH = (PAD_H - KGAP * 4) / 5
+
+let disp_r = rect(PAD, TOP, COL_W, DISP_H)
+let tape_r = rect(PAD + COL_W + GAP, TOP, TAPE_W, FOOT - TOP - 8)
+
+fn key_rect(i)
+  let col = i % 5
+  let row = i / 5
+  rect(PAD + col * (KW + KGAP), PADY + row * (KH + KGAP), KW, KH)
+end
+
+// ── Phase 1: hit-testing (before any state is applied) ───────────────────────
+
+let act = ""
+let act_label = ""
+
+for i in range(0, len(KEYS)) do
+  if clicked(key_rect(i)) then
+    act = KEYS[i].a
+    act_label = KEYS[i].l
+  end
+end
+
+// Keyboard: typed characters map straight onto keypad actions.
+let typed = text_input()
+if len(typed) > 0 then
+  let c = slice(typed, len(typed) - 1, len(typed))
+  if contains(DIGITS ++ OPS ++ "()", c) then
+    act = c
+  elsif c == "=" then
+    act = "eq"
+  elsif c == "c" || c == "C" then
+    act = "clear"
+  end
+end
+if key_pressed("return") || key_pressed("enter") then
+  act = "eq"
+end
+if key_pressed("backspace") then
+  act = "back"
+end
+if key_pressed("delete") then
+  act = "back"
+end
+if key_pressed("escape") then
+  act = "clear"
+end
+
+// Give the keyboard its matching key highlight.
+if act != "" && act_label == "" then
+  for i in range(0, len(KEYS)) do
+    if KEYS[i].a == act then
+      act_label = KEYS[i].l
+    end
+  end
+end
+
+// Memory chip in the display clears the store.
+let mem_chip = rect(disp_r.x + 18, disp_r.y + 16, 96, 22)
+if mem_set && clicked(mem_chip) then
+  memory = 0.0
+  mem_set = false
+end
+
+// Tape rows: click to append that result to the expression.
+let ROW_H = 46
+let tape_body = rect(tape_r.x, tape_r.y + 44, tape_r.w, tape_r.h - 44)
+let tape_rows = tape_body.h / ROW_H
+tape_scroll = scroll_update(tape_scroll, len(tape), tape_rows, tape_body)
+for i in range(0, min(tape_rows, len(tape) - tape_scroll)) do
+  let idx = i + tape_scroll
+  let rr = rect(tape_body.x, tape_body.y + i * ROW_H, tape_body.w, ROW_H)
+  if idx < len(tape) && clicked(rr) then
+    act = "paste:" ++ tape[idx].v
+  end
+end
+
+// ── Phase 2: apply the action ────────────────────────────────────────────────
+
+if act != "" then
+  presses = presses + 1
+  flash_key = act_label
+  flash_t = 1.0
+  err = ""
+
+  // A digit typed straight after `=` begins a new entry; an operator continues
+  // from the answer that is already sitting in `expr`.
+  if fresh && len(act) == 1 && contains(DIGITS ++ "(", act) then
+    expr = ""
+  end
+  if act != "eq" then
+    src_line = ""
+    fresh = false
+  end
+
+  if act == "clear" then
+    expr = ""
+    ans = ""
+  elsif act == "back" then
+    if len(expr) > 0 then
+      expr = slice(expr, 0, len(expr) - 1)
+    end
+  elsif act == "sign" then
+    expr = toggle_sign(expr)
+  elsif act == "mplus" || act == "mminus" then
+    let r = eval_str(trim_ops(expr))
+    if r.ok then
+      memory = if act == "mplus" then memory + r.v else memory - r.v end
+      mem_set = true
+    else
+      err = r.err
+    end
+  elsif act == "mrecall" then
+    if mem_set then
+      expr = expr ++ fmt(memory)
+    end
+  elsif act == "eq" then
+    let r = eval_str(expr)
+    if len(expr) == 0 then
+      ans = ""
+    elsif r.ok then
+      let out = fmt(r.v)
+      // `append` only pushes onto the tail, so a prepend is a flatten.
+      tape = flat([[{e: expr, v: out}], tape])
+      if len(tape) > 60 then
+        tape = slice(tape, 0, 60)
+      end
+      tape_scroll = 0
+      ans = out
+      src_line = expr ++ "  ="
+      expr = out
+      fresh = true
+    else
+      err = r.err
+    end
+  elsif len(act) > 6 && slice(act, 0, 6) == "paste:" then
+    expr = expr ++ slice(act, 6, len(act))
+  else
+    // A digit, a dot, an operator or a paren: plain append, with two guards.
+    let c = act
+    if contains(OPS, c) && contains(OPS, last_char(expr)) && c != "-" then
+      expr = slice(expr, 0, len(expr) - 1) ++ c
+    else
+      expr = expr ++ c
+    end
+  end
+end
+
+// Live evaluation: the exact expression first, then the trailing-operator-free
+// prefix, so a half-typed "12 *" still previews 12 instead of shouting.
+let live = eval_str(expr)
+let partial = false
+if !live.ok && live.err == "incomplete" then
+  let l2 = eval_str(trim_ops(expr))
+  if l2.ok then
+    live = l2
+    partial = true
+  end
+end
+
+flash_t = max(0.0, flash_t - dt() * 4.0)
+
+// ── Phase 3: draw ────────────────────────────────────────────────────────────
+
+clear(BG.r, BG.g, BG.b)
+
+// Header
+draw_text("CALCULATOR", {x: PAD, y: 26}, {size: T_SMALL, color: TEXT, spacing: 2.2})
+draw_text_right("infix · shunting-yard · petal", W - PAD, 29, T_MICRO, FAINT)
+draw_line({x: PAD, y: 56}, {x: W - PAD, y: 56}, RULE)
+
+// ── Display card ─────────────────────────────────────────────────────────────
+draw_rect_rounded(disp_r, 12, CARD)
+draw_rect_rounded(rect(disp_r.x, disp_r.y, disp_r.w, 1), 0, CARD_EDGE)
+
+// A status rail down the card's left edge: the readout's health at a glance.
+let rail = if len(expr) == 0 then FAINT elsif live.ok then AMBER else RED end
+draw_rect_rounded(rect(disp_r.x, disp_r.y + 16, 3, DISP_H - 32), 2, rail)
+
+// Top row of the card: the memory chip on the left, the last answer on the right.
+let mem_hot = mem_set && hovered(mem_chip)
+draw_rect_rounded(mem_chip, 6, if mem_hot then KEY_HOVER else KEY end)
+draw_rect_outline(mem_chip, CARD_EDGE)
+draw_text("M", {x: mem_chip.x + 9, y: mem_chip.y + 5}, {size: T_MICRO, color: if mem_set then TEAL else FAINT end})
+let mtxt = if mem_set then group(fmt(memory)) else "—" end
+draw_text_right(ellipsize_tail(mtxt, mem_chip.w - 40, T_MICRO), mem_chip.x + mem_chip.w - 9, mem_chip.y + 5, T_MICRO,
+                if mem_hot then TEXT else if mem_set then DIM else FAINT end end)
+
+if len(err) > 0 then
+  draw_text(err, {x: mem_chip.x + mem_chip.w + 14, y: disp_r.y + 19}, {size: T_SMALL, color: RED})
+elsif mem_set then
+  draw_text("click to clear", {x: mem_chip.x + mem_chip.w + 14, y: disp_r.y + 21}, {size: T_MICRO, color: FAINT})
+end
+if len(ans) > 0 then
+  draw_text_right("ans  " ++ ellipsize_tail(group(ans), 150, T_MICRO), disp_r.x + disp_r.w - 18, disp_r.y + 21, T_MICRO, FAINT)
+end
+
+// The expression being built — or, right after `=`, the one that produced the
+// answer below, so the card reads as a two-line statement instead of an echo.
+let expr_shown = if len(src_line) > 0 then src_line elsif len(expr) == 0 then "0" else expr end
+let expr_col = if len(expr) == 0 && len(src_line) == 0 then FAINT else DIM end
+draw_text_right(ellipsize_tail(expr_shown, disp_r.w - 36, T_BODY), disp_r.x + disp_r.w - 18, disp_r.y + 44, T_BODY, expr_col)
+
+// The live readout.
+let read_txt = "0"
+let read_col = FAINT
+if len(expr) > 0 then
+  if live.ok then
+    read_txt = group(fmt(live.v))
+    read_col = if partial then DIM else AMBER end
+  else
+    read_txt = "—"
+    read_col = RED
+  end
+end
+let read_size = T_HERO
+if text_width(read_txt, read_size) > disp_r.w - 36 then
+  read_size = T_BODY
+end
+draw_text_right(ellipsize_tail(read_txt, disp_r.w - 36, read_size), disp_r.x + disp_r.w - 18, disp_r.y + 74, read_size, read_col)
+
+// ── Keypad ───────────────────────────────────────────────────────────────────
+for i in range(0, len(KEYS)) do
+  let k = KEYS[i]
+  let r = key_rect(i)
+  let hot = hovered(r)
+  let held = hot && mouse_down(0)
+  let bg = KEY
+  let fg = TEXT
+  let size = T_BODY
+  if k.k == "fn" || k.k == "mem" || k.k == "clr" then
+    bg = if hot then KEY_FN_HI else KEY_FN end
+    size = T_SMALL
+  else
+    bg = if hot then KEY_HOVER else KEY end
+  end
+  if k.k == "op" then
+    fg = AMBER
+    size = T_BODY
+  elsif k.k == "mem" then
+    fg = TEAL
+  elsif k.k == "clr" then
+    fg = RED
+  elsif k.k == "fn" then
+    fg = DIM
+  end
+  if k.k == "eq" then
+    bg = if hot then AMBER_HI else AMBER end
+    fg = INK
+    size = T_BODY
+  end
+  if held then
+    bg = KEY_FN_HI
+  end
+
+  draw_rect_rounded(r, 10, bg)
+  if k.k != "eq" then
+    draw_rect_rounded(rect(r.x, r.y, r.w, 1), 0, CARD_EDGE)
+  end
+  // Press flash: a ring that fades out, so a key struck from the keyboard reads
+  // the same as one clicked. A wash would muddy the palette; an outline does not.
+  if flash_key == k.l && flash_t > 0.0 then
+    let ring = if k.k == "eq" then INK else AMBER end
+    draw_rect_rounded(r.x, r.y, r.w, r.h, 10, ring.r, ring.g, ring.b, int(flash_t * 26.0))
+    draw_rect_outline(r.x, r.y, r.w, r.h, ring.r, ring.g, ring.b, int(flash_t * 200.0), 2)
+  end
+  let tx = r.x + (r.w - text_width(k.l, size)) / 2
+  let ty = r.y + (r.h - size) / 2 - 1
+  draw_text(k.l, {x: tx, y: ty}, size, fg)
+end
+
+// ── Tape ─────────────────────────────────────────────────────────────────────
+draw_rect_rounded(tape_r, 12, CARD)
+draw_text("TAPE", {x: tape_r.x + 16, y: tape_r.y + 16}, {size: T_MICRO, color: DIM, spacing: 2.2})
+draw_text_right(str(len(tape)), tape_r.x + tape_r.w - 16, tape_r.y + 16, T_MICRO, FAINT)
+draw_line({x: tape_r.x + 16, y: tape_r.y + 40}, {x: tape_r.x + tape_r.w - 16, y: tape_r.y + 40}, RULE)
+
+clip(tape_body.x, tape_body.y, tape_body.w, tape_body.h)
+for i in range(0, min(tape_rows, len(tape) - tape_scroll)) do
+  let idx = i + tape_scroll
+  let rr = rect(tape_body.x, tape_body.y + i * ROW_H, tape_body.w, ROW_H)
+  let hot = hovered(rr)
+  if hot then
+    draw_rect(rect(rr.x + 8, rr.y + 3, rr.w - 16, rr.h - 6), KEY_FN_HI)
+  end
+  let vcol = if idx == 0 then AMBER else TEXT end
+  draw_text(ellipsize(tape[idx].e, rr.w - 34, T_MICRO), {x: rr.x + 16, y: rr.y + 7}, {size: T_MICRO, color: FAINT})
+  draw_text_right(ellipsize_tail(group(tape[idx].v), rr.w - 34, T_SMALL), rr.x + rr.w - 16, rr.y + 22, T_SMALL, vcol)
+  if i > 0 then
+    draw_line({x: rr.x + 16, y: rr.y}, {x: rr.x + rr.w - 16, y: rr.y}, RULE)
+  end
+end
+clip_none()
+// The prelude's draw_scrollbar paints in its own (light) theme colors, so the
+// tape draws its own in this palette.
+if len(tape) > tape_rows then
+  let track = rect(tape_r.x + tape_r.w - 9, tape_body.y + 4, 3, tape_body.h - 8)
+  draw_rect_rounded(track, 2, KEY)
+  let th = max(24, track.h * tape_rows / len(tape))
+  let ty = track.y + (track.h - th) * tape_scroll / (len(tape) - tape_rows)
+  draw_rect_rounded(rect(track.x, ty, track.w, th), 2, SCROLL)
+end
+
+// ── Footer ───────────────────────────────────────────────────────────────────
+let hints = fit_parts(["0-9 . ( )  and  + − × ÷ %", "Enter =", "Esc clears", "click a tape row to reuse it"], W - PAD * 2, T_MICRO)
+draw_text(hints, {x: PAD, y: FOOT + 14}, {size: T_MICRO, color: FAINT})

@@ -396,6 +396,130 @@ mod tests {
         );
     }
 
+    /// Rasterize the first glyph of `text` at `size` and return the pixel
+    /// height of the resulting bitmap. This is the raster stage only — the
+    /// same path `TextRenderer::prepare` takes to fill the glyph atlas.
+    fn raster_height(
+        fs: &mut FontSystem,
+        swash: &mut SwashCache,
+        family: Option<&str>,
+        text: &str,
+        size: f32,
+    ) -> u32 {
+        let mut buffer = glyphon::Buffer::new(fs, Metrics::new(size, size * LINE_HEIGHT_RATIO));
+        buffer.set_text(fs, text, &TextStack::attrs(family), Shaping::Advanced, None);
+        buffer.shape_until_scroll(fs, false);
+        let key = buffer
+            .layout_runs()
+            .next()
+            .expect("one layout run")
+            .glyphs
+            .first()
+            .expect("at least one glyph")
+            .physical((0.0, 0.0), 1.0)
+            .cache_key;
+        swash
+            .get_image_uncached(fs, key)
+            .expect("glyph rasterizes")
+            .placement
+            .height
+    }
+
+    /// A glyph must rasterize at the size it was asked for, no matter how many
+    /// other sizes the process has already drawn.
+    ///
+    /// swash caches hinting instances in a fixed-size table
+    /// (`MAX_CACHED_HINT_INSTANCES = 8`). Through swash 0.2.8, evicting an entry
+    /// reconfigured the instance to the new size but left the entry's recorded
+    /// `size` at the old value, so the *next* request for that old size matched
+    /// the stale entry and rasterized at the wrong size — while layout, which
+    /// never consults the hinting cache, kept reporting the right advances. The
+    /// visible result was text drawn at a stale size on correct advances once a
+    /// panel used more than eight distinct sizes, with `/scene` still reporting
+    /// the requested size. Fixed in swash 0.2.10; this pins it.
+    #[test]
+    fn glyphs_rasterize_at_their_own_size_past_the_hinting_cache_limit() {
+        // Comfortably more than MAX_CACHED_HINT_INSTANCES, so the table is
+        // forced to evict; a panel with a real type scale hits this easily.
+        const SIZES: [f32; 12] = [
+            10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 40.0, 48.0, 56.0,
+        ];
+
+        let (mut fs, family) = build_font_system(false);
+        let mut swash = SwashCache::new();
+
+        // Cold pass: every size is seen for the first time.
+        let cold: Vec<u32> = SIZES
+            .iter()
+            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "H", s))
+            .collect();
+
+        // Warm pass: the hinting table is now full, so each of these lookups
+        // goes through the eviction path that used to corrupt the entry.
+        let warm: Vec<u32> = SIZES
+            .iter()
+            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "H", s))
+            .collect();
+
+        assert_eq!(
+            cold, warm,
+            "a glyph rasterized to a different size on a warm hinting cache: \
+             cold={cold:?} warm={warm:?}"
+        );
+
+        // And the raster must actually track the requested size, in both passes
+        // — equal-but-wrong would satisfy the check above.
+        for pass in [&cold, &warm] {
+            for w in pass.windows(2) {
+                assert!(
+                    w[1] >= w[0],
+                    "raster height must not shrink as size grows: {pass:?}"
+                );
+            }
+            assert!(
+                pass[pass.len() - 1] > pass[0] * 2,
+                "56px must rasterize much taller than 10px: {pass:?}"
+            );
+        }
+    }
+
+    /// A brand-new glyph introduced into a warm cache must also come out at its
+    /// own size — the exact shape of the Garden bug (a panel hot-reloads, new
+    /// characters appear, and they rasterize at a stale size).
+    #[test]
+    fn a_new_glyph_in_a_warm_cache_rasterizes_at_its_own_size() {
+        const SIZES: [f32; 10] = [
+            10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 44.0, 56.0,
+        ];
+        let (mut fs, family) = build_font_system(false);
+        let mut swash = SwashCache::new();
+
+        // Warm every size on one glyph, filling the hinting table.
+        for &s in &SIZES {
+            raster_height(&mut fs, &mut swash, family.as_deref(), "H", s);
+        }
+
+        // Now a different glyph at the same sizes, and a reference measurement
+        // of that glyph taken on a completely cold cache.
+        let warm: Vec<u32> = SIZES
+            .iter()
+            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "B", s))
+            .collect();
+
+        let (mut cold_fs, cold_family) = build_font_system(false);
+        let mut cold_swash = SwashCache::new();
+        let cold: Vec<u32> = SIZES
+            .iter()
+            .map(|&s| raster_height(&mut cold_fs, &mut cold_swash, cold_family.as_deref(), "B", s))
+            .collect();
+
+        assert_eq!(
+            cold, warm,
+            "a new glyph rasterized differently in a warm process: \
+             cold={cold:?} warm={warm:?}"
+        );
+    }
+
     /// Shape `text` and return the `(font_id, glyph_id)` of its first glyph.
     /// A `glyph_id` of 0 is the notdef ("tofu") box; a `font_id` other than the
     /// primary face's means cosmic-text fell back to a covering font.

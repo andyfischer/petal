@@ -5,8 +5,6 @@
 //! `Env` holds a map of these keyed by [`ContextKey`]; each `Stack` links to
 //! its context by key. With a single default context, behavior is identical to
 //! the pre-extraction `Env`.
-//!
-//! See the "Speculative execution" section of docs/program-modification.md.
 
 use std::collections::HashMap;
 
@@ -23,8 +21,7 @@ use crate::value::{PendingId, Value};
 pub struct ContextKey(pub u32);
 
 /// One isolated execution's mutable bundle: the heap + the runtime registries
-/// that reference it. Does NOT own the Stack. [`fork`](Self::fork) yields an
-/// isolated copy sharing no mutable state with the source.
+/// that reference it. Does NOT own the Stack.
 pub struct ExecutionContext {
     pub heap: Heap,
     pub closures: Vec<RuntimeClosure>,
@@ -87,7 +84,7 @@ pub struct ExecutionContext {
     pub emit_origins: HashMap<SymbolId, Vec<EmitSite>>,
 }
 
-/// Where one buffered value was emitted from: the native's own call site,
+/// EmitSite - Where one buffered value was emitted from: the native's own call site,
 /// followed by the return address of each enclosing call, innermost first.
 ///
 /// A chain rather than a single site because the call a *user* means is rarely
@@ -147,16 +144,12 @@ impl ExecutionContext {
             output_buffers: HashMap::new(),
             // A speculative fork must not print to real stdout.
             echo: false,
-            // Copy the parent's RNG/noise state so the fork starts from the same
-            // point, then advances independently — the parent's stream is
-            // unaffected by anything the fork draws.
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,
             // Snapshot resource state so a fork observes the same resolution
             // status as its source at fork time, then diverges independently —
             // exactly how the heap is forked above.
             resources: self.resources.clone(),
-            // A fork observes the same frame as its source at fork time.
             frame: self.frame,
             // A fork inherits the trace setting but starts with an empty log —
             // its absorptions are its own, captured separately from the source's.

@@ -1,0 +1,810 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  PETAL PAINT — a vector drawing surface for a Garden panel.
+//
+//  Strokes are stored as records with points in artboard-normalized
+//  coordinates (0..1), so the drawing survives a pane resize. Every frame
+//  re-renders the whole stroke list; there is no pixel buffer.
+//
+//  Designed for a 1280x850 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Chrome palette ───────────────────────────────────────────────────────
+let BG      = #0c0e13
+let PANEL   = #13171f
+let ELEV    = #1a1f2a
+let HOVER   = #232a37
+let OUTLINE = #2a3240
+let TEXT    = #e8ecf4
+let DIM     = #8a94a7
+let FAINT   = #5b6577
+let ACCENT  = #6ea8ff
+let PAPER   = #f7f5f0
+
+// ── Ink palette (what you paint with) ────────────────────────────────────
+let INKS = [
+  #17191f, #55606f, #9aa3b2, #ffffff, #b5651d, #2f6fed,
+  #d64550, #f08a3c, #e8c34a, #79b74a, #2bb39a, #8b5cf6,
+]
+
+let TOOLS = [
+  {id: "brush",   name: "Brush",      key: "1", hint: "freehand"},
+  {id: "line",    name: "Line",       key: "2", hint: "click-drag"},
+  {id: "rect",    name: "Rectangle",  key: "3", hint: "click-drag"},
+  {id: "ellipse", name: "Ellipse",    key: "4", hint: "click-drag"},
+  {id: "eraser",  name: "Eraser",     key: "5", hint: "paints paper"},
+  {id: "fill",    name: "Flood fill", key: "6", hint: "click"},
+]
+
+let TAU = 6.28318530718
+
+// ── Small helpers ────────────────────────────────────────────────────────
+
+fn hex_digit(n)
+  slice("0123456789ABCDEF", n, n + 1)
+end
+
+fn hex2(n)
+  hex_digit(n / 16) ++ hex_digit(n % 16)
+end
+
+fn hex_of(c)
+  "#" ++ hex2(c.r) ++ hex2(c.g) ++ hex2(c.b)
+end
+
+fn luma(c)
+  (c.r * 299 + c.g * 587 + c.b * 114) / 1000
+end
+
+fn on_color(c)
+  if luma(c) > 140 then #101319 else #f4f6fa end
+end
+
+fn mix(a, b, t)
+  {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
+   g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+   b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+end
+
+fn seg(x1, y1, x2, y2, c, a, wd)
+  draw_line(int(x1), int(y1), int(x2), int(y2), c.r, c.g, c.b, a, max(1, int(wd)))
+end
+
+fn dot(x, y, rad, c, a)
+  draw_circle(int(x), int(y), max(1, int(rad)), c.r, c.g, c.b, a)
+end
+
+fn label(s, x, y, c)
+  draw_text(s, {x: x, y: y}, {size: 10, color: c, spacing: 2})
+end
+
+// ── Stroke geometry ──────────────────────────────────────────────────────
+
+fn to_px(art, p)
+  {x: float(art.x) + p[0] * float(art.w), y: float(art.y) + p[1] * float(art.h)}
+end
+
+fn to_uv(art, mx, my)
+  [clamp(float(mx - art.x) / float(art.w), 0.0, 1.0),
+   clamp(float(my - art.y) / float(art.h), 0.0, 1.0)]
+end
+
+fn ellipse_outline(cx, cy, rx, ry, c, a, wd)
+  let n = 60
+  let px = cx + rx
+  let py = cy
+  for i in range(1, n + 1) do
+    let t = float(i) * TAU / float(n)
+    let qx = cx + rx * cos(t)
+    let qy = cy + ry * sin(t)
+    seg(px, py, qx, qy, c, a, wd)
+    px = qx
+    py = qy
+  end
+end
+
+fn stroke_bbox(art, s)
+  if len(s.pts) == 0 then
+    art
+  else
+    let a = to_px(art, s.pts[0])
+    let x0 = a.x
+    let y0 = a.y
+    let x1 = a.x
+    let y1 = a.y
+    for p in s.pts do
+      let q = to_px(art, p)
+      x0 = min(x0, q.x)
+      y0 = min(y0, q.y)
+      x1 = max(x1, q.x)
+      y1 = max(y1, q.y)
+    end
+    let pad = float(s.size) / 2.0 + 3.0
+    rect(int(x0 - pad), int(y0 - pad), int(x1 - x0 + pad * 2.0), int(y1 - y0 + pad * 2.0))
+  end
+end
+
+fn draw_stroke(art, s)
+  let c = s.color
+  let a = s.alpha
+  let wd = s.size
+  if s.kind == "fill" then
+    draw_rect(art, c, a)
+  elsif s.kind == "brush" || s.kind == "eraser" then
+    let prev = to_px(art, s.pts[0])
+    if a >= 250 || len(s.pts) == 1 then
+      dot(prev.x, prev.y, float(wd) / 2.0, c, a)
+    end
+    for i in range(1, len(s.pts)) do
+      let q = to_px(art, s.pts[i])
+      seg(prev.x, prev.y, q.x, q.y, c, a, wd)
+      if wd >= 4 && a >= 250 then
+        dot(q.x, q.y, float(wd) / 2.0, c, a)
+      end
+      prev = q
+    end
+  elsif len(s.pts) >= 2 then
+    let p = to_px(art, s.pts[0])
+    let q = to_px(art, s.pts[1])
+    if s.kind == "line" then
+      seg(p.x, p.y, q.x, q.y, c, a, wd)
+      dot(p.x, p.y, float(wd) / 2.0, c, a)
+      dot(q.x, q.y, float(wd) / 2.0, c, a)
+    elsif s.kind == "rect" then
+      let x0 = min(p.x, q.x)
+      let y0 = min(p.y, q.y)
+      let x1 = max(p.x, q.x)
+      let y1 = max(p.y, q.y)
+      seg(x0, y0, x1, y0, c, a, wd)
+      seg(x1, y0, x1, y1, c, a, wd)
+      seg(x1, y1, x0, y1, c, a, wd)
+      seg(x0, y1, x0, y0, c, a, wd)
+    elsif s.kind == "ellipse" then
+      ellipse_outline((p.x + q.x) / 2.0, (p.y + q.y) / 2.0,
+                      abs(q.x - p.x) / 2.0, abs(q.y - p.y) / 2.0, c, a, wd)
+    end
+  end
+end
+
+// ── Seeded artwork ───────────────────────────────────────────────────────
+
+fn mk(kind, color, size, pts)
+  {kind: kind, color: color, size: size, alpha: 255, pts: pts}
+end
+
+fn mk(kind, color, size, alpha, pts)
+  {kind: kind, color: color, size: size, alpha: alpha, pts: pts}
+end
+
+fn tick(x, y0, y1)
+  mk("brush", #79b74a, 2, [[x, y0], [x + 0.006, y1]])
+end
+
+fn seed_artwork()
+  let out = []
+  // wash of sky
+  out = append(out, mk("fill", #dfe7ef, 0, 130, []))
+  // sun
+  out = append(out, mk("ellipse", #e8c34a, 3, [[0.735, 0.10], [0.865, 0.29]]))
+  out = append(out, mk("ellipse", #e8c34a, 2, 90, [[0.705, 0.075], [0.895, 0.315]]))
+  // far ridge
+  out = append(out, mk("brush", #9aa3b2, 3, [
+    [0.02, 0.50], [0.11, 0.38], [0.19, 0.45], [0.30, 0.28], [0.41, 0.44],
+    [0.52, 0.34], [0.63, 0.47], [0.75, 0.37], [0.87, 0.48], [0.98, 0.42],
+  ]))
+  // near ridge
+  out = append(out, mk("brush", #55606f, 4, [
+    [0.02, 0.63], [0.13, 0.55], [0.22, 0.60], [0.33, 0.47], [0.45, 0.61],
+    [0.56, 0.53], [0.68, 0.64], [0.80, 0.56], [0.90, 0.63], [0.98, 0.58],
+  ]))
+  // horizon
+  out = append(out, mk("line", #9aa3b2, 2, [[0.02, 0.735], [0.98, 0.735]]))
+  // water
+  out = append(out, mk("brush", #2bb39a, 3, 150, [
+    [0.06, 0.80], [0.16, 0.785], [0.26, 0.805], [0.36, 0.79], [0.46, 0.81],
+    [0.56, 0.792], [0.66, 0.812], [0.76, 0.795], [0.86, 0.815], [0.94, 0.80],
+  ]))
+  out = append(out, mk("brush", #2bb39a, 2, 110, [
+    [0.12, 0.875], [0.24, 0.86], [0.36, 0.882], [0.48, 0.866], [0.60, 0.886],
+    [0.72, 0.868], [0.84, 0.888],
+  ]))
+  // cabin
+  out = append(out, mk("rect", #17191f, 3, [[0.115, 0.615], [0.215, 0.735]]))
+  out = append(out, mk("brush", #b5651d, 3, [[0.098, 0.618], [0.165, 0.552], [0.232, 0.618]]))
+  out = append(out, mk("rect", #e8c34a, 2, [[0.145, 0.645], [0.185, 0.682]]))
+  // grass
+  out = append(out, tick(0.30, 0.735, 0.700))
+  out = append(out, tick(0.325, 0.735, 0.708))
+  out = append(out, tick(0.35, 0.735, 0.697))
+  out = append(out, tick(0.66, 0.735, 0.704))
+  out = append(out, tick(0.685, 0.735, 0.694))
+  out = append(out, tick(0.71, 0.735, 0.710))
+  // birds
+  out = append(out, mk("brush", #55606f, 2, [[0.46, 0.175], [0.483, 0.160], [0.506, 0.176]]))
+  out = append(out, mk("brush", #55606f, 2, [[0.535, 0.215], [0.552, 0.204], [0.569, 0.216]]))
+  out
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+fn build_layout(w, h, nrows)
+  let header_h = 64
+  let rail_w = 76
+  let panel_w = 300
+  let status_h = 36
+
+  let header = rect(0, 0, w, header_h)
+  let status = rect(0, h - status_h, w, status_h)
+  let rail = rect(0, header_h, rail_w, h - header_h - status_h)
+  let panel = rect(w - panel_w, header_h, panel_w, h - header_h - status_h)
+  let canvas = rect(rail_w, header_h, w - rail_w - panel_w, h - header_h - status_h)
+  let art = rect(canvas.x + 34, canvas.y + 30, canvas.w - 68, canvas.h - 60)
+
+  // header action pills, right aligned
+  let bw = 78
+  let bh = 30
+  let by = (header_h - bh) / 2
+  let bx = w - 24 - bw
+  let btn_clear = rect(bx, by, bw, bh)
+  let btn_redo = rect(bx - bw - 8, by, bw, bh)
+  let btn_undo = rect(bx - (bw + 8) * 2, by, bw, bh)
+  let btn_grid = rect(bx - (bw + 8) * 2 - 8 - 66, by, 66, bh)
+
+  // tool rail
+  let tool_rects = []
+  let ty = rail.y + 24
+  for i in range(0, len(TOOLS)) do
+    tool_rects = append(tool_rects, rect(rail.x + 12, ty, 52, 52))
+    ty = ty + 62
+  end
+
+  // right panel
+  let px = panel.x + 24
+  let pw = panel_w - 48
+  let y = panel.y + 22
+  let lbl_color = y
+  y = y + 22
+  let chip = rect(px, y, pw, 50)
+  y = y + 50 + 14
+  let sw = (pw - 5 * 8) / 6
+  let swatches = []
+  for i in range(0, len(INKS)) do
+    let col = i % 6
+    let row = i / 6
+    swatches = append(swatches, rect(px + col * (sw + 8), y + row * 38, sw, 30))
+  end
+  y = y + 68 + 24
+  let lbl_brush = y
+  y = y + 22
+  let size_row = y
+  y = y + 18
+  let size_slider = rect(px, y, pw, 20)
+  y = y + 20 + 16
+  let alpha_row = y
+  y = y + 18
+  let alpha_slider = rect(px, y, pw, 20)
+  y = y + 20 + 14
+  let preview = rect(px, y, pw, 56)
+  y = y + 56 + 22
+  let lbl_hist = y
+  y = y + 22
+  let list_h = panel.y + panel.h - 20 - y
+  let list_r = rect(px, y, pw, list_h)
+  let row_h = 32
+  let cap = min(nrows, list_h / row_h)
+  let rows = []
+  for i in range(0, cap) do
+    rows = append(rows, rect(px, y + i * row_h, pw, row_h - 4))
+  end
+
+  {header: header, status: status, rail: rail, panel: panel, canvas: canvas,
+   art: art, btn_undo: btn_undo, btn_redo: btn_redo, btn_clear: btn_clear,
+   btn_grid: btn_grid, tool_rects: tool_rects, px: px, pw: pw,
+   lbl_color: lbl_color, chip: chip, swatches: swatches, lbl_brush: lbl_brush,
+   size_row: size_row, size_slider: size_slider, alpha_row: alpha_row,
+   alpha_slider: alpha_slider, preview: preview, lbl_hist: lbl_hist,
+   list_r: list_r, rows: rows}
+end
+
+// ── Chrome widgets ───────────────────────────────────────────────────────
+
+fn plate(r, radius, fill, edge)
+  draw_rect_rounded(r.inset(-1), radius + 1, edge)
+  draw_rect_rounded(r, radius, fill)
+end
+
+fn pill(r, text, keycap, on, enabled)
+  let hov = enabled && hovered(r)
+  let fill = if on then ACCENT elsif hov then HOVER else ELEV end
+  let edge = if on then ACCENT else OUTLINE end
+  plate(r, 7, fill, edge)
+  let fg = if on then #0d1017 elsif enabled then TEXT else FAINT end
+  let kc = if on then #0d1017 elsif enabled then FAINT else #3c4453 end
+  let tw = text_width(text, 12)
+  let kw = text_width(keycap, 10)
+  let total = tw + 8 + kw
+  let tx = r.x + (r.w - total) / 2
+  draw_text(text, {x: tx, y: r.y + (r.h - 12) / 2 - 1}, 12, fg)
+  draw_text(keycap, {x: tx + tw + 8, y: r.y + (r.h - 10) / 2}, 10, kc)
+end
+
+fn tool_icon(id, r, c)
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  if id == "brush" then
+    let px = float(cx) - 10.0
+    let py = float(cy)
+    for i in range(1, 13) do
+      let f = float(i) / 12.0
+      let qx = float(cx) - 10.0 + f * 20.0
+      let qy = float(cy) + sin(f * TAU) * 5.5
+      seg(px, py, qx, qy, c, 255, 3)
+      px = qx
+      py = qy
+    end
+    dot(px, py, 1.5, c, 255)
+  elsif id == "line" then
+    seg(cx - 8, cy + 7, cx + 8, cy - 7, c, 255, 2)
+    dot(cx - 8, cy + 7, 2.5, c, 255)
+    dot(cx + 8, cy - 7, 2.5, c, 255)
+  elsif id == "rect" then
+    draw_rect_outline(cx - 9, cy - 7, 18, 14, c.r, c.g, c.b, 255, 2)
+  elsif id == "ellipse" then
+    ellipse_outline(float(cx), float(cy), 9.0, 7.5, c, 255, 2)
+  elsif id == "eraser" then
+    draw_rect_rounded(cx - 9, cy - 6, 18, 12, 3, c.r, c.g, c.b, 200)
+    seg(cx - 9, cy + 8, cx + 9, cy + 8, c, 255, 2)
+  elsif id == "fill" then
+    fill_poly([[cx - 8, cy - 1], [cx - 1, cy - 9], [cx + 7, cy - 1], [cx - 1, cy + 7]],
+              c.r, c.g, c.b, 220)
+    dot(cx + 8, cy + 6, 3.0, c, 255)
+  end
+end
+
+// The prelude keeps its menu rect private, and Garden's renderer draws every
+// text run above every quad — so text painted *before* the menu still shows
+// through it. Estimate the menu box and skip the text it will cover.
+fn menu_est(m)
+  let w = 170
+  let h = 122
+  let x = m.x
+  let y = m.y
+  if x + w > screen_width() then x = max(0, m.x - w) end
+  if y + h > screen_height() then y = max(0, m.y - h) end
+  rect(x, y, w, h)
+end
+
+fn overlaps(a, b)
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+end
+
+fn slider_track(r, t, c)
+  let ty = r.y + r.h / 2
+  draw_rect_rounded(r.x, ty - 3, r.w, 6, 3, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  let fw = int(float(r.w) * t)
+  if fw > 4 then
+    draw_rect_rounded(r.x, ty - 3, fw, 6, 3, c.r, c.g, c.b)
+  end
+  let kx = r.x + fw
+  dot(kx, ty, 9, #0c0e13, 255)
+  dot(kx, ty, 7, c, 255)
+end
+
+// ── Persistent document + tool state ─────────────────────────────────────
+
+state strokes = seed_artwork()
+state hist = []
+state fut = []
+state cur = {kind: "", color: #000000, size: 0, alpha: 0, pts: [], active: false}
+state tool = "brush"
+state ink = 0
+state brush = 5
+state opacity = 255
+state grid = false
+state sel = -1
+state menu = menu_state()
+state size_grab = false
+state alpha_grab = false
+state ops = 0
+
+// ── Frame ────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let mx = mouse_x()
+let my = mouse_y()
+let L = build_layout(W, H, len(strokes))
+let art = L.art
+let color = INKS[ink]
+let over_art = point_in(mx, my, art)
+let blocked = menu_blocking(menu)
+
+// ── Keyboard ─────────────────────────────────────────────────────────────
+for i in range(0, len(TOOLS)) do
+  if key_pressed(TOOLS[i].key) then
+    tool = TOOLS[i].id
+  end
+end
+if key_pressed("[") then brush = max(1, brush - 1) end
+if key_pressed("]") then brush = min(48, brush + 1) end
+if key_pressed("g") then grid = !grid end
+
+let want_undo = key_pressed("u") || (key_pressed("z") && mod_cmd() && !mod_shift())
+let want_redo = key_pressed("r") || (key_pressed("z") && mod_cmd() && mod_shift())
+let want_clear = key_pressed("c")
+
+// ── Pointer: mouse-down UI regions (sliders keep the grab) ───────────────
+if mouse_pressed(0) && hovered(L.size_slider) then size_grab = true end
+if mouse_pressed(0) && hovered(L.alpha_slider) then alpha_grab = true end
+if !mouse_down(0) then
+  size_grab = false
+  alpha_grab = false
+end
+if size_grab then
+  let t = clamp(float(mx - L.size_slider.x) / float(L.size_slider.w), 0.0, 1.0)
+  brush = 1 + int(round(t * 47.0))
+end
+if alpha_grab then
+  let t = clamp(float(mx - L.alpha_slider.x) / float(L.alpha_slider.w), 0.0, 1.0)
+  opacity = 25 + int(round(t * 230.0))
+end
+
+// ── Pointer: tools, swatches, history rows, header pills ─────────────────
+for i in range(0, len(TOOLS)) do
+  if !blocked && clicked(L.tool_rects[i]) then
+    tool = TOOLS[i].id
+  end
+end
+for i in range(0, len(INKS)) do
+  if !blocked && clicked(L.swatches[i]) then
+    ink = i
+  end
+end
+for i in range(0, len(L.rows)) do
+  let idx = len(strokes) - 1 - i
+  if !blocked && clicked(L.rows[i]) then
+    sel = if sel == idx then -1 else idx end
+  end
+  menu = menu_open_on_right_click(menu, L.rows[i], idx)
+end
+if !blocked && clicked(L.btn_grid) then grid = !grid end
+
+// ── Painting on the artboard ─────────────────────────────────────────────
+let kind = tool
+let paint_c = if tool == "eraser" then PAPER else color end
+let paint_w = if tool == "eraser" then brush * 3 else brush end
+let paint_a = if tool == "eraser" then 255 else opacity end
+
+let start_paint = over_art && mouse_pressed(0) && !size_grab && !alpha_grab && !blocked
+
+if start_paint && tool == "fill" then
+  hist = append(hist, strokes)
+  fut = []
+  strokes = append(strokes, mk("fill", color, 0, opacity, []))
+  ops = ops + 1
+  sel = -1
+elsif start_paint then
+  cur = {kind: kind, color: paint_c, size: paint_w, alpha: paint_a,
+         pts: [to_uv(art, mx, my)], active: true}
+  sel = -1
+end
+
+if cur.active && mouse_down(0) then
+  let uv = to_uv(art, mx, my)
+  if cur.kind == "brush" || cur.kind == "eraser" then
+    let lastp = last(cur.pts)
+    let dx = (uv[0] - lastp[0]) * float(art.w)
+    let dy = (uv[1] - lastp[1]) * float(art.h)
+    if dx * dx + dy * dy > 4.0 && len(cur.pts) < 900 then
+      cur.pts = append(cur.pts, uv)
+    end
+  else
+    cur.pts = [cur.pts[0], uv]
+  end
+end
+
+if cur.active && !mouse_down(0) then
+  let keep = cur.kind == "brush" || cur.kind == "eraser"
+  if !keep && len(cur.pts) >= 2 then
+    let p = to_px(art, cur.pts[0])
+    let q = to_px(art, cur.pts[1])
+    keep = abs(q.x - p.x) + abs(q.y - p.y) > 4.0
+  end
+  if keep then
+    hist = append(hist, strokes)
+    fut = []
+    strokes = append(strokes, {kind: cur.kind, color: cur.color, size: cur.size,
+                               alpha: cur.alpha, pts: cur.pts})
+    ops = ops + 1
+  end
+  cur = {kind: "", color: #000000, size: 0, alpha: 0, pts: [], active: false}
+end
+
+// ── Undo / redo / clear ──────────────────────────────────────────────────
+let hit_undo = !blocked && clicked(L.btn_undo) && len(hist) > 0
+let hit_redo = !blocked && clicked(L.btn_redo) && len(fut) > 0
+let hit_clear = !blocked && clicked(L.btn_clear) && len(strokes) > 0
+
+if (want_undo || hit_undo) && len(hist) > 0 then
+  fut = append(fut, strokes)
+  strokes = last(hist)
+  hist = drop_last(hist)
+  sel = -1
+  ops = ops + 1
+end
+if (want_redo || hit_redo) && len(fut) > 0 then
+  hist = append(hist, strokes)
+  strokes = last(fut)
+  fut = drop_last(fut)
+  sel = -1
+  ops = ops + 1
+end
+if (want_clear || hit_clear) && len(strokes) > 0 then
+  hist = append(hist, strokes)
+  fut = []
+  strokes = []
+  sel = -1
+  ops = ops + 1
+end
+if sel >= len(strokes) then sel = -1 end
+if len(hist) > 60 then hist = slice(hist, len(hist) - 60, len(hist)) end
+
+// ── Draw: background + canvas well ───────────────────────────────────────
+clear(BG.r, BG.g, BG.b)
+draw_rect(L.canvas, #090b0f)
+
+// artboard shadow, paper, strokes
+draw_rect_rounded(art.x - 1, art.y + 5, art.w + 2, art.h, 4, 0, 0, 0, 90)
+draw_rect(art, PAPER)
+clip(art.x, art.y, art.w, art.h)
+for s in strokes do
+  draw_stroke(art, s)
+end
+if cur.active && len(cur.pts) > 0 then
+  draw_stroke(art, cur)
+end
+if len(strokes) == 0 && !cur.active then
+  let ec = #b8b3a8
+  draw_text_center("blank canvas", art.x + art.w / 2, art.y + art.h / 2 - 22, 20, ec)
+  draw_text_center("drag to paint  ·  press U to bring the sketch back",
+                   art.x + art.w / 2, art.y + art.h / 2 + 6, 12, ec)
+end
+if grid then
+  let gx = art.x + 40
+  while gx < art.x + art.w do
+    seg(gx, art.y, gx, art.y + art.h, #17191f, 22, 1)
+    gx = gx + 40
+  end
+  let gy = art.y + 40
+  while gy < art.y + art.h do
+    seg(art.x, gy, art.x + art.w, gy, #17191f, 22, 1)
+    gy = gy + 40
+  end
+end
+clip_none()
+draw_rect_outline(art.x, art.y, art.w, art.h, 0, 0, 0, 40)
+
+// selection marquee
+if sel >= 0 && sel < len(strokes) then
+  let bb = stroke_bbox(art, strokes[sel])
+  draw_rect_outline(bb.x, bb.y, bb.w, bb.h, ACCENT.r, ACCENT.g, ACCENT.b, 220, 1)
+  dot(bb.x, bb.y, 3, ACCENT, 255)
+  dot(bb.x + bb.w, bb.y, 3, ACCENT, 255)
+  dot(bb.x, bb.y + bb.h, 3, ACCENT, 255)
+  dot(bb.x + bb.w, bb.y + bb.h, 3, ACCENT, 255)
+end
+
+// brush cursor
+if over_art && !cur.active then
+  let cr = if tool == "eraser" then paint_w else brush end
+  if tool == "fill" then
+    dot(mx, my, 5, color, 200)
+    draw_circle(mx, my, 9, 255, 255, 255, 120)
+  elsif tool == "eraser" then
+    draw_circle(mx, my, max(4, cr / 2 + 2), 0, 0, 0, 70)
+    draw_circle(mx, my, max(3, cr / 2), PAPER.r, PAPER.g, PAPER.b, 210)
+  else
+    draw_circle(mx, my, max(3, cr / 2 + 1), 0, 0, 0, 90)
+    draw_circle(mx, my, max(2, cr / 2), color.r, color.g, color.b, 150)
+  end
+end
+
+// ── Draw: header ─────────────────────────────────────────────────────────
+draw_rect(L.header, PANEL)
+seg(0, L.header.h, W, L.header.h, #000000, 130, 1)
+
+dot(30, 24, 9, #d64550, 210)
+dot(41, 24, 9, #e8c34a, 210)
+dot(36, 33, 9, #2f6fed, 210)
+
+label("PETAL PAINT", 62, 15, DIM)
+draw_text("morning-ridge", {x: 62, y: 31}, 17, TEXT)
+draw_text("{art.w} × {art.h} pt   ·   {len(strokes)} strokes   ·   {len(hist)} undo",
+          {x: 62 + text_width("morning-ridge", 17) + 16, y: 36}, 11, FAINT)
+
+pill(L.btn_grid, "Grid", "G", grid, true)
+pill(L.btn_undo, "Undo", "U", false, len(hist) > 0)
+pill(L.btn_redo, "Redo", "R", false, len(fut) > 0)
+pill(L.btn_clear, "Clear", "C", false, len(strokes) > 0)
+
+// ── Draw: tool rail ──────────────────────────────────────────────────────
+draw_rect(L.rail, PANEL)
+seg(L.rail.w, L.rail.y, L.rail.w, L.rail.y + L.rail.h, #000000, 130, 1)
+
+let tip = -1
+for i in range(0, len(TOOLS)) do
+  let r = L.tool_rects[i]
+  let t = TOOLS[i]
+  let on = t.id == tool
+  let hov = hovered(r)
+  if hov then tip = i end
+  let fill = if on then ELEV elsif hov then HOVER else PANEL end
+  draw_rect_rounded(r, 10, fill)
+  if on then
+    draw_rect_rounded(r.x - 12, r.y + 14, 4, r.h - 28, 2, ACCENT.r, ACCENT.g, ACCENT.b)
+  end
+  let ic = if on then TEXT elsif hov then TEXT else DIM end
+  tool_icon(t.id, r, ic)
+  draw_text(t.key, {x: r.x + r.w - 12, y: r.y + r.h - 15}, 9,
+            if on then ACCENT else FAINT end)
+end
+
+// ── Draw: right panel ────────────────────────────────────────────────────
+draw_rect(L.panel, PANEL)
+seg(L.panel.x, L.panel.y, L.panel.x, L.panel.y + L.panel.h, #000000, 130, 1)
+
+label("COLOR", L.px, L.lbl_color, FAINT)
+plate(L.chip, 8, color, OUTLINE)
+let fgc = on_color(color)
+draw_text(hex_of(color), {x: L.chip.x + 14, y: L.chip.y + 13}, 16, fgc)
+draw_text("ink {ink + 1} of {len(INKS)}", {x: L.chip.x + 14, y: L.chip.y + 33}, 11,
+          mix(color, fgc, 0.55))
+draw_text_right("{opacity * 100 / 255}%", L.chip.x + L.chip.w - 14, L.chip.y + 20, 13, fgc)
+
+for i in range(0, len(INKS)) do
+  let r = L.swatches[i]
+  let c = INKS[i]
+  if i == ink then
+    draw_rect_rounded(r.inset(-3), 8, TEXT)
+  elsif hovered(r) then
+    draw_rect_rounded(r.inset(-2), 7, OUTLINE)
+  end
+  draw_rect_rounded(r, 5, c)
+end
+
+label("BRUSH", L.px, L.lbl_brush, FAINT)
+draw_text("Size", {x: L.px, y: L.size_row}, 12, DIM)
+draw_text_right("{brush} px", L.px + L.pw, L.size_row, 12, TEXT)
+slider_track(L.size_slider, float(brush - 1) / 47.0, ACCENT)
+
+draw_text("Opacity", {x: L.px, y: L.alpha_row}, 12, DIM)
+draw_text_right("{opacity * 100 / 255}%", L.px + L.pw, L.alpha_row, 12, TEXT)
+slider_track(L.alpha_slider, float(opacity - 25) / 230.0, mix(ACCENT, TEXT, 0.35))
+
+plate(L.preview, 8, PAPER, OUTLINE)
+clip(L.preview.x, L.preview.y, L.preview.w, L.preview.h)
+if tool == "eraser" then
+  seg(L.preview.x + 8, L.preview.y + L.preview.h / 2,
+      L.preview.x + L.preview.w - 8, L.preview.y + L.preview.h / 2, #55606f, 255, 26)
+end
+let pcy = float(L.preview.y + L.preview.h / 2)
+let ppx = float(L.preview.x + 14)
+let ppy = pcy
+for i in range(1, 33) do
+  let f = float(i) / 32.0
+  let qx = float(L.preview.x + 14) + f * float(L.preview.w - 28)
+  let qy = pcy + sin(f * TAU) * 15.0
+  seg(ppx, ppy, qx, qy, paint_c, paint_a, paint_w)
+  ppx = qx
+  ppy = qy
+end
+clip_none()
+
+label("HISTORY", L.px, L.lbl_hist, FAINT)
+if len(strokes) == 0 then
+  draw_text("empty canvas", {x: L.px, y: L.list_r.y + 4}, 12, FAINT)
+end
+let mcover = if menu.open then menu_est(menu) else rect(-9999, -9999, 0, 0) end
+for i in range(0, len(L.rows)) do
+  let r = L.rows[i]
+  let hidden = overlaps(r, mcover)
+  let idx = len(strokes) - 1 - i
+  let s = strokes[idx]
+  let on = idx == sel
+  if on then
+    draw_rect_rounded(r, 6, ELEV)
+    draw_rect_rounded(r.x, r.y + 6, 3, r.h - 12, 2, ACCENT.r, ACCENT.g, ACCENT.b)
+  elsif hovered(r) then
+    draw_rect_rounded(r, 6, HOVER, 150)
+  end
+  draw_rect_rounded(r.x + 10, r.y + 8, 14, 14, 4, PAPER.r, PAPER.g, PAPER.b)
+  draw_rect_rounded(r.x + 13, r.y + 11, 8, 8, 3, s.color.r, s.color.g, s.color.b, s.alpha)
+  let nm = if s.kind == "fill" then "Fill" elsif s.kind == "brush" then "Brush"
+    elsif s.kind == "eraser" then "Eraser"
+    elsif s.kind == "line" then "Line" elsif s.kind == "rect" then "Rectangle"
+    else "Ellipse" end
+  if !hidden then
+    draw_text(nm, {x: r.x + 34, y: r.y + 8}, 12, if on then TEXT else DIM end)
+    let meta = if s.kind == "fill" then "wash" else "{s.size} px · {len(s.pts)} pt" end
+    draw_text_right(meta, r.x + r.w - 10, r.y + 9, 10, FAINT)
+  end
+end
+let older_r = rect(L.px, L.list_r.y + L.list_r.h - 16, L.pw, 14)
+if len(strokes) > len(L.rows) && !overlaps(older_r, mcover) then
+  draw_text("+{len(strokes) - len(L.rows)} older", {x: older_r.x, y: older_r.y}, 10, FAINT)
+end
+
+// ── Draw: status bar ─────────────────────────────────────────────────────
+draw_rect(L.status, PANEL)
+seg(0, L.status.y, W, L.status.y, #000000, 130, 1)
+let sy = L.status.y + 11
+
+let tname = "Brush"
+for t in TOOLS do
+  if t.id == tool then tname = t.name end
+end
+draw_rect_rounded(20, L.status.y + 8, text_width(tname, 11) + 20, 20, 6, ELEV.r, ELEV.g, ELEV.b)
+draw_text(tname, {x: 30, y: sy + 1}, 11, TEXT)
+
+let coords = if over_art then
+    "{int(float(mx - art.x) * 1000.0 / float(art.w))}, {int(float(my - art.y) * 1000.0 / float(art.h))}"
+  else "—" end
+draw_text(coords, {x: 30 + text_width(tname, 11) + 26, y: sy + 1}, 11, FAINT)
+
+draw_text_right("{ops} edits   ·   {len(strokes)} strokes", W - 24, sy + 1, 11, FAINT)
+
+let hints = fit_parts(["drag to paint", "1–6 tools", "[ ] size", "U / R undo·redo",
+                       "G grid", "C clear", "right-click a stroke"],
+                      float(W) * 0.60, 11)
+draw_text_center(hints, W / 2 + 40, sy + 1, 11, mix(FAINT, DIM, 0.4))
+
+// ── Tooltip for the hovered tool (drawn last, over the canvas) ───────────
+if tip >= 0 then
+  let t = TOOLS[tip]
+  let r = L.tool_rects[tip]
+  let tw = max(text_width(t.name, 12), text_width(t.hint, 10)) + 24
+  let tr = rect(r.x + r.w + 12, r.y + 6, tw, 42)
+  draw_rect_rounded(tr.x + 1, tr.y + 3, tr.w, tr.h, 8, 0, 0, 0, 110)
+  plate(tr, 8, ELEV, OUTLINE)
+  fill_triangle(tr.x - 6, tr.y + 20, tr.x + 1, tr.y + 14, tr.x + 1, tr.y + 26,
+                ELEV.r, ELEV.g, ELEV.b)
+  draw_text(t.name, {x: tr.x + 12, y: tr.y + 8}, 12, TEXT)
+  draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 10, FAINT)
+end
+
+// ── History context menu (drawn last so it sits over everything) ─────────
+let picked = context_menu(menu, [
+  menu_item("Select on canvas"),
+  menu_item("Duplicate"),
+  menu_item("Bring to front"),
+  menu_sep(),
+  menu_item("Delete stroke"),
+])
+menu = picked.menu
+if picked.index >= 0 then
+  let t = picked.tag
+  if picked.index == 0 then
+    sel = t
+  else
+    hist = append(hist, strokes)
+    fut = []
+    let out = []
+    for i in range(0, len(strokes)) do
+      if i == t then
+        if picked.index == 1 then
+          out = append(out, strokes[i])
+        elsif picked.index == 2 then
+          continue
+        elsif picked.index == 4 then
+          continue
+        end
+      end
+      out = append(out, strokes[i])
+    end
+    if picked.index == 2 then
+      out = append(out, strokes[t])
+    end
+    strokes = out
+    sel = -1
+    ops = ops + 1
+  end
+end

@@ -33,6 +33,7 @@ pub mod module;
 pub mod native_fn;
 pub mod observe;
 pub mod parse;
+pub mod profile;
 pub mod program;
 pub mod program_analysis;
 pub mod provenance;

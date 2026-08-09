@@ -68,6 +68,9 @@ pub fn lower_program_opt(
         root,
         fns,
         match_binds,
+        // Filled by `resolve_builtin_names` once a native table is in hand;
+        // until then every `BuiltinCall` resolves its name the slow way.
+        builtin_ids: Vec::new(),
     })
 }
 

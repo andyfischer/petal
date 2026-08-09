@@ -35,6 +35,7 @@ pub(super) fn handle_run(
     record_trace: Option<String>,
     ir: bool,
     dup_stats: bool,
+    profile: bool,
     no_opt: bool,
     trace_pending: bool,
     observe: bool,
@@ -67,6 +68,9 @@ pub(super) fn handle_run(
     if trace_emits {
         env.enable_emit_trace(true);
     }
+    if profile {
+        env.profile_mut().set_enabled(true);
+    }
     let pid = if ir {
         // The IR loader is a deserializer, not the front end; it has no phase
         // of its own, and reported "parse" before the phase channel existed.
@@ -92,7 +96,9 @@ pub(super) fn handle_run(
     if trace_pending {
         env.enable_pending_trace(sid);
     }
+    let run_started = std::time::Instant::now();
     let run_result = env.run(sid);
+    let run_elapsed = run_started.elapsed();
 
     // Snapshot the observed values now. The map is a snapshot by contract, and
     // reading it here — before anything else touches the env — keeps the
@@ -101,6 +107,15 @@ pub(super) fn handle_run(
 
     if let Some(path) = &record_trace {
         write_trace_to_file(&env, pid, path);
+    }
+
+    if profile {
+        // Names are resolved here rather than in `VmProfile` because the native
+        // table is the `Env`'s, not the profile's.
+        let report = env
+            .profile()
+            .report(Some(run_elapsed), |nid| env.native_fn_name(nid), 15);
+        eprint!("{report}");
     }
 
     if dup_stats {

@@ -50,6 +50,16 @@ pub struct OptFlags {
     /// bytecode (M4 route A; `bytecode::lastuse`). Independent of
     /// `in_place_mutation` so either route can be disabled to isolate a bug.
     pub in_place_straight_line: bool,
+    /// Propagate register copies and drop the `Move`s left dead by it
+    /// (`bytecode::copyprop`). Lowering emits a move per variable use and per
+    /// phi edge, which is about half of a typical program's instructions.
+    pub copy_propagation: bool,
+    /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
+    /// **named**, so the observation buffer still reports that binding. Set by
+    /// `Env` when the observation buffer or the `explain` trace is enabled;
+    /// it is part of the flags, so switching observation on re-lowers the
+    /// program rather than reusing code compiled without the guard.
+    pub preserve_observations: bool,
 }
 
 impl OptFlags {
@@ -58,6 +68,8 @@ impl OptFlags {
         OptFlags {
             in_place_mutation: false,
             in_place_straight_line: false,
+            copy_propagation: false,
+            preserve_observations: false,
         }
     }
 
@@ -66,6 +78,8 @@ impl OptFlags {
         OptFlags {
             in_place_mutation: true,
             in_place_straight_line: true,
+            copy_propagation: true,
+            preserve_observations: false,
         }
     }
 }
@@ -85,6 +99,8 @@ impl Default for OptFlags {
         OptFlags {
             in_place_mutation: true,
             in_place_straight_line: true,
+            copy_propagation: true,
+            preserve_observations: false,
         }
     }
 }

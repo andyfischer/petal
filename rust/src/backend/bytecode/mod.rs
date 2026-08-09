@@ -9,6 +9,7 @@
 //!
 //! See the bytecode plan for the milestone breakdown.
 
+pub mod copyprop;
 pub mod disasm;
 pub mod escape;
 pub mod isa;
@@ -16,6 +17,7 @@ pub mod lastuse;
 pub mod lower;
 pub mod vm;
 
+pub use copyprop::apply as apply_copy_prop;
 pub use escape::{InPlaceSet, analyze as analyze_escapes};
 pub use isa::{BytecodeFn, BytecodeProgram, Inst};
 pub use lastuse::apply as apply_last_use;
@@ -44,6 +46,19 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
         .map_err(|e| format!("bytecode lowering failed: {e}"))?;
     if flags.in_place_straight_line {
         apply_last_use(&mut bc, program);
+    }
+    // Runs last: it rewrites operands and drops instructions, so letting it
+    // precede route A would move the registers that pass's alias groups are
+    // stated in terms of.
+    if flags.copy_propagation {
+        let stats = apply_copy_prop(&mut bc, program, flags.preserve_observations);
+        if std::env::var("PETAL_OPT_STATS").is_ok() {
+            eprintln!(
+                "copyprop: {} instructions -> {} ({} moves removed, {} reads rewritten, \
+                 {} jumps threaded)",
+                stats.before, stats.after, stats.removed, stats.rewritten, stats.threaded
+            );
+        }
     }
     Ok(bc)
 }

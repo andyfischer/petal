@@ -48,6 +48,11 @@ struct NativeFnEntry {
 /// Registry of native functions, mapping IDs to names and function pointers.
 pub struct NativeFnTable {
     entries: Vec<NativeFnEntry>,
+    /// Name → id index over `entries`. Every `BuiltinCall` resolves a name
+    /// through it, several million times in a compute-heavy run, so the lookup
+    /// must not be a scan of the table (which is ~150 entries deep and answers
+    /// with a string compare per entry).
+    by_name: HashMap<String, NativeFnId>,
     /// IDs for higher-order builtins that need evaluator intrinsic dispatch.
     pub intrinsic_map: Option<NativeFnId>,
     pub intrinsic_filter: Option<NativeFnId>,
@@ -68,6 +73,7 @@ impl NativeFnTable {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            by_name: HashMap::new(),
             intrinsic_map: None,
             intrinsic_filter: None,
             intrinsic_reduce: None,
@@ -99,6 +105,12 @@ impl NativeFnTable {
             func,
             class: NativeClass::Strict,
         });
+        // Last registration of a name wins, matching the scan this replaced:
+        // it returned the *first* match, so a re-registration under an existing
+        // name was previously unreachable. Overwriting is the more useful of
+        // the two readings (a host replacing a builtin gets its own), and no
+        // caller registers a duplicate today.
+        self.by_name.insert(name.to_string(), id);
         id
     }
 
@@ -116,10 +128,7 @@ impl NativeFnTable {
 
     /// Look up a native function by name.
     pub fn lookup_name(&self, name: &str) -> Option<NativeFnId> {
-        self.entries
-            .iter()
-            .position(|e| e.name == name)
-            .map(|i| NativeFnId(i as u32))
+        self.by_name.get(name).copied()
     }
 
     /// Get the name of a native function by ID.
@@ -397,6 +406,21 @@ impl<'a> PetalCxt<'a> {
 
     pub fn push_string(&mut self, s: String) {
         let id = self.heap.alloc_string(s);
+        self.results.push(Value::String(id));
+    }
+
+    /// Return borrowed text. Prefer this to [`push_string`](Self::push_string)
+    /// whenever the value is not already an owned `String`: interning a `&str`
+    /// allocates only when the content is new to the heap.
+    pub fn push_str(&mut self, s: &str) {
+        let id = self.heap.intern_str(s);
+        self.results.push(Value::String(id));
+    }
+
+    /// Return a byte range of an existing heap string, interning it without
+    /// building the substring first. See [`Heap::intern_substring`].
+    pub fn push_substring(&mut self, src: crate::heap::StringId, start: usize, end: usize) {
+        let id = self.heap.intern_substring(src, start, end);
         self.results.push(Value::String(id));
     }
 

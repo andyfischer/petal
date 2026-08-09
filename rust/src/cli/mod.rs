@@ -19,6 +19,9 @@ pub enum Command {
         record_trace: Option<String>,
         ir: bool,
         dup_stats: bool,
+        /// Count instructions, builtin calls and collections during the run and
+        /// print the histogram to stderr afterwards (see `crate::profile`).
+        profile: bool,
         no_opt: bool,
         /// Turn on the pending absorption trace and print the frame pending
         /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
@@ -378,6 +381,7 @@ pub fn execute(cli: CliArgs) {
             record_trace,
             ir,
             dup_stats,
+            profile,
             no_opt,
             trace_pending,
             observe,
@@ -389,6 +393,7 @@ pub fn execute(cli: CliArgs) {
                 record_trace,
                 ir,
                 dup_stats,
+                profile,
                 no_opt,
                 trace_pending,
                 observe,

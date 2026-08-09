@@ -14,6 +14,7 @@ use crate::heap::Heap;
 use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeClass, NativeFn, NativeFnId, NativeFnTable};
 use crate::observe::Observations;
+use crate::profile::VmProfile;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{RuntimeStateKey, Stack, StackKey};
 use crate::stats::{AllocStats, DupStats};
@@ -46,6 +47,9 @@ pub struct Env {
     /// Last value bound to each named IR term. Off by default; see
     /// [`crate::observe`].
     observations: Observations,
+    /// Opt-in execution counters (opcodes, builtins, calls, GC). Off by
+    /// default; see [`crate::profile`].
+    profile: VmProfile,
     next_program_id: u32,
     next_stack_id: u32,
     /// Per-run optimization toggles for the bytecode VM.
@@ -97,6 +101,7 @@ impl Env {
             next_context_id: 2,
             trace: TraceBuffer::new(),
             observations: Observations::new(),
+            profile: VmProfile::new(),
             next_program_id: 1,
             next_stack_id: 1,
             opt_flags: Self::opt_flags_from_env(),
@@ -130,14 +135,35 @@ impl Env {
     /// Ensure `pid`'s program is lowered to bytecode and cached. Returns the
     /// lowering error (naming the first unlowered op) if it cannot be lowered.
     fn ensure_bytecode(&mut self, pid: ProgramId) -> Result<(), String> {
+        let flags = self.effective_opt_flags();
         // Serve the cache only if it was lowered with the flags in effect now.
-        if self.bytecode.get(&pid).map(|(f, _)| *f) == Some(self.opt_flags) {
+        if self.bytecode.get(&pid).map(|(f, _)| *f) == Some(flags) {
             return Ok(());
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
-        let bc = crate::backend::bytecode::lower_with_flags(program, self.opt_flags)?;
-        self.bytecode.insert(pid, (self.opt_flags, bc));
+        let mut bc = crate::backend::bytecode::lower_with_flags(program, flags)?;
+        // Bind builtin names to native ids now, once, rather than per call.
+        bc.resolve_builtin_names(&program.constants, |name| {
+            self.native_fns.lookup_name(name).map(|id| id.0)
+        });
+        self.bytecode.insert(pid, (flags, bc));
         Ok(())
+    }
+
+    /// The configured flags plus the ones the *current* debug facilities
+    /// require. Observation and the `explain` trace both read per-instruction
+    /// results, so turning either on holds back the optimization that would
+    /// delete the instructions they read (see
+    /// [`OptFlags::preserve_observations`]). Because the result is the bytecode
+    /// cache key, toggling a facility re-lowers the program on the next run
+    /// rather than silently running code compiled for the other setting.
+    ///
+    /// Toggle between runs, not inside one: a re-lowering mid-run would leave
+    /// live frames pointing into code that no longer exists.
+    fn effective_opt_flags(&self) -> OptFlags {
+        let mut flags = self.opt_flags;
+        flags.preserve_observations |= self.observations.enabled || self.trace.enabled;
+        flags
     }
 
     /// Shared access to one execution context.
@@ -342,6 +368,32 @@ impl Env {
     /// every subsequent run.
     pub fn observations_mut(&mut self) -> &mut Observations {
         &mut self.observations
+    }
+
+    /// Execution counters for the last profiled span — opcode and builtin
+    /// histograms, call and GC totals. Empty unless profiling was enabled; see
+    /// [`crate::profile`].
+    pub fn profile(&self) -> &VmProfile {
+        &self.profile
+    }
+
+    /// Mutable access to the execution counters. Profiling is off by default:
+    /// `env.profile_mut().set_enabled(true)` turns it on for subsequent runs
+    /// (and clears whatever was already counted).
+    pub fn profile_mut(&mut self) -> &mut VmProfile {
+        &mut self.profile
+    }
+
+    /// The registered name of a native function by table index — how a
+    /// [`VmProfile`] report turns its `NativeFnId` counters back into builtin
+    /// names. Out-of-range ids report as `<native N>` rather than panicking:
+    /// a profile can outlive the table it counted against.
+    pub fn native_fn_name(&self, nid: u32) -> String {
+        if (nid as usize) < self.native_fns.count() {
+            self.native_fns.get_name(NativeFnId(nid)).to_string()
+        } else {
+            format!("<native {nid}>")
+        }
     }
 
     /// Get a reference to a loaded program

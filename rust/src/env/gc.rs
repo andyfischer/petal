@@ -13,6 +13,9 @@ impl Env {
     /// Marks all values reachable from roots (stack registers, state, closures,
     /// loop state), then sweeps unmarked heap objects.
     pub(super) fn collect_garbage(&mut self, ck: ContextKey) {
+        // Timed only while profiling is on; `Instant::now` is a couple of ns
+        // against a collection's microseconds, so it is not worth gating twice.
+        let started = self.profile.enabled.then(std::time::Instant::now);
         // Disjoint borrows: stacks (shared) + the one context (mut). Mark all
         // roots into THAT context's heap, then sweep it.
         let ctx = self.contexts.get_mut(&ck).expect("context exists");
@@ -71,5 +74,8 @@ impl Env {
 
         // Sweep phase
         heap.sweep();
+        if let Some(t) = started {
+            self.profile.record_gc(t.elapsed());
+        }
     }
 }

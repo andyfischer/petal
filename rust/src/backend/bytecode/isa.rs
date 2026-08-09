@@ -397,7 +397,269 @@ pub enum Inst {
     },
 }
 
+/// The opcode of an [`Inst`], stripped of its operands — a dense, `Copy` tag
+/// for counting and grouping instructions (see [`crate::profile`]). Kept
+/// alongside `Inst` rather than derived by a macro so the two lists are read
+/// together; [`Opcode::ALL`] is asserted to cover every variant by a test below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Opcode {
+    LoadConst,
+    LoadNil,
+    LoadBool,
+    Move,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Not,
+    Concat,
+    Jump,
+    JumpIfFalse,
+    JumpIfTrue,
+    JumpIfPresent,
+    JumpIfPending,
+    ForEachInit,
+    ForEachNext,
+    RangeInit,
+    RangeNext,
+    WhileInit,
+    LoopBumpIdx,
+    LoopPop,
+    LoopCollect,
+    LoopCollectEnd,
+    Call,
+    MethodCall,
+    BuiltinCall,
+    MakeClosure,
+    MakeOverloadSet,
+    Return,
+    AllocList,
+    AllocMap,
+    AllocMapSpread,
+    AllocElement,
+    MakeEnumVariant,
+    GetField,
+    SetField,
+    GetIndex,
+    SetIndex,
+    SetFieldInPlace,
+    SetIndexInPlace,
+    CellNew,
+    CellRead,
+    CellWrite,
+    StateInit,
+    StateRead,
+    StateWrite,
+    MatchArm,
+    MatchFail,
+    Error,
+}
+
+impl Opcode {
+    /// Number of distinct opcodes — the width of a per-opcode counter array.
+    pub const COUNT: usize = 58;
+
+    /// Every opcode, in declaration order. Index equals the discriminant, so
+    /// `ALL[op as usize] == op`.
+    pub const ALL: [Opcode; Self::COUNT] = [
+        Opcode::LoadConst,
+        Opcode::LoadNil,
+        Opcode::LoadBool,
+        Opcode::Move,
+        Opcode::Add,
+        Opcode::Sub,
+        Opcode::Mul,
+        Opcode::Div,
+        Opcode::Mod,
+        Opcode::Neg,
+        Opcode::Eq,
+        Opcode::Ne,
+        Opcode::Lt,
+        Opcode::Le,
+        Opcode::Gt,
+        Opcode::Ge,
+        Opcode::Not,
+        Opcode::Concat,
+        Opcode::Jump,
+        Opcode::JumpIfFalse,
+        Opcode::JumpIfTrue,
+        Opcode::JumpIfPresent,
+        Opcode::JumpIfPending,
+        Opcode::ForEachInit,
+        Opcode::ForEachNext,
+        Opcode::RangeInit,
+        Opcode::RangeNext,
+        Opcode::WhileInit,
+        Opcode::LoopBumpIdx,
+        Opcode::LoopPop,
+        Opcode::LoopCollect,
+        Opcode::LoopCollectEnd,
+        Opcode::Call,
+        Opcode::MethodCall,
+        Opcode::BuiltinCall,
+        Opcode::MakeClosure,
+        Opcode::MakeOverloadSet,
+        Opcode::Return,
+        Opcode::AllocList,
+        Opcode::AllocMap,
+        Opcode::AllocMapSpread,
+        Opcode::AllocElement,
+        Opcode::MakeEnumVariant,
+        Opcode::GetField,
+        Opcode::SetField,
+        Opcode::GetIndex,
+        Opcode::SetIndex,
+        Opcode::SetFieldInPlace,
+        Opcode::SetIndexInPlace,
+        Opcode::CellNew,
+        Opcode::CellRead,
+        Opcode::CellWrite,
+        Opcode::StateInit,
+        Opcode::StateRead,
+        Opcode::StateWrite,
+        Opcode::MatchArm,
+        Opcode::MatchFail,
+        Opcode::Error,
+    ];
+
+    /// The variant name, as written in the source ("LoadConst", "Add", …).
+    pub fn name(self) -> &'static str {
+        match self {
+            Opcode::LoadConst => "LoadConst",
+            Opcode::LoadNil => "LoadNil",
+            Opcode::LoadBool => "LoadBool",
+            Opcode::Move => "Move",
+            Opcode::Add => "Add",
+            Opcode::Sub => "Sub",
+            Opcode::Mul => "Mul",
+            Opcode::Div => "Div",
+            Opcode::Mod => "Mod",
+            Opcode::Neg => "Neg",
+            Opcode::Eq => "Eq",
+            Opcode::Ne => "Ne",
+            Opcode::Lt => "Lt",
+            Opcode::Le => "Le",
+            Opcode::Gt => "Gt",
+            Opcode::Ge => "Ge",
+            Opcode::Not => "Not",
+            Opcode::Concat => "Concat",
+            Opcode::Jump => "Jump",
+            Opcode::JumpIfFalse => "JumpIfFalse",
+            Opcode::JumpIfTrue => "JumpIfTrue",
+            Opcode::JumpIfPresent => "JumpIfPresent",
+            Opcode::JumpIfPending => "JumpIfPending",
+            Opcode::ForEachInit => "ForEachInit",
+            Opcode::ForEachNext => "ForEachNext",
+            Opcode::RangeInit => "RangeInit",
+            Opcode::RangeNext => "RangeNext",
+            Opcode::WhileInit => "WhileInit",
+            Opcode::LoopBumpIdx => "LoopBumpIdx",
+            Opcode::LoopPop => "LoopPop",
+            Opcode::LoopCollect => "LoopCollect",
+            Opcode::LoopCollectEnd => "LoopCollectEnd",
+            Opcode::Call => "Call",
+            Opcode::MethodCall => "MethodCall",
+            Opcode::BuiltinCall => "BuiltinCall",
+            Opcode::MakeClosure => "MakeClosure",
+            Opcode::MakeOverloadSet => "MakeOverloadSet",
+            Opcode::Return => "Return",
+            Opcode::AllocList => "AllocList",
+            Opcode::AllocMap => "AllocMap",
+            Opcode::AllocMapSpread => "AllocMapSpread",
+            Opcode::AllocElement => "AllocElement",
+            Opcode::MakeEnumVariant => "MakeEnumVariant",
+            Opcode::GetField => "GetField",
+            Opcode::SetField => "SetField",
+            Opcode::GetIndex => "GetIndex",
+            Opcode::SetIndex => "SetIndex",
+            Opcode::SetFieldInPlace => "SetFieldInPlace",
+            Opcode::SetIndexInPlace => "SetIndexInPlace",
+            Opcode::CellNew => "CellNew",
+            Opcode::CellRead => "CellRead",
+            Opcode::CellWrite => "CellWrite",
+            Opcode::StateInit => "StateInit",
+            Opcode::StateRead => "StateRead",
+            Opcode::StateWrite => "StateWrite",
+            Opcode::MatchArm => "MatchArm",
+            Opcode::MatchFail => "MatchFail",
+            Opcode::Error => "Error",
+        }
+    }
+}
+
 impl Inst {
+    /// This instruction's [`Opcode`] — its variant tag without operands.
+    pub fn opcode(&self) -> Opcode {
+        match self {
+            Inst::LoadConst { .. } => Opcode::LoadConst,
+            Inst::LoadNil { .. } => Opcode::LoadNil,
+            Inst::LoadBool { .. } => Opcode::LoadBool,
+            Inst::Move { .. } => Opcode::Move,
+            Inst::Add { .. } => Opcode::Add,
+            Inst::Sub { .. } => Opcode::Sub,
+            Inst::Mul { .. } => Opcode::Mul,
+            Inst::Div { .. } => Opcode::Div,
+            Inst::Mod { .. } => Opcode::Mod,
+            Inst::Neg { .. } => Opcode::Neg,
+            Inst::Eq { .. } => Opcode::Eq,
+            Inst::Ne { .. } => Opcode::Ne,
+            Inst::Lt { .. } => Opcode::Lt,
+            Inst::Le { .. } => Opcode::Le,
+            Inst::Gt { .. } => Opcode::Gt,
+            Inst::Ge { .. } => Opcode::Ge,
+            Inst::Not { .. } => Opcode::Not,
+            Inst::Concat { .. } => Opcode::Concat,
+            Inst::Jump { .. } => Opcode::Jump,
+            Inst::JumpIfFalse { .. } => Opcode::JumpIfFalse,
+            Inst::JumpIfTrue { .. } => Opcode::JumpIfTrue,
+            Inst::JumpIfPresent { .. } => Opcode::JumpIfPresent,
+            Inst::JumpIfPending { .. } => Opcode::JumpIfPending,
+            Inst::ForEachInit { .. } => Opcode::ForEachInit,
+            Inst::ForEachNext { .. } => Opcode::ForEachNext,
+            Inst::RangeInit { .. } => Opcode::RangeInit,
+            Inst::RangeNext { .. } => Opcode::RangeNext,
+            Inst::WhileInit { .. } => Opcode::WhileInit,
+            Inst::LoopBumpIdx { .. } => Opcode::LoopBumpIdx,
+            Inst::LoopPop { .. } => Opcode::LoopPop,
+            Inst::LoopCollect { .. } => Opcode::LoopCollect,
+            Inst::LoopCollectEnd { .. } => Opcode::LoopCollectEnd,
+            Inst::Call { .. } => Opcode::Call,
+            Inst::MethodCall { .. } => Opcode::MethodCall,
+            Inst::BuiltinCall { .. } => Opcode::BuiltinCall,
+            Inst::MakeClosure { .. } => Opcode::MakeClosure,
+            Inst::MakeOverloadSet { .. } => Opcode::MakeOverloadSet,
+            Inst::Return { .. } => Opcode::Return,
+            Inst::AllocList { .. } => Opcode::AllocList,
+            Inst::AllocMap { .. } => Opcode::AllocMap,
+            Inst::AllocMapSpread { .. } => Opcode::AllocMapSpread,
+            Inst::AllocElement { .. } => Opcode::AllocElement,
+            Inst::MakeEnumVariant { .. } => Opcode::MakeEnumVariant,
+            Inst::GetField { .. } => Opcode::GetField,
+            Inst::SetField { .. } => Opcode::SetField,
+            Inst::GetIndex { .. } => Opcode::GetIndex,
+            Inst::SetIndex { .. } => Opcode::SetIndex,
+            Inst::SetFieldInPlace { .. } => Opcode::SetFieldInPlace,
+            Inst::SetIndexInPlace { .. } => Opcode::SetIndexInPlace,
+            Inst::CellNew { .. } => Opcode::CellNew,
+            Inst::CellRead { .. } => Opcode::CellRead,
+            Inst::CellWrite { .. } => Opcode::CellWrite,
+            Inst::StateInit { .. } => Opcode::StateInit,
+            Inst::StateRead { .. } => Opcode::StateRead,
+            Inst::StateWrite { .. } => Opcode::StateWrite,
+            Inst::MatchArm { .. } => Opcode::MatchArm,
+            Inst::MatchFail { .. } => Opcode::MatchFail,
+            Inst::Error { .. } => Opcode::Error,
+        }
+    }
+
     /// The destination register this instruction writes its result to, if it
     /// produces a value in the current frame. Used by the VM's best-effort
     /// trace hook to record `(origin term, result)` at instruction retire.
@@ -606,6 +868,129 @@ impl Inst {
         }
     }
 
+    /// Every register this instruction reads, by mutable reference so a pass can
+    /// rewrite operands in place (copy propagation) as well as enumerate them.
+    ///
+    /// This is the *complete* read set — unlike [`input_regs`](Inst::input_regs),
+    /// which serves the trace hook and covers only the simple value operands.
+    /// It is the read-side counterpart of [`for_each_write`](Inst::for_each_write);
+    /// the two together define the dataflow of an instruction, so a new `Inst`
+    /// variant must be added to both.
+    pub fn for_each_read_mut(&mut self, mut f: impl FnMut(&mut Reg)) {
+        match self {
+            Inst::Move { src, .. }
+            | Inst::Neg { a: src, .. }
+            | Inst::Not { a: src, .. }
+            | Inst::JumpIfFalse { cond: src, .. }
+            | Inst::JumpIfTrue { cond: src, .. }
+            | Inst::JumpIfPresent { cond: src, .. }
+            | Inst::JumpIfPending { cond: src, .. }
+            | Inst::ForEachInit { iter: src, .. }
+            | Inst::GetField { obj: src, .. }
+            | Inst::CellNew { init: src, .. }
+            | Inst::CellRead { cell: src, .. }
+            | Inst::LoopCollect { src, .. }
+            | Inst::MatchArm { subject: src, .. }
+            | Inst::MatchFail { subject: src } => f(src),
+            Inst::Add { a, b, .. }
+            | Inst::Sub { a, b, .. }
+            | Inst::Mul { a, b, .. }
+            | Inst::Div { a, b, .. }
+            | Inst::Mod { a, b, .. }
+            | Inst::Eq { a, b, .. }
+            | Inst::Ne { a, b, .. }
+            | Inst::Lt { a, b, .. }
+            | Inst::Le { a, b, .. }
+            | Inst::Gt { a, b, .. }
+            | Inst::Ge { a, b, .. }
+            | Inst::Concat { a, b, .. }
+            | Inst::GetIndex { obj: a, idx: b, .. }
+            | Inst::RangeInit {
+                start: a, end: b, ..
+            }
+            | Inst::CellWrite {
+                cell: a, val: b, ..
+            }
+            | Inst::SetField { obj: a, val: b, .. }
+            | Inst::SetFieldInPlace { obj: a, val: b, .. } => {
+                f(a);
+                f(b);
+            }
+            Inst::SetIndex { obj, idx, val, .. } | Inst::SetIndexInPlace { obj, idx, val, .. } => {
+                f(obj);
+                f(idx);
+                f(val);
+            }
+            Inst::Call { callee, args, .. } => {
+                f(callee);
+                for a in args {
+                    f(a);
+                }
+            }
+            Inst::MethodCall { recv, args, .. } => {
+                f(recv);
+                for a in args {
+                    f(a);
+                }
+            }
+            Inst::BuiltinCall { args, .. }
+            | Inst::MakeClosure { caps: args, .. }
+            | Inst::MakeOverloadSet { closures: args, .. }
+            | Inst::AllocList { elems: args, .. }
+            | Inst::AllocMap { vals: args, .. }
+            | Inst::MakeEnumVariant { fields: args, .. } => {
+                for a in args {
+                    f(a);
+                }
+            }
+            Inst::AllocMapSpread { ins, .. } | Inst::AllocElement { ins, .. } => {
+                for a in ins {
+                    f(a);
+                }
+            }
+            Inst::Return { val } => {
+                if let Some(v) = val {
+                    f(v);
+                }
+            }
+            Inst::StateWrite { val, key, .. } => {
+                f(val);
+                if let Some(k) = key {
+                    f(k);
+                }
+            }
+            Inst::StateInit { key, .. } => {
+                if let Some(k) = key {
+                    f(k);
+                }
+            }
+            Inst::LoadConst { .. }
+            | Inst::LoadNil { .. }
+            | Inst::LoadBool { .. }
+            | Inst::Jump { .. }
+            | Inst::ForEachNext { .. }
+            | Inst::RangeNext { .. }
+            | Inst::WhileInit { .. }
+            | Inst::LoopBumpIdx { .. }
+            | Inst::LoopPop { .. }
+            | Inst::LoopCollectEnd { .. }
+            | Inst::StateRead { .. }
+            | Inst::Error { .. } => {}
+        }
+    }
+
+    /// Every register this instruction reads. A read-only view over
+    /// [`for_each_read_mut`](Inst::for_each_read_mut), which stays the single
+    /// definition of the read set rather than being transcribed a second time.
+    /// Clones the instruction to borrow it mutably; that is a compile-time
+    /// pass cost (small enum, at most a `SmallVec` of register indices), not a
+    /// runtime one — nothing on the VM's hot path calls this.
+    pub fn read_regs(&self) -> SmallVec<[Reg; 4]> {
+        let mut v: SmallVec<[Reg; 4]> = SmallVec::new();
+        self.clone().for_each_read_mut(|r| v.push(*r));
+        v
+    }
+
     /// Whether control can fall through to the following instruction. False only
     /// for the unconditional terminators (`Jump` diverts; `Return`/`Error`/
     /// `MatchFail` end the path).
@@ -698,9 +1083,52 @@ pub struct BytecodeProgram {
     /// registers (the flat-register equivalent of the graph engine's
     /// `apply_pattern_bindings`).
     pub match_binds: std::collections::HashMap<(TermId, u16), Vec<(String, Reg)>>,
+    /// `ConstantId` → `NativeFnId`, for the string constants that name a
+    /// builtin — the resolution every `BuiltinCall` needs, done once per
+    /// program instead of once per call. `u32::MAX` means "not a builtin name"
+    /// (or unresolved, when the program was lowered without a native table);
+    /// the VM falls back to a by-name lookup then, which is also where the
+    /// "Unknown builtin" error comes from.
+    ///
+    /// Filled by [`resolve_builtin_names`](BytecodeProgram::resolve_builtin_names)
+    /// after lowering, because lowering has no access to the host's native
+    /// table — a host may register natives of its own.
+    pub builtin_ids: Vec<u32>,
 }
 
+/// Sentinel in [`BytecodeProgram::builtin_ids`]: this constant does not name a
+/// registered native.
+pub const NOT_A_BUILTIN: u32 = u32::MAX;
+
 impl BytecodeProgram {
+    /// Resolve every string constant against the native table, filling
+    /// [`builtin_ids`](Self::builtin_ids). Idempotent, and cheap: one pass over
+    /// the constant table (hundreds of entries) against a hash index.
+    pub fn resolve_builtin_names(
+        &mut self,
+        constants: &crate::constant_table::ConstantTable,
+        lookup: impl Fn(&str) -> Option<u32>,
+    ) {
+        use crate::constant_table::ConstantValue;
+        self.builtin_ids = constants
+            .values()
+            .iter()
+            .map(|c| match c {
+                ConstantValue::String(s) => lookup(s).unwrap_or(NOT_A_BUILTIN),
+                _ => NOT_A_BUILTIN,
+            })
+            .collect();
+    }
+
+    /// The native id a constant names, if it was resolved as a builtin.
+    #[inline]
+    pub fn builtin_id(&self, k: crate::constant_table::ConstantId) -> Option<u32> {
+        match self.builtin_ids.get(k.0 as usize).copied() {
+            Some(NOT_A_BUILTIN) | None => None,
+            Some(id) => Some(id),
+        }
+    }
+
     /// The `BytecodeFn` for a given `FunctionId`.
     pub fn function(&self, id: FunctionId) -> &BytecodeFn {
         &self.fns[id.0 as usize]
@@ -713,5 +1141,43 @@ impl BytecodeProgram {
             None => &self.root,
             Some(fid) => self.function(fid),
         }
+    }
+}
+
+#[cfg(test)]
+mod opcode_tests {
+    use super::*;
+
+    /// `Opcode::ALL` is hand-written; this catches the case where a new `Inst`
+    /// variant is added and its opcode is left out of the array (which would
+    /// silently mis-index every per-opcode counter after it).
+    #[test]
+    fn all_is_dense_and_in_discriminant_order() {
+        assert_eq!(Opcode::ALL.len(), Opcode::COUNT);
+        for (i, op) in Opcode::ALL.iter().enumerate() {
+            assert_eq!(*op as usize, i, "Opcode::ALL is out of order at {i}");
+        }
+    }
+
+    #[test]
+    fn opcode_name_matches_debug() {
+        for op in Opcode::ALL {
+            assert_eq!(op.name(), format!("{op:?}"));
+        }
+    }
+
+    #[test]
+    fn inst_reports_its_opcode() {
+        assert_eq!(Inst::LoadNil { dst: 3 }.opcode(), Opcode::LoadNil);
+        assert_eq!(Inst::Jump { to: 7 }.opcode(), Opcode::Jump);
+        assert_eq!(
+            Inst::GetIndex {
+                dst: 0,
+                obj: 1,
+                idx: 2
+            }
+            .opcode(),
+            Opcode::GetIndex
+        );
     }
 }

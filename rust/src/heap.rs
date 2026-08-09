@@ -475,6 +475,47 @@ impl Heap {
         id
     }
 
+    /// Intern a borrowed string, allocating only on a miss.
+    ///
+    /// Every `LoadConst` of a string literal, and every builtin that returns
+    /// text it already has in hand, goes through here. The owned-`String`
+    /// version above has to be handed a fresh allocation *before* it can
+    /// discover the string is already interned — which, on a hot loop over
+    /// string literals, is a malloc and a free per instruction for a value the
+    /// heap already holds. Taking `&str` moves the allocation to the miss path.
+    pub fn intern_str(&mut self, s: &str) -> StringId {
+        if let Some(&existing_id) = self.intern_table.get(s) {
+            if self.strings.slots[existing_id.0 as usize].alive {
+                return existing_id;
+            }
+        }
+        self.tick_alloc(AllocKind::String, s.len() as u64);
+        let id = StringId(self.strings.alloc(s.to_string()));
+        self.intern_table.insert(s.to_string(), id);
+        id
+    }
+
+    /// Intern the byte range `start..end` of an existing heap string without
+    /// materializing it first. `slice()` over text is the motivating caller:
+    /// a scanner walking a string one character at a time asks for substrings
+    /// that are, almost without exception, already interned — so the common
+    /// case here is a hash lookup with no allocation at all.
+    ///
+    /// The caller must pass char-boundary offsets (as `slice()` does); an
+    /// interior byte offset panics exactly as `&str` indexing would.
+    pub fn intern_substring(&mut self, id: StringId, start: usize, end: usize) -> StringId {
+        let sub = &self.strings.get(id.0)[start..end];
+        if let Some(&existing) = self.intern_table.get(sub) {
+            if self.strings.slots[existing.0 as usize].alive {
+                return existing;
+            }
+        }
+        // Miss: take ownership (which ends the borrow of `strings`) and go
+        // through the owned path, which re-checks the table and allocates.
+        let owned = sub.to_string();
+        self.intern_str(&owned)
+    }
+
     pub fn get_string(&self, id: StringId) -> &str {
         self.strings.get(id.0)
     }

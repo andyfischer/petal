@@ -31,7 +31,10 @@ pub fn constant_to_value(program: &Program, heap: &mut Heap, cid: ConstantId) ->
         ConstantValue::Bool(b) => Value::Bool(*b),
         ConstantValue::Int(n) => Value::Int(*n),
         ConstantValue::Float(bits) => Value::Float(f64::from_bits(*bits)),
-        ConstantValue::String(s) => Value::String(heap.alloc_string(s.clone())),
+        // `intern_str`, not `alloc_string`: the literal is almost always
+        // already on the heap, and this is one of the hottest instructions in
+        // the set — cloning it just to look it up is a malloc per execution.
+        ConstantValue::String(s) => Value::String(heap.intern_str(s)),
     }
 }
 

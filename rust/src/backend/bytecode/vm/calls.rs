@@ -345,6 +345,7 @@ impl<'a> Vm<'a> {
             ));
         }
 
+        self.profile.record_call();
         let mut frame = self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site);
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {

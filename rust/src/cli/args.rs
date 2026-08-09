@@ -52,6 +52,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut record_trace: Option<String> = None;
     let mut ir = false;
     let mut dup_stats = false;
+    let mut profile = false;
     let mut no_opt = false;
     let mut trace_pending = false;
     let mut observe = false;
@@ -67,6 +68,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--trace-emits" => trace_emits = true,
             "--ir" => ir = true,
             "--dup-stats" => dup_stats = true,
+            "--profile" => profile = true,
             "--no-opt" => no_opt = true,
             "--trace-pending" => trace_pending = true,
             "--record-trace" => {
@@ -93,7 +95,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] <file>");
         process::exit(1);
     });
 
@@ -104,6 +106,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             record_trace,
             ir,
             dup_stats,
+            profile,
             no_opt,
             trace_pending,
             observe,

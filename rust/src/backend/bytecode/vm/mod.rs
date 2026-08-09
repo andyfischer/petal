@@ -102,6 +102,9 @@ pub struct Vm<'a> {
     /// retire in their own frame, [`Vm::deliver_value`] for call results — but
     /// filtered to terms a reader could name (see [`Vm::is_observable`]).
     pub observations: &'a mut crate::observe::Observations,
+    /// Opt-in execution counters (off by default). Every recording site is one
+    /// predictable branch when disabled — see [`crate::profile`].
+    pub profile: &'a mut crate::profile::VmProfile,
     /// Set by `call_closure_sync` when a synchronous closure call (map/filter/
     /// reduce/forEach, or the host `Env::call_function`) unwinds with an error
     /// that `step` already annotated. The intrinsic returns that error via `?`,
@@ -111,6 +114,13 @@ pub struct Vm<'a> {
     /// already-complete message). Consumed with `mem::take`; a fresh `Vm` starts
     /// it clear, so a host-path error that leaves it set can't leak to a later run.
     pub error_already_annotated: bool,
+    /// Whether any per-instruction hook wants to run: the `explain` trace, the
+    /// observation buffer, or the profiler. Collapsing the three flags into one
+    /// field the `Vm` owns keeps the hot dispatch loop to a single local test
+    /// instead of three loads through separate borrows — see [`Vm::step`].
+    /// Computed when the `Vm` is built, which is once per batch dispatch, so a
+    /// host toggling one of the three takes effect on the next batch.
+    pub hooks: bool,
 }
 
 impl<'a> Vm<'a> {
@@ -146,6 +156,14 @@ impl<'a> Vm<'a> {
             None => return StepResult::Complete(Value::Nil),
         };
         let func: &'a BytecodeFn = bc.function_or_root(self.stack.vm_frames[frame_idx].func);
+        self.step_in(frame_idx, func)
+    }
+
+    /// One instruction of `func`, the function of frame `frame_idx`. Split from
+    /// [`step`](Self::step) so [`run_batch`](Self::run_batch) can resolve the
+    /// frame's function once and reuse it for the whole straight-line run
+    /// between calls, which is most of a program's instructions.
+    fn step_in(&mut self, frame_idx: usize, func: &'a BytecodeFn) -> StepResult {
         let ip = self.stack.vm_frames[frame_idx].ip;
         if ip >= func.code.len() {
             return self.finish_frame(func);
@@ -154,6 +172,23 @@ impl<'a> Vm<'a> {
         // overwrite `ip` when they need to.
         self.stack.vm_frames[frame_idx].ip = ip + 1;
         let inst = &func.code[ip];
+        // The common case is that nothing is watching: one test, then straight
+        // into dispatch. Every hook's own gate is still checked below, so this
+        // only decides whether to look.
+        if !self.hooks {
+            let origin = func.origins.get(ip).copied().flatten();
+            return match self.exec_inst(frame_idx, inst, origin) {
+                Ok(sr) => sr,
+                Err(e) => {
+                    if std::mem::take(&mut self.error_already_annotated) {
+                        StepResult::Error(e)
+                    } else {
+                        StepResult::Error(self.annotate(e, origin))
+                    }
+                }
+            };
+        }
+        self.profile.record_inst(inst);
         let origin = func.origins.get(ip).copied().flatten();
         // Gather trace inputs before execution — a `dst` that aliases a source
         // register would clobber it otherwise. The `enabled` check comes first
@@ -231,10 +266,29 @@ impl<'a> Vm<'a> {
     /// every call, which costs more than executing a typical instruction. Run
     /// in batches, that overhead amortizes to nothing.
     pub fn run_batch(&mut self, budget: u64) -> (StepResult, u64) {
+        let bc = self.bc;
         let mut consumed = 0;
+        // The executing function, cached across iterations. Resolving it is a
+        // match plus a bounds-checked index, and it can only change when the
+        // frame stack does — so the key is `(depth, that frame's FunctionId)`,
+        // which is one comparison against data the loop has to touch anyway.
+        let mut cached: Option<(usize, Option<FunctionId>, &'a BytecodeFn)> = None;
         while consumed < budget {
             consumed += 1;
-            match self.step() {
+            let depth = self.stack.vm_frames.len();
+            if depth == 0 {
+                return (StepResult::Complete(Value::Nil), consumed);
+            }
+            let fid = self.stack.vm_frames[depth - 1].func;
+            let func = match cached {
+                Some((d, f, func)) if d == depth && f == fid => func,
+                _ => {
+                    let func = bc.function_or_root(fid);
+                    cached = Some((depth, fid, func));
+                    func
+                }
+            };
+            match self.step_in(depth - 1, func) {
                 StepResult::Continue => {
                     if self.heap.should_collect() {
                         return (StepResult::Continue, consumed);
@@ -286,11 +340,18 @@ impl<'a> Vm<'a> {
     }
 
     fn set(&mut self, fi: usize, r: Reg, v: Value) {
+        // A frame is built with its function's full register file, so the
+        // in-bounds arm is the only one lowered code ever takes; writing it as
+        // a single checked access keeps the hot path to one bounds test, with
+        // the grow left as a fallback for hand-written or resized frames.
         let regs = &mut self.stack.vm_frames[fi].regs;
-        if r as usize >= regs.len() {
-            regs.resize(r as usize + 1, Value::Nil);
+        match regs.get_mut(r as usize) {
+            Some(slot) => *slot = v,
+            None => {
+                regs.resize(r as usize + 1, Value::Nil);
+                regs[r as usize] = v;
+            }
         }
-        regs[r as usize] = v;
     }
 
     /// Gather operand registers. Inline capacity covers typical arities, so

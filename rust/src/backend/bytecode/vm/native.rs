@@ -52,16 +52,26 @@ impl<'a> Vm<'a> {
         in_place: bool,
         origin: Option<TermId>,
     ) -> Result<(), String> {
-        // `program` is a `Copy` borrow with the Vm's own lifetime, so the name
-        // &str detaches from `self` — no per-call String allocation.
-        let program = self.program;
-        let name = match program.get_string_constant(name_cid) {
-            Some(s) => s,
-            None => return Err("BuiltinCall: invalid name constant".into()),
-        };
-        let nid = match self.native_fns.lookup_name(name) {
-            Some(id) => id,
-            None => return Err(format!("Unknown builtin: {}", name)),
+        // The name→id resolution is precomputed per program (see
+        // `BytecodeProgram::builtin_ids`); only the failure path, which is about
+        // to error anyway, goes back to the constant table for a name to print.
+        let nid = match self.bc.builtin_id(name_cid) {
+            Some(id) => NativeFnId(id),
+            // Either the name is not a builtin, or this program was lowered
+            // without a native table to resolve against (any path that does not
+            // go through `Env::ensure_bytecode`). Fall back to the by-name
+            // lookup, which answers both cases correctly.
+            None => {
+                let program = self.program;
+                let name = match program.get_string_constant(name_cid) {
+                    Some(s) => s,
+                    None => return Err("BuiltinCall: invalid name constant".into()),
+                };
+                match self.native_fns.lookup_name(name) {
+                    Some(id) => id,
+                    None => return Err(format!("Unknown builtin: {name}")),
+                }
+            }
         };
         // `__declare_method` publishes a method into the running stack, which
         // is state no native can reach through `PetalCxt` — so it is handled
@@ -134,6 +144,15 @@ impl<'a> Vm<'a> {
             return Ok(v);
         }
         let nf = self.native_fns;
+        // The intrinsics never reach the shared leaf, so they are counted here;
+        // everything else is counted once, in `call_native_fn_flagged`.
+        if nf.intrinsic_map == Some(nid)
+            || nf.intrinsic_filter == Some(nid)
+            || nf.intrinsic_reduce == Some(nid)
+            || nf.intrinsic_for_each == Some(nid)
+        {
+            self.profile.record_native(nid.0);
+        }
         if nf.intrinsic_map == Some(nid) {
             self.builtin_map(args)
         } else if nf.intrinsic_filter == Some(nid) {
@@ -208,6 +227,7 @@ impl<'a> Vm<'a> {
         if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
         }
+        self.profile.record_native(nid.0);
         let func = self.native_fns.get_func(nid);
         let chain = self.emit_call_chain(origin);
         let mut cxt = PetalCxt::new(

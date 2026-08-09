@@ -46,6 +46,19 @@ See [testing.md](testing.md) for the full testing guide.
 |---------|-------------|
 | `./ts/bin/bench-opts.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` on the bytecode VM at both optimization levels (release build) and report per-file medians plus the no-opt/opts speedup. |
 | `./ts/bin/bench-opts.ts --runs=10` | Use more repetitions per file (default 5). |
+| `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]` | Per-frame cost of a **panel** script under the headless harness — the shape of work a Garden pane does. Add `--observe` to mirror a real panel (Garden leaves observation on), `--profile` for the counters below. |
+
+See [performance.md](performance.md) for how to read these numbers and the
+measurement loop they belong to.
+
+## Profiling
+
+| Command | Description |
+|---------|-------------|
+| `petal run --profile <file>` | Count what the run executed — instructions per opcode, builtin calls by name, user calls, collections — and print the histogram to stderr. Runtime-gated, so a shipped release binary can profile without a rebuild. |
+| `petal run --dup-stats <file>` | Value-duplication and heap-allocation counters (debug builds, or release with the `dup-stats` feature). |
+| `PETAL_OPT_STATS=1 petal run <file>` | Report what the bytecode optimizer did to the program: instructions before/after, moves removed, reads rewritten, jumps threaded. |
+| `cd rust && cargo build --profile profiling` | Release codegen with symbols kept, at `rust/target/profiling/petal`, for a sampling profiler (`sample <pid>`, `perf`, `samply`). Same optimization as `release`. |
 
 ## Tooling
 

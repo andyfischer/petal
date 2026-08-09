@@ -65,6 +65,7 @@ impl Env {
             &mut self.symbols,
             &mut self.trace,
             &mut self.observations,
+            &mut self.profile,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -236,6 +237,7 @@ impl Env {
             &mut self.symbols,
             &mut self.trace,
             &mut self.observations,
+            &mut self.profile,
         )
         .call_closure_sync(callable, args)
     }
@@ -281,11 +283,14 @@ fn make_vm<'a>(
     symbols: &'a mut SymbolTable,
     trace: &'a mut TraceBuffer,
     observations: &'a mut Observations,
+    profile: &'a mut crate::profile::VmProfile,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
     let trace_pending = ctx.trace_pending;
     let trace_emit = ctx.trace_emit;
+    // One flag standing for "some per-instruction hook is armed" (see `Vm::hooks`).
+    let hooks = trace.enabled || observations.enabled || profile.enabled;
     Vm {
         program,
         bc,
@@ -311,6 +316,8 @@ fn make_vm<'a>(
         echo: ctx.echo,
         trace,
         observations,
+        profile,
+        hooks,
         error_already_annotated: false,
     }
 }

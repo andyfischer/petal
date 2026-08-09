@@ -27,3 +27,15 @@ gpp = { path = "gpp" }
 petal = { path = "../rust" }
 petal-ui = { path = "../petal-ui" }
 petal-query = { path = "../petal-query" }
+
+# A Petal panel re-runs its whole script every frame, so the interpreter is on
+# the frame budget in a way an ordinary dependency is not: an unoptimized
+# `petal` costs a script-heavy panel ~19 ms a frame where an optimized one costs
+# ~2.5 ms (measured on examples/testbed/25-spreadsheet). Building just these
+# dependencies with optimization keeps `cargo build` debuggable for Garden's own
+# code while making a debug build's panels usable.
+[profile.dev.package.petal]
+opt-level = 3
+
+[profile.dev.package.petal-ui]
+opt-level = 3

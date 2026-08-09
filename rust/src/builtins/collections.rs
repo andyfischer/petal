@@ -617,12 +617,11 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
             // whole chars and never exceeding the requested range.
             let start_idx = ceil_char_boundary(s, start_idx);
             let end_idx = floor_char_boundary(s, end_idx);
-            let sliced = if start_idx <= end_idx {
-                s[start_idx..end_idx].to_string()
+            if start_idx <= end_idx {
+                state.push_substring(id, start_idx, end_idx);
             } else {
-                String::new()
-            };
-            state.push_string(sliced);
+                state.push_str("");
+            }
             Ok(1)
         }
         _ => Err("slice() expects a list or string".into()),

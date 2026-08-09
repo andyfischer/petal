@@ -1549,6 +1549,8 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
 const ROUTE_A_ONLY: OptFlags = OptFlags {
     in_place_mutation: false,
     in_place_straight_line: true,
+    copy_propagation: false,
+    preserve_observations: false,
 };
 
 /// bytecode(no-opt) == bytecode(route A only) == bytecode(all).

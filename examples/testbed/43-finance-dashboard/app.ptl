@@ -1,0 +1,1174 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// LEDGER — a personal finance dashboard with drill-down
+//
+// A Garden panel app. Four KPI tiles, a donut of spending by category, a
+// twelve-month column chart, a cumulative line chart and a transaction table —
+// all scoped to the same drill path. Click a donut slice (or a legend row, or
+// a table row) to descend: all spending → a category → a merchant. Escape
+// climbs back out; the breadcrumb jumps straight to a level.
+//
+//   Run:  garden --headless --debug-port 0 --init layout.ptl
+//   Keys: up/down pick a slice   enter/right drill in   esc/left drill out
+//         n / p  step the month filter    a  clear it    t  re-sort the table
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────────
+// One near-black ground, two surface steps, a hairline that separates cards
+// without boxing them in, and eight categorical hues for the breakdown.
+
+let BG       = #0c0e13
+let SURFACE  = #14171e
+let RAISED   = #1a1e27
+let HAIRLINE = #262c38
+let GRID     = #1e232d
+let TEXT     = #e8edf5
+let DIM      = #8b95a6
+let FAINT    = #59616f
+let POS      = #58cf99
+let NEG      = #ef7d8e
+let ACCENT   = #6ea8ff
+let AMBER    = #f2b661
+let STEEL    = #7e93b8
+let WHITE    = #ffffff
+
+// Spacing scale — every gap in the layout is one of these.
+let S1 = 6
+let S2 = 12
+let S3 = 18
+let S4 = 24
+
+// Five text sizes, and no more: the host rasterizes one glyph per
+// (character, size) into a fixed atlas, and a page spread over many sizes
+// overflows it.
+let T_MICRO = 10
+let T_SMALL = 12
+let T_BODY  = 14
+let T_HEAD  = 18
+let T_HERO  = 26
+
+// ── Text helpers ─────────────────────────────────────────────────────────────
+
+fn text_w(s, st)
+  text_width(s, st)
+end
+
+fn text_at(s, x, y, st)
+  draw_text(s, {x: x, y: y}, st)
+end
+
+fn text_right(s, right_x, y, st)
+  draw_text(s, {x: right_x - text_w(s, st), y: y}, st)
+end
+
+// The prelude's `ellipsize` measures with a bare font size, which under-counts
+// a style carrying `spacing` — this one measures the exact record it draws.
+fn fit_style(s, avail, st)
+  if text_width(s, st) <= avail then
+    return s
+  end
+  let out = s
+  while len(out) > 0 && text_width(out ++ "...", st) > avail do
+    out = slice(out, 0, len(out) - 1)
+  end
+  out ++ "..."
+end
+
+fn text_mid(s, cx, y, st)
+  draw_text(s, {x: cx - text_w(s, st) / 2.0, y: y}, st)
+end
+
+// ── Numbers ──────────────────────────────────────────────────────────────────
+
+fn commas(n)
+  let s = str(n)
+  let out = ""
+  let c = 0
+  let i = len(s) - 1
+  while i >= 0 do
+    out = slice(s, i, i + 1) ++ out
+    c = c + 1
+    if c % 3 == 0 && i > 0 then
+      out = "," ++ out
+    end
+    i = i - 1
+  end
+  out
+end
+
+// Fixed-point without a printf: scale, round, split the integer back apart.
+// str(float) would hand us 12.300000000000001.
+fn dec(x, places)
+  let mul = 1
+  for i in range(0, places) do
+    mul = mul * 10
+  end
+  let neg = x < 0.0
+  let scaled = int(round(abs(x) * float(mul)))
+  let whole = scaled / mul
+  let frac = scaled % mul
+  let s = commas(whole)
+  if places > 0 then
+    let fs = str(frac)
+    while len(fs) < places do
+      fs = "0" ++ fs
+    end
+    s = s ++ "." ++ fs
+  end
+  if neg then "-" ++ s else s end
+end
+
+fn money(v)
+  if v < 0.0 then
+    "-$" ++ commas(int(round(abs(v))))
+  else
+    "$" ++ commas(int(round(v)))
+  end
+end
+
+fn money_cents(v)
+  "$" ++ dec(v, 2)
+end
+
+// One format per axis: a $250 step stays in dollars, a $10,000 step goes to k.
+// Mixing them inside a single axis ("$750" above "$1.0k") reads as a mistake.
+fn axis_label(v, step)
+  if abs(v) < 0.5 then
+    "$0"
+  elsif step >= 1000.0 then
+    "$" ++ dec(v / 1000.0, 1) ++ "k"
+  else
+    "$" ++ commas(int(round(v)))
+  end
+end
+
+fn pct(v)
+  dec(v, 1) ++ "%"
+end
+
+// ── Deterministic pseudo-random ──────────────────────────────────────────────
+// Seeded, so the ledger holds the same numbers across every launch and every
+// hot reload. A dashboard that reshuffles on reload cannot be read.
+
+fn hashi(n)
+  let x = (n * 374761393 + 668265263) % 2147483647
+  x = (x + 2147483647) % 2147483647
+  (x * 1103515245 + 12345) % 2147483647
+end
+
+// Hashed twice: a single LCG pass over an arithmetic seed walk (which is what
+// the generator below produces) comes back as an arithmetic sequence mod 1, and
+// every "does this merchant bill this month?" coin flip lands the same way.
+fn rand01(n)
+  float(hashi(hashi(n) % 65521) % 100000) / 100000.0
+end
+
+// ── Calendar ─────────────────────────────────────────────────────────────────
+
+let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+let MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+let YEAR = "2025"
+
+// ── The chart of accounts ────────────────────────────────────────────────────
+// `avg` is a typical charge, `freq` the expected number of charges a month
+// (fractional means "only some months"), `jit` the spread around `avg`.
+
+let CATS = [
+  {name: "Housing", color: #6ea8ff, merchants: [
+    {name: "Bayview Property Mgmt", avg: 2150.0, freq: 1.0,  jit: 0.005},
+    {name: "Rentersure",            avg: 33.0,   freq: 1.0,  jit: 0.02},
+    {name: "Storage Post",          avg: 89.0,   freq: 1.0,  jit: 0.01},
+  ]},
+  {name: "Groceries", color: #58cf99, merchants: [
+    {name: "Whole Foods",           avg: 84.0,   freq: 3.0,  jit: 0.34},
+    {name: "Trader Joe's",          avg: 61.0,   freq: 2.4,  jit: 0.30},
+    {name: "Corner Market",         avg: 23.0,   freq: 3.2,  jit: 0.45},
+    {name: "Sunrise Produce",       avg: 31.0,   freq: 1.4,  jit: 0.28},
+  ]},
+  {name: "Dining", color: #f2b661, merchants: [
+    {name: "Blue Bottle Coffee",    avg: 7.4,    freq: 6.0,  jit: 0.22},
+    {name: "Nori Ramen",            avg: 28.0,   freq: 1.6,  jit: 0.24},
+    {name: "Taqueria Norte",        avg: 19.0,   freq: 2.1,  jit: 0.30},
+    {name: "Pizzeria Vela",         avg: 41.0,   freq: 1.0,  jit: 0.26},
+    {name: "Cafe Marlow",           avg: 15.0,   freq: 2.0,  jit: 0.35},
+  ]},
+  {name: "Transport", color: #ef7d8e, merchants: [
+    {name: "Metro Transit",         avg: 2.75,   freq: 8.0,  jit: 0.05},
+    {name: "Shell",                 avg: 47.0,   freq: 1.5,  jit: 0.20},
+    {name: "Lyft",                  avg: 17.0,   freq: 2.4,  jit: 0.40},
+    {name: "CityBike",              avg: 12.0,   freq: 1.0,  jit: 0.10},
+  ]},
+  {name: "Utilities", color: #b08bf5, merchants: [
+    {name: "Pacific Power",         avg: 96.0,   freq: 1.0,  jit: 0.12},
+    {name: "Cascade Water",         avg: 41.0,   freq: 0.5,  jit: 0.10},
+    {name: "Fiberline Internet",    avg: 79.0,   freq: 1.0,  jit: 0.01},
+    {name: "Talkmobile",            avg: 55.0,   freq: 1.0,  jit: 0.02},
+  ]},
+  {name: "Shopping", color: #4fc3d9, merchants: [
+    {name: "Amazon",                avg: 46.0,   freq: 3.0,  jit: 0.55},
+    {name: "Uniqlo",                avg: 68.0,   freq: 0.5,  jit: 0.30},
+    {name: "Ikea",                  avg: 129.0,  freq: 0.35, jit: 0.50},
+    {name: "Powell's Books",        avg: 27.0,   freq: 1.0,  jit: 0.35},
+  ]},
+  {name: "Health", color: #9fd35f, merchants: [
+    {name: "Greenleaf Pharmacy",    avg: 24.0,   freq: 1.2,  jit: 0.40},
+    {name: "Dr. Amara Osei",        avg: 45.0,   freq: 0.4,  jit: 0.10},
+    {name: "Peak Fitness",          avg: 39.0,   freq: 1.0,  jit: 0.0},
+  ]},
+  {name: "Subscriptions", color: #f08fc4, merchants: [
+    {name: "Netflix",               avg: 17.99,  freq: 1.0,  jit: 0.0},
+    {name: "Spotify",               avg: 11.99,  freq: 1.0,  jit: 0.0},
+    {name: "iCloud+",               avg: 2.99,   freq: 1.0,  jit: 0.0},
+    {name: "Substack",              avg: 8.0,    freq: 0.6,  jit: 0.0},
+    {name: "Figma",                 avg: 15.0,   freq: 1.0,  jit: 0.0},
+  ]},
+]
+
+// Seasonality: heating peaks in winter, gifts in December, patios in summer.
+// Keeps the column chart from being twelve identical bars.
+fn season(ci, m)
+  let ph = float(m) / 12.0 * 2.0 * pi()
+  if ci == 2 then
+    1.0 + 0.20 * sin(ph - 1.6)
+  elsif ci == 4 then
+    1.0 + 0.34 * cos(ph)
+  elsif ci == 5 then
+    if m >= 10 then 1.85 elsif m == 7 then 1.25 else 0.88 end
+  elsif ci == 6 then
+    1.0 + 0.18 * cos(ph + 0.8)
+  else
+    1.0
+  end
+end
+
+fn build_txns()
+  let out = []
+  let seed = 7
+  for m in range(0, 12) do
+    for ci in range(0, len(CATS)) do
+      let cat = CATS[ci]
+      for mi in range(0, len(cat.merchants)) do
+        let mer = cat.merchants[mi]
+        seed = seed + 1
+        let n = int(floor(mer.freq))
+        if rand01(seed * 31 + 5) < mer.freq - float(n) then
+          n = n + 1
+        end
+        for k in range(0, n) do
+          seed = seed + 1
+          let r1 = rand01(seed * 17 + 3)
+          let r2 = rand01(seed * 29 + 11)
+          let amt = mer.avg * (1.0 - mer.jit + 2.0 * mer.jit * r1) * season(ci, m)
+          let day = 1 + int(r2 * float(MDAYS[m]))
+          out = append(out, {m: m, day: day, cat: ci, mer: mi, amt: amt})
+        end
+      end
+    end
+  end
+  out
+end
+
+fn build_income()
+  let out = for m in range(0, 12) do
+    let base = if m < 6 then 5240.0 else 5615.0 end
+    let bonus = if rand01(9000 + m) > 0.58 then 420.0 + rand01(9100 + m) * 1380.0 else 0.0 end
+    base + bonus
+  end
+  out
+end
+
+// ── Aggregation ──────────────────────────────────────────────────────────────
+
+fn shade(c, i, n)
+  if n <= 1 then
+    c
+  else
+    let hi = color_lerp(c, WHITE, 0.34)
+    let lo = color_lerp(c, #1b2130, 0.52)
+    color_lerp(hi, lo, float(i) / float(n - 1))
+  end
+end
+
+fn sum_of(xs)
+  let s = 0.0
+  for v in xs do
+    s = s + v
+  end
+  s
+end
+
+fn max_of(xs)
+  let m = xs[0]
+  for v in xs do
+    if v > m then m = v end
+  end
+  m
+end
+
+fn min_of(xs)
+  let m = xs[0]
+  for v in xs do
+    if v < m then m = v end
+  end
+  m
+end
+
+fn argmax_of(xs)
+  let m = xs[0]
+  let k = 0
+  for i in range(0, len(xs)) do
+    if xs[i] > m then
+      m = xs[i]
+      k = i
+    end
+  end
+  k
+end
+
+// Sorting without a comparator: pack (rank, index) into one int, let the
+// builtin `sort` do the work, then unpack. O(n log n) instead of the
+// quadratic list-copying an insertion sort written in Petal would cost.
+let SORT_SLOTS = 4096
+
+fn sorted_by_rank(items, ranks)
+  let packed = for i in range(0, len(items)) do
+    ranks[i] * SORT_SLOTS + i
+  end
+  let s = sort(packed)
+  let out = for v in s do
+    items[v % SORT_SLOTS]
+  end
+  out
+end
+
+fn in_scope(t, ci, mi, mo)
+  (ci < 0 || t.cat == ci) && (mi < 0 || t.mer == mi) && (mo < 0 || t.m == mo)
+end
+
+// A `for` is only captured where its value is *directly* consumed: bound to a
+// name, or passed as an argument. As a function's final expression, or as the
+// last expression of an `if` branch, it evaluates to nil — so every list built
+// by a loop in this file is bound to a local first.
+fn zeros(n)
+  let out = for i in range(0, n) do 0.0 end
+  out
+end
+
+fn zeros12()
+  zeros(12)
+end
+
+// Everything one drill scope needs, computed once and cached against its key.
+fn build_view(txns, income, ci, mi, mo, sort_mode)
+  // The monthly series always spans the full year: the month filter
+  // highlights a column rather than collapsing the chart to one.
+  let months = zeros12()
+  let all_months = zeros12()
+  let cat_totals = zeros(len(CATS))
+  let bucket = if ci < 0 then
+      zeros(len(CATS))
+    else
+      zeros(len(CATS[ci].merchants))
+    end
+  let rows = []
+  let total = 0.0
+
+  for t in txns do
+    all_months[t.m] = all_months[t.m] + t.amt
+    cat_totals[t.cat] = cat_totals[t.cat] + t.amt
+    if in_scope(t, ci, mi, -1) then
+      months[t.m] = months[t.m] + t.amt
+    end
+    if in_scope(t, ci, mi, mo) then
+      rows = append(rows, t)
+      total = total + t.amt
+    end
+    if in_scope(t, ci, -1, mo) then
+      if ci < 0 then
+        bucket[t.cat] = bucket[t.cat] + t.amt
+      else
+        bucket[t.mer] = bucket[t.mer] + t.amt
+      end
+    end
+  end
+
+  let slices = []
+  if ci < 0 then
+    let cs = for c in range(0, len(CATS)) do
+      {label: CATS[c].name, value: bucket[c], color: CATS[c].color, key: c}
+    end
+    slices = cs
+  elsif mi < 0 then
+    let ms = CATS[ci].merchants
+    let msl = for k in range(0, len(ms)) do
+      {label: ms[k].name, value: bucket[k], color: shade(CATS[ci].color, k, len(ms)), key: k}
+    end
+    slices = msl
+  else
+    let here = sum_of(bucket)
+    slices = [
+      {label: CATS[ci].merchants[mi].name, value: bucket[mi],
+       color: CATS[ci].color, key: mi},
+      {label: "rest of " ++ CATS[ci].name, value: max(0.0, here - bucket[mi]),
+       color: color_lerp(CATS[ci].color, #1b2130, 0.66), key: -1},
+    ]
+  end
+
+  // Big slices first, so the donut reads clockwise by weight.
+  let sranks = for s in slices do 9999999 - int(s.value * 100.0) end
+  slices = sorted_by_rank(slices, sranks)
+
+  let by_date = for t in rows do (11 - t.m) * 64 + (32 - t.day) end
+  let by_amt = for t in rows do 9999999 - int(t.amt * 100.0) end
+  let rranks = if sort_mode == 0 then by_date else by_amt end
+  rows = sorted_by_rank(rows, rranks)
+
+  {slices: slices, months: months, all_months: all_months, rows: rows,
+   total: total, grand: sum_of(all_months), cat_totals: cat_totals,
+   income: income, inc_total: sum_of(income), spend_total: sum_of(all_months)}
+end
+
+// ── Card chrome ──────────────────────────────────────────────────────────────
+
+fn card(r)
+  draw_rect_rounded(r.x, r.y + 2, r.w, r.h, 14, 0, 0, 0, 70)
+  draw_rect_rounded(r, 14, SURFACE)
+  draw_rect_outline(r, HAIRLINE, 255, 1)
+end
+
+// The content rect under a card's title row.
+fn card_body(r)
+  rect(r.x + S3, r.y + S3 + 24, r.w - S3 * 2, r.h - S3 * 2 - 24)
+end
+
+fn card_head(r, title, note)
+  text_at(title, r.x + S3, r.y + S3, {size: T_MICRO, color: DIM, spacing: 1.5})
+  if len(note) > 0 then
+    text_right(note, r.x + r.w - S3, r.y + S3, {size: T_MICRO, color: FAINT})
+  end
+  card_body(r)
+end
+
+// ── Donut ────────────────────────────────────────────────────────────────────
+
+fn ring_pt(cx, cy, a, r)
+  [cx + sin(a) * r, cy - cos(a) * r]
+end
+
+fn ring_arc(cx, cy, r_in, r_out, a0, a1, c, alpha)
+  let steps = max(2, int((a1 - a0) / 0.10) + 1)
+  for i in range(0, steps) do
+    let b0 = a0 + (a1 - a0) * float(i) / float(steps)
+    let b1 = a0 + (a1 - a0) * float(i + 1) / float(steps)
+    fill_poly([
+      ring_pt(cx, cy, b0, r_in),
+      ring_pt(cx, cy, b0, r_out),
+      ring_pt(cx, cy, b1, r_out),
+      ring_pt(cx, cy, b1, r_in),
+    ], c.r, c.g, c.b, alpha)
+  end
+end
+
+// Index of the slice under the pointer, or -1.
+fn donut_hit(cx, cy, r_in, r_out, slices, total)
+  let dx = float(mouse_x()) - cx
+  let dy = float(mouse_y()) - cy
+  let d = sqrt(dx * dx + dy * dy)
+  if d < r_in - 2.0 || d > r_out + 8.0 then
+    return -1
+  end
+  let a = atan2(dy, dx) + pi() / 2.0
+  if a < 0.0 then a = a + 2.0 * pi() end
+  let acc = 0.0
+  let hit = -1
+  for i in range(0, len(slices)) do
+    let sweep = if total > 0.0 then slices[i].value / total * 2.0 * pi() else 0.0 end
+    if hit < 0 && a >= acc && a < acc + sweep then
+      hit = i
+    end
+    acc = acc + sweep
+  end
+  hit
+end
+
+fn draw_donut(cx, cy, r_in, r_out, slices, total, hot, sel, t)
+  draw_circle({x: cx, y: cy}, r_out + 2.0, GRID)
+  let acc = 0.0
+  for i in range(0, len(slices)) do
+    let s = slices[i]
+    let sweep = if total > 0.0 then s.value / total * 2.0 * pi() * t else 0.0 end
+    let lift = if i == hot then 8.0 elsif i == sel then 3.5 else 0.0 end
+    let alpha = if hot >= 0 && i != hot then 140 else 255 end
+    // A hair of padding between wedges reads as separation without a stroke.
+    let gap = if sweep > 0.07 then 0.013 else 0.0 end
+    ring_arc(cx, cy, r_in, r_out + lift, acc + gap, acc + sweep - gap, s.color, alpha)
+    acc = acc + sweep
+  end
+  draw_circle({x: cx, y: cy}, r_in, SURFACE)
+end
+
+// ── Column chart ─────────────────────────────────────────────────────────────
+
+fn nice_top(v)
+  if v <= 0.0 then
+    1.0
+  else
+    let mag = pow(10.0, floor(log(v) / log(10.0)))
+    let n = v / mag
+    let mult = if n <= 1.0 then 1.0
+      elsif n <= 1.5 then 1.5
+      elsif n <= 2.0 then 2.0
+      elsif n <= 2.5 then 2.5
+      elsif n <= 3.0 then 3.0
+      elsif n <= 4.0 then 4.0
+      elsif n <= 5.0 then 5.0
+      elsif n <= 6.0 then 6.0
+      elsif n <= 8.0 then 8.0
+      else 10.0
+      end
+    mult * mag
+  end
+end
+
+// A round gridline step, so the axis reads $1.0k / $2.0k rather than the
+// quarters of whatever the maximum happens to be.
+fn axis_scale(maxv, target)
+  let raw = max(maxv, 0.000001) / float(target)
+  let mag = pow(10.0, floor(log(raw) / log(10.0)))
+  let n = raw / mag
+  let mult = if n <= 1.0 then 1.0
+    elsif n <= 2.0 then 2.0
+    elsif n <= 2.5 then 2.5
+    elsif n <= 5.0 then 5.0
+    else 10.0
+    end
+  let step = mult * mag
+  let ndiv = max(1, int(ceil(maxv / step)))
+  {step: step, ndiv: ndiv, top: step * float(ndiv)}
+end
+
+fn col_rect(plot, i, n)
+  let slot = plot.w / float(n)
+  let bw = slot * 0.54
+  rect(plot.x + slot * float(i) + (slot - bw) / 2.0, plot.y, bw, plot.h)
+end
+
+fn col_hit(plot, n)
+  let hit = -1
+  if mouse_y() >= plot.y - 8.0 && mouse_y() <= plot.y + plot.h + 18.0 then
+    for i in range(0, n) do
+      let slot = col_rect(plot, i, n)
+      if mouse_x() >= slot.x - 4.0 && mouse_x() <= slot.x + slot.w + 4.0 then
+        hit = i
+      end
+    end
+  end
+  hit
+end
+
+fn draw_columns(plot, vals, base_c, hot, marked, t)
+  let sc = axis_scale(max_of(vals) * 1.06, 5)
+  let top = sc.top
+  for g in range(0, sc.ndiv + 1) do
+    let y = plot.y + plot.h * (1.0 - float(g) / float(sc.ndiv))
+    draw_line(plot.x, y, plot.x + plot.w, y, GRID.r, GRID.g, GRID.b, 255, 1)
+    text_right(axis_label(sc.step * float(g), sc.step), plot.x - 10.0, y - 6.0,
+               {size: T_MICRO, color: FAINT})
+  end
+  for i in range(0, len(vals)) do
+    let slot = col_rect(plot, i, len(vals))
+    let h = plot.h * (vals[i] / top) * t
+    let c = if i == hot then color_lerp(base_c, WHITE, 0.32)
+      elsif marked >= 0 && i != marked then color_lerp(base_c, SURFACE, 0.58)
+      else base_c
+      end
+    draw_rect_rounded(slot.x, plot.y + plot.h - h, slot.w, max(2.0, h), 4,
+                      c.r, c.g, c.b)
+    let lc = if i == marked then ACCENT elsif i == hot then TEXT else FAINT end
+    text_mid(MONTHS[i], slot.x + slot.w / 2.0, plot.y + plot.h + 10.0,
+             {size: T_MICRO, color: lc})
+    if i == marked then
+      draw_line(slot.x - 3.0, plot.y + plot.h + 3.0, slot.x + slot.w + 3.0,
+                plot.y + plot.h + 3.0, ACCENT.r, ACCENT.g, ACCENT.b, 255, 2)
+    end
+  end
+  // Mean line last, so it sits over the columns.
+  let avg = sum_of(vals) / float(len(vals))
+  let ay = plot.y + plot.h * (1.0 - avg / top)
+  let x = plot.x
+  while x < plot.x + plot.w do
+    draw_line(x, ay, min(x + 5.0, plot.x + plot.w), ay, TEXT.r, TEXT.g, TEXT.b, 95, 1)
+    x = x + 11.0
+  end
+  text_at("avg " ++ money(avg), plot.x + 4.0, ay - 15.0, {size: T_MICRO, color: DIM})
+  if hot >= 0 then
+    let slot = col_rect(plot, hot, len(vals))
+    let h = plot.h * (vals[hot] / top) * t
+    text_mid(money(vals[hot]), slot.x + slot.w / 2.0, plot.y + plot.h - h - 18.0,
+             {size: T_SMALL, color: TEXT})
+  end
+  top
+end
+
+// ── Line chart ───────────────────────────────────────────────────────────────
+
+fn cum(vals)
+  let out = []
+  let acc = 0.0
+  for v in vals do
+    acc = acc + v
+    out = append(out, acc)
+  end
+  out
+end
+
+fn lx(plot, i, n)
+  if n <= 1 then plot.x + plot.w / 2.0 else plot.x + plot.w * float(i) / float(n - 1) end
+end
+
+fn ly(plot, v, lo, hi)
+  plot.y + plot.h * (1.0 - (v - lo) / max(hi - lo, 0.0001))
+end
+
+// fill_poly is convex-only, so the band under a polyline is emitted one
+// vertical trapezoid per segment; the gradient comes from redrawing the whole
+// band inside clip strips of falling alpha.
+fn area_under(plot, pts, c, a_top)
+  let bands = 12
+  for b in range(0, bands) do
+    let y0 = int(plot.y + plot.h * float(b) / float(bands))
+    let y1 = int(plot.y + plot.h * float(b + 1) / float(bands))
+    clip(int(plot.x), y0, int(plot.w) + 1, max(1, y1 - y0))
+    let a = int(lerp(float(a_top), 0.0, float(b) / float(bands - 1)))
+    for i in range(0, len(pts) - 1) do
+      fill_poly([
+        [pts[i][0], pts[i][1]],
+        [pts[i + 1][0], pts[i + 1][1]],
+        [pts[i + 1][0], plot.y + plot.h],
+        [pts[i][0], plot.y + plot.h],
+      ], c.r, c.g, c.b, a)
+    end
+  end
+  clip_none()
+end
+
+fn polyline(pts, c, w, a)
+  for i in range(0, len(pts) - 1) do
+    draw_line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], c.r, c.g, c.b, a, w)
+  end
+end
+
+fn dashed(x0, y0, x1, y1, c, a)
+  let steps = 36
+  for i in range(0, steps) do
+    if i % 2 == 0 then
+      let t0 = float(i) / float(steps)
+      let t1 = float(i + 1) / float(steps)
+      draw_line(lerp(x0, x1, t0), lerp(y0, y1, t0),
+                lerp(x0, x1, t1), lerp(y0, y1, t1), c.r, c.g, c.b, a, 1)
+    end
+  end
+end
+
+// ── Breadcrumb ───────────────────────────────────────────────────────────────
+
+let CRUMB = {size: T_SMALL, color: DIM}
+
+fn crumb_parts(lv, ci, mi)
+  if lv == 0 then
+    ["All spending"]
+  elsif lv == 1 then
+    ["All spending", CATS[ci].name]
+  else
+    ["All spending", CATS[ci].name, CATS[ci].merchants[mi].name]
+  end
+end
+
+fn crumb_rects(x, y, parts)
+  let out = []
+  let cx = x
+  let sepw = text_w("  >  ", CRUMB)
+  for i in range(0, len(parts)) do
+    let w = text_w(parts[i], CRUMB)
+    out = append(out, rect(cx, y - 4, w, 20))
+    cx = cx + w + sepw
+  end
+  out
+end
+
+fn hit_list(rs)
+  let hit = -1
+  for i in range(0, len(rs)) do
+    if hovered(rs[i]) then hit = i end
+  end
+  hit
+end
+
+// ── Legend ───────────────────────────────────────────────────────────────────
+
+let LEG_H = 26
+
+fn leg_rect(x, y0, w, i)
+  rect(x, y0 + i * LEG_H, w, LEG_H)
+end
+
+fn leg_hit(x, y0, w, n)
+  let hit = -1
+  for i in range(0, n) do
+    if hovered(leg_rect(x, y0, w, i)) then hit = i end
+  end
+  hit
+end
+
+// ── KPI tiles ────────────────────────────────────────────────────────────────
+
+fn kpi_tile(r, label, value, sub, sub_c, series, c, t)
+  card(r)
+  // The histogram owns the right side of the tile, so a long scope name is
+  // clipped rather than allowed to run under it.
+  let label_st = {size: T_MICRO, color: DIM, spacing: 1.4}
+  text_at(fit_style(label, r.w - S3 - 122, label_st), r.x + S3, r.y + 14, label_st)
+  text_at(value, r.x + S3, r.y + 30, {size: T_HERO, color: TEXT})
+  text_at(sub, r.x + S3, r.y + 64, {size: T_MICRO, color: sub_c})
+  // A twelve-column micro-histogram, right-aligned in the tile.
+  let bw = 5
+  let gap = 3
+  let bx = r.x + r.w - S3 - 12 * (bw + gap) + gap
+  let by = r.y + 20
+  let bh = 46.0
+  let top = max_of(series) * 1.05 + 0.0001
+  for i in range(0, 12) do
+    let h = max(2.0, bh * (series[i] / top) * t)
+    draw_rect_rounded(bx + i * (bw + gap), by + bh - h, bw, h, 2, c.r, c.g, c.b, 210)
+  end
+end
+
+fn kpi_rect(r, i, kw)
+  rect(r.x + i * (kw + 16), r.y, kw, r.h)
+end
+
+// ── Table ────────────────────────────────────────────────────────────────────
+
+let TROW = 24
+
+fn table_hit(view, scroll, count, visible)
+  let hit = -1
+  for i in range(0, visible) do
+    let idx = scroll + i
+    if idx < count && hovered(rect(view.x, view.y + i * TROW, view.w, TROW)) then
+      hit = idx
+    end
+  end
+  hit
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let PAD = 20
+let GAP = 16
+let COL_L = 468
+let COL_R = W - PAD * 2 - COL_L - GAP
+
+let ROW2 = 176
+let ROW3 = 480
+let r_kpis  = rect(PAD, 78, W - PAD * 2, 86)
+let r_donut = rect(PAD, ROW2, COL_L, ROW3 - ROW2 - GAP)
+let r_bars  = rect(PAD + COL_L + GAP, ROW2, COL_R, ROW3 - ROW2 - GAP)
+let r_line  = rect(PAD, ROW3, COL_L, H - ROW3 - PAD)
+let r_table = rect(PAD + COL_L + GAP, ROW3, COL_R, H - ROW3 - PAD)
+
+// ── Persistent state ─────────────────────────────────────────────────────────
+// `_`-prefixed names are filtered out of the debug server's `panel.values`,
+// which is where the 700-row ledger and the derived view belong.
+
+state _txns = build_txns()
+state _income = build_income()
+state _cache = nil
+state _cache_key = ""
+
+state level = 0        // 0 all spending · 1 one category · 2 one merchant
+state sel_cat = -1
+state sel_mer = -1
+state month = -1       // -1 = the whole year
+state legend_sel = 0
+state sort_mode = 0    // 0 by date · 1 by amount
+state table_scroll = 0
+state anim = 0.0
+state drills = 0       // counted, so a drill is observable in /state
+
+fn scope_key(ci, mi, mo, sm)
+  "{ci}|{mi}|{mo}|{sm}"
+end
+
+// ── Frame ────────────────────────────────────────────────────────────────────
+
+clear(BG.r, BG.g, BG.b)
+
+let key0 = scope_key(sel_cat, sel_mer, month, sort_mode)
+_cache = if _cache_key == key0 then _cache
+  else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
+_cache_key = key0
+let pre = _cache
+let total_pre = sum_of(for s in pre.slices do s.value end)
+
+// ── Hit testing, before drawing, so a click lands on the same frame ──────────
+
+let dcx = r_donut.x + S3 + 106.0
+let dcy = r_donut.y + 42.0 + 122.0
+let d_in = 62.0
+let d_out = 100.0
+let hot_slice = donut_hit(dcx, dcy, d_in, d_out, pre.slices, total_pre)
+
+let leg_x = r_donut.x + S3 + 228
+let leg_w = r_donut.w - S3 * 2 - 228
+let leg_y0 = int(dcy) - len(pre.slices) * LEG_H / 2
+let hot_leg = leg_hit(leg_x, leg_y0, leg_w, len(pre.slices))
+
+let bplot = rect(r_bars.x + S3 + 46, r_bars.y + 50,
+                 r_bars.w - S3 * 2 - 46, r_bars.h - 50 - S3 - 22)
+let hot_col = col_hit(bplot, 12)
+
+let parts = crumb_parts(level, sel_cat, sel_mer)
+let crumbs = crumb_rects(PAD, 46, parts)
+let hot_crumb = hit_list(crumbs)
+
+let tplot = card_body(r_table)
+let t_view = rect(tplot.x, tplot.y + 24, tplot.w, tplot.h - 24)
+let t_rows_visible = int(t_view.h) / TROW
+table_scroll = scroll_update(table_scroll, len(pre.rows), t_rows_visible, t_view)
+let hot_row = table_hit(t_view, table_scroll, len(pre.rows), t_rows_visible)
+
+// ── Input ────────────────────────────────────────────────────────────────────
+
+let n_slices = len(pre.slices)
+let want_cat = sel_cat
+let want_mer = sel_mer
+let want_level = level
+let want_sel = legend_sel
+
+if key_pressed("down") || key_pressed("j") then
+  want_sel = min(n_slices - 1, legend_sel + 1)
+end
+if key_pressed("up") || key_pressed("k") then
+  want_sel = max(0, legend_sel - 1)
+end
+
+// Which slice the pointer or the keyboard is asking to descend into.
+let pick = if mouse_pressed(0) && hot_slice >= 0 then hot_slice
+  elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
+  elsif key_pressed("return") || key_pressed("enter") || key_pressed("right") then want_sel
+  else -1
+  end
+
+if pick >= 0 && pick < n_slices && level < 2 then
+  let s = pre.slices[pick]
+  if level == 0 then
+    want_cat = s.key
+    want_level = 1
+    want_sel = 0
+  elsif s.key >= 0 then
+    want_mer = s.key
+    want_level = 2
+    want_sel = 0
+  end
+end
+
+// A table row drills straight to its merchant.
+if mouse_pressed(0) && hot_row >= 0 then
+  let t = pre.rows[hot_row]
+  want_cat = t.cat
+  want_mer = t.mer
+  want_level = 2
+  want_sel = 0
+end
+
+let climb = key_pressed("escape") || key_pressed("backspace") || key_pressed("left")
+let crumb_click = hot_crumb >= 0 && mouse_pressed(0)
+if climb || crumb_click then
+  let to = if crumb_click then hot_crumb else level - 1 end
+  if to <= 0 then
+    want_level = 0
+    want_cat = -1
+    want_mer = -1
+    want_sel = 0
+  elsif to == 1 && level > 1 then
+    want_level = 1
+    want_mer = -1
+    want_sel = 0
+  end
+end
+
+if key_pressed("n") then
+  month = if month >= 11 then -1 else month + 1 end
+end
+if key_pressed("p") then
+  month = if month <= -1 then 11 else month - 1 end
+end
+if key_pressed("a") then
+  month = -1
+end
+if mouse_pressed(0) && hot_col >= 0 then
+  month = if month == hot_col then -1 else hot_col end
+end
+if key_pressed("t") then
+  sort_mode = 1 - sort_mode
+end
+
+let changed = want_level != level || want_cat != sel_cat || want_mer != sel_mer
+drills = if changed then drills + 1 else drills end
+level = want_level
+sel_cat = want_cat
+sel_mer = want_mer
+legend_sel = want_sel
+anim = if changed then 0.0 else min(1.0, anim + dt() * 3.4) end
+let ease = 1.0 - pow(1.0 - anim, 3.0)
+
+let key1 = scope_key(sel_cat, sel_mer, month, sort_mode)
+_cache = if _cache_key == key1 then _cache
+  else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
+_cache_key = key1
+let view = _cache
+let slices = view.slices
+let total = sum_of(for s in slices do s.value end)
+
+let scope_name = if level == 0 then "All spending"
+  elsif level == 1 then CATS[sel_cat].name
+  else CATS[sel_cat].merchants[sel_mer].name
+  end
+// Low-chroma steel means "all of it"; a drill picks up the category's own hue.
+let scope_color = if level == 0 then STEEL else CATS[sel_cat].color end
+let line_color = if level == 0 then POS else CATS[sel_cat].color end
+let month_label = if month < 0 then "Full year {YEAR}" else "{MONTHS[month]} {YEAR}" end
+
+// ── Header ───────────────────────────────────────────────────────────────────
+
+draw_circle({x: PAD + 5, y: 27}, 5.0, scope_color)
+let mark_st = {size: T_HEAD, color: TEXT, spacing: 2.0}
+text_at("LEDGER", PAD + 18, 18, mark_st)
+text_at("personal accounts", PAD + 22 + text_w("LEDGER", mark_st), 23,
+        {size: T_SMALL, color: FAINT})
+
+let sepw = text_w("  >  ", CRUMB)
+let cbx = PAD
+for i in range(0, len(parts)) do
+  let last = i == len(parts) - 1
+  let c = if last then TEXT elsif i == hot_crumb then ACCENT else DIM end
+  text_at(parts[i], cbx, 46, {size: T_SMALL, color: c})
+  if i == hot_crumb && !last then
+    draw_line(cbx, 61, cbx + text_w(parts[i], CRUMB), 61,
+              ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
+  end
+  cbx = cbx + text_w(parts[i], CRUMB)
+  if !last then
+    text_at("  >  ", cbx, 46, {size: T_SMALL, color: FAINT})
+    cbx = cbx + sepw
+  end
+end
+
+text_right("up/down pick   enter drill in   esc back   n/p month   t sort",
+           W - PAD, 47, {size: T_MICRO, color: FAINT})
+let mp_w = text_w(month_label, {size: T_MICRO}) + 18
+let mp_c = if month < 0 then DIM else ACCENT end
+draw_rect_rounded(rect(W - PAD - mp_w, 16, mp_w, 22), 11, mp_c, 32)
+text_at(month_label, W - PAD - mp_w + 9, 21, {size: T_MICRO, color: mp_c})
+
+// ── KPI tiles ────────────────────────────────────────────────────────────────
+
+let kw = (r_kpis.w - GAP * 3) / 4
+
+if level == 0 then
+  let inc = view.inc_total
+  let spend = view.spend_total
+  let net = inc - spend
+  let rate = net / max(inc, 1.0) * 100.0
+  let best = argmax_of(view.all_months)
+  kpi_tile(kpi_rect(r_kpis, 0, kw), "INCOME  12 MO", money(inc),
+           "avg " ++ money(inc / 12.0) ++ " per month", DIM, view.income, POS, ease)
+  kpi_tile(kpi_rect(r_kpis, 1, kw), "SPENDING  12 MO", money(spend),
+           "avg " ++ money(spend / 12.0) ++ " per month", DIM, view.all_months, NEG, ease)
+  kpi_tile(kpi_rect(r_kpis, 2, kw), "NET SAVED", money(net),
+           "heaviest month " ++ MONTHS[best], DIM,
+           for i in range(0, 12) do max(0.0, view.income[i] - view.all_months[i]) end,
+           ACCENT, ease)
+  kpi_tile(kpi_rect(r_kpis, 3, kw), "SAVINGS RATE", pct(rate),
+           if rate >= 25.0 then "ahead of the 25% target" else "under the 25% target" end,
+           if rate >= 25.0 then POS else NEG end,
+           for i in range(0, 12) do
+             max(0.0, (view.income[i] - view.all_months[i]) / max(view.income[i], 1.0) * 100.0)
+           end, AMBER, ease)
+else
+  let scope_total = sum_of(view.months)
+  let share = scope_total / max(view.grand, 1.0) * 100.0
+  let big = argmax_of(view.months)
+  kpi_tile(kpi_rect(r_kpis, 0, kw), upper(scope_name) ++ "  12 MO", money(scope_total),
+           if len(view.rows) == 1 then "1 transaction in view"
+             else str(len(view.rows)) ++ " transactions in view" end,
+           DIM, view.months, scope_color, ease)
+  let avg_note = if level == 2 then "over the last 12 months"
+    else "across " ++ str(len(slices)) ++ " merchants" end
+  kpi_tile(kpi_rect(r_kpis, 1, kw), "MONTHLY AVERAGE", money(scope_total / 12.0),
+           avg_note, DIM, view.months, scope_color, ease)
+  kpi_tile(kpi_rect(r_kpis, 2, kw), "HEAVIEST MONTH", money(max_of(view.months)),
+           MONTHS[big] ++ " " ++ YEAR, DIM, view.months, scope_color, ease)
+  kpi_tile(kpi_rect(r_kpis, 3, kw), "SHARE OF SPENDING", pct(share),
+           "of " ++ money(view.grand) ++ " spent this year", DIM,
+           for i in range(0, 12) do
+             view.months[i] / max(view.all_months[i], 1.0) * 100.0
+           end, scope_color, ease)
+end
+
+// ── Donut card ───────────────────────────────────────────────────────────────
+
+card(r_donut)
+let d_title = if level == 0 then "SPENDING BY CATEGORY"
+  elsif level == 1 then upper(CATS[sel_cat].name) ++ " BY MERCHANT"
+  else "SHARE OF " ++ upper(CATS[sel_cat].name)
+  end
+card_head(r_donut, d_title, if month < 0 then "12 months" else month_label end)
+
+draw_donut(dcx, dcy, d_in, d_out, slices, total, hot_slice,
+           if hot_leg >= 0 then hot_leg else legend_sel end, ease)
+
+let focus = if hot_slice >= 0 then hot_slice
+  elsif hot_leg >= 0 then hot_leg
+  elsif legend_sel < len(slices) then legend_sel
+  else -1
+  end
+if focus >= 0 && len(slices) > 0 then
+  let s = slices[focus]
+  let p = s.value / max(total, 0.0001) * 100.0
+  text_mid(pct(p), dcx, dcy - 26, {size: T_HERO, color: s.color})
+  text_mid(money(s.value), dcx, dcy + 6, {size: T_SMALL, color: TEXT})
+  text_mid(ellipsize(s.label, d_in * 1.8, T_MICRO), dcx, dcy + 22,
+           {size: T_MICRO, color: DIM})
+else
+  text_mid(money(total), dcx, dcy - 14, {size: T_HERO, color: TEXT})
+  text_mid("total", dcx, dcy + 16, {size: T_MICRO, color: DIM})
+end
+
+for i in range(0, len(slices)) do
+  let s = slices[i]
+  let lr = leg_rect(leg_x, leg_y0, leg_w, i)
+  let on = i == hot_leg || i == hot_slice || i == legend_sel
+  if on then
+    draw_rect_rounded(rect(lr.x - 7, lr.y + 1, lr.w + 10, lr.h - 2), 6, RAISED)
+  end
+  draw_rect_rounded(rect(lr.x, lr.y + 9, 8, 8), 2, s.color)
+  let amt = money(s.value)
+  let aw = text_w(amt, {size: T_SMALL})
+  text_at(ellipsize(s.label, lr.w - aw - 26, T_SMALL), lr.x + 16, lr.y + 6,
+          {size: T_SMALL, color: if on then TEXT else DIM end})
+  text_right(amt, lr.x + lr.w, lr.y + 6,
+             {size: T_SMALL, color: if on then TEXT else FAINT end})
+end
+
+// ── Column chart card ────────────────────────────────────────────────────────
+
+card(r_bars)
+let b_title = if level == 0 then "MONTHLY SPENDING"
+  else upper(scope_name) ++ " BY MONTH" end
+card_head(r_bars, b_title, "click a column to filter that month")
+draw_columns(bplot, view.months, scope_color, hot_col, month, ease)
+
+// ── Line chart card ──────────────────────────────────────────────────────────
+
+card(r_line)
+let l_body = card_head(r_line,
+  if level == 0 then "CASH BALANCE" else "CUMULATIVE " ++ upper(scope_name) end,
+  if level == 0 then "opening $4,200" else "vs. even pace" end)
+let lplot = rect(l_body.x + 46, l_body.y + 14, l_body.w - 46, l_body.h - 40)
+
+let base = if level == 0 then 4200.0 else 0.0 end
+let net_months = for i in range(0, 12) do view.income[i] - view.all_months[i] end
+let series = if level == 0 then cum(net_months) else cum(view.months) end
+let vals = for v in series do v + base end
+let lsc = axis_scale(max_of(vals) * 1.06, 5)
+let hi = lsc.top
+let vmin = min_of(vals)
+let lo_n = if vmin < 0.0 then 0.0 - axis_scale(abs(vmin) * 1.15, 2).top else 0.0 end
+
+for g in range(0, lsc.ndiv + 1) do
+  let y = lplot.y + lplot.h * (1.0 - float(g) / float(lsc.ndiv))
+  draw_line(lplot.x, y, lplot.x + lplot.w, y, GRID.r, GRID.g, GRID.b, 255, 1)
+  text_right(axis_label(lerp(lo_n, hi, float(g) / float(lsc.ndiv)), lsc.step),
+             lplot.x - 10.0, y - 6.0, {size: T_MICRO, color: FAINT})
+end
+
+let pts = for i in range(0, 12) do
+  [lx(lplot, i, 12), ly(lplot, lo_n + (vals[i] - lo_n) * ease, lo_n, hi)]
+end
+area_under(lplot, pts, line_color, 80)
+
+// The reference line: the opening balance at the top level, an even pace to
+// the year's total once drilled in.
+if level == 0 then
+  let by = ly(lplot, base, lo_n, hi)
+  dashed(lplot.x, by, lplot.x + lplot.w, by, DIM, 110)
+else
+  dashed(lplot.x, ly(lplot, 0.0, lo_n, hi),
+         lplot.x + lplot.w, ly(lplot, vals[11] * ease, lo_n, hi), DIM, 110)
+end
+
+polyline(pts, line_color, 2.0, 255)
+for i in range(0, 12) do
+  if i % 2 == 0 then
+    text_mid(MONTHS[i], pts[i][0], lplot.y + lplot.h + 9, {size: T_MICRO, color: FAINT})
+  end
+  let on = i == month
+  draw_circle({x: pts[i][0], y: pts[i][1]}, if on then 5.0 else 2.5 end,
+              if on then WHITE else line_color end)
+end
+text_at(if level == 0 then "closing " ++ money(vals[11])
+        else "year to date " ++ money(vals[11]) end,
+        lplot.x + 4, lplot.y - 12, {size: T_MICRO, color: DIM})
+
+// ── Transactions card ────────────────────────────────────────────────────────
+
+card(r_table)
+let sort_note = if sort_mode == 0 then "newest first  ·  t sorts by amount"
+  else "largest first  ·  t sorts by date" end
+card_head(r_table, "TRANSACTIONS  " ++ str(len(view.rows)), sort_note)
+
+let col_date = tplot.x
+let col_desc = tplot.x + 76
+let col_cat = tplot.x + tplot.w - 252
+let col_amt = tplot.x + tplot.w - 14
+
+let HDR = {size: T_MICRO, color: FAINT, spacing: 1.2}
+text_at("DATE", col_date, tplot.y + 2, HDR)
+text_at("MERCHANT", col_desc, tplot.y + 2, HDR)
+text_at("CATEGORY", col_cat, tplot.y + 2, HDR)
+text_right("AMOUNT", col_amt, tplot.y + 2, HDR)
+draw_line(tplot.x, tplot.y + 18, tplot.x + tplot.w, tplot.y + 18,
+          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
+
+clip(int(t_view.x) - 8, int(t_view.y), int(t_view.w) + 16, int(t_view.h))
+for i in range(0, t_rows_visible) do
+  let idx = table_scroll + i
+  if idx < len(view.rows) then
+    let t = view.rows[idx]
+    let ry = t_view.y + i * TROW
+    if idx == hot_row then
+      draw_rect_rounded(rect(t_view.x - 7, ry, t_view.w + 14, TROW), 5, RAISED)
+    elsif idx % 2 == 1 then
+      draw_rect(t_view.x - 7, ry, t_view.w + 14, TROW, RAISED.r, RAISED.g, RAISED.b, 80)
+    end
+    let c = CATS[t.cat]
+    let mname = c.merchants[t.mer].name
+    text_at(MONTHS[t.m] ++ " " ++ str(t.day), col_date, ry + 5,
+            {size: T_SMALL, color: FAINT})
+    text_at(ellipsize(mname, col_cat - col_desc - 18, T_SMALL), col_desc, ry + 5,
+            {size: T_SMALL, color: TEXT})
+    draw_rect_rounded(rect(col_cat, ry + 8, 8, 8), 2, c.color)
+    text_at(c.name, col_cat + 16, ry + 5, {size: T_SMALL, color: DIM})
+    text_right(money_cents(t.amt), col_amt, ry + 5, {size: T_SMALL, color: TEXT})
+  end
+end
+clip_none()
+if len(view.rows) == 0 then
+  text_at("no transactions in this scope", tplot.x, t_view.y + 14,
+          {size: T_SMALL, color: FAINT})
+end
+draw_scrollbar(t_view, len(view.rows), t_rows_visible, table_scroll)

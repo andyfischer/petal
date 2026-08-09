@@ -915,7 +915,9 @@ export fn context_menu(m, items)
     // Drawn after the input so the highlight reflects this frame's pointer.
     // A soft drop shadow lifts the menu off whatever it covers; without it a
     // dark menu over a dark panel reads as part of the background.
-    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, #000000, 0.35)
+    // Alpha is 0–255, not a 0–1 fraction: a float here truncates to 0 and the
+    // shadow disappears entirely.
+    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, #000000, 89)
     draw_rect(r, theme.panel)
     draw_rect_outline(r, theme.outline)
     let y = r.y + _MENU_PAD

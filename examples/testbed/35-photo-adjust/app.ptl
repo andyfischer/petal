@@ -1,0 +1,978 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  APERTURE — a photo adjustment desk for a Garden panel.
+//
+//  There is no image decoder here and no pixel buffer in the host: every
+//  photograph is *synthesised* in Petal from a procedural scene function
+//  sampled on an 80x54 grid, and every adjustment is a real per-sample
+//  colour transform run in Petal. The grid is then painted as one small
+//  quad per sample, so what you see on screen is genuinely the output of
+//  the pipeline rather than a picture of one.
+//
+//  Designed for a 1280x850 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Chrome palette ───────────────────────────────────────────────────────
+let BG       = #0b0d11
+let RAIL     = #12151b
+let CARD     = #191d25
+let ELEV     = #1f242e
+let HOVER    = #262d39
+let LINE     = #2b3240
+let LINE_SOFT= #212734
+let TEXT     = #e9edf5
+let DIM      = #97a1b2
+let FAINT    = #626c7d
+let GHOST    = #3c4553
+let ACCENT   = #f0b35c
+let COOL     = #78b4f0
+
+// ── Geometry ─────────────────────────────────────────────────────────────
+let TOP_H    = 64
+let BOT_H    = 34
+let LEFT_W   = 232
+let RIGHT_W  = 336
+
+let GRID_W   = 80
+let GRID_H   = 54
+let CELL     = 8
+
+let THUMB_W  = 24
+let THUMB_H  = 16
+let THUMB_C  = 5
+
+// ── Small numeric helpers ────────────────────────────────────────────────
+
+fn fract(x)
+  x - floor(x)
+end
+
+fn iclamp(v, lo, hi)
+  max(lo, min(v, hi))
+end
+
+fn smoothstep(e0, e1, x)
+  let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0)
+  t * t * (3.0 - 2.0 * t)
+end
+
+fn hash2(x, y)
+  fract(sin(x * 127.1 + y * 311.7) * 43758.5453)
+end
+
+fn vnoise(x, y)
+  let xi = floor(x)
+  let yi = floor(y)
+  let xf = x - xi
+  let yf = y - yi
+  let u = xf * xf * (3.0 - 2.0 * xf)
+  let v = yf * yf * (3.0 - 2.0 * yf)
+  let a = hash2(xi, yi)
+  let b = hash2(xi + 1.0, yi)
+  let c = hash2(xi, yi + 1.0)
+  let d = hash2(xi + 1.0, yi + 1.0)
+  a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+end
+
+fn fbm(x, y)
+  vnoise(x, y) * 0.6 + vnoise(x * 2.3 + 5.2, y * 2.3 + 1.3) * 0.3 +
+    vnoise(x * 4.7 + 9.1, y * 4.7 + 7.7) * 0.1
+end
+
+// ── Float colour (0..1) ──────────────────────────────────────────────────
+
+fn fc(r, g, b)
+  {r: r, g: g, b: b}
+end
+
+fn cadd(a, b)
+  fc(a.r + b.r, a.g + b.g, a.b + b.b)
+end
+
+fn cglow(a, c, s)
+  fc(a.r + c.r * s, a.g + c.g * s, a.b + c.b * s)
+end
+
+fn cmix(a, b, t)
+  fc(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t)
+end
+
+fn cscale(a, s)
+  fc(a.r * s, a.g * s, a.b * s)
+end
+
+fn lum(c)
+  c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722
+end
+
+fn pack(c)
+  let r = int(clamp(c.r, 0.0, 1.0) * 255.0)
+  let g = int(clamp(c.g, 0.0, 1.0) * 255.0)
+  let b = int(clamp(c.b, 0.0, 1.0) * 255.0)
+  r * 65536 + g * 256 + b
+end
+
+// ── The photographs ──────────────────────────────────────────────────────
+// Each is a pure function of (u, v) in 0..1, v = 0 at the top.
+
+let PHOTOS = [
+  {name: "Harbour Dusk",     place: "Sausalito, CA",  meta: "f/8 · 1/250 · ISO 100"},
+  {name: "Alpine Fog",       place: "Val Gardena, IT", meta: "f/11 · 1/500 · ISO 64"},
+  {name: "Neon Alley",       place: "Shinjuku, JP",   meta: "f/1.8 · 1/60 · ISO 1600"},
+  {name: "Desert Highway",   place: "Route 190, CA",  meta: "f/9 · 1/800 · ISO 200"},
+  {name: "Orchard Morning",  place: "Hood River, OR", meta: "f/4 · 1/320 · ISO 125"},
+]
+
+fn scene_harbour(u, v)
+  let horizon = 0.60
+  let land = horizon - 0.055 - 0.040 * sin(u * 4.1 + 0.6) - 0.030 * fbm(u * 3.0, 4.0)
+  if v < horizon then
+    let t = v / horizon
+    let sky = cmix(fc(0.99, 0.66, 0.33), fc(0.10, 0.12, 0.31), pow(t, 0.42))
+    let dx = (u - 0.66) * 1.55
+    let dy = (v - horizon + 0.015) * 3.0
+    let glow = exp(-sqrt(dx * dx + dy * dy) * 4.2)
+    let out = cglow(sky, fc(1.0, 0.74, 0.38), glow * 1.05)
+    let cl = smoothstep(0.48, 0.78, fbm(u * 3.4 + 1.0, v * 8.0)) * (1.0 - t) * 0.55
+    out = cmix(out, fc(0.70, 0.40, 0.46), cl)
+    if v > land then
+      let shade = 0.10 + 0.12 * fbm(u * 6.0, v * 9.0)
+      out = cmix(fc(0.07, 0.07, 0.12), fc(0.16, 0.13, 0.17), shade * 3.0)
+    end
+    out
+  else
+    let t = (v - horizon) / (1.0 - horizon)
+    let water = cmix(fc(0.52, 0.34, 0.30), fc(0.045, 0.055, 0.115), pow(t, 0.55))
+    let band = exp(-abs(u - 0.66) * 4.4)
+    let rip = sin(v * 130.0 + sin(u * 9.0 + v * 20.0) * 2.4)
+    let spec = max(0.0, rip) * band * 0.55 * (1.0 - t * 0.65)
+    let out = cglow(water, fc(1.0, 0.72, 0.36), spec)
+    let chop = (fbm(u * 9.0, v * 26.0) - 0.5) * 0.10 * (0.4 + t)
+    cadd(out, fc(chop, chop * 0.95, chop * 0.9))
+  end
+end
+
+
+fn scene_alpine(u, v)
+  let horizon = 0.70
+  if v < horizon then
+    let t = v / horizon
+    let sky = cmix(fc(0.90, 0.93, 0.96), fc(0.45, 0.57, 0.72), pow(t, 0.85))
+    var out = sky
+    // three receding ridges, each washed further into the fog
+    for k in range(0, 3) do
+      let base = 0.28 + float(k) * 0.12
+      let amp = 0.090 - float(k) * 0.022
+      let ridge = base + amp * sin(u * (4.6 - float(k) * 1.1) + float(k) * 2.1) -
+        amp * 0.9 * fbm(u * (3.4 + float(k) * 1.8) + float(k) * 3.0, 2.0)
+      if v > ridge then
+        let depth = (v - ridge) * 5.0
+        let rock = cmix(fc(0.44, 0.49, 0.58), fc(0.19, 0.24, 0.32), clamp(depth, 0.0, 1.0))
+        let snow = smoothstep(0.015, 0.075, ridge + 0.075 - v) * smoothstep(0.36, 0.29, ridge)
+        let lit = cmix(rock, fc(0.95, 0.96, 0.99), snow * 0.85)
+        let fogv = 0.60 - float(k) * 0.23
+        set out = cmix(lit, fc(0.85, 0.89, 0.93), fogv)
+      end
+    end
+    // the fog bank itself, thickest just under the last ridge
+    set out = cmix(out, fc(0.88, 0.91, 0.94), exp(-abs(v - (horizon - 0.05)) * 13.0) * 0.75)
+    out
+  else
+    let t = (v - horizon) / (1.0 - horizon)
+    var out = cmix(fc(0.80, 0.84, 0.87), fc(0.13, 0.19, 0.18), pow(t, 0.55))
+    // far tree line, then a nearer, darker one
+    for k in range(0, 2) do
+      let n = if k == 0 then 15.0 else 7.0 end
+      let idx = floor(u * n) + float(k) * 40.0
+      let cell = fract(u * n)
+      let wid = 0.42 + 0.46 * hash2(idx, 9.0)
+      let hgt = (0.055 + 0.075 * hash2(idx, 3.0)) * (1.0 + float(k) * 1.5)
+      let taper = clamp(abs(cell - 0.5) * 2.0 / wid, 0.0, 1.0)
+      let top = horizon + 0.012 + float(k) * 0.10 + hgt * taper
+      if v > top then
+        let dark = if k == 0 then fc(0.15, 0.22, 0.19) else fc(0.07, 0.12, 0.11) end
+        let wash = if k == 0 then max(0.0, 0.50 - t * 1.5) else max(0.0, 0.20 - t * 1.1) end
+        set out = cmix(dark, fc(0.82, 0.86, 0.90), wash)
+      end
+    end
+    out
+  end
+end
+
+// The reflection below needs the sky/building half only — recursing into
+// scene_neon would bounce between the two branches forever.
+fn scene_neon_upper(u, v)
+  let ground = 0.70
+  var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(clamp(v / ground, 0.0, 1.0), 0.5))
+  let bi = floor(u * 7.0)
+  let bf = fract(u * 7.0)
+  let btop = 0.06 + 0.22 * hash2(bi, 11.0)
+  if v > btop then
+    let wall = 0.050 + 0.032 * hash2(bi, 5.0)
+    set out = fc(wall * 1.1, wall, wall * 1.35)
+    let wx = floor(bf * 5.0)
+    let wy = floor((v - btop) * 34.0)
+    let lit = hash2(bi * 13.0 + wx, wy)
+    if lit > 0.63 then
+      let warm = hash2(wx + 7.0, wy + 2.0)
+      set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), warm), 0.8)
+    end
+  end
+  let d1 = sqrt(pow((u - 0.22) * 1.0, 2.0) + pow((v - 0.40) * 1.9, 2.0))
+  let d2 = sqrt(pow((u - 0.79) * 1.0, 2.0) + pow((v - 0.26) * 1.9, 2.0))
+  set out = cglow(out, fc(1.0, 0.22, 0.62), exp(-d1 * 9.0) * 1.5)
+  set out = cglow(out, fc(0.20, 0.95, 1.0), exp(-d2 * 10.0) * 1.3)
+  out
+end
+
+fn scene_neon(u, v)
+  let ground = 0.70
+  if v < ground then
+    var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(v / ground, 0.5))
+    let bi = floor(u * 7.0)
+    let bf = fract(u * 7.0)
+    let btop = 0.06 + 0.22 * hash2(bi, 11.0)
+    if v > btop then
+      let wall = 0.050 + 0.032 * hash2(bi, 5.0)
+      set out = fc(wall * 1.1, wall, wall * 1.35)
+      // parapet and the seam between neighbouring blocks
+      if v < btop + 0.012 || bf < 0.035 || bf > 0.965 then
+        set out = fc(0.014, 0.014, 0.024)
+      else
+        let wx = floor(bf * 5.0)
+        let wy = floor((v - btop) * 34.0)
+        let lit = hash2(bi * 13.0 + wx, wy)
+        let inx = bf * 5.0 - wx
+        let iny = (v - btop) * 34.0 - wy
+        if lit > 0.63 && inx > 0.24 && inx < 0.76 && iny > 0.28 && iny < 0.72 then
+          let warm = hash2(wx + 7.0, wy + 2.0)
+          set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), warm), 0.55 + 0.45 * lit)
+        end
+      end
+    end
+    // two neon signs
+    let d1 = sqrt(pow((u - 0.22) * 1.0, 2.0) + pow((v - 0.40) * 1.9, 2.0))
+    let d2 = sqrt(pow((u - 0.79) * 1.0, 2.0) + pow((v - 0.26) * 1.9, 2.0))
+    set out = cglow(out, fc(1.0, 0.22, 0.62), exp(-d1 * 9.0) * 1.5)
+    set out = cglow(out, fc(0.20, 0.95, 1.0), exp(-d2 * 10.0) * 1.3)
+    if abs(u - 0.22) < 0.030 && abs(v - 0.40) < 0.075 then
+      set out = fc(1.0, 0.55, 0.80)
+    end
+    if abs(u - 0.79) < 0.024 && abs(v - 0.26) < 0.060 then
+      set out = fc(0.72, 1.0, 1.0)
+    end
+    out
+  else
+    // wet asphalt: a smeared, rippled reflection of the block above
+    let t = (v - ground) / (1.0 - ground)
+    let mirror = ground - t * 0.55 + sin(v * 70.0 + u * 6.0) * 0.010
+    let src = scene_neon_upper(u + sin(v * 45.0) * 0.012, clamp(mirror, 0.02, ground - 0.004))
+    let refl = cscale(src, 0.42 * (1.0 - t * 0.55))
+    let road = cmix(fc(0.060, 0.058, 0.080), fc(0.024, 0.024, 0.036), t)
+    let out = cadd(road, refl)
+    let grit = (hash2(floor(u * 90.0), floor(v * 60.0)) - 0.5) * 0.045
+    cadd(out, fc(grit, grit, grit))
+  end
+end
+
+fn scene_desert(u, v)
+  let horizon = 0.44
+  let mesa = horizon - 0.014 - 0.055 * max(0.0, sin(u * 2.7 + 0.5)) *
+    (0.45 + 0.75 * fbm(u * 1.9, 7.0)) - 0.016 * fbm(u * 6.0, 3.0)
+  if v < horizon then
+    let t = v / horizon
+    let sky = cmix(fc(0.09, 0.27, 0.62), fc(0.90, 0.89, 0.82), pow(t, 1.5))
+    var out = cglow(sky, fc(1.0, 0.95, 0.80), exp(-abs(u - 0.40) * 1.6) * pow(t, 3.0) * 0.55)
+    let cl = smoothstep(0.58, 0.82, fbm(u * 2.4, v * 5.5 + 2.0)) * (1.0 - t) * 0.60
+    set out = cmix(out, fc(0.96, 0.97, 0.98), cl)
+    if v > mesa then
+      let rock = cmix(fc(0.46, 0.36, 0.34), fc(0.60, 0.48, 0.42), fbm(u * 7.0, 3.0))
+      set out = cmix(rock, fc(0.86, 0.86, 0.82), 0.52)
+    end
+    out
+  else
+    let t = (v - horizon) / (1.0 - horizon)
+    var out = cmix(fc(0.80, 0.68, 0.48), fc(0.50, 0.38, 0.24), pow(t, 0.55))
+    let ripple = (fbm(u * 13.0, v * 34.0) - 0.5) * 0.11
+    set out = cadd(out, fc(ripple, ripple * 0.86, ripple * 0.62))
+    set out = cmix(out, fc(0.88, 0.87, 0.81), exp(-t * 22.0) * 0.55)
+    // the highway, converging on the vanishing point
+    let half = 0.007 + t * t * 0.205
+    let centre = 0.50 + t * t * 0.045
+    let dx = abs(u - centre)
+    if dx < half then
+      let asphalt = cmix(fc(0.36, 0.35, 0.36), fc(0.17, 0.17, 0.19), pow(t, 0.7))
+      let grit = (hash2(floor(u * 120.0), floor(v * 90.0)) - 0.5) * 0.05
+      set out = cmix(cadd(asphalt, fc(grit, grit, grit)), out, smoothstep(half * 0.86, half, dx))
+      if abs(dx - half * 0.80) < max(0.0015, half * 0.055) then
+        set out = fc(0.90, 0.88, 0.84)
+      end
+      if dx < max(0.0012, half * 0.045) && fract(v * 20.0 - 0.4) < 0.45 && t > 0.16 then
+        set out = fc(0.94, 0.86, 0.40)
+      end
+    end
+    out
+  end
+end
+
+fn scene_orchard(u, v)
+  let horizon = 0.38
+  if v < horizon then
+    let t = v / horizon
+    let sky = cmix(fc(0.55, 0.71, 0.87), fc(0.98, 0.95, 0.86), pow(t, 0.8))
+    let sun = exp(-sqrt(pow((u - 0.78) * 1.3, 2.0) + pow((v - 0.17) * 1.7, 2.0)) * 8.5)
+    cglow(sky, fc(1.0, 0.96, 0.80), sun * 0.60)
+  else
+    let t = (v - horizon) / (1.0 - horizon)
+    var out = cmix(fc(0.62, 0.68, 0.42), fc(0.15, 0.28, 0.14), pow(t, 0.55))
+    let mow = 0.045 * sin(v * 46.0 + sin(u * 3.0) * 1.5) * (0.3 + t)
+    set out = cadd(out, fc(mow * 0.7, mow, mow * 0.4))
+    // five rows of trees, drawn far to near so the near ones occlude
+    for k in range(0, 5) do
+      let f = float(k) / 4.0
+      let base = horizon + 0.030 + pow(f, 1.55) * 0.66
+      let hgt = 0.042 + f * 0.20
+      let sp = 15.0 - f * 10.5
+      let idx = floor(u * sp + float(k) * 0.41)
+      let cell = fract(u * sp + float(k) * 0.41)
+      let jig = (hash2(idx, float(k) + 2.0) - 0.5) * 0.22
+      let wid = 0.52 + 0.30 * hash2(idx, float(k) + 6.0)
+      let dx = abs(cell - 0.5) / wid
+      let dy = (base - v) / (hgt * (1.0 + jig))
+      if dy > 0.0 && dy < 1.0 then
+        let rr = dx * dx * 4.0 + pow(dy * 2.0 - 1.0, 2.0)
+        if rr < 1.0 then
+          let shade = 0.16 + 0.42 * hash2(idx, float(k) + 11.0) + 0.30 * (1.0 - dx)
+          let leaf = cmix(fc(0.09, 0.20, 0.09), fc(0.44, 0.60, 0.25), clamp(shade, 0.0, 1.0))
+          set out = cmix(leaf, fc(0.90, 0.92, 0.84), max(0.0, 0.42 - f * 0.55))
+        end
+      end
+      // trunks, only close enough to resolve
+      if f > 0.45 && dx < 0.09 && v > base && v < base + hgt * 0.28 then
+        set out = fc(0.22, 0.16, 0.11)
+      end
+    end
+    // morning mist hugging the far rows
+    set out = cmix(out, fc(0.94, 0.93, 0.86), exp(-abs(v - (horizon + 0.03)) * 30.0) * 0.60)
+    let gr = (fbm(u * 15.0, v * 28.0) - 0.5) * 0.09 * (0.3 + t)
+    cadd(out, fc(gr, gr * 1.1, gr * 0.7))
+  end
+end
+
+fn sample(id, u, v)
+  if id == 0 then scene_harbour(u, v)
+  elsif id == 1 then scene_alpine(u, v)
+  elsif id == 2 then scene_neon(u, v)
+  elsif id == 3 then scene_desert(u, v)
+  else scene_orchard(u, v)
+  end
+end
+
+// ── The adjustment pipeline ──────────────────────────────────────────────
+
+let SLIDERS = [
+  {name: "Exposure",    key: "ev", bipolar: true,  unit: "ev"},
+  {name: "Contrast",    key: "co", bipolar: true,  unit: ""},
+  {name: "Highlights",  key: "hi", bipolar: true,  unit: ""},
+  {name: "Shadows",     key: "sh", bipolar: true,  unit: ""},
+  {name: "Saturation",  key: "sa", bipolar: true,  unit: ""},
+  {name: "Temperature", key: "tp", bipolar: true,  unit: "K"},
+  {name: "Tint",        key: "tn", bipolar: true,  unit: ""},
+  {name: "Fade",        key: "fa", bipolar: false, unit: ""},
+  {name: "Grain",       key: "gr", bipolar: false, unit: ""},
+  {name: "Vignette",    key: "vg", bipolar: false, unit: ""},
+]
+
+let ZERO = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+let PRESETS = [
+  {name: "Original",    vals: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+  {name: "Vivid",       vals: [8, 28, -16, 14, 34, 6, 0, 0, 0, 14]},
+  {name: "Noir",        vals: [14, 34, -20, 10, -100, 0, 0, 4, 26, 28]},
+  {name: "Golden Hour", vals: [12, 12, -10, 20, 18, 44, -8, 10, 8, 22]},
+  {name: "Faded Film",  vals: [6, -14, -12, 24, -22, 12, 8, 46, 20, 12]},
+  {name: "Cold Steel",  vals: [-4, 24, -6, 10, -32, -40, 4, 8, 6, 28]},
+]
+
+fn adj_of(vals)
+  {ev: float(vals[0]) / 100.0,
+   co: float(vals[1]) / 100.0,
+   hi: float(vals[2]) / 100.0,
+   sh: float(vals[3]) / 100.0,
+   sa: float(vals[4]) / 100.0,
+   tp: float(vals[5]) / 100.0,
+   tn: float(vals[6]) / 100.0,
+   fa: float(vals[7]) / 100.0,
+   gr: float(vals[8]) / 100.0,
+   vg: float(vals[9]) / 100.0}
+end
+
+fn develop(c0, a, u, v, gain)
+  var c = cscale(c0, gain)
+
+  // tone: shadows lift and highlight rolloff, weighted by local luminance
+  let l0 = lum(c)
+  if a.sh != 0.0 then
+    let w = (1.0 - l0) * (1.0 - l0)
+    set c = cadd(c, fc(a.sh * 0.42 * w, a.sh * 0.42 * w, a.sh * 0.42 * w))
+  end
+  if a.hi != 0.0 then
+    let w = l0 * l0
+    set c = cadd(c, fc(a.hi * 0.46 * w, a.hi * 0.46 * w, a.hi * 0.46 * w))
+  end
+
+  // contrast about mid grey
+  if a.co != 0.0 then
+    let k = 1.0 + a.co
+    set c = fc((c.r - 0.5) * k + 0.5, (c.g - 0.5) * k + 0.5, (c.b - 0.5) * k + 0.5)
+  end
+
+  // white balance
+  if a.tp != 0.0 then
+    set c = fc(c.r * (1.0 + a.tp * 0.30), c.g * (1.0 + a.tp * 0.04), c.b * (1.0 - a.tp * 0.28))
+  end
+  if a.tn != 0.0 then
+    set c = fc(c.r * (1.0 + a.tn * 0.12), c.g * (1.0 - a.tn * 0.20), c.b * (1.0 + a.tn * 0.14))
+  end
+
+  // saturation about the sample's own luminance
+  if a.sa != 0.0 then
+    let l = lum(c)
+    let s = 1.0 + a.sa
+    set c = fc(l + (c.r - l) * s, l + (c.g - l) * s, l + (c.b - l) * s)
+  end
+
+  // faded print: blacks lift toward a warm grey, whites pull back
+  if a.fa > 0.0 then
+    let f = a.fa
+    set c = fc(c.r * (1.0 - 0.26 * f) + 0.155 * f,
+               c.g * (1.0 - 0.26 * f) + 0.150 * f,
+               c.b * (1.0 - 0.26 * f) + 0.170 * f)
+  end
+
+  // grain: fixed-pattern per sample so it never shimmers between frames
+  if a.gr > 0.0 then
+    let n = (hash2(floor(u * 260.0), floor(v * 260.0)) - 0.5) * a.gr * 0.30
+    set c = cadd(c, fc(n, n * 0.94, n * 1.06))
+  end
+
+  // vignette
+  if a.vg > 0.0 then
+    let dx = (u - 0.5) * 1.18
+    let dy = (v - 0.5)
+    let d = sqrt(dx * dx + dy * dy) * 1.72
+    set c = cscale(c, 1.0 - a.vg * 0.95 * smoothstep(0.34, 1.08, d))
+  end
+
+  c
+end
+
+// ── Image builders (cached in state, keyed by a signature string) ────────
+
+fn build_base(id, gw, gh)
+  let img = for j in range(0, gh) do
+    let row = for i in range(0, gw) do
+      pack(sample(id, (float(i) + 0.5) / float(gw), (float(j) + 0.5) / float(gh)))
+    end
+    row
+  end
+  img
+end
+
+fn unpack(p)
+  fc(float(p / 65536) / 255.0, float((p / 256) % 256) / 255.0, float(p % 256) / 255.0)
+end
+
+// Every other sample in each direction: the draft grid a live drag develops,
+// four times cheaper and drawn at double cell size.
+fn halve(img, gw, gh)
+  let out = for j in range(0, gh / 2) do
+    let src = img[j * 2]
+    let row = for i in range(0, gw / 2) do
+      src[i * 2]
+    end
+    row
+  end
+  out
+end
+
+// Develops the *cached* negative rather than re-synthesising the scene: the
+// scene functions are by far the expensive half, and the whole point of a
+// slider is that only the grade changes.
+fn build_dev(base, vals, gw, gh)
+  let a = adj_of(vals)
+  let gain = pow(2.0, a.ev * 1.45)
+  let img = for j in range(0, gh) do
+    let v = (float(j) + 0.5) / float(gh)
+    let src = base[j]
+    let row = for i in range(0, gw) do
+      pack(develop(unpack(src[i]), a, (float(i) + 0.5) / float(gw), v, gain))
+    end
+    row
+  end
+  img
+end
+
+// One pass over a developed frame: the 40-bin luminance histogram, the mean
+// level, and how many samples are pinned at either end of the scale.
+fn analyse(img)
+  var bins = []
+  for i in range(0, 40) do
+    set bins = append(bins, 0)
+  end
+  var total = 0
+  var n = 0
+  var low = 0
+  var high = 0
+  for row in img do
+    for p in row do
+      let l = ((p / 65536) * 54 + ((p / 256) % 256) * 183 + (p % 256) * 19) / 256
+      set bins[iclamp(l * 40 / 256, 0, 39)] = bins[iclamp(l * 40 / 256, 0, 39)] + 1
+      set total = total + l
+      set n = n + 1
+      if l <= 2 then
+        set low = low + 1
+      end
+      if l >= 252 then
+        set high = high + 1
+      end
+    end
+  end
+  {bins: bins, mean: total / max(1, n), low: low, high: high, n: n}
+end
+
+fn sig_of(id, vals)
+  var s = "{id}"
+  for v in vals do
+    set s = s ++ ":{v}"
+  end
+  s
+end
+
+// ── State ────────────────────────────────────────────────────────────────
+
+state photo = 0
+state adj = ZERO
+state preset = 0
+state slider_sel = 0
+state split = 0.5
+state peeking = false
+state view = "split"          // "split" | "before" | "after"
+state dragging = -1           // slider index, 100 = split handle, -1 = none
+state base_sig = ""
+state dev_sig = ""
+state negatives = [[], [], [], [], []]
+state base_img = []
+state base_half = []
+state dev_img = []
+state draft_img = []
+state draft_sig = ""
+state hist = {bins: [], mean: 0, low: 0, high: 0, n: 1}
+state base_mean = 0
+state thumb_sig = ""
+state thumbs = []
+state recomputes = 0
+
+// ── Drawing helpers ──────────────────────────────────────────────────────
+
+fn cap(s, x, y, size, c, sp)
+  draw_text(s, {x: x, y: y}, {size: size, color: c, spacing: sp})
+end
+
+fn body(s, x, y, size, c)
+  draw_text(s, {x: x, y: y}, size, c)
+end
+
+fn hline(x, y, w, c)
+  draw_rect(x, y, w, 1, c.r, c.g, c.b)
+end
+
+fn draw_img(img, x, y, cw, ch, cs, from_col, to_col)
+  for j in range(0, ch) do
+    let row = img[j]
+    let ry = y + j * cs
+    for i in range(from_col, to_col) do
+      let p = row[i]
+      draw_rect(x + i * cs, ry, cs, cs, p / 65536, (p / 256) % 256, p % 256)
+    end
+  end
+end
+
+fn signed(n)
+  if n > 0 then "+{n}" else "{n}" end
+end
+
+// ── Frame ────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+
+clear(BG.r, BG.g, BG.b)
+
+// keep the caches honest
+let want_base = sig_of(photo, ZERO)
+if base_sig != want_base then
+  // Scanning a negative is the expensive half, so each one is kept once it
+  // has been read: revisiting a photo in the library is instant.
+  if len(negatives[photo]) == 0 then
+    negatives[photo] = build_base(photo, GRID_W, GRID_H)
+  end
+  base_img = negatives[photo]
+  base_half = halve(base_img, GRID_W, GRID_H)
+  base_mean = analyse(base_img).mean
+  base_sig = want_base
+end
+// While a control is being dragged only the quarter-res draft is developed;
+// the full negative is developed once the pointer settles.
+let live = dragging >= 0 && dragging < 100
+let want_dev = sig_of(photo, adj)
+if live then
+  if draft_sig != want_dev then
+    draft_img = build_dev(base_half, adj, GRID_W / 2, GRID_H / 2)
+    draft_sig = want_dev
+  end
+elsif dev_sig != want_dev then
+  dev_img = build_dev(base_img, adj, GRID_W, GRID_H)
+  hist = analyse(dev_img)
+  dev_sig = want_dev
+  recomputes = recomputes + 1
+end
+let want_thumb = "{THUMB_W}x{THUMB_H}"
+if thumb_sig != want_thumb then
+  thumbs = for k in range(0, len(PHOTOS)) do
+    build_base(k, THUMB_W, THUMB_H)
+  end
+  thumb_sig = want_thumb
+end
+
+// ── Top bar ──────────────────────────────────────────────────────────────
+draw_rect(0, 0, W, TOP_H, RAIL.r, RAIL.g, RAIL.b)
+hline(0, TOP_H - 1, W, LINE)
+draw_rect(24, 22, 4, 20, ACCENT.r, ACCENT.g, ACCENT.b)
+cap("APERTURE", 40, 22, 17, TEXT, 4)
+cap("DEVELOP", 168, 26, 10, FAINT, 3)
+
+let cur = PHOTOS[photo]
+let dirty = adj != ZERO
+draw_text_right(cur.meta, W - 24, 34, 11, FAINT)
+draw_text_right(cur.name ++ "  ·  " ++ cur.place, W - 24, 17, 13, DIM)
+let dot_c = if dirty then ACCENT else GHOST end
+draw_circle(W - 24 - text_width(cur.name ++ "  ·  " ++ cur.place, 13) - 14, 23, 4, dot_c.r, dot_c.g, dot_c.b)
+
+// ── Left rail: library ───────────────────────────────────────────────────
+draw_rect(0, TOP_H, LEFT_W, H - TOP_H - BOT_H, RAIL.r, RAIL.g, RAIL.b)
+draw_rect(LEFT_W - 1, TOP_H, 1, H - TOP_H - BOT_H, LINE.r, LINE.g, LINE.b)
+cap("LIBRARY", 24, TOP_H + 22, 10, FAINT, 3)
+draw_text_right("{len(PHOTOS)}", LEFT_W - 24, TOP_H + 22, 10, GHOST)
+
+let CARD_H = 116
+var clicked_photo = -1
+for k in range(0, len(PHOTOS)) do
+  let r = rect(20, TOP_H + 44 + k * (CARD_H + 9), LEFT_W - 40, CARD_H)
+  let on = k == photo
+  let hov = hovered(r)
+  let bgc = if on then ELEV elsif hov then HOVER else CARD end
+  draw_rect_rounded(r, 6, bgc)
+  if on then
+    draw_rect(r.x, r.y + 8, 3, r.h - 16, ACCENT.r, ACCENT.g, ACCENT.b)
+  end
+  let tw = THUMB_W * THUMB_C
+  let tx = r.x + (r.w - tw) / 2
+  draw_img(thumbs[k], tx, r.y + 8, THUMB_W, THUMB_H, THUMB_C, 0, THUMB_W)
+  if !on then
+    draw_rect(tx, r.y + 8, tw, THUMB_H * THUMB_C, BG.r, BG.g, BG.b, if hov then 40 else 90 end)
+  end
+  let nc = if on then TEXT else DIM end
+  body(PHOTOS[k].name, r.x + 14, r.y + THUMB_H * THUMB_C + 20, 12, nc)
+  draw_text_right("0{k + 1}", r.x + r.w - 14, r.y + THUMB_H * THUMB_C + 21, 10, if on then ACCENT else GHOST end)
+  if clicked(r) then
+    set clicked_photo = k
+  end
+end
+if clicked_photo >= 0 then
+  photo = clicked_photo
+end
+
+// ── Centre: the image ────────────────────────────────────────────────────
+let IMG_W = GRID_W * CELL
+let IMG_H = GRID_H * CELL
+let cx0 = LEFT_W + (W - LEFT_W - RIGHT_W - IMG_W) / 2
+let cy0 = TOP_H + 30
+
+// matte
+draw_rect(cx0 - 10, cy0 - 10, IMG_W + 20, IMG_H + 20, ELEV.r, ELEV.g, ELEV.b)
+draw_rect_outline(cx0 - 10, cy0 - 10, IMG_W + 20, IMG_H + 20, LINE.r, LINE.g, LINE.b)
+
+let split_col = iclamp(int(split * float(GRID_W)), 0, GRID_W)
+// Space slams back to the untouched negative without disturbing the mode.
+let peek = peeking
+let shown = if peek then "before" else view end
+let after_img = if live then draft_img else dev_img end
+let ag = if live then GRID_W / 2 else GRID_W end
+let ah = if live then GRID_H / 2 else GRID_H end
+let ac = if live then CELL * 2 else CELL end
+if shown == "before" then
+  draw_img(base_img, cx0, cy0, GRID_W, GRID_H, CELL, 0, GRID_W)
+elsif shown == "after" then
+  draw_img(after_img, cx0, cy0, ag, ah, ac, 0, ag)
+else
+  draw_img(base_img, cx0, cy0, GRID_W, GRID_H, CELL, 0, split_col)
+  draw_img(after_img, cx0, cy0, ag, ah, ac, if live then split_col / 2 else split_col end, ag)
+end
+
+// split handle
+let sx = cx0 + split_col * CELL
+if shown == "split" then
+  draw_rect(sx - 1, cy0, 2, IMG_H, 240, 244, 250, 210)
+  let hyc = cy0 + IMG_H / 2
+  draw_circle(sx, hyc, 13, 12, 14, 18, 170)
+  draw_circle(sx, hyc, 11, 240, 244, 250, 245)
+  fill_triangle(sx - 7, hyc, sx - 2, hyc - 4, sx - 2, hyc + 4, 24, 28, 36)
+  fill_triangle(sx + 7, hyc, sx + 2, hyc - 4, sx + 2, hyc + 4, 24, 28, 36)
+  draw_rect_rounded(rect(cx0 + 10, cy0 + 10, 66, 20), 3, BG, 150)
+  cap("BEFORE", cx0 + 19, cy0 + 15, 9, {r: 240, g: 244, b: 250}, 2)
+  draw_rect_rounded(rect(cx0 + IMG_W - 68, cy0 + 10, 58, 20), 3, BG, 150)
+  draw_text_right("AFTER", cx0 + IMG_W - 18, cy0 + 15, 9, {r: 240, g: 244, b: 250})
+end
+if live then
+  draw_rect_rounded(rect(cx0 + IMG_W - 92, cy0 + IMG_H - 30, 82, 20), 3, ACCENT, 235)
+  draw_text_center("DRAFT 1:2", cx0 + IMG_W - 51, cy0 + IMG_H - 25, 9, BG)
+end
+if peek then
+  draw_rect_rounded(rect(cx0 + 10, cy0 + IMG_H - 30, 122, 20), 3, BG, 190)
+  cap("UNTOUCHED NEGATIVE", cx0 + 18, cy0 + IMG_H - 25, 8, TEXT, 1)
+end
+
+// ── Centre: view mode + histogram ────────────────────────────────────────
+let strip_y = cy0 + IMG_H + 26
+let MODES = ["before", "split", "after"]
+let MODE_LABELS = ["Before", "Split", "After"]
+var clicked_mode = ""
+for k in range(0, 3) do
+  let r = rect(cx0 + k * 92, strip_y, 88, 28)
+  let on = view == MODES[k]
+  draw_rect_rounded(r, 4, if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  if on then
+    draw_rect_outline(r, LINE)
+  end
+  draw_text_center(MODE_LABELS[k], r.center_x(), r.y + 8, 12, if on then TEXT else DIM end)
+  if clicked(r) then
+    set clicked_mode = MODES[k]
+  end
+end
+if clicked_mode != "" then
+  view = clicked_mode
+end
+draw_text_right("{GRID_W} × {GRID_H} samples  ·  {recomputes} develop passes", cx0 + IMG_W, strip_y + 9, 11, GHOST)
+
+let hy = strip_y + 46
+cap("LUMINANCE", cx0, hy, 9, FAINT, 3)
+let delta = hist.mean - base_mean
+let arrow = if live then "recomputing" else "{base_mean} → {hist.mean}   ({signed(delta)})" end
+draw_text_right(arrow, cx0 + IMG_W, hy, 10, if delta != 0 then ACCENT else GHOST end)
+let HH = 78
+let hy0 = hy + 16
+draw_rect(cx0, hy0, IMG_W, HH, CARD.r, CARD.g, CARD.b)
+for q in range(1, 4) do
+  draw_rect(cx0 + IMG_W * q / 4, hy0, 1, HH, LINE_SOFT.r, LINE_SOFT.g, LINE_SOFT.b)
+end
+var hmax = 1
+for b in hist.bins do
+  set hmax = max(hmax, b)
+end
+let bw = IMG_W / 40
+let halpha = if live then 90 else 255 end
+for k in range(0, 40) do
+  let bh = max(1, hist.bins[k] * (HH - 8) / hmax)
+  let t = float(k) / 39.0
+  let cc = cmix(fc(0.30, 0.34, 0.42), fc(0.92, 0.94, 0.98), t)
+  draw_rect(cx0 + k * bw + 1, hy0 + HH - bh, bw - 2, bh, int(cc.r * 255.0), int(cc.g * 255.0), int(cc.b * 255.0), halpha)
+end
+
+hline(cx0, hy0 + HH, IMG_W, LINE)
+cap("SHADOWS", cx0, hy0 + HH + 8, 9, GHOST, 2)
+draw_text_center("MIDTONES", cx0 + IMG_W / 2, hy0 + HH + 8, 9, GHOST)
+draw_text_right("HIGHLIGHTS", cx0 + IMG_W, hy0 + HH + 8, 9, GHOST)
+let clip_lo = hist.low * 1000 / max(1, hist.n)
+let clip_hi = hist.high * 1000 / max(1, hist.n)
+if clip_lo > 2 then
+  draw_circle(cx0 + 74, hy0 + HH + 12, 3, COOL.r, COOL.g, COOL.b)
+  body("{clip_lo / 10}.{clip_lo % 10}% clipped", cx0 + 82, hy0 + HH + 7, 9, COOL)
+end
+if clip_hi > 2 then
+  let s2 = "{clip_hi / 10}.{clip_hi % 10}% clipped"
+  draw_text_right(s2, cx0 + IMG_W - 82, hy0 + HH + 7, 9, ACCENT)
+  draw_circle(cx0 + IMG_W - 74, hy0 + HH + 12, 3, ACCENT.r, ACCENT.g, ACCENT.b)
+end
+
+// ── Right rail: adjustments ──────────────────────────────────────────────
+let RX = W - RIGHT_W
+draw_rect(RX, TOP_H, RIGHT_W, H - TOP_H - BOT_H, RAIL.r, RAIL.g, RAIL.b)
+draw_rect(RX, TOP_H, 1, H - TOP_H - BOT_H, LINE.r, LINE.g, LINE.b)
+
+let PX = RX + 24
+let PW = RIGHT_W - 48
+cap("ADJUSTMENTS", PX, TOP_H + 22, 10, FAINT, 3)
+if dirty then
+  draw_text_right("edited", RX + RIGHT_W - 24, TOP_H + 22, 10, ACCENT)
+end
+
+let ROW_H = 40
+let ROW_Y = TOP_H + 48
+
+fn slider_rect(i, px, pw, row_y, row_h)
+  rect(px, row_y + i * row_h, pw, row_h)
+end
+
+var new_drag = dragging
+var pending = adj
+for i in range(0, len(SLIDERS)) do
+  let sl = SLIDERS[i]
+  let r = slider_rect(i, PX, PW, ROW_Y, ROW_H)
+  let track = rect(r.x, r.y + 25, r.w, 4)
+  let sel = i == slider_sel
+  let hov = hovered(r)
+  if sel then
+    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), 4, ELEV)
+  elsif hov then
+    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), 4, CARD)
+  end
+  let v = adj[i]
+  let lo = if sl.bipolar then -100 else 0 end
+  let frac = float(v - lo) / float(100 - lo)
+  let kx = track.x + int(frac * float(track.w))
+  body(sl.name, r.x, r.y + 4, 12, if sel then TEXT else DIM end)
+  let vc = if v != 0 then ACCENT else GHOST end
+  draw_text_right(if sl.bipolar then signed(v) else "{v}" end, r.x + r.w, r.y + 4, 12, vc)
+  draw_rect_rounded(track, 2, GHOST)
+  let zx = track.x + if sl.bipolar then track.w / 2 else 0 end
+  if kx > zx then
+    draw_rect_rounded(rect(zx, track.y, kx - zx, 4), 2, ACCENT)
+  elsif kx < zx then
+    draw_rect_rounded(rect(kx, track.y, zx - kx, 4), 2, ACCENT)
+  end
+  if sl.bipolar then
+    draw_rect(track.x + track.w / 2, track.y - 4, 1, 12, LINE.r, LINE.g, LINE.b)
+  end
+  draw_circle(kx, track.y + 2, if sel || hov then 7 else 5 end, TEXT.r, TEXT.g, TEXT.b)
+  draw_circle(kx, track.y + 2, if sel || hov then 4 else 3 end, RAIL.r, RAIL.g, RAIL.b)
+  if mouse_pressed(0) && hovered(r) then
+    set new_drag = i
+    slider_sel = i
+  end
+  if hovered(r) && scroll_y() != 0 then
+    set pending[i] = iclamp(pending[i] + scroll_y() * 2, lo, 100)
+  end
+end
+
+// drags
+if !mouse_down(0) && dragging >= 0 then
+  set new_drag = -1
+end
+if new_drag >= 0 && new_drag < 100 then
+  let i = new_drag
+  let lo = if SLIDERS[i].bipolar then -100 else 0 end
+  let t = clamp(float(mouse_x() - PX) / float(PW), 0.0, 1.0)
+  set pending[i] = lo + int(round(t * float(100 - lo)))
+end
+
+// ── Right rail: presets ──────────────────────────────────────────────────
+let PRE_Y = ROW_Y + len(SLIDERS) * ROW_H + 22
+hline(PX, PRE_Y - 14, PW, LINE_SOFT)
+cap("LOOKS", PX, PRE_Y, 10, FAINT, 3)
+var clicked_preset = -1
+for k in range(0, len(PRESETS)) do
+  let col = k % 2
+  let row = k / 2
+  let r = rect(PX + col * (PW / 2 + 4), PRE_Y + 22 + row * 38, PW / 2 - 4, 30)
+  let on = preset == k && adj == PRESETS[k].vals
+  draw_rect_rounded(r, 4, if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  if on then
+    draw_rect_outline(r, ACCENT, 150)
+  end
+  draw_text_center(PRESETS[k].name, r.center_x(), r.y + 9, 11, if on then TEXT else DIM end)
+  if clicked(r) then
+    set clicked_preset = k
+  end
+end
+
+let RESET_Y = PRE_Y + 22 + 3 * 38 + 10
+let reset_r = rect(PX, RESET_Y, PW, 30)
+draw_rect_rounded(reset_r, 4, if hovered(reset_r) then HOVER else CARD end)
+draw_rect_outline(reset_r, LINE)
+draw_text_center("Reset all adjustments", reset_r.center_x(), reset_r.y + 9, 11, if dirty then TEXT else GHOST end)
+
+// ── Keyboard ─────────────────────────────────────────────────────────────
+if key_pressed("down") then
+  slider_sel = min(len(SLIDERS) - 1, slider_sel + 1)
+end
+if key_pressed("up") then
+  slider_sel = max(0, slider_sel - 1)
+end
+let step = if mod_shift() then 10 else 2 end
+if key_pressed("left") || key_pressed("right") then
+  let lo = if SLIDERS[slider_sel].bipolar then -100 else 0 end
+  let d = if key_pressed("right") then step else -step end
+  set pending[slider_sel] = iclamp(pending[slider_sel] + d, lo, 100)
+end
+if key_pressed("space") then
+  peeking = !peeking
+end
+if key_pressed("b") then
+  view = if view == "after" then "split" else "after" end
+end
+if key_pressed("v") then
+  view = if view == "before" then "split" else "before" end
+end
+for k in range(0, len(PHOTOS)) do
+  if key_pressed("{k + 1}") then
+    photo = k
+  end
+end
+if key_pressed("p") then
+  set clicked_preset = (preset + 1) % len(PRESETS)
+end
+if key_pressed("0") || (clicked(reset_r)) then
+  set pending = ZERO
+  preset = 0
+end
+if key_pressed("[") then
+  split = clamp(split - 0.05, 0.0, 1.0)
+end
+if key_pressed("]") then
+  split = clamp(split + 0.05, 0.0, 1.0)
+end
+
+if clicked_preset >= 0 then
+  preset = clicked_preset
+  set pending = PRESETS[clicked_preset].vals
+end
+
+// split drag
+let img_r = rect(cx0, cy0, IMG_W, IMG_H)
+if view == "split" && mouse_pressed(0) && hovered(img_r) then
+  set new_drag = 100
+end
+if new_drag == 100 && mouse_down(0) then
+  split = clamp(float(mouse_x() - cx0) / float(IMG_W), 0.0, 1.0)
+end
+
+dragging = new_drag
+adj = pending
+
+// ── Bottom bar ───────────────────────────────────────────────────────────
+draw_rect(0, H - BOT_H, W, BOT_H, RAIL.r, RAIL.g, RAIL.b)
+hline(0, H - BOT_H, W, LINE)
+let hints = fit_parts([
+  "1–5 photo",
+  "↑↓ slider",
+  "←→ adjust",
+  "⇧ coarse",
+  "drag split",
+  "b/v mode",
+  "space peek",
+  "p look",
+  "0 reset",
+], W - 240, 11)
+body(hints, 24, H - BOT_H + 11, 11, FAINT)
+let look_name = if adj == PRESETS[preset].vals then PRESETS[preset].name else PRESETS[preset].name ++ " · edited" end
+draw_text_right(if dirty then look_name else "Original" end, W - 24, H - BOT_H + 11, 11, DIM)

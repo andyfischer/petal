@@ -97,7 +97,16 @@ pub(crate) struct TextStack {
     swash_cache: SwashCache,
     viewport: Viewport,
     atlas: TextAtlas,
-    text_renderer: TextRenderer,
+    /// One renderer per *text batch* in the current frame, all sharing `atlas`
+    /// and `viewport`. A scene interleaves shapes and text to preserve
+    /// painter's order, so each contiguous stretch of text runs is staged into
+    /// its own renderer and drawn at its own point in the pass. The pool grows
+    /// to the high-water mark of batches and is reused across frames.
+    renderers: Vec<TextRenderer>,
+    /// Batches staged by the current frame — `renderers[..batches]` are live.
+    batches: usize,
+    /// Multisample state the pool's renderers are built with.
+    samples: u32,
     /// Pool of shaping buffers, one per text run, reused across frames.
     /// Only the first `texts.len()` entries are shaped and drawn each frame.
     buffers: Vec<glyphon::Buffer>,
@@ -168,19 +177,7 @@ impl TextStack {
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
-        let mut atlas = TextAtlas::new(device, queue, &cache, surface_format);
-        // Glyph coverage is already antialiased in the atlas, so this buys
-        // nothing on its own — but text shares the scene pass with the shapes,
-        // and every pipeline in a pass must agree on the sample count.
-        let text_renderer = TextRenderer::new(
-            &mut atlas,
-            device,
-            wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
-            None,
-        );
+        let atlas = TextAtlas::new(device, queue, &cache, surface_format);
 
         let cell_size = measure_cell(&mut font_system, family_name.as_deref());
 
@@ -189,10 +186,32 @@ impl TextStack {
             swash_cache,
             viewport,
             atlas,
-            text_renderer,
+            renderers: Vec::new(),
+            batches: 0,
+            samples,
             buffers: Vec::new(),
             family_name,
             cell_size,
+        }
+    }
+
+    /// Grow the renderer pool to `n` entries. Renderers share the atlas, so a
+    /// new one costs a vertex buffer, not a new glyph cache.
+    fn ensure_renderers(&mut self, device: &wgpu::Device, n: usize) {
+        while self.renderers.len() < n {
+            // Glyph coverage is already antialiased in the atlas, so MSAA buys
+            // nothing on its own — but text shares the scene pass with the
+            // shapes, and every pipeline in a pass must agree on the sample
+            // count.
+            self.renderers.push(TextRenderer::new(
+                &mut self.atlas,
+                device,
+                wgpu::MultisampleState {
+                    count: self.samples,
+                    ..Default::default()
+                },
+                None,
+            ));
         }
     }
 
@@ -227,6 +246,11 @@ impl TextStack {
     ///
     /// `scale_factor` converts the runs' logical pixels to the physical
     /// pixels glyphon renders in.
+    ///
+    /// `batches` partitions `texts` into the contiguous stretches that are
+    /// drawn at distinct points in the pass (see [`render_batch`]). It must
+    /// cover `texts` in order; passing a single full-width range reproduces
+    /// the old "all text last" behavior.
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -234,6 +258,7 @@ impl TextStack {
         physical_size: (u32, u32),
         scale_factor: f32,
         texts: &[TextRun<'_>],
+        batches: &[std::ops::Range<usize>],
     ) {
         self.viewport.update(
             queue,
@@ -268,41 +293,55 @@ impl TextStack {
             buffer.shape_until_scroll(&mut self.font_system, false);
         }
 
-        let areas = self
-            .buffers
-            .iter()
-            .zip(texts)
-            .map(|(buffer, run)| TextArea {
-                buffer,
-                left: run.pos.0 * scale_factor,
-                top: run.pos.1 * scale_factor,
-                scale: scale_factor,
-                bounds: TextBounds {
-                    left: (run.clip.x * scale_factor).floor() as i32,
-                    top: (run.clip.y * scale_factor).floor() as i32,
-                    right: ((run.clip.x + run.clip.w) * scale_factor).ceil() as i32,
-                    bottom: ((run.clip.y + run.clip.h) * scale_factor).ceil() as i32,
-                },
-                default_color: to_glyphon_color(run.color),
-                custom_glyphs: &[],
-            });
+        self.ensure_renderers(device, batches.len());
+        self.batches = batches.len();
 
-        self.text_renderer
-            .prepare(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                areas,
-                &mut self.swash_cache,
-            )
-            .expect("glyphon text prepare failed");
+        // Each batch is staged into its own renderer. They share one atlas, so
+        // a glyph rasterized for an earlier batch is reused by a later one; and
+        // because `TextAtlas::grow` preserves existing glyph coordinates, the
+        // vertices an earlier `prepare` already emitted stay valid even if a
+        // later batch grows the atlas.
+        for (renderer, batch) in self.renderers.iter_mut().zip(batches) {
+            let end = batch.end.min(texts.len());
+            let start = batch.start.min(end);
+            let areas = self.buffers[start..end]
+                .iter()
+                .zip(&texts[start..end])
+                .map(|(buffer, run)| TextArea {
+                    buffer,
+                    left: run.pos.0 * scale_factor,
+                    top: run.pos.1 * scale_factor,
+                    scale: scale_factor,
+                    bounds: TextBounds {
+                        left: (run.clip.x * scale_factor).floor() as i32,
+                        top: (run.clip.y * scale_factor).floor() as i32,
+                        right: ((run.clip.x + run.clip.w) * scale_factor).ceil() as i32,
+                        bottom: ((run.clip.y + run.clip.h) * scale_factor).ceil() as i32,
+                    },
+                    default_color: to_glyphon_color(run.color),
+                    custom_glyphs: &[],
+                });
+
+            renderer
+                .prepare(
+                    device,
+                    queue,
+                    &mut self.font_system,
+                    &mut self.atlas,
+                    &self.viewport,
+                    areas,
+                    &mut self.swash_cache,
+                )
+                .expect("glyphon text prepare failed");
+        }
     }
 
-    /// Draw everything staged by [`prepare`] into the current render pass.
-    pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.text_renderer
+    /// Draw text batch `index` (as partitioned by [`prepare`]) into the pass.
+    pub fn render_batch(&self, index: usize, pass: &mut wgpu::RenderPass<'_>) {
+        let Some(renderer) = self.renderers.get(index).filter(|_| index < self.batches) else {
+            return;
+        };
+        renderer
             .render(&self.atlas, &self.viewport, pass)
             .expect("glyphon text render failed");
     }

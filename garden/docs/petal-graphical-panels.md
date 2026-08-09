@@ -182,6 +182,26 @@ Relative image sources resolve from Garden's working directory. RGB and RGBA
 PNG files are supported; a missing or invalid bitmap is logged and skipped
 without aborting the panel frame. Image commands honor the active panel clip.
 
+### Draw order
+
+**Calls composite in the order you make them** — a `draw_rect` after a
+`draw_text` covers that text, and a `draw_text` after a `draw_rect` sits on top
+of it. Order holds between every kind of call: shapes, text, and images alike.
+
+This is what makes overlays work. A context menu, a modal, a tooltip, or a
+dropdown is just "draw the surface, then draw its contents, after everything
+it should hide" — no need to know what is underneath or to suppress it by hand.
+
+Garden batches consecutive shape calls into one mesh to keep the draw-call
+count down, and flushes that batch whenever a text or image call interrupts it,
+so the batching is invisible to the script.
+
+(Before this was fixed, the renderer drew all shapes and then all text, so text
+composited above every shape regardless of call order — a menu could paint its
+background over a list but the list's text showed straight through it. Panels
+written against that behavior may still carry manual text-suppression
+workarounds; they are no longer needed.)
+
 ### Text size and measurement
 
 `draw_text`'s `size` is honored per run — a panel is not locked to the editor's

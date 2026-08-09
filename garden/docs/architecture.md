@@ -353,9 +353,17 @@ because glyphon releases require specific wgpu versions):
   a triangle can't be CPU-clipped to a rect the way a quad can, so the renderer
   sets a GPU scissor (`clip` → physical px, rounded outward like glyphon's text
   bounds, clamped to the target) per mesh. Colors are linearized on the CPU
-  exactly like quads. Drawn after quads, before text — so text always
-  composites on top (the one cross-pass ordering caveat). The editor uses only
-  `Quad`; `Mesh` exists for Petal panels' full draw API.
+  exactly like quads. The editor uses only `Quad`; `Mesh` exists for Petal
+  panels' full draw API.
+- **Draw order**: primitives composite in `Scene::primitives` order, across
+  kinds as well as within one. The list is split into maximal same-kind runs
+  and each run is drawn by its own pipeline at its own point in the pass (text
+  through one glyphon renderer per run, all sharing a single atlas). Earlier
+  this was three fixed passes — quads, meshes, then text — which made text
+  composite on top of every shape regardless of position, so a panel could not
+  draw an overlay over its own labels. Interleaving costs one pipeline switch
+  per run, and a frame alternates on the order of a hundred times, so this is a
+  few extra draw calls rather than one per primitive.
 - **Color space**: `Color` values are sRGB (what you read off a hex picker).
   The surface is sRGB, so the renderer converts quad/clear colors to linear
   before writing (`Color::to_linear`); glyphon does the same internally for

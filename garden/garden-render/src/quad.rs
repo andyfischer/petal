@@ -160,14 +160,21 @@ impl QuadPipeline {
         }
     }
 
-    /// Record one instanced draw call for everything staged by [`prepare`].
-    pub fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.count == 0 {
+    /// Record one instanced draw call for the staged quads in `range`.
+    ///
+    /// The range is a half-open span of instance indices, in the order
+    /// [`prepare`] received them — i.e. scene order. The scene is drawn as an
+    /// interleaved sequence of per-kind batches so that painter's order holds
+    /// across primitive kinds, which is why this is a sub-range rather than
+    /// "everything staged".
+    pub fn render(&self, pass: &mut wgpu::RenderPass<'_>, range: std::ops::Range<u32>) {
+        let end = range.end.min(self.count as u32);
+        if range.start >= end {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         self.globals.bind(pass);
         pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-        pass.draw(0..4, 0..self.count as u32);
+        pass.draw(0..4, range.start..end);
     }
 }

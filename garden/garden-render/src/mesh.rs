@@ -180,20 +180,25 @@ impl MeshPipeline {
     /// Record one scissored draw per staged mesh. `physical_size` and
     /// `scale_factor` convert each group's logical-pixel clip rect to the
     /// integer physical-pixel scissor wgpu wants.
+    /// `range` selects a half-open span of staged meshes, in the order
+    /// [`prepare`] received them (scene order), so the scene can be drawn as
+    /// interleaved per-kind batches and keep painter's order across kinds.
     pub fn render(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         physical_size: (u32, u32),
         scale_factor: f32,
+        range: std::ops::Range<usize>,
     ) {
-        if self.groups.is_empty() {
+        let end = range.end.min(self.groups.len());
+        if range.start >= end {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         self.globals.bind(pass);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        for g in &self.groups {
+        for g in &self.groups[range.start..end] {
             let Some((x, y, w, h)) = scissor(g.clip, physical_size, scale_factor) else {
                 continue; // clip fully off-target → nothing visible
             };
@@ -201,8 +206,8 @@ impl MeshPipeline {
             pass.draw(g.start..g.start + g.count, 0..1);
         }
 
-        // Leave the scissor covering the whole target so the text pass that
-        // follows isn't accidentally clipped to the last mesh's rect.
+        // Leave the scissor covering the whole target so whatever batch follows
+        // isn't accidentally clipped to the last mesh's rect.
         pass.set_scissor_rect(0, 0, physical_size.0, physical_size.1);
     }
 }

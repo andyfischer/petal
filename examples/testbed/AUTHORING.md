@@ -60,6 +60,12 @@ Write your assertions against those names rather than against pixels.
 
 ### Driving it
 
+**Mouse coordinates are window-relative, not panel-relative.** `POST /mouse`
+takes window coordinates, but `mouse_x()`/`mouse_y()`/`point_in`/`hovered`
+inside the script see pane-local ones. The offset is the pane's rect origin —
+read it from `/state` (`panes[0].rect`), don't hardcode it; it is about `6,38`
+in a default single-pane layout but changes with the layout and chrome.
+
 ```bash
 curl -sX POST localhost:$PORT/key   -d '{"key":"left"}'
 curl -sX POST localhost:$PORT/key   -d '{"key":"s","mods":["cmd"]}'
@@ -162,8 +168,14 @@ These are showpieces, not smoke tests. Aim for:
 - Idiomatic Petal: `state` for what persists across frames, `let` for dataflow,
   `var`/`set` only where mutation is genuinely needed, functions to factor
   drawing, classes to name record shapes.
-- No crashes and no script error in `/state`'s `status_error` at any point in
-  the interaction script you exercise.
+- No crashes and no script error at any point in the interaction script you
+  exercise. Errors show up in three different places, so check all of them:
+  `status_error` in `/state` (a script that failed to *load* — also printed to
+  the launch log and shown as the pane title `panel error: <script>`),
+  `panes[].panel.error` (a live panel's reload or runtime error), and the pane
+  degrading to `kind: "editor"` with `panel: null` (no panel was created at
+  all). `petal check <file.ptl>` is the fastest way to confirm a script
+  compiles before you launch anything.
 
 ## Hard rules for this run
 

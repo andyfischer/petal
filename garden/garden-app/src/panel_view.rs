@@ -1838,12 +1838,19 @@ impl PanelView {
     /// Render the cached frame into `rect`, plus a tiny sleep/wake indicator dot
     /// in the top-right corner.
     ///
-    /// All of the panel's solid geometry — the base fill, every shape, each
+    /// The panel's solid geometry — the base fill, every shape, each
     /// `text_view` region's chrome, and the indicator dot — is tessellated into
-    /// one [`Primitive::Mesh`] in submission order, GPU-scissored to `rect` so a
-    /// sketch can't paint over its neighbors. Text runs are separate
-    /// [`Primitive::Text`] primitives; the renderer always composites text on top
-    /// of meshes (see `docs/petal-graphical-panels.md`).
+    /// [`Primitive::Mesh`] runs in submission order, GPU-scissored to `rect` so
+    /// a sketch can't paint over its neighbors. Text and images are separate
+    /// primitives.
+    ///
+    /// Geometry batches into as few meshes as possible, but the batch is
+    /// **flushed before any non-geometry primitive** ([`flush_mesh`]), so the
+    /// emitted list is in true submission order. The renderer honours
+    /// painter's order across primitive kinds, so a `draw_rect` after a
+    /// `draw_text` really does cover it — which is what makes an overlay (a
+    /// context menu, a modal) possible (see
+    /// `docs/petal-graphical-panels.md`).
     pub fn build_scene(
         &self,
         rect: Rect,
@@ -1868,12 +1875,7 @@ impl PanelView {
         for cmd in &self.cmds {
             match cmd {
                 PanelCmd::Clip { x, y, w, h } => {
-                    if !verts.is_empty() {
-                        prims.push(Primitive::Mesh {
-                            vertices: std::mem::take(&mut verts),
-                            clip: cur_clip,
-                        });
-                    }
+                    flush_mesh(prims, &mut verts, cur_clip);
                     cur_clip = intersect(
                         rect,
                         Rect {
@@ -1885,12 +1887,7 @@ impl PanelView {
                     );
                 }
                 PanelCmd::ClipNone => {
-                    if !verts.is_empty() {
-                        prims.push(Primitive::Mesh {
-                            vertices: std::mem::take(&mut verts),
-                            clip: cur_clip,
-                        });
-                    }
+                    flush_mesh(prims, &mut verts, cur_clip);
                     cur_clip = rect;
                 }
                 PanelCmd::TextView { id, .. } => {
@@ -1916,7 +1913,13 @@ impl PanelView {
                                 Primitive::Quad { rect: r, color } => {
                                     tess::rect(&mut verts, r.x, r.y, r.w, r.h, color)
                                 }
-                                other => prims.push(other),
+                                other => {
+                                    // Keep the region's own submission order:
+                                    // its text must land after the chrome
+                                    // tessellated above it, not before.
+                                    flush_mesh(prims, &mut verts, cur_clip);
+                                    prims.push(other);
+                                }
                             }
                         }
                     }
@@ -1947,12 +1950,7 @@ impl PanelView {
                     h,
                     a,
                 } => {
-                    if !verts.is_empty() {
-                        prims.push(Primitive::Mesh {
-                            vertices: std::mem::take(&mut verts),
-                            clip: cur_clip,
-                        });
-                    }
+                    flush_mesh(prims, &mut verts, cur_clip);
                     prims.push(Primitive::Image {
                         rect: Rect {
                             x: ox + *x as f32,
@@ -2103,6 +2101,11 @@ impl PanelView {
                         0 => FONT_SIZE,
                         s => s as f32,
                     };
+                    // Close the pending mesh first: the renderer honours
+                    // painter's order across primitive kinds, so a text run
+                    // pushed while shapes are still queued would sit *under*
+                    // them. (Same reason `Image` flushes.)
+                    flush_mesh(prims, &mut verts, cur_clip);
                     push_text_run(
                         prims,
                         (ox + *x as f32, oy + *y as f32),
@@ -2121,12 +2124,7 @@ impl PanelView {
         }
 
         // Flush whatever clip region was active when the commands ended.
-        if !verts.is_empty() {
-            prims.push(Primitive::Mesh {
-                vertices: std::mem::take(&mut verts),
-                clip: cur_clip,
-            });
-        }
+        flush_mesh(prims, &mut verts, cur_clip);
 
         // Sleep/wake indicator: a tiny dot, top-right, always over the whole pane
         // (never clipped by the script). Filled green awake; dim when asleep.
@@ -2354,9 +2352,10 @@ mod tests {
 
     /// Count the translucent rectangles (a diff-row tint or a selection band,
     /// both < 1.0 alpha) a region contributed to the panel's **mesh** stream.
-    /// They must be mesh geometry, not `Quad`s: the renderer draws every quad
-    /// beneath every mesh, and a panel covers its whole surface with one — a
-    /// band left as a `Quad` is painted but never seen.
+    /// They are tessellated into the panel's mesh rather than left as `Quad`s
+    /// so that they sit in the panel's own submission order, interleaved with
+    /// the shapes around them, rather than forming a separate batch whose
+    /// position relative to that geometry depends on emission accidents.
     fn translucent_bands(prims: &[Primitive]) -> usize {
         let translucent = |c: &Color| c.a > 0.0 && c.a < 0.9;
         assert!(
@@ -3584,5 +3583,21 @@ done
                 );
             }
         }
+    }
+}
+
+/// Close the pending geometry batch so the next primitive lands *after* it.
+///
+/// Panel shapes accumulate into one [`Primitive::Mesh`] to keep the draw-call
+/// count down, but the renderer composites primitives in list order. Anything
+/// that is not geometry — a text run, an image — therefore has to flush the
+/// batch first, or it would be drawn underneath shapes that were submitted
+/// before it. A no-op when nothing is queued.
+fn flush_mesh(prims: &mut Vec<Primitive>, verts: &mut Vec<Vertex>, clip: Rect) {
+    if !verts.is_empty() {
+        prims.push(Primitive::Mesh {
+            vertices: std::mem::take(verts),
+            clip,
+        });
     }
 }

@@ -196,19 +196,24 @@ impl ImagePipeline {
         self.globals.write(queue, logical_size);
     }
 
+    /// `range` selects a half-open span of staged images, in the order
+    /// [`prepare`] received them (scene order), so the scene can be drawn as
+    /// interleaved per-kind batches and keep painter's order across kinds.
     pub fn render(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         physical_size: (u32, u32),
         scale_factor: f32,
+        range: std::ops::Range<usize>,
     ) {
-        if self.draws.is_empty() {
+        let end = range.end.min(self.draws.len());
+        if range.start >= end {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         self.globals.bind(pass);
         pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-        for (index, draw) in self.draws.iter().enumerate() {
+        for (index, draw) in self.draws.iter().enumerate().take(end).skip(range.start) {
             let Some(texture) = self.textures.get(&draw.source).and_then(Option::as_ref) else {
                 continue;
             };

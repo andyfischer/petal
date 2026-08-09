@@ -183,10 +183,19 @@ pub enum Primitive {
 }
 
 /// Everything needed to draw one frame: a background clear color plus an
-/// ordered list of primitives. Drawn in three passes: quads first (one
-/// instanced draw call), then meshes (one scissored draw per `clip` group),
-/// then text. Painter's order is preserved *within* a mesh by triangle order,
-/// but not *across* passes — text always composites on top of quads/meshes.
+/// ordered list of primitives.
+///
+/// **Painter's order holds across the whole list**: a primitive later in
+/// `primitives` composites over an earlier one, whatever their kinds. The list
+/// is split into maximal runs of the same kind and each run is drawn by its own
+/// pipeline at its own point in the pass — quads instanced, meshes and images
+/// one scissored draw per `clip` group, and each stretch of text through its own
+/// glyphon renderer (all sharing one atlas). Order *within* a mesh is its
+/// triangle order.
+///
+/// Interleaving costs one pipeline switch per run, and scenes alternate only a
+/// handful of times (a panel's shapes tessellate into a few meshes), so this is
+/// a few extra draw calls, not one per primitive.
 pub struct Scene {
     pub bg: Color,
     pub primitives: Vec<Primitive>,
@@ -315,6 +324,60 @@ struct GpuCore {
     samples: u32,
     msaa: Option<wgpu::TextureView>,
     msaa_size: (u32, u32),
+    /// The current scene split into consecutive same-kind runs, in scene
+    /// order. Recording walks this so painter's order holds across primitive
+    /// kinds — see [`Scene`].
+    batches: Vec<Batch>,
+    /// Index ranges of the text batches, positionally matching the
+    /// `BatchKind::Text` entries in `batches`.
+    text_batches: Vec<std::ops::Range<usize>>,
+}
+
+/// Which pipeline draws a [`Batch`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BatchKind {
+    Quad,
+    Mesh,
+    Image,
+    Text,
+}
+
+/// One maximal run of consecutive same-kind primitives, as a half-open range
+/// of indices *within that kind's* staged list. Each pipeline stages in scene
+/// order, so these ranges address it directly.
+#[derive(Clone, Copy, Debug)]
+struct Batch {
+    kind: BatchKind,
+    start: usize,
+    end: usize,
+}
+
+/// Split `primitives` into maximal runs of the same kind, numbering each run
+/// against a per-kind running count.
+fn batch_primitives(primitives: &[Primitive]) -> Vec<Batch> {
+    let mut batches: Vec<Batch> = Vec::new();
+    // Next unused index for each kind, in `BatchKind` order.
+    let mut next = [0usize; 4];
+    for p in primitives {
+        let kind = match p {
+            Primitive::Quad { .. } => BatchKind::Quad,
+            Primitive::Mesh { .. } => BatchKind::Mesh,
+            Primitive::Image { .. } => BatchKind::Image,
+            Primitive::Text { .. } => BatchKind::Text,
+        };
+        let slot = &mut next[kind as usize];
+        let index = *slot;
+        *slot += 1;
+        match batches.last_mut() {
+            Some(last) if last.kind == kind => last.end = index + 1,
+            _ => batches.push(Batch {
+                kind,
+                start: index,
+                end: index + 1,
+            }),
+        }
+    }
+    batches
 }
 
 impl GpuCore {
@@ -345,6 +408,8 @@ impl GpuCore {
             samples,
             msaa: None,
             msaa_size: (0, 0),
+            batches: Vec::new(),
+            text_batches: Vec::new(),
         }
     }
 
@@ -451,8 +516,21 @@ impl GpuCore {
                 Primitive::Quad { .. } | Primitive::Mesh { .. } | Primitive::Image { .. } => None,
             })
             .collect();
-        self.text
-            .prepare(&self.device, &self.queue, physical, scale_factor, &texts);
+        self.batches = batch_primitives(&scene.primitives);
+        self.text_batches = self
+            .batches
+            .iter()
+            .filter(|b| b.kind == BatchKind::Text)
+            .map(|b| b.start..b.end)
+            .collect();
+        self.text.prepare(
+            &self.device,
+            &self.queue,
+            physical,
+            scale_factor,
+            &texts,
+            &self.text_batches,
+        );
     }
 
     /// Record the scene pass (clear + quads + text) staged by
@@ -504,18 +582,30 @@ impl GpuCore {
             multiview_mask: None,
         });
 
-        self.quads.render(&mut pass);
-        self.meshes.render(
-            &mut pass,
-            (self.width, self.height),
-            self.scale_factor as f32,
-        );
-        self.images.render(
-            &mut pass,
-            (self.width, self.height),
-            self.scale_factor as f32,
-        );
-        self.text.render(&mut pass);
+        // Walk the scene's batches in order so a quad drawn after a text run
+        // covers it, the way the primitive list says it should.
+        let physical = (self.width, self.height);
+        let scale = self.scale_factor as f32;
+        let mut text_batch = 0usize;
+        for batch in &self.batches {
+            match batch.kind {
+                BatchKind::Quad => self
+                    .quads
+                    .render(&mut pass, batch.start as u32..batch.end as u32),
+                BatchKind::Mesh => {
+                    self.meshes
+                        .render(&mut pass, physical, scale, batch.start..batch.end)
+                }
+                BatchKind::Image => {
+                    self.images
+                        .render(&mut pass, physical, scale, batch.start..batch.end)
+                }
+                BatchKind::Text => {
+                    self.text.render_batch(text_batch, &mut pass);
+                    text_batch += 1;
+                }
+            }
+        }
     }
 
     /// Render `scene` into an offscreen texture at the current target size

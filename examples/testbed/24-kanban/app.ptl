@@ -1,0 +1,596 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Kanban — a drag-and-drop sprint board, drawn as a Garden panel.
+//
+// Testbed app #24. Exercises: columns, cards, mouse drag/drop with a live
+// insertion ghost, per-column pixel scrolling, keyboard navigation and card
+// movement, hover/selection states, and a typographic hierarchy built only
+// from size / color / spacing (the embedded face has no bold).
+//
+// Run:  garden --headless --debug-port 0 --init layout.ptl
+// ─────────────────────────────────────────────────────────────────────────
+
+class Card
+  id: string,
+  title: string,
+  tag: string,
+  who: string,
+  pts: int,
+  pri: int,          // 0 = low, 1 = normal, 2 = urgent
+end
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let BG        = #0b0d12
+let SURFACE   = #12151d
+let CARD_BG   = #1a1f2a
+let CARD_HOV  = #222937
+let CARD_LIFT = #2a3342
+let RULE      = #232a37
+let TEXT      = #e9edf4
+let DIM       = #838d9c
+let FAINT      = #59626f
+let ACCENT    = #5b9dff
+let DANGER    = #e0655f
+let GOOD      = #3fae7a
+
+let LANES = [
+  {name: "BACKLOG",     color: #6c7a90, limit: 0},
+  {name: "IN PROGRESS", color: #5b9dff, limit: 3},
+  {name: "REVIEW",      color: #d9a441, limit: 2},
+  {name: "SHIPPED",     color: #3fae7a, limit: 0},
+]
+
+fn tag_color(t)
+  if t == "render" then #d98a4a
+  elsif t == "input" then #5b9dff
+  elsif t == "vm" then #e0655f
+  elsif t == "prelude" then #3fae7a
+  elsif t == "docs" then #a98ce0
+  elsif t == "tooling" then #46b1c9
+  else DIM
+  end
+end
+
+fn who_color(w)
+  if w == "AF" then #5b9dff
+  elsif w == "EK" then #d98a4a
+  elsif w == "JN" then #3fae7a
+  elsif w == "MR" then #a98ce0
+  else DIM
+  end
+end
+
+fn pri_color(p)
+  if p == 2 then DANGER
+  elsif p == 1 then #d9a441
+  else #3d4653
+  end
+end
+
+fn pri_name(p)
+  if p == 2 then "urgent" elsif p == 1 then "normal" else "low" end
+end
+
+// ── Board state ──────────────────────────────────────────────────────────
+
+state cols = [
+  [
+    Card("c1", "Embed the Bold face for panel text runs", "render", "EK", 3, 1),
+    Card("c2", "Wheel scroll should respect clip regions", "input", "JN", 2, 0),
+    Card("c3", "Document the panel sleep/wake window", "docs", "AF", 1, 0),
+    Card("c4", "Sparkline widget for the ui prelude", "prelude", "MR", 5, 1),
+    Card("c5", "Fuzz the bytecode VM against the corpus", "vm", "AF", 8, 0),
+  ],
+  [
+    Card("c6", "Capture the drag gesture across panes", "input", "JN", 5, 2),
+    Card("c7", "Corner antialiasing at small radii", "render", "EK", 3, 1),
+  ],
+  [
+    Card("c8", "Fast path for immutable list append", "vm", "AF", 8, 2),
+    Card("c9", "Focus registry: shift+tab wraps twice", "prelude", "MR", 2, 0),
+  ],
+  [
+    Card("c10", "Bytecode VM is the only engine", "vm", "AF", 13, 1),
+    Card("c11", "Panel values exposed in /state", "tooling", "JN", 3, 1),
+    Card("c12", "text_width uses real font advances", "render", "EK", 2, 0),
+  ],
+]
+
+state sel_id = "c6"
+state scrolls = [0, 0, 0, 0]
+state drag = {active: false, col: 0, idx: 0, card: Card("", "", "", "", 0, 0),
+              ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
+state moves = 0
+
+// ── Layout metrics (recomputed every frame — the pane can resize) ─────────
+
+let W = screen_width()
+let H = screen_height()
+let M = 26
+let GUT = 16
+let COL_W = (W - M * 2 - GUT * 3) / 4
+let BOARD_TOP = 104
+let FOOT_H = 54
+let LANE_HEAD = 30
+let SURF_TOP = BOARD_TOP + LANE_HEAD + 10
+let SURF_H = H - SURF_TOP - FOOT_H - M
+let COL_PAD = 12
+let CARD_GAP = 10
+let CARD_PAD = 13
+let INNER_W = COL_W - COL_PAD * 2
+let CARD_IN = INNER_W - CARD_PAD * 2
+let TITLE_SIZE = 14
+let TITLE_LH = 19
+// Measure ten glyphs, not one: the real advance is fractional (8.4px at 14),
+// and rounding it down per-character overestimates a line by several chars.
+let CHW10 = max(50, text_width("MMMMMMMMMM", TITLE_SIZE))
+let LINE_CHARS = max(8, CARD_IN * 10 / CHW10)
+
+fn col_x(c)
+  M + c * (COL_W + GUT)
+end
+
+// ── Small list surgery (lists are immutable values) ───────────────────────
+
+fn list_remove(xs, k)
+  let out = []
+  for i in range(0, len(xs)) do
+    if i != k then
+      out = append(out, xs[i])
+    end
+  end
+  out
+end
+
+fn list_insert(xs, k, v)
+  let out = []
+  for i in range(0, len(xs)) do
+    if i == k then
+      out = append(out, v)
+    end
+    out = append(out, xs[i])
+  end
+  if k >= len(xs) then
+    out = append(out, v)
+  end
+  out
+end
+
+fn find_card(cs, id)
+  let out = {c: -1, i: -1}
+  for c in range(0, 4) do
+    for i in range(0, len(cs[c])) do
+      if cs[c][i].id == id then
+        out = {c: c, i: i}
+      end
+    end
+  end
+  out
+end
+
+// ── Card geometry ────────────────────────────────────────────────────────
+
+fn card_lines(card)
+  preview(card.title, LINE_CHARS, 2).lines
+end
+
+fn card_h(card)
+  82 + TITLE_LH * len(card_lines(card))
+end
+
+fn column_h(cards)
+  let h = 0
+  for c in cards do
+    h = h + card_h(c) + CARD_GAP
+  end
+  max(0, h - CARD_GAP)
+end
+
+// Where a card whose vertical center is at `cy` would be inserted.
+fn insert_index(cards, top, cy)
+  let idx = 0
+  let y = top
+  for i in range(0, len(cards)) do
+    let ch = card_h(cards[i])
+    if cy > y + ch / 2 then
+      idx = i + 1
+    end
+    y = y + ch + CARD_GAP
+  end
+  idx
+end
+
+// Stacked rects for one column: every card, plus a `ghost` gap at `gi`.
+fn slot_list(cards, x, top, gi, gh)
+  let out = []
+  let y = top
+  for i in range(0, len(cards)) do
+    if i == gi then
+      out = append(out, {ghost: true, i: i, r: rect(x, y, INNER_W, gh)})
+      y = y + gh + CARD_GAP
+    end
+    let ch = card_h(cards[i])
+    out = append(out, {ghost: false, i: i, r: rect(x, y, INNER_W, ch)})
+    y = y + ch + CARD_GAP
+  end
+  if gi >= len(cards) then
+    out = append(out, {ghost: true, i: len(cards), r: rect(x, y, INNER_W, gh)})
+  end
+  out
+end
+
+// The whole board's derived geometry for this pointer position.
+fn plan(cs, d, sc, mx, my)
+  let lifting = d.active && d.moved
+  let dh = card_h(d.card)
+  let base = for c in range(0, 4) do
+    if d.active && c == d.col then list_remove(cs[c], d.idx) else cs[c] end
+  end
+  let tops = for c in range(0, 4) do
+    SURF_TOP + COL_PAD - sc[c]
+  end
+  let tcol = d.col
+  if lifting then
+    for c in range(0, 4) do
+      if mx >= col_x(c) - GUT && mx < col_x(c) + COL_W + GUT then
+        tcol = c
+      end
+    end
+  end
+  let tidx = 0
+  if lifting then
+    tidx = insert_index(base[tcol], tops[tcol], my - d.oy + dh / 2)
+  end
+  let slots = for c in range(0, 4) do
+    let gi = if lifting && c == tcol then tidx else -1 end
+    slot_list(base[c], col_x(c) + COL_PAD, tops[c], gi, dh)
+  end
+  {base: base, tops: tops, tcol: tcol, tidx: tidx, dh: dh,
+   slots: slots, lifting: lifting}
+end
+
+// ── Drawing ──────────────────────────────────────────────────────────────
+
+fn draw_card(r, card, mode)
+  if mode == "lift" then
+    draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), 12, #000000, 120)
+  end
+  let bg = if mode == "lift" then CARD_LIFT
+    elsif mode == "hover" then CARD_HOV
+    else CARD_BG
+    end
+  draw_rect_rounded(r, 12, bg)
+  if mode == "lift" then
+    draw_rect_outline(r, ACCENT, 170, 1)
+  elsif mode == "sel" then
+    draw_rect_outline(r, ACCENT, 200, 1)
+  else
+    draw_rect_outline(r, RULE, 255, 1)
+  end
+  if mode == "sel" || mode == "lift" then
+    draw_rect_rounded(rect(r.x + 1, r.y + 13, 3, r.h - 26), 2, ACCENT)
+  end
+
+  // Top row: tag pill on the left, priority dot on the right.
+  let tc = tag_color(card.tag)
+  let pw = text_width(card.tag, 10) + 16
+  draw_rect_rounded(rect(r.x + CARD_PAD, r.y + CARD_PAD, pw, 17), 8, tc, 38)
+  draw_text(card.tag, {x: r.x + CARD_PAD + 8, y: r.y + CARD_PAD + 4}, 10, tc)
+  draw_circle({x: r.x + r.w - CARD_PAD - 4, y: r.y + CARD_PAD + 8}, 4,
+              pri_color(card.pri))
+
+  // Title, one or two wrapped lines.
+  let lines = card_lines(card)
+  let ty = r.y + CARD_PAD + 26
+  for k in range(0, len(lines)) do
+    draw_text(lines[k], {x: r.x + CARD_PAD, y: ty + k * TITLE_LH}, TITLE_SIZE, TEXT)
+  end
+
+  // Footer: assignee chip, estimate.
+  let fy = r.y + r.h - CARD_PAD - 20
+  let wc = who_color(card.who)
+  draw_circle({x: r.x + CARD_PAD + 10, y: fy + 10}, 10, wc, 46)
+  draw_text_center(card.who, r.x + CARD_PAD + 10, fy + 5, 10, wc)
+  draw_text_right("{card.pts} pts", r.x + r.w - CARD_PAD, fy + 5, 11, FAINT)
+end
+
+fn draw_ghost(r)
+  draw_rect_rounded(r, 12, ACCENT, 26)
+  draw_rect_outline(r, ACCENT, 110, 1)
+  draw_text_center("drop here", r.x + r.w / 2, r.y + r.h / 2 - 6, 11, ACCENT)
+end
+
+// Soft edges where the well clips its cards, so a scrolled column reads as
+// continuing rather than as a card sliced in half.
+fn draw_edge_fade(surf, content, off)
+  let steps = 16
+  for k in range(0, steps) do
+    let a = 255 - k * 16
+    if off > 0 then
+      draw_rect(rect(surf.x + 2, surf.y + 2 + k * 4, surf.w - 4, 4), SURFACE, a)
+    end
+    if off < content - surf.h then
+      draw_rect(rect(surf.x + 2, surf.y + surf.h - 6 - k * 4, surf.w - 4, 4), SURFACE, a)
+    end
+  end
+end
+
+fn draw_vscroll(surf, content, off)
+  if content > surf.h then
+    let track_h = surf.h - 16
+    let th = max(24, track_h * surf.h / content)
+    let ty = surf.y + 8 + (track_h - th) * off / max(1, content - surf.h)
+    draw_rect_rounded(rect(surf.x + surf.w - 7, ty, 3, th), 2, FAINT, 150)
+  end
+end
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+let mx = mouse_x()
+let my = mouse_y()
+let P0 = plan(cols, drag, scrolls, mx, my)
+
+// Which card is the pointer over? (Not while a card is airborne.)
+let hit_c = -1
+let hit_i = -1
+let hit_x = 0
+let hit_y = 0
+if !P0.lifting then
+  for c in range(0, 4) do
+    let surf = rect(col_x(c), SURF_TOP, COL_W, SURF_H)
+    if point_in(mx, my, surf) then
+      for s in P0.slots[c] do
+        if !s.ghost && point_in(mx, my, s.r) then
+          hit_c = c
+          hit_i = s.i
+          hit_x = s.r.x
+          hit_y = s.r.y
+        end
+      end
+    end
+  end
+end
+
+// Wheel scrolls the column under the pointer.
+if scroll_y() != 0 && !drag.active then
+  for c in range(0, 4) do
+    let surf = rect(col_x(c), SURF_TOP, COL_W, SURF_H)
+    if point_in(mx, my, surf) then
+      let content = column_h(cols[c]) + COL_PAD * 2
+      let maxs = max(0, content - SURF_H)
+      scrolls[c] = max(0, min(maxs, scrolls[c] + scroll_y() * 40))
+    end
+  end
+end
+
+// Press: select, and arm a drag.
+if mouse_pressed(0) && hit_c >= 0 then
+  sel_id = cols[hit_c][hit_i].id
+  drag = {active: true, col: hit_c, idx: hit_i, card: cols[hit_c][hit_i],
+          ox: mx - hit_x, oy: my - hit_y, sx: mx, sy: my, moved: false}
+end
+
+// A press on bare well space clears the selection.
+if mouse_pressed(0) && hit_c < 0 then
+  let over_board = false
+  for c in range(0, 4) do
+    if point_in(mx, my, rect(col_x(c), SURF_TOP, COL_W, SURF_H)) then
+      over_board = true
+    end
+  end
+  if over_board then
+    sel_id = ""
+  end
+end
+
+// Held: past a few pixels of travel the press becomes a drag.
+if drag.active && !drag.moved && (abs(mx - drag.sx) + abs(my - drag.sy)) > 4 then
+  drag.moved = true
+end
+
+// Release: drop it where the ghost is.
+if mouse_released(0) && drag.active then
+  if drag.moved then
+    let dst = P0.tcol
+    let at = P0.tidx
+    if dst == drag.col then
+      cols[dst] = list_insert(list_remove(cols[dst], drag.idx), at, drag.card)
+    else
+      cols[drag.col] = list_remove(cols[drag.col], drag.idx)
+      cols[dst] = list_insert(cols[dst], at, drag.card)
+    end
+    moves = moves + 1
+  end
+  drag = {active: false, col: 0, idx: 0, card: drag.card,
+          ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
+end
+
+// Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
+let cur = find_card(cols, sel_id)
+let arrowed = key_pressed("up") || key_pressed("down") || key_pressed("left") || key_pressed("right")
+if cur.c < 0 && arrowed && len(cols[0]) > 0 then
+  // Nothing selected: the first arrow lands on the first card.
+  cur = {c: 0, i: 0}
+  sel_id = cols[0][0].id
+elsif key_pressed("escape") then
+  sel_id = ""
+  cur = {c: -1, i: -1}
+elsif mod_shift() && cur.c >= 0 then
+  if key_pressed("up") && cur.i > 0 then
+    let card = cols[cur.c][cur.i]
+    cols[cur.c] = list_insert(list_remove(cols[cur.c], cur.i), cur.i - 1, card)
+    moves = moves + 1
+  end
+  if key_pressed("down") && cur.i < len(cols[cur.c]) - 1 then
+    let card = cols[cur.c][cur.i]
+    cols[cur.c] = list_insert(list_remove(cols[cur.c], cur.i), cur.i + 1, card)
+    moves = moves + 1
+  end
+  if key_pressed("left") && cur.c > 0 then
+    let card = cols[cur.c][cur.i]
+    cols[cur.c] = list_remove(cols[cur.c], cur.i)
+    cols[cur.c - 1] = list_insert(cols[cur.c - 1], min(cur.i, len(cols[cur.c - 1])), card)
+    moves = moves + 1
+  end
+  if key_pressed("right") && cur.c < 3 then
+    let card = cols[cur.c][cur.i]
+    cols[cur.c] = list_remove(cols[cur.c], cur.i)
+    cols[cur.c + 1] = list_insert(cols[cur.c + 1], min(cur.i, len(cols[cur.c + 1])), card)
+    moves = moves + 1
+  end
+elsif cur.c >= 0 then
+  if key_pressed("up") && cur.i > 0 then
+    sel_id = cols[cur.c][cur.i - 1].id
+  end
+  if key_pressed("down") && cur.i < len(cols[cur.c]) - 1 then
+    sel_id = cols[cur.c][cur.i + 1].id
+  end
+  if key_pressed("left") && cur.c > 0 && len(cols[cur.c - 1]) > 0 then
+    sel_id = cols[cur.c - 1][min(cur.i, len(cols[cur.c - 1]) - 1)].id
+  end
+  if key_pressed("right") && cur.c < 3 && len(cols[cur.c + 1]) > 0 then
+    sel_id = cols[cur.c + 1][min(cur.i, len(cols[cur.c + 1]) - 1)].id
+  end
+end
+
+let sent = false
+for n in range(0, 4) do
+  if key_pressed(str(n + 1)) && cur.c >= 0 && cur.c != n && len(cols[cur.c]) > 0 then
+    let card = cols[cur.c][cur.i]
+    cols[cur.c] = list_remove(cols[cur.c], cur.i)
+    cols[n] = list_insert(cols[n], 0, card)
+    moves = moves + 1
+    sent = true
+  end
+end
+
+// Keyboard navigation keeps the selection on screen.
+if arrowed || sent then
+  let s2 = find_card(cols, sel_id)
+  if s2.c >= 0 then
+    let off = 0
+    for i in range(0, s2.i) do
+      off = off + card_h(cols[s2.c][i]) + CARD_GAP
+    end
+    let view = SURF_H - COL_PAD * 2
+    scrolls[s2.c] = max(0, ensure_visible_px(scrolls[s2.c], off, card_h(cols[s2.c][s2.i]), view))
+  end
+end
+
+if key_pressed("p") then
+  let seat = find_card(cols, sel_id)
+  if seat.c >= 0 then
+    let card = cols[seat.c][seat.i]
+    card.pri = (card.pri + 1) % 3
+    cols[seat.c][seat.i] = card
+  end
+end
+
+// ── Frame ────────────────────────────────────────────────────────────────
+
+let P = plan(cols, drag, scrolls, mx, my)
+let sel = find_card(cols, sel_id)
+
+clear(BG.r, BG.g, BG.b)
+
+// Header ------------------------------------------------------------------
+let total_pts = 0
+let done_pts = 0
+let n_cards = 0
+for c in range(0, 4) do
+  for card in cols[c] do
+    total_pts = total_pts + card.pts
+    n_cards = n_cards + 1
+    if c == 3 then
+      done_pts = done_pts + card.pts
+    end
+  end
+end
+
+draw_text("Petal Board", {x: M, y: 24}, {size: 25, color: TEXT})
+let move_note = if moves == 1 then "1 card moved" else "{moves} cards moved" end
+draw_text(fit_parts(["sprint 24", "{n_cards} cards", move_note], W / 2, 11),
+          {x: M + 2, y: 60}, {size: 11, color: DIM, spacing: 1})
+
+let bar_w = 260
+let bar_x = W - M - bar_w
+draw_text_right("{done_pts} of {total_pts} points shipped", W - M, 26, 11, DIM)
+draw_rect_rounded(rect(bar_x, 48, bar_w, 6), 3, RULE)
+let fill_w = if total_pts > 0 then bar_w * done_pts / total_pts else 0 end
+if fill_w > 0 then
+  draw_rect_rounded(rect(bar_x, 48, max(6, fill_w), 6), 3, GOOD)
+end
+draw_rect(rect(0, 86, W, 1), RULE)
+
+// Columns -----------------------------------------------------------------
+for c in range(0, 4) do
+  let lane = LANES[c]
+  let x = col_x(c)
+  let surf = rect(x, SURF_TOP, COL_W, SURF_H)
+  let cnt = len(cols[c])
+
+  // Lane header, above the surface so the surface stays a clean card well.
+  draw_circle({x: x + 6, y: BOARD_TOP + 12}, 4, lane.color)
+  draw_text(lane.name, {x: x + 18, y: BOARD_TOP + 5},
+            {size: 12, color: TEXT, spacing: 1})
+  let over = lane.limit > 0 && cnt > lane.limit
+  let ctext = if lane.limit > 0 then "{cnt}/{lane.limit}" else str(cnt) end
+  draw_text_right(ctext, x + COL_W, BOARD_TOP + 5, 12,
+                  if over then DANGER else FAINT end)
+  draw_rect(rect(x, BOARD_TOP + 24, COL_W, 2), lane.color, 90)
+
+  // Card well.
+  let is_target = P.lifting && c == P.tcol
+  draw_rect_rounded(surf, 14, SURFACE)
+  if is_target then
+    draw_rect_outline(surf, ACCENT, 70, 1)
+  end
+
+  clip(surf.x, surf.y, surf.w, surf.h)
+  if cnt == 0 && !is_target then
+    draw_text_center("empty", x + COL_W / 2, SURF_TOP + 26, 11, #333b47)
+  end
+  for s in P.slots[c] do
+    if s.ghost then
+      draw_ghost(s.r)
+    else
+      let card = P.base[c][s.i]
+      let mode = if card.id == sel_id then "sel"
+        elsif !P.lifting && c == hit_c && s.i == hit_i then "hover"
+        else "plain"
+        end
+      draw_card(s.r, card, mode)
+    end
+  end
+  let content = column_h(cols[c]) + COL_PAD * 2
+  draw_edge_fade(surf, content, scrolls[c])
+  clip_none()
+  draw_vscroll(surf, content, scrolls[c])
+end
+
+// The airborne card, over everything.
+if P.lifting then
+  draw_card(rect(mx - drag.ox, my - drag.oy, INNER_W, P.dh), drag.card, "lift")
+end
+
+// Footer ------------------------------------------------------------------
+let fy = H - FOOT_H
+draw_rect(rect(0, fy, W, 1), RULE)
+if sel.c >= 0 then
+  let card = cols[sel.c][sel.i]
+  let wc = who_color(card.who)
+  draw_circle({x: M + 10, y: fy + 27}, 10, wc, 46)
+  draw_text_center(card.who, M + 10, fy + 22, 10, wc)
+  draw_text(ellipsize(card.title, W / 2 - 120, 13), {x: M + 30, y: fy + 14},
+            {size: 13, color: TEXT})
+  draw_text(fit_parts([LANES[sel.c].name, card.tag, pri_name(card.pri),
+                       "{card.pts} pts"], W / 2 - 120, 10),
+            {x: M + 30, y: fy + 32}, {size: 10, color: FAINT, spacing: 1})
+else
+  draw_text("nothing selected", {x: M, y: fy + 22}, {size: 12, color: FAINT})
+end
+
+let hints = fit_parts(["drag a card", "arrows select", "shift+arrows move",
+                       "1-4 send to lane", "p priority", "esc deselect"],
+                      W - M * 2 - 440, 11)
+draw_text_right(hints, W - M, fy + 22, 11, FAINT)

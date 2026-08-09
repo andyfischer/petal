@@ -9,6 +9,8 @@ GPU-accelerated IDE in Rust, with Petal as the scripting layer.
 - `docs/notes/agent-workflow.md` — conventions this repo expects: how to verify
   a change, where new behavior goes, traps that have cost real time
 - `docs/testing.md` — the layered testing strategy
+- `tools/README.md` — the dev tools (integration tests, fuzzer, bundler); all
+  TypeScript run directly by Node, no build step
 - `docs/debug-server.md` — live inspection + input injection protocol
 - `docs/gpp.md` + `docs/writing-gpp-apps.md` — Garden Pane Protocol
   (subprocess-backed panes) and how to write a client

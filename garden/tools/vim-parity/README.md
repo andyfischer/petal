@@ -8,7 +8,7 @@ generator never emits a key Garden doesn't support, a disagreement is by
 construction a Garden parity bug.
 
 ```
-fuzz.py ──▶ generate keystroke program (supported subset only)
+fuzz.ts ──▶ generate keystroke program (supported subset only)
         ├─▶ real Vim   (nvim -s, one hermetic process per case)   ── oracle
         ├─▶ Garden     (headless, driven over the debug server)
         └─▶ compare buffer + cursor + mode → cluster → delta-debug → report
@@ -23,16 +23,19 @@ throwaway file so there is exactly one focused editor pane:
 cargo run -p garden-app -- --headless --debug-port 8091 /tmp/scratch.txt &
 ```
 
-Then run a sweep (needs `nvim` on PATH; `python3`, no third-party deps):
+Then run a sweep (needs `nvim` on PATH; Node >= 22.6, no third-party deps):
 
 ```bash
-python3 scripts/vim-parity/fuzz.py --port 8091 --count 500 --seed 1
-python3 scripts/vim-parity/fuzz.py --port 8091 --count 200 --seed 1 --tier paste
-python3 scripts/vim-parity/fuzz.py --port 8091 --count 200 --seed 1 --tier undo
+node tools/vim-parity/fuzz.ts --port 8091 --count 500 --seed 1
+node tools/vim-parity/fuzz.ts --port 8091 --count 200 --seed 1 --tier paste
+node tools/vim-parity/fuzz.ts --port 8091 --count 200 --seed 1 --tier undo
 ```
 
 `--out report.json` writes the full clustered report as JSON. `--seed` makes a
-run reproducible. See `FINDINGS.md` for the bugs a first pass turned up.
+run reproducible — though only against this fuzzer: the generator was ported
+from Python and its RNG is a different one, so a seed does not reproduce the
+cases the retired `fuzz.py` drew. See `FINDINGS.md` for the bugs a first pass
+turned up.
 
 ### Tiers
 
@@ -63,8 +66,8 @@ Getting a *trustworthy* oracle was most of the work. The non-obvious decisions:
     That produced a flood of false undo-tier divergences (Garden was right, the
     oracle was wrong). `feedkeys('ntx')` reproduces real vim's per-insert-session
     undo blocks. The two oracles were cross-checked and **agree on 300 core + 300
-    paste cases**, differing only on the undo tier — run `oracle_xcheck.py
-    {core,paste,undo}` to reproduce. (`nvim_feedkeys(...,'x')` — the RPC form
+    paste cases**, differing only on the undo tier — run `node
+    tools/vim-parity/oracle-xcheck.ts {core,paste,undo}` to reproduce. (`nvim_feedkeys(...,'x')` — the RPC form
     without `t` — is a third option that gets the beep/isolation cases wrong; the
     vimscript `feedkeys` with the `t` flag does not.)
 - **`-u NONE` is too bare — it flips `startofline` OFF.** Real Vim lands

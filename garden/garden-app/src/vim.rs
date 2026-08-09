@@ -4011,7 +4011,7 @@ mod tests {
         assert_eq!(v.anchor, Some(Point::new(0, 0)));
     }
 
-    // --- vim-parity fixes (see scripts/vim-parity) --------------------------
+    // --- vim-parity fixes (see tools/vim-parity) --------------------------
 
     #[test]
     fn d_g_deletes_linewise_to_the_last_and_first_line() {

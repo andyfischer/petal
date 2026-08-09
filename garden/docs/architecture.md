@@ -1537,7 +1537,7 @@ unit-tested (`gpp-apps/garden-diff/src/diff_core/tests.rs`, against scratch repo
 like the `git-viewers` tests), and the whole loop — load, pill switching, an edit
 typed into the after column, a refused delete of one of its markers, a `-` line
 deleted in the unified view, a hunk reverted by deleting its header, a refused
-delete of the title, `^S`, the file on disk — is driven end-to-end by `scripts/diff-review-integration-test.sh`
+delete of the title, `^S`, the file on disk — is driven end-to-end by `tools/diff-review-integration-test.ts`
 over the debug server. The drawer publishes its hit targets (`split_x` /
 `unified_x` / `stat_x` / `pill_y` for the pills; `after_x` / `unified_body_x` /
 `body_top` for the body regions, emitted from inside the branch that lays them
@@ -1605,7 +1605,7 @@ built-in panel's), doing the git work in `git-viewers/src/lib.rs`:
 The git plumbing and pure parsing in `git-viewers/src/lib.rs` are unit-tested
 against scratch repos (`cargo test -p git-viewers`); the whole `:Git` flow is
 driven end to end over the debug server by
-`scripts/git-panel-integration-test.sh` (see `docs/testing.md`).
+`tools/git-panel-integration-test.ts` (see `docs/testing.md`).
 
 ## Retired: the in-host projection framework
 
@@ -1618,10 +1618,10 @@ removed once `garden-diff` covered every entry point — the same projection now
 lives in the subprocess (`gpp-apps/garden-diff/src/diff_core.rs`), with an
 `edit_view` panel region as the editing surface and `^S` as the write-back, so
 there is exactly one implementation of the review. `:Revert` went with it (the
-after side is a normal vim buffer — undo, or reload the diff). The commit history
-(`garden-app/src/projection/`, `app::panes::review_split_tests`, and
-`scripts/review-editor-integration-test.sh`) is the record if the general
-source↔view machinery is ever wanted again.
+after side is a normal vim buffer — undo, or reload the diff). The names it went
+by before removal — `garden-app/src/projection/`, `app::panes::review_split_tests`,
+and `scripts/review-editor-integration-test.sh` — are what to search the history
+for if the general source↔view machinery is ever wanted again.
 
 ## Roadmap (post-v1)
 

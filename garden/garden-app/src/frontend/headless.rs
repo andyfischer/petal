@@ -1,6 +1,6 @@
 //! The headless frontend: no window, no terminal — the debug server is the
 //! only way to drive and observe the editor. Used for integration testing
-//! (`scripts/integration-test.sh`) and agent-driven verification, where a
+//! (`tools/integration-test.ts`) and agent-driven verification, where a
 //! real window would be slow, flaky, or unavailable.
 //!
 //! The loop blocks on the debug-request channel with a short timeout so the

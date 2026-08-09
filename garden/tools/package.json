@@ -1,0 +1,6 @@
+{
+  "name": "garden-tools",
+  "private": true,
+  "type": "module",
+  "description": "Garden dev tools, run directly with Node >= 22.6 native TypeScript stripping (see /run-ts-directly). No build step, no dependencies."
+}

@@ -33,8 +33,9 @@ mode is unreachable without it and exits with an error if it is omitted.
 Headless mode has no window to resize and the server has no resize endpoint;
 its virtual viewport defaults to 1280×850 logical pixels. Set
 `GARDEN_HEADLESS_SIZE=WxH` (e.g. `700x850`) before launch to run — and
-screenshot — at another size; integration tests use it to exercise
-narrow/wide layouts (see `scripts/session-retro-integration-test.sh`).
+screenshot — at another size, which is how a narrow/wide layout difference is
+reproduced without a real window. (A malformed value is ignored with a warning
+and the default is used.)
 
 ## How it works
 
@@ -126,7 +127,7 @@ then `GET /state` reflects the change. **Note:** one-frame edges
 tick (~200ms in headless), so a script that must observe them across a later
 `GET /state` has to *count* them into a `state` var rather than sample them —
 that var is then observed under its own name in `panel.values`. See
-`scripts/diff-review-integration-test.sh` for a full example.
+`tools/diff-review-integration-test.ts` for a full example.
 
 ### Editor `pending` — reading mid-command vim state
 
@@ -172,7 +173,7 @@ curl -s "localhost:$PORT/buffer/0?window=2"                 # window 2's, indepe
 curl -s -X POST "localhost:$PORT/key?window=1" -d '{"key":"w","mods":["cmd"]}'  # close just window 1
 ```
 
-`scripts/multi-window-integration-test.sh` drives this end to end (windowed
+`tools/multi-window-integration-test.ts` drives this end to end (windowed
 only — it opens real OS windows).
 
 ## Frame consistency
@@ -193,7 +194,7 @@ The upshot: **input then screenshot needs no sleep**. A `POST /key` /
 `GET /screenshot` reflects it, including panel state that takes an extra frame
 or two of script propagation. (Not covered: data a GPP panel client fetches
 asynchronously from its subprocess — poll `/state` until the panel's
-`values` show it.) `scripts/screenshot-consistency-test.sh` exercises
+`values` show it.) `tools/screenshot-consistency-test.ts` exercises
 this contract end to end, down to decoding the PNG pixels.
 
 Every scene build gets a **global frame number** — monotonically increasing

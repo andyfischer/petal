@@ -5,9 +5,9 @@
 // (`~/.garden/state/db.sqlite`, see garden-app/src/state.rs + event_log.rs).
 //
 // Usage:
-//   node scripts/reports-tool.ts list [--json]
-//   node scripts/reports-tool.ts show <id> [--json]
-//   node scripts/reports-tool.ts delete <id>
+//   node tools/reports-tool.ts list [--json]
+//   node tools/reports-tool.ts show <id> [--json]
+//   node tools/reports-tool.ts delete <id>
 //
 // Options:
 //   --db <path>   Override the state database path
@@ -179,9 +179,9 @@ function usage(): never {
       "reports-tool — browse and manage `:report` items in the garden state db",
       "",
       "Usage:",
-      "  node scripts/reports-tool.ts list [--json]",
-      "  node scripts/reports-tool.ts show <id> [--json]",
-      "  node scripts/reports-tool.ts delete <id>",
+      "  node tools/reports-tool.ts list [--json]",
+      "  node tools/reports-tool.ts show <id> [--json]",
+      "  node tools/reports-tool.ts delete <id>",
       "",
       "Options:",
       "  --db <path>   Override the state database path",

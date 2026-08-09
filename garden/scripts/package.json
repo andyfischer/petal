@@ -1,6 +1,0 @@
-{
-  "name": "garden-scripts",
-  "private": true,
-  "type": "module",
-  "description": "Garden dev scripts, run directly with Node >= 22.6 native TypeScript stripping (see /run-ts-directly). No build step, no dependencies."
-}

@@ -12,7 +12,7 @@ buffer, with tree-sitter syntax highlighting and live-reloading layout.
                      # ~/.cargo/bin, and seeds ~/.garden/init.ptl
 ```
 
-Then type `garden` anywhere to open the GUI. On macOS, `scripts/build-macos-app.sh`
+Then type `garden` anywhere to open the GUI. On macOS, `tools/build-macos-app.ts`
 produces a Finder/Dock-launchable `Garden.app` with the icon (a plain `cargo
 build` only makes CLI executables; a raw binary sets the Dock icon at runtime but
 has no persistent Finder icon).
@@ -237,7 +237,7 @@ dependencies on the Petal crates one level up in this repo.
 ```bash
 cargo build                          # whole workspace
 cargo test                           # full suite across core/script/app/gpp + the gpp-apps
-scripts/integration-test.sh          # end-to-end checks through the headless frontend
+node tools/integration-test.ts       # end-to-end checks through the headless frontend
 cargo run -p garden-render --example demo   # renderer standalone smoke test
 ```
 

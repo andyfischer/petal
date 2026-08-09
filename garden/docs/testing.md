@@ -40,7 +40,7 @@ operating on an `EditorView`'s public API) so it never needs a window. The vim
 state machine is a good example — `vim::handle(view, key, ..)` is fully tested
 without rendering a single frame.
 
-## Layer 2 — Functional integration (`scripts/integration-test.sh`)
+## Layer 2 — Functional integration (`tools/integration-test.ts`)
 
 The whole stack — frontend loop, key routing, vim, command line, file I/O —
 driven through the **debug server** over HTTP, asserting on `/state`, `/buffer`,
@@ -48,8 +48,8 @@ and files on disk. This catches wiring bugs that unit tests structurally
 cannot: key translation, mode plumbing, command execution, persistence.
 
 ```bash
-scripts/integration-test.sh            # headless frontend (no window, CI-safe)
-scripts/integration-test.sh --window   # same checks through the real winit/wgpu frontend
+node tools/integration-test.ts            # headless frontend (no window, CI-safe)
+node tools/integration-test.ts --window   # same checks through the real winit/wgpu frontend
 ```
 
 It boots the app on a free port (`--headless --debug-port 0`), runs a scripted
@@ -59,7 +59,7 @@ variant additionally exercises the winit event loop and renderer wiring and is
 run on demand. Keep it fast and deterministic: drive with injected input,
 assert on observable state, avoid sleeps beyond the startup poll.
 
-**The diff review** (`scripts/diff-review-integration-test.sh`) — the same
+**The diff review** (`tools/diff-review-integration-test.ts`) — the same
 approach for a Petal graphical panel, over `garden-diff` (the one diff/review
 tool). It builds a throwaway git repo fixture, opens `garden diff main` on it
 headless, and asserts on the values the panel's frame bound, read at `/state` →
@@ -71,16 +71,16 @@ that expresses its logical state only in pixels stays testable: the drawer
 gives that state (and its click targets) plain `let` names, which the host
 observes and reports by name — no publishing call in the script.
 
-**Git history browser** (`scripts/git-panel-integration-test.sh`) — the same
+**Git history browser** (`tools/git-panel-integration-test.ts`) — the same
 harness for the `:Git` panel, driving the `git-log` panel-mode GPP app via
 `garden git log`: a multi-commit fixture with a dirty worktree, asserting
 commit/file selection, the Tab focus ring, lazy per-commit fetches through
 `query`, and hover-scoped wheel scrolling. The app's git plumbing and pure
 parsing have *unit-level* coverage in `gpp-apps/git-viewers` (`cargo test -p
-git-viewers`), tested against scratch repos — faster to iterate on than the shell
+git-viewers`), tested against scratch repos — faster to iterate on than the full
 harness.
 
-**Multiple windows** (`scripts/multi-window-integration-test.sh`) — the one
+**Multiple windows** (`tools/multi-window-integration-test.ts`) — the one
 integration script that is **windowed-only** (it opens two real OS windows;
 there is no headless multi-window path, since the whole point is the winit
 window registry headless lacks). It launches with a redirected `$HOME` so

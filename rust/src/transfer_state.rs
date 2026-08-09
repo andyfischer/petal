@@ -5,8 +5,11 @@
 //! Hot-reloading is one use of this, but it can reshape a stack for any new
 //! program that shares the same StateKeys.
 
+use std::collections::HashSet;
+
 use crate::env::Env;
-use crate::program::Program;
+use crate::program::{Program, StateKey};
+use crate::stack::Stack;
 
 /// Result of transferring a stack's state onto a new program.
 pub struct TransferStateResult {
@@ -14,6 +17,42 @@ pub struct TransferStateResult {
     pub state_preserved: usize,
     /// Number of state values dropped (no matching key in new program).
     pub state_dropped: usize,
+}
+
+/// Reshape one stack for a program whose state declarations are `new_state_keys`:
+/// keep the state values that still have a declaration, drop the rest, and
+/// restart execution. Returns the preserved/dropped counts.
+///
+/// This is the whole stack-local half of the transfer, taking the `&mut Stack`
+/// directly — no `Env`, no program table, no stack lookup that can fail — so it
+/// is testable against a bare `Stack`. [`Env::transfer_state`] wraps it with the
+/// Env-level half (swapping the program in and invalidating closures).
+pub fn transfer_stack_state(
+    stack: &mut Stack,
+    new_state_keys: &HashSet<StateKey>,
+) -> TransferStateResult {
+    // Match on the base key: a runtime key also carries loop indices, which the
+    // new program's declarations say nothing about.
+    let preserved = stack
+        .state
+        .keys()
+        .filter(|k| new_state_keys.contains(&k.base))
+        .count();
+    let dropped = stack.state.len() - preserved;
+
+    stack.state.retain(|k, _| new_state_keys.contains(&k.base));
+    stack.reset_execution();
+    // The old captured closures point into the caller's now-cleared closures
+    // vec; they get recaptured on the next run.
+    stack.functions.clear();
+    stack.methods.clear();
+    // `reset_execution` cleared `vm_started`, so the VM re-pushes its root frame
+    // (against the new program's lowering) on the next run.
+
+    TransferStateResult {
+        state_preserved: preserved,
+        state_dropped: dropped,
+    }
 }
 
 impl Env {
@@ -26,45 +65,120 @@ impl Env {
         stack_id: crate::stack::StackKey,
         new_program: Program,
     ) -> Result<TransferStateResult, String> {
-        let stack = self.stack(stack_id).ok_or("Stack not found")?;
-        let old_program_id = stack.program_id;
+        let old_program_id = self.stack(stack_id).ok_or("Stack not found")?.program_id;
+        let new_state_keys: HashSet<StateKey> = new_program.state_terms().map(|(k, _)| k).collect();
 
-        // Collect base state keys from the new program to know which state to keep
-        let new_state_keys: std::collections::HashSet<_> =
-            new_program.state_terms().map(|(k, _)| k).collect();
-
-        // Determine which old state values will be preserved (match on base key)
-        let preserved: usize = stack
-            .state
-            .keys()
-            .filter(|k| new_state_keys.contains(&k.base))
-            .count();
-        let dropped: usize = stack.state.len() - preserved;
-
-        // Replace program
         self.insert_program(old_program_id, new_program);
-
-        // Clear closures (they reference the old program's function defs)
+        // Closures reference the old program's function defs.
         self.clear_closures();
 
-        // Reset stack: keep state but restart execution with new program
-        {
-            let stack = self.stack_mut(stack_id).unwrap();
-            // Remove state keys that no longer exist in the new program
-            stack.state.retain(|k, _| new_state_keys.contains(&k.base));
-            stack.reset_execution();
-            // The old captured closures point into the now-cleared closures
-            // vec; they get recaptured on the next run.
-            stack.functions.clear();
-            stack.methods.clear();
-        }
-        // `reset_execution` cleared `vm_started`, so the VM re-pushes its root
-        // frame (against the new program's lowering) on the next run.
+        let stack = self.stack_mut(stack_id).expect("stack found above");
+        Ok(transfer_stack_state(stack, &new_state_keys))
+    }
+}
 
-        Ok(TransferStateResult {
-            state_preserved: preserved,
-            state_dropped: dropped,
-        })
+/// Unit tests for the stack-local half, driven against a bare `Stack` — no
+/// program, no Env, no run loop. The `transfer_state_*` tests below cover the
+/// same reshaping end-to-end through real programs; these pin the reshaping
+/// rules themselves, including cases (loop-indexed keys, a mid-run stack with
+/// captured functions) that are awkward to set up through a source program.
+#[cfg(test)]
+mod stack_state_tests {
+    use super::*;
+    use crate::execution_context::ContextKey;
+    use crate::program::ProgramId;
+    use crate::stack::{RuntimeStateKey, StackKey, StackStatus};
+    use crate::value::Value;
+
+    /// A stack holding one state entry per given base key, all at loop depth 0.
+    fn stack_with_state(keys: &[u64]) -> Stack {
+        let mut stack = Stack::new(StackKey(0), ProgramId(0), ContextKey(0));
+        for (i, k) in keys.iter().enumerate() {
+            stack.state.insert(key(*k), Value::Int(i as i64));
+        }
+        stack
+    }
+
+    fn key(base: u64) -> RuntimeStateKey {
+        RuntimeStateKey {
+            base: StateKey(base),
+            loop_indices: Default::default(),
+        }
+    }
+
+    fn keys(bases: &[u64]) -> HashSet<StateKey> {
+        bases.iter().copied().map(StateKey).collect()
+    }
+
+    #[test]
+    fn state_with_a_matching_declaration_survives_and_the_rest_is_dropped() {
+        let mut stack = stack_with_state(&[1, 2, 3]);
+
+        // Key 2 has no declaration in the new program; keys 1 and 3 do. Key 9 is
+        // newly declared and simply has nothing to preserve yet.
+        let result = transfer_stack_state(&mut stack, &keys(&[1, 3, 9]));
+
+        assert_eq!(result.state_preserved, 2);
+        assert_eq!(result.state_dropped, 1);
+        assert_eq!(stack.state.len(), 2);
+        assert!(stack.state.contains_key(&key(1)));
+        assert!(stack.state.contains_key(&key(3)));
+        assert!(!stack.state.contains_key(&key(2)));
+    }
+
+    /// Keys are matched on `base` alone: every iteration's entry for a surviving
+    /// declaration is kept, and each counts once toward `state_preserved`.
+    #[test]
+    fn loop_indexed_entries_follow_their_base_declaration() {
+        let mut stack = Stack::new(StackKey(0), ProgramId(0), ContextKey(0));
+        for i in 0..3usize {
+            let mut k = key(1);
+            k.loop_indices.push(crate::stack::LoopKeyPart::Index(i));
+            stack.state.insert(k, Value::Int(i as i64));
+        }
+
+        let result = transfer_stack_state(&mut stack, &keys(&[1]));
+
+        assert_eq!(result.state_preserved, 3);
+        assert_eq!(result.state_dropped, 0);
+        assert_eq!(stack.state.len(), 3);
+    }
+
+    /// A program with no `state` declarations drops everything.
+    #[test]
+    fn an_empty_declaration_set_drops_all_state() {
+        let mut stack = stack_with_state(&[1, 2]);
+
+        let result = transfer_stack_state(&mut stack, &HashSet::new());
+
+        assert_eq!(result.state_preserved, 0);
+        assert_eq!(result.state_dropped, 2);
+        assert!(stack.state.is_empty());
+    }
+
+    /// Execution is restarted and the caches that point into the old program —
+    /// captured functions and methods — are invalidated, whatever the state did.
+    #[test]
+    fn execution_restarts_and_program_bound_caches_are_cleared() {
+        let mut stack = stack_with_state(&[1]);
+        stack.functions.insert("main".to_string(), Value::Int(0));
+        stack
+            .methods
+            .entry("Rect".to_string())
+            .or_default()
+            .insert("area".to_string(), Value::Int(0));
+        stack.vm_started = true;
+        stack.status = StackStatus::Running;
+
+        transfer_stack_state(&mut stack, &keys(&[1]));
+
+        assert!(stack.functions.is_empty(), "captured functions invalidated");
+        assert!(stack.methods.is_empty(), "captured methods invalidated");
+        assert!(!stack.vm_started, "the VM re-pushes its root frame");
+        assert!(stack.vm_frames.is_empty());
+        assert!(matches!(stack.status, StackStatus::Ready));
+        // The surviving state is untouched by the reset.
+        assert_eq!(stack.state.get(&key(1)), Some(&Value::Int(0)));
     }
 }
 

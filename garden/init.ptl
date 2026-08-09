@@ -1,0 +1,26 @@
+// Garden layout script — edit while Garden is running and the layout hot-reloads.
+
+layout(
+    column([
+        row([
+            editor("README.md"),
+            editor("docs/architecture.md"),
+            editor("CLAUDE.md"),
+        ]),
+        editor("init.ptl"),
+    ], [0.7, 0.3])
+)
+
+// Optional: override any subset of the dark theme. Colors are hex strings —
+// "#rgb", "#rrggbb", or "#rrggbbaa" (the last two digits are alpha). Unset
+// keys keep their built-in defaults. Uncomment to customize:
+//
+// color_theme({
+//     window_bg: "#090a0d",
+//     text: "#e4eaf3",
+//     cursor: "#8fbcea",
+//     selection: "#4f8cc94d",
+//     syntax_keyword: "#c678dd",
+//     syntax_string: "#98c379",
+//     syntax_comment: "#6b7786",
+// })

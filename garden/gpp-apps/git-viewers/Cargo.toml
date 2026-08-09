@@ -1,0 +1,24 @@
+[package]
+name = "git-viewers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The panel-mode GPP app behind `:Git` (git log), as a subprocess-backed pane.
+# The bin pushes its production drawer and answers that view's `query(kind, arg)`
+# requests by shelling out to `git`, on the protocol loop and diff parsing in
+# `lib.rs`. (The `:Diff` viewer that used to live here is now `garden-diff`.)
+[lib]
+name = "git_viewers"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git-log"
+path = "src/bin/git-log.rs"
+
+[dependencies]
+petal-query = { workspace = true }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

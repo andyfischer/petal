@@ -1,0 +1,22 @@
+// gpp-test-app — mode `query-error`: the panel stays healthy but a `query(...)`
+// fails, so the drawer surfaces the error itself (via `error_of`) rather than
+// aborting the frame. This is the soft/async error path — distinct from a
+// runtime frame error, and the reason drawers read `error` null-safely.
+let P = palette()
+clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)
+
+// `errored` and `msg` are plain bindings; the host observes them by name at
+// /state → panes[].panel.values (a bool as a bool, the message as a string), so
+// the drawer publishes nothing for tests.
+let rd = query("boom", "")
+let errored = is_error(rd)
+let msg = "loading…"
+if errored then
+  msg = error_of(rd) ?? "query failed"
+end
+
+draw_text("gpp-test-app — query error mode", {x: 16, y: 16}, 14, P.text)
+if errored then
+  draw_text("query error:", {x: 16, y: 48}, 14, {r: 0.9, g: 0.4, b: 0.42, a: 1.0})
+end
+draw_text(msg, {x: 16, y: 72}, 14, P.text_mut)

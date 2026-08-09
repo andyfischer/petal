@@ -1,0 +1,25 @@
+// screens-demo — DETAIL screen. Reached by navigating from HOME. Pressing
+// `b` calls navigate_back() (the in-script history API); the host's Ctrl+[ /
+// Ctrl+] and :back / :forward drive the same stack.
+let P = palette()
+let BG     = P.window_bg
+let TEXT   = P.text
+let DIM    = P.text_dim
+let ORANGE = P.orange
+
+let w = screen_width()
+let h = screen_height()
+clear(BG.r, BG.g, BG.b)
+
+draw_rect(rect(0, 0, w, 8), ORANGE)
+draw_rect(rect(40, 60, 6, 40), ORANGE)
+
+draw_text("DETAIL", {x: 62, y: 62}, 14, TEXT)
+draw_text("screen 2 of 2", {x: 62, y: 92}, 14, ORANGE)
+
+draw_text("press  b  →  back to HOME   (or Ctrl+[ , :back)", {x: 40, y: 150}, 14, TEXT)
+draw_text("Ctrl+]  /  :forward  returns here", {x: 40, y: 178}, 14, DIM)
+
+if key_pressed("b") then
+  navigate_back()
+end

@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "garden-core",
+    "garden-render",
+    "garden-script",
+    "garden-app",
+    "gpp",
+    "gpp-apps/directory-browser",
+    "gpp-apps/garden-diff",
+    "gpp-apps/git-viewers",
+    "gpp-apps/gpp-test-app",
+    "gpp-apps/screens-demo",
+    "gpp-apps/sqlite-browser",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+garden-core = { path = "garden-core" }
+garden-render = { path = "garden-render" }
+garden-script = { path = "garden-script" }
+gpp = { path = "gpp" }
+petal = { path = "../rust" }
+petal-ui = { path = "../petal-ui" }
+petal-query = { path = "../petal-query" }

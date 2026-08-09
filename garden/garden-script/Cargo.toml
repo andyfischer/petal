@@ -1,0 +1,23 @@
+[package]
+name = "garden-script"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+petal.workspace = true
+# The standard input/draw contract + the `ui` prelude module (widgets,
+# hit-testing, text metrics). Panel scripts run on it; see docs/architecture.md
+# (Phase 3).
+petal-ui.workspace = true
+# Same major version petal itself uses; needed to construct Petal record
+# (Map) values inside our native fns.
+indexmap = "2"
+# The `emit(event, arg)` panel native converts the script's arg value into the
+# JSON tree the GPP `emit` notification carries (see `panel::PanelHost::take_emitted`).
+serde_json = "1"
+
+[dev-dependencies]
+# Round-trip tests write generated layout source to a real temp file and load
+# it back through ScriptHost.
+tempfile = "3"

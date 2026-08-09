@@ -1,0 +1,20 @@
+[package]
+name = "screens-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A minimal multi-screen panel-mode GPP app: the worked example of browser-style
+# navigation across a subprocess panel's screens (GPP Phase 4). It declares two
+# navigable screens with `PanelUi::screen` and needs no data at all — the whole
+# point is the built-in `navigate` mutation swapping screens while the host owns
+# the history stack. Launch from a layout with
+# `process("/abs/path/screens-demo")`, then press `n`/`d` to navigate and
+# `Ctrl+[`/`Ctrl+]` (or `:back`/`:forward`) to walk history.
+[[bin]]
+name = "screens-demo"
+path = "src/main.rs"
+
+[dependencies]
+petal-query = { workspace = true }
+serde_json = "1"

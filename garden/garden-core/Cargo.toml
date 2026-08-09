@@ -1,0 +1,8 @@
+[package]
+name = "garden-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ropey = "1"

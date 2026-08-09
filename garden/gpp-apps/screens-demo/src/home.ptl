@@ -1,0 +1,26 @@
+// screens-demo — HOME screen. A fixed panel drawer (no data). Pressing `n`
+// navigates to the detail screen via the built-in `navigate` mutation.
+let P = palette()
+let BG     = P.window_bg
+let TEXT   = P.text
+let DIM    = P.text_dim
+let GREEN  = P.green
+let ACCENT = P.accent
+
+let w = screen_width()
+let h = screen_height()
+clear(BG.r, BG.g, BG.b)
+
+// A bold accent band identifies the screen at a glance.
+draw_rect(rect(0, 0, w, 8), GREEN)
+draw_rect(rect(40, 60, 6, 40), GREEN)
+
+draw_text("HOME", {x: 62, y: 62}, 14, TEXT)
+draw_text("screen 1 of 2", {x: 62, y: 92}, 14, GREEN)
+
+draw_text("press  n  →  navigate to DETAIL", {x: 40, y: 150}, 14, TEXT)
+draw_text("(the host fetches DETAIL's source over the navigate mutation)", {x: 40, y: 178}, 14, DIM)
+
+if key_pressed("n") then
+  navigate("detail.ptl")
+end

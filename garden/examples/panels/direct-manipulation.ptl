@@ -1,0 +1,57 @@
+// ── Programming by direct manipulation ───────────────────
+//   garden petal-ide examples/panels/direct-manipulation.ptl
+//
+// Hover a shape on the canvas and the `draw_*` call that drew
+// it lights up here. Cmd-click it to put the cursor there.
+// Nothing in this file opts in: the tracing is the runtime's.
+
+let w = screen_width()
+let h = screen_height()
+
+clear(16, 18, 26)
+
+// Overlapping shapes: hover the overlap and the highlight
+// names the shape on top — the one your eye picks.
+draw_circle(120, 110, 60, 210, 90, 110)
+draw_circle(170, 140, 60, 90, 170, 210)
+draw_circle(145, 175, 45, 240, 200, 110)
+
+// A frame is hit on its *stroke*. Hovering its hollow middle
+// reaches the text inside, the way a picture frame doesn't
+// intercept the picture.
+draw_rect_outline(260, 70, 180, 150, 70, 80, 105, 255, 3)
+draw_text("inside the frame", 276, 136, 13, 150, 160, 185)
+
+// One call, many shapes: every bar comes from the same
+// `draw_rect`, so they all highlight that one line. Which is
+// right — there is one piece of code here, and it is what you
+// would edit to change any bar.
+let bars = [40, 72, 28, 96, 55, 81, 34]
+let base_y = h - 60
+for i in range(0, len(bars)) do
+  let bh = bars[i]
+  draw_rect(w - 200 + i * 26, base_y - bh, 18, bh, 90, 150, 220)
+end
+
+// Through a function you wrote: hovering a swatch highlights
+// the `draw_rect` *inside* `swatch`, not the call to it. The
+// trace walks out of library code (every `draw_*` is itself a
+// Petal function) but stops at the first frame in this file.
+fn swatch(x, y, r, g, b)
+  draw_rect(x, y, 46, 46, r, g, b)
+end
+
+swatch(60, base_y - 46, 220, 120, 90)
+swatch(116, base_y - 46, 120, 200, 140)
+swatch(172, base_y - 46, 130, 130, 230)
+
+// Literals vs. names. These two rects are written the same way
+// apart from the x: one a literal, one a binding. Both trace —
+// the difference is what a drag would have to rewrite, since
+// editing `edge` moves every shape that reads it.
+let edge = 300
+
+draw_rect(edge, 250, 70, 40, 200, 170, 90)
+draw_rect(400, 250, 70, 40, 200, 170, 90)
+
+draw_text("hover a shape — its code lights up on the left", 16, 20, 14, 200, 210, 235)

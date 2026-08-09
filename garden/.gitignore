@@ -1,0 +1,7 @@
+target/
+temp/
+
+# Transient layout overlays — runtime-saved layout state (e.g. Ctrl-W o),
+# regenerated from the committed init.ptl; not meant to be committed.
+*.transient.ptl
+__pycache__/

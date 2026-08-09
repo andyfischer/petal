@@ -1,0 +1,16 @@
+[package]
+name = "garden-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GPU renderer for Garden: solid quads + monospace text drawn via wgpu and glyphon"
+
+[dependencies]
+# glyphon releases are pinned to specific wgpu major versions:
+# glyphon 0.11 <-> wgpu 29. Keep these two in lockstep when upgrading.
+wgpu = "29.0.0"
+glyphon = "0.11.0"
+winit = "0.30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+png = "0.17"

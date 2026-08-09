@@ -1,0 +1,11 @@
+// gpp-test-app — mode `runtime-error-long`: a runtime error with a long message,
+// to exercise the error card's word-wrapping (the old banner ran a message this
+// long straight off the pane). `assert(false, msg)` raises
+// "assertion failed: <msg>" as a frame error.
+let P = palette()
+clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)
+
+draw_text("gpp-test-app — long error mode", {x: 16, y: 16}, 14, P.text)
+draw_text("this content sits under the error card", {x: 16, y: 48}, 14, P.text_mut)
+
+assert(false, "the pull request could not be loaded because the upstream gh process exited with a non-zero status and returned no parseable JSON on stdout — check that gh is authenticated and that the current branch has an open pull request")

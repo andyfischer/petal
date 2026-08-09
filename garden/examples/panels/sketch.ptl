@@ -1,0 +1,47 @@
+// A Garden graphical panel, drawn by Petal. Garden runs this script every frame
+// (while the panel is awake) and paints what it draws. It uses the full draw
+// surface — clear / draw_rect / draw_rect_outline / draw_line / draw_circle /
+// fill_triangle / fill_poly / draw_text — plus the timing reads dt() /
+// frame_count() / screen_width() / screen_height().
+//
+// Use it from a layout script:   panel("examples/panels/sketch.ptl")
+// See docs/petal-graphical-panels.md.
+
+// `state` persists across frames; everything else re-runs each frame.
+state t = 0.0
+t = t + dt()
+
+let w = screen_width()
+let h = screen_height()
+
+clear(16, 18, 26)
+draw_rect_outline(0, 0, w, h, 64, 74, 96)
+
+// A row of bars that pulse with sin().
+let n = 14
+for i in range(0, n) do
+  let mag = (sin(t * 1.5 + float(i) * 0.5) + 1.0) * 0.5
+  let bw = int(float(w) / float(n))
+  let bh = int(mag * float(h) * 0.45)
+  let bx = i * bw
+  draw_rect(bx + 2, h - bh, bw - 4, bh, 70, int(140.0 + mag * 90.0), 220)
+end
+
+// A circle orbiting the center, trailed by a line back to it.
+let cx = int(float(w) * 0.5)
+let cy = int(float(h) * 0.45)
+let ox = cx + int(cos(t) * float(w) * 0.25)
+let oy = cy + int(sin(t) * float(h) * 0.22)
+draw_line(cx, cy, ox, oy, 90, 100, 130)
+draw_circle(ox, oy, 16, 240, 120, 60)
+
+// A spinning triangle / diamond at the center, to show meshes.
+let r = 22
+let a = t * 1.2
+fill_poly([
+  [cx + int(cos(a) * float(r)), cy + int(sin(a) * float(r))],
+  [cx + int(cos(a + 2.094) * float(r)), cy + int(sin(a + 2.094) * float(r))],
+  [cx + int(cos(a + 4.188) * float(r)), cy + int(sin(a + 4.188) * float(r))],
+], 120, 200, 140)
+
+draw_text("petal panel — frame " ++ str(frame_count()), 10, 10, 14, 200, 210, 232)

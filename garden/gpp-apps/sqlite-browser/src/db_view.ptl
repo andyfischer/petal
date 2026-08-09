@@ -1,0 +1,474 @@
+// sqlite-browser — the drawer for browsing and visualizing a SQLite database.
+//
+// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
+// viewers and pr-browser this is a FIXED, GENERIC script that bakes in no data:
+// everything is loaded at runtime through the async `query(kind, arg)` native
+// (petal-query on Petal's pending values), answered by the sqlite-browser
+// subprocess, which opens the database read-only:
+//
+//   query("catalog", "")   → { error, path, name,
+//                              tables: [ { name, kind, rows, cols } … ] }
+//   query("table", name)   → { heading, error, row_count, truncated,
+//                              columns: [ { name, type, pk, notnull } … ],
+//                              lines:   [ { text, style } … ] }
+//
+// The right column has two faces. For a table/view: a SCHEMA strip (column
+// name/type with PK·NN badges) above a monospace, column-aligned DATA GRID —
+// the `lines` are pre-formatted and per-line-styled by the subprocess, dumped
+// into a selectable `text_view`. For the OVERVIEW (left row 0): a horizontal
+// BAR CHART of every object's row count — the "visualizer".
+//
+// Two focusable regions — the catalog (left) and the detail (right) — cycle with
+// Tab (or click). j/k, arrows, PageUp/PageDown, Home/End move within the focused
+// region; the wheel scrolls whatever region the pointer is over. A draggable
+// vertical divider resizes the columns. Selection, scroll, focus, and load state
+// need no publishing step: the host observes every named binding and reports it
+// at the debug server's /state → panes[].panel.values, so tests drive this panel
+// without pixels by reading `selected`, `detail_scroll`, `focus_id`, `cat_ready`
+// and friends straight off their `let`/`state` names.
+
+// ── panel-local UI state ─────────────────────────────────────────────────────
+state fc = focus_set(focus_state(), "catalog")
+state cat_lst = list_state()
+state detail_scroll = 0
+state over_scroll = 0
+state left_frac = 0.30
+state drag_div = 0
+
+// data caches (query results, held in `state` so we poll only until ready)
+state cat = { path: "", name: "", tables: [] }
+state cat_ready = false
+state cat_err = ""
+state detail = { heading: "", row_count: 0, truncated: false, columns: [], lines: [] }
+state loaded_arg = "@none"
+state detail_loading = false
+state detail_err = ""
+state prev_sel = -1
+
+// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+// One `palette()` call yields the full active scheme, always complete, so the
+// drawer paints in Garden's colors in every theme. Local names keep the drawing
+// code below unchanged.
+let P = palette()
+let BG     = P.window_bg
+let PANEL  = P.panel
+let CARD   = P.panel
+let SEL    = P.sel
+let SELDIM = P.hover
+let HOVER  = P.hover
+let LINE   = P.border
+let TEXT   = P.text
+let MUT    = P.text_mut
+let DIM    = P.text_dim
+let FAINT  = P.text_faint
+let ACCENT = P.accent
+let GREEN  = P.green
+let RED    = P.red
+let ORANGE = P.orange
+let PURPLE = P.purple
+let BLUE   = P.blue
+let THUMB  = P.scrollbar_thumb
+let TRACK  = P.border
+
+let FS = 14
+
+// ── geometry ─────────────────────────────────────────────────────────────────
+let w = screen_width()
+let h = screen_height()
+let PAD = 12
+let header_h = 44
+let content_top = PAD + header_h
+let LINE_H = 17
+let ROW_H = 38
+
+let left_min = 190
+let left_max = max(left_min + 40, w - 340)
+
+fn spinner()
+  let frames = ["|", "/", "-", "\\"]
+  frames[int(frame_count() / 6) % 4]
+end
+
+fn left_width(frac, wpx, lo, hi)
+  int(clamp(float(wpx) * frac, float(lo), float(hi)))
+end
+
+fn commafmt(n)
+  // Group an integer's digits with commas: 1234567 → "1,234,567".
+  let s = "{n}"
+  if len(s) <= 3 then s
+  else
+    let out = ""
+    let i = len(s)
+    let c = 0
+    while i > 0 do
+      out = slice(s, i - 1, i) ++ out
+      c = c + 1
+      i = i - 1
+      if c % 3 == 0 && i > 0 then out = "," ++ out end
+    end
+    out
+  end
+end
+
+// A list with free wheel scrolling; only keyboard moves re-ensure visibility.
+fn nav_list(lst, count, rows, row_h, r, active)
+  let sel = lst.selected
+  let scroll = lst.scroll
+  let moved = false
+  if active then
+    if key_pressed("down") || key_pressed("j") then sel = sel + 1; moved = true end
+    if key_pressed("up") || key_pressed("k") then sel = sel - 1; moved = true end
+    if key_pressed("pagedown") then sel = sel + rows; moved = true end
+    if key_pressed("pageup") then sel = sel - rows; moved = true end
+    if key_pressed("home") then sel = 0; moved = true end
+    if key_pressed("end") then sel = count - 1; moved = true end
+  end
+  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+    let row = scroll + int(float(mouse_y() - r.y) / float(row_h))
+    if row >= 0 && row < count then sel = row end
+  end
+  if hovered(r) then scroll = scroll + scroll_y() end
+  sel = int(clamp(sel, 0, max(0, count - 1)))
+  if moved then scroll = ensure_visible(scroll, sel, rows) end
+  scroll = int(clamp(scroll, 0, max(0, count - rows)))
+  { selected: sel, scroll: scroll }
+end
+
+fn draw_scrollbar(r, count, rows, scroll)
+  if count > rows then
+    let track_x = r.x + r.w - 4
+    let th2 = max(24, int(float(r.h) * float(rows) / float(count)))
+    let span = r.h - th2
+    let ty = r.y + int(float(span) * float(scroll) / float(max(1, count - rows)))
+    draw_rect(rect(track_x, r.y, 3, r.h), PANEL)
+    draw_rect(rect(track_x, ty, 3, th2), THUMB)
+  end
+end
+
+fn section_label(label, x, y, active)
+  let c = DIM
+  if active then c = ACCENT end
+  draw_text(label, {x: x, y: y}, FS, c)
+  if active then draw_rect(rect(x, y + 19, text_width(label, FS), 2), ACCENT) end
+end
+
+// ── data: the catalog (loaded once, refreshed via cache policy on re-query) ──
+if !cat_ready then
+  let rd = query("catalog", "")
+  if is_ready(rd) then
+    cat = rd
+    cat_ready = true
+    cat_err = ""
+  elsif is_error(rd) then
+    cat_err = error_of(rd) ?? "could not open database"
+  end
+end
+let tables = cat.tables
+let table_count = len(tables)
+// Left entries: row 0 is the Overview, rows 1.. are the tables/views.
+let left_count = table_count + 1
+
+// largest row count, for bar-chart scaling
+let max_rows = 1
+for i in range(0, table_count) do
+  if tables[i].rows > max_rows then max_rows = tables[i].rows end
+end
+
+// ── geometry pass ─────────────────────────────────────────────────────────────
+let left_w = left_width(left_frac, w, left_min, left_max)
+let div_x = PAD + left_w
+
+// ── input: draggable divider ──────────────────────────────────────────────────
+let vdiv_hit = rect(div_x - 4, content_top - 10, 9, h - content_top + 10)
+if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), vdiv_hit) then drag_div = 1 end
+if !mouse_down(0) then drag_div = 0 end
+if drag_div == 1 then left_frac = clamp(float(mouse_x() - PAD) / float(w), 0.14, 0.66) end
+let dragging = drag_div != 0
+left_w = left_width(left_frac, w, left_min, left_max)
+div_x = PAD + left_w
+
+let cat_rect = rect(PAD, content_top + 24, left_w - 10, h - PAD - content_top - 24)
+let cat_rows = max(1, int(float(cat_rect.h) / float(ROW_H)))
+
+let right_x = div_x + 14
+let right_w = w - right_x - PAD
+
+// ── input: focus ring (Tab, click-to-focus) ───────────────────────────────────
+fc = focus_update(fc, ["catalog", "detail"])
+let detail_rect = rect(right_x - 6, content_top, right_w + 6, h - PAD - content_top)
+if mouse_pressed(0) && !dragging then
+  if point_in(mouse_x(), mouse_y(), cat_rect) then fc = focus_set(fc, "catalog") end
+  if point_in(mouse_x(), mouse_y(), detail_rect) then fc = focus_set(fc, "detail") end
+end
+
+// ── input: catalog selection, lazy detail fetch on change ──────────────────────
+cat_lst = nav_list(cat_lst, left_count, cat_rows, ROW_H, cat_rect, focused(fc, "catalog"))
+let selected = cat_lst.selected
+
+// row 0 = Overview (no query); rows 1.. = tables/views
+let is_overview = selected == 0
+let want = "@overview"
+if selected > 0 && selected <= table_count then want = tables[selected - 1].name end
+
+if !is_overview && want != loaded_arg then
+  let fetched = query("table", want)
+  if is_ready(fetched) then
+    detail = fetched
+    loaded_arg = want
+    detail_loading = false
+    detail_err = ""
+    if selected != prev_sel then detail_scroll = 0; prev_sel = selected end
+  elsif is_error(fetched) then
+    detail_loading = false
+    detail_err = error_of(fetched) ?? "load failed"
+  else
+    detail_loading = true
+  end
+end
+if is_overview && selected != prev_sel then over_scroll = 0; prev_sel = selected end
+
+// ── schema strip geometry (only for a table view) ─────────────────────────────
+let ncols = len(detail.columns)
+// number of wrapped schema lines, computed during draw; seed a reasonable default
+let schema_rows = 1
+if ncols > 0 then schema_rows = min(4, max(1, int((ncols + 2) / 3))) end
+let schema_h = 0
+if !is_overview then schema_h = 10 + schema_rows * LINE_H end
+let grid_top = content_top + 26 + schema_h
+let grid_rows = max(1, int(float(h - PAD - grid_top) / float(LINE_H)))
+let grid_rect = rect(right_x - 6, grid_top, right_w + 6, h - PAD - grid_top)
+
+// overview scroll region
+let over_rect = rect(right_x - 6, content_top + 60, right_w + 6, h - PAD - content_top - 60)
+let over_rows = max(1, int(float(over_rect.h) / float(ROW_H)))
+
+// ── input: detail scrolling (wheel over the region; keys when focused) ────────
+let detail_lines = len(detail.lines)
+if focused(fc, "detail") || hovered(detail_rect) then
+  if is_overview then
+    if hovered(over_rect) then over_scroll = over_scroll + scroll_y() end
+    if focused(fc, "detail") then
+      if key_pressed("down") || key_pressed("j") then over_scroll = over_scroll + 1 end
+      if key_pressed("up") || key_pressed("k") then over_scroll = over_scroll - 1 end
+      if key_pressed("pagedown") || key_pressed("space") then over_scroll = over_scroll + over_rows end
+      if key_pressed("pageup") then over_scroll = over_scroll - over_rows end
+      if key_pressed("home") then over_scroll = 0 end
+      if key_pressed("end") then over_scroll = table_count end
+    end
+  else
+    if hovered(grid_rect) then detail_scroll = detail_scroll + scroll_y() end
+    if focused(fc, "detail") then
+      if key_pressed("down") || key_pressed("j") then detail_scroll = detail_scroll + 1 end
+      if key_pressed("up") || key_pressed("k") then detail_scroll = detail_scroll - 1 end
+      if key_pressed("pagedown") || key_pressed("space") then detail_scroll = detail_scroll + grid_rows end
+      if key_pressed("pageup") then detail_scroll = detail_scroll - grid_rows end
+      if key_pressed("home") then detail_scroll = 0 end
+      if key_pressed("end") then detail_scroll = detail_lines end
+    end
+  end
+end
+detail_scroll = int(clamp(detail_scroll, 0, max(0, detail_lines - grid_rows)))
+over_scroll = int(clamp(over_scroll, 0, max(0, table_count - over_rows)))
+
+// ── introspection for tests / debug server ─────────────────────────────────────
+let focus_id = 0
+if focused(fc, "detail") then focus_id = 1 end
+// Nothing to publish: the host observes every named binding a frame makes and
+// reports it at /state → panes[].panel.values, with its real type. The values a
+// test drives this panel by — `table_count`, `left_count`, `selected`,
+// `detail_lines`, `detail_scroll`, `left_w`, `cat_ready`, `detail_loading`,
+// `cat_err`, `detail_err` — are already named above; only these two are derived
+// here, because nothing else in the frame names them.
+let has_error = len(cat_err) > 0 || len(detail_err) > 0
+
+// ── draw: chrome ───────────────────────────────────────────────────────────────
+clear(BG.r, BG.g, BG.b)
+draw_rect(rect(0, 0, div_x, h), PANEL)
+
+// header: database name + path + object count
+let dbname = cat.name
+if !cat_ready then dbname = "opening database {spinner()}" end
+if len(cat_err) > 0 then dbname = "could not open database" end
+draw_text(ellipsize_tail(dbname, w - 2 * PAD, FS), {x: PAD, y: PAD}, FS, TEXT)
+if cat_ready && len(cat_err) == 0 then
+  let ntab = 0
+  let nview = 0
+  for i in range(0, table_count) do
+    if tables[i].kind == "view" then nview = nview + 1 else ntab = ntab + 1 end
+  end
+  let tw = "tables"
+  if ntab == 1 then tw = "table" end
+  let vw = "views"
+  if nview == 1 then vw = "view" end
+  let sub = "{ntab} {tw} · {nview} {vw}"
+  // The path yields to the right-aligned summary: reserve the width `sub`
+  // actually measures rather than a fixed 24-character guess at it.
+  draw_text(ellipsize(cat.path, w - 2 * PAD - text_width(sub, FS) - 16, FS),
+            {x: PAD, y: PAD + 21}, FS, DIM)
+  draw_text_right(sub, w - PAD, PAD + 21, FS, DIM)
+end
+draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
+
+// vertical divider (draggable)
+let vcol = LINE
+if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then vcol = ACCENT end
+draw_rect(rect(div_x, content_top - 10, 1, h - content_top + 10), vcol)
+if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then
+  draw_rect(rect(div_x - 1, (content_top + h) / 2 - 14, 3, 28), ACCENT)
+end
+
+// ── draw: catalog section ───────────────────────────────────────────────────────
+section_label("TABLES · {table_count}", PAD, content_top, focused(fc, "catalog"))
+if len(cat_err) > 0 then
+  draw_text("open error:", {x: PAD + 4, y: cat_rect.y + 4}, FS, RED)
+  draw_text(ellipsize(cat_err, cat_rect.w, FS), {x: PAD + 4, y: cat_rect.y + 22}, FS, MUT)
+elsif !cat_ready then
+  draw_text("loading {spinner()}", {x: PAD + 4, y: cat_rect.y + 4}, FS, DIM)
+end
+
+let count_w = 78
+let name_px = cat_rect.w - 14 - count_w
+clip(cat_rect.x, cat_rect.y, cat_rect.w, cat_rect.h)
+let cvis = int(clamp(left_count - cat_lst.scroll, 0, cat_rows + 1))
+for i in range(0, cvis) do
+  let idx = i + cat_lst.scroll
+  let ry = cat_rect.y + i * ROW_H
+  let row_r = rect(cat_rect.x, ry, cat_rect.w, ROW_H)
+  if idx == selected then
+    let selbg = SELDIM
+    if focused(fc, "catalog") then selbg = SEL end
+    draw_rect(row_r, selbg)
+  else
+    if hovered(row_r) then draw_rect(row_r, HOVER) end
+  end
+  if idx == 0 then
+    draw_rect(rect(cat_rect.x, ry + 4, 3, ROW_H - 8), ACCENT)
+    let ov_c = MUT
+    if idx == selected then ov_c = TEXT end
+    draw_text("Overview", {x: cat_rect.x + 12, y: ry + 3}, FS, ov_c)
+    draw_text("row-count chart", {x: cat_rect.x + 12, y: ry + 20}, FS, FAINT)
+  else
+    let t = tables[idx - 1]
+    let accent = BLUE
+    if t.kind == "view" then accent = PURPLE end
+    draw_rect(rect(cat_rect.x, ry + 4, 3, ROW_H - 8), accent)
+    let name_c = MUT
+    if idx == selected then name_c = TEXT end
+    draw_text(ellipsize_tail(t.name, name_px, FS), {x: cat_rect.x + 12, y: ry + 3}, FS, name_c)
+    let kindlabel = "{t.cols} cols"
+    if t.kind == "view" then kindlabel = "view · {t.cols} cols" end
+    draw_text(kindlabel, {x: cat_rect.x + 12, y: ry + 20}, FS, FAINT)
+    draw_text_right(commafmt(t.rows), cat_rect.x + cat_rect.w - 8, ry + ROW_H / 2 - 8, FS, DIM)
+  end
+end
+clip_none()
+draw_scrollbar(cat_rect, left_count, cat_rows, cat_lst.scroll)
+
+// ── draw: detail — Overview bar chart OR a table's schema + data grid ──────────
+if is_overview then
+  // ── the "visualizer": a horizontal bar chart of every object's row count ──
+  draw_text("Row counts", {x: right_x, y: content_top}, FS, ACCENT)
+  draw_text_right("largest: {commafmt(max_rows)}", w - PAD, content_top, FS, DIM)
+  draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
+  if table_count == 0 then
+    draw_text("no tables in this database", {x: right_x, y: content_top + 40}, FS, FAINT)
+  end
+  let bar_label_w = 0
+  for i in range(0, table_count) do
+    let lw = text_width(tables[i].name, FS)
+    if lw > bar_label_w then bar_label_w = lw end
+  end
+  bar_label_w = min(bar_label_w + 14, int(float(over_rect.w) * 0.4))
+  let bar_x = over_rect.x + bar_label_w
+  let bar_max = over_rect.w - bar_label_w - 90
+  clip(over_rect.x, over_rect.y, over_rect.w, over_rect.h)
+  let ovis = int(clamp(table_count - over_scroll, 0, over_rows + 1))
+  for i in range(0, ovis) do
+    let idx = i + over_scroll
+    let t = tables[idx]
+    let ry = over_rect.y + i * ROW_H
+    let cy = ry + ROW_H / 2
+    let col = BLUE
+    if t.kind == "view" then col = PURPLE end
+    // label (right-aligned into its gutter)
+    draw_text_right(ellipsize(t.name, bar_label_w - 10, FS), over_rect.x + bar_label_w - 10, cy - 8, FS, MUT)
+    // track + bar
+    let bw = int(float(bar_max) * float(t.rows) / float(max_rows))
+    if bw < 2 && t.rows > 0 then bw = 2 end
+    draw_rect(rect(bar_x, cy - 8, bar_max, 16), TRACK)
+    draw_rect(rect(bar_x, cy - 8, bw, 16), col)
+    // value
+    draw_text(commafmt(t.rows), {x: bar_x + bar_max + 8, y: cy - 8}, FS, DIM)
+  end
+  clip_none()
+  draw_scrollbar(over_rect, table_count, over_rows, over_scroll)
+else
+  // ── a table/view: heading, schema strip, then the data grid ──
+  // Clipped once and reused: the focus underline below measures the heading
+  // that was actually drawn, not a second copy trimmed to its own budget.
+  let heading = ellipsize_tail(detail.heading, right_w, FS)
+  draw_text(heading, {x: right_x, y: content_top}, FS, ACCENT)
+  let sub = "{commafmt(detail.row_count)} rows · {ncols} cols"
+  if detail.truncated then sub = "first {commafmt(detail.row_count)} rows (truncated) · {ncols} cols" end
+  if !detail_loading && len(detail_err) == 0 then
+    draw_text_right(sub, w - PAD, content_top, FS, DIM)
+  end
+  if focused(fc, "detail") then
+    draw_rect(rect(right_x, content_top + 19, text_width(heading, FS), 2), ACCENT)
+  end
+  draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
+
+  if len(detail_err) > 0 then
+    draw_text("error:", {x: right_x, y: content_top + 40}, FS, RED)
+    // Sized to the right pane it draws into, not to the whole window — the
+    // window-wide budget let a long error run past the pane edge.
+    draw_text(ellipsize(detail_err, right_w, FS), {x: right_x, y: content_top + 60}, FS, MUT)
+  elsif detail_loading && detail_lines == 0 then
+    draw_text("loading {spinner()}", {x: right_x, y: content_top + 40}, FS, DIM)
+  else
+    // schema strip: flow column chips across up to schema_rows lines
+    let sx = right_x
+    let sy = content_top + 32
+    let line_no = 0
+    let cursor = sx
+    for ci in range(0, ncols) do
+      let c = detail.columns[ci]
+      let badge = ""
+      if c.pk then badge = badge ++ " PK" end
+      if c.notnull then badge = badge ++ " NN" end
+      let ty = c.type
+      if len(ty) == 0 then ty = "?" end
+      let chip = "{c.name} {ty}{badge}"
+      let cwid = text_width(chip, FS) + 18
+      if cursor + cwid > w - PAD && cursor > sx then
+        line_no = line_no + 1
+        cursor = sx
+      end
+      let yy = sy + line_no * LINE_H
+      if line_no < schema_rows then
+        draw_text(c.name, {x: cursor, y: yy}, FS, TEXT)
+        let after = cursor + text_width(c.name ++ " ", FS)
+        draw_text(ty, {x: after, y: yy}, FS, GREEN)
+        if len(badge) > 0 then
+          draw_text(badge, {x: after + text_width(ty, FS), y: yy}, FS, ORANGE)
+        end
+      end
+      cursor = cursor + cwid
+    end
+
+    // the data grid (selectable text_view with per-line styles)
+    if detail_lines == 0 then
+      draw_text("(no rows)", {x: right_x, y: grid_top + 4}, FS, FAINT)
+    else
+      let dlines = []
+      let dstyles = []
+      for li in range(0, detail_lines) do
+        dlines = append(dlines, detail.lines[li].text)
+        dstyles = append(dstyles, detail.lines[li].style)
+      end
+      text_view(1, grid_rect.x, grid_rect.y, grid_rect.w, grid_rect.h, join(dlines, "\n"))
+      text_view_line_styles(1, dstyles)
+    end
+  end
+end

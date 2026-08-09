@@ -1,0 +1,19 @@
+[package]
+name = "gpp-test-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A tiny panel-mode GPP app whose only job is to reproduce Garden's panel
+# situations on demand — a healthy panel, a runtime (frame) error, a long
+# runtime error that must wrap, and a failed query. The first launch arg selects
+# the mode, so `garden --subprocess gpp-test-app <mode>` puts the host into that
+# exact state for a screenshot or a test. Being a fixture rather than a tool, it
+# has no bare `garden gpp-test-app` subcommand.
+[[bin]]
+name = "gpp-test-app"
+path = "src/main.rs"
+
+[dependencies]
+petal-query = { workspace = true }
+serde_json = "1"

@@ -3,10 +3,6 @@
     "petal-tools": {
       "command": "node",
       "args": ["ts/tools/petal-mcp.ts"]
-    },
-    "petal-diagram-canvas": {
-      "command": "node",
-      "args": ["ts/tools/petal-diagram-mcp.ts"]
     }
   }
 }

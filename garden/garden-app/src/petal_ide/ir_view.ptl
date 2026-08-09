@@ -1,0 +1,93 @@
+// Petal IDE — IR inspector drawer.
+//
+// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
+// viewers it bakes in NO data: it pulls everything from the host through the
+// synchronous `host_data(kind, arg)` native, answered by Garden's IR provider
+// (garden-app/src/petal_ide/mod.rs), which compiles the IDE target editor's
+// LIVE buffer and renders the requested compilation stage:
+//
+//   host_data("stages", "")        → [ { label } … ]   (the menu tabs)
+//   host_data("inspect", <label>)  → { text, error }    (one field empty)
+//
+// A row of stage tabs across the top is the menu; click one to switch what the
+// body shows. The body is a native, selectable, scrollable text_view region.
+// The source is re-published (and the cache cleared) by the app as you type, so
+// the IR/bytecode/AST update live — and freeze when the toolbar's Pause is on.
+//
+// Garden renders all panel text at one monospace size, so hierarchy comes from
+// color, not size (docs/petal-graphical-panels.md).
+
+// ── palette (the host color scheme, always complete) ──────────────────────────
+let P = palette()
+let BG    = P.window_bg
+let PANEL = P.panel
+let HOVER = P.hover
+let LINE  = P.border
+let TEXT  = P.text
+let MUT   = P.text_mut
+let DIM   = P.text_dim
+let FAINT = P.text_faint
+let ACCENT = P.accent
+let RED   = P.red
+
+let FS = 14
+let w = screen_width()
+let h = screen_height()
+let PAD = 10
+let TABS_H = 30
+
+// ── selected stage (persists across frames and live reloads) ──────────────────
+// `stage` and `stage_count` are named so the host's observation channel reports
+// them under meaningful keys — the debug server surfaces every binding by name
+// (docs/debug-server.md), so no publishing call is needed.
+state stage = 0
+
+let stages = host_data("stages", "")
+let stage_count = len(stages)
+if stage >= stage_count then stage = 0 end
+if stage < 0 then stage = 0 end
+
+// ── background + header ───────────────────────────────────────────────────────
+draw_rect(rect(0, 0, w, h), BG)
+draw_rect(rect(0, 0, w, PAD + TABS_H), PANEL)
+
+// ── stage tabs (the menu) ─────────────────────────────────────────────────────
+// Each tab is a clickable label; the selected one gets an accent underline.
+let click = mouse_pressed(0)
+let mx = mouse_x()
+let my = mouse_y()
+let tx = PAD
+for i in range(0, stage_count) do
+  let label = stages[i].label
+  let tw = text_width(label, FS) + 18
+  let r = rect(tx, PAD - 2, tw, TABS_H)
+  let is_sel = i == stage
+  let hover = point_in(mx, my, r)
+  if hover && !is_sel then draw_rect(r, HOVER) end
+  if click && hover then stage = i end
+  let col = if is_sel then TEXT else DIM end
+  draw_text(label, {x: tx + 9, y: PAD + 5}, FS, col)
+  if is_sel then
+    draw_rect(rect(tx + 9, PAD + TABS_H - 4, text_width(label, FS), 2), ACCENT)
+  end
+  tx = tx + tw + 2
+end
+
+// ── body: the selected stage's rendered text (native selectable region) ───────
+let body_top = PAD + TABS_H
+draw_rect(rect(0, body_top, w, 1), LINE)
+
+let stage_label = if stage_count > 0 then stages[stage].label else "" end
+let d = host_data("inspect", stage_label)
+let has_error = len(d.error) > 0
+let body = if has_error then "compile error:\n\n" ++ d.error else d.text end
+// The rendered stage can be tens of thousands of characters, and observation
+// keeps whatever a name is bound to — so name the *length*, not the text.
+let body_len = len(body)
+
+if body_len == 0 then
+  draw_text("(empty — start editing the sketch)", {x: PAD, y: body_top + 8}, FS, FAINT)
+else
+  let br = rect(PAD, body_top + 4, w - 2 * PAD, h - body_top - PAD)
+  text_view(1, br.x, br.y, br.w, br.h, body)
+end

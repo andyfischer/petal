@@ -1,0 +1,649 @@
+// Garden built-in Git history browser — the drawer.
+//
+// A Petal graphical panel (see docs/petal-graphical-panels.md). This is a
+// FIXED, GENERIC script: it bakes in no data. Everything is loaded at runtime
+// through the async `query(kind, arg)` native (Garden's React-Query prototype on
+// Petal's pending values, see garden-script/src/query.rs), answered by the
+// host's GitQueryProvider:
+//
+//   query("log", "")      → { repo, branch, worktree_dirty,
+//                             commits: [ { hash, short, author, date, subject } … ] }
+//   query("commit", hash) → { error, body,
+//                             files: [ { path, added, removed,
+//                                        lines: [ { kind, text, old, new } … ] } … ] }
+//
+// A "@full:" prefix on the hash asks for the full-context diff (the whole file
+// around every hunk); the drawer requests it when a hunk header is clicked. The
+// synthetic "@worktree" hash is the uncommitted working-tree diff.
+//
+// While a query is in flight it returns a `Pending` value; the drawer inspects
+// it with `is_loading` / `is_error` / `error_of` and renders a spinner or an
+// error, then caches the resolved value in `state` so it polls only until it
+// lands. The header's ⟳ Refresh button `invalidate`s the log + working-tree
+// keys and re-loads — calling git again for fresh data.
+//
+// Three focusable regions — the commit list, the selected commit's file list,
+// and the selected file's diff — cycle focus with Tab (or click). j/k, arrows,
+// PageUp/PageDown, Home/End move within the focused region; the wheel scrolls
+// whatever region the pointer is over. The host observes every named binding a
+// frame makes and reports it at the debug server (/state →
+// panes[].panel.values), so selection, scroll, focus and load state are all
+// readable by their variable names — tests drive this drawer without pixels and
+// the script publishes nothing.
+//
+// Mouse interactions beyond selection:
+//   · click ⟳ Refresh (top-right) to re-run git and reload;
+//   · drag the vertical divider to resize the left column ↔ the diff, and the
+//     horizontal divider to resize the commit list ↔ the file list;
+//   · click a hunk header (▸/▾) in the diff to uncollapse it to full context
+//     (the whole file's source), or collapse it again.
+//
+// Garden renders all panel text at its one monospace size, so every draw_text
+// and text_width here uses size 14 — hierarchy comes from color, not size, and
+// long file names wrap across two lines rather than shrinking.
+
+// ── panel-local UI state ─────────────────────────────────────────────────────
+state fc = focus_set(focus_state(), "commits")
+state commits_lst = list_state()
+state files_lst = list_state()
+state diff_scroll = 0
+state loaded_key = "@none"
+state loaded_commit = "@none"
+state data = { error: "", body: "", files: [] }
+state prev_file = -1
+state diff_expanded = false
+// Draggable divider positions (as fractions of the window) + which one is
+// currently being dragged (0 none, 1 vertical, 2 horizontal).
+state left_frac = 0.36
+state commits_frac = 0.52
+state drag_div = 0
+
+// ── data-loading state (the React-Query cache, held in `state`) ───────────────
+// `log` is fetched once and cached here; `log_ready` stops the poll. Refresh
+// clears `log_ready` (and invalidates the key) to reload. `diff_loading` /
+// `diff_err` track the in-flight state of the selected commit's diff.
+state log = { repo: "", branch: "", worktree_dirty: false, commits: [] }
+state log_ready = false
+state log_err = ""
+state diff_loading = false
+state diff_err = ""
+
+// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+// One `palette()` call yields the full active scheme, always complete, so this
+// drawer paints in Garden's colors in every theme (light AND dark). Local names
+// keep the drawing code below unchanged.
+let P = palette()
+let BG     = P.window_bg
+let PANEL  = P.panel
+let SEL    = P.sel
+let SELDIM = P.hover
+let HOVER  = P.hover
+let LINE   = P.border
+let TEXT   = P.text
+let MUT    = P.text_mut
+let DIM    = P.text_dim
+let FAINT  = P.text_faint
+let ACCENT = P.accent
+let FOCUS  = P.focus
+let GREEN  = P.green
+let RED    = P.red
+let ORANGE = P.orange
+let HUNK   = P.hunk
+let HUNKBG = P.hunk_bg
+let HUNKBGH = P.hunk_bg_hover
+let ADDBG  = P.added_bg
+let DELBG  = P.removed_bg
+let THUMB  = P.scrollbar_thumb
+
+let FS = 14                       // the one font size Garden renders panels at
+
+// ── geometry ─────────────────────────────────────────────────────────────────
+let w = screen_width()
+let h = screen_height()
+let PAD = 12
+let header_h = 38
+let content_top = PAD + header_h
+
+let left_min = 220
+let left_max = max(left_min + 40, w - 340)
+let COMMIT_ROW = 40
+let FILE_ROW = 40                 // two text lines: wrapped path + diff counts
+let LINE_H = 17
+let avail_h = h - content_top - PAD
+
+// Left column width and commit-list height are driven by draggable fractions,
+// clamped to keep every region usable.
+fn left_width(frac, wpx, lo, hi)
+  int(clamp(float(wpx) * frac, float(lo), float(hi)))
+end
+fn commit_height(frac, avail)
+  int(clamp(float(avail) * frac, float(avail) * 0.2, float(avail) * 0.8))
+end
+
+// ── data: the commit log ─────────────────────────────────────────────────────
+// Poll `query("log", …)` until it resolves, then cache it in `state` and stop.
+// A Pending value flows out of `query` while git runs on a background thread;
+// `is_ready` / `is_error` inspect it without absorbing it.
+if !log_ready then
+  let rd = query("log", "")
+  if is_ready(rd) then
+    log = rd
+    log_ready = true
+    log_err = ""
+  elsif is_error(rd) then
+    log_err = error_of(rd) ?? "git log failed"
+  end
+end
+let git_repo = log.repo
+let git_branch = log.branch
+let git_worktree = log.worktree_dirty
+let git_commits = log.commits
+
+// A spinner glyph cycling on the frame clock (single monospace size → text).
+fn spinner()
+  let frames = ["|", "/", "-", "\\"]
+  frames[int(frame_count() / 6) % 4]
+end
+
+// Pass 1: positions from the current fractions, so the divider hit zones sit
+// exactly where the dividers are drawn.
+let left_w = left_width(left_frac, w, left_min, left_max)
+let div_x = PAD + left_w
+let commits_area = commit_height(commits_frac, avail_h)
+let files_label_y = content_top + commits_area + 8
+let hdiv_y = files_label_y - 6
+
+// ── input: draggable dividers ─────────────────────────────────────────────────
+// Start a drag on press within a divider band; while the button is held, the
+// divider tracks the pointer. Released anywhere ends the drag.
+let vdiv_hit = rect(div_x - 4, content_top - 10, 9, h - content_top + 10)
+let hdiv_hit = rect(PAD, hdiv_y - 5, left_w - 10, 10)
+if mouse_pressed(0) then
+  if point_in(mouse_x(), mouse_y(), vdiv_hit) then
+    drag_div = 1
+  elsif point_in(mouse_x(), mouse_y(), hdiv_hit) then
+    drag_div = 2
+  end
+end
+if !mouse_down(0) then drag_div = 0 end
+if drag_div == 1 then
+  left_frac = clamp(float(mouse_x() - PAD) / float(w), 0.14, 0.72)
+end
+if drag_div == 2 then
+  commits_frac = clamp(float(mouse_y() - content_top) / float(avail_h), 0.2, 0.8)
+end
+let dragging = drag_div != 0
+
+// Pass 2: recompute from the (possibly) updated fractions so a drag takes
+// effect the same frame, then derive every region rect.
+left_w = left_width(left_frac, w, left_min, left_max)
+div_x = PAD + left_w
+commits_area = commit_height(commits_frac, avail_h)
+files_label_y = content_top + commits_area + 8
+hdiv_y = files_label_y - 6
+
+let commits_rows = max(1, int(float(commits_area - 26) / float(COMMIT_ROW)))
+let commits_rect = rect(PAD, content_top + 24, left_w - 10, commits_rows * COMMIT_ROW)
+let files_rows = max(1, int(float(h - PAD - files_label_y - 26) / float(FILE_ROW)))
+let files_rect = rect(PAD, files_label_y + 24, left_w - 10, files_rows * FILE_ROW)
+
+let right_x = div_x + 14
+let right_w = w - right_x - PAD
+let diff_head_h = 62
+let diff_top = content_top + diff_head_h
+let diff_rows = max(1, int(float(h - PAD - diff_top) / float(LINE_H)))
+let diff_rect = rect(right_x - 6, diff_top, right_w + 6, h - PAD - diff_top)
+
+let n_commits = len(git_commits)
+let wt = 0
+if git_worktree then wt = 1 end
+let total_rows = n_commits + wt
+
+// ── input: refresh button (top-right) ─────────────────────────────────────────
+// Re-run git: drop the log + working-tree caches and clear the "loaded" markers
+// so the polls above/below resume. Immutable commit diffs stay cached.
+let refresh_label = "Refresh"
+// Room for a drawn reload glyph (left) + the label; the glyph is geometry, not
+// a font character (Garden's mono font has no ⟳), so it always renders.
+let refresh_w = text_width(refresh_label, FS) + 40
+let refresh_r = rect(w - PAD - refresh_w, PAD - 1, refresh_w, 23)
+let refresh_hover = point_in(mouse_x(), mouse_y(), refresh_r)
+if mouse_pressed(0) && refresh_hover then
+  invalidate("log", "")
+  invalidate("commit", "@worktree")
+  invalidate("commit", "@full:@worktree")
+  log_ready = false
+  loaded_key = "@none"
+  loaded_commit = "@none"
+end
+
+// ── a list with free wheel scrolling ─────────────────────────────────────────
+// Like the prelude's list_update, but the wheel scrolls the window without
+// dragging the selection along; only *keyboard* moves re-ensure visibility.
+fn nav_list(lst, count, rows, row_h, r, active)
+  let sel = lst.selected
+  let scroll = lst.scroll
+  let moved = false
+  if active then
+    if key_pressed("down") || key_pressed("j") then
+      sel = sel + 1
+      moved = true
+    end
+    if key_pressed("up") || key_pressed("k") then
+      sel = sel - 1
+      moved = true
+    end
+    if key_pressed("pagedown") then
+      sel = sel + rows
+      moved = true
+    end
+    if key_pressed("pageup") then
+      sel = sel - rows
+      moved = true
+    end
+    if key_pressed("home") then
+      sel = 0
+      moved = true
+    end
+    if key_pressed("end") then
+      sel = count - 1
+      moved = true
+    end
+  end
+  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+    let row = scroll + int(float(mouse_y() - r.y) / float(row_h))
+    if row >= 0 && row < count then
+      sel = row
+    end
+  end
+  if hovered(r) then
+    scroll = scroll + scroll_y()
+  end
+  sel = int(clamp(sel, 0, max(0, count - 1)))
+  if moved then
+    scroll = ensure_visible(scroll, sel, rows)
+  end
+  scroll = int(clamp(scroll, 0, max(0, count - rows)))
+  {selected: sel, scroll: scroll}
+end
+
+// A proportional scrollbar thumb along the right edge of `r`.
+fn draw_scrollbar(r, count, rows, scroll)
+  if count > rows then
+    let track_x = r.x + r.w - 4
+    let th = max(24, int(float(r.h) * float(rows) / float(count)))
+    let span = r.h - th
+    let ty = r.y + int(float(span) * float(scroll) / float(max(1, count - rows)))
+    draw_rect(rect(track_x, r.y, 3, r.h), PANEL)
+    draw_rect(rect(track_x, ty, 3, th), THUMB)
+  end
+end
+
+// A section label, accented (with an underline) while its region is focused.
+fn section_label(label, x, y, active)
+  let c = DIM
+  if active then c = ACCENT end
+  draw_text(label, {x: x, y: y}, FS, c)
+  if active then
+    draw_rect(rect(x, y + 19, text_width(label, FS), 2), ACCENT)
+  end
+end
+
+// Wrap a string onto (up to) two lines of `width` monospace chars, keeping the
+// tail (the file's basename) on overflow — so long paths stay readable without
+// a smaller font, which the panel renderer can't do.
+// Split `s` across two lines of `avail_px`, measured rather than counted: the
+// first line takes as much as fits, the second takes the remainder and is
+// ellipsized if even that overflows. The trimming loop terminates because
+// slice snaps an end index *down* to a character boundary, so every pass drops
+// a whole character.
+fn wrap2(s, avail_px, size)
+  if text_width(s, size) <= avail_px then
+    { a: s, b: "" }
+  else
+    let head = s
+    while len(head) > 0 && text_width(head, size) > avail_px do
+      head = slice(head, 0, len(head) - 1)
+    end
+    { a: head, b: ellipsize(slice(s, len(head), len(s)), avail_px, size) }
+  end
+end
+
+// ── input: focus ring (Tab / Shift+Tab, click-to-focus) ──────────────────────
+fc = focus_update(fc, ["commits", "files", "diff"])
+if mouse_pressed(0) && !dragging && !refresh_hover then
+  if point_in(mouse_x(), mouse_y(), commits_rect) then fc = focus_set(fc, "commits") end
+  if point_in(mouse_x(), mouse_y(), files_rect) then fc = focus_set(fc, "files") end
+  if point_in(mouse_x(), mouse_y(), diff_rect) then fc = focus_set(fc, "diff") end
+end
+
+// ── input: commit selection, lazy fetch on change ─────────────────────────────
+commits_lst = nav_list(commits_lst, total_rows, commits_rows, COMMIT_ROW, commits_rect, focused(fc, "commits"))
+let commit_selected = commits_lst.selected
+let commits_scroll = commits_lst.scroll
+
+// ── input: click a hunk header to toggle full-context expansion ────────────────
+// Uses the diff already shown this frame (persisted `data` + file selection);
+// the fetch below re-requests the collapsed/expanded variant accordingly.
+if mouse_pressed(0) && !dragging && point_in(mouse_x(), mouse_y(), diff_rect) then
+  let pf = files_lst.selected
+  if len(data.files) > 0 && pf >= 0 && pf < len(data.files) then
+    let clines = data.files[pf].lines
+    let row = diff_scroll + int(float(mouse_y() - diff_rect.y) / float(LINE_H))
+    if row >= 0 && row < len(clines) then
+      if clines[row].kind == "hunk" then diff_expanded = !diff_expanded end
+    end
+  end
+end
+
+// The commit (or working tree) the selection points at, and the fetch key —
+// prefixed with "@full:" when the diff is expanded.
+let base_want = ""
+if total_rows > 0 then
+  if wt == 1 && commit_selected == 0 then
+    base_want = "@worktree"
+  else
+    base_want = git_commits[commit_selected - wt].hash
+  end
+end
+// Selecting a different commit resets expansion back to the collapsed diff.
+if base_want != loaded_commit && loaded_commit != "@none" then
+  diff_expanded = false
+end
+let want = base_want
+if diff_expanded && base_want != "" then want = "@full:" ++ base_want end
+
+// Fetch the selected commit's diff through `query`. While the key differs from
+// the one in `data` we keep polling: `is_ready` commits it to `state`, a Pending
+// shows the spinner, an error shows the message. Once loaded, `want == loaded_key`
+// so no query runs — the diff is served from `state`.
+if want != "" && want != loaded_key then
+  let fetched = query("commit", want)
+  if is_ready(fetched) then
+    data = fetched
+    loaded_key = want
+    diff_loading = false
+    diff_err = ""
+    diff_scroll = 0
+    // Only reset the file selection when the underlying commit changed, so
+    // expanding/collapsing keeps you on the same file.
+    if base_want != loaded_commit then
+      files_lst = list_state()
+      prev_file = -1
+      loaded_commit = base_want
+    end
+  elsif is_error(fetched) then
+    diff_loading = false
+    diff_err = error_of(fetched) ?? "diff failed"
+  else
+    diff_loading = true
+  end
+end
+
+// ── input: file selection ─────────────────────────────────────────────────────
+let file_count = len(data.files)
+files_lst = nav_list(files_lst, file_count, files_rows, FILE_ROW, files_rect, focused(fc, "files"))
+let file_selected = files_lst.selected
+if file_selected != prev_file then
+  diff_scroll = 0
+  prev_file = file_selected
+end
+
+// ── input: diff scrolling (wheel over the region; keys when focused) ──────────
+let diff_lines = 0
+if file_count > 0 then diff_lines = len(data.files[file_selected].lines) end
+if hovered(diff_rect) then
+  diff_scroll = diff_scroll + scroll_y()
+end
+if focused(fc, "diff") then
+  if key_pressed("down") || key_pressed("j") then diff_scroll = diff_scroll + 1 end
+  if key_pressed("up") || key_pressed("k") then diff_scroll = diff_scroll - 1 end
+  if key_pressed("pagedown") || key_pressed("space") then diff_scroll = diff_scroll + diff_rows end
+  if key_pressed("pageup") then diff_scroll = diff_scroll - diff_rows end
+  if key_pressed("home") then diff_scroll = 0 end
+  if key_pressed("end") then diff_scroll = diff_lines end
+end
+diff_scroll = int(clamp(diff_scroll, 0, max(0, diff_lines - diff_rows)))
+
+// ── introspection for tests / debug server ───────────────────────────────────
+// Nothing is published: the host observes every named binding this frame made
+// and reports it at /state → panes[].panel.values. The names above (total_rows,
+// commit_selected, commits_scroll, file_count, file_selected, diff_lines,
+// diff_scroll, left_w, commits_area, diff_expanded, log_ready, diff_loading)
+// are therefore the test-facing API, with their real types. Only `focus` and
+// `has_error` are derived purely for that readout.
+let focus = 0
+if focused(fc, "files") then focus = 1 end
+if focused(fc, "diff") then focus = 2 end
+// The reply's soft `error` field may be null (no error), so coalesce before
+// `len` — a bare `len(nil)` would abort the frame.
+let data_err = data.error ?? ""
+let has_error = len(data_err) > 0
+
+// ── draw: chrome ─────────────────────────────────────────────────────────────
+clear(BG.r, BG.g, BG.b)
+draw_rect(rect(0, 0, div_x, h), PANEL)
+draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
+
+// header: repo · branch chip · refresh button
+draw_circle({x: PAD + 7, y: PAD + 10}, 5, ACCENT)
+let header_repo = git_repo
+if !log_ready then header_repo = "loading…" end
+draw_text(header_repo, {x: PAD + 20, y: PAD + 2}, FS, TEXT)
+let repo_w = text_width(header_repo, FS)
+if len(git_branch) > 0 then
+  let chip_x = PAD + 30 + repo_w
+  let chip_w = text_width(git_branch, FS) + 14
+  draw_rect_outline(rect(chip_x, PAD, chip_w, 21), FOCUS)
+  draw_text(git_branch, {x: chip_x + 7, y: PAD + 3}, FS, ACCENT)
+end
+
+// refresh button: a bordered pill (accents on hover) with a drawn reload glyph.
+let rbc = FAINT
+let rtc = MUT
+let rhole = BG
+if refresh_hover then
+  rbc = ACCENT
+  rtc = ACCENT
+  rhole = HOVER
+  draw_rect(refresh_r, HOVER)
+end
+draw_rect_outline(refresh_r, rbc)
+// A circular-arrow icon built from primitives (the mono font has no ⟳): a ring
+// (outer disc minus an inner hole) with a notch cut and an arrowhead, so it
+// reads as a clockwise reload arrow at any font.
+let ix = refresh_r.x + 15
+let iy = refresh_r.y + 11
+draw_circle({x: ix, y: iy}, 6, rtc)
+draw_circle({x: ix, y: iy}, 3, rhole)
+draw_rect(rect(ix, iy - 8, 8, 6), rhole)          // cut the top-right open
+fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, rtc.r, rtc.g, rtc.b)  // arrowhead
+draw_text(refresh_label, {x: refresh_r.x + 28, y: refresh_r.y + 3}, FS, rtc)
+
+// vertical divider (draggable): a grip that accents on hover / drag
+let vcol = LINE
+if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then vcol = ACCENT end
+draw_rect(rect(div_x, content_top - 10, 1, h - content_top + 10), vcol)
+if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then
+  draw_rect(rect(div_x - 1, (content_top + h) / 2 - 14, 3, 28), ACCENT)
+end
+
+// ── draw: commits section ─────────────────────────────────────────────────────
+section_label("COMMITS · {total_rows}", PAD, content_top, focused(fc, "commits"))
+
+// Subjects and metadata are clipped by measured width, not by an estimated
+// character count: the panel font is proportional, so `ellipsize` fills the
+// row where dividing by an average glyph width would leave it short or overrun.
+let subj_px = commits_rect.w - 18
+
+if total_rows == 0 then
+  if len(log_err) > 0 then
+    draw_text("git error:", {x: PAD + 4, y: commits_rect.y + 6}, FS, RED)
+    draw_text(ellipsize(log_err, subj_px, FS), {x: PAD + 4, y: commits_rect.y + 24}, FS, MUT)
+  elsif !log_ready then
+    draw_text("loading history {spinner()}", {x: PAD + 4, y: commits_rect.y + 6}, FS, DIM)
+  else
+    draw_text("no commits yet", {x: PAD + 4, y: commits_rect.y + 6}, FS, DIM)
+  end
+end
+clip(commits_rect.x, commits_rect.y, commits_rect.w, commits_rect.h)
+let cvis = int(clamp(total_rows - commits_scroll, 0, commits_rows + 1))
+for i in range(0, cvis) do
+  let idx = i + commits_scroll
+  let ry = commits_rect.y + i * COMMIT_ROW
+  let row_r = rect(commits_rect.x, ry, commits_rect.w, COMMIT_ROW)
+  if idx == commit_selected then
+    let selbg = SELDIM
+    if focused(fc, "commits") then selbg = SEL end
+    draw_rect(row_r, selbg)
+  else
+    if hovered(row_r) then draw_rect(row_r, HOVER) end
+  end
+  if wt == 1 && idx == 0 then
+    draw_rect(rect(commits_rect.x, ry + 4, 3, COMMIT_ROW - 8), ORANGE)
+    draw_text("working tree", {x: commits_rect.x + 12, y: ry + 3}, FS, ORANGE)
+    draw_text("uncommitted changes", {x: commits_rect.x + 12, y: ry + 21}, FS, DIM)
+  else
+    let c = git_commits[idx - wt]
+    draw_rect(rect(commits_rect.x, ry + 4, 3, COMMIT_ROW - 8), FOCUS)
+    let subj_c = MUT
+    if idx == commit_selected then subj_c = TEXT end
+    draw_text(ellipsize(c.subject, subj_px, FS), {x: commits_rect.x + 12, y: ry + 3}, FS, subj_c)
+    let meta = "{c.short}  {c.date}  {c.author}"
+    draw_text(ellipsize(meta, subj_px, FS), {x: commits_rect.x + 12, y: ry + 21}, FS, FAINT)
+  end
+end
+clip_none()
+draw_scrollbar(commits_rect, total_rows, commits_rows, commits_scroll)
+
+// ── draw: files section ───────────────────────────────────────────────────────
+// horizontal divider (draggable) between the commit list and the file list
+let hcol = LINE
+if drag_div == 2 || (point_in(mouse_x(), mouse_y(), hdiv_hit) && !dragging) then hcol = ACCENT end
+draw_rect(rect(PAD, hdiv_y, left_w - 10, 1), hcol)
+if drag_div == 2 || (point_in(mouse_x(), mouse_y(), hdiv_hit) && !dragging) then
+  draw_rect(rect(PAD + (left_w - 10) / 2 - 14, hdiv_y - 1, 28, 3), ACCENT)
+end
+section_label("FILES · {file_count}", PAD, files_label_y, focused(fc, "files"))
+
+if file_count == 0 then
+  let msg = "no files changed"
+  if total_rows == 0 then msg = "—" end
+  if diff_loading then msg = "loading diff {spinner()}" end
+  draw_text(msg, {x: PAD + 4, y: files_rect.y + 4}, FS, FAINT)
+end
+// Reserve a right strip for the +/- counts; wrap the path across the rest.
+let counts_w = 92
+let path_px = files_rect.w - 14 - counts_w
+clip(files_rect.x, files_rect.y, files_rect.w, files_rect.h)
+let fvis = int(clamp(file_count - files_lst.scroll, 0, files_rows + 1))
+for i in range(0, fvis) do
+  let idx = i + files_lst.scroll
+  let f = data.files[idx]
+  let ry = files_rect.y + i * FILE_ROW
+  let row_r = rect(files_rect.x, ry, files_rect.w, FILE_ROW)
+  if idx == file_selected then
+    let selbg = SELDIM
+    if focused(fc, "files") then selbg = SEL end
+    draw_rect(row_r, selbg)
+  else
+    if hovered(row_r) then draw_rect(row_r, HOVER) end
+  end
+  let accent = GREEN
+  if f.removed > f.added then accent = RED end
+  draw_rect(rect(files_rect.x, ry + 4, 3, FILE_ROW - 8), accent)
+  let path_c = MUT
+  if idx == file_selected then path_c = TEXT end
+  let wp = wrap2(f.path, path_px, FS)
+  draw_text(wp.a, {x: files_rect.x + 12, y: ry + 4}, FS, path_c)
+  if wp.b != "" then
+    draw_text(wp.b, {x: files_rect.x + 12, y: ry + 4 + LINE_H}, FS, path_c)
+  end
+  let count_y = ry + FILE_ROW / 2 - 8
+  draw_text_right("-{f.removed}", files_rect.x + files_rect.w - 8, count_y, FS, RED)
+  draw_text_right("+{f.added}", files_rect.x + files_rect.w - 48, count_y, FS, GREEN)
+end
+clip_none()
+draw_scrollbar(files_rect, file_count, files_rows, files_lst.scroll)
+
+// ── draw: diff header (selected commit + file) ────────────────────────────────
+let head_subject = ""
+let head_meta = ""
+if total_rows > 0 then
+  if wt == 1 && commit_selected == 0 then
+    head_subject = "Working tree"
+    head_meta = "uncommitted changes vs HEAD"
+  else
+    let c = git_commits[commit_selected - wt]
+    head_subject = c.subject
+    head_meta = "{c.short}  {c.date}  {c.author}"
+  end
+end
+if diff_expanded then head_meta = head_meta ++ "  ·  full context" end
+draw_text(ellipsize(head_subject, right_w, FS), {x: right_x, y: content_top}, FS, TEXT)
+draw_text(ellipsize(head_meta, right_w, FS), {x: right_x, y: content_top + 20}, FS, DIM)
+let head_path_w = 56
+if file_count > 0 then
+  let f = data.files[file_selected]
+  let counts = "+{f.added}  -{f.removed}"
+  draw_text_right(counts, w - PAD - 8, content_top + 41, FS, DIM)
+  let fp = ellipsize_tail(f.path, right_w - text_width(counts, FS) - 24, FS)
+  draw_text(fp, {x: right_x, y: content_top + 41}, FS, ACCENT)
+  head_path_w = text_width(fp, FS)
+end
+draw_line({x: right_x, y: diff_top - 4}, {x: w - PAD, y: diff_top - 4}, LINE)
+if focused(fc, "diff") then
+  draw_rect(rect(right_x, diff_top - 5, head_path_w, 2), ACCENT)
+end
+
+// ── draw: the diff (clipped + scrollable, numbered gutter) ────────────────────
+if len(diff_err) > 0 then
+  draw_text("git error:", {x: right_x, y: diff_top + 8}, FS, RED)
+  draw_text(ellipsize(diff_err, right_w, FS), {x: right_x, y: diff_top + 28}, FS, MUT)
+elsif len(data_err) > 0 then
+  draw_text("git error:", {x: right_x, y: diff_top + 8}, FS, RED)
+  draw_text(ellipsize(data_err, right_w, FS), {x: right_x, y: diff_top + 28}, FS, MUT)
+elsif diff_loading && file_count == 0 then
+  draw_text("loading diff {spinner()}", {x: right_x, y: diff_top + 8}, FS, DIM)
+else
+  if file_count == 0 then
+    if total_rows > 0 then
+      draw_text("no changes to show", {x: right_x, y: diff_top + 8}, FS, FAINT)
+    end
+  else
+    let f = data.files[file_selected]
+    if diff_lines == 0 then
+      draw_text("no textual diff (binary or empty)", {x: right_x, y: diff_top + 8}, FS, FAINT)
+    else
+      // Selectable diff: hand the text to a native read-only editor, which the
+      // host draws inside diff_rect so it can be highlighted and copied (Cmd-C).
+      // The editor owns scrolling, so the script no longer paints lines, the
+      // numbered gutter, or a scrollbar. Lines are unified-diff style
+      // (marker + text) so a copied selection is clean, paste-ready diff text.
+      // A parallel style name per line drives the host's line-styling side
+      // channel, restoring add/del/hunk coloring (foreground + a translucent
+      // band) on top of the selectable text.
+      let dlines = []
+      let dstyles = []
+      for li in range(0, diff_lines) do
+        let ln = f.lines[li]
+        let marker = " "
+        let style = ""
+        if ln.kind == "hunk" then
+          marker = "@"
+          style = "hunk"
+        elsif ln.kind == "add" then
+          marker = "+"
+          style = "added"
+        elsif ln.kind == "del" then
+          marker = "-"
+          style = "removed"
+        end
+        dlines = append(dlines, marker ++ " " ++ ln.text)
+        dstyles = append(dstyles, style)
+      end
+      text_view(1, diff_rect.x, diff_rect.y, diff_rect.w, diff_rect.h, join(dlines, "\n"))
+      text_view_line_styles(1, dstyles)
+    end
+  end
+end

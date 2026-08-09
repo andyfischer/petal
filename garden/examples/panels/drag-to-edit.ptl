@@ -1,0 +1,56 @@
+// ── Drag a shape, change the code ────────────────────────
+//   garden petal-ide examples/panels/drag-to-edit.ptl
+//
+// Cmd-drag any shape on the canvas and watch the numbers in
+// this file move under your pointer. Cmd-click without
+// dragging still jumps the cursor to the line that drew it.
+//
+// You never say which text to change: you say where the shape
+// should be, and Petal answers with the edit. The `config let`
+// bindings below are how this sketch tells it which variables
+// are its tuning knobs — everything else stays pinned.
+
+config let edge = 300
+config let spacing = 78
+
+let w = screen_width()
+let h = screen_height()
+
+clear(16, 18, 26)
+
+// ── 1. Literals ──────────────────────────────────────────
+// Both numbers are written right here, so a drag rewrites
+// this line and nothing else moves.
+draw_rect(46, 210, 96, 64, 90, 150, 220)
+draw_text("literals", 46, 284, 12, 130, 145, 175)
+
+// ── 2. One knob, two shapes ──────────────────────────────
+// Both squares read `edge`. Drag either one sideways and they
+// move together — the status bar says the edit is shared. The
+// y positions are literals, so they still move one at a time.
+draw_rect(edge, 60, 52, 52, 220, 120, 90)
+draw_rect(edge, 130, 52, 52, 130, 130, 230)
+draw_text("shared knob", edge, 200, 12, 130, 145, 175)
+
+// ── 3. Solved, not looked up ─────────────────────────────
+// There is no number to edit in `x0 + i * spacing` — the last
+// card's position exists only at runtime. Drag it anyway:
+// `x0` is pinned (it isn't a knob), so the runtime inverts the
+// arithmetic and moves `spacing` instead, and the whole row
+// re-spaces around the card you are holding.
+//
+// Drag one of the *earlier* cards and it declines and says
+// why: solving inverts against the values the run recorded,
+// and those are the last iteration's — so the last shape a
+// looping call drew is the one whose numbers are still true.
+let x0 = 46
+let row_y = 96
+for i in range(0, 4) do
+  draw_rect(x0 + i * spacing, row_y, 44, 44, 70, 165, 150)
+end
+draw_text("drag the last card to re-space the row", x0, 152, 12, 130, 145, 175)
+
+// ── 4. Text is a shape too ───────────────────────────────
+draw_text("cmd-drag me", 250, 250, 18, 235, 200, 120)
+
+draw_text("cmd-drag a shape — this file edits itself", 16, 20, 13, 200, 210, 235)

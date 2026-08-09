@@ -1,0 +1,22 @@
+// gpp-test-app — mode `runtime-error`: reproduces the exact pr-browser crash the
+// error card must display well. The panel first paints some real content (so the
+// error card is seen overlapping a live frame, as in the wild), then calls
+// `len()` on a nil field — "Cannot get length of nil [line N, column M]" — which
+// aborts the frame and raises the panel error banner.
+let P = palette()
+clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)
+
+draw_text("gpp-test-app — loading pull request", {x: 16, y: 16}, 14, P.text)
+draw_text("FILES · 0", {x: 16, y: 48}, 14, P.text_mut)
+draw_text("Overview", {x: 16, y: 72}, 14, P.text_dim)
+
+// The bug: `obj.error` is present but nil, and `len(nil)` is a runtime error —
+// exactly the pr-browser crash ("Cannot get length of nil").
+//
+// `n` is the deliberately unreachable binding: the frame aborts on the line
+// that computes it, so it never binds. The aborted frame reports nothing at
+// /state → panes[].panel.values (an empty object), and `n` in particular is
+// absent rather than null — absence is the assertion, there is nothing to
+// publish.
+let obj = { number: 0, error: nil }
+let n = len(obj.error)

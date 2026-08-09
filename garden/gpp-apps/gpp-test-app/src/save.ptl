@@ -1,0 +1,20 @@
+// save mode — exercises the editable-panel write-back path (Phase 2):
+// an `edit_view` region plus a `mutate("save", …)` triggered by the `s` key.
+// Focus the region and edit with vim; press Escape twice to release focus, then
+// `s` (now delivered to the script) saves the edited text through the
+// subprocess's `on_mutation("save")` handler, which writes it to
+// GPP_TEST_SAVE_PATH and replies with a status the host shows.
+let w = screen_width()
+let h = screen_height()
+clear(18, 20, 26)
+draw_text("save test — edit, Esc Esc, then 's' to save", {x: 10, y: 8}, 14, {r: 210, g: 214, b: 224})
+edit_view(1, 10, 34, w - 20, h - 70, "alpha\nbeta\ngamma")
+// The region's current text, plus its length as its own binding: the host
+// observes both by name at /state → panes[].panel.values, so a test can watch
+// `text_len` change as the buffer is edited (and read `cur` itself) without the
+// drawer publishing anything.
+let cur = edit_view_text(1)
+let text_len = len(cur)
+if key_pressed("s") then
+  mutate("save", {text: cur})
+end

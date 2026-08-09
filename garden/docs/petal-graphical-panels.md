@@ -1,0 +1,235 @@
+# Petal graphical panels
+
+A **panel** is a pane whose pixels are drawn by a Petal script, rather than by
+the editor. Where an `editor(...)` pane shows a text buffer and a `process(...)`
+pane mirrors a subprocess, a `panel("clock.ptl")` pane runs a Petal script every
+frame and paints whatever it draws. This is the same imperative draw model that
+`../integrations/petal-desktop-sdl` pioneered — the script calls
+`draw_rect`/`draw_text`/… and the host turns those calls into pixels — embedded
+**in-process** inside Garden.
+
+This doc records the design, the chosen trade-offs, and what is and isn't built
+yet. Read `docs/architecture.md` first for the crate contracts this builds on.
+
+The features built on panels are the **`:Diff`** and **`:Git`** viewers. `:Diff`
+draws an interactive master-detail view (file list + line diff) plus a `:Diff
+--stat` per-file changed-lines diagram; `:Git` is a three-region history browser
+(commit list, per-commit files, line diff) built on the petal-ui focus registry.
+Both load their data on demand rather than baking it in — the drawer asks for the
+diff/log through the async `query` native and inspects the pending value while it
+loads (see "Interactivity" below).
+
+These began as in-process built-in panels but are now delivered as **panel-mode
+GPP apps** (`gpp-apps/git-viewers`, bin `git-log`; the diff views live in
+`gpp-apps/garden-diff`): the app pushes the Petal drawer — colocated in that crate
+as `git-viewers/src/git_panel.ptl` / `garden-diff/src/garden_diff.ptl` — which the host still runs
+in-process using the exact panel draw/input vocabulary this doc describes, and
+answers the drawer's data `query`s over the pipe. So everything below about the
+panel runtime applies unchanged; only *who supplies the data* moved from a local
+Rust provider to a subprocess. See the `:Git`/`:Diff` sections of
+`docs/architecture.md` and the how-to in `docs/writing-gpp-apps.md`.
+
+## The model
+
+```
+panel("sketch.ptl")            LayoutNode::Panel { script }
+  │  layout solve                       │
+  ▼                                     ▼
+PaneContent::Panel { script }  ──►  Pane { panel: Some(PanelView) }
+                                         │  each awake frame
+                                         ▼
+              PanelHost::frame(dt, frame_count, input) -> Vec<PanelCmd>
+                                         │  translate (offset to pane rect, u8→sRGB)
+                                         ▼
+                          garden_render::Primitive::{Quad, Text}
+```
+
+- **`garden-script` owns the runtime.** A `PanelHost` holds its own Petal `Env`,
+  program, and stack — one VM per panel. The input/draw natives and the widget
+  prelude come from the upstream **`petal-ui`** crate (the standard every Petal
+  embedder shares): `PanelHost` registers `petal_ui::input::register_input` +
+  `draw::register_draw` + `register_prelude` (the `ui` module as an implicit
+  import), binds per-frame input/timing/dimensions with `petal-ui`'s
+  `bind_*` helpers, runs the script, and drains
+  `petal_ui::draw::take_draw_commands`, projecting each `DrawCommand` onto a
+  `Vec<PanelCmd>`. Garden adds the
+  `emit(event, arg)` push native (panel-mode GPP script→client signals; see
+  below), the `text_view` selectable-region pair (plus `text_view_scroll_to` to
+  scroll one programmatically and `text_view_wrap` to soft-wrap it), the
+  `panel_theme()` host-theme
+  read (injected per frame via `PanelHost::set_theme`, like `bind_input`), and
+  its monospace metric (`bind_text_metrics`, ratio 0.6), and does not register
+  the optional offscreen-canvas natives. `PanelCmd`, `PanelInput`, and
+  `PanelTheme` are plain data types (no `garden-render` dependency — the same
+  cross-crate rule the `Theme` capture follows): the host speaks `u8` RGB and
+  `i32`/`u32` panel-local pixels. See `../docs/embedding-guide.md`.
+- **`garden-app` owns presentation and scheduling.** A `PanelView` wraps a
+  `PanelHost` with the per-pane animation bookkeeping (frame counter, last-frame
+  instant for `dt`, last-activity instant for sleep/wake, the last frame's cached
+  commands, and any script error). `App::build_scene` translates the cached
+  `PanelCmd`s into `Primitive`s offset into the pane's rect and clipped to it,
+  converting `u8` RGB → sRGB `Color` at the boundary.
+
+### Coordinates and color
+
+A panel draws in **panel-local logical pixels**: `(0,0)` is the pane's top-left,
+and `screen_width()`/`screen_height()` report the pane's current size (rebound
+every frame, so a resize just changes the numbers). Colors are `0–255` integer
+RGB (petal-sdl convention), converted to Garden's sRGB `Color` when translated to
+primitives; the renderer then linearizes as usual (`Color::to_linear`).
+
+## Animation: sleep/wake heuristics
+
+Garden renders only on dirty frames — there is no continuous loop. A panel that
+animates needs ticking, but ticking forever would burn CPU on a window the user
+isn't touching. The heuristic:
+
+- **Any user input wakes panels.** A key, click, mouse move, or scroll stamps
+  every panel's `last_activity = now`. Spawning, hot-reloading, and resizing a
+  panel also stamp it (so a freshly appeared animation plays immediately).
+- **A panel stays awake for `PANEL_WAKE` (10s) after the last activity.** While
+  awake it ticks at ~60fps (`PANEL_FRAME` ≈ 16ms): each tick runs the script,
+  caches the new commands, and requests a redraw. This is the "let the animation
+  settle" window.
+- **After 10s idle the panel sleeps**: no run, no redraw, until the next input
+  wakes it. Its last frame stays on screen.
+
+A trap for any script that wants to **poll on a timer**: a panel reads `time()`
+only on a frame, and it only runs frames while awake, so a `time() >= next` check
+does not fire on its own once the panel sleeps. A poll survives only if something
+re-stamps activity within each `PANEL_WAKE` — a query's `queryResult` does, which
+is why `garden-diff`'s staleness probe works at all. The consequence is that the
+interval must stay meaningfully **under 10s**: at exactly 10s the poll and the
+sleep race and the poll dies (measured — two probes, then nothing until a
+keypress). `garden-diff` uses 9s. A genuinely slow poll needs a host-side timer,
+not a bigger constant.
+
+`App::tick_panels(now)` runs every awake panel and returns whether *any* panel is
+still awake. The windowed frontend uses that to pick its control flow:
+`WaitUntil(now + PANEL_FRAME)` while animating, falling back to the normal
+`RELOAD_POLL` (~200ms) cadence when everything is asleep. The terminal and
+headless frontends tick panels on their existing poll loop — panels there animate
+at the slow poll rate (acceptable degradation; these targets aren't the point).
+
+### Debug visibility
+
+Because "is it sleeping?" is otherwise invisible, every panel draws a tiny dot in
+its top-right corner — filled when awake, hollow/dim when asleep — and the debug
+server's `/state` reports each panel pane's `awake` flag and `frame` count
+alongside its script path.
+
+## Supported draw surface
+
+The full `petal-ui` draw vocabulary is wired, **including the optional
+per-primitive `a` (alpha), corner `radius`, and stroke `width` fields** — a
+Garden panel renders the same commands as any other petal-ui host (translucent
+fills, rounded rects, thick strokes), not a truncated set. Rectangles and text
+map onto Garden's `Quad`/`Text` primitives; the rest tessellate (on the CPU)
+into the `Mesh` triangle-list primitive added to `garden-render` for exactly
+this. Colors carry alpha through `Color::rgba`, and `garden-render`'s pipelines
+alpha-blend, so overlapping translucent tints composite:
+
+| Petal fn | becomes |
+|---|---|
+| `clear(r,g,b)` | a full-pane filled rect (in the panel mesh) |
+| `draw_rect(x,y,w,h,r,g,b[,a])` | one filled rect (2 triangles), optionally translucent |
+| `draw_rect_rounded(x,y,w,h,radius,r,g,b[,a])` | a filled rect with quarter-circle-fan corners |
+| `draw_rect_outline(x,y,w,h,r,g,b[,a[,width]])` | four `width`-px filled edges |
+| `draw_line(x1,y1,x2,y2,r,g,b[,a[,width]])` | a `width`-px-wide quad along the segment |
+| `draw_circle(cx,cy,radius,r,g,b[,a])` | a triangle fan (segments scale with radius) |
+| `fill_triangle(x1,y1,x2,y2,x3,y3,r,g,b[,a])` | one triangle |
+| `fill_poly(points,r,g,b[,a])` | a triangle fan from the first point (convex) |
+| `draw_text(s,x,y,size,r,g,b[,a])` | one `Text` run at `size` logical px (glyphon) |
+| `draw_image(source,x,y,w,h[,a])` | a cached PNG texture scaled into the destination rect |
+
+plus the input/timing reads `dt`, `frame_count`, `screen_width`,
+`screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
+`key_down`, `key_pressed`, `scroll_y`, `text_width`, and the `clip`/`clip_none`
+calls documented under "Interactivity" below. All of these —
+and the `ui` prelude widgets (`rect`/`point_in`/`hovered`, the record `draw_*`
+overloads, `button`, `list_update`, `scroll_update`, `truncate_tail`, `wrap`, `preview`,
+`fit_parts`, `ensure_visible_px`,
+`draw_text_right`, and the `context_menu` family — `menu_state`, `menu_item`,
+`menu_sep`, `menu_open_on_right_click`, `menu_blocking`, `menu_show`,
+`menu_close`) — come from `petal-ui` as an implicit import, so scripts call
+them bare.
+
+A **context menu** is two calls, because an immediate-mode pass has to reconcile
+z-order with input order: the menu must be *drawn* last to sit on top, but its
+click must be claimed *before* the widgets underneath react to the same press.
+So the rest of the panel stands down for the frame while one is open, and the
+menu resolves the click at the end:
+
+```petal
+state menu = menu_state()
+// near the top, before the panel's own click handling:
+if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
+menu = menu_open_on_right_click(menu, row, i)   // right-click arms it, tagged with `i`
+…
+// near the bottom, so it draws over everything:
+let picked = context_menu(menu, [menu_item("Only this"), menu_sep(), menu_item("All", enabled)])
+menu = picked.menu
+if picked.index >= 0 then … picked.label, picked.tag … end
+```
+
+`picked.index` counts **every** entry, separators included, so a `menu_sep()`
+shifts the indices after it. Escape and a click outside dismiss without
+choosing; Up/Down move the highlight past separators and disabled rows and
+Return takes it; a menu that would run off the screen flips to the other side of
+the pointer. `garden_diff.ptl`'s commit rows are the worked example. The `:Git`/`:Diff` viewers' drawers are written on this prelude.
+
+Relative image sources resolve from Garden's working directory. RGB and RGBA
+PNG files are supported; a missing or invalid bitmap is logged and skipped
+without aborting the panel frame. Image commands honor the active panel clip.
+
+### Text size and measurement
+
+`draw_text`'s `size` is honored per run — a panel is not locked to the editor's
+14 px, so a script can build a real typographic hierarchy (a 28 px heading over
+a 10 px caption). Line height follows the size at the renderer's usual 1.4×
+ratio.
+
+`text_width(s, size)` measures with the **real advances of the font Garden
+rasterizes with** (JetBrains Mono, measured through cosmic-text on the CPU), not
+the generic 0.6-of-size guess. So a rule drawn `text_width(s, size)` wide ends
+flush with its text at every size — centering and right-alignment are exact.
+
+The measurement is published **per host**: `PanelHost::set_font_advance_ratios`
+binds the advance table into that host's env, and `PanelView` calls it on every
+host it installs (construction, both rebuild paths, restart) — a rebuilt host
+starts over with garden-script's 0.6 fallback, so each one must be told. The
+measuring is memoized in `panel_view.rs` (the embedded font is fixed at compile
+time, so shaping the ASCII range once is enough), but nothing about the
+*setting* is process-wide: an embedder with a different face, or a test with a
+made-up table, tells its own hosts and disturbs no one else's.
+
+A face can be named — `text_width(s, size, "mono")` — for portability with
+other petal-ui hosts; Garden has one embedded face, so both `mono` and `ui`
+resolve to it and an unknown name degrades to it too.
+
+### Styled text
+
+`draw_text` also takes a **style record**, and `text_width` measures the same
+record, so what you measure is what you draw:
+
+```petal
+let BODY = {size: 15, color: palette().text}
+draw_text("Merge pull request ", {x: 10, y: 20}, BODY)
+draw_text("#482", {x: 170, y: 20}, {...BODY, weight: 700})
+draw_text("s p a c e d", {x: 10, y: 40}, {...BODY, spacing: 2})
+```
+
+Fields are `size`, `color`, `font`, `weight`, `italic`, `spacing`; any subset,
+with omitted ones meaning plain text. What Garden does with each:
+
+| Axis | In a Garden pane |
+|---|---|
+| `size` | honored per run |
+| `font` | one embedded face — every role and family resolves to it, and the measurement side agrees |
+| `italic` | passed to cosmic-text; resolves when a matching face is available |
+| `weight` | **degrades to regular** — only JetBrains Mono Regular is embedded, so a bold request comes back regular (and measures regular, so layout stays correct) |
+| `spacing` | honored — the host places each glyph, with the pen matching `text_width` exactly |
+
+Embedding the Bold face would light `weight` up with no protocol change.
+The full cross-host contract lives in `../docs/text-and-fonts.md`.
+

@@ -1,0 +1,988 @@
+// garden-diff — the editable diff drawer (unified + split + stat + commits views,
+// PR-aware).
+//
+// A FIXED, generic panel script (like the git-log viewer): it bakes in no data and
+// loads everything through `query("doc")`, answered by the garden-diff
+// subprocess (which shells `git`/`gh`). Three view modes, switched by the header
+// pills (mouse — works even while the editor is focused, since a click outside a
+// region defocuses it):
+//
+//   • UNIFIED (default, editable) — one column, the classic +/-/context stream,
+//     in an `edit_view` carrying an **editable projection** (`edit_view_projection`):
+//     click to focus, real vim, ^S writes the files back via mutate("apply", …).
+//     Editing the diff *is* editing the change — deleting a `+` line drops that
+//     addition, deleting a `-` line reverts that deletion, rewriting either
+//     changes the text, and `dd` on a hunk or file header reverts that hunk or
+//     drops that file's changes. The host tracks where each line came from and
+//     resolves the edits itself, so this script sends `edit_view_edits(5)` — the
+//     write-backs — rather than text for someone to re-interpret. In PR mode the
+//     inline review comments are threaded in at their diff lines (recorded as
+//     chrome, so editing or deleting one changes no file). Long lines soft-wrap
+//     to the column; the `wrap` pill turns that off.
+//     The +/-/space markers are NOT in the buffer: the projection declares them
+//     as gutter chrome (`decor.gutter`) and the host draws them beside the text,
+//     so the buffer holds the files' own content. That is what makes editing the
+//     view behave like editing a file — `J` joins two lines without dragging a
+//     `+` into the seam — and what makes `/` match what the reader sees.
+//   • SPLIT — BEFORE (the base) beside AFTER (the working tree in an editable
+//     `edit_view`: click to focus, real vim, ^S to write the files back). The
+//     after column is a projection too — an undecorated one, since it is the new
+//     file line for line — so it saves the same way the unified view does, by
+//     sending the edits the host resolved. Its `@@@` markers are locked chrome:
+//     the column holds only the new side, so it has nothing to revert a hunk
+//     *to*, and deleting a marker is refused rather than half-reverting.
+//   • STAT (read-only) — the per-file changed-lines diagram (`--stat`).
+//   • COMMITS (read-only) — the review's own history, newest first, and the
+//     control that scopes the diff. Left-click a row for that commit alone;
+//     right-click for a context menu (that commit / everything since it / back
+//     to the whole review). The scope is the `doc` query's *argument*, so the
+//     host caches each one and returning to a scope already looked at is free.
+//
+// A commit-scoped diff is READ-ONLY (`doc.editable` false): it describes files
+// as they were at that commit, so its line numbers address a blob and not the
+// checkout — writing them back would splice the past into the present at
+// coincidentally-matching offsets. Those views are declared as `text_view`s
+// rather than `edit_view`s, which also means they have no projection and so no
+// gutter, which is why the host bakes their markers into the text instead
+// (`doc.markers_in_text`). A "since this commit" scope still ends at the working
+// tree, so it is an ordinary editable diff from a nearer base.
+//
+// Unified and split also carry the **file column** down their left edge: the
+// hierarchical outline of changed files (`doc.outline`), where clicking a row
+// scrolls the diff beside it to that file via `text_view_scroll_to`.
+//
+// In PR mode (`garden pr [n]`, `:PR`) a collapsible discussion block shows the PR
+// number/title/author, its description, and the conversation comments.
+//
+// A review outlives the working tree it describes, so the header carries a ⟳
+// reload pill and the panel polls for change on its own (see "staleness probe"):
+// a doc that moved on disk is adopted silently when nothing is unsaved, and
+// otherwise only flagged — "changed on disk · click reload" — so an edit in
+// progress is never swapped out from under the user.
+//
+// `garden pr` on a branch with no pull request degrades to the plain local diff
+// (pending changes vs the base branch, staged and unstaged); the host sends a
+// `notice` string, shown as a band under the header, saying so.
+//
+// `/` searches the focused region: the region's vim asks the host to open its
+// usual search prompt, and the accepted pattern searches that region's buffer
+// (`n`/`N` then repeat it there). Nothing in this script is involved.
+//
+// query("doc", scope) → { error, notice, base, initial_mode, editable,
+//                  markers_in_text,
+//                      // `scope` is "" (the whole review), "commit:<sha>" (that
+//                      // commit alone, read-only) or "since:<sha>" (its parent
+//                      // → working tree, still editable).
+//                  files:[{path,added,removed,binary}],
+//                  outline:[{dir,depth,label,added,removed,binary,
+//                            line_before,line_after,line_unified}],
+//                      // the file list, hierarchical: a `dir` row names a path
+//                      // prefix shared by the deeper-`depth` rows below it, which
+//                      // carry only the remainder of their path. The `line_*`
+//                      // fields are where each projection must scroll to reach
+//                      // the row (a dir row points at its first file).
+//                  before:{text,styles},
+//                  after:{text,projection}, unified:{text,projection},
+//                      // each editable view's provenance, passed straight to
+//                      // `edit_view_projection(id, …)`:
+//                      // {sources,span_source,span_start,span_end,span_group,
+//                      //  kinds,line_spans,styles,decor} — one origin character
+//                      // per line, and the file range each hunk rewrites.
+//                  pr:{present,number,title,author,base_ref,head_ref,status,url,
+//                      body,discussion,comments} }   (`status` = the PR state;
+//                  `state` is a Petal keyword)
+//
+// query("commits", "") → { commits: [{sha,short,subject,author,date}] }
+//                  Newest first — the same set `git log <base>..HEAD` prints.
+//                  Fetched lazily, the first time the COMMITS view is opened: a
+//                  `git log` per launch is pure cost for the reviewers who never
+//                  open it.
+
+// The pre-load placeholder. Each editable view's `projection` starts empty: the
+// host reads every field of a projection spec with a default, so an empty record
+// declares a region with no provenance yet — which is exactly true of one that
+// has no text yet either.
+state doc = { error: "", notice: "", base: "", initial_mode: "unified", editable: true, markers_in_text: false, files: [], outline: [], before: { text: "", styles: [] }, after: { text: "", styles: [], projection: {} }, unified: { text: "", styles: [], projection: {} }, pr: { present: false, number: 0, title: "", author: "", base_ref: "", head_ref: "", status: "", url: "", body: "", discussion: "", comments: 0 } }
+state ready = false
+state err = ""
+state mode = "unified"       // "unified" (default) | "split" | "stat" | "commits"
+
+// ── scope ───────────────────────────────────────────────────────────────────
+// Which slice of the review the diff shows, as the `doc` query argument the
+// host caches on: "" is the whole thing, "commit:<sha>" one commit, "since:<sha>"
+// everything from a commit's parent to the working tree. Changing it re-enters
+// the loader with the new argument, so switching back to a scope already looked
+// at is served from the host's cache.
+//
+// `scope_label` is how the header says so, kept beside `scope` because the sha
+// alone reads as noise — a subject line is what a reviewer recognises.
+state scope = ""
+state scope_label = ""
+// A scope change *requested* this frame, applied in one place near the bottom.
+// It cannot be a function: a Petal function assigning `scope` would shadow it
+// locally rather than move the panel's state. Requesting and applying also puts
+// the reload in one spot, so every path into it — a commit click, each menu
+// action — resets the loader and the staleness probe the same way.
+state want_scope = ""
+state want_label = ""
+state scope_pending = false
+// The commits the review covers (newest first), loaded lazily the first time the
+// COMMITS view is opened: a `git log` per panel launch is pure cost for the
+// reviewers who never open it.
+state commits = []
+state commits_ready = false
+state commits_asked = false
+state csel = 0               // selected commit row
+state commit_scroll = 0      // first visible commit row
+state menu = menu_state()    // the commit rows' right-click menu
+state mode_applied = false   // has the launch flag's initial mode been applied yet?
+state pr_open = true         // whether the PR discussion block is expanded
+// Soft-wrap the unified view's long lines to the column width instead of
+// letting them run off the right edge (a diff of prose, or of code with long
+// string literals, is unreadable clipped). On by default; the header's `wrap`
+// pill turns it off when the exact columns matter. Only the unified view offers
+// it — split's two regions are row-aligned, and wrapping one would slide it out
+// of step with the other.
+state uni_wrap = true
+state sel = 0                // selected file-column row (index into doc.outline)
+state list_scroll = 0        // first visible file-column row
+state list_drag = false      // dragging the file column's scrollbar thumb?
+// ── staleness ──────────────────────────────────────────────────────────────
+// A review is a window onto a moving working tree: a rebase, an agent editing
+// files, a branch switch or a `git stash` all change the diff under it, and
+// nothing tells the panel. So the panel asks — see the staleness probe below.
+// `stale` means "the doc on disk differs from the one on screen, and there are
+// unsaved edits, so it is NOT being swapped out from under you" — the header
+// marks it and the ⟳ pill takes it.
+state stale = false
+state probing = false        // a staleness re-query is in flight
+state next_probe = 0.0       // `time()` (seconds since panel start) of the next probe
+state probes = 0             // completed probes; observed by name, so tests can wait on it
+
+// ── palette ───────────────────────────────────────────────────────────────
+let P = palette()
+let BG = P.window_bg
+let LINE = P.border
+let TEXT = P.text
+let DIM = P.text_dim
+let ACCENT = P.accent
+let RED = P.red
+let GREEN = P.green
+let ROWALT = P.hover
+let TRACK = P.scrollbar_track
+let THUMB = P.scrollbar_thumb
+let SELBG = P.sel
+
+let FS = 14
+let w = screen_width()
+let h = screen_height()
+let PAD = 12
+let header_h = 38
+// How often the staleness probe re-reads the doc (seconds). Each probe is a full
+// `git diff` rebuild, so this is the idle cost of leaving a review open: slow
+// enough that an open pane is not hammering a large repo, still fast enough that
+// a rebase or an agent's write shows up while you are looking at the same screen.
+//
+// **It must stay under the host's `PANEL_WAKE` (10s, `panel_view.rs`).** A panel
+// only runs frames while awake, and the probe's clock is only read on a frame —
+// so the poll runs at all only because each probe's `queryResult` re-stamps
+// activity and restarts that window before it closes. At exactly 10.0 the two
+// race and the probe stops dead: measured on an idle headless pane, it fired
+// twice and then never again until a keypress woke the panel, which is silently
+// the old "nothing refreshes the diff" bug back again. 9s buys the round trip a
+// second of margin. Raising this any further needs a real timer from the host,
+// not a bigger number.
+let PROBE_SECS = 9.0
+
+fn spinner()
+  let frames = ["|", "/", "-", "\\"]
+  frames[int(frame_count() / 6) % 4]
+end
+
+// ── data ────────────────────────────────────────────────────────────────────
+if !ready then
+  let rd = query("doc", scope)
+  if is_ready(rd) then
+    doc = rd
+    ready = true
+    err = ""
+    // Neither editable region needs a seed of its own: each is declared from the
+    // loaded doc every frame, and the host rebuilds a region's buffer only when
+    // that declared text actually changes — so the live edits are left alone.
+    // `--stat` (from `garden diff --stat` / `:Diff --stat`) opens the diagram;
+    // applied once, so switching pills afterwards sticks.
+    if !mode_applied then
+      mode = doc.initial_mode
+      mode_applied = true
+    end
+  elsif is_error(rd) then
+    err = error_of(rd) ?? "diff failed"
+  end
+end
+
+let has_pr = ready && doc.pr.present
+// A scoped diff is a picture of a commit, not of the working tree, so it has
+// nothing to write back to (see `Doc::editable` in the host). Everything below
+// keys off this: the views become read-only `text_view`s, ^S is inert, and the
+// header says so rather than letting a reviewer type into a dead end.
+let editable = ready && doc.editable
+
+// The commit list, fetched the first time the COMMITS view is opened. Asked for
+// once (`commits_asked`) so a failure is not retried every frame.
+if mode == "commits" && !commits_ready then
+  let cq = query("commits", "")
+  commits_asked = true
+  if is_ready(cq) then
+    commits = cq.commits
+    commits_ready = true
+  end
+end
+
+// ── staleness probe ───────────────────────────────────────────────────────────
+// Once every PROBE_SECS the panel invalidates the doc query and re-reads the
+// answer. The re-read is compared against what is on screen:
+//
+//   • identical            → nothing happens (the common case);
+//   • different, nothing unsaved → adopted outright, so a review left open while
+//     a branch moves simply shows the new change;
+//   • different, edits pending   → only `stale` is raised. An in-progress edit is
+//     never swapped out from under the user: the header says so and the ⟳ pill
+//     reloads when they are ready.
+//
+// Probing stops while `stale` (the answer is already known) and while a load or
+// an error is in flight. Each probe's answer is a `queryResult`, which the host
+// counts as panel activity — so the poll keeps itself awake rather than falling
+// into the idle window mid-review.
+//
+// "Unsaved" is the projection's own edit count: it resolves an edit only for a
+// span whose content actually moved, so the count is 0 on a freshly loaded diff,
+// non-zero exactly while the user has changed something, and 0 again once an
+// edit is undone. Only the mode's own region counts; a region that isn't
+// declared this frame resolves nothing, which reads as "not dirty".
+fn view_dirty(m)
+  if m == "unified" then
+    len(edit_view_edits(5)) > 0
+  elsif m == "split" then
+    len(edit_view_edits(2)) > 0
+  else
+    false
+  end
+end
+let unsaved = view_dirty(mode)
+if ready && len(err) == 0 && !stale then
+  if probing then
+    let pd = query("doc", scope)
+    if is_ready(pd) then
+      probing = false
+      probes = probes + 1
+      next_probe = time() + PROBE_SECS
+      // The unified stream is the whole change, both sides, in one string, so a
+      // byte difference there is a change to the review; `base` catches the base
+      // ref itself moving under a diff whose text happens to be unchanged.
+      if pd.unified.text != doc.unified.text || pd.base != doc.base then
+        if !unsaved then
+          doc = pd
+        else
+          stale = true
+        end
+      end
+    elsif is_error(pd) then
+      // A probe that fails (mid-rebase, say) is not an error the review should
+      // wear — the loaded doc still stands. Back off and try again.
+      probing = false
+      next_probe = time() + PROBE_SECS
+    end
+  elsif time() >= next_probe then
+    invalidate("doc", scope)
+    probing = true
+  end
+end
+
+// ── header: mode pills (click to switch view) ─────────────────────────────────
+let title = "diff"
+if ready then title = "diff vs {doc.base}" end
+if has_pr then title = "PR #{doc.pr.number}" end
+// A scoped review names the scope *instead of* the base: `doc.base` is then a
+// label synthesized for the slice ("commit 7a72009d"), and showing both would
+// say the same thing twice.
+if ready && len(scope) > 0 then title = "diff ▸ {scope_label}" end
+if has_pr && len(scope) > 0 then title = "PR #{doc.pr.number} ▸ {scope_label}" end
+if len(err) > 0 then title = "diff error" end
+if !ready && len(err) == 0 then title = "loading diff {spinner()}" end
+
+// Pills read in the order the views are reached for: unified (the default —
+// what "show me the diff" means), then the editable split, the diagram, and
+// last the commit list, which is about the review rather than about the change.
+let pills_x = PAD + text_width(title, FS) + 24
+// The ⟳ reload pill leads the row: it belongs to the review as a whole rather
+// than to any one view, and leading keeps it in one place — the wrap pill comes
+// and goes with the mode, and the right edge is the hint's. Icon-only (28px), so
+// four pills plus a reload still fit a narrow header.
+let refresh_w = 28
+let refresh_r = rect(pills_x, PAD - 3, refresh_w, 23)
+let pill_x = pills_x + refresh_w + 8
+let unified_w = text_width("unified", FS) + 20
+let split_w = text_width("split", FS) + 20
+let stat_w = text_width("stat", FS) + 20
+let unified_r = rect(pill_x, PAD - 3, unified_w, 23)
+let split_r = rect(pill_x + unified_w + 6, PAD - 3, split_w, 23)
+let stat_r = rect(pill_x + unified_w + split_w + 12, PAD - 3, stat_w, 23)
+let commits_w = text_width("commits", FS) + 20
+let commits_r = rect(pill_x + unified_w + split_w + stat_w + 18, PAD - 3, commits_w, 23)
+// The wrap toggle rides at the end of the pill row, and only in unified mode —
+// it is the only view that wraps.
+let wrap_w = text_width("wrap", FS) + 20
+let wrap_r = rect(pill_x + unified_w + split_w + stat_w + commits_w + 36, PAD - 3, wrap_w, 23)
+
+// ── hit targets for tests ────────────────────────────────────────────────────
+// The centre of each pill, named so a scripted test can click a control without
+// re-deriving this file's geometry. Naming a value is the whole mechanism: the
+// host observes every named binding a frame makes and reports it at the debug
+// server as `panes[].panel.values`. The `*_r` rects are observable too, but a
+// centre is what a click wants, so it is bound once here rather than computed by
+// every caller. The body regions bind their own x/y further down, where the
+// notice / PR bands have already pushed the layout into place.
+let pill_y = PAD + 8
+let refresh_x = refresh_r.x + int(refresh_w / 2)
+let unified_x = unified_r.x + int(unified_w / 2)
+let split_x = split_r.x + int(split_w / 2)
+let stat_x = stat_r.x + int(stat_w / 2)
+let commits_x = commits_r.x + int(commits_w / 2)
+let wrap_x = wrap_r.x + int(wrap_w / 2)
+
+// ── input: mode switch + PR-block toggle (mouse) ──────────────────────────────
+// A press here also hands keyboard focus back from any focused region (the host
+// clears it on a press outside every region), so switching mid-edit is safe.
+// A hidden region is dropped and re-seeded from the doc on return, so unsaved
+// edits do not survive a view switch — save (or stay) before switching. The
+// after column used to snapshot its buffer into a seed to survive the trip; a
+// projection cannot, since its origin table describes the *projected* lines and
+// re-seeding from edited text would leave the two out of step.
+let mx = mouse_x()
+let my = mouse_y()
+let refresh_hover = point_in(mx, my, refresh_r)
+// ⟳ — drop the doc query and re-enter the loader. This is the manual half of the
+// staleness story (the probe above is the automatic half): it is also how a
+// *stale* view with unsaved edits is finally taken, which is why it is a click
+// and not something the panel does on its own.
+if ready && len(err) == 0 && mouse_pressed(0) && refresh_hover && !menu_blocking(menu) then
+  invalidate("doc", scope)
+  // The commit list is part of the review too — a new commit is exactly the
+  // kind of thing a reload is asked for.
+  commits_ready = false
+  commits_asked = false
+  ready = false
+  stale = false
+  probing = false
+  next_probe = time() + PROBE_SECS
+end
+// The mode pills, guarded against the reload click above so one press is not
+// handled twice (git_panel's `!refresh_hover` guard) — and against an open
+// context menu, which owns the pointer for the frame (see `menu_blocking`).
+if ready && len(err) == 0 && mouse_pressed(0) && !refresh_hover && !menu_blocking(menu) then
+  let want = mode
+  if point_in(mx, my, split_r) then want = "split" end
+  if point_in(mx, my, unified_r) then want = "unified" end
+  if point_in(mx, my, stat_r) then want = "stat" end
+  if point_in(mx, my, commits_r) then want = "commits" end
+  if want != mode then mode = want end
+  if mode == "unified" && point_in(mx, my, wrap_r) then uni_wrap = !uni_wrap end
+end
+
+
+
+// ── save: ^S writes the focused editable view back ────────────────────────────
+// Both editable views save the same way: they send the *edits* the host's
+// projection resolved, not their text. The host has tracked where every line came
+// from as the buffer was edited, so `edit_view_edits(id)` already says which file
+// ranges to rewrite and with what — nothing downstream has to re-interpret text.
+// A scoped diff has no working tree behind it, so there is nothing for ^S to
+// write and no region declared to collect edits from — it is inert there.
+if mod_ctrl() && key_pressed("s") && editable then
+  let region = 0
+  if mode == "split" then region = 2 end
+  if mode == "unified" then region = 5 end
+  if region > 0 then
+    mutate("apply", { edits: edit_view_edits(region) })
+    invalidate("doc", scope)
+    ready = false
+    // The save is itself the reload, so any pending staleness is answered by it.
+    stale = false
+    probing = false
+    next_probe = time() + PROBE_SECS
+  end
+end
+
+// ── draw: chrome ──────────────────────────────────────────────────────────────
+let content_top = PAD + header_h
+clear(BG.r, BG.g, BG.b)
+draw_text(title, {x: PAD, y: PAD}, FS, TEXT)
+
+// One header pill: filled with the accent when it is the active view, outlined
+// otherwise. Captures the palette / metrics lets above.
+fn pill(r, label, on)
+  if on then
+    draw_rect(r, ACCENT)
+    draw_text(label, {x: r.x + 10, y: PAD}, FS, BG)
+  else
+    draw_rect_outline(r, LINE)
+    draw_text(label, {x: r.x + 10, y: PAD}, FS, DIM)
+  end
+end
+
+// The ⟳ reload pill. The glyph is drawn geometry, not a font character (Garden's
+// mono font has no ⟳): a ring — an outer disc with the pill's own background
+// punched back out of it — notched open at the top right and capped with an
+// arrowhead, so it reads as a clockwise reload arrow. `hole` must therefore be
+// exactly what is behind the glyph, which is why it follows the pill's fill.
+// Filled with the accent when the view is stale: the reload is the thing to do
+// next, so the control itself is the marker.
+fn refresh_pill(r, on, hover)
+  let glyph = DIM
+  let hole = BG
+  if on then
+    draw_rect(r, ACCENT)
+    glyph = BG
+    hole = ACCENT
+  elsif hover then
+    draw_rect(r, ROWALT)
+    draw_rect_outline(r, ACCENT)
+    glyph = ACCENT
+    hole = ROWALT
+  else
+    draw_rect_outline(r, LINE)
+  end
+  let ix = r.x + 14
+  let iy = r.y + 11
+  draw_circle({x: ix, y: iy}, 6, glyph)
+  draw_circle({x: ix, y: iy}, 3, hole)
+  draw_rect(rect(ix, iy - 8, 8, 6), hole)
+  fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, glyph.r, glyph.g, glyph.b)
+end
+
+if ready && len(err) == 0 then
+  refresh_pill(refresh_r, stale, refresh_hover)
+  pill(unified_r, "unified", mode == "unified")
+  pill(split_r, "split", mode == "split")
+  pill(stat_r, "stat", mode == "stat")
+  pill(commits_r, "commits", mode == "commits")
+  if mode == "unified" then pill(wrap_r, "wrap", uni_wrap) end
+
+  let nfiles = "{len(doc.files)} files"
+  if len(doc.files) == 1 then nfiles = "1 file" end
+  let ncommits = "{len(commits)} commits"
+  if len(commits) == 1 then ncommits = "1 commit" end
+  let hint = "{nfiles}  ·  ^S saves  ·  / searches"
+  if mode == "stat" then hint = "{nfiles}  ·  read-only" end
+  if mode == "commits" then hint = "{ncommits}  ·  click to scope  ·  right-click for more" end
+  // A scoped diff cannot be saved, so it must not advertise ^S. Saying what it
+  // *is* — one commit's diff — is the useful half anyway.
+  if !editable && mode != "stat" && mode != "commits" then
+    hint = "{nfiles}  ·  read-only (a commit's diff)  ·  / searches"
+  end
+  if has_pr && doc.pr.comments > 0 then
+    hint = "{hint}  ·  {doc.pr.comments} comments"
+  end
+  let hint_color = DIM
+  // Unsaved work is called out where the hint lives, because switching views
+  // discards it: a projection cannot be re-seeded from its own edited text, so
+  // the region's buffer is dropped the frame it stops being declared. The
+  // marker is the only warning the user gets before clicking a pill.
+  if unsaved then
+    hint = "unsaved edits  ·  ^S saves  ·  switching views discards them"
+    hint_color = ACCENT
+  end
+  // A stale view says so where the hint lives rather than in a band of its own:
+  // the header already carries four pills, and a fifth line of chrome would cost
+  // the diff a row on every narrow window to say nothing most of the time.
+  if stale then
+    hint = "changed on disk  ·  click reload"
+    hint_color = ACCENT
+  end
+  draw_text_right(hint, w - PAD, PAD, FS, hint_color)
+end
+draw_line({x: 0, y: content_top - 8}, {x: w, y: content_top - 8}, LINE)
+
+// ── error card ────────────────────────────────────────────────────────────────
+if len(err) > 0 then
+  draw_text("error:", {x: PAD, y: content_top + 4}, FS, RED)
+  draw_text(err, {x: PAD, y: content_top + 24}, FS, DIM)
+else
+  // ── notice band ─────────────────────────────────────────────────────────────
+  // Non-fatal explanation from the host — today: `garden pr` with no pull request
+  // to review, which falls back to the pending local changes.
+  let body_offset = 0
+  if ready && len(doc.notice) > 0 then
+    draw_text(doc.notice, {x: PAD, y: content_top}, FS, ACCENT)
+    body_offset = 26
+    draw_line({x: 0, y: content_top + body_offset - 6}, {x: w, y: content_top + body_offset - 6}, LINE)
+  end
+
+  // ── PR discussion band (PR mode only) ───────────────────────────────────────
+  if has_pr then
+    let meta = "#{doc.pr.number}  {doc.pr.title}"
+    draw_text(meta, {x: PAD, y: content_top}, FS, TEXT)
+    let sub = "@{doc.pr.author}  ·  {doc.pr.base_ref} ← {doc.pr.head_ref}"
+    if len(doc.pr.status) > 0 then sub = "{sub}  ·  {doc.pr.status}" end
+    draw_text(sub, {x: PAD, y: content_top + 18}, FS, DIM)
+    // Toggle pill for the discussion block.
+    let tog = "hide discussion"
+    if !pr_open then tog = "show discussion" end
+    let tog_w = text_width(tog, FS) + 16
+    let tog_r = rect(w - PAD - tog_w, content_top - 2, tog_w, 21)
+    draw_rect_outline(tog_r, LINE)
+    draw_text(tog, {x: tog_r.x + 8, y: content_top}, FS, DIM)
+    if mouse_pressed(0) && point_in(mx, my, tog_r) then pr_open = !pr_open end
+    body_offset = 40
+    if pr_open then
+      // The description + conversation comments in their own selectable /
+      // scrollable read-only region (id 4). Inline review comments are not here —
+      // they are threaded into the unified view at the lines they target.
+      let pr_body_h = 96
+      text_view(4, PAD, content_top + body_offset, w - 2 * PAD, pr_body_h, doc.pr.discussion)
+      // Prose, and nothing beside it to stay aligned with: always wrapped.
+      text_view_wrap(4, true)
+      body_offset = body_offset + pr_body_h + 8
+    end
+    draw_line({x: 0, y: content_top + body_offset - 6}, {x: w, y: content_top + body_offset - 6}, LINE)
+  end
+
+  let view_top = content_top + body_offset
+  let label_y = view_top
+  let body_top = view_top + 22
+  let body_h = h - body_top - PAD
+
+  // ── file column (split + unified) ───────────────────────────────────────────
+  // The outline down the left edge: click a row to jump the diff beside it to
+  // that file. `jump` is the row picked *this frame* — the diff views scroll only
+  // on that frame (a `text_view_scroll_to` every frame would pin them there).
+  let list_w = 0
+  // `clamp` yields a float; these feed pixel geometry and row indexing, which
+  // must stay integral, so every clamped value here is re-`int`ed.
+  if mode != "stat" && mode != "commits" then list_w = int(clamp(int(float(w) * 0.24), 180, 340)) end
+  let views_x = PAD
+  if list_w > 0 then views_x = PAD + list_w + 13 end
+  let views_w = w - PAD - views_x
+  let jump = -1
+
+  if list_w > 0 && ready then
+    let rows = doc.outline
+    let list_rows = len(rows)
+    let list_row_h = 20
+    let list_rect = rect(PAD, body_top, list_w, body_h)
+    let list_visible = max(1, int(float(body_h) / float(list_row_h)))
+    let max_scroll = max(0, list_rows - list_visible)
+    let bar_x = PAD + list_w - 10
+    // A save reloads the doc, and the new outline can be shorter — never index
+    // it with a selection or offset left over from the old one.
+    if sel >= list_rows then sel = 0 end
+    if list_scroll > max_scroll then list_scroll = max_scroll end
+
+    draw_text("FILES", {x: PAD, y: label_y}, FS, DIM)
+    draw_rect(rect(views_x - 7, view_top - 4, 1, h - view_top - PAD + 4), LINE)
+
+    // Wheel over the column scrolls it; the diff regions never see it (they only
+    // capture the wheel over their own rect).
+    // `scroll_y()` is fractional (trackpads report sub-tick deltas), so round it
+    // into whole rows — the row index has to stay an integer.
+    if point_in(mx, my, list_rect) then
+      list_scroll = int(clamp(int(list_scroll + scroll_y()), 0, max_scroll))
+    end
+
+    // Scrollbar: a track down the column's right edge with a thumb sized to the
+    // visible fraction. Press anywhere on the track to jump there, then drag.
+    let overflowing = list_rows > list_visible
+    if overflowing then
+      let track = rect(bar_x, body_top, 8, body_h)
+      let thumb_h = max(24, int(float(body_h) * float(list_visible) / float(list_rows)))
+      let span = body_h - thumb_h
+      let list_thumb_y = body_top
+      if max_scroll > 0 then
+        list_thumb_y = body_top + int(float(span) * float(list_scroll) / float(max_scroll))
+      end
+      // A press on the track jumps the thumb under the pointer and starts a
+      // drag. `pressed` is checked alongside `list_drag` because a click whose
+      // press and release land in one frame never sees `mouse_down` — it must
+      // still take effect.
+      let grabbing = list_drag
+      if mouse_pressed(0) && point_in(mx, my, track) then
+        list_drag = true
+        grabbing = true
+      end
+      if !mouse_down(0) && !mouse_pressed(0) then list_drag = false end
+      if grabbing && span > 0 then
+        let frac = float(my - body_top - int(thumb_h / 2)) / float(span)
+        list_scroll = int(clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll))
+        list_thumb_y = body_top + int(float(span) * float(list_scroll) / float(max_scroll))
+      end
+      draw_rect(track, TRACK)
+      draw_rect(rect(bar_x, list_thumb_y, 8, thumb_h), THUMB)
+      // The track's centre line — the x a test drags the thumb along. Bound
+      // rather than drawn inline, so the gesture is addressable by name.
+      let list_bar_x = bar_x + 4
+    end
+
+    // Rows. A press selects (and navigates); the row under the pointer lights up
+    // so the column reads as a control rather than a caption.
+    let shown = min(list_visible, list_rows - list_scroll)
+    for i in range(0, shown) do
+      let idx = list_scroll + i
+      let r = rows[idx]
+      let y = body_top + i * list_row_h
+      let row_r = rect(PAD, y, list_w - 12, list_row_h)
+      if idx == sel then
+        draw_rect(row_r, SELBG)
+      elsif point_in(mx, my, row_r) then
+        draw_rect(row_r, ROWALT)
+      end
+      if mouse_pressed(0) && point_in(mx, my, row_r) && !menu_blocking(menu) then
+        sel = idx
+        jump = idx
+      end
+      let tx = PAD + 6 + r.depth * 12
+      let avail = list_w - 18 - (tx - PAD)
+      let color = TEXT
+      if r.dir then color = ACCENT end
+      if !r.dir && idx != sel then color = DIM end
+      draw_text(ellipsize_tail(r.label, avail, FS), {x: tx, y: y + 2}, FS, color)
+    end
+  end
+
+  if mode == "commits" then
+    // ── COMMITS: the review's own history, and the scope control ──────────────
+    // Left-click a row to scope the diff to that commit alone — the fast path,
+    // and what "let me see just the last commit" means. Right-click for the
+    // rest: everything since it, or back to the whole review.
+    draw_text("COMMITS · newest first", {x: PAD, y: label_y}, FS, DIM)
+    let commit_row_h = 40
+    let commit_rows = len(commits)
+    let cvisible = max(1, int(float(body_h) / float(commit_row_h)))
+    let cmax = max(0, commit_rows - cvisible)
+    // The list reloads (⟳ picks up a new commit); never index it with an offset
+    // left over from a longer one.
+    if csel >= commit_rows then csel = 0 end
+    if commit_scroll > cmax then commit_scroll = cmax end
+    let clist_r = rect(PAD, body_top, w - 2 * PAD, body_h)
+    if point_in(mx, my, clist_r) then
+      commit_scroll = int(clamp(int(commit_scroll + scroll_y()), 0, cmax))
+    end
+
+    if !commits_ready then
+      draw_text("loading commits {spinner()}", {x: PAD, y: body_top + 4}, FS, DIM)
+    elsif commit_rows == 0 then
+      draw_text("no commits yet — this review is uncommitted work vs {doc.base}",
+                {x: PAD, y: body_top + 4}, FS, DIM)
+    else
+      let cshown = min(cvisible, commit_rows - commit_scroll)
+      for i in range(0, cshown) do
+        let idx = commit_scroll + i
+        let c = commits[idx]
+        let y = body_top + i * commit_row_h
+        let row_r = rect(PAD, y, w - 2 * PAD, commit_row_h - 2)
+        // The row this scope came from stays lit, so a scoped review always
+        // shows which commit it is showing.
+        let is_scoped = len(scope) > 0 && idx == csel
+        if is_scoped then
+          draw_rect(row_r, SELBG)
+        elsif point_in(mx, my, row_r) then
+          draw_rect(row_r, ROWALT)
+        end
+        // The newest commit leads the list and is what "the latest commit"
+        // means, so it is worth marking rather than making the reader count.
+        let sha_color = ACCENT
+        if idx > 0 then sha_color = DIM end
+        draw_text(c.short, {x: PAD + 8, y: y + 4}, FS, sha_color)
+        let subj_x = PAD + 8 + text_width("0000000  ", FS)
+        let subj_avail = w - PAD - 8 - subj_x - text_width("  0000-00-00", FS)
+        draw_text(ellipsize_tail(c.subject, subj_avail, FS), {x: subj_x, y: y + 4}, FS, TEXT)
+        draw_text_right(c.date, w - PAD - 8, y + 4, FS, DIM)
+        draw_text("@{c.author}", {x: subj_x, y: y + 21}, FS, DIM)
+        if idx == 0 then
+          draw_text_right("latest", w - PAD - 8, y + 21, FS, ACCENT)
+        end
+        draw_line({x: PAD, y: y + commit_row_h - 1}, {x: w - PAD, y: y + commit_row_h - 1}, LINE)
+
+        // A left press scopes to this commit; a right press opens the menu on
+        // it. Both stand down while a menu is already open — that press is the
+        // menu's to resolve (see `menu_blocking`).
+        if !menu_blocking(menu) && mouse_pressed(0) && point_in(mx, my, row_r) then
+          csel = idx
+          want_scope = "commit:{c.sha}"
+          want_label = "{c.short} {c.subject}"
+          scope_pending = true
+        end
+        menu = menu_open_on_right_click(menu, row_r, idx)
+      end
+    end
+  elsif mode == "split" then
+    let half = int((views_w - 6) / 2)
+    let before_x = views_x
+    let after_x = views_x + half + 6
+    draw_text("BEFORE", {x: before_x, y: label_y}, FS, DIM)
+    let alabel = "AFTER · editable"
+    if !editable then alabel = "AFTER · read-only" end
+    draw_text(alabel, {x: after_x, y: label_y}, FS, ACCENT)
+    draw_rect(rect(views_x + half, view_top - 4, 1, h - view_top - PAD + 4), LINE)
+    text_view(1, before_x, body_top, half - 6, body_h, doc.before.text)
+    text_view_line_styles(1, doc.before.styles)
+    if editable then
+      edit_view(2, after_x, body_top, half, body_h, doc.after.text)
+      // The after column's provenance: which file range each hunk's lines occupy,
+      // so an edit here folds straight back into that file. Undecorated (the column
+      // is the new file, verbatim), so unlike the unified view a line typed into it
+      // is taken literally and the styles are the only thing marking an addition.
+      edit_view_projection(2, doc.after.projection)
+    else
+      // A scoped diff has no working tree to write into, so the column is a
+      // plain selectable `text_view` — declaring an `edit_view` would invite
+      // edits that could only be thrown away.
+      text_view(2, after_x, body_top, half, body_h, doc.after.text)
+      text_view_line_styles(2, doc.after.styles)
+    end
+    // A point just inside the editable column — a click target for tests, and
+    // deliberately not `after_x` itself (the column's left edge is a boundary,
+    // not somewhere to click). The file column shifts it, so it can only be
+    // named from here, where the geometry is known.
+    let after_body_x = after_x + 8
+    if jump >= 0 then
+      text_view_scroll_to(1, doc.outline[jump].line_before)
+      text_view_scroll_to(2, doc.outline[jump].line_after)
+    end
+  elsif mode == "unified" then
+    let ulabel = "UNIFIED · editable"
+    if has_pr then ulabel = "UNIFIED · editable · review comments inline" end
+    if !editable then ulabel = "UNIFIED · read-only · one commit" end
+    draw_text(ulabel, {x: views_x, y: label_y}, FS, ACCENT)
+    if editable then
+      edit_view(5, views_x, body_top, views_w, body_h, doc.unified.text)
+      // What makes the view *editable as a diff*: every line's origin, so the host
+      // can fold edits back into the files (deleting a `+` drops that addition,
+      // deleting a `-` reverts that deletion, `dd` on a hunk header reverts the
+      // hunk). Declared every frame like the region; the host rebuilds it only when
+      // it genuinely changes, so the user's edits survive. It also carries the
+      // per-line styles, which then follow their lines through insertions instead
+      // of drifting — no `text_view_line_styles` needed here. The `+`/`-` markers
+      // ride in the region's *gutter*, drawn by the host from those same origins,
+      // so the buffer holds the files' own text and editing it behaves like
+      // editing a file rather than a patch.
+      edit_view_projection(5, doc.unified.projection)
+    else
+      // Read-only: a `text_view` with no projection, so the host has no gutter to
+      // draw markers in — which is why a scoped diff's lines arrive with the
+      // `+`/`-` already in their text (`doc.markers_in_text`).
+      text_view(5, views_x, body_top, views_w, body_h, doc.unified.text)
+      text_view_line_styles(5, doc.unified.styles)
+    end
+    // Frame state, so it is re-declared every frame (dropping it unwraps).
+    text_view_wrap(5, uni_wrap)
+    // A point just inside the unified column, for the same reason as
+    // `after_body_x` above.
+    let unified_body_x = views_x + 8
+    if jump >= 0 then
+      text_view_scroll_to(5, doc.outline[jump].line_unified)
+    end
+  else
+    // ── STAT: the per-file changed-lines diagram ──────────────────────────────
+    draw_text("STAT · changed lines per file", {x: PAD, y: label_y}, FS, DIM)
+    let n = len(doc.files)
+    let total_add = 0
+    let total_del = 0
+    let maxtotal = 1
+    for f in doc.files do
+      total_add = total_add + f.added
+      total_del = total_del + f.removed
+      let t = f.added + f.removed
+      if t > maxtotal then maxtotal = t end
+    end
+
+    // Totals line + a full-width stacked bar of the add/remove split.
+    let sum_y = body_top
+    let files_word = "files"
+    if n == 1 then files_word = "file" end
+    let seg = "{n} {files_word} changed"
+    draw_text(seg, {x: PAD, y: sum_y}, FS, DIM)
+    let sx = PAD + text_width("{seg} ", FS)
+    draw_text("+{total_add}", {x: sx, y: sum_y}, FS, GREEN)
+    sx = sx + text_width("+{total_add} ", FS)
+    draw_text("-{total_del}", {x: sx, y: sum_y}, FS, RED)
+
+    let bar_y = sum_y + 24
+    let bar_h = 8
+    let bar_w = w - PAD * 2
+    draw_rect(rect(PAD, bar_y, bar_w, bar_h), TRACK)
+    let grand = total_add + total_del
+    if grand > 0 then
+      let gw = int(float(bar_w) * float(total_add) / float(grand))
+      draw_rect(rect(PAD, bar_y, gw, bar_h), GREEN)
+      draw_rect(rect(PAD + gw, bar_y, bar_w - gw, bar_h), RED)
+    end
+
+    let head_bottom = bar_y + bar_h + 14
+    draw_line({x: PAD, y: head_bottom}, {x: w - PAD, y: head_bottom}, LINE)
+
+    // ── file rows ─────────────────────────────────────────────────────────────
+    // The host pre-groups the flat file list into `outline`: a dir row naming a
+    // shared path prefix, then the files under it with only their remainder,
+    // indented (see `file_outline.rs`). Rows are drawn in the order given.
+    let rows = doc.outline
+    let total_rows = len(rows)
+    let rows_top = head_bottom + 12
+    let avail = h - rows_top - PAD
+    let ROW_H = 26
+    let max_rows = max(1, int(float(avail) / float(ROW_H)))
+    let show = total_rows
+    let truncated = false
+    if total_rows > max_rows then
+      show = max_rows - 1
+      if show < 1 then show = 1 end
+      truncated = true
+    end
+
+    // Column geometry: the name column is sized in pixels, and every label is
+    // clipped against its own measured width.
+    let label_w = clamp(int(float(w) * 0.34), 130, 340)
+    let counts_w = 130
+    let bar_x0 = PAD + label_w
+    let bar_x1 = w - PAD - counts_w
+    let track_w = max(20, bar_x1 - bar_x0)
+
+    let INDENT = 14
+
+    for i in range(0, show) do
+      let f = rows[i]
+      let y = rows_top + i * ROW_H
+      let cy = y + int(float(ROW_H) / 2.0)
+      let ty = cy - 8
+      let text_x = PAD + 12 + f.depth * INDENT
+      // What is left of the name column once this row's indent is spent.
+      let name_px = label_w - 12 - f.depth * INDENT
+
+      if i % 2 == 1 then draw_rect(rect(PAD, y, w - PAD * 2, ROW_H), ROWALT) end
+
+      // A dir row is a heading for the rows under it: the prefix in the accent
+      // color, its subtree's totals on the right, and none of the per-file
+      // furniture (stripe, magnitude bar).
+      if f.dir then
+        draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, ACCENT)
+        draw_text_right("+{f.added}", w - PAD - 62, ty, FS, DIM)
+        draw_text_right("-{f.removed}", w - PAD, ty, FS, DIM)
+        continue
+      end
+
+      // Left accent: green when net-add, red when net-remove.
+      let accent = RED
+      if f.added >= f.removed then accent = GREEN end
+      draw_rect(rect(PAD, y + 4, 3, ROW_H - 8), accent)
+
+      draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, TEXT)
+
+      let tf = f.added + f.removed
+      if f.binary then
+        draw_text("binary", {x: bar_x0, y: ty}, FS, DIM)
+      else
+        // Proportional magnitude bar; sqrt-scaled so a huge file doesn't crush
+        // the small ones into invisibility.
+        let by = cy - 4
+        draw_rect(rect(bar_x0, by, track_w, 8), TRACK)
+        if tf > 0 then
+          let frac = sqrt(float(tf) / float(maxtotal))
+          let len_px = int(float(track_w) * frac)
+          let gw = int(float(len_px) * float(f.added) / float(tf))
+          draw_rect(rect(bar_x0, by, gw, 8), GREEN)
+          draw_rect(rect(bar_x0 + gw, by, len_px - gw, 8), RED)
+        end
+      end
+
+      // Counts in two fixed right-aligned columns so +/- line up down the list;
+      // a zero count renders dim rather than shouting green/red at nothing.
+      let cadd = DIM
+      if f.added > 0 then cadd = GREEN end
+      let cdel = DIM
+      if f.removed > 0 then cdel = RED end
+      draw_text_right("+{f.added}", w - PAD - 62, ty, FS, cadd)
+      draw_text_right("-{f.removed}", w - PAD, ty, FS, cdel)
+    end
+
+    if truncated then
+      let more = total_rows - show
+      let y = rows_top + show * ROW_H + 2
+      draw_text("… and {more} more rows", {x: PAD + 12, y: y}, FS, DIM)
+    end
+  end
+end
+
+// ── context menu ─────────────────────────────────────────────────────────────
+// Drawn last so it sits over every view, and resolved last so the click that
+// picks an item is not also handled by whatever is underneath (every other
+// click handler above stands down while `menu_blocking` is true).
+//
+// The menu is opened on a commit row and carries that row's index as its tag,
+// so the actions below know which commit they are about even after the pointer
+// has moved off it.
+if menu_blocking(menu) then
+  let mi = menu.tag
+  let mc = commits[mi]
+  let picked = context_menu(menu, [
+    menu_item("Only this commit"),
+    menu_item("Everything since this commit"),
+    menu_sep(),
+    menu_item("Whole review", len(scope) > 0)
+  ])
+  menu = picked.menu
+  if picked.index == 0 then
+    csel = mi
+    want_scope = "commit:{mc.sha}"
+    want_label = "{mc.short} {mc.subject}"
+    scope_pending = true
+  elsif picked.index == 1 then
+    // Still a working-tree diff, just from a nearer base — so unlike "only this
+    // commit" it stays editable.
+    csel = mi
+    want_scope = "since:{mc.sha}"
+    want_label = "since {mc.short}"
+    scope_pending = true
+  elsif picked.index == 3 then
+    // 3, not 2: `menu_sep()` occupies an index of its own in the item list.
+    want_scope = ""
+    want_label = ""
+    scope_pending = true
+  end
+end
+
+// ── apply a requested scope change ───────────────────────────────────────────
+// Last, so every handler above has had its say, and in one place so the loader
+// and the staleness probe are always reset together. The commit list is NOT
+// reloaded: it describes the review, which narrowing the diff does not move.
+if scope_pending then
+  scope = want_scope
+  scope_label = want_label
+  scope_pending = false
+  ready = false
+  stale = false
+  probing = false
+  next_probe = time() + PROBE_SECS
+end
+
+// ── introspection for tests / debug server ───────────────────────────────────
+// Nothing is *published* here: the host observes every named binding a frame
+// makes and reports the map at the debug server as `panes[].panel.values`, with
+// each value's real type (a bool is `true`/`false`, a string is a string). So
+// most of what a test reads — `mode`, `scope`, `ready`, `stale`, `unsaved`,
+// `editable`, `has_pr`, `uni_wrap`, `probes`, `files` — is already named where
+// it is computed, above. What is left below is the handful of values that were
+// only ever expressions: a name is what makes them readable.
+//
+// The pill hit targets are bound with the pill geometry near the top, and each
+// body region binds its own x/y where the notice / PR bands have settled it.
+let menu_open = menu_blocking(menu)
+let has_error = len(err) > 0
+let files = len(doc.files)
+if has_pr then
+  let comments = doc.pr.comments
+end
+// The editable regions' buffers, as lengths rather than text: naming the text
+// itself would put the whole diff into every `/state` response.
+let after_len = len(edit_view_text(2))
+let after_edits = len(edit_view_edits(2))
+let unified_len = len(edit_view_text(5))
+let unified_edits = len(edit_view_edits(5))

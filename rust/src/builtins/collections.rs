@@ -81,22 +81,6 @@ pub(super) fn native_f64_array(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
-pub(super) fn native_get(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 2, "get")?;
-    let container = state.get_value(1)?;
-    match container {
-        Value::F64Array(id) => {
-            let i = state.get_int(2)?;
-            let data = state.heap().get_f64_array(id);
-            let idx = checked_f64_index(i, data.len())?;
-            let v = data[idx];
-            state.push_float(v);
-            Ok(1)
-        }
-        _ => Err(format!("Cannot get() from {}", container.type_name())),
-    }
-}
-
 /// `set_at(arr, i, v)` returns a NEW f64-array with index `i` set to `v`. The
 /// input array is never mutated (value semantics) — callers must rebind:
 /// `a = set_at(a, i, v)`. (Equivalent to the `a[i] = v` index-assign form.)

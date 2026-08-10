@@ -164,7 +164,7 @@ mod tests {
     /// Builtins whose result type is decided at runtime must stay unlisted.
     #[test]
     fn runtime_dependent_builtins_are_absent() {
-        for name in ["reverse", "slice", "choose", "get", "last", "first", "sum"] {
+        for name in ["reverse", "slice", "choose", "last", "first", "sum"] {
             assert_eq!(builtin_return_type(name, &[Type::List]), None, "{name}");
         }
     }

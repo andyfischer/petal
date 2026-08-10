@@ -165,7 +165,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 184
+        "line": 168
       }
     },
     {
@@ -313,7 +313,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 162
+        "line": 146
       }
     },
     {
@@ -325,7 +325,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 193
+        "line": 177
       }
     },
     {
@@ -337,7 +337,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 264
+        "line": 248
       }
     },
     {
@@ -349,7 +349,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 283
+        "line": 267
       }
     },
     {
@@ -370,7 +370,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 295
+        "line": 279
       }
     },
     {
@@ -481,7 +481,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 361
+        "line": 345
       }
     },
     {
@@ -493,7 +493,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 401
+        "line": 385
       }
     },
     {
@@ -514,7 +514,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 419
+        "line": 403
       }
     },
     {
@@ -535,7 +535,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 448
+        "line": 432
       }
     },
     {
@@ -547,7 +547,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 475
+        "line": 459
       }
     },
     {
@@ -559,7 +559,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 487
+        "line": 471
       }
     },
     {
@@ -571,7 +571,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 499
+        "line": 483
       }
     },
     {
@@ -592,7 +592,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 520
+        "line": 504
       }
     },
     {
@@ -617,7 +617,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 563
+        "line": 547
       }
     },
     {
@@ -629,7 +629,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 631
+        "line": 615
       }
     },
     {
@@ -650,7 +650,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 295
+        "line": 279
       },
       "aliasOf": "contains"
     },
@@ -1224,7 +1224,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 266
+        "line": 265
       }
     },
     {
@@ -1236,7 +1236,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 266
+        "line": 265
       },
       "aliasOf": "map"
     },
@@ -1249,7 +1249,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 266
+        "line": 265
       },
       "aliasOf": "map"
     },
@@ -1262,7 +1262,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 266
+        "line": 265
       },
       "aliasOf": "map"
     },
@@ -1326,27 +1326,6 @@
       }
     },
     {
-      "name": "get",
-      "category": "collections",
-      "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "container",
-          "type": "any"
-        },
-        {
-          "name": "i",
-          "type": "int"
-        }
-      ],
-      "source": {
-        "file": "rust/src/builtins/collections.rs",
-        "line": 84
-      }
-    },
-    {
       "name": "set_at",
       "category": "collections",
       "group": "core",
@@ -1368,7 +1347,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 105
+        "line": 89
       }
     },
     {
@@ -1393,7 +1372,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 137
+        "line": 121
       }
     },
     {
@@ -1501,7 +1480,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 199
+        "line": 183
       }
     },
     {
@@ -1513,7 +1492,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 219
+        "line": 203
       }
     },
     {
@@ -1534,7 +1513,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 238
+        "line": 222
       }
     },
     {

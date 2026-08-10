@@ -139,7 +139,7 @@ fn f64_array_set_builtin_is_copy_free() {
     assert_copy_free(
         "f64_array set_at() builtin",
         &format!(
-            "let a = f64_array({N})\nfor i in range(0, {N}) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(get(a, 5))"
+            "let a = f64_array({N})\nfor i in range(0, {N}) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(a[5])"
         ),
     );
 }

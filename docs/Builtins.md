@@ -716,19 +716,21 @@ f64_array(3)   // [0.0, 0.0, 0.0]
 f64_array(0)   // []
 ```
 
-### `get(a, i)` / `set_at(a, i, v)`
+### `set_at(a, i, v)`
 
-`get` returns element `i` as a float. `set_at` stores `v` (an int or float) into
-slot `i`, mutating the array in place. Both error on an out-of-bounds or
-negative index.
+`set_at` stores `v` (an int or float) into slot `i`, mutating the array in
+place. It errors on an out-of-bounds or negative index.
 
 ```petal
 let a = f64_array(3)
 set_at(a, 1, 5.5)
-get(a, 1)        // 5.5
+a[1]             // 5.5
 ```
 
-Indexing sugar works too: `a[i]` reads and `a[i] = v` writes.
+Reading an element is plain indexing: `a[i]` reads and `a[i] = v` writes.
+(There was once a `get(a, i)` builtin for this; it was removed when `get`
+became the [keyword for reading a `var`](language-guide.md#get-and-set), and
+`a[i]` had always done the same job.)
 
 ```petal
 let a = f64_array(2)

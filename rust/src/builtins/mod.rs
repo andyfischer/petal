@@ -187,7 +187,6 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 
     // --- Flat unboxed f64 arrays (append-only to preserve phantom term indices) ---
     table.register("f64_array", collections::native_f64_array);
-    table.register("get", collections::native_get);
     table.register("set_at", collections::native_set_at);
     table.register("swap", collections::native_swap);
     table.register("hsv_deg", color::native_hsv_deg);

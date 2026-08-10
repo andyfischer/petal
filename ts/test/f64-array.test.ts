@@ -26,11 +26,11 @@ describe("f64_array — construction and length", () => {
 });
 
 describe("f64_array — element access", () => {
-  it("set then get round-trips a value", () => {
+  it("set then index round-trips a value", () => {
     expect(
       runPetal(`let a = f64_array(3)
 a = set_at(a, 1, 5.5)
-print(get(a, 1))`),
+print(a[1])`),
     ).toBe("5.5");
   });
 
@@ -56,7 +56,7 @@ print(b)`),
     expect(
       runPetal(`let a = f64_array(1)
 a = set_at(a, 0, 7)
-print(get(a, 0))`),
+print(a[0])`),
     ).toBe("7.0");
   });
 
@@ -95,8 +95,8 @@ print(a)`),
     ).toBe("[2.5, 0.0]");
   });
 
-  it("get out of bounds is an error", () => {
-    expect(runPetalError(`get(f64_array(2), 5)`)).toMatch(/bounds|range/i);
+  it("indexing out of bounds is an error", () => {
+    expect(runPetalError(`f64_array(2)[5]`)).toMatch(/bounds|range/i);
   });
 
   it("set out of bounds is an error", () => {

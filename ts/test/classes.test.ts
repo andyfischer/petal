@@ -295,7 +295,7 @@ describe("an undefined method on a class instance names the class", () => {
   const P = "class P\n  a: int,\nend\n";
 
   it.each([
-    ["get", "P(1).get()"],
+    ["first", "P(1).first()"],
     ["len", "P(1).len()"],
     ["upper", "P(1).upper()"],
     ["nope", "P(1).nope()"],

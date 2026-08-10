@@ -1026,7 +1026,7 @@ fn inplace_fires_on_fresh_builtin_root() {
         "let a = f64_array(8)\nfor i in range(0, 8) do\n  a[i] = i * 1.0\nend\nprint(a[0], a[7])";
     assert_inplace_parity(code);
     assert!(inplace_count(code) >= 1, "f64_array root should fire");
-    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(get(a, 0), get(a, 7))";
+    let code = "let a = f64_array(8)\nfor i in range(0, 8) do\n  a = set_at(a, i, i * 1.0)\nend\nprint(a[0], a[7])";
     assert_inplace_parity(code);
     assert!(
         inplace_count(code) >= 1,
@@ -1062,10 +1062,10 @@ fn inplace_fires_on_fresh_function_result_root() {
 
 #[test]
 fn inplace_does_not_fire_on_non_fresh_function_result() {
-    // `get()` returns a *captured* container, not one it allocated: the caller
+    // `fetch()` returns a *captured* container, not one it allocated: the caller
     // shares it with `shared`. Writing in place would corrupt `shared` — the
     // value-semantics guard for the call-result relaxation.
-    let code = "let shared = [0, 0, 0]\nfn get()\n  shared\nend\nlet a = get()\nfor i in range(0, 3) do\n  a[i] = i + 1\nend\nprint(shared[0], shared[2], a[0], a[2])";
+    let code = "let shared = [0, 0, 0]\nfn fetch()\n  shared\nend\nlet a = fetch()\nfor i in range(0, 3) do\n  a[i] = i + 1\nend\nprint(shared[0], shared[2], a[0], a[2])";
     assert_inplace_parity(code);
     assert_eq!(
         inplace_count(code),
@@ -1639,7 +1639,7 @@ fn route_a_does_not_fire_on_escapes() {
     );
     assert_route_a_parity(code);
     // Captured by a closure before the mutation.
-    let code = "let xs = [1, 2]\nlet get = fn() -> xs[0]\nxs[0] = 9\nprint(get(), xs[0])";
+    let code = "let xs = [1, 2]\nlet peek = fn() -> xs[0]\nxs[0] = 9\nprint(peek(), xs[0])";
     assert_eq!(route_a_count(code), 0, "closure-captured must not fire");
     assert_route_a_parity(code);
     // Passed to a user function before the mutation (arbitrary code could

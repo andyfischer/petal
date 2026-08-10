@@ -90,8 +90,8 @@ independent counters:
 fn counter()
   var c = 0
   let bump = fn()
-    set c = c + 1
-    c
+    set c = get c + 1
+    get c
   end
   bump
 end
@@ -916,10 +916,10 @@ classes is entirely independent.
 
 Calling something none of these resolve reports the class by name:
 `No method 'nope' on class Rect`. So does step 5 *failing* on a class
-instance: `P(1).get()` is a call to a method that does not exist, not a call to
-the global `get`, so it reports `No method 'get' on class P` rather than the
-builtin's own complaint. That is what a live edit which deletes `fn P.get`
-now reports.
+instance: `P(1).first()` is a call to a method that does not exist, not a call
+to the global `first`, so it reports `No method 'first' on class P` rather than
+the builtin's own complaint. That is what a live edit which deletes
+`fn P.first` now reports.
 
 An arity error counts the arguments you wrote. The receiver is supplied by the
 call site, so a two-parameter `fn C.foo(c: C, n: int)` called as `C(1).foo()`
@@ -938,22 +938,22 @@ carrying a class annotation**:
 class C
   a: int,
 end
-fn C.get(c: C)
+fn C.value(c: C)
   c.a
 end
 
 let pinned = C(1)             // pinned: the initializer says so
 state also: C = C(1)          // pinned: the annotation says so
 fn takes_one(c: C)            // pinned: the parameter is annotated
-  c.get()
+  c.value()
 end
 
 state loose = C(1)            // not pinned — un-annotated, so `any`
 fn takes_any(c)               // not pinned
-  c.get()
+  c.value()
 end
 
-print(pinned.get(), also.get(), takes_one(C(2)), loose.get(), takes_any(C(3)))
+print(pinned.value(), also.value(), takes_one(C(2)), loose.value(), takes_any(C(3)))
 ```
 
 This never changes what a working program computes; it is the same method
@@ -973,25 +973,25 @@ already live:
 class C
   x: int,
 end
-fn C.get(c: C)
+fn C.value(c: C)
   c.x
 end
 state c: C = C(1)
-print(c.get())        // 1
+print(c.value())        // 1
 ```
 
 ```petal
 // after: the class is renamed and the method rewritten. `c` still holds the
-// instance built above, labelled `C` — but the call is bound to `D.get`, so
+// instance built above, labelled `C` — but the call is bound to `D.value`, so
 // the edit lands on it.
 class D
   x: int,
 end
-fn D.get(d: D)
+fn D.value(d: D)
   d.x + 100
 end
 state c: D = D(1)
-print(c.get())        // 101, computed from the old value
+print(c.value())        // 101, computed from the old value
 ```
 
 Petal does **not** migrate state: a field the edit adds is not invented on an

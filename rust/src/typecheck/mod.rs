@@ -732,6 +732,13 @@ impl<'a> Checker<'a> {
                 .lookup(name)
                 .map(|v| v.effective())
                 .unwrap_or(Type::Any),
+            // `get x` has the type of the cell's contents, which is exactly
+            // what a bare read of `x` would report — the annotation on a `var`
+            // types every read and constrains every write.
+            ExprKind::CellGet(name) => self
+                .lookup(name)
+                .map(|v| v.effective())
+                .unwrap_or(Type::Any),
             ExprKind::AtVar(_) => Type::Any,
             ExprKind::BinaryOp { op, left, right } => {
                 let l = self.check_expr(left);

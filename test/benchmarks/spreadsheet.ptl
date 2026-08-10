@@ -284,12 +284,12 @@ fn parse_args(cx, toks, i0)
       if ra.ok && is_op(toks, i + 1, ":") && rb.ok then
         for r in range(min(ra.r, rb.r), max(ra.r, rb.r) + 1) do
           for c in range(min(ra.c, rb.c), max(ra.c, rb.c) + 1) do
-            vals = append(vals, _eval_at(cx, r, c))
+            vals = append(vals, get _eval_at(cx, r, c))
           end
         end
         i = i + 3
       else
-        let res = _expr(cx, toks, i)
+        let res = get _expr(cx, toks, i)
         vals = append(vals, res.v)
         i = res.i
       end
@@ -314,7 +314,7 @@ fn parse_primary(cx, toks, i)
   elsif t.t == "str" then
     {v: vtext(t.s), i: i + 1}
   elsif t.t == "op" && t.s == "(" then
-    let inner = _expr(cx, toks, i + 1)
+    let inner = get _expr(cx, toks, i + 1)
     if is_op(toks, inner.i, ")") then
       {v: inner.v, i: inner.i + 1}
     else
@@ -331,7 +331,7 @@ fn parse_primary(cx, toks, i)
     else
       let ref = parse_ref(t.s)
       if ref.ok then
-        {v: _eval_at(cx, ref.r, ref.c), i: i + 1}
+        {v: get _eval_at(cx, ref.r, ref.c), i: i + 1}
       else
         {v: verr("#NAME?"), i: i + 1}
       end

@@ -20,7 +20,7 @@ syn keyword petalTodo contained TODO FIXME XXX NOTE
 syn match   petalComment "//.*$" contains=petalTodo,@Spell
 
 " ---- Keywords ----
-syn keyword petalKeyword     import export as let var set state fn enum class return for in while do match when
+syn keyword petalKeyword     import export as let var set get state fn enum class return for in while do match when
 syn keyword petalKeyword     break continue
 syn keyword petalConditional if then elsif else end
 syn keyword petalBoolean     true false

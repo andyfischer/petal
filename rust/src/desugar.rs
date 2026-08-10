@@ -194,7 +194,10 @@ impl ExprVisitorMut for LiftAt<'_> {
                 desugar_stmts(body);
             }
 
-            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
+            ExprKind::Literal(_)
+            | ExprKind::Ident(_)
+            | ExprKind::AtVar(_)
+            | ExprKind::CellGet(_) => {}
         }
 
         // Post-order: this call's own `@`-arguments (nested calls already

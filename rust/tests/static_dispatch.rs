@@ -17,7 +17,7 @@ use petal::env::Env;
 use petal::program::TermOp;
 
 /// The class and method every case below shares.
-const CLS: &str = "class C\n  a: int,\nend\nfn C.get(c: C)\n  c.a\nend\n";
+const CLS: &str = "class C\n  a: int,\nend\nfn C.first(c: C)\n  c.a\nend\n";
 
 /// Whether `src` still contains a dispatched-at-runtime method call.
 fn dispatches(src: &str) -> bool {
@@ -50,14 +50,14 @@ fn run(src: &str) -> Vec<String> {
 
 #[test]
 fn a_constructor_call_receiver_resolves() {
-    let src = format!("{CLS}print(C(1).get())\n");
+    let src = format!("{CLS}print(C(1).first())\n");
     assert!(resolves(&src));
     assert_eq!(run(&src), ["1"]);
 }
 
 #[test]
 fn a_let_bound_to_a_constructor_resolves() {
-    let src = format!("{CLS}let c = C(1)\nprint(c.get())\n");
+    let src = format!("{CLS}let c = C(1)\nprint(c.first())\n");
     assert!(resolves(&src));
     assert_eq!(run(&src), ["1"]);
 }
@@ -67,7 +67,7 @@ fn a_let_bound_to_a_constructor_resolves() {
 #[test]
 fn an_annotation_resolves_every_binding_form() {
     for form in ["let c: C = C(1)", "var c: C = C(1)", "state c: C = C(1)"] {
-        let src = format!("{CLS}{form}\nprint(c.get())\n");
+        let src = format!("{CLS}{form}\nprint(c.first())\n");
         assert!(resolves(&src), "{form}");
         assert_eq!(run(&src), ["1"], "{form}");
     }
@@ -75,7 +75,7 @@ fn an_annotation_resolves_every_binding_form() {
 
 #[test]
 fn an_annotated_parameter_resolves() {
-    let src = format!("{CLS}fn f(c: C)\n  c.get()\nend\nprint(f(C(1)))\n");
+    let src = format!("{CLS}fn f(c: C)\n  c.first()\nend\nprint(f(C(1)))\n");
     assert!(resolves(&src));
     assert_eq!(run(&src), ["1"]);
 }
@@ -106,11 +106,11 @@ fn a_user_method_overrides_the_builtin_it_shadows() {
 #[test]
 fn an_unpinned_receiver_keeps_dispatching() {
     for form in ["state c = C(1)", "var c = C(1)"] {
-        let src = format!("{CLS}{form}\nprint(c.get())\n");
+        let src = format!("{CLS}{form}\nprint(c.first())\n");
         assert!(dispatches(&src), "{form}");
         assert_eq!(run(&src), ["1"], "{form}");
     }
-    let param = format!("{CLS}fn f(c)\n  c.get()\nend\nprint(f(C(1)))\n");
+    let param = format!("{CLS}fn f(c)\n  c.first()\nend\nprint(f(C(1)))\n");
     assert!(dispatches(&param));
     assert_eq!(run(&param), ["1"]);
 }
@@ -119,7 +119,7 @@ fn an_unpinned_receiver_keeps_dispatching() {
 /// the method would invert that, so a class declaring both keeps dispatching.
 #[test]
 fn a_field_of_the_same_name_keeps_dispatching() {
-    let src = "class C\n  get: any,\nend\nfn C.get(c: C)\n  1\nend\nlet c = C(fn() -> 9)\nprint(c.get())\n";
+    let src = "class C\n  first: any,\nend\nfn C.first(c: C)\n  1\nend\nlet c = C(fn() -> 9)\nprint(c.first())\n";
     assert!(dispatches(src));
     assert_eq!(run(src), ["9"], "the field wins, as it does at runtime");
 }
@@ -130,7 +130,7 @@ fn a_field_of_the_same_name_keeps_dispatching() {
 /// function body, into a term the caller's block cannot reference at all.
 #[test]
 fn a_method_declared_below_the_call_keeps_dispatching() {
-    let src = "class C\n  a: int,\nend\nfn f(c: C)\n  c.get()\nend\nfn C.get(x: C)\n  x.a\nend\nprint(f(C(1)))\n";
+    let src = "class C\n  a: int,\nend\nfn f(c: C)\n  c.first()\nend\nfn C.first(x: C)\n  x.a\nend\nprint(f(C(1)))\n";
     assert!(dispatches(src));
     assert_eq!(run(src), ["1"], "dispatch still finds it at call time");
 }
@@ -149,7 +149,7 @@ fn a_global_native_reached_through_a_receiver_keeps_dispatching() {
 /// would replace the method-shaped arity error with a plain function's.
 #[test]
 fn a_call_matching_no_overload_keeps_dispatching() {
-    let src = format!("{CLS}let c = C(1)\nprint(c.get(1, 2, 3))\n");
+    let src = format!("{CLS}let c = C(1)\nprint(c.first(1, 2, 3))\n");
     assert!(dispatches(&src));
 }
 
@@ -184,7 +184,7 @@ fn has_hint(src: &str) -> bool {
 #[test]
 fn an_unpinned_binding_carries_its_declarations_class_as_a_hint() {
     for form in ["state c = C(1)", "var c = C(1)"] {
-        let src = format!("{CLS}{form}\nprint(c.get())\n");
+        let src = format!("{CLS}{form}\nprint(c.first())\n");
         assert!(dispatches(&src), "{form}");
         assert!(has_hint(&src), "{form}");
     }
@@ -193,10 +193,10 @@ fn an_unpinned_binding_carries_its_declarations_class_as_a_hint() {
 /// A receiver with no declaration to speak for it has nothing to hint.
 #[test]
 fn a_parameter_and_an_expression_receiver_carry_no_hint() {
-    let param = format!("{CLS}fn f(c)\n  c.get()\nend\nprint(f(C(1)))\n");
+    let param = format!("{CLS}fn f(c)\n  c.first()\nend\nprint(f(C(1)))\n");
     assert!(dispatches(&param) && !has_hint(&param));
 
-    let expr = format!("{CLS}let xs = [C(1)]\nprint(xs[0].get())\n");
+    let expr = format!("{CLS}let xs = [C(1)]\nprint(xs[0].first())\n");
     assert!(!has_hint(&expr), "an index expression has no declaration");
 }
 
@@ -204,16 +204,16 @@ fn a_parameter_and_an_expression_receiver_carry_no_hint() {
 /// the method, and an arity no overload accepts is not a candidate.
 #[test]
 fn the_hint_obeys_the_same_guards_as_the_pin() {
-    let shadowed = "class C\n  get: any,\nend\nfn C.get(c: C)\n  1\nend\nstate c = C(fn() -> 9)\nprint(c.get())\n";
+    let shadowed = "class C\n  first: any,\nend\nfn C.first(c: C)\n  1\nend\nstate c = C(fn() -> 9)\nprint(c.first())\n";
     assert!(!has_hint(shadowed), "a field of that name wins");
 
-    let wrong_arity = format!("{CLS}state c = C(1)\nprint(c.get(1, 2, 3))\n");
+    let wrong_arity = format!("{CLS}state c = C(1)\nprint(c.first(1, 2, 3))\n");
     assert!(!has_hint(&wrong_arity), "no overload accepts three args");
 }
 
 /// A pinned site needs no hint — it does not dispatch at all.
 #[test]
 fn a_pinned_site_carries_no_hint() {
-    let src = format!("{CLS}state c: C = C(1)\nprint(c.get())\n");
+    let src = format!("{CLS}state c: C = C(1)\nprint(c.first())\n");
     assert!(resolves(&src) && !has_hint(&src));
 }

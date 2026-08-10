@@ -153,7 +153,7 @@ describe("`var` cells and the type checker", () => {
     const src = 'var n = 0\nset n = "hi"\n';
     expect(checkJson(`${src}let s: string = n\nprint(s)`).warnings).toEqual([]);
     expect(checkJson(`fn g(s: string)\n  s\nend\n${src}print(g(n))`).warnings).toEqual([]);
-    expect(checkJson(`${src}fn f() -> string\n  n\nend\nprint(f())`).warnings).toEqual([]);
+    expect(checkJson(`${src}fn f() -> string\n  get n\nend\nprint(f())`).warnings).toEqual([]);
   });
 
   it("does type an annotated var's reads from its annotation", () => {

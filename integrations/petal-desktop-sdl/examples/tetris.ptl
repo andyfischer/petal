@@ -215,12 +215,12 @@ end
 // the capture taken when the frame's script reached this definition, which on
 // the first frame is still the empty initial slot.
 fn spawn_piece(g)
-    set cur_type = next_type
+    set cur_type = get next_type
     set next_type = int(random(0.0, 7.0))
     set cur_rot = 0
     set cur_x = 3
     set cur_y = 0
-    if check_collision(g, cur_type, cur_rot, cur_x, cur_y) then
+    if check_collision(g, get cur_type, get cur_rot, get cur_x, get cur_y) then
         set game_over = true
     end
 end
@@ -230,13 +230,13 @@ end
 // `g` would not work: `let` binding a state-var read aliases the local to the
 // state slot, so route the grid through a parameter instead.)
 fn lock_piece(g)
-    let blocks = get_blocks(cur_type, cur_rot)
+    let blocks = get_blocks(get cur_type, get cur_rot)
     let i = 0
     while i < 4 do
-        let bx = cur_x + blocks[i * 2]
-        let by = cur_y + blocks[i * 2 + 1]
+        let bx = get cur_x + blocks[i * 2]
+        let by = get cur_y + blocks[i * 2 + 1]
         if by >= 0 && by < 20 && bx >= 0 && bx < 10 then
-            g = set_cell(g, bx, by, cur_type + 1)
+            g = set_cell(g, bx, by, get cur_type + 1)
         end
         i += 1
     end
@@ -288,7 +288,7 @@ fn clear_lines(g)
         set flash_timer = 0.3
     end
     set lines_cleared += cleared
-    set level = 1 + lines_cleared / 10
+    set level = 1 + get lines_cleared / 10
     g
 end
 

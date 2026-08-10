@@ -107,7 +107,7 @@ describe("provenance queries", () => {
  */
 describe("cell boundaries in provenance", () => {
   const REPRO = "var x = 0\nset x = x + 1\nlet y = x * 2\n";
-  const VIA_FN = "var x = 0\nfn bump()\n  set x = x + 1\n  x\nend\nlet y = bump()\n";
+  const VIA_FN = "var x = 0\nfn bump()\n  set x = get x + 1\n  get x\nend\nlet y = bump()\n";
 
   it("stops at the cell read and reports the frontier", () => {
     const prov = showProvenance(REPRO, "y");
@@ -176,7 +176,7 @@ describe("explain across a cell boundary", () => {
 
   it("names a write site inside a function", () => {
     const out = explainJson(
-      "var x = 0\nfn bump()\n  set x = x + 1\n  x\nend\nlet y = bump()\n",
+      "var x = 0\nfn bump()\n  set x = get x + 1\n  get x\nend\nlet y = bump()\n",
       "y"
     );
     const boundary = out.chain.map((e: any) => e.boundary).filter(Boolean)[0];

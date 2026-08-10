@@ -4,5 +4,5 @@
 export var hits = 0
 
 export fn bump()
-    set hits = hits + 1
+    set hits = get hits + 1
 end

@@ -429,17 +429,27 @@ impl Projector {
         let (target, value) = match compound_op {
             // `target op= rhs` desugars to `target = target op rhs`, the
             // desugared value spanning the whole statement.
-            Some(op) => (
-                expr_to_assign_target(target_expr.clone())?,
-                Expr {
-                    kind: ExprKind::BinaryOp {
-                        op,
-                        left: Box::new(target_expr),
-                        right: Box::new(rhs),
+            Some(op) => {
+                // A compound `set` reads a cell, so the read half is spelled
+                // `get` — see `parse::cell_get_at_root`. A compound `=` reads
+                // an ordinary binding and stays bare.
+                let left = if is_set {
+                    crate::parse::cell_get_at_root(target_expr.clone())
+                } else {
+                    target_expr.clone()
+                };
+                (
+                    expr_to_assign_target(target_expr)?,
+                    Expr {
+                        kind: ExprKind::BinaryOp {
+                            op,
+                            left: Box::new(left),
+                            right: Box::new(rhs),
+                        },
+                        span,
                     },
-                    span,
-                },
-            ),
+                )
+            }
             None => (expr_to_assign_target(target_expr)?, rhs),
         };
         Ok(Stmt {
@@ -573,6 +583,10 @@ impl Projector {
             }),
             SyntaxKind::AtVarExpr => Ok(Expr {
                 kind: ExprKind::AtVar(self.only_ident(node)?),
+                span: self.node_span(node)?,
+            }),
+            SyntaxKind::GetExpr => Ok(Expr {
+                kind: ExprKind::CellGet(self.only_ident(node)?),
                 span: self.node_span(node)?,
             }),
             SyntaxKind::UnaryExpr => {

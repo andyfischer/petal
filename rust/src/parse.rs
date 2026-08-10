@@ -42,6 +42,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::Let => kw("let"),
         Token::Var => kw("var"),
         Token::Set => kw("set"),
+        Token::Get => kw("get"),
         Token::Fn => kw("fn"),
         Token::If => kw("if"),
         Token::Else => kw("else"),
@@ -491,10 +492,17 @@ impl Parser {
             let rhs = self.parse_expr()?;
             // `set x += 1` desugars like `x += 1`: the value spans the whole
             // statement, which is what the CST projection reproduces.
+            //
+            // The read half is spelled `get x`, because `set` only ever writes
+            // a cell: `set x += 1` means `set x = get x + 1`. Synthesizing the
+            // bare `Ident` instead would make the statement demand a `get` the
+            // author never had anywhere to write, since the read here has no
+            // source text of its own.
+            let left = cell_get_at_root(target_expr.clone());
             let value = Expr {
                 kind: ExprKind::BinaryOp {
                     op,
-                    left: Box::new(target_expr.clone()),
+                    left: Box::new(left),
                     right: Box::new(rhs),
                 },
                 span: self.span_from(start),
@@ -1358,6 +1366,7 @@ impl Parser {
         match &expr.kind {
             // Definitely callable: identifiers, field/index access, calls, lambdas, blocks
             ExprKind::Ident(_)
+            | ExprKind::CellGet(_)
             | ExprKind::FieldAccess { .. }
             | ExprKind::IndexAccess { .. }
             | ExprKind::Call { .. }
@@ -1446,6 +1455,17 @@ impl Parser {
                 let name = self.expect_ident()?;
                 self.ev_close();
                 Ok(self.mk_expr(ExprKind::AtVar(name), start))
+            }
+            // `get x` reads a cell. Parsed in *primary* position rather than
+            // as a prefix operator so the postfix loop wraps the result:
+            // `get cfg.w` is `(get cfg).w`, which is what a cell holding a
+            // record needs — the dereference has to happen before the field.
+            Token::Get => {
+                self.ev_open(SyntaxKind::GetExpr);
+                self.advance(); // consume 'get'
+                let name = self.expect_ident()?;
+                self.ev_close();
+                Ok(self.mk_expr(ExprKind::CellGet(name), start))
             }
             Token::Ident(_) => {
                 self.ev_open(SyntaxKind::IdentExpr);
@@ -2035,6 +2055,40 @@ pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
             ("a", parse2(b[6], b[7])),
         ],
         _ => unreachable!("lexer validates hex length"),
+    }
+}
+
+/// Rewrite the *root* identifier of a `set` target into an explicit cell read.
+///
+/// A `set` target is rooted at a `var` by definition, so the read half of a
+/// compound `set` is a cell read: `set p.hp -= n` is `set p.hp = get p.hp - n`,
+/// where the dereference happens at `p` and the field access applies to the
+/// contents. Anything that is not rooted at a plain name is returned unchanged
+/// and the write-keyword check reports it.
+///
+/// Shared with `crate::cst_project` so the CST projection can't drift.
+pub(crate) fn cell_get_at_root(expr: Expr) -> Expr {
+    let span = expr.span;
+    match expr.kind {
+        ExprKind::Ident(name) => Expr {
+            kind: ExprKind::CellGet(name),
+            span,
+        },
+        ExprKind::FieldAccess { object, field } => Expr {
+            kind: ExprKind::FieldAccess {
+                object: Box::new(cell_get_at_root(*object)),
+                field,
+            },
+            span,
+        },
+        ExprKind::IndexAccess { object, index } => Expr {
+            kind: ExprKind::IndexAccess {
+                object: Box::new(cell_get_at_root(*object)),
+                index,
+            },
+            span,
+        },
+        other => Expr { kind: other, span },
     }
 }
 

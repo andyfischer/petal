@@ -85,6 +85,7 @@ pub enum SyntaxKind {
     LiteralExpr,
     IdentExpr,
     AtVarExpr,
+    GetExpr,
     BinaryExpr,
     UnaryExpr,
     CallExpr,

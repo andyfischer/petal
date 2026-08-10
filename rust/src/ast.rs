@@ -55,6 +55,15 @@ pub enum ExprKind {
     /// compiler is an `@` used somewhere the desugar pass can't lift (e.g. not
     /// inside a call at statement level) and compiles to a deferred error.
     AtVar(String),
+    /// `get name` — an explicit read of a `var` cell's current contents.
+    ///
+    /// Required wherever the read crosses a function boundary from the
+    /// declaration, because that is exactly where a bare name would be
+    /// ambiguous: a captured `let`/`state` reads the value as of the
+    /// function's definition point, while a cell reads the value now. Inside
+    /// the declaring scope both spellings mean the same thing and the bare one
+    /// is still allowed.
+    CellGet(String),
     BinaryOp {
         op: BinOp,
         left: Box<Expr>,
@@ -386,7 +395,10 @@ pub trait ExprVisitor {
 /// Visit every direct child expression/statement of `e` with `v`.
 pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
     match &e.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
+        ExprKind::Literal(_)
+        | ExprKind::Ident(_)
+        | ExprKind::AtVar(_)
+        | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);
@@ -542,7 +554,10 @@ pub trait ExprVisitorMut {
 /// Visit every direct child expression/statement of `e` with `v` (mutable).
 pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
     match &mut e.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) => {}
+        ExprKind::Literal(_)
+        | ExprKind::Ident(_)
+        | ExprKind::AtVar(_)
+        | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);

@@ -29,7 +29,19 @@ impl Compiler {
                 self.emit_term(TermOp::Constant(cid), smallvec![], None)
             }
 
-            ExprKind::Ident(name) => self.compile_ident(name),
+            ExprKind::Ident(name) => {
+                // A bare read of a cell that lives outside this function is
+                // the one position where "snapshot" and "live" disagree, so it
+                // has to say which it means. Checked here rather than in
+                // `compile_ident` because the internal root-read for a nested
+                // write target (`set r.f = v`) goes through that helper too and
+                // is not a user-written read.
+                self.check_cell_read_says_get(name, span);
+                self.compile_ident(name)
+            }
+
+            // `get x` — the explicit read of a cell's current contents.
+            ExprKind::CellGet(name) => self.compile_cell_get(name, span),
 
             // `@x` that the desugar pass could not lift (it wasn't a call
             // argument at statement level). Compile to a deferred error so it
@@ -288,6 +300,49 @@ impl Compiler {
     /// phantom when the binding crosses a function boundary. Unresolved
     /// names compile to an `Error` term (with a hint for common slips from
     /// other languages) that only fires if actually executed.
+    /// `get name` — read a cell's contents, explicitly.
+    ///
+    /// The mirror of `set`: `set` is the only way to write a cell, `get` is the
+    /// unambiguous way to read one. It is an error on anything that is not a
+    /// `var`, so the keyword never appears on a binding whose reads are already
+    /// plain dataflow edges — seeing `get` in a body always means a cell.
+    fn compile_cell_get(&mut self, name: &str, span: SourceSpan) -> TermId {
+        if self.scope_lookup(name).is_none() {
+            // Same shape as a bare undefined name: a deferred error that only
+            // fires if the expression actually runs.
+            return self.compile_ident(name);
+        }
+        if !self.binding_is_var(name) {
+            self.error_at(
+                span,
+                format!(
+                    "`{name}` is not a `var`, so `get {name}` has nothing to read — \
+                     a `let` or `state` read is already a plain value. Drop the `get`."
+                ),
+            );
+        }
+        self.compile_ident(name)
+    }
+
+    /// Reject a bare read of a cell that is bound outside this function.
+    ///
+    /// Inside the declaring scope a bare read is fine — there is no captured
+    /// snapshot there for it to be confused with. Across a function boundary
+    /// there is, and the two answers differ by a frame in a script that re-runs,
+    /// so the read has to say which one it wants.
+    fn check_cell_read_says_get(&mut self, name: &str, span: SourceSpan) {
+        if self.binding_is_var(name) && self.is_outer_function_binding(name) {
+            self.error_at(
+                span,
+                format!(
+                    "`{name}` is a `var` declared outside this function; write `get {name}` \
+                     to read the cell's current value. A bare name here would read the value \
+                     captured when this function was defined, which is a different thing."
+                ),
+            );
+        }
+    }
+
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
         if let Some(local_tid) = self.resolve_local_term(name) {
             // A `var` binds the *cell*, so reading the name dereferences it.

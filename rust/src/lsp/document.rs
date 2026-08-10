@@ -380,7 +380,7 @@ fn is_ident_char(c: char) -> bool {
 /// should still offer. Checked against `petal::lexer::KEYWORDS` by
 /// `rust/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
-    "let", "var", "set", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do", "while",
+    "let", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do", "while",
     "match", "when", "return", "break", "continue", "state", "import", "export", "as", "true",
     "false", "nil", "enum", "class",
 ];

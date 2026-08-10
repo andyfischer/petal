@@ -252,6 +252,7 @@ module.exports = grammar({
       $.if_expression,
       $.match_expression,
       $.unary_expression,
+      $.get_expression,
       $.binary_expression,
       $.pipe_expression,
       $.call,
@@ -265,6 +266,14 @@ module.exports = grammar({
 
     unary_expression: $ => prec.right(PREC.unary, seq(
       field('operator', choice('-', '!')),
+      field('operand', $._expression),
+    )),
+
+    // `get x` — a read of a `var` cell. Required wherever the read crosses a
+    // function boundary from the declaration, so a captured snapshot and a
+    // live cell read never look alike.
+    get_expression: $ => prec.right(PREC.unary, seq(
+      'get',
       field('operand', $._expression),
     )),
 

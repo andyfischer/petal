@@ -334,18 +334,18 @@ fn entry_file_state_keys_stay_bare_named() {
 #[test]
 fn hot_reload_of_module_preserves_its_state() {
     let mut env = Env::new();
-    env.register_module("counter", "state n = 0\nn += 1\nexport fn get()\n  n\nend");
+    env.register_module("counter", "state n = 0\nn += 1\nexport fn read()\n  n\nend");
     let pid = env
-        .load_program("import counter\nprint(counter.get())")
+        .load_program("import counter\nprint(counter.read())")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), vec!["1"]);
 
     // Edit the module (init unchanged, increment becomes +10) and reload.
-    env.register_module("counter", "state n = 0\nn += 10\nexport fn get()\n  n\nend");
+    env.register_module("counter", "state n = 0\nn += 10\nexport fn read()\n  n\nend");
     let new_program = env
-        .compile_program(pid, "import counter\nprint(counter.get())")
+        .compile_program(pid, "import counter\nprint(counter.read())")
         .unwrap();
     let result = env.transfer_state(sid, new_program).unwrap();
     assert_eq!(result.state_preserved, 1);
@@ -358,12 +358,12 @@ fn hot_reload_of_module_preserves_its_state() {
 
 #[test]
 fn renaming_a_module_drops_its_state() {
-    let counter = "state n = 0\nn += 1\nexport fn get()\n  n\nend";
+    let counter = "state n = 0\nn += 1\nexport fn read()\n  n\nend";
     let mut env = Env::new();
     env.register_module("counter", counter);
     env.register_module("tally", counter);
     let pid = env
-        .load_program("import counter\nprint(counter.get())")
+        .load_program("import counter\nprint(counter.read())")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
@@ -371,7 +371,7 @@ fn renaming_a_module_drops_its_state() {
 
     // Same state decl, different module name → different key → dropped.
     let new_program = env
-        .compile_program(pid, "import tally\nprint(tally.get())")
+        .compile_program(pid, "import tally\nprint(tally.read())")
         .unwrap();
     let result = env.transfer_state(sid, new_program).unwrap();
     assert_eq!(result.state_preserved, 0);

@@ -190,7 +190,7 @@ end
 
 fn save_slot(idx)
     let path = slot_files[idx]
-    let txt  = serialize_level(level)
+    let txt  = serialize_level(get level)
     let ok   = save_text_file(path, txt)
     if ok then say("Saved {path}") else say("Save failed!") end
 end
@@ -245,56 +245,56 @@ fn delete_at(wx, wy)
     // attempt to delete topmost item at (wx,wy)
     // search from "front" (last list pushed first): try plats, oneways, coins,
     // spikes, enemies, checks.
-    let i = len(level.plats) - 1
+    let i = len(get level.plats) - 1
     while i >= 0 do
-        let p = level.plats[i]
+        let p = get level.plats[i]
         if wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h then
-            set level.plats = filter_index(level.plats, i)
+            set level.plats = filter_index(get level.plats, i)
             return true
         end
         i = i - 1
     end
-    let j = len(level.oneways) - 1
+    let j = len(get level.oneways) - 1
     while j >= 0 do
-        let o = level.oneways[j]
+        let o = get level.oneways[j]
         if wx >= o.x && wx <= o.x + o.w && wy >= o.y - 4 && wy <= o.y + 10 then
-            set level.oneways = filter_index(level.oneways, j)
+            set level.oneways = filter_index(get level.oneways, j)
             return true
         end
         j = j - 1
     end
-    let k = len(level.coins) - 1
+    let k = len(get level.coins) - 1
     while k >= 0 do
-        let c = level.coins[k]
+        let c = get level.coins[k]
         if abs(wx - c.x) < 14 && abs(wy - c.y) < 14 then
-            set level.coins = filter_index(level.coins, k)
+            set level.coins = filter_index(get level.coins, k)
             return true
         end
         k = k - 1
     end
-    let m = len(level.spikes) - 1
+    let m = len(get level.spikes) - 1
     while m >= 0 do
-        let s = level.spikes[m]
+        let s = get level.spikes[m]
         if wx >= s.x && wx <= s.x + 24 && wy >= s.y && wy <= s.y + 16 then
-            set level.spikes = filter_index(level.spikes, m)
+            set level.spikes = filter_index(get level.spikes, m)
             return true
         end
         m = m - 1
     end
-    let n = len(level.enemies) - 1
+    let n = len(get level.enemies) - 1
     while n >= 0 do
-        let e = level.enemies[n]
+        let e = get level.enemies[n]
         if abs(wx - int(e.x) - 12) < 16 && abs(wy - int(e.origin_y) - 11) < 16 then
-            set level.enemies = filter_index(level.enemies, n)
+            set level.enemies = filter_index(get level.enemies, n)
             return true
         end
         n = n - 1
     end
-    let cc = len(level.checks) - 1
+    let cc = len(get level.checks) - 1
     while cc >= 0 do
-        let ck = level.checks[cc]
+        let ck = get level.checks[cc]
         if abs(wx - ck.x - 12) < 14 && wy > ck.y - 36 && wy < ck.y then
-            set level.checks = filter_index(level.checks, cc)
+            set level.checks = filter_index(get level.checks, cc)
             return true
         end
         cc = cc - 1

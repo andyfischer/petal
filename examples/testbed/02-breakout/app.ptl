@@ -223,11 +223,11 @@ fn build_level(lvl)
 end
 
 fn pad_w()
-  if wide_t > 0.0 then PADW_WIDE else PADW end
+  if get wide_t > 0.0 then PADW_WIDE else PADW end
 end
 
 fn park_ball()
-  set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
+  set balls = [{x: get padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
   set trail = []
 end
 
@@ -250,8 +250,8 @@ fn new_game()
   set drops = []
   set bits = []
   set padx = float(cx) - float(PADW) / 2.0
-  set pad_target = padx
-  build_level(level)
+  set pad_target = get padx
+  build_level(get level)
   park_ball()
   set phase = "title"
   set banner = "BREAKOUT"

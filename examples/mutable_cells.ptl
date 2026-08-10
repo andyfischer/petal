@@ -36,8 +36,8 @@ print("======================")
 fn make_counter()
   var count = 0
   let bump = fn()
-    set count = count + 1
-    count
+    set count = get count + 1
+    get count
   end
   bump
 end
@@ -61,7 +61,7 @@ print("snapshot:", snapshot, "level:", level)
 // `set` also takes field and index targets.
 var player = { hp: 100, pos: [0, 0] }
 fn take_damage(amount)
-  set player.hp = player.hp - amount
+  set player.hp = get player.hp - amount
 end
 take_damage(30)
 set player.pos[0] = 5

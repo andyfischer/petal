@@ -125,7 +125,7 @@ print(f(true))`);
   it("is silent for a `var` written with `set` — the escape hatch", () => {
     const out = checkJson(`var i = 0
 fn f()
-  set i = i + 1
+  set i = get i + 1
 end
 f()
 print(i)`);

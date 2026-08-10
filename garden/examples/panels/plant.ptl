@@ -77,7 +77,7 @@ fn leaf(id, tip, bend)
   let dx = sin(angle)
   let dy = -cos(angle)
 
-  set leaf_blades = append(leaf_blades, {
+  set leaf_blades = append(get leaf_blades, {
     points: [
       [tip.x, tip.y],
       [tip.x + dx * blade * 0.35 + dy * wide, tip.y + dy * blade * 0.35 - dx * wide],
@@ -105,7 +105,7 @@ end
 
 fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   set segment_count += 1
-  if segment_count > MAX_SEGMENTS || depth > MAX_DEPTH then
+  if get segment_count > MAX_SEGMENTS || depth > MAX_DEPTH then
     return nil
   end
 

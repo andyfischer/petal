@@ -41,14 +41,14 @@ fn after_reload(v1: &str, v2: &str) -> Result<Vec<String>, String> {
 // ── The new code wins ──────────────────────────────────────────────────────
 
 /// The headline case. `c` holds an instance built by v1 and tagged `C`; v2
-/// renames the class to `D`. Dispatching on the tag would look for `C.get` and
+/// renames the class to `D`. Dispatching on the tag would look for `C.first` and
 /// find nothing, so the annotation is what makes the edit land: the call binds
-/// to `D.get`, which reads a field the old instance still has.
+/// to `D.first`, which reads a field the old instance still has.
 #[test]
 fn an_annotated_receiver_runs_the_new_classs_method() {
     let out = after_reload(
-        "class C\n  x: int,\nend\nfn C.get(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.get())\n",
-        "class D\n  x: int,\nend\nfn D.get(d: D)\n  d.x + 100\nend\nstate c: D = D(1)\nprint(c.get())\n",
+        "class C\n  x: int,\nend\nfn C.first(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.first())\n",
+        "class D\n  x: int,\nend\nfn D.first(d: D)\n  d.x + 100\nend\nstate c: D = D(1)\nprint(c.first())\n",
     )
     .expect("the annotation binds the call to the new class");
     assert_eq!(out, ["101"], "the new method ran on the old value");
@@ -57,12 +57,12 @@ fn an_annotated_receiver_runs_the_new_classs_method() {
 /// A record that predates the class entirely. v2 turns it into a `class` and
 /// calls a method on it — with no tag to dispatch on, only static resolution
 /// can find the method. This used to surface as the *global* builtin's
-/// complaint (`get() expects 2 arguments`) from a call that named no builtin.
+/// complaint (`first() expects 1 argument`) from a call that named no builtin.
 #[test]
 fn a_plain_record_reaches_a_method_added_by_the_edit() {
     let out = after_reload(
         "state c = {a: 1}\nprint(c.a)\n",
-        "class C\n  a: int,\nend\nfn C.get(c: C)\n  c.a\nend\nstate c: C = C(1)\nprint(c.get())\n",
+        "class C\n  a: int,\nend\nfn C.first(c: C)\n  c.a\nend\nstate c: C = C(1)\nprint(c.first())\n",
     )
     .expect("an untagged record still reaches the method");
     assert_eq!(out, ["1"]);
@@ -73,8 +73,8 @@ fn a_plain_record_reaches_a_method_added_by_the_edit() {
 #[test]
 fn an_edited_method_body_takes_effect() {
     let out = after_reload(
-        "class C\n  x: int,\nend\nfn C.get(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.get())\n",
-        "class C\n  x: int,\nend\nfn C.get(c: C)\n  c.x + 100\nend\nstate c = C(1)\nprint(c.get())\n",
+        "class C\n  x: int,\nend\nfn C.first(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.first())\n",
+        "class C\n  x: int,\nend\nfn C.first(c: C)\n  c.x + 100\nend\nstate c = C(1)\nprint(c.first())\n",
     )
     .expect("runs");
     assert_eq!(out, ["101"]);
@@ -130,18 +130,18 @@ fn a_field_added_by_the_edit_is_not_invented_on_an_old_instance() {
 
 // ── What still dispatches on the label, and how it reports ─────────────────
 
-/// Deleting `fn P.get` from a running program. The receiver is an
+/// Deleting `fn P.first` from a running program. The receiver is an
 /// un-annotated `state`, so the call dispatches on the tag and finds nothing;
-/// it used to fail with `get() expects 2 arguments` — the *global* builtin's
+/// it used to fail with `first() expects 1 argument` — the *global* builtin's
 /// arity complaint, from a call that named no builtin.
 #[test]
 fn deleting_a_method_reports_the_class_not_the_builtin_it_collides_with() {
     let err = after_reload(
-        "class P\n  a: int,\nend\nfn P.get(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.get())\n",
-        "class P\n  a: int,\nend\nstate p = P(1)\nprint(p.get())\n",
+        "class P\n  a: int,\nend\nfn P.first(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.first())\n",
+        "class P\n  a: int,\nend\nstate p = P(1)\nprint(p.first())\n",
     )
     .expect_err("the method is gone");
-    assert!(err.contains("No method 'get' on class P"), "{err}");
+    assert!(err.contains("No method 'first' on class P"), "{err}");
     assert!(!err.contains("expects 2 arguments"), "{err}");
 }
 
@@ -152,8 +152,8 @@ fn deleting_a_method_reports_the_class_not_the_builtin_it_collides_with() {
 #[test]
 fn a_stale_label_falls_back_to_the_declarations_class() {
     let out = after_reload(
-        "class C\n  x: int,\nend\nfn C.get(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.get())\n",
-        "class D\n  x: int,\nend\nfn D.get(d: D)\n  d.x + 100\nend\nstate c = D(1)\nprint(c.get())\n",
+        "class C\n  x: int,\nend\nfn C.first(c: C)\n  c.x\nend\nstate c = C(1)\nprint(c.first())\n",
+        "class D\n  x: int,\nend\nfn D.first(d: D)\n  d.x + 100\nend\nstate c = D(1)\nprint(c.first())\n",
     )
     .expect("the label is stale, so the declaration answers");
     assert_eq!(out, ["101"]);
@@ -182,9 +182,9 @@ fn a_live_label_still_wins_over_the_declarations_class() {
 #[test]
 fn a_live_label_missing_the_method_still_reports_its_own_class() {
     let err = after_reload(
-        "class P\n  a: int,\nend\nfn P.get(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.get())\n",
-        "class P\n  a: int,\nend\nfn P.other(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.get())\n",
+        "class P\n  a: int,\nend\nfn P.first(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.first())\n",
+        "class P\n  a: int,\nend\nfn P.other(p: P)\n  p.a\nend\nstate p = P(1)\nprint(p.first())\n",
     )
     .expect_err("the method is gone and the class is not");
-    assert!(err.contains("No method 'get' on class P"), "{err}");
+    assert!(err.contains("No method 'first' on class P"), "{err}");
 }

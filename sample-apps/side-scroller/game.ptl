@@ -228,8 +228,8 @@ end
 // ----------------------------- RESET ----------------------------------
 
 fn respawn_player()
-    let spawn = level.start
-    if checkpoint != nil then spawn = checkpoint end
+    let spawn = get level.start
+    if get checkpoint != nil then spawn = get checkpoint end
     set px = spawn.x
     set py = spawn.y
     set vx = 0.0
@@ -670,7 +670,7 @@ end
 // =====================================================================
 
 fn cam_offset_x()
-    int(cam_x - shake_dx)
+    int(get cam_x - shake_dx)
 end
 fn cam_offset_y()
     int(0.0 - shake_dy)
@@ -696,9 +696,9 @@ fn draw_sky()
     while row < 12 do
         let sy = row * 50
         let t = float(row) / 11.0
-        let r = int(float(level.bg_r) * (1.0 - t) + 240.0 * t)
-        let g = int(float(level.bg_g) * (1.0 - t) + 220.0 * t)
-        let b = int(float(level.bg_b) * (1.0 - t) + 200.0 * t)
+        let r = int(float(get level.bg_r) * (1.0 - t) + 240.0 * t)
+        let g = int(float(get level.bg_g) * (1.0 - t) + 220.0 * t)
+        let b = int(float(get level.bg_b) * (1.0 - t) + 200.0 * t)
         draw_rect(0, sy, SCREEN_W, 55, r, g, b)
         row = row + 1
     end
@@ -706,7 +706,7 @@ end
 
 fn draw_parallax_mountains()
     // 2 layers at different parallax speeds
-    let off1 = int(cam_x * 0.2)
+    let off1 = int(get cam_x * 0.2)
     let m = 0
     while m < 10 do
         let mx = m * 220 - (off1 % 220) - 60
@@ -717,7 +717,7 @@ fn draw_parallax_mountains()
         draw_circle(mx + 110, my + mh + 30, mh + 30, r, g, b)
         m = m + 1
     end
-    let off2 = int(cam_x * 0.4)
+    let off2 = int(get cam_x * 0.4)
     let n = 0
     while n < 12 do
         let nx = n * 180 - (off2 % 180) - 40
@@ -729,7 +729,7 @@ fn draw_parallax_mountains()
 end
 
 fn draw_clouds()
-    let off = int(cam_x * 0.1) + frame_count() / 4
+    let off = int(get cam_x * 0.1) + frame_count() / 4
     let c = 0
     while c < 8 do
         let cx = (c * 240 - (off % 240)) % (SCREEN_W + 240) - 120
@@ -743,7 +743,7 @@ fn draw_clouds()
 end
 
 fn draw_platforms()
-    for p in level.plats do
+    for p in get level.plats do
         // dirt body
         draw_at(p.x, p.y + 4, p.w, p.h - 4, 110, 70, 40)
         draw_at(p.x, p.y + p.h - 3, p.w, 3, 80, 50, 28)
@@ -758,7 +758,7 @@ fn draw_platforms()
             i = i + 1
         end
     end
-    for o in level.oneways do
+    for o in get level.oneways do
         // wooden plank
         draw_at(o.x, o.y, o.w, 6, 200, 160, 90)
         draw_at(o.x, o.y + 3, o.w, 3, 160, 120, 70)
@@ -771,7 +771,7 @@ fn draw_platforms()
 end
 
 fn draw_spikes()
-    for s in level.spikes do
+    for s in get level.spikes do
         let bx = s.x
         let by = s.y
         // 2 triangle spikes per tile (24 wide)
@@ -785,7 +785,7 @@ end
 
 fn draw_coins()
     let fc = frame_count()
-    for c in level.coins do
+    for c in get level.coins do
         if !c.collected then
             let bob = ((fc + c.x * 3) % 40)
             let off = if bob < 20 then bob/5 - 2 else 2 - (bob-20)/5 end
@@ -803,8 +803,8 @@ fn draw_coins()
 end
 
 fn draw_checks()
-    for ck in level.checks do
-        let lit = checkpoint != nil && abs(checkpoint.x - float(ck.x)) < 4.0
+    for ck in get level.checks do
+        let lit = get checkpoint != nil && abs(get checkpoint.x - float(ck.x)) < 4.0
         let pole_r = if lit then 230 else 110 end
         let pole_g = if lit then 230 else 110 end
         let pole_b = if lit then 240 else 130 end
@@ -818,7 +818,7 @@ end
 
 fn draw_enemies()
     let fc = frame_count()
-    for e in level.enemies do
+    for e in get level.enemies do
         if !e.alive then continue end
         if e.kind == "goomba" then
             let walk = (fc + int(e.x)) % 16
@@ -855,8 +855,8 @@ fn draw_enemies()
 end
 
 fn draw_goal()
-    let gx = int(level.goal.x)
-    let gy = int(level.goal.y)
+    let gx = int(get level.goal.x)
+    let gy = int(get level.goal.y)
     let pulse = (frame_count() % 60)
     let r = 200 + (pulse * 55) / 60
     // pole
@@ -874,13 +874,13 @@ fn draw_goal()
 end
 
 fn draw_player()
-    let bx = int(px) - cam_offset_x()
-    let by = int(py) - cam_offset_y()
+    let bx = int(get px) - cam_offset_x()
+    let by = int(get py) - cam_offset_y()
     // flicker if invul
-    let show = invul <= 0.0 || (frame_count() % 6) < 3
+    let show = get invul <= 0.0 || (frame_count() % 6) < 3
     if !show then return end
-    let sw = int(float(PLAYER_W) * stretch)
-    let sh = int(float(PLAYER_H) * squash)
+    let sw = int(float(PLAYER_W) * get stretch)
+    let sh = int(float(PLAYER_H) * get squash)
     let dx = (PLAYER_W - sw) / 2
     let dy = PLAYER_H - sh
     // body
@@ -892,14 +892,14 @@ fn draw_player()
     draw_rect(bx + dx, by + dy - 2, sw, 5, 200, 60, 60)
     draw_rect(bx + dx - 2, by + dy + 2, sw + 4, 3, 180, 50, 50)
     // eyes
-    let eo = if facing > 0 then sw - 9 else 3 end
+    let eo = if get facing > 0 then sw - 9 else 3 end
     draw_rect(bx + dx + eo, by + dy + 6, 4, 4, 255, 255, 255)
     draw_rect(bx + dx + eo - 5, by + dy + 6, 4, 4, 255, 255, 255)
     draw_rect(bx + dx + eo + 1, by + dy + 7, 2, 3, 20, 20, 50)
     draw_rect(bx + dx + eo - 4, by + dy + 7, 2, 3, 20, 20, 50)
     // legs
     let leg = (frame_count() * 3) % 12
-    if abs(vx) > 20.0 && on_ground then
+    if abs(get vx) > 20.0 && get on_ground then
         if leg < 6 then
             draw_rect(bx + dx + 3, by + dy + sh - 6, 6, 6, 60, 60, 130)
             draw_rect(bx + dx + sw - 9, by + dy + sh - 8, 6, 8, 60, 60, 130)
@@ -917,7 +917,7 @@ fn draw_player()
 end
 
 fn draw_particles()
-    for p in particles do
+    for p in get particles do
         let r = 220
         let g = 200
         let b = 160
@@ -929,7 +929,7 @@ fn draw_particles()
 end
 
 fn draw_floats()
-    for f in floats do
+    for f in get floats do
         let alpha = clamp(f.life, 0.0, 1.0)
         let r = int(255.0 * alpha)
         let g = int(240.0 * alpha)
@@ -961,19 +961,19 @@ fn draw_hud()
     // coin count
     draw_circle(110, 18, 8, 255, 210, 40)
     draw_circle(108, 16, 4, 255, 240, 130)
-    draw_text("x{coins_got}", 122, 8, 22, 255, 255, 255)
+    draw_text("x{get coins_got}", 122, 8, 22, 255, 255, 255)
     // timer
-    let t = level_timer
+    let t = get level_timer
     let mins = int(t) / 60
     let secs = int(t) % 60
     let cents = int(t * 100.0) % 100
     draw_text("{mins}:{secs}.{cents}", 220, 8, 22, 220, 220, 240)
     // level name
-    draw_text(level.name, SCREEN_W - 240, 8, 22, 230, 230, 250)
+    draw_text(get level.name, SCREEN_W - 240, 8, 22, 230, 230, 250)
     // toast
-    if toast_t > 0.0 then
+    if get toast_t > 0.0 then
         draw_rect(SCREEN_W/2 - 100, 50, 200, 28, 0, 0, 0)
-        draw_text(toast, SCREEN_W/2 - 90, 54, 20, 255, 230, 120)
+        draw_text(get toast, SCREEN_W/2 - 90, 54, 20, 255, 230, 120)
     end
 end
 
@@ -1028,12 +1028,12 @@ fn draw_complete_overlay()
     let dim = int(180.0 * alpha)
     draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
     draw_text("LEVEL CLEAR!", SCREEN_W/2 - 130, 180, 40, 100, 230, 120)
-    draw_text(level.name, SCREEN_W/2 - 80, 230, 22, 230, 230, 250)
-    let mins = int(level_timer) / 60
-    let secs = int(level_timer) % 60
-    let cents = int(level_timer * 100.0) % 100
+    draw_text(get level.name, SCREEN_W/2 - 80, 230, 22, 230, 230, 250)
+    let mins = int(get level_timer) / 60
+    let secs = int(get level_timer) % 60
+    let cents = int(get level_timer * 100.0) % 100
     draw_text("time  {mins}:{secs}.{cents}", SCREEN_W/2 - 70, 280, 22, 220, 220, 240)
-    draw_text("coins {coins_got}", SCREEN_W/2 - 50, 310, 22, 255, 220, 120)
+    draw_text("coins {get coins_got}", SCREEN_W/2 - 50, 310, 22, 255, 220, 120)
     draw_text("ENTER to continue   Q for menu", SCREEN_W/2 - 140, 380, 18, 180, 180, 220)
 end
 

@@ -255,7 +255,7 @@ impl CounterState {
 
 /// A "Counter" handle class over the captured state.
 /// Methods (receiver is cxt arg 1, method args follow):
-///   get()  -> current cell value
+///   value()  -> current cell value
 ///   add(n) -> adds n to the cell, returns the new value
 /// Anything else: Err("no method '{name}' on Counter").
 fn counter_class(state: &CounterState) -> HandleClass {
@@ -269,7 +269,7 @@ fn counter_class(state: &CounterState) -> HandleClass {
         call_method: Box::new(move |cxt: &mut PetalCxt, method: &str| -> NativeResult {
             *was_called.borrow_mut() = true;
             match method {
-                "get" => {
+                "value" => {
                     let v = *cell.borrow();
                     cxt.push_int(v);
                     Ok(1)
@@ -320,17 +320,17 @@ fn run_plain(source: &str) -> Result<Value, String> {
 // ── 7. Method dispatch through the handle class ──────────────────
 
 #[test]
-fn handle_method_dispatch_add_then_get() {
+fn handle_method_dispatch_add_then_value() {
     let state = CounterState::new(0);
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.add(5)\nh.get()",
+        "let h = binding(symbol(\"h\"))\nh.add(5)\nh.value()",
     );
     assert_eq!(
         result,
         Ok(Value::Int(5)),
-        "h.add(5) then h.get() must dispatch through call_method"
+        "h.add(5) then h.value() must dispatch through call_method"
     );
     assert_eq!(*state.cell.borrow(), 5, "add(5) must mutate host state");
     assert!(*state.was_called.borrow(), "call_method must be invoked");
@@ -360,7 +360,7 @@ fn stale_handle_method_errors_with_describe_and_skips_call_method() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.get()",
+        "let h = binding(symbol(\"h\"))\nh.value()",
     );
     let err = result.expect_err(&format!(
         "calling a method on a stale handle must be a runtime error"
@@ -416,19 +416,19 @@ fn native_get_999(cxt: &mut PetalCxt) -> NativeResult {
 #[test]
 fn handle_class_method_shadows_ufcs_native() {
     let state = CounterState::new(5);
-    // Note: a builtin `get(container, key)` also already exists in the
-    // native table, and UFCS name lookup returns the first match — so
-    // today `h.get()` resolves to that builtin (arity error). Either way,
-    // after chunk 2 the handle class's own `get` must win over the table.
+    // Note: a global native `value` is registered in the table below, and UFCS
+    // name lookup returns the first match — so without the class taking
+    // priority, `h.value()` would resolve to that native. The handle class's
+    // own `value` must win over the table.
     let result = run_with_class(
         counter_class(&state),
-        &[("get", native_get_999)], // global native `get` would return 999
-        "let h = binding(symbol(\"h\"))\nh.get()",
+        &[("value", native_get_999)], // global native `value` would return 999
+        "let h = binding(symbol(\"h\"))\nh.value()",
     );
     assert_eq!(
         result,
         Ok(Value::Int(5)),
-        "the handle class's 'get' must win over the global native 'get'"
+        "the handle class's 'value' must win over the global native 'value'"
     );
 }
 

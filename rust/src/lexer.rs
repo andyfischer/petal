@@ -13,6 +13,7 @@ pub enum Token {
     Let,
     Var,
     Set,
+    Get,
     Fn,
     If,
     Else,
@@ -100,8 +101,9 @@ pub enum Token {
 ///
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
-    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for",
-    "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true", "var",
+    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for", "get",
+    "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true",
+    "var",
     "when", "while",
 ];
 
@@ -126,6 +128,7 @@ pub fn keyword_token(text: &str) -> Option<Token> {
         "let" => Token::Let,
         "var" => Token::Var,
         "set" => Token::Set,
+        "get" => Token::Get,
         "fn" => Token::Fn,
         "if" => Token::If,
         "else" => Token::Else,

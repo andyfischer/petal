@@ -213,8 +213,8 @@ describe("cells", () => {
     expect(
       runPetal(`var i = 10
 fn f()
-  set i = i + 1
-  i
+  set i = get i + 1
+  get i
 end
 print(f())
 print(f())
@@ -243,8 +243,8 @@ print(doubled, score, hit)`),
   it("shares one cell between two closures", () => {
     expect(
       runPetal(`var n = 0
-let inc = fn() set n = n + 1 end
-let dec = fn() set n = n - 1 end
+let inc = fn() set n = get n + 1 end
+let dec = fn() set n = get n - 1 end
 inc()
 inc()
 inc()
@@ -259,8 +259,8 @@ print(n)`),
       runPetal(`fn counter()
   var c = 0
   let bump = fn()
-    set c = c + 1
-    c
+    set c = get c + 1
+    get c
   end
   bump
 end
@@ -275,7 +275,7 @@ print(a(), a(), a(), b())`),
     expect(
       runPetal(`var acc = []
 let _ = map([1, 2, 3], fn(x)
-  set acc = append(acc, x * x)
+  set acc = append(get acc, x * x)
   x
 end)
 print(acc)`),
@@ -286,8 +286,8 @@ print(acc)`),
     expect(
       runPetal(`var st = { items: [], n: 0 }
 fn add(v)
-  set st.items = append(st.items, v)
-  set st.n = st.n + 1
+  set st.items = append(get st.items, v)
+  set st.n = get st.n + 1
 end
 add(1)
 add(2)

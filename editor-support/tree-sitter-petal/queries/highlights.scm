@@ -18,6 +18,7 @@
   "let"
   "var"
   "set"
+  "get"
   "state"
   "fn"
   "enum"

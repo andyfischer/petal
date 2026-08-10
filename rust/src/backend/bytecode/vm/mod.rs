@@ -193,12 +193,12 @@ impl<'a> Vm<'a> {
         // Gather trace inputs before execution — a `dst` that aliases a source
         // register would clobber it otherwise. The `enabled` check comes first
         // so the disabled hot path pays only one bool test, never `dst()` /
-        // `input_regs()`.
+        // `read_regs()`.
         let trace_inputs: Option<(TermId, Reg, SmallVec<[Value; 4]>)> = if self.trace.enabled {
             match (origin, inst.dst()) {
                 (Some(term), Some(dst)) => {
                     let inputs = inst
-                        .input_regs()
+                        .read_regs()
                         .iter()
                         .map(|&r| self.reg(frame_idx, r))
                         .collect();

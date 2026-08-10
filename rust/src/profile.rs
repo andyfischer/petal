@@ -187,46 +187,50 @@ impl VmProfile {
             self.gc_time.as_secs_f64() * 1e3
         );
 
-        let pct = |n: u64| {
-            if total == 0 {
-                0.0
-            } else {
-                n as f64 * 100.0 / total as f64
-            }
-        };
-        let _ = writeln!(s, "\n  top opcodes:");
-        for (op, n) in self.opcodes_by_count().into_iter().take(top_n) {
-            let _ = writeln!(
-                s,
-                "    {:<18} {:>12}  {:>5.1}%",
-                op.name(),
-                commas(n),
-                pct(n)
-            );
-        }
+        let opcodes = self.opcodes_by_count();
+        histogram(
+            &mut s,
+            "top opcodes",
+            opcodes.iter().map(|&(op, n)| (op.name().to_string(), n)),
+            total,
+            top_n,
+        );
 
         let natives = self.natives_by_count();
-        if !natives.is_empty() {
-            let ntotal = self.total_natives();
-            let npct = |n: u64| {
-                if ntotal == 0 {
-                    0.0
-                } else {
-                    n as f64 * 100.0 / ntotal as f64
-                }
-            };
-            let _ = writeln!(s, "\n  top builtins:");
-            for (nid, n) in natives.into_iter().take(top_n) {
-                let _ = writeln!(
-                    s,
-                    "    {:<18} {:>12}  {:>5.1}%",
-                    native_name(nid),
-                    commas(n),
-                    npct(n)
-                );
-            }
-        }
+        histogram(
+            &mut s,
+            "top builtins",
+            natives.iter().map(|&(nid, n)| (native_name(nid), n)),
+            self.total_natives(),
+            top_n,
+        );
         s
+    }
+}
+
+/// Append one `label: rows` histogram section — `name  count  share-of-total`,
+/// truncated to `top_n`. Skipped entirely when there is nothing to report, so a
+/// program that called no builtins gets no empty "top builtins" heading.
+fn histogram(
+    out: &mut String,
+    label: &str,
+    rows: impl Iterator<Item = (String, u64)>,
+    total: u64,
+    top_n: usize,
+) {
+    use fmt::Write as _;
+    let mut rows = rows.take(top_n).peekable();
+    if rows.peek().is_none() {
+        return;
+    }
+    let _ = writeln!(out, "\n  {label}:");
+    for (name, n) in rows {
+        let pct = if total == 0 {
+            0.0
+        } else {
+            n as f64 * 100.0 / total as f64
+        };
+        let _ = writeln!(out, "    {:<18} {:>12}  {:>5.1}%", name, commas(n), pct);
     }
 }
 

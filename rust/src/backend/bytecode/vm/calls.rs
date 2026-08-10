@@ -207,7 +207,7 @@ impl<'a> Vm<'a> {
                         return self.do_call(fi, dst, field_val, args, call_site);
                     }
                     Value::NativeFunction(nid) => {
-                        let v = self.call_native_fn(nid, args, call_site)?;
+                        let v = self.call_native_fn(nid, args, false, call_site)?;
                         self.set(fi, dst, v);
                         return Ok(());
                     }

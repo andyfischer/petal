@@ -82,9 +82,9 @@ impl<'a> Vm<'a> {
             return Ok(());
         }
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
-        // in-place flag only reaches `call_native_fn`.
+        // in-place flag can go straight to the leaf.
         let v = if in_place {
-            self.call_native_fn_in_place(nid, args, origin)?
+            self.call_native_fn(nid, args, true, origin)?
         } else {
             self.call_native_or_intrinsic(nid, args, origin)?
         };
@@ -103,8 +103,8 @@ impl<'a> Vm<'a> {
     /// MUST be consulted at every native entry point, because a native can be
     /// invoked three ways that don't share a single call site: the intrinsic
     /// fork below (map/filter/… never reach the leaf), the shared leaf
-    /// `call_native_fn_flagged` (plain + in-place mutating builtins), and
-    /// record-field method calls. Guarding only one path would make absorption
+    /// [`call_native_fn`](Vm::call_native_fn) (plain + in-place mutating
+    /// builtins), and record-field method calls. Guarding only one path would make absorption
     /// depend on the in-place optimizer or call syntax.
     fn intercept_pending(
         &mut self,
@@ -145,7 +145,7 @@ impl<'a> Vm<'a> {
         }
         let nf = self.native_fns;
         // The intrinsics never reach the shared leaf, so they are counted here;
-        // everything else is counted once, in `call_native_fn_flagged`.
+        // everything else is counted once, in `call_native_fn`.
         if nf.intrinsic_map == Some(nid)
             || nf.intrinsic_filter == Some(nid)
             || nf.intrinsic_reduce == Some(nid)
@@ -162,7 +162,7 @@ impl<'a> Vm<'a> {
         } else if nf.intrinsic_for_each == Some(nid) {
             self.builtin_for_each(args)
         } else {
-            self.call_native_fn(nid, args, origin)
+            self.call_native_fn(nid, args, false, origin)
         }
     }
 
@@ -185,80 +185,72 @@ impl<'a> Vm<'a> {
         Ok(Value::Nil)
     }
 
-    /// Call a non-intrinsic native function via `PetalCxt` (clone-and-alloc).
-    /// `origin` is the requesting call site, stamped onto any resource the
-    /// native creates.
+    /// Build the `PetalCxt` a native call runs against: this `Vm`'s borrows of
+    /// the owning context's heap, output, bindings, resources and flags, plus
+    /// this call's `args`, emit `chain`, `origin`, and `in_place` eligibility.
+    /// The one place those twenty-odd borrows are threaded together — every
+    /// native entry point goes through it, so a new piece of context reaches
+    /// all of them at once.
+    fn native_cxt<'c>(
+        &'c mut self,
+        args: &'c [Value],
+        chain: &'c [TermId],
+        origin: Option<TermId>,
+        in_place: bool,
+    ) -> PetalCxt<'c> {
+        PetalCxt {
+            args,
+            heap: self.heap,
+            output: self.output,
+            symbols: self.symbols,
+            output_buffers: self.output_buffers,
+            trace_emit: self.trace_emit,
+            emit_origins: self.emit_origins,
+            emit_chain: chain,
+            bindings: self.bindings,
+            counters: self.counters,
+            rng_state: self.rng_state,
+            noise_seed: self.noise_seed,
+            resources: self.resources,
+            trace_pending: self.trace_pending,
+            absorption_log: self.absorption_log,
+            origin,
+            frame: self.frame,
+            echo: self.echo,
+            handle_classes: self.handle_classes,
+            results: Vec::new(),
+            in_place,
+        }
+    }
+
+    /// Call a non-intrinsic native function via `PetalCxt`. `origin` is the
+    /// requesting call site, stamped onto any resource the native creates.
+    /// `in_place` lets a mutating builtin (`append`/`set`/…) reuse its container
+    /// argument's backing store instead of cloning it; it is set only when
+    /// escape analysis proved that container unique + non-escaping (M4).
+    ///
+    /// This is the shared leaf for every real native invocation — plain calls,
+    /// the in-place mutating path, and record-field method calls.
     pub(super) fn call_native_fn(
-        &mut self,
-        nid: NativeFnId,
-        args: &[Value],
-        origin: Option<TermId>,
-    ) -> Result<Value, String> {
-        self.call_native_fn_flagged(nid, args, false, origin)
-    }
-
-    /// Call a non-intrinsic native function marked in-place: a mutating builtin
-    /// (`append`/`set`/…) may reuse its container argument's backing store.
-    /// Only reached when escape analysis proved the container unique +
-    /// non-escaping (M4).
-    fn call_native_fn_in_place(
-        &mut self,
-        nid: NativeFnId,
-        args: &[Value],
-        origin: Option<TermId>,
-    ) -> Result<Value, String> {
-        self.call_native_fn_flagged(nid, args, true, origin)
-    }
-
-    fn call_native_fn_flagged(
         &mut self,
         nid: NativeFnId,
         args: &[Value],
         in_place: bool,
         origin: Option<TermId>,
     ) -> Result<Value, String> {
-        // The shared leaf for every real native invocation — plain calls, the
-        // in-place mutating path (`append`/`set`/…, on by default via the
-        // optimizer), and record-field method calls. Intercept here so a Pending
-        // argument is absorbed/no-op'd regardless of which path or optimization
-        // reached this native (redundant with the pre-fork check on the plain
-        // path, but that check only returns early; the scan is a cheap no-op
-        // when no arg is Pending).
+        // Intercept here so a Pending argument is absorbed/no-op'd regardless of
+        // which path or optimization reached this native (redundant with the
+        // pre-fork check in `call_native_or_intrinsic`, but that check only
+        // returns early; the scan is a cheap no-op when no arg is Pending).
         if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
         }
         self.profile.record_native(nid.0);
         let func = self.native_fns.get_func(nid);
         let chain = self.emit_call_chain(origin);
-        let mut cxt = PetalCxt::new(
-            args,
-            self.heap,
-            self.output,
-            self.symbols,
-            self.output_buffers,
-            self.trace_emit,
-            self.emit_origins,
-            &chain,
-            self.bindings,
-            self.counters,
-            self.rng_state,
-            self.noise_seed,
-            self.resources,
-            self.trace_pending,
-            self.absorption_log,
-            origin,
-            self.frame,
-            self.echo,
-            self.handle_classes,
-        );
-        cxt.set_in_place(in_place);
+        let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = func(&mut cxt)?;
-        let results = cxt.take_results();
-        Ok(if count > 0 && !results.is_empty() {
-            results[0]
-        } else {
-            Value::Nil
-        })
+        Ok(cxt.take_result(count))
     }
 
     /// Dispatch `h.method(args...)` through the handle class registered for
@@ -294,33 +286,8 @@ impl<'a> Vm<'a> {
         full_args.push(Value::Handle(h));
         full_args.extend_from_slice(args);
         let chain = self.emit_call_chain(origin);
-        let mut cxt = PetalCxt::new(
-            &full_args,
-            self.heap,
-            self.output,
-            self.symbols,
-            self.output_buffers,
-            self.trace_emit,
-            self.emit_origins,
-            &chain,
-            self.bindings,
-            self.counters,
-            self.rng_state,
-            self.noise_seed,
-            self.resources,
-            self.trace_pending,
-            self.absorption_log,
-            origin,
-            self.frame,
-            self.echo,
-            handle_classes,
-        );
+        let mut cxt = self.native_cxt(&full_args, &chain, origin, false);
         let count = (class.call_method)(&mut cxt, method_name)?;
-        let results = cxt.take_results();
-        Ok(if count > 0 && !results.is_empty() {
-            results[0]
-        } else {
-            Value::Nil
-        })
+        Ok(cxt.take_result(count))
     }
 }

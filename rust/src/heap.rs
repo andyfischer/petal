@@ -459,40 +459,45 @@ impl Heap {
 
     // --- String allocation ---
 
-    pub fn alloc_string(&mut self, s: String) -> StringId {
-        // Check intern table for an existing live string with the same content
-        if let Some(&existing_id) = self.intern_table.get(&s) {
-            let slot = &self.strings.slots[existing_id.0 as usize];
-            if slot.alive {
-                return existing_id;
-            }
-            // Stale entry — will be overwritten below
-        }
+    /// The id already interned for this content, if it is still live. A stale
+    /// entry (the string was collected) reads as a miss and is overwritten by
+    /// the next [`insert_interned`](Self::insert_interned).
+    fn interned(&self, s: &str) -> Option<StringId> {
+        let id = *self.intern_table.get(s)?;
+        self.strings.slots[id.0 as usize].alive.then_some(id)
+    }
 
+    /// Allocate `s` and index it in the intern table. The caller must have
+    /// missed [`interned`](Self::interned) first — this always allocates.
+    fn insert_interned(&mut self, s: String) -> StringId {
         self.tick_alloc(AllocKind::String, s.len() as u64);
         let id = StringId(self.strings.alloc(s.clone()));
         self.intern_table.insert(s, id);
         id
     }
 
+    /// Intern an owned string. Prefer [`intern_str`](Self::intern_str) when the
+    /// content is borrowed: this signature forces the allocation before the
+    /// intern table can say whether it was needed.
+    pub fn alloc_string(&mut self, s: String) -> StringId {
+        match self.interned(&s) {
+            Some(id) => id,
+            None => self.insert_interned(s),
+        }
+    }
+
     /// Intern a borrowed string, allocating only on a miss.
     ///
     /// Every `LoadConst` of a string literal, and every builtin that returns
-    /// text it already has in hand, goes through here. The owned-`String`
-    /// version above has to be handed a fresh allocation *before* it can
-    /// discover the string is already interned — which, on a hot loop over
-    /// string literals, is a malloc and a free per instruction for a value the
-    /// heap already holds. Taking `&str` moves the allocation to the miss path.
+    /// text it already has in hand, goes through here. On a hot loop over
+    /// string literals, [`alloc_string`](Self::alloc_string) is a malloc and a
+    /// free per instruction for a value the heap already holds; taking `&str`
+    /// moves the allocation to the miss path.
     pub fn intern_str(&mut self, s: &str) -> StringId {
-        if let Some(&existing_id) = self.intern_table.get(s) {
-            if self.strings.slots[existing_id.0 as usize].alive {
-                return existing_id;
-            }
+        match self.interned(s) {
+            Some(id) => id,
+            None => self.insert_interned(s.to_string()),
         }
-        self.tick_alloc(AllocKind::String, s.len() as u64);
-        let id = StringId(self.strings.alloc(s.to_string()));
-        self.intern_table.insert(s.to_string(), id);
-        id
     }
 
     /// Intern the byte range `start..end` of an existing heap string without
@@ -505,15 +510,14 @@ impl Heap {
     /// interior byte offset panics exactly as `&str` indexing would.
     pub fn intern_substring(&mut self, id: StringId, start: usize, end: usize) -> StringId {
         let sub = &self.strings.get(id.0)[start..end];
-        if let Some(&existing) = self.intern_table.get(sub) {
-            if self.strings.slots[existing.0 as usize].alive {
-                return existing;
+        match self.interned(sub) {
+            Some(existing) => existing,
+            // Miss: take ownership, which ends the borrow of `strings`.
+            None => {
+                let owned = sub.to_string();
+                self.insert_interned(owned)
             }
         }
-        // Miss: take ownership (which ends the borrow of `strings`) and go
-        // through the owned path, which re-checks the table and allocates.
-        let owned = sub.to_string();
-        self.intern_str(&owned)
     }
 
     pub fn get_string(&self, id: StringId) -> &str {

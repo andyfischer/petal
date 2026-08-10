@@ -397,12 +397,50 @@ pub enum Inst {
     },
 }
 
-/// The opcode of an [`Inst`], stripped of its operands — a dense, `Copy` tag
-/// for counting and grouping instructions (see [`crate::profile`]). Kept
-/// alongside `Inst` rather than derived by a macro so the two lists are read
-/// together; [`Opcode::ALL`] is asserted to cover every variant by a test below.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Opcode {
+/// Declare the [`Opcode`] tag set from one list of [`Inst`] variant names, and
+/// derive from it everything that must agree with that list: the enum,
+/// [`Opcode::ALL`], [`Opcode::COUNT`], [`Opcode::name`], and [`Inst::opcode`].
+/// Written this way because the four were previously transcribed by hand, and a
+/// new `Inst` variant that reached only three of them would silently mis-index
+/// every per-opcode counter after it.
+macro_rules! define_opcodes {
+    ($($name:ident),* $(,)?) => {
+        /// The opcode of an [`Inst`], stripped of its operands — a dense, `Copy`
+        /// tag for counting and grouping instructions (see [`crate::profile`]).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum Opcode {
+            $($name),*
+        }
+
+        impl Opcode {
+            /// Every opcode, in declaration order. Index equals the
+            /// discriminant, so `ALL[op as usize] == op`.
+            pub const ALL: &'static [Opcode] = &[$(Opcode::$name),*];
+
+            /// Number of distinct opcodes — the width of a per-opcode counter
+            /// array.
+            pub const COUNT: usize = Opcode::ALL.len();
+
+            /// The variant name, as written in the source ("LoadConst", "Add", …).
+            pub fn name(self) -> &'static str {
+                match self {
+                    $(Opcode::$name => stringify!($name)),*
+                }
+            }
+        }
+
+        impl Inst {
+            /// This instruction's [`Opcode`] — its variant tag without operands.
+            pub fn opcode(&self) -> Opcode {
+                match self {
+                    $(Inst::$name { .. } => Opcode::$name),*
+                }
+            }
+        }
+    };
+}
+
+define_opcodes!(
     LoadConst,
     LoadNil,
     LoadBool,
@@ -461,214 +499,36 @@ pub enum Opcode {
     MatchArm,
     MatchFail,
     Error,
-}
+);
 
-impl Opcode {
-    /// Number of distinct opcodes — the width of a per-opcode counter array.
-    pub const COUNT: usize = 58;
-
-    /// Every opcode, in declaration order. Index equals the discriminant, so
-    /// `ALL[op as usize] == op`.
-    pub const ALL: [Opcode; Self::COUNT] = [
-        Opcode::LoadConst,
-        Opcode::LoadNil,
-        Opcode::LoadBool,
-        Opcode::Move,
-        Opcode::Add,
-        Opcode::Sub,
-        Opcode::Mul,
-        Opcode::Div,
-        Opcode::Mod,
-        Opcode::Neg,
-        Opcode::Eq,
-        Opcode::Ne,
-        Opcode::Lt,
-        Opcode::Le,
-        Opcode::Gt,
-        Opcode::Ge,
-        Opcode::Not,
-        Opcode::Concat,
-        Opcode::Jump,
-        Opcode::JumpIfFalse,
-        Opcode::JumpIfTrue,
-        Opcode::JumpIfPresent,
-        Opcode::JumpIfPending,
-        Opcode::ForEachInit,
-        Opcode::ForEachNext,
-        Opcode::RangeInit,
-        Opcode::RangeNext,
-        Opcode::WhileInit,
-        Opcode::LoopBumpIdx,
-        Opcode::LoopPop,
-        Opcode::LoopCollect,
-        Opcode::LoopCollectEnd,
-        Opcode::Call,
-        Opcode::MethodCall,
-        Opcode::BuiltinCall,
-        Opcode::MakeClosure,
-        Opcode::MakeOverloadSet,
-        Opcode::Return,
-        Opcode::AllocList,
-        Opcode::AllocMap,
-        Opcode::AllocMapSpread,
-        Opcode::AllocElement,
-        Opcode::MakeEnumVariant,
-        Opcode::GetField,
-        Opcode::SetField,
-        Opcode::GetIndex,
-        Opcode::SetIndex,
-        Opcode::SetFieldInPlace,
-        Opcode::SetIndexInPlace,
-        Opcode::CellNew,
-        Opcode::CellRead,
-        Opcode::CellWrite,
-        Opcode::StateInit,
-        Opcode::StateRead,
-        Opcode::StateWrite,
-        Opcode::MatchArm,
-        Opcode::MatchFail,
-        Opcode::Error,
-    ];
-
-    /// The variant name, as written in the source ("LoadConst", "Add", …).
-    pub fn name(self) -> &'static str {
-        match self {
-            Opcode::LoadConst => "LoadConst",
-            Opcode::LoadNil => "LoadNil",
-            Opcode::LoadBool => "LoadBool",
-            Opcode::Move => "Move",
-            Opcode::Add => "Add",
-            Opcode::Sub => "Sub",
-            Opcode::Mul => "Mul",
-            Opcode::Div => "Div",
-            Opcode::Mod => "Mod",
-            Opcode::Neg => "Neg",
-            Opcode::Eq => "Eq",
-            Opcode::Ne => "Ne",
-            Opcode::Lt => "Lt",
-            Opcode::Le => "Le",
-            Opcode::Gt => "Gt",
-            Opcode::Ge => "Ge",
-            Opcode::Not => "Not",
-            Opcode::Concat => "Concat",
-            Opcode::Jump => "Jump",
-            Opcode::JumpIfFalse => "JumpIfFalse",
-            Opcode::JumpIfTrue => "JumpIfTrue",
-            Opcode::JumpIfPresent => "JumpIfPresent",
-            Opcode::JumpIfPending => "JumpIfPending",
-            Opcode::ForEachInit => "ForEachInit",
-            Opcode::ForEachNext => "ForEachNext",
-            Opcode::RangeInit => "RangeInit",
-            Opcode::RangeNext => "RangeNext",
-            Opcode::WhileInit => "WhileInit",
-            Opcode::LoopBumpIdx => "LoopBumpIdx",
-            Opcode::LoopPop => "LoopPop",
-            Opcode::LoopCollect => "LoopCollect",
-            Opcode::LoopCollectEnd => "LoopCollectEnd",
-            Opcode::Call => "Call",
-            Opcode::MethodCall => "MethodCall",
-            Opcode::BuiltinCall => "BuiltinCall",
-            Opcode::MakeClosure => "MakeClosure",
-            Opcode::MakeOverloadSet => "MakeOverloadSet",
-            Opcode::Return => "Return",
-            Opcode::AllocList => "AllocList",
-            Opcode::AllocMap => "AllocMap",
-            Opcode::AllocMapSpread => "AllocMapSpread",
-            Opcode::AllocElement => "AllocElement",
-            Opcode::MakeEnumVariant => "MakeEnumVariant",
-            Opcode::GetField => "GetField",
-            Opcode::SetField => "SetField",
-            Opcode::GetIndex => "GetIndex",
-            Opcode::SetIndex => "SetIndex",
-            Opcode::SetFieldInPlace => "SetFieldInPlace",
-            Opcode::SetIndexInPlace => "SetIndexInPlace",
-            Opcode::CellNew => "CellNew",
-            Opcode::CellRead => "CellRead",
-            Opcode::CellWrite => "CellWrite",
-            Opcode::StateInit => "StateInit",
-            Opcode::StateRead => "StateRead",
-            Opcode::StateWrite => "StateWrite",
-            Opcode::MatchArm => "MatchArm",
-            Opcode::MatchFail => "MatchFail",
-            Opcode::Error => "Error",
+/// Match the single backpatchable branch-target label of a branching op, over
+/// whichever borrow `$e` carries — match ergonomics yield `&Label` from a
+/// shared borrow and `&mut Label` from a mutable one. One variant list backs
+/// both [`Inst::branch_target`] and [`Inst::branch_target_mut`], so the CFG's
+/// successors and lowering's backpatch can never drift apart.
+macro_rules! branch_target_of {
+    ($e:expr) => {
+        match $e {
+            Inst::Jump { to }
+            | Inst::JumpIfFalse { to, .. }
+            | Inst::JumpIfTrue { to, .. }
+            | Inst::JumpIfPresent { to, .. }
+            | Inst::JumpIfPending { to, .. }
+            | Inst::ForEachNext { exit: to, .. }
+            | Inst::RangeNext { exit: to, .. }
+            | Inst::MatchArm { next: to, .. }
+            | Inst::StateInit { after: to, .. } => Some(to),
+            _ => None,
         }
-    }
+    };
 }
 
 impl Inst {
-    /// This instruction's [`Opcode`] — its variant tag without operands.
-    pub fn opcode(&self) -> Opcode {
-        match self {
-            Inst::LoadConst { .. } => Opcode::LoadConst,
-            Inst::LoadNil { .. } => Opcode::LoadNil,
-            Inst::LoadBool { .. } => Opcode::LoadBool,
-            Inst::Move { .. } => Opcode::Move,
-            Inst::Add { .. } => Opcode::Add,
-            Inst::Sub { .. } => Opcode::Sub,
-            Inst::Mul { .. } => Opcode::Mul,
-            Inst::Div { .. } => Opcode::Div,
-            Inst::Mod { .. } => Opcode::Mod,
-            Inst::Neg { .. } => Opcode::Neg,
-            Inst::Eq { .. } => Opcode::Eq,
-            Inst::Ne { .. } => Opcode::Ne,
-            Inst::Lt { .. } => Opcode::Lt,
-            Inst::Le { .. } => Opcode::Le,
-            Inst::Gt { .. } => Opcode::Gt,
-            Inst::Ge { .. } => Opcode::Ge,
-            Inst::Not { .. } => Opcode::Not,
-            Inst::Concat { .. } => Opcode::Concat,
-            Inst::Jump { .. } => Opcode::Jump,
-            Inst::JumpIfFalse { .. } => Opcode::JumpIfFalse,
-            Inst::JumpIfTrue { .. } => Opcode::JumpIfTrue,
-            Inst::JumpIfPresent { .. } => Opcode::JumpIfPresent,
-            Inst::JumpIfPending { .. } => Opcode::JumpIfPending,
-            Inst::ForEachInit { .. } => Opcode::ForEachInit,
-            Inst::ForEachNext { .. } => Opcode::ForEachNext,
-            Inst::RangeInit { .. } => Opcode::RangeInit,
-            Inst::RangeNext { .. } => Opcode::RangeNext,
-            Inst::WhileInit { .. } => Opcode::WhileInit,
-            Inst::LoopBumpIdx { .. } => Opcode::LoopBumpIdx,
-            Inst::LoopPop { .. } => Opcode::LoopPop,
-            Inst::LoopCollect { .. } => Opcode::LoopCollect,
-            Inst::LoopCollectEnd { .. } => Opcode::LoopCollectEnd,
-            Inst::Call { .. } => Opcode::Call,
-            Inst::MethodCall { .. } => Opcode::MethodCall,
-            Inst::BuiltinCall { .. } => Opcode::BuiltinCall,
-            Inst::MakeClosure { .. } => Opcode::MakeClosure,
-            Inst::MakeOverloadSet { .. } => Opcode::MakeOverloadSet,
-            Inst::Return { .. } => Opcode::Return,
-            Inst::AllocList { .. } => Opcode::AllocList,
-            Inst::AllocMap { .. } => Opcode::AllocMap,
-            Inst::AllocMapSpread { .. } => Opcode::AllocMapSpread,
-            Inst::AllocElement { .. } => Opcode::AllocElement,
-            Inst::MakeEnumVariant { .. } => Opcode::MakeEnumVariant,
-            Inst::GetField { .. } => Opcode::GetField,
-            Inst::SetField { .. } => Opcode::SetField,
-            Inst::GetIndex { .. } => Opcode::GetIndex,
-            Inst::SetIndex { .. } => Opcode::SetIndex,
-            Inst::SetFieldInPlace { .. } => Opcode::SetFieldInPlace,
-            Inst::SetIndexInPlace { .. } => Opcode::SetIndexInPlace,
-            Inst::CellNew { .. } => Opcode::CellNew,
-            Inst::CellRead { .. } => Opcode::CellRead,
-            Inst::CellWrite { .. } => Opcode::CellWrite,
-            Inst::StateInit { .. } => Opcode::StateInit,
-            Inst::StateRead { .. } => Opcode::StateRead,
-            Inst::StateWrite { .. } => Opcode::StateWrite,
-            Inst::MatchArm { .. } => Opcode::MatchArm,
-            Inst::MatchFail { .. } => Opcode::MatchFail,
-            Inst::Error { .. } => Opcode::Error,
-        }
-    }
-
-    /// The destination register this instruction writes its result to, if it
-    /// produces a value in the current frame. Used by the VM's best-effort
-    /// trace hook to record `(origin term, result)` at instruction retire.
-    ///
-    /// `Call`/`MethodCall` have a `dst` but do not fill it in the current frame
-    /// — the result is delivered when the callee frame returns — so they are
-    /// deliberately excluded here and traced from the frame-return path instead.
-    /// Control-flow, loop-cursor, and store-only ops produce no traceable value.
-    pub fn dst(&self) -> Option<Reg> {
+    /// The `dst` operand this instruction carries, if it has one at all. The
+    /// single list of value-producing variants, shared by [`dst`](Inst::dst)
+    /// (which excludes the calls) and [`for_each_write`](Inst::for_each_write)
+    /// (which includes them) so the two cannot disagree about which ops write.
+    fn dst_field(&self) -> Option<Reg> {
         match self {
             Inst::LoadConst { dst, .. }
             | Inst::LoadNil { dst }
@@ -708,10 +568,10 @@ impl Inst {
             | Inst::CellNew { dst, .. }
             | Inst::CellRead { dst, .. }
             | Inst::CellWrite { dst, .. }
-            | Inst::LoopCollectEnd { dst, .. } => Some(*dst),
-            // Value delivered on frame return, not in this frame.
-            Inst::Call { .. } | Inst::MethodCall { .. } => None,
-            // No traceable single-value result.
+            | Inst::LoopCollectEnd { dst, .. }
+            | Inst::Call { dst, .. }
+            | Inst::MethodCall { dst, .. } => Some(*dst),
+            // No single-value result.
             Inst::Jump { .. }
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
@@ -732,117 +592,37 @@ impl Inst {
         }
     }
 
-    /// The source registers this instruction reads, for the trace's input list.
-    /// Best-effort: gathered before the instruction executes (a `dst` that
-    /// aliases a source would otherwise clobber it). Inputs enrich the full
-    /// trace dump (`--record-trace`); `explain` needs only the result, so an
-    /// approximate or empty list here is acceptable.
-    pub fn input_regs(&self) -> SmallVec<[Reg; 4]> {
-        let mut v: SmallVec<[Reg; 4]> = SmallVec::new();
+    /// The destination register this instruction writes its result to *in the
+    /// current frame*, if any. Used by the VM's per-instruction hooks to record
+    /// `(origin term, result)` at instruction retire.
+    ///
+    /// `Call`/`MethodCall` carry a `dst` but do not fill it in the current
+    /// frame — the result is delivered when the callee frame returns — so they
+    /// are excluded here and recorded from the frame-return path instead. For
+    /// the full dataflow write set, use [`for_each_write`](Inst::for_each_write).
+    pub fn dst(&self) -> Option<Reg> {
         match self {
-            Inst::Move { src, .. } | Inst::Neg { a: src, .. } | Inst::Not { a: src, .. } => {
-                v.push(*src)
-            }
-            Inst::Add { a, b, .. }
-            | Inst::Sub { a, b, .. }
-            | Inst::Mul { a, b, .. }
-            | Inst::Div { a, b, .. }
-            | Inst::Mod { a, b, .. }
-            | Inst::Eq { a, b, .. }
-            | Inst::Ne { a, b, .. }
-            | Inst::Lt { a, b, .. }
-            | Inst::Le { a, b, .. }
-            | Inst::Gt { a, b, .. }
-            | Inst::Ge { a, b, .. }
-            | Inst::Concat { a, b, .. } => {
-                v.push(*a);
-                v.push(*b);
-            }
-            Inst::GetField { obj, .. } => v.push(*obj),
-            Inst::GetIndex { obj, idx, .. } => {
-                v.push(*obj);
-                v.push(*idx);
-            }
-            Inst::SetField { obj, val, .. } | Inst::SetFieldInPlace { obj, val, .. } => {
-                v.push(*obj);
-                v.push(*val);
-            }
-            Inst::SetIndex { obj, idx, val, .. } | Inst::SetIndexInPlace { obj, idx, val, .. } => {
-                v.push(*obj);
-                v.push(*idx);
-                v.push(*val);
-            }
-            Inst::BuiltinCall { args, .. } => v.extend(args.iter().copied()),
-            Inst::AllocList { elems, .. } => v.extend(elems.iter().copied()),
-            Inst::AllocMap { vals, .. } => v.extend(vals.iter().copied()),
-            Inst::MakeEnumVariant { fields, .. } => v.extend(fields.iter().copied()),
-            Inst::StateWrite { val, .. } => v.push(*val),
-            Inst::CellNew { init, .. } => v.push(*init),
-            Inst::CellRead { cell, .. } => v.push(*cell),
-            Inst::CellWrite { cell, val, .. } => {
-                v.push(*cell);
-                v.push(*val);
-            }
-            // Everything else contributes no simple input registers.
-            _ => {}
+            Inst::Call { .. } | Inst::MethodCall { .. } => None,
+            other => other.dst_field(),
         }
-        v
     }
 
-    /// Every register this instruction writes. Unlike [`dst`](Inst::dst) — which
-    /// reports only the single value delivered *in the current frame* for the
-    /// trace hook — this is the full dataflow write set the liveness / last-use
-    /// analysis needs: it includes `Call`/`MethodCall` (the return lands in
-    /// `dst`), the loop-variable of `ForEachNext`/`RangeNext`, and a
-    /// `MatchArm`'s precomputed pattern-binding registers (whose own `dst` is
-    /// written later by the arm body's join `Move`, not by the op).
+    /// Every register this instruction writes — the full dataflow write set the
+    /// liveness / last-use analyses need. Beyond the plain `dst` operand (see
+    /// [`dst_field`](Inst::dst_field)) that means `Call`/`MethodCall` (the
+    /// return lands in `dst`), the loop variable of `ForEachNext`/`RangeNext`,
+    /// and a `MatchArm`'s precomputed pattern-binding registers (whose own
+    /// `dst` is written later by the arm body's join `Move`, not by the op).
     pub fn for_each_write(
         &self,
         match_binds: &std::collections::HashMap<(TermId, u16), Vec<(String, Reg)>>,
         mut f: impl FnMut(Reg),
     ) {
+        if let Some(dst) = self.dst_field() {
+            f(dst);
+            return;
+        }
         match self {
-            Inst::LoadConst { dst, .. }
-            | Inst::LoadNil { dst }
-            | Inst::LoadBool { dst, .. }
-            | Inst::Move { dst, .. }
-            | Inst::Add { dst, .. }
-            | Inst::Sub { dst, .. }
-            | Inst::Mul { dst, .. }
-            | Inst::Div { dst, .. }
-            | Inst::Mod { dst, .. }
-            | Inst::Neg { dst, .. }
-            | Inst::Eq { dst, .. }
-            | Inst::Ne { dst, .. }
-            | Inst::Lt { dst, .. }
-            | Inst::Le { dst, .. }
-            | Inst::Gt { dst, .. }
-            | Inst::Ge { dst, .. }
-            | Inst::Not { dst, .. }
-            | Inst::Concat { dst, .. }
-            | Inst::Call { dst, .. }
-            | Inst::MethodCall { dst, .. }
-            | Inst::BuiltinCall { dst, .. }
-            | Inst::MakeClosure { dst, .. }
-            | Inst::MakeOverloadSet { dst, .. }
-            | Inst::AllocList { dst, .. }
-            | Inst::AllocMap { dst, .. }
-            | Inst::AllocMapSpread { dst, .. }
-            | Inst::AllocElement { dst, .. }
-            | Inst::MakeEnumVariant { dst, .. }
-            | Inst::GetField { dst, .. }
-            | Inst::SetField { dst, .. }
-            | Inst::GetIndex { dst, .. }
-            | Inst::SetIndex { dst, .. }
-            | Inst::SetFieldInPlace { dst, .. }
-            | Inst::SetIndexInPlace { dst, .. }
-            | Inst::StateInit { dst, .. }
-            | Inst::StateRead { dst, .. }
-            | Inst::StateWrite { dst, .. }
-            | Inst::CellNew { dst, .. }
-            | Inst::CellRead { dst, .. }
-            | Inst::CellWrite { dst, .. }
-            | Inst::LoopCollectEnd { dst, .. } => f(*dst),
             Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
             Inst::MatchArm { term, arm, .. } => {
                 if let Some(binds) = match_binds.get(&(*term, *arm)) {
@@ -851,28 +631,15 @@ impl Inst {
                     }
                 }
             }
-            Inst::Jump { .. }
-            | Inst::JumpIfFalse { .. }
-            | Inst::JumpIfTrue { .. }
-            | Inst::JumpIfPresent { .. }
-            | Inst::JumpIfPending { .. }
-            | Inst::ForEachInit { .. }
-            | Inst::RangeInit { .. }
-            | Inst::WhileInit { .. }
-            | Inst::LoopBumpIdx { .. }
-            | Inst::LoopPop { .. }
-            | Inst::LoopCollect { .. }
-            | Inst::Return { .. }
-            | Inst::MatchFail { .. }
-            | Inst::Error { .. } => {}
+            _ => {}
         }
     }
 
     /// Every register this instruction reads, by mutable reference so a pass can
     /// rewrite operands in place (copy propagation) as well as enumerate them.
     ///
-    /// This is the *complete* read set — unlike [`input_regs`](Inst::input_regs),
-    /// which serves the trace hook and covers only the simple value operands.
+    /// This is the sole definition of the read set — the dataflow passes and the
+    /// VM's trace hook (via [`read_regs`](Inst::read_regs)) both come here.
     /// It is the read-side counterpart of [`for_each_write`](Inst::for_each_write);
     /// the two together define the dataflow of an instruction, so a new `Inst`
     /// variant must be added to both.
@@ -1001,43 +768,19 @@ impl Inst {
         )
     }
 
-    /// This instruction's explicit branch target label, if any. Every branching
-    /// op carries at most one — the same field lowering backpatches (see
-    /// [`branch_target_mut`](Inst::branch_target_mut), which must stay in lockstep
-    /// with this variant set) and the CFG treats as a non-fall-through successor.
+    /// This instruction's explicit branch target label, if any — the CFG's
+    /// non-fall-through successor. Every branching op carries at most one; the
+    /// variant list lives in the `branch_target_of!` macro, shared with
+    /// [`branch_target_mut`](Inst::branch_target_mut).
     pub fn branch_target(&self) -> Option<Label> {
-        match self {
-            Inst::Jump { to }
-            | Inst::JumpIfFalse { to, .. }
-            | Inst::JumpIfTrue { to, .. }
-            | Inst::JumpIfPresent { to, .. }
-            | Inst::JumpIfPending { to, .. }
-            | Inst::ForEachNext { exit: to, .. }
-            | Inst::RangeNext { exit: to, .. }
-            | Inst::MatchArm { next: to, .. }
-            | Inst::StateInit { after: to, .. } => Some(*to),
-            _ => None,
-        }
+        branch_target_of!(self).copied()
     }
 
     /// Mutable view of the single backpatchable branch-target label — the write
-    /// counterpart of [`branch_target`](Inst::branch_target). Lowering resolves a
-    /// placeholder block-id to a code offset through this; the two methods
-    /// enumerate the identical variant set so successors and patch can never
-    /// drift apart.
+    /// counterpart of [`branch_target`](Inst::branch_target). Lowering resolves
+    /// a placeholder block-id to a code offset through this.
     pub fn branch_target_mut(&mut self) -> Option<&mut Label> {
-        match self {
-            Inst::Jump { to }
-            | Inst::JumpIfFalse { to, .. }
-            | Inst::JumpIfTrue { to, .. }
-            | Inst::JumpIfPresent { to, .. }
-            | Inst::JumpIfPending { to, .. }
-            | Inst::ForEachNext { exit: to, .. }
-            | Inst::RangeNext { exit: to, .. }
-            | Inst::MatchArm { next: to, .. }
-            | Inst::StateInit { after: to, .. } => Some(to),
-            _ => None,
-        }
+        branch_target_of!(self)
     }
 }
 

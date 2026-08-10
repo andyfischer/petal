@@ -156,116 +156,63 @@ impl Default for NativeFnTable {
 /// The handle passed to native functions, providing access to arguments,
 /// result pushing, output, and heap.
 pub struct PetalCxt<'a> {
-    args: &'a [Value],
-    heap: &'a mut Heap,
-    output: &'a mut Vec<String>,
-    symbols: &'a mut SymbolTable,
-    output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
+    pub(crate) args: &'a [Value],
+    pub(crate) heap: &'a mut Heap,
+    pub(crate) output: &'a mut Vec<String>,
+    pub(crate) symbols: &'a mut SymbolTable,
+    pub(crate) output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
     /// Whether emits record their call site (copied from the owning
     /// `ExecutionContext`). Gates the push in [`push_output`](Self::push_output).
-    trace_emit: bool,
+    pub(crate) trace_emit: bool,
     /// The owning context's call-site attribution for buffered output, borrowed
     /// so [`push_output`](Self::push_output) can stamp this call's
     /// [`origin`](Self::origin) onto the value it emits while `trace_emit` is on.
     /// See [`crate::execution_context::ExecutionContext::emit_origins`].
-    emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
+    pub(crate) emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
     /// The call chain that reached this native — its own call site, then the
     /// return address of each enclosing call, innermost first. Built by the VM
     /// only while `trace_emit` is on, and copied onto each value this call
     /// emits. Empty otherwise.
-    emit_chain: &'a [crate::program::TermId],
-    bindings: &'a mut HashMap<SymbolId, Value>,
-    counters: &'a mut HashMap<SymbolId, u64>,
+    pub(crate) emit_chain: &'a [crate::program::TermId],
+    pub(crate) bindings: &'a mut HashMap<SymbolId, Value>,
+    pub(crate) counters: &'a mut HashMap<SymbolId, u64>,
     /// Per-run xorshift64* PRNG state, borrowed from the owning
     /// `ExecutionContext` so the RNG builtins advance that context's stream.
-    rng_state: &'a mut u64,
+    pub(crate) rng_state: &'a mut u64,
     /// Per-run Perlin-noise seed, borrowed from the owning `ExecutionContext`.
-    noise_seed: &'a mut u64,
+    pub(crate) noise_seed: &'a mut u64,
     /// The owning context's resource table, borrowed so the pending-resource
     /// builtins (`__pending`/`__resolve`/`__reject`) can create/resolve entries.
-    resources: &'a mut crate::resource_table::ResourceTable,
+    pub(crate) resources: &'a mut crate::resource_table::ResourceTable,
     /// Whether the debug-gated absorption log records (copied from the owning
     /// `ExecutionContext`). Gates the push in [`note_absorbed`](Self::note_absorbed).
-    trace_pending: bool,
+    pub(crate) trace_pending: bool,
     /// The owning context's per-frame absorption log, borrowed so an aggregate
     /// that absorbs a Pending element (`sort`/`join`) can record `(origin, id)`
     /// when `trace_pending` is on. See
     /// [`crate::execution_context::ExecutionContext::absorption_log`].
-    absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
+    pub(crate) absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
     /// The call site (`TermId`) of the instruction invoking this native, when
     /// known — stamped onto any resource this call creates for the observability
     /// tooling. `None` when the caller has no origin term to attribute.
-    origin: Option<crate::program::TermId>,
+    pub(crate) origin: Option<crate::program::TermId>,
     /// The owning context's current frame, stamped onto any resource this call
     /// creates (`ResourceEntry::frame_started`).
-    frame: u64,
+    pub(crate) frame: u64,
     /// Whether `print` echoes to real stdout. False for speculative forks so
     /// their output stays captured in the buffer instead of leaking to stdout.
-    echo: bool,
-    handle_classes: &'a [HandleClass],
-    results: Vec<Value>,
+    pub(crate) echo: bool,
+    pub(crate) handle_classes: &'a [HandleClass],
+    pub(crate) results: Vec<Value>,
     /// When true, the caller (the bytecode VM, under `OptFlags::in_place_mutation`)
     /// has proven this call's container argument is uniquely owned and
     /// non-escaping, so a mutating builtin (`append`, `drop_last`, `set`, …) may
     /// mutate the backing store in place and reuse its id instead of cloning.
     /// Always false with optimizations off (the clone-and-alloc baseline).
-    in_place: bool,
+    pub(crate) in_place: bool,
 }
 
 impl<'a> PetalCxt<'a> {
-    pub fn new(
-        args: &'a [Value],
-        heap: &'a mut Heap,
-        output: &'a mut Vec<String>,
-        symbols: &'a mut SymbolTable,
-        output_buffers: &'a mut HashMap<SymbolId, Vec<Value>>,
-        trace_emit: bool,
-        emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
-        emit_chain: &'a [crate::program::TermId],
-        bindings: &'a mut HashMap<SymbolId, Value>,
-        counters: &'a mut HashMap<SymbolId, u64>,
-        rng_state: &'a mut u64,
-        noise_seed: &'a mut u64,
-        resources: &'a mut crate::resource_table::ResourceTable,
-        trace_pending: bool,
-        absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
-        origin: Option<crate::program::TermId>,
-        frame: u64,
-        echo: bool,
-        handle_classes: &'a [HandleClass],
-    ) -> Self {
-        Self {
-            args,
-            heap,
-            output,
-            symbols,
-            output_buffers,
-            trace_emit,
-            emit_origins,
-            emit_chain,
-            bindings,
-            counters,
-            rng_state,
-            noise_seed,
-            resources,
-            trace_pending,
-            absorption_log,
-            origin,
-            frame,
-            echo,
-            handle_classes,
-            results: Vec::new(),
-            in_place: false,
-        }
-    }
-
-    /// Mark this call as in-place-eligible (see [`in_place`](Self::in_place)).
-    /// The VM sets this before invoking a mutating builtin when its escape
-    /// analysis proved the container argument unique + non-escaping.
-    pub fn set_in_place(&mut self, in_place: bool) {
-        self.in_place = in_place;
-    }
-
     /// Whether a mutating builtin may mutate its container argument in place
     /// (and reuse its id) rather than cloning. See [`set_in_place`](Self::set_in_place).
     pub fn in_place(&self) -> bool {
@@ -583,8 +530,14 @@ impl<'a> PetalCxt<'a> {
         self.frame
     }
 
-    /// Consume the state and return the results vector.
-    pub fn take_results(self) -> Vec<Value> {
-        self.results
+    /// Consume the state and return the single value a call yields to Petal:
+    /// the first result the native pushed, or `Nil` if it pushed none. `count`
+    /// is what the native itself reported — a native that returns `Ok(0)` has
+    /// no result even if it left something on the stack.
+    pub fn take_result(self, count: u32) -> Value {
+        if count == 0 {
+            return Value::Nil;
+        }
+        self.results.first().copied().unwrap_or(Value::Nil)
     }
 }

@@ -137,8 +137,8 @@ fn an_overlay_hides_the_text_beneath_it_and_keeps_its_own() {
     let scene = Scene {
         bg: Color::rgb(0.0, 0.0, 0.0),
         primitives: vec![
-            text(),                                     // the list underneath
-            cover_quad(panel),                          // the menu background
+            text(),            // the list underneath
+            cover_quad(panel), // the menu background
             Primitive::Text {
                 // the menu's own label, drawn after the panel
                 pos: (0.0, 0.0),

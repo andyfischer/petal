@@ -10,7 +10,7 @@ use glyphon::{
     TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
 
-use crate::{Color, Rect, TextStyle};
+use crate::{Color, Rect, TextStyle, REGULAR_WEIGHT};
 
 /// One text run staged for drawing, in logical pixels.
 pub(crate) struct TextRun<'a> {
@@ -115,6 +115,36 @@ pub(crate) struct TextStack {
     family_name: Option<String>,
     /// (advance_width, line_height) in logical pixels.
     cell_size: (f32, f32),
+    /// Per-batch: did this batch's `prepare` fail because the atlas was full?
+    /// A failed batch holds whatever vertices it was left with by an earlier
+    /// frame, so it must not be drawn — see [`render_batch`](Self::render_batch).
+    failed: Vec<bool>,
+    /// Running counters of atlas pressure, surfaced through
+    /// [`crate::Renderer::text_atlas_stats`].
+    stats: AtlasStats,
+}
+
+/// What the glyph atlas is being asked to hold, and whether it ever gave up.
+///
+/// The atlas has a hard ceiling: it doubles until it hits the device's
+/// `max_texture_dimension_2d` and then starts evicting, and once every glyph it
+/// holds is in use by the frame being staged there is nowhere left to put the
+/// next one. That is `overflows > 0`, and it is the state in which text
+/// silently disappears — so it is counted, logged, and reported rather than
+/// left to be discovered by squinting at a screenshot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AtlasStats {
+    /// Text runs staged in the last prepared frame.
+    pub runs: usize,
+    /// Distinct font sizes (rounded to 1/4 px, the shaping granularity) in the
+    /// last prepared frame. The failure mode this whole area is about scales
+    /// with this number, so it is the useful pressure reading.
+    pub distinct_sizes: usize,
+    /// Text batches the last frame refused to draw because the atlas was full.
+    pub dropped_batches: usize,
+    /// Total atlas-full events since startup. Nonzero means text has been
+    /// missing from at least one frame.
+    pub overflows: u64,
 }
 
 /// Load the embedded font into a fresh `FontSystem`. Returns the font system
@@ -192,7 +222,14 @@ impl TextStack {
             buffers: Vec::new(),
             family_name,
             cell_size,
+            failed: Vec::new(),
+            stats: AtlasStats::default(),
         }
+    }
+
+    /// Atlas pressure as of the last prepared frame.
+    pub fn atlas_stats(&self) -> AtlasStats {
+        self.stats
     }
 
     /// Grow the renderer pool to `n` entries. Renderers share the atlas, so a
@@ -295,19 +332,27 @@ impl TextStack {
 
         self.ensure_renderers(device, batches.len());
         self.batches = batches.len();
+        self.failed.clear();
+        self.failed.resize(batches.len(), false);
+
+        let mut sizes: Vec<u32> = texts.iter().map(|r| (r.size * 4.0) as u32).collect();
+        sizes.sort_unstable();
+        sizes.dedup();
+        self.stats.runs = texts.len();
+        self.stats.distinct_sizes = sizes.len();
+        self.stats.dropped_batches = 0;
 
         // Each batch is staged into its own renderer. They share one atlas, so
         // a glyph rasterized for an earlier batch is reused by a later one; and
         // because `TextAtlas::grow` preserves existing glyph coordinates, the
         // vertices an earlier `prepare` already emitted stay valid even if a
         // later batch grows the atlas.
-        for (renderer, batch) in self.renderers.iter_mut().zip(batches) {
+        for (index, (renderer, batch)) in self.renderers.iter_mut().zip(batches).enumerate() {
             let end = batch.end.min(texts.len());
             let start = batch.start.min(end);
-            let areas = self.buffers[start..end]
-                .iter()
-                .zip(&texts[start..end])
-                .map(|(buffer, run)| TextArea {
+            let mut areas: Vec<TextArea<'_>> = Vec::with_capacity(end - start);
+            for (buffer, run) in self.buffers[start..end].iter().zip(&texts[start..end]) {
+                let area = TextArea {
                     buffer,
                     left: run.pos.0 * scale_factor,
                     top: run.pos.1 * scale_factor,
@@ -320,24 +365,64 @@ impl TextStack {
                     },
                     default_color: to_glyphon_color(run.color),
                     custom_glyphs: &[],
-                });
+                };
+                // Faux bold: the embedded family ships Regular only, so a
+                // bold request resolves back to Regular and `weight` would
+                // otherwise be a no-op the protocol accepts and ignores.
+                // Smearing the same run horizontally thickens the stems
+                // without touching layout — advances, and therefore
+                // `text_width` and every column the caller computed from it,
+                // are unchanged.
+                if let Some(offset) = embolden_offset(run.style.weight, run.size) {
+                    areas.push(TextArea {
+                        left: area.left + offset * scale_factor,
+                        ..area
+                    });
+                }
+                areas.push(area);
+            }
 
-            renderer
-                .prepare(
-                    device,
-                    queue,
-                    &mut self.font_system,
-                    &mut self.atlas,
-                    &self.viewport,
-                    areas,
-                    &mut self.swash_cache,
-                )
-                .expect("glyphon text prepare failed");
+            let outcome = renderer.prepare(
+                device,
+                queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &self.viewport,
+                areas,
+                &mut self.swash_cache,
+            );
+
+            // The atlas is full: every glyph it holds is already in use by
+            // this frame and it cannot grow past the device's texture limit.
+            // glyphon leaves the renderer holding whatever vertices it had, so
+            // drawing it would composite a *previous* frame's text into this
+            // one. Skip the batch, count it, and say so — a missing line of
+            // text with a log line beside it is debuggable; silently stale
+            // text is what cost days of screenshot-squinting.
+            if let Err(glyphon::PrepareError::AtlasFull) = outcome {
+                self.failed[index] = true;
+                self.stats.dropped_batches += 1;
+                self.stats.overflows += 1;
+                if self.stats.dropped_batches == 1 {
+                    eprintln!(
+                        "garden-render: GLYPH ATLAS FULL — dropped a text batch \
+                         ({} runs, {} distinct sizes this frame, {} overflows total). \
+                         Text in that batch is NOT on screen. Reduce the number of \
+                         distinct font sizes drawn in one frame.",
+                        self.stats.runs, self.stats.distinct_sizes, self.stats.overflows
+                    );
+                }
+            }
         }
     }
 
     /// Draw text batch `index` (as partitioned by [`prepare`]) into the pass.
     pub fn render_batch(&self, index: usize, pass: &mut wgpu::RenderPass<'_>) {
+        // A batch whose `prepare` hit a full atlas still holds an older
+        // frame's vertices; drawing it would show stale text.
+        if self.failed.get(index).copied().unwrap_or(false) {
+            return;
+        }
         let Some(renderer) = self.renderers.get(index).filter(|_| index < self.batches) else {
             return;
         };
@@ -350,6 +435,26 @@ impl TextStack {
     pub fn end_frame(&mut self) {
         self.atlas.trim();
     }
+}
+
+/// Weight at or above which a run is emboldened by smearing. 600 is CSS
+/// semibold — below that a run is drawn once, as before.
+const BOLD_THRESHOLD: u16 = 600;
+
+/// How far to offset the doubled draw of a `weight >= 600` run, in logical
+/// pixels, or `None` for a run that needs no emboldening.
+///
+/// The offset scales with the font size so the stem weight stays proportional,
+/// and is floored at half a logical pixel so small text still thickens
+/// visibly. It is deliberately well under a quarter of the advance: the smear
+/// must not close the counters of small glyphs or bleed into the next cell.
+fn embolden_offset(weight: u16, size: f32) -> Option<f32> {
+    if weight < BOLD_THRESHOLD {
+        return None;
+    }
+    // 400 -> 0, 700 -> 1, 900 -> ~1.67 of the base stroke increment.
+    let extra = (weight - REGULAR_WEIGHT) as f32 / 300.0;
+    Some((size * 0.035 * extra).max(0.5))
 }
 
 fn to_glyphon_color(c: Color) -> glyphon::Color {
@@ -527,9 +632,7 @@ mod tests {
     /// characters appear, and they rasterize at a stale size).
     #[test]
     fn a_new_glyph_in_a_warm_cache_rasterizes_at_its_own_size() {
-        const SIZES: [f32; 10] = [
-            10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 44.0, 56.0,
-        ];
+        const SIZES: [f32; 10] = [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 44.0, 56.0];
         let (mut fs, family) = build_font_system(false);
         let mut swash = SwashCache::new();
 
@@ -549,7 +652,15 @@ mod tests {
         let mut cold_swash = SwashCache::new();
         let cold: Vec<u32> = SIZES
             .iter()
-            .map(|&s| raster_height(&mut cold_fs, &mut cold_swash, cold_family.as_deref(), "B", s))
+            .map(|&s| {
+                raster_height(
+                    &mut cold_fs,
+                    &mut cold_swash,
+                    cold_family.as_deref(),
+                    "B",
+                    s,
+                )
+            })
             .collect();
 
         assert_eq!(

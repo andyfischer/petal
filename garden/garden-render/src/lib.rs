@@ -28,7 +28,7 @@ mod mesh;
 mod quad;
 mod text;
 
-pub use text::{FONT_SIZE, LINE_HEIGHT_RATIO};
+pub use text::{AtlasStats, FONT_SIZE, LINE_HEIGHT_RATIO};
 
 use std::sync::Arc;
 
@@ -965,6 +965,14 @@ impl Renderer {
     pub fn scale_factor(&self) -> f64 {
         self.window.scale_factor()
     }
+
+    /// Glyph-atlas pressure as of the last prepared frame — how many text runs
+    /// and distinct font sizes it was asked to hold, and whether it ever
+    /// overflowed. Meant for `/state`: a nonzero `overflows` is the signal that
+    /// text is missing from the screen for a reason the pixels cannot explain.
+    pub fn text_atlas_stats(&self) -> AtlasStats {
+        self.core.text.atlas_stats()
+    }
 }
 
 /// GPU renderer with no window or surface: renders scenes offscreen and reads
@@ -1029,5 +1037,10 @@ impl HeadlessRenderer {
     /// Monospace cell metrics, identical to [`Renderer::cell_size`].
     pub fn cell_size(&self) -> (f32, f32) {
         self.core.text.cell_size()
+    }
+
+    /// Glyph-atlas pressure, identical to [`Renderer::text_atlas_stats`].
+    pub fn text_atlas_stats(&self) -> AtlasStats {
+        self.core.text.atlas_stats()
     }
 }

@@ -42,8 +42,10 @@ impl App {
         // borrow on `self` ends (like `spawned`, but their first data comes from
         // the query round-trip rather than an initial `render`).
         let mut spawned_clients: Vec<usize> = Vec::new();
-        // Panel scripts that failed to compile/load this rebuild, reported once
-        // the borrow on `self` ends.
+        // Panel scripts that could not be given a pane at all this rebuild (the
+        // stub host itself failed), reported once the borrow on `self` ends. An
+        // ordinary compile failure is *not* here: it keeps a live panel pane
+        // whose error `sync_panel_error` reports every tick.
         let mut panel_errors: Vec<String> = Vec::new();
         for (idx, PaneSlot { rect, content }) in slots.into_iter().enumerate() {
             let pane = match content {
@@ -141,19 +143,37 @@ impl App {
                                 Pane::panel(rect, EditorView::open(None), view)
                             }
                             Err(err) => {
-                                // Never crash: show the error in a plain editor.
-                                // Also report it everywhere a failure is looked
-                                // for — the pane title, the status bar, and the
-                                // launch log — because the fallback pane is
-                                // otherwise indistinguishable from an empty
-                                // buffer, and a headless/scripted client reading
-                                // `status_error` would see a clean start.
+                                // Never crash, and never *degrade*: the pane stays
+                                // a panel, running an empty stub program that keeps
+                                // watching the file, so fixing the script brings the
+                                // panel up by itself (before this, a script that was
+                                // broken at startup turned the pane into a plain
+                                // editor forever — only a restart recovered it).
+                                // The error is reported everywhere a failure is
+                                // looked for: the pane's error banner, `/state`'s
+                                // `panel.error` *and* `status_error`, and the log.
                                 let msg = format!("could not load panel {script}: {err}");
-                                let mut view = EditorView::open(None);
-                                view.set_external_content(&msg, None);
-                                view.set_external_title(Some(format!("panel error: {script}")));
-                                panel_errors.push(msg);
-                                Pane::editor(rect, None, view)
+                                match PanelHost::stub(&path) {
+                                    Ok(host) => {
+                                        let mut view =
+                                            PanelView::new(host, script.clone(), Instant::now());
+                                        view.set_screens(screens.clone());
+                                        view.set_load_error(err);
+                                        Pane::panel(rect, EditorView::open(None), view)
+                                    }
+                                    // The empty program failed to compile — not a
+                                    // reachable state, but fall back to showing the
+                                    // text rather than losing the pane.
+                                    Err(_) => {
+                                        panel_errors.push(msg.clone());
+                                        let mut view = EditorView::open(None);
+                                        view.set_external_content(&msg, None);
+                                        view.set_external_title(Some(format!(
+                                            "panel error: {script}"
+                                        )));
+                                        Pane::editor(rect, None, view)
+                                    }
+                                }
                             }
                         }
                     }

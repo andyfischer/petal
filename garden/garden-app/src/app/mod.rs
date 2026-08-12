@@ -508,9 +508,7 @@ impl App {
     /// one is standing, else the live panel error. One place to look, for the
     /// status bar and for a headless client polling `/state`.
     pub(crate) fn effective_status_error(&self) -> Option<&str> {
-        self.status_error
-            .as_deref()
-            .or(self.panel_error.as_deref())
+        self.status_error.as_deref().or(self.panel_error.as_deref())
     }
 
     /// The debug capture consistency contract: run panel frames until the drawn

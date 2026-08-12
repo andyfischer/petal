@@ -4110,7 +4110,11 @@ fn a_runtime_error_reaches_status_error_and_recovers() {
     );
     // One line, whatever the Petal error's source excerpt looks like: the status
     // bar has one line to give it.
-    assert_eq!(err.lines().count(), 1, "status text is a single line: {err}");
+    assert_eq!(
+        err.lines().count(),
+        1,
+        "status text is a single line: {err}"
+    );
 
     fs::write(&script, "let xs = [1, 2]\nlet bad = xs[1]\n").unwrap();
     app.settle_panels();

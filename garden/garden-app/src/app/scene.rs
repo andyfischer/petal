@@ -143,7 +143,7 @@ impl App {
                     size: FONT_SIZE,
                     style: TextStyle::default(),
                 });
-            } else if let Some(err) = &self.status_error {
+            } else if let Some(err) = self.effective_status_error() {
                 prims.push(Primitive::Text {
                     pos: (w * 0.4, text_y),
                     text: err.replace('\n', " "),

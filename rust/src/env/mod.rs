@@ -163,6 +163,7 @@ impl Env {
     fn effective_opt_flags(&self) -> OptFlags {
         let mut flags = self.opt_flags;
         flags.preserve_observations |= self.observations.enabled || self.trace.enabled;
+        flags.preserve_trace |= self.trace.enabled;
         flags
     }
 

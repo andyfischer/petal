@@ -697,6 +697,30 @@ mod tests {
         assert_eq!(by_var, vec![(Some("offset"), "22.5"), (Some("x"), "32.5")]);
     }
 
+    /// A loop counter has no literal to read: its only value is the one the run
+    /// recorded. Copy propagation deletes the register move a loop-variable read
+    /// lowers to, and with it the trace event the solve inverts against — so
+    /// tracing has to hold the pass back (`OptFlags::preserve_trace`), or every
+    /// `x0 + i * spacing` in a sketch silently stops being draggable.
+    #[test]
+    fn a_loop_counter_supplies_the_value_a_solve_inverts_against() {
+        let src = "config let spacing = 50\n\
+                   let x0 = 20\n\
+                   for i in range(0, 3) do\n\
+                     print(x0 + i * spacing)\n\
+                   end\n";
+        let (env, pid) = run_traced(src);
+        // The last iteration drew at 20 + 2 * 50 = 120; ask for 140, which only
+        // `spacing` (the declared knob) can deliver: 20 + 2 * 60.
+        let ps = propose(&env, pid, 0, StaticValue::Float(140.0), &HashMap::new());
+        assert_eq!(
+            ps.iter()
+                .map(|p| (p.variable.as_deref(), p.edit.new_text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(Some("spacing"), "60")]
+        );
+    }
+
     #[test]
     fn policy_narrows_computed_candidates_to_one() {
         let src = "let x = 20\nlet offset = 10\nprint(x + offset)\n";

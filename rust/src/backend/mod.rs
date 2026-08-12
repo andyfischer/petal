@@ -60,6 +60,17 @@ pub struct OptFlags {
     /// it is part of the flags, so switching observation on re-lowers the
     /// program rather than reusing code compiled without the guard.
     pub preserve_observations: bool,
+    /// Hold `copy_propagation` back from deleting **any** instruction that
+    /// carries an origin term, so the execution trace still records a value for
+    /// every term the program computes. Set by `Env` when the trace buffer is
+    /// enabled.
+    ///
+    /// Broader than `preserve_observations`, and deliberately so: the
+    /// observation buffer only reports *named* bindings, while the trace is read
+    /// per-term by provenance, `explain` and direct manipulation — solving
+    /// `x0 + i * spacing` for `spacing` needs the value the anonymous `i` read
+    /// took, which is exactly the kind of dead `Move` copy propagation deletes.
+    pub preserve_trace: bool,
 }
 
 impl OptFlags {
@@ -70,6 +81,7 @@ impl OptFlags {
             in_place_straight_line: false,
             copy_propagation: false,
             preserve_observations: false,
+            preserve_trace: false,
         }
     }
 
@@ -80,6 +92,7 @@ impl OptFlags {
             in_place_straight_line: true,
             copy_propagation: true,
             preserve_observations: false,
+            preserve_trace: false,
         }
     }
 }
@@ -101,6 +114,7 @@ impl Default for OptFlags {
             in_place_straight_line: true,
             copy_propagation: true,
             preserve_observations: false,
+            preserve_trace: false,
         }
     }
 }

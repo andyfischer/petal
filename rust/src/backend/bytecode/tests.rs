@@ -1551,6 +1551,7 @@ const ROUTE_A_ONLY: OptFlags = OptFlags {
     in_place_straight_line: true,
     copy_propagation: false,
     preserve_observations: false,
+    preserve_trace: false,
 };
 
 /// bytecode(no-opt) == bytecode(route A only) == bytecode(all).

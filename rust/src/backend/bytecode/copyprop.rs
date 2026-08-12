@@ -20,19 +20,26 @@
 //!    compacted, and every branch target is remapped.
 //!
 //! Self-moves (`Move d <- d`, which lowering emits at some join edges) are
-//! dropped unconditionally — nothing can observe them.
+//! dropped whenever nothing can observe them, which is every run that is not
+//! tracing.
 //!
 //! # What is deliberately preserved
-//! A `Move` whose origin term is **named** is kept even when dead. Naming is
-//! exactly the filter the VM's observation buffer applies (`Vm::is_observable`),
-//! and an embedder reads a frame's bindings out of that buffer — Garden's
-//! `panel.values` and the debug server's `/state` are this, and the `--observe`
-//! CLI dump is too. Deleting the instruction that writes `d` would silently drop
-//! the binding from that report. Unnamed temporaries have no such reader.
+//! Both guards live in [`Preserve`], set from [`crate::backend::OptFlags`] by
+//! whichever debug facility is on.
 //!
-//! The `explain` *trace* is thinned by this pass (a propagated-away move retires
-//! no entry). That is the same best-effort contract in-place mutation and
-//! register reuse already establish for it.
+//! `Preserve::observations`: a `Move` whose origin term is **named** is kept
+//! even when dead. Naming is exactly the filter the VM's observation buffer
+//! applies (`Vm::is_observable`), and an embedder reads a frame's bindings out
+//! of that buffer — Garden's `panel.values` and the debug server's `/state` are
+//! this, and the `--observe` CLI dump is too. Deleting the instruction that
+//! writes `d` would silently drop the binding from that report.
+//!
+//! `Preserve::trace`: every instruction carrying an origin term is kept, named
+//! or not. The trace is addressed per *term* — provenance, `explain`, and
+//! direct manipulation all look up `last_for_term` — so an unnamed temporary
+//! does have a reader after all. Solving `x0 + i * spacing` for `spacing` needs
+//! the value the loop counter `i` took, and the read of `i` is precisely an
+//! unnamed dead move; without this guard the solve silently finds nothing.
 //!
 //! # Soundness
 //! Propagation only rewrites a read of `d` to `s` at a point where every path
@@ -68,29 +75,41 @@ pub struct CopyPropStats {
     pub after: usize,
 }
 
-/// Run the pass over every function of `bc`.
+/// What a run is watching, and therefore what this pass may not delete.
 ///
-/// `preserve_observations` keeps every dead-but-named `Move`, so a host reading
-/// a run's bindings back (`--observe`, Garden's `panel.values`) sees the same
-/// set it would without the pass. It costs real instructions — the named moves
-/// are the phi copies of user variables, the most frequent kind — so it is set
-/// only when something is actually observing. See [`crate::backend::OptFlags`].
-pub fn apply(
-    bc: &mut BytecodeProgram,
-    program: &Program,
-    preserve_observations: bool,
-) -> CopyPropStats {
+/// Both flags cost real instructions — the moves in question are the phi copies
+/// of user variables, the most frequent kind — so each is set only when
+/// something is actually reading the results back. See
+/// [`crate::backend::OptFlags`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Preserve {
+    /// Keep every dead-but-*named* `Move`, so a host reading a run's bindings
+    /// back (`--observe`, Garden's `panel.values`) sees the same set it would
+    /// without the pass.
+    pub observations: bool,
+    /// Keep every dead pure instruction that carries an origin term (and every
+    /// self-move that does), so the trace records a value for each term. The
+    /// trace is read per-term — provenance, `explain`, direct manipulation — and
+    /// anonymous terms are exactly what a solve inverts against, so the narrower
+    /// `observations` rule is not enough.
+    pub trace: bool,
+}
+
+impl Preserve {
+    /// Whether an instruction with this origin has to survive even when its
+    /// destination is dead.
+    fn keeps(&self, program: &Program, origin: Option<TermId>) -> bool {
+        (self.trace && origin.is_some()) || (self.observations && is_observable(program, origin))
+    }
+}
+
+/// Run the pass over every function of `bc`.
+pub fn apply(bc: &mut BytecodeProgram, program: &Program, preserve: Preserve) -> CopyPropStats {
     let mut stats = CopyPropStats::default();
     let match_binds = std::mem::take(&mut bc.match_binds);
-    apply_fn(
-        &mut bc.root,
-        program,
-        &match_binds,
-        preserve_observations,
-        &mut stats,
-    );
+    apply_fn(&mut bc.root, program, &match_binds, preserve, &mut stats);
     for f in &mut bc.fns {
-        apply_fn(f, program, &match_binds, preserve_observations, &mut stats);
+        apply_fn(f, program, &match_binds, preserve, &mut stats);
     }
     bc.match_binds = match_binds;
     stats
@@ -107,7 +126,7 @@ fn apply_fn(
     f: &mut BytecodeFn,
     program: &Program,
     binds: &Binds,
-    preserve_observations: bool,
+    preserve: Preserve,
     stats: &mut CopyPropStats,
 ) {
     stats.before += f.code.len();
@@ -116,7 +135,7 @@ fn apply_fn(
             break;
         }
         stats.rewritten += propagate(f, binds);
-        let removed = eliminate(f, program, binds, preserve_observations);
+        let removed = eliminate(f, program, binds, preserve);
         stats.removed += removed;
         if removed == 0 {
             break;
@@ -283,23 +302,21 @@ fn transfer(facts: &Facts, inst: &Inst, binds: &Binds) -> Facts {
 
 /// Delete moves whose destination is dead afterwards (plus every self-move),
 /// compact the code, and remap branch targets. Returns how many were deleted.
-fn eliminate(
-    f: &mut BytecodeFn,
-    program: &Program,
-    binds: &Binds,
-    preserve_observations: bool,
-) -> usize {
+fn eliminate(f: &mut BytecodeFn, program: &Program, binds: &Binds, preserve: Preserve) -> usize {
     let n = f.code.len();
     let live_out = liveness(f, binds);
 
     let mut drop_it = vec![false; n];
     let mut removed = 0;
     for j in 0..n {
+        let origin = f.origins.get(j).copied().flatten();
         // A self-move is unobservable even when its origin term is named: the
         // register already holds the value an observation would record, and the
-        // VM reads `dst` *after* the instruction to record it.
+        // VM reads `dst` *after* the instruction to record it. It is not
+        // *untraceable*, though — the trace keys on the origin term, and with
+        // the move gone no event is ever pushed for that term.
         if let Inst::Move { dst, src } = f.code[j] {
-            if dst == src {
+            if dst == src && !(preserve.trace && origin.is_some()) {
                 drop_it[j] = true;
                 removed += 1;
                 continue;
@@ -312,7 +329,7 @@ fn eliminate(
         if live_out[j].contains(&dst) {
             continue;
         }
-        if preserve_observations && is_observable(program, f.origins.get(j).copied().flatten()) {
+        if preserve.keeps(program, origin) {
             continue;
         }
         drop_it[j] = true;
@@ -484,6 +501,12 @@ fn thread_jumps(f: &mut BytecodeFn) -> usize {
 
 #[cfg(test)]
 mod tests {
+    /// The guard a `--observe` run sets: named bindings survive, nothing else.
+    const OBSERVED: Preserve = Preserve {
+        observations: true,
+        trace: false,
+    };
+
     use super::*;
     use crate::backend::bytecode::isa::Opcode;
     use crate::env::Env;
@@ -497,7 +520,7 @@ mod tests {
         let program = env.get_program(pid).expect("program");
         let plain = super::super::lower_program(program).expect("lowers");
         let mut opt = super::super::lower_program(program).expect("lowers");
-        apply(&mut opt, program, true);
+        apply(&mut opt, program, OBSERVED);
         (plain, opt, env)
     }
 
@@ -565,6 +588,48 @@ mod tests {
         assert!(kept, "the named `total` move was eliminated");
     }
 
+    /// The observation guard only covers *named* terms, so it does not save the
+    /// anonymous read of a loop counter — which is the value a direct-
+    /// manipulation solve inverts against. The trace guard keeps every
+    /// instruction that carries an origin term, named or not.
+    #[test]
+    fn the_trace_guard_keeps_the_anonymous_loop_counter_read() {
+        let src = "let spacing = 50\nfor i in range(0, 3) do\n  print(i * spacing)\nend";
+        let mut env = Env::new();
+        let pid = env.load_program(src).expect("compiles");
+        let program = env.get_program(pid).expect("program");
+        let mut traced = super::super::lower_program(program).expect("lowers");
+        let mut observed = super::super::lower_program(program).expect("lowers");
+        let with_trace = apply(
+            &mut traced,
+            program,
+            Preserve {
+                observations: true,
+                trace: true,
+            },
+        );
+        let with_observations = apply(&mut observed, program, OBSERVED);
+        assert!(
+            with_trace.removed < with_observations.removed,
+            "the trace guard should keep strictly more than the observation guard \
+             ({} removed vs {})",
+            with_trace.removed,
+            with_observations.removed
+        );
+        // Every surviving instruction's term can be addressed in the trace: no
+        // origin-carrying instruction was dropped at all.
+        let origins_kept = std::iter::once(&traced.root)
+            .chain(traced.fns.iter())
+            .flat_map(|f| f.origins.iter().flatten())
+            .count();
+        let plain = super::super::lower_program(program).expect("lowers");
+        let origins_before = std::iter::once(&plain.root)
+            .chain(plain.fns.iter())
+            .flat_map(|f| f.origins.iter().flatten())
+            .count();
+        assert_eq!(origins_kept, origins_before);
+    }
+
     #[test]
     fn without_the_observation_guard_the_named_move_goes() {
         let src = "let total = 0\nfor i in range(0, 3) do\n  total = total + i\nend\nprint(total)";
@@ -573,8 +638,8 @@ mod tests {
         let program = env.get_program(pid).expect("program");
         let mut kept = super::super::lower_program(program).expect("lowers");
         let mut freed = super::super::lower_program(program).expect("lowers");
-        let with_guard = apply(&mut kept, program, true);
-        let without = apply(&mut freed, program, false);
+        let with_guard = apply(&mut kept, program, OBSERVED);
+        let without = apply(&mut freed, program, Preserve::default());
         assert!(
             without.removed > with_guard.removed,
             "the guard should be costing instructions ({} vs {})",
@@ -621,7 +686,7 @@ mod tests {
             .expect("compiles");
         let program = env.get_program(pid).expect("program");
         let mut bc = super::super::lower_program(program).expect("lowers");
-        let stats = apply(&mut bc, program, true);
+        let stats = apply(&mut bc, program, OBSERVED);
         assert_eq!(stats.before - stats.removed, stats.after);
     }
 }

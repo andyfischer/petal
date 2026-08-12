@@ -17,7 +17,7 @@ pub mod lastuse;
 pub mod lower;
 pub mod vm;
 
-pub use copyprop::apply as apply_copy_prop;
+pub use copyprop::{Preserve, apply as apply_copy_prop};
 pub use escape::{InPlaceSet, analyze as analyze_escapes};
 pub use isa::{BytecodeFn, BytecodeProgram, Inst};
 pub use lastuse::apply as apply_last_use;
@@ -51,7 +51,14 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
     // precede route A would move the registers that pass's alias groups are
     // stated in terms of.
     if flags.copy_propagation {
-        let stats = apply_copy_prop(&mut bc, program, flags.preserve_observations);
+        let stats = apply_copy_prop(
+            &mut bc,
+            program,
+            Preserve {
+                observations: flags.preserve_observations,
+                trace: flags.preserve_trace,
+            },
+        );
         if std::env::var("PETAL_OPT_STATS").is_ok() {
             eprintln!(
                 "copyprop: {} instructions -> {} ({} moves removed, {} reads rewritten, \

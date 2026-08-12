@@ -617,6 +617,7 @@ fn assert_exact_parity(seed: u64, code: &str) {
         in_place_straight_line: true,
         copy_propagation: false,
         preserve_observations: false,
+        preserve_trace: false,
     };
     let bc_noopt = run(code, OptFlags::none());
     let bc_route_a = run(code, ROUTE_A_ONLY);

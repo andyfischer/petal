@@ -67,15 +67,27 @@ isolate a bug:
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
 
-`copyprop` has one deliberate limitation. The observation buffer records a value
-per *named* term, and a host reads a run's bindings out of it (`--observe`,
-Garden's `panel.values`, the debug server's `/state`). Deleting the instruction
-that writes a named register would silently drop that binding — so when
-observation or the `explain` trace is on, `OptFlags::preserve_observations`
-holds those moves back. It is part of the bytecode cache key, so switching
-observation on re-lowers rather than reusing code compiled without the guard.
-Observation therefore costs about 15% on top of its own recording overhead.
-Toggle it between runs, never inside one.
+`copyprop` has two deliberate limitations, both of them "do not delete what
+something is reading".
+
+The observation buffer records a value per *named* term, and a host reads a
+run's bindings out of it (`--observe`, Garden's `panel.values`, the debug
+server's `/state`). Deleting the instruction that writes a named register would
+silently drop that binding — so when observation or the `explain` trace is on,
+`OptFlags::preserve_observations` holds those moves back.
+
+The execution trace is read per *term*, named or not — provenance, `explain`,
+and direct manipulation all key on term ids, and solving `x0 + i * spacing` for
+`spacing` needs the value the anonymous read of the loop counter `i` took. A
+dead move is exactly what that read lowers to, so the observation guard is too
+narrow for it: `OptFlags::preserve_trace` keeps *every* instruction carrying an
+origin term (including self-moves, whose trace event is the only record of that
+term) and is set whenever the trace buffer is enabled.
+
+Both are part of the bytecode cache key, so switching a facility on re-lowers
+rather than reusing code compiled without the guard. Observation costs about 15%
+on top of its own recording overhead, and the trace guard more, since it saves
+strictly more instructions. Toggle them between runs, never inside one.
 
 ## Where the remaining headroom is
 

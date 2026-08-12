@@ -38,10 +38,6 @@ export fn clicked(r)
   hovered(r) && mouse_pressed(0)
 end
 
-fn _clamp(v, lo, hi)
-  max(lo, min(v, hi))
-end
-
 // ── Timing ────────────────────────────────────────────────────────────────
 // `time()` is an absolute clock in seconds, published by the host each frame
 // (monotonic, read fresh — never a running sum of `dt()`, so it does not
@@ -140,6 +136,17 @@ export fn draw_line(x1, y1, x2, y2, r, g, b, a, width)
 end
 export fn draw_line(a, b, c)
   _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b)
+end
+// Alpha and stroke width, matching the flat arities and every other primitive's
+// record overload. A checkmark, a strikethrough, a caret and a focus underline
+// all want a 2px or translucent stroke; without these the call fell through to
+// the native's arity check and failed at *runtime* with "draw_line() expects
+// 7 or 8 or 9 or 3 arguments, got 5".
+export fn draw_line(a, b, c, alpha)
+  _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha)
+end
+export fn draw_line(a, b, c, alpha, width)
+  _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha, width)
 end
 
 export fn draw_circle(cx, cy, radius, r, g, b)
@@ -293,12 +300,28 @@ export fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
 end
 
+// Style-record form — `{size, color, font, weight, italic, spacing}`, the same
+// record `draw_text` and `text_width` take. Measuring and drawing then agree
+// even for bold or spaced text, which the bare-`size` form cannot do.
+export fn draw_text_right(text, right_x, y, style)
+  _native_text(text, right_x - text_width(text, style), y, style)
+end
+
 // Centered text: the run's midpoint sits at `cx`.
 export fn draw_text_center(text, cx, y, size, c)
   _native_text(text, cx - text_width(text, size) / 2, y, size, c.r, c.g, c.b)
 end
 
+export fn draw_text_center(text, cx, y, style)
+  _native_text(text, cx - text_width(text, style) / 2, y, style)
+end
+
 // Shorten `s` until it fits `avail_px` at font `size`, with a trailing "…".
+//
+// `size` is either a bare pixel size or a full style record — the same
+// `{size, weight, font, spacing, …}` record `draw_text` and `text_width` take.
+// Pass the style you are going to *draw* with and what you measure is what you
+// get; measuring a bare 14 and drawing 14-bold overflows the box.
 //
 // The pixel-measured counterpart to truncate_head, for anything carrying text
 // of unknown length into a fixed box. Returns `s` untouched when it already
@@ -324,6 +347,8 @@ end
 // Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
 // the mirror of ellipsize, keeping the rightmost text instead of the leftmost.
 //
+// `size` may be a bare pixel size or a style record, exactly as in `ellipsize`.
+//
 // The pixel-measured counterpart to truncate_tail, and what a file path wants:
 // "…/panel/src/git_panel.ptl" says which file this is, while the head-keeping
 // ellipsize would spend the whole box on the directories it shares with every
@@ -348,7 +373,8 @@ end
 // run that fits `avail_px` (measured with text_width at font `size`): it stops
 // at the first part whose addition would overflow and drops that part and every
 // part after it. Lets header / metadata lines degrade by shedding their rightmost
-// segments instead of clipping mid-glyph at the pane edge. Returns {text, count}
+// segments instead of clipping mid-glyph at the pane edge. `size` may be a bare
+// pixel size or a style record, exactly as in `ellipsize`. Returns {text, count}
 // — `count` is how many segments survived (0 when even the first overflows).
 export fn fit_parts_n(parts, avail_px, size)
   let out = ""
@@ -376,7 +402,50 @@ export fn fit_parts(parts, avail_px, size)
   fit_parts_n(parts, avail_px, size).text
 end
 
+// ── Color helpers ─────────────────────────────────────────────────────────
+
+// Blend two colors: `t` = 0 is `a`, 1 is `b`. Thin wrapper over the `color_lerp`
+// builtin so the prelude's own name for it is discoverable next to `theme` —
+// several apps hand-rolled this same three-channel average.
+export fn mix(a, b, t)
+  color_lerp(a, b, t)
+end
+
+// `lerp_color` is the same function under the name the graphics-minded reach
+// for first.
+export fn lerp_color(a, b, t)
+  color_lerp(a, b, t)
+end
+
+// Perceived brightness of a color, 0 (black) – 255 (white), using the Rec. 601
+// luma weights. The one thing a themeable widget actually needs to know about a
+// color it did not choose: `luma(bg) > 128` means "this is a light surface", so
+// pick dark ink. Handy for deriving a readable foreground for arbitrary tags,
+// avatars and status chips.
+export fn luma(c)
+  (c.r * 299 + c.g * 587 + c.b * 114) / 1000
+end
+
+// A foreground that stays readable on `bg`: near-black on light surfaces,
+// near-white on dark ones.
+export fn contrast_text(bg)
+  if luma(bg) > 140 then #14161c else #f2f5fa end
+end
+
 // ── Style ─────────────────────────────────────────────────────────────────
+// `theme` is the *default* palette. The live palette every prelude widget
+// paints with is `ui_theme()`, which starts as `theme` and can be replaced or
+// tweaked once at startup with `theme_set`:
+//
+//   theme_set({panel: #ffffff, text: #202020, outline: #d0d4da})   // light
+//   theme_set(theme_from_palette(palette()))                        // Garden
+//
+// `theme_set` merges: keys you leave out keep their current value, so a light
+// panel is a three-line diff rather than a re-typed palette. Every widget also
+// takes an optional trailing `style` record that overrides the theme for that
+// one call (see `button`), and a style may omit any key — missing keys fall
+// through to `ui_theme()`. Between the two, no app has to reimplement a widget
+// just to change its colors.
 
 export let theme = {
   bg: #14161c,
@@ -389,25 +458,117 @@ export let theme = {
   selection: #2c4a7a
 }
 
+// The keys a theme carries, in order. Used to merge a partial theme onto the
+// current one without a generic record-merge builtin.
+let _THEME_KEYS = ["bg", "panel", "text", "dim", "accent", "outline", "hover", "selection"]
+
+// Field `key` of `rec`, or `fallback` when the record does not carry it. The
+// whole reason a style record can be partial.
+fn _get(rec, key, fallback)
+  if contains(keys(rec), key) then rec[key] else fallback end
+end
+
+// The single module state slot holding the live palette. `writing` is the write
+// port: one function so there is exactly one `state` declaration, i.e. exactly
+// one slot, shared by every caller and preserved across hot reload.
+fn _theme_slot(writing, v)
+  state cur = theme
+  if writing then
+    cur = v
+  end
+  cur
+end
+
+// The live palette a widget paints with: `ui_theme()`, with the module default
+// standing in if a caller ever emptied it.
+//
+// Widgets call this as `_palette(theme)`, naming the top-level `theme` binding
+// explicitly, and that mention is LOAD-BEARING, not documentation. The compiler
+// hoists a top-level `fn` whose body mentions nothing the file computes above
+// the file's own statements — and up there the `export fn draw_rect(r, c)`
+// overloads that shadow the flat draw natives have not been bound yet, so every
+// `draw_rect(r, c)` in a hoisted widget falls through to the 7-argument native
+// and dies at runtime with "Expected int at arg 1, got record". Mentioning a
+// top-level `let` keeps the widget compiled where it is written.
+//
+// TODO(compiler): `hoistable_fn_names` (rust/src/compiler/mod.rs) should block a
+// function that references a *non-hoistable* top-level fn — the shadowing draw
+// overloads are exactly that — instead of leaving module authors to defend
+// against it by hand. Remove this dance once it does.
+fn _palette(defaults)
+  let live = ui_theme()
+  if len(keys(live)) == 0 then defaults else live end
+end
+
+// The live palette. Widgets read this through `_palette`, never `theme`
+// directly.
+export fn ui_theme()
+  _theme_slot(false, 0)
+end
+
+// Merge `t`'s keys onto the live palette and return the result. Call it once
+// at startup (or every frame — it is idempotent for a fixed `t`).
+export fn theme_set(t)
+  let cur = ui_theme()
+  let next = {}
+  for k in _THEME_KEYS do
+    next[k] = _get(t, k, cur[k])
+  end
+  // Carry through any extra keys the app hangs on its theme, so a style record
+  // and a theme record are interchangeable.
+  for k in keys(t) do
+    next[k] = t[k]
+  end
+  _theme_slot(true, next)
+end
+
+// Back to the built-in dark palette.
+export fn theme_reset()
+  _theme_slot(true, theme)
+end
+
+// Project a host palette record — Garden's `palette()` / `panel_theme()`, whose
+// keys are the host's semantic names — onto the ui theme's key names. Missing
+// keys keep the current theme's color, so this is safe against a bare embedder
+// that returns an empty record.
+//
+//   theme_set(theme_from_palette(palette()))
+//
+// TODO: petal-ui itself has no `palette()` native (it lives in garden-script),
+// so this takes the record as an argument rather than defaulting the theme from
+// the host automatically. If/when a host-palette native lands in petal-ui, make
+// `ui_theme()` default from it.
+export fn theme_from_palette(p)
+  let cur = ui_theme()
+  {
+    bg: _get(p, "window_bg", cur.bg),
+    panel: _get(p, "panel", cur.panel),
+    text: _get(p, "text", cur.text),
+    dim: _get(p, "text_dim", cur.dim),
+    accent: _get(p, "accent", cur.accent),
+    outline: _get(p, "border", cur.outline),
+    hover: _get(p, "hover", cur.hover),
+    selection: _get(p, "sel", cur.selection)
+  }
+end
+
 // ── Button (immediate-mode): draws, returns true on click this frame ─────
 
 export fn button(r, label)
-  button(r, label, {
-    bg: theme.panel,
-    hover: theme.hover,
-    fg: theme.text,
-    outline: theme.outline
-  })
+  button(r, label, {})
 end
 
+// `style` overrides any of {bg, hover, fg, outline, size}; anything it omits
+// comes from `ui_theme()`. A `{}` style is the themed button.
 export fn button(r, label, style)
-  let bg = if hovered(r) then style.hover else style.bg end
+  let t = _palette(theme)
+  let bg = if hovered(r) then _get(style, "hover", t.hover) else _get(style, "bg", t.panel) end
   draw_rect(r, bg)
-  draw_rect_outline(r, style.outline)
-  let size = 14
+  draw_rect_outline(r, _get(style, "outline", t.outline))
+  let size = _get(style, "size", 14)
   let tx = r.x + (r.w - text_width(label, size)) / 2
   let ty = r.y + (r.h - size) / 2
-  draw_text(label, {x: tx, y: ty}, size, style.fg)
+  draw_text(label, {x: tx, y: ty}, size, _get(style, "fg", t.text))
   clicked(r)
 end
 
@@ -513,8 +674,8 @@ export fn list_update(lst, item_count, visible_rows, r, active)
   if hovered(r) then
     scroll = scroll + scroll_y()
   end
-  sel = _clamp(sel, 0, max(0, item_count - 1))
-  scroll = _clamp(scroll, 0, max(0, item_count - visible_rows))
+  sel = clamp(sel, 0, max(0, item_count - 1))
+  scroll = clamp(scroll, 0, max(0, item_count - visible_rows))
   if key_moved then
     scroll = ensure_visible(scroll, sel, visible_rows)
   end
@@ -546,7 +707,7 @@ export fn scroll_update(offset, total_lines, visible_lines, r, active)
       off = off - visible_lines
     end
   end
-  _clamp(off, 0, max(0, total_lines - visible_lines))
+  clamp(off, 0, max(0, total_lines - visible_lines))
 end
 
 // Proportional scrollbar thumb along the right edge of scroll region `r`.
@@ -555,13 +716,20 @@ end
 // content fits (count <= rows); otherwise a dim track with an accent-neutral
 // thumb sized rows/count of the track and positioned by scroll/(count - rows).
 export fn draw_scrollbar(r, count, rows, scroll)
+  draw_scrollbar(r, count, rows, scroll, {})
+end
+
+// `style` overrides any of {track, thumb, width}; omitted keys come from
+// `ui_theme()`.
+export fn draw_scrollbar(r, count, rows, scroll, style)
   if count > rows then
-    let bar_w = 4
+    let t = _palette(theme)
+    let bar_w = _get(style, "width", 4)
     let track = {x: r.x + r.w - bar_w, y: r.y, w: bar_w, h: r.h}
-    draw_rect(track, theme.outline)
+    draw_rect(track, _get(style, "track", t.outline))
     let thumb_h = max(12, r.h * rows / count)
     let thumb_y = track.y + (r.h - thumb_h) * scroll / (count - rows)
-    draw_rect({x: track.x, y: thumb_y, w: bar_w, h: thumb_h}, theme.dim)
+    draw_rect({x: track.x, y: thumb_y, w: bar_w, h: thumb_h}, _get(style, "thumb", t.dim))
   end
 end
 
@@ -646,8 +814,15 @@ end
 // with an underline when `active`, dim otherwise. Pairs with the focus
 // registry — pass `focused(fc, id)` as `active` to label each focusable region.
 export fn section_label(label, x, y, active)
-  let size = 14
-  let color = if active then theme.accent else theme.dim end
+  section_label(label, x, y, active, {})
+end
+
+// `style` overrides any of {active, inactive, size}; omitted keys come from
+// `ui_theme()`.
+export fn section_label(label, x, y, active, style)
+  let t = _palette(theme)
+  let size = _get(style, "size", 14)
+  let color = if active then _get(style, "active", t.accent) else _get(style, "inactive", t.dim) end
   draw_text(label, {x: x, y: y}, size, color)
   if active then
     let uy = y + size + 1
@@ -664,21 +839,18 @@ end
 //   fc = res.focus  buf = res.text
 //   if res.submitted then ... end
 
-fn _draw_text_field(r, text, has)
-  draw_rect(r, theme.panel)
-  let border = if has then theme.accent else theme.outline end
-  draw_rect_outline(r, border)
-  let size = 14
-  let tx = r.x + 6
-  let ty = r.y + (r.h - size) / 2
-  draw_text(text, {x: tx, y: ty}, size, theme.text)
-  if has then
-    let cx = tx + text_width(text, size)
-    draw_line({x: cx, y: ty}, {x: cx, y: ty + size}, theme.accent)
-  end
-end
-
-export fn text_field(fc, id, r, buf)
+// The input half, with no pixels of its own: click-to-focus, typing, backspace
+// and Return, returning the same {focus, text, submitted} the full widget does.
+// An app with its own palette keeps the editing logic — which is the fiddly
+// part — and draws the box itself:
+//
+//   let res = text_field_update(fc, "name", r, buf)
+//   fc = res.focus  buf = res.text
+//   ...my own box, my own caret...
+//
+// Pair it with `draw_text_field(r, buf, focused(fc, "name"), style)` to get the
+// stock look back.
+export fn text_field_update(fc, id, r, buf)
   let f = fc
   if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
     f = focus_set(fc, id)
@@ -698,8 +870,41 @@ export fn text_field(fc, id, r, buf)
       submitted = true
     end
   end
-  _draw_text_field(r, text, has)
   {focus: f, text: text, submitted: submitted}
+end
+
+// The draw half. `has` is whether the field holds focus (draws the accent
+// border and the caret).
+export fn draw_text_field(r, text, has)
+  draw_text_field(r, text, has, {})
+end
+
+// `style` overrides any of {bg, fg, outline, focus, caret, size, inset};
+// omitted keys come from `ui_theme()`.
+export fn draw_text_field(r, text, has, style)
+  let t = _palette(theme)
+  let accent = _get(style, "focus", t.accent)
+  draw_rect(r, _get(style, "bg", t.panel))
+  let border = if has then accent else _get(style, "outline", t.outline) end
+  draw_rect_outline(r, border)
+  let size = _get(style, "size", 14)
+  let tx = r.x + _get(style, "inset", 6)
+  let ty = r.y + (r.h - size) / 2
+  draw_text(text, {x: tx, y: ty}, size, _get(style, "fg", t.text))
+  if has then
+    let cx = tx + text_width(text, size)
+    draw_line({x: cx, y: ty}, {x: cx, y: ty + size}, _get(style, "caret", accent))
+  end
+end
+
+export fn text_field(fc, id, r, buf)
+  text_field(fc, id, r, buf, {})
+end
+
+export fn text_field(fc, id, r, buf, style)
+  let res = text_field_update(fc, id, r, buf)
+  draw_text_field(r, res.text, focused(res.focus, id), style)
+  res
 end
 
 // ── Context menu (immediate-mode dropdown) ─────────────────────────────────
@@ -782,40 +987,70 @@ let _MENU_SEP_H = 9
 let _MENU_PAD = 6
 let _MENU_SIZE = 14
 
-fn _menu_row_h(item)
-  if item.sep then _MENU_SEP_H else _MENU_ROW_H end
+// The menu's metrics, with a style record's overrides applied. Exported so an
+// app that draws its own menu chrome measures with the same numbers the
+// prelude lays out with instead of copying the constants (which is exactly
+// what two testbed apps had to do, and what silently rots when these change).
+export fn menu_metrics()
+  menu_metrics({})
+end
+
+export fn menu_metrics(style)
+  {
+    row_h: _get(style, "row_h", _MENU_ROW_H),
+    sep_h: _get(style, "sep_h", _MENU_SEP_H),
+    pad: _get(style, "pad", _MENU_PAD),
+    size: _get(style, "size", _MENU_SIZE)
+  }
+end
+
+fn _menu_row_h(item, mm)
+  if item.sep then mm.sep_h else mm.row_h end
 end
 
 // Total height of `items` plus the frame's own vertical padding.
-fn _menu_h(items)
-  let h = _MENU_PAD * 2
+fn _menu_h(items, mm)
+  let h = mm.pad * 2
   for it in items do
-    h = h + _menu_row_h(it)
+    h = h + _menu_row_h(it, mm)
   end
   h
 end
 
 // Width that fits the widest label, clamped so a very long one does not run
 // off the screen and a very short menu is still comfortably clickable.
-fn _menu_w(items)
+fn _menu_w(items, mm)
   let widest = 0
   for it in items do
-    let tw = text_width(it.label, _MENU_SIZE)
+    let tw = text_width(it.label, mm.size)
     if !it.sep && tw > widest then
       widest = tw
     end
   end
-  // `_clamp`, not the `clamp` builtin: that one yields a float, and this feeds
-  // pixel geometry that has to stay integral.
-  _clamp(widest + 28, 120, max(140, screen_width() - 24))
+  // The `clamp` builtin preserves int-ness (it used to return a float, which is
+  // why this went through a private `_clamp` for years) and this feeds pixel
+  // geometry that has to stay integral.
+  clamp(widest + 28, 120, max(140, screen_width() - 24))
 end
 
 // Where the menu actually lands: it prefers down-and-right of the click, and
 // flips to the other side of the pointer when that would put it off-screen —
 // so a right-click near the bottom edge opens upward instead of being clipped.
-fn _menu_rect(m, items)
-  let w = _menu_w(items)
-  let h = _menu_h(items)
+//
+// EXPORTED because the flip rule is not something an app can guess: a panel
+// that has to know where the menu will be — to suppress its own hover, to skip
+// drawing text under it, to scroll it into view — otherwise reimplements this
+// function *and* the four metric constants above, and the copy drifts the
+// moment either changes. `context_menu` also hands the same rect back as
+// `.rect` in its result, for the common case of "where did the open menu land".
+export fn menu_rect(m, items)
+  menu_rect(m, items, {})
+end
+
+export fn menu_rect(m, items, style)
+  let mm = menu_metrics(style)
+  let w = _menu_w(items, mm)
+  let h = _menu_h(items, mm)
   let x = m.x
   let y = m.y
   if x + w > screen_width() then
@@ -829,12 +1064,12 @@ end
 
 // Index of the choosable item at pane-local `(px, py)`, or -1. Separators and
 // disabled rows are transparent to this, so neither can be picked.
-fn _menu_hit(r, items, px, py)
+fn _menu_hit(r, items, px, py, mm)
   let hit = -1
-  let y = r.y + _MENU_PAD
+  let y = r.y + mm.pad
   for i in range(0, len(items)) do
     let it = items[i]
-    let rh = _menu_row_h(it)
+    let rh = _menu_row_h(it, mm)
     if !it.sep && it.enabled && px >= r.x && px < r.x + r.w && py >= y && py < y + rh then
       hit = i
     end
@@ -863,14 +1098,24 @@ fn _menu_step(items, from, step)
 end
 
 // Draw the menu and resolve this frame's input. Returns
-// {menu, index, label, tag}: `index` is -1 unless something was chosen, and
-// `tag` is whatever was passed to `menu_show` / `menu_open_on_right_click`.
-// A closed menu draws nothing and always returns index -1.
+// {menu, index, label, tag, rect}: `index` is -1 unless something was chosen,
+// `tag` is whatever was passed to `menu_show` / `menu_open_on_right_click`, and
+// `rect` is where the menu landed this frame (an empty rect when closed) — so a
+// panel can keep its own painting out from under the menu without recomputing
+// the geometry. A closed menu draws nothing and always returns index -1.
 export fn context_menu(m, items)
+  context_menu(m, items, {})
+end
+
+// `style` overrides any of {bg, fg, dim, outline, selection, shadow, size,
+// row_h, sep_h, pad}; omitted keys come from `ui_theme()` and the menu metrics.
+export fn context_menu(m, items, style)
   if !m.open || len(items) == 0 then
-    {menu: m, index: -1, label: "", tag: m.tag}
+    {menu: m, index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
   else
-    let r = _menu_rect(m, items)
+    let t = _palette(theme)
+    let mm = menu_metrics(style)
+    let r = menu_rect(m, items, style)
     let mx = mouse_x()
     let my = mouse_y()
     let inside = point_in(mx, my, r)
@@ -880,7 +1125,7 @@ export fn context_menu(m, items)
     // Pointer hover wins over the keyboard highlight the moment it is over a
     // row — the two share one `hover`, so the menu never shows two of them.
     let hover = m.hover
-    let over = _menu_hit(r, items, mx, my)
+    let over = _menu_hit(r, items, mx, my, mm)
     if inside && over >= 0 then
       hover = over
     end
@@ -917,29 +1162,126 @@ export fn context_menu(m, items)
     // dark menu over a dark panel reads as part of the background.
     // Alpha is 0–255, not a 0–1 fraction: a float here truncates to 0 and the
     // shadow disappears entirely.
-    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, #000000, 89)
-    draw_rect(r, theme.panel)
-    draw_rect_outline(r, theme.outline)
-    let y = r.y + _MENU_PAD
+    let bg = _get(style, "bg", t.panel)
+    let fg_on = _get(style, "fg", t.text)
+    let fg_off = _get(style, "dim", t.dim)
+    let outline = _get(style, "outline", t.outline)
+    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, _get(style, "shadow", #000000), 89)
+    draw_rect(r, bg)
+    draw_rect_outline(r, outline)
+    let y = r.y + mm.pad
     for i in range(0, len(items)) do
       let it = items[i]
-      let rh = _menu_row_h(it)
+      let rh = _menu_row_h(it, mm)
       if it.sep then
         let sy = y + rh / 2
-        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, theme.outline)
+        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, outline)
       else
-        let fg = if it.enabled then theme.text else theme.dim end
+        let fg = if it.enabled then fg_on else fg_off end
         if i == hover then
-          draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, theme.selection)
-          fg = theme.text
+          draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, _get(style, "selection", t.selection))
+          fg = fg_on
         end
-        draw_text(it.label, {x: r.x + 12, y: y + (rh - _MENU_SIZE) / 2}, _MENU_SIZE, fg)
+        draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, mm.size, fg)
       end
       y = y + rh
     end
 
     let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at} end
     let label = if chosen >= 0 then items[chosen].label else "" end
-    {menu: next, index: chosen, label: label, tag: m.tag}
+    {menu: next, index: chosen, label: label, tag: m.tag, rect: r}
   end
+end
+
+// ── Drag and drop (immediate-mode) ────────────────────────────────────────
+// The primitive every reorderable list, kanban board, timeline editor and tab
+// strip was hand-rolling. State is an explicit record; keep it in `state` and
+// thread it through one `drag_update` call per draggable item per frame:
+//
+//   state dg = drag_state()
+//   for i in range(0, len(cards)) do
+//     let r = card_rect(i)
+//     dg = drag_update(dg, cards[i].id, r)
+//     ...draw the card, offset by (dg.dx, dg.dy) when dg.dragging && dg.id == id
+//   end
+//   if dg.dropped then
+//     let to = insertion_index(card_rects, mouse_y())
+//     ...move dg.id to `to`...
+//   end
+//
+// Fields: `dragging` (a drag is in flight), `id` (which item — the value you
+// passed as `item_id`), `dx`/`dy` (pointer offset from where the press landed),
+// `dropped` (true for exactly the frame the button came up, with `id`/`dx`/`dy`
+// still describing the finished drag). `sx`/`sy` are the press position and
+// `at` the frame the drop happened on — internal bookkeeping, but harmless to
+// read.
+//
+// `dropped` survives the rest of the frame's `drag_update` calls (it is cleared
+// on the next frame, not by the next call), so the app can loop over every item
+// and still see the drop afterwards.
+
+export fn drag_state()
+  {dragging: false, id: "", dx: 0, dy: 0, dropped: false, sx: 0, sy: 0, at: -1}
+end
+
+export fn drag_update(ds, item_id, r)
+  let d = ds
+  // A finished drag is visible for one whole frame, then cleared.
+  if d.dropped && d.at != frame_count() then
+    d = drag_state()
+  end
+  // A press inside `r` claims the drag, unless another item already holds it.
+  if !d.dragging && !d.dropped && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+    d = {dragging: true, id: item_id, dx: 0, dy: 0, dropped: false,
+         sx: mouse_x(), sy: mouse_y(), at: -1}
+  end
+  if d.dragging && d.id == item_id then
+    let dx = mouse_x() - d.sx
+    let dy = mouse_y() - d.sy
+    if mouse_down(0) then
+      d = {dragging: true, id: item_id, dx: dx, dy: dy, dropped: false,
+           sx: d.sx, sy: d.sy, at: -1}
+    else
+      // The button came up: report the drop, keeping the final offset.
+      d = {dragging: false, id: item_id, dx: dx, dy: dy, dropped: true,
+           sx: d.sx, sy: d.sy, at: frame_count()}
+    end
+  end
+  d
+end
+
+// Abandon an in-flight drag (Escape, a lost window, a list that just changed
+// under the pointer). Returns a fresh state, so no `dropped` is reported.
+export fn drag_cancel(ds)
+  drag_state()
+end
+
+// True while `item_id` is the item being dragged.
+export fn dragging(ds, item_id)
+  ds.dragging && ds.id == item_id
+end
+
+// Where an item dropped at pixel `y` belongs in a vertical list whose rows are
+// `rects` (in list order): the count of rows whose midpoint is above `y`. 0
+// means "before the first row", len(rects) means "after the last" — exactly the
+// index an insert wants, and the index to draw the drop indicator at.
+export fn insertion_index(rects, y)
+  let idx = 0
+  for r in rects do
+    if y > r.y + r.h / 2 then
+      idx = idx + 1
+    end
+  end
+  idx
+end
+
+// The horizontal counterpart, for tab strips and kanban columns.
+export fn insertion_index_x(rects, x)
+  let idx = 0
+  for r in rects do
+    if x > r.x + r.w / 2 then
+      idx = idx + 1
+    end
+  end
+  idx
 end

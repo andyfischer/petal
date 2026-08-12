@@ -160,8 +160,31 @@ overloads, `button`, `list_update`, `scroll_update`, `truncate_tail`, `wrap`, `p
 `fit_parts`, `ensure_visible_px`,
 `draw_text_right`, and the `context_menu` family — `menu_state`, `menu_item`,
 `menu_sep`, `menu_open_on_right_click`, `menu_blocking`, `menu_show`,
-`menu_close`) — come from `petal-ui` as an implicit import, so scripts call
-them bare.
+`menu_close`, `menu_rect`) — come from `petal-ui` as an implicit import, so
+scripts call them bare.
+
+Three things a panel used to have to reimplement are also in the prelude now:
+
+- **Theming.** `ui_theme()` is the live palette every widget paints with;
+  `theme_set({panel: …, text: …})` merges new colors into it (leave a key out
+  and it keeps its current value) and `theme_reset()` restores the dark
+  default. `theme_set(theme_from_palette(palette()))` adopts Garden's own
+  scheme. Every widget — `button`, `context_menu`, `text_field`,
+  `draw_scrollbar`, `section_label` — also takes an optional trailing `style`
+  record that overrides the theme for that one call, and a style may name only
+  the keys it cares about. A light-themed panel is a `theme_set` call, not a
+  reimplemented widget set.
+- **Drag and drop.** `drag_state()` plus one `drag_update(ds, id, rect)` per
+  draggable item per frame yields `{dragging, id, dx, dy, dropped}`;
+  `insertion_index(rects, y)` (and `insertion_index_x`) turns the drop position
+  into the list index an insert wants.
+- **Text-field internals.** `text_field_update(fc, id, r, buf)` is the input
+  half — click-to-focus, typing, backspace, Return — with no pixels of its own,
+  and `draw_text_field(r, text, has_focus[, style])` is the stock look. Keep
+  the logic, bring your own paint.
+
+Plus the small helpers apps kept hand-rolling: `mix`/`lerp_color(a, b, t)`,
+`luma(c)` and `contrast_text(bg)`.
 
 A **context menu** is two calls, because an immediate-mode pass has to reconcile
 z-order with input order: the menu must be *drawn* last to sit on top, but its

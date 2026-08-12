@@ -1552,3 +1552,429 @@ fn context_menu_flips_away_from_the_screen_edges() {
         }
     });
 }
+
+// ── Regression coverage for the prelude gaps found by the testbed apps ──────
+
+/// `draw_line`'s record overload had only the 3-argument form, so a translucent
+/// or thick stroke — what a checkmark, a strikethrough and a caret all want —
+/// fell through to the flat native and died at *runtime* with
+/// "draw_line() expects 7 or 8 or 9 or 3 arguments, got 5".
+#[test]
+fn draw_line_record_overload_takes_alpha_and_width() {
+    let src = "draw_line({x: 1, y: 2}, {x: 3, y: 4}, #ff0000)\n\
+               draw_line({x: 5, y: 6}, {x: 7, y: 8}, #00ff00, 128)\n\
+               draw_line({x: 9, y: 10}, {x: 11, y: 12}, #0000ff, 64, 3)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let lines: Vec<(i32, u8, u32)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Line { x1, a, width, .. } => Some((*x1, *a, *width)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![(1, 255, 1), (5, 128, 1), (9, 64, 3)],
+            "the 4- and 5-argument record forms carry alpha and stroke width"
+        );
+    });
+}
+
+/// The menu's landing rect — width, height and the flip-when-offscreen rule —
+/// is public, so an app that must know where the menu sits stops copying
+/// `_menu_rect` and the four metric constants into its own file.
+#[test]
+fn menu_rect_is_public_and_matches_what_context_menu_draws() {
+    let src = "state mx = 0\n\
+               state my = 0\n\
+               state mw = 0\n\
+               state cx = 0\n\
+               state cy = 0\n\
+               state menu = menu_state()\n\
+               let items = [menu_item(\"Copy\"), menu_sep(), menu_item(\"Delete\")]\n\
+               menu = menu_open_on_right_click(menu, {x: 0, y: 0, w: 800, h: 600}, \"row\")\n\
+               let mr = menu_rect(menu, items)\n\
+               mx = mr.x\n\
+               my = mr.y\n\
+               mw = mr.w\n\
+               let picked = context_menu(menu, items)\n\
+               menu = picked.menu\n\
+               cx = picked.rect.x\n\
+               cy = picked.rect.y";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        // Open near the bottom-right corner: the menu must flip up and left.
+        ui.mouse_move(790, 590);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+        let (x, y, w) = (
+            ui.state_int("mx").unwrap(),
+            ui.state_int("my").unwrap(),
+            ui.state_int("mw").unwrap(),
+        );
+        assert!(x < 790 && y < 590, "menu_rect flips away from the edge");
+        assert!(x + w <= 800, "flipped menu stays on screen");
+        assert_eq!(
+            (ui.state_int("cx"), ui.state_int("cy")),
+            (Some(x), Some(y)),
+            "context_menu hands back the same rect it drew at"
+        );
+    });
+}
+
+/// A closed menu reports an empty rect rather than a stale one.
+#[test]
+fn context_menu_reports_an_empty_rect_when_closed() {
+    let src = "state w = -1\n\
+               let picked = context_menu(menu_state(), [menu_item(\"Copy\")])\n\
+               w = picked.rect.w";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("w"), Some(0));
+    });
+}
+
+/// `theme_set` repaints every prelude widget, so a light-themed panel stops
+/// reimplementing buttons, fields, scrollbars and the menu just to change color.
+#[test]
+fn theme_set_repaints_every_widget() {
+    // Away from the pointer's resting (0, 0) so the button paints its face,
+    // not its hover color.
+    let src = "theme_set({panel: #ffffff, text: #101010, outline: #cccccc})\n\
+               button({x: 100, y: 100, w: 80, h: 24}, \"Go\")";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            cmds.iter().any(|c| matches!(
+                c,
+                DrawCommand::Rect {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    ..
+                }
+            )),
+            "the button's face takes the themed panel color: {cmds:?}"
+        );
+        assert!(
+            cmds.iter().any(|c| matches!(c,
+                DrawCommand::Text { text, r: 16, g: 16, b: 16, .. } if text == "Go")),
+            "the button's label takes the themed text color: {cmds:?}"
+        );
+    });
+}
+
+/// `theme_set` merges: the keys it leaves out keep their current value, and
+/// `theme_reset` puts the built-in dark palette back.
+#[test]
+fn theme_set_merges_and_theme_reset_restores() {
+    let src = "state accent_r = 0\n\
+               state panel_r = 0\n\
+               state n = 0\n\
+               n = n + 1\n\
+               if n == 1 then\n\
+                 theme_set({panel: #ffffff})\n\
+               end\n\
+               if n == 3 then\n\
+                 theme_reset()\n\
+               end\n\
+               accent_r = ui_theme().accent.r\n\
+               panel_r = ui_theme().panel.r";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("panel_r"), Some(255), "the set key applies");
+        assert_eq!(
+            ui.state_int("accent_r"),
+            Some(60),
+            "an unmentioned key keeps the default accent"
+        );
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state_int("panel_r"),
+            Some(255),
+            "the palette survives the frame that set it"
+        );
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("panel_r"), Some(29), "theme_reset restores");
+    });
+}
+
+/// Every widget also takes a per-call style record, and a style may omit any
+/// key — what it leaves out falls through to the live theme.
+#[test]
+fn widget_style_records_may_be_partial() {
+    let src = "button({x: 100, y: 100, w: 80, h: 24}, \"Go\", {bg: #ff0000})\n\
+               draw_scrollbar({x: 0, y: 40, w: 100, h: 200}, 20, 5, 0, {thumb: #00ff00})\n\
+               section_label(\"Files\", 10, 260, true, {active: #0000ff})\n\
+               draw_text_field({x: 0, y: 300, w: 120, h: 24}, \"hi\", false, {bg: #ffff00})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let rect_colors: Vec<(u8, u8, u8)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Rect { r, g, b, .. } => Some((*r, *g, *b)),
+                _ => None,
+            })
+            .collect();
+        assert!(rect_colors.contains(&(255, 0, 0)), "button bg override");
+        assert!(rect_colors.contains(&(0, 255, 0)), "scrollbar thumb override");
+        assert!(rect_colors.contains(&(255, 255, 0)), "text field bg override");
+        assert!(
+            rect_colors.contains(&(58, 64, 76)),
+            "the scrollbar track it did NOT override still comes from the theme: {rect_colors:?}"
+        );
+        assert!(
+            cmds.iter().any(|c| matches!(c,
+                DrawCommand::Text { text, r: 0, g: 0, b: 255, .. } if text == "Files")),
+            "section_label active color override: {cmds:?}"
+        );
+    });
+}
+
+/// `ellipsize` / `ellipsize_tail` / `fit_parts` accept the same style record
+/// `draw_text` takes, so what is measured is what gets drawn.
+#[test]
+fn ellipsize_accepts_a_style_record() {
+    let src = "state a = \"\"\n\
+               state b = \"\"\n\
+               a = ellipsize(\"a long enough label\", 40, 14)\n\
+               b = ellipsize(\"a long enough label\", 40, {size: 14})";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        let a = ui.state_string("a").unwrap();
+        assert!(a.ends_with('…'), "the bare-size form still clips: {a}");
+        assert_eq!(
+            ui.state_string("b").unwrap(),
+            a,
+            "a style record measures the same as the bare size it carries"
+        );
+    });
+
+    let src = "state a = \"\"\n\
+               a = ellipsize_tail(\"/some/deep/path/file.ptl\", 40, {size: 14})";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert!(ui.state_string("a").unwrap().starts_with('…'));
+    });
+}
+
+/// Right- and center-aligned text take a style record too, so bold or spaced
+/// runs land where they are measured.
+#[test]
+fn aligned_text_takes_a_style_record() {
+    let src = "draw_text_right(\"hi\", 100, 10, {size: 14, color: #ff0000})\n\
+               draw_text_center(\"hi\", 100, 30, {size: 14, color: #00ff00})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let xs: Vec<i32> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { x, .. } => Some(*x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(xs.len(), 2, "both aligned forms drew: {cmds:?}");
+        assert!(xs[0] < 100, "right-aligned text sits left of its right edge");
+        assert!(
+            xs[1] > xs[0],
+            "centered text starts further right than right-aligned text at the same edge"
+        );
+    });
+}
+
+/// `text_field_update` is the input half with no pixels: an app with its own
+/// palette keeps focus, typing, backspace and Return and draws the box itself.
+#[test]
+fn text_field_update_edits_without_drawing() {
+    let src = "state fc = focus_state()\n\
+               state buf = \"\"\n\
+               state submitted = false\n\
+               let r = {x: 0, y: 0, w: 200, h: 24}\n\
+               let res = text_field_update(fc, \"name\", r, buf)\n\
+               fc = res.focus\n\
+               buf = res.text\n\
+               submitted = res.submitted";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(cmds.is_empty(), "the input half draws nothing: {cmds:?}");
+        ui.click(10, 10).unwrap();
+        ui.text("ab").unwrap();
+        assert_eq!(ui.state_string("buf").as_deref(), Some("ab"));
+        ui.key("backspace").unwrap();
+        assert_eq!(ui.state_string("buf").as_deref(), Some("a"));
+        ui.key("return").unwrap();
+        assert_eq!(ui.state().get("submitted").unwrap(), true);
+        assert!(
+            ui.commands.is_empty(),
+            "still no pixels of its own: {:?}",
+            ui.commands
+        );
+    });
+}
+
+/// The stock look is still one call, and the draw half can be used on its own.
+#[test]
+fn draw_text_field_renders_the_stock_box() {
+    let src = "draw_text_field({x: 0, y: 0, w: 200, h: 24}, \"hi\", true)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, DrawCommand::Line { r: 60, g: 140, b: 255, .. })),
+            "a focused field draws the accent caret: {cmds:?}"
+        );
+    });
+}
+
+/// The drag primitive every kanban / reorderable-list / tab-strip app was
+/// hand-rolling: press to pick up, offset while held, one frame of `dropped`.
+#[test]
+fn drag_update_tracks_a_press_drag_release_cycle() {
+    let src = "state dg = drag_state()\n\
+               state dropped_id = \"\"\n\
+               state dx = 0\n\
+               state dy = 0\n\
+               state active = \"\"\n\
+               dg = drag_update(dg, \"a\", {x: 0, y: 0, w: 50, h: 20})\n\
+               dg = drag_update(dg, \"b\", {x: 0, y: 40, w: 50, h: 20})\n\
+               active = if dg.dragging then dg.id else \"\" end\n\
+               dx = dg.dx\n\
+               dy = dg.dy\n\
+               if dg.dropped then dropped_id = dg.id end";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_string("active").as_deref(), Some(""));
+
+        // Press inside item "b".
+        ui.mouse_move(10, 50);
+        ui.mouse_down(0);
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state_string("active").as_deref(),
+            Some("b"),
+            "the press claims the item under the pointer"
+        );
+        assert_eq!(ui.state_int("dx"), Some(0), "offset starts at zero");
+
+        // Drag up and to the right.
+        ui.mouse_move(35, 5);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("dx"), Some(25));
+        assert_eq!(ui.state_int("dy"), Some(-45));
+        assert_eq!(
+            ui.state_string("active").as_deref(),
+            Some("b"),
+            "a drag in flight is not stolen by the item now under the pointer"
+        );
+
+        // Release: `dropped` is reported once, with the final offset, and it
+        // survives the rest of the frame's drag_update calls.
+        ui.mouse_up(0);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_string("dropped_id").as_deref(), Some("b"));
+        assert_eq!(ui.state_int("dx"), Some(25));
+        assert_eq!(ui.state_string("active").as_deref(), Some(""));
+
+        // ...and is cleared on the next frame.
+        let src_dropped = ui.state().get("dg").unwrap()["dropped"].clone();
+        assert_eq!(src_dropped, true, "dropped is still set entering the frame");
+        ui.frame().unwrap();
+        assert_eq!(ui.state().get("dg").unwrap()["dropped"], false);
+    });
+}
+
+/// `insertion_index` turns a drop position into the list index an insert wants.
+#[test]
+fn insertion_index_counts_rows_above_the_drop() {
+    let src = "state before = 0\n\
+               state middle = 0\n\
+               state after = 0\n\
+               let rows = [{x: 0, y: 0, w: 50, h: 20},\n\
+                           {x: 0, y: 20, w: 50, h: 20},\n\
+                           {x: 0, y: 40, w: 50, h: 20}]\n\
+               before = insertion_index(rows, 2)\n\
+               middle = insertion_index(rows, 35)\n\
+               after = insertion_index(rows, 100)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("before"), Some(0), "above every midpoint");
+        assert_eq!(ui.state_int("middle"), Some(2), "past two midpoints");
+        assert_eq!(ui.state_int("after"), Some(3), "below every midpoint");
+    });
+
+    let src = "state i = 0\n\
+               let cols = [{x: 0, y: 0, w: 40, h: 10}, {x: 40, y: 0, w: 40, h: 10}]\n\
+               i = insertion_index_x(cols, 65)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("i"), Some(2));
+    });
+}
+
+/// The color helpers several apps hand-rolled.
+#[test]
+fn color_helpers_mix_and_measure_luma() {
+    let src = "state m = 0\n\
+               state l = 0\n\
+               state dark = 0\n\
+               state light = 0\n\
+               m = mix(#000000, #ffffff, 0.5).r\n\
+               l = luma(#ffffff)\n\
+               dark = contrast_text(#ffffff).r\n\
+               light = contrast_text(#000000).r";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("m"), Some(128), "mix is a midpoint blend");
+        assert_eq!(ui.state_int("l"), Some(255), "white is full luma");
+        assert!(
+            ui.state_int("dark").unwrap() < 64,
+            "a light surface gets dark ink"
+        );
+        assert!(
+            ui.state_int("light").unwrap() > 192,
+            "a dark surface gets light ink"
+        );
+    });
+
+    let src = "state a = 0\n a = lerp_color(#000000, #ff0000, 1.0).r";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("a"), Some(255));
+    });
+}
+
+/// The `clamp` builtin preserves int-ness now, which is why the prelude's
+/// private `_clamp` is gone. A float creeping back into the menu's width would
+/// put every menu on a half-pixel boundary.
+#[test]
+fn menu_geometry_stays_integral_on_the_clamp_builtin() {
+    let src = "state w = 0.5\n\
+               w = menu_rect(menu_show(menu_state(), 10, 10, \"t\"),\n\
+                             [menu_item(\"Copy\")]).w";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state().get("w").unwrap(),
+            &serde_json::json!(120),
+            "clamp() keeps the width an int, not 120.0"
+        );
+    });
+}
+
+/// A script that already had its own `mix` / `luma` (several testbed apps do)
+/// keeps its own — the new prelude names are shadowed, not fought over.
+#[test]
+fn script_definitions_shadow_the_new_color_helpers() {
+    let src = "fn mix(a, b, t)\n\
+                 {r: 7, g: 7, b: 7}\n\
+               end\n\
+               state m = 0\n\
+               m = mix(#000000, #ffffff, 0.5).r";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(ui.state_int("m"), Some(7), "the script's own mix wins");
+    });
+}

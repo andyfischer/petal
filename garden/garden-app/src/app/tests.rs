@@ -3986,13 +3986,12 @@ fn a_region_search_that_misses_says_so() {
     );
 }
 
-/// A panel script that doesn't compile must announce itself. The fallback pane
-/// is an ordinary editor holding the error text, which on its own is
-/// indistinguishable from an empty buffer: `kind` reads `editor`, `panel` is
-/// null, and nothing else changes. Before this was reported, a syntax error and
-/// a wrong script path looked identical, and a headless client polling
-/// `status_error` saw a clean start — so the error has to reach the status bar
-/// and the pane title, not just the buffer.
+/// A panel script that doesn't compile must announce itself. Before this was
+/// reported, the pane silently degraded to an ordinary editor — `kind` read
+/// `editor`, `panel` was null, `status_error` was clean — so a syntax error, a
+/// bad layout, and a wrong path all looked identical, and only `petal check`
+/// told them apart. The pane now stays a *panel* (running an empty stub) and the
+/// compile error is reported through `panel_error`/`status_error`.
 #[test]
 fn a_panel_that_does_not_compile_reports_the_error() {
     let dir = temp_dir("panel-broken");
@@ -4000,31 +3999,25 @@ fn a_panel_that_does_not_compile_reports_the_error() {
     let script = file_with(&dir, "broken.ptl", "clear(0,0,0)\nlet x = (((\n");
     let app = app_with_panel(&script);
 
-    // The fallback pane really is a plain editor, not a panel.
+    // The pane is still a panel, so it can come back to life on a fixed save.
+    let panel = app.panes[0]
+        .panel
+        .as_ref()
+        .expect("a script that fails to compile keeps its panel pane");
+    let panel_err = panel.error().expect("the panel carries the compile error");
     assert!(
-        app.panes[0].panel.is_none(),
-        "a script that fails to compile must not produce a live panel"
+        panel_err.contains("line 2"),
+        "the panel error should carry the compiler's position: {panel_err}"
     );
 
     let err = app
-        .status_error
-        .as_deref()
-        .expect("a failed panel load must set status_error");
+        .effective_status_error()
+        .expect("a failed panel load must reach status_error");
     assert!(
-        err.contains("could not load panel") && err.contains("broken.ptl"),
+        err.contains("panel") && err.contains("broken.ptl"),
         "status_error should name the failing script: {err}"
     );
-
-    // The title distinguishes this pane from an untitled scratch buffer.
-    assert_eq!(app.panes[0].view.title(), format!("panel error: {script}"));
-
-    // The buffer still carries the full message, including the compiler's
-    // position, which is what a human reads in the pane.
-    let body = app.panes[0].view.buffer.to_string();
-    assert!(
-        body.contains("could not load panel") && body.contains("line 2"),
-        "the pane body should hold the compiler error with its position: {body}"
-    );
+    assert_eq!(app.panel_error.as_deref(), Some(err));
 }
 
 /// A panel whose script is simply missing must report just as loudly — this is
@@ -4035,13 +4028,309 @@ fn a_panel_with_a_missing_script_reports_the_error() {
     let missing = dir.join("nope.ptl").display().to_string();
     let app = app_with_panel(&missing);
 
-    assert!(app.panes[0].panel.is_none());
     let err = app
-        .status_error
-        .as_deref()
-        .expect("a missing panel script must set status_error");
+        .effective_status_error()
+        .expect("a missing panel script must reach status_error");
     assert!(
-        err.contains("could not load panel") && err.contains("nope.ptl"),
+        err.contains("nope.ptl"),
         "status_error should name the missing script: {err}"
     );
+}
+
+/// A panel that was broken **at load** used to be unrecoverable: the pane had
+/// been replaced by an editor, so fixing the file changed nothing and only a
+/// restart brought the canvas back. It must heal itself instead.
+#[test]
+fn a_panel_broken_at_load_recovers_when_the_script_is_fixed() {
+    let dir = temp_dir("panel-load-recover");
+    let script = file_with(&dir, "recover.ptl", "let x = (((\n");
+    let mut app = app_with_panel(&script);
+    assert!(app.panel_error.is_some(), "starts broken");
+
+    fs::write(&script, "let ok = 1 + 1\n").unwrap();
+    app.settle_panels();
+
+    assert_eq!(
+        app.panel_error, None,
+        "a fixed script must clear the reported panel error"
+    );
+    assert_eq!(app.effective_status_error(), None);
+    assert_eq!(
+        panel_value(&app, "ok"),
+        Some(json!(2)),
+        "the repaired script is actually running"
+    );
+}
+
+/// A **hot reload** that doesn't compile keeps the last good program on screen —
+/// correct, but silent: you edit, see no change, and conclude the edit had no
+/// effect. The failure has to be reported.
+#[test]
+fn a_hot_reload_that_does_not_compile_is_reported() {
+    let dir = temp_dir("panel-reload-broken");
+    let script = file_with(&dir, "live.ptl", "let ok = 1 + 1\n");
+    let mut app = app_with_panel(&script);
+    assert_eq!(app.panel_error, None, "starts healthy");
+
+    fs::write(&script, "let ok = (((\n").unwrap();
+    app.settle_panels();
+
+    let err = app
+        .effective_status_error()
+        .expect("a failed hot reload must reach status_error");
+    assert!(
+        err.contains("live.ptl"),
+        "the report should name the script: {err}"
+    );
+    // The old program is still the one running — that part was always right.
+    assert_eq!(panel_value(&app, "ok"), Some(json!(2)));
+
+    // …and fixing it again clears the report.
+    fs::write(&script, "let ok = 1 + 1 + 1\n").unwrap();
+    app.settle_panels();
+    assert_eq!(app.panel_error, None);
+    assert_eq!(panel_value(&app, "ok"), Some(json!(3)));
+}
+
+/// A **runtime** error lived only in `panes[].panel.error` plus a banner painted
+/// into the canvas; `status_error` — where the docs send people — stayed null.
+/// It must be reported in the same one place, and recover on a fixed save.
+#[test]
+fn a_runtime_error_reaches_status_error_and_recovers() {
+    let dir = temp_dir("panel-runtime-error");
+    let script = file_with(&dir, "boom.ptl", "let xs = [1, 2]\nlet bad = xs[10]\n");
+    let mut app = app_with_panel(&script);
+
+    let err = app
+        .effective_status_error()
+        .expect("a panel runtime error must reach status_error");
+    assert!(
+        err.contains("boom.ptl"),
+        "the report should name the script: {err}"
+    );
+    // One line, whatever the Petal error's source excerpt looks like: the status
+    // bar has one line to give it.
+    assert_eq!(err.lines().count(), 1, "status text is a single line: {err}");
+
+    fs::write(&script, "let xs = [1, 2]\nlet bad = xs[1]\n").unwrap();
+    app.settle_panels();
+    assert_eq!(
+        app.panel_error, None,
+        "a panel must recover from a runtime error on a fixed save"
+    );
+}
+
+/// `print(...)` from a panel script reached stdout and nowhere else, so a
+/// headless client had no debug channel at all. It must show up in `/state`'s
+/// `script.output`.
+#[test]
+fn panel_print_output_reaches_the_debug_state() {
+    let dir = temp_dir("panel-print");
+    let script = file_with(&dir, "printer.ptl", "print(\"DBG hello\")\n");
+    let mut app = app_with_panel(&script);
+
+    let state = app.state_json();
+    let output = state["script"]["output"]
+        .as_array()
+        .expect("script.output is a list")
+        .iter()
+        .map(|v| v.as_str().unwrap_or_default().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        output.iter().any(|l| l.contains("DBG hello")),
+        "panel print should appear in script.output: {output:?}"
+    );
+
+    // Drained: a second read does not repeat the same lines forever.
+    let again = app.state_json();
+    assert!(!again["script"]["output"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v.as_str().unwrap_or_default().contains("DBG hello")));
+}
+
+// ── panel input fidelity ────────────────────────────────────────────────
+//
+// A panel used to have almost no keyboard namespace and a lossy pointer: every
+// Cmd/Ctrl chord but `Ctrl+S` was swallowed, `Mods` had no alt bit at all,
+// `/mouse` delivered only shift, `click_count()` was permanently 1, and the one
+// forwarded chord arrived with its character attached. Apps shipped `esc`-then-
+// `z` for undo and moved Select All onto a bare `A` to work around it. These
+// pin down the fixed contract end to end, through the same `App` entry points
+// the frontends and the debug server use.
+
+/// A panel over a script that records everything the input contract delivers.
+fn app_with_input_probe(test: &str, prelude: &str) -> App {
+    let dir = temp_dir(test);
+    let script = file_with(
+        &dir,
+        "probe.ptl",
+        &format!(
+            "{prelude}\
+             state typed = \"\"\n\
+             state chords = 0\n\
+             state clicks = 0\n\
+             state alt_seen = 0\n\
+             if text_input() != \"\" then typed = concat(typed, text_input()) end\n\
+             if key_pressed(\"z\") then chords = chords + 1 end\n\
+             if click_count() > clicks then clicks = click_count() end\n\
+             if mod_alt() then alt_seen = 1 end\n\
+             let held_shift = key_down(\"shift\")\n\
+             let held_w = key_down(\"w\")\n\
+             draw_rect(0, 0, 2, 2, 1, 2, 3)\n"
+        ),
+    );
+    app_with_panel(&script)
+}
+
+/// `Ctrl+S` is forwarded to the script — and must arrive as a *chord*, with no
+/// character attached. It used to be fed through `panel_key_text`, so the first
+/// save also typed an "s" into the document.
+#[test]
+fn a_forwarded_chord_delivers_no_text_input() {
+    let mut app = app_with_input_probe("panel-chord-text", "");
+    app.apply_key(
+        Key::Char('s'),
+        Mods {
+            ctrl: true,
+            ..Default::default()
+        },
+    );
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "typed"),
+        Some(json!("")),
+        "a modified chord must not also type its character"
+    );
+    // A plain key still types.
+    app.apply_key(Key::Char('a'), Mods::default());
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "typed"), Some(json!("a")));
+}
+
+/// `claim_key("z", "cmd")` hands the panel a chord the host would otherwise keep
+/// (Garden's global Undo). Without it a panel has no command keyspace at all.
+#[test]
+fn a_claimed_chord_reaches_the_panel_script() {
+    let mut app = app_with_input_probe("panel-claim", "claim_key(\"z\", \"cmd\")\n");
+    app.apply_key(
+        Key::Char('z'),
+        Mods {
+            cmd: true,
+            ..Default::default()
+        },
+    );
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "chords"),
+        Some(json!(1)),
+        "the claimed Cmd+Z must reach the script"
+    );
+    assert_eq!(
+        panel_value(&app, "typed"),
+        Some(json!("")),
+        "…and still carry no typed text"
+    );
+}
+
+/// An unclaimed Cmd chord stays host-global — claiming is opt-in, so an
+/// existing panel keeps every editor shortcut it always had.
+#[test]
+fn an_unclaimed_chord_stays_with_the_host() {
+    let mut app = app_with_input_probe("panel-unclaimed", "");
+    app.apply_key(
+        Key::Char('z'),
+        Mods {
+            cmd: true,
+            ..Default::default()
+        },
+    );
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "chords"), Some(json!(0)));
+}
+
+/// Every modifier reaches the script on a mouse press, not just shift: alt-drag
+/// ("scale about the center") and cmd-click were unimplementable and untestable.
+#[test]
+fn a_mouse_press_carries_every_modifier() {
+    let mut app = app_with_input_probe("panel-mouse-mods", "");
+    let idx = panel_idx(&app);
+    let rect = app.panes[idx].rect;
+    app.mouse_down(
+        rect.x + 20.0,
+        rect.y + 20.0,
+        Mods {
+            alt: true,
+            ..Default::default()
+        },
+        1,
+    );
+    app.mouse_up();
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "alt_seen"),
+        Some(json!(1)),
+        "mod_alt() must be true under an alt-press"
+    );
+}
+
+/// A double click reaches the script as `click_count() == 2`. The host counted
+/// the chain and then threw it away, so a panel saw 1 forever.
+#[test]
+fn a_double_click_reaches_the_script_as_click_count_two() {
+    let mut app = app_with_input_probe("panel-click-count", "");
+    let idx = panel_idx(&app);
+    let rect = app.panes[idx].rect;
+    app.mouse_down(rect.x + 30.0, rect.y + 30.0, Mods::default(), 2);
+    app.mouse_up();
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "clicks"), Some(json!(2)));
+}
+
+/// `key_down("shift")` used to return false forever — not an error, just a
+/// keybinding that quietly did nothing. Modifiers are published as held keys too.
+#[test]
+fn a_held_modifier_is_readable_as_a_key() {
+    let mut app = app_with_input_probe("panel-modifier-key", "");
+    app.apply_key(
+        Key::Char('a'),
+        Mods {
+            shift: true,
+            ..Default::default()
+        },
+    );
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_shift"), Some(json!(true)));
+}
+
+/// `{"op": "down"}` / `{"op": "up"}`: a key can be *held* across frames, so
+/// `key_down(k)` is observable from a later read and hold-to-do-X is drivable.
+#[test]
+fn a_key_can_be_held_across_frames() {
+    let mut app = app_with_input_probe("panel-held-key", "");
+    app.apply_key_phase(Key::Char('w'), Mods::default(), KeyPhase::Down);
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "held_w"),
+        Some(json!(true)),
+        "a held key stays down across frames"
+    );
+    // Several frames later it is *still* held — this is the whole point.
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(true)));
+
+    app.apply_key_phase(Key::Char('w'), Mods::default(), KeyPhase::Up);
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
+}
+
+/// A plain key press is still a tap: down and up in one frame, so nothing that
+/// depended on the old behavior starts seeing a stuck key.
+#[test]
+fn a_tapped_key_does_not_stay_held() {
+    let mut app = app_with_input_probe("panel-tap-key", "");
+    app.apply_key(Key::Char('w'), Mods::default());
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
 }

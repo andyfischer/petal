@@ -202,6 +202,7 @@ fn translate_key(key: KeyEvent) -> Option<(vim::Key, Mods)> {
         cmd: key.modifiers.contains(KeyModifiers::SUPER),
         ctrl: key.modifiers.contains(KeyModifiers::CONTROL),
         shift: key.modifiers.contains(KeyModifiers::SHIFT),
+        alt: key.modifiers.contains(KeyModifiers::ALT),
     };
     Some((vkey, mods))
 }
@@ -216,6 +217,7 @@ fn handle_mouse(app: &mut App, clicks: &mut ClickCounter, mouse: MouseEvent) {
     let mods = crate::app::Mods {
         shift: mouse.modifiers.contains(KeyModifiers::SHIFT),
         ctrl: mouse.modifiers.contains(KeyModifiers::CONTROL),
+        alt: mouse.modifiers.contains(KeyModifiers::ALT),
         cmd: false,
     };
     match mouse.kind {

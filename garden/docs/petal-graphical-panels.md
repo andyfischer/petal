@@ -253,3 +253,55 @@ with omitted ones meaning plain text. What Garden does with each:
 Embedding the Bold face would light `weight` up with no protocol change.
 The full cross-host contract lives in `../docs/text-and-fonts.md`.
 
+
+## Input: what a focused panel receives
+
+A focused panel pane reads input through the standard `petal-ui` contract —
+`mouse_x`/`mouse_y`, `mouse_down`/`mouse_pressed`/`mouse_released`,
+`key_down`/`key_pressed`/`key_released`, `mod_shift`/`mod_ctrl`/`mod_alt`/`mod_cmd`,
+`drag_active`, `click_count`, `text_input`, `scroll_x`/`scroll_y`. Garden feeds
+that contract from the same paths every frontend and the debug server use, so
+what a real window delivers and what `POST /key` / `POST /mouse` deliver are the
+same thing.
+
+Four rules are worth stating outright, because each was once false:
+
+- **A chord carries no text.** `text_input()` is empty on any frame whose key was
+  held with `Cmd`, `Ctrl`, or `Alt`. (Shift is not a command modifier — it is
+  already in the character, so `Shift+a` still types `"A"`.) A panel can handle a
+  chord *and* read `text_input()` without the chord typing itself into the
+  document.
+- **Every modifier arrives, on keys and on the mouse alike.** `mod_alt()` is real:
+  an alt-drag ("scale about the center") or a cmd-click sees its modifier.
+- **Modifiers are also held keys.** `key_down("shift")` / `"ctrl"` / `"alt"` /
+  `"cmd"` answer truthfully, as well as `mod_shift()` and friends.
+- **`click_count()` is the real chain**: 2 on a double click, 3 on a triple.
+
+### `claim_key` — a panel's own command keyspace
+
+Garden owns the Cmd/Ctrl chords: they are the editor's shortcuts, and a panel
+never sees them. For a panel whose *bare letters are content* — a spreadsheet, a
+console, a text editor — that leaves nothing to bind a command to. `claim_key`
+is how a script asks for one back:
+
+```petal
+claim_key("z", "cmd")          // Cmd+Z reaches this panel, not Garden's Undo
+claim_key("s", "cmd+shift")    // one exact chord
+claim_key("escape")            // this key under *any* modifier combination
+```
+
+A claim is **declarative and per frame**: state it unconditionally near the top
+of the script, not inside a branch, and it applies to the keys that arrive
+before the next frame. The chord is then delivered like any other key —
+`key_pressed("z")` with `mod_cmd()` true, and no `text_input()`.
+
+The modifier argument is a spelling (`"shift"`, `"ctrl"`/`"control"`,
+`"alt"`/`"option"`, `"cmd"`/`"super"`/`"meta"`, combined with `+`) or the raw
+bitmask `1=shift 2=ctrl 4=alt 8=cmd` — the same encoding `/state` reports as
+`panel.input.modifiers`. An unknown spelling is an error rather than a claim
+that silently never fires.
+
+**`Cmd`/`Ctrl`+`Q` cannot be claimed.** Quitting is never something a script can
+capture. Everything else — including the bare `:` command bar and the `Ctrl+[` /
+`Ctrl+]` history chords — is claimable, so a panel that claims them takes on the
+job of offering its own way out.

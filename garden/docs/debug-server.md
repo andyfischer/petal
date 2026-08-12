@@ -20,8 +20,11 @@ cargo run -p garden-app -- --debug-port 0    # OS picks a free port
 cargo run -p garden-app -- --headless --debug-port 8080   # headless requires a port
 ```
 
-The server binds `127.0.0.1` only. The bound port is printed on startup
-(except in `--term`, where stderr would scribble on the TUI):
+The server binds loopback only — `127.0.0.1` and, on the same port, `[::1]`, so
+that `localhost:<port>` cannot reach a *different* Garden (see
+[Which Garden am I talking to?](#which-garden-am-i-talking-to)). The bound port
+is printed on startup (except in `--term`, where stderr would scribble on the
+TUI):
 
 ```
 garden: debug server on http://127.0.0.1:8080
@@ -66,8 +69,9 @@ All JSON request bodies and responses; errors are
 | Endpoint | Returns |
 |----------|---------|
 | `GET /state` | Editor state: the global `frame` counter (see [Frame consistency](#frame-consistency)), window size/scale, cell metrics, focused pane, status-bar error, status note (file reloaded / changed-on-disk warning), drained script `print` output, and per pane: `kind` (`editor`/`process`/`panel`), file, title, `mode` (vim mode label), `pending` (mid-command vim state, see below), dirty flag, cursor, selection (anchor/head/text, text capped at 10k chars), scroll_top, scroll_sub (wrapped sub-row at the top), scroll_frac (sub-row offset in rows, `0.0..1.0` — the smooth part of the position, invisible in the two fields above), scroll_left (fractional display columns), wrap (soft-wrap on/off), line_count, visible_lines, rect, `trace_highlight` (the direct-manipulation source range under the pointer, or `null`), and — for a panel pane — a `panel` object (see below). Plus a top-level `trace`: the whole traced draw call the pointer is over — `callee`, `call` span, and per argument its `source` (`literal`/`binding`/`computed`), `value`, `is_int`, `span` (where it is written in the call) and `editable_span` (the range a rewrite must replace, at the *definition* for a binding). `null` when the pointer is over no shape. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1) |
+| `GET /state?values=…` | The same, with each panel's `values` map narrowed — see [Filtering `panel.values`](#filtering-panelvalues). |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
-| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color) and text runs (pos, text, color, clip, size — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
+| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
 | `GET /screenshot` | PNG of a **complete, settled** frame at physical-pixel size, rendered offscreen; the captured frame number comes back in an `X-Garden-Frame` response header (see [Frame consistency](#frame-consistency)) |
 | `GET /frame` | `{"ok": true, "frame": n}` — the current global frame counter, answered instantly (never blocks). Optional `?min=N` adds `"reached": true/false` (`frame >= N`) for one-liner client polls |
 | `GET /windows` | `{"ok": true, "windows": [{"window": 1, "focused": true, "panes": 2}, …]}` — the open OS windows by ordinal (see [Multiple windows](#multiple-windows)), which one is focused, and each one's pane count. Single-window frontends (headless, terminal) always report the one window as ordinal `1` |
@@ -83,6 +87,12 @@ A **panel** pane (a Petal graphical panel, e.g. the `:Diff` viewer) reports a
   "values": {              // every value the last good frame bound, by name
     "sel": 2, "scroll_right": 45, "mode": "unified",
     "list_row.y": 88, "files": ["a.rs", "b.rs"]
+  },
+  "values_frame": 233,     // the panel frame `values` came from
+  "values_stale": true,    // that is NOT the frame that just ran (see below)
+  "values_partial": {      // present only when the last frame RAISED: how far
+    "frame": 234,          // it got before it did
+    "values": {"sel": 3}
   },
   "input": {               // the exact input delivered to the last frame (the
                            // uniforms petal-ui bound — read back, not editor state)
@@ -111,6 +121,87 @@ to know:
   reports its final value, not its history; a binding that never executed is
   *absent* rather than null.
 - **Values keep their types** — ints, floats, strings, bools, lists, records.
+- **`values` is the last *good* frame, stamped with which one.** A frame that
+  raises leaves the previous frame's values in place (they are what is still on
+  screen). `values_frame` says which frame they came from and `values_stale`
+  says whether that is the frame that just ran — without them, a key missing
+  because the frame that would have bound it blew up is indistinguishable from
+  a branch that never ran, which is the exact opposite conclusion.
+  `values_partial` carries the failing frame's own bindings, as far as it got.
+
+### Filtering `panel.values`
+
+Unfiltered, `values` is *every* binding the script made — colour constants,
+seeded data lists, and every intermediate that re-derives them. On a real app
+that is a four-figure line count per `GET /state`, which is why harnesses
+started mirroring the few interesting values into `obs_`-prefixed names. Narrow
+the map instead:
+
+```bash
+curl -s "127.0.0.1:$PORT/state?values=sel,scroll_right"   # exact names
+curl -s "127.0.0.1:$PORT/state?values_prefix=obs_"         # by prefix
+curl -s "127.0.0.1:$PORT/state?values=none"                # drop values entirely
+```
+
+Both selectors accept a comma-separated list, may be combined (a key matching
+either survives), and match a function-qualified key by its tail too — `values=y`
+finds `list_row.y` without your knowing which function binds it. `values=all`
+is the explicit form of the default. Filtering applies to `values_partial` as
+well, so a failing frame is just as readable.
+
+### Stepping frames and resetting panels
+
+| Endpoint | Body | Effect |
+|----------|------|--------|
+| `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance **every** panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600 per call. Replies with `panel_frames` (frames actually run) and each panel's new `frame`. |
+| `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. Replies `{"ok": true, "panels_reset": n}`. |
+
+`POST /tick` is how you drive an animation or a game: panel time advances
+deterministically, with the `dt` you asked for, and no input is fabricated. It
+supersedes the pattern of posting a no-op keypress per frame just to make a
+frame happen — that injected phantom edges into `panel.input` and gave each
+frame a wall-clock `dt`.
+
+`POST /panel/reset` exists because `state` **surviving hot reload is correct**
+and is exactly what makes iterating on *seeded* data impossible in place: you
+edit the generator, the old seed is restored from state, and nothing appears to
+change. Reset instead of restarting the process. (A GPP-pushed panel has no
+file to restart from and is skipped.)
+
+For a long-running panel, pair these with `--panel-wake`: a panel sleeps ten
+seconds after its last activity, which is right for an idle drawer and wrong for
+a running game that nobody is typing at. `garden --panel-wake` never sleeps;
+`--panel-wake 60` sets the window in seconds. `POST /tick` runs frames even on a
+sleeping panel (and re-stamps its activity), so it works either way.
+
+### Asserting panel geometry
+
+`/scene` is the numeric complement to `/screenshot`, but panel fills are
+**meshes**: `draw_rect_rounded`, circles and triangles are all tessellated, so a
+design built from rounded rectangles used to dump nothing but its text runs. A
+mesh primitive now reports what a layout assertion actually wants:
+
+```jsonc
+{"type": "mesh", "triangles": 44,
+ "rect": {"x": 0, "y": 0, "w": 800, "h": 600},   // bounds of the whole batch
+ "color": [0.12, 0.12, 0.14, 1.0],               // the colour covering the most area
+ "shapes": [                                      // the fills that went into it
+   {"rect": {"x": 0, "y": 0, "w": 800, "h": 600}, "color": [0.12, 0.12, 0.14, 1.0], "triangles": 2},
+   {"rect": {"x": 780, "y": 40, "w": 8, "h": 220}, "color": [0.35, 0.37, 0.42, 1.0], "triangles": 42}
+ ],
+ "clip": {"x": 0, "y": 0, "w": 800, "h": 600}}
+```
+
+`rect` is the axis-aligned bounds of the mesh's vertices and `color` is the
+per-vertex colour with the largest total triangle area (a fill wins over the
+hairline border around it) — but a panel batches consecutive fills into **one**
+mesh primitive, so those two describe the batch, which is often most of the
+pane. `shapes` is the useful field: the batch split back into runs of
+consecutive same-colour triangles, one per `draw_*` call, each with its own
+bounding rect. Asserting "there is an 8px-wide bar at x≈780 in the scrollbar
+colour" is a search over `shapes`. Two adjacent fills of the *identical* colour
+merge into one entry (they are indistinguishable on screen too), and the list is
+capped at 256 entries per mesh.
 
 Garden reports the script's own bindings only: keys containing `::` (imported),
 keys starting with `_` (internal plumbing), and values that are functions are
@@ -119,9 +210,14 @@ your dozen names under a hundred of its own. `panel.input` is the full standard 
 script saw (Phase 4): pressed/released edges, held state, the drag gesture,
 click count, modifiers, and typed text. A focused panel receives `/key`,
 `/text`, `/mouse` (click/down/move/up/drag), and `/mouse scroll` through the
-normal dispatch — a key is forwarded by name **and** as `text_input()`, a press
-starts a drag captured by the panel so moves/release reach it, and the wheel
-feeds `scroll_y()`/`scroll_x()`. The pane is ticked immediately, so `POST /key`
+normal dispatch — a key is forwarded by name (and as `text_input()`, unless it
+is a `Cmd`/`Ctrl`/`Alt` chord, which never types its character), a press starts
+a drag captured by the panel so moves/release reach it and carries its full
+modifier chord and click count, and the wheel feeds `scroll_y()`/`scroll_x()`.
+Modifiers arrive both as `mod_shift()`/`mod_ctrl()`/`mod_alt()`/`mod_cmd()` and
+as held keys (`key_down("shift")`). Cmd/Ctrl chords are the *editor's* shortcuts
+and are not forwarded unless the script claimed them with `claim_key(key, mods)`
+— see [petal-graphical-panels.md](petal-graphical-panels.md#claim_key--a-panels-own-command-keyspace). The pane is ticked immediately, so `POST /key`
 then `GET /state` reflects the change. **Note:** one-frame edges
 (`*_released`, `click_count`, `scroll`, `text`) are cleared by the next idle
 tick (~200ms in headless), so a script that must observe them across a later
@@ -227,7 +323,7 @@ answering, so their responses already include everything injected before them.
 
 | Endpoint | Body | Effect |
 |----------|------|--------|
-| `POST /key` | `{"key": "s", "mods": ["cmd"]}` | One key press through the normal key dispatch. Named keys: `enter`/`return`, `tab`, `space`, `backspace`, `delete`, `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. Mods: `cmd`/`super`/`meta`, `ctrl`, `shift`. Single characters map to character keys. |
+| `POST /key` | `{"key": "s", "mods": ["cmd"]}` | One key press through the normal key dispatch. Named keys: `enter`/`return`, `tab`, `space`, `backspace`, `delete`, `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. Mods: `cmd`/`super`/`meta`, `ctrl`/`control`, `shift`, `alt`/`option`. Single characters map to character keys. Add `"op": "down"` / `"op": "up"` to **hold** a key — see below. |
 | `POST /text` | `{"text": "hello\nworld"}` | Insert a string into the focused pane (replaces the selection if one is active). A focused **editable panel region** takes it one character at a time through the region's vim state machine — see below |
 | `POST /mouse` | see below | Mouse press / move / release / scroll |
 
@@ -251,8 +347,11 @@ units as the rects in `/state`):
 {"op": "up", "button": 1}
 ```
 
-`mods` takes the same names `POST /key` does (`cmd`/`super`/`meta`, `ctrl`,
-`shift`); `"shift": true` remains valid as the shorthand for `["shift"]`. On a
+`mods` takes the same names `POST /key` does (`cmd`/`super`/`meta`,
+`ctrl`/`control`, `shift`, `alt`/`option`); `"shift": true` remains valid as the
+shorthand for `["shift"]`. **Every** modifier named is delivered — to the editor
+and to a panel script's `mod_alt()`/`mod_cmd()` alike, so "ignore the snap grid"
+and "scale about the center" behaviors are drivable headless. On a
 Petal-IDE canvas, `cmd`/`ctrl` turns a press on a traced shape into a jump to the
 `draw_*` call that drew it (see
 [petal-ide-mode.md](petal-ide-mode.md#direct-manipulation-point-at-a-shape-find-its-code)).
@@ -290,7 +389,29 @@ focused editable region, `/text` behaves as before — a panel gets it as
 double-click (select the word under the point; a drag then extends word-wise),
 3+ like a triple-click (select the whole line including its newline; a drag
 extends line-wise). Real frontends count clicks by timing/proximity; the
-debug server takes the count explicitly so tests don't depend on timing.
+debug server takes the count explicitly so tests don't depend on timing. A
+panel script reads the same count as `click_count()`.
+
+### Holding a key: `{"op": "down"}` / `{"op": "up"}`
+
+A plain `POST /key` is a **tap**: the press and its release land in the same
+frame, so `key_down(k)` is never true by the time a later `GET /state` reads it.
+That makes a hold-to-do-X interaction (a game's movement key, a spring-loaded
+mode) impossible to drive — the reason testbed games grew tap-impulse hacks.
+
+`{"key": "w", "op": "down"}` presses and holds: the key stays in the focused
+panel's `key_down(...)` and in `panel.input.keys_down` until `{"key": "w",
+"op": "up"}` releases it. The default (`"op"` absent, or `"tap"`) is unchanged.
+
+```bash
+curl -s -X POST $BASE/key -d '{"key":"w","op":"down"}'   # start moving
+curl -s -X POST $BASE/tick -d '{"n": 30}'                # 30 frames of holding it
+curl -s -X POST $BASE/key -d '{"key":"w","op":"up"}'     # stop
+```
+
+Holding is a **panel** capability: only a panel script has a notion of a held
+key, so over an editor or process pane a `down` acts like a tap and an `up` is
+dropped. `Cmd`/`Ctrl`+`Q` still quits rather than being held.
 
 Input endpoints reply with a small acknowledgment of where things landed:
 
@@ -350,6 +471,28 @@ curl -s localhost:$PORT/screenshot -o shot.png          # see the result
 curl -s localhost:$PORT/buffer/0 | diff - README.md     # buffer vs disk
 ```
 
+## Which Garden am I talking to?
+
+`GET /state` opens with an `identity` block:
+
+```jsonc
+"identity": {
+  "pid": 40122,
+  "port": 65113,
+  "layout": "/Users/me/.garden/init.ptl",   // the layout script, or null
+  "cwd": "/Users/me/project",
+  "panels": [{"pane": 1, "script": "app.ptl", "path": "/Users/me/project/app.ptl"}]
+}
+```
+
+Check it first when more than one Garden is running — two sessions have each
+spent time debugging the other's app. The server binds **both** `127.0.0.1` and
+`[::1]` on its port for the same reason: `localhost` resolves to `::1` first on
+macOS, so an IPv4-only bind left the same port number on the v6 side free for a
+different process, and `curl localhost:$PORT` could reach it. If the v6 bind
+fails (someone else already holds it) Garden prints a warning at startup and you
+should address it as `127.0.0.1:$PORT` explicitly.
+
 ## Notes & limitations
 
 - **Shared desktop** (windowed mode only): the window is real and frontmost
@@ -361,7 +504,14 @@ curl -s localhost:$PORT/buffer/0 | diff - README.md     # buffer vs disk
 - One command per HTTP request; the connection closes after the response
   (`Connection: close`). Requests time out after ~5s if the event loop is
   unresponsive.
-- `GET /state` **drains** the script's `print` output — two concurrent
-  pollers will each see only part of it.
+- `GET /state` **drains** `script.output` — the layout script's *and* every
+  panel's `print(...)` lines, merged — so two concurrent pollers will each see
+  only part of it. A panel keeps its 200 most recent lines between reads.
+- Panel script errors — a script that won't compile at startup, a hot reload
+  that won't compile, or a frame that raises — are reported in `panel_error`,
+  and `status_error` falls back to it, so **one field answers "is anything
+  broken?"**. `panes[].panel.error` still carries the full multi-line message
+  (`panel_error` is its first line, for the status bar). A panel whose script
+  is broken keeps its pane and recovers by itself once the file is fixed.
 - The server has no authentication; it binds loopback only. Don't forward
   the port.

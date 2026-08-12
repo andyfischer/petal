@@ -514,12 +514,12 @@ impl App {
                     // sees `mouse_pressed()` and can select the clicked row,
                     // toggle a hunk, or move its focus ring.
                     let (lx, ly) = ((x - pane_rect.x) as i32, (y - pane_rect.y) as i32);
-                    panel.set_modifiers(super::Mods {
-                        shift,
-                        ..Default::default()
-                    });
+                    // The whole chord, not just shift: a script's alt-drag
+                    // ("scale about the center") and cmd-click are as real as
+                    // shift-click, and used to arrive with `mod_alt()` false.
+                    panel.set_modifiers(mods);
                     panel.set_mouse(lx, ly);
-                    panel.mouse_down(0);
+                    panel.mouse_down_clicks(0, clicks);
                 }
                 self.drag = Some(Drag::PanelText { pane: idx, id });
                 self.tick_panel_at(idx);
@@ -563,14 +563,16 @@ impl App {
                 let pane = &mut self.panes[idx];
                 let (lx, ly) = ((x - pane.rect.x) as i32, (y - pane.rect.y) as i32);
                 if let Some(panel) = pane.panel.as_mut() {
-                    panel.set_modifiers(super::Mods {
-                        shift,
-                        ..Default::default()
-                    });
+                    // The full chord reaches the script (see the `text_view`
+                    // tee above): `mod_alt()`/`mod_cmd()` are how a panel says
+                    // "ignore the snap grid" or "scale about the center".
+                    panel.set_modifiers(mods);
                     // Sync the pointer before the press so the click chain and
                     // drag anchor start from the right spot.
                     panel.set_mouse(lx, ly);
-                    panel.mouse_down(0);
+                    // …and the click chain the host already counted, so
+                    // `click_count()` can report a double-click.
+                    panel.mouse_down_clicks(0, clicks);
                 }
                 // Capture the drag so moves/release route to this panel (drag
                 // gesture + `mouse_released` edge).
@@ -701,6 +703,19 @@ impl App {
                 self.needs_redraw = true;
             }
             Some(Drag::Manipulate) => self.drag_manipulate(x, y),
+            // Not dragging: the pointer still moved *over* a panel, and the
+            // script's `mouse_x()`/`mouse_y()` are a level it reads every frame.
+            // Tick it now (as a press does) so hover is delivered on the frame
+            // the move happened — otherwise the first move after launch lands
+            // between ticks and is never seen by a `GET /state` right after it.
+            None if self.divider_drag.is_none() => {
+                if let Some(idx) = self.pane_at(x, y) {
+                    if self.panes.get(idx).is_some_and(super::Pane::is_panel) {
+                        self.tick_panel_at(idx);
+                        self.needs_redraw = true;
+                    }
+                }
+            }
             Some(Drag::PanelText { pane, id }) => {
                 if let Some(p) = self.panes.get_mut(pane) {
                     let rect = p.rect;

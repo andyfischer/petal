@@ -27,11 +27,37 @@ pub struct Viewport {
 }
 
 /// Modifier state accompanying one key press.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mods {
     pub cmd: bool,
     pub ctrl: bool,
     pub shift: bool,
+    /// `Alt`/`Option`. Carried all the way into a panel script's `mod_alt()`,
+    /// which is why it exists: a panel whose bare letters are content needs a
+    /// modifier the host doesn't already own.
+    pub alt: bool,
+}
+
+impl Mods {
+    /// The chord as petal-ui's modifier bitmask — `1=shift 2=ctrl 4=alt 8=cmd`,
+    /// the same encoding a script reads through `modifiers` and the debug
+    /// server reports as `panel.input.modifiers`. Used to match a panel's
+    /// [key claims](crate::panel_view::PanelView::claims_key).
+    pub fn bits(self) -> u8 {
+        (self.shift as u8) | (self.ctrl as u8) << 1 | (self.alt as u8) << 2 | (self.cmd as u8) << 3
+    }
+
+    /// Whether any modifier is held — i.e. this key press is a *chord*, not a
+    /// plain character. A chord never produces `text_input()`.
+    pub fn any(self) -> bool {
+        self.cmd || self.ctrl || self.alt || self.shift
+    }
+
+    /// Whether a **command** modifier is held (`Cmd`/`Ctrl`/`Alt`). Shift is
+    /// excluded: it only shifts the character.
+    pub fn any_command(self) -> bool {
+        self.cmd || self.ctrl || self.alt
+    }
 }
 
 /// A native-menu command (the macOS menu bar). Built by the windowed
@@ -471,6 +497,21 @@ fn panel_title(script: &str) -> String {
         .and_then(|n| n.to_str())
         .unwrap_or(script)
         .to_string()
+}
+
+/// Which half of a key press is being delivered.
+///
+/// Every frontend delivers [`Tap`](KeyPhase::Tap) — a press and its release in
+/// the same frame — because none of them report key-up. `Down`/`Up` come from
+/// the debug server's `POST /key {"op": "down"}` so a driver can *hold* a key
+/// against a panel script, which is the only way `key_down(k)` is observable
+/// from a later `GET /state`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyPhase {
+    #[default]
+    Tap,
+    Down,
+    Up,
 }
 
 /// What a key press did, so callers know whether to exit or redraw.

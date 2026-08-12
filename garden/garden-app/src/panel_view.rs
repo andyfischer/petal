@@ -11,9 +11,10 @@
 //! `docs/petal-graphical-panels.md`.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use garden_core::projection::{
@@ -315,12 +316,40 @@ fn hash_projection(spec: &ProjectionSpec) -> u64 {
 
 /// How long a panel keeps ticking after its last activity before it sleeps.
 pub const PANEL_WAKE: Duration = Duration::from_secs(10);
+
+/// The live wake window in milliseconds, defaulting to [`PANEL_WAKE`] and
+/// overridable process-wide by `--panel-wake` (see [`set_panel_wake`]). A
+/// running game or animation is exactly the case where sleeping after ten idle
+/// seconds is wrong, and a headless harness driving one has no user input to
+/// keep re-stamping activity with.
+static PANEL_WAKE_MS: AtomicU64 = AtomicU64::new(PANEL_WAKE.as_secs() * 1_000);
+
+/// Override the panel wake window process-wide. `None` means "never sleep".
+/// Set once from the command line before any frontend starts.
+pub fn set_panel_wake(window: Option<Duration>) {
+    let ms = match window {
+        // ~584 million years: "forever" without a second code path in `is_awake`.
+        None => u64::MAX,
+        Some(d) => d.as_millis().min(u64::MAX as u128) as u64,
+    };
+    PANEL_WAKE_MS.store(ms, Ordering::Relaxed);
+}
+
+/// The wake window in force (see [`set_panel_wake`]).
+pub fn panel_wake() -> Duration {
+    Duration::from_millis(PANEL_WAKE_MS.load(Ordering::Relaxed))
+}
 /// Target frame interval while a panel is awake (~60fps).
 pub const PANEL_FRAME: Duration = Duration::from_millis(16);
 
 /// Largest `dt` handed to a script, so a frame after a long sleep doesn't see a
 /// huge time step.
 const MAX_DT: f64 = 0.1;
+
+/// How many of a panel's most recent `print(...)` lines are kept for the debug
+/// channel. A panel that prints every frame would otherwise grow the buffer
+/// without bound between reads; the newest lines are the interesting ones.
+const OUTPUT_CAP: usize = 200;
 
 pub struct PanelView {
     host: PanelHost,
@@ -346,6 +375,20 @@ pub struct PanelView {
     /// wants — the ones matching the picture still on screen — are the last good
     /// frame's.
     observed: serde_json::Map<String, serde_json::Value>,
+    /// The panel frame number [`observed`](Self::observed) was captured on. A
+    /// reader that only ever sees the *last good* map cannot tell a value that
+    /// is current from one that is several failed frames stale — and an absent
+    /// key reads as "that branch never ran" when it in fact means "the frame
+    /// that would have bound it blew up". Stamping the frame makes both
+    /// self-diagnosing.
+    observed_frame: i64,
+    /// The observation buffer of the most recent frame that **errored**, with
+    /// the frame number it came from: whatever the aborted run got through
+    /// before raising. Kept separate from [`observed`](Self::observed) (which
+    /// still matches the picture on screen) so a debugger can see how far the
+    /// broken frame got without the good values being overwritten by a partial
+    /// set. Cleared by the next successful frame.
+    partial_observed: Option<(i64, serde_json::Map<String, serde_json::Value>)>,
     /// Set when a **reload** (disk `poll_reload`, live `reload_from_editor`, or a
     /// GPP `setScript` push) fails to compile the *new* source. The old program
     /// keeps running (so the last good frame stays on screen), so this must NOT be
@@ -356,10 +399,29 @@ pub struct PanelView {
     /// cleared by the next successful frame. Distinct from [`reload_error`](Self::reload_error),
     /// which is about compiling new source.
     frame_error: Option<String>,
+    /// The script's own `print(...)` lines, drained from the host after every
+    /// frame and kept here (newest last, capped at [`OUTPUT_CAP`]) until a
+    /// consumer takes them — the debug server's `/state` reports them as
+    /// `script.output`, which is the only debug channel a panel author has.
+    /// Draining every frame also keeps the host's buffer from growing without
+    /// bound in a panel that prints each frame.
+    output: VecDeque<String>,
     /// Native read-only editors for the panel's `text_view(...)` regions, keyed
     /// by the script's stable region id. Synced from [`PanelCmd::TextView`] each
     /// frame in [`tick`](Self::tick); rendered in [`build_scene`](Self::build_scene).
     text_views: HashMap<i64, EmbeddedText>,
+    /// The key chords the last good frame claimed with `claim_key(name, mods)`,
+    /// as `(canonical key name, modifier bits or None for "any chord")`. A claim
+    /// is re-declared by every frame, so this is replaced (not merged) after
+    /// each successful frame; a frame that *errored* leaves the previous claims
+    /// standing, since dropping them would silently return the panel's command
+    /// keys to the host mid-debugging. Read by
+    /// [`App::panel_key`](crate::app::App) before it applies any host shortcut.
+    key_claims: Vec<(String, Option<u8>)>,
+    /// The modifier chord last pushed with [`set_modifiers`](Self::set_modifiers),
+    /// so a change can be republished as `keys_down` entries — `key_down("shift")`
+    /// used to return false forever, which failed silently.
+    mods: Mods,
     /// Which `text_view` region (if any) currently owns keyboard focus — set when
     /// the pointer presses inside a region, so Cmd-C copies that region's
     /// selection. `None` means keys go to the script as usual.
@@ -497,9 +559,14 @@ impl PanelView {
             cmds: Vec::new(),
             last_tick_changed: false,
             observed: serde_json::Map::new(),
+            observed_frame: -1,
+            partial_observed: None,
             reload_error: None,
             frame_error: None,
+            output: VecDeque::new(),
             text_views: HashMap::new(),
+            key_claims: Vec::new(),
+            mods: Mods::default(),
             focused_region: None,
             live_source_hash: None,
             client: None,
@@ -684,6 +751,8 @@ impl PanelView {
         self.text_views.clear();
         self.frame_count = 0;
         self.last_frame = None;
+        self.observed_frame = -1;
+        self.partial_observed = None;
     }
 
     /// The **live** screen currently displayed — the history entry at the cursor.
@@ -965,7 +1034,14 @@ impl PanelView {
 
     /// Whether the panel is currently animating (within its wake window).
     pub fn is_awake(&self, now: Instant) -> bool {
-        now.duration_since(self.last_activity) < PANEL_WAKE
+        now.duration_since(self.last_activity) < panel_wake()
+    }
+
+    /// Push the activity stamp far enough into the past that the panel is
+    /// asleep — for tests of the paths that must run regardless (`/tick`).
+    #[cfg(test)]
+    pub(crate) fn sleep_for_test(&mut self) {
+        self.last_activity = Instant::now() - PANEL_WAKE - Duration::from_secs(1);
     }
 
     /// Stamp activity, restarting the wake window.
@@ -991,6 +1067,21 @@ impl PanelView {
         self.host.input_event(InputEvent::MouseUp { button });
     }
 
+    /// A left press that is the `clicks`-th of a chain — what `click_count()`
+    /// reports. A real pointer builds the chain out of repeated presses, and so
+    /// does this: a host (or `POST /mouse {"clicks": 2}`) that already knows the
+    /// count feeds that many presses at the current position, which is the only
+    /// thing the standard input contract derives a chain from. Without it a
+    /// panel's `click_count()` was permanently 1 and no double-click gesture was
+    /// reachable, in a real window or headless.
+    pub fn mouse_down_clicks(&mut self, button: u8, clicks: u32) {
+        // Only the left button carries a click chain; anything else is one press.
+        let repeats = if button == 0 { clicks.max(1) } else { 1 };
+        for _ in 0..repeats {
+            self.host.input_event(InputEvent::MouseDown { button });
+        }
+    }
+
     /// Forward a key (canonical name, e.g. `"j"`, `"down"`, `"space"`) plus its
     /// typed text if any. Garden's frontends don't deliver key-up, so a key is
     /// fed as a paired down+up: scripts see the `key_pressed`/`key_released`
@@ -1003,6 +1094,38 @@ impl PanelView {
         self.host
             .input_event(InputEvent::KeyDown { key: name.clone() });
         self.host.input_event(InputEvent::KeyUp { key: name });
+    }
+
+    /// Press and **hold** a key: the `key_pressed` edge fires now and the key
+    /// stays in `key_down(...)` until [`key_up`](Self::key_up). No frontend
+    /// delivers key-up, so this comes from the debug server's
+    /// `POST /key {"op":"down"}` — the only way a hold-to-do-X interaction is
+    /// drivable headless.
+    pub fn key_down(&mut self, name: String, text: Option<String>) {
+        if let Some(text) = text {
+            self.host.input_event(InputEvent::Text { text });
+        }
+        self.host.input_event(InputEvent::KeyDown { key: name });
+    }
+
+    /// Release a key held by [`key_down`](Self::key_down) — the `key_released`
+    /// edge, and the end of `key_down(...)`.
+    pub fn key_up(&mut self, name: String) {
+        self.host.input_event(InputEvent::KeyUp { key: name });
+    }
+
+    /// Whether the script claimed `name` under the modifier bits `mods`
+    /// (`1=shift 2=ctrl 4=alt 8=cmd`) — i.e. the host must forward this chord
+    /// instead of applying its own shortcut. See [`key_claims`](Self::key_claims).
+    pub fn claims_key(&self, name: &str, mods: u8) -> bool {
+        self.key_claims.iter().any(|(claim, claim_mods)| {
+            claim.eq_ignore_ascii_case(name) && claim_mods.is_none_or(|m| m == mods)
+        })
+    }
+
+    /// The chords the script currently claims, for tests and introspection.
+    pub fn key_claims(&self) -> &[(String, Option<u8>)] {
+        &self.key_claims
     }
 
     /// Feed typed text (IME/paste) as `text_input`, with no accompanying key
@@ -1027,15 +1150,39 @@ impl PanelView {
         self.host.set_data_provider(provider);
     }
 
-    /// Set the held modifier chord read by `mod_shift()`/`mod_ctrl()`/`mod_cmd()`.
-    /// Garden's `Mods` has no alt bit, so `mod_alt()` is always false in panels.
+    /// Set the held modifier chord read by
+    /// `mod_shift()`/`mod_ctrl()`/`mod_alt()`/`mod_cmd()`.
+    ///
+    /// The same change is also published as ordinary held keys named `"shift"`,
+    /// `"ctrl"`, `"alt"` and `"cmd"`, so `key_down("shift")` answers truthfully.
+    /// It is not how modifiers are *meant* to be read (`mod_shift()` is), but it
+    /// used to return false forever — a keybinding written that way simply did
+    /// nothing, with no error to notice.
     pub fn set_modifiers(&mut self, mods: Mods) {
         self.host.input_event(InputEvent::Modifiers(Modifiers {
             shift: mods.shift,
             ctrl: mods.ctrl,
-            alt: false,
+            alt: mods.alt,
             cmd: mods.cmd,
         }));
+        let was = self.mods;
+        self.mods = mods;
+        for (name, now, before) in [
+            ("shift", mods.shift, was.shift),
+            ("ctrl", mods.ctrl, was.ctrl),
+            ("alt", mods.alt, was.alt),
+            ("cmd", mods.cmd, was.cmd),
+        ] {
+            if now == before {
+                continue;
+            }
+            let key = name.to_string();
+            self.host.input_event(if now {
+                InputEvent::KeyDown { key }
+            } else {
+                InputEvent::KeyUp { key }
+            });
+        }
     }
 
     /// Accumulate wheel movement in whole lines/columns (positive = down/right),
@@ -1053,6 +1200,20 @@ impl PanelView {
     /// is absent; see [`PanelHost::observed_json`] for the full rule.
     pub fn observed(&self) -> &serde_json::Map<String, serde_json::Value> {
         &self.observed
+    }
+
+    /// The panel frame [`observed`](Self::observed) was captured on, or `None`
+    /// before the first successful frame. Compare against
+    /// [`frame_count`](Self::frame_count) to tell current values from stale ones.
+    pub fn observed_frame(&self) -> Option<i64> {
+        (self.observed_frame >= 0).then_some(self.observed_frame)
+    }
+
+    /// The partial observations of the last **failed** frame (frame number and
+    /// the bindings it reached before raising), or `None` when the last frame
+    /// succeeded. See the [`partial_observed`](Self::partial_observed) field.
+    pub fn partial_observed(&self) -> Option<(i64, &serde_json::Map<String, serde_json::Value>)> {
+        self.partial_observed.as_ref().map(|(f, m)| (*f, m))
     }
 
     /// The script's live `state` variables as a JSON map keyed by name — the
@@ -1082,6 +1243,15 @@ impl PanelView {
         self.reload_error.is_some()
     }
 
+    /// Record the compile error of a panel whose script did not load at all, so
+    /// the pane reports it (banner, `status_error`, `/state`) while running the
+    /// empty [`PanelHost::stub`] program. Cleared like any other reload error —
+    /// by the next [`poll_reload`](Self::poll_reload) that compiles — which is
+    /// what lets a panel that was broken at startup recover on a fixed save.
+    pub fn set_load_error(&mut self, err: impl Into<String>) {
+        self.reload_error = Some(err.into());
+    }
+
     /// The exact input delivered to the last frame (for debug-server visibility).
     pub fn input_snapshot(&self) -> &PanelInput {
         self.host.input_snapshot()
@@ -1098,7 +1268,25 @@ impl PanelView {
             None => 0.0,
         };
         self.last_frame = Some(now);
+        self.run_frame(dt, rect, cell);
+        true
+    }
 
+    /// Run one frame with an explicit `dt`, ignoring the sleep/wake window —
+    /// the debug server's `POST /tick`. A headless harness driving a game or an
+    /// animation otherwise has to fake input to get a frame at all (and then
+    /// gets a wall-clock `dt` it did not choose); this advances panel time
+    /// deterministically instead. Activity is stamped so the panel also stays
+    /// awake for the ordinary tick path afterwards.
+    pub fn tick_with_dt(&mut self, now: Instant, dt: f64, rect: Rect, cell: (f32, f32)) {
+        self.note_activity(now);
+        self.last_frame = Some(now);
+        self.run_frame(dt.clamp(0.0, MAX_DT), rect, cell);
+    }
+
+    /// The body of one panel frame, shared by the wall-clock [`tick`](Self::tick)
+    /// and the deterministic [`tick_with_dt`](Self::tick_with_dt).
+    fn run_frame(&mut self, dt: f64, rect: Rect, cell: (f32, f32)) {
         // The host owns the standard input contract: events fed since the last
         // frame (mouse, keys, scroll, modifiers, text) are promoted to this
         // frame's edge/level snapshot by `frame`'s `begin_frame`, so there is no
@@ -1118,6 +1306,8 @@ impl PanelView {
                 self.last_tick_changed = cmds != self.cmds || self.frame_error.is_some();
                 self.cmds = cmds;
                 self.observed = self.host.observed_json();
+                self.observed_frame = self.frame_count;
+                self.partial_observed = None;
                 // Forward the frame's `emit(event, arg)` events to the pane's
                 // GPP subprocess as `emit` notifications — fire-and-forget, in
                 // call order. An in-process panel (no client) drops them.
@@ -1140,6 +1330,9 @@ impl PanelView {
                 for (name, arg) in self.host.take_mutations() {
                     self.nav_events.push(ClientEvent::Mutate { name, arg });
                 }
+                // The chords this frame asked the host to hand over. Declarative:
+                // whatever the frame claimed *is* the claim set from now on.
+                self.key_claims = self.host.take_key_claims();
                 // A successful frame clears only the *runtime* error; a reload
                 // error (broken buffer) persists — the old program is what just
                 // ran, and its health says nothing about the new source.
@@ -1149,11 +1342,35 @@ impl PanelView {
             Err(err) => {
                 self.last_tick_changed = self.frame_error.as_deref() != Some(err.as_str());
                 self.frame_error = Some(err);
+                // How far the broken frame got, kept beside (never on top of)
+                // the last good values — an absent key otherwise reads as "that
+                // branch never ran".
+                self.partial_observed = Some((self.frame_count, self.host.observed_json()));
             }
         }
 
+        // Collect this frame's `print(...)` lines whether it succeeded or raised
+        // — a print before the failing line is exactly what someone debugging a
+        // broken frame needs to see.
+        self.collect_output();
         self.frame_count += 1;
-        true
+    }
+
+    /// Move the host's buffered `print(...)` lines into this pane's capped ring.
+    fn collect_output(&mut self) {
+        for line in self.host.take_output() {
+            if self.output.len() == OUTPUT_CAP {
+                self.output.pop_front();
+            }
+            self.output.push_back(line);
+        }
+    }
+
+    /// Take the script `print(...)` lines collected since the last call (oldest
+    /// first). Drained, so each line is reported once — the debug server's
+    /// `/state` is the consumer.
+    pub fn take_output(&mut self) -> Vec<String> {
+        self.output.drain(..).collect()
     }
 
     /// Whether the most recent [`tick`](Self::tick) frame actually changed the
@@ -1806,6 +2023,8 @@ impl PanelView {
                 self.text_views.clear();
                 self.frame_count = 0;
                 self.last_frame = None;
+                self.observed_frame = -1;
+                self.partial_observed = None;
                 self.live_source_hash = None;
                 self.note_activity(now);
                 true
@@ -1815,6 +2034,14 @@ impl PanelView {
                 true
             }
         }
+    }
+
+    /// Whether this panel runs a script loaded from a real file, rather than
+    /// source pushed by a GPP subprocess. Only a file-backed panel can be
+    /// restarted from disk ([`restart`](Self::restart)); a pushed one has no
+    /// file to reload (its "path" is the client binary).
+    pub fn is_file_backed(&self) -> bool {
+        self.client.is_none()
     }
 
     /// Poll the script file and hot-reload on change. Returns true if it
@@ -3184,6 +3411,73 @@ done
     /// The integer the panel's last good frame bound to `name`.
     fn debug_val(pv: &PanelView, name: &str) -> Option<i64> {
         pv.observed().get(name).and_then(|v| v.as_i64())
+    }
+
+    /// A left press that the host already counted as the n-th of a chain must
+    /// reach the script as `click_count() == n`. The count was dropped at the
+    /// boundary, so a panel could never see a double click.
+    #[test]
+    fn a_multi_click_press_reaches_the_script_as_its_count() {
+        let host = PanelHost::from_source("p", "let cc = click_count()\n").unwrap();
+        let mut pv = PanelView::new(host, "p".into(), Instant::now());
+        pv.set_mouse(5, 5);
+        pv.mouse_down_clicks(0, 2);
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "cc"), Some(2));
+
+        // A single press is still 1 (and the chain does not keep growing from
+        // the earlier double click once the pointer has moved away).
+        pv.mouse_up(0);
+        pv.set_mouse(300, 300);
+        pv.mouse_down_clicks(0, 1);
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "cc"), Some(1));
+    }
+
+    /// Modifiers are published as held keys as well as `mod_*()` flags:
+    /// `key_down("shift")` used to answer false forever, silently.
+    #[test]
+    fn modifiers_are_also_readable_as_held_keys() {
+        let host = PanelHost::from_source(
+            "p",
+            "let s = if key_down(\"shift\") then 1 else 0 end\n             let a = if key_down(\"alt\") then 1 else 0 end\n",
+        )
+        .unwrap();
+        let mut pv = PanelView::new(host, "p".into(), Instant::now());
+        pv.set_modifiers(Mods {
+            shift: true,
+            alt: true,
+            ..Default::default()
+        });
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "s"), Some(1));
+        assert_eq!(debug_val(&pv, "a"), Some(1));
+
+        // Releasing them takes the keys back down with it.
+        pv.set_modifiers(Mods::default());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "s"), Some(0));
+        assert_eq!(debug_val(&pv, "a"), Some(0));
+    }
+
+    /// The chords a frame claimed are what the host matches keys against —
+    /// including the "any modifier" form, and matched case-insensitively.
+    #[test]
+    fn claimed_chords_are_matched_by_key_and_modifier_bits() {
+        let host = PanelHost::from_source(
+            "p",
+            "claim_key(\"z\", \"cmd\")\nclaim_key(\"escape\")\n",
+        )
+        .unwrap();
+        let mut pv = PanelView::new(host, "p".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert!(pv.claims_key("z", 8), "Cmd+Z was claimed");
+        assert!(pv.claims_key("Z", 8), "key names match case-insensitively");
+        assert!(!pv.claims_key("z", 0), "a bare z was not claimed");
+        assert!(!pv.claims_key("y", 8), "another chord was not claimed");
+        // No modifier argument claims the key under every chord.
+        assert!(pv.claims_key("escape", 0));
+        assert!(pv.claims_key("escape", 8));
     }
 
     /// `text_view_scroll_to` moves the region's viewport on the frame it is

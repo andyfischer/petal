@@ -47,7 +47,9 @@ mod process;
 mod scene;
 mod types;
 
-pub use types::{ClickCounter, MenuAction, Mods, Pane, ToolbarAction, Viewport, MENU_ACTIONS};
+pub use types::{
+    ClickCounter, KeyPhase, MenuAction, Mods, Pane, ToolbarAction, Viewport, MENU_ACTIONS,
+};
 pub(crate) use types::{KeyOutcome, ToolbarButton};
 
 #[cfg(test)]
@@ -129,6 +131,16 @@ pub struct App {
     /// pattern not found); shown in the status bar (red) until the next key
     /// press starts a new action.
     status_error: Option<String>,
+    /// The current panel script error (compile or runtime), reconciled from the
+    /// live panes every tick by [`sync_panel_error`](Self::sync_panel_error).
+    /// A panel paints its own error banner, but that banner is *inside* one pane
+    /// on a canvas nobody may be looking at; this is the single obvious place —
+    /// alongside [`script_error`](Self::script_error) — where "my panel is
+    /// broken" is reported, and it is what `/state`'s `status_error` falls back
+    /// to. Derived state: it clears itself the moment the panel compiles and
+    /// renders again, and unlike [`status_error`](Self::status_error) a keypress
+    /// does not dismiss it (the panel is still broken).
+    panel_error: Option<String>,
     /// Transient informational message (file written / reloaded from disk,
     /// external-change warning); shown in the status bar in a non-error color
     /// until the next key press.
@@ -296,6 +308,7 @@ impl App {
             live_layout: None,
             script_error: None,
             status_error: None,
+            panel_error: None,
             status_note: None,
             command_line: None,
             file_finder: None,
@@ -454,10 +467,50 @@ impl App {
                 redraw = true;
             }
         }
+        if self.sync_panel_error() {
+            redraw = true;
+        }
         if redraw {
             self.needs_redraw = true;
         }
         (changed, animating)
+    }
+
+    /// Reconcile [`panel_error`](Self::panel_error) with the live panes: a panel
+    /// that fails to compile (at load, on a hot reload, or from a paired editor
+    /// buffer) or raises at runtime reports here, and the report clears itself as
+    /// soon as the panel runs clean again. Each *new* message is also written to
+    /// the event log and stderr, because the failure people actually hit is a
+    /// hot reload that silently keeps running the old program: without a line
+    /// somewhere, an edit that doesn't compile is indistinguishable from an edit
+    /// that had no effect. Returns whether the reported error changed.
+    fn sync_panel_error(&mut self) -> bool {
+        let current = self.panes.iter().find_map(|pane| {
+            let panel = pane.panel.as_ref()?;
+            let err = panel.error()?;
+            // The headline only: a Petal runtime error carries a multi-line
+            // source excerpt, and the status bar is one line.
+            let headline = err.lines().next().unwrap_or(err);
+            Some(format!("panel {}: {headline}", panel.script()))
+        });
+        if current == self.panel_error {
+            return false;
+        }
+        if let Some(msg) = current.clone() {
+            eprintln!("garden: {msg}");
+            self.log_event("panel", msg);
+        }
+        self.panel_error = current;
+        true
+    }
+
+    /// The error to show as *the* current error: the last user-action error if
+    /// one is standing, else the live panel error. One place to look, for the
+    /// status bar and for a headless client polling `/state`.
+    pub(crate) fn effective_status_error(&self) -> Option<&str> {
+        self.status_error
+            .as_deref()
+            .or(self.panel_error.as_deref())
     }
 
     /// The debug capture consistency contract: run panel frames until the drawn
@@ -488,6 +541,59 @@ impl App {
                 break;
             }
         }
+    }
+
+    /// Advance every panel by `n` frames of exactly `dt` seconds each, ignoring
+    /// the sleep/wake window — the debug server's `POST /tick`. Deterministic
+    /// panel time for a harness driving a game or an animation, which otherwise
+    /// has to post a no-op keypress per frame just to make one happen. Returns
+    /// how many panel frames actually ran.
+    pub fn advance_panels(&mut self, n: u32, dt: f64) -> u64 {
+        let cell = self.viewport.cell;
+        let panel_theme = self.theme.to_panel_theme();
+        let mut frames = 0u64;
+        for _ in 0..n {
+            let now = Instant::now();
+            for pane in &mut self.panes {
+                let Some(panel) = pane.panel.as_mut() else {
+                    continue;
+                };
+                panel.set_theme(panel_theme.clone());
+                panel.tick_with_dt(now, dt, pane.rect, cell);
+                frames += 1;
+            }
+            for i in 0..self.panes.len() {
+                self.drain_panel_nav(i);
+            }
+        }
+        if frames > 0 {
+            self.needs_redraw = true;
+        }
+        frames
+    }
+
+    /// Restart every panel pane from its source, discarding Petal `state` — the
+    /// debug server's `POST /panel/reset`, and the same operation the toolbar's
+    /// Reset performs. `state` deliberately survives hot reload, which makes
+    /// iterating on *seeded* data impossible in place: you edit the generator,
+    /// the old seed is restored, and only killing the process helps. Returns
+    /// how many panels restarted.
+    pub fn reset_panel_state(&mut self) -> usize {
+        let now = Instant::now();
+        let mut count = 0;
+        for pane in &mut self.panes {
+            // A GPP-pushed panel has no file to reload from — its "path" is the
+            // client binary — so restarting it would only record a load error.
+            if let Some(pv) = pane.panel.as_mut().filter(|pv| pv.is_file_backed()) {
+                pv.restart(now);
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.paused = false;
+            self.needs_redraw = true;
+        }
+        count
     }
 
     /// Run one frame of the focused pane's panel immediately, if it is one, so

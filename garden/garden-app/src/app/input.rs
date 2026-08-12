@@ -16,7 +16,7 @@ use crate::editor_view::EditorView;
 use crate::vim::{self, Key};
 use crate::window_nav::{self, Direction};
 
-use super::{App, KeyOutcome, Mods, Pane};
+use super::{App, KeyOutcome, KeyPhase, Mods, Pane};
 
 /// Upper bound on the files the fuzzy finder gathers, so a walk of a huge tree
 /// stays bounded in time and memory. Comfortably covers a typical project.
@@ -26,6 +26,19 @@ impl App {
     /// Apply one logical key press with the given modifiers. Shared by every
     /// frontend's input translation and debug-server `/key` injection.
     pub fn apply_key(&mut self, key: Key, mods: Mods) {
+        self.apply_key_phase(key, mods, KeyPhase::Tap);
+    }
+
+    /// Apply one key in a given press [phase](KeyPhase). [`KeyPhase::Tap`] — a
+    /// press and its release in one frame — is what every frontend delivers and
+    /// what [`apply_key`](Self::apply_key) means.
+    ///
+    /// `Down`/`Up` exist for a **focused panel**: they let a driver hold a key
+    /// across frames, so `key_down("w")` is observable from a later `GET /state`
+    /// and a hold-to-move interaction is testable headless. Only a panel can
+    /// observe held keys — over an editor or a process pane a `Down` acts like a
+    /// tap and an `Up` is dropped, since neither has any notion of a held key.
+    pub fn apply_key_phase(&mut self, key: Key, mods: Mods, phase: KeyPhase) {
         // Every key press is logged for replay (this is the single funnel for
         // all frontend input and debug injection); the event log buffers it.
         self.log_event("key", describe_key(key, mods));
@@ -39,7 +52,19 @@ impl App {
             self.needs_redraw = true;
         }
         self.wake_panels();
-        match self.key_outcome(key, mods) {
+        // A held key is only meaningful to a panel script; route it straight
+        // there (still through the reserved-chord classification, so `Cmd+Q`
+        // cannot be held instead of quitting). Anything else falls back to the
+        // normal single-press dispatch.
+        let panel_focused = self.panes.get(self.focus).is_some_and(Pane::is_panel);
+        let modal = self.command_line.is_some() || self.file_finder.is_some();
+        let outcome = match phase {
+            KeyPhase::Tap => self.key_outcome(key, mods),
+            _ if panel_focused && !modal => self.panel_key(key, mods, phase),
+            KeyPhase::Down => self.key_outcome(key, mods),
+            KeyPhase::Up => KeyOutcome::Ignored,
+        };
+        match outcome {
             KeyOutcome::Quit => {
                 self.log_event("quit", "editor exiting");
                 self.quit = true;
@@ -94,7 +119,7 @@ impl App {
         // A focused panel pane consumes plain keys (forwarded to its script);
         // the command bar and quit chords stay reserved, like a process pane.
         if self.panes.get(self.focus).is_some_and(Pane::is_panel) {
-            return self.panel_key(key, mods);
+            return self.panel_key(key, mods, KeyPhase::Tap);
         }
 
         // Whether the focused pane rejects edits (the read-only "before" side of
@@ -307,17 +332,42 @@ impl App {
         }
     }
 
+    /// Whether the focused panel's script claimed this exact key + chord with
+    /// `claim_key(name, mods)` on its last frame. A claim beats every host
+    /// shortcut except quit — see [`classify_panel_key`].
+    fn panel_claims_key(&self, key: Key, mods: Mods) -> bool {
+        let Some(name) = panel_key_name(key) else {
+            return false;
+        };
+        self.panes
+            .get(self.focus)
+            .and_then(|p| p.panel.as_ref())
+            .is_some_and(|panel| panel.claims_key(&name, mods.bits()))
+    }
+
     /// Route a key press to the focused panel pane. Reserved chords match a
     /// process pane ([`classify_process_key`]): `Cmd`/`Ctrl`+`Q` quits, `:` opens
-    /// the command bar, other `Cmd`/`Ctrl` chords stay host-global; every other
-    /// key is forwarded to the script as a named one-frame press. The panel is
-    /// ticked immediately so the effect is visible at once.
-    fn panel_key(&mut self, key: Key, mods: Mods) -> KeyOutcome {
+    /// the command bar, other `Cmd`/`Ctrl` chords stay host-global **unless the
+    /// script claimed them** with `claim_key(...)`; every other key is forwarded
+    /// to the script under its canonical name. The panel is ticked immediately
+    /// so the effect is visible at once.
+    fn panel_key(&mut self, key: Key, mods: Mods, phase: KeyPhase) -> KeyOutcome {
+        // A key the script claimed goes to the script and nowhere else — that
+        // claim is the whole point (a panel whose bare letters are content has
+        // no command keyspace otherwise), so it is tested before the region
+        // editing chords and before the host globals.
+        let claimed = self.panel_claims_key(key, mods);
         // A focused `text_view` region intercepts the editor selection chords —
         // Cmd/Ctrl+C copies its selection to the system clipboard, Cmd/Ctrl+A
         // selects all, Escape releases focus back to the script — before any
         // key reaches the panel script. Everything else falls through.
-        if let Some(id) = self.focused_panel_region() {
+        // A claimed chord skips the focused region's own editing keys, and a
+        // held key (`down`/`up`) is a script-level gesture that a region's vim
+        // has no way to represent — both go straight to the classification below.
+        if let Some(id) = self
+            .focused_panel_region()
+            .filter(|_| !claimed && phase == KeyPhase::Tap)
+        {
             let editable = self
                 .panes
                 .get(self.focus)
@@ -418,7 +468,7 @@ impl App {
                 }
             }
         }
-        match classify_panel_key(key, mods) {
+        match classify_panel_key(key, mods, claimed) {
             PanelKey::Quit => KeyOutcome::Quit,
             PanelKey::CommandBar => {
                 self.command_line = Some(CommandLine::new());
@@ -432,7 +482,15 @@ impl App {
                     .and_then(|p| p.panel.as_mut())
                 {
                     panel.set_modifiers(mods);
-                    panel.key(name, panel_key_text(key));
+                    // A chord carries no typed text: `text_input()` must be
+                    // empty on the frame a panel handles `Ctrl+S`, or the first
+                    // save types an "s" into the document.
+                    let text = panel_key_text(key, mods);
+                    match phase {
+                        KeyPhase::Tap => panel.key(name, text),
+                        KeyPhase::Down => panel.key_down(name, text),
+                        KeyPhase::Up => panel.key_up(name),
+                    }
                 }
                 self.tick_focused_panel();
                 self.needs_redraw = true;
@@ -961,9 +1019,21 @@ enum PanelKey {
 /// without an `App`): `Cmd`/`Ctrl`+`Q` quits; a bare `:` opens the command bar;
 /// any other `Cmd`/`Ctrl` chord is a host-global shortcut and is not forwarded;
 /// every remaining key forwards to the script under its canonical name.
-fn classify_panel_key(key: Key, mods: Mods) -> PanelKey {
+///
+/// `claimed` is the escape hatch: the focused script asked for this exact chord
+/// with `claim_key(...)`, so it is forwarded instead of swallowed. A panel whose
+/// bare letters are its content (a spreadsheet, a console, a text editor) has no
+/// command keyspace at all otherwise. **`Cmd`/`Ctrl`+`Q` is the one chord a
+/// claim cannot take** — quitting must never be something a script can capture.
+fn classify_panel_key(key: Key, mods: Mods, claimed: bool) -> PanelKey {
     if (mods.cmd || mods.ctrl) && matches!(key, Key::Char('q' | 'Q')) {
         return PanelKey::Quit;
+    }
+    if claimed {
+        return match panel_key_name(key) {
+            Some(name) => PanelKey::Forward(name),
+            None => PanelKey::Ignore,
+        };
     }
     if !mods.cmd && !mods.ctrl && matches!(key, Key::Char(':')) {
         return PanelKey::CommandBar;
@@ -998,10 +1068,17 @@ fn classify_panel_key(key: Key, mods: Mods) -> PanelKey {
 }
 
 /// The typed text a panel key produces for `text_input()`, or `None` for keys
-/// that aren't text (arrows, Enter, Escape…). Only reached for un-modified keys
-/// ([`classify_panel_key`] excludes Cmd/Ctrl chords), so the character already
-/// reflects Shift (e.g. an uppercase letter).
-fn panel_key_text(key: Key) -> Option<String> {
+/// that aren't text (arrows, Enter, Escape…) **and for every chord**: a key held
+/// with `Cmd`, `Ctrl`, or `Alt` is a command, not typing, so `text_input()` is
+/// empty on that frame. Without this, the one chord Garden forwarded (`Ctrl+S`)
+/// arrived with its character attached and the first save typed an "s" into the
+/// document — latent in every panel that handles a chord and reads
+/// `text_input()`. Shift is not a command modifier: it is already baked into the
+/// character (an uppercase letter), so shifted keys still produce text.
+fn panel_key_text(key: Key, mods: Mods) -> Option<String> {
+    if mods.any_command() {
+        return None;
+    }
     match key {
         Key::Char(' ') => Some(" ".to_string()),
         Key::Char(c) if !c.is_control() => Some(c.to_string()),
@@ -1116,16 +1193,31 @@ mod tests {
         cmd: false,
         ctrl: false,
         shift: false,
+        alt: false,
     };
     const CMD: Mods = Mods {
         cmd: true,
         ctrl: false,
         shift: false,
+        alt: false,
     };
     const CTRL: Mods = Mods {
         cmd: false,
         ctrl: true,
         shift: false,
+        alt: false,
+    };
+    const ALT: Mods = Mods {
+        cmd: false,
+        ctrl: false,
+        shift: false,
+        alt: true,
+    };
+    const SHIFT: Mods = Mods {
+        cmd: false,
+        ctrl: false,
+        shift: true,
+        alt: false,
     };
 
     /// The command bar is reserved at every takeover level, even when a
@@ -1199,26 +1291,113 @@ mod tests {
     /// the same reserved chords as a process pane (quit, command bar, host chords).
     #[test]
     fn panel_key_reserved_and_forwarded() {
-        assert_eq!(classify_panel_key(Key::Char('q'), CMD), PanelKey::Quit);
-        assert_eq!(classify_panel_key(Key::Char('q'), CTRL), PanelKey::Quit);
         assert_eq!(
-            classify_panel_key(Key::Char(':'), NONE),
+            classify_panel_key(Key::Char('q'), CMD, false),
+            PanelKey::Quit
+        );
+        assert_eq!(
+            classify_panel_key(Key::Char('q'), CTRL, false),
+            PanelKey::Quit
+        );
+        assert_eq!(
+            classify_panel_key(Key::Char(':'), NONE, false),
             PanelKey::CommandBar
         );
         // Other Cmd/Ctrl chords stay host-global, never forwarded.
-        assert_eq!(classify_panel_key(Key::Char('s'), CMD), PanelKey::Ignore);
+        assert_eq!(
+            classify_panel_key(Key::Char('s'), CMD, false),
+            PanelKey::Ignore
+        );
         // Plain keys forward under their canonical name.
         assert_eq!(
-            classify_panel_key(Key::Char('j'), NONE),
+            classify_panel_key(Key::Char('j'), NONE, false),
             PanelKey::Forward("j".into())
         );
         assert_eq!(
-            classify_panel_key(Key::Down, NONE),
+            classify_panel_key(Key::Down, NONE, false),
             PanelKey::Forward("down".into())
         );
         assert_eq!(
-            classify_panel_key(Key::Char(' '), NONE),
+            classify_panel_key(Key::Char(' '), NONE, false),
             PanelKey::Forward("space".into())
+        );
+    }
+
+    /// A claimed chord is forwarded instead of being swallowed as a host
+    /// shortcut — including the ones the host would otherwise keep for itself
+    /// (`Cmd+Z`, the bare `:` command bar) — because a panel whose bare letters
+    /// are content has no command keyspace otherwise.
+    #[test]
+    fn a_claimed_chord_reaches_the_script() {
+        assert_eq!(
+            classify_panel_key(Key::Char('z'), CMD, true),
+            PanelKey::Forward("z".into())
+        );
+        assert_eq!(
+            classify_panel_key(Key::Char(':'), NONE, true),
+            PanelKey::Forward(":".into())
+        );
+        assert_eq!(
+            classify_panel_key(Key::Char('['), CTRL, true),
+            PanelKey::Forward("[".into())
+        );
+    }
+
+    /// …except quit. A script must never be able to capture Cmd/Ctrl+Q.
+    #[test]
+    fn quit_cannot_be_claimed() {
+        assert_eq!(
+            classify_panel_key(Key::Char('q'), CMD, true),
+            PanelKey::Quit
+        );
+        assert_eq!(
+            classify_panel_key(Key::Char('q'), CTRL, true),
+            PanelKey::Quit
+        );
+    }
+
+    /// An unclaimed Alt chord is not a host shortcut, so it forwards like any
+    /// plain key — Alt is the modifier a panel gets for free.
+    #[test]
+    fn alt_chords_forward_to_the_script() {
+        assert_eq!(
+            classify_panel_key(Key::Char('a'), ALT, false),
+            PanelKey::Forward("a".into())
+        );
+    }
+
+    /// A chord produces no typed text: `text_input()` is empty on the frame a
+    /// panel handles `Ctrl+S`, so the save doesn't also type an "s".
+    #[test]
+    fn a_chord_carries_no_text_input() {
+        assert_eq!(panel_key_text(Key::Char('s'), CTRL), None);
+        assert_eq!(panel_key_text(Key::Char('s'), CMD), None);
+        assert_eq!(panel_key_text(Key::Char('s'), ALT), None);
+        // Shift is not a command modifier — it is already in the character.
+        assert_eq!(
+            panel_key_text(Key::Char('S'), SHIFT),
+            Some("S".to_string())
+        );
+        assert_eq!(panel_key_text(Key::Char('s'), NONE), Some("s".to_string()));
+    }
+
+    /// The modifier bitmask matches petal-ui's (`1=shift 2=ctrl 4=alt 8=cmd`) —
+    /// the encoding a claim is matched on and `/state` reports.
+    #[test]
+    fn mods_bits_match_the_script_encoding() {
+        assert_eq!(NONE.bits(), 0);
+        assert_eq!(SHIFT.bits(), 1);
+        assert_eq!(CTRL.bits(), 2);
+        assert_eq!(ALT.bits(), 4);
+        assert_eq!(CMD.bits(), 8);
+        assert_eq!(
+            Mods {
+                cmd: true,
+                shift: true,
+                ..NONE
+            }
+            .bits(),
+            9
         );
     }
 

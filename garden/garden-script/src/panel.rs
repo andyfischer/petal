@@ -118,6 +118,13 @@ const NAV_EVENTS: &str = "nav_events";
 /// host-surfaced, not returned to the frame. See [`PanelHost::take_mutations`].
 const MUTATE_EVENTS: &str = "mutate_events";
 
+/// Output-buffer channel carrying the script's `claim_key(key, mods)` requests —
+/// the chords this panel wants delivered to it instead of being consumed by the
+/// host's own shortcuts. Drained by [`PanelHost::take_key_claims`] after each
+/// frame; a claim is *declarative* (re-stated by every frame it applies to), so
+/// the host replaces its claim set wholesale rather than accumulating.
+const KEY_CLAIMS: &str = "key_claims";
+
 /// A browser-style history navigation intent a panel script raised this frame,
 /// drained by [`PanelHost::take_nav`]. `Push`/`Replace` name the target screen
 /// (a `.ptl` script the host resolves against the pane's whitelist);
@@ -720,6 +727,21 @@ impl PanelHost {
         })
     }
 
+    /// A **placeholder** host for a script that does not compile: an empty
+    /// program that draws nothing, but which keeps `path` as a real disk-backed
+    /// script with *no* recorded signature. The next
+    /// [`poll_reload`](Self::poll_reload) therefore re-reads the file, so a panel
+    /// whose script was broken at load time comes alive by itself the moment the
+    /// file is fixed — no restart. Fails only if the empty program itself won't
+    /// compile (i.e. never in practice).
+    pub fn stub(path: &Path) -> Result<PanelHost, String> {
+        let mut host = PanelHost::from_source(&path.to_string_lossy(), "")?;
+        host.path = path.to_path_buf();
+        host.disk_backed = true;
+        host.last_sig = None;
+        Ok(host)
+    }
+
     /// Compile + prepare a panel from an **in-memory** source string rather than a
     /// file. `name` is a stable virtual identity (not a real path) used for
     /// `Debug` and, in Garden, as the pane's `script` string — the built-in diff
@@ -879,6 +901,8 @@ impl PanelHost {
         let sym = self.env.intern_symbol(NAV_EVENTS);
         self.env.clear_output_buffer(sym);
         let sym = self.env.intern_symbol(MUTATE_EVENTS);
+        self.env.clear_output_buffer(sym);
+        let sym = self.env.intern_symbol(KEY_CLAIMS);
         self.env.clear_output_buffer(sym);
         self.env.reset_stack(self.stack_id)?;
         // Make the data + query providers reachable from their natives for the
@@ -1123,6 +1147,34 @@ impl PanelHost {
                     .map(|v| value_to_json(heap, v))
                     .unwrap_or(serde_json::Value::Null);
                 out.push((name, arg));
+            }
+        }
+        out
+    }
+
+    /// Drain the key chords the last frame claimed with `claim_key(key, mods)`,
+    /// as `(canonical key name, modifier bits)` — `1=shift 2=ctrl 4=alt 8=cmd`,
+    /// the same encoding `modifiers` uses. `None` for the bits means "this key
+    /// under **any** chord" (the one-argument `claim_key("z")` form).
+    ///
+    /// The host consults this before applying its own shortcut to a key, which
+    /// is the only way a panel gets a command keyspace of its own: a panel whose
+    /// bare letters are content (a spreadsheet, a console) otherwise has none,
+    /// because every Cmd/Ctrl chord belongs to the editor around it.
+    /// Call after [`frame`](Self::frame).
+    pub fn take_key_claims(&mut self) -> Vec<(String, Option<u8>)> {
+        let sym = self.env.intern_symbol(KEY_CLAIMS);
+        let values = self.env.take_output_buffer(sym);
+        let heap = self.env.heap();
+        let mut out = Vec::with_capacity(values.len());
+        for v in &values {
+            if let Value::EnumVariant { tag, data } = v {
+                let key = heap.get_string(*tag).to_ascii_lowercase();
+                let mods = match heap.get_list(*data).first() {
+                    Some(Value::Int(bits)) => Some(*bits as u8),
+                    _ => None,
+                };
+                out.push((key, mods));
             }
         }
         out
@@ -1716,6 +1768,9 @@ fn register_panel_natives(env: &mut Env) {
     // The browser-history navigation API: each raises a typed `NavIntent` into
     // the `nav_events` side channel that the host drains ([`PanelHost::take_nav`])
     // to drive its per-pane history stack.
+    // `claim_key(key, mods)` — the panel's own command keyspace: chords the host
+    // must forward instead of consuming (drained by `take_key_claims`).
+    env.register_native("claim_key", native_claim_key);
     env.register_native("navigate", native_navigate);
     env.register_native("navigate_replace", native_navigate_replace);
     env.register_native("navigate_back", native_navigate_back);
@@ -1901,6 +1956,66 @@ fn native_mutate(cxt: &mut PetalCxt) -> NativeResult {
     cxt.emit(sym, &name, vec![arg]);
     cxt.push_nil();
     Ok(1)
+}
+
+/// `claim_key(key)` / `claim_key(key, mods)` — ask the host to deliver a chord
+/// to this panel instead of applying its own shortcut to it.
+///
+/// `key` is a canonical key name (`"z"`, `"space"`, `"return"`, `"left"`, …).
+/// `mods` is the chord, either a string like `"cmd"` / `"cmd+shift"` /
+/// `"alt"` (`option`, `super`, `meta`, `control` are accepted spellings) or the
+/// integer bitmask `1=shift 2=ctrl 4=alt 8=cmd`. With no `mods`, the key is
+/// claimed under **every** chord, including no modifier at all.
+///
+/// A claim lasts for the frame that made it, so declare it unconditionally at
+/// the top of the script rather than inside a branch. Quit (`Cmd`/`Ctrl`+`Q`)
+/// cannot be claimed. Emits no draw command, returns nil; in a host that does
+/// not honor claims it is simply ignored.
+fn native_claim_key(cxt: &mut PetalCxt) -> NativeResult {
+    let key = cxt.get_string(1)?;
+    let mods = if cxt.arg_count() >= 2 {
+        let v = cxt.get_value(2)?;
+        Some(match v {
+            Value::Int(bits) => bits,
+            Value::String(id) => parse_mod_bits(cxt.heap().get_string(id))? as i64,
+            other => {
+                return Err(format!(
+                    "claim_key() expects a modifier string or bitmask, got {}",
+                    other.type_name()
+                ))
+            }
+        })
+    } else {
+        None
+    };
+    let sym = cxt.intern_symbol(KEY_CLAIMS);
+    let data = mods.map(Value::Int).into_iter().collect();
+    cxt.emit(sym, &key, data);
+    cxt.push_nil();
+    Ok(1)
+}
+
+/// Parse `claim_key`'s modifier spelling (`"cmd"`, `"cmd+shift"`, `"alt"`, …)
+/// into the `1=shift 2=ctrl 4=alt 8=cmd` bitmask. An unknown name is an error
+/// rather than a silently-ignored zero — a typo'd claim that quietly never
+/// fires is exactly the failure this whole API exists to end.
+fn parse_mod_bits(spec: &str) -> Result<u8, String> {
+    let mut bits = 0u8;
+    for part in spec.split(['+', '-', ' ']).filter(|p| !p.is_empty()) {
+        bits |= match part.to_ascii_lowercase().as_str() {
+            "shift" => 1,
+            "ctrl" | "control" => 2,
+            "alt" | "option" | "opt" => 4,
+            "cmd" | "command" | "super" | "meta" => 8,
+            other => {
+                return Err(format!(
+                    "claim_key(): unknown modifier {other:?} \
+                     (want shift/ctrl/alt/cmd, e.g. \"cmd+shift\")"
+                ))
+            }
+        };
+    }
+    Ok(bits)
 }
 
 /// `navigate(screen)` — raise a browser-style *push* navigation intent to
@@ -3277,6 +3392,46 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn key_claims_are_published_and_drained() {
+        // `claim_key` names the chords the host must forward to this panel
+        // instead of applying its own shortcut. Bits are petal-ui's:
+        // 1=shift 2=ctrl 4=alt 8=cmd.
+        let f = write_script(
+            "claim_key(\"z\", \"cmd\")\n             claim_key(\"s\", \"cmd+shift\")\n             claim_key(\"Escape\")\n             claim_key(\"c\", 2)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(10, 10);
+        let cmds = host.frame(0.0, 0).unwrap();
+        assert!(cmds.is_empty(), "a claim draws nothing");
+        assert_eq!(
+            host.take_key_claims(),
+            vec![
+                ("z".to_string(), Some(8)),
+                ("s".to_string(), Some(9)),
+                // No modifier argument: the key under *any* chord.
+                ("escape".to_string(), None),
+                // A raw bitmask is accepted as well as a spelling.
+                ("c".to_string(), Some(2)),
+            ]
+        );
+        // Drained, and re-declared by the next frame rather than accumulating.
+        assert!(host.take_key_claims().is_empty());
+        host.frame(0.0, 1).unwrap();
+        assert_eq!(host.take_key_claims().len(), 4);
+    }
+
+    #[test]
+    fn an_unknown_claim_modifier_is_an_error() {
+        // A typo'd claim that silently never fires is exactly the failure this
+        // API exists to end, so it raises instead of claiming nothing.
+        let f = write_script("claim_key(\"z\", \"komand\")\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(10, 10);
+        let err = host.frame(0.0, 0).unwrap_err();
+        assert!(err.contains("komand"), "unhelpful error: {err}");
     }
 
     #[test]

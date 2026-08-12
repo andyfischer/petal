@@ -112,6 +112,7 @@ impl WindowState {
             cmd: m.super_key(),
             ctrl: m.control_key(),
             shift: m.shift_key(),
+            alt: m.alt_key(),
         }
     }
 

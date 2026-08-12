@@ -473,10 +473,13 @@ fn container_stored_into_another_container_still_copies() {
 #[test]
 fn container_captured_by_a_closure_still_copies() {
     // The closure captures the container mid-loop and is called after it, so
-    // it observes a state the loop later moved past.
+    // it observes a state the loop later moved past. Written inside a function
+    // because at module scope capturing a name that is rebound below is now a
+    // compile error (`compiler::capture_lag`); the capture-then-mutate shape
+    // the copy analysis cares about is the same either way.
     assert_copies(
         "accumulator captured by a closure",
-        "let xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nlet snap = fn() -> len(xs)\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs), snap())",
+        "fn f()\n  let xs = []\n  for i in range(0, 4) do\n    xs = append(xs, i)\n  end\n  let snap = fn() -> len(xs)\n  for i in range(0, 4) do\n    xs = append(xs, i)\n  end\n  print(len(xs), snap())\nend\nf()",
     );
 }
 

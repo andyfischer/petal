@@ -1638,8 +1638,12 @@ fn route_a_does_not_fire_on_escapes() {
         "stored-into-container must not fire"
     );
     assert_route_a_parity(code);
-    // Captured by a closure before the mutation.
-    let code = "let xs = [1, 2]\nlet peek = fn() -> xs[0]\nxs[0] = 9\nprint(peek(), xs[0])";
+    // Captured by a closure before the mutation. Written inside a function
+    // because at module scope this is now a compile error: the closure would
+    // read the value captured at its definition, not the rebound one (see
+    // `compiler::capture_lag`). The escape itself is what route A must notice,
+    // and that is unchanged by the wrapper.
+    let code = "fn f()\n  let xs = [1, 2]\n  let peek = fn() -> xs[0]\n  xs[0] = 9\n  print(peek(), xs[0])\nend\nf()";
     assert_eq!(route_a_count(code), 0, "closure-captured must not fire");
     assert_route_a_parity(code);
     // Passed to a user function before the mutation (arbitrary code could

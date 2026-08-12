@@ -18,21 +18,23 @@ impl Compiler {
         name: &str,
         params: &[String],
         body: &[Stmt],
+        def_end: u32,
     ) -> Option<TermId> {
         let Some(&expected_count) = self.overloaded_fns.get(name) else {
-            let closure_tid = self.compile_function(Some(name.to_string()), params, body);
+            let closure_tid =
+                self.compile_function(Some(name.to_string()), params, body, Some(def_end));
             // Module functions carry a qualified display name ("ui::button")
             // so root-frame harvesting exposes them to `Env::call_function`
             // without colliding with the entry file's names. The scope
             // binding stays bare — in-module references are unqualified.
             self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
-            self.scope_bind(name.to_string(), closure_tid);
+            self.bind_fn_result(name, closure_tid);
             return Some(closure_tid);
         };
 
         // Overloaded function: compile with internal name "name#arity"
         let internal_name = format!("{}#{}", name, params.len());
-        let closure_tid = self.compile_function(Some(internal_name), params, body);
+        let closure_tid = self.compile_function(Some(internal_name), params, body, Some(def_end));
         self.overload_variants
             .entry(name.to_string())
             .or_default()
@@ -48,10 +50,29 @@ impl Compiler {
                 inputs,
                 Some(self.qualified_name(name)),
             );
-            self.scope_bind(name.to_string(), set_tid);
+            self.bind_fn_result(name, set_tid);
             return Some(set_tid);
         }
         None
+    }
+
+    /// Publish a compiled `fn`'s value under its name. A hoisted function was
+    /// already bound to a cell by the prescan, and every reference — including
+    /// the ones compiled before this point — resolves through that cell, so the
+    /// declaration *writes* it rather than rebinding the name.
+    fn bind_fn_result(&mut self, name: &str, value: TermId) {
+        if self.binding_is_fn_cell(name) {
+            let cell = self
+                .scope_lookup(name)
+                .expect("a fn-cell binding resolves in the scope that declares it");
+            self.emit_term(
+                TermOp::CellWrite,
+                smallvec![cell, value],
+                Some(self.qualified_name(name)),
+            );
+        } else {
+            self.scope_bind(name.to_string(), value);
+        }
     }
 
     /// `class Name` compiles to a constructor function taking one parameter per
@@ -139,12 +160,18 @@ impl Compiler {
         );
     }
 
+    /// `def_end` is the source offset just past this closure's declaration —
+    /// the point at which it froze whatever module bindings it captures — or
+    /// `None` for a lambda, which the capture-lag rule exempts. See
+    /// [`crate::compiler::capture_lag`].
     pub(super) fn compile_function(
         &mut self,
         name: Option<String>,
         params: &[String],
         body: &[Stmt],
+        def_end: Option<u32>,
     ) -> TermId {
+        self.closure_def_ends.push(def_end);
         let (body_block, saved_block) = self.begin_function_scope(params);
 
         // Self-reference phantom for recursion (if named)
@@ -161,6 +188,7 @@ impl Compiler {
         // block's last term.
         self.compile_stmts(body, true);
 
+        self.closure_def_ends.pop();
         self.end_function_scope(name, params, body_block, saved_block, self_ref_register)
     }
 
@@ -343,6 +371,11 @@ impl Compiler {
         // inside the closure would be rejected as "not a `var`" — and, worse,
         // a read would forward the raw cell instead of dereferencing it.
         let is_var = self.var_scopes[binding_scope_idx].contains(name);
+        // Same for a hoisted `fn`: the captured value is the cell id, so the
+        // phantom denotes the same box and a read inside the closure sees
+        // whatever the declaration wrote — which is the whole point, since the
+        // capture happens before the declaration has run.
+        let is_fn_cell = self.fn_cell_scopes[binding_scope_idx].contains(name);
 
         // Every enclosing function whose boundary sits *inside* the binding
         // scope must capture the value and forward it inward.
@@ -352,7 +385,7 @@ impl Compiler {
                 // At or above the binding: this function sees it directly.
                 continue;
             }
-            source_tid = self.add_capture_at_level(level, name, source_tid, is_var);
+            source_tid = self.add_capture_at_level(level, name, source_tid, is_var, is_fn_cell);
         }
         source_tid
     }
@@ -367,6 +400,7 @@ impl Compiler {
         name: &str,
         source_tid: TermId,
         is_var: bool,
+        is_fn_cell: bool,
     ) -> TermId {
         if let Some(cap) = self.capture_stack[level].iter().find(|c| c.name == name) {
             return cap.local_phantom;
@@ -393,6 +427,9 @@ impl Compiler {
         self.scopes[boundary_scope].insert(name.to_string(), phantom);
         if is_var {
             self.var_scopes[boundary_scope].insert(name.to_string());
+        }
+        if is_fn_cell {
+            self.fn_cell_scopes[boundary_scope].insert(name.to_string());
         }
         phantom
     }

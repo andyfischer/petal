@@ -94,7 +94,12 @@ pub fn make_overload_set(
             let func = &program.functions[closure.function_id.0 as usize];
             let cap_names = func.capture_names.clone();
             for (i, cap_name) in cap_names.iter().enumerate() {
-                if cap_name == base {
+                // Only the *unresolved* self-capture is patched. A hoisted
+                // overload captures its own name as a cell, which the
+                // declaration writes the finished set into — patching that
+                // would replace the cell with the set and turn every read of
+                // it into a `cell_read` on a function.
+                if cap_name == base && matches!(closure.captures[i], Value::Nil) {
                     closure.captures[i] = overload_val;
                 }
             }

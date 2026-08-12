@@ -1,0 +1,9 @@
+// A mutually recursive pair exported from a module: `ping` calls `pong`, whose
+// declaration is below it. Both must survive being exported and imported.
+export fn ping(n)
+  if n <= 0 then "done" else pong(n - 1) end
+end
+
+export fn pong(n)
+  ping(n - 1)
+end

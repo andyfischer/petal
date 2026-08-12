@@ -9,6 +9,7 @@
 //! - `function`   — function bodies, closures, capture tracking
 //! - `phi`        — cross-block rebind detection, phi joins, loop carries
 
+mod capture_lag;
 mod expr;
 mod function;
 mod phi;
@@ -61,6 +62,23 @@ pub struct Compiler {
 
     // Function scope depth tracking for closure capture
     function_boundaries: Vec<usize>, // scope indices that are function boundaries
+    /// Top-level rebindings in the module being compiled, for the
+    /// capture-lag rule (`compiler::capture_lag`).
+    module_rebinds: capture_lag::ModuleRebinds,
+    /// Source offset just past each open closure's declaration, outermost
+    /// first. A module binding captured by the *outermost* closure is frozen
+    /// at that point, so that is the offset a later rebinding is measured
+    /// against — an inner lambda only ever re-captures what the enclosing
+    /// function already froze.
+    ///
+    /// `None` for a lambda, which exempts it: an anonymous closure written
+    /// inline is overwhelmingly a callback (`map(xs, fn(a) … end)`) that runs
+    /// and is discarded inside the statement that created it, so it cannot
+    /// outlive a later rebinding. Flagging those would reject a core idiom
+    /// with no fix available — a `map` callback's parameter list is not the
+    /// author's to extend. A lambda that really is stored and called later
+    /// keeps today's behaviour; see `capture_lag`'s note on the gap.
+    closure_def_ends: Vec<Option<u32>>,
 
     // Capture tracking for the current function being compiled (stack for nesting)
     capture_stack: Vec<Vec<CaptureInfo>>,
@@ -136,6 +154,28 @@ pub struct Compiler {
     // `scope_rebind` — a missed propagation loses var-ness and produces a loud
     // "not a var" error rather than silently accepting `=` on a cell.
     var_scopes: Vec<HashSet<String>>,
+
+    // Names bound to a *function cell* — the hoisting mechanism for top-level
+    // `fn`s that are referenced before they are declared (mutual recursion, a
+    // helper called from a function written above it). One set per entry in
+    // `scopes`, pushed/popped in lockstep with it, exactly like `var_scopes`.
+    //
+    // The binding holds a cell whose contents the declaration writes when it
+    // runs, so a reference compiled *before* the declaration still resolves to
+    // the same box and reads the closure once it is there. A closure capturing
+    // such a name captures the cell, not the (still nil) value — which is what
+    // makes `fn a` above `fn b` able to call `b` at all.
+    //
+    // Only forward-referenced names get one (see `forward_referenced_fns`), so
+    // an ordinary declare-then-call program keeps its direct binding and pays
+    // nothing.
+    fn_cell_scopes: Vec<HashSet<String>>,
+
+    // Spans of the `fn` declarations this module's prescan already compiled
+    // (see `hoistable_fn_names`). `compile_stmt` skips them so a hoisted
+    // declaration is not compiled twice. Reset per module — spans are
+    // file-local, so two files' spans collide freely.
+    hoisted_fn_decls: HashSet<SourceSpan>,
 
     // Imported `var`s visible in the file being compiled, bare name → (owning
     // module, the term that holds the cell). Populated by `bind_imports` for
@@ -236,6 +276,8 @@ impl Compiler {
             declared_methods: HashSet::new(),
             warnings: Vec::new(),
             function_boundaries: Vec::new(),
+            module_rebinds: capture_lag::ModuleRebinds::default(),
+            closure_def_ends: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
             loop_depth: 0,
@@ -248,6 +290,8 @@ impl Compiler {
             block_shadowed: HashMap::new(),
             cross_fn_terms: HashSet::new(),
             var_scopes: Vec::new(),
+            fn_cell_scopes: Vec::new(),
+            hoisted_fn_decls: HashSet::new(),
             imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
@@ -421,6 +465,10 @@ impl Compiler {
             self.push_scope(false); // module scope frame
         }
 
+        // Top-level rebindings, for the capture-lag rule. Per module: a
+        // closure can only capture names from its own module scope.
+        self.module_rebinds = capture_lag::ModuleRebinds::collect(&stmts);
+
         self.bind_imports(module, &stmts)?;
         Self::check_overload_export_consistency(&stmts).map_err(|mut e| {
             // Same bytes as the old `format!("{display_name}: {e}")`.
@@ -438,6 +486,9 @@ impl Compiler {
         self.method_dispatch = dispatch;
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
+        // After the checker, before the file's statements: a hoisted body is
+        // compiled here and wants the dispatch table the checker just built.
+        self.prescan_emit(&stmts);
         for stmt in &stmts {
             self.compile_stmt(stmt);
         }
@@ -448,7 +499,11 @@ impl Compiler {
             // would hand the next module's frame this module's binding kinds.
             let scope = self.scopes.pop().expect("module scope frame");
             let vars = self.var_scopes.pop().expect("module scope var frame");
-            self.capture_exports(module, scope, vars);
+            let fn_cells = self
+                .fn_cell_scopes
+                .pop()
+                .expect("module scope fn-cell frame");
+            self.capture_exports(module, scope, vars, fn_cells);
         }
         self.current_module = None;
         self.error_file = None;
@@ -564,6 +619,10 @@ impl Compiler {
             self.scope_bind_var(name.to_string(), tid);
             self.imported_vars
                 .insert(name.to_string(), (module.to_string(), tid));
+        } else if self.binding_is_fn_cell(&format!("{module}::{name}")) {
+            // A hoisted `fn` binds its cell; the bare alias has to know that,
+            // or a read would forward the cell id instead of the closure.
+            self.scope_bind_fn_cell(name.to_string(), tid);
         } else {
             self.scope_bind(name.to_string(), tid);
         }
@@ -580,6 +639,7 @@ impl Compiler {
         module: &LoadedModule,
         scope: HashMap<String, TermId>,
         vars: HashSet<String>,
+        fn_cells: HashSet<String>,
     ) {
         let module_name = module.name.as_deref().expect("not the entry file");
         let imported: std::collections::HashSet<&str> = module
@@ -612,7 +672,14 @@ impl Compiler {
             if vars.contains(name)
                 && let Some(global_vars) = self.var_scopes.first_mut()
             {
-                global_vars.insert(qualified);
+                global_vars.insert(qualified.clone());
+            }
+            // A hoisted `fn` exports its *cell* for the same reason: an
+            // importer's read has to dereference it, not forward the cell id.
+            if fn_cells.contains(name)
+                && let Some(global_cells) = self.fn_cell_scopes.first_mut()
+            {
+                global_cells.insert(qualified);
             }
         }
         self.module_exports.insert(module_name.to_string(), names);
@@ -763,11 +830,13 @@ impl Compiler {
         }
         self.scopes.push(HashMap::new());
         self.var_scopes.push(HashSet::new());
+        self.fn_cell_scopes.push(HashSet::new());
     }
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
         self.var_scopes.pop();
+        self.fn_cell_scopes.pop();
         if let Some(&boundary) = self.function_boundaries.last()
             && boundary >= self.scopes.len()
         {
@@ -776,9 +845,37 @@ impl Compiler {
     }
 
     fn scope_bind(&mut self, name: String, term_id: TermId) {
+        // A plain rebind in the same scope drops function-cell-ness: whatever
+        // is bound now is an ordinary value term, and a read of it must not
+        // compile to a `CellRead` of a non-cell.
+        if let Some(cells) = self.fn_cell_scopes.last_mut() {
+            cells.remove(&name);
+        }
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, term_id);
         }
+    }
+
+    /// Bind `name` to a hoisted function cell: reads dereference it and a
+    /// closure capturing it captures the cell, so the binding is live before
+    /// the declaration that fills it has run. See `fn_cell_scopes`.
+    pub(super) fn scope_bind_fn_cell(&mut self, name: String, term_id: TermId) {
+        self.scope_bind(name.clone(), term_id);
+        if let Some(cells) = self.fn_cell_scopes.last_mut() {
+            cells.insert(name);
+        }
+    }
+
+    /// Is the innermost binding of `name` a hoisted function cell? Answered
+    /// against the scope that actually binds the name, so a local `let f`
+    /// shadowing a hoisted top-level `fn f` reports its own kind.
+    pub(super) fn binding_is_fn_cell(&self, name: &str) -> bool {
+        for (i, scope) in self.scopes.iter().enumerate().rev() {
+            if scope.contains_key(name) {
+                return self.fn_cell_scopes[i].contains(name);
+            }
+        }
+        false
     }
 
     fn scope_lookup(&self, name: &str) -> Option<TermId> {
@@ -822,6 +919,18 @@ impl Compiler {
         } else {
             Some(tid)
         }
+    }
+
+    /// Is the scope that binds `name` below index `limit`? Used to ask whether
+    /// a binding is module-level: `limit` is the outermost function boundary,
+    /// so anything below it was declared outside every function.
+    pub(super) fn binding_is_below_scope(&self, name: &str, limit: usize) -> bool {
+        for (i, scope) in self.scopes.iter().enumerate().rev() {
+            if scope.contains_key(name) {
+                return i < limit;
+            }
+        }
+        false
     }
 
     /// Was the innermost binding of `name` declared `var`? Answered against
@@ -1050,6 +1159,42 @@ impl Compiler {
                 self.overloaded_fns.insert(name, arities.len());
             }
         }
+    }
+
+    /// The emitting half of the prescan: the declarations that are *hoisted* —
+    /// class constructors, the cells of forward-referenced functions, enum
+    /// phantoms, and the hoisted `fn` bodies themselves — all emitted into the
+    /// root block ahead of the file's first statement.
+    ///
+    /// Split from [`Self::prescan_declarations`] so the type checker can run in
+    /// between: a hoisted body's `c.first()` binds statically only if
+    /// `method_dispatch` already says which class the receiver is, and that
+    /// table is the checker's output.
+    fn prescan_emit(&mut self, stmts: &[Stmt]) {
+        // Which top-level `fn`s are hoisted, and which of them need a cell.
+        // Both are decided before anything is emitted, because the cells have
+        // to exist before the first hoisted body is compiled.
+        let mut hoistable = hoistable_fn_names(stmts);
+        // A `fn` that *shadows* a name already in scope — a builtin, or an
+        // import — is left exactly where it is. Reading the old meaning before
+        // the shadow lands is a deliberate idiom (`let _draw_line = draw_line`
+        // above `fn draw_line`), and both hoisting the declaration and binding
+        // the name to a cell would silently turn that read into nil.
+        hoistable.retain(|n| self.scope_lookup(n).is_none());
+        let mut forward = forward_referenced_fns(stmts);
+        forward.extend(late_bound_fn_refs(stmts, &hoistable));
+        // Same two exclusions as hoisting: a name already in scope keeps its
+        // meaning until the declaration shadows it, and a name a `let`/`state`
+        // also declares is rebound in source order, which a cell would fight.
+        let shadowed = top_level_value_names(stmts);
+        forward.retain(|n| self.scope_lookup(n).is_none() && !shadowed.contains(n));
+        let late: Vec<crate::diagnostic::Diagnostic> = late_declaration_warnings(stmts, &hoistable)
+            .into_iter()
+            .filter(|(name, _)| self.scope_lookup(name).is_none())
+            .map(|(_, d)| d)
+            .collect();
+        self.warnings.extend(late);
+        self.hoisted_fn_decls.clear();
 
         for stmt in stmts {
             match &stmt.kind {
@@ -1070,7 +1215,20 @@ impl Compiler {
                     self.scope_bind(name.clone(), ctor);
                 }
                 StmtKind::FnDecl { name, .. } => {
-                    if self.scope_lookup(name).is_none() {
+                    if forward.contains(name) {
+                        // Hoisted: bind the name to a cell now, ahead of every
+                        // statement in the file, so a reference compiled before
+                        // the declaration — including one inside a function
+                        // written above it — resolves to the same box the
+                        // declaration will fill. This is what makes mutual
+                        // recursion possible: `a`'s closure captures `b`'s cell
+                        // rather than `b`'s (still nil) value.
+                        let nil = self.constants.intern(ConstantValue::Nil);
+                        let nil_tid = self.emit_term(TermOp::Constant(nil), smallvec![], None);
+                        let cell = self.emit_term(TermOp::CellNew, smallvec![nil_tid], None);
+                        self.source_map.add(cell, stmt.span);
+                        self.scope_bind_fn_cell(name.clone(), cell);
+                    } else if self.scope_lookup(name).is_none() {
                         let tid = self.emit_phantom_term(name.clone());
                         self.scope_bind(name.clone(), tid);
                     }
@@ -1086,7 +1244,323 @@ impl Compiler {
                 _ => {}
             }
         }
+
+        // Emit the hoisted declarations, in source order, ahead of the file's
+        // first statement. A hoisted `fn` closes over nothing this file
+        // computes at run time (see `hoistable_fn_names`), so moving *when* its
+        // closure is created cannot change what it sees — and it makes
+        // `main()` above `fn main` work, not just calls between functions.
+        // `compile_stmt` skips the declarations recorded here.
+        for stmt in stmts {
+            let StmtKind::FnDecl {
+                name,
+                class,
+                params,
+                body,
+                ..
+            } = &stmt.kind
+            else {
+                continue;
+            };
+            if !hoistable.contains(name) {
+                continue;
+            }
+            let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+            // `def_end` is where the declaration *is written*, not where it is
+            // emitted: the capture-lag check compares it against the source
+            // position of a later rebind, which hoisting must not move.
+            let bound = self.compile_fn_decl(name, &param_names, body, stmt.span.end.offset);
+            if let Some(tid) = bound {
+                self.source_map.add(tid, stmt.span);
+            }
+            // Methods are hoisted with everything else, in source order.
+            // They have to be: a method's registration is what lets a pinned
+            // `c.first()` bind to the declaration, and a hoisted function whose
+            // body contains such a call is now compiled *here*. Registering in
+            // this same pass keeps the two in the order the file wrote them.
+            if let (Some(class), Some(tid)) = (class, bound) {
+                let method = crate::compiler::method_base_name(&stmt.kind).to_string();
+                self.emit_declare_method(class, &method, tid);
+            }
+            self.hoisted_fn_decls.insert(stmt.span);
+        }
     }
+}
+
+/// Names this file binds to a *computed* value at the top level: `let`, `var`,
+/// `state`, and enum variants (whose constructors are built where the `enum`
+/// statement stands). A function body that mentions one of these is tied to the
+/// order the file runs in, and so is a `fn` whose own name is one of them.
+fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for stmt in stmts {
+        match &stmt.kind {
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => {
+                names.insert(name.clone());
+            }
+            StmtKind::EnumDecl { variants, .. } => {
+                for v in variants {
+                    names.insert(v.name.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+/// Top-level `fn` names whose declarations can be emitted ahead of the file's
+/// statements — those whose bodies mention nothing the file *computes*: no
+/// top-level `let`/`var`/`state`, and no enum variant (its constructor is built
+/// where the `enum` statement stands).
+///
+/// Such a function captures nothing from the file's run-time work, so creating
+/// its closure early cannot change what the closure sees; a function that does
+/// capture one stays exactly where it was written, capturing the same value it
+/// captures today. Over-approximate on purpose — a body that merely reuses a
+/// top-level name as a local is treated as depending on it — because the
+/// failure mode of a false negative is only "this one is not hoisted".
+///
+/// An overloaded name is hoisted only if every arity is: the overload set is
+/// emitted once the last variant compiles, so a split would gain nothing.
+fn hoistable_fn_names(stmts: &[Stmt]) -> HashSet<String> {
+    let computed = top_level_value_names(stmts);
+
+    let mut hoistable: HashSet<String> = HashSet::new();
+    // A name a `let`/`state` also declares is never hoisted: the two
+    // declarations shadow each other in source order, and moving one of them
+    // would change which meaning the statements between them see.
+    let mut blocked: HashSet<String> = computed.clone();
+    for stmt in stmts {
+        // Methods (`fn C.first`, bound under `"C.first"`) are hoisted too:
+        // their registration is what a pinned `c.first()` binds to, and the
+        // functions containing such calls are hoisted now.
+        let StmtKind::FnDecl { name, body, .. } = &stmt.kind else {
+            continue;
+        };
+        if idents_in_stmts(body)
+            .iter()
+            .any(|id| computed.contains(id.as_str()))
+        {
+            blocked.insert(name.clone());
+        } else {
+            hoistable.insert(name.clone());
+        }
+    }
+    hoistable.retain(|n| !blocked.contains(n));
+    hoistable
+}
+
+/// Warn about the one forward reference hoisting cannot fix: a top-level
+/// statement that *runs* a function whose declaration is below it and which
+/// could not be hoisted, because its body reads something the file computes.
+/// The call reaches a name that is still nil, and without this the only
+/// symptom is `Cannot call nil` at run time with no mention of declaration
+/// order — the thing that actually went wrong.
+///
+/// References from inside a function or lambda body are never reported: those
+/// run later, by which point the declaration has executed. That is the whole
+/// point of the cell, and it is why the visitor stops at every function
+/// boundary.
+fn late_declaration_warnings(
+    stmts: &[Stmt],
+    hoistable: &HashSet<String>,
+) -> Vec<(String, crate::diagnostic::Diagnostic)> {
+    let mut decl_at: HashMap<&str, usize> = HashMap::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        if let StmtKind::FnDecl {
+            name, class: None, ..
+        } = &stmt.kind
+        {
+            decl_at.entry(name.as_str()).or_insert(i);
+        }
+    }
+
+    struct Refs<'a> {
+        decl_at: &'a HashMap<&'a str, usize>,
+        hoistable: &'a HashSet<String>,
+        here: usize,
+        out: &'a mut Vec<(String, crate::diagnostic::Diagnostic)>,
+    }
+    impl crate::ast::ExprVisitor for Refs<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            // A lambda body runs later, like a `fn` body.
+            if matches!(e.kind, ExprKind::Lambda { .. }) {
+                return;
+            }
+            // Call position only. A bare mention (`let f2 = f`) is sometimes
+            // deliberate — capturing a name's *current* meaning before a
+            // declaration below shadows it — and the reported failure is
+            // always a call.
+            if let ExprKind::Call { function, .. } = &e.kind
+                && let ExprKind::Ident(name) = &function.kind
+                && let Some(&d) = self.decl_at.get(name.as_str())
+                && d > self.here
+                && !self.hoistable.contains(name)
+            {
+                self.out.push((
+                    name.clone(),
+                    crate::diagnostic::Diagnostic {
+                        span: function.span,
+                        message: format!(
+                            "call to `{name}` before its declaration, which is further down \
+                             this file and cannot be hoisted: its body reads a value the file \
+                             computes at run time, so at this point `{name}` is still nil. \
+                             Move this call below the declaration of `{name}`."
+                        ),
+                    },
+                ));
+            }
+            crate::ast::walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if matches!(s.kind, StmtKind::FnDecl { .. }) {
+                return;
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+
+    let mut out = Vec::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        if matches!(stmt.kind, StmtKind::FnDecl { .. }) {
+            continue;
+        }
+        let mut v = Refs {
+            decl_at: &decl_at,
+            hoistable,
+            here: i,
+            out: &mut out,
+        };
+        crate::ast::ExprVisitor::visit_stmt(&mut v, stmt);
+    }
+    out
+}
+
+/// Top-level `fn` names that a *hoisted* body references but that are not
+/// themselves hoisted — they are bound where they are written, which is after
+/// every hoisted declaration, so the reference has to go through a cell to
+/// reach them at all. (A hoisted body referencing another hoisted function
+/// declared later is already covered by `forward_referenced_fns`.)
+fn late_bound_fn_refs(stmts: &[Stmt], hoistable: &HashSet<String>) -> HashSet<String> {
+    let top_level_fns: HashSet<&str> = stmts
+        .iter()
+        .filter_map(|s| match &s.kind {
+            StmtKind::FnDecl {
+                name, class: None, ..
+            } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    let mut needed = HashSet::new();
+    for stmt in stmts {
+        // Every hoisted body, methods included — each is compiled before the
+        // file's first statement, so each one's references are subject to the
+        // same rule.
+        let StmtKind::FnDecl { name, body, .. } = &stmt.kind else {
+            continue;
+        };
+        if !hoistable.contains(name) {
+            continue;
+        }
+        for id in idents_in_stmts(body) {
+            if top_level_fns.contains(id.as_str()) && !hoistable.contains(&id) {
+                needed.insert(id);
+            }
+        }
+    }
+    needed
+}
+
+/// Every name spelled anywhere inside `stmts`, nesting included: plain
+/// identifiers, `get x` / `@x`, and the root of an assignment target. Bindings
+/// are not tracked, so this is a superset of the free variables — every caller
+/// here wants exactly that conservatism, and every *spelling* of a name has to
+/// be in it or a body that reads `get hits` looks independent of `var hits`.
+fn idents_in_stmts(stmts: &[Stmt]) -> HashSet<String> {
+    struct Idents<'a>(&'a mut HashSet<String>);
+    impl crate::ast::ExprVisitor for Idents<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::Ident(name) | ExprKind::AtVar(name) | ExprKind::CellGet(name) => {
+                    self.0.insert(name.clone());
+                }
+                _ => {}
+            }
+            crate::ast::walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            // An assignment's target root is a name the statement touches but
+            // never an `Ident` expression, so `walk_stmt` would not show it.
+            // (`walk_stmt` covers the object/index expressions of the other
+            // two target forms, whose roots are ordinary identifiers.)
+            if let StmtKind::Assign {
+                target: crate::ast::AssignTarget::Name(name),
+                ..
+            }
+            | StmtKind::Set {
+                target: crate::ast::AssignTarget::Name(name),
+                ..
+            } = &s.kind
+            {
+                self.0.insert(name.clone());
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+    let mut names = HashSet::new();
+    let mut v = Idents(&mut names);
+    for stmt in stmts {
+        crate::ast::ExprVisitor::visit_stmt(&mut v, stmt);
+    }
+    names
+}
+
+/// The top-level `fn` names in `stmts` that are *used before they are
+/// declared* — the ones that need hoisting.
+///
+/// A name qualifies when it appears as an identifier anywhere in a statement
+/// that precedes its first declaration, which includes the body of a function
+/// declared above it: that is exactly the mutual-recursion case (`fn a` calls
+/// `b`, `fn b` calls `a` — `b` is forward-referenced, `a` is not).
+///
+/// Deliberately an over-approximation: it does not track shadowing, so a local
+/// `b` inside an earlier function also marks the top-level `b`. The cost of a
+/// false positive is one indirection on reads of that name; the cost of a false
+/// negative is a call to nil, so the analysis errs toward hoisting. Names never
+/// mentioned before their declaration keep their direct binding and are
+/// completely unaffected.
+///
+/// Method declarations (`fn Point.scaled(...)`, whose bound name is
+/// `"Point.scaled"`) can never match: that name has no identifier spelling.
+/// Method registration therefore keeps its source-order behaviour.
+fn forward_referenced_fns(stmts: &[Stmt]) -> HashSet<String> {
+    // First declaration index per top-level fn name.
+    let mut decl_at: HashMap<&str, usize> = HashMap::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        if let StmtKind::FnDecl {
+            name, class: None, ..
+        } = &stmt.kind
+        {
+            decl_at.entry(name.as_str()).or_insert(i);
+        }
+    }
+    if decl_at.is_empty() {
+        return HashSet::new();
+    }
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut forward = HashSet::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        for (name, &d) in &decl_at {
+            if d == i && seen.contains(*name) {
+                forward.insert((*name).to_string());
+            }
+        }
+        seen.extend(idents_in_stmts(std::slice::from_ref(stmt)));
+    }
+    forward
 }
 
 /// Fold every `class` declaration in `stmts`, and every method declared on one,

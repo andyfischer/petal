@@ -37,6 +37,7 @@ impl Compiler {
                 // write target (`set r.f = v`) goes through that helper too and
                 // is not a user-written read.
                 self.check_cell_read_says_get(name, span);
+                self.check_capture_is_not_rebound(name, span);
                 self.compile_ident(name)
             }
 
@@ -283,7 +284,7 @@ impl Compiler {
 
             ExprKind::Lambda { params, body } => {
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-                self.compile_function(None, &param_names, body)
+                self.compile_function(None, &param_names, body, None)
             }
 
             ExprKind::Element {
@@ -343,13 +344,61 @@ impl Compiler {
         }
     }
 
+    /// Reject a capture of a module binding that is rebound after this closure
+    /// was defined.
+    ///
+    /// The capture is by value at the closure's own position, so a rebinding
+    /// below it produces a term the closure never sees — and in a script that
+    /// re-runs each frame, that reads as one frame of lag rather than as an
+    /// error. See [`crate::compiler::capture_lag`] for why this is an error
+    /// rather than a warning.
+    fn check_capture_is_not_rebound(&mut self, name: &str, span: SourceSpan) {
+        // Cells are exempt: their reads are live, and `get` marks them.
+        if self.binding_is_var(name) || !self.is_outer_function_binding(name) {
+            return;
+        }
+        // Only module bindings. A capture of an enclosing *function's* local
+        // has the same shape, but its rebindings are not in the module-level
+        // scan, so it is out of scope here and left for a follow-up.
+        let Some(&outermost_fn) = self.function_boundaries.first() else {
+            return;
+        };
+        if !self.binding_is_below_scope(name, outermost_fn) {
+            return;
+        }
+        // The freeze point is the *outermost* open closure: an inner lambda
+        // only re-captures what the enclosing function already froze. `None`
+        // there means the outermost closure is an inline lambda, which the
+        // rule exempts.
+        let Some(Some(frozen_at)) = self.closure_def_ends.first().copied() else {
+            return;
+        };
+        let Some(rebind) = self.module_rebinds.first_after(name, frozen_at) else {
+            return;
+        };
+        self.error_at(
+            span,
+            format!(
+                "`{name}` is rebound on line {}, after this function was defined, so this \
+                 reads the value captured at the definition and not the current one. \
+                 Pass it in as a parameter instead.",
+                rebind.start.line
+            ),
+        );
+    }
+
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
         if let Some(local_tid) = self.resolve_local_term(name) {
             // A `var` binds the *cell*, so reading the name dereferences it.
             // This is the only place reads of a var are turned into `CellRead`,
             // which is what makes the containment invariant hold by
             // construction: nothing else forwards a cell into the value domain.
-            let op = if self.binding_is_var(name) {
+            // A hoisted `fn` binds its cell for the same reason a `var` does —
+            // the box exists before the value — so a read dereferences it too.
+            // Unlike a `var` this needs no `get`: the cell is an implementation
+            // detail of declaration order, written exactly once, so a bare read
+            // has only one possible meaning.
+            let op = if self.binding_is_var(name) || self.binding_is_fn_cell(name) {
                 TermOp::CellRead
             } else {
                 TermOp::Copy

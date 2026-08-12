@@ -87,11 +87,18 @@ impl Compiler {
                 body,
                 ..
             } => {
+                // A hoisted declaration was already compiled by the prescan,
+                // ahead of the file's first statement — compiling it again
+                // would emit a second closure and, for an overloaded name, a
+                // second variant.
+                if self.hoisted_fn_decls.contains(&stmt_span) {
+                    return;
+                }
                 // Declared parameter types are not yet used at compile time
                 // (checking lands in a later chunk); the compiler only needs the
                 // names.
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-                let bound = self.compile_fn_decl(name, &param_names, body);
+                let bound = self.compile_fn_decl(name, &param_names, body, stmt_span.end.offset);
                 // A declaration's term is where the declaration is written.
                 // Without this every `<function>` in a provenance chain reads
                 // `[no location]` — the one entry a reader most needs to find.
@@ -431,6 +438,22 @@ impl Compiler {
                 format!(
                     "`{root}` is a `var` exported by module `{owner}`; only `{owner}` \
                      can write it — call a function it exports instead"
+                ),
+            );
+            return false;
+        }
+        // A hoisted `fn` binds a cell that its declaration writes exactly once.
+        // Rebinding that name would leave every already-compiled reference —
+        // and every closure that captured the cell — pointing at a box nothing
+        // updates, so reject the write instead of silently splitting the name
+        // in two.
+        if self.binding_is_fn_cell(&root) {
+            self.error_at(
+                span,
+                format!(
+                    "`{root}` is a function declared in this file and is used before its \
+                     declaration, so its name cannot be reassigned. Bind a `var` to it \
+                     instead (`var current = {root}`) and write that."
                 ),
             );
             return false;

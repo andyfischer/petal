@@ -238,6 +238,25 @@ pub fn drag_handle(cmd: &PanelCmd, callee: &str, arity: usize) -> Option<DragHan
         ("draw_rect_outline", PanelCmd::RectOutline { x, y, .. }) if arity >= 7 => {
             Some(DragHandle::xy((0, *x as f64), (1, *y as f64)))
         }
+        // `draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, …)` — the
+        // radius pushes the color args along, so its arity floor is one higher
+        // than the square outline's.
+        ("draw_rect_rounded_outline", PanelCmd::RectOutline { x, y, .. }) if arity >= 8 => {
+            Some(DragHandle::xy((0, *x as f64), (1, *y as f64)))
+        }
+        ("draw_circle_outline", PanelCmd::EllipseOutline { cx, cy, .. }) if arity >= 6 => {
+            Some(DragHandle::xy((0, *cx as f64), (1, *cy as f64)))
+        }
+        (
+            "draw_ellipse" | "draw_ellipse_outline",
+            PanelCmd::Ellipse { cx, cy, .. } | PanelCmd::EllipseOutline { cx, cy, .. },
+        ) if arity >= 7 => Some(DragHandle::xy((0, *cx as f64), (1, *cy as f64))),
+        ("fill_arc", PanelCmd::Arc { cx, cy, .. }) if arity >= 9 => {
+            Some(DragHandle::xy((0, *cx as f64), (1, *cy as f64)))
+        }
+        ("fill_fan", PanelCmd::Fan { cx, cy, .. }) if arity >= 6 => {
+            Some(DragHandle::xy((0, *cx as f64), (1, *cy as f64)))
+        }
         ("draw_text", PanelCmd::Text { x, y, .. }) if arity >= 7 => {
             Some(DragHandle::xy((1, *x as f64), (2, *y as f64)))
         }
@@ -385,7 +404,87 @@ fn contains(cmd: &PanelCmd, x: i32, y: i32) -> bool {
             ..
         } => in_polygon(&[(*x1, *y1), (*x2, *y2), (*x3, *y3)], x, y),
 
-        PanelCmd::Poly { points, .. } => in_polygon(points, x, y),
+        PanelCmd::Poly { points, .. } | PanelCmd::Polygon { points, .. } => {
+            in_polygon(points, x, y)
+        }
+
+        // A fan covers the polygon center→p0→…→pn, so the same even-odd test
+        // applies once the center is spliced in.
+        PanelCmd::Fan { cx, cy, points, .. } => {
+            let mut ring = Vec::with_capacity(points.len() + 1);
+            ring.push((*cx, *cy));
+            ring.extend_from_slice(points);
+            in_polygon(&ring, x, y)
+        }
+
+        // Like a line, a polyline is a zero-area shape and needs a pick
+        // tolerance: it is hit anywhere along the stroke.
+        PanelCmd::Polyline { points, width, .. } => {
+            let tol = ((*width).max(1) as f64 / 2.0).max(LINE_PICK_TOLERANCE);
+            match points.as_slice() {
+                [] => false,
+                [(px, py)] => {
+                    let (dx, dy) = ((x - px) as f64, (y - py) as f64);
+                    (dx * dx + dy * dy).sqrt() <= tol
+                }
+                pts => pts.windows(2).any(|w| {
+                    point_segment_distance(
+                        x as f64,
+                        y as f64,
+                        w[0].0 as f64,
+                        w[0].1 as f64,
+                        w[1].0 as f64,
+                        w[1].1 as f64,
+                    ) <= tol
+                }),
+            }
+        }
+
+        PanelCmd::Ellipse { cx, cy, rx, ry, .. } => in_ellipse(*cx, *cy, *rx, *ry, x, y),
+
+        // An outline is hit on its ring, not its hollow middle — same rule the
+        // rect outline follows, so clicking through a hollow shape reaches what
+        // is drawn inside it.
+        PanelCmd::EllipseOutline {
+            cx,
+            cy,
+            rx,
+            ry,
+            width,
+            ..
+        } => {
+            let t = (*width).max(1);
+            in_ellipse(*cx, *cy, *rx, *ry, x, y)
+                && !in_ellipse(*cx, *cy, *rx - t as i32, *ry - t as i32, x, y)
+        }
+
+        // An annular sector: inside the radius band *and* inside the angular
+        // sweep. Angles are normalized into [0, TAU) relative to the start, so
+        // a wedge that crosses the +x axis (or sweeps backwards) still tests
+        // correctly.
+        PanelCmd::Arc {
+            cx,
+            cy,
+            r_in,
+            r_out,
+            a0,
+            a1,
+            ..
+        } => {
+            let (dx, dy) = ((x - cx) as f32, (y - cy) as f32);
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < *r_in || dist > *r_out {
+                return false;
+            }
+            let tau = std::f32::consts::TAU;
+            let sweep = (a1 - a0).clamp(-tau, tau);
+            let rel = (dy.atan2(dx) - a0).rem_euclid(tau);
+            if sweep >= 0.0 {
+                rel <= sweep
+            } else {
+                rel >= tau + sweep || rel == 0.0
+            }
+        }
 
         // Text is hit over its measured box. The host knows the real advance
         // width; approximating it here from the size would mis-hit proportional
@@ -418,6 +517,17 @@ const TEXT_ADVANCE_RATIO: f64 = 0.6;
 
 fn in_rect(rx: i32, ry: i32, w: u32, h: u32, x: i32, y: i32) -> bool {
     x >= rx && x < rx + w as i32 && y >= ry && y < ry + h as i32
+}
+
+/// Is the point inside the axis-aligned ellipse? A zero (or negative) semi-axis
+/// is an empty shape — which is what makes the hollow-ellipse test below fall
+/// out for free once a thick stroke eats the inner rim.
+fn in_ellipse(cx: i32, cy: i32, rx: i32, ry: i32, x: i32, y: i32) -> bool {
+    if rx <= 0 || ry <= 0 {
+        return false;
+    }
+    let (dx, dy) = ((x - cx) as f64 / rx as f64, (y - cy) as f64 / ry as f64);
+    dx * dx + dy * dy <= 1.0
 }
 
 /// Even-odd point-in-polygon. Handles the concave polygons `fill_poly` allows,
@@ -544,6 +654,7 @@ mod tests {
             b: 0,
             a: 255,
             width: 2,
+            radius: 0,
         }];
         assert_eq!(hit_test(&cmds, 1, 20), Some(0), "on the left edge");
         assert_eq!(hit_test(&cmds, 20, 20), None, "through the middle");

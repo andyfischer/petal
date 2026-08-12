@@ -170,8 +170,13 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
             b,
             a,
             width,
+            radius,
         } => {
-            stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
+            if radius == 0 {
+                stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
+            } else {
+                stroke_rounded_rect_outline(canvas, x, y, w, h, radius, width, r, g, b, a);
+            }
         }
         DrawCommand::Line {
             x1,
@@ -225,6 +230,154 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
             set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &points);
         }
+        // The scanline filler is already even-odd, so a concave outline needs
+        // no separate path here — `Polygon` differs from `Poly` only in the
+        // guarantee it makes to the script.
+        DrawCommand::Polygon { points, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon(canvas, &points);
+        }
+        // A fan from `(cx, cy)` over an open point list covers exactly the
+        // polygon center→p0→…→pn, which the scanline filler draws directly.
+        DrawCommand::Fan {
+            cx,
+            cy,
+            points,
+            r,
+            g,
+            b,
+            a,
+        } => {
+            let mut ring = Vec::with_capacity(points.len() + 1);
+            ring.push((cx, cy));
+            ring.extend(points);
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon(canvas, &ring);
+        }
+        DrawCommand::Polyline {
+            points,
+            r,
+            g,
+            b,
+            a,
+            width,
+        } => {
+            match points.as_slice() {
+                [] => {}
+                // A single point is a dot — the click a paint app must mark.
+                [(x, y)] => fill_disc_aa(
+                    canvas,
+                    *x as f64 + 0.5,
+                    *y as f64 + 0.5,
+                    width.max(1) as f64 / 2.0,
+                    r,
+                    g,
+                    b,
+                    a,
+                ),
+                pts => {
+                    for w in pts.windows(2) {
+                        stroke_line_aa(canvas, w[0].0, w[0].1, w[1].0, w[1].1, width, r, g, b, a);
+                    }
+                    // Round joins, so a thick polyline has no notch at a corner.
+                    if width > 2 {
+                        for (x, y) in &pts[1..pts.len() - 1] {
+                            fill_disc_aa(
+                                canvas,
+                                *x as f64 + 0.5,
+                                *y as f64 + 0.5,
+                                width as f64 / 2.0,
+                                r,
+                                g,
+                                b,
+                                a,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        DrawCommand::Ellipse {
+            cx,
+            cy,
+            rx,
+            ry,
+            r,
+            g,
+            b,
+            a,
+        } => {
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon(
+                canvas,
+                &ellipse_ring(cx, cy, rx as f64, ry as f64, 0.0, TAU),
+            );
+        }
+        DrawCommand::EllipseOutline {
+            cx,
+            cy,
+            rx,
+            ry,
+            r,
+            g,
+            b,
+            a,
+            width,
+        } => {
+            // A whole annulus is not a simple polygon, so it is filled as two
+            // half-rings, each of which is.
+            set_draw_color(canvas, r, g, b, a);
+            let t = width.max(1) as f64;
+            for (a0, a1) in [(0.0, PI), (PI, TAU)] {
+                fill_polygon(
+                    canvas,
+                    &annular_sector(
+                        cx,
+                        cy,
+                        (rx as f64 - t).max(0.0),
+                        rx as f64,
+                        (ry as f64 - t).max(0.0),
+                        ry as f64,
+                        a0,
+                        a1,
+                    ),
+                );
+            }
+        }
+        DrawCommand::Arc {
+            cx,
+            cy,
+            r_in,
+            r_out,
+            a0,
+            a1,
+            r,
+            g,
+            b,
+            a,
+        } => {
+            set_draw_color(canvas, r, g, b, a);
+            let sweep = (a1 - a0).clamp(-TAU as f32, TAU as f32) as f64;
+            // Split a sweep past half a turn so each piece stays simple.
+            let halves = if sweep.abs() > PI { 2 } else { 1 };
+            for i in 0..halves {
+                let s0 = a0 as f64 + sweep * (i as f64) / halves as f64;
+                let s1 = a0 as f64 + sweep * ((i + 1) as f64) / halves as f64;
+                fill_polygon(
+                    canvas,
+                    &annular_sector(
+                        cx,
+                        cy,
+                        r_in as f64,
+                        r_out as f64,
+                        r_in as f64,
+                        r_out as f64,
+                        s0,
+                        s1,
+                    ),
+                );
+            }
+        }
         DrawCommand::Text {
             text,
             x,
@@ -254,9 +407,7 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
                 false => {
                     let mut pen = x as f32;
                     for ch in text.chars() {
-                        let advance = font
-                            .find_glyph_metrics(ch)
-                            .map_or(0, |m| m.advance) as f32;
+                        let advance = font.find_glyph_metrics(ch).map_or(0, |m| m.advance) as f32;
                         T::render_text(canvas, font, &ch.to_string(), pen as i32, y, color);
                         pen += advance + spacing;
                     }
@@ -416,6 +567,118 @@ fn stroke_rect_outline<T: RenderTarget>(
     if mid_h > 0 {
         let _ = canvas.fill_rect(Rect::new(x, y + swi, sw, mid_h));
         let _ = canvas.fill_rect(Rect::new(x + wi - swi, y + swi, sw, mid_h));
+    }
+}
+
+/// A full turn and a half turn in radians — the sweeps the conic commands are
+/// split along so every filled piece stays a simple polygon.
+const TAU: f64 = std::f64::consts::TAU;
+const PI: f64 = std::f64::consts::PI;
+
+/// How many segments to approximate a conic of the given size with.
+fn conic_segments(size: f64) -> usize {
+    ((size * 0.7) as usize + 8).clamp(8, 64)
+}
+
+/// Sample an elliptical arc from `a0` to `a1` into a closed point ring — the
+/// outline of a filled ellipse or elliptical wedge.
+fn ellipse_ring(cx: i32, cy: i32, rx: f64, ry: f64, a0: f64, a1: f64) -> Vec<(i32, i32)> {
+    let n = conic_segments(rx.max(ry));
+    (0..=n)
+        .map(|i| {
+            let t = a0 + (a1 - a0) * (i as f64) / (n as f64);
+            (
+                cx + (rx * t.cos()).round() as i32,
+                cy + (ry * t.sin()).round() as i32,
+            )
+        })
+        .collect()
+}
+
+/// The outline of one annular sector — the outer rim swept forward, the inner
+/// rim swept back — which is a *simple* polygon as long as the sweep is at most
+/// half a turn. Used for arcs, rounded-outline corners, and (as two halves) a
+/// hollow ellipse.
+#[allow(clippy::too_many_arguments)]
+fn annular_sector(
+    cx: i32,
+    cy: i32,
+    rx_in: f64,
+    rx_out: f64,
+    ry_in: f64,
+    ry_out: f64,
+    a0: f64,
+    a1: f64,
+) -> Vec<(i32, i32)> {
+    let mut ring = ellipse_ring(cx, cy, rx_out, ry_out, a0, a1);
+    if rx_in <= 0.0 || ry_in <= 0.0 {
+        ring.push((cx, cy));
+    } else {
+        let mut inner = ellipse_ring(cx, cy, rx_in, ry_in, a0, a1);
+        inner.reverse();
+        ring.extend(inner);
+    }
+    ring
+}
+
+/// Stroke a rounded rectangle outline `width` px thick inside the bounds: four
+/// straight bands between the corners, plus a quarter annulus at each corner.
+/// Genuinely hollow (unlike two stacked rounded fills), which is the whole
+/// point of the command.
+#[allow(clippy::too_many_arguments)]
+fn stroke_rounded_rect_outline<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    radius: u32,
+    width: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+) {
+    let rad = radius.min(w / 2).min(h / 2) as i32;
+    if rad <= 0 {
+        stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
+        return;
+    }
+    let t = width.max(1).min(w).min(h);
+    let ti = t as i32;
+    let (wi, hi) = (w as i32, h as i32);
+    set_draw_color(canvas, r, g, b, a);
+    let flat_w = (wi - 2 * rad).max(0) as u32;
+    let flat_h = (hi - 2 * rad).max(0) as u32;
+    if flat_w > 0 {
+        let _ = canvas.fill_rect(Rect::new(x + rad, y, flat_w, t));
+        let _ = canvas.fill_rect(Rect::new(x + rad, y + hi - ti, flat_w, t));
+    }
+    if flat_h > 0 {
+        let _ = canvas.fill_rect(Rect::new(x, y + rad, t, flat_h));
+        let _ = canvas.fill_rect(Rect::new(x + wi - ti, y + rad, t, flat_h));
+    }
+    let inner = (rad - ti).max(0) as f64;
+    let corners = [
+        (x + rad, y + rad, PI),
+        (x + wi - rad, y + rad, 1.5 * PI),
+        (x + wi - rad, y + hi - rad, 0.0),
+        (x + rad, y + hi - rad, 0.5 * PI),
+    ];
+    for (ccx, ccy, start) in corners {
+        fill_polygon(
+            canvas,
+            &annular_sector(
+                ccx,
+                ccy,
+                inner,
+                rad as f64,
+                inner,
+                rad as f64,
+                start,
+                start + PI / 2.0,
+            ),
+        );
     }
 }
 
@@ -764,7 +1027,16 @@ mod tests {
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
-            vec![DrawCommand::plain_text("Hi".to_string(), 2, 2, 24, 255, 255, 255, 255)],
+            vec![DrawCommand::plain_text(
+                "Hi".to_string(),
+                2,
+                2,
+                24,
+                255,
+                255,
+                255,
+                255,
+            )],
             &mut fonts,
         );
 
@@ -979,7 +1251,9 @@ mod tests {
             surface.fill_rect(None, Color::RGB(0, 0, 0)).unwrap();
             render_frame(
                 surface,
-                vec![DrawCommand::plain_text("Hg", 4, 4, size, 255, 255, 255, 255)],
+                vec![DrawCommand::plain_text(
+                    "Hg", 4, 4, size, 255, 255, 255, 255,
+                )],
                 &mut fonts,
             )
         };
@@ -1101,7 +1375,10 @@ mod tests {
         assert!(regular > 0, "the regular run must draw something");
         // Synthetic emboldening and shearing both widen the run; letter-spacing
         // adds 6px between each of the three glyphs.
-        assert!(bold > regular, "bold ({bold}px) should be wider than regular ({regular}px)");
+        assert!(
+            bold > regular,
+            "bold ({bold}px) should be wider than regular ({regular}px)"
+        );
         assert!(
             italic > regular,
             "italic ({italic}px) should be wider than regular ({regular}px)"

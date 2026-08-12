@@ -112,6 +112,11 @@ pub enum DrawCommand {
         /// Stroke width in px (1 = hairline).
         #[serde(skip_serializing_if = "is_one")]
         width: u32,
+        /// Corner radius in px; 0 = square corners. A host that can't round a
+        /// stroke draws the square outline, which is what this command has
+        /// always meant.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
     },
     Line {
         x1: i32,
@@ -177,6 +182,90 @@ pub enum DrawCommand {
     },
     Poly {
         points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
+    /// A filled **simple** polygon — concave allowed. Where [`Poly`](Self::Poly)
+    /// is a fan from the first vertex (correct only for convex outlines), this
+    /// is triangulated properly, so a star, an L, or an arrowhead fills the
+    /// region its outline encloses.
+    Polygon {
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
+    /// A filled triangle fan from an explicit center through `points` — the
+    /// cheap star/pie shape, where every vertex is visible from the center.
+    /// The fan is *not* closed: repeat the first point to close it.
+    Fan {
+        cx: i32,
+        cy: i32,
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
+    /// A stroked open path through `points`, `width` px wide, with round joins
+    /// and round caps. The whole path is one translucent shape: unlike N
+    /// separate [`Line`](Self::Line)s, overlapping segments don't double up
+    /// where they meet, so a translucent stroke reads evenly.
+    Polyline {
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        #[serde(skip_serializing_if = "is_one")]
+        width: u32,
+    },
+    /// Filled axis-aligned ellipse with semi-axes `rx`/`ry` about (`cx`, `cy`).
+    Ellipse {
+        cx: i32,
+        cy: i32,
+        rx: i32,
+        ry: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
+    /// Hollow axis-aligned ellipse, stroked `width` px wide *inside* the
+    /// rx/ry boundary. `draw_circle_outline` emits this with `rx == ry`.
+    EllipseOutline {
+        cx: i32,
+        cy: i32,
+        rx: i32,
+        ry: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        #[serde(skip_serializing_if = "is_one")]
+        width: u32,
+    },
+    /// A filled annular sector — the donut/pie wedge. Spans radii `r_in`
+    /// (0 for a solid pie slice) to `r_out`, between angles `a0` and `a1` in
+    /// **radians**, measured clockwise from the +x axis (y grows downward, the
+    /// screen convention every other draw command uses). `a1 < a0` sweeps the
+    /// other way; a sweep of a full turn or more is a complete ring.
+    Arc {
+        cx: i32,
+        cy: i32,
+        r_in: f32,
+        r_out: f32,
+        a0: f32,
+        a1: f32,
         r: u8,
         g: u8,
         b: u8,
@@ -252,6 +341,42 @@ fn as_i64(v: &Value) -> Result<i64, String> {
             other.type_name()
         )),
     }
+}
+
+/// Decode a heap list of points — each a `vec2` or a two-element `[x, y]`
+/// list — into integer pixel coordinates. Shared by every point-list command
+/// (`poly`, `polygon`, `fan`, `polyline`), so they all accept the same two
+/// spellings a script may have written.
+fn decode_points(tag: &str, points: &Value, heap: &Heap) -> Result<Vec<(i32, i32)>, String> {
+    let list_id = match points {
+        Value::List(id) => *id,
+        other => {
+            return Err(format!(
+                "{tag} points must be a list, got {}",
+                other.type_name()
+            ));
+        }
+    };
+    let mut out = Vec::new();
+    for p in heap.get_list(list_id) {
+        match p {
+            Value::Vec2(x, y) => out.push((*x as i32, *y as i32)),
+            Value::List(pid) => {
+                let coords = heap.get_list(*pid);
+                if coords.len() != 2 {
+                    return Err(format!("{tag} list points must have 2 coords [x, y]"));
+                }
+                out.push((as_i64(&coords[0])? as i32, as_i64(&coords[1])? as i32));
+            }
+            other => {
+                return Err(format!(
+                    "{tag} point must be vec2 or [x, y], got {}",
+                    other.type_name()
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 impl DrawCommand {
@@ -370,6 +495,7 @@ impl DrawCommand {
                 b: u8_at(6)?,
                 a: opt_u8(7, 255),
                 width: opt_u32(8, 1),
+                radius: opt_u32(9, 0),
             },
             "line" => DrawCommand::Line {
                 x1: i32_at(0)?,
@@ -403,38 +529,76 @@ impl DrawCommand {
                 b: u8_at(8)?,
                 a: opt_u8(9, 255),
             },
-            "poly" => {
-                let points_id = match arg(0)? {
-                    Value::List(id) => *id,
-                    other => {
-                        return Err(format!(
-                            "poly points must be a list, got {}",
-                            other.type_name()
-                        ));
-                    }
+            "poly" => DrawCommand::Poly {
+                points: decode_points(&tag, arg(0)?, heap)?,
+                r: u8_at(1)?,
+                g: u8_at(2)?,
+                b: u8_at(3)?,
+                a: opt_u8(4, 255),
+            },
+            "polygon" => DrawCommand::Polygon {
+                points: decode_points(&tag, arg(0)?, heap)?,
+                r: u8_at(1)?,
+                g: u8_at(2)?,
+                b: u8_at(3)?,
+                a: opt_u8(4, 255),
+            },
+            "fan" => DrawCommand::Fan {
+                cx: i32_at(0)?,
+                cy: i32_at(1)?,
+                points: decode_points(&tag, arg(2)?, heap)?,
+                r: u8_at(3)?,
+                g: u8_at(4)?,
+                b: u8_at(5)?,
+                a: opt_u8(6, 255),
+            },
+            "polyline" => DrawCommand::Polyline {
+                points: decode_points(&tag, arg(0)?, heap)?,
+                r: u8_at(1)?,
+                g: u8_at(2)?,
+                b: u8_at(3)?,
+                a: opt_u8(4, 255),
+                width: opt_u32(5, 1),
+            },
+            "ellipse" => DrawCommand::Ellipse {
+                cx: i32_at(0)?,
+                cy: i32_at(1)?,
+                rx: i32_at(2)?,
+                ry: i32_at(3)?,
+                r: u8_at(4)?,
+                g: u8_at(5)?,
+                b: u8_at(6)?,
+                a: opt_u8(7, 255),
+            },
+            "ellipse_outline" => DrawCommand::EllipseOutline {
+                cx: i32_at(0)?,
+                cy: i32_at(1)?,
+                rx: i32_at(2)?,
+                ry: i32_at(3)?,
+                r: u8_at(4)?,
+                g: u8_at(5)?,
+                b: u8_at(6)?,
+                a: opt_u8(7, 255),
+                width: opt_u32(8, 1),
+            },
+            "arc" => {
+                let f32_at = |i: usize| -> Result<f32, String> {
+                    data.get(i)
+                        .and_then(num_as_f64)
+                        .map(|v| v as f32)
+                        .ok_or_else(|| format!("arc command needs a number at arg {i}"))
                 };
-                let mut points = Vec::new();
-                for p in heap.get_list(points_id) {
-                    match p {
-                        Value::Vec2(x, y) => points.push((*x as i32, *y as i32)),
-                        Value::List(pid) => {
-                            let coords = heap.get_list(*pid);
-                            points.push((as_i64(&coords[0])? as i32, as_i64(&coords[1])? as i32));
-                        }
-                        other => {
-                            return Err(format!(
-                                "poly point must be vec2 or [x, y], got {}",
-                                other.type_name()
-                            ));
-                        }
-                    }
-                }
-                DrawCommand::Poly {
-                    points,
-                    r: u8_at(1)?,
-                    g: u8_at(2)?,
-                    b: u8_at(3)?,
-                    a: opt_u8(4, 255),
+                DrawCommand::Arc {
+                    cx: i32_at(0)?,
+                    cy: i32_at(1)?,
+                    r_in: f32_at(2)?,
+                    r_out: f32_at(3)?,
+                    a0: f32_at(4)?,
+                    a1: f32_at(5)?,
+                    r: u8_at(6)?,
+                    g: u8_at(7)?,
+                    b: u8_at(8)?,
+                    a: opt_u8(9, 255),
                 }
             }
             "text" => {
@@ -594,10 +758,21 @@ pub fn register_draw(env: &mut Env) {
     env.register_native("draw_rect", native_draw_rect);
     env.register_native("draw_rect_rounded", native_draw_rect_rounded);
     env.register_native("draw_rect_outline", native_draw_rect_outline);
+    env.register_native(
+        "draw_rect_rounded_outline",
+        native_draw_rect_rounded_outline,
+    );
     env.register_native("draw_line", native_draw_line);
+    env.register_native("draw_polyline", native_draw_polyline);
     env.register_native("draw_circle", native_draw_circle);
+    env.register_native("draw_circle_outline", native_draw_circle_outline);
+    env.register_native("draw_ellipse", native_draw_ellipse);
+    env.register_native("draw_ellipse_outline", native_draw_ellipse_outline);
+    env.register_native("fill_arc", native_fill_arc);
     env.register_native("fill_triangle", native_fill_triangle);
     env.register_native("fill_poly", native_fill_poly);
+    env.register_native("fill_polygon", native_fill_polygon);
+    env.register_native("fill_fan", native_fill_fan);
     env.register_native("draw_text", native_draw_text);
     env.register_native("clip", native_clip);
     env.register_native("clip_none", native_clip_none);
@@ -704,7 +879,43 @@ fn native_draw_rect_outline(state: &mut PetalCxt) -> NativeResult {
     let mut args = int_args(state, 7)?;
     args.push(Value::Int(opt_int(state, 8, 255)?)); // a
     args.push(Value::Int(opt_int(state, 9, 1)?)); // width
+    args.push(Value::Int(0)); // radius: square corners
     emit_draw(state, "rect_outline", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, [a], [width])` —
+/// the stroked sibling of `draw_rect_rounded`. Emits the same `rect_outline`
+/// command with a corner radius, so a host that only draws square outlines
+/// still draws the frame (rather than nothing).
+fn native_draw_rect_rounded_outline(state: &mut PetalCxt) -> NativeResult {
+    let x = state.get_int(1)?;
+    let y = state.get_int(2)?;
+    let w = state.get_int(3)?;
+    let h = state.get_int(4)?;
+    let radius = state.get_int(5)?;
+    let r = state.get_int(6)?;
+    let g = state.get_int(7)?;
+    let b = state.get_int(8)?;
+    let a = opt_int(state, 9, 255)?;
+    let width = opt_int(state, 10, 1)?;
+    emit_draw(
+        state,
+        "rect_outline",
+        vec![
+            Value::Int(x),
+            Value::Int(y),
+            Value::Int(w),
+            Value::Int(h),
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+            Value::Int(width),
+            Value::Int(radius),
+        ],
+    );
     state.push_nil();
     Ok(1)
 }
@@ -728,6 +939,96 @@ fn native_draw_circle(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+// `draw_circle_outline(cx, cy, radius, r, g, b, [a], [width])` — a hollow
+// circle, stroked `width` px inward from `radius`. Emitted as the `rx == ry`
+// case of `ellipse_outline` so a host implements one stroked-conic path.
+fn native_draw_circle_outline(state: &mut PetalCxt) -> NativeResult {
+    let cx = state.get_int(1)?;
+    let cy = state.get_int(2)?;
+    let radius = state.get_int(3)?;
+    let mut args = vec![
+        Value::Int(cx),
+        Value::Int(cy),
+        Value::Int(radius),
+        Value::Int(radius),
+    ];
+    for index in 4..=6 {
+        args.push(Value::Int(state.get_int(index)?));
+    }
+    args.push(Value::Int(opt_int(state, 7, 255)?)); // a
+    args.push(Value::Int(opt_int(state, 8, 1)?)); // width
+    emit_draw(state, "ellipse_outline", args);
+    state.push_nil();
+    Ok(1)
+}
+
+// `draw_ellipse(cx, cy, rx, ry, r, g, b, [a])`.
+fn native_draw_ellipse(state: &mut PetalCxt) -> NativeResult {
+    let mut args = int_args(state, 7)?;
+    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+    emit_draw(state, "ellipse", args);
+    state.push_nil();
+    Ok(1)
+}
+
+// `draw_ellipse_outline(cx, cy, rx, ry, r, g, b, [a], [width])`.
+fn native_draw_ellipse_outline(state: &mut PetalCxt) -> NativeResult {
+    let mut args = int_args(state, 7)?;
+    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+    args.push(Value::Int(opt_int(state, 9, 1)?)); // width
+    emit_draw(state, "ellipse_outline", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// Read a 1-indexed argument as f64 — for the angle/radius args of `fill_arc`,
+/// where an int would quantize a sweep to whole radians.
+fn get_num(state: &PetalCxt, index: usize, name: &str) -> Result<f64, String> {
+    match state.get_value(index)? {
+        Value::Int(n) => Ok(n as f64),
+        Value::Float(f) => Ok(f),
+        other => Err(format!(
+            "{name}() arg {index} must be a number, got {}",
+            other.type_name()
+        )),
+    }
+}
+
+// `fill_arc(cx, cy, r_in, r_out, a0, a1, r, g, b, [a])` — one annular sector:
+// the donut wedge that every pie/gauge chart otherwise hand-rolls as a quad
+// fan. Angles are radians, clockwise from +x (screen y-down). `r_in = 0` is a
+// solid pie slice; a sweep of `TAU` is a full ring.
+fn native_fill_arc(state: &mut PetalCxt) -> NativeResult {
+    let cx = state.get_int(1)?;
+    let cy = state.get_int(2)?;
+    let r_in = get_num(state, 3, "fill_arc")?;
+    let r_out = get_num(state, 4, "fill_arc")?;
+    let a0 = get_num(state, 5, "fill_arc")?;
+    let a1 = get_num(state, 6, "fill_arc")?;
+    let r = state.get_int(7)?;
+    let g = state.get_int(8)?;
+    let b = state.get_int(9)?;
+    let a = opt_int(state, 10, 255)?;
+    emit_draw(
+        state,
+        "arc",
+        vec![
+            Value::Int(cx),
+            Value::Int(cy),
+            Value::Float(r_in),
+            Value::Float(r_out),
+            Value::Float(a0),
+            Value::Float(a1),
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
 // `fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b, [a])`.
 fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
     let mut args = int_args(state, 9)?;
@@ -745,19 +1046,22 @@ fn coord_to_i32(v: &Value) -> Result<i32, String> {
     }
 }
 
-fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
-    let points_value = state.get_value(1)?;
+/// Read a point-list argument, validating it up front (the host re-reads the
+/// same list when it decodes the command, so a bad point must be rejected here
+/// where the script's own call site is still on the stack). `min` is the
+/// smallest point count the shape means anything at.
+fn point_list_arg(state: &PetalCxt, index: usize, name: &str, min: usize) -> Result<Value, String> {
+    let points_value = state.get_value(index)?;
     let list_id = match points_value {
         Value::List(id) => id,
         other => {
             return Err(format!(
-                "fill_poly() expects a list of points, got {}",
+                "{name}() expects a list of points, got {}",
                 other.type_name()
             ));
         }
     };
 
-    // Validate the points up front (the renderer re-reads the list on decode).
     let elements: Vec<Value> = state.heap().get_list(list_id).to_vec();
     for el in &elements {
         match el {
@@ -765,26 +1069,30 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
             Value::List(pid) => {
                 let coords = state.heap().get_list(*pid);
                 if coords.len() != 2 {
-                    return Err(
-                        "fill_poly() list points must have exactly 2 coords [x, y]".to_string()
-                    );
+                    return Err(format!(
+                        "{name}() list points must have exactly 2 coords [x, y]"
+                    ));
                 }
                 coord_to_i32(&coords[0])?;
                 coord_to_i32(&coords[1])?;
             }
             other => {
                 return Err(format!(
-                    "fill_poly() points must be vec2 or [x, y] lists, got {}",
+                    "{name}() points must be vec2 or [x, y] lists, got {}",
                     other.type_name()
                 ));
             }
         }
     }
 
-    if elements.len() < 3 {
-        return Err("fill_poly() needs at least 3 points".to_string());
+    if elements.len() < min {
+        return Err(format!("{name}() needs at least {min} points"));
     }
+    Ok(points_value)
+}
 
+fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
+    let points_value = point_list_arg(state, 1, "fill_poly", 3)?;
     let r = state.get_int(2)?;
     let g = state.get_int(3)?;
     let b = state.get_int(4)?;
@@ -799,6 +1107,86 @@ fn native_fill_poly(state: &mut PetalCxt) -> NativeResult {
             Value::Int(g),
             Value::Int(b),
             Value::Int(a),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+/// `fill_polygon(points, r, g, b, [a])` — fill a **simple** polygon, concave
+/// allowed. `fill_poly` fans from the first vertex, which only fills a convex
+/// outline correctly; this triangulates properly, so a star fills as a star
+/// instead of needing to be hand-fanned into triangles by the caller.
+fn native_fill_polygon(state: &mut PetalCxt) -> NativeResult {
+    let points_value = point_list_arg(state, 1, "fill_polygon", 3)?;
+    let r = state.get_int(2)?;
+    let g = state.get_int(3)?;
+    let b = state.get_int(4)?;
+    let a = opt_int(state, 5, 255)?;
+    emit_draw(
+        state,
+        "polygon",
+        vec![
+            points_value,
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+/// `fill_fan(cx, cy, points, r, g, b, [a])` — a triangle fan from an explicit
+/// center. The cheap star/pie/gauge shape for an outline every vertex of which
+/// the center can see; `fill_polygon` is the general case.
+fn native_fill_fan(state: &mut PetalCxt) -> NativeResult {
+    let cx = state.get_int(1)?;
+    let cy = state.get_int(2)?;
+    let points_value = point_list_arg(state, 3, "fill_fan", 2)?;
+    let r = state.get_int(4)?;
+    let g = state.get_int(5)?;
+    let b = state.get_int(6)?;
+    let a = opt_int(state, 7, 255)?;
+    emit_draw(
+        state,
+        "fan",
+        vec![
+            Value::Int(cx),
+            Value::Int(cy),
+            points_value,
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_polyline(points, r, g, b, [a], [width])` — one stroked open path with
+/// round joins and caps. The point of it being a single command rather than N
+/// `draw_line` calls is translucency: the whole stroke is composited once, so
+/// overlapping segments and joins don't darken where they meet.
+fn native_draw_polyline(state: &mut PetalCxt) -> NativeResult {
+    let points_value = point_list_arg(state, 1, "draw_polyline", 1)?;
+    let r = state.get_int(2)?;
+    let g = state.get_int(3)?;
+    let b = state.get_int(4)?;
+    let a = opt_int(state, 5, 255)?;
+    let width = opt_int(state, 6, 1)?;
+    emit_draw(
+        state,
+        "polyline",
+        vec![
+            points_value,
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
+            Value::Int(width),
         ],
     );
     state.push_nil();
@@ -1007,6 +1395,223 @@ mod tests {
                 a: 200,
                 radius: 6
             }
+        );
+    }
+
+    #[test]
+    fn polyline_decodes_points_alpha_and_width() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source("draw_polyline([[0, 0], [10, 5], [20, 0]], 1, 2, 3, 128, 6)")
+            .expect("run");
+        assert_eq!(
+            take_draw_commands(&mut env),
+            vec![DrawCommand::Polyline {
+                points: vec![(0, 0), (10, 5), (20, 0)],
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 128,
+                width: 6,
+            }]
+        );
+        // Short form: opaque hairline, the same defaults draw_line has.
+        env.run_source("draw_polyline([[0, 0], [1, 1]], 4, 5, 6)")
+            .expect("run");
+        assert!(matches!(
+            take_draw_commands(&mut env)[0],
+            DrawCommand::Polyline {
+                a: 255,
+                width: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn ellipse_circle_outline_and_arc_decode() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source(
+            "draw_ellipse(50, 40, 30, 10, 200, 100, 50)\n\
+             draw_ellipse_outline(50, 40, 30, 10, 200, 100, 50, 128, 4)\n\
+             draw_circle_outline(8, 9, 7, 1, 2, 3)\n\
+             fill_arc(60, 60, 20.0, 40.0, 0.0, 1.5, 9, 8, 7, 200)",
+        )
+        .expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Ellipse {
+                cx: 50,
+                cy: 40,
+                rx: 30,
+                ry: 10,
+                r: 200,
+                g: 100,
+                b: 50,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            cmds[1],
+            DrawCommand::EllipseOutline {
+                cx: 50,
+                cy: 40,
+                rx: 30,
+                ry: 10,
+                r: 200,
+                g: 100,
+                b: 50,
+                a: 128,
+                width: 4,
+            }
+        );
+        // A circle outline is the rx == ry case of the same command.
+        assert_eq!(
+            cmds[2],
+            DrawCommand::EllipseOutline {
+                cx: 8,
+                cy: 9,
+                rx: 7,
+                ry: 7,
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+                width: 1,
+            }
+        );
+        assert_eq!(
+            cmds[3],
+            DrawCommand::Arc {
+                cx: 60,
+                cy: 60,
+                r_in: 20.0,
+                r_out: 40.0,
+                a0: 0.0,
+                a1: 1.5,
+                r: 9,
+                g: 8,
+                b: 7,
+                a: 200,
+            }
+        );
+    }
+
+    #[test]
+    fn arc_angles_keep_their_fraction() {
+        // Ints are accepted, but a fractional sweep must survive as a float —
+        // truncating it would quantize every pie chart to whole radians.
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source("fill_arc(0, 0, 0, 10, 0.25, 2.75, 1, 2, 3)")
+            .expect("run");
+        match take_draw_commands(&mut env)[0] {
+            DrawCommand::Arc { a0, a1, r_in, .. } => {
+                assert!((a0 - 0.25).abs() < 1e-6, "a0 was {a0}");
+                assert!((a1 - 2.75).abs() < 1e-6, "a1 was {a1}");
+                assert_eq!(r_in, 0.0, "an int radius still decodes");
+            }
+            ref other => panic!("expected an arc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rounded_outline_carries_radius_and_plain_outline_does_not() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source(
+            "draw_rect_outline(0, 0, 10, 10, 1, 2, 3, 128, 2)\n\
+             draw_rect_rounded_outline(0, 0, 10, 10, 4, 1, 2, 3, 128, 2)",
+        )
+        .expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert!(matches!(
+            cmds[0],
+            DrawCommand::RectOutline {
+                a: 128,
+                width: 2,
+                radius: 0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            cmds[1],
+            DrawCommand::RectOutline {
+                a: 128,
+                width: 2,
+                radius: 4,
+                ..
+            }
+        ));
+        // The square outline must still serialize to its pre-radius JSON.
+        let json = serde_json::to_string(&cmds[0]).unwrap();
+        assert!(!json.contains("radius"), "{json}");
+    }
+
+    #[test]
+    fn concave_fill_and_fan_decode() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        env.run_source(
+            "fill_polygon([[0, 0], [10, 10], [20, 0], [10, 30]], 1, 2, 3, 90)\n\
+             fill_fan(5, 5, [[0, 0], [10, 0], [10, 10]], 4, 5, 6)",
+        )
+        .expect("run");
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Polygon {
+                points: vec![(0, 0), (10, 10), (20, 0), (10, 30)],
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 90,
+            }
+        );
+        assert_eq!(
+            cmds[1],
+            DrawCommand::Fan {
+                cx: 5,
+                cy: 5,
+                points: vec![(0, 0), (10, 0), (10, 10)],
+                r: 4,
+                g: 5,
+                b: 6,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn point_lists_are_validated_at_the_call_site() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // A non-list, a too-short list, and a malformed point each fail at the
+        // call rather than being silently dropped when the host decodes.
+        assert!(env.run_source("fill_polygon(7, 1, 2, 3)").is_err());
+        assert!(
+            env.run_source("fill_polygon([[0, 0], [1, 1]], 1, 2, 3)")
+                .is_err()
+        );
+        assert!(
+            env.run_source("draw_polyline([[0, 0, 0]], 1, 2, 3)")
+                .is_err()
+        );
+        // vec2 points are the other accepted spelling.
+        env.run_source("draw_polyline([vec2(1, 2), vec2(3, 4)], 1, 2, 3)")
+            .expect("vec2 points");
+        assert_eq!(
+            take_draw_commands(&mut env),
+            vec![DrawCommand::Polyline {
+                points: vec![(1, 2), (3, 4)],
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+                width: 1,
+            }]
         );
     }
 

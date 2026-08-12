@@ -194,7 +194,9 @@ pub enum PanelCmd {
         a: u8,
         radius: u32,
     },
-    /// Hollow rectangle (rendered as four `width`-px edges by the host).
+    /// Hollow rectangle, stroked `width` px inside its bounds. `radius` px
+    /// rounds the corners (0 = square), so a rounded bordered box is one
+    /// stroked frame rather than two stacked rounded fills.
     RectOutline {
         x: i32,
         y: i32,
@@ -205,6 +207,7 @@ pub enum PanelCmd {
         b: u8,
         a: u8,
         width: u32,
+        radius: u32,
     },
     /// A straight line between two endpoints, `width` px thick (1 = hairline).
     Line {
@@ -244,6 +247,74 @@ pub enum PanelCmd {
     /// Filled convex polygon through `points` (panel-local pixels).
     Poly {
         points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
+    /// Filled **simple** polygon — concave allowed. Triangulated properly by
+    /// the host (ear clipping), unlike the first-vertex fan of [`Poly`].
+    Polygon {
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
+    /// Filled triangle fan from an explicit center through `points`.
+    Fan {
+        cx: i32,
+        cy: i32,
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
+    /// A stroked open path, `width` px wide, with round joins and caps. One
+    /// shape, so a translucent stroke composites evenly instead of darkening
+    /// at every join the way N separate [`Line`]s do.
+    Polyline {
+        points: Vec<(i32, i32)>,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+        width: u32,
+    },
+    /// Filled axis-aligned ellipse with semi-axes `rx`/`ry`.
+    Ellipse {
+        cx: i32,
+        cy: i32,
+        rx: i32,
+        ry: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
+    /// Hollow axis-aligned ellipse, stroked `width` px inside `rx`/`ry`.
+    /// `draw_circle_outline` arrives here with `rx == ry`.
+    EllipseOutline {
+        cx: i32,
+        cy: i32,
+        rx: i32,
+        ry: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+        width: u32,
+    },
+    /// A filled annular sector (the donut/pie wedge): radii `r_in`..`r_out`
+    /// between angles `a0`..`a1` in radians, clockwise from +x with y down.
+    Arc {
+        cx: i32,
+        cy: i32,
+        r_in: f32,
+        r_out: f32,
+        a0: f32,
+        a1: f32,
         r: u8,
         g: u8,
         b: u8,
@@ -413,6 +484,7 @@ impl PanelCmd {
                 b,
                 a,
                 width,
+                radius,
             } => PanelCmd::RectOutline {
                 x,
                 y,
@@ -423,6 +495,7 @@ impl PanelCmd {
                 b,
                 a,
                 width,
+                radius,
             },
             DrawCommand::Line {
                 x1,
@@ -486,6 +559,102 @@ impl PanelCmd {
                 a,
             },
             DrawCommand::Poly { points, r, g, b, a } => PanelCmd::Poly { points, r, g, b, a },
+            DrawCommand::Polygon { points, r, g, b, a } => PanelCmd::Polygon { points, r, g, b, a },
+            DrawCommand::Fan {
+                cx,
+                cy,
+                points,
+                r,
+                g,
+                b,
+                a,
+            } => PanelCmd::Fan {
+                cx,
+                cy,
+                points,
+                r,
+                g,
+                b,
+                a,
+            },
+            DrawCommand::Polyline {
+                points,
+                r,
+                g,
+                b,
+                a,
+                width,
+            } => PanelCmd::Polyline {
+                points,
+                r,
+                g,
+                b,
+                a,
+                width,
+            },
+            DrawCommand::Ellipse {
+                cx,
+                cy,
+                rx,
+                ry,
+                r,
+                g,
+                b,
+                a,
+            } => PanelCmd::Ellipse {
+                cx,
+                cy,
+                rx,
+                ry,
+                r,
+                g,
+                b,
+                a,
+            },
+            DrawCommand::EllipseOutline {
+                cx,
+                cy,
+                rx,
+                ry,
+                r,
+                g,
+                b,
+                a,
+                width,
+            } => PanelCmd::EllipseOutline {
+                cx,
+                cy,
+                rx,
+                ry,
+                r,
+                g,
+                b,
+                a,
+                width,
+            },
+            DrawCommand::Arc {
+                cx,
+                cy,
+                r_in,
+                r_out,
+                a0,
+                a1,
+                r,
+                g,
+                b,
+                a,
+            } => PanelCmd::Arc {
+                cx,
+                cy,
+                r_in,
+                r_out,
+                a0,
+                a1,
+                r,
+                g,
+                b,
+                a,
+            },
             DrawCommand::Text {
                 text,
                 x,
@@ -677,6 +846,13 @@ pub struct PanelHost {
     /// ordinary panel pays nothing; Petal IDE turns it on to map the canvas back
     /// to the source beside it.
     trace_origins: bool,
+    /// This panel's persistent key/value store, behind the `panel_store_get` /
+    /// `panel_store_set` natives — scoped to the script's own path, so a panel
+    /// remembers its todos across a restart without any file API. Installed
+    /// into the store channel for the duration of each [`frame`](Self::frame)
+    /// (the same swap as the providers) and flushed to disk after it, so a
+    /// write costs a rewrite only on the frames that actually change something.
+    store: Option<crate::panel_store::PanelStore>,
     /// The call site of each command the last [`frame`](Self::frame) returned,
     /// index-aligned with that command list. Empty while tracing is off.
     ///
@@ -723,6 +899,7 @@ impl PanelHost {
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
             trace_origins: false,
+            store: Some(crate::panel_store::PanelStore::for_script(path)),
             frame_origins: Vec::new(),
         })
     }
@@ -777,6 +954,11 @@ impl PanelHost {
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
             trace_origins: false,
+            // A source-backed panel has no script file, but it does have a
+            // stable virtual identity (`gpp:<cmd>`, a `garden:…` URI), which is
+            // exactly the scoping key the store wants — so a GPP app's drawer
+            // persists under its own name like any other panel.
+            store: Some(crate::panel_store::PanelStore::for_script(Path::new(name))),
             frame_origins: Vec::new(),
         })
     }
@@ -912,7 +1094,17 @@ impl PanelHost {
         let saved_q = query::swap_query_provider(self.query_provider.take());
         let saved_e = swap_edit_view_texts(std::mem::take(&mut self.edit_view_texts));
         let saved_ee = swap_edit_view_edits(std::mem::take(&mut self.edit_view_edits));
+        // The persistent store is reachable only while this panel's own frame
+        // runs, so `panel_store_get`/`_set` can never touch another script's.
+        let saved_store = crate::panel_store::swap_store(self.store.take());
         let run_result = self.env.run(self.stack_id);
+        self.store = crate::panel_store::swap_store(saved_store);
+        // Persist whatever the frame changed. A failure (read-only home, full
+        // disk) is reported to the script's output rather than failing the
+        // frame: the panel keeps drawing, with its in-memory store intact.
+        if let Some(Err(err)) = self.store.as_mut().map(|s| s.flush()) {
+            self.output.push(format!("[panel store] {err}"));
+        }
         self.edit_view_edits = swap_edit_view_edits(saved_ee);
         self.edit_view_texts = swap_edit_view_texts(saved_e);
         self.query_provider = query::swap_query_provider(saved_q);
@@ -1771,6 +1963,10 @@ fn register_panel_natives(env: &mut Env) {
     // `claim_key(key, mods)` — the panel's own command keyspace: chords the host
     // must forward instead of consuming (drained by `take_key_claims`).
     env.register_native("claim_key", native_claim_key);
+    // The panel's own persistent key/value store, scoped to its script path —
+    // the answer to "a todo app remembers your todos" without handing a sketch
+    // a file API. See [`crate::panel_store`].
+    crate::panel_store::register_store(env);
     env.register_native("navigate", native_navigate);
     env.register_native("navigate_replace", native_navigate_replace);
     env.register_native("navigate_back", native_navigate_back);
@@ -1982,7 +2178,7 @@ fn native_claim_key(cxt: &mut PetalCxt) -> NativeResult {
                 return Err(format!(
                     "claim_key() expects a modifier string or bitmask, got {}",
                     other.type_name()
-                ))
+                ));
             }
         })
     } else {
@@ -2011,7 +2207,7 @@ fn parse_mod_bits(spec: &str) -> Result<u8, String> {
                 return Err(format!(
                     "claim_key(): unknown modifier {other:?} \
                      (want shift/ctrl/alt/cmd, e.g. \"cmd+shift\")"
-                ))
+                ));
             }
         };
     }
@@ -3743,6 +3939,187 @@ mod tests {
             Some(PanelCmd::Rect { x, .. }) => *x,
             other => panic!("expected a rect first, got {other:?}"),
         }
+    }
+    /// The persistence contract end to end: a script writes a key, and a
+    /// *fresh host over the same script file* reads it back. This is the whole
+    /// point ("a todo app remembers your todos"), and it is the assertion that
+    /// would catch the store being scoped to the wrong thing.
+    #[test]
+    fn a_panel_reads_back_what_an_earlier_run_stored() {
+        let _guard = crate::panel_store::lock_store_env();
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: guarded by STORE_ENV_LOCK — see `panel_store`.
+        unsafe { std::env::set_var("GARDEN_PANEL_STORE_DIR", dir.path()) };
+
+        let writer = write_script(
+            "let seen = panel_store_get(\"visits\") ?? \"0\"\n\
+             panel_store_set(\"visits\", str(int(seen) + 1))\n\
+             draw_text(seen, 0, 0, 12, 255, 255, 255)\n",
+        );
+
+        // Three separate hosts over the same file: each sees the last one's
+        // write, so the count climbs across "restarts".
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            let mut host = PanelHost::load(writer.path()).unwrap();
+            host.set_dimensions(50, 50);
+            let cmds = host.frame(0.016, 0).unwrap();
+            match &cmds[0] {
+                PanelCmd::Text { text, .. } => seen.push(text.clone()),
+                other => panic!("expected the stored value drawn, got {other:?}"),
+            }
+        }
+        assert_eq!(seen, vec!["0", "1", "2"]);
+
+        // A different script does not see those keys — the store is scoped to
+        // the script's own path, not shared across the process.
+        let other =
+            write_script("draw_text(panel_store_get(\"visits\") ?? \"none\", 0, 0, 12, 1, 2, 3)\n");
+        let mut host = PanelHost::load(other.path()).unwrap();
+        host.set_dimensions(50, 50);
+        match &host.frame(0.016, 0).unwrap()[0] {
+            PanelCmd::Text { text, .. } => assert_eq!(text, "none"),
+            other => panic!("expected nil-defaulted text, got {other:?}"),
+        }
+
+        unsafe { std::env::remove_var("GARDEN_PANEL_STORE_DIR") };
+    }
+
+    /// A store write is only visible to the panel whose frame is running, so a
+    /// script that errors — or a host with no store at all — cannot reach into
+    /// another's. Deleting a key round-trips too.
+    #[test]
+    fn a_deleted_key_reads_back_as_nil() {
+        let _guard = crate::panel_store::lock_store_env();
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: guarded by STORE_ENV_LOCK — see `panel_store`.
+        unsafe { std::env::set_var("GARDEN_PANEL_STORE_DIR", dir.path()) };
+        let f = write_script(
+            "state step = 0\n\
+             step = step + 1\n\
+             if step == 1 then\n\
+             \x20 panel_store_set(\"k\", \"v\")\n\
+             else\n\
+             \x20 panel_store_set(\"k\", nil)\n\
+             end\n\
+             draw_text(panel_store_get(\"k\") ?? \"gone\", 0, 0, 12, 1, 2, 3)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(50, 50);
+        let first = host.frame(0.016, 0).unwrap();
+        assert!(matches!(&first[0], PanelCmd::Text { text, .. } if text == "v"));
+        let second = host.frame(0.016, 1).unwrap();
+        assert!(matches!(&second[0], PanelCmd::Text { text, .. } if text == "gone"));
+        unsafe { std::env::remove_var("GARDEN_PANEL_STORE_DIR") };
+    }
+
+    /// A non-string value is refused at the call site with a message that says
+    /// what to do, rather than being stringified into something unparseable.
+    #[test]
+    fn storing_a_non_string_is_an_error() {
+        let _guard = crate::panel_store::lock_store_env();
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: guarded by STORE_ENV_LOCK — see `panel_store`.
+        unsafe { std::env::set_var("GARDEN_PANEL_STORE_DIR", dir.path()) };
+        let f = write_script("panel_store_set(\"k\", [1, 2, 3])\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(50, 50);
+        let err = host.frame(0.016, 0).unwrap_err();
+        assert!(err.contains("must be a string"), "{err}");
+        unsafe { std::env::remove_var("GARDEN_PANEL_STORE_DIR") };
+    }
+
+    /// Every new primitive survives the round trip from the script's call to
+    /// the host's render vocabulary — the seam where a missing `from_draw` arm
+    /// would silently drop a shape.
+    #[test]
+    fn the_new_primitives_reach_the_render_vocabulary() {
+        let f = write_script(
+            "draw_polyline([[0, 0], [10, 5]], 1, 2, 3, 128, 4)\n\
+             draw_ellipse(5, 6, 7, 8, 9, 10, 11)\n\
+             draw_circle_outline(1, 2, 3, 4, 5, 6, 255, 2)\n\
+             fill_arc(1, 2, 3.0, 9.0, 0.0, 1.5, 7, 8, 9)\n\
+             fill_polygon([[0, 0], [10, 0], [10, 10], [0, 10]], 1, 2, 3)\n\
+             fill_fan(5, 5, [[0, 0], [10, 0]], 1, 2, 3)\n\
+             draw_rect_rounded_outline(0, 0, 20, 20, 4, 1, 2, 3, 255, 2)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(50, 50);
+        let cmds = host.frame(0.016, 0).unwrap();
+        assert_eq!(
+            cmds,
+            vec![
+                PanelCmd::Polyline {
+                    points: vec![(0, 0), (10, 5)],
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 128,
+                    width: 4,
+                },
+                PanelCmd::Ellipse {
+                    cx: 5,
+                    cy: 6,
+                    rx: 7,
+                    ry: 8,
+                    r: 9,
+                    g: 10,
+                    b: 11,
+                    a: 255,
+                },
+                PanelCmd::EllipseOutline {
+                    cx: 1,
+                    cy: 2,
+                    rx: 3,
+                    ry: 3,
+                    r: 4,
+                    g: 5,
+                    b: 6,
+                    a: 255,
+                    width: 2,
+                },
+                PanelCmd::Arc {
+                    cx: 1,
+                    cy: 2,
+                    r_in: 3.0,
+                    r_out: 9.0,
+                    a0: 0.0,
+                    a1: 1.5,
+                    r: 7,
+                    g: 8,
+                    b: 9,
+                    a: 255,
+                },
+                PanelCmd::Polygon {
+                    points: vec![(0, 0), (10, 0), (10, 10), (0, 10)],
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                },
+                PanelCmd::Fan {
+                    cx: 5,
+                    cy: 5,
+                    points: vec![(0, 0), (10, 0)],
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                },
+                PanelCmd::RectOutline {
+                    x: 0,
+                    y: 0,
+                    w: 20,
+                    h: 20,
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                    width: 2,
+                    radius: 4,
+                },
+            ]
+        );
     }
 }
 

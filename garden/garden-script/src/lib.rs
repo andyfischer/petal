@@ -55,6 +55,7 @@ mod convert;
 pub mod inspect;
 mod native_fns;
 mod panel;
+mod panel_store;
 mod panel_trace;
 mod query;
 mod theme;
@@ -67,6 +68,7 @@ pub use panel_trace::{
     drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragHandle, DragOutcome, DrawOrigin,
     DrawTrace, SourceRewrite, TracedArg,
 };
+pub use panel_store::PanelStore;
 pub use query::{HostData, QueryProvider, QueryState};
 pub use theme::Theme;
 

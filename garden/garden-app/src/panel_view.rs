@@ -2226,17 +2226,24 @@ impl PanelView {
                     b,
                     a,
                     width,
+                    radius,
                 } => {
                     let t = (*width as f32).max(1.0);
-                    tess::rect_outline(
-                        &mut verts,
-                        ox + *x as f32,
-                        oy + *y as f32,
-                        *w as f32,
-                        *h as f32,
-                        t,
-                        col(*r, *g, *b, *a),
-                    );
+                    let (px, py, pw, ph) = (ox + *x as f32, oy + *y as f32, *w as f32, *h as f32);
+                    if *radius > 0 {
+                        tess::rect_rounded_outline(
+                            &mut verts,
+                            px,
+                            py,
+                            pw,
+                            ph,
+                            *radius as f32,
+                            t,
+                            col(*r, *g, *b, *a),
+                        );
+                    } else {
+                        tess::rect_outline(&mut verts, px, py, pw, ph, t, col(*r, *g, *b, *a));
+                    }
                 }
                 PanelCmd::Line {
                     x1,
@@ -2297,11 +2304,104 @@ impl PanelView {
                     );
                 }
                 PanelCmd::Poly { points, r, g, b, a } => {
-                    let pts: Vec<(f32, f32)> = points
-                        .iter()
-                        .map(|(x, y)| (ox + *x as f32, oy + *y as f32))
-                        .collect();
+                    let pts = abs_points(points, ox, oy);
                     tess::poly(&mut verts, &pts, col(*r, *g, *b, *a));
+                }
+                PanelCmd::Polygon { points, r, g, b, a } => {
+                    let pts = abs_points(points, ox, oy);
+                    tess::polygon(&mut verts, &pts, col(*r, *g, *b, *a));
+                }
+                PanelCmd::Fan {
+                    cx,
+                    cy,
+                    points,
+                    r,
+                    g,
+                    b,
+                    a,
+                } => {
+                    let pts = abs_points(points, ox, oy);
+                    tess::fan(
+                        &mut verts,
+                        ox + *cx as f32,
+                        oy + *cy as f32,
+                        &pts,
+                        col(*r, *g, *b, *a),
+                    );
+                }
+                PanelCmd::Polyline {
+                    points,
+                    r,
+                    g,
+                    b,
+                    a,
+                    width,
+                } => {
+                    let pts = abs_points(points, ox, oy);
+                    tess::polyline(&mut verts, &pts, *width as f32, col(*r, *g, *b, *a));
+                }
+                PanelCmd::Ellipse {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    r,
+                    g,
+                    b,
+                    a,
+                } => {
+                    tess::ellipse(
+                        &mut verts,
+                        ox + *cx as f32,
+                        oy + *cy as f32,
+                        *rx as f32,
+                        *ry as f32,
+                        col(*r, *g, *b, *a),
+                    );
+                }
+                PanelCmd::EllipseOutline {
+                    cx,
+                    cy,
+                    rx,
+                    ry,
+                    r,
+                    g,
+                    b,
+                    a,
+                    width,
+                } => {
+                    tess::ellipse_outline(
+                        &mut verts,
+                        ox + *cx as f32,
+                        oy + *cy as f32,
+                        *rx as f32,
+                        *ry as f32,
+                        *width as f32,
+                        col(*r, *g, *b, *a),
+                    );
+                }
+                PanelCmd::Arc {
+                    cx,
+                    cy,
+                    r_in,
+                    r_out,
+                    a0,
+                    a1,
+                    r,
+                    g,
+                    b,
+                    a,
+                } => {
+                    tess::arc(
+                        &mut verts,
+                        ox + *cx as f32,
+                        oy + *cy as f32,
+                        *r_in,
+                        *r_out,
+                        *a0,
+                        *a1,
+                        col(*r, *g, *b, *a),
+                    );
                 }
                 PanelCmd::Text {
                     text,
@@ -2534,6 +2634,16 @@ fn col(r: u8, g: u8, b: u8, a: u8) -> Color {
         b as f32 / 255.0,
         a as f32 / 255.0,
     )
+}
+
+/// Offset a command's panel-local point list into absolute pane pixels — the
+/// one translation every point-list primitive (poly, polygon, fan, polyline)
+/// needs before it reaches the tessellator.
+fn abs_points(points: &[(i32, i32)], ox: f32, oy: f32) -> Vec<(f32, f32)> {
+    points
+        .iter()
+        .map(|(x, y)| (ox + *x as f32, oy + *y as f32))
+        .collect()
 }
 
 /// Intersection of two rects (empty — zero size — when they don't overlap), so a
@@ -3464,11 +3574,9 @@ done
     /// including the "any modifier" form, and matched case-insensitively.
     #[test]
     fn claimed_chords_are_matched_by_key_and_modifier_bits() {
-        let host = PanelHost::from_source(
-            "p",
-            "claim_key(\"z\", \"cmd\")\nclaim_key(\"escape\")\n",
-        )
-        .unwrap();
+        let host =
+            PanelHost::from_source("p", "claim_key(\"z\", \"cmd\")\nclaim_key(\"escape\")\n")
+                .unwrap();
         let mut pv = PanelView::new(host, "p".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
         assert!(pv.claims_key("z", 8), "Cmd+Z was claimed");

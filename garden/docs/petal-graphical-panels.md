@@ -144,12 +144,42 @@ alpha-blend, so overlapping translucent tints composite:
 | `draw_rect(x,y,w,h,r,g,b[,a])` | one filled rect (2 triangles), optionally translucent |
 | `draw_rect_rounded(x,y,w,h,radius,r,g,b[,a])` | a filled rect with quarter-circle-fan corners |
 | `draw_rect_outline(x,y,w,h,r,g,b[,a[,width]])` | four `width`-px filled edges |
+| `draw_rect_rounded_outline(x,y,w,h,radius,r,g,b[,a[,width]])` | a genuinely hollow rounded frame: four bands + a quarter *ring* per corner |
 | `draw_line(x1,y1,x2,y2,r,g,b[,a[,width]])` | a `width`-px-wide quad along the segment |
+| `draw_polyline(points,r,g,b[,a[,width]])` | one stroked path with round joins and caps — **non-overlapping**, see below |
 | `draw_circle(cx,cy,radius,r,g,b[,a])` | a triangle fan (segments scale with radius) |
+| `draw_circle_outline(cx,cy,radius,r,g,b[,a[,width]])` | a `width`-px ring (the `rx == ry` ellipse outline) |
+| `draw_ellipse(cx,cy,rx,ry,r,g,b[,a])` | a triangle fan on both semi-axes |
+| `draw_ellipse_outline(cx,cy,rx,ry,r,g,b[,a[,width]])` | a `width`-px elliptical ring |
+| `fill_arc(cx,cy,r_in,r_out,a0,a1,r,g,b[,a])` | one annular sector — the donut/pie wedge (`r_in = 0` is a solid slice) |
 | `fill_triangle(x1,y1,x2,y2,x3,y3,r,g,b[,a])` | one triangle |
 | `fill_poly(points,r,g,b[,a])` | a triangle fan from the first point (convex) |
+| `fill_polygon(points,r,g,b[,a])` | a **concave-correct** fill (ear clipping) |
+| `fill_fan(cx,cy,points,r,g,b[,a])` | a triangle fan from an explicit center |
 | `draw_text(s,x,y,size,r,g,b[,a])` | one `Text` run at `size` logical px (glyphon) |
 | `draw_image(source,x,y,w,h[,a])` | a cached PNG texture scaled into the destination rect |
+
+`examples/panels/shapes.ptl` draws every one of them on one screen.
+
+Three of these exist because the naive composition of the older calls is
+**wrong**, not merely slower:
+
+- **`draw_polyline` and translucency.** Alpha blending is not idempotent: two
+  50%-alpha shapes over one pixel read 75%. A stroke drawn as N `draw_line`s
+  double-blends its whole join area, and one drawn as a circle per mouse sample
+  (what a paint app does without this) double-blends nearly everything — the
+  reason a translucent brush comes out mottled. `draw_polyline` tessellates a
+  stroke whose pieces do not overlap: the segment quads are trimmed to their
+  crossing point on the inside of each turn, and only the *wedge* the turn
+  opens up is added on the outside. A path that crosses its own stroke (a loop)
+  still overlaps itself — nothing short of a stencil pass fixes that.
+- **`fill_polygon` vs `fill_poly`.** `fill_poly` fans from the first vertex,
+  which fills a convex outline and spills across the reflex corners of anything
+  else. `fill_polygon` ear-clips, so a star is one call instead of ten
+  `fill_triangle`s.
+- **`draw_rect_rounded_outline`.** A rounded border drawn as a rounded fill
+  with a smaller rounded fill on top is opaque (nothing behind shows through),
+  costs two meshes, and degenerates at radius 1. This is one hollow frame.
 
 plus the input/timing reads `dt`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
@@ -284,6 +314,51 @@ with omitted ones meaning plain text. What Garden does with each:
 
 Embedding the Bold face would light `weight` up with no protocol change.
 The full cross-host contract lives in `../docs/text-and-fonts.md`.
+
+### Rotated text is not supported
+
+There is no `rotate(angle)` on a text draw, and adding one is not a small
+change. Every text run becomes a glyphon `TextArea`, whose entire placement
+API is `left` / `top` / `scale` — glyphon emits axis-aligned quads from its own
+atlas through its own pipeline, and nothing in that path takes a transform.
+Rotated labels would mean one of: forking glyphon's renderer, rasterizing each
+run to an offscreen texture and blitting it rotated (needs per-run render
+targets), or rasterizing glyphs with swash into a Garden-owned atlas and
+drawing them through a new pipeline. All three are a new text path, not a
+parameter.
+
+So a 2-D editor in a panel can rotate its shapes but not its labels. The
+workarounds that do exist: draw the label upright beside the rotated shape, or
+lay out per-character positions along a path (each glyph is still upright).
+
+## Persistence: `panel_store_get` / `panel_store_set`
+
+A panel's `state` lives and dies with the process. There is deliberately no
+file API in the panel vocabulary — a sketch that can open any path is a
+different security story — so a panel that must remember something across a
+restart uses the store:
+
+```petal
+state todos = json_parse(panel_store_get("todos") ?? "[]")
+# …after an edit…
+panel_store_set("todos", json_stringify(todos))
+```
+
+- **String → string, scoped to the script's own path.** Two panels running
+  different scripts cannot see each other's keys, and no script names a file.
+  `panel_store_set(key, nil)` deletes a key.
+- **One JSON file per script**, under `~/.garden/panel-store/`, named after the
+  script's absolute path (slugified, plus a hash so two same-named scripts in
+  different directories don't collide). `GARDEN_PANEL_STORE_DIR` overrides the
+  directory — how a test gets a scratch store.
+- **Written after any frame that changed it**, atomically (temp file +
+  rename), so a crash mid-write leaves the previous contents intact. A frame
+  that changes nothing writes nothing.
+- **Capped** at 256 KiB per value and 1024 keys: over either, the `set` call
+  errors instead of growing a file without bound. It is a place to keep the
+  kilobyte of state a panel owns, not a database.
+- A write failure (read-only home, full disk) reaches the script's `print`
+  output rather than failing the frame — the panel keeps drawing.
 
 
 ## Input: what a focused panel receives

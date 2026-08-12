@@ -1,0 +1,93 @@
+// Every drawing primitive a panel has, on one screen — the visual reference
+// for the vocabulary in docs/petal-graphical-panels.md, and the fixture the
+// renderer is checked against.
+//
+// Use it from a layout script:   panel("examples/panels/shapes.ptl")
+
+let w = screen_width()
+let h = screen_height()
+
+clear(14, 16, 22)
+
+fn label(text, x, y)
+  draw_text(text, x, y, 12, 150, 160, 180)
+end
+
+// ── Row 1: strokes ────────────────────────────────────────────────────────
+// A polyline is one shape, so a translucent stroke composites evenly instead
+// of darkening at every join the way overlapping circles or lines do.
+label("polyline", 20, 16)
+let zig = [[20, 40], [60, 90], [100, 40], [140, 90], [180, 40]]
+draw_polyline(zig, 90, 200, 255, 120, 14)
+
+label("draw_line x4 (for contrast)", 210, 16)
+let lines = [[210, 40], [250, 90], [290, 40], [330, 90], [370, 40]]
+for i in range(0, 4) do
+  draw_line(lines[i][0], lines[i][1], lines[i + 1][0], lines[i + 1][1], 90, 200, 255, 120, 14)
+end
+
+// ── Row 2: conics ─────────────────────────────────────────────────────────
+label("ellipse", 20, 120)
+draw_ellipse(70, 165, 48, 24, 240, 120, 90)
+
+label("ellipse outline", 150, 120)
+draw_ellipse_outline(210, 165, 48, 24, 240, 200, 90, 255, 5)
+
+label("circle outline", 300, 120)
+draw_circle_outline(340, 165, 26, 120, 220, 140, 255, 4)
+
+// ── Row 3: arcs — one call per donut segment, not a hand-rolled quad fan ──
+label("fill_arc donut", 20, 210)
+let cx = 80
+let cy = 275
+let slices = [0.35, 0.25, 0.22, 0.18]
+let colors = [[88, 166, 255], [63, 185, 80], [210, 153, 34], [248, 81, 73]]
+var a0 = -1.5708
+for i in range(0, 4) do
+  let a1 = a0 + slices[i] * 6.28318
+  fill_arc(cx, cy, 26.0, 52.0, a0, a1, colors[i][0], colors[i][1], colors[i][2])
+  set a0 = a1
+end
+
+// A pie slice is the same call with no hole.
+label("pie", 170, 210)
+fill_arc(215, 275, 0.0, 50.0, 2.2, 5.6, 188, 140, 255)
+
+// ── Row 4: fills ──────────────────────────────────────────────────────────
+// A five-pointed star: concave, so `fill_poly`'s first-vertex fan would spill
+// between the arms. `fill_polygon` triangulates it properly.
+label("fill_polygon (concave)", 300, 210)
+var star = []
+for i in range(0, 10) do
+  let r = if i % 2 == 0 then 46.0 else 19.0 end
+  let t = 6.28318 * float(i) / 10.0 - 1.5708
+  set star = append(star, [365 + int(r * cos(t)), 275 + int(r * sin(t))])
+end
+fill_polygon(star, 255, 214, 102)
+
+label("fill_fan", 460, 210)
+var rim = []
+for i in range(0, 9) do
+  let t = 3.14159 * float(i) / 8.0
+  set rim = append(rim, [520 + int(46.0 * cos(t)), 275 + int(46.0 * sin(t))])
+end
+fill_fan(520, 275, rim, 120, 200, 255)
+
+// ── Row 5: rounded frames ────────────────────────────────────────────────
+// Genuinely hollow, at any radius — what two stacked rounded fills can't do.
+label("rounded outline", 20, 330)
+draw_rect_rounded_outline(20, 350, 160, 70, 14, 88, 166, 255, 255, 3)
+draw_rect_rounded_outline(200, 350, 160, 70, 1, 248, 81, 73, 255, 2)
+draw_text("radius 14 / radius 1", 32, 378, 12, 230, 236, 243)
+
+// ── Persistence ───────────────────────────────────────────────────────────
+// `panel_store_*` is scoped to this script's path and survives a restart, so a
+// panel can remember something without any file API.
+state runs = 0
+if runs == 0 then
+  runs = int(panel_store_get("runs") ?? "0") + 1
+  panel_store_set("runs", str(runs))
+end
+draw_text("run #{runs} (remembered across restarts)", 400, 378, 12, 150, 160, 180)
+
+draw_rect_outline(0, 0, w, h, 44, 52, 68)

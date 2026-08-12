@@ -93,6 +93,15 @@ isn't touching. The heuristic:
   settle" window.
 - **After 10s idle the panel sleeps**: no run, no redraw, until the next input
   wakes it. Its last frame stays on screen.
+- **`--panel-wake` overrides the window** process-wide: a bare `--panel-wake`
+  never sleeps, `--panel-wake 60` sets the window in seconds. A running game is
+  exactly the case the sleep model gets wrong, and a headless harness driving
+  one has no user input to keep re-stamping activity with.
+
+For a test, prefer `POST /tick {"n": 60, "dt": 0.016}` (see
+[debug-server.md](debug-server.md#stepping-frames-and-resetting-panels)): it runs
+frames on demand with a `dt` you choose, ignoring the wake window entirely, so an
+animation test is neither a sleep nor a stream of fake keypresses.
 
 A trap for any script that wants to **poll on a timer**: a panel reads `time()`
 only on a frame, and it only runs frames while awake, so a `time() >= next` check

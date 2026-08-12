@@ -28,7 +28,19 @@ export interface PaneState {
   cursor?: Cursor;
   line_count?: number;
   process?: { name?: string };
-  panel?: { values?: Record<string, unknown> } | null;
+  panel?: {
+    values?: Record<string, unknown>;
+    /** Which panel frame `values` came from, and whether that is the frame
+     *  that just ran: a key missing from a *stale* map means the frame that
+     *  would have bound it raised, not that its branch never ran. */
+    values_frame?: number | null;
+    values_stale?: boolean;
+    /** The failing frame's own bindings, as far as it got. */
+    values_partial?: { frame: number; values: Record<string, unknown> } | null;
+    frame?: number;
+    awake?: boolean;
+    error?: string | null;
+  } | null;
 }
 
 export interface AppState {
@@ -46,6 +58,12 @@ export interface ScenePrimitive {
   text?: string;
   pos?: [number, number];
   color?: [number, number, number, number];
+  rect?: Rect;
+  /** For a `mesh`: the batch split back into one entry per fill (consecutive
+   *  same-colour triangles), each with its own bounds. Panel fills are all
+   *  meshes, and consecutive ones are batched, so this — not the primitive's
+   *  own `rect` — is what a layout assertion searches. */
+  shapes?: { rect: Rect; color: [number, number, number, number]; triangles: number }[];
 }
 
 export interface MouseReply {
@@ -99,6 +117,31 @@ export class DebugClient {
 
   state(): Promise<AppState> {
     return this.getJson<AppState>("/state");
+  }
+
+  /** `/state` with each panel's `values` map narrowed — pass exact names and/or
+   *  a prefix. Unfiltered, `values` is every binding the script made (seeded
+   *  data and colour constants included), which on a real app is thousands of
+   *  lines per read. `{ values: "none" }` drops the map entirely. */
+  stateValues(opts: { values?: string[] | "none"; prefix?: string }): Promise<AppState> {
+    const params = new URLSearchParams();
+    if (opts.values === "none") params.set("values", "none");
+    else if (opts.values?.length) params.set("values", opts.values.join(","));
+    if (opts.prefix) params.set("values_prefix", opts.prefix);
+    return this.getJson<AppState>(`/state?${params.toString()}`);
+  }
+
+  /** Advance every panel by `n` frames of `dt` seconds, ignoring the sleep/wake
+   *  window and without fabricating any input — how to drive an animation or a
+   *  game deterministically. */
+  tick(n = 1, dt = 1 / 60): Promise<{ panel_frames?: number } | null> {
+    return this.post<{ panel_frames?: number }>("/tick", { n, dt });
+  }
+
+  /** Restart every file-backed panel from source, discarding Petal `state` —
+   *  the way to re-run a seeded-data generator without killing the process. */
+  resetPanels(): Promise<{ panels_reset?: number } | null> {
+    return this.post<{ panels_reset?: number }>("/panel/reset", {});
   }
 
   scene(): Promise<{ primitives: ScenePrimitive[] }> {

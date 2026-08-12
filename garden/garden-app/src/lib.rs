@@ -62,7 +62,9 @@ pub fn run() {
     // command line, so it must come last (put garden's own flags before it).
     let mut subprocess: Option<Vec<String>> = None;
 
-    let mut args = std::env::args().skip(1);
+    // Peekable so a flag with an *optional* argument (`--panel-wake [secs]`) can
+    // look at the next token without consuming a following flag.
+    let mut args = raw_args.clone().into_iter().peekable();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => {
@@ -78,6 +80,22 @@ pub fn run() {
                 subprocess = Some(rest);
             }
             "--headless" => mode = Mode::Headless,
+            // Panels sleep 10s after their last activity, which is right for a
+            // drawer nobody is touching and wrong for a running game: a headless
+            // harness driving one has no user input to keep re-stamping
+            // activity with, and its panel goes quiet mid-test. `--panel-wake`
+            // with no argument never sleeps; `--panel-wake 60` sets the window
+            // in seconds.
+            "--panel-wake" => {
+                let secs = args
+                    .peek()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .filter(|s| *s >= 0.0);
+                if secs.is_some() {
+                    args.next();
+                }
+                panel_view::set_panel_wake(secs.map(std::time::Duration::from_secs_f64));
+            }
             "--term" | "--terminal" => mode = Mode::Terminal,
             "--init" => match args.next() {
                 Some(path) => init_override = Some(PathBuf::from(path)),
@@ -684,6 +702,8 @@ fn print_usage() {
         "  --headless       Run without any UI; drive via the debug server (needs --debug-port)"
     );
     eprintln!("  --debug-port <n> Start the debug server on port n (0 picks a free port)");
+    eprintln!("  --panel-wake [s] Keep panels animating instead of sleeping 10s after the last");
+    eprintln!("                   input; a number sets the window in seconds, bare = never sleep");
     eprintln!("  --subprocess <cmd> [args…]  Launch an arbitrary GPP client as the layout.");
     eprintln!("                   A bare <cmd> resolves beside `garden` (e.g. sqlite-browser),");
     eprintln!("                   else on $PATH. Must be last — put garden's flags before it.");

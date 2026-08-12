@@ -185,6 +185,50 @@ print([old_max(1, 2), max(1, 2)])
     ).toBe(`[2, "shadowed"]`);
   });
 
+  it("a caller of a shadowing overload is held back with it", () => {
+    // The prelude shape: a file grabs the native (`let _native = max`),
+    // redeclares the name with a different arity, and a widget below calls the
+    // record form. The widget mentions no top-level `let`, so it used to be
+    // hoisted above the declarations — where `max` still named the 2-argument
+    // native, so `widget()` compiled against the wrong overload and died with
+    // an arity error. Blocking is transitive now: a `fn` that references a
+    // non-hoistable `fn` cannot be hoisted either.
+    expect(
+      runPetal(`
+let _native_max = max
+
+fn max(r)
+  _native_max(r.a, r.b)
+end
+
+fn widget()
+  max({a: 1, b: 2})
+end
+
+print(widget())
+`)
+    ).toBe("2");
+  });
+
+  it("blocking is transitive through a chain of callers", () => {
+    // `mid` is blocked because it calls the shadowing `max`; `outer` is
+    // blocked because it calls `mid`.
+    expect(
+      runPetal(`
+let _native_max = max
+
+fn max(r)
+  _native_max(r.a, r.b)
+end
+
+fn mid(r) max(r) end
+fn outer() mid({a: 3, b: 9}) end
+
+print(outer())
+`)
+    ).toBe("9");
+  });
+
   it("a call to a not-hoistable declaration below is a compile diagnostic", () => {
     // The residue hoisting cannot fix. Before, this was a bare runtime
     // `Cannot call nil` and `petal check` passed clean.

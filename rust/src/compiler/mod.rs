@@ -1181,13 +1181,15 @@ impl Compiler {
         // Which top-level `fn`s are hoisted, and which of them need a cell.
         // Both are decided before anything is emitted, because the cells have
         // to exist before the first hoisted body is compiled.
-        let mut hoistable = hoistable_fn_names(stmts);
         // A `fn` that *shadows* a name already in scope — a builtin, or an
         // import — is left exactly where it is. Reading the old meaning before
         // the shadow lands is a deliberate idiom (`let _draw_line = draw_line`
         // above `fn draw_line`), and both hoisting the declaration and binding
-        // the name to a cell would silently turn that read into nil.
-        hoistable.retain(|n| self.scope_lookup(n).is_none());
+        // the name to a cell would silently turn that read into nil. That is
+        // handed to `hoistable_fn_names` rather than filtered out afterwards,
+        // so a caller of such a `fn` is held back with it — a hoisted caller
+        // would bind to the shadowed meaning.
+        let hoistable = hoistable_fn_names(stmts, |n| self.scope_lookup(n).is_some());
         let mut forward = forward_referenced_fns(stmts);
         forward.extend(late_bound_fn_refs(stmts, &hoistable));
         // Same two exclusions as hoisting: a name already in scope keeps its
@@ -1330,10 +1332,27 @@ fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
 ///
 /// An overloaded name is hoisted only if every arity is: the overload set is
 /// emitted once the last variant compiles, so a split would gain nothing.
-fn hoistable_fn_names(stmts: &[Stmt]) -> HashSet<String> {
+///
+/// Blocking is **transitive**. A hoisted body is compiled up front, so every
+/// name it calls resolves against the scope as it stands *there* — and a
+/// function that stayed behind has not bound its name yet. When the stay-behind
+/// also shadows something (`let _rect = draw_rect` above
+/// `fn draw_rect(r, c)`, the shape every prelude uses), the early call does not
+/// fail loudly: it binds to the *old* meaning, the 7-argument native, and the
+/// record-form call dies at run time. So a function that references a
+/// non-hoistable top-level function is itself non-hoistable, to a fixpoint.
+///
+/// `shadows_existing` reports the names already bound where the file starts —
+/// a builtin or an import the file redeclares. Those declarations are left
+/// where they are for the same reason (see `prescan_emit`), which makes them
+/// blocked seeds here so their callers are held back too.
+fn hoistable_fn_names(stmts: &[Stmt], shadows_existing: impl Fn(&str) -> bool) -> HashSet<String> {
     let computed = top_level_value_names(stmts);
 
-    let mut hoistable: HashSet<String> = HashSet::new();
+    // Every top-level `fn`, with the names its body mentions. Kept so the
+    // fixpoint below can re-ask "does this one reach anything blocked?"
+    // without re-walking the AST.
+    let mut fn_refs: Vec<(&str, HashSet<String>)> = Vec::new();
     // A name a `let`/`state` also declares is never hoisted: the two
     // declarations shadow each other in source order, and moving one of them
     // would change which meaning the statements between them see.
@@ -1345,17 +1364,36 @@ fn hoistable_fn_names(stmts: &[Stmt]) -> HashSet<String> {
         let StmtKind::FnDecl { name, body, .. } = &stmt.kind else {
             continue;
         };
-        if idents_in_stmts(body)
-            .iter()
-            .any(|id| computed.contains(id.as_str()))
-        {
+        let refs = idents_in_stmts(body);
+        if refs.iter().any(|id| computed.contains(id.as_str())) || shadows_existing(name) {
             blocked.insert(name.clone());
-        } else {
-            hoistable.insert(name.clone());
+        }
+        fn_refs.push((name.as_str(), refs));
+    }
+
+    // Fixpoint: a `fn` that reaches a blocked name is blocked. Terminates
+    // because `blocked` only grows and is bounded by the file's `fn` names.
+    loop {
+        let mut changed = false;
+        for (name, refs) in &fn_refs {
+            if blocked.contains(*name) {
+                continue;
+            }
+            if refs.iter().any(|id| blocked.contains(id.as_str())) {
+                blocked.insert((*name).to_string());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
         }
     }
-    hoistable.retain(|n| !blocked.contains(n));
-    hoistable
+
+    fn_refs
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .filter(|n| !blocked.contains(n))
+        .collect()
 }
 
 /// Warn about the one forward reference hoisting cannot fix: a top-level

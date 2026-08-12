@@ -482,22 +482,9 @@ end
 // The live palette a widget paints with: `ui_theme()`, with the module default
 // standing in if a caller ever emptied it.
 //
-// Widgets call this as `_palette(theme)`, naming the top-level `theme` binding
-// explicitly, and that mention is LOAD-BEARING, not documentation. The compiler
-// hoists a top-level `fn` whose body mentions nothing the file computes above
-// the file's own statements — and up there the `export fn draw_rect(r, c)`
-// overloads that shadow the flat draw natives have not been bound yet, so every
-// `draw_rect(r, c)` in a hoisted widget falls through to the 7-argument native
-// and dies at runtime with "Expected int at arg 1, got record". Mentioning a
-// top-level `let` keeps the widget compiled where it is written.
-//
-// TODO(compiler): `hoistable_fn_names` (rust/src/compiler/mod.rs) should block a
-// function that references a *non-hoistable* top-level fn — the shadowing draw
-// overloads are exactly that — instead of leaving module authors to defend
-// against it by hand. Remove this dance once it does.
-fn _palette(defaults)
+fn _palette()
   let live = ui_theme()
-  if len(keys(live)) == 0 then defaults else live end
+  if len(keys(live)) == 0 then theme else live end
 end
 
 // The live palette. Widgets read this through `_palette`, never `theme`
@@ -561,7 +548,7 @@ end
 // `style` overrides any of {bg, hover, fg, outline, size}; anything it omits
 // comes from `ui_theme()`. A `{}` style is the themed button.
 export fn button(r, label, style)
-  let t = _palette(theme)
+  let t = _palette()
   let bg = if hovered(r) then _get(style, "hover", t.hover) else _get(style, "bg", t.panel) end
   draw_rect(r, bg)
   draw_rect_outline(r, _get(style, "outline", t.outline))
@@ -723,7 +710,7 @@ end
 // `ui_theme()`.
 export fn draw_scrollbar(r, count, rows, scroll, style)
   if count > rows then
-    let t = _palette(theme)
+    let t = _palette()
     let bar_w = _get(style, "width", 4)
     let track = {x: r.x + r.w - bar_w, y: r.y, w: bar_w, h: r.h}
     draw_rect(track, _get(style, "track", t.outline))
@@ -820,7 +807,7 @@ end
 // `style` overrides any of {active, inactive, size}; omitted keys come from
 // `ui_theme()`.
 export fn section_label(label, x, y, active, style)
-  let t = _palette(theme)
+  let t = _palette()
   let size = _get(style, "size", 14)
   let color = if active then _get(style, "active", t.accent) else _get(style, "inactive", t.dim) end
   draw_text(label, {x: x, y: y}, size, color)
@@ -882,7 +869,7 @@ end
 // `style` overrides any of {bg, fg, outline, focus, caret, size, inset};
 // omitted keys come from `ui_theme()`.
 export fn draw_text_field(r, text, has, style)
-  let t = _palette(theme)
+  let t = _palette()
   let accent = _get(style, "focus", t.accent)
   draw_rect(r, _get(style, "bg", t.panel))
   let border = if has then accent else _get(style, "outline", t.outline) end
@@ -1113,7 +1100,7 @@ export fn context_menu(m, items, style)
   if !m.open || len(items) == 0 then
     {menu: m, index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
   else
-    let t = _palette(theme)
+    let t = _palette()
     let mm = menu_metrics(style)
     let r = menu_rect(m, items, style)
     let mx = mouse_x()

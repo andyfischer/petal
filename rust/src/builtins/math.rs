@@ -1,5 +1,6 @@
 //! Basic math, trig, and numeric conversion: abs, sqrt, floor, ceil, round,
-//! float, int, random, min, max, sin/cos/tan, atan2, pi.
+//! float, int, parse_float, parse_int, random, min, max, sin/cos/tan, atan2,
+//! pi.
 
 use crate::native_fn::PetalCxt;
 use crate::value::{Value, compare_values};
@@ -82,8 +83,74 @@ pub(super) fn native_ceil(state: &mut PetalCxt) -> Result<u32, String> {
     unary_num_preserving(state, "ceil", |n| n, f64::ceil, |_| 0.0)
 }
 
+/// Parse `s` as a float the way `float`/`parse_float` accept it: surrounding
+/// whitespace is ignored, and only a finite number counts (so `"inf"`/`"nan"`,
+/// which `f64::from_str` accepts, are rejected — a spreadsheet cell reading
+/// "nan" is bad input, not a value).
+fn parse_f64(s: &str) -> Option<f64> {
+    match s.trim().parse::<f64>() {
+        Ok(f) if f.is_finite() => Some(f),
+        _ => None,
+    }
+}
+
 pub(super) fn native_float(state: &mut PetalCxt) -> Result<u32, String> {
+    // A numeric string converts, mirroring `int("42")`; anything else falls
+    // through to the dual-aware numeric path.
+    if state.arg_count() == 1 {
+        if let Value::String(id) = state.get_value(1)? {
+            let s = state.heap().get_string(id).to_string();
+            return match parse_f64(&s) {
+                Some(f) => {
+                    state.push_float(f);
+                    Ok(1)
+                }
+                None => Err(format!("Cannot convert '{}' to float", s)),
+            };
+        }
+    }
     unary_float_dual(state, "float", |x| x, |_| 1.0)
+}
+
+/// `parse_float(s)` — the failable counterpart of `float`: `nil` instead of an
+/// abort when the text isn't a number, so user input can be validated rather
+/// than crashing the program that read it.
+pub(super) fn native_parse_float(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "parse_float")?;
+    match state.get_value(1)? {
+        Value::Int(n) => state.push_float(n as f64),
+        Value::Float(f) => state.push_float(f),
+        Value::String(id) => {
+            let s = state.heap().get_string(id).to_string();
+            match parse_f64(&s) {
+                Some(f) => state.push_float(f),
+                None => state.push_nil(),
+            }
+        }
+        _ => state.push_nil(),
+    }
+    Ok(1)
+}
+
+/// `parse_int(s)` — the failable counterpart of `int`. Only a whole number
+/// parses; `"3.5"` is `nil`, because silently truncating a user's "3.5" into 3
+/// is the kind of quiet wrong answer this builtin exists to avoid. Use
+/// `int(parse_float(s))` when truncation is what you want.
+pub(super) fn native_parse_int(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "parse_int")?;
+    match state.get_value(1)? {
+        Value::Int(n) => state.push_int(n),
+        Value::Float(f) => state.push_int(f as i64),
+        Value::String(id) => {
+            let s = state.heap().get_string(id).to_string();
+            match s.trim().parse::<i64>() {
+                Ok(n) => state.push_int(n),
+                Err(_) => state.push_nil(),
+            }
+        }
+        _ => state.push_nil(),
+    }
+    Ok(1)
 }
 
 pub(super) fn native_int(state: &mut PetalCxt) -> Result<u32, String> {
@@ -152,7 +219,48 @@ pub(super) fn native_max(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// Round `x` to `places` decimal digits. Negative `places` rounds to a power of
+/// ten to the left of the point (`round(1234.0, -2) == 1200.0`). Beyond ±17
+/// digits the scaling would overflow the f64's precision without changing the
+/// value, so the number is returned as-is.
+fn round_to_places(x: f64, places: i64) -> f64 {
+    if !x.is_finite() || places > 17 || places < -17 {
+        return x;
+    }
+    let factor = 10f64.powi(places as i32);
+    (x * factor).round() / factor
+}
+
 pub(super) fn native_round(state: &mut PetalCxt) -> Result<u32, String> {
+    if state.arg_count() == 2 {
+        let places = state.get_int(2)?;
+        return match state.get_value(1)? {
+            // An int is already whole: only rounding to the *left* of the
+            // point can change it, and it stays an int either way.
+            Value::Int(n) => {
+                let r = if places >= 0 {
+                    n
+                } else {
+                    round_to_places(n as f64, places) as i64
+                };
+                state.push_int(r);
+                Ok(1)
+            }
+            Value::Float(f) => {
+                state.push_float(round_to_places(f, places));
+                Ok(1)
+            }
+            Value::Dual { value, derivative } => {
+                // Rounding is a step function: derivative 0 almost everywhere.
+                state.push_value(Value::Dual {
+                    value: round_to_places(value, places),
+                    derivative: 0.0 * derivative,
+                });
+                Ok(1)
+            }
+            _ => Err("round() expects a number".to_string()),
+        };
+    }
     unary_num_preserving(state, "round", |n| n, f64::round, |_| 0.0)
 }
 

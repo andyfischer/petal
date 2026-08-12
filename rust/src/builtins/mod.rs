@@ -256,6 +256,18 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     );
     table.intrinsic_declare_method = Some(declare_method_id);
 
+    // --- Failable numeric parsing + character-indexed strings (append-only) ---
+    // `parse_*` return nil instead of aborting, so a program reading user input
+    // can validate it. The `char_*` family indexes text by character where
+    // `len`/`slice` index by byte.
+    table.register("parse_float", math::native_parse_float);
+    table.register("parse_int", math::native_parse_int);
+    table.register("chars", collections::native_chars);
+    table.register("char_len", collections::native_char_len);
+    table.register("char_at", collections::native_char_at);
+    table.register("char_slice", collections::native_char_slice);
+    table.register("index_of", collections::native_index_of);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);

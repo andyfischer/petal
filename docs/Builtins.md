@@ -58,13 +58,18 @@ ceil(3.2)   // 4.0
 ceil(-1.7)  // -1.0
 ```
 
-### `round(x)`
+### `round(x)` / `round(x, places)`
 
-Rounds to the nearest integer (returns float).
+Rounds to the nearest integer, or — with `places` — to that many decimal
+digits. Int-preserving: an `int` argument rounds to an `int`. A negative
+`places` rounds to the left of the decimal point.
 
 ```petal
-round(3.4)   // 3.0
-round(3.6)   // 4.0
+round(3.4)            // 3.0
+round(3.6)            // 4.0
+round(3.14159, 2)     // 3.14
+round(1234.0, -2)     // 1200.0
+round(7, 3)           // 7
 ```
 
 ### `min(a, b)`
@@ -184,10 +189,20 @@ keeps animation, layout, and generative code readable.
 
 Constrain a value to the range `[lo, hi]`.
 
+Int-preserving, like `min`/`max`: three `int` arguments give an `int`, so a
+clamped value is still usable as a list index or a `range` bound. One `float`
+argument makes the result a `float`, the same rule `+` follows.
+
 ```petal
 clamp(15.0, 0.0, 10.0)   // 10.0
 clamp(-3.0, 0.0, 10.0)   //  0.0
 clamp(5.0, 0.0, 10.0)    //  5.0
+clamp(9, 0, 5)           // 5     (int in, int out)
+clamp(3, 0.0, 5)         // 3.0   (one float makes it float)
+```
+
+```petal ignore
+xs[clamp(i, 0, len(xs) - 1)]   // a clamped index is still an index
 ```
 
 ### `lerp(a, b, t)`
@@ -393,10 +408,40 @@ int("42")    // 42
 
 ### `float(value)`
 
-Converts to a float.
+Converts to a float. Accepts numbers and numeric strings (surrounding
+whitespace is ignored). A string that isn't a number aborts the program — use
+[`parse_float`](#parse_floats--parse_ints) when the input might be bad.
 
 ```petal
-float(42)    // 42.0
+float(42)      // 42.0
+float("3.5")   // 3.5
+float("42")    // 42.0
+```
+
+### `parse_float(s)` / `parse_int(s)`
+
+The failable conversions: they return `nil` instead of aborting when the text
+isn't a number. This is what a calculator, spreadsheet cell, or form field
+wants — reading bad input should be a value you can test, not a crash.
+
+`parse_int` accepts only whole numbers; `"3.5"` is `nil` rather than a silent
+truncation to 3. Write `int(parse_float(s))` when truncating is the intent.
+
+```petal
+parse_float("3.5")     // 3.5
+parse_float("abc")     // nil
+parse_float("")        // nil
+parse_int("42")        // 42
+parse_int("3.5")       // nil
+```
+
+```petal ignore
+let n = parse_float(text_input())
+if n == nil then
+  show_error("Enter a number")
+else
+  total = total + n
+end
 ```
 
 ### `type(value)`
@@ -602,6 +647,78 @@ Flattens one level of nesting.
 ```petal
 flat([[1, 2], [3, 4]])       // [1, 2, 3, 4]
 flat([[1, [2]], [3]])         // [1, [2], 3]
+```
+
+### `index_of(collection, needle)`
+
+Position of the first occurrence, or `-1` when absent. On a list that is the
+element index; on a string it is a **character** index, so the result can be
+handed straight to [`char_at`](#char_ats-i) or
+[`char_slice`](#char_slices-start-end). `contains` only answers yes/no, which
+otherwise forces a hand-written scan to find out *where*.
+
+```petal
+index_of([10, 20, 30], 20)     // 1
+index_of([10, 20], 99)         // -1
+index_of("hello world", "wor") // 6
+index_of("abc", "z")           // -1
+```
+
+```petal ignore
+let i = index_of(line, "=")
+if i >= 0 then
+  let key = char_slice(line, 0, i)
+  let value = char_slice(line, i + 1)
+end
+```
+
+## Text (character-indexed)
+
+`len` and `slice` count **bytes** — right for buffers, wrong for text: in
+`"Óscar"` the first character is two bytes, so `slice("Óscar", 0, 1)` returns
+`""` and a "first letter" loop silently produces wrong data. The builtins here
+count **characters** instead, so a program that means "the first letter" gets
+the first letter.
+
+### `chars(s)`
+
+The string as a list of single-character strings.
+
+```petal
+chars("Óscar")   // ["Ó", "s", "c", "a", "r"]
+chars("")        // []
+```
+
+### `char_len(s)`
+
+Number of characters, as opposed to `len`'s bytes.
+
+```petal
+char_len("Óscar")   // 5
+len("Óscar")        // 6
+```
+
+### `char_at(s, i)`
+
+The single character at character index `i`. Negative indices count from the
+end. An out-of-range index yields `""` rather than aborting, so a loop that
+runs one past the end degrades instead of killing the program.
+
+```petal
+char_at("Óscar", 0)    // "Ó"
+char_at("Óscar", -1)   // "r"
+char_at("Óscar", 99)   // ""
+```
+
+### `char_slice(s, start, end?)`
+
+`slice` for text: the indices count characters. Negative indices count from the
+end, both ends clamp, and `end` defaults to the end of the string.
+
+```petal
+char_slice("Óscar Delgado", 0, 1)   // "Ó"
+char_slice("Óscar", 1)              // "scar"
+char_slice("Óscar", -3, -1)         // "ca"
 ```
 
 ## Higher-Order Functions

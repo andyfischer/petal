@@ -9,6 +9,19 @@ use super::require_args;
 
 pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "clamp")?;
+    // Int-preserving, the same contract `min`/`max` already keep: a clamped
+    // list index or `range` bound has to stay an int, or the caller gets
+    // "Cannot index list with float" for what reads like integer arithmetic.
+    // Only an all-int call stays int; one float argument makes the whole
+    // expression float, as it does for `+`.
+    if let (Value::Int(v), Value::Int(lo), Value::Int(hi)) = (
+        state.get_value(1)?,
+        state.get_value(2)?,
+        state.get_value(3)?,
+    ) {
+        state.push_int(v.max(lo).min(hi));
+        return Ok(1);
+    }
     let v = state.get_float(1)?;
     let lo = state.get_float(2)?;
     let hi = state.get_float(3)?;

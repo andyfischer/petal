@@ -20,8 +20,8 @@
 //! 2. **Argument-dependent results are computed, not assumed.** `abs`, `floor`,
 //!    `ceil`, `round` and `sign` preserve int-ness (`rust/src/builtins/math.rs`,
 //!    `unary_num_preserving`); `min`/`max` return one of their operands
-//!    unchanged. Those are handled by the match arms below rather than a fixed
-//!    type.
+//!    unchanged, and `clamp` is int for an all-int call. Those are handled by
+//!    the match arms below rather than a fixed type.
 //!
 //! Host builtins registered by an embedding (the `petal-ui` drawing/input set)
 //! are listed too. They are not part of the core runtime, so an embedder
@@ -38,10 +38,35 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
     // Argument-dependent results first.
     match name {
         // `unary_num_preserving`: Int -> Int, Float -> Float, Dual -> Dual.
-        "abs" | "floor" | "ceil" | "round" | "sign" => {
+        "abs" | "floor" | "ceil" | "sign" => {
             return match args {
                 [Type::Int] => Some(Type::Int),
                 [Type::Float] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        // `round` is int-preserving in both its arities: `round(x, places)`
+        // rounds to `places` decimals and keeps the argument's kind.
+        "round" => {
+            return match args {
+                [Type::Int] | [Type::Int, _] => Some(Type::Int),
+                [Type::Float] | [Type::Float, _] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        // `clamp` returns one of its three arguments' kinds: all-int stays int
+        // (so a clamped index or `range` bound is still usable as one), and any
+        // float argument makes the result float, as `+` does.
+        "clamp" => {
+            return match args {
+                [a, b, c] if [a, b, c].iter().all(|t| **t == Type::Int) => Some(Type::Int),
+                [a, b, c]
+                    if [a, b, c]
+                        .iter()
+                        .all(|t| matches!(t, Type::Int | Type::Float)) =>
+                {
+                    Some(Type::Float)
+                }
                 _ => None,
             };
         }
@@ -66,23 +91,24 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
 
     let ty = match name {
         // ── core: int results ───────────────────────────────────────────────
-        "int" | "len" | "random_int" => Type::Int,
+        "int" | "len" | "random_int" | "char_len" | "index_of" => Type::Int,
         // ── core: float results ─────────────────────────────────────────────
         // `float` is `unary_float_dual` like `sqrt` above, but it is also the
         // sanctioned cast: `float(x)` is written precisely to leave the float
         // domain, and treating it as anything but `float` would defeat every
         // annotation that uses it.
-        "float" | "atan2" | "pi" | "random" | "clamp" | "lerp" | "map_range" | "distance"
-        | "mag" | "pow" | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log"
-        | "dot" => Type::Float,
+        "float" | "atan2" | "pi" | "random" | "lerp" | "map_range" | "distance" | "mag" | "pow"
+        | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log" | "dot" => Type::Float,
         // ── core: string results ────────────────────────────────────────────
-        "str" | "type" | "join" | "upper" | "lower" => Type::String,
+        "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" => Type::String,
         // ── core: bool results ──────────────────────────────────────────────
         "contains" | "includes" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
             Type::Bool
         }
         // ── core: list results ──────────────────────────────────────────────
-        "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort" => Type::List,
+        "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort" | "chars" => {
+            Type::List
+        }
         // ── core: record / vec2 results ─────────────────────────────────────
         "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
         "vec2" | "normalize" | "limit" => Type::Vec2,
@@ -121,13 +147,62 @@ mod tests {
         assert_eq!(builtin_return_type("banana", &[]), None);
     }
 
-    /// `clamp` coerces to f64 and pushes a float even for all-int arguments —
-    /// the reason `int(clamp(...))` is a real cast and not a redundant one.
+    /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is
+    /// still an int, so `xs[clamp(i, 0, len(xs) - 1)]` type-checks as an index.
     #[test]
-    fn clamp_is_always_float() {
+    fn clamp_preserves_int_ness() {
         assert_eq!(
             builtin_return_type("clamp", &[Type::Int, Type::Int, Type::Int]),
+            Some(Type::Int)
+        );
+        assert_eq!(
+            builtin_return_type("clamp", &[Type::Float, Type::Int, Type::Int]),
             Some(Type::Float)
+        );
+        assert_eq!(
+            builtin_return_type("clamp", &[Type::Any, Type::Int, Type::Int]),
+            None
+        );
+    }
+
+    /// The two-argument `round(x, places)` keeps its argument's kind too.
+    #[test]
+    fn round_with_places_follows_its_argument() {
+        assert_eq!(
+            builtin_return_type("round", &[Type::Float, Type::Int]),
+            Some(Type::Float)
+        );
+        assert_eq!(
+            builtin_return_type("round", &[Type::Int, Type::Int]),
+            Some(Type::Int)
+        );
+    }
+
+    /// `parse_float`/`parse_int` answer `nil` on bad input, so their result is
+    /// not statically a number and they must stay unlisted.
+    #[test]
+    fn failable_parsers_are_absent() {
+        assert_eq!(builtin_return_type("parse_float", &[Type::String]), None);
+        assert_eq!(builtin_return_type("parse_int", &[Type::String]), None);
+    }
+
+    #[test]
+    fn character_indexed_string_ops() {
+        assert_eq!(
+            builtin_return_type("char_len", &[Type::String]),
+            Some(Type::Int)
+        );
+        assert_eq!(
+            builtin_return_type("chars", &[Type::String]),
+            Some(Type::List)
+        );
+        assert_eq!(
+            builtin_return_type("char_at", &[Type::String, Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("index_of", &[Type::String, Type::String]),
+            Some(Type::Int)
         );
     }
 

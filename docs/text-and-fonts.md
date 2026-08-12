@@ -128,7 +128,7 @@ the binding path is the default, not a requirement.
 | petal-sdl | System sans (`ui`) + system mono (`mono`), SDL_ttf size ladder | yes — SDL_ttf synthetic bold/oblique | yes — per-glyph placement | measured per face × variant |
 | petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText` |
 | diagram-canvas / cube-browser | inherits web-canvas | yes | yes | inherits web-canvas |
-| Garden panels | one embedded JetBrains Mono; every role resolves to it | italic yes; **bold degrades to regular** (no bold face embedded) | yes — the host places each glyph | measured through cosmic-text |
+| Garden panels | one embedded JetBrains Mono; every role resolves to it | italic yes; **bold is synthetic** (no bold face embedded — `weight >= 600` is emboldened by a second offset draw, and measures regular) | yes — the host places each glyph | measured through cosmic-text |
 | petal-fps | 5×7 bitmap font (own command set) | no | no | n/a |
 
 `size` is honored everywhere (per run, including Garden panels).

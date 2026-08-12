@@ -78,6 +78,36 @@ every frame, so a resize just changes the numbers). Colors are `0–255` integer
 RGB (petal-sdl convention), converted to Garden's sRGB `Color` when translated to
 primitives; the renderer then linearizes as usual (`Color::to_linear`).
 
+The pane is **not** the window: it is inset by the tab strip, the status bar and
+a small gutter (a `1440x900` window gives a single pane `x:6 y:38 w:1428
+h:828.4`). A script never needs those numbers — `screen_width()` and
+`screen_height()` are already the pane's — but a *harness* does, and the debug
+server's `panes[0].rect` is where to read them rather than assuming the window
+size. In particular `POST /mouse` takes **window** coordinates while
+`mouse_x()`/`mouse_y()` report **pane-local** ones; the difference is that
+origin.
+
+### Alpha composites in linear space
+
+Colors are converted sRGB → linear before the GPU blends them
+(`BlendState::ALPHA_BLENDING` against an sRGB target), so a low `a` reads far
+brighter than its nominal percentage. Measured on a `#12161e` ground with white:
+
+| `a` | nominal | rendered |
+|---|---|---|
+| 5 | 2% | `#2c2e32` |
+| 10 | 4% | `#3c3d40` |
+| 20 | 8% | `#525355` |
+| 51 | 20% | `#7d7d7e` |
+| 128 | 50% | `#bcbdbd` |
+
+`draw_rect(cell, #ffffff, 10)` is therefore a plainly visible grey block, not a
+whisper — panel authors have repeatedly read `a: 10` as a subtle hover tint and
+gone looking for a bug elsewhere. For a genuinely subtle tint, either use a
+single-digit `a` or compute an opaque color with the prelude's `mix` /
+`lerp_color`, which is also idempotent where shapes overlap (alpha is not: two
+50% fills over one pixel read 75%).
+
 ## Animation: sleep/wake heuristics
 
 Garden renders only on dirty frames — there is no continuous loop. A panel that
@@ -119,6 +149,42 @@ still awake. The windowed frontend uses that to pick its control flow:
 `RELOAD_POLL` (~200ms) cadence when everything is asleep. The terminal and
 headless frontends tick panels on their existing poll loop — panels there animate
 at the slow poll rate (acceptable degradation; these targets aren't the point).
+
+### The headless contract
+
+Headless is where panels get driven by a harness, and it is **not** a 60fps loop.
+What a script actually gets there:
+
+- **Roughly one frame per injected event** (measured: about two panel frames per
+  `POST /key`), one per ~200ms idle poll while awake, and one settle before every
+  `/screenshot` or `/scene`. Nothing else makes a frame happen.
+- **`dt()` is wall-clock, so it is large and spiky**: ~0.1–0.2s on an idle poll,
+  and the frame after a pause carries the whole pause. It is not 0.016.
+- **The 10s sleep still applies**, so a simulation with no input simply stops.
+
+A panel that integrates anything physical must therefore **clamp and sub-step its
+own `dt`** — `let step = min(dt(), 0.05)`, then integrate in fixed slices —
+rather than trusting the delta it is handed. A 0.2s step tunnels a ball through
+a paddle.
+
+Drive frames explicitly instead of faking input: `POST /tick {"n": 60, "dt":
+0.016}` gives 60 frames of exactly 16ms each, and `garden --panel-wake` keeps a
+long-running panel from sleeping at all.
+
+### `state` survives a hot reload
+
+Editing a panel's script reloads it in place, and Petal `state` is **carried
+across the reload** — that is deliberate (a reload should not lose your selection
+or scroll position), and it has one consequence worth stating outright, because
+it is the single most common "my edit did nothing" report:
+
+**A `state` value is not recomputed when you change the code that computes it.**
+Edit a seed-data generator, or a function whose result you cached in `state`, and
+the panel keeps showing the old value. Nothing is broken; the initializer simply
+does not run again.
+
+`POST /panel/reset` rebuilds every file-backed panel from source and drops
+`state`, which is the fix — restarting the process is not necessary.
 
 ### Debug visibility
 
@@ -181,9 +247,11 @@ Three of these exist because the naive composition of the older calls is
   with a smaller rounded fill on top is opaque (nothing behind shows through),
   costs two meshes, and degenerates at radius 1. This is one hollow frame.
 
-plus the input/timing reads `dt`, `frame_count`, `screen_width`,
+plus the input/timing reads `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
-`key_down`, `key_pressed`, `scroll_y`, `text_width`, and the `clip`/`clip_none`
+`mouse_released`, `click_count`, `drag_active`, `key_down`, `key_pressed`,
+`key_released`, **`mod_shift`, `mod_ctrl`, `mod_alt`, `mod_cmd`**, `scroll_x`,
+`scroll_y`, `text_input`, `text_width`, and the `clip`/`clip_none`
 calls documented under "Interactivity" below. All of these —
 and the `ui` prelude widgets (`rect`/`point_in`/`hovered`, the record `draw_*`
 overloads, `button`, `list_update`, `scroll_update`, `truncate_tail`, `wrap`, `preview`,
@@ -192,6 +260,19 @@ overloads, `button`, `list_update`, `scroll_update`, `truncate_tail`, `wrap`, `p
 `menu_sep`, `menu_open_on_right_click`, `menu_blocking`, `menu_show`,
 `menu_close`, `menu_rect`) — come from `petal-ui` as an implicit import, so
 scripts call them bare.
+
+**The whole Petal builtin table is available too.** A panel is an ordinary Petal
+program with extra natives registered, not a sandboxed subset: everything in
+[`../../docs/Builtins.md`](../../docs/Builtins.md) is callable. Worth naming,
+because panel authors have gone hunting for them or hand-rolled them —
+`random(min, max)`, `random_int(lo, hi)` and `choose(list)` for seeded data;
+`clamp` / `min` / `max` / `round(x, places)`, all int-preserving, so a computed
+index or pixel offset stays an int; `parse_int` / `parse_float`, which answer
+`nil` on bad input instead of aborting the frame; `chars` / `char_len` /
+`char_at` / `char_slice` / `index_of` for text that may not be ASCII (`len` and
+`slice` are byte-indexed); and `json_parse` / `json_stringify`, which is what
+pairs with `panel_store_*` below. The only things a panel does *not* get are the
+host-specific natives another embedder registers.
 
 Three things a panel used to have to reimplement are also in the prelude now:
 
@@ -220,19 +301,38 @@ A **context menu** is two calls, because an immediate-mode pass has to reconcile
 z-order with input order: the menu must be *drawn* last to sit on top, but its
 click must be claimed *before* the widgets underneath react to the same press.
 So the rest of the panel stands down for the frame while one is open, and the
-menu resolves the click at the end:
+menu resolves the click at the end.
+
+The two halves are not "top-ish" and "bottom-ish" — they are different kinds of
+call and each has a hard position:
+
+- **`menu_blocking(m)` is an input guard.** It goes above the panel's own click
+  handling, so nothing underneath reacts to the press the open menu owns.
+- **`context_menu(m, items)` is a DRAW call.** It must come after the panel's
+  *last* drawing call — the bottom of the frame, not the bottom of the input
+  section. Since [draw order is call order](#draw-order), calling it early paints
+  the menu and then paints the panel's own background straight over it: the menu
+  vanishes entirely, with no error to explain why. (This has already cost an
+  author a session.)
 
 ```petal
 state menu = menu_state()
-// near the top, before the panel's own click handling:
+
+// input, near the top — before the panel's own click handling:
 if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
 menu = menu_open_on_right_click(menu, row, i)   // right-click arms it, tagged with `i`
-…
-// near the bottom, so it draws over everything:
+
+…all of the panel's drawing…
+
+// the LAST draw call in the frame:
 let picked = context_menu(menu, [menu_item("Only this"), menu_sep(), menu_item("All", enabled)])
 menu = picked.menu
 if picked.index >= 0 then … picked.label, picked.tag … end
 ```
+
+`context_menu` also returns the menu's landing rect (what `menu_rect(m, items)`
+computes), so a panel that needs the box does not re-derive it from the metric
+constants.
 
 `picked.index` counts **every** entry, separators included, so a `menu_sep()`
 shifts the indices after it. Escape and a click outside dismiss without
@@ -309,7 +409,7 @@ with omitted ones meaning plain text. What Garden does with each:
 | `size` | honored per run |
 | `font` | one embedded face — every role and family resolves to it, and the measurement side agrees |
 | `italic` | passed to cosmic-text; resolves when a matching face is available |
-| `weight` | **degrades to regular** — only JetBrains Mono Regular is embedded, so a bold request comes back regular (and measures regular, so layout stays correct) |
+| `weight` | **synthetic** — only JetBrains Mono Regular is embedded, so a run at `weight >= 600` is emboldened by drawing it twice at a size-proportional sub-pixel offset. Visibly heavier, but a thickening rather than a true Bold cut; advances are untouched, so it still *measures* regular and layout stays correct |
 | `spacing` | honored — the host places each glyph, with the pen matching `text_width` exactly |
 
 Embedding the Bold face would light `weight` up with no protocol change.

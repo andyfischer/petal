@@ -182,12 +182,12 @@ runs under the headless frontend for scripted testing and screenshotting:
 PORT=8080
 garden petal-ide /abs/path/my.ptl --headless --debug-port $PORT &
 # inject edits into the editor (pane 0) …
-curl -s -X POST localhost:$PORT/key  -d '{"key":"G"}'
-curl -s -X POST localhost:$PORT/key  -d '{"key":"o"}'
-curl -s -X POST localhost:$PORT/text -d '{"text":"draw_circle(100, 100, 30, 240, 90, 80)"}'
+curl -s -X POST 127.0.0.1:$PORT/key  -d '{"key":"G"}'
+curl -s -X POST 127.0.0.1:$PORT/key  -d '{"key":"o"}'
+curl -s -X POST 127.0.0.1:$PORT/text -d '{"text":"draw_circle(100, 100, 30, 240, 90, 80)"}'
 # … then observe the panel it drives (pane 1):
-curl -s localhost:$PORT/state | jq '.panes[1].panel | {frame, error, values}'
-curl -s localhost:$PORT/screenshot -o canvas.png   # offscreen GPU render
+curl -s 127.0.0.1:$PORT/state | jq '.panes[1].panel | {frame, error, values}'
+curl -s 127.0.0.1:$PORT/screenshot -o canvas.png   # offscreen GPU render
 ```
 
 `/state` exposes each panel's `frame` counter, every value its last good frame
@@ -198,10 +198,10 @@ pixels. Full protocol: [`debug-server.md`](debug-server.md).
 The toolbar controls are `/menu` actions, so a headless session drives them too:
 
 ```bash
-curl -s -X POST localhost:$PORT/menu -d '{"action":"ToggleIr"}'    # open the IR pane
-curl -s -X POST localhost:$PORT/menu -d '{"action":"TogglePlay"}'  # pause the canvas
+curl -s -X POST 127.0.0.1:$PORT/menu -d '{"action":"ToggleIr"}'    # open the IR pane
+curl -s -X POST 127.0.0.1:$PORT/menu -d '{"action":"TogglePlay"}'  # pause the canvas
 # the IR pane names its selected stage + rendered size, so both are observed:
-curl -s localhost:$PORT/state | jq '.panes[] | select(.panel.script|test("ir_view"))
+curl -s 127.0.0.1:$PORT/state | jq '.panes[] | select(.panel.script|test("ir_view"))
                                     | .panel.values'  # incl. stage, stage_count,
                                                       # body_len, has_error (a bool)
 ```
@@ -330,8 +330,8 @@ The highlight is exposed on each editor pane's `/state`, so the canvas→source
 mapping is assertable without decoding pixels:
 
 ```bash
-curl -s -X POST localhost:$PORT/mouse -d '{"op":"move","x":761,"y":182}'
-curl -s localhost:$PORT/state | jq '.panes[0].trace_highlight'
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"move","x":761,"y":182}'
+curl -s 127.0.0.1:$PORT/state | jq '.panes[0].trace_highlight'
 # { "start": { "line": 15, "col": 0 }, "end": { "line": 15, "col": 39 } }
 ```
 
@@ -342,7 +342,7 @@ would act on, not just the range the editor bands. There is one pointer, so
 there is one of these; it is `null` when the pointer is over no shape:
 
 ```bash
-curl -s localhost:$PORT/state | jq '.trace | {callee, line: .call.start.line, args}'
+curl -s 127.0.0.1:$PORT/state | jq '.trace | {callee, line: .call.start.line, args}'
 # {
 #   "callee": "draw_rect",
 #   "line": 53,
@@ -363,8 +363,8 @@ The jump gesture is drivable too — `/mouse` takes the same `mods` array `/key`
 does (`"shift": true` still works as the shorthand it always was):
 
 ```bash
-curl -s -X POST localhost:$PORT/mouse -d '{"op":"click","x":761,"y":182,"mods":["cmd"]}'
-curl -s localhost:$PORT/state | jq '{focus, cursor: .panes[0].cursor}'
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":761,"y":182,"mods":["cmd"]}'
+curl -s 127.0.0.1:$PORT/state | jq '{focus, cursor: .panes[0].cursor}'
 # { "focus": 0, "cursor": { "line": 15, "col": 0 } }
 ```
 
@@ -448,11 +448,11 @@ pair of numbers to move.
 The gesture is three debug-server calls, which is how its tests are written:
 
 ```bash
-curl -s -X POST localhost:$PORT/mouse -d '{"op":"down","x":735,"y":314,"mods":["cmd"]}'
-curl -s -X POST localhost:$PORT/mouse -d '{"op":"move","x":775,"y":339}'
-curl -s -X POST localhost:$PORT/mouse -d '{"op":"up"}'
-curl -s localhost:$PORT/buffer/0 | sed -n 24p     # the rewritten line
-curl -s localhost:$PORT/state | jq .status_note   # what the drag reported
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"down","x":735,"y":314,"mods":["cmd"]}'
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"move","x":775,"y":339}'
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"up"}'
+curl -s 127.0.0.1:$PORT/buffer/0 | sed -n 24p     # the rewritten line
+curl -s 127.0.0.1:$PORT/state | jq .status_note   # what the drag reported
 ```
 
 #### The argument detail behind it

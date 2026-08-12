@@ -43,12 +43,16 @@ return  break  continue  state  enum  import  export  true  false  nil
 not globally reserved. `class` in particular stays usable as an ordinary
 identifier and as the JSX attribute `<div class="…">`.
 
+A reserved keyword is still usable as a **member name**, where nothing else
+could be meant: `{when: 3, end: 10}`, `r.when`, and the same names in record
+patterns.
+
 ### Literals
 
 | Kind | Examples |
 |------|----------|
 | int | `42`, `-3`, `0` |
-| float | `3.14`, `-0.5`, `1.0`, `.001` (leading zero optional) |
+| float | `3.14`, `-0.5`, `1.0`, `.001` (leading zero optional), `1e9`, `1.5e-3`, `2E+4` (scientific) |
 | bool | `true`, `false` |
 | nil | `nil` |
 | string | `"hello"`, `"line\n"` |

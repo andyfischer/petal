@@ -430,10 +430,17 @@ end
 
 #### For loops as mapping expressions
 
-Used in **value position** — assigned to a name, `return`ed, passed as an
-argument, or placed as a list element — a `for` loop evaluates to a **list**
-built from the last expression of each iteration. This turns a loop into a
-mapping:
+Used in **value position** a `for` loop evaluates to a **list** built from the
+last expression of each iteration. This turns a loop into a mapping. The rule is
+simply *"the loop's value is used"*; in full, that is when the loop is
+
+- assigned to a name (`let xs = for … end`),
+- `return`ed,
+- passed as an argument (`len(for … end)`, `print(for … end)`),
+- placed as a list element (`[for … end, 9]`),
+- **used as a record field value** (`{rows: for … end}`),
+- interpolated into a string (`"{for … end}"`),
+- or in a **tail position** — see below.
 
 ```petal
 let squares = for i in range(1, 6) do
@@ -446,15 +453,33 @@ fn doubled(xs)
 end
 ```
 
-**Tail positions count as value positions.** A loop that is the last statement
-of a function body (the implicit return), of a value-position `if` branch, or of
-a collecting loop's body collects just the same — no `return` or intermediate
-binding needed:
+**Tail positions count as value positions.** A loop that ends a construct whose
+own value is used collects just the same — no `return` or intermediate binding
+needed. That covers a function body's **implicit return**, an **`if`/`else`
+branch tail**, a **`match` arm tail**, and the body of an enclosing collecting
+loop:
 
 ```petal
 fn doubled(xs)
-    for x in xs do x * 2 end    // implicit return: [2, 4, 6] for [1, 2, 3]
+    for x in xs do x * 2 end        // implicit return: [2, 4, 6] for [1, 2, 3]
 end
+
+fn rows(n)
+    if n > 0 then
+        for i in range(0, n) do i end   // if-branch tail: [0, 1, 2] for n = 3
+    else
+        []
+    end
+end
+
+fn tagged(n)
+    match n
+        when 0 -> []
+        when m -> for i in range(0, m) do i + 100 end   // match-arm tail
+    end
+end
+
+let grouped = {ids: for i in range(0, 3) do i end}      // record field: [0, 1, 2]
 ```
 
 A `for` loop only produces a list when its value is actually used ("captured").
@@ -563,6 +588,38 @@ fn factorial(n)
     end
 end
 ```
+
+### Declaration order: top-level `fn`s are hoisted
+
+A top-level `fn` is usable **above** where it is written, so declaration order
+inside a file does not matter and mutual recursion works — the table stakes for
+parsers, tree-walkers and state machines:
+
+```petal
+fn is_even(n)
+    if n == 0 then true else is_odd(n - 1) end
+end
+
+fn is_odd(n)
+    if n == 0 then false else is_even(n - 1) end
+end
+
+print(is_even(10))  // true
+```
+
+The hoist is deliberately conservative, because moving a declaration must never
+change what it captures. A top-level `fn` stays exactly where it is written when
+
+- its body mentions something the file computes at run time (a top-level `let`,
+  `var`, `state`, or an enum variant), or
+- it shadows a name already in scope — so `let old_max = max` above `fn max`
+  still reads the builtin.
+
+For the one case that leaves — a top-level *call* to a declaration below it that
+was not hoistable — the compiler reports it as "call to `h` before its
+declaration" at compile time, rather than leaving a bare runtime `Cannot call
+nil` at the call site. A reference from *inside* another function body is always
+fine: that body runs after the whole file has.
 
 ### Lambdas
 
@@ -1044,9 +1101,10 @@ live edit working and failing any more.
 unpinned one is recovered as a *may*-edge to every method of that name, since
 which one runs is not knowable until the receiver arrives.
 
-One thing does not change: nothing in Petal hoists, so a call above its
-`fn Class.method` is never pinned to it — it keeps the runtime search, which
-finds the method by the time the call actually runs.
+Declaration order no longer decides this. Top-level declarations are
+[hoisted](#declaration-order-top-level-fns-are-hoisted), methods included and in
+source order, so a `c.bump()` written *above* its `fn C.bump` pins to that
+method just as one written below it does.
 
 ### The built-in `Rect`
 

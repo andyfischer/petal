@@ -20,6 +20,12 @@ cargo run -p garden-app -- --debug-port 0    # OS picks a free port
 cargo run -p garden-app -- --headless --debug-port 8080   # headless requires a port
 ```
 
+**Address it as `127.0.0.1:<port>`, never `localhost:<port>`.** On macOS
+`localhost` resolves to `::1` first, and when several Gardens are running (agents
+in one checkout, say) that has repeatedly landed a session on someone else's
+process — you then debug someone else's app. Every example in this doc uses the
+literal `127.0.0.1` on purpose.
+
 The server binds loopback only — `127.0.0.1` and, on the same port, `[::1]`, so
 that `localhost:<port>` cannot reach a *different* Garden (see
 [Which Garden am I talking to?](#which-garden-am-i-talking-to)). The bound port
@@ -260,13 +266,13 @@ does not exist replies `{"ok": false, "error": "no window with ordinal n"}`; a
 non-numeric or `0` ordinal is a 400.
 
 ```bash
-curl -s localhost:$PORT/windows | jq .                      # who's open, who's focused
+curl -s 127.0.0.1:$PORT/windows | jq .                      # who's open, who's focused
 # per-char command-line entry (see below) types :windownew
-for c in : w i n d o w n e w; do curl -s -X POST localhost:$PORT/key -d "{\"key\":\"$c\"}" >/dev/null; done
-curl -s -X POST localhost:$PORT/key -d '{"key":"enter"}'    # spawn a second window
-curl -s "localhost:$PORT/buffer/0?window=1"                 # window 1's buffer
-curl -s "localhost:$PORT/buffer/0?window=2"                 # window 2's, independently
-curl -s -X POST "localhost:$PORT/key?window=1" -d '{"key":"w","mods":["cmd"]}'  # close just window 1
+for c in : w i n d o w n e w; do curl -s -X POST 127.0.0.1:$PORT/key -d "{\"key\":\"$c\"}" >/dev/null; done
+curl -s -X POST 127.0.0.1:$PORT/key -d '{"key":"enter"}'    # spawn a second window
+curl -s "127.0.0.1:$PORT/buffer/0?window=1"                 # window 1's buffer
+curl -s "127.0.0.1:$PORT/buffer/0?window=2"                 # window 2's, independently
+curl -s -X POST "127.0.0.1:$PORT/key?window=1" -d '{"key":"w","mods":["cmd"]}'  # close just window 1
 ```
 
 `tools/multi-window-integration-test.ts` drives this end to end (windowed
@@ -308,9 +314,9 @@ instead of sleeping — e.g. wait until a redraw after your input has been
 built:
 
 ```bash
-before=$(curl -s localhost:$PORT/frame | jq .frame)
-curl -s -X POST localhost:$PORT/key -d '{"key":"j"}' > /dev/null
-until [ "$(curl -s "localhost:$PORT/frame?min=$((before + 1))" | jq .reached)" = true ]; do :; done
+before=$(curl -s 127.0.0.1:$PORT/frame | jq .frame)
+curl -s -X POST 127.0.0.1:$PORT/key -d '{"key":"j"}' > /dev/null
+until [ "$(curl -s "127.0.0.1:$PORT/frame?min=$((before + 1))" | jq .reached)" = true ]; do :; done
 ```
 
 The server never blocks a request on a future frame: requests are answered on
@@ -444,10 +450,10 @@ is the authoritative list. Each routes through the same `App::dispatch_menu` a
 real click does, so behavior matches the menu exactly.
 
 ```bash
-curl -s localhost:$PORT/menu | jq '.actions[].action'          # what can I fire?
-curl -s -X POST localhost:$PORT/menu -d '{"action":"SplitDown"}'
-curl -s -X POST localhost:$PORT/menu -d '{"action":"SetTheme","arg":"light"}'
-curl -s -X POST localhost:$PORT/menu -d '{"action":"OpenFile","arg":"README.md"}'
+curl -s 127.0.0.1:$PORT/menu | jq '.actions[].action'          # what can I fire?
+curl -s -X POST 127.0.0.1:$PORT/menu -d '{"action":"SplitDown"}'
+curl -s -X POST 127.0.0.1:$PORT/menu -d '{"action":"SetTheme","arg":"light"}'
+curl -s -X POST 127.0.0.1:$PORT/menu -d '{"action":"OpenFile","arg":"README.md"}'
 ```
 
 `POST /menu` replies with the standard input acknowledgment plus an `action`
@@ -461,14 +467,14 @@ required `arg` return a 400 `{"ok": false, "error": …}`.
 PORT=8080   # any free port you like
 cargo run -p garden-app -- --debug-port $PORT &
 
-curl -s localhost:$PORT/state | jq '.panes[].title'     # what's open?
-curl -s -X POST localhost:$PORT/mouse \
+curl -s 127.0.0.1:$PORT/state | jq '.panes[].title'     # what's open?
+curl -s -X POST 127.0.0.1:$PORT/mouse \
      -d '{"op":"drag","x":80,"y":30,"to":{"x":300,"y":90}}'   # select by drag
-curl -s localhost:$PORT/state | jq '.panes[0].selection.text'  # what got selected?
-curl -s -X POST localhost:$PORT/text -d '{"text":"replacement"}'
-curl -s -X POST localhost:$PORT/key -d '{"key":"z","mods":["cmd"]}'  # undo
-curl -s localhost:$PORT/screenshot -o shot.png          # see the result
-curl -s localhost:$PORT/buffer/0 | diff - README.md     # buffer vs disk
+curl -s 127.0.0.1:$PORT/state | jq '.panes[0].selection.text'  # what got selected?
+curl -s -X POST 127.0.0.1:$PORT/text -d '{"text":"replacement"}'
+curl -s -X POST 127.0.0.1:$PORT/key -d '{"key":"z","mods":["cmd"]}'  # undo
+curl -s 127.0.0.1:$PORT/screenshot -o shot.png          # see the result
+curl -s 127.0.0.1:$PORT/buffer/0 | diff - README.md     # buffer vs disk
 ```
 
 ## Which Garden am I talking to?
@@ -489,7 +495,7 @@ Check it first when more than one Garden is running — two sessions have each
 spent time debugging the other's app. The server binds **both** `127.0.0.1` and
 `[::1]` on its port for the same reason: `localhost` resolves to `::1` first on
 macOS, so an IPv4-only bind left the same port number on the v6 side free for a
-different process, and `curl localhost:$PORT` could reach it. If the v6 bind
+different process, and `curl 127.0.0.1:$PORT` could reach it. If the v6 bind
 fails (someone else already holds it) Garden prints a warning at startup and you
 should address it as `127.0.0.1:$PORT` explicitly.
 

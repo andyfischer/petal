@@ -344,14 +344,14 @@ impl Compiler {
         }
     }
 
-    /// Reject a capture of a module binding that is rebound after this closure
-    /// was defined.
+    /// Warn about a capture of a reactive (`state`) module binding that is
+    /// rebound after this closure was defined.
     ///
     /// The capture is by value at the closure's own position, so a rebinding
-    /// below it produces a term the closure never sees — and in a script that
-    /// re-runs each frame, that reads as one frame of lag rather than as an
-    /// error. See [`crate::compiler::capture_lag`] for why this is an error
-    /// rather than a warning.
+    /// below it produces a term the closure never sees — and for a `state`, in
+    /// a script that re-runs each frame, that reads as one frame of lag. A
+    /// `let` is left alone: capture-at-definition is its defined meaning. See
+    /// [`crate::compiler::capture_lag`].
     fn check_capture_is_not_rebound(&mut self, name: &str, span: SourceSpan) {
         // Cells are exempt: their reads are live, and `get` marks them.
         if self.binding_is_var(name) || !self.is_outer_function_binding(name) {
@@ -373,15 +373,15 @@ impl Compiler {
         let Some(Some(frozen_at)) = self.closure_def_ends.first().copied() else {
             return;
         };
-        let Some(rebind) = self.module_rebinds.first_after(name, frozen_at) else {
+        let Some(rebind) = self.module_rebinds.lagging_rebind(name, frozen_at) else {
             return;
         };
-        self.error_at(
+        self.warn_at(
             span,
             format!(
-                "`{name}` is rebound on line {}, after this function was defined, so this \
-                 reads the value captured at the definition and not the current one. \
-                 Pass it in as a parameter instead.",
+                "`{name}` is a `state` binding written on line {}, after this function was \
+                 defined, so this reads the value captured at the definition — one run \
+                 behind the write. Pass it in as a parameter if you want the current value.",
                 rebind.start.line
             ),
         );

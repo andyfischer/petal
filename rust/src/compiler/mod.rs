@@ -945,6 +945,13 @@ impl Compiler {
         false
     }
 
+    /// Record a non-fatal diagnostic at `span`. Compilation succeeds; the
+    /// warning rides along on the compiled program, like the type checker's.
+    pub(super) fn warn_at(&mut self, span: SourceSpan, message: String) {
+        self.warnings
+            .push(crate::diagnostic::Diagnostic { span, message });
+    }
+
     /// Record a fatal compile error at `span`. Compilation continues so a
     /// single run can report more than one, but `compile_modules` will fail.
     pub(super) fn error_at(&mut self, span: SourceSpan, message: String) {

@@ -1,26 +1,41 @@
-//! Reject a closure that captures a module binding which is rebound after it.
+//! Warn about a closure that captures a *reactive* module binding which is
+//! rebound after it.
 //!
 //! A closure captures by value at its own textual position: `MakeClosure` takes
 //! the term carrying the name's value on the line the `fn` is written, and a
-//! later rebinding produces a *different* term the closure never sees. That is
-//! the correct consequence of `let` being an immutable dataflow edge — but it
-//! means the read inside the body silently answers a different question from
-//! the same read written one scope out, and in a script that re-runs each frame
-//! the gap is exactly one frame, every frame.
+//! later rebinding produces a *different* term the closure never sees.
 //!
-//! So the capture is an error, and the fix is to take the value as a parameter.
-//! The same move as §2a's cross-function `=` (docs/dev/var-next-steps.md): the
-//! honest half of the behaviour was the half that failed.
+//! # `let` is not a hazard
 //!
-//! Together with `get` this closes the hole from both sides. `get` says which
-//! *timing* a cell read wants; this says a lexical read can only capture a name
-//! whose value is settled. After both, a bare name inside a function body is
-//! always a value that cannot change under you.
+//! For a `let` that is the *defined* semantics, not a mistake: a rebinding is a
+//! new binding, and a function written above it is supposed to see the earlier
+//! one — exactly as it would if the rebinding were spelled `let` a second time.
+//! Nothing is stale, so nothing is reported. Capture-at-definition is the
+//! documented answer and the rule stays quiet about it.
+//!
+//! # `state` is
+//!
+//! A `state` name is not a fresh binding per assignment: `x = e` on a `state`
+//! lowers to a `StateWrite` into the persisted slot (see
+//! `Compiler::rebind_name`), and the *next* run of the file initialises the name
+//! from that slot. So a function above the write reads the value the slot held
+//! when the file reached the `fn` — the value from the previous frame. The read
+//! is a frame behind, every frame, which is the shape that reads as input lag
+//! rather than as a mistake. That earns a warning, and the fix is to take the
+//! value as a parameter.
+//!
+//! It is only a warning: the behaviour is well-defined and sometimes what the
+//! author wanted, so a whole program must not fail to compile over it.
+//!
+//! Cells (`var`, `state var`) are exempt from this pass entirely. A bare read
+//! of an outer cell is already rejected by `check_cell_read_says_get`, and the
+//! `get` it demands is a live read that cannot lag — `get` says which timing a
+//! cell read wants, and this pass covers the non-cell half.
 //!
 //! # Where the rule deliberately stops
 //!
-//! Two shapes keep today's behaviour, both because flagging them would cost
-//! more than it buys:
+//! Two further shapes keep today's behaviour, both because flagging them would
+//! cost more than it buys:
 //!
 //! - **Inline lambdas.** `map(xs, fn(a) … end)` runs and discards its callback
 //!   inside the statement that created it, so it cannot outlive a later
@@ -32,10 +47,10 @@
 //!   rebinds `x`), but the rebindings scanned here are module-level only.
 //!
 //! Both are under-approximations: they let a real hazard through rather than
-//! reject working code, which is the right way round for a rule that is a hard
-//! error.
+//! shout at working code, which is the right way round for a rule that fires
+//! without being asked.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{AssignTarget, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_expr, walk_stmt};
 use crate::source_map::SourceSpan;
@@ -50,13 +65,16 @@ use crate::source_map::SourceSpan;
 #[derive(Default)]
 pub(super) struct ModuleRebinds {
     spans: HashMap<String, Vec<SourceSpan>>,
+    /// Module-level `state` names (not `state var`, which is a cell). Only
+    /// these are reported: a rebound `let` reads its pre-rebinding value by
+    /// design, while a rebound `state` writes the slot the *next* run reads
+    /// from, so the capture is a frame behind.
+    reactive: HashSet<String>,
 }
 
 impl ModuleRebinds {
     pub(super) fn collect(stmts: &[Stmt]) -> Self {
-        let mut out = ModuleRebinds {
-            spans: HashMap::new(),
-        };
+        let mut out = ModuleRebinds::default();
         for stmt in stmts {
             out.visit_stmt(stmt);
         }
@@ -66,8 +84,13 @@ impl ModuleRebinds {
         out
     }
 
-    /// The first rebinding of `name` at or after `offset`, if any.
-    pub(super) fn first_after(&self, name: &str, offset: u32) -> Option<SourceSpan> {
+    /// The first rebinding of `name` at or after `offset` that leaves a capture
+    /// taken at `offset` reading a stale value — `None` when there is none, or
+    /// when `name` is not a reactive (`state`) binding.
+    pub(super) fn lagging_rebind(&self, name: &str, offset: u32) -> Option<SourceSpan> {
+        if !self.reactive.contains(name) {
+            return None;
+        }
         self.spans
             .get(name)?
             .iter()
@@ -91,6 +114,14 @@ impl ExprVisitor for ModuleRebinds {
             // A `set` writes a cell. Cells are exempt: a cell read is live by
             // construction, and `get` is what makes that visible at the read.
             StmtKind::Set { .. } => {}
+            StmtKind::State {
+                name,
+                is_var: false,
+                ..
+            } => {
+                self.reactive.insert(name.clone());
+                walk_stmt(self, s);
+            }
             _ => walk_stmt(self, s),
         }
     }

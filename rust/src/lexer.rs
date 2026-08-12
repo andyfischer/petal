@@ -101,10 +101,9 @@ pub enum Token {
 ///
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
-    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for", "get",
-    "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true",
-    "var",
-    "when", "while",
+    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for",
+    "get", "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true",
+    "var", "when", "while",
 ];
 
 /// Words the parser treats as keywords but the lexer emits as `Ident`.
@@ -155,6 +154,45 @@ pub fn keyword_token(text: &str) -> Option<Token> {
     })
 }
 
+/// The source text of a keyword token, or `None` for anything that is not a
+/// keyword. The inverse of [`keyword_token`].
+///
+/// Used by the parser where a *name* is expected and no keyword could mean
+/// anything else — a record key (`{when: 3}`) or a field access (`r.when`).
+/// Keeping keywords usable there is what stops the keyword set from quietly
+/// stealing ordinary field names.
+pub fn keyword_text(tok: &Token) -> Option<&'static str> {
+    Some(match tok {
+        Token::Let => "let",
+        Token::Var => "var",
+        Token::Set => "set",
+        Token::Get => "get",
+        Token::Fn => "fn",
+        Token::If => "if",
+        Token::Else => "else",
+        Token::For => "for",
+        Token::In => "in",
+        Token::While => "while",
+        Token::Match => "match",
+        Token::Return => "return",
+        Token::Break => "break",
+        Token::Continue => "continue",
+        Token::State => "state",
+        Token::Enum => "enum",
+        Token::End => "end",
+        Token::Then => "then",
+        Token::Do => "do",
+        Token::Elsif => "elsif",
+        Token::When => "when",
+        Token::Import => "import",
+        Token::Export => "export",
+        Token::True => "true",
+        Token::False => "false",
+        Token::Nil => "nil",
+        _ => return None,
+    })
+}
+
 /// Lexer mode for JSX disambiguation.
 #[derive(Debug, Clone, PartialEq)]
 enum LexerMode {
@@ -183,6 +221,11 @@ pub struct Lexer {
     /// the module loader lexes each imported module with its own id so
     /// spans stay file-local. See source_map::FileId.
     file: FileId,
+    /// How many string-interpolation holes (`"… {here} …"`) enclose the
+    /// cursor. Inside a hole a `\"` is accepted as a string delimiter, because
+    /// an editor (or a person) that escapes the quotes of a nested string is
+    /// writing the same thing as a bare `"`. See [`Lexer::read_string_inner`].
+    interp_depth: usize,
 }
 
 impl Lexer {
@@ -203,6 +246,7 @@ impl Lexer {
             line: 1,
             col: 1,
             file,
+            interp_depth: 0,
         }
     }
 
@@ -568,6 +612,13 @@ impl Lexer {
                     ));
                 }
             }
+            // Inside an interpolation hole, `\"` opens a nested string: a
+            // string written inside another string is often escaped by whoever
+            // (or whatever) produced the source, and both spellings mean the
+            // same thing. See `read_string_inner`.
+            '\\' if self.interp_depth > 0 && self.peek_next() == Some('"') => {
+                self.read_string_inner(true)?
+            }
             '#' => self.read_color()?,
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
@@ -612,7 +663,28 @@ impl Lexer {
     }
 
     fn read_string(&mut self) -> Result<(), String> {
+        self.read_string_inner(false)
+    }
+
+    /// Read a string literal starting at the cursor (which sits on the opening
+    /// quote).
+    ///
+    /// `escaped_quotes` is set when the literal was opened by `\"` rather than
+    /// `"` — only possible inside a string-interpolation hole, where a nested
+    /// string may reasonably be written either way:
+    ///
+    /// ```text
+    /// "v {if t then "a" else "b" end}"
+    /// "v {if t then \"a\" else \"b\" end}"
+    /// ```
+    ///
+    /// In that mode a `\"` closes the literal (as does a bare `"`), so the two
+    /// spellings lex identically.
+    fn read_string_inner(&mut self, escaped_quotes: bool) -> Result<(), String> {
         let open_quote = self.current_pos();
+        if escaped_quotes {
+            self.advance_char(); // skip the backslash of the opening `\"`
+        }
         self.advance_char(); // skip opening quote
         let mut s = String::new();
         let mut has_interp = false;
@@ -640,6 +712,19 @@ impl Lexer {
                 return Ok(());
             }
             if ch == '\\' {
+                if escaped_quotes && self.peek_next() == Some('"') {
+                    // `\"` closes a literal that was opened with `\"`.
+                    let close_quote = self.current_pos();
+                    self.advance_n(2);
+                    if has_interp {
+                        self.push_token_span(Token::String(s), part_start, close_quote);
+                        let end = self.current_pos();
+                        self.push_token_span(Token::InterpEnd, close_quote, end);
+                    } else {
+                        self.push_token(Token::String(s), open_quote);
+                    }
+                    return Ok(());
+                }
                 self.advance_char();
                 if self.pos >= self.input.len() {
                     return Err(format!(
@@ -676,7 +761,10 @@ impl Lexer {
                 self.push_token_span(Token::String(s), part_start, after_brace);
                 s = String::new();
 
-                self.tokenize_braced_expr(false, false)?;
+                self.interp_depth += 1;
+                let braced = self.tokenize_braced_expr(false, false);
+                self.interp_depth -= 1;
+                braced?;
                 // The next literal part absorbs the closing `}` just consumed,
                 // so no delimiter is left in an inter-token gap.
                 part_start = self.prev_char_pos();
@@ -740,6 +828,23 @@ impl Lexer {
                 }
             } else {
                 // Could be a method call like `5.method()` - don't consume
+            }
+        }
+
+        // Exponent: `1e9`, `1.5e-3`, `2E+4`. Only consumed when at least one
+        // digit follows (optionally after a sign), so `1.method()` and an
+        // identifier that merely starts with `e` are untouched.
+        if self.pos < self.input.len() && matches!(self.input[self.pos], 'e' | 'E') {
+            let mut ahead = self.pos + 1;
+            if ahead < self.input.len() && matches!(self.input[ahead], '+' | '-') {
+                ahead += 1;
+            }
+            if ahead < self.input.len() && self.input[ahead].is_ascii_digit() {
+                is_float = true;
+                self.advance_n(ahead - self.pos);
+                while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
+                    self.advance_char();
+                }
             }
         }
 
@@ -1283,5 +1388,55 @@ mod tests {
                 Token::JsxSelfClose,
             ]
         );
+    }
+    // ---- numeric literals -------------------------------------------------
+
+    #[test]
+    fn lexes_scientific_notation() {
+        assert_eq!(tokenize("1e9"), vec![Token::Float(1e9)]);
+        assert_eq!(tokenize("1.0e9"), vec![Token::Float(1e9)]);
+        assert_eq!(tokenize("1.5e-3"), vec![Token::Float(1.5e-3)]);
+        assert_eq!(tokenize("2E+4"), vec![Token::Float(2e4)]);
+        assert_eq!(tokenize(".5e2"), vec![Token::Float(50.0)]);
+    }
+
+    #[test]
+    fn exponent_needs_a_digit_to_be_one() {
+        // `e` with nothing numeric after it is an identifier, not an exponent.
+        assert_eq!(
+            tokenize("1 e"),
+            vec![Token::Int(1), Token::Ident("e".into())]
+        );
+        assert_eq!(
+            tokenize("1.method"),
+            vec![Token::Int(1), Token::Dot, Token::Ident("method".into())]
+        );
+    }
+
+    // ---- keyword_text -----------------------------------------------------
+
+    #[test]
+    fn keyword_text_inverts_keyword_token() {
+        for kw in KEYWORDS {
+            let tok = keyword_token(kw).expect("keyword");
+            assert_eq!(keyword_text(&tok), Some(*kw));
+        }
+        assert_eq!(keyword_text(&Token::Ident("when".into())), None);
+        assert_eq!(keyword_text(&Token::Plus), None);
+    }
+
+    // ---- escaped quotes inside an interpolation hole ----------------------
+
+    #[test]
+    fn escaped_quotes_open_a_string_inside_a_hole() {
+        let escaped = tokenize(r#""v {if t then \"a\" else \"b\" end}""#);
+        let bare = tokenize(r#""v {if t then "a" else "b" end}""#);
+        assert_eq!(escaped, bare);
+    }
+
+    #[test]
+    fn a_backslash_outside_a_hole_is_still_an_error() {
+        let mut lexer = Lexer::new("let x = \\");
+        assert!(lexer.tokenize().is_err());
     }
 }

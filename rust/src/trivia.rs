@@ -196,6 +196,9 @@ mod tests {
         assert_round_trips("print(\"sum = {2 + 2} done\")\n");
         assert_round_trips("let s = \"\"\"\n  raw {braces} kept\n\"\"\"\n");
         assert_round_trips("print(\"{ a }{ b }\")\n"); // spaces inside holes
+        // A nested string inside a hole, written both ways.
+        assert_round_trips("print(\"v {if t then \"a\" else \"b\" end}\")\n");
+        assert_round_trips("print(\"v {if t then \\\"a\\\" else \\\"b\\\" end}\")\n");
     }
 
     #[test]

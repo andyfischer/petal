@@ -411,6 +411,7 @@ assignability rules and `petal check`.
 
 - [Language Guide](../language-guide.md) — the full tour with worked examples.
 - [Commas](commas.md) — where commas are required, and how `-` is disambiguated.
+- [Line Continuation](line-continuation.md) — breaking a long expression across lines.
 - [Module System](../module-system.md) — `import`, exports, resolution, hot reload.
 - [Function Overloading](../function-overloading.md) — multi-arity dispatch.
 - [Rebind Operator](rebind-operator.md) — the `@` in-out argument operator.

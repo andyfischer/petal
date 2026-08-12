@@ -129,6 +129,17 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
+/// The name spelling of a token in *member-name* position — a record key or
+/// the field of a field access. Mirrors the parser's `expect_field_name`:
+/// keywords are ordinary names there (`{when: 3}`, `r.when`).
+fn field_name_value(t: &SyntaxToken) -> Option<String> {
+    let tok = t.token()?;
+    if let Token::Ident(name) = tok {
+        return Some(name.clone());
+    }
+    crate::lexer::keyword_text(tok).map(str::to_string)
+}
+
 /// The type-name spelling of a token in type position: a plain identifier, or
 /// the two vocabulary names that lex as keywords (`nil`/`enum`). Mirrors the
 /// parser's `expect_type_name`; the `:`/`->` leaders yield `None` and are
@@ -556,6 +567,15 @@ impl Projector {
             .ok_or_else(|| format!("{:?} missing an identifier token", node.kind()))
     }
 
+    /// The first direct token usable as a member name — a record key or the
+    /// field of a field access, where keywords are ordinary names.
+    fn only_field_name(&self, node: &SyntaxNode) -> Result<String, String> {
+        direct_tokens(node)
+            .iter()
+            .find_map(field_name_value)
+            .ok_or_else(|| format!("{:?} missing an identifier token", node.kind()))
+    }
+
     /// The node's single expression child.
     fn only_expr(&mut self, node: &SyntaxNode) -> Result<Expr, String> {
         let nodes = child_nodes(node);
@@ -611,7 +631,7 @@ impl Projector {
             SyntaxKind::CallExpr => self.call_expr(node),
             SyntaxKind::FieldAccessExpr => {
                 let object = self.field_access_object(node)?;
-                let field = self.only_ident(node)?;
+                let field = self.only_field_name(node)?;
                 let span = SourceSpan {
                     start: object.span.start,
                     end: self.end_of(node)?,
@@ -870,7 +890,7 @@ impl Projector {
         if is_spread {
             Ok(RecordField::Spread(self.only_expr(node)?))
         } else {
-            let key = self.only_ident(node)?;
+            let key = self.only_field_name(node)?;
             Ok(RecordField::Named(key, self.only_expr(node)?))
         }
     }
@@ -1035,7 +1055,7 @@ impl Projector {
             Some(Token::LBrace) => {
                 // Direct identifier tokens are the keys, in order, pairing
                 // with the Pattern child nodes.
-                let keys: Vec<String> = tokens.iter().filter_map(ident_value).collect();
+                let keys: Vec<String> = tokens.iter().filter_map(field_name_value).collect();
                 let values = child_nodes(node);
                 if keys.len() != values.len() {
                     return Err(format!(

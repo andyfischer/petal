@@ -254,6 +254,118 @@ impl Parser {
         }
     }
 
+    /// Is the next token one of `ops`, allowing line breaks in front of it?
+    ///
+    /// A line that *begins* with a binary operator continues the expression on
+    /// the previous line:
+    ///
+    /// ```text
+    /// let total = base
+    ///   + bonus
+    ///   * multiplier
+    /// ```
+    ///
+    /// None of these operators can begin a statement, so a line break before
+    /// one is never a statement boundary — with the single exception of `-`
+    /// (unary negation), which is why the leading-operator rule skips it: a
+    /// line starting with `-` keeps meaning a fresh negated expression. Break
+    /// after the `-` instead (`a -` / `b`), which every operator already
+    /// supports.
+    ///
+    /// Line breaks are consumed only when the operator actually matches, so the
+    /// precedence cascade still unwinds to whichever level owns the operator.
+    fn at_binary_op(&mut self, ops: &[Token]) -> bool {
+        if ops.contains(self.peek()) {
+            return true;
+        }
+        if !matches!(self.peek(), Token::Newline) {
+            return false;
+        }
+        let mut i = self.pos;
+        while matches!(self.tokens.get(i), Some(Token::Newline)) {
+            i += 1;
+        }
+        match self.tokens.get(i) {
+            Some(tok) if Self::continues_line(tok) && ops.contains(tok) => {
+                while self.pos < i {
+                    self.advance();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Operators that may open a continuation line. Everything binary except
+    /// `-` (unary negation) and `<` (which also opens a JSX tag).
+    fn continues_line(tok: &Token) -> bool {
+        matches!(
+            tok,
+            Token::Plus
+                | Token::Star
+                | Token::Slash
+                | Token::Percent
+                | Token::PlusPlus
+                | Token::Eq
+                | Token::Ne
+                | Token::Le
+                | Token::Gt
+                | Token::Ge
+                | Token::And
+                | Token::Or
+                | Token::DoubleQuestion
+                | Token::Pipe
+        )
+    }
+
+    /// Can this token begin a statement? Tokens that cannot (a closing
+    /// delimiter, a separator, a keyword that only ever continues a construct)
+    /// end a block instead of being fed to `parse_stmt`, so the *enclosing*
+    /// construct reports what is unfinished. See
+    /// [`Parser::expect_block_end`].
+    fn can_start_stmt(tok: &Token) -> bool {
+        !matches!(
+            tok,
+            Token::Eof
+                | Token::Comma
+                | Token::Colon
+                | Token::RParen
+                | Token::RBracket
+                | Token::RBrace
+                | Token::Arrow
+                | Token::Then
+                | Token::Do
+                | Token::In
+                | Token::Pipe
+        )
+    }
+
+    /// Consume the `end` that closes a block opened by the token at
+    /// `opener_pos`. When it is missing, name where the unclosed construct
+    /// *started* — the token the parser stopped on is usually a comma or a
+    /// paren many lines later, which tells the reader nothing:
+    ///
+    /// ```text
+    /// f(1, if q then a else b, 2)
+    ///                        ^ "an `if` expression started at line 1 column 6
+    ///                           is unclosed; expected `end`"
+    /// ```
+    fn expect_block_end(&mut self, opener_pos: usize, what: &str) -> Result<(), String> {
+        if matches!(self.peek(), Token::End) {
+            self.advance();
+            return Ok(());
+        }
+        let start = self
+            .token_spans
+            .get(opener_pos)
+            .map(|s| s.start)
+            .unwrap_or(ZERO_SPAN.start);
+        Err(self.error_at_current(format!(
+            "an `{what}` expression started at line {} column {} is unclosed; expected `end`",
+            start.line, start.column
+        )))
+    }
+
     /// Consume the separator between two elements of a delimited,
     /// comma-separated construct (list, argument list, record, pattern, …).
     ///
@@ -855,7 +967,7 @@ impl Parser {
         let mut stmts = Vec::new();
         self.skip_newlines();
         self.ev_open(SyntaxKind::Block);
-        while !matches!(self.peek(), Token::Eof) && !stops.contains(self.peek()) {
+        while Self::can_start_stmt(self.peek()) && !stops.contains(self.peek()) {
             let stmt = self.parse_stmt()?;
             stmts.push(stmt);
             self.skip_newlines();
@@ -973,6 +1085,19 @@ impl Parser {
     /// documented `nil`/`enum` annotations would hit a hard "Expected identifier"
     /// parse error even though the checker recognizes them (see
     /// docs/dev/type-declarations-plan.md §2 grammar).
+    /// A member name: an identifier, or any keyword. Used where a *name* is
+    /// the only thing that can appear — a record key (`{when: 3}`, `{end: 1}`)
+    /// and a field access (`r.when`). No keyword is ambiguous in either spot,
+    /// and reserving the whole keyword set as field names is a papercut that
+    /// costs a program its most natural word.
+    fn expect_field_name(&mut self) -> Result<String, String> {
+        if let Some(kw) = crate::lexer::keyword_text(self.peek()) {
+            self.advance();
+            return Ok(kw.to_string());
+        }
+        self.expect_ident()
+    }
+
     fn expect_type_name(&mut self) -> Result<String, String> {
         let pos = self.pos;
         let name = match self.advance() {
@@ -1016,7 +1141,7 @@ impl Parser {
         // rewrite of `a |> f` into a call.
         let cp = self.ev_checkpoint();
         let mut left = self.parse_or()?;
-        while matches!(self.peek(), Token::Pipe) {
+        while self.at_binary_op(&[Token::Pipe]) {
             let start = self.pos;
             self.advance();
             self.skip_newlines();
@@ -1042,7 +1167,7 @@ impl Parser {
     fn parse_or(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_and()?;
-        while matches!(self.peek(), Token::Or) {
+        while self.at_binary_op(&[Token::Or]) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_and()?;
@@ -1066,7 +1191,7 @@ impl Parser {
     fn parse_and(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_equality()?;
-        while matches!(self.peek(), Token::And) {
+        while self.at_binary_op(&[Token::And]) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_equality()?;
@@ -1090,7 +1215,7 @@ impl Parser {
     fn parse_equality(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_comparison()?;
-        while matches!(self.peek(), Token::Eq | Token::Ne) {
+        while self.at_binary_op(&[Token::Eq, Token::Ne]) {
             let op = match self.advance() {
                 Token::Eq => BinOp::Eq,
                 Token::Ne => BinOp::Ne,
@@ -1118,7 +1243,7 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_coalesce()?;
-        while matches!(self.peek(), Token::Lt | Token::Le | Token::Gt | Token::Ge) {
+        while self.at_binary_op(&[Token::Lt, Token::Le, Token::Gt, Token::Ge]) {
             let op = match self.advance() {
                 Token::Lt => BinOp::Lt,
                 Token::Le => BinOp::Le,
@@ -1152,7 +1277,7 @@ impl Parser {
     fn parse_coalesce(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_concat()?;
-        while matches!(self.peek(), Token::DoubleQuestion) {
+        while self.at_binary_op(&[Token::DoubleQuestion]) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_concat()?;
@@ -1176,7 +1301,7 @@ impl Parser {
     fn parse_concat(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_additive()?;
-        while matches!(self.peek(), Token::PlusPlus) {
+        while self.at_binary_op(&[Token::PlusPlus]) {
             self.advance();
             self.skip_newlines();
             let right = self.parse_additive()?;
@@ -1200,7 +1325,7 @@ impl Parser {
     fn parse_additive(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_multiplicative()?;
-        while matches!(self.peek(), Token::Plus | Token::Minus) {
+        while self.at_binary_op(&[Token::Plus, Token::Minus]) {
             let op = match self.advance() {
                 Token::Plus => BinOp::Add,
                 Token::Minus => BinOp::Sub,
@@ -1228,7 +1353,7 @@ impl Parser {
     fn parse_multiplicative(&mut self) -> Result<Expr, String> {
         let cp = self.ev_checkpoint();
         let mut left = self.parse_unary()?;
-        while matches!(self.peek(), Token::Star | Token::Slash | Token::Percent) {
+        while self.at_binary_op(&[Token::Star, Token::Slash, Token::Percent]) {
             let op = match self.advance() {
                 Token::Star => BinOp::Mul,
                 Token::Slash => BinOp::Div,
@@ -1294,7 +1419,7 @@ impl Parser {
             match self.peek() {
                 Token::Dot => {
                     self.advance();
-                    let field = self.expect_ident()?;
+                    let field = self.expect_field_name()?;
                     self.ev_wrap(cp, SyntaxKind::FieldAccessExpr);
                     expr = Expr {
                         span: SourceSpan {
@@ -1544,7 +1669,7 @@ impl Parser {
                 let expr = self.parse_expr()?;
                 fields.push(RecordField::Spread(expr));
             } else {
-                let key = self.expect_ident()?;
+                let key = self.expect_field_name()?;
                 self.expect(&Token::Colon)?;
                 let value = self.parse_expr()?;
                 fields.push(RecordField::Named(key, value));
@@ -1565,7 +1690,7 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Token::Then)?;
         let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
-        let else_body = self.parse_else_chain()?;
+        let else_body = self.parse_else_chain(start)?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::If {
@@ -1580,7 +1705,7 @@ impl Parser {
     /// Parse the tail of an if-expression after the then-body. Consumes the
     /// single closing `end` for the whole if/elsif/else chain. Precondition:
     /// peek is Elsif, Else, or End.
-    fn parse_else_chain(&mut self) -> Result<Option<ElseBranch>, String> {
+    fn parse_else_chain(&mut self, if_pos: usize) -> Result<Option<ElseBranch>, String> {
         match self.peek() {
             Token::Elsif => {
                 let start = self.pos;
@@ -1590,7 +1715,7 @@ impl Parser {
                 self.skip_newlines();
                 self.expect(&Token::Then)?;
                 let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
-                let else_body = self.parse_else_chain()?; // consumes the final 'end'
+                let else_body = self.parse_else_chain(if_pos)?; // consumes the final 'end'
                 self.ev_close();
                 let inner = self.mk_expr(
                     ExprKind::If {
@@ -1606,12 +1731,12 @@ impl Parser {
                 self.ev_open(SyntaxKind::ElseBranch);
                 self.advance(); // consume 'else'
                 let body = self.parse_block_until(&[Token::End])?;
-                self.expect(&Token::End)?;
+                self.expect_block_end(if_pos, "if")?;
                 self.ev_close();
                 Ok(Some(ElseBranch::Block(body)))
             }
             _ => {
-                self.expect(&Token::End)?;
+                self.expect_block_end(if_pos, "if")?;
                 Ok(None)
             }
         }
@@ -1782,7 +1907,7 @@ impl Parser {
 
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
             self.expect_element_start("a record pattern field")?;
-            let key = self.expect_ident()?;
+            let key = self.expect_field_name()?;
             self.expect(&Token::Colon)?;
             let pat = self.parse_pattern()?;
             fields.push((key, pat));

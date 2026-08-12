@@ -16,6 +16,7 @@ Start here if you're learning or using the language:
 | [Text & Fonts](text-and-fonts.md) | Drawing text: faces, sizes, metrics, and measurement |
 | [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator (`f(@x)` ≡ `x = f(x)`) |
 | [Commas](syntax/commas.md) | Where commas are required, and how `-` is disambiguated |
+| [Line Continuation](syntax/line-continuation.md) | Breaking a long expression across lines |
 | [Examples](examples/README.md) | Documentation code snippets (runnable demos live in [`../examples/`](../examples/README.md)) |
 
 ## Design & internals

@@ -109,6 +109,7 @@ export interface StdlibManifest {
 
 const CATEGORY_TITLES: Record<string, string> = {
   io: "I/O & Types",
+  format: "Formatting",
   math: "Math",
   creative_coding: "Creative-Coding Math",
   noise: "Noise",
@@ -169,13 +170,25 @@ const GET_TYPE: Record<string, ParamType> = {
   get_value: "any",
 };
 
+// Argument readers that wrap `state.get_*` behind a helper taking the stack
+// index as their second argument: `let <name> = <helper>(state, <index>, …)`.
+// Without these, a native that validates an argument through a helper looks to
+// the extractor like it has no parameter at that index at all — and the docs
+// then renumber every later argument (`fill_arc`'s colours slid into slots
+// 3-5). Optional-argument helpers (`opt_int`) stay out on purpose: no optional
+// argument is documented anywhere else either.
+const HELPER_TYPE: Record<string, ParamType> = {
+  point_list_arg: "list",
+  get_num: "float",
+};
+
 /**
  * Pull arity + parameters out of a single `fn native_*` body.
  *
  * Arity comes from `require_args(state, N, …)` when present. Parameters come
- * from `let <name> = state.get_<type>(<index>)?` bindings, keyed by the
- * stack index so we recover them in declared order even across `match` arms;
- * the first binding seen for a given index wins.
+ * from `let <name> = state.get_<type>(<index>)?` bindings (or the `HELPER_TYPE`
+ * accessors), keyed by the stack index so we recover them in declared order
+ * even across `match` arms; the first binding seen for a given index wins.
  */
 function parseFnBody(body: string): {
   arity: number | null;
@@ -187,14 +200,20 @@ function parseFnBody(body: string): {
   const arity = requireArgs ? Number(requireArgs[1]) : null;
 
   const byIndex = new Map<number, Param>();
-  const re =
-    /let\s+(\w+)\s*=\s*(?:match\s+)?state\.(get_int|get_float|get_string|get_list|get_value)\(\s*(\d+)\s*\)/g;
+  const helpers = Object.keys(HELPER_TYPE).join("|");
+  const re = new RegExp(
+    String.raw`let\s+(\w+)\s*=\s*(?:match\s+)?(?:state\.(get_int|get_float|get_string|get_list|get_value)\(\s*(\d+)\s*\)|(${helpers})\(\s*state\s*,\s*(\d+)\s*[,)])`,
+    "g",
+  );
   for (let m; (m = re.exec(body)); ) {
-    const [, name, getter, idxStr] = m;
-    const idx = Number(idxStr);
+    const [, name, getter, getterIdx, helper, helperIdx] = m;
+    const idx = Number(getter ? getterIdx : helperIdx);
     if (idx === 0) continue; // index 0 is the callee slot, not an argument
     if (!byIndex.has(idx) && name !== "_") {
-      byIndex.set(idx, { name, type: GET_TYPE[getter] });
+      byIndex.set(idx, {
+        name,
+        type: getter ? GET_TYPE[getter] : HELPER_TYPE[helper],
+      });
     }
   }
   const params = [...byIndex.entries()]

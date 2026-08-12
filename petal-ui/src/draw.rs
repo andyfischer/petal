@@ -946,15 +946,21 @@ fn native_draw_circle_outline(state: &mut PetalCxt) -> NativeResult {
     let cx = state.get_int(1)?;
     let cy = state.get_int(2)?;
     let radius = state.get_int(3)?;
+    // Read r/g/b as named bindings rather than a loop: the stdlib doc
+    // extractor recovers a native's signature from `let <name> = state.get_*`
+    // bindings, and a loop index leaves it with no name to report.
+    let r = state.get_int(4)?;
+    let g = state.get_int(5)?;
+    let b = state.get_int(6)?;
     let mut args = vec![
         Value::Int(cx),
         Value::Int(cy),
         Value::Int(radius),
         Value::Int(radius),
+        Value::Int(r),
+        Value::Int(g),
+        Value::Int(b),
     ];
-    for index in 4..=6 {
-        args.push(Value::Int(state.get_int(index)?));
-    }
     args.push(Value::Int(opt_int(state, 7, 255)?)); // a
     args.push(Value::Int(opt_int(state, 8, 1)?)); // width
     emit_draw(state, "ellipse_outline", args);

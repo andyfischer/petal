@@ -71,6 +71,59 @@ describe("stdlib extractor", () => {
     ]);
   });
 
+  it("recovers arguments read through a helper, not just state.get_*", () => {
+    // Regression: when draw.rs moved its point-list and float arguments behind
+    // `point_list_arg(state, i, …)` / `get_num(state, i, …)`, the extractor saw
+    // no binding at those indices and silently dropped them — so `fill_arc`
+    // documented its colours as arguments 3-5 when they are really 7-9, and
+    // `fill_poly` lost its point list entirely.
+    expect(byName.get("fill_arc")!.params.map((p) => p.name)).toEqual([
+      "cx",
+      "cy",
+      "r_in",
+      "r_out",
+      "a0",
+      "a1",
+      "r",
+      "g",
+      "b",
+    ]);
+    expect(byName.get("fill_arc")!.params[2].type).toBe("float");
+
+    for (const name of ["fill_poly", "fill_polygon", "draw_polyline"]) {
+      const fn = byName.get(name)!;
+      expect(fn.params.length, `${name} lost its point list`).toBe(4);
+      expect(fn.params[0].type).toBe("list");
+      expect(fn.params.slice(1).map((p) => p.name)).toEqual(["r", "g", "b"]);
+    }
+  });
+
+  it("documents a full colour triple for every solid-colour drawing call", () => {
+    // A drawing native that takes r/g/b must say so. A body that reads its
+    // colour through a loop index (`for i in 4..=6 { state.get_int(i) }`)
+    // leaves the extractor with no name to report, which reads in the docs as
+    // "this call takes no colour".
+    for (const name of [
+      "draw_rect",
+      "draw_circle",
+      "draw_circle_outline",
+      "draw_ellipse",
+      "draw_ellipse_outline",
+      "fill_arc",
+      "fill_fan",
+      "fill_triangle",
+      "fill_poly",
+      "draw_polyline",
+    ]) {
+      const names = byName.get(name)!.params.map((p) => p.name);
+      expect(names.slice(-3), `${name} is missing r/g/b`).toEqual([
+        "r",
+        "g",
+        "b",
+      ]);
+    }
+  });
+
   it("flags arg-count-dispatching builtins as variadic", () => {
     expect(byName.get("noise")!.variadic).toBe(true);
     expect(byName.get("print")!.variadic).toBe(true);

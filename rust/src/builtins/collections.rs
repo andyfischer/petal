@@ -163,6 +163,55 @@ pub(super) fn native_append(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `prepend(list, value)` returns a NEW list with `value` in front of every
+/// element of `list` (value semantics; the input is never mutated). The mirror
+/// of `append`, which had no counterpart — building a list front-to-back
+/// previously meant `concat([x], xs)` or a reverse at the end.
+///
+/// Never in place: the first element moves every existing element up one slot,
+/// so there is no store to reuse without an O(n) shift either way.
+pub(super) fn native_prepend(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "prepend")?;
+    let list = state.get_value(1)?;
+    let val = state.get_value(2)?;
+    match list {
+        Value::List(id) => {
+            let mut items = Vec::with_capacity(state.heap().list_len(id) + 1);
+            items.push(val);
+            items.extend_from_slice(state.heap().get_list(id));
+            state.push_list(items);
+            Ok(1)
+        }
+        _ => Err("prepend() expects a list".into()),
+    }
+}
+
+/// `concat(a, b)` joins two lists (or two strings) into a NEW one. This is the
+/// operation `append(xs, ys)` is often mistaken for: `append` adds `ys` as a
+/// single *element*, `concat` splices its elements in.
+pub(super) fn native_concat(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "concat")?;
+    match (state.get_value(1)?, state.get_value(2)?) {
+        (Value::List(a), Value::List(b)) => {
+            let mut items = state.heap().get_list(a).to_vec();
+            items.extend_from_slice(state.heap().get_list(b));
+            state.push_list(items);
+            Ok(1)
+        }
+        (Value::String(a), Value::String(b)) => {
+            let mut s = state.heap().get_string(a).to_string();
+            s.push_str(state.heap().get_string(b));
+            state.push_string(s);
+            Ok(1)
+        }
+        (a, b) => Err(format!(
+            "concat() expects two lists or two strings, got {} and {}",
+            a.type_name(),
+            b.type_name()
+        )),
+    }
+}
+
 /// Deprecated alias for `append`. Kept temporarily so existing scripts keep
 /// compiling while they migrate to `xs = append(xs, x)`. Like `append`, it is
 /// immutable and returns a new list — statement-form `push(xs, x)` no longer
@@ -305,8 +354,13 @@ pub(super) fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 /// Sort key extracted from Values so sorting doesn't need heap access.
+///
+/// Shared by the plain `sort(list)` below and the VM-side `sort_by(list, key_fn)`
+/// intrinsic (`backend::bytecode::vm::intrinsics`), so both orderings — direct
+/// and by extracted key — agree on how numbers, strings, and everything else
+/// rank against each other.
 #[derive(PartialEq)]
-enum SortKey {
+pub(crate) enum SortKey {
     Num(f64),
     Str(String),
     Other,
@@ -315,6 +369,18 @@ enum SortKey {
 impl Eq for SortKey {}
 
 impl SortKey {
+    /// The sort key of `v`, reading string content out of `heap` so the
+    /// comparison itself needs no heap access.
+    pub(crate) fn of(heap: &crate::heap::Heap, v: Value) -> SortKey {
+        match v {
+            Value::Int(n) => SortKey::Num(n as f64),
+            Value::Float(f) => SortKey::Num(f),
+            Value::Dual { value, .. } => SortKey::Num(value),
+            Value::String(sid) => SortKey::Str(heap.get_string(sid).to_string()),
+            _ => SortKey::Other,
+        }
+    }
+
     /// Rank for ordering keys of different kinds: numbers, then strings, then
     /// everything else.
     fn rank(&self) -> u8 {
@@ -362,18 +428,7 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
             // so the sort closure doesn't need heap access.
             let mut keyed: Vec<(SortKey, Value)> = items
                 .into_iter()
-                .map(|v| {
-                    let key = match v {
-                        Value::Int(n) => SortKey::Num(n as f64),
-                        Value::Float(f) => SortKey::Num(f),
-                        Value::Dual { value, .. } => SortKey::Num(value),
-                        Value::String(sid) => {
-                            SortKey::Str(state.heap().get_string(sid).to_string())
-                        }
-                        _ => SortKey::Other,
-                    };
-                    (key, v)
-                })
+                .map(|v| (SortKey::of(state.heap(), v), v))
                 .collect();
             keyed.sort_by(|(a, _), (b, _)| a.cmp(b));
             let sorted: Vec<Value> = keyed.into_iter().map(|(_, v)| v).collect();

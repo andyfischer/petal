@@ -16,6 +16,7 @@ mod collections;
 mod color;
 mod creative_coding;
 mod effects;
+mod format;
 mod handle;
 mod io;
 mod math;
@@ -24,6 +25,7 @@ mod output;
 mod pending;
 mod vec2;
 
+pub(crate) use collections::SortKey;
 pub use effects::{
     is_mutating_builtin, is_pure_builtin, looks_mutating, retains_no_reference,
     returns_fresh_container,
@@ -268,7 +270,23 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("char_slice", collections::native_char_slice);
     table.register("index_of", collections::native_index_of);
 
+    // --- Collections, formatting, and safe arithmetic (append-only) ---
+    // `sort_by` and the two-argument `sort` call user code, so they are
+    // dispatched as VM intrinsics (see `vm::native::call_native_or_intrinsic`);
+    // the placeholder below only exists so the compiler resolves the name.
+    let sort_by_id = table.register("sort_by", native_intrinsic_placeholder);
+    table.register("prepend", collections::native_prepend);
+    table.register("concat", collections::native_concat);
+    table.register("fixed", format::native_fixed);
+    table.register("commas", format::native_commas);
+    table.register("pad_start", format::native_pad_start);
+    table.register("pad_end", format::native_pad_end);
+    table.register("format", format::native_format);
+    table.register("safe_div", math::native_safe_div);
+
     table.intrinsic_map = Some(map_id);
+    table.intrinsic_sort = table.lookup_name("sort");
+    table.intrinsic_sort_by = Some(sort_by_id);
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);
     table.intrinsic_for_each = Some(for_each_id);

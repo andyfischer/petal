@@ -633,15 +633,23 @@ fn int_arithmetic_needs_no_int_cast_but_float_arithmetic_does() {
     assert_fixed_point("let w = 100\nprint(int(w * 0.6))\n");
 }
 
-/// `clamp` coerces to f64 and returns a float even for all-int arguments, so
-/// the `float` here is redundant and the `int` is not.
+/// `clamp` is int-preserving (405562a), so an all-int clamp is an `int`: the
+/// redundant cast is the `int` and the `float` is a real conversion. The pair
+/// is kept both ways round because it is the result *type* that decides, not
+/// the spelling of the call.
 #[test]
 fn builtin_result_types_drive_the_rule() {
     assert_lints_to(
-        "let v = clamp(3, 0, 10)\nprint(float(v))\n",
+        "let v = clamp(3, 0, 10)\nprint(int(v))\n",
         "let v = clamp(3, 0, 10)\nprint(v)\n",
     );
-    assert_fixed_point("let v = clamp(3, 0, 10)\nprint(int(v))\n");
+    assert_fixed_point("let v = clamp(3, 0, 10)\nprint(float(v))\n");
+    // One float argument makes the whole call a float, flipping which cast is
+    // the identity.
+    assert_lints_to(
+        "let v = clamp(3.0, 0, 10)\nprint(float(v))\n",
+        "let v = clamp(3.0, 0, 10)\nprint(v)\n",
+    );
     // `len` is an int; `sqrt` is a float.
     assert_lints_to(
         "let xs = [1, 2]\nprint(int(len(xs)))\n",

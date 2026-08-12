@@ -295,3 +295,39 @@ pub(super) fn native_pi(state: &mut PetalCxt) -> Result<u32, String> {
     state.push_float(std::f64::consts::PI);
     Ok(1)
 }
+
+/// `safe_div(a, b)` — division that answers `nil` instead of aborting when the
+/// divisor is zero. Everything else about it is bare `/`: the same int/int
+/// truncation, the same float, dual and list-broadcast behaviour, and the same
+/// errors for a non-numeric operand or an i64 overflow.
+///
+/// This exists because bare `/` deliberately *aborts* on a zero divisor, which
+/// is right for a program with a bug and wrong for an evaluator whose input is
+/// user-supplied (a calculator, a spreadsheet cell, a ratio over a count that
+/// can legitimately be 0). Those want the failure as data — `safe_div(a, b) ?? 0`
+/// or a nil check — not a dead run. The semantics of `/` are unchanged.
+pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "safe_div")?;
+    let a = state.get_value(1)?;
+    let b = state.get_value(2)?;
+    let divisor_is_zero = match b {
+        Value::Int(0) => true,
+        Value::Float(f) => f == 0.0,
+        Value::Dual { value, .. } => value == 0.0,
+        _ => false,
+    };
+    if divisor_is_zero {
+        state.push_nil();
+        return Ok(1);
+    }
+    // Delegate to the real `/` so every other case (dual numbers, vec2,
+    // list broadcast, overflow reporting) stays byte-identical to the operator.
+    let v = crate::backend::ops::arithmetic(
+        &crate::program::TermOp::Div,
+        a,
+        b,
+        state.heap_mut(),
+    )?;
+    state.push_value(v);
+    Ok(1)
+}

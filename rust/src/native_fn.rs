@@ -58,6 +58,14 @@ pub struct NativeFnTable {
     pub intrinsic_filter: Option<NativeFnId>,
     pub intrinsic_reduce: Option<NativeFnId>,
     pub intrinsic_for_each: Option<NativeFnId>,
+    /// `sort`, which is *conditionally* an intrinsic: the one-argument
+    /// `sort(list)` is an ordinary native, while `sort(list, cmp)` calls a
+    /// user comparator and so must be driven by the VM. The dispatcher picks by
+    /// argument count.
+    pub intrinsic_sort: Option<NativeFnId>,
+    /// `sort_by(list, key_fn)` / `sort_by(list, key_fn, descending)` — always an
+    /// intrinsic; it calls the key function once per element.
+    pub intrinsic_sort_by: Option<NativeFnId>,
     /// `__declare_method`, which the VM intercepts instead of calling: it
     /// publishes a user-declared `fn Class.method` into the running stack's
     /// method table, which no native can reach through [`PetalCxt`].
@@ -78,6 +86,8 @@ impl NativeFnTable {
             intrinsic_filter: None,
             intrinsic_reduce: None,
             intrinsic_for_each: None,
+            intrinsic_sort: None,
+            intrinsic_sort_by: None,
             intrinsic_declare_method: None,
             class_methods: HashMap::new(),
         }
@@ -191,7 +201,8 @@ pub struct PetalCxt<'a> {
     /// that absorbs a Pending element (`sort`/`join`) can record `(origin, id)`
     /// when `trace_pending` is on. See
     /// [`crate::execution_context::ExecutionContext::absorption_log`].
-    pub(crate) absorption_log: &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
+    pub(crate) absorption_log:
+        &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
     /// The call site (`TermId`) of the instruction invoking this native, when
     /// known — stamped onto any resource this call creates for the observability
     /// tooling. `None` when the caller has no origin term to attribute.

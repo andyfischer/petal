@@ -144,16 +144,26 @@ impl<'a> Vm<'a> {
             return Ok(v);
         }
         let nf = self.native_fns;
+        // `sort` is an intrinsic only in its comparator form: `sort(list)` has
+        // no closure to drive and stays an ordinary native, so a one-argument
+        // call must fall through to the leaf below.
+        let sort_with_cmp = nf.intrinsic_sort == Some(nid) && args.len() == 2;
         // The intrinsics never reach the shared leaf, so they are counted here;
         // everything else is counted once, in `call_native_fn`.
         if nf.intrinsic_map == Some(nid)
             || nf.intrinsic_filter == Some(nid)
             || nf.intrinsic_reduce == Some(nid)
             || nf.intrinsic_for_each == Some(nid)
+            || nf.intrinsic_sort_by == Some(nid)
+            || sort_with_cmp
         {
             self.profile.record_native(nid.0);
         }
-        if nf.intrinsic_map == Some(nid) {
+        if nf.intrinsic_sort_by == Some(nid) {
+            self.builtin_sort_by(args)
+        } else if sort_with_cmp {
+            self.builtin_sort_cmp(args)
+        } else if nf.intrinsic_map == Some(nid) {
             self.builtin_map(args)
         } else if nf.intrinsic_filter == Some(nid) {
             self.builtin_filter(args)

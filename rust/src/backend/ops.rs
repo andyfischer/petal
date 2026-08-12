@@ -739,6 +739,22 @@ fn set_index_impl(
                 ))
             }
         }
+        // `rec[key] = v` with a computed key. Reading a record by computed key
+        // (`rec[key]`, see `get_index`) has always worked; writing one used to
+        // fall into the error below, so a script that had to name its fields at
+        // runtime — a table keyed by a column name, a per-metric accumulator —
+        // was pushed into parallel lists. This is `rec.field = v` with the field
+        // name arriving as a value instead of a constant, and it goes through
+        // the same `map_set` so the two forms cannot drift apart.
+        (Value::Map(map_id), Value::String(key_id)) => {
+            let key = heap.get_string(key_id).to_string();
+            let new_id = if in_place {
+                heap.map_set_in_place(map_id, key, val)
+            } else {
+                heap.map_set(map_id, key, val)
+            };
+            Ok(Value::Map(new_id))
+        }
         _ => Err(format!(
             "Cannot index-assign {} with {}",
             obj.type_name(),

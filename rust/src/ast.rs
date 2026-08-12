@@ -395,10 +395,7 @@ pub trait ExprVisitor {
 /// Visit every direct child expression/statement of `e` with `v`.
 pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
     match &e.kind {
-        ExprKind::Literal(_)
-        | ExprKind::Ident(_)
-        | ExprKind::AtVar(_)
-        | ExprKind::CellGet(_) => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);
@@ -554,10 +551,7 @@ pub trait ExprVisitorMut {
 /// Visit every direct child expression/statement of `e` with `v` (mutable).
 pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
     match &mut e.kind {
-        ExprKind::Literal(_)
-        | ExprKind::Ident(_)
-        | ExprKind::AtVar(_)
-        | ExprKind::CellGet(_) => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);

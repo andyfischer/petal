@@ -343,7 +343,10 @@ fn hot_reload_of_module_preserves_its_state() {
     assert_eq!(env.take_output(), vec!["1"]);
 
     // Edit the module (init unchanged, increment becomes +10) and reload.
-    env.register_module("counter", "state n = 0\nn += 10\nexport fn read()\n  n\nend");
+    env.register_module(
+        "counter",
+        "state n = 0\nn += 10\nexport fn read()\n  n\nend",
+    );
     let new_program = env
         .compile_program(pid, "import counter\nprint(counter.read())")
         .unwrap();

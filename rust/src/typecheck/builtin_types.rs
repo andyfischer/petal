@@ -100,15 +100,18 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         "float" | "atan2" | "pi" | "random" | "lerp" | "map_range" | "distance" | "mag" | "pow"
         | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log" | "dot" => Type::Float,
         // ── core: string results ────────────────────────────────────────────
-        "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" => Type::String,
+        // `format`/`fixed`/`commas`/`pad_*` render *into* a string, so unlike
+        // `concat` (list or string, decided by its arguments) their result is
+        // known statically.
+        "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" | "fixed"
+        | "commas" | "pad_start" | "pad_end" | "format" => Type::String,
         // ── core: bool results ──────────────────────────────────────────────
         "contains" | "includes" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
             Type::Bool
         }
         // ── core: list results ──────────────────────────────────────────────
-        "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort" | "chars" => {
-            Type::List
-        }
+        "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort"
+        | "sort_by" | "prepend" | "chars" => Type::List,
         // ── core: record / vec2 results ─────────────────────────────────────
         "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
         "vec2" | "normalize" | "limit" => Type::Vec2,
@@ -236,10 +239,35 @@ mod tests {
         assert_eq!(builtin_return_type("sqrt", &[Type::Any]), None);
     }
 
+    /// The formatting builtins all answer a string, and `sort_by` a list.
+    #[test]
+    fn formatting_and_sorting_results() {
+        assert_eq!(
+            builtin_return_type("fixed", &[Type::Float, Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("commas", &[Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("format", &[Type::String, Type::Float]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("sort_by", &[Type::List, Type::Any]),
+            Some(Type::List)
+        );
+    }
+
     /// Builtins whose result type is decided at runtime must stay unlisted.
+    /// `concat` joins two lists *or* two strings, and `safe_div` answers nil on
+    /// a zero divisor, so neither has a static result type.
     #[test]
     fn runtime_dependent_builtins_are_absent() {
-        for name in ["reverse", "slice", "choose", "last", "first", "sum"] {
+        for name in [
+            "reverse", "slice", "choose", "last", "first", "sum", "concat", "safe_div",
+        ] {
             assert_eq!(builtin_return_type(name, &[Type::List]), None, "{name}");
         }
     }

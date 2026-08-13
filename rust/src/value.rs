@@ -62,7 +62,6 @@ pub enum Value {
     /// context's resource table, where state/provenance live. Ordinary ops are
     /// strict in Pending (they absorb and return it); a small non-strict meta set
     /// inspects it. See docs/dev/pending-values-plan.md.
-    // TODO(pending): operator/native absorption + meta builtins land in later chunks.
     Pending(PendingId),
 }
 

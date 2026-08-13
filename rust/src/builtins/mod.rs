@@ -31,11 +31,8 @@ pub use effects::{
     returns_fresh_container,
 };
 
-// xorshift64* PRNG. The state lives per-run on `ExecutionContext::rng_state`
-// (seeded from `initial_seed()` at context creation) rather than in a process
-// global, so each run/fork has isolated randomness. Replaces an earlier
-// implementation that used `subsec_nanos()` per call — that aliased multiple
-// random() calls within the same frame to nearly identical values.
+// xorshift64* PRNG. State lives per run in `ExecutionContext::rng_state` (seeded by
+// `initial_seed()`), so each run and fork has isolated randomness.
 
 /// The seed a fresh [`ExecutionContext`](crate::execution_context::ExecutionContext)
 /// initializes its `rng_state` to.
@@ -59,8 +56,6 @@ pub fn initial_seed() -> u64 {
 }
 
 /// Advance the caller-owned xorshift64* state and return the next raw u64.
-/// The algorithm is byte-identical to the previous process-global version;
-/// only the storage location moved to `state`.
 pub(super) fn rng_next_u64(state: &mut u64) -> u64 {
     let mut x = *state;
     if x == 0 {

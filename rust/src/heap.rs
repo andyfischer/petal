@@ -837,10 +837,8 @@ impl Heap {
                 self.mark_string(tag);
                 self.mark_list(data);
             }
-            // Non-heap values: nothing to mark. `Pending` is a thin id into the
-            // resource table (not the heap); the table's own Ready/Errored
-            // payloads are rooted separately.
-            // TODO(pending): root resource-table payload Values in GC.
+            // Non-heap values need no marking. `Pending` is an id into the resource
+            // table; its Ready/Errored payloads are rooted separately.
             Value::Nil
             | Value::Bool(_)
             | Value::Int(_)
@@ -863,7 +861,7 @@ impl Heap {
 
     fn mark_list(&mut self, id: ListId) {
         if self.lists.mark(id.0) {
-            // Copy elements to avoid borrow conflict
+            // Clone the elements before recursive marking to release the arena borrow.
             let elements: Vec<Value> = self.lists.get(id.0).clone();
             for val in elements {
                 self.mark_value(val);

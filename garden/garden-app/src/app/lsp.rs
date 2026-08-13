@@ -103,9 +103,8 @@ impl LspManager {
         self.completions.remove(&id)
     }
 
-    /// Whether any server is running (used by `/state` and by the Tab
-    /// heuristic in Phase 4).
-    #[allow(dead_code)] // drives the Tab heuristic (G7 Phase 4)
+    /// Whether a language server is running for `path`.
+    #[allow(dead_code)] // completion integration entry point
     pub fn has_client_for(&self, path: &std::path::Path) -> bool {
         registry::for_path(path)
             .map(|s| self.clients.contains_key(s.language_id))
@@ -115,7 +114,7 @@ impl LspManager {
     /// Request completions for an open document. `None` when the file has no
     /// server, its server isn't running, or the document was never opened —
     /// all ordinary states, not errors.
-    #[allow(dead_code)] // fired by Tab / trigger chars (G7 Phase 4)
+    #[allow(dead_code)] // completion integration entry point
     pub fn request_completion(
         &mut self,
         path: &std::path::Path,
@@ -217,7 +216,7 @@ impl super::App {
                 continue;
             };
             match self.lsp.docs.get(&path) {
-                Some(doc) if doc.revision == revision => continue, // unchanged
+                Some(doc) if doc.revision == revision => continue,
                 Some(doc) => {
                     let (uri, language_id, version) =
                         (doc.uri.clone(), doc.language_id, doc.version + 1);

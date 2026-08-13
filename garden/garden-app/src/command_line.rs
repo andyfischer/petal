@@ -669,8 +669,8 @@ mod tests {
         let mut cl = CommandLine::new();
         cl.push('a');
         cl.push('b');
-        assert!(cl.backspace()); // removed 'b'
-        assert!(cl.backspace()); // removed 'a'
-        assert!(!cl.backspace()); // now empty
+        assert!(cl.backspace());
+        assert!(cl.backspace());
+        assert!(!cl.backspace());
     }
 }

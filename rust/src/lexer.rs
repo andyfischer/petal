@@ -499,7 +499,7 @@ impl Lexer {
                     // Self-closing JSX tag: `/>`
                     self.advance_n(2);
                     self.push_token(Token::JsxSelfClose, start);
-                    self.mode_stack.pop(); // pop JsxTag
+                    self.mode_stack.pop();
                 } else if self.peek_next() == Some('=') {
                     self.advance_n(2);
                     self.push_token(Token::SlashAssign, start);
@@ -554,7 +554,7 @@ impl Lexer {
                     // Fold the `>` into the tag-name span so no delimiter is
                     // left ungoverned by a token (see crate::trivia).
                     self.extend_last_span_to_cursor();
-                    self.mode_stack.pop(); // pop JsxContent
+                    self.mode_stack.pop();
                 } else {
                     self.advance_char();
                     self.push_token(Token::Lt, start);
@@ -568,7 +568,6 @@ impl Lexer {
                     // End of JSX open tag — switch to content mode
                     self.advance_char();
                     self.push_token(Token::Gt, start);
-                    // Replace JsxTag with JsxContent
                     self.mode_stack.pop();
                     self.mode_stack.push(LexerMode::JsxContent);
                 } else {
@@ -683,9 +682,9 @@ impl Lexer {
     fn read_string_inner(&mut self, escaped_quotes: bool) -> Result<(), String> {
         let open_quote = self.current_pos();
         if escaped_quotes {
-            self.advance_char(); // skip the backslash of the opening `\"`
+            self.advance_char();
         }
-        self.advance_char(); // skip opening quote
+        self.advance_char();
         let mut s = String::new();
         let mut has_interp = false;
         // Source position where the current literal part's span begins. It
@@ -756,7 +755,7 @@ impl Lexer {
                 }
                 // Emit the literal part accumulated so far, spanning from its
                 // start through and including this opening `{`.
-                self.advance_char(); // consume `{`
+                self.advance_char();
                 let after_brace = self.current_pos();
                 self.push_token_span(Token::String(s), part_start, after_brace);
                 s = String::new();
@@ -785,7 +784,7 @@ impl Lexer {
     /// Useful for embedding source code, e.g. `Program.parse("""...""")`.
     fn read_raw_string(&mut self) -> Result<(), String> {
         let start = self.current_pos();
-        self.advance_n(3); // skip opening """
+        self.advance_n(3);
         let mut s = String::new();
 
         while self.pos < self.input.len() {
@@ -794,7 +793,7 @@ impl Lexer {
                 && self.input[self.pos + 1] == '"'
                 && self.input[self.pos + 2] == '"'
             {
-                self.advance_n(3); // skip closing """
+                self.advance_n(3);
                 self.push_token(Token::String(s), start);
                 return Ok(());
             }
@@ -816,18 +815,15 @@ impl Lexer {
             self.advance_char();
         }
 
-        if self.pos < self.input.len() && self.input[self.pos] == '.' {
-            // Check it's not `..` (range)
-            if self.pos + 1 < self.input.len() && self.input[self.pos + 1] == '.' {
-                // It's a range like 1..10, don't consume the dot
-            } else if self.pos + 1 < self.input.len() && self.input[self.pos + 1].is_ascii_digit() {
-                is_float = true;
-                self.advance_char(); // skip the dot
-                while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
-                    self.advance_char();
-                }
-            } else {
-                // Could be a method call like `5.method()` - don't consume
+        // Leave the dot for ranges and method calls; consume it only when a digit follows.
+        if self.pos + 1 < self.input.len()
+            && self.input[self.pos] == '.'
+            && self.input[self.pos + 1].is_ascii_digit()
+        {
+            is_float = true;
+            self.advance_char();
+            while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
+                self.advance_char();
             }
         }
 
@@ -863,7 +859,7 @@ impl Lexer {
 
     fn read_color(&mut self) -> Result<(), String> {
         let start = self.current_pos();
-        self.advance_char(); // skip '#'
+        self.advance_char();
         let hex_start = self.pos;
         while self.pos < self.input.len() && self.input[self.pos].is_ascii_hexdigit() {
             self.advance_char();

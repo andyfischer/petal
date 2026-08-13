@@ -322,12 +322,7 @@ pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
     }
     // Delegate to the real `/` so every other case (dual numbers, vec2,
     // list broadcast, overflow reporting) stays byte-identical to the operator.
-    let v = crate::backend::ops::arithmetic(
-        &crate::program::TermOp::Div,
-        a,
-        b,
-        state.heap_mut(),
-    )?;
+    let v = crate::backend::ops::arithmetic(&crate::program::TermOp::Div, a, b, state.heap_mut())?;
     state.push_value(v);
     Ok(1)
 }

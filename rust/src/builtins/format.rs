@@ -79,7 +79,11 @@ fn as_number(v: Value, who: &str) -> Result<f64, String> {
         Value::Float(f) => Ok(f),
         Value::Dual { value, .. } => Ok(value),
         Value::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
-        other => Err(format!("{}() expects a number, got {}", who, other.type_name())),
+        other => Err(format!(
+            "{}() expects a number, got {}",
+            who,
+            other.type_name()
+        )),
     }
 }
 

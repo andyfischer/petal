@@ -57,7 +57,11 @@ fn lag_warning(src: &str) -> String {
         .filter(|m| m.contains("captured at the definition"))
         .cloned()
         .collect();
-    assert_eq!(lag.len(), 1, "expected one capture-lag warning, got: {all:?}");
+    assert_eq!(
+        lag.len(),
+        1,
+        "expected one capture-lag warning, got: {all:?}"
+    );
     lag.pop().unwrap()
 }
 
@@ -90,7 +94,10 @@ fn capturing_a_state_rebound_later_warns() {
 #[test]
 fn the_warning_suggests_a_parameter() {
     let w = lag_warning("state s = 1\nfn peek()\n  s\nend\ns = 2\nprint(peek())");
-    assert!(w.contains("parameter"), "the fix is to pass it in; got: {w}");
+    assert!(
+        w.contains("parameter"),
+        "the fix is to pass it in; got: {w}"
+    );
 }
 
 #[test]

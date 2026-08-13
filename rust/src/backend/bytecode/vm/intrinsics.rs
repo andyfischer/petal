@@ -187,9 +187,7 @@ impl<'a> Vm<'a> {
             [list, func] => (list, func, Value::Bool(false)),
             [list, func, dir] => (list, func, *dir),
             _ => {
-                return Err(
-                    "sort_by() expects 2 or 3 arguments (list, key_fn, descending)".into(),
-                );
+                return Err("sort_by() expects 2 or 3 arguments (list, key_fn, descending)".into());
             }
         };
         let Value::List(list_id) = *list else {

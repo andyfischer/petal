@@ -644,6 +644,7 @@ fn handle_normal(
             let last = view.buffer.line_count().saturating_sub(1);
             if n == 1 {
                 delete_to_line_end(view, clipboard);
+                view.clamp_cursor_normal();
             } else if view.cursor.line + n - 1 <= last {
                 apply_operator(view, 'd', Motion::LineEnd, n, clipboard);
             }
@@ -1713,7 +1714,6 @@ fn delete_to_line_end(view: &mut EditorView, clipboard: &mut dyn Clipboard) {
         );
         view.cursor = view.erase(view.cursor, end);
     }
-    view.clamp_cursor_normal();
 }
 
 /// `J`: merge `lines` consecutive lines (the line at `start` plus `lines - 1`
@@ -3157,6 +3157,10 @@ mod tests {
         keys(&mut v, "C");
         assert_eq!(v.vim.mode, Mode::Insert);
         assert_eq!(v.buffer.to_string(), "hello");
+        // Insert happens at the end of the remaining text, not one col left.
+        assert_eq!(v.cursor, Point::new(0, 5));
+        keys(&mut v, "!");
+        assert_eq!(v.buffer.to_string(), "hello!");
     }
 
     #[test]

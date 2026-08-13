@@ -111,6 +111,21 @@ Export a function that performs the write instead. This keeps every `set` on a
 cell in the file that owns it, which is also the only place a reader would think
 to look for one.
 
+Reading it still says [`get`](language-guide.md#get) when the read is inside a
+function, because it is still a cell read — the importer sees the owner's
+writes as they happen, so the timing is exactly the one `get` marks:
+
+```petal ignore
+import tally: hits
+
+fn describe()
+  "hits: {get hits}"     // live: reflects whatever `tally` has written
+end
+```
+
+The qualified form needs no keyword — `tally.hits` is a module member access,
+not a name in scope, and it already reads at the point it is written.
+
 `export` is the single privacy rule. A leading `_` carries no special privacy
 meaning: `export fn _helper` exports normally, and a plain `fn _helper` (no
 `export`) is private exactly like any other unexported name.

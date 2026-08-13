@@ -1097,7 +1097,8 @@ mod cell_tests {
     /// feature matters.
     #[test]
     fn cell_decl_resolves_through_capture_phantom() {
-        let env = compiled("var x = 0\nfn bump()\n  set x = get x + 1\n  get x\nend\nlet y = bump()\n");
+        let env =
+            compiled("var x = 0\nfn bump()\n  set x = get x + 1\n  get x\nend\nlet y = bump()\n");
         let p = program(&env);
         let decl = only(ops(p, |o| matches!(o, TermOp::CellNew)));
         let index = p.cell_index();

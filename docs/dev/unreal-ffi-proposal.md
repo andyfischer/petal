@@ -104,9 +104,11 @@ These are the concrete, evidenced asks. None of them is about handles.
    Every host that receives a model it does not control has rewritten the same
    helper — worldsfair's is `wf_field(rec, key, fallback)` over
    `contains(keys(rec), key)`, which is a linear scan per read, on every field,
-   every frame. `get(c, k)` exists but only accepts `F64Array`. Making `get`
-   accept records with an optional default (or adding `has_field`) is a small
-   change that deletes a workaround from every embedder at once.
+   every frame. There is no builtin for it: `get(c, k)` used to exist but only
+   accepted `F64Array`, and it has since been removed — `get` is now the
+   keyword for reading a `var`, so this wants a *new* name. A `field(rec, key,
+   default)` builtin (or `has_field`) is a small change that deletes a
+   workaround from every embedder at once.
 
 3. **A first-party bundler, or a way to ship modules to a remote host.**
    Fragments are delivered as one flat concatenated source string with a

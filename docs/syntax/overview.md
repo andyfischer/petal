@@ -34,8 +34,8 @@ intentionally-unused or internal name. A lone `_` is the wildcard pattern in
 Reserved keywords:
 
 ```
-let  var  set  fn  if  else  elsif  then  for  in  while  match  when  do  end
-return  break  continue  state  enum  import  export  true  false  nil
+let  var  set  get  fn  if  else  elsif  then  for  in  while  match  when  do
+end  return  break  continue  state  enum  import  export  true  false  nil
 ```
 
 `as` (in `import ui as u`), `class` (in `class Rect … end`), and `config` (in
@@ -141,11 +141,12 @@ The contextual `config` modifier marks a binding as the value direct
 manipulation should edit (docs/direct-manipulation.md). It composes with
 `export` (`export config let`) and is rejected on `var`.
 
-### `var` and `set`
+### `var`, `set` and `get`
 
-`var` declares a mutable cell instead of a dataflow binding, and `set` is the
-only way to write one. The two keywords are disjoint: `=` on a `var` and `set`
-on a `let` are both compile errors.
+`var` declares a mutable cell instead of a dataflow binding, `set` is the only
+way to write one, and `get` is how you read one across a function boundary. The
+write keywords are disjoint: `=` on a `var` and `set` on a `let` are both
+compile errors.
 
 ```petal
 var count = 0
@@ -159,6 +160,25 @@ A `var` binds a box, so a function or closure that mentions the name writes the
 *same* box — the one thing `=` cannot express, since an `=` inside a function
 only shadows. Reading a `var` yields its contents; no expression evaluates to
 the box itself, so the only way to share one is closure capture.
+
+Inside a function that read is written `get`, and the keyword is required
+there:
+
+```petal
+var hits = 0
+fn describe()
+    "hits: {get hits}"
+end
+set hits = 2
+print(describe())         // hits: 2
+```
+
+An ordinary binding is captured *by value at the point the function is
+written*, while a cell is read *now*; `get` is what tells the two apart at the
+read instead of at a distant declaration. It binds tighter than `.` and `[]`
+(`get cfg.w` is `(get cfg).w`) and is an error on anything that is not a `var`.
+The matching rule for ordinary bindings: a function may not capture a module
+binding that is **rebound below it** — pass it as a parameter instead.
 
 `set` never declares: `set` on an unknown name is an error. Targets may be a
 name, a field, or an index (`set r.a = 1`, `set xs[0] = 1`). `@` is a `let`-only

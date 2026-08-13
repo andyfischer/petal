@@ -140,10 +140,18 @@ fn get_on_an_unknown_name_is_an_error() {
 
 #[test]
 fn a_bare_read_is_always_a_snapshot_and_a_get_is_always_live() {
-    // The whole point. Same program shape, one letter of difference, and the
+    // The whole point. Same program shape, one keyword of difference, and the
     // reader can now tell which timing they are getting without looking up the
     // declaration.
-    let snapshot = run("let x = 1\nfn peek()\n  x\nend\nlet before = peek()\nx = 2\nprint(\"{before} {peek()}\")").unwrap();
+    //
+    // A module-scope `let` rebound below the function is the canonical shape:
+    // capturing at the definition is the defined behaviour there, not a
+    // mistake, so `capture_lag` says nothing about it. See
+    // `crate::compiler::capture_lag` for the reactive case it does warn on.
+    let snapshot = run(
+        "let x = 1\nfn peek()\n  x\nend\nlet before = peek()\nx = 2\nprint(\"{before} {peek()}\")",
+    )
+    .unwrap();
     assert_eq!(snapshot, "1 1", "a captured let never moves");
 
     let live = run("var x = 1\nfn peek()\n  get x\nend\nlet before = peek()\nset x = 2\nprint(\"{before} {peek()}\")").unwrap();

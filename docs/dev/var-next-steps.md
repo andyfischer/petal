@@ -74,6 +74,76 @@ because it desugars to `x = f(x)`.
 An exported `var` is readable by importers under every import form and writable
 only by the module that declared it: a cross-module `set` names the owner.
 
+### `get` is the same argument applied to reads (2026-08-12)
+
+The reasoning above was applied to writes and stopped there, which left the
+identical ambiguity on the read side: a bare name is a *captured snapshot* if it
+names a `let`/`state` and a *live cell read* if it names a `var`, told apart
+only by that same far-away declaration. A function captures by value at its own
+textual position (`MakeClosure` takes the term carrying the value on that line),
+so in a script that re-runs per frame the two answers differ by exactly one
+frame, every frame — a defect that presents as input lag, not as a bug. It was
+measured before the fix: a helper reading `state n` saw 14/17/20 while `n` held
+15/18/21.
+
+So `get` reads a cell, and the escape hatch is one keyword per operation:
+`var` declares, `set` writes, `get` reads.
+
+- **Required only across a function boundary.** Inside the declaring scope no
+  snapshot exists to confuse the read with, so a bare read stays legal there —
+  which also keeps the loop-accumulator idiom (`set out = append(out, x)`) from
+  growing ceremony it gains nothing from. 90 reads across 10 files migrated,
+  driven by the compiler's diagnostics rather than a regex.
+- **An error on a non-`var`,** so `get` in a body always means a cell.
+- **Primary position, not a prefix operator,** so postfix applies to the
+  contents: `get cfg.w` is `(get cfg).w`.
+- **A compound `set x += 1` synthesizes its own `get`** (`parse::cell_get_at_root`),
+  because that read has no source text the author could have annotated.
+- The old `get(container, key)` builtin was deleted to free the word; `a[i]`
+  had always done the same job, and there were two call sites in-repo and none
+  downstream. Like every keyword, `get` can no longer name a field, a method or
+  an FFI host method.
+
+### A closure may not capture a module binding rebound below it (2026-08-12)
+
+`get` removes the ambiguity; this removes the wrongness. `compiler::capture_lag`
+scans each module's top-level rebindings and **warns** on a *named* function
+whose body reads a module binding rebound after the declaration — the same move
+as §2a, and for the same reason: the honest half of the behaviour was the half
+that failed. The diagnostic is reported at the read and names the rebinding's
+line; the fix is a parameter.
+
+**Amended the same day.** This first shipped as a hard error covering every
+module binding, which broke three apps that compiled on `main`. It is now a
+warning, and it is scoped to *reactive* bindings only:
+
+- **`let` is exempt.** Capturing at the definition is the defined behaviour for
+  a `let` — the later `let` is a new binding, and the function above it is meant
+  to read the earlier one. There is nothing to report.
+- **Module-level `state` still warns.** `x = e` on a `state` does not create a
+  new binding; it emits a `StateWrite` into the persisted slot, and the next run
+  initialises the name from that slot. So the read really is one run behind,
+  every run — the hazard the rule was written for.
+- **`var`/`state var` stay exempt** for the pre-existing reason: a bare
+  outer-cell read is already a hard error, and the `get` it demands is a live
+  read that cannot lag.
+
+Two further deliberate under-approximations:
+
+- **Inline lambdas are exempt.** A `map(xs, fn(a) … end)` callback cannot
+  outlive the statement that made it, and flagging it would be unfixable — the
+  author does not control a callback's parameter list. The cost is that a
+  lambda genuinely stored and called later is missed.
+- **Only module bindings are scanned.** The same staleness one scope in (a
+  nested lambda over an enclosing function's local, rebound afterwards) is not
+  checked.
+
+Corpus: 5 sites, all real latent one-frame lags — `cell_rect`/`cell_at` over
+`scroll` and `is_formula` over `cells` in `25-spreadsheet`, `snap` over
+`grid_snap` in `side-scroller/editor.ptl`, and `restart_level` over `level_idx`
+in `side-scroller/game.ptl`, which was loading the previous level for a frame
+after every level change.
+
 ### Provenance: a cell operand is an identity edge
 
 A cell operand — of a `CellRead`, a `CellWrite`, or a `MakeClosure` capture —

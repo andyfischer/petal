@@ -74,6 +74,95 @@ it is an error, because it would create a function-local shadow and leave the
 outer binding alone. Reach for `var`/`set` when you meant the write to land;
 reach for `let` when you meant a new local.
 
+### `get`
+
+Reading a cell from inside a function is written `get`:
+
+```petal
+var hits = 0
+
+fn describe()
+  "hits so far: {get hits}"
+end
+
+set hits = 3
+print(describe())   // hits so far: 3
+```
+
+`get` is **required** wherever the read crosses a function boundary from the
+declaration, and optional inside the declaring scope — the loop above writes
+plain `count`, because there both spellings mean the same thing.
+
+The reason is timing. A function captures the ordinary bindings it mentions
+**by value, at the point the function is written**: a `let` or `state` read
+inside a body answers with the value the name had on that line, and a later
+rebinding produces a new value the function never sees. A cell read answers
+with the box's contents *now*. Those are different questions, and before `get`
+they were spelled the same way — so which one you got depended on a
+declaration that might be hundreds of lines away. In a script that re-runs
+every frame the gap is exactly one frame, every frame, which looks like input
+lag rather than a mistake.
+
+So the escape hatch has one keyword per operation, and none of it is implicit:
+
+| | |
+|---|---|
+| `var x = …` | declare the box |
+| `set x = …` | write it |
+| `get x` | read it |
+
+`get` binds tighter than `.` and `[]`, so it dereferences first and the rest
+applies to the contents — `get cfg.width` is `(get cfg).width`, which is what a
+cell holding a record wants. It is an error on anything that is not a `var`, so
+`get` appearing in a body always means a cell.
+
+### Capturing a reactive name that moves later
+
+The other half of the same problem, though only for one kind of binding.
+
+Because a function captures at its own position, a function reading a `let`
+that is rebound below it sees the earlier binding. That is the **defined
+behaviour**, not a mistake: the later `let` is a new binding, and the function
+above it is meant to read the one that was in scope where it was written.
+Nothing is reported.
+
+A module-level `state` is different. Rebinding it with `=` does not create a
+new binding — it writes the persisted slot, and the *next* run of the file
+initialises the name from that slot. So a function above the write reads one
+run behind, every run:
+
+```petal ignore
+state scroll = 0
+
+fn row_y(r)
+  GRID_Y + (r - scroll) * ROW_H   // warning: reads `scroll` one run behind
+end
+
+scroll = scroll + 3
+draw_row(row_y(2))                // uses the previous run's `scroll`
+```
+
+That is a **warning**, not an error — the program compiles and `petal check`
+exits 0. Pass the value in when you want the current one:
+
+```petal ignore
+fn row_y(r, scroll)
+  GRID_Y + (r - scroll) * ROW_H
+end
+```
+
+A `state` that is never written after the function is fine to capture — the
+overwhelmingly common case, and why constants, helpers and `fn`s all keep
+reading exactly as before. Three shapes are deliberately left alone: `let`, as
+above; an inline callback (`map(xs, fn(a) … end)`), which runs inside the
+statement that created it, so nothing can move underneath it; and a binding
+local to an enclosing *function*, since only module-level ones are checked.
+`var`/`state var` are exempt too — a bare outer-cell read is already a hard
+error there, and the `get` it demands is a live read that cannot lag.
+
+Between the two rules, a bare name inside a function body is always a value
+that cannot change under you, and anything live says `get`.
+
 ```petal
 var score = 0
 let doubled = map([1, 2, 3], fn(a)

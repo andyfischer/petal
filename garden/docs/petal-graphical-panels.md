@@ -460,6 +460,35 @@ panel_store_set("todos", json_stringify(todos))
 - A write failure (read-only home, full disk) reaches the script's `print`
   output rather than failing the frame — the panel keeps drawing.
 
+## Asking the host to act: `mutate`
+
+`mutate(name, arg)` is the panel vocabulary's one effectful call. In a
+panel-mode GPP pane it is a request to the pane's **subprocess**
+(`on_mutation`, see `gpp.md`); the reply becomes the status note, an error the
+status error.
+
+An **in-process** `panel(...)` pane has no subprocess — and `emit(...)`, which
+only writes to a client's pipe, is silently dropped for it — so `mutate` is
+also how such a panel asks *Garden itself* to do something. A short list of
+names is therefore answered by the host before any forwarding happens:
+
+| `mutate(…)` | effect |
+|---|---|
+| `mutate("open_path", { path: "…" })` | open that file in the focused pane, as `:e` does |
+| `mutate("open_project", { path: "…" })` | record the directory as a project and browse it, as File ▸ Open Folder does |
+| `mutate("open_pr", { number: 42 })` | open the PR review (`:PR 42`) |
+| `mutate("open_file_dialog", { mode: "file" })` | pop the native picker, then open what was chosen (`mode: "folder"` picks a directory and opens it as a project) |
+
+These exist for host screens — a start screen listing recent files, say — that
+must drive the editor with no client behind them. Every other name still goes
+to the subprocess, so a GPP app's own mutations (`"apply"`, `"save"`) are
+unaffected; sending one of these names from a *client-backed* panel reaches the
+host, not the client.
+
+A malformed argument (no `path`, a non-numeric `number`) is a status error, and
+`open_file_dialog` is refused with one under `--term` / `--headless`, where a
+native modal has no window to be answered from.
+
 
 ## Input: what a focused panel receives
 

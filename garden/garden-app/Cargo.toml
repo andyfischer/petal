@@ -55,11 +55,14 @@ tree-sitter-nix = "0.3.0"
 # Petal — Garden's own scripting language. The reference grammar lives in the
 # petal repo alongside the language itself (see ../editor-support/).
 tree-sitter-petal = { path = "../../editor-support/tree-sitter-petal" }
+# Native file/folder picker (see src/file_dialog.rs). Cross-platform, so it is
+# not in the macOS table below: the menu bar is macOS-only, but the picker is
+# also opened by the host-handled `open_file_dialog` panel mutation.
+rfd = "0.15"
 
 # macOS native menu bar (File/Edit) — windowed frontend only.
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.19"
-rfd = "0.15"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSThread"] }
 

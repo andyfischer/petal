@@ -201,6 +201,9 @@ impl Handler {
         app.set_event_log(config.event_log);
         app.set_recents(config.recents);
         app.set_save_as_paths(config.save_as_paths);
+        // Only here: a native picker needs a desktop session and an event loop
+        // to hand control back to, which `--term` and `--headless` lack.
+        app.enable_native_dialogs();
         // The windowed frontend draws its own slim titlebar across the top.
         #[cfg(target_os = "macos")]
         app.enable_titlebar();

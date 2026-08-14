@@ -2,6 +2,7 @@
 //! (`render`, `setKeymap`, `setStatus`, `openPath`) and opening the directory
 //! browser in the focused pane.
 
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use garden_script::NavIntent;
@@ -369,7 +370,18 @@ impl App {
     /// ([`MUTATE_TIMEOUT`]) for the round-trip, like the navigate mutation. This is
     /// the write-back path for editable panels: a drawer reading `edit_view_text`
     /// and calling `mutate("save", …)` reaches its subprocess here.
-    fn mutate_panel(&mut self, idx: usize, name: &str, arg: serde_json::Value) {
+    ///
+    /// A short list of names is answered by the **host** first, without ever
+    /// reaching a subprocess ([`host_mutation`](Self::host_mutation)) — an
+    /// in-process `panel(...)` pane has no client, and `emit(...)` is dropped for
+    /// it, so `mutate` is the only channel such a panel has to ask Garden to act.
+    /// Every other name keeps forwarding, so a client's own mutations (garden-diff's
+    /// `"apply"`, a drawer's `"save"`) are untouched.
+    pub(in crate::app) fn mutate_panel(&mut self, idx: usize, name: &str, arg: serde_json::Value) {
+        if self.host_mutation(name, &arg) {
+            self.needs_redraw = true;
+            return;
+        }
         match self
             .panes
             .get_mut(idx)
@@ -388,6 +400,108 @@ impl App {
             None => {}
         }
         self.needs_redraw = true;
+    }
+
+    /// Answer the mutations the **host** owns, returning whether `name` was one
+    /// of them (an unrecognized name is left to the subprocess). These are the
+    /// app actions a panel screen — the start screen's recent-files list, say —
+    /// has no other way to reach:
+    ///
+    /// | name | arg | effect |
+    /// |---|---|---|
+    /// | `open_path` | `{ "path": "…" }` | [`open_path`](App::open_path): the file replaces the focused pane |
+    /// | `open_project` | `{ "path": "…" }` | record the project, then browse it (as File ▸ Open Folder) |
+    /// | `open_pr` | `{ "number": 12 }` | [`open_garden_diff`](App::open_garden_diff) on `--pr <n>` |
+    /// | `open_file_dialog` | `{ "mode": "file" \| "folder" }` | native picker, then the matching open above |
+    ///
+    /// A malformed or missing argument is a status *error*, never a panic: the
+    /// arg is JSON a script built, so every field is untrusted. A cancelled
+    /// picker is an ordinary note — the user chose nothing, which is not a fault.
+    fn host_mutation(&mut self, name: &str, arg: &serde_json::Value) -> bool {
+        let path_arg = arg.get("path").and_then(serde_json::Value::as_str);
+        match name {
+            "open_path" => match path_arg {
+                Some(path) => self.open_path_from_panel(&PathBuf::from(path)),
+                None => self.status_error = Some("open_path: expected a `path` string".to_string()),
+            },
+            "open_project" => match path_arg {
+                Some(path) => self.open_project_from_panel(&PathBuf::from(path)),
+                None => {
+                    self.status_error = Some("open_project: expected a `path` string".to_string())
+                }
+            },
+            "open_pr" => match arg.get("number").and_then(serde_json::Value::as_i64) {
+                Some(number) => {
+                    self.open_garden_diff(vec!["--pr".to_string(), number.to_string()]);
+                    self.status_note = Some(format!("PR #{number}"));
+                    self.status_error = None;
+                }
+                None => {
+                    self.status_error = Some("open_pr: expected a `number` integer".to_string())
+                }
+            },
+            "open_file_dialog" => {
+                let mode = arg
+                    .get("mode")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("file");
+                self.open_file_dialog(mode);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Open a file a panel named. Split out of
+    /// [`host_mutation`](Self::host_mutation) so the file picker's result takes
+    /// the identical path, status note included.
+    fn open_path_from_panel(&mut self, path: &Path) {
+        self.open_path(&path.to_string_lossy());
+        self.status_note = Some(format!("opened {}", path.display()));
+        self.status_error = None;
+    }
+
+    /// Open a directory a panel named as a project — the same pair of steps as
+    /// [`MenuAction::OpenFolder`](crate::app::MenuAction::OpenFolder): record it
+    /// as a project (the user is naming one, so it belongs in the recents list)
+    /// and browse it in the focused pane.
+    fn open_project_from_panel(&mut self, path: &Path) {
+        let dir = path.to_string_lossy();
+        self.record_project_opened(&dir);
+        self.open_directory_browser(&dir);
+        self.status_note = Some(format!("opened {dir}"));
+        self.status_error = None;
+    }
+
+    /// Pop the native picker for `open_file_dialog` and open what comes back.
+    ///
+    /// Refused outright unless a windowed frontend enabled it
+    /// ([`enable_native_dialogs`](App::enable_native_dialogs)): the dialog blocks
+    /// this thread until the user answers, so under `--headless`/`--term` (and in
+    /// tests) it would hang the editor with no window to answer from. The panel
+    /// hears about that as a status error rather than freezing.
+    fn open_file_dialog(&mut self, mode: &str) {
+        if !self.native_dialogs {
+            self.status_error =
+                Some("open_file_dialog: no native file picker without a window".to_string());
+            return;
+        }
+        let picked = match mode {
+            "file" => crate::file_dialog::pick_file().map(|p| (p, false)),
+            "folder" => crate::file_dialog::pick_folder().map(|p| (p, true)),
+            other => {
+                self.status_error = Some(format!("open_file_dialog: unknown mode '{other}'"));
+                return;
+            }
+        };
+        match picked {
+            Some((path, true)) => self.open_project_from_panel(&path),
+            Some((path, false)) => self.open_path_from_panel(&path),
+            None => {
+                self.status_note = Some("open cancelled".to_string());
+                self.status_error = None;
+            }
+        }
     }
 
     /// The directory the focused pane should browse when opening the directory

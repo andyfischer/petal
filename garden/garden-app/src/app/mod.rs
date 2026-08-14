@@ -202,6 +202,15 @@ pub struct App {
     /// is unavailable, in which case nothing is recorded — recording is
     /// bookkeeping and must never stand between the user and their file.
     recents: Option<crate::recents::Recents>,
+    /// Whether this process may open a **native modal** file picker
+    /// ([`crate::file_dialog`]). Only the windowed frontend turns it on (via
+    /// [`enable_native_dialogs`](App::enable_native_dialogs)) — a modal in
+    /// `--term`, `--headless`, or a unit test has no window to attach to and
+    /// would block the thread with nobody able to dismiss it, so the
+    /// `open_file_dialog` mutation reports that instead of hanging. Unlike
+    /// [`top_inset`](App::top_inset), headless does *not* opt in: it draws a
+    /// titlebar but has no desktop session.
+    native_dialogs: bool,
     /// Height of the custom titlebar reserved at the top of the drawable area,
     /// logical pixels. Zero (the default) draws no titlebar; the windowed and
     /// headless frontends enable it via [`enable_titlebar`](App::enable_titlebar).
@@ -333,6 +342,7 @@ impl App {
             last_theme_rev,
             event_log: None,
             recents: None,
+            native_dialogs: false,
             top_inset: 0.0,
             frame: std::cell::Cell::new(0),
             save_as_paths: std::collections::HashSet::new(),
@@ -353,6 +363,13 @@ impl App {
         self.top_inset = TITLEBAR_H;
         self.reposition_panes();
         self.needs_redraw = true;
+    }
+
+    /// Allow the app core to open a native modal file picker. Called by the
+    /// **windowed** frontend only — it is the one frontend with a desktop
+    /// session to show a modal in and an event loop to return to.
+    pub fn enable_native_dialogs(&mut self) {
+        self.native_dialogs = true;
     }
 
     /// Turn on Petal-IDE mode: record the target program the IR inspector

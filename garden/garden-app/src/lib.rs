@@ -11,6 +11,7 @@ mod command_line;
 mod debug;
 mod editor_view;
 mod event_log;
+mod file_dialog;
 mod file_finder;
 mod frontend;
 mod layout;

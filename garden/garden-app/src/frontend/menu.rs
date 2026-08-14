@@ -228,11 +228,11 @@ mod imp {
             let mut actions = Vec::new();
             while let Ok(event) = MenuEvent::receiver().try_recv() {
                 if event.id == self.open_id {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(path) = crate::file_dialog::pick_file() {
                         actions.push(MenuAction::OpenFile(path));
                     }
                 } else if event.id == self.open_folder_id {
-                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    if let Some(path) = crate::file_dialog::pick_folder() {
                         actions.push(MenuAction::OpenFolder(path));
                     }
                 } else if let Some((_, action)) = self.items.iter().find(|(id, _)| *id == event.id)

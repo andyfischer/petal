@@ -4421,3 +4421,80 @@ fn opening_a_pr_records_it_only_with_a_number() {
     app.open_garden_diff(vec!["--pr".to_string()]);
     assert_eq!(recents.recent_prs(10).unwrap().len(), 1);
 }
+
+/// The host-intercepted `mutate` names (see `App::host_mutation`) — the only
+/// way an in-process `panel(...)` screen, which has no subprocess and whose
+/// `emit(...)` calls are dropped, can ask Garden to act.
+#[test]
+fn a_panel_mutation_can_open_a_file_in_the_focused_pane() {
+    let dir = temp_dir("mutate-open-path");
+    let file = file_with(&dir, "a.txt", "hello\n");
+    let mut app = app_with_panes(&[None]);
+
+    app.mutate_panel(0, "open_path", json!({ "path": file }));
+
+    assert_eq!(app.panes[0].file.as_deref(), Some(file.as_str()));
+    assert_eq!(app.panes[0].view.buffer.text(), "hello\n");
+}
+
+/// A name the host does not own keeps the old behavior: it is forwarded to the
+/// pane's subprocess. This panel has none, so the forwarding path is what
+/// produces the error — proof the mutation was not swallowed by the host.
+#[test]
+fn an_unknown_panel_mutation_still_goes_to_the_client() {
+    let dir = temp_dir("mutate-unknown");
+    let script = file_with(&dir, "p.ptl", "draw_rect(0, 0, 1, 1, 255, 255, 255)\n");
+    let mut app = App::new(
+        None,
+        LayoutNode::Panel {
+            script,
+            screens: Vec::new(),
+        },
+        true,
+        Viewport {
+            size: (800.0, 600.0),
+            cell: (8.0, 16.0),
+            scale: 1.0,
+        },
+        Box::new(InMemoryClipboard::default()),
+    );
+
+    app.mutate_panel(0, "apply", json!({ "edits": [] }));
+
+    let err = app.status_error.clone().unwrap_or_default();
+    assert!(
+        err.contains("apply") && err.contains("no subprocess"),
+        "unknown mutations are relayed to the client, not handled here: {err:?}"
+    );
+}
+
+/// The arg is JSON a script built, so every field is untrusted: a missing or
+/// non-numeric PR number is a status error, not a panic (and opens nothing).
+#[test]
+fn a_malformed_open_pr_mutation_is_a_status_error() {
+    let mut app = app_with_panes(&[None]);
+
+    app.mutate_panel(0, "open_pr", json!({ "number": "forty-two" }));
+    assert!(app.status_error.as_deref().unwrap().contains("open_pr"));
+
+    app.status_error = None;
+    app.mutate_panel(0, "open_pr", json!({}));
+    assert!(app.status_error.as_deref().unwrap().contains("open_pr"));
+
+    assert!(!app.panes[0].is_process(), "nothing was opened");
+}
+
+/// A native modal would block this thread forever with no window to dismiss it
+/// from, so a non-windowed App refuses the picker instead of opening one — if
+/// this regressed, the test would hang rather than fail.
+#[test]
+fn the_file_dialog_is_refused_without_a_window() {
+    let mut app = app_with_panes(&[None]);
+
+    app.mutate_panel(0, "open_file_dialog", json!({ "mode": "file" }));
+
+    assert_eq!(
+        app.status_error.as_deref(),
+        Some("open_file_dialog: no native file picker without a window")
+    );
+}

@@ -67,6 +67,7 @@ impl Frontend for HeadlessFrontend {
             Box::new(SystemClipboard::new()),
         );
         app.set_event_log(config.event_log);
+        app.set_recents(config.recents);
         app.set_save_as_paths(config.save_as_paths);
         // Match the windowed frontend's chrome so screenshots taken here
         // reflect what the real window shows.

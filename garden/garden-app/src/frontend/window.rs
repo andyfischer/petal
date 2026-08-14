@@ -199,6 +199,7 @@ impl Handler {
             Box::new(self.clipboard.clone()),
         );
         app.set_event_log(config.event_log);
+        app.set_recents(config.recents);
         app.set_save_as_paths(config.save_as_paths);
         // The windowed frontend draws its own slim titlebar across the top.
         #[cfg(target_os = "macos")]

@@ -4338,3 +4338,86 @@ fn a_tapped_key_does_not_stay_held() {
     app.settle_panels();
     assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
 }
+
+// --- Recording what the user opened ------------------------------------
+
+/// An `App` with one empty pane whose recents lists live in `dir`, plus a
+/// second handle on the same database to read back what was recorded (the
+/// `App`'s own handle is private to it).
+fn app_with_recents(dir: &Path) -> (App, crate::recents::Recents) {
+    let mut app = app_with_panes(&[None]);
+    app.set_recents(Some(crate::recents::Recents::open(dir).unwrap()));
+    (app, crate::recents::Recents::open(dir).unwrap())
+}
+
+#[test]
+fn opening_a_file_records_it_and_its_project() {
+    let dir = temp_dir("recents-open-file");
+    let repo = dir.join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    let file = file_with(&repo, "a.txt", "hello\n");
+    let (mut app, recents) = app_with_recents(&dir);
+
+    run_ex(&mut app, &format!("e {file}"));
+
+    let files = recents.recent_files(10).unwrap();
+    assert_eq!(files.len(), 1);
+    assert!(files[0].path.ends_with("a.txt"));
+    assert!(
+        files[0].project_path.as_deref().unwrap().ends_with("repo"),
+        "the file's repo root is recorded alongside it"
+    );
+    let projects = recents.recent_projects(10).unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].name, "repo");
+}
+
+/// `:e newfile` opens a buffer for a file that may never be written; only
+/// files that exist on disk belong in the recents list.
+#[test]
+fn opening_a_path_that_is_not_a_file_records_nothing() {
+    let dir = temp_dir("recents-open-missing");
+    let (mut app, recents) = app_with_recents(&dir);
+
+    run_ex(&mut app, "e /nonexistent/never-written.txt");
+
+    assert!(recents.recent_files(10).unwrap().is_empty());
+}
+
+/// Opening a folder records the project even though no file was opened, and a
+/// folder *inside* a repo records the repo root rather than the subdirectory.
+#[test]
+fn opening_a_folder_records_its_project_root() {
+    let dir = temp_dir("recents-open-folder");
+    let repo = dir.join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    let (mut app, recents) = app_with_recents(&dir);
+
+    app.record_project_opened(&repo.join("src").to_string_lossy());
+
+    let projects = recents.recent_projects(10).unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].name, "repo");
+}
+
+/// `:PR 42` records the PR; `:PR` with no number has no identity to record
+/// until `gh` resolves the branch's PR, so it records nothing.
+#[test]
+fn opening_a_pr_records_it_only_with_a_number() {
+    let dir = temp_dir("recents-open-pr");
+    let (mut app, recents) = app_with_recents(&dir);
+
+    app.record_pr_opened(&dir.to_string_lossy(), 42);
+    let prs = recents.recent_prs(10).unwrap();
+    assert_eq!(prs.len(), 1);
+    assert_eq!(prs[0].number, 42);
+    assert_eq!(
+        prs[0].title, "",
+        "the title is filled in later, not by `gh`"
+    );
+
+    // The `--pr` form the ex command builds, minus the number.
+    app.open_garden_diff(vec!["--pr".to_string()]);
+    assert_eq!(recents.recent_prs(10).unwrap().len(), 1);
+}

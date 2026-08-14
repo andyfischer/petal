@@ -300,6 +300,7 @@ impl App {
     /// is a way out of a browser pane.
     pub(in crate::app) fn open_path(&mut self, path: &str) {
         self.log_event("file", format!("open {path}"));
+        self.record_file_opened(path);
         if let Some(pane) = self.panes.get_mut(self.focus) {
             pane.set_editor(Some(path.to_string()));
             self.needs_redraw = true;
@@ -349,8 +350,13 @@ impl App {
             // `:windownew` (routed through run_command for the event log).
             MenuAction::NewWindow => self.run_menu_command(Command::WindowNew),
             MenuAction::OpenFile(path) => self.open_path(&path.to_string_lossy()),
+            // "Open Folder" is the user naming a project, so it records one —
+            // unlike `:E` / `-`, which browse in and out of directories all
+            // session and would otherwise flood the list.
             MenuAction::OpenFolder(path) => {
-                self.open_directory_browser(&path.to_string_lossy());
+                let dir = path.to_string_lossy();
+                self.record_project_opened(&dir);
+                self.open_directory_browser(&dir);
             }
             MenuAction::Save => self.apply_key(Key::Char('s'), cmd),
             MenuAction::SaveAll => self.apply_key(Key::Char('s'), cmd_shift),

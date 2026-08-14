@@ -447,6 +447,13 @@ impl App {
     /// status bar.
     pub(in crate::app) fn open_garden_diff(&mut self, extra: Vec<String>) {
         let dir = self.focused_browse_dir();
+        // `--pr` with no number means "whatever PR this branch has", which only
+        // `gh` can resolve — there is no identity to record yet, so don't.
+        if extra.first().is_some_and(|a| a == "--pr") {
+            if let Some(number) = extra.get(1).and_then(|n| n.parse::<i64>().ok()) {
+                self.record_pr_opened(&dir, number);
+            }
+        }
         let mut args = vec![dir];
         args.extend(extra);
         self.open_browser(

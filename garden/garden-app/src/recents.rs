@@ -11,6 +11,7 @@
 //! directory upserts one row rather than sprouting near-duplicates.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
@@ -60,6 +61,60 @@ pub fn project_root(path: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// The `owner/name` slug of a git remote URL, or `None` when `url` is not
+/// shaped like one.
+///
+/// Both remote spellings of the same repo must collapse to one key, since
+/// [`Recents::record_pr`] keys PRs on `(repo, number)` and a checkout can use
+/// either: the scp-like `git@github.com:owner/name.git` and the URL form
+/// `https://github.com/owner/name.git` (or `ssh://git@…`). The URL form carries
+/// a host segment the scp form does not, so it needs one more segment to be
+/// well-formed — `https://github.com/owner` is a host and a user, not a repo.
+/// A remote with neither separator is a local path clone, which has no
+/// `owner/name` to report.
+pub fn repo_slug(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let (rest, min_segments) = match url.split_once("://") {
+        Some((_scheme, rest)) => (rest, 3),
+        None => (url.split_once(':')?.1, 2),
+    };
+    let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.len() < min_segments {
+        return None;
+    }
+    let [owner, name] = segments[segments.len() - 2..] else {
+        return None;
+    };
+    Some(format!("{owner}/{name}"))
+}
+
+/// How a PR's repo is identified in the recents list: the `owner/name` slug of
+/// `dir`'s `origin` remote, falling back to `dir`'s final component when there
+/// is no origin, no git, or an unparseable URL — a checkout with a local-path
+/// remote still gets a stable, human-recognizable key.
+pub fn repo_identity(dir: &Path) -> String {
+    let remote = Command::new("git")
+        .args(["-C"])
+        .arg(dir)
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned());
+    remote
+        .as_deref()
+        .and_then(repo_slug)
+        .unwrap_or_else(|| dir_name(dir))
+}
+
+/// `path`'s final component, or its whole string when it has none (`/`).
+fn dir_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
 /// Absolute, symlink-resolved form of `path`, falling back to `path` itself
 /// when it cannot be resolved — recording a file the user is *about to*
 /// create is more useful than recording nothing.
@@ -79,10 +134,7 @@ fn now_ms() -> i64 {
 /// Insert-or-touch a project row on any connection-like handle, so
 /// [`Recents::record_file`] can run it inside its transaction.
 fn upsert_project(conn: &Connection, path: &Path, at_ms: i64) -> Result<(), String> {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+    let name = dir_name(path);
     conn.execute(
         "INSERT INTO recent_projects (path, name, last_opened_ms, open_count)
          VALUES (?1, ?2, ?3, 1)
@@ -315,6 +367,39 @@ mod tests {
         fs::create_dir_all(inner.join(".git")).unwrap();
         fs::create_dir_all(inner.join("src")).unwrap();
         assert_eq!(project_root(&inner.join("src")), Some(inner));
+    }
+
+    #[test]
+    fn repo_slug_parses_both_remote_spellings() {
+        assert_eq!(
+            repo_slug("git@github.com:owner/name.git"),
+            Some("owner/name".to_string())
+        );
+        assert_eq!(
+            repo_slug("https://github.com/owner/name.git"),
+            Some("owner/name".to_string())
+        );
+        assert_eq!(
+            repo_slug("ssh://git@github.com/owner/name"),
+            Some("owner/name".to_string())
+        );
+        // Trailing slash, and a `git remote get-url`'s trailing newline.
+        assert_eq!(
+            repo_slug("https://github.com/owner/name/\n"),
+            Some("owner/name".to_string())
+        );
+    }
+
+    /// A remote that is not a repo URL must fall through to the directory-name
+    /// fallback rather than inventing an `owner/name` key.
+    #[test]
+    fn repo_slug_rejects_malformed_remotes() {
+        assert_eq!(repo_slug(""), None);
+        assert_eq!(repo_slug("not-a-remote"), None);
+        // A local-path clone: no host, no owner.
+        assert_eq!(repo_slug("/srv/git/name.git"), None);
+        // Host + user only: no repository component.
+        assert_eq!(repo_slug("https://github.com/owner"), None);
     }
 
     #[test]

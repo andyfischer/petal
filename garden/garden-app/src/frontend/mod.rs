@@ -31,6 +31,7 @@ use std::time::Duration;
 use garden_script::{LayoutNode, ScriptHost};
 
 use crate::event_log::EventLog;
+use crate::recents::Recents;
 
 /// How often every frontend polls the layout script for hot reloads.
 pub const RELOAD_POLL: Duration = Duration::from_millis(200);
@@ -51,6 +52,9 @@ pub struct AppConfig {
     /// The per-window event log, when the state database is available. `None`
     /// disables logging (and `:report`), but never blocks the editor.
     pub event_log: Option<EventLog>,
+    /// The recents lists (files/projects/PRs), when the state database is
+    /// available. `None` disables recording, but never blocks the editor.
+    pub recents: Option<Recents>,
     /// Save-protected files: saving a pane whose file is one of these prompts
     /// for a filename ("save as") instead of overwriting it. Populated for the
     /// Petal-IDE default (scratch) mode; empty otherwise.

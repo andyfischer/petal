@@ -175,6 +175,7 @@ pub fn run() {
     // sibling fallback). Best-effort — a state hiccup leaves both `None`, and
     // the editor still launches with logging and per-window persistence off.
     let event_log = attach_window_state(script.as_mut());
+    let recents = open_recents();
 
     // Petal-IDE default (scratch) mode protects the scratch file: saving prompts
     // for a filename rather than overwriting it (see App::save_as_paths). An
@@ -204,6 +205,7 @@ pub fn run() {
         script_owns_layout,
         debug_port,
         event_log,
+        recents,
         save_as_paths,
         ide_target,
     };
@@ -250,12 +252,14 @@ pub(crate) fn new_window_config() -> AppConfig {
         None => (None, false),
     };
     let event_log = attach_window_state(script.as_mut());
+    let recents = open_recents();
     AppConfig {
         script,
         fallback_layout: empty,
         script_owns_layout,
         debug_port: None,
         event_log,
+        recents,
         save_as_paths: std::collections::HashSet::new(),
         ide_target: None,
     }
@@ -467,16 +471,36 @@ fn resolve_pr_subcommand(args: &[String]) -> LayoutNode {
     let dir = std::env::current_dir()
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_else(|_| ".".to_string());
-    let mut client_args = vec![dir];
+    let mut client_args = vec![dir.clone()];
     if !local {
         client_args.push("--pr".to_string());
     }
     if let Some(arg) = positional.filter(|a| !a.is_empty()) {
         client_args.push(arg.clone());
+        // Only an explicit PR number is a recordable identity: a bare `garden
+        // pr` is "whatever PR this branch has", which only `gh` can resolve,
+        // and `--local` is not a PR at all.
+        if let Some(number) = arg.parse::<i64>().ok().filter(|_| !local) {
+            record_pr_from_cli(Path::new(&dir), number);
+        }
     }
     LayoutNode::Process {
         command: process_pane::garden_diff_bin(),
         args: client_args,
+    }
+}
+
+/// Record a PR opened from the command line (`garden pr <number>`), the CLI
+/// twin of [`App::record_pr_opened`](app::App::record_pr_opened). The title is
+/// left empty here for the same reason: resolving it needs `gh`. Best-effort —
+/// a missing state database silently records nothing.
+fn record_pr_from_cli(dir: &Path, number: i64) {
+    let Some(recents) = open_recents() else {
+        return;
+    };
+    let repo = recents::repo_identity(dir);
+    if let Err(err) = recents.record_pr(&repo, number, "", Some(dir)) {
+        eprintln!("garden: {err}");
     }
 }
 
@@ -659,6 +683,24 @@ fn open_window_state() -> (Option<PathBuf>, Option<event_log::EventLog>) {
         Err(err) => {
             eprintln!("garden: window state unavailable ({err}); layout changes and event logging won't persist to ~/.garden");
             (None, None)
+        }
+    }
+}
+
+/// Open this window's handle on the recents lists (files/projects/PRs), on a
+/// connection of its own — startup has already moved the `State` connection
+/// into the event log. Best-effort like [`open_window_state`]: `None` (after a
+/// warning) when `$HOME` is unset or the database cannot be opened, which only
+/// costs the window its recents bookkeeping.
+fn open_recents() -> Option<recents::Recents> {
+    let state_dir = config_dir().map(|d| d.join("state"))?;
+    match recents::Recents::open(&state_dir) {
+        Ok(recents) => Some(recents),
+        Err(err) => {
+            eprintln!(
+                "garden: recents unavailable ({err}); recently-opened files won't be tracked"
+            );
+            None
         }
     }
 }

@@ -58,6 +58,7 @@ fn run_loop(config: AppConfig) -> io::Result<()> {
         Box::new(SystemClipboard::new()),
     );
     app.set_event_log(config.event_log);
+    app.set_recents(config.recents);
     app.set_save_as_paths(config.save_as_paths);
 
     let (tx, rx) = mpsc::channel();

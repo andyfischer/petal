@@ -18,6 +18,7 @@
 //!   window prefix) and text injection
 //! - [`process`] — applying GPP subprocess messages and the directory browser
 //! - [`commands`] — ex commands, search/substitute, the native menu
+//! - [`recents`] — recording what the user opened into [`crate::recents`]
 //! - [`mouse`] — pointer hit-testing, drag selection, scrolling
 //! - [`scene`] — building the render frame
 //! - [`debug_server`] — answering debug-server requests against live state
@@ -44,6 +45,7 @@ mod lsp;
 mod mouse;
 mod panes;
 mod process;
+mod recents;
 mod scene;
 mod types;
 
@@ -194,6 +196,12 @@ pub struct App {
     /// and when state is unavailable, in which case logging and `:report` are
     /// silently disabled.
     event_log: Option<EventLog>,
+    /// Recently-opened files/projects/PRs, when the state database is
+    /// available. Attached after construction by the frontend via
+    /// [`set_recents`](App::set_recents); `None` in unit tests and when state
+    /// is unavailable, in which case nothing is recorded — recording is
+    /// bookkeeping and must never stand between the user and their file.
+    recents: Option<crate::recents::Recents>,
     /// Height of the custom titlebar reserved at the top of the drawable area,
     /// logical pixels. Zero (the default) draws no titlebar; the windowed and
     /// headless frontends enable it via [`enable_titlebar`](App::enable_titlebar).
@@ -324,6 +332,7 @@ impl App {
             theme_scheme,
             last_theme_rev,
             event_log: None,
+            recents: None,
             top_inset: 0.0,
             frame: std::cell::Cell::new(0),
             save_as_paths: std::collections::HashSet::new(),

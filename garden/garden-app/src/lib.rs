@@ -438,6 +438,7 @@ const BUILTIN_GPP_APPS: &[&str] = &[
     "sqlite-browser",
     "git-log",
     "garden-diff",
+    "main-menu",
 ];
 
 /// Launch a builtin GPP client `app` (resolved beside `garden`) as the whole
@@ -734,7 +735,9 @@ fn print_usage() {
     eprintln!(
         "       garden <gpp-app> [args…] Launch a builtin GPP app directly (no --subprocess):"
     );
-    eprintln!("                   directory-browser, sqlite-browser, git-log, garden-diff");
+    eprintln!(
+        "                   directory-browser, sqlite-browser, git-log, garden-diff, main-menu"
+    );
     eprintln!("       garden setup <command>   Seed or reset ~/.garden (see `garden setup`)");
     eprintln!();
     eprintln!("Options:");
@@ -816,6 +819,7 @@ mod tests {
             "sqlite-browser",
             "git-log",
             "garden-diff",
+            "main-menu",
         ] {
             assert!(
                 BUILTIN_GPP_APPS.contains(&app),

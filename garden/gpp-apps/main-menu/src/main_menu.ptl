@@ -1,0 +1,315 @@
+// Garden's start screen — the drawer.
+//
+// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git and
+// sqlite drawers this is a FIXED, GENERIC script that bakes in no data: the
+// three lists arrive at runtime through the async `query(kind, arg)` native,
+// answered by the main-menu subprocess reading the recents tables of
+// ~/.garden/state/db.sqlite:
+//
+//   query("recents", "") → {
+//     projects: [ { path, name, last_opened_ms, open_count } … ],
+//     files:    [ { path, name, dir, project_name, last_opened_ms, open_count } … ],
+//     prs:      [ { repo, number, title, last_opened_ms } … ] }
+//
+// The provider derives every display field (basename, parent dir, project
+// name), so nothing here does path surgery.
+//
+// ACTIONS GO TO THE HOST, NOT THE APP. Opening a file, a folder, a PR, or the
+// native picker are `mutate(...)` calls that App::host_mutation intercepts
+// before any forwarding reaches the subprocess — the only channel a panel has
+// to ask Garden to act (`emit` is dropped for in-process panels, and only the
+// host can put a file in a pane):
+//
+//   mutate("open_project",     { path })            mutate("open_path", { path })
+//   mutate("open_pr",          { number })          mutate("open_file_dialog", { mode })
+//
+// The three sections are ONE flat selection list: up/down (and k/j) walk from
+// the last project into the first file and on into the PRs, Enter opens what is
+// selected. An empty section keeps its heading and shows a dim hint instead of
+// vanishing, so a first-ever launch — no database at all — still looks like the
+// menu it is rather than a broken screen.
+//
+// The host observes every named binding a frame makes and reports it at the
+// debug server (/state → panes[].panel.values), so `recents_ready`,
+// `project_count`, `file_count`, `pr_count`, `selected`, `row_count`,
+// `open_button` and `last_action` are the handles the integration test drives
+// this screen by — the script publishes nothing.
+//
+// Garden renders all panel text at its one monospace size, so every draw_text
+// here uses size 14: hierarchy comes from color, never from size.
+
+// ── panel-local UI state ─────────────────────────────────────────────────────
+state selected = 0
+state scroll_px = 0
+// The last activation this panel performed, by mutation name. Kept in `state`
+// because a mutation is a one-frame edge: the test reads the name a frame (or
+// several) after the click that caused it.
+state last_action = ""
+
+// ── data (the query result, cached in `state` so we poll only until ready) ────
+state recents = { projects: [], files: [], prs: [] }
+state recents_ready = false
+state recents_err = ""
+
+// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+let P = palette()
+let BG     = P.window_bg
+let CARD   = P.panel
+let SEL    = P.sel
+let HOVER  = P.hover
+let LINE   = P.border
+let TEXT   = P.text
+let MUT    = P.text_mut
+let DIM    = P.text_dim
+let FAINT  = P.text_faint
+let ACCENT = P.accent
+let BLUE   = P.blue
+let GREEN  = P.green
+let PURPLE = P.purple
+let RED    = P.red
+
+let FS = 14
+
+// ── geometry ─────────────────────────────────────────────────────────────────
+let w = screen_width()
+let h = screen_height()
+let PAD = 24
+let ROW_H = 38          // two text lines: the name, then its dim context line
+let HEAD_H = 30         // a section heading + its rule
+let HINT_H = 26         // the dim one-liner an empty section shows instead
+let GAP = 18
+
+// A centered column: the screen is a start page, not a dense list, so it stays
+// readable rather than stretching a file path across a 2000px window.
+let col_w = min(760, w - 2 * PAD)
+let col_x = max(PAD, (w - col_w) / 2)
+
+// ── data: load once, then stop polling ───────────────────────────────────────
+if !recents_ready then
+  let rd = query("recents", "")
+  if is_ready(rd) then
+    recents = rd
+    recents_ready = true
+    recents_err = ""
+  elsif is_error(rd) then
+    // A reader failure is never fatal (a missing database answers with empty
+    // lists), so this is a genuine surprise — show it, keep the buttons live.
+    recents_err = error_of(rd) ?? "could not read recents"
+    recents_ready = true
+  end
+end
+let projects = recents.projects
+let files = recents.files
+let prs = recents.prs
+let project_count = len(projects)
+let file_count = len(files)
+let pr_count = len(prs)
+
+// ── the flat row model: three sections, one selection ─────────────────────────
+let rows = []
+for i in range(0, project_count) do rows = append(rows, { kind: "project", idx: i }) end
+for i in range(0, file_count) do rows = append(rows, { kind: "file", idx: i }) end
+for i in range(0, pr_count) do rows = append(rows, { kind: "pr", idx: i }) end
+let row_count = len(rows)
+
+// ── header + the two Open buttons ─────────────────────────────────────────────
+let title_y = PAD
+let btn_y = title_y + 52
+let BTN_H = 30
+let open_label = "Open File…"
+let folder_label = "Open Folder…"
+// Written as plain `{x, y, w, h}` records rather than `rect(…)`: every rect-taking
+// native accepts either, but only a record survives into /state → panel.values,
+// and a test that clicks Open by reading its geometry beats one that hardcodes it.
+let open_button = {x: col_x, y: btn_y, w: text_width(open_label, FS) + 32, h: BTN_H}
+let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
+                     w: text_width(folder_label, FS) + 32, h: BTN_H}
+
+let content_top = btn_y + BTN_H + 26
+let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - PAD}
+
+// ── layout pass: every row's offset inside the scrolled content ───────────────
+// Computed before input so a click and the draw agree on where a row is.
+let cursor = 0
+let row_off = []
+let proj_head = cursor
+cursor = cursor + HEAD_H
+if project_count == 0 then
+  cursor = cursor + HINT_H
+else
+  for i in range(0, project_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+end
+cursor = cursor + GAP
+let file_head = cursor
+cursor = cursor + HEAD_H
+if file_count == 0 then
+  cursor = cursor + HINT_H
+else
+  for i in range(0, file_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+end
+cursor = cursor + GAP
+let pr_head = cursor
+cursor = cursor + HEAD_H
+if pr_count == 0 then
+  cursor = cursor + HINT_H
+else
+  for i in range(0, pr_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+end
+let content_h = cursor
+
+// ── input: keyboard selection over the flat list ──────────────────────────────
+let key_moved = false
+if key_pressed("down") || key_pressed("j") then selected = selected + 1; key_moved = true end
+if key_pressed("up") || key_pressed("k") then selected = selected - 1; key_moved = true end
+if key_pressed("home") then selected = 0; key_moved = true end
+if key_pressed("end") then selected = row_count - 1; key_moved = true end
+selected = int(clamp(selected, 0, max(0, row_count - 1)))
+
+// ── input: clicks (buttons, then rows) ────────────────────────────────────────
+// `activate` names the row to open this frame (-1 = none): a click on it, or
+// Enter on the selection. Resolved before the mutations so both paths take one
+// code path.
+let activate = -1
+let clicked_button = false
+if mouse_pressed(0) then
+  if point_in(mouse_x(), mouse_y(), open_button) then
+    clicked_button = true
+    last_action = "open_file_dialog"
+    mutate("open_file_dialog", { mode: "file" })
+  elsif point_in(mouse_x(), mouse_y(), folder_button) then
+    clicked_button = true
+    last_action = "open_file_dialog"
+    mutate("open_file_dialog", { mode: "folder" })
+  end
+end
+
+if mouse_pressed(0) && !clicked_button && point_in(mouse_x(), mouse_y(), content_rect) then
+  for i in range(0, row_count) do
+    let ry = content_top + row_off[i] - scroll_px
+    if point_in(mouse_x(), mouse_y(), rect(content_rect.x, ry, content_rect.w, ROW_H)) then
+      selected = i
+      activate = i
+    end
+  end
+end
+// The host spells Return `"return"` (never `"enter"`) — see panel_key_name.
+if key_pressed("return") && row_count > 0 then activate = selected end
+
+// ── the activation itself: one host mutation per row kind ─────────────────────
+if activate >= 0 && activate < row_count then
+  let row = rows[activate]
+  if row.kind == "project" then
+    last_action = "open_project"
+    mutate("open_project", { path: projects[row.idx].path })
+  elsif row.kind == "file" then
+    last_action = "open_path"
+    mutate("open_path", { path: files[row.idx].path })
+  else
+    last_action = "open_pr"
+    mutate("open_pr", { number: prs[row.idx].number })
+  end
+end
+
+// ── input: scrolling (wheel over the content; keys pull the selection back) ───
+if hovered(content_rect) then scroll_px = scroll_px + scroll_y() * 24 end
+if key_moved && row_count > 0 then
+  scroll_px = ensure_visible_px(scroll_px, row_off[selected], ROW_H, content_rect.h)
+end
+scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
+
+// ── draw: chrome ──────────────────────────────────────────────────────────────
+clear(BG.r, BG.g, BG.b)
+draw_text("Garden", {x: col_x, y: title_y}, FS, ACCENT)
+draw_text("a place to start", {x: col_x, y: title_y + 20}, FS, FAINT)
+
+// Two pills: the primary Open carries the accent border, the folder one the
+// ordinary hairline — same shape, so the pair reads as one control group.
+fn draw_button(r, label, accented)
+  let bg = CARD
+  if hovered(r) then bg = HOVER end
+  draw_rect(r, bg)
+  let border = LINE
+  if accented || hovered(r) then border = ACCENT end
+  draw_rect_outline(r, border)
+  let fg = MUT
+  if accented then fg = TEXT end
+  draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, fg)
+end
+draw_button(open_button, open_label, true)
+draw_button(folder_button, folder_label, false)
+
+if len(recents_err) > 0 then
+  draw_text(ellipsize(recents_err, col_w, FS), {x: col_x, y: btn_y + BTN_H + 6}, FS, RED)
+end
+
+// ── draw: the three sections ──────────────────────────────────────────────────
+clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
+
+fn draw_heading(label, count, y)
+  draw_text(label, {x: col_x, y: y}, FS, ACCENT)
+  if count > 0 then draw_text_right("{count}", col_x + col_w, y, FS, FAINT) end
+  draw_line({x: col_x, y: y + 20}, {x: col_x + col_w, y: y + 20}, LINE)
+end
+
+draw_heading("Recent Projects", project_count, content_top + proj_head - scroll_px)
+draw_heading("Recent Files", file_count, content_top + file_head - scroll_px)
+draw_heading("Recent Pull Requests", pr_count, content_top + pr_head - scroll_px)
+
+// An empty section says so rather than collapsing — on a first launch all three
+// are empty, and three headings over blank space would read as a failure.
+if project_count == 0 then
+  draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, FAINT)
+end
+if file_count == 0 then
+  draw_text("No recent files yet", {x: col_x, y: content_top + file_head + HEAD_H - scroll_px}, FS, FAINT)
+end
+if pr_count == 0 then
+  draw_text("No recent pull requests yet", {x: col_x, y: content_top + pr_head + HEAD_H - scroll_px}, FS, FAINT)
+end
+
+for i in range(0, row_count) do
+  let row = rows[i]
+  let ry = content_top + row_off[i] - scroll_px
+  let row_r = rect(content_rect.x, ry, content_rect.w, ROW_H)
+  // Cull rows scrolled out of the viewport: nothing below draws for them.
+  if ry + ROW_H > content_rect.y && ry < content_rect.y + content_rect.h then
+    if i == selected then
+      draw_rect(row_r, SEL)
+    elsif hovered(row_r) then
+      draw_rect(row_r, HOVER)
+    end
+    let name_c = MUT
+    if i == selected then name_c = TEXT end
+    let tx = row_r.x + 12
+    let avail = row_r.w - 24
+    if row.kind == "project" then
+      let p = projects[row.idx]
+      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), GREEN)
+      draw_text(ellipsize_tail(p.name, avail, FS), {x: tx, y: ry + 3}, FS, name_c)
+      draw_text(ellipsize(p.path, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+    elsif row.kind == "file" then
+      let f = files[row.idx]
+      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), BLUE)
+      draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 3}, FS, name_c)
+      // The head of a long path is the expendable part — `ellipsize` keeps the
+      // tail, which is what tells two same-named files apart.
+      let ctx = f.dir
+      if len(f.project_name) > 0 then ctx = "{f.project_name} · {f.dir}" end
+      draw_text(ellipsize(ctx, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+    else
+      let pr = prs[row.idx]
+      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), PURPLE)
+      draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 3}, FS, name_c)
+      if len(pr.title) > 0 then
+        draw_text(ellipsize_tail(pr.title, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+      end
+    end
+  end
+end
+clip_none()
+
+// A hint only while there is something to walk — the keys do nothing on an
+// empty screen, and saying otherwise is worse than saying nothing.
+if row_count > 0 then
+  draw_text_right("↑↓ move · Enter open", col_x + col_w, h - PAD + 4, FS, FAINT)
+end

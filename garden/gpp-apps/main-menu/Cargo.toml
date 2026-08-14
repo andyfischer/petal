@@ -1,0 +1,18 @@
+[package]
+name = "main-menu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The panel-mode GPP app behind `garden main-menu` — Garden's start screen. The
+# bin pushes `main_menu.ptl` and answers its one query kind from the recents
+# tables in the shared state database; `lib.rs` holds the reader (and its tests).
+
+[dependencies]
+petal-query = { workspace = true }
+serde_json = "1"
+# Same bundled build garden-app uses — no system SQLite needed, builds offline.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"

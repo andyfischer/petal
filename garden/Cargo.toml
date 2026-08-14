@@ -10,6 +10,7 @@ members = [
     "gpp-apps/garden-diff",
     "gpp-apps/git-viewers",
     "gpp-apps/gpp-test-app",
+    "gpp-apps/main-menu",
     "gpp-apps/screens-demo",
     "gpp-apps/sqlite-browser",
 ]

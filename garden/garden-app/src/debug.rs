@@ -967,7 +967,10 @@ mod tests {
     #[test]
     fn every_modifier_is_parsed_for_key_and_mouse() {
         let all = mods_from_names(&["cmd", "ctrl", "shift", "alt"]);
-        assert_eq!((all.cmd, all.ctrl, all.shift, all.alt), (true, true, true, true));
+        assert_eq!(
+            (all.cmd, all.ctrl, all.shift, all.alt),
+            (true, true, true, true)
+        );
         // Alternate spellings.
         let alt = mods_from_names(&["option"]);
         assert!(alt.alt);
@@ -977,14 +980,22 @@ mod tests {
         // Unknown names are ignored, not an error.
         assert_eq!(mods_from_names(&["hyper"]), crate::app::Mods::default());
 
-        let mouse = match route("POST", "/mouse", br#"{"op":"down","x":1,"y":2,"mods":["alt","cmd"]}"#) {
+        let mouse = match route(
+            "POST",
+            "/mouse",
+            br#"{"op":"down","x":1,"y":2,"mods":["alt","cmd"]}"#,
+        ) {
             Ok(DebugCmd::Mouse { mods, .. }) => mods,
             _ => panic!("did not route to Mouse"),
         };
         assert!(mouse.alt, "/mouse must deliver alt, not just shift");
         assert!(mouse.cmd);
         // The legacy `"shift": true` shorthand still works.
-        let legacy = match route("POST", "/mouse", br#"{"op":"down","x":1,"y":2,"shift":true}"#) {
+        let legacy = match route(
+            "POST",
+            "/mouse",
+            br#"{"op":"down","x":1,"y":2,"shift":true}"#,
+        ) {
             Ok(DebugCmd::Mouse { mods, .. }) => mods,
             _ => panic!("did not route to Mouse"),
         };

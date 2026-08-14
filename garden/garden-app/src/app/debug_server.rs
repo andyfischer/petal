@@ -453,10 +453,7 @@ fn absolute_path(path: &std::path::Path) -> String {
 }
 
 /// Apply a `/state` value filter to one panel's observation map.
-fn filter_values(
-    observed: &serde_json::Map<String, Value>,
-    filter: &debug::ValueFilter,
-) -> Value {
+fn filter_values(observed: &serde_json::Map<String, Value>, filter: &debug::ValueFilter) -> Value {
     if filter.is_all() {
         return Value::Object(observed.clone());
     }
@@ -752,10 +749,7 @@ mod tests {
         assert!(values.contains_key("obs_sel") && values.contains_key("obs_scroll"));
 
         let dropped = state_with(&mut app, "/state?values=none");
-        assert!(panel_of(&dropped)["values"]
-            .as_object()
-            .unwrap()
-            .is_empty());
+        assert!(panel_of(&dropped)["values"].as_object().unwrap().is_empty());
     }
 
     /// A key from an erroring frame used to come back *absent*, which reads as

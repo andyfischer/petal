@@ -1374,10 +1374,7 @@ mod tests {
         assert_eq!(panel_key_text(Key::Char('s'), CMD), None);
         assert_eq!(panel_key_text(Key::Char('s'), ALT), None);
         // Shift is not a command modifier — it is already in the character.
-        assert_eq!(
-            panel_key_text(Key::Char('S'), SHIFT),
-            Some("S".to_string())
-        );
+        assert_eq!(panel_key_text(Key::Char('S'), SHIFT), Some("S".to_string()));
         assert_eq!(panel_key_text(Key::Char('s'), NONE), Some("s".to_string()));
     }
 

@@ -23,7 +23,7 @@ the first place to add a test for any new behavior.
 | App core | `garden-app/src/app/tests.rs` | the `App` input/command surface end to end in memory: key routing, ex commands, splits/close, clipboard, file refresh, `/state` JSON |
 | File finder | `garden-app/src/file_finder.rs` (`#[cfg(test)]`) | the fuzzy matcher, ranking, and the modal finder state machine |
 | Panel tessellation | `garden-app/src/panel_tess.rs` (`#[cfg(test)]`) | pure geometry→mesh-triangle tessellation for Petal panels |
-| State / event log | `garden-app/src/state.rs`, `event_log.rs` | the SQLite state dir: window ids, migrations, event buffering, `:report` capture (temp-dir DBs) |
+| State / event log | `garden-app/src/state.rs`, `event_log.rs`, `recents.rs` | the SQLite state dir: window ids, migrations (incl. upgrading an existing DB in place), event buffering, `:report` capture, recently-opened files/projects/PRs and repo-root detection (temp-dir DBs) |
 | Terminal grid | `garden-app/src/frontend/grid.rs` (`#[cfg(test)]`) | Scene→character-grid rasterization for the TUI frontend |
 | GPP contract | `gpp/src/lib.rs` (`#[cfg(test)]`) | envelope/param serde round-trips and the key-name encoding |
 | GPP clients | `gpp-apps/*/src/` | each Lines-mode browser's pure core (listing/log navigation, activation); the `git-log` app's git plumbing (`cargo test -p git-viewers`) and `garden-diff`'s diff parsing, projection **spec** (per-line origins, hunk spans), comment weaving, and write-back splicing (`cargo test -p garden-diff`) — the *semantics* of editing a projection live in `garden-core`, not here, all against real temporary repos |

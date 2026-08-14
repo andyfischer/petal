@@ -9,6 +9,8 @@
 //! [`State`] is the whole public surface: open it once at startup
 //! ([`State::open`]), allocate a window id ([`State::new_window_id`]), and ask
 //! for that window's overlay path ([`State::window_overlay_path`]).
+//! [`open_db`] is the shared open-and-migrate step, also used by
+//! [`crate::recents`], which needs its own connection to the same file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,7 +55,59 @@ const MIGRATIONS: &[&str] = &[
          message   TEXT NOT NULL,
          context   TEXT NOT NULL
      );",
+    // v3 — the "recently opened" registry backing the start screen (see
+    // `recents.rs`). Three separate tables because the three things are opened
+    // by different keys: a file by absolute path, a project by its repo root,
+    // a PR by (repo, number). Paths are the primary keys so re-opening the
+    // same thing upserts instead of accumulating duplicates; `open_count`
+    // survives the upsert so frequency can rank alongside recency.
+    // `project_path` is nullable — files outside any repo and PRs opened
+    // without a checkout still belong in the list. Only `recent_files` gets a
+    // recency index: it is the one list expected to grow unbounded.
+    "CREATE TABLE recent_projects (
+         path           TEXT PRIMARY KEY,
+         name           TEXT NOT NULL,
+         last_opened_ms INTEGER NOT NULL,
+         open_count     INTEGER NOT NULL DEFAULT 1
+     );
+     CREATE TABLE recent_files (
+         path           TEXT PRIMARY KEY,
+         project_path   TEXT,
+         last_opened_ms INTEGER NOT NULL,
+         open_count     INTEGER NOT NULL DEFAULT 1
+     );
+     CREATE INDEX recent_files_last ON recent_files (last_opened_ms);
+     CREATE TABLE recent_prs (
+         repo           TEXT NOT NULL,
+         number         INTEGER NOT NULL,
+         title          TEXT NOT NULL DEFAULT '',
+         project_path   TEXT,
+         last_opened_ms INTEGER NOT NULL,
+         PRIMARY KEY (repo, number)
+     );",
 ];
+
+/// Open (creating if absent) the SQLite database under `dir`, configure the
+/// connection for the multi-connection world, and bring its schema up to date.
+///
+/// Shared by [`State::open`] and [`Recents::open`](crate::recents::Recents::open):
+/// startup consumes the `State` into the [`EventLog`](crate::event_log::EventLog),
+/// so anything wanting the database later must open its own connection to the
+/// same file — which is only safe with the WAL + busy_timeout applied here.
+pub(crate) fn open_db(dir: &Path) -> Result<Connection, String> {
+    fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let mut conn =
+        Connection::open(dir.join("db.sqlite")).map_err(|e| format!("open state db: {e}"))?;
+    // Two windows = two connections writing to one db.sqlite; WAL + a
+    // busy_timeout keep concurrent EventLog flushes from failing with
+    // SQLITE_BUSY (roadmap §5.3).
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| format!("enable WAL on state db: {e}"))?;
+    conn.busy_timeout(std::time::Duration::from_millis(5000))
+        .map_err(|e| format!("set state db busy_timeout: {e}"))?;
+    migrate(&mut conn, MIGRATIONS)?;
+    Ok(conn)
+}
 
 /// Handle to the `~/.garden/state` directory and its SQLite database.
 pub struct State {
@@ -67,19 +121,8 @@ impl State {
     /// database file if absent) and bring its schema up to date by running any
     /// pending [`MIGRATIONS`].
     pub fn open(dir: &Path) -> Result<State, String> {
-        fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-        let mut conn =
-            Connection::open(dir.join("db.sqlite")).map_err(|e| format!("open state db: {e}"))?;
-        // Two windows = two connections writing to one db.sqlite; WAL + a
-        // busy_timeout keep concurrent EventLog flushes from failing with
-        // SQLITE_BUSY (roadmap §5.3).
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(|e| format!("enable WAL on state db: {e}"))?;
-        conn.busy_timeout(std::time::Duration::from_millis(5000))
-            .map_err(|e| format!("set state db busy_timeout: {e}"))?;
-        migrate(&mut conn, MIGRATIONS)?;
         Ok(State {
-            conn,
+            conn: open_db(dir)?,
             dir: dir.to_path_buf(),
         })
     }
@@ -271,5 +314,54 @@ mod tests {
             migrate(&mut conn, v2).unwrap();
             assert_eq!(schema_version(&conn), 2);
         }
+    }
+
+    /// The real upgrade path users take: a database stopped at v2 (windows +
+    /// events, before the recents tables existed) picks up v3 on the next open
+    /// with every row it already held still there.
+    #[test]
+    fn v2_database_upgrades_to_v3_without_data_loss() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.sqlite");
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            migrate(&mut conn, &MIGRATIONS[..2]).unwrap();
+            assert_eq!(schema_version(&conn), 2);
+            conn.execute("INSERT INTO windows DEFAULT VALUES", [])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO events (window_id, at_ms, category, detail) VALUES (1, 42, 'key', 'j')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let state = State::open(dir.path()).unwrap();
+        assert_eq!(schema_version(&state.conn), MIGRATIONS.len() as i64);
+
+        let windows: i64 = state
+            .conn
+            .query_row("SELECT count(*) FROM windows", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(windows, 1);
+        let detail: String = state
+            .conn
+            .query_row("SELECT detail FROM events WHERE at_ms = 42", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(detail, "j");
+
+        // And the v3 tables are now usable on that same upgraded database.
+        let recents: i64 = state
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table'
+                   AND name IN ('recent_projects','recent_files','recent_prs')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(recents, 3);
     }
 }

@@ -19,6 +19,7 @@ mod panel_tess;
 mod panel_view;
 mod petal_ide;
 mod process_pane;
+mod recents;
 mod script_client;
 mod search;
 mod setup;
@@ -690,9 +691,7 @@ fn print_usage() {
     eprintln!(
         "       garden <gpp-app> [args…] Launch a builtin GPP app directly (no --subprocess):"
     );
-    eprintln!(
-        "                   directory-browser, sqlite-browser, git-log, garden-diff"
-    );
+    eprintln!("                   directory-browser, sqlite-browser, git-log, garden-diff");
     eprintln!("       garden setup <command>   Seed or reset ~/.garden (see `garden setup`)");
     eprintln!();
     eprintln!("Options:");

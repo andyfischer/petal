@@ -64,11 +64,11 @@ pub use panel::{
     buttons, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd, PanelData,
     PanelHost, PanelInput, PanelTheme, ProjectionSpec, KEY_NAMES,
 };
+pub use panel_store::PanelStore;
 pub use panel_trace::{
     drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragHandle, DragOutcome, DrawOrigin,
     DrawTrace, SourceRewrite, TracedArg,
 };
-pub use panel_store::PanelStore;
 pub use query::{HostData, QueryProvider, QueryState};
 pub use theme::Theme;
 

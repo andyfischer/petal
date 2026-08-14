@@ -80,6 +80,19 @@ parsing have *unit-level* coverage in `gpp-apps/git-viewers` (`cargo test -p
 git-viewers`), tested against scratch repos — faster to iterate on than the full
 harness.
 
+**The start screen** (`tools/main-menu-integration-test.ts`) — the `main-menu`
+panel a bare `garden` opens, under a redirected `$HOME` so its recents database
+is hermetic. It seeds that database by *running* Garden (a first launch opens
+two fixture files through the real `:e` path, then quits with Cmd-Q so the WAL
+is checkpointed) rather than writing rows by hand — which is what makes it catch
+schema drift between garden-app, the writer, and main-menu, the read-only
+reader. It then asserts the menu comes up on those recents, that the keyboard
+walks and clamps the one flat selection, and that a click on a Recent Files row
+turns the pane into an editor on that file — the drawer's `mutate("open_path")`
+travelling through `App::host_mutation` to the pane, which is the only thing
+that proves the menu can actually open anything. A second launch on an empty
+`$HOME` covers the first-ever run: three empty sections, no error.
+
 **Multiple windows** (`tools/multi-window-integration-test.ts`) — the one
 integration script that is **windowed-only** (it opens two real OS windows;
 there is no headless multi-window path, since the whole point is the winit

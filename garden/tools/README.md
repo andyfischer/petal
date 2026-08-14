@@ -24,6 +24,7 @@ no `enum`s, namespaces, or constructor parameter properties.
 | `integration-test.ts` | The top-layer functional test: vim editing, the command line, file I/O, and the directory-browser GPP pane. `--window` runs it through the real winit/wgpu frontend. |
 | `diff-review-integration-test.ts` | The `garden-diff` review client end to end, against a throwaway git repo. |
 | `git-panel-integration-test.ts` | The `:Git` history browser (`git-log` panel-mode GPP app). |
+| `main-menu-integration-test.ts` | The start screen a bare `garden` opens, on a recents database seeded by really opening files under a throwaway `$HOME`. |
 | `multi-window-integration-test.ts` | Two real OS windows and the per-window debug addressing. Windowed-only. |
 | `screenshot-consistency-test.ts` | The debug server's settle-then-capture contract, asserted down to the captured PNG's pixels. |
 | `build-macos-app.ts` | Bundles `Garden.app` with its Dock/Finder icon. macOS only. |

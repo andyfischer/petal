@@ -755,15 +755,21 @@ directly in an editor pane with **no script** (the `$EDITOR` shape — `App`
 then uses a fallback `LayoutNode` and skips reload polling); a single directory
 opens the GPP directory browser. `garden open <path>` is the unambiguous form —
 everything after `open` is a path, never a subcommand, so a file literally named
-`git` or `setup` still opens. With no positional argument, the layout script
-loads: `--init <path>` if given, else `~/.garden/init.ptl` if it exists, else a
+`git` or `setup` still opens. With no positional argument the **main menu**
+(`gpp-apps/main-menu`, a `LayoutNode::Process` over the cwd) is the layout, and
+`~/.garden/init.ptl` loads *config-only* — its color scheme and settings apply,
+its `layout(...)` does not (`script_owns_layout = false`, the same shape as a
+file argument). The script takes the layout back on `--no-menu`, on an explicit
+`--init <path>`, or when the `main-menu` binary isn't installed
+(`process_pane::client_bin_exists`), in which case the script loads as before:
+`--init <path>` if given, else `~/.garden/init.ptl` if it exists, else a
 single empty editor. `garden petal-ide [file.ptl]` (`resolve_petal_ide_subcommand`
 in `main.rs`) is the **Petal IDE** launcher: it builds the fallback layout
 `row([editor(file), panel(file)])` over one absolute path (seeding a starter
 sketch for a new file, or `~/.garden/petal-ide/scratch.ptl` with no argument), so
 editing the source live-updates the canvas beside it — see the **live editor↔panel
 binding** under EditorView/panel below, and the user guide `docs/petal-ide-mode.md`.
-Options: `--init <path>`, `--term`,
+Options: `--init <path>`, `--no-menu`, `--term`,
 `--headless`, `--debug-port <n>` (start the debug server on port n; 0 = pick free;
 no default). `garden setup <cmd>` (`setup.rs`) is the administrative side door — it never
 opens a window: `initialize-config-if-missing` seeds `~/.garden` (idempotent;

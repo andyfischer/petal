@@ -330,6 +330,33 @@ pub fn garden_diff_bin() -> String {
     sibling_bin("garden-diff", "GARDEN_DIFF_BIN")
 }
 
+/// Resolve the `main-menu` GPP client binary — the panel-mode app a bare
+/// `garden` opens (recent projects / files / PRs) — by the same rules as
+/// [`directory_browser_bin`]: `$GARDEN_MAIN_MENU_BIN`, else a sibling of the
+/// running executable, else the bare name on `$PATH`. A separate workspace
+/// binary (in `gpp-apps/main-menu`); build the whole workspace so it lands
+/// beside `garden`. Because this one backs the *default* launch, callers pair it
+/// with [`client_bin_exists`] and fall back to the init-script layout when the
+/// binary is missing — Garden must launch either way.
+pub fn main_menu_bin() -> String {
+    sibling_bin("main-menu", "GARDEN_MAIN_MENU_BIN")
+}
+
+/// Whether a resolved client binary (as returned by [`main_menu_bin`] & co.)
+/// names something that exists: a path is checked directly, a bare name is
+/// looked up across `$PATH` the way the spawn would. Only worth calling when a
+/// missing client has a graceful fallback — spawning and failing is otherwise
+/// the cheaper check.
+pub fn client_bin_exists(bin: &str) -> bool {
+    if bin.contains(std::path::MAIN_SEPARATOR) {
+        return std::path::Path::new(bin).exists();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(bin).exists())
+}
+
 /// Resolve a user-supplied `--subprocess <cmd>` binary. A `cmd` that carries a
 /// path separator (absolute or relative) is used verbatim; a bare name is
 /// resolved beside the running `garden` — so `garden --subprocess sqlite-browser

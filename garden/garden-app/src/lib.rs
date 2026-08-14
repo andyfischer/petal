@@ -1,5 +1,6 @@
-//! Garden application crate: [`run`] parses the command line, loads the layout
-//! script (or builds a plain-file fallback layout), and hands the thread to the
+//! Garden application crate: [`run`] parses the command line, resolves the
+//! layout (the main menu, a subcommand's app, plain files, or the layout
+//! script — see [`resolve_layout`]), and hands the thread to the
 //! chosen frontend — windowed (default), terminal (`--term`), or headless
 //! (`--headless`). See `src/frontend/` for the frontend interface and
 //! `src/app.rs` for the frontend-independent core. The `garden` binary
@@ -60,6 +61,9 @@ pub fn run() {
     let mut debug_port: Option<u16> = None;
     let mut init_override: Option<PathBuf> = None;
     let mut positionals: Vec<String> = Vec::new();
+    // `--no-menu`: opt out of the main-menu default launch and let `init.ptl`
+    // own the layout again (the pre-menu behavior). See [`resolve_layout`].
+    let mut no_menu = false;
     // `--subprocess <cmd> [args…]`: everything after the flag is the GPP client
     // command line, so it must come last (put garden's own flags before it).
     let mut subprocess: Option<Vec<String>> = None;
@@ -82,6 +86,7 @@ pub fn run() {
                 subprocess = Some(rest);
             }
             "--headless" => mode = Mode::Headless,
+            "--no-menu" => no_menu = true,
             // Panels sleep 10s after their last activity, which is right for a
             // drawer nobody is touching and wrong for a running game: a headless
             // harness driving one has no user input to keep re-stamping
@@ -160,13 +165,15 @@ pub fn run() {
             Some("diff") => (None, resolve_diff_subcommand(&positionals[1..]), false),
             Some("pr") => (None, resolve_pr_subcommand(&positionals[1..]), false),
             Some("petal-ide") => (None, resolve_petal_ide_subcommand(&positionals[1..]), false),
-            Some("open") => resolve_layout(&positionals[1..], init_override.as_deref()),
+            // A bare `garden open` is a degenerate "open nothing", not the
+            // default launch, so it keeps the pre-menu init-script behavior.
+            Some("open") => resolve_layout(&positionals[1..], init_override.as_deref(), false),
             // Any builtin GPP client by its raw name: `garden sqlite-browser …`,
             // `garden directory-browser …`, etc. — no `--subprocess` flag needed.
             Some(cmd) if BUILTIN_GPP_APPS.contains(&cmd) => {
                 (None, gpp_app_layout(cmd, &positionals[1..]), false)
             }
-            _ => resolve_layout(&positionals, init_override.as_deref()),
+            _ => resolve_layout(&positionals, init_override.as_deref(), !no_menu),
         }
     };
 
@@ -223,9 +230,10 @@ pub fn run() {
 }
 
 /// Build the [`AppConfig`] for a runtime-spawned window (`:windownew`, File ▸
-/// New Window) — what a bare `garden` launch (no args, no subcommand) gets:
-/// the default `~/.garden/init.ptl` owning the layout when present, over an
-/// empty-editor fallback. Every window loads its **own** [`ScriptHost`] (one
+/// New Window): the default `~/.garden/init.ptl` owning the layout when present,
+/// over an empty-editor fallback — the `garden --no-menu` shape. A new window is
+/// opened *from* a session that already has the main menu a keystroke away, so
+/// it gets the configured workspace rather than the menu. Every window loads its **own** [`ScriptHost`] (one
 /// Petal `Env` per window) and mints a **fresh window id** — its own layout
 /// overlay and event log — via [`attach_window_state`]. The debug server is
 /// process-global, so `debug_port` is always `None` here.
@@ -277,12 +285,19 @@ pub(crate) fn new_window_config() -> AppConfig {
 ///   `EDITOR garden --term file` shape). The script's own `layout(...)` is
 ///   ignored. A `.ptl` file here is just opened as text like any other file —
 ///   the layout script is selected with `--init`, not by positional extension.
-/// - Nothing → the init script drives everything: `init_override` (`--init
-///   <path>`) if given, else `~/.garden/init.ptl` ([`default_config_script`]);
-///   if neither resolves, a single empty editor.
+/// - Nothing → the **main menu** (recent projects / files / PRs), when `menu` is
+///   set and no `--init` override names a script to run instead. `init.ptl` is
+///   still loaded config-only, so your color scheme and settings apply, but its
+///   `layout(...)` no longer decides what you see: the menu is the default app
+///   experience. `--no-menu` (or `--init <path>`) hands the layout back to the
+///   script, as does a missing `main-menu` binary — Garden always launches.
+/// - Nothing, script-owned: the init script drives everything — `init_override`
+///   (`--init <path>`) if given, else `~/.garden/init.ptl`
+///   ([`default_config_script`]); if neither resolves, a single empty editor.
 fn resolve_layout(
     positionals: &[String],
     init_override: Option<&Path>,
+    menu: bool,
 ) -> (Option<ScriptHost>, LayoutNode, bool) {
     let empty = LayoutNode::Editor {
         file: None,
@@ -303,6 +318,27 @@ fn resolve_layout(
     }
 
     if positionals.is_empty() {
+        // The default launch: the main menu is the layout, and `init.ptl` comes
+        // along config-only (theme, color scheme, settings) — the same shape as
+        // a file argument, so its `layout(...)` is never applied, not applied
+        // and then replaced. An explicit `--init <path>` is a deliberate request
+        // to run *that* script, so it opts out along with `--no-menu`.
+        if menu && init_override.is_none() {
+            let command = process_pane::main_menu_bin();
+            // A missing client would spawn into a broken pane; degrade to the
+            // pre-menu behavior instead. Garden must always launch.
+            if process_pane::client_bin_exists(&command) {
+                let dir = std::env::current_dir()
+                    .map(|d| d.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| ".".to_string());
+                let node = LayoutNode::Process {
+                    command,
+                    args: vec![dir],
+                };
+                return (load_config_script(None), node, false);
+            }
+        }
+
         // No file given — fall back to the init script, which owns the layout.
         // An explicit `--init` path that fails to load is fatal; a missing
         // *default* config is not (we just open an empty editor).
@@ -644,8 +680,10 @@ draw_text("frame " ++ str(frame_count()), 12, 32, 14, 120, 132, 156)
 draw_text("edit me and watch the canvas update", 12, h - 24, 14, 120, 132, 156)
 "#;
 
-/// Locate the layout script to use when Garden is launched with no file
-/// argument and no `--init` override.
+/// Locate the user's config script — the source of the color scheme and
+/// permanent settings, and the layout only when a script *owns* the layout
+/// (`garden --no-menu`, a runtime-spawned window); a bare `garden` opens the
+/// main menu and loads this config-only. See [`resolve_layout`].
 ///
 /// This is the user's personal `~/.garden/init.ptl` (vim-style). A project-local
 /// `./init.ptl` is *not* picked up automatically — point `--init` at it to use
@@ -726,6 +764,7 @@ fn config_dir() -> Option<PathBuf> {
 
 fn print_usage() {
     eprintln!("Usage: garden [options] [file or directory]");
+    eprintln!("       garden                   With no arguments: the main menu (recent projects, files, PRs)");
     eprintln!("       garden open <file or directory>   Same, but never parsed as a subcommand");
     eprintln!("       garden git log           Open the git history browser (like `:Git`)");
     eprintln!("       garden diff [--stat] [base]  Editable before/after review of the diff vs <base> (like `:Diff`); --stat opens the summary view");
@@ -741,7 +780,8 @@ fn print_usage() {
     eprintln!("       garden setup <command>   Seed or reset ~/.garden (see `garden setup`)");
     eprintln!();
     eprintln!("Options:");
-    eprintln!("  --init <path>    Use <path> as the layout script (default ~/.garden/init.ptl)");
+    eprintln!("  --init <path>    Run <path> as the layout script instead of opening the menu");
+    eprintln!("  --no-menu        Skip the main menu: ~/.garden/init.ptl owns the layout again");
     eprintln!("  --term           Run in the terminal (TUI); usable as $EDITOR");
     eprintln!(
         "  --headless       Run without any UI; drive via the debug server (needs --debug-port)"
@@ -833,6 +873,88 @@ mod tests {
             assert!(
                 !BUILTIN_GPP_APPS.contains(&app),
                 "{app} was replaced by garden-diff"
+            );
+        }
+    }
+
+    /// A bare `garden` opens the main menu, not the init script's layout: the
+    /// `main-menu` client is the layout and the script (if any) is config-only.
+    /// Every opt-out — `--no-menu`, an explicit `--init <path>`, a missing
+    /// client binary — hands the layout back to the script, since Garden has to
+    /// launch either way.
+    #[test]
+    fn no_arguments_open_the_main_menu_unless_opted_out() {
+        let dir = tempfile::tempdir().unwrap();
+        // A `$HOME` of our own so the developer's real `~/.garden/init.ptl`
+        // can't decide what this test sees. The env writes are also why every
+        // menu assertion lives in this one test rather than racing across
+        // several: the process environment is shared by all of them.
+        let home = std::env::var_os("HOME");
+        // SAFETY: single-threaded test; both vars are restored below.
+        unsafe { std::env::set_var("HOME", dir.path()) };
+
+        // Any existing file passes the "client is installed" check.
+        let bin = dir.path().join("main-menu");
+        std::fs::write(&bin, "").unwrap();
+        unsafe { std::env::set_var("GARDEN_MAIN_MENU_BIN", &bin) };
+
+        let (script, layout, owns) = resolve_layout(&[], None, true);
+        match &layout {
+            LayoutNode::Process { command, args } => {
+                assert_eq!(command, &bin.to_string_lossy());
+                // Arg 0 is the cwd, so the menu can scope recents to a project.
+                assert_eq!(args.len(), 1, "expected just the cwd, got {args:?}");
+            }
+            other => panic!("expected the main-menu Process node, got {other:?}"),
+        }
+        // Config-only: whatever init.ptl sets still applies, but its layout(...)
+        // is never consulted (see App::layout).
+        assert!(!owns);
+        assert!(script.is_none(), "this $HOME has no init.ptl");
+
+        // `--no-menu` and `--init <path>` both restore the old shape: the script
+        // owns the layout, over the empty-editor fallback.
+        let init = dir.path().join(".garden").join("init.ptl");
+        std::fs::create_dir_all(init.parent().unwrap()).unwrap();
+        // The returned node stays the empty-editor fallback either way — a
+        // layout-owning script is consulted for its panes later, by App::layout.
+        std::fs::write(&init, "layout(editor(\"a.rs\"))\n").unwrap();
+        for (menu, override_path) in [(false, None), (true, Some(init.as_path()))] {
+            let (script, layout, owns) = resolve_layout(&[], override_path, menu);
+            assert!(script.is_some(), "menu={menu}");
+            assert!(owns, "menu={menu}");
+            assert!(
+                matches!(layout, LayoutNode::Editor { file: None, .. }),
+                "menu={menu}: {layout:?}"
+            );
+        }
+
+        // A main-menu binary that isn't installed falls back the same way,
+        // rather than launching into a pane that can't spawn.
+        unsafe { std::env::set_var("GARDEN_MAIN_MENU_BIN", dir.path().join("not-installed")) };
+        let (script, layout, owns) = resolve_layout(&[], None, true);
+        assert!(script.is_some() && owns);
+        assert!(matches!(layout, LayoutNode::Editor { file: None, .. }));
+
+        unsafe { std::env::remove_var("GARDEN_MAIN_MENU_BIN") };
+        match home {
+            Some(value) => unsafe { std::env::set_var("HOME", value) },
+            None => unsafe { std::env::remove_var("HOME") },
+        }
+    }
+
+    /// A path argument is untouched by the menu default — `garden file.txt` and
+    /// `garden open file.txt` both open the file, with the script config-only.
+    #[test]
+    fn a_file_argument_still_wins_over_the_main_menu() {
+        // `menu` is true for `garden <file>` and false for `garden open <file>`;
+        // neither reaches the no-positional branch, so both open the file.
+        for menu in [true, false] {
+            let (_, layout, owns) = resolve_layout(&["notes.txt".to_string()], None, menu);
+            assert!(!owns, "menu={menu}");
+            assert!(
+                matches!(&layout, LayoutNode::Editor { file: Some(f), .. } if f == "notes.txt"),
+                "menu={menu}: {layout:?}"
             );
         }
     }

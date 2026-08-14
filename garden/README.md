@@ -29,7 +29,8 @@ beside `garden` — several subcommands spawn them and they are *not* dependenci
 of `garden-app`.
 
 ```bash
-garden                       # GPU window (uses ~/.garden/init.ptl if present)
+garden                       # GPU window: the main menu (recent projects, files, PRs)
+garden --no-menu             # skip the menu — ~/.garden/init.ptl owns the layout
 garden --init my.ptl         # custom layout script
 garden notes.txt             # a file opens directly, no script
 garden src/                  # a directory opens the navigable browser (vim netrw style)
@@ -50,14 +51,17 @@ commands):
 
 Any builtin GPP client is also launchable by name —
 `garden sqlite-browser`, `garden directory-browser`, `garden git-log`,
-`garden garden-diff` — the ergonomic form of the generic
+`garden garden-diff`, `garden main-menu` — the ergonomic form of the generic
 `garden --subprocess <app> [args…]` (which runs any GPP client as the whole
 layout; its args come last, after Garden's own flags).
 
-With no arguments Garden loads `~/.garden/init.ptl` if it exists; `--init <path>`
-overrides it. Edit the script while Garden runs — the layout updates live within
-~200 ms, and a broken script keeps the last good layout with the error in the
-status bar.
+With no arguments Garden opens the **main menu** (`garden main-menu`): your
+recent projects, files, and pull requests, plus Open File… / Open Folder…
+`~/.garden/init.ptl` still loads, so its color scheme and settings apply, but it
+no longer decides the startup layout — `garden --no-menu` (or `--init <path>`)
+gives the script the layout back. Edit the script while Garden runs — the layout
+updates live within ~200 ms, and a broken script keeps the last good layout with
+the error in the status bar.
 
 ### Run modes
 

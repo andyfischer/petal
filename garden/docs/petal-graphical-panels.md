@@ -126,7 +126,9 @@ isn't touching. The heuristic:
 - **`--panel-wake` overrides the window** process-wide: a bare `--panel-wake`
   never sleeps, `--panel-wake 60` sets the window in seconds. A running game is
   exactly the case the sleep model gets wrong, and a headless harness driving
-  one has no user input to keep re-stamping activity with.
+  one has no user input to keep re-stamping activity with. *Landed in 216ec76,
+  2026-08-12; feature flag `cli.panel-wake` — an older binary answers `garden:
+  unknown option --panel-wake`, so check `garden --version` first.*
 
 For a test, prefer `POST /tick {"n": 60, "dt": 0.016}` (see
 [debug-server.md](debug-server.md#stepping-frames-and-resetting-panels)): it runs
@@ -296,6 +298,15 @@ Three things a panel used to have to reimplement are also in the prelude now:
 
 Plus the small helpers apps kept hand-rolling: `mix`/`lerp_color(a, b, t)`,
 `luma(c)` and `contrast_text(bg)`.
+
+> **Landed in 017c328, 2026-08-12** (petal-ui prelude level 2):
+> `text_field_update/4`, the 4-argument `draw_text_field(r, text, has, style)`,
+> `luma/1` and `contrast_text/1`. On an older binary these fail at *runtime*
+> with `Unknown builtin: contrast_text`, which says nothing about why — so
+> check before you write against them: `garden --version` prints the prelude
+> level and `garden --version --json` lists every export as `name/arity`
+> (`prelude.exports`), derived from the prelude actually compiled into that
+> binary. `GET /version` reports the same to a running app.
 
 A **context menu** is two calls, because an immediate-mode pass has to reconcile
 z-order with input order: the menu must be *drawn* last to sit on top, but its

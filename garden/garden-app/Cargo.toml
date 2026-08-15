@@ -14,6 +14,9 @@ garden-render.workspace = true
 garden-script.workspace = true
 gpp = { path = "../gpp" }
 petal-query = { workspace = true }
+# Read directly (not just through garden-script) so `garden --version` can
+# report the prelude actually linked into this binary — see src/version.rs.
+petal-ui.workspace = true
 winit = "0.30"
 crossterm = "0.29"
 serde = { version = "1", features = ["derive"] }

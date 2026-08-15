@@ -40,6 +40,15 @@ export interface LaunchOptions {
   bin?: string;
   /** What to call the app in the "did not start" message. */
   label?: string;
+  /**
+   * Feature flags (`GET /version` → `features`) this test needs, e.g.
+   * `["cli.panel-wake", "state.values-filter"]`. Checked before the test runs
+   * so a stale binary fails with "this build lacks X, rebuild" instead of a
+   * confusing assertion twenty steps later — which is exactly how a stale
+   * install used to be discovered. Names are listed in
+   * `garden-app/src/version.rs`.
+   */
+  requireFeatures?: string[];
 }
 
 /** A launched app and a client pointed at its debug server. */
@@ -88,6 +97,8 @@ export async function launchGarden(opts: LaunchOptions): Promise<LaunchedApp> {
   }
   console.log(`debug server at ${base}`);
 
+  if (opts.requireFeatures?.length) await requireFeatures(base, bin, opts.requireFeatures);
+
   return {
     child,
     client: new DebugClient(base),
@@ -103,6 +114,36 @@ export async function launchGarden(opts: LaunchOptions): Promise<LaunchedApp> {
     },
     kill,
   };
+}
+
+/**
+ * Fail fast when the launched binary predates a feature the test depends on.
+ *
+ * A 404 means the binary is older than `/version` itself, which is the same
+ * diagnosis with a blunter instrument.
+ */
+async function requireFeatures(base: string, bin: string, wanted: string[]): Promise<void> {
+  const stale = (why: string) =>
+    die(
+      `${bin} ${why}\n` +
+        `  needs: ${wanted.join(", ")}\n` +
+        "  rebuild with `cargo build -p garden-app` (or re-run garden/install-local.sh " +
+        "if this is an installed binary)",
+    );
+  let report: { features?: string[]; build?: { commit?: string; build_date?: string } };
+  try {
+    const res = await fetch(`${base}/version`);
+    if (res.status === 404) return stale("predates the /version endpoint");
+    report = await res.json();
+  } catch (e) {
+    return stale(`could not be asked for its version (${(e as Error).message})`);
+  }
+  const have = new Set(report.features ?? []);
+  const missing = wanted.filter((f) => !have.has(f));
+  if (missing.length) {
+    const b = report.build ?? {};
+    stale(`is commit ${b.commit ?? "?"} (built ${b.build_date ?? "?"}) and lacks ${missing.join(", ")}`);
+  }
 }
 
 /** Poll the app's log for the debug server's URL, then for the server itself. */

@@ -54,6 +54,20 @@ const g = app.client;
 // --- assertions -------------------------------------------------------------
 console.log("running checks...");
 
+// What build is this? The wiring test for `GET /version` — the endpoint that
+// lets a client (or a harness, via `requireFeatures`) tell a stale binary from
+// an unsupported request.
+const version = await g.version();
+checks.check("reports a version", typeof version.version === "string" && version.version !== "", true);
+checks.check("reports a build stamp", typeof version.build?.build_date === "string", true);
+checks.check(
+  "every feature flag is a non-empty name",
+  version.features.length > 0 && version.features.every((f) => typeof f === "string" && f !== ""),
+  true,
+);
+checks.check("advertises the value filter it just answered with", version.features.includes("state.values-filter"), true);
+checks.check("prelude exports are reported", version.prelude.exports.includes("contrast_text/1"), true);
+
 checks.check("starts in Normal mode", (await g.pane()).mode, "NORMAL");
 checks.check("opened the scratch file", (await g.pane()).file, scratch);
 

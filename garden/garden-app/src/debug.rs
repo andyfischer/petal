@@ -31,6 +31,12 @@
 //! POST /panel/reset  restart every file-backed panel from source, discarding
 //!                    Petal `state` — what to call after editing seeded data,
 //!                    which hot reload deliberately preserves
+//! GET  /version      what this build is: version, git commit + date, build
+//!                    date, the named `features` a client can probe, and the
+//!                    petal-ui prelude's level and export list. Answered
+//!                    without touching the event loop. Ask this *before*
+//!                    calling a newer endpoint or flag rather than reading a
+//!                    404 as "unsupported" — see `docs/debug-server.md`
 //! GET  /scene        the primitives of the current frame (quads + text runs),
 //!                    panels settled first (see /screenshot)
 //! GET  /frame        {"ok": true, "frame": n} — the global frame counter,
@@ -403,6 +409,13 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
             return respond_json(&mut writer, status, &json!({"ok": false, "error": msg}));
         }
     };
+    // `/version` is a pure constant — answer it here rather than through the
+    // event loop, so a client can still ask what this build is while the app is
+    // busy (or wedged), which is exactly when it wants to know.
+    if is_static_endpoint(&method, route_path) {
+        return respond_json(&mut writer, 200, &crate::version::report_json());
+    }
+
     let cmd = match route(&method, route_path, &body) {
         Ok(cmd) => cmd,
         Err((status, msg)) => {
@@ -456,6 +469,13 @@ pub(crate) fn route_for_test(
     body: &[u8],
 ) -> Result<DebugCmd, (u16, String)> {
     route(method, path, body)
+}
+
+/// Endpoints answered straight from the connection thread, without a
+/// [`DebugCmd`] round trip through the frontend's event loop.
+fn is_static_endpoint(method: &str, path: &str) -> bool {
+    let (bare, _) = split_query(path);
+    (method, bare) == ("GET", "/version")
 }
 
 fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String)> {
@@ -797,6 +817,18 @@ mod tests {
     //   builds the {ok, windows: [...]} reply, so only routing is pinned).
 
     // ---- panel ergonomics: value filtering, frame stepping, state reset -----
+
+    /// `/version` is answered from the connection thread, not routed to the
+    /// event loop — and it is the only such endpoint.
+    #[test]
+    fn version_is_answered_without_the_event_loop() {
+        assert!(is_static_endpoint("GET", "/version"));
+        assert!(is_static_endpoint("GET", "/version?anything=1"));
+        assert!(!is_static_endpoint("POST", "/version"));
+        assert!(!is_static_endpoint("GET", "/state"));
+        // …and it never reaches `route`, which would 404 it.
+        assert!(route("GET", "/version", b"").is_err());
+    }
 
     #[test]
     fn state_route_parses_the_value_filter() {

@@ -53,6 +53,27 @@ export interface AppState {
   status_error?: string | null;
 }
 
+/** `GET /version` — what the binary on the other end of the socket is. */
+export interface VersionReport {
+  version: string;
+  build: {
+    version: string;
+    commit: string;
+    commit_date: string;
+    build_date: string;
+    dirty: boolean;
+    prelude_level: number;
+  };
+  /** Named capabilities this build has, e.g. `cli.panel-wake`. */
+  features: string[];
+  prelude: {
+    level: number;
+    ui_version: number;
+    /** `name/arity` per exported prelude function, `name` per exported value. */
+    exports: string[];
+  };
+}
+
 export interface ScenePrimitive {
   type?: string;
   text?: string;
@@ -135,6 +156,13 @@ export class DebugClient {
     else if (opts.values?.length) params.set("values", opts.values.join(","));
     if (opts.prefix) params.set("values_prefix", opts.prefix);
     return this.getJson<AppState>(`/state?${params.toString()}`);
+  }
+
+  /** What build is answering: version, git stamp, feature flags, prelude
+   *  exports. Ask this before using a newer endpoint or flag rather than
+   *  reading its error — see `docs/debug-server.md`. */
+  version(): Promise<VersionReport> {
+    return this.getJson<VersionReport>("/version");
   }
 
   /** Advance every panel by `n` frames of `dt` seconds, ignoring the sleep/wake

@@ -49,6 +49,23 @@ pub mod text;
 /// incompatibly.
 pub const UI_VERSION: i64 = 1;
 
+/// Monotonic counter of *additive* prelude growth, the companion to
+/// [`UI_VERSION`]: that one counts incompatible changes (which is why it is
+/// still 1 after years of additions), this one increments every time the
+/// prelude gains a symbol or an overload, so a host or a script can ask "is
+/// this prelude new enough to have X?" with `>= N` instead of calling X and
+/// reading the error.
+///
+/// A host that reports capability by *name* (Garden's `garden --version`
+/// derives the export list from [`prelude_source`]) does not need this; it is
+/// for the coarse "how new is this?" check.
+///
+/// Levels:
+/// - 1 — the prelude as of the first release (`UI_VERSION` 1).
+/// - 2 — `luma(c)`, `contrast_text(bg)`, `text_field_update(fc, id, r, buf)`
+///   and the 4-argument `draw_text_field(r, text, has, style)` (2026-08-12).
+pub const PRELUDE_LEVEL: u32 = 2;
+
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";
 

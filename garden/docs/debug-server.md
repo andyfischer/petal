@@ -75,7 +75,8 @@ All JSON request bodies and responses; errors are
 | Endpoint | Returns |
 |----------|---------|
 | `GET /state` | Editor state: the global `frame` counter (see [Frame consistency](#frame-consistency)), window size/scale, cell metrics, focused pane, status-bar error, status note (file reloaded / changed-on-disk warning), drained script `print` output, and per pane: `kind` (`editor`/`process`/`panel`), file, title, `mode` (vim mode label), `pending` (mid-command vim state, see below), dirty flag, cursor, selection (anchor/head/text, text capped at 10k chars), scroll_top, scroll_sub (wrapped sub-row at the top), scroll_frac (sub-row offset in rows, `0.0..1.0` — the smooth part of the position, invisible in the two fields above), scroll_left (fractional display columns), wrap (soft-wrap on/off), line_count, visible_lines, rect, `trace_highlight` (the direct-manipulation source range under the pointer, or `null`), and — for a panel pane — a `panel` object (see below). Plus a top-level `trace`: the whole traced draw call the pointer is over — `callee`, `call` span, and per argument its `source` (`literal`/`binding`/`computed`), `value`, `is_int`, `span` (where it is written in the call) and `editable_span` (the range a rewrite must replace, at the *definition* for a binding). `null` when the pointer is over no shape. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1) |
-| `GET /state?values=…` | The same, with each panel's `values` map narrowed — see [Filtering `panel.values`](#filtering-panelvalues). |
+| `GET /state?values=…` | The same, with each panel's `values` map narrowed — see [Filtering `panel.values`](#filtering-panelvalues). *Landed in 57b2c8e, 2026-08-12; feature flag `state.values-filter`.* |
+| `GET /version` | What build is answering: `version`, a `build` stamp (git commit + commit date, build date, dirty flag, prelude level), the named `features` this build has, and the petal-ui `prelude` (level, `ui_version`, and every export as `name/arity`). Answered without touching the event loop, so it works even when the app is busy. See [Which build am I talking to?](#which-build-am-i-talking-to). *Landed 2026-08-15; feature flag `debug.version`.* |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
 | `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size, `visible` — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
 | `GET /screenshot` | PNG of a **complete, settled** frame at physical-pixel size, rendered offscreen; the captured frame number comes back in an `X-Garden-Frame` response header (see [Frame consistency](#frame-consistency)) |
@@ -162,6 +163,9 @@ well, so a failing frame is just as readable.
 | `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance **every** panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600 per call. Replies with `panel_frames` (frames actually run) and each panel's new `frame`. |
 | `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. Replies `{"ok": true, "panels_reset": n}`. |
 
+*Both landed in 216ec76, 2026-08-12; feature flags `debug.tick` and
+`debug.panel-reset`.*
+
 `POST /tick` is how you drive an animation or a game: panel time advances
 deterministically, with the `dt` you asked for, and no input is fabricated. It
 supersedes the pattern of posting a no-op keypress per frame just to make a
@@ -179,6 +183,10 @@ seconds after its last activity, which is right for an idle drawer and wrong for
 a running game that nobody is typing at. `garden --panel-wake` never sleeps;
 `--panel-wake 60` sets the window in seconds. `POST /tick` runs frames even on a
 sleeping panel (and re-stamps its activity), so it works either way.
+
+*`--panel-wake` landed in 216ec76, 2026-08-12; feature flag `cli.panel-wake`.
+An older binary rejects it with `garden: unknown option --panel-wake` — check
+`garden --version` rather than reading that as "no such feature".*
 
 ### Asserting panel geometry
 
@@ -502,7 +510,11 @@ curl -s 127.0.0.1:$PORT/buffer/0 | diff - README.md     # buffer vs disk
   "port": 65113,
   "layout": "/Users/me/.garden/init.ptl",   // the layout script, or null
   "cwd": "/Users/me/project",
-  "panels": [{"pane": 1, "script": "app.ptl", "path": "/Users/me/project/app.ptl"}]
+  "build": {                                 // which build, not just which process
+  "version": "0.1.0", "commit": "216ec76", "commit_date": "2026-08-12",
+  "build_date": "2026-08-12", "dirty": false, "prelude_level": 2
+},
+"panels": [{"pane": 1, "script": "app.ptl", "path": "/Users/me/project/app.ptl"}]
 }
 ```
 
@@ -513,6 +525,66 @@ macOS, so an IPv4-only bind left the same port number on the v6 side free for a
 different process, and `curl 127.0.0.1:$PORT` could reach it. If the v6 bind
 fails (someone else already holds it) Garden prints a warning at startup and you
 should address it as `127.0.0.1:$PORT` explicitly.
+
+## Which build am I talking to?
+
+A binary that reports nothing about itself can only be probed by *calling*
+something and reading the error — and `garden: unknown option --panel-wake`,
+`{"error":"no endpoint GET /state?values=none"}` and `Unknown builtin:
+contrast_text` all look like "unsupported" when they actually mean "your
+`garden` is old". Ask up front instead:
+
+```bash
+garden --version            # human: version, commit, build date, features
+garden --version --json     # the same report as JSON
+curl -s 127.0.0.1:$PORT/version | jq .features
+```
+
+```jsonc
+{
+  "ok": true,
+  "version": "0.1.0",
+  "build": {"version": "0.1.0", "commit": "216ec76", "commit_date": "2026-08-12",
+            "build_date": "2026-08-12", "dirty": false, "prelude_level": 2},
+  "features": ["cli.panel-wake", "state.values-filter", "debug.tick", …],
+  "prelude": {"level": 2, "ui_version": 1,
+              "exports": ["contrast_text/1", "text_field_update/4", "draw_text_field/4", …]}
+}
+```
+
+- **`features`** is the list to test against — stable dotted names
+  (`<area>.<feature>`) that are never renamed or removed once published, so
+  `features.includes("cli.panel-wake")` is a safe check for old and new builds
+  alike. Every documented endpoint and flag that postdates the first release
+  carries a *landed in* note above naming its flag.
+- **`prelude.exports`** is derived from the petal-ui prelude compiled into
+  *this* binary, one entry per overload (`draw_text_field/3` and
+  `draw_text_field/4` are separate capabilities), so it cannot drift from
+  reality the way a hand-written list can. `prelude.level` is the coarse
+  "how new is this prelude?" counter (`petal_ui::PRELUDE_LEVEL`), incremented
+  on every additive change; `ui_version` still counts only *incompatible* ones.
+- A **404** from `/version` means the binary predates the endpoint entirely —
+  treat it as "older than everything listed here".
+
+Degrade deliberately, not by trial and error:
+
+```bash
+if curl -sf $BASE/version | jq -e '.features | index("state.values-filter")' >/dev/null; then
+  curl -s "$BASE/state?values=sel"
+else
+  curl -s "$BASE/state"    # older build: filter client-side
+fi
+```
+
+The integration harness does this for you: `launchGarden({ requireFeatures:
+["cli.panel-wake"] })` (`tools/lib/app.ts`) fails at launch with the build stamp
+in the message instead of failing an assertion twenty steps later.
+
+**Adding a feature flag**: append it to `HOST_FEATURES` in
+`garden-app/src/version.rs` in the same commit that adds the endpoint or flag,
+and add a *landed in* note here. `cli.*` names are checked against the real
+argument parser by a unit test, so an advertised flag that no longer parses
+fails the build.
 
 ## Notes & limitations
 

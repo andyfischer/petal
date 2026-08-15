@@ -98,6 +98,9 @@ const app = await launchGarden({
   cwd: repo,
   logPath: join(work, "menu.log"),
   env: { ...process.env, HOME: seededHome },
+  // A stale `garden` without these is the failure this harness used to hit as
+  // an unexplained assertion; now it says so up front.
+  requireFeatures: ["state.values-filter", "panel.host-mutate"],
 });
 const g = app.client;
 

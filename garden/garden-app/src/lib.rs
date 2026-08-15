@@ -28,6 +28,7 @@ mod setup;
 mod state;
 mod syntax;
 mod theme;
+mod version;
 mod vim;
 mod window_nav;
 
@@ -41,6 +42,146 @@ enum Mode {
     Window,
     Headless,
     Terminal,
+}
+
+/// How `--version` was asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VersionFormat {
+    Human,
+    Json,
+}
+
+/// The parsed command line. Parsing is a pure function of the argument list
+/// ([`parse_cli`]) so the flags this build accepts can be asserted in a unit
+/// test — which is what keeps the feature list `garden --version` prints from
+/// advertising a flag the parser no longer has.
+struct Cli {
+    mode: Mode,
+    debug_port: Option<u16>,
+    init_override: Option<PathBuf>,
+    positionals: Vec<String>,
+    no_menu: bool,
+    subprocess: Option<Vec<String>>,
+    /// `Some(None)` = `--panel-wake` (never sleep); `Some(Some(d))` = an
+    /// explicit window; `None` = flag absent, keep the default.
+    panel_wake: Option<Option<std::time::Duration>>,
+    /// Set when the run should just print the build report and exit 0.
+    version: Option<VersionFormat>,
+}
+
+impl Default for Cli {
+    fn default() -> Self {
+        Cli {
+            mode: Mode::Window,
+            debug_port: None,
+            init_override: None,
+            positionals: Vec::new(),
+            no_menu: false,
+            subprocess: None,
+            panel_wake: None,
+            version: None,
+        }
+    }
+}
+
+/// Parse `garden`'s arguments. Side-effect free apart from the usage errors,
+/// which still `exit(2)` exactly as they did inline.
+fn parse_cli(raw_args: Vec<String>) -> Cli {
+    let mut cli = Cli::default();
+    // `garden version` is the subcommand spelling of `--version`. Only in first
+    // position, so `garden open version` still opens a file called `version`.
+    let mut raw_args = raw_args;
+    if raw_args.first().map(String::as_str) == Some("version") {
+        raw_args.remove(0);
+        cli.version = Some(VersionFormat::Human);
+    }
+    // Peekable so a flag with an *optional* argument (`--panel-wake [secs]`) can
+    // look at the next token without consuming a following flag.
+    let mut args = raw_args.into_iter().peekable();
+    // `--json` is a modifier on `--version`, and may appear on either side of it.
+    let mut want_json = false;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print_usage();
+                std::process::exit(0);
+            }
+            // What build is this? See `version.rs` — the whole point is that a
+            // client can ask before it calls, instead of discovering a missing
+            // feature as an error.
+            "--version" | "-V" => cli.version = Some(VersionFormat::Human),
+            "--json" => want_json = true,
+            "--subprocess" => {
+                let rest: Vec<String> = args.by_ref().collect();
+                if rest.is_empty() {
+                    eprintln!("garden: --subprocess requires a command (e.g. --subprocess sqlite-browser <arg>)");
+                    std::process::exit(2);
+                }
+                cli.subprocess = Some(rest);
+            }
+            "--headless" => cli.mode = Mode::Headless,
+            "--no-menu" => cli.no_menu = true,
+            // Panels sleep 10s after their last activity, which is right for a
+            // drawer nobody is touching and wrong for a running game: a headless
+            // harness driving one has no user input to keep re-stamping
+            // activity with, and its panel goes quiet mid-test. `--panel-wake`
+            // with no argument never sleeps; `--panel-wake 60` sets the window
+            // in seconds.
+            "--panel-wake" => {
+                let secs = args
+                    .peek()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .filter(|s| *s >= 0.0);
+                if secs.is_some() {
+                    args.next();
+                }
+                cli.panel_wake = Some(secs.map(std::time::Duration::from_secs_f64));
+            }
+            "--term" | "--terminal" => cli.mode = Mode::Terminal,
+            "--init" => match args.next() {
+                Some(path) => cli.init_override = Some(PathBuf::from(path)),
+                None => {
+                    eprintln!("garden: --init requires a path to a layout script");
+                    std::process::exit(2);
+                }
+            },
+            "--debug-port" => {
+                let value = args.next().and_then(|v| v.parse().ok());
+                match value {
+                    Some(port) => cli.debug_port = Some(port),
+                    None => {
+                        eprintln!("garden: --debug-port requires a port number");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            // `--stat` is a `diff`-subcommand flag, not a global option; pass it
+            // through to the positionals so `resolve_diff_subcommand` can see it
+            // wherever it appears (e.g. `garden diff --stat HEAD --headless`).
+            "--stat" => cli.positionals.push("--stat".to_string()),
+            // `--local` (alias `--diff`) is a `pr`-subcommand flag that reviews
+            // the local `git diff <base>` instead of resolving a GitHub PR — no
+            // `gh`, no network. Passed through as a positional (like `--stat`) so
+            // `resolve_pr_subcommand` can see it.
+            "--local" | "--diff" => cli.positionals.push("--local".to_string()),
+            other if !other.starts_with('-') => cli.positionals.push(other.to_string()),
+            other => {
+                eprintln!("garden: unknown option {other}");
+                print_usage();
+                std::process::exit(2);
+            }
+        }
+    }
+    if want_json {
+        if cli.version.is_some() {
+            cli.version = Some(VersionFormat::Json);
+        } else {
+            eprintln!("garden: --json is only meaningful with --version");
+            print_usage();
+            std::process::exit(2);
+        }
+    }
+    cli
 }
 
 /// The whole `garden` command-line entry point: parse arguments, resolve the
@@ -57,86 +198,30 @@ pub fn run() {
         std::process::exit(setup::run(&raw_args[1..]));
     }
 
-    let mut mode = Mode::Window;
-    let mut debug_port: Option<u16> = None;
-    let mut init_override: Option<PathBuf> = None;
-    let mut positionals: Vec<String> = Vec::new();
-    // `--no-menu`: opt out of the main-menu default launch and let `init.ptl`
-    // own the layout again (the pre-menu behavior). See [`resolve_layout`].
-    let mut no_menu = false;
-    // `--subprocess <cmd> [args…]`: everything after the flag is the GPP client
-    // command line, so it must come last (put garden's own flags before it).
-    let mut subprocess: Option<Vec<String>> = None;
+    let cli = parse_cli(raw_args);
 
-    // Peekable so a flag with an *optional* argument (`--panel-wake [secs]`) can
-    // look at the next token without consuming a following flag.
-    let mut args = raw_args.clone().into_iter().peekable();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--help" | "-h" => {
-                print_usage();
-                return;
-            }
-            "--subprocess" => {
-                let rest: Vec<String> = args.by_ref().collect();
-                if rest.is_empty() {
-                    eprintln!("garden: --subprocess requires a command (e.g. --subprocess sqlite-browser <arg>)");
-                    std::process::exit(2);
-                }
-                subprocess = Some(rest);
-            }
-            "--headless" => mode = Mode::Headless,
-            "--no-menu" => no_menu = true,
-            // Panels sleep 10s after their last activity, which is right for a
-            // drawer nobody is touching and wrong for a running game: a headless
-            // harness driving one has no user input to keep re-stamping
-            // activity with, and its panel goes quiet mid-test. `--panel-wake`
-            // with no argument never sleeps; `--panel-wake 60` sets the window
-            // in seconds.
-            "--panel-wake" => {
-                let secs = args
-                    .peek()
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .filter(|s| *s >= 0.0);
-                if secs.is_some() {
-                    args.next();
-                }
-                panel_view::set_panel_wake(secs.map(std::time::Duration::from_secs_f64));
-            }
-            "--term" | "--terminal" => mode = Mode::Terminal,
-            "--init" => match args.next() {
-                Some(path) => init_override = Some(PathBuf::from(path)),
-                None => {
-                    eprintln!("garden: --init requires a path to a layout script");
-                    std::process::exit(2);
-                }
-            },
-            "--debug-port" => {
-                let value = args.next().and_then(|v| v.parse().ok());
-                match value {
-                    Some(port) => debug_port = Some(port),
-                    None => {
-                        eprintln!("garden: --debug-port requires a port number");
-                        std::process::exit(2);
-                    }
-                }
-            }
-            // `--stat` is a `diff`-subcommand flag, not a global option; pass it
-            // through to the positionals so `resolve_diff_subcommand` can see it
-            // wherever it appears (e.g. `garden diff --stat HEAD --headless`).
-            "--stat" => positionals.push("--stat".to_string()),
-            // `--local` (alias `--diff`) is a `pr`-subcommand flag that reviews
-            // the local `git diff <base>` instead of resolving a GitHub PR — no
-            // `gh`, no network. Passed through as a positional (like `--stat`) so
-            // `resolve_pr_subcommand` can see it.
-            "--local" | "--diff" => positionals.push("--local".to_string()),
-            other if !other.starts_with('-') => positionals.push(other.to_string()),
-            other => {
-                eprintln!("garden: unknown option {other}");
-                print_usage();
-                std::process::exit(2);
-            }
+    // `--version` / `garden version`: print the build report and stop, before
+    // any layout resolution or frontend wiring.
+    if let Some(format) = cli.version {
+        match format {
+            VersionFormat::Human => version::print_human(),
+            VersionFormat::Json => version::print_json(),
         }
+        return;
+    }
+
+    let Cli {
+        mode,
+        debug_port,
+        init_override,
+        positionals,
+        no_menu,
+        subprocess,
+        panel_wake,
+        version: _,
+    } = cli;
+    if let Some(window) = panel_wake {
+        panel_view::set_panel_wake(window);
     }
 
     // `garden git <subcommand>` opens a git view directly — e.g. `garden git
@@ -780,6 +865,7 @@ fn print_usage() {
     eprintln!("       garden setup <command>   Seed or reset ~/.garden (see `garden setup`)");
     eprintln!();
     eprintln!("Options:");
+    eprintln!("  --version        Print version, build stamp and feature list (--json for JSON)");
     eprintln!("  --init <path>    Run <path> as the layout script instead of opening the menu");
     eprintln!("  --no-menu        Skip the main menu: ~/.garden/init.ptl owns the layout again");
     eprintln!("  --term           Run in the terminal (TUI); usable as $EDITOR");
@@ -797,6 +883,96 @@ fn print_usage() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cli(args: &[&str]) -> Cli {
+        parse_cli(args.iter().map(|s| s.to_string()).collect())
+    }
+
+    /// Every `cli.<flag>` this build advertises really parses. A feature list
+    /// that can drift from the parser is the bug this whole change is about,
+    /// one level down — so the list is checked against the parser itself.
+    #[test]
+    fn every_advertised_cli_feature_is_a_flag_the_parser_accepts() {
+        for feature in version::HOST_FEATURES {
+            let Some(name) = feature.strip_prefix("cli.") else {
+                continue;
+            };
+            let flag = format!("--{name}");
+            // `--subprocess` swallows the rest of the line, so give it one.
+            let args: Vec<&str> = if name == "subprocess" {
+                vec![&flag, "sqlite-browser"]
+            } else {
+                vec![&flag]
+            };
+            // A rejected flag exits(2) from inside the parser, so reaching the
+            // assertion at all is most of the proof.
+            let parsed = cli(&args);
+            assert!(
+                parsed.positionals.is_empty(),
+                "{flag} was parsed as a path, not a flag"
+            );
+        }
+    }
+
+    /// `--panel-wake`'s optional argument peeks without consuming: a following
+    /// flag still parses as a flag.
+    #[test]
+    fn panel_wake_takes_an_optional_seconds_argument() {
+        assert_eq!(cli(&["--panel-wake"]).panel_wake, Some(None));
+        assert_eq!(
+            cli(&["--panel-wake", "60"]).panel_wake,
+            Some(Some(std::time::Duration::from_secs(60)))
+        );
+        let both = cli(&["--panel-wake", "--headless"]);
+        assert_eq!(both.panel_wake, Some(None));
+        assert!(matches!(both.mode, Mode::Headless));
+        assert!(cli(&["--headless"]).panel_wake.is_none());
+    }
+
+    /// `--version`, `-V`, `garden version`, and the JSON form.
+    #[test]
+    fn version_is_requestable_three_ways() {
+        assert_eq!(cli(&["--version"]).version, Some(VersionFormat::Human));
+        assert_eq!(cli(&["-V"]).version, Some(VersionFormat::Human));
+        let sub = cli(&["version"]);
+        assert_eq!(sub.version, Some(VersionFormat::Human));
+        assert!(
+            sub.positionals.is_empty(),
+            "`version` is not a file to open"
+        );
+        assert_eq!(
+            cli(&["--version", "--json"]).version,
+            Some(VersionFormat::Json)
+        );
+        assert_eq!(
+            cli(&["--json", "--version"]).version,
+            Some(VersionFormat::Json)
+        );
+        // Only in first position — a file named `version` still opens.
+        let opened = cli(&["open", "version"]);
+        assert!(opened.version.is_none());
+        assert_eq!(opened.positionals, vec!["open", "version"]);
+    }
+
+    /// The pre-existing parsing contracts the refactor must not have changed.
+    #[test]
+    fn parse_cli_keeps_the_established_flag_semantics() {
+        let sub = cli(&["--headless", "--subprocess", "sqlite-browser", "db.sqlite"]);
+        assert_eq!(
+            sub.subprocess,
+            Some(vec!["sqlite-browser".into(), "db.sqlite".into()])
+        );
+        assert!(matches!(sub.mode, Mode::Headless));
+        // Subcommand flags pass through as positionals for the resolvers.
+        assert_eq!(cli(&["diff", "--stat"]).positionals, vec!["diff", "--stat"]);
+        assert_eq!(cli(&["pr", "--diff"]).positionals, vec!["pr", "--local"]);
+        let opts = cli(&["--debug-port", "0", "--init", "l.ptl", "--no-menu", "f.txt"]);
+        assert_eq!(opts.debug_port, Some(0));
+        assert_eq!(opts.init_override, Some(PathBuf::from("l.ptl")));
+        assert!(opts.no_menu);
+        assert_eq!(opts.positionals, vec!["f.txt"]);
+        assert!(matches!(cli(&["--term"]).mode, Mode::Terminal));
+    }
 
     /// A `petal-ide` invocation over an explicit file produces the editor|canvas
     /// split (both leaves on the same absolute path) and seeds a fresh file.

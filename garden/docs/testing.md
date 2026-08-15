@@ -59,6 +59,15 @@ variant additionally exercises the winit event loop and renderer wiring and is
 run on demand. Keep it fast and deterministic: drive with injected input,
 assert on observable state, avoid sleeps beyond the startup poll.
 
+An integration script declares the build features it depends on —
+`launchGarden({ requireFeatures: ["cli.panel-wake", "state.values-filter"] })` —
+and the harness preflights `GET /version` before the first assertion, so a
+binary too old for the test says so with its commit and build date instead of
+failing an assertion twenty steps later. Feature names live in
+`garden-app/src/version.rs`; `garden --version` is how you check an installed
+build by hand (see
+[debug-server.md](debug-server.md#which-build-am-i-talking-to)).
+
 **The diff review** (`tools/diff-review-integration-test.ts`) — the same
 approach for a Petal graphical panel, over `garden-diff` (the one diff/review
 tool). It builds a throwaway git repo fixture, opens `garden diff main` on it

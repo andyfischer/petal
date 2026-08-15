@@ -204,6 +204,10 @@ impl App {
             "port": crate::debug::server_port(),
             "layout": self.script.as_ref().map(|s| absolute_path(s.path())),
             "cwd": std::env::current_dir().ok().map(|p| p.display().to_string()),
+            // Which *build* answered, not just which process: an agent reading
+            // /state on every step can tell a stale binary without a second
+            // request. The full feature list is at `GET /version`.
+            "build": crate::version::build_json(),
             "panels": panels,
         })
     }
@@ -913,6 +917,10 @@ mod tests {
                 .to_string(),
             "the panel's script path is in /state's root, absolute"
         );
+        // …and which *build* answered, so a stale binary is visible to any
+        // client already reading /state.
+        assert!(!id["build"]["version"].as_str().unwrap().is_empty());
+        assert!(!id["build"]["build_date"].as_str().unwrap().is_empty());
     }
 
     /// Every panel fill is a mesh, so a `/scene` that reported only a triangle

@@ -35,7 +35,15 @@ garden --init my.ptl         # custom layout script
 garden notes.txt             # a file opens directly, no script
 garden src/                  # a directory opens the navigable browser (vim netrw style)
 garden open git              # `open` forces a path (opens a file named `git`, not the git view)
+garden --version             # what this build is: version, git stamp, feature flags
+garden --version --json      # the same, machine-readable (features + prelude exports)
 ```
+
+`garden --version` is the first thing to run when an install misbehaves: it
+prints the commit and build date the binary came from plus the named features it
+has, so a missing endpoint or flag reads as "this binary is old" instead of
+"unsupported". A running Garden answers the same report at `GET /version` — see
+[docs/debug-server.md](docs/debug-server.md#which-build-am-i-talking-to).
 
 Subcommands open a specific view directly (the CLI counterparts of the `:` ex
 commands):

@@ -442,12 +442,29 @@ with omitted ones meaning plain text. What Garden does with each:
 | Axis | In a Garden pane |
 |---|---|
 | `size` | honored per run |
-| `font` | one embedded face — every role and family resolves to it, and the measurement side agrees |
-| `italic` | passed to cosmic-text; resolves when a matching face is available |
-| `weight` | **synthetic** — only JetBrains Mono Regular is embedded, so a run at `weight >= 600` is emboldened by drawing it twice at a size-proportional sub-pixel offset. Visibly heavier, but a thickening rather than a true Bold cut; advances are untouched, so it still *measures* regular and layout stays correct |
+| `font` | **two** embedded faces: `"ui"` selects proportional Inter, everything else (`mono`, `serif`, a concrete family, an unknown name) resolves to JetBrains Mono. The measurement side resolves names the same way, so what you measure is what you get |
+| `italic` | passed to cosmic-text; resolves when a matching face is available (no italic cut is embedded, so this is currently upright) |
+| `weight` | **real** on `font: "ui"` — Inter Bold is embedded, so `weight >= 600` shapes the Bold cut with its own advances. Still **synthetic** on the monospace face, where only Regular is embedded: a heavy run is drawn twice at a size-proportional sub-pixel offset, which thickens without changing advances, so it measures regular and layout stays correct |
 | `spacing` | honored — the host places each glyph, with the pen matching `text_width` exactly |
 
-Embedding the Bold face would light `weight` up with no protocol change.
+Embedding a mono Bold face would light `weight` up there too, with no protocol change.
+
+### Measuring the UI face
+
+`text_width(s, size, "ui")` sums a **separate advance table**, because Inter is
+proportional — `i` and `W` are nowhere near the same width, so the single ratio
+that fully describes a monospace face does not describe this one. The host
+publishes both tables (`PanelHost::set_font_advance_ratios_with_ui`), so
+centering and right-alignment are exact in either face. Measure in the face you
+draw in: measuring a `font: "ui"` run without the third argument sums monospace
+advances and the result lands visibly wrong while nothing about the drawing
+looks broken.
+
+```petal
+let TITLE = {size: 22, weight: 700, font: "ui", color: palette().text}
+let w = text_width("Pick your handle", 22, "ui")   // not text_width(s, 22)
+draw_text("Pick your handle", {x: (screen_width() - w) / 2, y: 40}, TITLE)
+```
 The full cross-host contract lives in `../docs/text-and-fonts.md`.
 
 ### Rotated text is not supported

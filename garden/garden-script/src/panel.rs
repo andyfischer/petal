@@ -1026,7 +1026,24 @@ impl PanelHost {
     /// but a host rebuilt from scratch is a new host and must be told again.
     pub fn set_font_advance_ratios(&mut self, ratios: Vec<f64>) {
         let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
-        bind_font_advances(&mut self.env, &metrics);
+        bind_font_advances(&mut self.env, &metrics, &metrics);
+    }
+
+    /// [`set_font_advance_ratios`](Self::set_font_advance_ratios) for a host
+    /// that renders **two** faces: the default/`mono` table and a separate one
+    /// for the `ui` role a script selects with `font: "ui"`.
+    ///
+    /// Publishing both is what keeps `text_width(s, size, "ui")` agreeing with
+    /// what the renderer shapes. A host that draws a proportional `ui` face but
+    /// publishes only the monospace table will measure every UI run with
+    /// monospace advances — centered and right-aligned text then lands visibly
+    /// wrong, and nothing about the drawing looks broken, so it is a hard bug
+    /// to see. Same contract as the single-face setter: call before the first
+    /// [`frame`](Self::frame), and tell every rebuilt host again.
+    pub fn set_font_advance_ratios_with_ui(&mut self, mono: Vec<f64>, ui: Vec<f64>) {
+        let mono = petal_ui::draw::FontMetrics::proportional(mono, TEXT_ADVANCE_RATIO);
+        let ui = petal_ui::draw::FontMetrics::proportional(ui, TEXT_ADVANCE_RATIO);
+        bind_font_advances(&mut self.env, &mono, &ui);
     }
 
     /// Attach the host-side data source the script reaches through
@@ -1978,18 +1995,25 @@ fn stat_sig(path: &Path) -> Option<FileSig> {
 /// measures the font the pane will actually get, and an unknown name degrades
 /// to the same default. All four are plain rebindable bindings, so calling this
 /// again on a live env replaces the measurement wholesale.
-fn bind_font_advances(env: &mut Env, metrics: &petal_ui::draw::FontMetrics) {
-    petal_ui::draw::bind_text_metrics(env, metrics.advance);
-    if !metrics.advances.is_empty() {
-        petal_ui::draw::bind_text_advance_table(env, &metrics.advances);
+fn bind_font_advances(
+    env: &mut Env,
+    mono: &petal_ui::draw::FontMetrics,
+    ui: &petal_ui::draw::FontMetrics,
+) {
+    // The *unnamed* default metrics stay the mono face: a script that measures
+    // without naming a role is measuring what Garden draws by default.
+    petal_ui::draw::bind_text_metrics(env, mono.advance);
+    if !mono.advances.is_empty() {
+        petal_ui::draw::bind_text_advance_table(env, &mono.advances);
     }
-    petal_ui::draw::bind_font_metrics(env, "mono", metrics);
-    petal_ui::draw::bind_font_metrics(env, "ui", metrics);
+    petal_ui::draw::bind_font_metrics(env, "mono", mono);
+    // `ui` is a genuinely different face (proportional Inter) whenever the host
+    // has measured one. A host that hasn't passes the mono table for both, which
+    // is the old single-face behavior — measuring stays consistent with drawing
+    // either way, which is the property that matters.
+    petal_ui::draw::bind_font_metrics(env, "ui", ui);
     // Garden's default font *is* the mono role, so a style naming no face
-    // resolves that role's variants. Only the regular exists today (one
-    // embedded face), so a bold style measures — and renders — regular; naming
-    // the role is what would let an embedded bold take effect on both sides at
-    // once.
+    // resolves that role's variants.
     petal_ui::draw::bind_default_font_name(env, "mono");
 }
 
@@ -2035,10 +2059,8 @@ fn register_panel_natives(env: &mut Env) {
     // Text metrics: the uniform ratio is the floor every host starts from. A
     // host that can measure its real face replaces it per instance with
     // [`PanelHost::set_font_advance_ratios`], which rebinds these same symbols.
-    bind_font_advances(
-        env,
-        &petal_ui::draw::FontMetrics::monospace(TEXT_ADVANCE_RATIO),
-    );
+    let floor = petal_ui::draw::FontMetrics::monospace(TEXT_ADVANCE_RATIO);
+    bind_font_advances(env, &floor, &floor);
     // Garden-only: the host UI theme, injected read-only each frame (see
     // [`bind_panel_theme`]) so a drawer paints in the app's colors instead of a
     // hardcoded palette. Its record is bound before the run; the native returns

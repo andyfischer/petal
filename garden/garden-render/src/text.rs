@@ -10,7 +10,7 @@ use glyphon::{
     TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
 
-use crate::{Color, Rect, TextStyle, REGULAR_WEIGHT};
+use crate::{Color, FontRole, Rect, TextStyle, REGULAR_WEIGHT};
 
 /// One text run staged for drawing, in logical pixels.
 pub(crate) struct TextRun<'a> {
@@ -29,6 +29,44 @@ pub(crate) struct TextRun<'a> {
 /// JetBrains Mono Regular, embedded so there is no font discovery at startup.
 /// Licensed under the SIL Open Font License 1.1 (see `assets/OFL.txt`).
 const FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
+
+/// Inter Regular and Bold — the proportional face a panel selects with
+/// `font: "ui"`. Embedded for the same reason as the monospace one: no font
+/// discovery at startup, and identical rendering on every machine.
+/// Licensed under the SIL Open Font License 1.1 (see `assets/Inter-OFL.txt`).
+///
+/// Both cuts are loaded under one family, which is what lets `weight: 700` on
+/// a UI run resolve to a real Bold face instead of the over-draw the monospace
+/// face has to fake it with.
+const UI_FONT_BYTES: &[u8] = include_bytes!("../assets/Inter-Regular.ttf");
+const UI_FONT_BOLD_BYTES: &[u8] = include_bytes!("../assets/Inter-Bold.ttf");
+
+/// The family names of the embedded faces, read back from the parsed font data
+/// rather than hardcoded, so swapping a font file can't leave a stale string
+/// behind.
+///
+/// `None` means that face failed to parse; shaping then falls back as described
+/// on [`Families::for_role`].
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Families {
+    mono: Option<String>,
+    ui: Option<String>,
+}
+
+impl Families {
+    /// The family a run in this role shapes with.
+    fn for_role(&self, role: FontRole) -> Option<&str> {
+        match role {
+            FontRole::Mono => self.mono.as_deref(),
+            // A UI run on a build whose Inter failed to parse falls back to the
+            // *monospace* face, not to a generic proportional family: the
+            // advance table published for `ui` was measured from whichever face
+            // this returns, and a generic family would disagree with it and
+            // misplace every centered run. Degrade consistently or not at all.
+            FontRole::Ui => self.ui.as_deref().or(self.mono.as_deref()),
+        }
+    }
+}
 
 /// Default font size in logical pixels — what editor and chrome text render
 /// at. A [`crate::Primitive::Text`] carries its own size, so a panel script
@@ -110,9 +148,10 @@ pub(crate) struct TextStack {
     /// Pool of shaping buffers, one per text run, reused across frames.
     /// Only the first `texts.len()` entries are shaped and drawn each frame.
     buffers: Vec<glyphon::Buffer>,
-    /// Family name of the embedded font; `None` falls back to the system
-    /// monospace family (only if the embedded font failed to parse).
-    family_name: Option<String>,
+    /// Family names of the embedded faces, selected per run by its
+    /// [`FontRole`]; `None` falls back to the system monospace family (only if
+    /// the embedded font failed to parse).
+    families: Families,
     /// (advance_width, line_height) in logical pixels.
     cell_size: (f32, f32),
     /// Per-batch: did this batch's `prepare` fail because the atlas was full?
@@ -156,27 +195,43 @@ pub struct AtlasStats {
 /// the cell advance is measured from the primary Latin face alone, so the
 /// (potentially large) fallback files never need to be opened just to compute
 /// layout metrics.
-fn build_font_system(with_fallbacks: bool) -> (FontSystem, Option<String>) {
+fn build_font_system(with_fallbacks: bool) -> (FontSystem, Families) {
     let mut db = glyphon::fontdb::Database::new();
+    // The monospace face goes in first and is named from the first face in the
+    // database — the UI faces below would otherwise take that slot.
     db.load_font_data(FONT_BYTES.to_vec());
-    let family_name = db
+    let mono = db
         .faces()
         .next()
         .and_then(|face| face.families.first().map(|(name, _)| name.clone()));
-    if family_name.is_none() {
+
+    // Both Inter cuts share a family name; read it off the regular, then load
+    // Bold under the same family so the shaper can answer a bold request with
+    // a real cut. `faces()` is ordered by insertion, so the face added by this
+    // load is the one at the previous end of the database.
+    let ui_index = db.faces().count();
+    db.load_font_data(UI_FONT_BYTES.to_vec());
+    let ui = db
+        .faces()
+        .nth(ui_index)
+        .and_then(|face| face.families.first().map(|(name, _)| name.clone()));
+    db.load_font_data(UI_FONT_BOLD_BYTES.to_vec());
+
+    let families = Families { mono, ui };
+    if families.mono.is_none() {
         // The embedded font failed to parse; fall back to system fonts
         // and let cosmic-text pick a monospace family.
         db.load_system_fonts();
     }
     if with_fallbacks {
         // Add CJK/kana/hangul/emoji/Unicode faces. The primary monospace face
-        // stays the default (`family_name` is unchanged), so Latin text and the
-        // cell advance are unaffected; cosmic-text only consults these for
+        // stays the default (`families.mono` is unchanged), so Latin text and
+        // the cell advance are unaffected; cosmic-text only consults these for
         // clusters the primary face can't cover.
         load_fallback_fonts(&mut db);
     }
     let font_system = FontSystem::new_with_locale_and_db("en-US".to_string(), db);
-    (font_system, family_name)
+    (font_system, families)
 }
 
 /// Measure the monospace cell with a throwaway `FontSystem` — no GPU
@@ -184,15 +239,15 @@ fn build_font_system(with_fallbacks: bool) -> (FontSystem, Option<String>) {
 /// windowed renderer's layout math. No fallback fonts are loaded: the advance
 /// comes from the primary face alone.
 pub(crate) fn measure_cell_standalone() -> (f32, f32) {
-    let (mut font_system, family_name) = build_font_system(false);
-    measure_cell(&mut font_system, family_name.as_deref())
+    let (mut font_system, families) = build_font_system(false);
+    measure_cell(&mut font_system, families.for_role(FontRole::Mono))
 }
 
 /// [`measure_ascii_advances`] with a throwaway `FontSystem` — backs
 /// [`crate::ascii_advance_ratios`].
-pub(crate) fn measure_ascii_advances_standalone() -> Vec<f64> {
-    let (mut font_system, family_name) = build_font_system(false);
-    measure_ascii_advances(&mut font_system, family_name.as_deref())
+pub(crate) fn measure_ascii_advances_standalone(role: FontRole) -> Vec<f64> {
+    let (mut font_system, families) = build_font_system(false);
+    measure_ascii_advances(&mut font_system, families.for_role(role))
 }
 
 impl TextStack {
@@ -202,14 +257,14 @@ impl TextStack {
         surface_format: wgpu::TextureFormat,
         samples: u32,
     ) -> Self {
-        let (mut font_system, family_name) = build_font_system(true);
+        let (mut font_system, families) = build_font_system(true);
 
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
         let atlas = TextAtlas::new(device, queue, &cache, surface_format);
 
-        let cell_size = measure_cell(&mut font_system, family_name.as_deref());
+        let cell_size = measure_cell(&mut font_system, families.for_role(FontRole::Mono));
 
         Self {
             font_system,
@@ -220,7 +275,7 @@ impl TextStack {
             batches: 0,
             samples,
             buffers: Vec::new(),
-            family_name,
+            families,
             cell_size,
             failed: Vec::new(),
             stats: AtlasStats::default(),
@@ -311,7 +366,7 @@ impl TextStack {
                 .push(glyphon::Buffer::new(&mut self.font_system, metrics));
         }
         for (buffer, run) in self.buffers.iter_mut().zip(texts) {
-            let attrs = Self::styled_attrs(self.family_name.as_deref(), run.style);
+            let attrs = Self::styled_attrs(self.families.for_role(run.style.font), run.style);
             // Buffers are pooled across frames and a run carries its own size,
             // so re-state the metrics every frame rather than at creation.
             buffer.set_metrics(
@@ -519,7 +574,7 @@ mod tests {
 
     #[test]
     fn ascii_advance_ratios_match_the_measured_cell() {
-        let ratios = measure_ascii_advances_standalone();
+        let ratios = measure_ascii_advances_standalone(FontRole::Mono);
         let (advance, _) = measure_cell_standalone();
         let expected = (advance / FONT_SIZE) as f64;
         // The primary face is monospace, so every printable glyph advances the
@@ -538,6 +593,45 @@ mod tests {
             expected > 0.4 && expected < 0.8,
             "implausible advance ratio {expected}"
         );
+    }
+
+    /// The UI face has to be a *different, proportional* face, or `font: "ui"`
+    /// is a no-op that still measures and draws monospace. Both halves matter:
+    /// if the family never resolved we would silently fall back to mono, and if
+    /// the advances were uniform we would have embedded the wrong file.
+    #[test]
+    fn the_ui_face_is_proportional_and_distinct_from_the_mono_one() {
+        let (_, families) = build_font_system(false);
+        let mono = families
+            .for_role(FontRole::Mono)
+            .expect("the embedded monospace face must parse");
+        let ui = families
+            .for_role(FontRole::Ui)
+            .expect("the embedded UI face must parse");
+        assert_ne!(
+            mono, ui,
+            "font: \"ui\" resolved to the monospace family — Inter did not load"
+        );
+
+        let ratios = measure_ascii_advances_standalone(FontRole::Ui);
+        // 'i' and 'W' are the narrowest and widest ASCII letters in any
+        // proportional face, and exactly equal in a monospace one.
+        let narrow = ratios['i' as usize];
+        let wide = ratios['W' as usize];
+        assert!(
+            wide > narrow * 1.5,
+            "UI advances look monospace: 'i' {narrow}, 'W' {wide}"
+        );
+        assert_eq!(ratios[0x09], 0.0, "control codes must add no width");
+    }
+
+    /// The two tables are what `text_width` sums per role; publishing one table
+    /// for both roles is the bug that makes centered UI text land wrong.
+    #[test]
+    fn the_two_advance_tables_differ() {
+        let mono = measure_ascii_advances_standalone(FontRole::Mono);
+        let ui = measure_ascii_advances_standalone(FontRole::Ui);
+        assert_ne!(mono, ui);
     }
 
     /// Rasterize the first glyph of `text` at `size` and return the pixel
@@ -595,14 +689,14 @@ mod tests {
         // Cold pass: every size is seen for the first time.
         let cold: Vec<u32> = SIZES
             .iter()
-            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "H", s))
+            .map(|&s| raster_height(&mut fs, &mut swash, family.for_role(FontRole::Mono), "H", s))
             .collect();
 
         // Warm pass: the hinting table is now full, so each of these lookups
         // goes through the eviction path that used to corrupt the entry.
         let warm: Vec<u32> = SIZES
             .iter()
-            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "H", s))
+            .map(|&s| raster_height(&mut fs, &mut swash, family.for_role(FontRole::Mono), "H", s))
             .collect();
 
         assert_eq!(
@@ -638,14 +732,14 @@ mod tests {
 
         // Warm every size on one glyph, filling the hinting table.
         for &s in &SIZES {
-            raster_height(&mut fs, &mut swash, family.as_deref(), "H", s);
+            raster_height(&mut fs, &mut swash, family.for_role(FontRole::Mono), "H", s);
         }
 
         // Now a different glyph at the same sizes, and a reference measurement
         // of that glyph taken on a completely cold cache.
         let warm: Vec<u32> = SIZES
             .iter()
-            .map(|&s| raster_height(&mut fs, &mut swash, family.as_deref(), "B", s))
+            .map(|&s| raster_height(&mut fs, &mut swash, family.for_role(FontRole::Mono), "B", s))
             .collect();
 
         let (mut cold_fs, cold_family) = build_font_system(false);
@@ -656,7 +750,7 @@ mod tests {
                 raster_height(
                     &mut cold_fs,
                     &mut cold_swash,
-                    cold_family.as_deref(),
+                    cold_family.for_role(FontRole::Mono),
                     "B",
                     s,
                 )
@@ -694,14 +788,14 @@ mod tests {
     #[test]
     fn latin_uses_primary_face_and_fallbacks_do_not_change_advance() {
         let (mut fs, family) = build_font_system(true);
-        let (_a_font, a_glyph) = first_glyph(&mut fs, family.as_deref(), "A");
+        let (_a_font, a_glyph) = first_glyph(&mut fs, family.for_role(FontRole::Mono), "A");
         assert_ne!(a_glyph, 0, "'A' must resolve to a real glyph, not notdef");
 
         // The mono advance must be identical whether or not fallback fonts are
         // loaded — panel/editor column alignment depends on it staying stable.
-        let (adv_with, lh) = measure_cell(&mut fs, family.as_deref());
+        let (adv_with, lh) = measure_cell(&mut fs, family.for_role(FontRole::Mono));
         let (mut fs_bare, fam_bare) = build_font_system(false);
-        let (adv_without, _) = measure_cell(&mut fs_bare, fam_bare.as_deref());
+        let (adv_without, _) = measure_cell(&mut fs_bare, fam_bare.for_role(FontRole::Mono));
         assert!(adv_with > 0.0 && lh > 0.0);
         assert_eq!(
             adv_with, adv_without,
@@ -716,10 +810,10 @@ mod tests {
             return;
         }
         let (mut fs, family) = build_font_system(true);
-        let (primary_font, _) = first_glyph(&mut fs, family.as_deref(), "A");
+        let (primary_font, _) = first_glyph(&mut fs, family.for_role(FontRole::Mono), "A");
 
         // U+4E2D 中 — a Han ideograph absent from JetBrains Mono.
-        let (cjk_font, cjk_glyph) = first_glyph(&mut fs, family.as_deref(), "中");
+        let (cjk_font, cjk_glyph) = first_glyph(&mut fs, family.for_role(FontRole::Mono), "中");
         assert_ne!(
             cjk_glyph, 0,
             "CJK must resolve to a real (non-notdef) glyph instead of tofu"
@@ -736,8 +830,8 @@ mod tests {
         // codepoint must resolve to notdef (0) from the primary face — the exact
         // pre-fallback behavior, proving the guard degrades cleanly.
         let (mut fs, family) = build_font_system(false);
-        let (primary_font, _) = first_glyph(&mut fs, family.as_deref(), "A");
-        let (cjk_font, cjk_glyph) = first_glyph(&mut fs, family.as_deref(), "中");
+        let (primary_font, _) = first_glyph(&mut fs, family.for_role(FontRole::Mono), "A");
+        let (cjk_font, cjk_glyph) = first_glyph(&mut fs, family.for_role(FontRole::Mono), "中");
         assert_eq!(cjk_glyph, 0, "no fallback loaded => CJK is notdef");
         assert_eq!(cjk_font, primary_font, "notdef comes from the primary face");
     }

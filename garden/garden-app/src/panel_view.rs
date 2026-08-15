@@ -46,6 +46,23 @@ fn measured_advance_ratios() -> &'static [f64] {
     RATIOS.get_or_init(garden_render::ascii_advance_ratios)
 }
 
+/// [`measured_advance_ratios`] for the proportional UI face — the table behind
+/// a script's `text_width(s, size, "ui")`. Cached the same way and for the same
+/// reason: measuring a face is a pure function of the build.
+fn measured_ui_advance_ratios() -> &'static [f64] {
+    static RATIOS: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
+    RATIOS.get_or_init(garden_render::ui_ascii_advance_ratios)
+}
+
+/// The advance table a run in this role measures with, so the pen in
+/// [`push_text_run`] steps exactly as `text_width` says it will.
+fn advance_ratios_for(role: garden_render::FontRole) -> &'static [f64] {
+    match role {
+        garden_render::FontRole::Mono => measured_advance_ratios(),
+        garden_render::FontRole::Ui => measured_ui_advance_ratios(),
+    }
+}
+
 /// Emit a script's text run as scene primitives.
 ///
 /// Normally that is one [`Primitive::Text`]. A run with letter-spacing becomes
@@ -74,7 +91,7 @@ fn push_text_run(
         });
         return;
     }
-    let ratios = measured_advance_ratios();
+    let ratios = advance_ratios_for(style.font);
     let mut pen = x;
     for ch in text.chars() {
         let advance = ratios
@@ -111,7 +128,10 @@ const FALLBACK_ADVANCE_RATIO: f64 = 0.6;
 /// because the ratios live in the host's env and a rebuilt host starts over
 /// with the estimate.
 fn adopt_font(host: &mut PanelHost) {
-    host.set_font_advance_ratios(measured_advance_ratios().to_vec());
+    host.set_font_advance_ratios_with_ui(
+        measured_advance_ratios().to_vec(),
+        measured_ui_advance_ratios().to_vec(),
+    );
 }
 
 /// A native read-only editor rendered inside one `text_view(...)` region of a
@@ -2495,11 +2515,11 @@ impl PanelView {
                     g,
                     b,
                     a,
-                    // Garden has exactly one embedded face, so every role and
-                    // family name resolves to it — which is what the
-                    // measurement side reports too, so the two agree. The
-                    // field stays in the protocol for hosts with a font book.
-                    font: _,
+                    // `ui` selects the embedded proportional face; every other
+                    // name resolves to the monospace one. The measurement side
+                    // resolves names the same way (an unbound role falls back to
+                    // the default metrics), so the two agree either way.
+                    font,
                     weight,
                     italic,
                     spacing,
@@ -2527,6 +2547,9 @@ impl PanelView {
                             weight: *weight,
                             italic: *italic,
                             spacing: *spacing,
+                            font: font
+                                .as_deref()
+                                .map_or(garden_render::FontRole::Mono, garden_render::FontRole::from_name),
                         },
                     );
                 }
@@ -3287,7 +3310,8 @@ edit_view_projection(1, {{
                     TextStyle {
                         weight: 700,
                         italic: false,
-                        spacing: 0.0
+                        spacing: 0.0,
+                        font: garden_render::FontRole::Mono,
                     }
                 ),
                 (
@@ -3295,7 +3319,8 @@ edit_view_projection(1, {{
                     TextStyle {
                         weight: 400,
                         italic: true,
-                        spacing: 0.0
+                        spacing: 0.0,
+                        font: garden_render::FontRole::Mono,
                     }
                 ),
                 ("plain".to_string(), TextStyle::default()),

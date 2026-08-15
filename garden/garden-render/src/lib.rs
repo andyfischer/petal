@@ -117,13 +117,46 @@ impl Vertex {
     }
 }
 
+/// Which embedded face a text run is shaped with.
+///
+/// Garden embeds two: a monospace face for everything code-shaped (the editor,
+/// its chrome, and any panel that doesn't ask otherwise) and a proportional UI
+/// face for panels drawing prose. The editor's layout math is monospace-only,
+/// so [`FontRole::Ui`] is reachable **only** through a panel script's
+/// `font: "ui"` — nothing Garden itself draws can select it, and the editor's
+/// column arithmetic is untouched by its existence.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FontRole {
+    /// JetBrains Mono — the default for every run Garden itself draws.
+    #[default]
+    Mono,
+    /// Inter — proportional, for panel prose.
+    Ui,
+}
+
+impl FontRole {
+    /// Resolve a petal-ui font role name. `ui` selects the proportional face;
+    /// every other name — `mono`, `serif`, a concrete family, or one this host
+    /// has never heard of — degrades to the monospace face. That matches the
+    /// measurement side, where an unbound name falls back to the default
+    /// metrics, so what a script measures is what it gets drawn.
+    pub fn from_name(name: &str) -> FontRole {
+        match name {
+            "ui" => FontRole::Ui,
+            _ => FontRole::Mono,
+        }
+    }
+}
+
 /// The typographic axes a text run can vary beyond its size. Panel scripts
 /// set these through the petal-ui draw protocol; everything Garden itself
-/// draws uses the default (the embedded face, regular, upright, unspaced).
+/// draws uses the default (the monospace face, regular, upright, unspaced).
 ///
-/// Weight and slant are requests to the shaper: with only JetBrains Mono
-/// Regular embedded, cosmic-text answers a bold request with the regular face
-/// unless the machine has a matching one installed. Letter-spacing, by
+/// Slant is a request to the shaper: no italic cut is embedded, so cosmic-text
+/// answers one with the upright face unless the machine has a matching one
+/// installed. Weight resolves to a **real** Bold cut on [`FontRole::Ui`]
+/// (Inter Bold is embedded); on [`FontRole::Mono`] it is still synthesized by
+/// over-drawing, since only JetBrains Mono Regular is. Letter-spacing, by
 /// contrast, is applied by the caller placing glyphs — it always takes effect.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextStyle {
@@ -132,6 +165,8 @@ pub struct TextStyle {
     pub italic: bool,
     /// Letter-spacing in logical px, added after each glyph.
     pub spacing: f32,
+    /// Which embedded face to shape with.
+    pub font: FontRole,
 }
 
 /// CSS regular weight — what every run Garden itself draws uses.
@@ -143,6 +178,7 @@ impl Default for TextStyle {
             weight: REGULAR_WEIGHT,
             italic: false,
             spacing: 0.0,
+            font: FontRole::Mono,
         }
     }
 }
@@ -218,11 +254,23 @@ pub fn cell_metrics() -> (f32, f32) {
 }
 
 /// Per-codepoint advance ratios (glyph advance ÷ font size) for ASCII, measured
-/// from the embedded font on the CPU — the table petal-ui's `text_width` sums
-/// so a Petal panel script measures text the way this renderer draws it.
-/// Ratios, not pixel widths, so one table serves every font size.
+/// from the embedded monospace font on the CPU — the table petal-ui's
+/// `text_width` sums so a Petal panel script measures text the way this
+/// renderer draws it. Ratios, not pixel widths, so one table serves every size.
 pub fn ascii_advance_ratios() -> Vec<f64> {
-    text::measure_ascii_advances_standalone()
+    text::measure_ascii_advances_standalone(FontRole::Mono)
+}
+
+/// The same table for the embedded **proportional** UI face ([`FontRole::Ui`]).
+///
+/// A monospace table is fully described by its single ratio; this one is not —
+/// every glyph differs, which is the whole reason `text_width` sums a
+/// per-codepoint table instead of multiplying by a constant. A host that draws
+/// `font: "ui"` must publish this alongside [`ascii_advance_ratios`], or
+/// scripts will measure proportional text with monospace advances and every
+/// centered or right-aligned run will land wrong.
+pub fn ui_ascii_advance_ratios() -> Vec<f64> {
+    text::measure_ascii_advances_standalone(FontRole::Ui)
 }
 
 /// The shared GPU handles every renderer is built on: one wgpu

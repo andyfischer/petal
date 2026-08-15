@@ -85,6 +85,12 @@ export interface ScenePrimitive {
    *  meshes, and consecutive ones are batched, so this — not the primitive's
    *  own `rect` — is what a layout assertion searches. */
   shapes?: { rect: Rect; color: [number, number, number, number]; triangles: number }[];
+  clip?: Rect;
+  /** False when the primitive is provably clipped away — a row of a scrolling
+   *  list scrolled past its viewport, say. The scene carries those primitives
+   *  with the clip that removes them, so counting runs without this counts
+   *  things nobody can see. */
+  visible?: boolean;
 }
 
 export interface MouseReply {
@@ -106,12 +112,6 @@ export class DebugClient {
   constructor(base: string) {
     this.base = base;
   }
-  clip?: Rect;
-  /** False when the primitive is provably clipped away — a row of a scrolling
-   *  list scrolled past its viewport, say. The scene carries those primitives
-   *  with the clip that removes them, so counting runs without this counts
-   *  things nobody can see. */
-  visible?: boolean;
 
   // --- raw transport --------------------------------------------------------
 
@@ -268,6 +268,17 @@ export class DebugClient {
 
   async key(key: string, mods: string[] = []): Promise<void> {
     await this.post("/key", { key, mods });
+  }
+
+  /** Send a key that is meant to end the process (Cmd-Q). The app can tear the
+   *  debug server down before the reply is written, so a closed connection here
+   *  is the expected outcome, not a failure — the caller waits on the process. */
+  async keyQuitting(key: string, mods: string[] = []): Promise<void> {
+    try {
+      await this.key(key, mods);
+    } catch {
+      // connection closed by the exiting app
+    }
   }
 
   async text(text: string): Promise<void> {

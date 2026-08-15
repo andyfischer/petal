@@ -232,7 +232,7 @@ function panelScript(state: unknown): boolean {
 /** Quit the app the way a user does, and wait for the process to actually go —
  *  the database is flushed on the way out, and phase 2 reads it. */
 async function quit(app: LaunchedApp): Promise<void> {
-  await app.client.key("q", ["cmd"]);
+  await app.client.keyQuitting("q", ["cmd"]);
   await waitUntil(async () => app.alive(), (alive) => !alive, { tries: 40, intervalMs: 100 });
   app.kill();
 }

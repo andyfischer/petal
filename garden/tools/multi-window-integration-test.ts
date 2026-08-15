@@ -107,7 +107,7 @@ checks.check("no window 2 lingers", await winFocused(2), "MISSING");
 checks.check("the survivor serves its own buffer", await g.firstLine(), "W1LINE");
 
 // Cmd+Q quits the whole process.
-await g.key("q", ["cmd"]);
+await g.keyQuitting("q", ["cmd"]);
 const alive = await waitUntil(async () => app.alive(), (a) => !a, { tries: 12, intervalMs: 250 });
 checks.check("Cmd+Q exits the process", alive, false);
 

@@ -69,6 +69,11 @@ fn span(start: f32, len: f32, cell: f32, max: usize) -> (usize, usize) {
     (a.clamp(0, max) as usize, b.clamp(0, max) as usize)
 }
 
+/// Is `center` inside the half-open span `[start, start + len)`?
+fn inside(center: f32, start: f32, len: f32) -> bool {
+    center >= start && center < start + len
+}
+
 /// Cell range covered by `rect`: `(col0, col1, row0, row1)`, half-open.
 fn cell_rect(rect: &Rect, cols: usize, rows: usize) -> (usize, usize, usize, usize) {
     let (c0, c1) = span(rect.x, rect.w, CELL.0, cols);
@@ -114,16 +119,26 @@ pub fn rasterize(scene: &Scene, cols: usize, rows: usize) -> Grid {
         else {
             continue;
         };
-        let (clip_c0, clip_c1, clip_r0, clip_r1) = cell_rect(clip, cols, rows);
         let row = (pos.1 / CELL.1).round() as isize;
-        if row < clip_r0 as isize || row >= clip_r1 as isize {
+        // Clip by cell *center*, not by the rounded cell span a quad uses: a
+        // cell is atomic here, so a row the GPU renderer would cut in half is
+        // kept only when more than half of it is inside the clip. Rounding the
+        // clip outward instead (what `cell_rect` does) drew a straddling row
+        // whole, which is how text escaped a scrolling viewport in the TUI.
+        if row < 0 || !inside(row as f32 * CELL.1 + CELL.1 * 0.5, clip.y, clip.h) {
             continue;
         }
         let row = row as usize;
+        if row >= rows {
+            continue;
+        }
         let start = (pos.0 / CELL.0).round() as isize;
         for (i, ch) in text.chars().enumerate() {
             let col = start + i as isize;
-            if col < clip_c0 as isize || col >= clip_c1 as isize {
+            if col < 0
+                || col >= cols as isize
+                || !inside(col as f32 * CELL.0 + CELL.0 * 0.5, clip.x, clip.w)
+            {
                 continue;
             }
             let cell = grid.get_mut(col as usize, row);
@@ -254,6 +269,52 @@ mod tests {
                 color: WHITE,
                 // Clip allows columns 0..3 only.
                 clip: Rect::new(0.0, 0.0, 24.0, 16.0),
+                size: garden_render::FONT_SIZE,
+                style: TextStyle::default(),
+            }]),
+            8,
+            1,
+        );
+        assert_eq!(grid.row_text(0), "abc     ");
+    }
+
+    /// A cell is atomic in the terminal, so a row the GPU renderer cuts in half
+    /// is a judgement call — it is kept only when its center is inside the clip.
+    /// The row above the boundary stays whole; the one past it goes.
+    #[test]
+    fn text_row_straddling_the_clip_bottom_is_cut_by_cell_center() {
+        // Clip bottom at y = 40: row 1 (16..32) is fully inside, row 2 (32..48)
+        // straddles it with its center exactly on the edge.
+        let clip = Rect::new(0.0, 0.0, 64.0, 40.0);
+        let text = |y: f32, s: &str| Primitive::Text {
+            pos: (0.0, y),
+            text: s.to_string(),
+            color: WHITE,
+            clip,
+            size: garden_render::FONT_SIZE,
+            style: TextStyle::default(),
+        };
+        let grid = rasterize(
+            &scene(vec![text(16.0, "in"), text(32.0, "half"), text(48.0, "out")]),
+            8,
+            4,
+        );
+        assert_eq!(grid.row_text(1), "in      ");
+        assert_eq!(grid.row_text(2), "        ");
+        assert_eq!(grid.row_text(3), "        ");
+    }
+
+    /// The same rule horizontally: a column whose center is past the clip's
+    /// right edge is dropped rather than rounded back in.
+    #[test]
+    fn text_column_straddling_the_clip_right_edge_is_cut() {
+        let grid = rasterize(
+            &scene(vec![Primitive::Text {
+                pos: (0.0, 0.0),
+                text: "abcdef".to_string(),
+                color: WHITE,
+                // Right edge mid-way through column 3 (24..32).
+                clip: Rect::new(0.0, 0.0, 28.0, 16.0),
                 size: garden_render::FONT_SIZE,
                 style: TextStyle::default(),
             }]),

@@ -375,6 +375,26 @@ ratio.
 rasterizes with** (JetBrains Mono, measured through cosmic-text on the CPU), not
 the generic 0.6-of-size guess. So a rule drawn `text_width(s, size)` wide ends
 flush with its text at every size — centering and right-alignment are exact.
+### Clipping
+
+`clip(x, y, w, h)` narrows every following call to that rect until `clip_none()`
+restores the pane; the clip is itself intersected with the pane, so a script can
+never paint outside its own pane. **It applies to everything drawn under it** —
+fills, lines, images, `draw_text`, and the text inside a `text_view` /
+`edit_view` region declared while it is active (a region carries its own
+interior clip; the two are intersected).
+
+Text is cut, not dropped: a run that straddles the clip's bottom edge renders
+its top half, which is exactly what a scrolling list wants at its viewport
+boundary. A drawer therefore does **not** need to cull the half-visible row
+itself — skipping rows that are entirely outside the viewport is still worth it
+as cheap work avoidance, nothing more. (The terminal frontend cannot draw half a
+character cell, so there a row is kept when its cell center is inside the clip.)
+
+Whether a run survives its clip is observable: each `/scene` primitive carries a
+`visible` flag (see `docs/debug-server.md`), so a headless test can tell a drawn
+row from a clipped-away one.
+
 
 The measurement is published **per host**: `PanelHost::set_font_advance_ratios`
 binds the advance table into that host's env, and `PanelView` calls it on every

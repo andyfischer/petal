@@ -85,6 +85,12 @@ export class DebugClient {
   constructor(base: string) {
     this.base = base;
   }
+  clip?: Rect;
+  /** False when the primitive is provably clipped away — a row of a scrolling
+   *  list scrolled past its viewport, say. The scene carries those primitives
+   *  with the clip that removes them, so counting runs without this counts
+   *  things nobody can see. */
+  visible?: boolean;
 
   // --- raw transport --------------------------------------------------------
 
@@ -202,17 +208,22 @@ export class DebugClient {
     return (await this.state()).command_line ?? "";
   }
 
-  /** On-screen text runs whose text is exactly `text`. */
-  async sceneTextCount(text: string): Promise<number> {
+  /** Every text run the clip actually keeps. */
+  async sceneVisibleTexts(): Promise<ScenePrimitive[]> {
     const { primitives } = await this.scene();
-    return primitives.filter((p) => p.type === "text" && p.text === text).length;
+    return primitives.filter((p) => p.type === "text" && p.visible !== false);
+  }
+
+  /** On-screen text runs whose text is exactly `text` (clipped-away runs, which
+   *  the scene still carries, do not count). */
+  async sceneTextCount(text: string): Promise<number> {
+    return (await this.sceneVisibleTexts()).filter((p) => p.text === text).length;
   }
 
   /** On-screen text runs mentioning "error" — how a panel runtime error shows. */
   async sceneErrorCount(): Promise<number> {
-    const { primitives } = await this.scene();
-    return primitives.filter(
-      (p) => p.type === "text" && (p.text ?? "").toLowerCase().includes("error"),
+    return (await this.sceneVisibleTexts()).filter((p) =>
+      (p.text ?? "").toLowerCase().includes("error"),
     ).length;
   }
 

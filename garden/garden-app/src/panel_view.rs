@@ -2145,7 +2145,11 @@ impl PanelView {
                                     // its text must land after the chrome
                                     // tessellated above it, not before.
                                     flush_mesh(prims, &mut verts, cur_clip);
-                                    prims.push(other);
+                                    // …and it obeys the panel's active clip like
+                                    // anything else drawn under it: the region
+                                    // carries its own clip (its interior), so the
+                                    // two are intersected rather than replaced.
+                                    prims.push(clip_to(other, cur_clip));
                                 }
                             }
                         }
@@ -3986,6 +3990,89 @@ done
             }
         }
     }
+
+    /// Every text run a panel emits while a `clip(...)` is active carries that
+    /// clip, so the renderer cuts a run that straddles the region's bottom edge
+    /// instead of drawing it whole. A drawer must not have to cull the half row
+    /// itself — that is exactly what a scroll viewport wants to show.
+    #[test]
+    fn draw_text_straddling_the_clip_is_cut_not_dropped() {
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        write!(
+            f,
+            "clip(0, 0, 300, 40)\n\
+             draw_text(\"inside\", 0, 4, 16, 255, 255, 255)\n\
+             draw_text(\"straddle\", 0, 32, 16, 255, 255, 255)\n\
+             draw_text(\"below\", 0, 60, 16, 255, 255, 255)\n\
+             clip_none()\n\
+             draw_text(\"unclipped\", 0, 120, 16, 255, 255, 255)\n"
+        )
+        .unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        let mut prims = Vec::new();
+        pv.build_scene(RECT, CELL, &Theme::default(), true, &mut prims);
+
+        let run = |want: &str| -> Rect {
+            prims
+                .iter()
+                .find_map(|p| match p {
+                    Primitive::Text { text, clip, .. } if text == want => Some(*clip),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no text run {want:?}"))
+        };
+        // The straddling run is still emitted — cutting is the renderer's job,
+        // via the clip the run carries.
+        for name in ["inside", "straddle", "below"] {
+            let clip = run(name);
+            assert_eq!(
+                (clip.y, clip.y + clip.h),
+                (0.0, 40.0),
+                "{name} must carry the active clip"
+            );
+        }
+        let clip = run("unclipped");
+        assert_eq!(clip.h, RECT.h, "clip_none() restores the pane rect");
+    }
+
+    /// A `text_view` region's text is drawn by the embedded editor, but it is
+    /// still "drawn while the clip is active" — so it clips like everything
+    /// else. Before this, only the region's tessellated chrome clipped and its
+    /// glyphs spilled past the viewport.
+    #[test]
+    fn a_text_view_region_clips_its_text_to_the_active_clip() {
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        let lines = (1..=20).map(|i| format!("line {i}")).collect::<Vec<_>>();
+        write!(
+            f,
+            "clip(0, 0, 300, 40)\n\
+             text_view(1, 0, 0, 200, 300, \"{}\")\n",
+            lines.join("\\n")
+        )
+        .unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        let mut prims = Vec::new();
+        pv.build_scene(RECT, CELL, &Theme::default(), true, &mut prims);
+
+        let clipped: Vec<Rect> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text { clip, .. } => Some(*clip),
+                _ => None,
+            })
+            .collect();
+        assert!(!clipped.is_empty(), "the region should emit text runs");
+        for clip in clipped {
+            assert!(
+                clip.y >= 0.0 && clip.y + clip.h <= 40.0 + f32::EPSILON,
+                "region text escaped the panel clip: {clip:?}"
+            );
+        }
+    }
 }
 
 /// Close the pending geometry batch so the next primitive lands *after* it.
@@ -3995,6 +4082,50 @@ done
 /// that is not geometry — a text run, an image — therefore has to flush the
 /// batch first, or it would be drawn underneath shapes that were submitted
 /// before it. A no-op when nothing is queued.
+/// Narrow a primitive's own clip to `to`.
+///
+/// Primitives that arrive already clipped — everything an embedded `text_view`
+/// region renders — still have to obey whatever `clip(...)` was active when the
+/// region was declared. Intersecting (rather than overwriting) keeps both: the
+/// region's interior *and* the panel's viewport. A [`Primitive::Quad`] carries
+/// no clip at all; panel code tessellates those into the mesh, which is
+/// scissored when it is flushed.
+fn clip_to(p: Primitive, to: Rect) -> Primitive {
+    match p {
+        Primitive::Text {
+            pos,
+            text,
+            color,
+            clip,
+            size,
+            style,
+        } => Primitive::Text {
+            pos,
+            text,
+            color,
+            clip: intersect(clip, to),
+            size,
+            style,
+        },
+        Primitive::Mesh { vertices, clip } => Primitive::Mesh {
+            vertices,
+            clip: intersect(clip, to),
+        },
+        Primitive::Image {
+            rect,
+            source,
+            alpha,
+            clip,
+        } => Primitive::Image {
+            rect,
+            source,
+            alpha,
+            clip: intersect(clip, to),
+        },
+        Primitive::Quad { .. } => p,
+    }
+}
+
 fn flush_mesh(prims: &mut Vec<Primitive>, verts: &mut Vec<Vertex>, clip: Rect) {
     if !verts.is_empty() {
         prims.push(Primitive::Mesh {

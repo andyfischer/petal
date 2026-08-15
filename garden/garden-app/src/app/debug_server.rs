@@ -616,6 +616,35 @@ fn scene_json(scene: &Scene) -> Value {
     let color_json = |c: &garden_render::Color| json!([c.r, c.g, c.b, c.a]);
     let prims: Vec<Value> = scene
         .primitives
+/// Does anything of `rect` survive `clip`?
+fn survives_clip(rect: Rect, clip: Rect) -> bool {
+    let x = rect.x.max(clip.x);
+    let y = rect.y.max(clip.y);
+    let right = (rect.x + rect.w).min(clip.x + clip.w);
+    let bottom = (rect.y + rect.h).min(clip.y + clip.h);
+    right > x && bottom > y
+}
+
+/// Whether a text run has any pixel left after its clip.
+///
+/// Vertically this is exact: the run's line box is `pos.y ..
+/// pos.y + size * LINE_HEIGHT_RATIO`, which is what makes a row scrolled out of
+/// a clipped viewport reportable. Horizontally the dump has no shaped advances,
+/// so only the run's *start* is judged — a run reaching in from the left of the
+/// clip is reported visible rather than guessed at. `visible: false` therefore
+/// means "provably clipped away"; `true` means "not provably gone".
+fn text_run_visible(pos: (f32, f32), size: f32, clip: Rect) -> bool {
+    let line = Rect::new(
+        pos.0,
+        pos.1,
+        // Zero width would fail the strict test below; a run's first glyph
+        // stands in for its horizontal extent.
+        (clip.x + clip.w - pos.0).max(0.0),
+        size * garden_render::LINE_HEIGHT_RATIO,
+    );
+    survives_clip(line, clip)
+}
+
         .iter()
         .map(|p| match p {
             Primitive::Quad { rect, color } => json!({
@@ -636,6 +665,12 @@ fn scene_json(scene: &Scene) -> Value {
                 // The typographic axes appear only when a run actually uses
                 // one, so an assertion over ordinary text sees the shape it
                 // always did.
+                    // Whether the run survives its clip. A scrolling list that
+                    // clips to its viewport emits the rows above and below it
+                    // too; without this a headless test could not tell a drawn
+                    // row from a clipped-away one, which is what pushed drawers
+                    // into culling straddling rows themselves.
+                    "visible": text_run_visible(*pos, *size, *clip),
                 if *style != TextStyle::default() {
                     run["weight"] = json!(style.weight);
                     run["italic"] = json!(style.italic);
@@ -656,6 +691,7 @@ fn scene_json(scene: &Scene) -> Value {
                 // …and, since consecutive fills are batched into one mesh, the
                 // individual shapes that went into it.
                 "shapes": mesh_shapes(vertices),
+                "visible": survives_clip(mesh_bounds(vertices), *clip),
             }),
             Primitive::Image {
                 rect,
@@ -669,6 +705,7 @@ fn scene_json(scene: &Scene) -> Value {
         })
         .collect();
     json!({"ok": true, "bg": color_json(&scene.bg), "primitives": prims})
+                "visible": survives_clip(*rect, *clip),
 }
 
 #[cfg(test)]
@@ -880,6 +917,53 @@ mod tests {
 
     /// Every panel fill is a mesh, so a `/scene` that reported only a triangle
     /// count left a rounded-rect design with no assertable geometry at all.
+        // …and which *build* answered, so a stale binary is visible to any
+        // client already reading /state.
+        assert!(!id["build"]["version"].as_str().unwrap().is_empty());
+        assert!(!id["build"]["build_date"].as_str().unwrap().is_empty());
+    }
+
+    /// A clipped scrolling list emits the rows outside its viewport too; the
+    /// dump has to say which of them the clip actually keeps, or a headless
+    /// test cannot tell a drawn row from a clipped-away one.
+    #[test]
+    fn scene_marks_text_clipped_away_as_not_visible() {
+        let clip = Rect::new(0.0, 100.0, 200.0, 40.0);
+        let run = |y: f32| Primitive::Text {
+            pos: (10.0, y),
+            text: "row".to_string(),
+            color: Color {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            },
+            clip,
+            size: 16.0,
+            style: TextStyle::default(),
+        };
+        let scene = Scene {
+            bg: Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+            // Above the clip, inside it, straddling its bottom edge, below it.
+            primitives: vec![run(60.0), run(110.0), run(130.0), run(180.0)],
+        };
+        let json = scene_json(&scene);
+        let visible: Vec<&Value> = json["primitives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| &p["visible"])
+            .collect();
+        assert_eq!(
+            visible,
+            vec![&json!(false), &json!(true), &json!(true), &json!(false)],
+            "a straddling run is still (partly) visible; the ones outside are not"
+        );
     #[test]
     fn scene_reports_mesh_bounds_and_dominant_color() {
         let fill = Color {

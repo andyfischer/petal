@@ -77,7 +77,7 @@ All JSON request bodies and responses; errors are
 | `GET /state` | Editor state: the global `frame` counter (see [Frame consistency](#frame-consistency)), window size/scale, cell metrics, focused pane, status-bar error, status note (file reloaded / changed-on-disk warning), drained script `print` output, and per pane: `kind` (`editor`/`process`/`panel`), file, title, `mode` (vim mode label), `pending` (mid-command vim state, see below), dirty flag, cursor, selection (anchor/head/text, text capped at 10k chars), scroll_top, scroll_sub (wrapped sub-row at the top), scroll_frac (sub-row offset in rows, `0.0..1.0` — the smooth part of the position, invisible in the two fields above), scroll_left (fractional display columns), wrap (soft-wrap on/off), line_count, visible_lines, rect, `trace_highlight` (the direct-manipulation source range under the pointer, or `null`), and — for a panel pane — a `panel` object (see below). Plus a top-level `trace`: the whole traced draw call the pointer is over — `callee`, `call` span, and per argument its `source` (`literal`/`binding`/`computed`), `value`, `is_int`, `span` (where it is written in the call) and `editable_span` (the range a rewrite must replace, at the *definition* for a binding). `null` when the pointer is over no shape. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1) |
 | `GET /state?values=…` | The same, with each panel's `values` map narrowed — see [Filtering `panel.values`](#filtering-panelvalues). |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
-| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
+| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size, `visible` — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
 | `GET /screenshot` | PNG of a **complete, settled** frame at physical-pixel size, rendered offscreen; the captured frame number comes back in an `X-Garden-Frame` response header (see [Frame consistency](#frame-consistency)) |
 | `GET /frame` | `{"ok": true, "frame": n}` — the current global frame counter, answered instantly (never blocks). Optional `?min=N` adds `"reached": true/false` (`frame >= N`) for one-liner client polls |
 | `GET /windows` | `{"ok": true, "windows": [{"window": 1, "focused": true, "panes": 2}, …]}` — the open OS windows by ordinal (see [Multiple windows](#multiple-windows)), which one is focused, and each one's pane count. Single-window frontends (headless, terminal) always report the one window as ordinal `1` |
@@ -195,7 +195,8 @@ mesh primitive now reports what a layout assertion actually wants:
    {"rect": {"x": 0, "y": 0, "w": 800, "h": 600}, "color": [0.12, 0.12, 0.14, 1.0], "triangles": 2},
    {"rect": {"x": 780, "y": 40, "w": 8, "h": 220}, "color": [0.35, 0.37, 0.42, 1.0], "triangles": 42}
  ],
- "clip": {"x": 0, "y": 0, "w": 800, "h": 600}}
+ "clip": {"x": 0, "y": 0, "w": 800, "h": 600},
+ "visible": true}
 ```
 
 `rect` is the axis-aligned bounds of the mesh's vertices and `color` is the
@@ -206,6 +207,20 @@ pane. `shapes` is the useful field: the batch split back into runs of
 consecutive same-colour triangles, one per `draw_*` call, each with its own
 bounding rect. Asserting "there is an 8px-wide bar at x≈780 in the scrollbar
 colour" is a search over `shapes`. Two adjacent fills of the *identical* colour
+Every clipped primitive — text runs, meshes and images — carries **`visible`**:
+whether anything of it survives its `clip`. A panel that clips a scrolling list
+to its viewport still *emits* the rows above and below it (clipping is the
+renderer's job, and a straddling row is cut in half rather than dropped), so
+without this a headless test could not tell a drawn row from a clipped-away one
+— which is what used to push drawers into culling straddling rows themselves.
+`sceneTextCount` / `sceneErrorCount` / `sceneVisibleTexts` in
+`tools/lib/debug-client.ts` count only visible runs.
+
+For a text run the vertical test is exact (its line box is `pos.y ..
+pos.y + size * LINE_HEIGHT_RATIO`); horizontally only the run's start is judged,
+since the dump carries no shaped advances. So `"visible": false` means "provably
+clipped away" and `true` means "not provably gone".
+
 merge into one entry (they are indistinguishable on screen too), and the list is
 capped at 256 entries per mesh.
 

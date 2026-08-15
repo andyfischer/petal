@@ -363,7 +363,9 @@ The pushed script is an ordinary Petal graphical panel (see
   of step, while a single full-width body only gains from it. Everything else
   stays wrap-aware: clicks, the caret, per-line styling and scroll-to-line all
   keep addressing buffer lines, not screen rows. Use this for
-  any diff/code/log body the user might want to copy. **Input routing**: a
+  any diff/code/log body the user might want to copy. A region declared while a
+  `clip(...)` is active is clipped by it — text included — so a region can sit
+  inside a scrolling viewport. **Input routing**: a
   region only consumes an input it can act on. While its content *overflows*
   its rect, the region owns the wheel over it and — once a click focused it —
   the nav keys (`j`/`k`/arrows/page/space/home/end), even at the top/bottom

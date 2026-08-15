@@ -3,6 +3,7 @@ import {
   ensureBuild,
   showIrJson,
   runPetal,
+  runPetalError,
   termsByOp,
 } from "./helpers";
 
@@ -77,6 +78,25 @@ describe("field access", () => {
     expect(runPetal('let r = { a: 1 }\nprint(field(r, "zz", 7), has_field(r, "a"))')).toBe(
       "7 true",
     );
+  });
+
+  it("keeps a bare read of a missing field a hard error", () => {
+    // `??` is the only thing that softens a read; without it the access
+    // still has to fail loudly.
+    expect(runPetalError('let r = { a: 1 }\nprint(r.b)')).toMatch(
+      /No field 'b' on record/,
+    );
+    expect(runPetalError('let r = { a: 1 }\nprint(r["b"])')).toMatch(
+      /No key 'b' on record/,
+    );
+  });
+
+  it("does not soften a wrong-typed base or an out-of-range index under ??", () => {
+    // Absence is tolerated on a `??` spine; a genuinely bad read is not.
+    expect(runPetalError("let n = 3\nprint(n.x ?? 1)")).toMatch(
+      /Cannot access field 'x' on int/,
+    );
+    expect(runPetalError("print([1, 2][9] ?? 5)")).toMatch(/out of bounds/);
   });
 
   it("emits SetField for field assignment", () => {

@@ -213,7 +213,9 @@ impl App {
                         content_changed = true;
                     }
                 }
-                ClientEvent::Mutate { name, arg } => self.mutate_panel(idx, &name, arg),
+                ClientEvent::Mutate { name, arg, handle } => {
+                    self.mutate_panel(idx, &name, arg, handle)
+                }
             }
         }
         if content_changed {
@@ -276,9 +278,9 @@ impl App {
     /// layout sync still records the pane by that origin screen, not the
     /// navigated-to one.
     fn navigate_panel(&mut self, idx: usize, intent: NavIntent) -> bool {
-        let (screen, replace) = match intent {
-            NavIntent::Push(screen) => (screen, false),
-            NavIntent::Replace(screen) => (screen, true),
+        let (screen, arg, replace) = match intent {
+            NavIntent::Push(screen, arg) => (screen, arg, false),
+            NavIntent::Replace(screen, arg) => (screen, arg, true),
             NavIntent::Back => {
                 return self
                     .panes
@@ -312,7 +314,7 @@ impl App {
                 .panes
                 .get_mut(idx)
                 .and_then(|p| p.panel.as_mut())
-                .map(|pv| pv.client_fetch_screen(&screen, NAV_MUTATION_TIMEOUT))
+                .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_MUTATION_TIMEOUT))
             {
                 Some(Ok(source)) => source,
                 Some(Err(reason)) => {
@@ -353,9 +355,9 @@ impl App {
         match self.panes.get_mut(idx).and_then(|p| p.panel.as_mut()) {
             Some(pv) => {
                 if replace {
-                    pv.nav_replace(screen, source);
+                    pv.nav_replace(screen, source, arg);
                 } else {
-                    pv.nav_push(screen, source);
+                    pv.nav_push(screen, source, arg);
                 }
                 true
             }
@@ -377,17 +379,43 @@ impl App {
     /// it, so `mutate` is the only channel such a panel has to ask Garden to act.
     /// Every other name keeps forwarding, so a client's own mutations (garden-diff's
     /// `"apply"`, a drawer's `"save"`) are untouched.
-    pub(in crate::app) fn mutate_panel(&mut self, idx: usize, name: &str, arg: serde_json::Value) {
+    /// Report a mutation's outcome back to the panel that raised it, under the
+    /// handle its `mutate(...)` returned. Missing pane / missing panel is simply
+    /// nothing to report to.
+    fn resolve_panel_mutation(
+        &mut self,
+        idx: usize,
+        handle: i64,
+        result: Result<Option<String>, String>,
+    ) {
+        if let Some(pv) = self.panes.get_mut(idx).and_then(|p| p.panel.as_mut()) {
+            pv.resolve_mutation(handle, result);
+        }
+    }
+
+    pub(in crate::app) fn mutate_panel(
+        &mut self,
+        idx: usize,
+        name: &str,
+        arg: serde_json::Value,
+        handle: i64,
+    ) {
         if self.host_mutation(name, &arg) {
+            // Host-answered names resolve immediately and successfully; the
+            // script still learns so, under the same handle.
+            self.resolve_panel_mutation(idx, handle, Ok(None));
             self.needs_redraw = true;
             return;
         }
-        match self
+        let outcome = self
             .panes
             .get_mut(idx)
             .and_then(|p| p.panel.as_mut())
-            .map(|pv| pv.client_mutate(name, arg, MUTATE_TIMEOUT))
-        {
+            .map(|pv| pv.client_mutate(name, arg, MUTATE_TIMEOUT));
+        if let Some(outcome) = outcome.as_ref() {
+            self.resolve_panel_mutation(idx, handle, outcome.clone());
+        }
+        match outcome {
             Some(Ok(Some(status))) => {
                 self.status_note = Some(status);
                 self.status_error = None;

@@ -1883,6 +1883,49 @@ fn coalesce_tolerates_a_missing_field() {
 }
 
 #[test]
+fn optional_access_reads_a_missing_link_as_nil() {
+    let all = OptFlags::all();
+    // `?.` is the same tolerance the left of a `??` gets, asked for outright —
+    // so it stands on its own, with no fallback to write.
+    assert_eq!(run("{a: 1}?.fragment", all).unwrap().0, "nil");
+    assert_eq!(run(r#"{a: 1}?.fragment ?? "none""#, all).unwrap().0, "none");
+    assert_eq!(run("{a: 1}?.a", all).unwrap().0, "1");
+    // One `?.` short-circuits the rest of its chain, like JavaScript's: a
+    // missing `x` must not then error on the `.b` written after it.
+    assert_eq!(run("{a: {b: 1}}?.x.b", all).unwrap().0, "nil");
+    assert_eq!(run("{a: {b: 1}}?.a.b", all).unwrap().0, "1");
+    assert_eq!(run("{a: 1}?.x.y.z", all).unwrap().0, "nil");
+    // The index spelling, `a?.[i]`.
+    assert_eq!(run(r#"{a: 1}?.["z"]"#, all).unwrap().0, "nil");
+    assert_eq!(run(r#"{a: 1}?.["a"]"#, all).unwrap().0, "1");
+    assert_eq!(run("[10, 20]?.[0]", all).unwrap().0, "10");
+
+    for code in ["{a: 1}?.fragment", "{a: {b: 1}}?.x.b", r#"{a: 1}?.["z"]"#] {
+        assert_parity(code);
+    }
+}
+
+#[test]
+fn optional_access_does_not_soften_a_real_bug() {
+    let all = OptFlags::all();
+    // Absence is a property of ragged data, not of wrong types or bad indices.
+    // `?.` says "this link may be missing", never "ignore what goes wrong here".
+    assert!(run("3?.field", all).unwrap_err().contains("Cannot access"));
+    assert!(
+        run("[1, 2]?.[9]", all)
+            .unwrap_err()
+            .contains("out of bounds")
+    );
+    // And it is confined to its own chain: a `?.` inside an index expression
+    // does not make the enclosing read tolerant.
+    assert!(
+        run(r#"{a: 1}[{}?.k ?? "zz"]"#, all)
+            .unwrap_err()
+            .contains("No key")
+    );
+}
+
+#[test]
 fn a_bare_missing_field_is_still_an_error() {
     let all = OptFlags::all();
     // Absence is tolerated only where the program asked for it. A typo in a

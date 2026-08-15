@@ -552,6 +552,13 @@ browser-history natives `navigate("detail.ptl")` / `navigate_replace(...)` /
 screen's source from your app over the built-in **`navigate` mutation** and owns
 the history stack + per-entry `state` restore; your app just supplies source.
 
+`navigate("detail.ptl", { id: 7 })` additionally carries the subject the target
+screen is for. The target screen reads it back with `nav_arg()`, and it arrives at
+your handler as `ctx.arg["arg"]`. The host stores it on the history entry, so
+*back* and *forward* return to that screen with the argument it was opened with
+rather than an empty one. See
+[petal-graphical-panels.md](petal-graphical-panels.md#navigating-navigatescreen--navigatescreen-arg).
+
 An app that needs **navigation side effects** (log the visit, prime data for the
 target screen) registers its own handler instead — it takes precedence over the
 built-in, and must return the target `source` itself:
@@ -569,7 +576,13 @@ an effectful, uncached request/response (the fourth quadrant beside `query` and
 `emit`). `navigate` is just the first built-in use. **v1 limitation:** back/forward
 reuse the host-cached source and don't re-issue the mutation, so if your app tracks
 hidden per-screen context, key your `query` data by its `arg` (as the reference
-apps do) rather than by that context.
+apps do) rather than by that context — or pass it as the navigation argument,
+which *is* restored per entry.
+
+A script-issued `mutate(name, arg)` hands the drawer a **handle**, and
+`mutate_result(handle)` reads back `{ ok, value, error }` once your handler has
+replied — the panel-side half of `Reply::json` / `Reply::error`. See
+[petal-graphical-panels.md](petal-graphical-panels.md#reading-the-outcome-the-handle-mutate-returns).
 
 ## Editable panels (`mutate` write-back)
 

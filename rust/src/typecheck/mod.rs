@@ -903,6 +903,13 @@ impl<'a> Checker<'a> {
                 self.check_expr(index);
                 Type::Any
             }
+            // `a?.b` asks for absence-tolerance outright, so the "class has no
+            // field" warning is suppressed down its spine exactly as it is on a
+            // `??` left-hand side.
+            ExprKind::OptionalAccess(inner) => {
+                self.tolerant_access = true;
+                self.check_expr(inner)
+            }
             ExprKind::Block(stmts) => self.check_block_scoped(stmts),
             ExprKind::Lambda { params, body } => {
                 self.push_scope();

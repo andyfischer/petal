@@ -251,14 +251,28 @@ impl Compiler {
                 }
                 let obj_tid = self.compile_expr(object);
                 let field_const = self.constants.intern(ConstantValue::String(field.clone()));
-                self.emit_term(TermOp::GetField(field_const), smallvec![obj_tid], None)
+                let op = if spine_is_optional(object) {
+                    TermOp::GetFieldOpt(field_const)
+                } else {
+                    TermOp::GetField(field_const)
+                };
+                self.emit_term(op, smallvec![obj_tid], None)
             }
 
             ExprKind::IndexAccess { object, index } => {
                 let obj_tid = self.compile_expr(object);
                 let idx_tid = self.compile_expr(index);
-                self.emit_term(TermOp::GetIndex, smallvec![obj_tid, idx_tid], None)
+                let op = if spine_is_optional(object) {
+                    TermOp::GetIndexOpt
+                } else {
+                    TermOp::GetIndex
+                };
+                self.emit_term(op, smallvec![obj_tid, idx_tid], None)
             }
+
+            // `a?.b` — the same absence-tolerant spine a `??` left-hand side
+            // gets, requested explicitly.
+            ExprKind::OptionalAccess(inner) => self.compile_expr_optional(inner),
 
             ExprKind::Block(stmts) => {
                 // Compile in a new scope but same block (inline block)
@@ -861,5 +875,26 @@ impl Compiler {
                 .flat_map(|(_, p)| Self::extract_pattern_vars(p))
                 .collect(),
         }
+    }
+}
+
+/// Does this access chain already carry a written `?.` to its left?
+///
+/// `?.` short-circuits the **rest** of its chain, the way JavaScript's does: in
+/// `cfg?.window.width` a missing `window` yields nil rather than erroring on the
+/// `.width`. The parser marks only the link that was written `?.`
+/// ([`ExprKind::OptionalAccess`]), so the plain `FieldAccess`/`IndexAccess` arms
+/// of [`Compiler::compile_expr`] ask this of their object to decide between the
+/// hard read and the tolerant one.
+///
+/// Only the spine is walked. A `?.` inside a call argument or an index
+/// expression is a different chain and does not leak out of it.
+fn spine_is_optional(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::OptionalAccess(_) => true,
+        ExprKind::FieldAccess { object, .. } | ExprKind::IndexAccess { object, .. } => {
+            spine_is_optional(object)
+        }
+        _ => false,
     }
 }

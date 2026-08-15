@@ -295,7 +295,11 @@ mod tests {
             style: TextStyle::default(),
         };
         let grid = rasterize(
-            &scene(vec![text(16.0, "in"), text(32.0, "half"), text(48.0, "out")]),
+            &scene(vec![
+                text(16.0, "in"),
+                text(32.0, "half"),
+                text(48.0, "out"),
+            ]),
             8,
             4,
         );

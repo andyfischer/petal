@@ -127,15 +127,23 @@ const KEY_CLAIMS: &str = "key_claims";
 
 /// A browser-style history navigation intent a panel script raised this frame,
 /// drained by [`PanelHost::take_nav`]. `Push`/`Replace` name the target screen
-/// (a `.ptl` script the host resolves against the pane's whitelist);
-/// `Back`/`Forward` move the history cursor and carry no target.
+/// (a `.ptl` script the host resolves against the pane's whitelist) and the
+/// argument the caller passed with it; `Back`/`Forward` move the history cursor
+/// and carry no target.
+///
+/// The argument is the answer to "navigate to the detail screen *for this row*".
+/// It is plain JSON (like a `mutate` arg, and for the same reason: a navigation
+/// may cross a subprocess boundary) and `Null` when the one-argument
+/// `navigate(screen)` form was used. The host stores it on the history entry, so
+/// it comes back with the screen on *back* and *forward* — a restored entry that
+/// lost its argument would redraw a detail screen with no subject.
 #[derive(Clone, Debug, PartialEq)]
 pub enum NavIntent {
     /// Navigate to `screen`, pushing a new history entry (browser link click).
-    Push(String),
+    Push(String, serde_json::Value),
     /// Navigate to `screen`, replacing the current history entry (browser
     /// `location.replace` — the current entry is not kept for *back*).
-    Replace(String),
+    Replace(String, serde_json::Value),
     /// Move the history cursor back one entry (browser *back*); a no-op at the
     /// start of history.
     Back,
@@ -784,6 +792,21 @@ impl PanelTheme {
 /// Distinct from the native's own name so the two can coexist as bindings.
 const PANEL_THEME_BINDING: &str = "panel_theme_data";
 
+/// Counter symbol behind the mutation handle `mutate(name, arg)` returns. Env
+/// counters live on the [`Env`], so ids stay unique across frames and across a
+/// hot reload — which is exactly what a handle held in `state` needs.
+const MUTATE_HANDLES: &str = "mutate_handles";
+
+/// The env binding the [`mutate_result`](native_mutate_result) native reads: a
+/// map from mutation handle to the reply the host resolved it with. Republished
+/// by [`bind_mutation_results`] before every frame.
+const MUTATE_RESULTS_BINDING: &str = "mutate_results_data";
+
+/// The env binding the [`nav_arg`](native_nav_arg) native reads: the argument the
+/// navigation that brought this screen up carried (`navigate(screen, arg)`).
+/// Distinct from the native's own name so the two can coexist as bindings.
+const NAV_ARG_BINDING: &str = "nav_arg_data";
+
 /// File identity for change detection: (modified time, size in bytes).
 type FileSig = (SystemTime, u64);
 
@@ -816,6 +839,27 @@ pub struct PanelHost {
     /// Set by the host with [`set_theme`](Self::set_theme) before every frame;
     /// empty until then, so `panel_theme()` returns an empty record.
     theme: PanelTheme,
+    /// Replies the host has resolved, keyed by the handle `mutate(...)` returned
+    /// — read back by the script as `mutate_result(handle)`.
+    ///
+    /// A mutation is fire-and-forget *from inside the frame* (the round trip to a
+    /// subprocess must not block a redraw), so the only way a drawer can tell a
+    /// save that worked from one that failed — and the only way a test can assert
+    /// on either — is to keep the handle in `state` and read the reply on a later
+    /// frame. Entries are kept until [`forget_mutation_result`] is called, so a
+    /// script that never asks does not grow the map without bound in the one way
+    /// that matters: [`set_mutation_result`] caps it.
+    mutation_results: HashMap<i64, serde_json::Value>,
+    /// The argument the navigation that opened this screen carried
+    /// (`navigate(screen, arg)`), read back by the script as `nav_arg()`.
+    /// `Null` for a screen reached without one — including a panel's origin
+    /// screen, which nothing navigated to.
+    ///
+    /// The host owns the history stack, so it is the host that re-publishes this
+    /// on *back* and *forward* ([`set_nav_arg`](Self::set_nav_arg)): the value
+    /// belongs to the history entry, not to the screen identity, which is what
+    /// makes returning to a detail screen show the same subject it did before.
+    nav_arg: serde_json::Value,
     /// Host-side data source behind the `host_data(kind, arg)` native; without
     /// one the native answers nil. Installed into [`DATA_PROVIDER`] for the
     /// duration of each [`frame`](Self::frame).
@@ -893,6 +937,8 @@ impl PanelHost {
             input: InputState::new(),
             last_input: PanelInput::default(),
             theme: PanelTheme::default(),
+            nav_arg: serde_json::Value::Null,
+            mutation_results: HashMap::new(),
             provider: None,
             query_provider: None,
             edit_view_texts: HashMap::new(),
@@ -948,6 +994,8 @@ impl PanelHost {
             input: InputState::new(),
             last_input: PanelInput::default(),
             theme: PanelTheme::default(),
+            nav_arg: serde_json::Value::Null,
+            mutation_results: HashMap::new(),
             provider: None,
             query_provider: None,
             edit_view_texts: HashMap::new(),
@@ -1052,6 +1100,14 @@ impl PanelHost {
         self.theme = theme;
     }
 
+    /// Publish the argument this screen was navigated to with, read back by the
+    /// script as `nav_arg()`. Set by the host from the live history entry before
+    /// the next frame — on the navigation itself and again on every *back* /
+    /// *forward* onto that entry.
+    pub fn set_nav_arg(&mut self, arg: serde_json::Value) {
+        self.nav_arg = arg;
+    }
+
     /// Run one frame: advance the input clock, bind timing + input, re-run the
     /// script from the top (preserving `state`), and return the draw commands it
     /// emitted. On a script runtime error the previous frame's commands are *not*
@@ -1066,6 +1122,8 @@ impl PanelHost {
         input::bind_time(&mut self.env, self.start.elapsed().as_secs_f64());
         input::bind_input(&mut self.env, &self.input);
         bind_panel_theme(&mut self.env, &self.theme);
+        bind_nav_arg(&mut self.env, &self.nav_arg);
+        bind_mutation_results(&mut self.env, &self.mutation_results);
         self.last_input = self.snapshot_input();
 
         // Discard any stale buffered commands + emitted events, then re-run.
@@ -1325,7 +1383,7 @@ impl PanelHost {
     /// JSON arg), but a distinct buffer so a `mutate` never mixes with an `emit`.
     /// The host relays each to the subprocess and surfaces the reply as status.
     /// Call after [`frame`](Self::frame).
-    pub fn take_mutations(&mut self) -> Vec<(String, serde_json::Value)> {
+    pub fn take_mutations(&mut self) -> Vec<(String, serde_json::Value, i64)> {
         let sym = self.env.intern_symbol(MUTATE_EVENTS);
         let values = self.env.take_output_buffer(sym);
         let heap = self.env.heap();
@@ -1333,15 +1391,46 @@ impl PanelHost {
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
                 let name = heap.get_string(*tag).to_string();
-                let arg = heap
-                    .get_list(*data)
+                let items = heap.get_list(*data);
+                let arg = items
                     .first()
                     .map(|v| value_to_json(heap, v))
                     .unwrap_or(serde_json::Value::Null);
-                out.push((name, arg));
+                // The handle the native returned to the script, so the host can
+                // report this request's reply back under the same number.
+                let handle = match items.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    _ => 0,
+                };
+                out.push((name, arg, handle));
             }
         }
         out
+    }
+
+    /// Record the reply a mutation resolved to, under the handle `mutate(...)`
+    /// returned to the script. Read back by `mutate_result(handle)` on the next
+    /// frame.
+    ///
+    /// `result` is the handle record the script sees verbatim — see
+    /// [`mutation_reply`] for the shape the host builds.
+    pub fn set_mutation_result(&mut self, handle: i64, result: serde_json::Value) {
+        // A drawer that fires mutations and never reads their replies (the
+        // ordinary fire-and-forget use) must not accumulate them forever. The
+        // cap is generous enough that no realistic in-flight set is evicted.
+        const MAX_KEPT: usize = 256;
+        if self.mutation_results.len() >= MAX_KEPT {
+            if let Some(&oldest) = self.mutation_results.keys().min() {
+                self.mutation_results.remove(&oldest);
+            }
+        }
+        self.mutation_results.insert(handle, result);
+    }
+
+    /// The reply recorded for `handle`, if any — the host-side read of what
+    /// `mutate_result(handle)` would answer.
+    pub fn mutation_result(&self, handle: i64) -> Option<&serde_json::Value> {
+        self.mutation_results.get(&handle)
     }
 
     /// Drain the key chords the last frame claimed with `claim_key(key, mods)`,
@@ -1393,9 +1482,17 @@ impl PanelHost {
                         _ => None,
                     })
                 };
+                // The optional second element is `navigate(screen, arg)`'s
+                // argument; absent for the one-argument form.
+                let arg = || {
+                    heap.get_list(*data)
+                        .get(1)
+                        .map(|v| value_to_json(heap, v))
+                        .unwrap_or(serde_json::Value::Null)
+                };
                 let intent = match kind {
-                    "push" => screen().map(NavIntent::Push),
-                    "replace" => screen().map(NavIntent::Replace),
+                    "push" => screen().map(|s| NavIntent::Push(s, arg())),
+                    "replace" => screen().map(|s| NavIntent::Replace(s, arg())),
                     "back" => Some(NavIntent::Back),
                     "forward" => Some(NavIntent::Forward),
                     _ => None,
@@ -1957,6 +2054,8 @@ fn register_panel_natives(env: &mut Env) {
     // Garden-only: request an effectful action from the pane's subprocess
     // (`on_mutation`), with the reply host-surfaced as status. See [`native_mutate`].
     env.register_native("mutate", native_mutate);
+    // The reading half: what the mutation identified by a handle resolved to.
+    env.register_native("mutate_result", native_mutate_result);
     // The browser-history navigation API: each raises a typed `NavIntent` into
     // the `nav_events` side channel that the host drains ([`PanelHost::take_nav`])
     // to drive its per-pane history stack.
@@ -1968,6 +2067,8 @@ fn register_panel_natives(env: &mut Env) {
     // a file API. See [`crate::panel_store`].
     crate::panel_store::register_store(env);
     env.register_native("navigate", native_navigate);
+    // Read back the argument the navigation that opened this screen carried.
+    env.register_native("nav_arg", native_nav_arg);
     env.register_native("navigate_replace", native_navigate_replace);
     env.register_native("navigate_back", native_navigate_back);
     env.register_native("navigate_forward", native_navigate_forward);
@@ -2019,6 +2120,67 @@ fn bind_panel_theme(env: &mut Env, theme: &PanelTheme) {
     let record_id = env.heap_mut().alloc_map(record);
     let sym = env.intern_symbol(PANEL_THEME_BINDING);
     env.set_binding(sym, Value::Map(record_id));
+}
+
+/// Bind the resolved mutation replies for `mutate_result(handle)` to read, as a
+/// record keyed by the handle's decimal spelling (Petal record keys are strings).
+///
+/// Rebuilt each frame from the host's table rather than mutated in place, so a
+/// reply that arrived between two frames is visible on the very next one.
+fn bind_mutation_results(env: &mut Env, results: &HashMap<i64, serde_json::Value>) {
+    let mut record: IndexMap<String, Value> = IndexMap::with_capacity(results.len());
+    for (handle, reply) in results {
+        let value = petal::value::json_to_value(reply, env.heap_mut()).unwrap_or(Value::Nil);
+        record.insert(handle.to_string(), value);
+    }
+    let id = env.heap_mut().alloc_map(record);
+    let sym = env.intern_symbol(MUTATE_RESULTS_BINDING);
+    env.set_binding(sym, Value::Map(id));
+}
+
+/// The handle record a resolved mutation reads back as: `ok` plus the reply
+/// `value`, or `ok: false` and the `error` that refused it. One shape for both
+/// outcomes so a drawer can branch on `ok` without testing for absent keys.
+pub fn mutation_reply(result: Result<Option<String>, String>) -> serde_json::Value {
+    match result {
+        Ok(value) => serde_json::json!({
+            "ok": true,
+            "value": value,
+            "error": serde_json::Value::Null,
+        }),
+        Err(error) => serde_json::json!({
+            "ok": false,
+            "value": serde_json::Value::Null,
+            "error": error,
+        }),
+    }
+}
+
+/// Bind this frame's navigation argument for `nav_arg()` to read.
+///
+/// Called by [`PanelHost::frame`] alongside [`bind_panel_theme`], so a screen
+/// restored by *back* sees its own argument on its very first frame rather than
+/// one frame late — a detail screen that read nil first would draw an empty
+/// subject before correcting itself.
+///
+/// A value that will not convert (nothing in practice — it arrived as JSON)
+/// binds as nil rather than failing the frame.
+fn bind_nav_arg(env: &mut Env, arg: &serde_json::Value) {
+    let value = petal::value::json_to_value(arg, env.heap_mut()).unwrap_or(Value::Nil);
+    let sym = env.intern_symbol(NAV_ARG_BINDING);
+    env.set_binding(sym, value);
+}
+
+/// `nav_arg()` — the argument the navigation that opened this screen carried
+/// (`navigate("detail.ptl", { id: 7 })` → `{ id: 7 }` here).
+///
+/// Returns nil for a screen reached without one, including a panel's origin
+/// screen, so the idiomatic read is `nav_arg() ?? <default>`. The value is stored
+/// on the history entry, so it is still here after *back* and *forward*.
+fn native_nav_arg(cxt: &mut PetalCxt) -> NativeResult {
+    let v = cxt.binding_named(NAV_ARG_BINDING);
+    cxt.push_value(v);
+    Ok(1)
 }
 
 /// `panel_theme()` — the host UI theme for this frame, as a record of `{ r, g,
@@ -2148,9 +2310,40 @@ fn native_emit(cxt: &mut PetalCxt) -> NativeResult {
 fn native_mutate(cxt: &mut PetalCxt) -> NativeResult {
     let name = cxt.get_string(1)?;
     let arg = cxt.get_value(2)?;
+    // The handle: unique for the life of the env, so a script may keep it in
+    // `state` across frames and ask for the reply later.
+    let counter = cxt.intern_symbol(MUTATE_HANDLES);
+    let handle = cxt.next_counter(counter) as i64 + 1;
     let sym = cxt.intern_symbol(MUTATE_EVENTS);
-    cxt.emit(sym, &name, vec![arg]);
-    cxt.push_nil();
+    cxt.emit(sym, &name, vec![arg, Value::Int(handle)]);
+    cxt.push_int(handle);
+    Ok(1)
+}
+
+/// `mutate_result(handle)` — the reply the mutation `handle` identifies resolved
+/// to, or nil while it is still in flight (and for a handle that was never
+/// issued).
+///
+/// A resolved reply is a record: `{ ok: bool, value: <reply>, error: <string> }`
+/// — `ok` false with `error` set when the host or the client refused it. The
+/// idiomatic use keeps the handle in `state`, since the frame that *makes* the
+/// request cannot also see its answer:
+///
+/// ```text
+/// state saving = 0
+/// if pressed then
+///   saving = mutate("save", {text: cur})
+/// end
+/// let saved = mutate_result(saving)
+/// ```
+fn native_mutate_result(cxt: &mut PetalCxt) -> NativeResult {
+    let handle = cxt.get_int(1)?;
+    let results = cxt.binding_named(MUTATE_RESULTS_BINDING);
+    let found = match results {
+        Value::Map(id) => cxt.heap().get_map(id).get(&handle.to_string()).copied(),
+        _ => None,
+    };
+    cxt.push_value(found.unwrap_or(Value::Nil));
     Ok(1)
 }
 
@@ -2214,30 +2407,49 @@ fn parse_mod_bits(spec: &str) -> Result<u8, String> {
     Ok(bits)
 }
 
-/// `navigate(screen)` — raise a browser-style *push* navigation intent to
-/// `screen` (a `.ptl` script the host resolves against the pane's whitelist),
-/// like clicking a link: the current screen's `state` is saved and a new history
-/// entry is pushed. Fire-and-forget; the host acts on the drained
-/// [`NavIntent::Push`] (see [`PanelHost::take_nav`]). Emits no draw command,
-/// returns nil. In a panel with no host history (a bare unit test) it is dropped.
+/// `navigate(screen)` / `navigate(screen, arg)` — raise a browser-style *push*
+/// navigation intent to `screen` (a `.ptl` script the host resolves against the
+/// pane's whitelist), like clicking a link: the current screen's `state` is saved
+/// and a new history entry is pushed.
+///
+/// `arg` is the subject the target screen is *for* — the row that was clicked,
+/// the commit to show. The target reads it back with `nav_arg()`, and it is
+/// stored on the history entry, so *back* and *forward* return to that screen
+/// with the same argument rather than an empty one. Any value that survives the
+/// JSON round trip may be passed (see [`NavIntent`]).
+///
+/// Fire-and-forget; the host acts on the drained [`NavIntent::Push`] (see
+/// [`PanelHost::take_nav`]). Emits no draw command, returns nil. In a panel with
+/// no host history (a bare unit test) it is dropped.
 fn native_navigate(cxt: &mut PetalCxt) -> NativeResult {
-    let screen = cxt.get_string(1)?;
-    let screen_id = cxt.heap_mut().alloc_string(screen);
-    let sym = cxt.intern_symbol(NAV_EVENTS);
-    cxt.emit(sym, "push", vec![Value::String(screen_id)]);
-    cxt.push_nil();
-    Ok(1)
+    nav_emit(cxt, "push")
 }
 
-/// `navigate_replace(screen)` — raise a browser-style *replace* navigation
-/// intent to `screen` (browser `location.replace`): the current history entry is
-/// overwritten rather than kept, so *back* skips it. Fire-and-forget; the host
-/// acts on the drained [`NavIntent::Replace`]. Emits no draw command, returns nil.
+/// `navigate_replace(screen)` / `navigate_replace(screen, arg)` — raise a
+/// browser-style *replace* navigation intent to `screen` (browser
+/// `location.replace`): the current history entry is overwritten rather than kept,
+/// so *back* skips it. `arg` behaves exactly as in [`native_navigate`].
+/// Fire-and-forget; the host acts on the drained [`NavIntent::Replace`]. Emits no
+/// draw command, returns nil.
 fn native_navigate_replace(cxt: &mut PetalCxt) -> NativeResult {
+    nav_emit(cxt, "replace")
+}
+
+/// The shared body of `navigate` / `navigate_replace`: emit `kind` into the nav
+/// side channel carrying the screen name and, when the two-argument form was
+/// used, the caller's argument.
+fn nav_emit(cxt: &mut PetalCxt, kind: &str) -> NativeResult {
     let screen = cxt.get_string(1)?;
+    let arg = if cxt.arg_count() >= 2 {
+        Some(cxt.get_value(2)?)
+    } else {
+        None
+    };
     let screen_id = cxt.heap_mut().alloc_string(screen);
     let sym = cxt.intern_symbol(NAV_EVENTS);
-    cxt.emit(sym, "replace", vec![Value::String(screen_id)]);
+    let mut data = vec![Value::String(screen_id)];
+    data.extend(arg);
+    cxt.emit(sym, kind, data);
     cxt.push_nil();
     Ok(1)
 }
@@ -3521,7 +3733,7 @@ mod tests {
         assert!(host.frame(0.0, 0).unwrap().is_empty());
         assert_eq!(
             host.take_mutations(),
-            vec![("save".to_string(), serde_json::json!({ "text": "hi" }))]
+            vec![("save".to_string(), serde_json::json!({ "text": "hi" }), 1)]
         );
         // The emit stayed on its own channel, untouched by the mutation drain.
         assert_eq!(
@@ -3590,6 +3802,51 @@ mod tests {
         );
     }
 
+    /// `navigate(screen, arg)` — the two-argument form carries the subject the
+    /// target screen is for. The argument rides the same side channel as the
+    /// screen name, and `nav_arg()` reads back what the host republished.
+    #[test]
+    fn a_navigation_carries_its_argument_and_reads_it_back() {
+        let f = write_script(
+            "navigate(\"detail.ptl\", {id: 7, name: \"row\"})\n\
+             navigate_replace(\"login.ptl\", 3)\n\
+             navigate(\"plain.ptl\")\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(10, 10);
+        host.frame(0.0, 0).unwrap();
+        assert_eq!(
+            host.take_nav(),
+            vec![
+                NavIntent::Push(
+                    "detail.ptl".to_string(),
+                    serde_json::json!({"id": 7, "name": "row"})
+                ),
+                NavIntent::Replace("login.ptl".to_string(), serde_json::json!(3)),
+                // The one-argument form is unchanged and carries nothing.
+                NavIntent::Push("plain.ptl".to_string(), serde_json::Value::Null),
+            ]
+        );
+
+        // The reading half: whatever the host publishes is what `nav_arg()` sees,
+        // and a screen nothing navigated to reads nil.
+        let g = write_script("let got = nav_arg()\n");
+        let mut target = PanelHost::load(g.path()).unwrap();
+        target.set_dimensions(10, 10);
+        target.frame(0.0, 0).unwrap();
+        assert_eq!(
+            target.observed_json().get("got"),
+            Some(&serde_json::Value::Null),
+            "a screen nothing navigated to reads nil"
+        );
+        target.set_nav_arg(serde_json::json!({"id": 7}));
+        target.frame(0.0, 1).unwrap();
+        assert_eq!(
+            target.observed_json().get("got"),
+            Some(&serde_json::json!({"id": 7}))
+        );
+    }
+
     #[test]
     fn key_claims_are_published_and_drained() {
         // `claim_key` names the chords the host must forward to this panel
@@ -3647,8 +3904,8 @@ mod tests {
         assert_eq!(
             host.take_nav(),
             vec![
-                NavIntent::Push("detail".to_string()),
-                NavIntent::Replace("login".to_string()),
+                NavIntent::Push("detail".to_string(), serde_json::Value::Null),
+                NavIntent::Replace("login".to_string(), serde_json::Value::Null),
                 NavIntent::Back,
                 NavIntent::Forward,
             ]
@@ -3672,7 +3929,13 @@ mod tests {
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(10, 10);
         host.frame(0.0, 0).unwrap();
-        assert_eq!(host.take_nav(), vec![NavIntent::Push("detail".to_string())]);
+        assert_eq!(
+            host.take_nav(),
+            vec![NavIntent::Push(
+                "detail".to_string(),
+                serde_json::Value::Null
+            )]
+        );
         assert_eq!(
             host.take_emitted(),
             vec![("select".to_string(), serde_json::json!(3))]

@@ -484,10 +484,14 @@ pub enum ClientEvent {
     /// The script called `mutate(name, arg)` — an effectful request for the pane's
     /// subprocess. The app layer relays it to the client
     /// ([`client_mutate`](PanelView::client_mutate)) and surfaces the reply as the
-    /// pane's status.
+    /// pane's status *and* back to the script under `handle`
+    /// ([`resolve_mutation`](PanelView::resolve_mutation)).
     Mutate {
         name: String,
         arg: serde_json::Value,
+        /// The handle `mutate(...)` returned to the script, which
+        /// `mutate_result(handle)` will read the reply back under.
+        handle: i64,
     },
 }
 
@@ -536,6 +540,15 @@ struct HistoryEntry {
     /// The `state` snapshot captured when navigation last **left** this entry,
     /// re-seeded before its first frame on return. `None` until the entry is left.
     saved_state: Option<serde_json::Map<String, serde_json::Value>>,
+    /// The argument the `navigate(screen, arg)` that created this entry carried,
+    /// republished to the script as `nav_arg()` every time the entry is
+    /// displayed. `Null` for the seed (nothing navigated to it) and for the
+    /// one-argument `navigate(screen)` form.
+    ///
+    /// It lives on the *entry* rather than on the host, which is the whole point:
+    /// a detail screen returned to by *back* must come back showing the same
+    /// subject, and a host slot would only ever hold the most recent navigation.
+    nav_arg: serde_json::Value,
 }
 
 impl PanelView {
@@ -550,6 +563,7 @@ impl PanelView {
             path: Some(host.path().to_path_buf()),
             source: None,
             saved_state: None,
+            nav_arg: serde_json::Value::Null,
         };
         PanelView {
             host,
@@ -839,9 +853,18 @@ impl PanelView {
     pub(crate) fn client_fetch_screen(
         &mut self,
         screen: &str,
+        nav_arg: &serde_json::Value,
         wait: Duration,
     ) -> Result<String, String> {
-        let arg = serde_json::json!({ "screen": screen });
+        // `arg` is the subject `navigate(screen, arg)` carried. A client that
+        // registered its own `navigate` handler needs it to prime data for the
+        // target screen; the built-in handler ignores it. Absent for the
+        // one-argument form, so an app that never passes one sees the shape it
+        // always did.
+        let mut arg = serde_json::json!({ "screen": screen });
+        if !nav_arg.is_null() {
+            arg["arg"] = nav_arg.clone();
+        }
         let id = match self.client.as_mut() {
             Some(client) => client.send_mutate(petal_query::gpp::NAVIGATE, arg),
             None => return Err("panel has no client to navigate".to_string()),
@@ -886,6 +909,19 @@ impl PanelView {
     /// for a status line), or an `Err` on a handler error / no client / timeout.
     /// Non-`mutateResult` envelopes drained while waiting are folded back through
     /// the normal path so nothing is lost.
+    /// Report what a mutation resolved to back to the script, under the handle
+    /// `mutate(...)` handed it. The next frame's `mutate_result(handle)` answers
+    /// with it.
+    ///
+    /// Every outcome is reported, including the ones the host answered itself and
+    /// the ones that failed: a drawer that asked for a save is entitled to know it
+    /// did not happen, and a test asserting on the panel's own values is entitled
+    /// to read that.
+    pub(crate) fn resolve_mutation(&mut self, handle: i64, result: Result<Option<String>, String>) {
+        self.host
+            .set_mutation_result(handle, garden_script::mutation_reply(result));
+    }
+
     pub(crate) fn client_mutate(
         &mut self,
         name: &str,
@@ -931,7 +967,7 @@ impl PanelView {
     /// Navigate to `screen` (a browser link click): snapshot the current entry's
     /// `state`, drop any forward entries, push a new entry for `screen`/`source`,
     /// advance the cursor, and load it. `source` is the already-resolved script.
-    pub(crate) fn nav_push(&mut self, screen: String, source: String) {
+    pub(crate) fn nav_push(&mut self, screen: String, source: String, arg: serde_json::Value) {
         self.history[self.cursor].saved_state = Some(self.host.state_json());
         self.history.truncate(self.cursor + 1);
         self.history.push(HistoryEntry {
@@ -939,6 +975,7 @@ impl PanelView {
             path: None,
             source: Some(source),
             saved_state: None,
+            nav_arg: arg,
         });
         self.cursor = self.history.len() - 1;
         self.load_entry();
@@ -952,12 +989,13 @@ impl PanelView {
     /// screen identity and drops its file `path`, so the panel's [`origin_script`]
     /// no longer matches its layout-declared node. Replace is meant for a
     /// navigated screen redirecting onward, not for redirecting the origin itself.
-    pub(crate) fn nav_replace(&mut self, screen: String, source: String) {
+    pub(crate) fn nav_replace(&mut self, screen: String, source: String, arg: serde_json::Value) {
         self.history[self.cursor] = HistoryEntry {
             screen,
             path: None,
             source: Some(source),
             saved_state: None,
+            nav_arg: arg,
         };
         self.load_entry();
     }
@@ -999,11 +1037,16 @@ impl PanelView {
     /// to a screen restores its program, not just its state.
     fn load_entry(&mut self) {
         let entry = &self.history[self.cursor];
+        // The entry's navigation argument, republished before the rebuilt host
+        // runs its first frame — so a screen restored by *back* draws its own
+        // subject immediately instead of a frame of nothing.
+        let nav_arg = entry.nav_arg.clone();
         if let Some(path) = entry.path.clone() {
             self.reload_from_path(&path);
         } else if let Some(source) = entry.source.clone() {
             self.reload_from_source(&source);
         }
+        self.host.set_nav_arg(nav_arg);
         if let Some(state) = self.history[self.cursor].saved_state.clone() {
             self.host.restore_state(&state);
         }
@@ -1327,8 +1370,9 @@ impl PanelView {
                 // Mutation requests (`mutate(name, arg)`) ride the same
                 // app-drained channel: the app layer relays each to the
                 // subprocess and surfaces the reply as status.
-                for (name, arg) in self.host.take_mutations() {
-                    self.nav_events.push(ClientEvent::Mutate { name, arg });
+                for (name, arg, handle) in self.host.take_mutations() {
+                    self.nav_events
+                        .push(ClientEvent::Mutate { name, arg, handle });
                 }
                 // The chords this frame asked the host to hand over. Declarative:
                 // whatever the frame claimed *is* the claim set from now on.
@@ -3496,7 +3540,11 @@ done
         pv.set_origin_source("state marker = 1".into());
 
         // An undeclared screen surfaces the client's error (no swap).
-        let err = pv.client_fetch_screen("missing.ptl", Duration::from_secs(5));
+        let err = pv.client_fetch_screen(
+            "missing.ptl",
+            &serde_json::Value::Null,
+            Duration::from_secs(5),
+        );
         assert!(err.unwrap_err().contains("no such screen"));
         assert_eq!(pv.history_len(), 1, "a rejected navigate pushes no entry");
 
@@ -3504,10 +3552,10 @@ done
         // driving it through the history stack swaps the screen and keeps the
         // client, and *back* returns to the origin's own (source-backed) home.
         let src = pv
-            .client_fetch_screen("b.ptl", Duration::from_secs(5))
+            .client_fetch_screen("b.ptl", &serde_json::Value::Null, Duration::from_secs(5))
             .expect("navigate fetch");
         assert_eq!(src, "state marker = 2");
-        pv.nav_push("b.ptl".into(), src);
+        pv.nav_push("b.ptl".into(), src, serde_json::Value::Null);
         assert_eq!(pv.current_screen(), "b.ptl");
         assert_eq!(pv.history_len(), 2);
         assert!(
@@ -3727,7 +3775,7 @@ done
         assert_eq!(debug_val(&pv, "n"), Some(3));
 
         // Push screen B: a new entry, cursor advances, host swaps to B.
-        pv.nav_push("b".into(), B.into());
+        pv.nav_push("b".into(), B.into(), serde_json::Value::Null);
         assert_eq!(pv.history_len(), 2);
         assert_eq!(pv.history_cursor(), 1);
         assert_eq!(pv.current_screen(), "b");
@@ -3767,7 +3815,7 @@ done
         assert_eq!(pv.history_len(), 1);
         assert_eq!(pv.history_cursor(), 0);
 
-        pv.nav_push("b".into(), "state n = 0\n".into());
+        pv.nav_push("b".into(), "state n = 0\n".into(), serde_json::Value::Null);
         assert_eq!(pv.history_cursor(), 1);
         // At the end of history: forward is a no-op, back works, then back again
         // (now at the start) is a no-op.
@@ -3777,12 +3825,61 @@ done
         assert!(!pv.nav_back());
     }
 
+    /// A `navigate(screen, arg)` argument belongs to the *history entry*, not to
+    /// the host — so a detail screen returned to by *back* comes back showing the
+    /// same subject it was opened with, and *forward* onto a different entry
+    /// shows that entry's own subject. A host-level slot would have collapsed all
+    /// three of these onto whichever navigation happened last.
+    #[test]
+    fn a_navigation_argument_survives_back_and_forward() {
+        // Each screen simply reports the id it was navigated with (nil at home).
+        const SCREEN: &str = "let subject = nav_arg() ?? {id: 0}\nlet id = subject.id\n";
+        let host = PanelHost::from_source("home", SCREEN).unwrap();
+        let mut pv = PanelView::new(host, "home".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(
+            debug_val(&pv, "id"),
+            Some(0),
+            "home was navigated to by nobody"
+        );
+
+        pv.nav_push("detail".into(), SCREEN.into(), serde_json::json!({"id": 7}));
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "id"), Some(7));
+
+        pv.nav_push("detail".into(), SCREEN.into(), serde_json::json!({"id": 9}));
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "id"), Some(9));
+
+        // Back onto the first detail visit: its own argument, not the latest one.
+        assert!(pv.nav_back());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(
+            debug_val(&pv, "id"),
+            Some(7),
+            "back restored the entry's argument"
+        );
+
+        // Back to home, which never had one.
+        assert!(pv.nav_back());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "id"), Some(0));
+
+        // And forward walks the arguments again in order.
+        assert!(pv.nav_forward());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "id"), Some(7));
+        assert!(pv.nav_forward());
+        pv.tick(Instant::now(), RECT, CELL);
+        assert_eq!(debug_val(&pv, "id"), Some(9));
+    }
+
     /// `nav_replace` swaps the current screen in place without growing history.
     #[test]
     fn history_replace_keeps_length() {
         let host = PanelHost::from_source("a", "state n = 0\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
-        pv.nav_replace("b".into(), "state n = 0\n".into());
+        pv.nav_replace("b".into(), "state n = 0\n".into(), serde_json::Value::Null);
         assert_eq!(pv.history_len(), 1);
         assert_eq!(pv.history_cursor(), 0);
         assert_eq!(pv.current_screen(), "b");
@@ -3810,7 +3907,7 @@ done
 
         // Navigate to a DIFFERENT program (screen 2).
         const DETAIL: &str = "state n = 0\nn = n + 100\nlet screen = 2\n";
-        pv.nav_push("detail.ptl".into(), DETAIL.into());
+        pv.nav_push("detail.ptl".into(), DETAIL.into(), serde_json::Value::Null);
         pv.tick(Instant::now(), RECT, CELL);
         assert_eq!(
             debug_val(&pv, "screen"),
@@ -3838,7 +3935,7 @@ done
         let host = PanelHost::from_source("a", "state n = 0\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
         assert!(!pv.is_navigated());
-        pv.nav_push("b".into(), "state n = 0\n".into());
+        pv.nav_push("b".into(), "state n = 0\n".into(), serde_json::Value::Null);
         assert!(pv.is_navigated());
         assert!(pv.nav_back());
         assert!(!pv.is_navigated());
@@ -3855,7 +3952,7 @@ done
         assert!(
             events.iter().any(|e| matches!(
                 e,
-                ClientEvent::Navigate(garden_script::NavIntent::Push(s)) if s == "detail"
+                ClientEvent::Navigate(garden_script::NavIntent::Push(s, _)) if s == "detail"
             )),
             "expected a Navigate(Push(\"detail\")) event"
         );

@@ -92,6 +92,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::RBracket => op("]"),
         Token::Comma => op(","),
         Token::Dot => op("."),
+        Token::QuestionDot => op("?."),
         Token::Colon => op(":"),
         Token::At => op("@"),
         Token::Pipe => op("|>"),
@@ -114,6 +115,10 @@ pub struct Parser {
     /// [`crate::cst::parse_source`]); read it back with [`Parser::cst_events`]
     /// after `parse_program` succeeds (on error the stream may be unbalanced).
     events: EventBuilder,
+    /// Set when a `?.` was consumed immediately before a `[` — the `a?.[i]`
+    /// index spelling. The bracket arm of `parse_postfix` takes it back and
+    /// wraps the access it just built.
+    pending_optional: bool,
 }
 
 impl Parser {
@@ -124,6 +129,7 @@ impl Parser {
             pos: 0,
             next_state_id: 0,
             events: EventBuilder::new(),
+            pending_optional: false,
         }
     }
 
@@ -181,6 +187,11 @@ impl Parser {
         } else {
             &Token::Eof
         }
+    }
+
+    /// The token `n` places past the cursor (`peek_at(0)` == [`peek`](Self::peek)).
+    fn peek_at(&self, n: usize) -> &Token {
+        self.tokens.get(self.pos + n).unwrap_or(&Token::Eof)
     }
 
     fn advance(&mut self) -> Token {
@@ -1417,6 +1428,35 @@ impl Parser {
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
+                // `a?.b` and `a?.[i]` — the optional forms. A `?.` before a `[`
+                // is the index spelling, matching JavaScript; the `[` arm below
+                // then builds the access itself, and the `OptionalAccess`
+                // wrapper is applied to the link it produces.
+                Token::QuestionDot if matches!(self.peek_at(1), Token::LBracket) => {
+                    self.advance();
+                    self.pending_optional = true;
+                    continue;
+                }
+                Token::QuestionDot => {
+                    self.advance();
+                    let field = self.expect_field_name()?;
+                    self.ev_wrap(cp, SyntaxKind::FieldAccessExpr);
+                    let span = SourceSpan {
+                        start: expr.span.start,
+                        end: self.prev_span().end,
+                        file: expr.span.file,
+                    };
+                    expr = Expr {
+                        span,
+                        kind: ExprKind::OptionalAccess(Box::new(Expr {
+                            span,
+                            kind: ExprKind::FieldAccess {
+                                object: Box::new(expr),
+                                field,
+                            },
+                        })),
+                    };
+                }
                 Token::Dot => {
                     self.advance();
                     let field = self.expect_field_name()?;
@@ -1449,17 +1489,25 @@ impl Parser {
                     }
                     self.expect(&Token::RBracket)?;
                     self.ev_wrap(cp, SyntaxKind::IndexAccessExpr);
+                    let span = SourceSpan {
+                        start: expr.span.start,
+                        end: self.prev_span().end,
+                        file: expr.span.file,
+                    };
                     expr = Expr {
-                        span: SourceSpan {
-                            start: expr.span.start,
-                            end: self.prev_span().end,
-                            file: expr.span.file,
-                        },
+                        span,
                         kind: ExprKind::IndexAccess {
                             object: Box::new(expr),
                             index: Box::new(index),
                         },
                     };
+                    // `a?.[i]` — the `?.` was consumed before the bracket.
+                    if std::mem::take(&mut self.pending_optional) {
+                        expr = Expr {
+                            span,
+                            kind: ExprKind::OptionalAccess(Box::new(expr)),
+                        };
+                    }
                 }
                 Token::LParen => {
                     self.check_callable(&expr)?;
@@ -1494,6 +1542,7 @@ impl Parser {
             | ExprKind::CellGet(_)
             | ExprKind::FieldAccess { .. }
             | ExprKind::IndexAccess { .. }
+            | ExprKind::OptionalAccess(_)
             | ExprKind::Call { .. }
             | ExprKind::Lambda { .. }
             | ExprKind::Block(_)

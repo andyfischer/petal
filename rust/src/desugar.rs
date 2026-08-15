@@ -164,6 +164,7 @@ impl ExprVisitorMut for LiftAt<'_> {
             | ExprKind::Record(_)
             | ExprKind::FieldAccess { .. }
             | ExprKind::IndexAccess { .. }
+            | ExprKind::OptionalAccess(_)
             | ExprKind::StringInterp { .. }
             | ExprKind::Element { .. } => ast::walk_expr_mut(self, expr),
 

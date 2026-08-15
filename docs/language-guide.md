@@ -958,6 +958,32 @@ print(n.width ?? 800)           // error (Cannot access field 'width' on int)
 print([1, 2][9] ?? 0)           // error (Index 9 out of bounds)
 ```
 
+When there is no sensible fallback to write — the value is simply absent and the
+caller will deal with it — `?.` asks for the tolerance on its own:
+
+```petal
+print(el?.fragment)             // nil — no error, no fallback needed
+print(el?.fragment ?? "")       // "" — the two compose
+print(el?.["fragment"])         // nil — the index spelling
+```
+
+One `?.` covers the rest of its chain, the way JavaScript's does, so a missing
+link partway down does not then fail on the link written after it:
+
+```petal
+let cfg = {}
+print(cfg?.window.width)        // nil
+```
+
+`?.` softens absence and nothing else — the same line the `??` rule draws:
+
+```petal
+print(3?.width)                 // error (Cannot access field 'width' on int)
+print([1, 2]?.[9])              // error (Index 9 out of bounds)
+```
+
+It is a read, not a write: `a?.b = v` is not an assignment target.
+
 When the key is computed, the prelude spells the same rule as a function —
 `field(rec, key, fallback)`, plus `has_field(rec, key)` for the one question
 `??` cannot answer (a key that is present but nil):

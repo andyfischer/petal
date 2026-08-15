@@ -62,10 +62,26 @@ pub const HOST_FEATURES: &[&str] = &[
     "state.values-filter", // landed in 57b2c8e, 2026-08-12
     // `/state`'s `identity` block carries a `build` object.
     "state.identity-build", // landed with this module
+    // Every `/scene` primitive carries a `visible` flag: whether anything of it
+    // survives its clip. Without it a headless test cannot tell a drawn row from
+    // a clipped-away one.
+    "debug.scene-visible", // landed in 6937a22, 2026-08-15
     // Host-handled panel `mutate` names (open_path, open_file_dialog, …).
     "panel.host-mutate",
+    // A panel's active `clip(...)` is applied to text (and meshes and images),
+    // in every frontend — so a drawer no longer has to cull its own half-rows.
+    "panel.text-clip", // landed in 6937a22, 2026-08-15
+    // `navigate(screen, arg)` and `nav_arg()`: a navigation carries the subject
+    // its target screen is for, stored per history entry so back/forward keep it.
+    "panel.nav-arg",
+    // `mutate(name, arg)` returns a handle and `mutate_result(handle)` reads the
+    // outcome back, so a mutation's success or failure is observable.
+    "panel.mutate-handle",
     // The petal-ui prelude is reported by name under `prelude.exports`.
     "prelude.exports",
+    // The Petal this binary embeds accepts `a?.b` / `a?.[i]` — absence-tolerant
+    // reads without a `??` fallback.
+    "lang.optional-access",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

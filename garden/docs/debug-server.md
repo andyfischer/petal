@@ -207,14 +207,6 @@ mesh primitive now reports what a layout assertion actually wants:
  "visible": true}
 ```
 
-`rect` is the axis-aligned bounds of the mesh's vertices and `color` is the
-per-vertex colour with the largest total triangle area (a fill wins over the
-hairline border around it) — but a panel batches consecutive fills into **one**
-mesh primitive, so those two describe the batch, which is often most of the
-pane. `shapes` is the useful field: the batch split back into runs of
-consecutive same-colour triangles, one per `draw_*` call, each with its own
-bounding rect. Asserting "there is an 8px-wide bar at x≈780 in the scrollbar
-colour" is a search over `shapes`. Two adjacent fills of the *identical* colour
 Every clipped primitive — text runs, meshes and images — carries **`visible`**:
 whether anything of it survives its `clip`. A panel that clips a scrolling list
 to its viewport still *emits* the rows above and below it (clipping is the
@@ -229,6 +221,17 @@ pos.y + size * LINE_HEIGHT_RATIO`); horizontally only the run's start is judged,
 since the dump carries no shaped advances. So `"visible": false` means "provably
 clipped away" and `true` means "not provably gone".
 
+*(Landed 2026-08-15; feature flag `debug.scene-visible`. The clipping it reports
+on is `panel.text-clip`.)*
+
+`rect` is the axis-aligned bounds of the mesh's vertices and `color` is the
+per-vertex colour with the largest total triangle area (a fill wins over the
+hairline border around it) — but a panel batches consecutive fills into **one**
+mesh primitive, so those two describe the batch, which is often most of the
+pane. `shapes` is the useful field: the batch split back into runs of
+consecutive same-colour triangles, one per `draw_*` call, each with its own
+bounding rect. Asserting "there is an 8px-wide bar at x≈780 in the scrollbar
+colour" is a search over `shapes`. Two adjacent fills of the *identical* colour
 merge into one entry (they are indistinguishable on screen too), and the list is
 capped at 256 entries per mesh.
 

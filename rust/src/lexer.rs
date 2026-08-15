@@ -50,6 +50,7 @@ pub enum Token {
     And,            // &&
     Or,             // ||
     DoubleQuestion, // ??
+    QuestionDot,    // ?. (optional field/index access)
     Bang,           // !
     Assign,         // =
     PlusAssign,     // +=
@@ -628,6 +629,9 @@ impl Lexer {
                 if self.peek_next() == Some('?') {
                     self.advance_n(2);
                     self.push_token(Token::DoubleQuestion, start);
+                } else if self.peek_next() == Some('.') {
+                    self.advance_n(2);
+                    self.push_token(Token::QuestionDot, start);
                 } else {
                     return Err(format!(
                         "Unexpected character '?' [line {}, column {}]",
@@ -1112,8 +1116,11 @@ impl Lexer {
             let ch = self.input[self.pos];
             // A single trailing `?` stays part of a predicate identifier
             // (`is_valid?`), but a `??` is the coalescing operator — stop before
-            // it so `foo??bar` splits into `foo`, `??`, `bar`.
-            if ch == '?' && self.peek_next() == Some('?') {
+            // it so `foo??bar` splits into `foo`, `??`, `bar`. A `?.` is the
+            // optional-access operator for the same reason: without this,
+            // `rec?.missing` lexed as the identifier `rec?` and failed with
+            // "Undefined variable: rec?" instead of reading the field.
+            if ch == '?' && matches!(self.peek_next(), Some('?') | Some('.')) {
                 break;
             }
             if ch.is_alphanumeric() || ch == '_' || ch == '?' {
@@ -1162,6 +1169,50 @@ mod tests {
             .into_iter()
             .filter(|t| !matches!(t, Token::Newline | Token::Eof))
             .collect()
+    }
+
+    /// `?` is both a predicate-identifier suffix (`is_valid?`) and the head of
+    /// two operators, so the identifier scanner has to stop before `??` and
+    /// before `?.`. Without the `?.` case `rec?.missing` lexed as the single
+    /// identifier `rec?` and died with "Undefined variable: rec?".
+    #[test]
+    fn question_splits_from_identifiers_for_both_operators() {
+        assert_eq!(
+            tokenize("rec?.missing"),
+            vec![
+                Token::Ident("rec".into()),
+                Token::QuestionDot,
+                Token::Ident("missing".into()),
+            ]
+        );
+        assert_eq!(
+            tokenize("rows?.[0]"),
+            vec![
+                Token::Ident("rows".into()),
+                Token::QuestionDot,
+                Token::LBracket,
+                Token::Int(0),
+                Token::RBracket,
+            ]
+        );
+        // A predicate name keeps its `?`, including right before a `??`.
+        assert_eq!(tokenize("ok?"), vec![Token::Ident("ok?".into())]);
+        assert_eq!(
+            tokenize("ok? ?? 1"),
+            vec![
+                Token::Ident("ok?".into()),
+                Token::DoubleQuestion,
+                Token::Int(1),
+            ]
+        );
+        assert_eq!(
+            tokenize("a??b"),
+            vec![
+                Token::Ident("a".into()),
+                Token::DoubleQuestion,
+                Token::Ident("b".into()),
+            ]
+        );
     }
 
     // ---- KEYWORDS / keyword_token agreement -------------------------------

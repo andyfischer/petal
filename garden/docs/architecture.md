@@ -572,7 +572,10 @@ off.
   order as `(String, serde_json::Value)` pairs and `PanelView::tick` forwards
   them to the pane's subprocess as GPP `emit` notifications; no reply, and
   dropped in a panel with no attached client), the browser-style **history
-  navigation** API — `navigate(screen)` (push), `navigate_replace(screen)`
+  navigation** API — `navigate(screen)` / `navigate(screen, arg)` (push, the
+  second form carrying the subject the target screen is for, read back there with
+  `nav_arg()` and stored per history entry so back/forward keep it),
+  `navigate_replace(screen)`
   (replace in place), `navigate_back()` / `navigate_forward()` — which push
   typed `NavIntent`s onto a separate `nav_events` channel (drained by
   `PanelHost::take_nav`, surfaced from `PanelView::tick` as

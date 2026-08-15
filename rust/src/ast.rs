@@ -105,6 +105,17 @@ pub enum ExprKind {
         object: Box<Expr>,
         index: Box<Expr>,
     },
+    /// An access chain written with `?.` somewhere in it (`cfg?.window.width`,
+    /// `rows?.[0]`). The inner expression is an ordinary `FieldAccess`/
+    /// `IndexAccess` spine; the wrapper marks that the *whole* spine reads
+    /// absence-tolerantly, so a record that simply does not carry a link yields
+    /// `Nil` rather than aborting — the same tolerance a `??` left-hand side
+    /// already gets, made available without writing a fallback.
+    ///
+    /// One `?.` covers the chain it appears in, matching JavaScript's
+    /// short-circuit: in `a?.b.c` a missing `b` yields nil instead of erroring
+    /// on the `.c`.
+    OptionalAccess(Box<Expr>),
     Block(Vec<Stmt>),
     Lambda {
         params: Vec<Param>,
@@ -454,6 +465,7 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
             }
         }
         ExprKind::FieldAccess { object, .. } => v.visit_expr(object),
+        ExprKind::OptionalAccess(inner) => v.visit_expr(inner),
         ExprKind::IndexAccess { object, index } => {
             v.visit_expr(object);
             v.visit_expr(index);
@@ -610,6 +622,7 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
             }
         }
         ExprKind::FieldAccess { object, .. } => v.visit_expr(object),
+        ExprKind::OptionalAccess(inner) => v.visit_expr(inner),
         ExprKind::IndexAccess { object, index } => {
             v.visit_expr(object);
             v.visit_expr(index);

@@ -2807,7 +2807,10 @@ fn navigate_swaps_to_an_in_directory_screen() {
 
     // A sibling `.ptl` in the same directory is allowed: the screen swaps and a
     // history entry is pushed.
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(panel_screen(&app), "b.ptl", "current screen is now b.ptl");
     assert_eq!(app.panes[idx].panel.as_ref().unwrap().history_len(), 2);
     app.settle_panels();
@@ -2840,7 +2843,10 @@ fn ctrl_bracket_and_ex_commands_drive_panel_history() {
     let mut app = app_with_panel(&a);
 
     // Push a second screen so there is history to walk.
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(panel_screen(&app), "b.ptl");
 
     // Ctrl+[ steps back to the origin; Ctrl+] steps forward again — the host
@@ -2909,7 +2915,10 @@ fn navigate_rejects_traversal_absolute_missing_and_non_ptl() {
         "b.txt",           // not a .ptl
     ] {
         app.status_note = None;
-        navigate(&mut app, NavIntent::Push(bad.into()));
+        navigate(
+            &mut app,
+            NavIntent::Push(bad.into(), serde_json::Value::Null),
+        );
         assert_eq!(
             panel_screen(&app),
             a,
@@ -3009,7 +3018,10 @@ fn declared_screen_navigation_succeeds() {
     // The allowlist threaded onto the live panel.
     assert_eq!(app.panes[idx].panel.as_ref().unwrap().screens(), ["b.ptl"]);
 
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(panel_screen(&app), "b.ptl", "listed screen swaps in");
     assert_eq!(app.panes[idx].panel.as_ref().unwrap().history_len(), 2);
     app.settle_panels();
@@ -3034,7 +3046,10 @@ fn undeclared_in_directory_screen_is_rejected_when_list_declared() {
     let idx = panel_idx(&app);
 
     app.status_note = None;
-    navigate(&mut app, NavIntent::Push("c.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("c.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(
         panel_screen(&app),
         a,
@@ -3054,7 +3069,10 @@ fn undeclared_in_directory_screen_is_rejected_when_list_declared() {
     );
 
     // The listed screen still works — narrowing left the member reachable.
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(panel_screen(&app), "b.ptl");
 }
 
@@ -3074,7 +3092,10 @@ fn a_listed_screen_still_must_pass_safety_checks() {
 
     let mut app = app_with_panel_screens(&a, &["../secret.ptl"]);
     app.status_note = None;
-    navigate(&mut app, NavIntent::Push("../secret.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("../secret.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(
         panel_screen(&app),
         a,
@@ -3110,7 +3131,10 @@ fn navigated_panel_survives_rebuild_and_persists_by_origin() {
 
     // Navigate to a sibling screen: the live script now tracks b, the origin
     // stays a, and a history entry is pushed.
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
     {
         let pv = app.panes[idx].panel.as_ref().unwrap();
         assert_eq!(
@@ -3202,8 +3226,14 @@ fn navigate_from_a_navigated_screen_resolves_against_the_origin_dir() {
     let mut app = app_with_panel(&a);
     let idx = panel_idx(&app);
 
-    navigate(&mut app, NavIntent::Push("b.ptl".into()));
-    navigate(&mut app, NavIntent::Push("c.ptl".into()));
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
+    navigate(
+        &mut app,
+        NavIntent::Push("c.ptl".into(), serde_json::Value::Null),
+    );
     assert_eq!(
         panel_screen(&app),
         "c.ptl",
@@ -4431,10 +4461,76 @@ fn a_panel_mutation_can_open_a_file_in_the_focused_pane() {
     let file = file_with(&dir, "a.txt", "hello\n");
     let mut app = app_with_panes(&[None]);
 
-    app.mutate_panel(0, "open_path", json!({ "path": file }));
+    app.mutate_panel(0, "open_path", json!({ "path": file }), 1);
 
     assert_eq!(app.panes[0].file.as_deref(), Some(file.as_str()));
     assert_eq!(app.panes[0].view.buffer.text(), "hello\n");
+}
+
+/// A `mutate(...)` hands the script back a handle, and the outcome comes back
+/// under it — the only way a drawer (or a test reading `panel.values`) can tell
+/// a mutation that worked from one that failed, since the frame that makes the
+/// request cannot see its own answer.
+#[test]
+fn a_panel_mutation_reports_its_outcome_back_under_its_handle() {
+    let dir = temp_dir("mutate-handle");
+    let script = file_with(
+        &dir,
+        "p.ptl",
+        "state h = 0\n\
+         if h == 0 then\n\
+           h = mutate(\"apply\", {edits: []})\n\
+         end\n\
+         let reply = mutate_result(h)\n\
+         let ok = reply.ok ?? \"pending\"\n",
+    );
+    let mut app = App::new(
+        None,
+        LayoutNode::Panel {
+            script,
+            screens: Vec::new(),
+        },
+        true,
+        Viewport {
+            size: (800.0, 600.0),
+            cell: (8.0, 16.0),
+            scale: 1.0,
+        },
+        Box::new(InMemoryClipboard::default()),
+    );
+
+    // Frame 1 issues the mutation; the handle it returns is a real, non-zero id
+    // and no reply exists yet.
+    app.tick_panels();
+    fn panel(app: &App) -> serde_json::Map<String, serde_json::Value> {
+        app.panes[0].panel.as_ref().unwrap().observed().clone()
+    }
+    let handle = panel(&app).get("h").and_then(|v| v.as_i64()).unwrap_or(0);
+    assert!(
+        handle > 0,
+        "mutate() returned a usable handle, got {handle}"
+    );
+    assert_eq!(panel(&app).get("ok"), Some(&json!("pending")));
+
+    // This panel has no subprocess, so `apply` cannot be delivered — and that
+    // refusal is exactly what must reach the script rather than silence.
+    app.mutate_panel(0, "apply", json!({ "edits": [] }), handle);
+    app.tick_panels();
+    assert_eq!(
+        panel(&app).get("ok"),
+        Some(&json!(false)),
+        "a mutation that could not be delivered reports ok: false"
+    );
+    let err = panel(&app)
+        .get("reply")
+        .and_then(|r| r.get("error"))
+        .and_then(|e| e.as_str())
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        err.contains("no subprocess"),
+        "the reply carries the reason it failed: {err:?}"
+    );
 }
 
 /// A name the host does not own keeps the old behavior: it is forwarded to the
@@ -4459,7 +4555,7 @@ fn an_unknown_panel_mutation_still_goes_to_the_client() {
         Box::new(InMemoryClipboard::default()),
     );
 
-    app.mutate_panel(0, "apply", json!({ "edits": [] }));
+    app.mutate_panel(0, "apply", json!({ "edits": [] }), 1);
 
     let err = app.status_error.clone().unwrap_or_default();
     assert!(
@@ -4474,11 +4570,11 @@ fn an_unknown_panel_mutation_still_goes_to_the_client() {
 fn a_malformed_open_pr_mutation_is_a_status_error() {
     let mut app = app_with_panes(&[None]);
 
-    app.mutate_panel(0, "open_pr", json!({ "number": "forty-two" }));
+    app.mutate_panel(0, "open_pr", json!({ "number": "forty-two" }), 1);
     assert!(app.status_error.as_deref().unwrap().contains("open_pr"));
 
     app.status_error = None;
-    app.mutate_panel(0, "open_pr", json!({}));
+    app.mutate_panel(0, "open_pr", json!({}), 1);
     assert!(app.status_error.as_deref().unwrap().contains("open_pr"));
 
     assert!(!app.panes[0].is_process(), "nothing was opened");
@@ -4491,7 +4587,7 @@ fn a_malformed_open_pr_mutation_is_a_status_error() {
 fn the_file_dialog_is_refused_without_a_window() {
     let mut app = app_with_panes(&[None]);
 
-    app.mutate_panel(0, "open_file_dialog", json!({ "mode": "file" }));
+    app.mutate_panel(0, "open_file_dialog", json!({ "mode": "file" }), 1);
 
     assert_eq!(
         app.status_error.as_deref(),

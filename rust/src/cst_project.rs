@@ -89,6 +89,26 @@ fn direct_tokens(node: &SyntaxNode) -> Vec<SyntaxToken> {
         .collect()
 }
 
+/// Wrap `access` in [`ExprKind::OptionalAccess`] when the node it came from
+/// carries a `?.` token — i.e. the link was written `a?.b` (or `a?.[i]`) rather
+/// than `a.b`.
+///
+/// The CST is the authoritative parse artifact, so a projection that ignored the
+/// token would quietly turn every `?.` back into a hard `.` the first time a
+/// program was round-tripped through a modification.
+fn wrap_optional(node: &SyntaxNode, access: Expr) -> Expr {
+    let optional = direct_tokens(node)
+        .iter()
+        .any(|t| matches!(t.token(), Some(Token::QuestionDot)));
+    if !optional {
+        return access;
+    }
+    Expr {
+        span: access.span,
+        kind: ExprKind::OptionalAccess(Box::new(access)),
+    }
+}
+
 /// First significant token leaf in the subtree (the construct's first token).
 fn first_token_deep(node: &SyntaxNode) -> Option<SyntaxToken> {
     for el in node.children() {
@@ -637,13 +657,16 @@ impl Projector {
                     end: self.end_of(node)?,
                     file: object.span.file,
                 };
-                Ok(Expr {
-                    kind: ExprKind::FieldAccess {
-                        object: Box::new(object),
-                        field,
+                Ok(wrap_optional(
+                    node,
+                    Expr {
+                        kind: ExprKind::FieldAccess {
+                            object: Box::new(object),
+                            field,
+                        },
+                        span,
                     },
-                    span,
-                })
+                ))
             }
             SyntaxKind::IndexAccessExpr => {
                 let nodes = child_nodes(node);
@@ -660,13 +683,16 @@ impl Projector {
                     end: self.end_of(node)?,
                     file: object.span.file,
                 };
-                Ok(Expr {
-                    kind: ExprKind::IndexAccess {
-                        object: Box::new(object),
-                        index: Box::new(index),
+                Ok(wrap_optional(
+                    node,
+                    Expr {
+                        kind: ExprKind::IndexAccess {
+                            object: Box::new(object),
+                            index: Box::new(index),
+                        },
+                        span,
                     },
-                    span,
-                })
+                ))
             }
             SyntaxKind::ListExpr => {
                 let elements = child_nodes(node)
@@ -1248,6 +1274,19 @@ mod tests {
             format!("{projected:#?}"),
             "projected AST differs from parser AST for {src:?}"
         );
+    }
+
+    /// A `?.` lives only in the CST's tokens — the projection has to recover it
+    /// from the `QuestionDot` child, or a program modified through the CST
+    /// would silently come back with every optional read turned hard.
+    #[test]
+    fn projects_optional_access() {
+        assert_projects("a?.b\n");
+        assert_projects("a?.b.c\n");
+        assert_projects("a.b?.c\n");
+        assert_projects("a?.[0]\n");
+        assert_projects("a?.b ?? \"d\"\n");
+        assert_projects("f(a?.b, a.b)\n");
     }
 
     #[test]

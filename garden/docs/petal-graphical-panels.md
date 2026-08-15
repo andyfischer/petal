@@ -375,17 +375,6 @@ background over a list but the list's text showed straight through it. Panels
 written against that behavior may still carry manual text-suppression
 workarounds; they are no longer needed.)
 
-### Text size and measurement
-
-`draw_text`'s `size` is honored per run — a panel is not locked to the editor's
-14 px, so a script can build a real typographic hierarchy (a 28 px heading over
-a 10 px caption). Line height follows the size at the renderer's usual 1.4×
-ratio.
-
-`text_width(s, size)` measures with the **real advances of the font Garden
-rasterizes with** (JetBrains Mono, measured through cosmic-text on the CPU), not
-the generic 0.6-of-size guess. So a rule drawn `text_width(s, size)` wide ends
-flush with its text at every size — centering and right-alignment are exact.
 ### Clipping
 
 `clip(x, y, w, h)` narrows every following call to that rect until `clip_none()`
@@ -406,6 +395,21 @@ Whether a run survives its clip is observable: each `/scene` primitive carries a
 `visible` flag (see `docs/debug-server.md`), so a headless test can tell a drawn
 row from a clipped-away one.
 
+*(Text clipping landed 2026-08-15; feature flag `panel.text-clip`. Before it, a
+`clip(...)` narrowed fills but text drew straight through, which is why older
+drawers cull their own straddling rows — that workaround is no longer needed.)*
+
+### Text size and measurement
+
+`draw_text`'s `size` is honored per run — a panel is not locked to the editor's
+14 px, so a script can build a real typographic hierarchy (a 28 px heading over
+a 10 px caption). Line height follows the size at the renderer's usual 1.4×
+ratio.
+
+`text_width(s, size)` measures with the **real advances of the font Garden
+rasterizes with** (JetBrains Mono, measured through cosmic-text on the CPU), not
+the generic 0.6-of-size guess. So a rule drawn `text_width(s, size)` wide ends
+flush with its text at every size — centering and right-alignment are exact.
 
 The measurement is published **per host**: `PanelHost::set_font_advance_ratios`
 binds the advance table into that host's env, and `PanelView` calls it on every
@@ -519,6 +523,71 @@ host, not the client.
 A malformed argument (no `path`, a non-numeric `number`) is a status error, and
 `open_file_dialog` is refused with one under `--term` / `--headless`, where a
 native modal has no window to be answered from.
+
+### Reading the outcome: the handle `mutate` returns
+
+`mutate(...)` returns an integer **handle**, and `mutate_result(handle)` reads
+back what that request resolved to — nil while it is still in flight, otherwise
+a record:
+
+```petal
+{ ok: true,  value: "wrote 2 files", error: nil }
+{ ok: false, value: nil,             error: "panel has no subprocess to handle 'apply'" }
+```
+
+The round trip must not block a redraw, so the frame that *makes* the request
+can never see its own answer. Keep the handle in `state` and read it later:
+
+```petal
+state saving = 0
+if key_down("ctrl") && key_pressed("s") then
+  saving = mutate("save", { text: edit_view_text(1) })
+end
+let saved = mutate_result(saving)
+let save_failed = saved?.ok == false
+```
+
+Both `saving` and `saved` are ordinary `let`/`state` bindings, so they show up in
+`panes[].panel.values` — which is how a headless test asserts that a save
+actually happened rather than that a key was pressed. Every outcome is reported,
+including the host-answered names above (`ok: true`, no `value`) and requests
+that could not be delivered at all. Ignoring the return value keeps the old
+fire-and-forget behavior exactly.
+
+*(landed 2026-08-15; feature flag `panel.mutate-handle`.)*
+
+## Navigating: `navigate(screen)` / `navigate(screen, arg)`
+
+`navigate(screen)` pushes a new entry onto the pane's browser-style history and
+`navigate_back()` / `navigate_forward()` walk it (as do the host's `Ctrl+[` /
+`Ctrl+]`). `navigate_replace(screen)` swaps the current entry in place.
+
+The two-argument form carries the **subject** the target screen is for — the row
+that was clicked, the commit to show — and the target reads it back with
+`nav_arg()`:
+
+```petal
+// list.ptl
+if clicked then
+  navigate("detail.ptl", { id: rows[sel].id })
+end
+
+// detail.ptl
+let id = nav_arg()?.id ?? 0
+```
+
+`arg` is any JSON-representable value (a navigation may cross a subprocess
+boundary, so it travels as JSON, like a `mutate` argument). `nav_arg()` is nil
+for a screen reached without one — including the panel's origin screen, which
+nothing navigated to — so the idiomatic read pairs it with a `??` fallback.
+
+The argument is stored **on the history entry**, not on the pane, so it comes
+back with the screen: *back* onto a detail screen shows the subject that visit
+was opened with, not the most recent one, and *forward* walks the arguments
+again in order. Without that, returning to a detail screen would redraw it with
+no subject at all.
+
+*(landed 2026-08-15; feature flag `panel.nav-arg`.)*
 
 
 ## Input: what a focused panel receives

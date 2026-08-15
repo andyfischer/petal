@@ -104,16 +104,19 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 | additive | `+` `-` | scalar; also broadcasts a scalar over a list (`[1,2,3] + 10`) |
 | multiplicative | `*` `/` `%` | scalar; `*` and `/` also broadcast a scalar over a list |
 | unary | `-` `!` | negation, logical not |
-| postfix | `f(...)` `x[i]` `a.b` | call, index, field access |
+| postfix | `f(...)` `x[i]` `a.b` `a?.b` `a?.[i]` | call, index, field access, optional access |
 
 `??` binds tighter than comparison but looser than `++`, so `count ?? 0 > 5`
 parses as `(count ?? 0) > 5`.
 
 The left side of `??` reads records *tolerantly*: a field or `[key]` the record
 does not carry is nil there rather than an error, and that holds for the whole
-access chain (`cfg.window.width ?? 800`). Everywhere else a missing field stays
-a hard error, as do a wrong-typed base (`3.x`) and an out-of-bounds list index
-on either side of the operator. See
+access chain (`cfg.window.width ?? 800`). `a?.b` (and its index spelling
+`a?.[i]`) asks for that same tolerance without a fallback, and — like
+JavaScript's — short-circuits the rest of its chain, so `cfg?.window.width` is
+nil when `window` is absent. Everywhere else a missing field stays a hard error,
+as do a wrong-typed base (`3.x`) and an out-of-bounds list index, on either side
+of the operator and under `?.`. See
 [Ragged records](../language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 **Assignment** is a statement, not an operator: `x = e`, plus the compound forms

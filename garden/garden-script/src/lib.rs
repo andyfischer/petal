@@ -61,8 +61,8 @@ mod query;
 mod theme;
 
 pub use panel::{
-    buttons, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd, PanelData,
-    PanelHost, PanelInput, PanelTheme, ProjectionSpec, KEY_NAMES,
+    buttons, mutation_reply, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd,
+    PanelData, PanelHost, PanelInput, PanelTheme, ProjectionSpec, KEY_NAMES,
 };
 pub use panel_store::PanelStore;
 pub use panel_trace::{

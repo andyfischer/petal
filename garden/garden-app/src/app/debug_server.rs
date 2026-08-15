@@ -616,10 +616,6 @@ fn mesh_shapes(vertices: &[garden_render::Vertex]) -> Vec<Value> {
     shapes
 }
 
-fn scene_json(scene: &Scene) -> Value {
-    let color_json = |c: &garden_render::Color| json!([c.r, c.g, c.b, c.a]);
-    let prims: Vec<Value> = scene
-        .primitives
 /// Does anything of `rect` survive `clip`?
 fn survives_clip(rect: Rect, clip: Rect) -> bool {
     let x = rect.x.max(clip.x);
@@ -649,6 +645,10 @@ fn text_run_visible(pos: (f32, f32), size: f32, clip: Rect) -> bool {
     survives_clip(line, clip)
 }
 
+fn scene_json(scene: &Scene) -> Value {
+    let color_json = |c: &garden_render::Color| json!([c.r, c.g, c.b, c.a]);
+    let prims: Vec<Value> = scene
+        .primitives
         .iter()
         .map(|p| match p {
             Primitive::Quad { rect, color } => json!({
@@ -665,16 +665,16 @@ fn text_run_visible(pos: (f32, f32), size: f32, clip: Rect) -> bool {
                 let mut run = json!({
                     "type": "text", "pos": [pos.0, pos.1], "text": text,
                     "color": color_json(color), "clip": rect_json(*clip), "size": size,
-                });
-                // The typographic axes appear only when a run actually uses
-                // one, so an assertion over ordinary text sees the shape it
-                // always did.
                     // Whether the run survives its clip. A scrolling list that
                     // clips to its viewport emits the rows above and below it
                     // too; without this a headless test could not tell a drawn
                     // row from a clipped-away one, which is what pushed drawers
                     // into culling straddling rows themselves.
                     "visible": text_run_visible(*pos, *size, *clip),
+                });
+                // The typographic axes appear only when a run actually uses
+                // one, so an assertion over ordinary text sees the shape it
+                // always did.
                 if *style != TextStyle::default() {
                     run["weight"] = json!(style.weight);
                     run["italic"] = json!(style.italic);
@@ -691,11 +691,11 @@ fn text_run_visible(pos: (f32, f32), size: f32, clip: Rect) -> bool {
             Primitive::Mesh { vertices, clip } => json!({
                 "type": "mesh", "triangles": vertices.len() / 3, "clip": rect_json(*clip),
                 "rect": rect_json(mesh_bounds(vertices)),
+                "visible": survives_clip(mesh_bounds(vertices), *clip),
                 "color": dominant_color(vertices).map(|c| color_json(&c)),
                 // …and, since consecutive fills are batched into one mesh, the
                 // individual shapes that went into it.
                 "shapes": mesh_shapes(vertices),
-                "visible": survives_clip(mesh_bounds(vertices), *clip),
             }),
             Primitive::Image {
                 rect,
@@ -705,11 +705,11 @@ fn text_run_visible(pos: (f32, f32), size: f32, clip: Rect) -> bool {
             } => json!({
                 "type": "image", "rect": rect_json(*rect), "source": source,
                 "alpha": alpha, "clip": rect_json(*clip),
+                "visible": survives_clip(*rect, *clip),
             }),
         })
         .collect();
     json!({"ok": true, "bg": color_json(&scene.bg), "primitives": prims})
-                "visible": survives_clip(*rect, *clip),
 }
 
 #[cfg(test)]
@@ -923,14 +923,6 @@ mod tests {
         assert!(!id["build"]["build_date"].as_str().unwrap().is_empty());
     }
 
-    /// Every panel fill is a mesh, so a `/scene` that reported only a triangle
-    /// count left a rounded-rect design with no assertable geometry at all.
-        // …and which *build* answered, so a stale binary is visible to any
-        // client already reading /state.
-        assert!(!id["build"]["version"].as_str().unwrap().is_empty());
-        assert!(!id["build"]["build_date"].as_str().unwrap().is_empty());
-    }
-
     /// A clipped scrolling list emits the rows outside its viewport too; the
     /// dump has to say which of them the clip actually keeps, or a headless
     /// test cannot tell a drawn row from a clipped-away one.
@@ -972,6 +964,10 @@ mod tests {
             vec![&json!(false), &json!(true), &json!(true), &json!(false)],
             "a straddling run is still (partly) visible; the ones outside are not"
         );
+    }
+
+    /// Every panel fill is a mesh, so a `/scene` that reported only a triangle
+    /// count left a rounded-rect design with no assertable geometry at all.
     #[test]
     fn scene_reports_mesh_bounds_and_dominant_color() {
         let fill = Color {

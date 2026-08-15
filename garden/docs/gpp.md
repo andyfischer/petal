@@ -279,7 +279,8 @@ the short version:
   The host uses it for **browser-style navigation across a subprocess panel's
   screens**: a panel declares its navigable screens (`PanelUi::screen(name,
   source)`), and when the running script calls `navigate("b.ptl")` the host issues
-  the built-in **`navigate` mutation** (`arg = { screen }`) to fetch that screen's
+  the built-in **`navigate` mutation** (`arg = { screen }`, plus `arg.arg` when the
+  script used the two-argument `navigate(screen, arg)` form) to fetch that screen's
   source (`value = { screen, source }`), then drives its own history stack with it
   — the host owns the history and per-entry `state`; the client only supplies
   source. An app can register its own `navigate` handler (`Provider::on_mutation`)

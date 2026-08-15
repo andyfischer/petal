@@ -53,3 +53,26 @@ describe("string interpolation", () => {
     expect(result).toBe("12");
   });
 });
+
+describe("escaped quotes inside an interpolation hole", () => {
+  // A nested string may be written bare or backslash-escaped; both spellings
+  // mean the same thing, so both must lex.
+  it("accepts an escaped empty string next to ??", () => {
+    const result = runPetal(
+      'let a = "A"\nlet b = nil\nlet c = "C"\nprint("{a} · {b ?? \\"\\"} · {c}")'
+    );
+    expect(result).toBe("A ·  · C");
+  });
+
+  it("lexes the escaped and bare spellings of a hole identically", () => {
+    const escaped = showTokensJson('"v {if t then \\"a\\" else \\"b\\" end}"');
+    const bare = showTokensJson('"v {if t then "a" else "b" end}"');
+    expect(escaped).toEqual(bare);
+  });
+
+  it("accepts an escaped string in a JSX child hole", () => {
+    const escaped = showTokensJson('<t>{b ?? \\"q\\"}</t>');
+    const bare = showTokensJson('<t>{b ?? "q"}</t>');
+    expect(escaped).toEqual(bare);
+  });
+});

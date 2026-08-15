@@ -418,6 +418,28 @@ print("hello, {name}!")
 print("2 + 2 = {2 + 2}")
 ```
 
+A nested string inside a hole may be written bare or backslash-escaped; both
+spellings mean the same thing:
+
+```petal
+print("{if name == "" then "anon" else name end}")
+print("{if name == \"\" then \"anon\" else name end}")
+```
+
+Such a nested string has to close on the same line it opened on. Without that
+rule a stray quote silently swallows the rest of the file, and the error surfaces
+far from its cause.
+
+For a literal brace, escape it or use a raw string:
+
+```petal
+print("\{" ++ name ++ "\}")   // {Petal}
+print("""{""" ++ name ++ """}""")
+```
+
+A bare `"{"` is a parse error — the brace opens a hole, so the quote that was
+meant to close the string opens a nested one instead.
+
 ### Raw (triple-quoted) strings
 
 Use `"""..."""` for a raw, multi-line string. The contents are captured
@@ -436,7 +458,8 @@ let src = """
 
 Ordinary double-quoted strings may also span multiple lines, but a `{` inside
 them starts an interpolation hole — use a raw string when you want braces to be
-literal.
+literal. (A string nested *inside* a hole is the one exception: it must close on
+the line it opened on.)
 
 ### String Builtins
 
@@ -896,6 +919,54 @@ let moved = {...defaults, x: 100}    // {x: 100, y: 0, color: "gray"}
 Spread and field assignment both produce an updated record — spread names the
 fields it keeps, field assignment names the fields it changes. Use whichever
 reads better at the call site.
+
+### Ragged records — reading a field that may not be there
+
+Reading a field a record does not carry is a **hard error**. That is deliberate:
+a typo'd field name should fail where it is written, not silently read as nil.
+
+```petal
+let el = {tag: "p"}
+print(el.fragment)     // error: No field 'fragment' on record
+```
+
+Data that is legitimately ragged — decoded JSON, a partial style record — says
+so with `??`. The nil-coalescing operator makes its **left side** tolerant: a
+field (or `[key]`) the record does not carry reads as nil there, so the fallback
+runs instead of the frame aborting.
+
+```petal
+print(el.fragment ?? "")        // "" — no error
+print(el["fragment"] ?? "")     // "" — same for index syntax
+```
+
+The tolerance covers the whole access chain on the left of `??`, so a link
+missing partway down is fine too:
+
+```petal
+let cfg = {}
+print(cfg.window.width ?? 800)  // 800
+```
+
+It covers *only* an absent record key. A wrong-typed base and an out-of-bounds
+list index are bugs, not ragged data, and stay hard errors on both sides of the
+operator:
+
+```petal
+let n = 3
+print(n.width ?? 800)           // error: Cannot access field 'width' on int
+print([1, 2][9] ?? 0)           // error: Index 9 out of bounds (len 2)
+```
+
+When the key is computed, the prelude spells the same rule as a function —
+`field(rec, key, fallback)`, plus `has_field(rec, key)` for the one question
+`??` cannot answer (a key that is present but nil):
+
+```petal
+field({a: 1}, "zz", 7)          // 7
+has_field({a: nil}, "a")        // true
+field({a: nil}, "a", 7)         // 7 — nil coalesces
+```
 
 ### Record Builtins
 

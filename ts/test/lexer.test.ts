@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, showTokensJson, runPetal } from "./helpers";
+import { ensureBuild, showTokensJson, runPetal, runPetalError } from "./helpers";
 
 beforeAll(() => ensureBuild());
 
@@ -104,5 +104,63 @@ describe("triple-quoted raw strings", () => {
   it("lexes an empty triple-quoted string", () => {
     const tokens = showTokensJson('""""""');
     expect(tokens).toEqual([{ String: "" }, "Eof"]);
+  });
+});
+
+describe("a literal brace in a double-quoted string", () => {
+  // A bare `{` used to open an interpolation hole, whose first `"` opened a
+  // *nested* string that ran on until the next quote anywhere in the file.
+  // Quote parity inverted from there, and the first character that is illegal
+  // outside a string got the blame — hundreds of lines away from the cause.
+  const laterStrings = [
+    'print("mid · dot")',
+    'print("dash — here")',
+    'print("arrow ↑ up")',
+  ].join("\n");
+
+  it("blames the brace, not a non-ASCII character much later in the file", () => {
+    const err = runPetalError(
+      ['let name = "x"', 'let tok = "{" ++ name ++ "}"', "", laterStrings].join("\n")
+    );
+    expect(err).toMatch(/line 2/);
+    expect(err).toContain("interpolation hole");
+    expect(err).toContain('"""{"""');
+    expect(err).not.toContain("·");
+    expect(err).not.toContain("—");
+    expect(err).not.toContain("↑");
+  });
+
+  it("rejects a lone bare-brace literal at the brace", () => {
+    const err = runPetalError(['let open = "{"', "", laterStrings].join("\n"));
+    expect(err).toMatch(/line 1, column 13/);
+    expect(err).toContain("interpolation hole");
+  });
+
+  it("names the escape form, and that form runs clean alongside non-ASCII text", () => {
+    const out = runPetal(
+      ['let tok = "\\{" ++ "x" ++ "\\}"', "print(tok)", laterStrings].join("\n")
+    );
+    expect(out.trim().split("\n")).toEqual([
+      "{x}",
+      "mid · dot",
+      "dash — here",
+      "arrow ↑ up",
+    ]);
+  });
+
+  it("names the raw-string form, and that form runs clean too", () => {
+    const out = runPetal(
+      ['let tok = """{""" ++ "x" ++ """}"""', "print(tok)", laterStrings].join("\n")
+    );
+    expect(out.trim().split("\n")[0]).toBe("{x}");
+  });
+
+  it("still allows a hole whose first token is a string but which computes", () => {
+    expect(runPetal('let x = "B"\nprint("{"pre" ++ x}")').trim()).toBe("preB");
+  });
+
+  it("rejects a string inside a hole that runs past the end of its line", () => {
+    const err = runPetalError('print("{ 1 ++ "y\nz" }")');
+    expect(err).toContain("must close on the same line");
   });
 });

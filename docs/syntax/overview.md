@@ -67,6 +67,21 @@ holes: `"2 + 2 = {2 + 2}"`. Triple-quoted **raw** strings capture their contents
 verbatim — `{`/`}` are literal, backslashes are not escapes, and newlines are
 allowed — which makes them ideal for embedding source or brace-heavy text.
 
+To put a *literal* brace in an ordinary string, escape it (`"\{"`, `"\}"`) or
+use a raw string (`"""{"""`). A bare `"{"` is rejected: the brace opens a hole,
+and the quote meant to close the string would open a nested one instead. A
+string opened inside a hole must also close on the same line, so a stray quote
+cannot swallow the rest of the file and blame some innocent character hundreds
+of lines further down.
+
+Inside a hole, a nested string may be written bare or backslash-escaped — the
+two spellings lex identically, in string holes and in JSX holes alike:
+
+```
+"{if t then "a" else "b" end}"
+"{if t then \"a\" else \"b\" end}"
+```
+
 **Commas are required.** In every comma-separated construct (list literals, call
 arguments, function parameters, record literals, enum declarations, and the
 matching patterns) adjacent elements must be separated by a comma. Whitespace and
@@ -82,7 +97,7 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 | pipe | `\|>` | `x \|> f` ≡ `f(x)` (value becomes first arg) |
 | logical or | `\|\|` | short-circuit |
 | logical and | `&&` | short-circuit |
-| nil-coalescing | `??` | `a ?? b` → `b` only when `a` is `nil`; RHS short-circuits |
+| nil-coalescing | `??` | `a ?? b` → `b` when `a` is `nil` or an absent record field; RHS short-circuits |
 | equality | `==` `!=` | |
 | comparison | `<` `<=` `>` `>=` | |
 | concat | `++` | string concatenation |
@@ -93,6 +108,13 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 
 `??` binds tighter than comparison but looser than `++`, so `count ?? 0 > 5`
 parses as `(count ?? 0) > 5`.
+
+The left side of `??` reads records *tolerantly*: a field or `[key]` the record
+does not carry is nil there rather than an error, and that holds for the whole
+access chain (`cfg.window.width ?? 800`). Everywhere else a missing field stays
+a hard error, as do a wrong-typed base (`3.x`) and an out-of-bounds list index
+on either side of the operator. See
+[Ragged records](../language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 **Assignment** is a statement, not an operator: `x = e`, plus the compound forms
 `+=` `-=` `*=` `/=` `%=`. Assignment targets may be a variable, an index

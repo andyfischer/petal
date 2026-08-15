@@ -228,6 +228,30 @@ pub struct Lexer {
     interp_depth: usize,
 }
 
+/// How to write a brace that is not an interpolation hole. Shared by both
+/// diagnostics below so the tests can assert one phrase.
+const LITERAL_BRACE_HELP: &str =
+    "write `\\{` for a literal brace, or use a raw string: \"\"\"{\"\"\"";
+
+/// A `{` in a double-quoted string that only ever made sense as a literal
+/// brace — the hole after it lexed to a lone string constant, or to nothing at
+/// all. Reported at the brace, which is the character the author has to change.
+fn literal_brace_error(brace: SourcePosition) -> String {
+    format!(
+        "A `{{` in a double-quoted string opens an interpolation hole; {} [line {}, column {}]",
+        LITERAL_BRACE_HELP, brace.line, brace.column
+    )
+}
+
+/// A string opened inside an interpolation hole that ran off the end of its
+/// line. Reported at that string's opening quote.
+fn unclosed_hole_string_error(open_quote: SourcePosition) -> String {
+    format!(
+        "Unterminated string: a string opened inside an interpolation hole must close on the same line; {} [line {}, column {}]",
+        LITERAL_BRACE_HELP, open_quote.line, open_quote.column
+    )
+}
+
 impl Lexer {
     pub fn new(input: &str) -> Self {
         Self::new_in_file(input, ENTRY_FILE)
@@ -746,8 +770,24 @@ impl Lexer {
                 self.advance_char();
                 continue;
             }
+            if ch == '\n' && self.interp_depth > 0 {
+                // A string opened inside an interpolation hole must close on
+                // the same line. Without this the literal runs on until the
+                // next `"` anywhere in the file, inverting quote parity for
+                // everything after it and blaming some innocent character
+                // hundreds of lines later.
+                return Err(unclosed_hole_string_error(open_quote));
+            }
             if ch == '{' {
                 // Start of interpolation.
+                let brace = self.current_pos();
+                // A hole that opens with a bare `"` is almost always a literal
+                // brace the author meant to write (`"{"`), not an expression —
+                // see the mis-lex check below. A triple quote really is a raw
+                // string and is left alone.
+                let hole_opens_with_quote = self.peek_next() == Some('"')
+                    && !(self.input.get(self.pos + 2) == Some(&'"')
+                        && self.input.get(self.pos + 3) == Some(&'"'));
                 if !has_interp {
                     has_interp = true;
                     // InterpStart's span is exactly the opening quote.
@@ -760,9 +800,24 @@ impl Lexer {
                 self.push_token_span(Token::String(s), part_start, after_brace);
                 s = String::new();
 
-                self.interp_depth += 1;
+                let mark = self.tokens.len();
                 let braced = self.tokenize_braced_expr(false, false);
-                self.interp_depth -= 1;
+                if hole_opens_with_quote {
+                    // Two shapes give the mistake away: the quote that follows
+                    // the brace never closed on this line (nothing was pushed),
+                    // or the whole hole lexed to a single string constant — as
+                    // `"{" ++ name ++ "}"` does, silently, today.
+                    let mis_lexed = match &braced {
+                        Err(_) => self.tokens.len() == mark,
+                        Ok(()) => {
+                            self.tokens.len() == mark + 1
+                                && matches!(self.tokens[mark], Token::String(_))
+                        }
+                    };
+                    if mis_lexed {
+                        return Err(literal_brace_error(brace));
+                    }
+                }
                 braced?;
                 // The next literal part absorbs the closing `}` just consumed,
                 // so no delimiter is left in an inter-token gap.
@@ -882,6 +937,20 @@ impl Lexer {
     /// - `emit_close`: whether to emit `RBrace` for the final `}`
     /// - `skip_newlines`: whether to silently skip newline characters
     fn tokenize_braced_expr(
+        &mut self,
+        emit_close: bool,
+        skip_newlines: bool,
+    ) -> Result<(), String> {
+        // Every braced hole — string interpolation and both JSX forms — accepts
+        // `\"` as a string delimiter, so the escaped and bare spellings of a
+        // nested literal lex identically. See `read_string_inner`.
+        self.interp_depth += 1;
+        let result = self.tokenize_braced_expr_inner(emit_close, skip_newlines);
+        self.interp_depth -= 1;
+        result
+    }
+
+    fn tokenize_braced_expr_inner(
         &mut self,
         emit_close: bool,
         skip_newlines: bool,
@@ -1434,5 +1503,84 @@ mod tests {
     fn a_backslash_outside_a_hole_is_still_an_error() {
         let mut lexer = Lexer::new("let x = \\");
         assert!(lexer.tokenize().is_err());
+    }
+
+    #[test]
+    fn escaped_quotes_work_in_a_jsx_hole() {
+        let escaped = tokenize(r#"<t>{b ?? \"q\"}</t>"#);
+        let bare = tokenize(r#"<t>{b ?? "q"}</t>"#);
+        assert_eq!(escaped, bare);
+    }
+
+    // ---- a literal `{` in a double-quoted string --------------------------
+
+    fn tokenize_err(src: &str) -> String {
+        let mut lexer = Lexer::new(src);
+        lexer
+            .tokenize()
+            .expect_err("expected the lexer to reject this")
+    }
+
+    /// The reported bug: a bare-brace literal near the top of a file made every
+    /// later non-ASCII character in a string blow up. The blame must land on
+    /// the brace's own line, and nothing downstream may be touched.
+    #[test]
+    fn a_bare_brace_string_is_rejected_at_the_brace() {
+        let err = tokenize_err("let open = \"{\"\nprint(\"mid · dot\")\n");
+        assert!(err.contains("[line 1, column 13]"), "{err}");
+        assert!(err.contains("interpolation hole"), "{err}");
+        assert!(err.contains(r#""""{""""#), "{err}");
+    }
+
+    /// The one-line spelling used to lex *silently* into an interpolation of
+    /// the constant string `" ++ name ++ "`.
+    #[test]
+    fn a_bare_brace_between_concatenations_is_rejected() {
+        let err = tokenize_err(r#"let tok = "{" ++ name ++ "}""#);
+        assert!(err.contains("[line 1, column 12]"), "{err}");
+        assert!(err.contains("interpolation hole"), "{err}");
+    }
+
+    /// The two spellings the diagnostic recommends must both still work, and
+    /// must not disturb the non-ASCII characters that used to be blamed.
+    #[test]
+    fn the_suggested_literal_brace_spellings_still_lex() {
+        assert_eq!(
+            tokenize(r#""a\{b}c""#),
+            vec![Token::String("a{b}c".to_string())]
+        );
+        assert_eq!(tokenize(r#""""{""""#), vec![Token::String("{".to_string())]);
+        assert_eq!(
+            tokenize("\"a\\{b}c\"\n\"mid · dot\"\n\"dash — here\"\n\"arrow ↑ up\"")
+                .into_iter()
+                .filter(|t| matches!(t, Token::String(_)))
+                .count(),
+            4
+        );
+    }
+
+    /// A hole whose *first* token is a string but which goes on to do something
+    /// is a real interpolation, not a mis-lexed brace.
+    #[test]
+    fn a_hole_that_starts_with_a_string_but_computes_is_kept() {
+        let toks = tokenize(r#""{"pre" ++ x}""#);
+        assert!(toks.contains(&Token::PlusPlus), "{toks:?}");
+    }
+
+    /// A string opened inside a hole may not run past the end of its line —
+    /// that runaway is what inverted quote parity for the rest of the file.
+    #[test]
+    fn a_string_inside_a_hole_may_not_cross_a_newline() {
+        let err = tokenize_err("\"{ x ++ \"y\nz\" }\"");
+        assert!(err.contains("must close on the same line"), "{err}");
+        assert!(err.contains("[line 1, column 9]"), "{err}");
+    }
+
+    /// An unrelated error inside a hole that opens with a string must still be
+    /// reported as itself, not swallowed by the literal-brace diagnostic.
+    #[test]
+    fn a_real_error_after_a_nested_string_is_not_masked() {
+        let err = tokenize_err(r#""{"a" ++ &}""#);
+        assert!(err.contains("Unexpected character '&'"), "{err}");
     }
 }

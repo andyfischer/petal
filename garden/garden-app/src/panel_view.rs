@@ -827,6 +827,41 @@ impl PanelView {
         &self.history[self.cursor].screen
     }
 
+    /// The current entry's screen and navigation argument, when re-issuing its
+    /// `navigate` mutation is meaningful — i.e. a *navigated* entry. `None` at
+    /// the seed (entry 0): nothing navigated to it, and its screen name is the
+    /// pane's own origin rather than one the client declared, so replaying it
+    /// would only ever draw a rejection.
+    pub(crate) fn restored_entry(&self) -> Option<(String, serde_json::Value)> {
+        if self.cursor == 0 {
+            return None;
+        }
+        let entry = &self.history[self.cursor];
+        Some((entry.screen.clone(), entry.nav_arg.clone()))
+    }
+
+    /// Swap the current entry's cached source for a freshly fetched one and
+    /// redisplay it, keeping the entry's saved `state` and its navigation
+    /// argument (both live on the entry, and [`load_entry`](Self::load_entry)
+    /// re-applies them).
+    ///
+    /// Returns whether anything was rebuilt. An identical source is left alone:
+    /// the common case of a *back* that re-runs the client's `navigate` handler
+    /// purely for its side effects then costs no recompile and no flicker.
+    pub(crate) fn refresh_current_source(&mut self, source: String) -> bool {
+        // The seed rebuilds from its `path`, not a source; replacing it would
+        // strip the origin's file identity and hot-reload.
+        if self.cursor == 0 {
+            return false;
+        }
+        if self.history[self.cursor].source.as_deref() == Some(source.as_str()) {
+            return false;
+        }
+        self.history[self.cursor].source = Some(source);
+        self.load_entry();
+        true
+    }
+
     /// Drain the navigation intents accumulated by [`tick`](Self::tick), for the
     /// app layer to resolve and act on. Empty after a drain until the next frame.
     pub(crate) fn take_nav_events(&mut self) -> Vec<ClientEvent> {

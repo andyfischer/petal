@@ -281,22 +281,8 @@ impl App {
         let (screen, arg, replace) = match intent {
             NavIntent::Push(screen, arg) => (screen, arg, false),
             NavIntent::Replace(screen, arg) => (screen, arg, true),
-            NavIntent::Back => {
-                return self
-                    .panes
-                    .get_mut(idx)
-                    .and_then(|p| p.panel.as_mut())
-                    .map(|pv| pv.nav_back())
-                    .unwrap_or(false);
-            }
-            NavIntent::Forward => {
-                return self
-                    .panes
-                    .get_mut(idx)
-                    .and_then(|p| p.panel.as_mut())
-                    .map(|pv| pv.nav_forward())
-                    .unwrap_or(false);
-            }
+            NavIntent::Back => return self.nav_history(idx, false),
+            NavIntent::Forward => return self.nav_history(idx, true),
         };
         // How the target screen's source is resolved differs by pane kind:
         //  - A **subprocess** (pushed-script) pane has no on-disk screens; the
@@ -363,6 +349,71 @@ impl App {
             }
             None => false,
         }
+    }
+
+    /// Move pane `idx`'s history cursor one step and, for a **subprocess**
+    /// panel, re-issue the restored entry's `navigate` mutation.
+    ///
+    /// Restoring an entry replays the *host's* record of it — the source, the
+    /// `state` snapshot, the navigation argument — but the client that served
+    /// that screen keeps its own state, and an app whose `on_mutation("navigate")`
+    /// handler primes the data a screen reads would otherwise never learn about
+    /// the revisit: the screen would come back drawn from whatever the provider
+    /// happens to hold now, which is the stale-identity bug that made apps poll
+    /// a `selection` query every frame instead of latching it. Re-issuing makes
+    /// *back* and *forward* as much a navigation to the client as the original
+    /// push was, and the entry's own argument is what gets replayed, so each
+    /// entry re-primes its own subject.
+    ///
+    /// Best effort by design: the cursor has already moved when the mutation is
+    /// sent, so a client that is gone, slow, or rejects the screen leaves the
+    /// restored entry showing its cached source — with the reason in the status
+    /// note — rather than failing a navigation the user explicitly asked for.
+    /// A fresh source swaps the running program in; an identical one costs
+    /// nothing. In-process `panel(...)` panes have no provider to re-ask and are
+    /// unaffected, as is the seed entry (see [`PanelView::restored_entry`]).
+    fn nav_history(&mut self, idx: usize, forward: bool) -> bool {
+        let moved = match self.panes.get_mut(idx).and_then(|p| p.panel.as_mut()) {
+            Some(pv) => {
+                if forward {
+                    pv.nav_forward()
+                } else {
+                    pv.nav_back()
+                }
+            }
+            None => false,
+        };
+        if !moved {
+            return false;
+        }
+        let target = self
+            .panes
+            .get(idx)
+            .and_then(|p| p.panel.as_ref())
+            .filter(|pv| pv.has_client())
+            .and_then(|pv| pv.restored_entry());
+        let Some((screen, arg)) = target else {
+            return true;
+        };
+        let fetched = self
+            .panes
+            .get_mut(idx)
+            .and_then(|p| p.panel.as_mut())
+            .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_MUTATION_TIMEOUT));
+        match fetched {
+            Some(Ok(source)) => {
+                if let Some(pv) = self.panes.get_mut(idx).and_then(|p| p.panel.as_mut()) {
+                    pv.refresh_current_source(source);
+                }
+            }
+            Some(Err(reason)) => {
+                self.status_note = Some(format!(
+                    "navigate replay failed: {reason} (showing the cached screen)"
+                ));
+            }
+            None => {}
+        }
+        true
     }
 
     /// Relay a script `mutate(name, arg)` on pane `idx` to its subprocess and

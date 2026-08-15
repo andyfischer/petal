@@ -74,6 +74,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // `navigate(screen, arg)` and `nav_arg()`: a navigation carries the subject
     // its target screen is for, stored per history entry so back/forward keep it.
     "panel.nav-arg",
+    // Back/forward re-issue the restored entry's `navigate` mutation, so a
+    // subprocess app's own handler re-primes the screen's data on a revisit
+    // instead of the entry coming back drawn from whatever the provider holds.
+    "panel.nav-replay",
     // `mutate(name, arg)` returns a handle and `mutate_result(handle)` reads the
     // outcome back, so a mutation's success or failure is observable.
     "panel.mutate-handle",

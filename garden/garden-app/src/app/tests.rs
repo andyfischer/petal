@@ -3248,6 +3248,174 @@ fn navigate_from_a_navigated_screen_resolves_against_the_origin_dir() {
     );
 }
 
+/// A stub panel-mode client whose `navigate` handler has a **side effect**: it
+/// answers `b.ptl` with a fresh source every time, numbering the visit. The
+/// numbering stands in for the real thing an app's `on_mutation("navigate")`
+/// handler does — priming the data the target screen reads — and makes it
+/// observable whether the host asked again.
+const NAV_REPLAY_CLIENT: &str = r#"
+read -r line
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"replay-stub","mode":"panel"}}'
+visits=0
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"screen":"b.ptl"'*)
+      visits=$((visits+1))
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","value":{"screen":"b.ptl","source":"let visits = %s"}}}\n' "$id" "$visits"
+      ;;
+    *'"method":"mutate"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"no such screen"}}\n' "$id"
+      ;;
+  esac
+done
+"#;
+
+/// Back/forward re-issue the restored entry's `navigate` mutation on a
+/// subprocess panel, so the client's own handler re-primes the screen.
+///
+/// This is the half that per-entry `nav_arg` could not fix on its own: the host
+/// restores its record of a visit faithfully, but the *provider* holds the data
+/// the screen draws, and without a replay it is never told the user came back.
+#[test]
+fn back_and_forward_re_issue_the_navigate_mutation() {
+    use crate::process_pane::ProcessPane;
+    use garden_script::NavIntent;
+    let base = temp_dir("g5-nav-replay");
+    let a = file_with(&base, "a.ptl", "let home = 1\n");
+
+    let mut app = app_with_panel(&a);
+    let idx = panel_idx(&app);
+    let client = ProcessPane::spawn(
+        "bash",
+        &["-c".to_string(), NAV_REPLAY_CLIENT.to_string()],
+        2,
+        24,
+        80,
+    )
+    .expect("spawn stub client");
+    app.panes[idx].panel.as_mut().unwrap().attach_client(
+        client,
+        crate::script_client::new_shared(),
+        "replay-stub".into(),
+    );
+
+    // The first navigation is visit 1.
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
+    assert_eq!(panel_screen(&app), "b.ptl");
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "visits"), Some(json!(1)));
+
+    // Back lands on the seed. Nothing navigated to it, so it is *not* replayed —
+    // its screen name is the pane's own origin, which the client never declared.
+    navigate(&mut app, NavIntent::Back);
+    assert_eq!(panel_screen(&app), a, "back restores the origin");
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "home"),
+        Some(json!(1)),
+        "the seed rebuilt from its own file, not from the client"
+    );
+
+    // Forward re-asks the client for b.ptl: visit 2, and the fresh source is
+    // what the panel now runs. Without the replay this would still read 1.
+    navigate(&mut app, NavIntent::Forward);
+    assert_eq!(panel_screen(&app), "b.ptl");
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "visits"),
+        Some(json!(2)),
+        "forward re-issued the navigate mutation"
+    );
+
+    // And again on a second round trip, so the replay is not a one-shot.
+    navigate(&mut app, NavIntent::Back);
+    navigate(&mut app, NavIntent::Forward);
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "visits"), Some(json!(3)));
+}
+
+/// The same stub, but it serves `b.ptl` exactly once and refuses every later
+/// request — a client that has moved on, or lost the data the screen needs.
+const NAV_REPLAY_ONCE_CLIENT: &str = r#"
+read -r line
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"once-stub","mode":"panel"}}'
+served=0
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"screen":"b.ptl"'*)
+      if [ "$served" = "0" ]; then
+        served=1
+        printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","value":{"screen":"b.ptl","source":"let visits = 1"}}}\n' "$id"
+      else
+        printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"screen is gone"}}\n' "$id"
+      fi
+      ;;
+    *'"method":"mutate"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"no such screen"}}\n' "$id"
+      ;;
+  esac
+done
+"#;
+
+/// A client that refuses the replay leaves the restored entry showing its
+/// cached screen: the user asked to go forward, so going forward must not fail.
+/// The reason surfaces in the status note instead.
+#[test]
+fn a_refused_navigate_replay_keeps_the_cached_screen() {
+    use crate::process_pane::ProcessPane;
+    use garden_script::NavIntent;
+    let base = temp_dir("g5-nav-replay-refused");
+    let a = file_with(&base, "a.ptl", "let home = 1\n");
+
+    let mut app = app_with_panel(&a);
+    let idx = panel_idx(&app);
+    let client = ProcessPane::spawn(
+        "bash",
+        &["-c".to_string(), NAV_REPLAY_ONCE_CLIENT.to_string()],
+        2,
+        24,
+        80,
+    )
+    .expect("spawn stub client");
+    app.panes[idx].panel.as_mut().unwrap().attach_client(
+        client,
+        crate::script_client::new_shared(),
+        "once-stub".into(),
+    );
+
+    navigate(
+        &mut app,
+        NavIntent::Push("b.ptl".into(), serde_json::Value::Null),
+    );
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "visits"), Some(json!(1)));
+
+    // The replay is refused, but the navigation itself still happens.
+    navigate(&mut app, NavIntent::Back);
+    navigate(&mut app, NavIntent::Forward);
+    assert_eq!(
+        panel_screen(&app),
+        "b.ptl",
+        "forward still moved the cursor"
+    );
+    app.settle_panels();
+    assert_eq!(
+        panel_value(&app, "visits"),
+        Some(json!(1)),
+        "the entry still runs its cached source"
+    );
+    let note = app.status_note.clone().unwrap_or_default();
+    assert!(
+        note.contains("screen is gone"),
+        "the client's reason is surfaced, got {note:?}"
+    );
+}
+
 // ── Petal-IDE: toolbar + play/pause ───────────────────────────────────────────
 
 #[test]

@@ -573,11 +573,28 @@ provider.on_mutation("navigate", |state: &mut S, ctx| {
 
 More broadly, `on_mutation(name, handler)` is the general **mutation** primitive:
 an effectful, uncached request/response (the fourth quadrant beside `query` and
-`emit`). `navigate` is just the first built-in use. **v1 limitation:** back/forward
-reuse the host-cached source and don't re-issue the mutation, so if your app tracks
-hidden per-screen context, key your `query` data by its `arg` (as the reference
-apps do) rather than by that context — or pass it as the navigation argument,
-which *is* restored per entry.
+`emit`). `navigate` is just the first built-in use.
+
+**Back and forward re-issue it.** Restoring a history entry replays the *host's*
+record of that visit — its source, its `state` snapshot, its navigation argument
+— but your provider holds the data the screen actually draws, so the host asks
+again: going back or forward to a navigated entry sends your `navigate` handler
+the same screen and `arg` the original push did, and your handler re-runs its
+effect before the screen is redrawn. Write it to be **idempotent**: it is called
+once per visit, not once per screen. Returning a changed `source` swaps the
+running program in; returning the same one costs nothing.
+
+The replay is best effort, because the user's back/forward must not fail: the
+cursor has already moved when the mutation is sent, so if your app is gone, slow
+(500 ms), or rejects the screen, the entry stays on its cached source and the
+reason appears in the pane's status note. The seed entry is never replayed —
+nothing navigated to it, and its screen name is the pane's own origin rather than
+one your app declared. In-process `panel(...)` panes have no provider to re-ask.
+
+Probe for it with the `panel.nav-replay` feature flag (see
+[debug-server.md](debug-server.md)) if your app must also work against an older
+`garden`; without it, key your `query` data by its `arg` rather than by hidden
+per-screen context.
 
 A script-issued `mutate(name, arg)` hands the drawer a **handle**, and
 `mutate_result(handle)` reads back `{ ok, value, error }` once your handler has

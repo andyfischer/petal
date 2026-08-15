@@ -589,6 +589,22 @@ no subject at all.
 
 *(landed 2026-08-15; feature flag `panel.nav-arg`.)*
 
+For a **subprocess** panel there is a second half to this. The entry carries the
+argument, but the app on the other end of the pipe holds the data the screen
+draws, and it would otherwise never learn that the user came back — the screen
+would return drawn from whatever the provider happens to hold now. So back and
+forward **re-issue the restored entry's `navigate` mutation**, with that entry's
+own screen and argument, before the screen is redrawn. An app's `navigate`
+handler is therefore called once per *visit*, not once per screen, and should be
+idempotent; see
+[writing-gpp-apps.md](writing-gpp-apps.md#multi-screen-navigation-optional).
+
+It is best effort: the cursor moves first, so a provider that is gone, slow, or
+refuses the screen leaves the entry on its cached source with the reason in the
+status note — going back never fails because the app did.
+
+*(landed 2026-08-15; feature flag `panel.nav-replay`.)*
+
 
 ## Input: what a focused panel receives
 

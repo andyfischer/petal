@@ -1,0 +1,126 @@
+==================
+Coalescing with ??
+==================
+
+let a = r.b ?? "d"
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (field_access
+        object: (identifier)
+        field: (identifier))
+      right: (string (string_content)))))
+
+==================
+?? binds tighter than a comparison
+==================
+
+let h = n ?? 0 > 5
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (binary_expression
+        left: (identifier)
+        right: (integer))
+      right: (integer))))
+
+==================
+?? binds looser than a concat
+==================
+
+let f = "x" ++ y ?? "z"
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (binary_expression
+        left: (string (string_content))
+        right: (identifier))
+      right: (string (string_content)))))
+
+==================
+Optional field access
+==================
+
+let c = r?.b
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (field_access
+      object: (identifier)
+      field: (identifier))))
+
+==================
+An optional access anywhere in a chain
+==================
+
+let d = cfg?.window.width ?? 800
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (field_access
+        object: (field_access
+          object: (identifier)
+          field: (identifier))
+        field: (identifier))
+      right: (integer))))
+
+==================
+Optional index access
+==================
+
+let e = xs?.[0]
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (index_access
+      object: (identifier)
+      index: (integer))))
+
+==================
+A trailing ? still belongs to a predicate identifier
+==================
+
+fn even?(n)
+  n % 2 == 0
+end
+let g = even?(4)
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list (parameter name: (identifier)))
+    body: (block
+      (binary_expression
+        left: (binary_expression
+          left: (identifier)
+          right: (integer))
+        right: (integer))))
+  (let_declaration
+    name: (identifier)
+    value: (call
+      function: (identifier)
+      arguments: (argument_list (integer)))))

@@ -477,6 +477,10 @@
             "named": false
           },
           {
+            "type": "??",
+            "named": false
+          },
+          {
             "type": "||",
             "named": false
           }
@@ -1181,6 +1185,20 @@
             "named": true
           }
         ]
+      },
+      "operator": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": ".",
+            "named": false
+          },
+          {
+            "type": "?.",
+            "named": false
+          }
+        ]
       }
     }
   },
@@ -1561,6 +1579,11 @@
     }
   },
   {
+    "type": "identifier",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "if_expression",
     "named": true,
     "fields": {
@@ -1909,6 +1932,16 @@
           {
             "type": "unary_expression",
             "named": true
+          }
+        ]
+      },
+      "operator": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "?.[",
+            "named": false
           }
         ]
       }
@@ -4675,6 +4708,22 @@
     "named": false
   },
   {
+    "type": "?",
+    "named": false
+  },
+  {
+    "type": "?.",
+    "named": false
+  },
+  {
+    "type": "?.[",
+    "named": false
+  },
+  {
+    "type": "??",
+    "named": false
+  },
+  {
     "type": "[",
     "named": false
   },
@@ -4754,10 +4803,6 @@
   {
     "type": "get",
     "named": false
-  },
-  {
-    "type": "identifier",
-    "named": true
   },
   {
     "type": "if",

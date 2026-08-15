@@ -17,7 +17,11 @@
 
 // Precedence ladder, lowest → highest, mirroring the precedence-climbing
 // parser in rust/src/parse.rs (pipe → or → and → equality → comparison →
-// concat → additive → multiplicative → unary → postfix).
+// coalesce → concat → additive → multiplicative → unary → postfix).
+//
+// `??` sits between comparison and concat, exactly where `parse_coalesce`
+// sits in the Rust parser: `count ?? 0 > 5` is `(count ?? 0) > 5` and
+// `"a" ++ b ?? "x"` is `("a" ++ b) ?? "x"`.
 const PREC = {
   assign: -1,
   pipe: 1,
@@ -25,12 +29,13 @@ const PREC = {
   and: 3,
   equality: 4,
   comparison: 5,
-  concat: 6,
-  additive: 7,
-  multiplicative: 8,
-  unary: 9,
-  postfix: 10,
-  jsx: 11,
+  coalesce: 6,
+  concat: 7,
+  additive: 8,
+  multiplicative: 9,
+  unary: 10,
+  postfix: 11,
+  jsx: 12,
 };
 
 /**
@@ -46,7 +51,9 @@ function commaSep(rule) {
 module.exports = grammar({
   name: 'petal',
 
-  word: $ => $.identifier,
+  // Keyword extraction needs a single token; `identifier` is a two-token
+  // sequence (see its definition), so the core regex is the word token.
+  word: $ => $._identifier_core,
 
   extras: $ => [
     // The lexer turns `;` into a newline-style separator; with newlines
@@ -287,6 +294,7 @@ module.exports = grammar({
         ['<=', PREC.comparison],
         ['>', PREC.comparison],
         ['>=', PREC.comparison],
+        ['??', PREC.coalesce],
         ['++', PREC.concat],
         ['+', PREC.additive],
         ['-', PREC.additive],
@@ -314,18 +322,29 @@ module.exports = grammar({
 
     argument_list: $ => seq('(', commaSep($._expression), ')'),
 
+    // `?.` is the tolerant spelling: `rec?.missing` is nil rather than an
+    // error, and one `?.` makes the rest of its chain tolerant too. It is a
+    // read-only form — `a?.b = v` is rejected by the Rust parser, a rule the
+    // grammar does not try to encode (an assignment target is a plain
+    // `_expression` here).
     field_access: $ => prec(PREC.postfix, seq(
       field('object', $._expression),
-      '.',
+      field('operator', choice('.', '?.')),
       field('field', $.identifier),
     )),
 
     // The `[` is immediate (no whitespace before it) so that real indexing
     // (`arr[i]`) is distinguished from an expression statement followed by a
     // list literal on the next line — newlines being insignificant here.
+    // `a?.[i]` is the optional spelling, matching JavaScript. It is lexed as
+    // the single token `?.[` rather than `?.` followed by `[`: as two tokens
+    // the state after `?.` is ambiguous between this rule and `field_access`,
+    // and the generator resolves it toward a field name, misparsing `a?.[0]`
+    // as `a?.<missing>` indexed by `0`. One token makes the lexer's
+    // longest-match decide, which needs no lookahead at all.
     index_access: $ => prec(PREC.postfix, seq(
       field('object', $._expression),
-      token.immediate('['),
+      choice(token.immediate('['), field('operator', '?.[')),
       field('index', $._expression),
       ']',
     )),
@@ -489,9 +508,21 @@ module.exports = grammar({
 
     // ---- Literals & terminals ----
 
-    // Identifiers may end in `?` (e.g. `even?`); the lexer also permits `?`
-    // mid-identifier.
-    identifier: _ => /[a-zA-Z_][a-zA-Z0-9_?]*/,
+    // Identifiers may end in `?` (e.g. `even?`). That trailing `?` is a
+    // *separate* immediate token rather than part of the identifier regex,
+    // because `rec?.field` and `a??b` have to split the other way. Folding it
+    // into the regex makes the identifier DFA swallow the `?` — longest match
+    // — so `rec?.field` lexes as the identifier `rec?` followed by a stray `.`
+    // and `xs?.[0]` fails outright. As its own token the choice is made at the
+    // `?` by longest match among the operators valid there: `?.` and `??` (two
+    // characters) beat a bare `?` (one), which is exactly the rule
+    // `read_identifier` applies in rust/src/lexer.rs.
+    //
+    // `identifier` therefore stays a node — every use site is unchanged — but
+    // is no longer a single token, so `word` names the core regex instead.
+    identifier: $ => seq($._identifier_core, optional(token.immediate('?'))),
+
+    _identifier_core: _ => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
     integer: _ => /\d+/,
 

@@ -97,6 +97,26 @@ export fn drop(xs, n)
   slice(xs, max(0, min(n, len(xs))), len(xs))
 end
 
+// ── Ragged records ─────────────────────────────────────────────────────────
+//
+// Reading a field a record does not carry is a hard error — a typo should not
+// pass silently. Data that is legitimately ragged (decoded JSON, a partial
+// style record) asks for the absence explicitly: `rec.key ?? fallback`, which
+// tolerates the missing field, or one of these two by name.
+
+// True when `rec` carries `key` at all — including when its value is nil,
+// which is the one case `rec[key] ?? false` cannot tell apart.
+export fn has_field(rec, key)
+  contains(keys(rec), key)
+end
+
+// Field `key` of `rec`, or `fallback` when the record does not carry it (or
+// carries it as nil). The named spelling of `rec[key] ?? fallback`, useful
+// when the key is computed.
+export fn field(rec, key, fallback)
+  rec[key] ?? fallback
+end
+
 // ── Numbers ────────────────────────────────────────────────────────────────
 
 // Clamp a number to the 0..1 range — the common `clamp(x, 0, 1)` shorthand.

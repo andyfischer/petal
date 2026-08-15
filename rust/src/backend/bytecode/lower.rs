@@ -446,6 +446,13 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 obj: self.flat(ins[0])?,
                 field: *field,
+                opt: false,
+            },
+            TermOp::GetFieldOpt(field) => Inst::GetField {
+                dst,
+                obj: self.flat(ins[0])?,
+                field: *field,
+                opt: true,
             },
             TermOp::SetField(field) if self.in_place.allows(term.id) => Inst::SetFieldInPlace {
                 dst,
@@ -463,6 +470,13 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 obj: self.flat(ins[0])?,
                 idx: self.flat(ins[1])?,
+                opt: false,
+            },
+            TermOp::GetIndexOpt => Inst::GetIndex {
+                dst,
+                obj: self.flat(ins[0])?,
+                idx: self.flat(ins[1])?,
+                opt: true,
             },
             TermOp::SetIndex if self.in_place.allows(term.id) => Inst::SetIndexInPlace {
                 dst,

@@ -111,6 +111,12 @@ struct Checker<'a> {
     /// [`CastSlot::Operand`] default) on entry, so it describes that one
     /// expression and never leaks into its subexpressions.
     slot: CastSlot,
+    /// True while walking the *access spine* on the left of a `??`. That spine
+    /// compiles to the absence-tolerant field/index reads, so a field the class
+    /// does not declare is the whole point of the expression, not a mistake to
+    /// warn about. Set immediately before entering the spine and consumed on
+    /// entry to each expression, like [`Checker::slot`].
+    tolerant_access: bool,
 }
 
 /// Walk a module once, returning both products of the pass: the warnings and
@@ -129,6 +135,7 @@ fn run(
         casts: Vec::new(),
         dispatch: MethodDispatch::new(),
         slot: CastSlot::Operand,
+        tolerant_access: false,
     };
     checker.bind_enum_variants(stmts);
     for stmt in stmts {
@@ -720,6 +727,7 @@ impl<'a> Checker<'a> {
         // describes *this* expression, and every subexpression is nested inside
         // something and so is not delimited.
         let slot = std::mem::replace(&mut self.slot, CastSlot::Operand);
+        let tolerant = std::mem::take(&mut self.tolerant_access);
         match &expr.kind {
             ExprKind::Literal(lit) => match lit {
                 Literal::Nil => Type::Nil,
@@ -741,6 +749,9 @@ impl<'a> Checker<'a> {
                 .unwrap_or(Type::Any),
             ExprKind::AtVar(_) => Type::Any,
             ExprKind::BinaryOp { op, left, right } => {
+                // `a.b ?? d` explicitly tolerates `b` being absent — walk the
+                // left side with the missing-field warning turned off.
+                self.tolerant_access = *op == BinOp::Coalesce;
                 let l = self.check_expr(left);
                 let r = self.check_expr(right);
                 binary_type(*op, l, r)
@@ -864,6 +875,7 @@ impl<'a> Checker<'a> {
                 Type::Record
             }
             ExprKind::FieldAccess { object, field } => {
+                self.tolerant_access = tolerant;
                 let obj = self.check_expr(object);
                 // A class instance has declared field types; a plain record
                 // does not (`Type` is unparameterized), so everything else
@@ -873,6 +885,7 @@ impl<'a> Checker<'a> {
                 };
                 match self.classes.get(id).field(field) {
                     Some(f) => f.ty.unwrap_or(Type::Any),
+                    None if tolerant => Type::Any,
                     None => {
                         // The class table lists this class's fields exactly, so
                         // a name that is not among them cannot be read off an
@@ -885,6 +898,7 @@ impl<'a> Checker<'a> {
                 }
             }
             ExprKind::IndexAccess { object, index } => {
+                self.tolerant_access = tolerant;
                 self.check_expr(object);
                 self.check_expr(index);
                 Type::Any
@@ -1230,6 +1244,23 @@ mod tests {
             .into_iter()
             .map(|d| d.message)
             .collect()
+    }
+
+    /// A class field that is not declared warns on a plain read — but not when
+    /// the read is the left side of `??`, which explicitly asks to tolerate the
+    /// field being absent (and compiles to the tolerant `GetFieldOpt`).
+    #[test]
+    fn coalesced_missing_class_field_does_not_warn() {
+        let cls = "class B\n  x: int\nend\n";
+        let w = warns(&format!("{cls}let b = B(1)\nlet y = b.nosuch"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("has no field"), "{w:?}");
+
+        assert!(warns(&format!("{cls}let b = B(1)\nlet y = b.nosuch ?? 0")).is_empty());
+        assert!(warns(&format!("{cls}let b = B(1)\nlet y = b.nosuch.deeper ?? 0")).is_empty());
+        // Only the left side is tolerant.
+        let w = warns(&format!("{cls}let b = B(1)\nlet y = 0 ?? b.nosuch"));
+        assert_eq!(w.len(), 1, "{w:?}");
     }
 
     #[test]

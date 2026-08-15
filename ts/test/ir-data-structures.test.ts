@@ -55,6 +55,30 @@ describe("field access", () => {
     expect(gets[0].inputs).toHaveLength(1);
   });
 
+  it("emits GetFieldOpt for the access spine on the left of ??", () => {
+    // `??` explicitly tolerates the field being absent, so its left side
+    // compiles to the tolerant read — the whole spine, so a missing link
+    // partway down does not abort before the coalesce runs.
+    const ir = showIrJson('let r = { x: 1 }\nlet v = r.a.b ?? 0');
+    expect(termsByOp(ir, "GetFieldOpt")).toHaveLength(2);
+    expect(termsByOp(ir, "GetField")).toHaveLength(0);
+    // A plain read keeps the hard op.
+    const plain = showIrJson('let r = { x: 1 }\nlet v = r.x');
+    expect(termsByOp(plain, "GetFieldOpt")).toHaveLength(0);
+  });
+
+  it("reads a field the record does not have when ?? supplies a fallback", () => {
+    expect(runPetal('let r = { a: 1 }\nprint(r.fragment ?? "none")')).toBe(
+      "none",
+    );
+    expect(runPetal('let r = { a: 1 }\nprint(r["fragment"] ?? "none")')).toBe(
+      "none",
+    );
+    expect(runPetal('let r = { a: 1 }\nprint(field(r, "zz", 7), has_field(r, "a"))')).toBe(
+      "7 true",
+    );
+  });
+
   it("emits SetField for field assignment", () => {
     const ir = showIrJson('let r = { x: 1 }\nr.x = 2');
     const sets = termsByOp(ir, "SetField");

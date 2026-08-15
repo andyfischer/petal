@@ -1235,7 +1235,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 295
+        "line": 290
       }
     },
     {
@@ -1247,7 +1247,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 295
+        "line": 290
       },
       "aliasOf": "map"
     },
@@ -1260,7 +1260,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 295
+        "line": 290
       },
       "aliasOf": "map"
     },
@@ -1273,7 +1273,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 295
+        "line": 290
       },
       "aliasOf": "map"
     },
@@ -1823,7 +1823,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 295
+        "line": 290
       },
       "aliasOf": "map"
     },
@@ -1869,7 +1869,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 89
+        "line": 93
       }
     },
     {
@@ -1890,7 +1890,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 109
+        "line": 113
       }
     },
     {
@@ -1902,7 +1902,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 177
+        "line": 181
       }
     },
     {
@@ -1914,7 +1914,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 181
+        "line": 185
       }
     },
     {
@@ -1931,7 +1931,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 265
+        "line": 269
       }
     },
     {
@@ -2230,6 +2230,52 @@
       }
     },
     {
+      "name": "has_field",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "rec",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 109
+      }
+    },
+    {
+      "name": "field",
+      "category": "std",
+      "group": "prelude",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "rec",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        },
+        {
+          "name": "fallback",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/prelude/std.ptl",
+        "line": 116
+      }
+    },
+    {
       "name": "clamp01",
       "category": "std",
       "group": "prelude",
@@ -2243,7 +2289,7 @@
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
-        "line": 103
+        "line": 123
       }
     },
     {

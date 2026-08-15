@@ -260,9 +260,14 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, v);
             }
 
-            Inst::GetField { dst, obj, field } => {
+            Inst::GetField {
+                dst,
+                obj,
+                field,
+                opt,
+            } => {
                 let base = self.reg(fi, *obj);
-                let v = ops::get_field(self.program, self.heap, *field, base)?;
+                let v = ops::get_field(self.program, self.heap, *field, base, *opt)?;
                 // Absorption gates on the BASE: `pending.field` yields that same
                 // Pending. A resolved record that merely holds a Pending field is
                 // element-wise (not an absorption), so the result value can't be
@@ -285,9 +290,9 @@ impl<'a> Vm<'a> {
                 )?;
                 self.set(fi, *dst, v);
             }
-            Inst::GetIndex { dst, obj, idx } => {
+            Inst::GetIndex { dst, obj, idx, opt } => {
                 let base = self.reg(fi, *obj);
-                let v = ops::get_index(self.heap, base, self.reg(fi, *idx))?;
+                let v = ops::get_index(self.heap, base, self.reg(fi, *idx), *opt)?;
                 // Absorption gates on the BASE (`pending[i]` is that Pending); a
                 // resolved collection holding a Pending element is element-wise.
                 // A Pending *index* is a hard error above and never reaches here.

@@ -185,8 +185,10 @@ fn format_op(op: &TermOp) -> String {
             format!("AllocMapSpread({})", parts.join(", "))
         }
         TermOp::GetField(cid) => format!("GetField(c{})", cid.0),
+        TermOp::GetFieldOpt(cid) => format!("GetFieldOpt(c{})", cid.0),
         TermOp::SetField(cid) => format!("SetField(c{})", cid.0),
         TermOp::GetIndex => "GetIndex".into(),
+        TermOp::GetIndexOpt => "GetIndexOpt".into(),
         TermOp::SetIndex => "SetIndex".into(),
         TermOp::MakeEnumVariant(cid) => format!("MakeEnumVariant(c{})", cid.0),
         TermOp::MethodCall { name, hint } => match hint {

@@ -547,6 +547,28 @@ Returns a list of all values from a record.
 values({a: 1, b: 2})   // [1, 2]
 ```
 
+### `field(record, key, fallback)`
+
+Reads `record[key]`, or `fallback` when the record does not carry that key (or
+carries it as nil). The named spelling of `record[key] ?? fallback`, for when
+the key is computed. A *bare* `record.missing` is still a hard error — see
+[Ragged records](language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
+
+```petal
+field({a: 1}, "a", 7)    // 1
+field({a: 1}, "zz", 7)   // 7
+```
+
+### `has_field(record, key)`
+
+Whether the record carries `key` at all — the one question `??` cannot answer,
+since a key present with a nil value coalesces just like an absent one.
+
+```petal
+has_field({a: nil}, "a")   // true
+has_field({a: 1}, "zz")    // false
+```
+
 ### `contains(collection, needle)`
 
 Checks if a list contains a value or a string contains a substring.

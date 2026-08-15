@@ -1846,3 +1846,78 @@ fn lowering_reports_cross_function_term_reference_as_error() {
         "unexpected lowering error message: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Ragged records: `??` tolerates an absent field, a bare read does not
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coalesce_tolerates_a_missing_field() {
+    let all = OptFlags::all();
+    // The reported shape: ragged JSON where the key is simply not there.
+    assert_eq!(run(r#"{a: 1}.fragment ?? "none""#, all).unwrap().0, "none");
+    assert_eq!(
+        run(r#"{a: 1}["fragment"] ?? "none""#, all).unwrap().0,
+        "none"
+    );
+    // A key that *is* there still wins, and a present-but-nil key still
+    // coalesces (that is what `??` has always meant).
+    assert_eq!(run(r#"{a: 1}.a ?? "none""#, all).unwrap().0, "1");
+    assert_eq!(run(r#"{a: nil}.a ?? "none""#, all).unwrap().0, "none");
+    // The whole access spine is tolerant, so an absent link mid-chain does not
+    // abort before the `??` can run.
+    assert_eq!(run(r#"{a: {b: 1}}.x.b ?? "d""#, all).unwrap().0, "d");
+    assert_eq!(run(r#"{a: {b: 1}}.a.b ?? "d""#, all).unwrap().0, "1");
+    assert_eq!(run(r#"{a: {b: 1}}["x"]["b"] ?? "d""#, all).unwrap().0, "d");
+    // The plain forms are untouched.
+    assert_eq!(run(r#"nil ?? "d""#, all).unwrap().0, "d");
+    assert_eq!(run(r#"7 ?? "d""#, all).unwrap().0, "7");
+
+    for code in [
+        r#"{a: 1}.fragment ?? "none""#,
+        r#"{a: {b: 1}}.x.b ?? "d""#,
+        r#"{a: 1}["fragment"] ?? "none""#,
+    ] {
+        assert_parity(code);
+    }
+}
+
+#[test]
+fn a_bare_missing_field_is_still_an_error() {
+    let all = OptFlags::all();
+    // Absence is tolerated only where the program asked for it. A typo in a
+    // plain read must still be loud.
+    assert!(
+        run("{a: 1}.fragment", all)
+            .unwrap_err()
+            .contains("No field")
+    );
+    assert!(run(r#"{a: 1}["z"]"#, all).unwrap_err().contains("No key"));
+    // A wrong-typed base is a bug, not ragged data — `??` does not soften it.
+    assert!(
+        run(
+            r#"let x = 3
+x.field ?? "d""#,
+            all
+        )
+        .unwrap_err()
+        .contains("Cannot access field")
+    );
+    // Nor does it soften an out-of-bounds list index: a list has no ragged keys.
+    assert!(
+        run(r#"[1, 2][9] ?? "d""#, all)
+            .unwrap_err()
+            .contains("out of bounds")
+    );
+}
+
+#[test]
+fn prelude_field_helpers_read_ragged_records() {
+    let all = OptFlags::all();
+    assert_eq!(run(r#"field({a: 1}, "zz", 7)"#, all).unwrap().0, "7");
+    assert_eq!(run(r#"field({a: 1}, "a", 7)"#, all).unwrap().0, "1");
+    assert_eq!(run(r#"has_field({a: 1}, "a")"#, all).unwrap().0, "true");
+    assert_eq!(run(r#"has_field({a: 1}, "zz")"#, all).unwrap().0, "false");
+    // `has_field` is the one that can see a key whose value is nil.
+    assert_eq!(run(r#"has_field({a: nil}, "a")"#, all).unwrap().0, "true");
+}

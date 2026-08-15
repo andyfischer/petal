@@ -209,10 +209,19 @@ pub enum TermOp {
     },
     /// Read a field: inputs=[object], field name as constant
     GetField(ConstantId),
+    /// Tolerant field read: like [`TermOp::GetField`], but a record/class that
+    /// lacks the field — or a Nil object — yields Nil instead of erroring. Only
+    /// emitted where the program explicitly asked for absence-tolerance (the
+    /// left side of `??`); a wrong-typed object is still a hard error.
+    GetFieldOpt(ConstantId),
     /// Write a field: inputs=[object, value]
     SetField(ConstantId),
     /// Read by index: inputs=[object, index]
     GetIndex,
+    /// Tolerant index read: the [`TermOp::GetIndex`] counterpart of
+    /// [`TermOp::GetFieldOpt`] — a missing record key or a Nil object yields
+    /// Nil. A list index out of bounds still errors.
+    GetIndexOpt,
     /// Write by index: inputs=[object, index, value]
     SetIndex,
 
@@ -244,6 +253,7 @@ impl TermOp {
             TermOp::Constant(c)
             | TermOp::Error(c)
             | TermOp::GetField(c)
+            | TermOp::GetFieldOpt(c)
             | TermOp::SetField(c)
             | TermOp::BuiltinCall(c)
             | TermOp::MakeEnumVariant(c) => vec![*c],

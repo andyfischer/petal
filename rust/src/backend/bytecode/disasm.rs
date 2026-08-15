@@ -215,7 +215,18 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 reglist(fields)
             )
         }
-        GetField { dst, obj, field } => format!("r{} = r{}.{}", dst, obj, kconst(program, *field)),
+        GetField {
+            dst,
+            obj,
+            field,
+            opt,
+        } => format!(
+            "r{} = r{}{}{}",
+            dst,
+            obj,
+            if *opt { "?." } else { "." },
+            kconst(program, *field)
+        ),
         SetField {
             dst,
             obj,
@@ -230,7 +241,15 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 val
             )
         }
-        GetIndex { dst, obj, idx } => format!("r{} = r{}[r{}]", dst, obj, idx),
+        GetIndex { dst, obj, idx, opt } => {
+            format!(
+                "r{} = r{}{}[r{}]",
+                dst,
+                obj,
+                if *opt { "?" } else { "" },
+                idx
+            )
+        }
         SetIndex { dst, obj, idx, val } => {
             format!("r{} = set r{}[r{}] = r{}", dst, obj, idx, val)
         }

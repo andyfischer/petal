@@ -458,15 +458,17 @@ export let theme = {
   selection: #2c4a7a
 }
 
+// Field `key` of `rec`, or `fallback` when the record does not carry it. The
+// whole reason a style record can be partial. This is `std`'s `field`, which
+// programs can call directly — a module's body does not see the implicit
+// prelude import, so the ui prelude spells it locally.
+fn _get(rec, key, fallback)
+  rec[key] ?? fallback
+end
+
 // The keys a theme carries, in order. Used to merge a partial theme onto the
 // current one without a generic record-merge builtin.
 let _THEME_KEYS = ["bg", "panel", "text", "dim", "accent", "outline", "hover", "selection"]
-
-// Field `key` of `rec`, or `fallback` when the record does not carry it. The
-// whole reason a style record can be partial.
-fn _get(rec, key, fallback)
-  if contains(keys(rec), key) then rec[key] else fallback end
-end
 
 // The single module state slot holding the live palette. `writing` is the write
 // port: one function so there is exactly one `state` declaration, i.e. exactly

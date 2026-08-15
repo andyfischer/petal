@@ -927,7 +927,7 @@ a typo'd field name should fail where it is written, not silently read as nil.
 
 ```petal
 let el = {tag: "p"}
-print(el.fragment)     // error: No field 'fragment' on record
+print(el.fragment)     // error (No field 'fragment' on record)
 ```
 
 Data that is legitimately ragged — decoded JSON, a partial style record — says
@@ -954,8 +954,8 @@ operator:
 
 ```petal
 let n = 3
-print(n.width ?? 800)           // error: Cannot access field 'width' on int
-print([1, 2][9] ?? 0)           // error: Index 9 out of bounds (len 2)
+print(n.width ?? 800)           // error (Cannot access field 'width' on int)
+print([1, 2][9] ?? 0)           // error (Index 9 out of bounds)
 ```
 
 When the key is computed, the prelude spells the same rule as a function —

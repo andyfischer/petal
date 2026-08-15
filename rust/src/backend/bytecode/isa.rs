@@ -286,6 +286,9 @@ pub enum Inst {
         dst: Reg,
         obj: Reg,
         field: ConstantId,
+        /// Absence-tolerant read: a record without the field, or a Nil object,
+        /// yields Nil instead of erroring. Set only for `TermOp::GetFieldOpt`.
+        opt: bool,
     },
     SetField {
         dst: Reg,
@@ -297,6 +300,8 @@ pub enum Inst {
         dst: Reg,
         obj: Reg,
         idx: Reg,
+        /// Absence-tolerant read — see [`Inst::GetField`]'s `opt`.
+        opt: bool,
     },
     SetIndex {
         dst: Reg,
@@ -917,7 +922,8 @@ mod opcode_tests {
             Inst::GetIndex {
                 dst: 0,
                 obj: 1,
-                idx: 2
+                idx: 2,
+                opt: false
             }
             .opcode(),
             Opcode::GetIndex

@@ -507,16 +507,28 @@ pub fn make_enum_variant(
 // ---------------------------------------------------------------------------
 
 /// Field access on records, elements, lists/strings (`.length`), and vec2.
+///
+/// `opt` is the absence-tolerant form (`TermOp::GetFieldOpt`, the left side of
+/// `??`): a record or class instance that does not carry the field, and a Nil
+/// object, yield `Nil` rather than an error. Everything else is unchanged — an
+/// object of the wrong type is still a hard error, because that is a bug in the
+/// program rather than a missing key in ragged data.
 pub fn get_field(
     program: &Program,
     heap: &Heap,
     field_cid: ConstantId,
     obj: Value,
+    opt: bool,
 ) -> Result<Value, String> {
     // Pending base absorbs: `pending.name` is the same Pending, regardless of
     // which field is requested (the object isn't there yet to have fields).
     if let Value::Pending(_) = obj {
         return Ok(obj);
+    }
+    // A tolerant read walks off the end of a chain quietly: once one link is
+    // absent, `a.b.c ?? d` asks the rest of the spine for nothing.
+    if opt && matches!(obj, Value::Nil) {
+        return Ok(Value::Nil);
     }
     let field_name = match program.get_string_constant(field_cid) {
         Some(s) => s,
@@ -525,6 +537,7 @@ pub fn get_field(
     let val = match obj {
         Value::Map(map_id) => match heap.get_map(map_id).get(field_name).copied() {
             Some(v) => v,
+            None if opt => Value::Nil,
             // Name the class when the instance carries one — a class declares
             // its fields, so "on class B" tells the reader exactly which
             // declaration to go and read.
@@ -618,12 +631,19 @@ fn set_field_impl(
 
 /// `obj[idx]` on lists (negative indices count from the end), f64 arrays, and
 /// records (string key).
-pub fn get_index(heap: &Heap, obj: Value, idx: Value) -> Result<Value, String> {
+///
+/// `opt` is the absence-tolerant form — see [`get_field`]. It softens a missing
+/// *record key* and a Nil object only; a list index out of bounds stays an
+/// error, since a list has no notion of a ragged key.
+pub fn get_index(heap: &Heap, obj: Value, idx: Value, opt: bool) -> Result<Value, String> {
     // Pending base absorbs: `pending[i]` is the same Pending. (A resolved
     // collection *containing* a Pending is element-wise — a later chunk — so
     // only the base is handled here, not a Pending index.)
     if let Value::Pending(_) = obj {
         return Ok(obj);
+    }
+    if opt && matches!(obj, Value::Nil) {
+        return Ok(Value::Nil);
     }
     match (obj, idx) {
         (Value::List(list_id), Value::Int(i)) => {
@@ -654,6 +674,7 @@ pub fn get_index(heap: &Heap, obj: Value, idx: Value) -> Result<Value, String> {
             let key = heap.get_string(key_id).to_string();
             match heap.get_map(map_id).get(&key).copied() {
                 Some(v) => Ok(v),
+                None if opt => Ok(Value::Nil),
                 None => Err(format!("No key '{}' on record", key)),
             }
         }

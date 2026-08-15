@@ -526,8 +526,12 @@ impl<'p> Analysis<'p> {
         let term = self.program.get_term(user);
         let here = self.exec_index.get(&user).copied();
         match &term.op {
-            TermOp::GetField(_) if term.inputs.first() == Some(&observed) => here,
-            TermOp::GetIndex
+            TermOp::GetField(_) | TermOp::GetFieldOpt(_)
+                if term.inputs.first() == Some(&observed) =>
+            {
+                here
+            }
+            TermOp::GetIndex | TermOp::GetIndexOpt
                 if term.inputs.first() == Some(&observed)
                     && term.inputs.get(1) != Some(&observed) =>
             {

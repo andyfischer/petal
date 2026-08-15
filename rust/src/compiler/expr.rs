@@ -751,10 +751,42 @@ impl Compiler {
         tid
     }
 
+    /// Compile the left side of `??` in absence-tolerant mode: every link of a
+    /// *field/index access spine* reads with the `Opt` op, so a record that
+    /// simply does not carry the key produces `Nil` — which is exactly what the
+    /// `??` then coalesces — instead of aborting the frame before the
+    /// `Coalesce` term can run.
+    ///
+    /// Only the access spine is softened, and only under a `??`. A bare
+    /// `rec.missing` keeps its hard error, as does a wrong-typed base (`3.x`)
+    /// and an out-of-bounds list index, on either side of the operator. So
+    /// `ragged.maybe ?? "default"` works, while a typo'd `rec.filed` still
+    /// fails loudly unless the author writes the `??` that asks for tolerance.
+    fn compile_expr_optional(&mut self, expr: &Expr) -> TermId {
+        match &expr.kind {
+            ExprKind::FieldAccess { object, field } => {
+                // A module member is a static resolution, not a record read.
+                if let Some(tid) = self.try_module_member(object, field) {
+                    return tid;
+                }
+                let obj_tid = self.compile_expr_optional(object);
+                let field_const = self.constants.intern(ConstantValue::String(field.clone()));
+                self.emit_term(TermOp::GetFieldOpt(field_const), smallvec![obj_tid], None)
+            }
+            ExprKind::IndexAccess { object, index } => {
+                let obj_tid = self.compile_expr_optional(object);
+                let idx_tid = self.compile_expr(index);
+                self.emit_term(TermOp::GetIndexOpt, smallvec![obj_tid, idx_tid], None)
+            }
+            _ => self.compile_expr(expr),
+        }
+    }
+
     /// Compile `x ?? y`: the RHS lives in a child block that only runs when the
-    /// LHS is absent (`Nil` or `Pending`). Mirrors [`compile_short_circuit`].
+    /// LHS is absent (`Nil`, `Pending`, or — via [`compile_expr_optional`] — a
+    /// record field that is not there at all). Mirrors [`compile_short_circuit`].
     fn compile_coalesce(&mut self, left: &Expr, right: &Expr) -> TermId {
-        let left_tid = self.compile_expr(left);
+        let left_tid = self.compile_expr_optional(left);
         let rhs_block = self.new_block(None);
 
         // Compile RHS in its own block

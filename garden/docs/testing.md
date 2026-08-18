@@ -115,14 +115,42 @@ registry/close-vs-quit logic is unit-tested in `frontend::registry` and
 `app::tests` (the lib+bin split exists so this logic is reachable without a
 real event loop); the N-window lifecycle needs this real windowed harness.
 
+### Headless apps clean up after themselves
+
+A headless app has no window to close and no terminal to be killed with, so a
+run whose launcher dies keeps going and holds its debug port until the machine
+reboots. Garden exits by itself when it is reparented to pid 1, which covers the
+ordinary hard-killed harness — but *not* a launcher that exited before that pid
+could be sampled (`sh -c 'garden --headless … &'` is enough to hit it), which
+leaves a run that looks exactly like a deliberately detached one.
+
+So the harness sets an idle timeout on every launch:
+`launchGarden` passes `GARDEN_HEADLESS_IDLE_TIMEOUT` (see
+`IDLE_TIMEOUT_SECONDS` in `tools/lib/app.ts`), and the app shuts down after that
+long with no debug request. It is off by default in the binary — a session
+nobody is poking is not necessarily abandoned — and on here because a test run
+polls several times a second, so silence means the run is over.
+
+**Launching headless outside the harness — an exploratory session, a one-off
+script — set it yourself:**
+
+```bash
+GARDEN_HEADLESS_IDLE_TIMEOUT=1800 garden --headless --debug-port 8080 &
+```
+
+Before assuming a test hangs, check for leftovers from earlier runs:
+`ps -eo pid,ppid,command | grep '[g]arden --headless'` — anything with a ppid of
+1 is an orphan, and its port is not the one your new run is on.
+
 ## Layer 3 — Exploratory (manual, via the debug server)
 
 Ad-hoc verification while developing — not saved as repeatable tests. Launch the
-app with `--debug-port <n>` and poke at it; see `docs/debug-server.md` for the full
-protocol and `CLAUDE.md` for the agent-driven recipe (drive input, read
-`/state`, capture `/screenshot`). When this surfaces a bug, fix it *and* add a
-unit or integration test so the bug can't come back — that closes the gap rather
-than just the symptom.
+app with `--debug-port <n>` and poke at it (with
+`GARDEN_HEADLESS_IDLE_TIMEOUT` set, per above, if it is headless); see
+`docs/debug-server.md` for the full protocol and `CLAUDE.md` for the
+agent-driven recipe (drive input, read `/state`, capture `/screenshot`). When
+this surfaces a bug, fix it *and* add a unit or integration test so the bug
+can't come back — that closes the gap rather than just the symptom.
 
 ## Adding coverage
 

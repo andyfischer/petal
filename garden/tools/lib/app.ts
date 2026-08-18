@@ -34,7 +34,13 @@ export interface LaunchOptions {
   cwd?: string;
   /** Where to tee the app's stdout+stderr; the port is read back out of it. */
   logPath: string;
-  /** Extra environment for the app (e.g. a redirected HOME). */
+  /**
+   * Extra environment for the app (e.g. a redirected HOME). Replaces the
+   * inherited environment rather than adding to it, so a caller that sets this
+   * usually spreads `process.env` into it. `GARDEN_HEADLESS_IDLE_TIMEOUT` is
+   * added underneath either way (see [`IDLE_TIMEOUT_SECONDS`]) and can be
+   * overridden here.
+   */
   env?: NodeJS.ProcessEnv;
   /** Binary to run; defaults to the debug `garden`. */
   bin?: string;
@@ -62,6 +68,20 @@ export interface LaunchedApp {
 }
 
 /**
+ * How long a test's app may sit without a debug request before it shuts itself
+ * down (`GARDEN_HEADLESS_IDLE_TIMEOUT`, seconds).
+ *
+ * Every launch here gets it, and `kill()` below is the normal way a test's app
+ * dies — this is for the runs where that never happens: a `kill -9`'d test, a
+ * crashed harness, an agent session that goes away mid-run. Garden's own orphan
+ * check handles most of those, but not a launcher that exits before its pid can
+ * be sampled, which leaves a headless app holding a port forever. Generous
+ * enough that no real test comes near it (they poll several times a second),
+ * short enough that an abandoned one is gone within the hour.
+ */
+const IDLE_TIMEOUT_SECONDS = 600;
+
+/**
  * Launch Garden with its debug server on a free port and wait for it to answer.
  *
  * The port is chosen by the OS (`--debug-port 0`), so it is discovered from the
@@ -72,7 +92,10 @@ export async function launchGarden(opts: LaunchOptions): Promise<LaunchedApp> {
   const log = openSync(opts.logPath, "w");
   const child = spawn(bin, [...opts.args, "--debug-port", "0"], {
     cwd: opts.cwd,
-    env: opts.env ?? process.env,
+    env: {
+      GARDEN_HEADLESS_IDLE_TIMEOUT: String(IDLE_TIMEOUT_SECONDS),
+      ...(opts.env ?? process.env),
+    },
     stdio: ["ignore", log, log],
   });
   child.on("error", (e) => die(`could not launch ${bin}: ${e.message}`));

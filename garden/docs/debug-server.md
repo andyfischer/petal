@@ -59,12 +59,15 @@ stray `garden --headless` on a dev box has come from:
   *already* parented to pid 1 at startup — a supervisor, `nohup` — is not
   watched, so it is never mistaken for an orphan. `GARDEN_HEADLESS_KEEP_ORPHAN=1`
   turns the check off.
-- **Idle.** No debug request for 30 minutes ends the session, logging
-  `headless idle with no debug requests; shutting down`. Nothing but the debug
-  server can reach a headless run, so silence that long means nobody is driving
-  it. This is the backstop for a launcher that exited *before* its pid could be
-  sampled. `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>` changes the window; `0`
-  disables it, for a run that is meant to sit idle.
+- **Idle — opt in.** `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>` ends the session
+  after that long with no debug request, logging `headless idle with no debug
+  requests; shutting down`. Unset (or `0`) means no timeout, so a session parked
+  under a supervisor or one you come back to after a long detour is never reaped
+  out from under you. Turn it on for the case the orphan check cannot see: a
+  launcher that exited *before* its pid could be sampled leaves a run already
+  parented to pid 1, which is indistinguishable from a deliberately detached
+  one. The test harness sets it on every launch — see
+  [testing.md](testing.md#headless-apps-clean-up-after-themselves).
 
 Neither applies to the windowed or terminal frontends, which a user can see and
 close.

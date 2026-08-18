@@ -10,15 +10,18 @@
 //! surface-less [`HeadlessRenderer`] is created lazily on the first request
 //! and renders the scene offscreen.
 //!
-//! A headless run also stops on its own two ways, because it has no window to
-//! close and no terminal to be killed with: when it is **orphaned**
-//! ([`orphaned`]) and when it has been **idle** too long ([`IDLE_TIMEOUT`]).
-//! Without them a session whose launcher died — an agent's test script, a
-//! hard-killed shell — keeps running and holding its debug port for the life of
-//! the machine. That is not hypothetical: it is where every stray
-//! `garden --headless` on a dev box has come from. The two cover each other:
-//! the orphan check is immediate but can miss a launcher that exited before the
-//! parent pid was sampled, and the idle timeout catches whatever it misses.
+//! A headless run also stops on its own when it is **orphaned**
+//! ([`orphaned`]), because it has no window to close and no terminal to be
+//! killed with: without that, a session whose launcher died — an agent's test
+//! script, a hard-killed shell — keeps running and holding its debug port for
+//! the life of the machine. That is not hypothetical: it is where every stray
+//! `garden --headless` on a dev box has come from.
+//!
+//! The orphan check misses one case: a launcher that exited *before* the parent
+//! pid could be sampled leaves a run that was already parented to pid 1, which
+//! is indistinguishable from a deliberately detached one. The opt-in idle
+//! timeout ([`idle_timeout`]) covers it, and the test harness turns it on for
+//! every headless launch — see `docs/testing.md`.
 
 use std::sync::mpsc;
 
@@ -55,20 +58,21 @@ fn viewport_size() -> (f32, f32) {
 }
 
 /// How long a headless session may go without a single debug request before it
-/// shuts itself down. Nothing can reach a headless run except the debug server,
-/// so silence this long means nobody is driving it: an integration test polls
-/// several times a second, and an agent session that has gone quiet for half an
-/// hour has moved on. `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>` overrides it, and
-/// `0` disables the timeout for a run that is meant to sit idle.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-
-/// [`IDLE_TIMEOUT`], or what `GARDEN_HEADLESS_IDLE_TIMEOUT` asks for. `None`
-/// disables the check. A malformed value is ignored with a warning rather than
-/// failing the launch, matching [`viewport_size`].
+/// shuts itself down — **off unless `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>`
+/// asks for it** (`0` is also off).
+///
+/// Opt-in rather than on by default because "idle" is not by itself evidence of
+/// abandonment: a session parked under a supervisor, or one an agent comes back
+/// to after a long detour, is doing nothing wrong, and a default that reaped it
+/// would be a surprise nobody asked for. Where abandonment *is* the likely
+/// reading — a test run, which polls several times a second and has a known
+/// runtime — the harness sets it (`tools/lib/app.ts`), which is what closes the
+/// gap the orphan check leaves.
+///
+/// A malformed value is ignored with a warning rather than failing the launch,
+/// matching [`viewport_size`].
 fn idle_timeout() -> Option<Duration> {
-    let Some(spec) = std::env::var_os("GARDEN_HEADLESS_IDLE_TIMEOUT") else {
-        return Some(IDLE_TIMEOUT);
-    };
+    let spec = std::env::var_os("GARDEN_HEADLESS_IDLE_TIMEOUT")?;
     match spec.to_string_lossy().trim().parse::<u64>() {
         Ok(0) => None,
         Ok(secs) => Some(Duration::from_secs(secs)),
@@ -77,7 +81,7 @@ fn idle_timeout() -> Option<Duration> {
                 "garden: ignoring malformed GARDEN_HEADLESS_IDLE_TIMEOUT={} (want whole seconds)",
                 spec.to_string_lossy()
             );
-            Some(IDLE_TIMEOUT)
+            None
         }
     }
 }
@@ -219,10 +223,10 @@ impl Frontend for HeadlessFrontend {
                 eprintln!("garden: headless launcher exited; shutting down");
                 break;
             }
-            // The backstop for a launcher that was already gone when
-            // `orphan_watch` sampled, and for one that lives on having forgotten
-            // this child: nothing has asked this session for anything in a long
-            // time, so nobody is driving it.
+            // Opt-in only (see `idle_timeout`): the backstop for a launcher
+            // that was already gone when `orphan_watch` sampled. Nothing has
+            // asked this session for anything in a long time, so nobody is
+            // driving it.
             if idle_timeout.is_some_and(|limit| last_request.elapsed() >= limit) {
                 eprintln!("garden: headless idle with no debug requests; shutting down");
                 break;

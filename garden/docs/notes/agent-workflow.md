@@ -10,6 +10,22 @@ osascript or screen-recording permission needed. The same endpoints exist in
 windowed mode, but there real input interleaves with injected input — re-read
 `/state` after acting instead of assuming earlier state holds.
 
+**Launch it with an idle timeout, and kill it when you are done:**
+
+```bash
+GARDEN_HEADLESS_IDLE_TIMEOUT=1800 garden --headless --debug-port 8080 &
+```
+
+A headless app has no window and no terminal, so one you forget about — or one
+whose session is killed out from under it — keeps running and holding its port
+indefinitely. Garden exits when it is reparented to pid 1, which catches most of
+it, but not a launcher that exited before that pid could be sampled (backgrounding
+from a `sh -c` is enough), so the timeout is the backstop. It is off by default,
+because an idle session is not necessarily an abandoned one. `ps -eo
+pid,ppid,command | grep '[g]arden --headless'` lists what is still up; a ppid of
+1 means nobody owns it. The test harness sets the timeout for you
+(`tools/lib/app.ts`).
+
 Layered strategy (what is unit-tested vs. driven end-to-end) is in
 `../testing.md`. The pure modules listed there must stay unit-tested.
 

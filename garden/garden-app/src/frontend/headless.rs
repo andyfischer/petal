@@ -9,10 +9,22 @@
 //! math matches the windowed frontend exactly. `/screenshot` works too: a
 //! surface-less [`HeadlessRenderer`] is created lazily on the first request
 //! and renders the scene offscreen.
+//!
+//! A headless run also stops on its own two ways, because it has no window to
+//! close and no terminal to be killed with: when it is **orphaned**
+//! ([`orphaned`]) and when it has been **idle** too long ([`IDLE_TIMEOUT`]).
+//! Without them a session whose launcher died — an agent's test script, a
+//! hard-killed shell — keeps running and holding its debug port for the life of
+//! the machine. That is not hypothetical: it is where every stray
+//! `garden --headless` on a dev box has come from. The two cover each other:
+//! the orphan check is immediate but can miss a launcher that exited before the
+//! parent pid was sampled, and the idle timeout catches whatever it misses.
 
 use std::sync::mpsc;
 
 use garden_render::HeadlessRenderer;
+
+use std::time::{Duration, Instant};
 
 use crate::app::{App, Viewport};
 use crate::clipboard::SystemClipboard;
@@ -40,6 +52,71 @@ fn viewport_size() -> (f32, f32) {
             SIZE
         }
     }
+}
+
+/// How long a headless session may go without a single debug request before it
+/// shuts itself down. Nothing can reach a headless run except the debug server,
+/// so silence this long means nobody is driving it: an integration test polls
+/// several times a second, and an agent session that has gone quiet for half an
+/// hour has moved on. `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>` overrides it, and
+/// `0` disables the timeout for a run that is meant to sit idle.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// [`IDLE_TIMEOUT`], or what `GARDEN_HEADLESS_IDLE_TIMEOUT` asks for. `None`
+/// disables the check. A malformed value is ignored with a warning rather than
+/// failing the launch, matching [`viewport_size`].
+fn idle_timeout() -> Option<Duration> {
+    let Some(spec) = std::env::var_os("GARDEN_HEADLESS_IDLE_TIMEOUT") else {
+        return Some(IDLE_TIMEOUT);
+    };
+    match spec.to_string_lossy().trim().parse::<u64>() {
+        Ok(0) => None,
+        Ok(secs) => Some(Duration::from_secs(secs)),
+        Err(_) => {
+            eprintln!(
+                "garden: ignoring malformed GARDEN_HEADLESS_IDLE_TIMEOUT={} (want whole seconds)",
+                spec.to_string_lossy()
+            );
+            Some(IDLE_TIMEOUT)
+        }
+    }
+}
+
+/// The pid the process started under, sampled before the loop. Compared each
+/// poll against the current parent: on Unix a process whose parent exits is
+/// reparented to init (pid 1), which is the signal that the launcher is gone.
+///
+/// Sampled rather than assumed because a run that was *already* parented to
+/// pid 1 at startup (launched by a supervisor, `nohup`, a daemon) must not
+/// mistake its own normal state for an orphaning and exit immediately.
+///
+/// `GARDEN_HEADLESS_KEEP_ORPHAN=1` turns the check off, for the deliberate
+/// detached run that wants to outlive its launcher.
+#[cfg(unix)]
+fn orphan_watch() -> Option<u32> {
+    if std::env::var_os("GARDEN_HEADLESS_KEEP_ORPHAN").is_some() {
+        return None;
+    }
+    let parent = std::os::unix::process::parent_id();
+    (parent != 1).then_some(parent)
+}
+
+/// Whether the launcher recorded by [`orphan_watch`] has gone away.
+#[cfg(unix)]
+fn orphaned(watch: Option<u32>) -> bool {
+    watch.is_some() && std::os::unix::process::parent_id() == 1
+}
+
+/// No reparenting signal to watch for off Unix: the session runs until asked to
+/// quit, as it always did.
+#[cfg(not(unix))]
+fn orphan_watch() -> Option<u32> {
+    None
+}
+
+#[cfg(not(unix))]
+fn orphaned(_watch: Option<u32>) -> bool {
+    false
 }
 
 pub struct HeadlessFrontend;
@@ -87,9 +164,14 @@ impl Frontend for HeadlessFrontend {
         // screenshots, not the whole session.
         let mut renderer: Option<Result<HeadlessRenderer, String>> = None;
 
+        let orphan_watch = orphan_watch();
+        let idle_timeout = idle_timeout();
+        let mut last_request = Instant::now();
+
         loop {
             match rx.recv_timeout(RELOAD_POLL) {
                 Ok(request) => {
+                    last_request = Instant::now();
                     // Headless is a single window with the fixed ordinal 1; a
                     // `?window=<n>` selector for anything else has no target.
                     let result = match request.window {
@@ -128,6 +210,21 @@ impl Frontend for HeadlessFrontend {
             }
             // Headless is single-window: closing the window ends the process.
             if app.should_quit() || app.should_close() {
+                break;
+            }
+            // Nobody is left to drive this session or shut it down, so shut it
+            // down here rather than leaving a headless editor (and its GPP
+            // child processes) running forever on a stolen port.
+            if orphaned(orphan_watch) {
+                eprintln!("garden: headless launcher exited; shutting down");
+                break;
+            }
+            // The backstop for a launcher that was already gone when
+            // `orphan_watch` sampled, and for one that lives on having forgotten
+            // this child: nothing has asked this session for anything in a long
+            // time, so nobody is driving it.
+            if idle_timeout.is_some_and(|limit| last_request.elapsed() >= limit) {
+                eprintln!("garden: headless idle with no debug requests; shutting down");
                 break;
             }
         }

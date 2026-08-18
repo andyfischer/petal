@@ -46,6 +46,29 @@ screenshot — at another size, which is how a narrow/wide layout difference is
 reproduced without a real window. (A malformed value is ignored with a warning
 and the default is used.)
 
+### When a headless run stops by itself
+
+A headless session has no window to close and no terminal to be killed with, so
+it also ends on its own in two cases — otherwise a run whose launcher died sits
+there holding its debug port until the machine reboots, which is where every
+stray `garden --headless` on a dev box has come from:
+
+- **Orphaned.** The parent pid is sampled at startup; if the process is later
+  reparented to pid 1 (its launcher exited), it shuts down within one poll
+  (200 ms), logging `headless launcher exited; shutting down`. A run that was
+  *already* parented to pid 1 at startup — a supervisor, `nohup` — is not
+  watched, so it is never mistaken for an orphan. `GARDEN_HEADLESS_KEEP_ORPHAN=1`
+  turns the check off.
+- **Idle.** No debug request for 30 minutes ends the session, logging
+  `headless idle with no debug requests; shutting down`. Nothing but the debug
+  server can reach a headless run, so silence that long means nobody is driving
+  it. This is the backstop for a launcher that exited *before* its pid could be
+  sampled. `GARDEN_HEADLESS_IDLE_TIMEOUT=<seconds>` changes the window; `0`
+  disables it, for a run that is meant to sit idle.
+
+Neither applies to the windowed or terminal frontends, which a user can see and
+close.
+
 ## How it works
 
 A background thread accepts connections and parses each HTTP request into a

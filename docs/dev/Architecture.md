@@ -52,6 +52,7 @@ populates the trace buffer that the graph-level introspection reads. See
 | `classes.rs` | `ClassTable` — the compile-time registry of `class` declarations (fields, methods) and the built-in classes (`Rect`) |
 | `env/` | `Env` — owns programs, stacks, contexts: `run.rs`, `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `mod.rs` |
 | `execution_context.rs` | `ExecutionContext` — one isolated execution's mutable runtime bundle (heap + closure/output/host registries) |
+| `closure_table.rs` | `ClosureTable` — the collected home for runtime closures and overload sets; swept jointly with the heap |
 | `native_fn.rs` | Native function FFI (`NativeFnTable`, `PetalCxt`) |
 | `builtins/` | Built-in function implementations (io, math, collections, …) |
 | `handle.rs` | Handles — opaque references to host-owned foreign objects |
@@ -266,9 +267,25 @@ heap handles aliasing, and the GC handles reclamation.
 
 ### Heap & GC
 
-`Heap` is a mark-and-sweep garbage collector. Every 1024 allocations it
-sweeps; live values are found by walking all live stacks' registers
-plus the string-intern table. Reclaimed slots go onto a free list.
+`Heap` is a mark-and-sweep garbage collector. A collection is triggered by
+*work owed* rather than object count: each allocation charges its payload size
+plus a per-slot term, and a sweep runs once that reaches a budget the previous
+sweep sized from the live set (`should_collect`). Live values are found by
+walking all live stacks' registers plus the other roots — closure captures,
+host bindings, output buffers, the resource table, observations. Reclaimed
+slots go onto a free list.
+
+Closures and overload sets live *beside* the heap, in the context's
+`ClosureTable` (`closure_table.rs`), because the VM borrows the two disjointly
+— but they are collected with it. A `Value::Closure` inside a heap object can
+only be recorded, not followed, while the heap is being marked, so `mark_value`
+pushes it onto a *gray set*; `Env::collect_garbage` then alternates — drain the
+gray set, mark those table entries, feed their captures back through the heap —
+until a round turns up nothing new, and sweeps both stores. Until that table
+existed the two were append-only `Vec`s: a host that re-runs a program per
+frame (a Garden panel, a game loop) allocated a closure per `fn` declaration
+per frame forever, and since every capture was treated as a GC root, the dead
+closures pinned everything they had captured.
 
 Strings are interned on creation — `"hello"` returns the same `StringId`
 regardless of how many times it's constructed.

@@ -106,13 +106,8 @@ impl<'a> Vm<'a> {
     ) -> Result<(), String> {
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
-                let cid = calls::resolve_callable(
-                    self.program,
-                    self.closures,
-                    self.overload_sets,
-                    callable,
-                    args.len(),
-                )?;
+                let cid =
+                    calls::resolve_callable(self.program, self.closures, callable, args.len())?;
                 self.push_closure_frame(cid, args, Some(dst), call_site)?;
             }
             Value::NativeFunction(nid) => {
@@ -321,7 +316,7 @@ impl<'a> Vm<'a> {
     ) -> Result<(), String> {
         let bc = self.bc;
         let program = self.program;
-        let fn_id = self.closures[cid.0 as usize].function_id;
+        let fn_id = self.closures.closure(cid).function_id;
 
         let bcfn = bc.function(fn_id);
         let func = &program.functions[fn_id.0 as usize];
@@ -353,7 +348,7 @@ impl<'a> Vm<'a> {
             }
         }
         // Reborrowed (not cloned) — the frame is local, so nothing conflicts.
-        let captures = &self.closures[cid.0 as usize].captures;
+        let captures = &self.closures.closure(cid).captures;
         for (i, &creg) in bcfn.capture_regs.iter().enumerate() {
             if let (Some(slot), Some(cap)) = (frame.regs.get_mut(creg as usize), captures.get(i)) {
                 *slot = *cap;

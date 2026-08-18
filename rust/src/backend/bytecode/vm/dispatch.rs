@@ -8,7 +8,8 @@ use super::*;
 
 use super::super::isa::Inst;
 use crate::backend::{calls, ops};
-use crate::program::{ClosureId, TermOp};
+use crate::closure_table::ClosureTable;
+use crate::program::TermOp;
 use crate::stack::LoopKeyPart;
 
 impl<'a> Vm<'a> {
@@ -338,21 +339,21 @@ impl<'a> Vm<'a> {
             // --- calls / closures ---
             Inst::MakeClosure { dst, func, caps } => {
                 let captures = self.regs(fi, caps).into_vec();
-                let cid = ClosureId(self.closures.len() as u32);
-                self.closures.push(RuntimeClosure {
+                let closure = RuntimeClosure {
                     function_id: *func,
                     captures,
-                });
+                };
+                // Closures are collected with the heap but allocated outside
+                // it, so the budget has to be told about them by hand or a
+                // closure-churning program never triggers a collection.
+                self.heap
+                    .charge_external_alloc(ClosureTable::alloc_cost(&closure));
+                let cid = self.closures.alloc_closure(closure);
                 self.set(fi, *dst, Value::Closure(cid));
             }
             Inst::MakeOverloadSet { dst, closures } => {
                 let inputs = self.regs(fi, closures);
-                let v = calls::make_overload_set(
-                    self.program,
-                    self.closures,
-                    self.overload_sets,
-                    &inputs,
-                );
+                let v = calls::make_overload_set(self.program, self.closures, &inputs);
                 self.set(fi, *dst, v);
             }
             Inst::Call { dst, callee, args } => {

@@ -533,6 +533,14 @@ impl Env {
         &mut self.ctx_mut(ck).heap
     }
 
+    /// The default context's closures and overload sets — collected with the
+    /// heap (see [`ClosureTable`](crate::closure_table::ClosureTable)). Host
+    /// introspection: a per-frame embedder watches `closure_count()` to see
+    /// that re-running a program is not accumulating closures.
+    pub fn closures(&self) -> &crate::closure_table::ClosureTable {
+        &self.ctx(self.default_context).closures
+    }
+
     /// Heap of the context a specific stack is bound to. For a forked stack this
     /// is the fork's own heap — the one its state `Value` ids resolve against —
     /// not the default context's. Use this (not [`heap`](Self::heap)) to decode
@@ -695,7 +703,6 @@ impl Env {
         let ck = self.default_context;
         let ctx = self.ctx_mut(ck);
         ctx.closures.clear();
-        ctx.overload_sets.clear();
     }
 }
 
@@ -752,7 +759,7 @@ impl std::fmt::Debug for Env {
             .field("contexts", &self.contexts.len())
             .field(
                 "closures",
-                &default_ctx.map(|c| c.closures.len()).unwrap_or(0),
+                &default_ctx.map(|c| c.closures.closure_count()).unwrap_or(0),
             )
             .field(
                 "pending_output_lines",

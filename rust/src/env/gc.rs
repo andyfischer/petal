@@ -1,5 +1,13 @@
 //! Garbage collection: the mark-and-sweep cycle over one execution context's
-//! heap.
+//! heap *and* its [`ClosureTable`](crate::closure_table::ClosureTable).
+//!
+//! The two stores are marked jointly. A closure lives outside the heap but can
+//! be referenced from inside it (a record field, a list element), and its
+//! captures point back into the heap, so neither can be traced alone: marking a
+//! `Value::Closure` only records the id in the heap's *gray set*, and the loop
+//! below alternates — drain the gray set, mark those table entries, feed their
+//! captures back through the heap — until a round turns up nothing new. Only
+//! then is either store swept.
 //!
 //! Split out of `env/mod.rs`; see that module for the `Env` struct and core
 //! accessors. `collect_garbage` is `pub(super)` (rather than private) only so
@@ -30,12 +38,12 @@ impl Env {
             stack.gc_roots(|val| heap.mark_value(val));
         }
 
-        // 2. Closure captures
-        for closure in &ctx.closures {
-            for val in &closure.captures {
-                heap.mark_value(*val);
-            }
-        }
+        // 2. Closures are *not* roots. Every one reachable from a real root
+        //    gets marked by the fixpoint below, and the rest are garbage — this
+        //    is the whole point of the table: a host that re-runs a program per
+        //    frame creates a closure per `fn` declaration per frame, and
+        //    rooting them all pinned both the closures and everything they had
+        //    captured for the life of the process.
 
         // 3. Print output buffer holds Rust Strings, not heap values — nothing
         //    to mark. The per-symbol output buffers, however, hold heap-backed
@@ -72,7 +80,36 @@ impl Env {
             }
         }
 
-        // Sweep phase
+        // Joint fixpoint: follow every closure/overload set marking ran into,
+        // marking their captures back into the heap (which may turn up more of
+        // them), until a round comes back empty. `mark_closure`/`mark_set`
+        // return false for an entry already marked, so a cycle terminates.
+        let closures = &mut ctx.closures;
+        loop {
+            let (gray_closures, gray_sets) = heap.take_gray();
+            if gray_closures.is_empty() && gray_sets.is_empty() {
+                break;
+            }
+            for set_id in gray_sets {
+                if closures.mark_set(set_id) {
+                    for entry in closures.set(set_id).to_vec() {
+                        // Re-grayed rather than marked here, so the closure and
+                        // its captures go through the one path below.
+                        heap.mark_value(crate::value::Value::Closure(entry.closure_id));
+                    }
+                }
+            }
+            for cid in gray_closures {
+                if closures.mark_closure(cid) {
+                    for val in closures.closure(cid).captures.clone() {
+                        heap.mark_value(val);
+                    }
+                }
+            }
+        }
+
+        // Sweep phase — both stores, now that the joint mark has settled.
+        closures.sweep();
         heap.sweep();
         if let Some(t) = started {
             self.profile.record_gc(t.elapsed());

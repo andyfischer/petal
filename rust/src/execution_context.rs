@@ -8,9 +8,9 @@
 
 use std::collections::HashMap;
 
-use crate::backend::RuntimeClosure;
+use crate::closure_table::ClosureTable;
 use crate::heap::Heap;
-use crate::program::{OverloadEntry, TermId};
+use crate::program::TermId;
 use crate::resource_table::ResourceTable;
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolId;
@@ -24,8 +24,9 @@ pub struct ContextKey(pub u32);
 /// that reference it. Does NOT own the Stack.
 pub struct ExecutionContext {
     pub heap: Heap,
-    pub closures: Vec<RuntimeClosure>,
-    pub overload_sets: Vec<Vec<OverloadEntry>>,
+    /// Runtime closures and overload sets, collected alongside `heap` — see
+    /// [`ClosureTable`].
+    pub closures: ClosureTable,
     pub output: Vec<String>,
     pub output_buffers: HashMap<SymbolId, Vec<Value>>,
     pub bindings: HashMap<SymbolId, Value>,
@@ -113,8 +114,7 @@ impl ExecutionContext {
     pub fn new() -> Self {
         Self {
             heap: Heap::new(),
-            closures: Vec::new(),
-            overload_sets: Vec::new(),
+            closures: ClosureTable::new(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
             bindings: HashMap::new(),
@@ -143,7 +143,6 @@ impl ExecutionContext {
         ExecutionContext {
             heap: self.heap.fork(),
             closures: self.closures.clone(),
-            overload_sets: self.overload_sets.clone(),
             bindings: self.bindings.clone(),
             counters: self.counters.clone(),
             output: Vec::new(),

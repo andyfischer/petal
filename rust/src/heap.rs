@@ -20,6 +20,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+use crate::program::{ClosureId, OverloadSetId};
 use crate::stats::{AllocKind, AllocStats, DupKind, DupStats};
 use crate::value::Value;
 
@@ -107,7 +108,7 @@ struct ElementPayload {
 /// reachability flag (cleared each sweep); `alive` is false for a reclaimed slot
 /// sitting on the free list.
 #[derive(Clone)]
-struct Slot<T> {
+pub(crate) struct Slot<T> {
     data: T,
     gc_mark: bool,
     alive: bool,
@@ -117,13 +118,13 @@ struct Slot<T> {
 /// kinds. Ids are bare indices (no generation counter): a reclaimed slot is
 /// reused and hands back the same index value.
 #[derive(Clone)]
-struct Slab<T> {
+pub(crate) struct Slab<T> {
     slots: Vec<Slot<T>>,
     free: Vec<u32>,
 }
 
 impl<T> Slab<T> {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Slab {
             slots: Vec::new(),
             free: Vec::new(),
@@ -131,7 +132,7 @@ impl<T> Slab<T> {
     }
 
     /// Allocate `data` into a reused free slot or a fresh one; return its index.
-    fn alloc(&mut self, data: T) -> u32 {
+    pub(crate) fn alloc(&mut self, data: T) -> u32 {
         if let Some(idx) = self.free.pop() {
             let slot = &mut self.slots[idx as usize];
             slot.data = data;
@@ -149,17 +150,29 @@ impl<T> Slab<T> {
         }
     }
 
-    fn get(&self, idx: u32) -> &T {
+    /// How many slots exist, live or free — what a collection has to walk.
+    pub(crate) fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+
+    /// How many slots are live (allocated and not yet reclaimed). Counted
+    /// directly rather than as `slots - free`: a slot is free the moment it is
+    /// reclaimed, whether or not it is currently on the list.
+    pub(crate) fn live_count(&self) -> usize {
+        self.slots.iter().filter(|s| s.alive).count()
+    }
+
+    pub(crate) fn get(&self, idx: u32) -> &T {
         &self.slots[idx as usize].data
     }
 
-    fn get_mut(&mut self, idx: u32) -> &mut T {
+    pub(crate) fn get_mut(&mut self, idx: u32) -> &mut T {
         &mut self.slots[idx as usize].data
     }
 
     /// Mark slot `idx` live. Returns true iff it was newly marked (alive and not
     /// already marked) — the caller then recurses into the payload's children.
-    fn mark(&mut self, idx: u32) -> bool {
+    pub(crate) fn mark(&mut self, idx: u32) -> bool {
         let slot = &mut self.slots[idx as usize];
         if slot.alive && !slot.gc_mark {
             slot.gc_mark = true;
@@ -171,7 +184,11 @@ impl<T> Slab<T> {
 
     /// Sweep: reclaim every unmarked-live slot (flip alive off, run `on_reclaim`
     /// on its payload to release backing memory / side-table entries, push to the
-    /// free list); clear the mark on every surviving slot. Rebuilds `free`.
+    /// free list); clear the mark on every surviving slot. Rebuilds `free` from
+    /// *every* dead slot, not just this cycle's — a slot reclaimed by an earlier
+    /// sweep and not yet reused is still free, and dropping it from the list
+    /// would orphan it for the rest of the run (the slot vector would then grow
+    /// monotonically no matter how much was collected).
     ///
     /// `on_reclaim` must *release* the payload's heap allocation, not merely
     /// empty it: `Vec::clear()` keeps the buffer, so a swept 160 KB array would
@@ -179,7 +196,7 @@ impl<T> Slab<T> {
     /// reused for anything either, because [`alloc`](Self::alloc) overwrites
     /// `slot.data` wholesale (dropping whatever buffer was there). Assign a
     /// fresh empty value (`*v = Vec::new()`) instead.
-    fn sweep_with(&mut self, mut on_reclaim: impl FnMut(&mut T)) {
+    pub(crate) fn sweep_with(&mut self, mut on_reclaim: impl FnMut(&mut T)) {
         self.free.clear();
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.alive {
@@ -190,6 +207,10 @@ impl<T> Slab<T> {
                     on_reclaim(&mut slot.data);
                     self.free.push(i as u32);
                 }
+            } else {
+                // Already dead from an earlier sweep and never reused: still
+                // free, so it belongs on the rebuilt list.
+                self.free.push(i as u32);
             }
         }
     }
@@ -227,6 +248,18 @@ pub struct Heap {
     /// Cumulative over the run (never decremented by GC), so it surfaces
     /// temporary-object churn. Same gate as `dup_stats`.
     alloc_stats: AllocStats,
+    /// Closures and overload sets seen while marking, for the collector to
+    /// follow — the heap's half of a mark that spans two stores.
+    ///
+    /// A `Value::Closure`/`Value::OverloadSet` is an id into the owning
+    /// context's [`ClosureTable`](crate::closure_table::ClosureTable), which
+    /// the heap cannot reach, so marking one records it here instead. The
+    /// collector ([`Env::collect_garbage`](crate::env::Env)) drains this
+    /// "gray set", marks those entries in the table, and feeds their captures
+    /// back through [`mark_value`](Self::mark_value) until nothing new turns
+    /// up — the two stores reach a joint fixpoint before either is swept.
+    gray_closures: Vec<ClosureId>,
+    gray_overload_sets: Vec<OverloadSetId>,
 }
 
 /// What one slot costs a collection, expressed in the same "bytes" currency as
@@ -268,6 +301,8 @@ impl Heap {
             alloc_charge: 0,
             gc_budget: GC_MIN_BUDGET_BYTES,
             collections: 0,
+            gray_closures: Vec::new(),
+            gray_overload_sets: Vec::new(),
             dup_stats: DupStats::new(),
             alloc_stats: AllocStats::new(),
         }
@@ -415,6 +450,27 @@ impl Heap {
     /// after every VM instruction.
     pub fn should_collect(&self) -> bool {
         self.alloc_charge >= self.gc_budget
+    }
+
+    /// Take the closures and overload sets marking has run into so far, leaving
+    /// the gray set empty. The collector calls this in a loop: each batch it
+    /// marks may mark more values, which may turn up more closures, until a
+    /// round comes back empty. See [`gray_closures`](Self::gray_closures).
+    pub fn take_gray(&mut self) -> (Vec<ClosureId>, Vec<OverloadSetId>) {
+        (
+            std::mem::take(&mut self.gray_closures),
+            std::mem::take(&mut self.gray_overload_sets),
+        )
+    }
+
+    /// Charge the collector budget for an object allocated *outside* the heap
+    /// but collected with it — a closure or an overload set in the context's
+    /// [`ClosureTable`](crate::closure_table::ClosureTable). Without this a
+    /// program whose only churn is closures (every frame of a panel script
+    /// re-runs its `fn` declarations) would never reach
+    /// [`should_collect`](Self::should_collect) and never reclaim them.
+    pub fn charge_external_alloc(&mut self, payload_bytes: u64) {
+        self.alloc_charge += payload_bytes + SLOT_TRACE_COST;
     }
 
     /// Create an isolated clone of this heap for a forked execution. Because
@@ -837,14 +893,17 @@ impl Heap {
                 self.mark_string(tag);
                 self.mark_list(data);
             }
+            // Ids into the context's ClosureTable, which this heap cannot
+            // reach: record them for the collector to follow (see
+            // `gray_closures`) instead of marking them here.
+            Value::Closure(id) => self.gray_closures.push(id),
+            Value::OverloadSet(id) => self.gray_overload_sets.push(id),
             // Non-heap values need no marking. `Pending` is an id into the resource
             // table; its Ready/Errored payloads are rooted separately.
             Value::Nil
             | Value::Bool(_)
             | Value::Int(_)
             | Value::Float(_)
-            | Value::Closure(_)
-            | Value::OverloadSet(_)
             | Value::NativeFunction(_)
             | Value::Dual { .. }
             | Value::Vec2(_, _)
@@ -942,6 +1001,11 @@ impl Heap {
         // Size the next collection's budget against what this collection would
         // cost to repeat (see `should_collect`). Computed here, once per cycle,
         // where an O(slots) walk is already being paid — never per allocation.
+        // The collector drains the gray set before sweeping; anything left is
+        // a leftover from an interrupted mark and must not survive into the
+        // next cycle, where those ids would resurrect unrelated entries.
+        self.gray_closures.clear();
+        self.gray_overload_sets.clear();
         self.alloc_charge = 0;
         self.gc_budget = GC_MIN_BUDGET_BYTES.max(GC_HEAP_GROWTH * self.collection_cost());
         self.collections += 1;

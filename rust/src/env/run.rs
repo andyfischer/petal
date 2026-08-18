@@ -297,7 +297,6 @@ fn make_vm<'a>(
         stack,
         heap: &mut ctx.heap,
         closures: &mut ctx.closures,
-        overload_sets: &mut ctx.overload_sets,
         native_fns,
         handle_classes,
         output: &mut ctx.output,

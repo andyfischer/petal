@@ -27,7 +27,8 @@ use crate::backend::{RuntimeClosure, StepResult};
 use crate::handle::HandleClass;
 use crate::heap::Heap;
 use crate::native_fn::{NativeFnId, NativeFnTable};
-use crate::program::{FunctionId, OverloadEntry, Program, TermId, base_fn_name};
+use crate::closure_table::ClosureTable;
+use crate::program::{FunctionId, Program, TermId, base_fn_name};
 use crate::stack::Stack;
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::value::{PendingId, Value};
@@ -52,8 +53,11 @@ pub struct Vm<'a> {
     pub bc: &'a BytecodeProgram,
     pub stack: &'a mut Stack,
     pub heap: &'a mut Heap,
-    pub closures: &'a mut Vec<RuntimeClosure>,
-    pub overload_sets: &'a mut Vec<Vec<OverloadEntry>>,
+    /// The owning context's closures and overload sets. Borrowed separately
+    /// from `heap` (a call reads a closure's captures while the heap is
+    /// borrowed mutably) but collected with it — see
+    /// [`ClosureTable`](crate::closure_table::ClosureTable).
+    pub closures: &'a mut ClosureTable,
     pub native_fns: &'a NativeFnTable,
     pub handle_classes: &'a [HandleClass],
     pub output: &'a mut Vec<String>,

@@ -7,6 +7,7 @@ pub mod backend;
 pub mod builtins;
 pub mod classes;
 pub mod cli;
+pub mod closure_table;
 pub mod compiler;
 pub mod constant_table;
 pub mod cst;

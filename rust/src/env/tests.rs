@@ -264,6 +264,74 @@ mod call_function_tests {
     }
 
     #[test]
+    fn re_running_a_program_does_not_accumulate_closures() {
+        // The per-frame host shape: one program, run again and again off the
+        // same stack. Every run re-executes the `fn` declarations, so every run
+        // allocates fresh closures; the ones the previous run made are garbage
+        // and must be reclaimed. Before the ClosureTable they never were — a
+        // Garden panel at 60fps leaked ~130 closures a frame, and because their
+        // captures were treated as GC roots they pinned the heap with them.
+        let mut env = Env::new();
+        let program = env
+            .load_program(
+                "fn outer(n)\n\
+                   let scale = n * 2\n\
+                   let inner = fn(x) -> x * scale\n\
+                   inner(3)\n\
+                 end\n\
+                 let acc = 0\n\
+                 for i in range(0, 50) do\n\
+                   acc = acc + outer(i)\n\
+                 end\n\
+                 acc\n",
+            )
+            .unwrap();
+        let stack = env.create_stack(program).unwrap();
+
+        env.run(stack).unwrap();
+        let after_first = env.closures().closure_count();
+        for _ in 0..200 {
+            env.reset_stack(stack).unwrap();
+            env.run(stack).unwrap();
+        }
+        // Collections are budget-driven, so the live count sawtooths between
+        // cycles; force one and the answer is exact — every closure the 200
+        // dead runs made is gone, and the live run's are still there.
+        let ck = env.stacks.get(&stack).unwrap().context;
+        env.collect_garbage(ck);
+        let after_collect = env.closures().closure_count();
+        assert!(
+            after_collect <= after_first,
+            "after 200 runs and a collection {after_collect} closures are live, \
+             up from {after_first} after the first run — the table is leaking"
+        );
+    }
+
+    #[test]
+    fn a_closure_held_in_state_survives_gc() {
+        // The other half of the contract: a closure the program still holds —
+        // here across runs, in a `state` var, plus one stored inside a record —
+        // must never be swept, and its captures must stay intact.
+        let mut env = Env::new();
+        let program = env
+            .load_program(
+                "state held = { f: fn(x) -> x + 40 }\n\
+                 let acc = 0\n\
+                 for i in range(0, 2000) do\n\
+                   let tmp = \"garbage\" ++ str(i)\n\
+                   acc = acc + len(tmp)\n\
+                 end\n\
+                 held.f(2)\n",
+            )
+            .unwrap();
+        let stack = env.create_stack(program).unwrap();
+        for _ in 0..20 {
+            env.reset_stack(stack).unwrap();
+            assert_eq!(env.run(stack).unwrap(), Value::Int(42));
+        }
+    }
+
+    #[test]
     fn binding_is_readable_from_script() {
         let mut env = Env::new();
         let sym = env.intern_symbol("dt");

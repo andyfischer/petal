@@ -4406,6 +4406,38 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn frames_do_not_accumulate_closures() {
+        // A panel re-runs its whole script every frame, so every frame
+        // re-executes its `fn` declarations and allocates a fresh closure for
+        // each. Those from earlier frames are garbage; if the runtime keeps
+        // them (it did until petal's closures became collectable) a panel leaks
+        // for as long as its window is open — a few hundred KB a second at
+        // 60fps, gigabytes over an afternoon.
+        let f = write_script(
+            "fn box_at(i)\n\
+               let hue = i * 7\n\
+               let shade = fn(c) -> c + hue\n\
+               draw_rect(i * 3, 4, 3, 4, shade(10), shade(20), shade(30))\n\
+             end\n\
+             for i in range(0, 30) do\n\
+               box_at(i)\n\
+             end\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(200, 120);
+        host.frame(0.016, 0).unwrap();
+        let after_first = host.env.closures().closure_count();
+        for i in 1..1000 {
+            host.frame(0.016, i).unwrap();
+        }
+        let after_many = host.env.closures().closure_count();
+        assert!(
+            after_many < after_first * 100,
+            "closures grew from {after_first} to {after_many} over 1000 frames"
+        );
+    }
 }
 
 /// End-to-end source tracing: a panel script draws shapes, the host traces a

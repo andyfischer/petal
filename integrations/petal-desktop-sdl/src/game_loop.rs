@@ -13,7 +13,8 @@
 //! portable:
 //!
 //! ```text
-//! poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
+//! poll events → input.begin_frame(dt) → bind frame_info/input → env.run
+//!   → host.end_frame → host.present
 //! ```
 
 use std::path::Path;
@@ -31,7 +32,7 @@ use petal::stack::StackKey;
 use petal_ui::draw::clear_draw_commands;
 use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time, take_mouse_grab};
 
-use crate::input::poll_sdl_events;
+use crate::input::{Gamepads, poll_sdl_events_with_gamepads};
 use crate::protocol::{self, ClockSource, Command, Response};
 use crate::watcher::{check_hot_reload, setup_watcher};
 
@@ -70,6 +71,15 @@ pub trait Host {
     /// Register this host's natives, prelude, and modules into a fresh `Env`.
     /// Called once, before any program is loaded.
     fn register(&mut self, env: &mut Env);
+
+    /// Called immediately after `sdl2::init()`, in the run modes that create an
+    /// SDL context at all (windowed interactive and windowed agent). This is
+    /// where a host opens subsystems the loop doesn't own — an audio device
+    /// ([`crate::audio::AudioOutput`]), haptics, extra windows — without having
+    /// to re-implement the loop to get at the `Sdl` handle. The headless,
+    /// screenshot, and record modes never init SDL and never call this, so
+    /// anything opened here must be optional to the host's operation.
+    fn on_sdl_init(&mut self, _sdl: &sdl2::Sdl) {}
 
     /// Paint the live frame's draw output (drained from `env`'s default draw
     /// buffer) to the window and present. Windowed modes only.
@@ -124,6 +134,26 @@ pub trait Host {
     fn after_frame(&mut self, _env: &mut Env) -> Option<ScriptSwitch> {
         None
     }
+
+    /// Called once after every *committed* frame, in every run mode — windowed,
+    /// windowed-agent, headless `step`, screenshot, and record — so a host can
+    /// drain output it accumulated during the script run even when there is no
+    /// window and nothing will ever be presented (pushing a frame of audio, for
+    /// instance).
+    ///
+    /// Ordering within a frame:
+    ///
+    /// ```text
+    /// prepare_frame → env.run → drain print output → end_frame → [after_frame → present]
+    /// ```
+    ///
+    /// `present` is windowed-only and runs after this; `end_frame` is the hook
+    /// that is guaranteed everywhere. It is *not* called for **speculative**
+    /// frames (the forked runs behind `--screenshot`'s final capture and the
+    /// agent's `screenshot` / `capture_draw_commands` commands): those exist to
+    /// be read and thrown away, and their side effects are discarded with the
+    /// fork, so emitting them would double up a frame of a host's output.
+    fn end_frame(&mut self, _env: &mut Env) {}
 }
 
 /// A loaded program + its stack, path, and file watcher. Threaded through the
@@ -188,6 +218,7 @@ pub fn run_game<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let sdl = sdl2::init()?;
+    host.on_sdl_init(&sdl);
     let video = sdl.video()?;
 
     let window = video
@@ -204,6 +235,7 @@ pub fn run_game<H: Host>(
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
+    let mut gamepads = Gamepads::new(&sdl);
 
     let mut env = Env::new();
     host.register(&mut env);
@@ -216,7 +248,7 @@ pub fn run_game<H: Host>(
     let mut mouse_grabbed = false;
 
     'game: loop {
-        match poll_sdl_events(&mut event_pump, &mut input) {
+        match poll_sdl_events_with_gamepads(&mut event_pump, &mut input, &mut gamepads) {
             crate::input::PollResult::Quit => break 'game,
             crate::input::PollResult::Escape => match host.on_escape(&mut env) {
                 EscapeAction::Quit => break 'game,
@@ -263,6 +295,7 @@ pub fn run_game<H: Host>(
             eprintln!("[petal error] {}", e);
         }
         drain_output(&mut env);
+        host.end_frame(&mut env);
 
         // Honor the script's pointer grab/release requests (pointer lock for
         // mouselook). Set once when it changes, so we don't thrash SDL.
@@ -300,6 +333,7 @@ pub fn run_agent<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let sdl = sdl2::init()?;
+    host.on_sdl_init(&sdl);
     let video = sdl.video()?;
 
     let window = video
@@ -316,6 +350,7 @@ pub fn run_agent<H: Host>(
         .map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl.event_pump()?;
+    let mut gamepads = Gamepads::new(&sdl);
 
     let mut env = Env::new();
     host.register(&mut env);
@@ -350,7 +385,7 @@ pub fn run_agent<H: Host>(
             );
         }
 
-        match poll_sdl_events(&mut event_pump, &mut input) {
+        match poll_sdl_events_with_gamepads(&mut event_pump, &mut input, &mut gamepads) {
             crate::input::PollResult::Quit | crate::input::PollResult::Escape => break 'game,
             crate::input::PollResult::None => {}
         }
@@ -382,6 +417,7 @@ pub fn run_agent<H: Host>(
                 eprintln!("[petal error] {}", e);
             }
             drain_output(&mut env);
+            host.end_frame(&mut env);
         }
 
         // Always present (shows the retained frame when paused).
@@ -457,12 +493,11 @@ pub fn run_screenshot<H: Host>(
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..frames {
-        protocol::run_one_frame(
+        run_committed_frame(
             &mut env,
             current.stack_id,
             &mut input,
             &mut frame_count,
-            ClockSource::Fixed,
             host,
         )?;
     }
@@ -502,22 +537,20 @@ pub fn run_record<H: Host>(
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
     for _ in 0..warmup {
-        protocol::run_one_frame(
+        run_committed_frame(
             &mut env,
             current.stack_id,
             &mut input,
             &mut frame_count,
-            ClockSource::Fixed,
             host,
         )?;
     }
     for i in 0..frames {
-        protocol::run_one_frame(
+        run_committed_frame(
             &mut env,
             current.stack_id,
             &mut input,
             &mut frame_count,
-            ClockSource::Fixed,
             host,
         )?;
         let (img, _) = capture_image(
@@ -629,6 +662,22 @@ fn capture_image<H: Host>(
     Ok((img?, output))
 }
 
+/// Run one committed frame on the deterministic clock and fire the host's
+/// end-of-frame hook. The non-interactive modes (screenshot, record, agent
+/// `step`) all go through here so `Host::end_frame` has exactly the same
+/// per-frame guarantee it has in the interactive loop.
+fn run_committed_frame<H: Host>(
+    env: &mut Env,
+    stack_id: StackKey,
+    input: &mut InputState,
+    frame_count: &mut i64,
+    host: &mut H,
+) -> Result<i64, String> {
+    let fc = protocol::run_one_frame(env, stack_id, input, frame_count, ClockSource::Fixed, host)?;
+    host.end_frame(env);
+    Ok(fc)
+}
+
 fn drain_output(env: &mut Env) {
     for line in env.take_output() {
         eprintln!("{}", line);
@@ -639,6 +688,10 @@ fn drain_output(env: &mut Env) {
 /// `clock` is the session's single `time()` source — the real monotonic clock
 /// in windowed-agent mode (so a `Step` interleaved with the live loop stays
 /// monotonic), a deterministic per-frame clock in headless mode.
+///
+/// `step` is driven here rather than in `protocol` so that each stepped frame
+/// gets the same `Host::end_frame` call a live frame gets; everything else is
+/// pure protocol and is delegated unchanged.
 #[allow(clippy::too_many_arguments)]
 fn handle_command<H: Host>(
     cmd: Command,
@@ -650,15 +703,55 @@ fn handle_command<H: Host>(
     clock: ClockSource,
     host: &mut H,
 ) {
-    protocol::handle_command(
-        cmd,
-        env,
-        current.program_id,
-        current.stack_id,
-        paused,
-        input,
-        frame_count,
-        clock,
-        host,
-    );
+    match cmd {
+        Command::Step { n } => {
+            step_frames(n, env, current.stack_id, input, frame_count, clock, host)
+        }
+        cmd => protocol::handle_command(
+            cmd,
+            env,
+            current.program_id,
+            current.stack_id,
+            paused,
+            input,
+            frame_count,
+            clock,
+            host,
+        ),
+    }
+}
+
+/// The agent `step` command: run `n` committed frames, then reply with the
+/// final frame number and everything the script printed across them.
+#[allow(clippy::too_many_arguments)]
+fn step_frames<H: Host>(
+    n: u32,
+    env: &mut Env,
+    stack_id: StackKey,
+    input: &mut InputState,
+    frame_count: &mut i64,
+    clock: ClockSource,
+    host: &mut H,
+) {
+    let mut last_frame = 0i64;
+    for _ in 0..n {
+        match protocol::run_one_frame(env, stack_id, input, frame_count, clock, host) {
+            Ok(fc) => last_frame = fc,
+            Err(e) => {
+                protocol::send_response(&Response::err(e));
+                return;
+            }
+        }
+        host.end_frame(env);
+    }
+    let output = env.take_output();
+    protocol::send_response(&Response {
+        frame: Some(last_frame),
+        output: if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        },
+        ..Response::ok()
+    });
 }

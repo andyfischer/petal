@@ -239,3 +239,85 @@ See [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) for the 
 schema — the same protocol is used by `petal-diagram-canvas` over
 WebSocket, so tooling written against one transport works against the
 other.
+
+## Host extension points (audio, gamepads, end-of-frame)
+
+Three capabilities exist for hosts built on this crate as a library (Shape B in
+[docs/building-apps.md](../../../docs/building-apps.md)). None of them changes
+anything for a plain `.ptl` sketch running under the shipped binary.
+
+### `Host::on_sdl_init(&sdl)`
+
+Called immediately after `sdl2::init()`, in the two run modes that create an SDL
+context (windowed interactive and windowed agent). It hands a host the `Sdl`
+handle so it can open subsystems the loop does not own — an audio device
+above all — without forking the loop to get at it. Headless, screenshot, and
+record never init SDL and never call this, so whatever a host opens here must be
+optional to its operation.
+
+### `Host::end_frame(&mut env)`
+
+Called once after **every committed frame**, in *every* mode — windowed,
+windowed-agent, headless `step`, `--screenshot`, `--record`. The frame order is:
+
+```text
+prepare_frame → env.run → drain print output → end_frame → [after_frame → present]
+```
+
+`present` only exists when there is a window; `end_frame` is the hook that is
+guaranteed everywhere, which is what makes it the right place to flush a host's
+own per-frame output — a block of audio, a network packet, a trace record.
+
+It is deliberately **not** called for speculative frames (the forked runs behind
+the final screenshot capture and the agent's `screenshot` /
+`capture_draw_commands` commands). Those frames exist to be read and discarded;
+their effects die with the fork, so emitting them would duplicate a frame of
+output.
+
+### `audio::AudioOutput`
+
+A thin wrapper over SDL's `AudioQueue<i16>`: `open(sdl, sample_rate, channels,
+buffer_frames)`, `queue_samples(&[i16])` (interleaved), `queued_frames()`,
+`resume` / `pause` / `clear`. Transport only — it knows nothing about synthesis.
+
+The queue (rather than a callback) is the deliberate choice: Petal's `Env` is
+single-threaded and lives on the main thread, so a callback on SDL's audio
+thread could never call into a script. With a queue the host synthesizes during
+its own frame — normally in `end_frame` — and tops the device up toward a lead
+of a few frames, using `queued_frames()` to decide how much. That is what makes
+script-driven synthesis possible at all.
+
+The device opens paused and reports the rate/channel count actually obtained,
+which may differ from the request; synthesize against those, not the ask.
+
+### Gamepads
+
+Game controllers do not get their own script vocabulary. They are folded into
+the **same normalized key stream** as the keyboard, so a script that reads
+`key_down("left")` is controller-playable with no extra work and a game's
+keyboard and pad bindings cannot drift apart.
+
+`Gamepads::new(&sdl)` opens the controller subsystem (degrading to inert if it
+is unavailable) and is passed to `poll_sdl_events_with_gamepads` each frame,
+which handles hot-plug in both directions. The windowed modes do this already;
+`poll_sdl_events` remains keyboard/mouse only for hosts that want it.
+
+Pad slots are assigned in connection order and survive a disconnect, so
+unplugging player 2 does not promote them to player 1. The mapping:
+
+| Control | Slot 0 | Slot 1 |
+|---|---|---|
+| d-pad / left stick | `up` `down` `left` `right` | `i` `k` `j` `l` |
+| south (A) | `z` | `n` |
+| east (B) | `x` | `m` |
+| west (X) | `c` | `comma` |
+| north (Y) | `v` | `period` |
+| start | `return` | — |
+| back / select | `shift` | — |
+| shoulders | `leftbracket` `rightbracket` | — |
+
+Slot 0 is the NES-style convention (arrows, Z/X, Enter, RShift), so the common
+case needs no per-host configuration. Slots 2+ are ignored rather than mapped
+onto arbitrary keys. The left stick is quantized into the same four direction
+keys as the d-pad with hysteresis, so a stick resting on a boundary does not
+chatter; the right stick and triggers are not mapped.

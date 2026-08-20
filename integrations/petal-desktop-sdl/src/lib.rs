@@ -14,10 +14,12 @@
 //!   software 3D rasterizer) implement their own [`Host`] and reuse everything
 //!   else from this crate — see `docs/building-apps.md`.
 //!
-//! The reusable building blocks ([`input`] SDL translation, [`protocol`] agent
-//! JSON, [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
+//! The reusable building blocks ([`input`] SDL translation and gamepad
+//! folding, [`audio`] queued-sample output, [`protocol`] agent JSON,
+//! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
 //! [`renderer`] SDL-canvas primitives) are public so hosts can compose them.
 
+pub mod audio;
 pub mod commands;
 pub mod default_host;
 pub mod font;
@@ -29,8 +31,10 @@ pub mod renderer;
 pub mod screenshot;
 pub mod watcher;
 
+pub use audio::AudioOutput;
 pub use default_host::DefaultHost;
 pub use game_loop::{
     EscapeAction, GameConfig, Host, ScriptSwitch, run_agent, run_game, run_headless, run_record,
     run_screenshot,
 };
+pub use input::Gamepads;

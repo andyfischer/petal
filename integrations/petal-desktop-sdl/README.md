@@ -89,3 +89,26 @@ implement the `Host` trait instead of copying the host code, reusing the window,
 event loop, agent protocol, screenshot/record modes, and hot reload. See
 [`docs/building-apps.md`](../../docs/building-apps.md) for
 the pattern.
+
+## Audio, gamepads, and `end_frame`
+
+Three extension points exist for library users (they change nothing for a plain
+`.ptl` sketch under the shipped binary):
+
+- **`Host::on_sdl_init(&sdl)`** — runs right after `sdl2::init()` in the
+  windowed modes, so a host can open an audio device or other SDL subsystem
+  without forking the loop.
+- **`Host::end_frame(&mut env)`** — runs after every committed frame in *every*
+  mode, windowed or not, so a host can flush its own per-frame output when
+  there is nothing to present. Not called for speculative capture frames.
+- **`audio::AudioOutput`** — a thin safe wrapper over SDL's `AudioQueue<i16>`
+  (open / queue interleaved samples / `queued_frames()` / pause / resume).
+  Transport only; the host owns synthesis. Queued rather than callback-driven
+  because Petal's `Env` is single-threaded, which is what lets a script
+  synthesize its own audio.
+
+**Gamepads** are folded into the same normalized key stream as the keyboard —
+no separate pad API — so `key_down("left")` works from a d-pad or the left
+stick. Pad 0 maps to arrows + `z`/`x` + `return`/`shift`, pad 1 to `i k j l` +
+`n`/`m`. Hot-plug is handled; with no controller attached nothing changes.
+See [`docs/design.md`](docs/design.md) for the full table.

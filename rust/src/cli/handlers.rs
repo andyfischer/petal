@@ -930,15 +930,54 @@ pub(super) fn handle_lint(
     }
 }
 
+/// Compact `line:col-line:col` rendering of a token span (1-based,
+/// end-exclusive), shared by both `show-tokens` output forms.
+fn token_span_compact(span: &crate::source_map::SourceSpan) -> String {
+    format!(
+        "{}:{}-{}:{}",
+        span.start.line, span.start.column, span.end.line, span.end.column
+    )
+}
+
 pub(super) fn handle_show_tokens(json: bool, source: &str) {
     let mut lexer = Lexer::new(source);
     match lexer.tokenize() {
         Ok(_) => {
             if json {
-                println!("{}", serde_json::to_string_pretty(&lexer.tokens).unwrap());
+                // Uniform rows: {"kind", "value"?, "span"}, one per line.
+                // Assembled by hand so the key order and the one-row-per-line
+                // layout stay stable (serde_json would sort keys and either
+                // cram everything on one line or explode the span array).
+                let rows: Vec<String> = lexer
+                    .tokens_with_spans()
+                    .map(|(token, span)| {
+                        let mut row = format!("{{\"kind\": \"{}\"", token.kind_name());
+                        if let Some(value) = token.value_json() {
+                            row.push_str(&format!(", \"value\": {}", value));
+                        }
+                        row.push_str(&format!(
+                            ", \"span\": [{}, {}, {}, {}]}}",
+                            span.start.line, span.start.column, span.end.line, span.end.column
+                        ));
+                        row
+                    })
+                    .collect();
+                println!("[\n  {}\n]", rows.join(",\n  "));
             } else {
-                for (i, token) in lexer.tokens.iter().enumerate() {
-                    println!("{}: {:?}", i, token);
+                for (i, (token, span)) in lexer.tokens_with_spans().enumerate() {
+                    let value = match token.value_json() {
+                        // JSON rendering doubles as the text rendering:
+                        // numbers print bare, strings print quoted+escaped.
+                        Some(v) => format!(" {}", v),
+                        None => String::new(),
+                    };
+                    println!(
+                        "{}: {}{} @{}",
+                        i,
+                        token.kind_name(),
+                        value,
+                        token_span_compact(span)
+                    );
                 }
             }
         }

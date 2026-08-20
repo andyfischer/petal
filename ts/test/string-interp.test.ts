@@ -10,10 +10,11 @@ beforeAll(() => ensureBuild());
 describe("string interpolation", () => {
   it("lexes a string with interpolation into parts", () => {
     const tokens = showTokensJson('"hello {name}"');
-    expect(tokens).toContainEqual({ String: "hello " });
-    expect(tokens).toContain("InterpStart");
-    expect(tokens).toContainEqual({ Ident: "name" });
-    expect(tokens).toContain("InterpEnd");
+    const parts = tokens.map((t: any) => [t.kind, t.value]);
+    expect(parts).toContainEqual(["String", "hello "]);
+    expect(parts).toContainEqual(["InterpStart", undefined]);
+    expect(parts).toContainEqual(["Ident", "name"]);
+    expect(parts).toContainEqual(["InterpEnd", undefined]);
   });
 
   it("evaluates simple variable interpolation", () => {
@@ -64,15 +65,20 @@ describe("escaped quotes inside an interpolation hole", () => {
     expect(result).toBe("A ·  · C");
   });
 
+  // Spans differ between the two spellings (the escapes occupy columns), so
+  // compare kind+value only.
+  const kindsAndValues = (tokens: any[]) =>
+    tokens.map((t: any) => ({ kind: t.kind, value: t.value }));
+
   it("lexes the escaped and bare spellings of a hole identically", () => {
     const escaped = showTokensJson('"v {if t then \\"a\\" else \\"b\\" end}"');
     const bare = showTokensJson('"v {if t then "a" else "b" end}"');
-    expect(escaped).toEqual(bare);
+    expect(kindsAndValues(escaped)).toEqual(kindsAndValues(bare));
   });
 
   it("accepts an escaped string in a JSX child hole", () => {
     const escaped = showTokensJson('<t>{b ?? \\"q\\"}</t>');
     const bare = showTokensJson('<t>{b ?? "q"}</t>');
-    expect(escaped).toEqual(bare);
+    expect(kindsAndValues(escaped)).toEqual(kindsAndValues(bare));
   });
 });

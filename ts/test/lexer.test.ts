@@ -1,13 +1,69 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, showTokensJson, runPetal, runPetalError } from "./helpers";
+import {
+  ensureBuild,
+  showTokensJson,
+  showTokensText,
+  tokenKinds,
+  runPetal,
+  runPetalError,
+} from "./helpers";
 
 beforeAll(() => ensureBuild());
+
+describe("token dump format", () => {
+  // JSON rows are uniform: {kind, value?, span} where span is
+  // [startLine, startCol, endLine, endCol] (1-based, end-exclusive).
+  it("emits uniform rows with spans", () => {
+    const tokens = showTokensJson("let x = 1");
+    expect(tokens).toEqual([
+      { kind: "Let", span: [1, 1, 1, 4] },
+      { kind: "Ident", value: "x", span: [1, 5, 1, 6] },
+      { kind: "Assign", span: [1, 7, 1, 8] },
+      { kind: "Int", value: 1, span: [1, 9, 1, 10] },
+      { kind: "Eof", span: [1, 10, 1, 10] },
+    ]);
+  });
+
+  it("keeps numeric values as JSON numbers and strings as JSON strings", () => {
+    const tokens = showTokensJson('f(1, 2.5, "s")');
+    const byKind = Object.fromEntries(
+      tokens.filter((t: any) => "value" in t).map((t: any) => [t.kind, t.value])
+    );
+    expect(byKind.Int).toBe(1);
+    expect(byKind.Float).toBe(2.5);
+    expect(byKind.String).toBe("s");
+  });
+
+  it("omits value on unit tokens", () => {
+    const tokens = showTokensJson("let x = 1");
+    for (const t of tokens.filter((t: any) => t.kind === "Let" || t.kind === "Assign")) {
+      expect(t).not.toHaveProperty("value");
+    }
+  });
+
+  it("spans track lines", () => {
+    const tokens = showTokensJson("let x = 1\nlet y = 2");
+    const y = tokens.find((t: any) => t.kind === "Ident" && t.value === "y");
+    expect(y.span).toEqual([2, 5, 2, 6]);
+  });
+
+  it("text form is one token per line with index, value, and span", () => {
+    const lines = showTokensText("let x = 1").split("\n");
+    expect(lines).toEqual([
+      "0: Let @1:1-1:4",
+      '1: Ident "x" @1:5-1:6',
+      "2: Assign @1:7-1:8",
+      "3: Int 1 @1:9-1:10",
+      "4: Eof @1:10-1:10",
+    ]);
+  });
+});
 
 describe("semicolons", () => {
   it("lexes semicolon as Newline token", () => {
     const tokens = showTokensJson("let x = 1; let y = 2");
     // Semicolons should produce Newline tokens, same as actual newlines
-    const newlineCount = tokens.filter((t: any) => t === "Newline").length;
+    const newlineCount = tokenKinds(tokens).filter((k) => k === "Newline").length;
     expect(newlineCount).toBeGreaterThanOrEqual(1);
   });
 
@@ -34,34 +90,33 @@ describe("semicolons", () => {
 
 describe("DotDotDot token", () => {
   it("lexes ... as a single DotDotDot token", () => {
-    const tokens = showTokensJson("...x");
-    expect(tokens).toContain("DotDotDot");
+    const kinds = tokenKinds(showTokensJson("...x"));
+    expect(kinds).toContain("DotDotDot");
     // Should NOT be DotDot + Dot
-    const dotDotCount = tokens.filter((t: any) => t === "DotDot").length;
+    const dotDotCount = kinds.filter((k) => k === "DotDot").length;
     expect(dotDotCount).toBe(0);
   });
 
   it("still lexes .. as DotDot", () => {
-    const tokens = showTokensJson("1..10");
-    expect(tokens).not.toContain("DotDotDot");
-    expect(tokens).toContain("DotDot");
+    const kinds = tokenKinds(showTokensJson("1..10"));
+    expect(kinds).not.toContain("DotDotDot");
+    expect(kinds).toContain("DotDot");
   });
 
   it("lexes . as Dot", () => {
-    const tokens = showTokensJson("a.b");
-    expect(tokens).toContain("Dot");
+    expect(tokenKinds(showTokensJson("a.b"))).toContain("Dot");
   });
 
   it("lexes ... in list pattern context", () => {
     const tokens = showTokensJson("[first, ...rest]");
     expect(tokens).toEqual([
-      "LBracket",
-      { Ident: "first" },
-      "Comma",
-      "DotDotDot",
-      { Ident: "rest" },
-      "RBracket",
-      "Eof",
+      { kind: "LBracket", span: [1, 1, 1, 2] },
+      { kind: "Ident", value: "first", span: [1, 2, 1, 7] },
+      { kind: "Comma", span: [1, 7, 1, 8] },
+      { kind: "DotDotDot", span: [1, 9, 1, 12] },
+      { kind: "Ident", value: "rest", span: [1, 12, 1, 16] },
+      { kind: "RBracket", span: [1, 16, 1, 17] },
+      { kind: "Eof", span: [1, 17, 1, 17] },
     ]);
   });
 });
@@ -69,7 +124,10 @@ describe("DotDotDot token", () => {
 describe("triple-quoted raw strings", () => {
   it("lexes a triple-quoted string as a single String token", () => {
     const tokens = showTokensJson('"""hello"""');
-    expect(tokens).toEqual([{ String: "hello" }, "Eof"]);
+    expect(tokens).toEqual([
+      { kind: "String", value: "hello", span: [1, 1, 1, 12] },
+      { kind: "Eof", span: [1, 12, 1, 12] },
+    ]);
   });
 
   it("captures raw newlines verbatim", () => {
@@ -103,7 +161,10 @@ describe("triple-quoted raw strings", () => {
 
   it("lexes an empty triple-quoted string", () => {
     const tokens = showTokensJson('""""""');
-    expect(tokens).toEqual([{ String: "" }, "Eof"]);
+    expect(tokens).toEqual([
+      { kind: "String", value: "", span: [1, 1, 1, 7] },
+      { kind: "Eof", span: [1, 7, 1, 7] },
+    ]);
   });
 });
 

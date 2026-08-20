@@ -67,11 +67,7 @@ impl<'ttf> FontLadder<'ttf> {
     }
 
     /// Load the ladder from the first path in `paths` that loads.
-    fn load_from(
-        ttf: &'ttf Sdl2TtfContext,
-        paths: &[&str],
-        sizes: &[u16],
-    ) -> Result<Self, String> {
+    fn load_from(ttf: &'ttf Sdl2TtfContext, paths: &[&str], sizes: &[u16]) -> Result<Self, String> {
         let path = resolve_font_path(ttf, paths)
             .ok_or_else(|| "No system font found. Install a TTF font.".to_string())?;
 
@@ -103,12 +99,7 @@ impl<'ttf> FontLadder<'ttf> {
     /// not a per-call argument: the rung is restyled on the way out and stays
     /// that way until the next caller sets it, which is why every text command
     /// goes through here rather than [`nearest`](Self::nearest).
-    pub fn nearest_styled(
-        &mut self,
-        size: u16,
-        weight: u16,
-        italic: bool,
-    ) -> &Font<'ttf, 'static> {
+    pub fn nearest_styled(&mut self, size: u16, weight: u16, italic: bool) -> &Font<'ttf, 'static> {
         let style = synthetic_style(weight, italic);
         let index = self.index_nearest(size);
         let font = &mut self.rungs[index].1;

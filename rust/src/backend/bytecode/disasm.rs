@@ -139,7 +139,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 None => String::new(),
             };
             format!(
-                "r{} = r{}.{}{}{}",
+                "r{} = r{}.{} {}{}",
                 dst,
                 recv,
                 kconst(program, *name),
@@ -159,7 +159,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 "builtin"
             };
             format!(
-                "r{} = {} {}{}",
+                "r{} = {} {} {}",
                 dst,
                 tag,
                 kconst(program, *name),
@@ -209,7 +209,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         }
         MakeEnumVariant { dst, name, fields } => {
             format!(
-                "r{} = enum {}{}",
+                "r{} = enum {} {}",
                 dst,
                 kconst(program, *name),
                 reglist(fields)
@@ -328,8 +328,84 @@ fn opt_key(key: &Option<u16>) -> String {
     }
 }
 
+#[cfg(test)]
+mod inst_json_tests {
+    use smallvec::smallvec;
+
+    use super::*;
+    use crate::constant_table::ConstantId;
+    use crate::program::FunctionId;
+
+    /// The `inst` field of a `show-bytecode --json` row is the externally-tagged
+    /// serde form of [`Inst`]. These pin the encoding — variant name as the
+    /// single key, operand structs inside — so a change to the derive setup (or
+    /// to an operand type's serialization) breaks loudly instead of silently
+    /// reshaping the tool-facing JSON.
+    #[test]
+    fn externally_tagged_with_named_operands() {
+        assert_eq!(
+            serde_json::to_value(Inst::Add { dst: 4, a: 0, b: 1 }).unwrap(),
+            json!({ "Add": { "dst": 4, "a": 0, "b": 1 } })
+        );
+        assert_eq!(
+            serde_json::to_value(Inst::Jump { to: 7 }).unwrap(),
+            json!({ "Jump": { "to": 7 } })
+        );
+    }
+
+    /// `ConstantId` operands serialize as the bare constant-table index (the
+    /// table itself is documented in the IR JSON), and reg lists as arrays.
+    #[test]
+    fn constant_ids_are_numbers_and_reglists_are_arrays() {
+        assert_eq!(
+            serde_json::to_value(Inst::LoadConst {
+                dst: 2,
+                k: ConstantId(3)
+            })
+            .unwrap(),
+            json!({ "LoadConst": { "dst": 2, "k": 3 } })
+        );
+        assert_eq!(
+            serde_json::to_value(Inst::BuiltinCall {
+                dst: 5,
+                name: ConstantId(1),
+                args: smallvec![0, 4],
+                in_place: false,
+            })
+            .unwrap(),
+            json!({ "BuiltinCall": { "dst": 5, "name": 1, "args": [0, 4], "in_place": false } })
+        );
+        assert_eq!(
+            serde_json::to_value(Inst::MakeClosure {
+                dst: 0,
+                func: FunctionId(2),
+                caps: smallvec![],
+            })
+            .unwrap(),
+            json!({ "MakeClosure": { "dst": 0, "func": 2, "caps": [] } })
+        );
+    }
+
+    /// Optional operands stay present as `null` — consumers get a fixed field
+    /// set per opcode rather than a shape that shifts with operand values.
+    #[test]
+    fn optional_operands_serialize_as_null() {
+        assert_eq!(
+            serde_json::to_value(Inst::Return { val: None }).unwrap(),
+            json!({ "Return": { "val": null } })
+        );
+        assert_eq!(
+            serde_json::to_value(Inst::Return { val: Some(3) }).unwrap(),
+            json!({ "Return": { "val": 3 } })
+        );
+    }
+}
+
 /// Render a lowered program as JSON: one object per function with an array of
-/// disassembled instruction strings plus register metadata.
+/// instruction rows plus register metadata. Each row carries the instruction
+/// twice: `inst` is the structured operand-level encoding (the [`Inst`] enum's
+/// externally-tagged serde form, for tooling) and `text` is the disassembled
+/// string (for reading).
 pub fn render_json(bc: &BytecodeProgram, program: &Program) -> Json {
     let mut fns = vec![fn_json(&bc.root, program)];
     for f in &bc.fns {
@@ -343,7 +419,13 @@ fn fn_json(f: &BytecodeFn, program: &Program) -> Json {
         .code
         .iter()
         .enumerate()
-        .map(|(i, inst)| json!({ "ip": i, "text": render_inst(inst, program) }))
+        .map(|(i, inst)| {
+            json!({
+                "ip": i,
+                "inst": serde_json::to_value(inst).expect("Inst serializes"),
+                "text": render_inst(inst, program),
+            })
+        })
         .collect();
     json!({
         "fn": f.func_id.map(|id| id.0),

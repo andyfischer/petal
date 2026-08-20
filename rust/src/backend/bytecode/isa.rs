@@ -32,7 +32,14 @@ pub type LoopSlot = u16;
 /// forms — [`Move`](Inst::Move) (lowered `Copy` *and* `Phi`), the jump family,
 /// the loop family (which replaces the graph engine's per-frame `loop_states`),
 /// and [`MatchArm`](Inst::MatchArm).
-#[derive(Debug, Clone)]
+///
+/// `Serialize` backs the `inst` field of `show-bytecode --json` rows (see
+/// [`super::disasm`]): the derived externally-tagged form,
+/// `{"Add": {"dst": 4, "a": 0, "b": 0}}`, matching how the IR's `TermOp`
+/// serializes. Constant-table operands (`ConstantId`) serialize as their index
+/// number. Serialize-only: the bytecode is not an interchange format — the IR
+/// JSON is — so there is no `Deserialize`.
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum Inst {
     // --- constants / moves ---
     /// `dst = constants[k]`

@@ -606,6 +606,95 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 
 **SourcePosition**: `{"line": number, "column": number, "offset": number}`
 
+### `show-bytecode` — Bytecode lowering
+
+```
+petal show-bytecode [--json] <file.ptl>
+petal show-bytecode [--json] -e '<code>'
+```
+
+Displays the bytecode the VM executes: the compiled IR lowered — through the
+same optimization pipeline a `run` uses — to linear, register-based
+instructions. One section per function; the program's top level is the
+implicit root function. See [Architecture.md](dev/Architecture.md) for the
+backend split.
+
+For `let xs = map([1, 2, 3], fn(x) x * 2 end)`:
+
+```
+fn <root>  (122 regs, 0 loop slots)
+     0  r116 = const 1
+     1  r117 = const 2
+     2  r118 = const 3
+     3  r119 = list [r116, r117, r118]
+     4  r120 = closure f0 caps=[]
+     5  r121 = builtin "map" [r119, r120]
+
+fn f0  (4 regs, 0 loop slots)
+  params:   r0
+     0  r2 = const 2
+     1  r3 = r0 * r2
+```
+
+Text-form conventions: `rN` is a register in the function's flat register
+file, `fN` a FunctionId, `slotN` a loop-cursor slot, `kN` a state key.
+Constant-table operands are resolved inline (`const 1`, `builtin "map"`).
+Jump targets (`jump -> 5`) are instruction indexes within the same function —
+the left-hand column.
+
+#### Bytecode JSON Encoding
+
+`--json` emits `{"functions": [Function]}`, root function first.
+
+**Function**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fn` | `number \| null` | FunctionId (null for the implicit root function) |
+| `name` | `string \| null` | Function name (null for the root and for lambdas) |
+| `reg_count` | `number` | Size of the function's flat register file |
+| `loop_slots` | `number` | Number of loop-cursor slots the function needs |
+| `param_regs` | `number[]` | Registers that receive positional parameters, in order |
+| `capture_regs` | `number[]` | Registers that receive captured values, in capture order |
+| `self_ref_reg` | `number \| null` | Register holding the self-reference (recursion), if any |
+| `code` | `InstRow[]` | The instruction stream |
+
+**InstRow** — each instruction appears twice, structured for tooling and
+rendered for reading:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `number` | Instruction index within this function (what jump targets refer to) |
+| `inst` | `object` | Structured instruction: `{"<Opcode>": {operands}}` |
+| `text` | `string` | The disassembled text form of the same instruction |
+
+`inst` is the externally tagged encoding of the instruction enum — one key,
+the opcode name, mapping to an object of named operands (the same convention
+as a term's `op` in the [IR JSON](#program-json-schema)):
+
+```json
+{
+  "ip": 5,
+  "inst": { "BuiltinCall": { "dst": 121, "name": 3, "args": [119, 120], "in_place": false } },
+  "text": "r121 = builtin \"map\" [r119, r120]"
+}
+```
+
+Operand encoding:
+
+- Registers are plain numbers (`dst`, `a`, `b`, `src`, `args`, …).
+- Constant-table operands (`k`, `name`, `field`, `tag`, `class`, `msg`, …)
+  are ConstantId indexes into the program's constant table — the same table
+  `show-ir --json` emits as `constants`. The `text` form resolves them inline.
+- Jump-target operands (`to`, `exit`, `next`, `after`) are `ip` indexes
+  within the same function.
+- Function operands (`func`) are FunctionIds; state operands (`base`) are
+  state keys.
+- Optional operands are present as `null` rather than omitted, so each opcode
+  has a fixed field set.
+
+The full instruction set is documented in `rust/src/backend/bytecode/isa.rs`.
+
 ## Dataflow query commands
 
 The remaining commands query the compiled dataflow graph without running

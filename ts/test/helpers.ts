@@ -28,6 +28,15 @@ export function showTokensJson(code: string): any {
   return JSON.parse(run(["show-tokens", "--json", "-e", shellEscape(code)]));
 }
 
+export function showBytecodeJson(code: string): any {
+  return JSON.parse(run(["show-bytecode", "--json", "-e", shellEscape(code)]));
+}
+
+/** `petal show-bytecode -e <code>` (text form), raw stdout. */
+export function showBytecodeText(code: string): string {
+  return run(["show-bytecode", "-e", shellEscape(code)]);
+}
+
 export function runPetal(code: string): string {
   return run(["run", "-e", shellEscape(code)]);
 }

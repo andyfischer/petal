@@ -2,17 +2,1276 @@
 //
 // Music and sound-effect vocabulary over the `apu_*` natives, kept separate
 // from `nes` so a cart that makes no sound never pays to compile it. Also an
-// implicit import.
+// implicit import, so carts call these bare; `import nes_sound` also works.
 //
-// STUB: one trivial export, enough to prove the module wiring. Note-name
-// parsing, pattern/tracker playback, and the envelope helpers are the sound
-// task's work.
+// The shape of this module is FamiTracker's, because that is the shape the
+// hardware suggests and the shape a composer already knows: **instruments are
+// envelopes stepped once per frame**, **patterns are lists of rows**, and an
+// **order** list says which pattern each channel plays in each frame of the
+// song. Nothing here reaches the chip except through `apu_pulse`,
+// `apu_triangle` and `apu_noise`, so a cart that wants to poke the registers
+// itself can ignore the whole file.
+//
+// The cart's job is three lines:
+//
+//     music_play(song_title())     // idempotent — safe every frame
+//     if pad_pressed(0, "a") then sfx_play("jump") end
+//     music_tick()                 // exactly once per frame, near the end
+//
+// `music_tick()` is the only thing that writes the chip: it advances the song,
+// overlays whatever sound effects are running, and emits one register write
+// per channel. Playback position lives in `state`, so a hot reload mid-song
+// picks up on the same row — which is also why `music_play` restarts only when
+// handed a song with a *different* `name`. A cart re-runs top to bottom every
+// frame; a `music_play` that restarted unconditionally would play row 0
+// forever. The song *data* is still taken fresh on every call, so editing a
+// pattern and saving is audible on the next row without losing the playhead.
 
+// ── Note vocabulary ───────────────────────────────────────────────────────
 // Notes are MIDI semitones so a pitch bend is just a fractional value: 60 is
-// middle C, 69 is A440, and +12 is an octave.
-export let middle_c = 60
+// middle C, 69 is A440, and +12 is an octave. Written notes use the tracker's
+// three-column spelling — `"C-4"`, `"A#3"`, `"Db5"` — where the middle column
+// is the accidental and `-` means "none"; `"C4"` works too.
+//
+// Two spellings are not notes at all, and both are negative so a single
+// `>= 0` test separates a real pitch from either:
+//   `"..."`  nothing happens on this row (the channel holds)
+//   `"---"`  release the channel (`"==="` is accepted as a synonym)
 
-// Semitone offset from a note number, for transposing a whole pattern.
-export fn transpose(note, semitones)
-  note + semitones
+export let note_none = -1
+export let note_off = -2
+export let middle_c = 60
+export let a440 = 69
+
+let _PITCH = {c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11}
+let _DIGITS = "0123456789"
+
+fn _is_digit(c)
+  index_of(_DIGITS, c) >= 0
+end
+
+fn _all_digits(s)
+  if len(s) == 0 then
+    return false
+  end
+  let ok = true
+  for c in chars(s) do
+    if !_is_digit(c) then
+      ok = false
+    end
+  end
+  ok
+end
+
+// Semitone number for a written note. Passing a number through unchanged is
+// deliberate: every function that takes a note takes either spelling, so a
+// pattern may mix `"C-4"` with a computed `base + 7` without the caller
+// converting anything.
+export fn note(spec)
+  if type(spec) != "string" then
+    return spec
+  end
+  if spec == "---" || spec == "===" then
+    return note_off
+  end
+  let cs = chars(spec)
+  if len(cs) < 2 then
+    return note_none
+  end
+  let step = _PITCH[lower(cs[0])] ?? -1
+  if step < 0 then
+    return note_none
+  end
+  let i = 1
+  let acc = 0
+  if cs[1] == "#" then
+    acc = 1
+    i = 2
+  elsif cs[1] == "b" then
+    acc = -1
+    i = 2
+  elsif cs[1] == "-" then
+    i = 2
+  end
+  let tail = join(slice(cs, i, len(cs)), "")
+  if !_all_digits(tail) then
+    return note_none
+  end
+  (parse_int(tail) + 1) * 12 + step + acc
+end
+
+let _NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
+
+// The inverse, for debug overlays and pattern editors. Sentinels print as the
+// glyphs a tracker would show, so a status line can print `note_name(v.note)`
+// without special-casing them.
+export fn note_name(n)
+  if n == note_off then
+    return "---"
+  end
+  if n < 0 then
+    return "..."
+  end
+  let i = int(round(n))
+  _NAMES[i % 12] ++ str(i / 12 - 1)
+end
+
+// Frequency in Hz. The chip natives take semitones, so this is only for the
+// PCM helpers at the bottom of the file (and for anyone curious).
+export fn note_hz(n)
+  440.0 * pow(2.0, (n - 69) / 12.0)
+end
+
+// Shift a note, leaving the two sentinels alone — transposing a "rest" into a
+// note is never what was meant.
+export fn transpose(n, semitones)
+  if n < 0 then n else n + semitones end
+end
+
+// Semitone of C in octave `o`, so a computed melody can be written in scale
+// degrees: `octave(4) + 7` is G-4.
+export fn octave(o)
+  (o + 1) * 12
+end
+
+// Transpose a whole pattern. Cheap enough to call at song-construction time,
+// which is how one written pattern serves three keys.
+export fn transpose_rows(rs, semitones)
+  let out = []
+  for r in rs do
+    out = append(out, {...r, note: transpose(r.note, semitones)})
+  end
+  out
+end
+
+// ── Envelopes ─────────────────────────────────────────────────────────────
+// An envelope is a list of values stepped once per frame, with an optional
+// loop point. Past the end it holds its last value, which is what makes a
+// three-element `[15, 12, 10]` a perfectly good sustaining volume envelope.
+// `envelope(seq, loop_at)` instead jumps back to index `loop_at` and repeats
+// from there forever — a tremolo, a shimmer, a repeating arpeggio.
+//
+// Anywhere an envelope is expected a bare list also works and means "no loop",
+// so an instrument reads as data rather than as constructor calls.
+
+export fn envelope(seq)
+  {seq: seq, loop_at: -1}
+end
+
+export fn envelope(seq, loop_at)
+  {seq: seq, loop_at: loop_at}
+end
+
+// Coerce a bare list to an envelope; pass an envelope through untouched.
+fn _env(v)
+  if type(v) == "list" then envelope(v) else v end
+end
+
+// Read an envelope's field from an instrument/sfx spec, falling back to
+// `fallback` (a bare list) when the spec does not carry it.
+fn _env_field(spec, key, fallback)
+  _env(spec[key] ?? fallback)
+end
+
+export fn env_len(e)
+  len(e.seq)
+end
+
+// Value of envelope `e` at frame `t`. Out of range it holds the last value, or
+// wraps into the loop segment when one was declared.
+export fn env_at(e, t)
+  let n = len(e.seq)
+  if n == 0 then
+    return 0
+  end
+  if t < n then
+    return e.seq[max(0, t)]
+  end
+  if e.loop_at >= 0 && e.loop_at < n then
+    return e.seq[e.loop_at + (t - n) % (n - e.loop_at)]
+  end
+  e.seq[n - 1]
+end
+
+// A looping arpeggio envelope from a list of semitone offsets: `chord_arp([0,
+// 4, 7])` is the major triad every chiptune instrument leans on, cycling one
+// step per frame forever. This is the *instrument's* chord; the `a<xy>`
+// pattern effect is the per-row one.
+export fn chord_arp(offsets)
+  envelope(offsets, 0)
+end
+
+// ── Instruments ───────────────────────────────────────────────────────────
+// Four envelopes and two scalars, all optional:
+//
+//   vol    0–15, the channel's amplitude. Scaled by the row's volume column.
+//   arp    whole semitones added to the pitch — the classic chiptune chord.
+//   pitch  detune in 1/16 semitones, for a blip's upward chirp or a slow drift.
+//   duty   pulse duty 0–3 (12.5%, 25%, 50%, 75%). Ignored off the pulse
+//          channels, so one instrument record can serve any channel.
+//   rel    the volume envelope used *after* a `"---"` row. The default `[0]`
+//          is a hard cut; `[10, 6, 3, 1, 0]` is a release tail.
+//   mode   noise mode, 0 long / 1 short (metallic). Noise channel only.
+//
+//   instrument({vol: [15, 14, 12, 10], arp: [0], duty: [2],
+//               rel: [8, 4, 0]})
+
+export fn instrument()
+  instrument({})
+end
+
+export fn instrument(spec)
+  {
+    vol: _env_field(spec, "vol", [15]),
+    arp: _env_field(spec, "arp", [0]),
+    pitch: _env_field(spec, "pitch", [0]),
+    duty: _env_field(spec, "duty", [2]),
+    rel: _env_field(spec, "rel", [0]),
+    mode: spec["mode"] ?? 0
+  }
+end
+
+let _DEFAULT_INST = instrument({})
+
+// ── Rows, patterns, orders, songs ─────────────────────────────────────────
+// A **row** is one tracker line for one channel: a note, an instrument, a
+// volume, and one effect. A **pattern** is a list of rows. A **song frame** is
+// which pattern each of the four channels plays for one span of rows, and the
+// **order** is the list of frames in playing sequence — FamiTracker's frame
+// matrix exactly.
+//
+// Rows are usually written as text, one row per line, because that is the
+// whole point of a tracker:
+//
+//   let melody = rows("""
+//     C-4 0 v12       // note, instrument 0, volume 12
+//     ...             // nothing happens — the channel holds
+//     E-4             // same instrument and volume as before
+//     ---             // release
+//     G-4 0 m43       // vibrato, speed 4 depth 3
+//   """)
+//
+// Columns after the note may appear in any order:
+//   a bare number   the instrument index
+//   `v<n>`          volume 0–15
+//   `<letter><n>`   an effect (below)
+// A blank line is skipped and `//` starts a comment, so a pattern can be laid
+// out with section headings; an *empty row* must be written `...`.
+//
+// Effects (digits are decimal, not FamiTracker's hex — this is Petal):
+//   `a<xy>`  arpeggio: cycle 0, +x, +y semitones every frame. `a47` is major.
+//   `p<n>`   portamento: glide to this row's note at n/16 semitone per frame.
+//   `s<n>`   slide up n/16 semitone per frame.  `d<n>` slides down.
+//   `m<xy>`  vibrato: speed x, depth y.
+//   `t<n>`   set the song's ticks-per-row from here on (tempo change).
+//   `b<n>`   break: jump to the next order frame after this row.
+// An effect persists on its channel until another one replaces it, so `m00`,
+// `p00` and `a00` are how you turn one off.
+
+let _CHANS = ["p1", "p2", "tri", "noise"]
+let _CH_FX = ["a", "p", "s", "d", "m"]
+
+fn _mk_row(n, inst, vol, fx, val)
+  {note: note(n), inst: inst, vol: vol, fx: fx, val: val}
+end
+
+// `inst` and `vol` of -1 mean "whatever the channel already had", which is
+// what an empty tracker column means.
+export fn row(n)
+  _mk_row(n, -1, -1, "", 0)
+end
+
+export fn row(n, inst)
+  _mk_row(n, inst, -1, "", 0)
+end
+
+export fn row(n, inst, vol)
+  _mk_row(n, inst, vol, "", 0)
+end
+
+export fn row(n, inst, vol, fx, val)
+  _mk_row(n, inst, vol, fx, val)
+end
+
+fn _tokens(line)
+  let out = []
+  for t in split(join(split(line, "\t"), " "), " ") do
+    if len(t) > 0 then
+      out = append(out, t)
+    end
+  end
+  out
+end
+
+fn _row_from_tokens(ts)
+  let r = _mk_row(ts[0], -1, -1, "", 0)
+  for i in range(1, len(ts)) do
+    let t = ts[i]
+    if _all_digits(t) then
+      r.inst = parse_int(t)
+    else
+      let head = lower(slice(t, 0, 1))
+      let tail = slice(t, 1, len(t))
+      let n = if _all_digits(tail) then parse_int(tail) else 0 end
+      if head == "v" then
+        r.vol = clamp(n, 0, 15)
+      else
+        r.fx = head
+        r.val = n
+      end
+    end
+  end
+  r
+end
+
+// Parse a block of tracker text into a pattern (a list of rows).
+export fn rows(text)
+  let out = []
+  for raw in split(text, "\n") do
+    let line = raw
+    let c = index_of(line, "//")
+    if c >= 0 then
+      line = slice(line, 0, c)
+    end
+    let ts = _tokens(line)
+    if len(ts) > 0 then
+      out = append(out, _row_from_tokens(ts))
+    end
+  end
+  out
+end
+
+// One entry in the order list: the pattern index each channel plays. -1 is a
+// silent channel for this stretch of the song.
+export fn song_frame(p1, p2, tri, noise)
+  {p1: p1, p2: p2, tri: tri, noise: noise}
+end
+
+// Tempo is `ticks` — frames per row, the unit the hardware actually counts in
+// — but a spec may give `bpm` (with an optional `rows_per_beat`, default 4)
+// and have it converted at 60 fps instead.
+//
+//   song({
+//     name: "title",              // identity: what makes music_play idempotent
+//     bpm: 112,                   // or: ticks: 8
+//     instruments: [...],         // indexed by a row's instrument column
+//     patterns: [...],            // indexed by a song frame
+//     order: [song_frame(0, 2, 3, 4), ...],
+//     loop_at: 0                  // order index to repeat from; -1 plays once
+//   })
+export fn song(spec)
+  let ticks = spec["ticks"] ?? 0
+  if ticks <= 0 then
+    let bpm = spec["bpm"] ?? 120
+    let rpb = spec["rows_per_beat"] ?? 4
+    ticks = max(1, int(round(3600.0 / (bpm * rpb))))
+  end
+  {
+    name: spec["name"] ?? "song",
+    ticks: ticks,
+    instruments: spec["instruments"] ?? [],
+    patterns: spec["patterns"] ?? [],
+    order: spec["order"] ?? [],
+    loop_at: spec["loop_at"] ?? 0
+  }
+end
+
+// ── Driver state ──────────────────────────────────────────────────────────
+// Everything the driver remembers lives in one record behind one `state` slot,
+// for the same reason `ui.ptl`'s theme does: one declaration site is one slot,
+// shared by every entry point and carried across a hot reload. That is what
+// makes a reload mid-song resume on the same row of the same pattern instead
+// of restarting the tune every time the file is saved.
+//
+// (`state` is a keyword, so the field naming here avoids it entirely; the
+// current song is `tune`.)
+
+fn _voice()
+  {note: -1, tgt: 0.0, cur: 0.0, inst: 0, t: 0, vol: 15,
+   on: false, rel: false, fx: "", val: 0}
+end
+
+fn _no_sfx()
+  {name: "", t: 0}
+end
+
+// An effect renders through the same voice path as a music channel: a voice
+// pinned to the def's pitch, at frame `t`, with no row effects of its own.
+fn _sfx_voice(d, t)
+  let v = _voice()
+  v.cur = d.pitch
+  v.tgt = d.pitch
+  v.t = t
+  v.on = true
+  v
+end
+
+fn _fresh()
+  {
+    name: "", tune: 0, playing: false, brk: false,
+    ord: 0, row: 0, acc: 0, ticks: 6, frame: -1,
+    voices: {p1: _voice(), p2: _voice(), tri: _voice(), noise: _voice()},
+    sfx: {p1: _no_sfx(), p2: _no_sfx(), tri: _no_sfx(), noise: _no_sfx()},
+    bank: {}
+  }
+end
+
+fn _slot(writing, v)
+  state cur = _fresh()
+  if writing then
+    cur = v
+  end
+  cur
+end
+
+fn _snd()
+  _slot(false, 0)
+end
+
+fn _put(s)
+  _slot(true, s)
+end
+
+// ── Transport ─────────────────────────────────────────────────────────────
+
+// Start `tune`, or do nothing if a song of the same `name` is already loaded.
+// Idempotent by design: a cart re-runs top to bottom every frame, so this is
+// meant to be called unconditionally. Change the song by calling it with a
+// different song; restart the current one with `music_restart()`.
+export fn music_play(tune)
+  music_play(tune, -1)
+end
+
+// `from_order` >= 0 forces a (re)start at that order index, whatever is
+// loaded — the form a level-select or a "play from here" debug key wants.
+export fn music_play(tune, from_order)
+  let s = _snd()
+  if s.name != tune.name || type(s.tune) != "record" || from_order >= 0 then
+    s.name = tune.name
+    s.tune = tune
+    s.ord = max(0, from_order)
+    s.row = 0
+    s.acc = 0
+    s.ticks = tune.ticks
+    s.brk = false
+    s.playing = len(tune.order) > 0
+    s.voices = {p1: _voice(), p2: _voice(), tri: _voice(), noise: _voice()}
+  else
+    // Same song, so the position stands — but the *data* is taken fresh. That
+    // is what makes editing a pattern and saving audible immediately: the
+    // reload rebuilds the song record, this swaps it in under the playhead,
+    // and the next row read comes from the new notes. Only the position is
+    // clamped, in case the edit made the song shorter.
+    s.tune = tune
+    s.ord = clamp(s.ord, 0, max(0, len(tune.order) - 1))
+    if s.playing then
+      s.row = clamp(s.row, 0, max(0, _frame_rows(s) - 1))
+    end
+  end
+  _put(s)
+  0
+end
+
+// Restart the loaded song from the top. Sound effects keep playing.
+export fn music_restart()
+  let s = _snd()
+  if s.name != "" then
+    s.ord = 0
+    s.row = 0
+    s.acc = 0
+    s.ticks = s.tune.ticks
+    s.brk = false
+    s.playing = true
+    s.voices = {p1: _voice(), p2: _voice(), tri: _voice(), noise: _voice()}
+  end
+  _put(s)
+  0
+end
+
+// Stop and forget the position. The channels go quiet on the next
+// `music_tick()`, which is also the tick that lets a running sound effect
+// finish rather than cutting it off.
+export fn music_stop()
+  let s = _snd()
+  s.playing = false
+  s.name = ""
+  s.tune = 0
+  s.voices = {p1: _voice(), p2: _voice(), tri: _voice(), noise: _voice()}
+  _put(s)
+  0
+end
+
+// Freeze the song where it is, holding the current row's notes. Pairs with
+// `music_resume()` for a pause menu.
+export fn music_pause()
+  let s = _snd()
+  s.playing = false
+  _put(s)
+  0
+end
+
+export fn music_resume()
+  let s = _snd()
+  if s.name != "" then
+    s.playing = true
+  end
+  _put(s)
+  0
+end
+
+export fn music_playing()
+  _snd().playing
+end
+
+// Where the song is, for a debug overlay or a cutscene that waits on a
+// musical bar: {name, order, row, playing, ticks}.
+export fn music_pos()
+  let s = _snd()
+  {name: s.name, order: s.ord, row: s.row, playing: s.playing, ticks: s.ticks}
+end
+
+// ── Per-row and per-frame channel logic ───────────────────────────────────
+
+fn _inst_of(tune, i)
+  if type(tune) == "record" && i >= 0 && i < len(tune.instruments) then
+    tune.instruments[i]
+  else
+    _DEFAULT_INST
+  end
+end
+
+fn _apply_row(v, r)
+  let n = v
+  if r.inst >= 0 then
+    n.inst = r.inst
+  end
+  if r.vol >= 0 then
+    n.vol = r.vol
+  end
+  // Only the channel's own effects are stored; `t` and `b` are the song's,
+  // handled by the row reader, and must not clobber a running vibrato.
+  if contains(_CH_FX, r.fx) then
+    n.fx = r.fx
+    n.val = r.val
+  end
+  if r.note == note_off then
+    n.rel = true
+    n.t = 0
+  elsif r.note >= 0 then
+    n.note = r.note
+    n.tgt = float(r.note)
+    // Portamento glides from wherever the channel already is; every other
+    // effect jumps straight to the new note.
+    if n.fx != "p" || n.val <= 0 || !n.on then
+      n.cur = n.tgt
+    end
+    n.on = true
+    n.rel = false
+    n.t = 0
+  end
+  n
+end
+
+fn _step_pitch(v)
+  let n = v
+  if n.fx == "p" && n.val > 0 then
+    let step = n.val / 16.0
+    if n.cur < n.tgt then
+      n.cur = min(n.tgt, n.cur + step)
+    elsif n.cur > n.tgt then
+      n.cur = max(n.tgt, n.cur - step)
+    end
+  else
+    n.cur = n.tgt
+  end
+  // `s`/`d` move the target itself, so the slide keeps running across rows
+  // that carry no new note.
+  if n.fx == "s" && n.val > 0 then
+    n.tgt = n.tgt + n.val / 16.0
+    n.cur = n.tgt
+  elsif n.fx == "d" && n.val > 0 then
+    n.tgt = n.tgt - n.val / 16.0
+    n.cur = n.tgt
+  end
+  n
+end
+
+// What this channel should sound like this frame: {pitch, vol, duty, mode}.
+fn _voice_out(v, ins)
+  let e = if v.rel then ins.rel else ins.vol end
+  let amp = clamp(env_at(e, v.t), 0, 15)
+  let vol = if v.on then clamp(amp * v.vol / 15, 0, 15) else 0 end
+  let p = v.cur + env_at(ins.arp, v.t) + env_at(ins.pitch, v.t) / 16.0
+  if v.fx == "a" && v.val > 0 then
+    p = p + [0, v.val / 10, v.val % 10][v.t % 3]
+  end
+  if v.fx == "m" && v.val > 0 then
+    p = p + (v.val % 10) * 0.125 * sin(v.t * (v.val / 10) * 0.25)
+  end
+  {pitch: p, vol: vol, duty: clamp(env_at(ins.duty, v.t), 0, 3), mode: ins.mode}
+end
+
+// The noise channel has 16 periods, not pitches. They are laid out on the 16
+// semitones from C-2 upward — the tracker convention — so a drum part is
+// written with note names like everything else and a *higher* note is a
+// brighter, tighter noise.
+export fn noise_period(n)
+  clamp(15 - (int(round(n)) - 36), 0, 15)
+end
+
+// ── The tick ──────────────────────────────────────────────────────────────
+
+// Read the current row of every channel and apply it. Returns the updated
+// driver state; song-wide effects (`t`, `b`) are resolved here.
+fn _read_row(s)
+  let st = s
+  let ord = st.tune.order[st.ord]
+  let vs = st.voices
+  for ch in _CHANS do
+    let pi = ord[ch] ?? -1
+    if pi >= 0 && pi < len(st.tune.patterns) then
+      let pat = st.tune.patterns[pi]
+      if st.row < len(pat) then
+        let r = pat[st.row]
+        vs[ch] = _apply_row(vs[ch], r)
+        if r.fx == "t" && r.val > 0 then
+          st.ticks = r.val
+        elsif r.fx == "b" then
+          st.brk = true
+        end
+      end
+    end
+  end
+  st.voices = vs
+  st
+end
+
+// Rows in the current order frame: the longest pattern it names. A shorter
+// pattern on one channel simply runs out and that channel holds — which is how
+// a 4-row drum loop rides under a 64-row melody.
+fn _frame_rows(s)
+  let ord = s.tune.order[s.ord]
+  let n = 0
+  for ch in _CHANS do
+    let pi = ord[ch] ?? -1
+    if pi >= 0 && pi < len(s.tune.patterns) then
+      n = max(n, len(s.tune.patterns[pi]))
+    end
+  end
+  n
+end
+
+fn _advance(s)
+  let st = s
+  st.row = st.row + 1
+  if st.brk || st.row >= _frame_rows(st) then
+    st.brk = false
+    st.row = 0
+    st.ord = st.ord + 1
+    if st.ord >= len(st.tune.order) then
+      if st.tune.loop_at >= 0 && st.tune.loop_at < len(st.tune.order) then
+        st.ord = st.tune.loop_at
+      else
+        st.playing = false
+        st.ord = 0
+        st.voices = {p1: _voice(), p2: _voice(), tri: _voice(), noise: _voice()}
+      end
+    end
+  end
+  st
+end
+
+// Advance the song, overlay sound effects, and write the chip. Call it exactly
+// once per frame, after the cart's own logic. Calling it twice in one frame is
+// harmless — the second call is a no-op — but skipping it leaves whatever the
+// last write said hanging, so call it unconditionally, even on a paused frame.
+export fn music_tick()
+  let s = _snd()
+  if s.frame == frame_count() then
+    return 0
+  end
+  s.frame = frame_count()
+
+  // Row boundary first, so the frame that starts a row also renders it.
+  if s.playing && s.acc <= 0 then
+    s = _read_row(s)
+    s.acc = max(1, s.ticks)
+  end
+
+  // Music layer.
+  let out = {}
+  let vs = s.voices
+  for ch in _CHANS do
+    let v = _step_pitch(vs[ch])
+    let ins = _inst_of(s.tune, v.inst)
+    out[ch] = _voice_out(v, ins)
+    v.t = v.t + 1
+    vs[ch] = v
+  end
+  s.voices = vs
+
+  // Sound-effect layer, written over the music on the channels it owns.
+  let sfx = s.sfx
+  for ch in _CHANS do
+    let sv = sfx[ch]
+    if sv.name != "" && has_field(s.bank, sv.name) then
+      let d = s.bank[sv.name]
+      if sv.t >= d.dur then
+        sfx[ch] = _no_sfx()
+      else
+        out[ch] = _voice_out(_sfx_voice(d, sv.t), d.ins)
+        sv.t = sv.t + 1
+        sfx[ch] = sv
+      end
+    end
+  end
+  s.sfx = sfx
+
+  apu_pulse(0, out.p1.pitch, out.p1.duty, out.p1.vol)
+  apu_pulse(1, out.p2.pitch, out.p2.duty, out.p2.vol)
+  apu_triangle(out.tri.pitch, out.tri.vol > 0)
+  apu_noise(noise_period(out.noise.pitch), out.noise.vol, out.noise.mode)
+
+  // Row clock last, so `ticks` changed by a `t` effect on this row counts from
+  // this row.
+  if s.playing then
+    s.acc = s.acc - 1
+    if s.acc <= 0 then
+      s = _advance(s)
+    end
+  end
+  _put(s)
+  0
+end
+
+// A cart that only wants sound effects still needs the per-frame pump. Same
+// function, honest name.
+export fn sound_tick()
+  music_tick()
+end
+
+// ── Sound effects ─────────────────────────────────────────────────────────
+// An effect is a one-shot instrument at a fixed pitch: the same four envelopes,
+// played from frame 0 for as long as its volume envelope lasts.
+//
+//   sfx_def("jump", {ch: "p2", note: "C-5", pri: 2,
+//                    vol: [12, 12, 11, 9, 7, 5, 3, 1],
+//                    pitch: [0, 6, 12, 18, 24, 28, 31, 33],
+//                    duty: [2]})
+//
+// **Channel-allocation policy.** An effect names one channel and borrows it for
+// its whole (short) duration, writing over the music there and handing it back
+// the moment it ends — the music voice keeps running underneath, so the melody
+// resumes mid-phrase rather than restarting. `pri` (default 1) settles a
+// collision: a new effect takes the channel unless the one already playing has
+// a *strictly higher* priority, so equal-priority effects retrigger (a rapid
+// coin pickup sounds like rapid coins) and a low-priority footstep can never
+// interrupt an explosion. Nothing is ever queued — a sound that loses the
+// channel is simply dropped, which is the right answer at 60 fps.
+//
+// The conventions worth keeping to, because they are the ones the NES itself
+// forced and the ones the stock effects follow: **pulse 2** is the effects
+// channel (pulse 1 carries the melody, and losing the melody is what players
+// notice), **noise** is percussion and explosions, and **triangle** is left to
+// the bass except for the short blip half of a drum.
+
+// Register (or replace) an effect. Idempotent, so `sfx_standard()` and a
+// cart's own defs can sit at the top of the script and re-run every frame.
+export fn sfx_def(name, spec)
+  let s = _snd()
+  let ins = instrument(spec)
+  let vol = _env_field(spec, "vol", [15])
+  let bank = s.bank
+  bank[name] = {
+    ch: spec["ch"] ?? "p2",
+    pitch: float(note(spec["note"] ?? "C-5")),
+    pri: spec["pri"] ?? 1,
+    dur: spec["dur"] ?? env_len(vol),
+    ins: ins
+  }
+  s.bank = bank
+  _put(s)
+  0
+end
+
+// Trigger a registered effect. Unknown names are ignored — a cart that has not
+// called `sfx_standard()` yet should not crash on its first jump.
+export fn sfx_play(name)
+  let s = _snd()
+  if has_field(s.bank, name) then
+    let d = s.bank[name]
+    let cur = s.sfx[d.ch] ?? _no_sfx()
+    let held = cur.name != "" && has_field(s.bank, cur.name) && s.bank[cur.name].pri > d.pri
+    if !held then
+      let sfx = s.sfx
+      sfx[d.ch] = {name: name, t: 0}
+      s.sfx = sfx
+    end
+  end
+  _put(s)
+  0
+end
+
+// Free a channel immediately, handing it straight back to the music.
+export fn sfx_stop(ch)
+  let s = _snd()
+  let sfx = s.sfx
+  sfx[ch] = _no_sfx()
+  s.sfx = sfx
+  _put(s)
+  0
+end
+
+export fn sfx_stop_all()
+  let s = _snd()
+  s.sfx = {p1: _no_sfx(), p2: _no_sfx(), tri: _no_sfx(), noise: _no_sfx()}
+  _put(s)
+  0
+end
+
+// ── Drums ─────────────────────────────────────────────────────────────────
+// NES percussion is noise plus, for the kick, a triangle blip pitched down
+// fast — there is no sample channel to hit. `drum(name)` plays the noise half
+// and, when the bank carries a `"<name>_tri"` companion, the triangle half in
+// the same frame, which is why a kick has body instead of sounding like a
+// hi-hat with the treble off.
+//
+// The same three sounds exist as *instruments* (`drum_instruments()`) for use
+// in a song's noise pattern; `drum()` is for gameplay hits.
+
+export fn drum_kick()
+  instrument({vol: [15, 13, 9, 5, 2, 0], mode: 0})
+end
+
+export fn drum_snare()
+  instrument({vol: [14, 12, 9, 7, 5, 3, 2, 1, 0], mode: 0})
+end
+
+export fn drum_hat()
+  instrument({vol: [9, 5, 2, 0], mode: 1})
+end
+
+// Kick, snare, hat — the indices the stock songs use for the noise channel.
+export fn drum_instruments()
+  [drum_kick(), drum_snare(), drum_hat()]
+end
+
+export fn drum(name)
+  sfx_play(name)
+  let s = _snd()
+  if has_field(s.bank, name ++ "_tri") then
+    sfx_play(name ++ "_tri")
+  end
+  0
+end
+
+// ── The stock sound bank ──────────────────────────────────────────────────
+// Five effects every game needs plus the drum kit. Call once at the top of the
+// cart; it is idempotent, so leaving it in the per-frame body is fine.
+
+export fn sfx_standard()
+  // Up-chirp, fading. Pulse 2 with a wide duty so it cuts through the music.
+  sfx_def("jump", {ch: "p2", note: "C-5", pri: 2,
+                   vol: [12, 12, 11, 10, 8, 6, 4, 2, 1],
+                   pitch: [0, 8, 16, 24, 30, 34, 37, 39, 40],
+                   duty: [2]})
+  // Two notes, the universal pickup: a fifth up on frame 4.
+  sfx_def("coin", {ch: "p2", note: "E-5", pri: 2,
+                   vol: [13, 13, 13, 13, 13, 12, 11, 9, 7, 5, 3, 1],
+                   arp: [0, 0, 0, 0, 7, 7, 7, 7, 7, 7, 7, 7],
+                   duty: [1]})
+  // Short, dissonant, down. High priority so damage is never masked.
+  sfx_def("hit", {ch: "p2", note: "A-4", pri: 4,
+                  vol: [15, 14, 12, 10, 7, 4, 2, 0],
+                  pitch: [0, -6, -14, -22, -30, -38, -46, -54],
+                  duty: [0]})
+  // Noise, long decay, low period sweep — the channel is percussion anyway.
+  sfx_def("explode", {ch: "noise", note: "D#3", pri: 6,
+                      vol: [15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+                      arp: [0, -2, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15],
+                      mode: 0})
+  // Menu blip: quiet, low priority, never steps on anything.
+  sfx_def("select", {ch: "p2", note: "G-5", pri: 1,
+                     vol: [8, 8, 6, 4, 2, 0],
+                     duty: [1]})
+  // The kit, as one-shots. The kick's triangle half is a separate def on the
+  // triangle channel — see `drum()`.
+  sfx_def("kick", {ch: "noise", note: "C-2", pri: 3,
+                   vol: [15, 13, 9, 5, 2, 0], mode: 0})
+  sfx_def("kick_tri", {ch: "tri", note: "C-2", pri: 3,
+                       vol: [15, 15, 15, 0],
+                       pitch: [0, -24, -48], mode: 0})
+  sfx_def("snare", {ch: "noise", note: "A-2", pri: 3,
+                    vol: [14, 12, 9, 7, 5, 3, 2, 1, 0], mode: 0})
+  sfx_def("hat", {ch: "noise", note: "D#3", pri: 2,
+                  vol: [9, 5, 2, 0], mode: 1})
+  0
+end
+
+// ── Petal-synthesized PCM ─────────────────────────────────────────────────
+// The `register_sound` path renders a sound *in Petal* ahead of time. The host
+// calls a named function as `fn_name(start_sample, count, sample_rate)` and
+// expects a list of floats in −1..1. These are the pieces to build one from:
+//
+//   fn laser(start, count, rate)
+//     pcm_render(start, count, rate, fn(t, i) ->
+//       osc_square(t, 900.0 - 700.0 * t / 0.30, 2) * env_decay(t, 0.30))
+//   end
+//   register_sound("laser", 0.30, "laser")
+//   ...
+//   play_sound("laser")
+//
+// `pcm_render` hands the callback the absolute time in seconds and the
+// absolute sample index, so a block rendered at `start = 40000` sounds exactly
+// like the same moment of a one-shot render — blocks must be stateless, and
+// keeping time absolute is what makes them so. Same discipline for the
+// realtime `enable_dsp(fn_name)` path, which uses the identical signature.
+
+// Seconds at absolute sample `i`.
+export fn pcm_time(i, rate)
+  i / float(rate)
+end
+
+// Build `count` samples starting at absolute sample `start`. `f` is called as
+// `f(t_seconds, sample_index)`.
+export fn pcm_render(start, count, rate, f)
+  let out = []
+  for k in range(0, count) do
+    let i = start + k
+    out = append(out, f(i / float(rate), i))
+  end
+  out
+end
+
+export fn osc_sine(t, hz)
+  sin(t * hz * 2.0 * pi())
+end
+
+// A phase in 0..1, the shared basis of the non-sine oscillators.
+fn _phase(t, hz)
+  fract(t * hz)
+end
+
+export fn osc_saw(t, hz)
+  _phase(t, hz) * 2.0 - 1.0
+end
+
+export fn osc_tri(t, hz)
+  abs(_phase(t, hz) * 4.0 - 2.0) - 1.0
+end
+
+// `duty` is the chip's 0–3 (12.5%, 25%, 50%, 75%), so a PCM sound can be
+// voiced to match a pulse instrument.
+export fn osc_square(t, hz, duty)
+  let widths = [0.125, 0.25, 0.5, 0.75]
+  if _phase(t, hz) < widths[clamp(duty, 0, 3)] then 1.0 else -1.0 end
+end
+
+// Deterministic white noise: a hash of the sample index, not a PRNG, so
+// re-rendering a block gives the same samples and a hot reload does not change
+// the sound.
+export fn osc_noise(i)
+  fract(sin(i * 12.9898) * 43758.5453) * 2.0 - 1.0
+end
+
+// Exponential decay to silence over `secs`. The workhorse: almost every short
+// effect is an oscillator times one of these.
+export fn env_decay(t, secs)
+  if t >= secs then 0.0 else pow(1.0 - t / secs, 2.0) end
+end
+
+// Linear attack then exponential decay, both in seconds.
+export fn env_ad(t, attack, decay)
+  if t < attack then
+    if attack <= 0.0 then 1.0 else t / attack end
+  else
+    env_decay(t - attack, decay)
+  end
+end
+
+// Classic four-stage envelope over a note of length `dur` seconds; `sustain`
+// is a level in 0..1.
+export fn env_adsr(t, attack, decay, sustain, release, dur)
+  if t < attack then
+    if attack <= 0.0 then 1.0 else t / attack end
+  elsif t < attack + decay then
+    lerp(1.0, sustain, (t - attack) / max(0.0001, decay))
+  elsif t < dur then
+    sustain
+  else
+    sustain * env_decay(t - dur, max(0.0001, release))
+  end
+end
+
+export fn pcm_scale(xs, g)
+  map(xs, fn(x) -> x * g)
+end
+
+// Sample-wise sum of two equal-length blocks. Mixing is a plain add, so keep
+// the parts quiet enough that the sum stays inside −1..1 (or run `pcm_clip`).
+export fn pcm_mix(a, b)
+  let out = []
+  for i in range(0, min(len(a), len(b))) do
+    out = append(out, a[i] + b[i])
+  end
+  out
+end
+
+export fn pcm_clip(xs)
+  map(xs, fn(x) -> clamp(x, -1.0, 1.0))
+end
+
+// ── Ready-made songs ──────────────────────────────────────────────────────
+// Two complete tunes the demo carts import. Both are 16-row patterns in A
+// minor with the same instrument layout, so a cart can cross-fade between them
+// by name alone:
+//
+//   0 lead   1 bass   2 pluck   3 triangle bass   4 kick   5 snare   6 hat
+
+export fn standard_instruments()
+  [
+    // 0 — lead: pulse, slight attack, sustains, short release tail.
+    instrument({vol: [13, 15, 14, 13, 12, 12, 11, 11, 10],
+                duty: [2, 2, 2, 1], rel: [8, 5, 3, 1, 0]}),
+    // 1 — bass: thin duty, fast decay, no release.
+    instrument({vol: [15, 14, 12, 11, 10, 9, 9, 8], duty: [0]}),
+    // 2 — pluck: bright and short, with an upward chirp on the attack.
+    instrument({vol: [15, 13, 10, 8, 6, 4, 2, 1, 0],
+                pitch: [8, 4, 0], duty: [1]}),
+    // 3 — triangle bass: the triangle has no volume, so this is a gate.
+    instrument({vol: [15], rel: [0]}),
+    drum_kick(),
+    drum_snare(),
+    drum_hat()
+  ]
+end
+
+// A slow, stately minor theme for the title screen: lead over a walking bass,
+// triangle roots, and a half-time backbeat.
+export fn song_title()
+  song({
+    name: "title",
+    bpm: 112,
+    instruments: standard_instruments(),
+    patterns: [
+      // 0 — lead A
+      rows("""
+        A-4 0 v12
+        ...
+        E-4 0
+        ...
+        A-4 0
+        ...
+        C-5 0 m32
+        ...
+        B-4 0
+        ...
+        G-4 0
+        ...
+        E-4 0
+        ...
+        ---
+        ...
+      """),
+      // 1 — lead B, answering phrase
+      rows("""
+        C-5 0 v12
+        ...
+        B-4 0
+        ...
+        A-4 0
+        ...
+        E-4 0 m42
+        ...
+        F-4 0
+        ...
+        G-4 0
+        ...
+        A-4 0 a47
+        ...
+        ...
+        ...
+      """),
+      // 2 — bass, one octave leap per chord
+      rows("""
+        A-2 1 v10
+        ...
+        A-3 1
+        ...
+        E-2 1
+        ...
+        E-3 1
+        ...
+        F-2 1
+        ...
+        F-3 1
+        ...
+        G-2 1
+        ...
+        G-3 1
+        ...
+      """),
+      // 3 — triangle roots, whole notes
+      rows("""
+        A-1 3
+        ...
+        ...
+        ...
+        E-1 3
+        ...
+        ...
+        ...
+        F-1 3
+        ...
+        ...
+        ...
+        G-1 3
+        ...
+        ...
+        ...
+      """),
+      // 4 — half-time drums (noise notes are periods; see noise_period)
+      rows("""
+        C-2 4
+        ...
+        D#3 6
+        ...
+        A-2 5
+        ...
+        D#3 6
+        ...
+        C-2 4
+        ...
+        D#3 6
+        ...
+        A-2 5
+        ...
+        D#3 6
+        ...
+      """)
+    ],
+    order: [
+      song_frame(0, 2, 3, -1),
+      song_frame(0, 2, 3, 4),
+      song_frame(1, 2, 3, 4),
+      song_frame(1, 2, 3, 4)
+    ],
+    loop_at: 1
+  })
+end
+
+// The gameplay loop: same key, twice the pace, driving eighth-note bass and a
+// straight backbeat. Built to sit *under* gameplay — the lead stays in one
+// octave and the drums never fill, because a loop you hear for twenty minutes
+// should not have a hook that wears out.
+export fn song_gameplay()
+  song({
+    name: "gameplay",
+    bpm: 150,
+    instruments: standard_instruments(),
+    patterns: [
+      // 0 — lead A
+      rows("""
+        A-4 0 v11
+        ...
+        C-5 0
+        E-5 0
+        ...
+        D-5 0
+        ...
+        C-5 0
+        B-4 0
+        ...
+        A-4 0
+        ...
+        E-4 0 a37
+        ...
+        ...
+        ...
+      """),
+      // 1 — lead B
+      rows("""
+        G-4 0 v11
+        ...
+        B-4 0
+        D-5 0
+        ...
+        C-5 0
+        ...
+        B-4 0
+        A-4 0
+        ...
+        G-4 0
+        ...
+        E-4 0 p06
+        A-4 0
+        ...
+        ---
+      """),
+      // 2 — pluck counter-melody on the second pulse
+      rows("""
+        E-5 2 v8
+        ...
+        A-5 2
+        ...
+        G-5 2
+        ...
+        E-5 2
+        ...
+        D-5 2
+        ...
+        C-5 2
+        ...
+        B-4 2
+        ...
+        A-4 2
+        ...
+      """),
+      // 3 — eighth-note triangle bass
+      rows("""
+        A-2 3
+        A-2 3
+        A-2 3
+        A-2 3
+        F-2 3
+        F-2 3
+        F-2 3
+        F-2 3
+        C-2 3
+        C-2 3
+        C-2 3
+        C-2 3
+        E-2 3
+        E-2 3
+        E-2 3
+        E-2 3
+      """),
+      // 4 — straight backbeat
+      rows("""
+        C-2 4
+        D#3 6
+        A-2 5
+        D#3 6
+        C-2 4
+        D#3 6
+        A-2 5
+        D#3 6
+        C-2 4
+        D#3 6
+        A-2 5
+        D#3 6
+        C-2 4
+        D#3 6
+        A-2 5
+        C-2 4
+      """)
+    ],
+    order: [
+      song_frame(0, -1, 3, 4),
+      song_frame(0, 2, 3, 4),
+      song_frame(1, -1, 3, 4),
+      song_frame(1, 2, 3, 4)
+    ],
+    loop_at: 0
+  })
 end

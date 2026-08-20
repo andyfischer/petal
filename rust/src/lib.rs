@@ -3,6 +3,7 @@
 // See docs/Architecture.md for the module layout and the term-graph IR design.
 
 pub mod ast;
+pub mod ast_display;
 pub mod backend;
 pub mod builtins;
 pub mod classes;

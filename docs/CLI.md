@@ -334,7 +334,52 @@ petal show-ast --json -e '<code>'
 
 Outputs the parsed abstract syntax tree — an array of `Stmt` nodes. Useful for verifying parser behavior and understanding the tree structure before compilation.
 
-**Text output** (default) — Rust `Debug` pretty-print of each statement.
+**Text output** (default) — a compact tree, one node per line: the node kind
+plus its key facts inline (names, operators, literal values), children
+indented two spaces, spans as `@line:col-line:col` (end-exclusive, collapsed
+to `@line:col` for single-character spans). Patterns and type annotations are
+rendered source-like; default facts (`exported: false`, `is_var: false`, an
+absent type annotation) are elided, and modifiers show as words after the
+kind (`Let var c`, `FnDecl export f`). For this source:
+
+```petal ignore
+fn square(x: number) -> number
+  x * x
+end
+
+let m = match n
+  when 0 -> "zero"
+  when k if k > 1 -> "big"
+end
+```
+
+the dump is:
+
+```
+FnDecl square (x: number) -> number @1:1-3:4
+  Expr @2:3-2:8
+    BinaryOp Mul @2:3-2:8
+      Ident x @2:3
+      Ident x @2:7
+Let m @5:1-8:4
+  Match @5:9-8:4
+    Ident n @5:15
+    Arm 0
+      Literal "zero" @6:13-6:19
+    Arm k
+      Guard
+        BinaryOp Gt @7:13-7:18
+          Ident k @7:13
+          Literal 1 @7:17
+      Literal "big" @7:22-7:27
+```
+
+Structural sub-parts that are not themselves nodes get label lines without
+spans: `Then`/`Else` under an `If`, `Arm <pattern>` and `Guard` under a
+`Match`, `Key` under an explicit-key `State`, `Part`/`Prop`/`Text` inside
+string interpolations and elements, `Field`/`Spread` inside records. This
+form is a debug view and may change; `--json` is the stable
+machine-readable output.
 
 **JSON output** (`--json`) — array of `Stmt` nodes:
 

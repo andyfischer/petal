@@ -964,13 +964,23 @@ pub(super) fn handle_show_ast(json: bool, source: &str) {
 pub(super) fn handle_show_ir(
     json: bool,
     all: bool,
+    user_only: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     let program = compile_source(source, source_input, include_dirs);
     if json {
-        println!("{}", serde_json::to_string_pretty(&program).unwrap());
+        if user_only {
+            // Filtered debugging view — see `ir_display::user_only_json`.
+            // NOT the `run --ir` interchange format.
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::ir_display::user_only_json(&program)).unwrap()
+            );
+        } else {
+            println!("{}", serde_json::to_string_pretty(&program).unwrap());
+        }
     } else {
         print!("{}", display_program_with(&program, !all));
     }

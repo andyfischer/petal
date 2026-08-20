@@ -25,7 +25,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
         }
-        "show-ir" => parse_show_with_all(&args[1..], |json, all| Command::ShowIr { json, all }),
+        "show-ir" => parse_show_ir_args(&args[1..]),
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
@@ -380,8 +380,63 @@ fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliAr
     }
 }
 
+/// Parse args for `show-ir`: `--json`, `--all` (include phantom builtin terms
+/// and prelude/module content), and `--user-only` (with `--json`: emit the
+/// filtered user-only view instead of the complete interchange Program).
+fn parse_show_ir_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut all = false;
+    let mut user_only = false;
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => json = true,
+            "--all" => all = true,
+            "--user-only" => user_only = true,
+            "-e" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected code after -e");
+                    process::exit(1);
+                }
+                source = Some(SourceInput::Inline(args[i].clone()));
+            }
+            _ => {
+                source = Some(SourceInput::File(args[i].clone()));
+            }
+        }
+        i += 1;
+    }
+
+    if user_only && !json {
+        eprintln!("--user-only requires --json (text output is already filtered; use --all to see everything)");
+        process::exit(1);
+    }
+    if user_only && all {
+        eprintln!("--user-only and --all are mutually exclusive");
+        process::exit(1);
+    }
+
+    let source = source.unwrap_or_else(|| {
+        eprintln!("Expected a file path or -e <code>");
+        process::exit(1);
+    });
+
+    CliArgs {
+        command: Command::ShowIr {
+            json,
+            all,
+            user_only,
+        },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
 /// Like `parse_show_args` but also accepts `--all` to include phantom builtin
-/// terms in the output. Used by `show-ir` / `show-graph`.
+/// terms in the output. Used by `show-graph`.
 fn parse_show_with_all(args: &[String], make_cmd: impl Fn(bool, bool) -> Command) -> CliArgs {
     let mut json = false;
     let mut all = false;

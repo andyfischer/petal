@@ -55,6 +55,10 @@ pub enum Command {
     ShowIr {
         json: bool,
         all: bool,
+        /// With `--json`: emit the filtered user-only view (phantom builtin
+        /// terms and prelude/module content removed). A debugging view, not
+        /// loadable by `run --ir`.
+        user_only: bool,
     },
     ShowBytecode {
         json: bool,
@@ -216,7 +220,15 @@ Commands:
   lint -e <code>                 Lint inline code, print result to stdout
   lint-fix <file>                Same as 'lint --fix <file>': rewrite in place.
                                  Makes no change if the file fails to parse.
-  show-ir [--json] [--all] <file> Display compiled IR (--all to include builtin phantoms)
+  show-ir [--json] [--all] [--user-only] <file>
+                                 Display compiled IR. Text output hides builtin
+                                 phantom terms and the auto-loaded prelude /
+                                 imported modules; --all restores them.
+                                 --json emits the complete Program object (the
+                                 `run --ir` interchange format); add --user-only
+                                 for a filtered debugging view with phantoms,
+                                 prelude content, and prelude-only constants
+                                 removed (not loadable by `run --ir`)
   show-bytecode [--json] <file>  Display the bytecode lowering of the compiled IR
   show-ast [--json] <file>       Display parsed AST
   show-tokens [--json] <file>    Display lexer tokens
@@ -443,8 +455,12 @@ pub fn execute(cli: CliArgs) {
         Command::ShowAst { json } => {
             handlers::handle_show_ast(json, &source);
         }
-        Command::ShowIr { json, all } => {
-            handlers::handle_show_ir(json, all, &source, &source_input, &include_dirs);
+        Command::ShowIr {
+            json,
+            all,
+            user_only,
+        } => {
+            handlers::handle_show_ir(json, all, user_only, &source, &source_input, &include_dirs);
         }
         Command::ShowBytecode { json } => {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);

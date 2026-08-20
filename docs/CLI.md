@@ -431,39 +431,116 @@ the common variants but are not exhaustive.
 ### `show-ir` — Compiled IR (term graph)
 
 ```
-petal show-ir [--json] [--all] <file.ptl>
-petal show-ir [--json] [--all] -e '<code>'
+petal show-ir [--json] [--all] [--user-only] <file.ptl>
+petal show-ir [--json] [--all] [--user-only] -e '<code>'
 ```
 
 Outputs the compiled intermediate representation — the term graph that the evaluator executes. This is the primary command for GUI and tooling integration.
 
-By default, builtin "phantom" terms (one per registered native function, see
-below) are **hidden** so output starts with user code. Pass `--all` to
-include them.
+By default the **text output hides compiler noise**: builtin "phantom" terms
+(one per registered native function, see below) and everything that belongs
+to a non-entry file — the auto-loaded `std` prelude and imported modules.
+Ids are never renumbered by hiding; the lines are simply omitted. Pass
+`--all` to include everything.
 
-**Text output** (default):
+**Text output** (default). For this program:
+
+```petal
+fn double(x)
+  x * 2
+end
+let msg = match double(4)
+  when 0 -> "zero"
+  when n if n > 5 -> "big"
+  when _ -> "small"
+end
+print(msg)
+```
+
+`show-ir` prints:
 
 ```
 === Constants ===
-  c0: true
-  c1: 1
-  c2: 2
+  c0: 2
+  c1: 4
+  c2: "zero"
+  c3: 5
+  c4: "big"
+  c5: "small"
+  c6: "print"
 
 === Functions ===
-  fn0: add params=["a", "b"] body=block1 captures=[]
+  fn0: double params=["x"] body=block1 captures=[]
 
 === Blocks ===
-block0 [root] regs=24
-  t21 r21 = Constant(c0) []
-  t22 r22 = Branch [t21] -> block1, block2 ; x
+block0 [root] regs=124
+  t122 r117 = MakeClosure(fn0) [] ; double @1:1
+  t123 r118 = Copy [t122] @4:17
+  t124 r119 = Constant(4) [] @4:24
+  t125 r120 = Call [t123, t124] @4:17
+  t134 r121 = Match [t125] -> block2, block3, block5 ; msg @4:11
+    arm0: when 0 -> block2
+    arm1: when n if block4 -> block3
+    arm2: when _ -> block5
+  t135 r122 = Copy [t134] @9:7
+  t136 r123 = BuiltinCall("print") [t135] @9:1
 
-block1 (parent: t22) regs=1
-  t23 r0 = Constant(c1) []
+block2 (parent: t134) regs=1
+  t126 r0 = Constant("zero") [] @5:13
+
+block4 (guard for t134 arm1) regs=4
+  binds: n=t127:r0
+  t128 r1 = Copy [t127] @6:13
+  t129 r2 = Constant(5) [] @6:17
+  t130 r3 = Gt [t128, t129] @6:13
+
+...
+
+block1 (body of fn0 double) regs=5
+  params: x=t117:r0  self: double=t118:r1
+  t119 r2 = Copy [t117] @2:3
+  t120 r3 = Constant(2) [] @2:7
+  t121 r4 = Mul [t119, t120] @2:3
 ```
 
-Each term line: `t{id} r{register} = {op} [{inputs}] -> {child_blocks} ; {name}`
+Each term line: `t{id} r{register} = {op} [{inputs}] -> {child_blocks} ; {name} @{line}:{col}`
 
-**JSON output** (`--json`) — the full `Program` object:
+The text form is designed to be read without cross-referencing:
+
+- **Constants are resolved inline** in ops, following the bytecode
+  disassembler's convention: `Constant(1)`, `Constant("zero")`,
+  `BuiltinCall("print")`, `Error("message")`, `GetField(.x)` /
+  `GetFieldOpt(.x)` / `SetField(.x)`, `MethodCall(.dist2)` (plus
+  `, hint=Rect` when a class hint is present), `MakeEnumVariant(Circle)`,
+  `AllocMap{x, y}` (plus ` class=Rect` for class constructors), and
+  `AllocElement(div, props=[width])`.
+- **Match arms** print under their `Match` term, one line per arm, with the
+  pattern rendered source-like (`0`, `n`, `_`, `[a, ...rest]`, `{x: xx}`,
+  `Circle(r)`), the guard block if any (`if block4`), and the body block.
+  Guard blocks are labeled in their own header: `(guard for t134 arm1)`.
+- **Blocks are listed as a tree**: the root block first, then its descendant
+  child blocks depth-first in term order (a match arm's guard block just
+  before its body); each function's body-block tree follows as its own
+  top-level section, labeled `(body of fn0 double)`.
+- **Block headers name their bindings** — params, captures, the self
+  reference, and match-pattern variables — with term id and register
+  (`params: x=t117:r0  self: double=t118:r1`, `binds: n=t127:r0`). These
+  binding terms are hidden phantoms, so the header is what ties `Copy [t117]`
+  to the `x` parameter. A reference to any *other* hidden term is annotated
+  inline with its name: `Copy [t162(std::sum)]`.
+- **State ops show their identity**: `StateInit(count, key=0x5dff…)` /
+  `StateRead(...)` / `StateWrite(...)` carry the state's name and key, so a
+  write visibly links to its init.
+- **Phi carry-outs** print as a block footer: `phi-out: t126 -> t120 (x)`
+  means "when this block's frame pops, copy `t126`'s value into `t120`'s
+  register" (the `Phi` term for `x` in the parent block; see `Block.phi_outs`).
+- Every term line with a source span ends with a compact `@line:col`
+  location (prefixed with the file's display name for non-entry files, e.g.
+  `@std:21:1`).
+
+**JSON output** (`--json`) — the full `Program` object, always complete
+(phantoms and prelude included): this is the interchange format that
+`run --ir` / `check --ir` load, so it is never filtered by default.
 
 ```json
 {
@@ -479,6 +556,18 @@ Each term line: `t{id} r{register} = {op} [{inputs}] -> {child_blocks} ; {name}`
   "match_arms": {...}
 }
 ```
+
+**Filtered JSON view** (`--json --user-only`) — the same Program JSON shape
+with the noise filtered out of the arrays: builtin phantom terms, prelude /
+imported-module terms, blocks, and functions, and constants referenced only
+by them. Ids are preserved as-is (nothing is renumbered), which is why
+`constants.values` becomes an **id-keyed object** here
+(`{"0": {"Int": 2}, "6": {"String": "print"}}`) instead of an array;
+`source_map.term_spans` and `match_arms` are filtered to the kept terms. The
+param/capture/self binding phantoms of user blocks are kept so no kept term
+references a missing id. This is a debugging **view**, not an interchange
+format — it is **not loadable** by `run --ir`. (The MCP `ShowIR` tool
+returns this view by default.)
 
 #### Program JSON Schema
 
@@ -733,8 +822,9 @@ block's `entry` points to the first user term).
 Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) register
 additional natives before compiling programs. Those natives add more
 phantom terms, so the starting ID of user code shifts accordingly. In
-show-ir output, everything before the first non-phantom term is
-host-provided.
+`show-ir --json` output (and `show-ir --all` text), everything before the
+first non-phantom term is host-provided; the default text output and the
+`--user-only` JSON view hide phantoms entirely.
 
 ## Traversing the IR
 

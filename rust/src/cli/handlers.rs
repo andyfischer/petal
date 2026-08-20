@@ -952,9 +952,7 @@ pub(super) fn handle_show_ast(json: bool, source: &str) {
             if json {
                 println!("{}", serde_json::to_string_pretty(&stmts).unwrap());
             } else {
-                for stmt in &stmts {
-                    println!("{:#?}", stmt);
-                }
+                print!("{}", crate::ast_display::display_stmts(&stmts));
             }
         }
         Err(e) => die_plain(&e),

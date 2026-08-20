@@ -82,13 +82,15 @@ set x = 1`).map((t: any) => t.kind ?? t.type ?? t);
   });
 
   it("records is_var on the declaration, not on `let`", () => {
+    // A `false` is_var is omitted from the JSON (defaults are skipped —
+    // docs/CLI.md, AST JSON Schema), so `let` carries no is_var at all.
     const ast = showAstJson(`var a = 1
 let b = 2
 state var c = 3`);
-    const flags = [...JSON.stringify(ast).matchAll(/"is_var":\s*(true|false)/g)].map(
-      (m) => m[1],
-    );
-    expect(flags).toEqual(["true", "false", "true"]);
+    const [varA, letB, stateC] = ast.map((s: any) => s.kind);
+    expect(varA.Let.is_var).toBe(true);
+    expect(letB.Let.is_var).toBeUndefined();
+    expect(stateC.State.is_var).toBe(true);
   });
 });
 

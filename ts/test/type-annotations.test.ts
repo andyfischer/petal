@@ -8,8 +8,9 @@ beforeAll(() => ensureBuild());
 // checked or used at runtime. In the serialized AST an annotation appears under
 // `ty`/`ret` as an object `{ name, resolved }`: `name` is the raw type name as
 // written (`"int"`, `"str"`, `"banana"`), and `resolved` is the Rust `Type`
-// variant name ("Int", "Float", "String", ...) or null for an unknown name.
-// An absent annotation is null.
+// variant name ("Int", "Float", "String", ...) — omitted for an unknown name.
+// An absent annotation omits the `ty`/`ret` field entirely (the AST JSON
+// skips default-valued fields; see docs/CLI.md, AST JSON Schema).
 
 function letStmt(ast: any) {
   return ast.find((s: any) => s.kind.Let)?.kind.Let;
@@ -28,9 +29,9 @@ describe("optional type annotations", () => {
     expect(letStmt(ast).ty).toEqual({ name: "int", resolved: "Int" });
   });
 
-  it("leaves un-annotated let with ty: null", () => {
+  it("omits ty on an un-annotated let", () => {
     const ast = showAstJson("let y = 5");
-    expect(letStmt(ast).ty).toBeNull();
+    expect(letStmt(ast).ty).toBeUndefined();
   });
 
   it("accepts str as an alias for string", () => {
@@ -46,17 +47,14 @@ describe("optional type annotations", () => {
     const params = fnDecl(ast).params;
     expect(params).toEqual([
       { name: "a", ty: { name: "int", resolved: "Int" } },
-      { name: "b", ty: null },
+      { name: "b" },
       { name: "c", ty: { name: "string", resolved: "String" } },
     ]);
   });
 
-  it("leaves fully un-annotated params with ty: null", () => {
+  it("omits ty on fully un-annotated params", () => {
     const params = fnDecl(showAstJson("fn g(a, b) a end")).params;
-    expect(params).toEqual([
-      { name: "a", ty: null },
-      { name: "b", ty: null },
-    ]);
+    expect(params).toEqual([{ name: "a" }, { name: "b" }]);
   });
 
   it("parses a function return-type annotation", () => {
@@ -64,9 +62,9 @@ describe("optional type annotations", () => {
     expect(fnDecl(ast).ret).toEqual({ name: "float", resolved: "Float" });
   });
 
-  it("leaves an un-annotated function with ret: null", () => {
+  it("omits ret on an un-annotated function", () => {
     const ast = showAstJson("fn greet(n)\n  n\nend");
-    expect(fnDecl(ast).ret).toBeNull();
+    expect(fnDecl(ast).ret).toBeUndefined();
   });
 
   it("runs a function with a return-type annotation (ignored at runtime)", () => {
@@ -79,9 +77,9 @@ describe("optional type annotations", () => {
     expect(lambda.params).toEqual([{ name: "n", ty: { name: "int", resolved: "Int" } }]);
   });
 
-  it("preserves an unknown type name (raw name kept, resolved: null)", () => {
+  it("preserves an unknown type name (raw name kept, resolved omitted)", () => {
     const ast = showAstJson("let z: banana = 3");
-    expect(letStmt(ast).ty).toEqual({ name: "banana", resolved: null });
+    expect(letStmt(ast).ty).toEqual({ name: "banana" });
   });
 
   it("ignores annotations at runtime (dynamic execution unchanged)", () => {
@@ -112,8 +110,8 @@ describe("type annotations on `state`", () => {
     expect(stateStmt(ast).ty).toEqual({ name: "int", resolved: "Int" });
   });
 
-  it("leaves an un-annotated state with ty: null", () => {
-    expect(stateStmt(showAstJson("state n = 0")).ty).toBeNull();
+  it("omits ty on an un-annotated state", () => {
+    expect(stateStmt(showAstJson("state n = 0")).ty).toBeUndefined();
   });
 
   it("parses annotations on `state var` and on a keyed state", () => {
@@ -129,7 +127,6 @@ describe("type annotations on `state`", () => {
   it("preserves an unknown type name on state", () => {
     expect(stateStmt(showAstJson("state n: banana = 0")).ty).toEqual({
       name: "banana",
-      resolved: null,
     });
   });
 

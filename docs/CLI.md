@@ -400,29 +400,40 @@ string interpolations and elements, `Field`/`Spread` inside records. This
 form is a debug view and may change; `--json` is the stable
 machine-readable output.
 
-**JSON output** (`--json`) — array of `Stmt` nodes:
+**JSON output** (`--json`) — array of `Stmt` nodes. For `let x = 1 + 2`:
 
 ```json
 [
   {
-    "Let": {
-      "name": "x",
-      "value": {
-        "BinaryOp": {
-          "op": "Add",
-          "left": { "Literal": { "Int": 1 } },
-          "right": { "Literal": { "Int": 2 } }
+    "kind": {
+      "Let": {
+        "name": "x",
+        "value": {
+          "kind": {
+            "BinaryOp": {
+              "op": "Add",
+              "left": { "kind": { "Literal": { "Int": 1 } }, "span": [1, 9, 8, 1, 10, 9] },
+              "right": { "kind": { "Literal": { "Int": 2 } }, "span": [1, 13, 12, 1, 14, 13] }
+            }
+          },
+          "span": [1, 9, 8, 1, 14, 13]
         }
       }
-    }
+    },
+    "span": [1, 1, 0, 1, 14, 13]
   }
 ]
 ```
 
+Note the absent `ty`/`is_var`/`is_config`/`exported` fields on the `Let`:
+default-valued fields are omitted (see below).
+
 #### AST JSON Schema
 
 All AST enum types use serde's externally-tagged representation. `Stmt` and
-`Expr` are serialized as `{kind: <variant>, span: SourceSpan}` — `SourceSpan`
+`Expr` are serialized as `{kind: <variant>, span: SourceSpan}` (a `Stmt` also
+carries `"exported": true` when declared with the `export` modifier) —
+`SourceSpan`
 is the same compact array encoding the IR uses
 (`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`, see
 [Program JSON Schema](#program-json-schema)), and the `<variant>` shapes are
@@ -430,14 +441,31 @@ listed in the `StmtKind` and `ExprKind` tables below.
 The canonical definitions live in `rust/src/ast.rs`; the tables below cover
 the common variants but are not exhaustive.
 
+**Defaults are omitted.** A field holding its default value is left out of
+the JSON rather than written explicitly: `false` flags (`exported`, `is_var`,
+`is_config`), absent options (`ty`, `ret`, `resolved`, `class`, `key`,
+`guard`, `else_body`, `alias`, `names`, a list pattern's `rest`), and empty
+variant field lists (`EnumVariant.fields`, a `Variant` pattern's `fields`).
+Read a missing field as its default. The tables below write these as
+`Type (omitted when …)`.
+
+**Why externally tagged** (`{"kind": {"BinaryOp": {…}}}` rather than
+ESTree-style `{"type": "BinaryOp", …}`): this is serde's default enum
+encoding, and it is kept deliberately. Internal tagging reads flatter but
+cannot represent the AST's newtype variants (`Ident(String)`,
+`Literal(Literal)`, `List(Vec<Expr>)`, `Return(Option<Expr>)`, …) without
+restructuring every one of them into a struct variant with an invented field
+name; the churn isn't worth it for a debug-oriented dump. Consumers should
+treat the single key of the `kind` object as the node type.
+
 **StmtKind** (top-level statements):
 
 | Variant | Shape |
 |---------|-------|
-| `Let` | `{"Let": {"name": string, "ty": TypeAnn \| null, "value": Expr, "is_var": bool}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …` |
+| `Let` | `{"Let": {"name": string, "ty": TypeAnn (omitted when un-annotated), "value": Expr, "is_var": bool (omitted when false), "is_config": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …`; `is_config` for `config let` |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
-| `FnDecl` | `{"FnDecl": {"name": string, "class": string \| null, "params": Param[], "ret": TypeAnn \| null, "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
+| `FnDecl` | `{"FnDecl": {"name": string, "class": string (omitted for ordinary functions), "params": Param[], "ret": TypeAnn (omitted when un-annotated), "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
 | `ClassDecl` | `{"ClassDecl": {"name": string, "fields": ClassField[]}}` — a `class Name … end` declaration; fields are in declaration (and constructor-argument) order |
 | `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
@@ -445,7 +473,7 @@ the common variants but are not exhaustive.
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
 | `Continue` | `"Continue"` |
-| `State` | `{"State": {"name": string, "ty": TypeAnn \| null, "init": Expr, "id": number, "key": Expr \| null, "is_var": bool}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
+| `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "id": number, "key": Expr (omitted when unkeyed), "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
 
 **ExprKind** (expressions):
 
@@ -456,7 +484,7 @@ the common variants but are not exhaustive.
 | `BinaryOp` | `{"BinaryOp": {"op": BinOp, "left": Expr, "right": Expr}}` |
 | `UnaryOp` | `{"UnaryOp": {"op": UnaryOp, "operand": Expr}}` |
 | `Call` | `{"Call": {"function": Expr, "args": Expr[]}}` |
-| `If` | `{"If": {"condition": Expr, "then_body": Stmt[], "else_body": ElseBranch \| null}}` |
+| `If` | `{"If": {"condition": Expr, "then_body": Stmt[], "else_body": ElseBranch (omitted when there is no else)}}` |
 | `Match` | `{"Match": {"subject": Expr, "arms": MatchArm[]}}` |
 | `List` | `{"List": Expr[]}` |
 | `Record` | `{"Record": RecordField[]}` |
@@ -467,11 +495,11 @@ the common variants but are not exhaustive.
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
 | `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
 
-**Param**: `{"name": string, "ty": TypeAnn | null}` — a function/lambda parameter with its optional declared type annotation.
+**Param**: `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — a function/lambda parameter with its optional declared type annotation.
 
-**ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn | null}` — the same optional-annotation shape as a **Param**.
+**ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type | null}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (or `null` for an unrecognized name, e.g. `{"name": "banana", "resolved": null}`). An absent annotation is `null` (not an object). Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries `resolved: null` in the AST dump; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
@@ -489,11 +517,11 @@ the common variants but are not exhaustive.
 
 **ElseBranch**: `{"Block": Stmt[]}`, `{"ElseIf": Expr}`
 
-**MatchArm**: `{"pattern": Pattern, "guard": Expr | null, "body": Expr}`
+**MatchArm**: `{"pattern": Pattern, "guard": Expr (omitted when unguarded), "body": Expr}`
 
-**Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[]}}`, `{"List": {"elements": Pattern[], "rest": string | null}}`, `{"Record": [string, Pattern][]}`
+**Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[] (omitted when empty)}}`, `{"List": {"elements": Pattern[], "rest": string (omitted when there is no `...rest`)}}`, `{"Record": [string, Pattern][]}` — the same encoding the IR JSON's `match_arms` uses (see [ir-as-target.md](dev/ir-as-target.md))
 
-**EnumVariant**: `{"name": string, "fields": string[]}`
+**EnumVariant**: `{"name": string, "fields": string[] (omitted when empty)}`
 
 ### `show-ir` — Compiled IR (term graph)
 

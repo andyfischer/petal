@@ -151,8 +151,9 @@ The runtime is untouched — annotations are stripped to names for codegen.
 
 ### Serialization — `show-ast --json`
 `ty`/`ret` serialize as `{ "name": "int", "resolved": "Int" }`, or
-`{ "name": "banana", "resolved": null }` for an unknown name, or `null` when
-un-annotated. Schema documented in [`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
+`{ "name": "banana" }` for an unknown name (`resolved` is omitted); the
+`ty`/`ret` field itself is omitted when un-annotated. Schema documented in
+[`../CLI.md`](../CLI.md) (`TypeAnn`, `Type`).
 
 ---
 

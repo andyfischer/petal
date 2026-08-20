@@ -2,6 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::source_map::SourceSpan;
 
+// The serialized AST (`show-ast --json`) omits fields holding their default
+// value — `false` flags, `None` annotations, empty variant field lists — via
+// `skip_serializing_if`. Absence means the default. The two AST types that are
+// also *de*serialized (`Pattern`/`Literal`, embedded in the IR JSON via
+// `Program.match_arms`) pair each skip with `#[serde(default)]` so both the
+// compact and the explicit spellings load.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Literal {
     Nil,
@@ -80,6 +90,7 @@ pub enum ExprKind {
     If {
         condition: Box<Expr>,
         then_body: Vec<Stmt>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         else_body: Option<ElseBranch>,
     },
     Match {
@@ -159,6 +170,7 @@ pub enum ElseBranch {
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub guard: Option<Expr>,
     pub body: Expr,
 }
@@ -170,10 +182,12 @@ pub enum Pattern {
     Variable(String),
     Variant {
         name: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         fields: Vec<Pattern>,
     },
     List {
         elements: Vec<Pattern>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         rest: Option<String>,
     },
     Record(Vec<(String, Pattern)>),
@@ -189,6 +203,7 @@ pub enum AssignTarget {
 #[derive(Debug, Clone, Serialize)]
 pub struct EnumVariant {
     pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
 }
 
@@ -205,6 +220,7 @@ pub struct TypeAnn {
     /// The type name exactly as written (`int`, `str`, `banana`).
     pub name: String,
     /// The resolved static type, or `None` for an unrecognized name.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<crate::types::Type>,
     /// Where the type name was written. [`ZERO_SPAN`] when synthesized.
     #[serde(skip)]
@@ -241,6 +257,7 @@ impl TypeAnn {
 #[derive(Debug, Clone, Serialize)]
 pub struct ClassFieldDecl {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ty: Option<TypeAnn>,
     /// The whole field declaration, `x: int` — what a diagnostic about *this
     /// field* (a duplicate name, say) underlines. Without it every field-level
@@ -255,6 +272,7 @@ pub struct ClassFieldDecl {
 #[derive(Debug, Clone, Serialize)]
 pub struct Param {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ty: Option<TypeAnn>,
 }
 
@@ -268,6 +286,7 @@ pub struct Stmt {
     /// Only meaningful for a module's top-level `fn`/`let`/`state`/`enum`: it
     /// gates what importers can see (see `docs/module-system.md`). `false`
     /// everywhere else — nested statements and the entry file never export.
+    #[serde(skip_serializing_if = "is_false")]
     pub exported: bool,
 }
 
@@ -278,16 +297,19 @@ pub enum StmtKind {
         /// Optional declared type (`let x: int = …`). `None` only when
         /// un-annotated; a written but unrecognized name is preserved as a
         /// [`TypeAnn`] with `resolved: None`.
+        #[serde(skip_serializing_if = "Option::is_none")]
         ty: Option<TypeAnn>,
         value: Expr,
         /// Written `var x = …` rather than `let x = …`: a mutable cell, which
         /// is written with `set` and rejects `=`.
         /// See docs/dev/var-next-steps.md (Two write keywords).
+        #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
         /// Written `config let x = …`: the binding is declared as a tuning
         /// knob. Direct manipulation prefers editing config bindings and
         /// leaves the rest alone (docs/direct-manipulation.md); hosts may
         /// also render them as sliders. No effect on evaluation.
+        #[serde(skip_serializing_if = "is_false")]
         is_config: bool,
     },
     Assign {
@@ -311,12 +333,14 @@ pub enum StmtKind {
         /// `Some("Rect")` for `fn Rect.center_x(...)`: this declaration is a
         /// method on that class, and the first parameter is its receiver.
         /// `None` for an ordinary function.
+        #[serde(skip_serializing_if = "Option::is_none")]
         class: Option<String>,
         params: Vec<Param>,
         /// Optional declared return type (`fn f(…) -> int`). `None` when
         /// un-annotated; a written but unrecognized name is preserved as a
         /// [`TypeAnn`] with `resolved: None`. Named functions only; lambdas have
         /// no return-type slot.
+        #[serde(skip_serializing_if = "Option::is_none")]
         ret: Option<TypeAnn>,
         body: Vec<Stmt>,
     },
@@ -348,12 +372,15 @@ pub enum StmtKind {
         /// Optional `state x: int = …` annotation. A reactive binding has no
         /// trustworthy inferred type (a later frame or `set` can replace it), so
         /// this is the only thing that lets the checker constrain a state name.
+        #[serde(skip_serializing_if = "Option::is_none")]
         ty: Option<TypeAnn>,
         init: Expr,
         id: usize,
         /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
+        #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<Expr>,
         /// Written `state var x = …`: a cell that persists across frames.
+        #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
     },
     /// `import m` / `import m as u` / `import m: a, b`. Only allowed before
@@ -369,9 +396,11 @@ pub struct ImportDecl {
     /// The module name as written (`import ui` → "ui").
     pub module: String,
     /// `import ui as u` → Some("u"). Defaults to the module name.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
     /// `import ui: button, clicked` → Some(["button", "clicked"]).
     /// `None` means qualified-only (`ui.button(...)`).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>,
 }
 

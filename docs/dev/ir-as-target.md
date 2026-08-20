@@ -288,9 +288,13 @@ Pattern := "Wildcard"
          | {"Literal": <Literal>}
          | {"Variable": "x"}
          | {"Variant": {"name": "Circle", "fields": [Pattern, ...]}}
-         | {"List": {"elements": [Pattern, ...], "rest": "tail" | null}}
+         | {"List": {"elements": [Pattern, ...], "rest": "tail"}}
          | {"Record": [["field", Pattern], ...]}
 ```
+
+`Variant.fields` and `List.rest` follow the omit-defaults rule: dumps skip an
+empty `fields` array and an absent `rest`, and the loader accepts the explicit
+spellings (`"fields": []`, `"rest": null`) as well.
 
 `Float` constants are stored as the `u64` bit pattern of the `f64`
 (`f64::to_bits`), for hashable dedup. An emitter must bit-encode floats; a

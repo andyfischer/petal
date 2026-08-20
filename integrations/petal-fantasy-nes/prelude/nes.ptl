@@ -1,0 +1,24 @@
+// fantasy-nes prelude — module `nes`
+//
+// Cart-facing conveniences over the raw video/system natives. Registered by
+// the host as an implicit import, so carts call these bare; `import nes` also
+// works. Only `export`ed declarations are visible to carts.
+//
+// Nothing here reaches the hardware directly — every function is a wrapper
+// over a native, so a cart that ignores the prelude entirely still works.
+//
+// STUB: two trivial exports, enough to prove the module wiring. The real
+// vocabulary (color names, tile helpers, meta-sprite layout, text rendering
+// into the map) is the prelude task's work.
+
+// Master-palette index of the pure black the hardware actually produces (the
+// $0F slot), which is what a cart wants for "off", not index 0. Petal has no
+// hex integer literals, so master-palette indices are decimal throughout.
+export let black = 15
+
+// Pixel coordinate of a map cell's top-left corner. Carts mix pixel-space
+// sprites with cell-space map writes constantly, so the conversion is worth a
+// name.
+export fn cell_to_px(cell)
+  cell * 8
+end

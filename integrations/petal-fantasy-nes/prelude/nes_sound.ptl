@@ -1,0 +1,18 @@
+// fantasy-nes prelude — module `nes_sound`
+//
+// Music and sound-effect vocabulary over the `apu_*` natives, kept separate
+// from `nes` so a cart that makes no sound never pays to compile it. Also an
+// implicit import.
+//
+// STUB: one trivial export, enough to prove the module wiring. Note-name
+// parsing, pattern/tracker playback, and the envelope helpers are the sound
+// task's work.
+
+// Notes are MIDI semitones so a pitch bend is just a fractional value: 60 is
+// middle C, 69 is A440, and +12 is an octave.
+export let middle_c = 60
+
+// Semitone offset from a note number, for transposing a whole pattern.
+export fn transpose(note, semitones)
+  note + semitones
+end

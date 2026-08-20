@@ -1,0 +1,88 @@
+// hello — the smallest cart that exercises the whole console.
+//
+// It sets a palette, defines two tiles, lays a floor into the map, and walks
+// one sprite around with the d-pad. Run it with:
+//
+//   cargo run -- carts/hello.ptl
+//
+// Honest about the skeleton it was written against: the PPU rasterizer is
+// still a stub that fills the screen with the backdrop color, so today this
+// cart renders as a flat blue field. Every call below is real and reaches the
+// host — the tiles, map and sprite are applied once the PPU task lands, with
+// no change to this file.
+
+// ── Palettes ──────────────────────────────────────────────────────────────
+// Colors are indices into the fixed 64-entry master palette, never RGB. Petal
+// has no hex integer literals, so they are written in decimal (33 == $21 in the
+// hardware numbering every NES palette chart uses).
+
+set_backdrop(33)                            // sky blue, the universal color 0
+set_palette(0, 15, 26, 42, 48)              // background: greens + white
+set_palette(4, 15, 22, 39, 48)              // sprites: reds + skin + white
+
+// ── Artwork ───────────────────────────────────────────────────────────────
+// A tile is 8 rows of 8 characters, one per pixel: `.` is transparent (the
+// backdrop) and 1-3 pick the sub-palette's other three colors.
+
+define_tile(1, [
+  "11111111",
+  "12222221",
+  "12222221",
+  "12222221",
+  "12222221",
+  "12222221",
+  "12222221",
+  "11111111"
+])
+
+define_tile(2, [
+  "..2222..",
+  ".233332.",
+  "23311332",
+  "23111132",
+  "23111132",
+  "23311332",
+  ".233332.",
+  "..2222.."
+])
+
+// ── Background map ────────────────────────────────────────────────────────
+
+set_map_size(32, 30)
+fill_map(0, 0)
+
+// A floor across the bottom three rows.
+for y in range(27, 30) do
+  for x in range(0, 32) do
+    set_tile(x, y, 1, 0)
+  end
+end
+
+// ── The hero ──────────────────────────────────────────────────────────────
+// `state` survives both frames and hot reloads, which is what lets the cart be
+// edited mid-game without the sprite jumping back to the start.
+
+state var hero_x = 120
+state var hero_y = 200
+
+let speed = 2
+
+if pad_down(0, "left") then
+  set hero_x = hero_x - speed
+end
+if pad_down(0, "right") then
+  set hero_x = hero_x + speed
+end
+if pad_down(0, "up") then
+  set hero_y = hero_y - speed
+end
+if pad_down(0, "down") then
+  set hero_y = hero_y + speed
+end
+
+// Keep him on screen: 256x240 visible, 8x8 sprite.
+set hero_x = max(0, min(248, hero_x))
+set hero_y = max(0, min(232, hero_y))
+
+// Sprites are cleared every frame and pushed every frame — nothing lingers.
+sprite(hero_x, hero_y, 2, 4)

@@ -419,7 +419,7 @@ fn render_block(
         .filter_map(|t| t.name.as_deref().map(|n| (n, *t)))
         .collect();
     let mut consumed: Vec<TermId> = Vec::new();
-    let mut bind = |name: &str, consumed: &mut Vec<TermId>| -> String {
+    let bind = |name: &str, consumed: &mut Vec<TermId>| -> String {
         match by_name.get(name) {
             Some(t) => {
                 consumed.push(t.id);

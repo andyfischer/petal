@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   ensureBuild,
   showTokensJson,
+  tokenKinds,
   showAstJson,
   showIrJson,
   runPetal,
@@ -14,9 +15,7 @@ describe("JSX elements", () => {
   describe("lexer", () => {
     it("tokenizes self-closing element", () => {
       const tokens = showTokensJson("<div />");
-      const types = tokens.map((t: any) =>
-        typeof t === "string" ? t : Object.keys(t)[0]
-      );
+      const types = tokenKinds(tokens);
       expect(types).toContain("JsxOpenStart");
       expect(types).toContain("JsxTagName");
       expect(types).toContain("JsxSelfClose");
@@ -24,9 +23,7 @@ describe("JSX elements", () => {
 
     it("tokenizes element with children", () => {
       const tokens = showTokensJson("<p>hello</p>");
-      const types = tokens.map((t: any) =>
-        typeof t === "string" ? t : Object.keys(t)[0]
-      );
+      const types = tokenKinds(tokens);
       expect(types).toContain("JsxOpenStart");
       expect(types).toContain("JsxTagName");
       expect(types).toContain("Gt");
@@ -36,9 +33,7 @@ describe("JSX elements", () => {
 
     it("tokenizes element with attributes", () => {
       const tokens = showTokensJson('<div class="foo" />');
-      const types = tokens.map((t: any) =>
-        typeof t === "string" ? t : Object.keys(t)[0]
-      );
+      const types = tokenKinds(tokens);
       expect(types).toContain("JsxOpenStart");
       expect(types).toContain("Ident");
       expect(types).toContain("Assign");
@@ -48,9 +43,7 @@ describe("JSX elements", () => {
 
     it("still lexes < as Lt with space", () => {
       const tokens = showTokensJson("x < 10");
-      const types = tokens.map((t: any) =>
-        typeof t === "string" ? t : Object.keys(t)[0]
-      );
+      const types = tokenKinds(tokens);
       expect(types).toContain("Lt");
       expect(types).not.toContain("JsxOpenStart");
     });

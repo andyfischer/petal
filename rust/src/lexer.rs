@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Literals
     Int(i64),
@@ -92,6 +92,110 @@ pub enum Token {
     // Special
     Newline,
     Eof,
+}
+
+impl Token {
+    /// The variant name (`"Let"`, `"Ident"`, …) as printed by the
+    /// `show-tokens` dumps (docs/CLI.md). Deliberately an exhaustive match:
+    /// adding a `Token` variant fails to compile here instead of silently
+    /// going missing from the dumps.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Token::Int(_) => "Int",
+            Token::Float(_) => "Float",
+            Token::String(_) => "String",
+            Token::True => "True",
+            Token::False => "False",
+            Token::Nil => "Nil",
+            Token::Ident(_) => "Ident",
+            Token::Let => "Let",
+            Token::Var => "Var",
+            Token::Set => "Set",
+            Token::Get => "Get",
+            Token::Fn => "Fn",
+            Token::If => "If",
+            Token::Else => "Else",
+            Token::For => "For",
+            Token::In => "In",
+            Token::While => "While",
+            Token::Match => "Match",
+            Token::Return => "Return",
+            Token::Break => "Break",
+            Token::Continue => "Continue",
+            Token::State => "State",
+            Token::Enum => "Enum",
+            Token::End => "End",
+            Token::Then => "Then",
+            Token::Do => "Do",
+            Token::Elsif => "Elsif",
+            Token::When => "When",
+            Token::Import => "Import",
+            Token::Export => "Export",
+            Token::Plus => "Plus",
+            Token::Minus => "Minus",
+            Token::Star => "Star",
+            Token::Slash => "Slash",
+            Token::Percent => "Percent",
+            Token::PlusPlus => "PlusPlus",
+            Token::Eq => "Eq",
+            Token::Ne => "Ne",
+            Token::Lt => "Lt",
+            Token::Le => "Le",
+            Token::Gt => "Gt",
+            Token::Ge => "Ge",
+            Token::And => "And",
+            Token::Or => "Or",
+            Token::DoubleQuestion => "DoubleQuestion",
+            Token::QuestionDot => "QuestionDot",
+            Token::Bang => "Bang",
+            Token::Assign => "Assign",
+            Token::PlusAssign => "PlusAssign",
+            Token::MinusAssign => "MinusAssign",
+            Token::StarAssign => "StarAssign",
+            Token::SlashAssign => "SlashAssign",
+            Token::PercentAssign => "PercentAssign",
+            Token::LParen => "LParen",
+            Token::RParen => "RParen",
+            Token::LBrace => "LBrace",
+            Token::RBrace => "RBrace",
+            Token::LBracket => "LBracket",
+            Token::RBracket => "RBracket",
+            Token::Comma => "Comma",
+            Token::Dot => "Dot",
+            Token::Colon => "Colon",
+            Token::At => "At",
+            Token::Pipe => "Pipe",
+            Token::Arrow => "Arrow",
+            Token::DotDot => "DotDot",
+            Token::DotDotDot => "DotDotDot",
+            Token::InterpStart => "InterpStart",
+            Token::InterpEnd => "InterpEnd",
+            Token::JsxOpenStart => "JsxOpenStart",
+            Token::JsxTagName(_) => "JsxTagName",
+            Token::JsxSelfClose => "JsxSelfClose",
+            Token::JsxCloseStart => "JsxCloseStart",
+            Token::JsxText(_) => "JsxText",
+            Token::Color(_) => "Color",
+            Token::Newline => "Newline",
+            Token::Eof => "Eof",
+        }
+    }
+
+    /// The carried value of a value-carrying token (`Int`, `Float`, `String`,
+    /// `Ident`, `JsxTagName`, `JsxText`, `Color`) as a JSON value, or `None`
+    /// for unit tokens. Numbers stay JSON numbers, strings stay JSON strings.
+    pub fn value_json(&self) -> Option<serde_json::Value> {
+        match self {
+            Token::Int(n) => Some((*n).into()),
+            Token::Float(f) => Some(serde_json::json!(f)),
+            Token::String(s)
+            | Token::Ident(s)
+            | Token::JsxTagName(s)
+            | Token::JsxText(s)
+            | Token::Color(s) => Some(s.as_str().into()),
+            _ => None,
+        }
+    }
 }
 
 /// Every word the lexer turns into a dedicated [`Token`] variant instead of an
@@ -305,6 +409,14 @@ impl Lexer {
             end,
             file: self.file,
         });
+    }
+
+    /// The token stream zipped with the parallel span stream. Tokens and
+    /// spans are always pushed together ([`Lexer::push_token_span`]), so
+    /// after `tokenize()` this pairs every token with its `[start, end)`
+    /// source span.
+    pub fn tokens_with_spans(&self) -> impl Iterator<Item = (&Token, &SourceSpan)> {
+        self.tokens.iter().zip(self.token_spans.iter())
     }
 
     /// The position of the single non-newline character immediately before the

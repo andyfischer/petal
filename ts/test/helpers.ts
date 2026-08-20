@@ -28,6 +28,16 @@ export function showTokensJson(code: string): any {
   return JSON.parse(run(["show-tokens", "--json", "-e", shellEscape(code)]));
 }
 
+/** `petal show-tokens -e <code>` — the text form, one token per line. */
+export function showTokensText(code: string): string {
+  return run(["show-tokens", "-e", shellEscape(code)]);
+}
+
+/** Map show-tokens JSON rows to their kind names. */
+export function tokenKinds(tokens: any[]): string[] {
+  return tokens.map((t: any) => t.kind);
+}
+
 export function runPetal(code: string): string {
   return run(["run", "-e", shellEscape(code)]);
 }

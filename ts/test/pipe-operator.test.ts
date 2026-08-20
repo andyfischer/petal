@@ -11,7 +11,7 @@ beforeAll(() => ensureBuild());
 describe("pipe operator |>", () => {
   it("lexes |> as a Pipe token", () => {
     const tokens = showTokensJson("1 |> f");
-    expect(tokens).toContainEqual("Pipe");
+    expect(tokens.map((t: any) => t.kind)).toContain("Pipe");
   });
 
   it("parses x |> f as f(x)", () => {

@@ -291,37 +291,56 @@ petal show-tokens --json <file.ptl>
 petal show-tokens --json -e '<code>'
 ```
 
-Outputs the flat token stream produced by the lexer. Useful for debugging tokenization and verifying operator/keyword recognition.
+Outputs the flat token stream produced by the lexer, with source spans. Useful for debugging tokenization and verifying operator/keyword recognition.
 
-**Text output** (default) — one token per line with index:
+**Text output** (default) — one token per line: index, kind, quoted value
+(when the token carries one), and compact span:
 
 ```
-0: Let
-1: Ident("x")
-2: Assign
-3: Int(1)
-4: Plus
-5: Int(2)
-6: Eof
+0: Let @1:1-1:4
+1: Ident "x" @1:5-1:6
+2: Assign @1:7-1:8
+3: Int 1 @1:9-1:10
+4: Plus @1:11-1:12
+5: Int 2 @1:13-1:14
+6: Eof @1:14-1:14
 ```
 
-**JSON output** (`--json`) — array of tokens:
+**JSON output** (`--json`) — array of uniform rows:
 
 ```json
-["Let", {"Ident": "x"}, "Assign", {"Int": 1}, "Plus", {"Int": 2}, "Eof"]
+[
+  {"kind": "Let", "span": [1, 1, 1, 4]},
+  {"kind": "Ident", "value": "x", "span": [1, 5, 1, 6]},
+  {"kind": "Assign", "span": [1, 7, 1, 8]},
+  {"kind": "Int", "value": 1, "span": [1, 9, 1, 10]},
+  {"kind": "Plus", "span": [1, 11, 1, 12]},
+  {"kind": "Int", "value": 2, "span": [1, 13, 1, 14]},
+  {"kind": "Eof", "span": [1, 14, 1, 14]}
+]
 ```
 
 #### Token JSON Encoding
 
-Tokens use serde's externally-tagged enum representation:
+Every row has the same shape — `{"kind", "value"?, "span"}`:
+
+- `kind` — the token's variant name (see the table below).
+- `value` — present only on value-carrying tokens. `Int`/`Float` values are
+  JSON numbers; `String`/`Ident` (and `JsxTagName`/`JsxText`/`Color`) values
+  are JSON strings. Unit tokens omit the field entirely.
+- `span` — `[startLine, startCol, endLine, endCol]`, 1-based, end-exclusive
+  (`end` points one past the last character). The text form prints the same
+  span as `@startLine:startCol-endLine:endCol`.
+
+Kind names:
 
 | Category | Examples |
 |----------|---------|
-| Unit keywords/operators | `"Let"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"True"`, `"False"`, `"Nil"` |
-| Unit operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"Pipe"` |
-| Unit delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"` |
-| Unit special | `"Newline"`, `"Eof"` |
-| Value-carrying | `{"Int": 42}`, `{"Float": 3.14}`, `{"String": "hello"}`, `{"Ident": "myVar"}` |
+| Keywords | `"Let"`, `"Var"`, `"Set"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"True"`, `"False"`, `"Nil"` |
+| Operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"Pipe"` |
+| Delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"` |
+| Special | `"Newline"`, `"Eof"` |
+| Value-carrying | `{"kind": "Int", "value": 42, …}`, `{"kind": "Float", "value": 3.14, …}`, `{"kind": "String", "value": "hello", …}`, `{"kind": "Ident", "value": "myVar", …}` |
 
 ### `show-ast` — Parsed AST
 

@@ -115,7 +115,10 @@ describe("escaped quotes inside an interpolation hole", () => {
 
 describe("scientific notation floats", () => {
   it("lexes exponent forms as floats", () => {
-    expect(showTokensJson("1e9")).toEqual([{ Float: 1e9 }, "Eof"]);
+    expect(showTokensJson("1e9")).toEqual([
+      { kind: "Float", value: 1e9, span: [1, 1, 1, 4] },
+      { kind: "Eof", span: [1, 4, 1, 4] },
+    ]);
     expect(runPetal("print(1.0e9)").trim()).toBe("1000000000.0");
     expect(runPetal("print(1e3)").trim()).toBe("1000.0");
     expect(runPetal("print(1.5e-3)").trim()).toBe("0.0015");

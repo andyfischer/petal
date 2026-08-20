@@ -171,12 +171,26 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
 ## Mechanism: Desktop (Rust + SDL) — the SDL track
 
 `petal-desktop-sdl` is a lib + bin crate. The library is the reusable host; the
-`petal-sdl` binary is a thin CLI over it. Both sample apps build on it:
+`petal-sdl` binary is a thin CLI over it. Three apps in this repo build on it:
 
 - `side-scroller` is **Shape A** — it launches the binary unchanged.
 - `petal-fps` is **Shape B** — it depends on the library and adds only its
   delta (a software-framebuffer 3D rasterizer and the `triangle3d` native
   family): one small `Host` impl plus its rasterizer and font.
+- [`petal-fantasy-nes`](../integrations/petal-fantasy-nes/) is **Shape B at the
+  integration tier** — an NES-style fantasy console whose "carts" are `.ptl`
+  scripts. Its delta is two emulated chips (a PPU-shaped tile/sprite rasterizer
+  and an APU-shaped sound chip), the natives that feed them, and a Petal-source
+  prelude registered as an implicit import; the window, loop, timing, input,
+  hot reload and agent/headless/screenshot modes are all inherited. It is a
+  *reusable host for many scripts* rather than one app, which is why it lives
+  under `integrations/` — and it is the example to read for two things
+  `petal-fps` does not exercise: a host that owns **audio** (`on_sdl_init` to
+  open the device, `end_frame` to fill it, and Petal functions called *by* the
+  host to synthesize samples), and a host that ships a **prelude written in
+  Petal** rather than in Rust. See its
+  [design](../integrations/petal-fantasy-nes/docs/design.md) and
+  [LANGUAGE_NOTES](../integrations/petal-fantasy-nes/LANGUAGE_NOTES.md).
 
 ### The design: one `Host` trait over a generic loop
 
@@ -237,6 +251,14 @@ app: an `InputEvent::MouseRelative`, `mouse_dx()`/`mouse_dy()` natives, and
 via SDL relative-mouse mode. Every host — web included — now gets them for free.
 The general rule: a capability an app needs belongs in the layer below it
 (§"Extension hooks, not forks").
+
+`petal-fantasy-nes` did the same three more times, and the shape of each is the
+test to apply: `Host::on_sdl_init(&sdl)` so a host can open the audio device,
+`Host::end_frame(&mut env)` called in *every* run mode so a host can drain its
+own buffers with no window, and SDL `GameController` events folded into the
+existing normalized key stream. All three default to inert, none changed
+`DefaultHost` or `petal-fps`, and gamepad support now arrives for free in every
+`petal-sdl` app.
 
 ### What is shared vs. custom in petal-fps (scope guide)
 

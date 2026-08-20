@@ -15,6 +15,32 @@ use sdl2::mouse::MouseButton;
 
 pub use petal_ui::input::{InputEvent, InputState, Modifiers};
 
+/// Suppress the event ids that `sdl2-compat` leaks through untranslated.
+///
+/// Homebrew's `sdl2` formula now installs **sdl2-compat**, a shim that
+/// implements the SDL2 API on top of SDL3. It forwards a few SDL3 window
+/// events using SDL3's numbering, and SDL3 packs `SHOWN`/`HIDDEN`/`EXPOSED`/
+/// `MOVED`/`RESIZED`/`PIXEL_SIZE_CHANGED` into `0x202..=0x20F` — a range where
+/// real SDL2 defines nothing above `SDL_SYSWMEVENT` (`0x201`).
+///
+/// The `sdl2` crate's `EventType: TryFrom<u32>` transmutes the raw id *before*
+/// matching it, so any id outside its enum is instant UB; in practice the
+/// process takes a non-unwinding abort ("trying to construct an enum from an
+/// invalid value 0x207") the first time the window is shown. That kills every
+/// windowed SDL app on such a machine, and no amount of care on our side of
+/// `poll_sdl_events` can catch it — the crate panics inside `poll_event`.
+///
+/// So we tell SDL to drop those ids before they ever reach the queue. We lose
+/// nothing: the window state we actually consume arrives on `SDL_WINDOWEVENT`
+/// (`0x200`), which sdl2-compat does translate properly.
+pub fn suppress_untranslated_events() {
+    // SDL_IGNORE — see SDL_events.h.
+    const SDL_IGNORE: i32 = 0;
+    for event_id in 0x202u32..=0x20F {
+        unsafe { sdl2::sys::SDL_EventState(event_id, SDL_IGNORE) };
+    }
+}
+
 /// Result of pumping the SDL event queue for one iteration of the loop.
 pub enum PollResult {
     None,

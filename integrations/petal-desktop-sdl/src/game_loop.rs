@@ -218,6 +218,7 @@ pub fn run_game<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let sdl = sdl2::init()?;
+    crate::input::suppress_untranslated_events();
     host.on_sdl_init(&sdl);
     let video = sdl.video()?;
 
@@ -333,6 +334,7 @@ pub fn run_agent<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let sdl = sdl2::init()?;
+    crate::input::suppress_untranslated_events();
     host.on_sdl_init(&sdl);
     let video = sdl.video()?;
 

@@ -9,17 +9,19 @@
 //! noise. Audio commands emitted on a fork are dropped along with the fork,
 //! which is exactly the behavior an agent taking a screenshot wants.
 //!
-//! STUB: every native is registered and every call is emitted, but only the
-//! chip writes are applied; `register_sound` / `enable_dsp` are accepted and
-//! ignored. Sample rendering, the voice mixer, and the DSP budget are the audio
-//! task's work.
+//! Two of these natives are not writes but *calls back into the cart*:
+//! `register_sound` and `enable_dsp` name a Petal function the host invokes to
+//! synthesize PCM. Those calls happen in [`apply`], after the frame's script
+//! has finished, because re-entering the interpreter while it is running is not
+//! possible and because ahead-of-time rendering is far too slow to sit inside
+//! the pump. [`crate::audio`] owns the calling, the caching, and the budget.
 
 use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
 use petal::value::Value;
 
 use crate::apu::Apu;
-use crate::audio::AudioEngine;
+use crate::audio::{AudioEngine, SYM_DSP_COST, SoundRequest};
 use crate::natives::{Command, emit, opt_nums, take_commands};
 
 /// Output channel carrying sound commands from the cart to the APU/mixer.
@@ -37,17 +39,32 @@ pub fn register_audio(env: &mut Env) {
     env.register_native("play_sound", native_play_sound);
     env.register_native("stop_sound", native_stop_sound);
     env.register_native("enable_dsp", native_enable_dsp);
+    env.register_native("dsp_cost_ms", native_dsp_cost_ms);
 }
 
 /// Apply this frame's sound commands from the live stack.
+///
+/// Order matters: the chip and voice writes are applied first, then the
+/// synthesis requests they may have referenced are reconciled, then the frame's
+/// realtime DSP block is rendered. Everything that calls back into Petal
+/// happens at the end, once the buffer has been fully drained, so a synthesis
+/// function that itself emits does not have its commands eaten by this pass.
 pub fn apply(env: &mut Env, apu: &mut Apu, engine: &mut AudioEngine) {
     let commands = take_commands(env, AUDIO_CHANNEL);
+    let mut requests = Vec::new();
     for c in &commands {
-        apply_command(c, apu, engine);
+        apply_command(c, apu, engine, &mut requests);
     }
+    engine.sync_sounds(env, &requests);
+    engine.begin_frame(env);
 }
 
-fn apply_command(c: &Command, apu: &mut Apu, engine: &mut AudioEngine) {
+fn apply_command(
+    c: &Command,
+    apu: &mut Apu,
+    engine: &mut AudioEngine,
+    requests: &mut Vec<SoundRequest>,
+) {
     match c.tag.as_str() {
         "apu_pulse" => apu.write_pulse(c.usize(0), c.f32(1), c.u8(2), c.u8(3)),
         "apu_triangle" => apu.write_triangle(c.f32(0), c.bool(1)),
@@ -63,9 +80,12 @@ fn apply_command(c: &Command, apu: &mut Apu, engine: &mut AudioEngine) {
             engine.play_sound(c.str(0), volume);
         }
         "stop_sound" => engine.stop_sound(c.str(0)),
-        // STUB: `register_sound` and `enable_dsp` need to call back into the
-        // Env to run the cart's synthesis function, which is the audio task's
-        // work. They are accepted and dropped for now.
+        "register_sound" => requests.push(SoundRequest {
+            name: c.str(0).to_string(),
+            seconds: c.f32(1),
+            fn_name: c.str(2).to_string(),
+        }),
+        "enable_dsp" => engine.set_dsp(c.str(0)),
         _ => {}
     }
 }
@@ -145,6 +165,19 @@ fn native_enable_dsp(cxt: &mut PetalCxt) -> NativeResult {
     let fn_name = string_arg(cxt, 1);
     emit(cxt, AUDIO_CHANNEL, "enable_dsp", vec![fn_name]);
     cxt.push_nil();
+    Ok(1)
+}
+
+/// What the last realtime DSP call cost, in milliseconds — the number the
+/// budget is judged on, so a cart can show it on screen and decide for itself
+/// whether to drop a voice before the host fades the bus out.
+fn native_dsp_cost_ms(cxt: &mut PetalCxt) -> NativeResult {
+    let ms = match cxt.binding_named(SYM_DSP_COST) {
+        Value::Float(f) => f,
+        Value::Int(n) => n as f64,
+        _ => 0.0,
+    };
+    cxt.push_float(ms);
     Ok(1)
 }
 

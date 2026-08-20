@@ -174,11 +174,25 @@ server.registerTool("CheckSnippet", {
 
 server.registerTool("ShowIR", {
   title: "Show Petal IR",
-  description: "Compiles Petal code and returns the intermediate representation (IR) as JSON.",
+  description:
+    "Compiles Petal code and returns the intermediate representation (IR) as JSON. " +
+    "By default this is the user-only view (`show-ir --json --user-only`): builtin " +
+    "phantom terms, the auto-loaded std prelude, and imported-module internals are " +
+    "filtered out, and `constants.values` is an id-keyed object. Ids are preserved, " +
+    "but the view is not loadable by `run --ir`. Pass `all: true` for the complete " +
+    "Program object (the `run --ir` interchange format).",
   inputSchema: {
     code: z.string().describe("The Petal source code to compile"),
+    all: z.boolean().optional().describe(
+      "Return the complete program, including builtin phantom terms and prelude/module internals"
+    ),
   },
-}, ({ code }) => runPetalCommand(["show-ir", "--json", "-e", code]));
+}, ({ code, all }) =>
+  runPetalCommand(
+    all
+      ? ["show-ir", "--json", "-e", code]
+      : ["show-ir", "--json", "--user-only", "-e", code]
+  ));
 
 server.registerTool("ShowBytecode", {
   title: "Show Petal Bytecode",

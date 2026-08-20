@@ -10,7 +10,7 @@ quickly test Petal snippets without shelling out manually.
 | `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. Non-fatal type-checker warnings appear on stderr. `trace: true` adds a per-term execution trace. |
 | `CheckSnippet({code})` | Lex+parse+compile without running. Returns `{ok: true, warnings: [...]}` (each warning `{message, line, column, file}`) or a structured error. Warnings are non-fatal. Cheaper than `TestSnippet` for validating syntax and type annotations. |
 | `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
-| `ShowIR({code})` | Return the compiled IR as JSON. |
+| `ShowIR({code, all?})` | Return the compiled IR as JSON. By default the user-only view: builtin phantom terms, the std prelude, and imported-module internals are filtered out (ids preserved; `constants.values` becomes an id-keyed object; not loadable by `run --ir`). `all: true` returns the complete Program (the `run --ir` interchange format). |
 | `ShowBytecode({code})` | Return the bytecode lowering of the IR as JSON. |
 | `ShowAST({code})` | Return the parsed AST as JSON. |
 | `ShowTokens({code})` | Return the token stream as JSON. |

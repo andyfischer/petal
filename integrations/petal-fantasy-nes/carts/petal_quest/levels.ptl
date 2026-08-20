@@ -1,0 +1,507 @@
+// Petal Quest — the three worlds.
+//
+// A level is authored as a list of **chunks**, each one 16 cells wide and 26
+// cells tall, stitched left to right by `game.ptl`. Chunks are the unit a
+// level is actually designed in: a chunk is half a screen, it fits on one
+// editor page at full width, and a level can be re-ordered or a chunk swapped
+// out without re-aligning anything.
+//
+// The 26 rows are the *play area*. The console's map is 30 rows; the top four
+// belong to the status bar, which the scroll split holds still, so data row `r`
+// is map row `r + 4` and world pixel `y = (r + 4) * 8`. Row 20 is the usual
+// ground line and rows 21-25 are what is under it.
+//
+// Legend — terrain, drawn into the background map:
+//
+//   .  air          #  ground top    =  ground fill   B  brick
+//   X  hard block   [  ledge left    -  ledge mid     ]  ledge right
+//   *  deco A       %  deco B        ,  tuft          (  cloud/wall left
+//   )  cloud/wall right               |  pole         ^  spikes (hurts)
+//   F  banner (the level's goal)
+//
+// Legend — objects, which leave their cell empty and become entities:
+//
+//   @  hero spawn   o  coin          w  walker        j  jumper
+//   b  flyer        H  extra life    S  star (brief invulnerability)
+//   K  the boss
+//
+// An object's cell is where its *feet* go: a 16-tall entity written on row 19
+// stands on the ground at row 20. Coins are 8x8 and sit in their cell exactly.
+//
+// Only the shapes are here. Which tiles those legend characters resolve to is
+// `game.ptl`'s `T_*` table, and what they look like is `art.ptl` — all three
+// worlds share one slot layout, so the level format never mentions a tileset.
+
+// (One line: an `import` list may not be wrapped across lines.)
+import nes: light_blue, black, navy, brown, peach, light_green, maroon, gray, light_gray, white, dark_green, green, pale_green, indigo, violet, pink, red, orange, purple, magenta, blue, cyan, pale_cyan
+
+// Rows dull enough to deserve a name. Everything else is drawn in place.
+let SKY = "................"
+let GND = "################"
+let FILL = "================"
+
+// ── World 1 — Green Fields ────────────────────────────────────────────────
+// The teaching level: one enemy at a time, every pit crossable at a walk, and
+// the first coin arc placed where a natural jump already goes.
+
+let L1_0 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  "..()............",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY, SKY,
+  "...@......,.....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L1_1 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "..........()....",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "....oooo........",
+  SKY, SKY, SKY,
+  "...........w....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L1_2 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  "....()..........",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  ".....oooo.......",
+  "....[----]......",
+  SKY, SKY, SKY,
+  "#####......#####",
+  "=====......=====",
+  "=====......=====",
+  "=====......=====",
+  "=====......=====",
+  "=====......====="
+]
+
+let L1_3 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  ".........()....",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "............BBB.",
+  SKY,
+  ".........o.o....",
+  ".........BBB....",
+  "....j...........",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L1_4 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "..()........()..",
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  "....[--]........",
+  SKY,
+  "..........b.....",
+  "..........[--]..",
+  SKY,
+  "..o..........o..",
+  SKY, SKY,
+  "###....####...##",
+  "===....====...==",
+  "===....====...==",
+  "===....====...==",
+  "===....====...==",
+  "===....====...=="
+]
+
+let L1_5 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  ".....().........",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY,
+  "......oo........",
+  "..w....^^^..w...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L1_6 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "............()..",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "............H...",
+  "...........XXX..",
+  SKY,
+  "........XXX.....",
+  SKY,
+  ".....XXX........",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L1_7 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  "..().......()...",
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  ".......S........",
+  "......[-].......",
+  SKY,
+  "..oo........oo..",
+  SKY,
+  "...j............",
+  "####...####...##",
+  "====...====...==",
+  "====...====...==",
+  "====...====...==",
+  "====...====...==",
+  "====...====...=="
+]
+
+let L1_8 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "......()........",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  "..........F.....",
+  "..........|.....",
+  "..........|.....",
+  "..........|.....",
+  "..........|.....",
+  "..........|.....",
+  ".....,....|.....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+// ── World 2 — The Deep ────────────────────────────────────────────────────
+// Roofed: every chunk opens with three rows of solid stone, so the sky the
+// first world had is gone and the flyers have somewhere to hide.
+
+let L2_0 = [
+  FILL, FILL, FILL,
+  SKY,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY, SKY,
+  "...@.......*....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L2_1 = [
+  FILL, FILL, FILL,
+  SKY,
+  SKY,
+  ".....b.......b..",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "......oooo......",
+  SKY, SKY, SKY,
+  "....*......%....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L2_2 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "....[--]........",
+  SKY,
+  "...........[--].",
+  SKY,
+  "..oo.......oo...",
+  SKY, SKY, SKY,
+  SKY,
+  "###..........###",
+  "===..........===",
+  "===..........===",
+  "===^^^^^^^^^^===",
+  "===##########===",
+  FILL
+]
+
+let L2_3 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  ".......BBB......",
+  SKY,
+  "...BBB.....BBB..",
+  SKY,
+  ".......oo.......",
+  "..j.........j...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L2_4 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY,
+  "=====......=====",
+  "=====......=====",
+  "=====......=====",
+  SKY,
+  "......b.....b...",
+  SKY,
+  "....oo....oo....",
+  SKY, SKY, SKY, SKY,
+  "......^^^^......",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L2_5 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  "..S.............",
+  "[-].............",
+  SKY,
+  "....XXX.........",
+  SKY,
+  ".......XXX......",
+  SKY,
+  "..........XXX...",
+  "############....",
+  "============....",
+  "============....",
+  "============....",
+  "============....",
+  FILL
+]
+
+let L2_6 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "..........H.....",
+  ".........XXX....",
+  SKY,
+  "...oo......oo...",
+  SKY,
+  "..w...w.....w...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L2_7 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "...[--].........",
+  SKY,
+  ".........[--]...",
+  SKY,
+  "...oo.......oo..",
+  SKY,
+  SKY,
+  "...^^^....j.....",
+  "#####....#######",
+  "=====....=======",
+  "=====....=======",
+  "=====....=======",
+  "=====....=======",
+  FILL
+]
+
+let L2_8 = [
+  FILL, FILL, FILL,
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  ".........F......",
+  ".........|......",
+  ".........|......",
+  ".........|......",
+  ".........|......",
+  ".........|......",
+  "....%....|......",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+// ── World 3 — Sky Castle ──────────────────────────────────────────────────
+// Long falls and three enemy types at once, then two chunks of flat arena at
+// the end. The arena has no walls of its own: the camera stops at the map edge
+// and `game.ptl` fences the hero in, which is cheaper and never traps him
+// inside a tile. Its roof is a lip at each end and open down the middle, so a
+// respawn dropped in from above lands on the floor and not on the roof.
+
+let L3_0 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "..().......()...",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY, SKY,
+  "...,........,...",
+  "...@............",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_1 = [
+  SKY, SKY, SKY, SKY, SKY,
+  ".....().........",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  "..o..........o..",
+  SKY, SKY, SKY, SKY,
+  "......b.........",
+  "#####.....######",
+  "=====.....======",
+  "=====.....======",
+  "=====.....======",
+  "=====.....======",
+  "=====.....======"
+]
+
+let L3_2 = [
+  SKY, SKY, SKY, SKY,
+  "............[--]",
+  SKY,
+  "........[--]....",
+  SKY,
+  "....[--]........",
+  SKY,
+  "..o.........o...",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  "..j.........j...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_3 = [
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "......b......b..",
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  "...oo......oo...",
+  SKY, SKY, SKY, SKY,
+  "..^^^...^^^...^^",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_4 = [
+  SKY, SKY, SKY, SKY,
+  SKY,
+  "......S.........",
+  ".....[-]........",
+  SKY, SKY, SKY, SKY, SKY,
+  "...........[--].",
+  SKY, SKY, SKY, SKY, SKY,
+  "..o..........o..",
+  SKY,
+  "###..........###",
+  "===..........===",
+  "===..........===",
+  "===..........===",
+  "===..........===",
+  "===..........==="
+]
+
+let L3_5 = [
+  SKY, SKY, SKY, SKY, SKY,
+  "...()......()...",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  "...........H....",
+  "..........XXX...",
+  SKY,
+  "....oo..........",
+  SKY,
+  SKY,
+  "..w....j....b...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_6 = [
+  SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY,
+  "..........XXXX..",
+  "..........X**X..",
+  "..........X**X..",
+  "..........X**X..",
+  "..........X**X..",
+  "..o..o....X**X..",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_7 = [
+  SKY, SKY, SKY,
+  "XX............XX",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY, SKY,
+  "...*........*...",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+let L3_8 = [
+  SKY, SKY, SKY,
+  "XX............XX",
+  SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY, SKY,
+  SKY, SKY, SKY, SKY, SKY,
+  ".....K.....*....",
+  GND,
+  FILL, FILL, FILL, FILL, FILL
+]
+
+// ── The levels ────────────────────────────────────────────────────────────
+// `world` selects the tileset; `pal` is the four background sub-palettes as
+// three colors each (entry 0 is always the backdrop). Palette 2 is the status
+// bar's and is white in every world on purpose — the HUD should not change
+// character when the scenery does.
+//
+// `boss` is the world pixel past which the Rift Warden wakes, or -1 for a
+// level that ends at a banner instead.
+
+export fn level(n)
+  if n == 1 then
+    {
+      name: "THE DEEP",
+      world: 1,
+      backdrop: black,
+      pal: [
+        [navy, gray, light_gray],       // 0 — fractured stone
+        [indigo, violet, pink],         // 1 — crystal seams and blocks
+        [gray, light_gray, white],      // 2 — status bar
+        [maroon, red, orange]           // 3 — embers
+      ],
+      chunks: [L2_0, L2_1, L2_2, L2_3, L2_4, L2_5, L2_6, L2_7, L2_8],
+      boss: -1
+    }
+  elsif n == 2 then
+    {
+      name: "SKY CASTLE",
+      world: 2,
+      backdrop: navy,
+      pal: [
+        [gray, light_gray, white],      // 0 — cut marble
+        [purple, magenta, pink],        // 1 — royal brick
+        [gray, light_gray, white],      // 2 — status bar
+        [blue, cyan, pale_cyan]         // 3 — glass and stars
+      ],
+      chunks: [L3_0, L3_1, L3_2, L3_3, L3_4, L3_5, L3_6, L3_7, L3_8],
+      boss: 900
+    }
+  else
+    {
+      name: "GREEN FIELDS",
+      world: 0,
+      backdrop: light_blue,
+      pal: [
+        [brown, peach, light_green],    // 0 — grass over dirt
+        [maroon, brown, peach],         // 1 — brick and timber
+        [gray, light_gray, white],      // 2 — status bar
+        [dark_green, green, pale_green] // 3 — foliage
+      ],
+      chunks: [L1_0, L1_1, L1_2, L1_3, L1_4, L1_5, L1_6, L1_7, L1_8],
+      boss: -1
+    }
+  end
+end
+
+// How many levels there are. `game.ptl` counts wins against this.
+export let level_count = 3

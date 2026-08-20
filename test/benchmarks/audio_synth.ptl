@@ -1,0 +1,209 @@
+// Benchmark: audio synthesis in Petal, shaped exactly like the block callback
+// petal-fantasy-nes would use — `voice(start_sample, count, sample_rate)`
+// returning `count` samples in -1..1. The question this answers is whether a
+// cart can synthesize its own audio in realtime (`enable_dsp`) or only ahead of
+// time (`register_sound`); see
+// integrations/petal-fantasy-nes/docs/audio-feasibility.md for the verdict.
+//
+// One 60fps frame at 44100Hz is 735 samples, so a block is 735 and the unit
+// that matters is microseconds-per-block against a 16.6ms frame.
+//
+// Four sections, so the doc can attribute cost rather than guess at it:
+//   1. chip voice into an f64_array   — the cheap NES-shaped voice
+//   2. chip voice into a boxed list   — same math, the `append` buffer, to
+//      price the return-type choice on its own
+//   3. rich voice into an f64_array   — 3 detuned saws, SVF, control-rate LFO
+//   4. ahead-of-time render           — one 0.3s sound effect end to end
+//
+// Every section prints a checksum so an optimizer change that eats the loop
+// shows up as a wrong number rather than as a suspiciously fast run.
+
+let RATE = 44100.0
+let BLOCK = 735 // one 60fps frame at 44100Hz
+let BLOCKS = 100 // ~1.7 seconds of audio per section
+let SFX_SAMPLES = 13230 // 0.3s, the ahead-of-time case
+
+// ── shared helpers ────────────────────────────────────────────────────────
+// No bitwise operators in the language, so the noise channel's LFSR is a
+// multiply/modulo PRNG sampled and held at the channel period — which is what
+// the audible result of an LFSR is anyway.
+
+fn prng_next(s)
+  (s * 1103515245 + 12345) % 2147483647
+end
+
+fn note_hz(note)
+  440.0 * pow(2.0, (note - 69.0) / 12.0)
+end
+
+// ── 1/2. the cheap chip voice ─────────────────────────────────────────────
+// Square + triangle + sample-and-held noise under one linear-attack /
+// exponential-decay envelope. Phase is derived from `start` so a block is
+// self-contained: the host hands out (start, count) and gets back audio that
+// stitches to its neighbours without carrying state across the FFI boundary.
+
+fn chip_sample_setup(start)
+  {
+    pp: fract(float(start) * (440.0 / 44100.0)),
+    tp: fract(float(start) * (220.0 / 44100.0)),
+    rnd: prng_next(start + 1),
+  }
+end
+
+fn chip_block_arr(start, count, rate)
+  let out = f64_array(count)
+  let st = chip_sample_setup(start)
+  var pp = st.pp
+  var tp = st.tp
+  var rnd = st.rnd
+  var nz = 0.0
+  let pinc = note_hz(69.0) / rate
+  let tinc = note_hz(57.0) / rate
+  let nper = 24
+  var ncount = 0
+  var i = 0
+  while i < count do
+    let t = float(start + i) / rate
+    let env = if t < 0.01 then t * 100.0 else pow(0.5, (t - 0.01) * 6.0) end
+
+    set pp = pp + pinc
+    if pp >= 1.0 then set pp = pp - 1.0 end
+    let sq = if pp < 0.5 then 0.35 else -0.35 end
+
+    set tp = tp + tinc
+    if tp >= 1.0 then set tp = tp - 1.0 end
+    let tri = if tp < 0.5 then tp * 4.0 - 1.0 else 3.0 - tp * 4.0 end
+
+    set ncount = ncount + 1
+    if ncount >= nper then
+      set ncount = 0
+      set rnd = prng_next(rnd)
+      set nz = if rnd % 2 == 0 then 0.25 else -0.25 end
+    end
+
+    out[i] = (sq + tri * 0.3 + nz) * env
+    set i = i + 1
+  end
+  out
+end
+
+// The same math writing the boxed list the design's `fn(start, count, rate)`
+// contract nominally returns, so the two runs differ only in the buffer.
+fn chip_block_list(start, count, rate)
+  var out = []
+  let st = chip_sample_setup(start)
+  var pp = st.pp
+  var tp = st.tp
+  var rnd = st.rnd
+  var nz = 0.0
+  let pinc = note_hz(69.0) / rate
+  let tinc = note_hz(57.0) / rate
+  let nper = 24
+  var ncount = 0
+  var i = 0
+  while i < count do
+    let t = float(start + i) / rate
+    let env = if t < 0.01 then t * 100.0 else pow(0.5, (t - 0.01) * 6.0) end
+
+    set pp = pp + pinc
+    if pp >= 1.0 then set pp = pp - 1.0 end
+    let sq = if pp < 0.5 then 0.35 else -0.35 end
+
+    set tp = tp + tinc
+    if tp >= 1.0 then set tp = tp - 1.0 end
+    let tri = if tp < 0.5 then tp * 4.0 - 1.0 else 3.0 - tp * 4.0 end
+
+    set ncount = ncount + 1
+    if ncount >= nper then
+      set ncount = 0
+      set rnd = prng_next(rnd)
+      set nz = if rnd % 2 == 0 then 0.25 else -0.25 end
+    end
+
+    set out = append(out, (sq + tri * 0.3 + nz) * env)
+    set i = i + 1
+  end
+  out
+end
+
+// ── 3. the rich voice ─────────────────────────────────────────────────────
+// Three detuned saws through a 2-pole state-variable lowpass whose cutoff an
+// LFO sweeps. The LFO runs at control rate (every 16 samples) because that is
+// what a synth actually does and because `sin` is a native call, which costs
+// more than the arithmetic around it.
+
+fn rich_block_arr(start, count, rate)
+  let out = f64_array(count)
+  let base = note_hz(45.0)
+  let i1 = base / rate
+  let i2 = base * 1.005 / rate
+  let i3 = base * 0.5 / rate
+  var p1 = fract(float(start) * i1)
+  var p2 = fract(float(start) * i2)
+  var p3 = fract(float(start) * i3)
+  var low = 0.0
+  var band = 0.0
+  var f = 0.3
+  let q = 0.4
+  var i = 0
+  while i < count do
+    let t = float(start + i) / rate
+    let env = if t < 0.01 then t * 100.0 else pow(0.5, (t - 0.01) * 2.0) end
+
+    if i % 16 == 0 then
+      let lfo = sin(t * 6.2831853 * 3.0)
+      set f = 0.18 + 0.14 * lfo
+    end
+
+    set p1 = p1 + i1
+    if p1 >= 1.0 then set p1 = p1 - 1.0 end
+    set p2 = p2 + i2
+    if p2 >= 1.0 then set p2 = p2 - 1.0 end
+    set p3 = p3 + i3
+    if p3 >= 1.0 then set p3 = p3 - 1.0 end
+    let raw = (p1 * 2.0 - 1.0) + (p2 * 2.0 - 1.0) * 0.7 + (p3 * 2.0 - 1.0) * 0.5
+
+    // state-variable filter, one pass
+    set low = low + f * band
+    let high = raw * 0.3 - low - q * band
+    set band = band + f * high
+
+    out[i] = low * env
+    set i = i + 1
+  end
+  out
+end
+
+// ── driver ────────────────────────────────────────────────────────────────
+// Checksums sample the buffer at a few fixed offsets rather than summing every
+// element: the summing loop would otherwise cost as much as the synthesis it
+// is checking.
+
+fn checksum(buf, acc)
+  acc + buf[0] + buf[1] + buf[BLOCK / 2] + buf[BLOCK - 1]
+end
+
+var acc_chip = 0.0
+for b in range(0, BLOCKS) do
+  let buf = chip_block_arr(b * BLOCK, BLOCK, RATE)
+  set acc_chip = checksum(buf, get acc_chip)
+end
+print("chip/array checksum:", round(get acc_chip, 6))
+
+var acc_list = 0.0
+for b in range(0, BLOCKS) do
+  let buf = chip_block_list(b * BLOCK, BLOCK, RATE)
+  set acc_list = checksum(buf, get acc_list)
+end
+print("chip/list  checksum:", round(get acc_list, 6))
+
+var acc_rich = 0.0
+for b in range(0, BLOCKS) do
+  let buf = rich_block_arr(b * BLOCK, BLOCK, RATE)
+  set acc_rich = checksum(buf, get acc_rich)
+end
+print("rich/array checksum:", round(get acc_rich, 6))
+
+// Ahead-of-time: a 0.3s effect rendered in one call, the `register_sound` path.
+let sfx = chip_block_arr(0, SFX_SAMPLES, RATE)
+print("sfx checksum:", round(sfx[0] + sfx[SFX_SAMPLES / 2] + sfx[SFX_SAMPLES - 1], 6))

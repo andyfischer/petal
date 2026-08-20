@@ -1,7 +1,11 @@
-name: Release
+name: Release Petal
 
 # Cut a release by pushing a version tag, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
+#
+# This repo ships more than one package, so each has its own tag prefix: bare
+# `v*` tags belong to the `petal` CLI (this file) and `garden-v*` tags belong to
+# Garden (release-garden.yml).
 #
 # This builds the `petal` CLI for macOS (arm64 + x86_64) and Linux (x86_64 +
 # arm64, static musl), packages each as a tarball + SHA-256 checksum, and

@@ -7,6 +7,15 @@ buffer, with tree-sitter syntax highlighting and live-reloading layout.
 
 ## Install
 
+With Homebrew (macOS only — Garden is a wgpu/winit GPU app):
+
+```bash
+brew install facetlayer/tap/garden
+garden setup initialize-config-if-missing   # seeds ~/.garden
+```
+
+From source:
+
 ```bash
 ./install-local.sh   # cargo-installs `garden` + its GPP clients into
                      # ~/.cargo/bin, and seeds ~/.garden/init.ptl

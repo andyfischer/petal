@@ -1,0 +1,194 @@
+name: Release Garden
+
+# Cut a Garden release by pushing a `garden-v*` tag, e.g.:
+#   git tag garden-v0.2.0 && git push origin garden-v0.2.0
+#
+# This repo ships more than one package, so each has its own tag prefix: bare
+# `v*` tags belong to the `petal` CLI (release-petal.yml) and `garden-v*` tags
+# belong to Garden. See docs/dev/releasing-garden.md.
+#
+# Garden is a wgpu/winit GPU app and is only built and supported on macOS
+# (arm64 + x86_64). The release ships `garden` plus every GPP client binary it
+# spawns — `garden` resolves those next to its own executable, so they have to
+# land in the same prefix.
+
+on:
+  push:
+    tags:
+      - "garden-v*"
+  # Allow a dry-run build (no publish) from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Every binary that ends up in the tarball. `garden` itself plus the builtin
+  # GPP clients listed in BUILTIN_GPP_APPS (garden-app/src/lib.rs) — omitting one
+  # breaks the matching `garden <app>` subcommand at runtime with no build error.
+  GARDEN_BINS: garden directory-browser git-log garden-diff main-menu sqlite-browser
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # Cross-compiled from the arm64 runner: Apple's clang and SDK target
+          # both architectures, so x86_64 needs no extra tooling.
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # The formula's `test do` asserts the tag's version against
+      # `garden --version`, which reports CARGO_PKG_VERSION. Catch a forgotten
+      # version bump here rather than with a broken formula in the tap.
+      - name: Check tag matches Cargo version
+        if: startsWith(github.ref, 'refs/tags/garden-v')
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#garden-v}"
+          cargo_version="$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' garden/Cargo.toml | head -1)"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $tag_version but garden/Cargo.toml says $cargo_version"
+            exit 1
+          fi
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            garden/target
+          key: cargo-garden-release-${{ matrix.target }}-${{ hashFiles('garden/Cargo.lock') }}
+          restore-keys: cargo-garden-release-${{ matrix.target }}-
+
+      - name: Build
+        run: |
+          cargo build --release --locked \
+            --manifest-path garden/Cargo.toml \
+            --target ${{ matrix.target }} \
+            -p garden-app -p directory-browser -p git-viewers \
+            -p garden-diff -p main-menu -p sqlite-browser
+
+      - name: Package tarball + checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          dist="garden-${target}"
+          mkdir -p "dist/${dist}"
+          for bin in $GARDEN_BINS; do
+            cp "garden/target/${target}/release/${bin}" "dist/${dist}/"
+          done
+          cp LICENSE "dist/${dist}/" 2>/dev/null || true
+          cp garden/README.md "dist/${dist}/" 2>/dev/null || true
+          ( cd dist && tar -czf "${dist}.tar.gz" "${dist}" )
+          ( cd dist && shasum -a 256 "${dist}.tar.gz" > "${dist}.tar.gz.sha256" )
+          ls -l dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: garden-${{ matrix.target }}
+          path: |
+            dist/garden-${{ matrix.target }}.tar.gz
+            dist/garden-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish when triggered by a tag push; workflow_dispatch is a dry run.
+    if: startsWith(github.ref, 'refs/tags/garden-v')
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/garden-*.tar.gz
+            artifacts/garden-*.tar.gz.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          # Do NOT let a Garden release become the repo's "latest" release: the
+          # petal installer fetches releases/latest/download/petal-<target>.tar.gz,
+          # which 404s the moment a Garden release takes that slot.
+          make_latest: "false"
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A PAT with `contents: write` on facetlayer/homebrew-tap, stored as
+      # HOMEBREW_TAP_TOKEN (FACETLAYER_PACKAGES_TOKEN is accepted as a fallback
+      # since this repo already carries one). Skipped when neither is set.
+      - name: Check for tap token
+        id: check
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.FACETLAYER_PACKAGES_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No tap token set — skipping Homebrew tap update."
+          fi
+
+      - name: Checkout tap
+        if: steps.check.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: facetlayer/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.FACETLAYER_PACKAGES_TOKEN }}
+          path: tap
+
+      - name: Download checksums
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'garden-*.tar.gz.sha256' --dir sums
+          cat sums/*.sha256 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Write and push formula
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          FORMULA: garden
+          CLASS: Garden
+          DESC: "GPU-accelerated IDE scripted with Petal"
+          HOMEPAGE: https://github.com/andyfischer/petal
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          ASSET_PREFIX: garden
+          CAVEATS: |
+            Garden keeps its config and state in ~/.garden. To seed it:
+              garden setup initialize-config-if-missing
+          TEST_CMD: |
+            assert_match version.to_s, shell_output("#{bin}/garden --version")
+        run: |
+          set -euo pipefail
+          export VERSION="${GITHUB_REF_NAME#garden-v}"
+          export BINS="$GARDEN_BINS"
+          .github/scripts/update-homebrew-tap.sh

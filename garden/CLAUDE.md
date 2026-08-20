@@ -17,3 +17,4 @@ GPU-accelerated IDE in Rust, with Petal as the scripting layer.
 - `docs/petal-graphical-panels.md` — Petal-drawn `panel(...)` panes (draw/input API)
 - `docs/petal-ide-mode.md` — `garden petal-ide` live editor + editor↔panel binding
 - `docs/keybindings.md` — key routing
+- `../docs/dev/releasing-garden.md` — cutting a Garden release + the Homebrew tap

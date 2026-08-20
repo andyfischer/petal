@@ -7,7 +7,7 @@ the one-line installer works end to end.
 
 | Piece | Where | Role |
 |-------|-------|------|
-| `.github/workflows/release.yml` | this repo | Builds the CLI for every target on a tag push and publishes a GitHub Release. |
+| `.github/workflows/release-petal.yml` | this repo | Builds the CLI for every target on a tag push and publishes a GitHub Release. |
 | `dist/install.sh` | this repo | The installer. Served at `https://petal-lang.org/install.sh`. |
 | `dist/uninstall.sh` | this repo | The uninstaller. Served at `https://petal-lang.org/uninstall.sh`. |
 | `frontend/public/install.sh` / `uninstall.sh` | `petal-lang.org` repo | The **served copies** — mirror `dist/` (see "Keeping the scripts in sync"). |

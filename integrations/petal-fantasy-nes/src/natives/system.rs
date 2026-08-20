@@ -11,9 +11,6 @@
 //! Presentation (`set_scale`, `set_crt`) and cart launching go through output
 //! channels because they act on the window and the loaded program — things the
 //! host owns and a native cannot reach.
-//!
-//! STUB: the cart list is not populated yet, so `cart_count()` is 0 and the
-//! launcher has nothing to show. Everything else here is real.
 
 use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
@@ -180,45 +177,59 @@ fn native_launch_cart(cxt: &mut PetalCxt) -> NativeResult {
 
 // ── Pads ──────────────────────────────────────────────────────────────────
 
-/// Keyboard keys each pad button answers to. More than one per button where a
-/// second layout is conventional (arrows *and* WASD on pad 0); the pad is down
-/// if any of them is. Names must match `petal_ui::input::KEY_NAMES`.
+/// The eight buttons a pad has, in hardware order. Also the valid set an
+/// unknown-button error quotes back, which is why it is one list rather than
+/// eight scattered string literals.
+pub const BUTTONS: [&str; 8] = ["up", "down", "left", "right", "a", "b", "select", "start"];
+
+/// Keyboard keys each pad button answers to, indexed by pad then by position
+/// in [`BUTTONS`]. The button is down if *any* of its keys is.
 ///
-/// Pad 1 has no select/start: there are only so many comfortable keys on one
-/// keyboard, and no two-player cart has needed them yet.
-const PAD_KEYS: [[(&str, &[&str]); 8]; 2] = [
+/// The spellings are deliberately the ones `petal-sdl` also produces for a
+/// connected game controller (slot 0: d-pad/stick -> arrows, south -> z,
+/// east -> x, west/north -> c/v, start -> return, back -> shift; slot 1:
+/// i/k/j/l + n/m). A controller is not a second input device here — it presses
+/// the same normalized keys — so listing those keys is all it takes for a cart
+/// written against the keyboard to be playable on a pad.
+///
+/// Pad 0 carries the conventional emulator layout plus a left-hand alternative
+/// (WASD for the d-pad, Tab as a second select), because the arrow/Z/X cluster
+/// is awkward on a laptop. Pad 1 has no select or start: there are only so many
+/// comfortable keys on one keyboard, and the second player never needs to open
+/// a menu. Asking for them is legal and simply reads as "not pressed".
+const PAD_KEYS: [[&[&str]; 8]; 2] = [
     [
-        ("up", &["up", "w"]),
-        ("down", &["down", "s"]),
-        ("left", &["left", "a"]),
-        ("right", &["right", "d"]),
-        ("a", &["z"]),
-        ("b", &["x"]),
-        ("select", &["shift"]),
-        ("start", &["return"]),
+        &["up", "w"],
+        &["down", "s"],
+        &["left", "a"],
+        &["right", "d"],
+        &["z", "c"],
+        &["x", "v"],
+        &["shift", "tab"],
+        &["return"],
     ],
-    [
-        ("up", &["i"]),
-        ("down", &["k"]),
-        ("left", &["j"]),
-        ("right", &["l"]),
-        ("a", &["n"]),
-        ("b", &["m"]),
-        ("select", &[]),
-        ("start", &[]),
-    ],
+    [&["i"], &["k"], &["j"], &["l"], &["n"], &["m"], &[], &[]],
 ];
 
-fn keys_for(pad: i64, button: &str) -> &'static [&'static str] {
-    let pad = match pad {
-        0 | 1 => pad as usize,
-        _ => return &[],
-    };
-    PAD_KEYS[pad]
-        .iter()
-        .find(|(name, _)| *name == button)
-        .map(|(_, keys)| *keys)
-        .unwrap_or(&[])
+/// Position of `button` in [`BUTTONS`], or an error naming the whole set.
+/// A misspelled button is a cart bug that would otherwise present as a control
+/// that silently never responds, so it is worth an error rather than a `false`.
+fn button_index(native: &str, button: &str) -> Result<usize, String> {
+    BUTTONS.iter().position(|b| *b == button).ok_or_else(|| {
+        format!(
+            "{}: unknown button {:?}, expected one of {}",
+            native,
+            button,
+            BUTTONS.join(", ")
+        )
+    })
+}
+
+fn pad_index(native: &str, pad: i64) -> Result<usize, String> {
+    match pad {
+        0 | 1 => Ok(pad as usize),
+        _ => Err(format!("{}: pad must be 0 or 1, got {}", native, pad)),
+    }
 }
 
 /// Is any of `keys` present in the string list bound at `binding`?
@@ -234,23 +245,53 @@ fn any_key_in(cxt: &mut PetalCxt, binding: &str, keys: &[&str]) -> bool {
     })
 }
 
-fn pad_query(cxt: &mut PetalCxt, binding: &str) -> NativeResult {
-    let pad = cxt.get_int(1).unwrap_or(0);
-    let button = cxt.get_string(2).unwrap_or_default();
-    let keys = keys_for(pad, &button);
+fn pad_query(cxt: &mut PetalCxt, native: &str, binding: &str) -> NativeResult {
+    let pad = pad_index(native, cxt.get_int(1)?)?;
+    let button = button_index(native, &cxt.get_string(2)?)?;
+    let keys = PAD_KEYS[pad][button];
     let down = !keys.is_empty() && any_key_in(cxt, binding, keys);
     cxt.push_bool(down);
     Ok(1)
 }
 
 fn native_pad_down(cxt: &mut PetalCxt) -> NativeResult {
-    pad_query(cxt, SYM_KEYS_DOWN)
+    pad_query(cxt, "pad_down", SYM_KEYS_DOWN)
 }
 
 fn native_pad_pressed(cxt: &mut PetalCxt) -> NativeResult {
-    pad_query(cxt, SYM_KEYS_PRESSED)
+    pad_query(cxt, "pad_pressed", SYM_KEYS_PRESSED)
 }
 
 fn native_pad_released(cxt: &mut PetalCxt) -> NativeResult {
-    pad_query(cxt, SYM_KEYS_RELEASED)
+    pad_query(cxt, "pad_released", SYM_KEYS_RELEASED)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use petal_ui::input::is_canonical_key;
+
+    #[test]
+    fn every_pad_key_is_canonical() {
+        for pad in PAD_KEYS {
+            for keys in pad {
+                for key in keys {
+                    assert!(is_canonical_key(key), "{} is not a petal-ui key name", key);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_button_names_the_valid_set() {
+        let err = button_index("pad_down", "fire").unwrap_err();
+        assert!(err.contains("\"fire\""), "{}", err);
+        assert!(err.contains("select, start"), "{}", err);
+    }
+
+    #[test]
+    fn pad_1_select_is_known_but_unmapped() {
+        let i = button_index("pad_down", "select").expect("select is a real button");
+        assert!(PAD_KEYS[1][i].is_empty());
+    }
 }

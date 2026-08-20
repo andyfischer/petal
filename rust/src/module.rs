@@ -117,6 +117,7 @@ impl ModuleResolver for ModuleRegistry {
 /// scope. `implicit` imports bind every export bare but *weakly*: the file's
 /// own declarations shadow them silently, and they never raise collision
 /// errors (mirroring how builtins behave).
+#[derive(Clone)]
 pub struct ResolvedImport {
     pub decl: ImportDecl,
     pub implicit: bool,
@@ -242,6 +243,21 @@ pub fn load_modules(
         });
     }
     let gated_modules = std::mem::take(&mut walker.out);
+
+    // The gated prelude binds inside *every* module, not just the entry. A host
+    // that registers its own prelude module (petal-ui's `ui`, the fantasy
+    // console's `nes_sound`) writes ordinary Petal in it and reasonably expects
+    // `has_field`/`sum`/… to resolve there exactly as they do in a script; when
+    // they only reached the entry, such a module compiled fine and then raised
+    // "Unknown builtin" the first time the offending line ran, which is both
+    // late and confusing. Gated decls stay lowest-precedence, so a module's own
+    // declarations still shadow them.
+    let mut ungated_modules = ungated_modules;
+    for m in &mut ungated_modules {
+        let mut imports = gated_decls.clone();
+        imports.extend(std::mem::take(&mut m.imports));
+        m.imports = imports;
+    }
 
     // Assemble: prelude modules run first, then the always-merged modules, then
     // the entry. The entry's import list mirrors that precedence order.

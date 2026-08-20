@@ -275,23 +275,33 @@ few leaky messages stand out more.
 
 ## What was missing
 
-### 8. The core prelude is invisible inside a host prelude module — and it shipped a bug
+### 8. The core prelude was invisible inside a host prelude module — **fixed**
 
-`has_field` lives in `rust/prelude/std.ptl`. It is a *gated* implicit import
-merged into the entry program, but the import list is attached only to the
-entry, not to the host's own registered modules. So this works in a cart and
-fails inside `nes_sound.ptl`:
+`has_field` lives in `rust/prelude/std.ptl`. It is a *gated* implicit import:
+it merges only when something references one of its exports. The reference scan
+already covered every loaded module, but the resulting import list was attached
+to the entry file alone — so this worked in a cart and failed inside
+`nes_sound.ptl`:
 
 ```
 Error: Unknown builtin: has_field [nes_sound line 801, column 6]
 ```
 
-The result is that `sfx_play` and `drum` are broken in the shipped console:
-sound effects raise on their first call. Nothing in the language flagged it,
-because the prelude was authored and tested on the bare `petal` CLI, where
-`std` *is* in scope. Two things would prevent a repeat: bind the gated prelude
-to every loaded module, not just the entry, and give hosts a way to compile a
-registered module in the same environment their carts see.
+That shipped: `sfx_play` and `drum` raised on their first call, and nothing
+flagged it, because the prelude was authored and tested on the bare `petal`
+CLI where `std` *is* in scope. The failure mode is the worst shape available —
+compiles clean, dies at runtime, only on the branch that reaches the call.
+
+Fixed in `module.rs`: gated decls are now prepended to every loaded module's
+import list, not just the entry's. They stay lowest-precedence, so a module's
+own declarations still shadow them. Covered by three cases in
+`rust/tests/modules.rs` (host prelude, script-imported module, and the
+shadowing rule).
+
+The second half of the lesson stands and is not addressed: a host has no way to
+compile its registered prelude in the same environment its carts see, so this
+class of bug is still only findable by running the host. A
+`petal check --as-module` would have caught it in a second.
 
 ### 9. No string builder, and no cheap character access
 
@@ -395,7 +405,7 @@ Not language issues, but they cost the same time and are worth listing:
 | | |
 |---|---|
 | Would build a console in Petal again | Yes |
-| Blocking for this class of app | §1 (`state` name collisions), §8 (`std` invisible in host modules) |
+| Blocking for this class of app | §1 (`state` name collisions); §8 was too, and is now fixed |
 | Highest-value additions | A non-allocating string/char API (§9), bitwise ops + hex literals (§5), string-literal record keys (§4) |
 | Best surprise | Realtime audio synthesis at 0.32 ms/frame (§F) |
 | Best-loved feature | The frame model, and the hot reload that falls out of it (§A) |

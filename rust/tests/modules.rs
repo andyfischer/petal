@@ -594,3 +594,53 @@ fn wasm_shaped_env_compiles_from_memory_only() {
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), vec!["42"]);
 }
+
+// The core prelude (`std`) is a *gated* implicit import: it merges only when
+// something references one of its exports. It used to merge into the entry file
+// alone, so a host prelude module registered by an embedder — petal-ui's `ui`,
+// the fantasy console's `nes_sound` — compiled cleanly and then died with
+// "Unknown builtin: has_field" the first time the line actually ran. These pin
+// the fix: the prelude resolves inside every module, at lowest precedence.
+
+#[test]
+fn core_prelude_resolves_inside_a_registered_module() {
+    let mut env = Env::new();
+    env.register_module(
+        "hostlib",
+        "export fn probe(r)\n  if has_field(r, \"hit\") then \"yes\" else \"no\" end\nend",
+    );
+    env.set_implicit_imports(&["hostlib"]);
+    let pid = env
+        .load_program("print(probe({hit: 1}))\nprint(probe({miss: 1}))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["yes", "no"]);
+}
+
+#[test]
+fn core_prelude_resolves_inside_an_explicitly_imported_module() {
+    // Same rule for a module the *script* imports, not just a host prelude.
+    check_output(
+        &[(
+            "helper",
+            "export fn total(xs)\n  sum(xs)\nend",
+        )],
+        "import helper\nprint(helper.total([1, 2, 3]))",
+        &["6"],
+    );
+}
+
+#[test]
+fn a_module_declaration_still_shadows_the_core_prelude() {
+    // Gated imports stay lowest-precedence: a module that defines its own `sum`
+    // gets its own, not std's.
+    check_output(
+        &[(
+            "shadow",
+            "fn sum(xs)\n  \"mine\"\nend\nexport fn go()\n  sum([1, 2])\nend",
+        )],
+        "import shadow\nprint(shadow.go())",
+        &["mine"],
+    );
+}

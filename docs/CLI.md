@@ -282,6 +282,58 @@ With `--json`, emits the raw report array:
 `[{id, key, state, age_frames, origin, absorbed_count}, ...]`. This is what
 the MCP `PendingReport` tool wraps.
 
+### Dump format conventions
+
+The four stage dumps — [`show-tokens`](#show-tokens--lexer-token-stream),
+[`show-ast`](#show-ast--parsed-ast),
+[`show-ir`](#show-ir--compiled-ir-term-graph), and
+[`show-bytecode`](#show-bytecode--bytecode-lowering) — share these
+conventions, documented once here and referenced from each section.
+
+**Spans.** Lines and columns are 1-based; span ends are exclusive (one past
+the last character); byte offsets, where present, are 0-based.
+
+- *Text dumps* print spans as `@line:col-line:col`, collapsed to `@line:col`
+  when the end adds nothing (a single-character AST span; IR term lines,
+  which print only the start). A location in a non-entry file is prefixed
+  with the file's display name: `@std:21:1`.
+- *JSON dumps* use compact arrays. Token rows carry a 4-element
+  `[startLine, startCol, endLine, endCol]`. The AST and IR dumps share the
+  lossless **SourceSpan** encoding
+  `[startLine, startCol, startOffset, endLine, endCol, endOffset]`, with a
+  seventh element — the `source_map.files` index — appended only when
+  nonzero (non-entry file).
+
+**Id prefixes.** In text dumps every id kind gets a prefix; in JSON the same
+ids are bare integers (see the schema sections below for which field is
+which):
+
+| Prefix | Names | Appears as |
+|--------|-------|------------|
+| `tN` | TermId — a node in the IR term graph | `t117` |
+| `rN` | register index in a frame / function register file | `r0` |
+| `cN` | ConstantId — index into the constant table | `c3` |
+| `fnN` | FunctionId (`fn0`); the bytecode text abbreviates it to `fN` (`closure f0`) | `fn0`, `f0` |
+| `blockN` | BlockId | `block1` |
+| `kN` | state key (a `u64`) — bytecode text, decimal; the IR text prints the same key as `key=0x…` hex | `k677…`, `key=0x5dff…` |
+| `slotN` | loop-cursor slot (bytecode only) | `slot0` |
+
+**Defaults are omitted in JSON.** Every JSON dump skips a field whose value
+is its default — a `null` option, a `false` boolean, an empty
+array/string/map — and readers must treat absence as the default. (Token
+rows omit `value` on unit tokens; the AST omits `exported`/`is_var`/`ty`/…;
+the IR omits `name`/`inputs`/`child_blocks`/… .) The one exception is the
+structured `inst` object in the bytecode JSON, whose operands keep explicit
+`null`s so each opcode has a fixed field set.
+
+**Contract vs. debug view.** Exactly one dump is a stable interchange
+format: the unfiltered IR JSON (`show-ir --json`), which `run --ir` /
+`check --ir` load back and foreign front-ends emit (see
+[ir-as-target.md](dev/ir-as-target.md)). Everything else — all four text
+forms, the tokens/AST/bytecode JSON, and the filtered `--user-only` IR view
+— is a debug view: kept accurate here, but versionless and subject to
+change, and not loadable by anything.
+
 ### `show-tokens` — Lexer token stream
 
 ```
@@ -328,9 +380,10 @@ Every row has the same shape — `{"kind", "value"?, "span"}`:
 - `value` — present only on value-carrying tokens. `Int`/`Float` values are
   JSON numbers; `String`/`Ident` (and `JsxTagName`/`JsxText`/`Color`) values
   are JSON strings. Unit tokens omit the field entirely.
-- `span` — `[startLine, startCol, endLine, endCol]`, 1-based, end-exclusive
-  (`end` points one past the last character). The text form prints the same
-  span as `@startLine:startCol-endLine:endCol`.
+- `span` — `[startLine, startCol, endLine, endCol]` per the shared span
+  rules ([Dump format conventions](#dump-format-conventions)); token rows
+  are the one 4-element span form — no byte offsets. The text form prints
+  the same span as `@startLine:startCol-endLine:endCol`.
 
 Kind names:
 
@@ -396,9 +449,10 @@ Let m @5:1-8:4
 Structural sub-parts that are not themselves nodes get label lines without
 spans: `Then`/`Else` under an `If`, `Arm <pattern>` and `Guard` under a
 `Match`, `Key` under an explicit-key `State`, `Part`/`Prop`/`Text` inside
-string interpolations and elements, `Field`/`Spread` inside records. This
-form is a debug view and may change; `--json` is the stable
-machine-readable output.
+string interpolations and elements, `Field`/`Spread` inside records. Both
+forms are debug views (see
+[Dump format conventions](#dump-format-conventions)); `--json` is the
+machine-readable one.
 
 **JSON output** (`--json`) — array of `Stmt` nodes. For `let x = 1 + 2`:
 
@@ -436,12 +490,14 @@ carries `"exported": true` when declared with the `export` modifier) —
 `SourceSpan`
 is the same compact array encoding the IR uses
 (`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`, see
-[Program JSON Schema](#program-json-schema)), and the `<variant>` shapes are
-listed in the `StmtKind` and `ExprKind` tables below.
+[Dump format conventions](#dump-format-conventions)), and the `<variant>`
+shapes are listed in the `StmtKind` and `ExprKind` tables below.
 The canonical definitions live in `rust/src/ast.rs`; the tables below cover
 the common variants but are not exhaustive.
 
-**Defaults are omitted.** A field holding its default value is left out of
+**Defaults are omitted** (the shared rule — see
+[Dump format conventions](#dump-format-conventions)). A field holding its
+default value is left out of
 the JSON rather than written explicitly: `false` flags (`exported`, `is_var`,
 `is_config`), absent options (`ty`, `ret`, `resolved`, `class`, `key`,
 `guard`, `else_body`, `alias`, `names`, a list pattern's `rest`), and empty
@@ -599,6 +655,8 @@ block1 (body of fn0 double) regs=5
 ```
 
 Each term line: `t{id} r{register} = {op} [{inputs}] -> {child_blocks} ; {name} @{line}:{col}`
+(id prefixes and span form per
+[Dump format conventions](#dump-format-conventions)).
 
 The text form is designed to be read without cross-referencing:
 
@@ -648,7 +706,8 @@ The text form is designed to be read without cross-referencing:
   "constants": {"values": [...]},
   "source_map": {"term_spans": {...}},
   "functions": [...],
-  "match_arms": {...}
+  "match_arms": {...},
+  "class_names": ["Rect"]
 }
 ```
 
@@ -672,7 +731,8 @@ contract and the legacy-v0 tolerance rules). All ID newtypes serialize as
 their inner integer (e.g. `TermId(5)` becomes `5`). **Defaults are omitted on
 the wire**: any field whose value is its default — a `null` option, an empty
 array/string/map, a `false` boolean — is simply absent, and loaders treat
-absence as the default.
+absence as the default (the shared rule — see
+[Dump format conventions](#dump-format-conventions)).
 
 **Top-level Program**:
 
@@ -685,10 +745,11 @@ absence as the default.
 | `blocks` | `Block[]` | All blocks in the program |
 | `root_block` | `number` | BlockId of the root/entry block |
 | `constants` | `{"values": ConstantValue[]}` | Constant table |
-| `source_map` | `{"term_spans": {}}` | TermId → SourceSpan mapping (string keys); omitted when empty |
+| `source_map` | `{"term_spans": {}, "files": []}` | `term_spans`: TermId → SourceSpan mapping (string keys). `files`: file table for multi-file programs — entry file at index 0, imported modules after (omitted for single-file programs). The whole `source_map` is omitted when empty |
 | `has_errors` | `boolean` | Whether the program has parse errors (omitted when `false`) |
 | `functions` | `FunctionDef[]` | All function definitions (omitted when empty) |
 | `match_arms` | `{[termId: string]: MatchArmMeta[]}` | Match term → arm metadata (string keys); omitted when empty |
+| `class_names` | `string[]` | Sorted names of every class the program declares, built-ins included (the prelude's `Rect` makes it non-empty for any CLI compile). The runtime's answer to "is this value's class label a live class here?" — it gates `MethodCall` hint dispatch. Omitted when empty |
 
 **Term**:
 
@@ -799,11 +860,10 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 
 **ConstantValue**: `"Nil"`, `{"Bool": true}`, `{"Int": 42}`, `{"Float": 12345678901234}` (u64 bits), `{"String": "hello"}`
 
-**SourceSpan** — a compact lossless array, shared by the IR `source_map` and
-the AST JSON:
-`[startLine, startCol, startOffset, endLine, endCol, endOffset]`, with a
-seventh element (the `source_map.files` index) appended only when nonzero
-(non-entry file). Lines and columns are 1-based, offsets 0-based bytes. On
+**SourceSpan** — the compact lossless array shared by the IR `source_map`
+and the AST JSON, defined in
+[Dump format conventions](#dump-format-conventions):
+`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`. On
 input, the loader also accepts the legacy object form
 `{"start": {"line", "column", "offset"}, "end": {…}, "file"?}`.
 
@@ -837,8 +897,10 @@ fn f0  (4 regs, 0 loop slots)
      1  r3 = r0 * r2
 ```
 
-Text-form conventions: `rN` is a register in the function's flat register
-file, `fN` a FunctionId, `slotN` a loop-cursor slot, `kN` a state key.
+Text-form conventions (see
+[Dump format conventions](#dump-format-conventions) for the shared prefixes):
+`rN` is a register in the function's flat register file, `fN` a FunctionId,
+`slotN` a loop-cursor slot, `kN` a state key.
 Constant-table operands are resolved inline (`const 1`, `builtin "map"`).
 Jump targets (`jump -> 5`) are instruction indexes within the same function —
 the left-hand column.
@@ -892,7 +954,8 @@ Operand encoding:
 - Function operands (`func`) are FunctionIds; state operands (`base`) are
   state keys.
 - Optional operands are present as `null` rather than omitted, so each opcode
-  has a fixed field set.
+  has a fixed field set — the one exception to the shared
+  [omit-defaults rule](#dump-format-conventions).
 
 The full instruction set is documented in `rust/src/backend/bytecode/isa.rs`.
 

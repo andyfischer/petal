@@ -133,12 +133,20 @@ introduces over the raw `show-ir` dump is the validation pass.
   "constants": { "values": [ ConstantValue, ... ] },
   "functions": [ FunctionDef, ... ],          // omitted when empty
   "match_arms": { "<termId>": [ MatchArm, ... ] },  // omitted when empty
-  "source_map": { ... }            // optional; omitted when empty
+  "source_map": { ... },           // optional; omitted when empty
+  "class_names": ["Rect", ...]     // sorted; omitted when empty
 }
 ```
 
 (`has_errors: true` marks a compile that failed; a valid import must omit it
 or set it `false`.)
+
+`class_names` lists every class the program declares, built-ins included, in
+sorted order (it serializes from a `BTreeSet`, keeping dumps byte-stable). At
+runtime it answers "is the class label on this value a class that exists
+here?", which gates `MethodCall` hint dispatch. An emitter that tags records
+with a `class` (in `AllocMap`) must list that class here; a program with no
+classes just omits the field.
 
 **Module system:** programs compiled from more than one file carry a file
 table and file-tagged spans (see docs/module-system.md):
@@ -209,7 +217,7 @@ emitter should not imitate that.
 | `Eq` `Ne` `Lt` `Le` `Gt` `Ge` | 2 | 0 | — | comparison |
 | `Not` | 1 | 0 | — | logical not |
 | `And` `Or` | 1 | 1 | — | short-circuit; `inputs=[left]`, `child_blocks=[rhs_block]` |
-| `Concat` | ≥1 | 0 | — | string concat / interpolation parts |
+| `Concat` | 2 | 0 | — | string concatenation (`++`); interpolation compiles to a chain of binary `Concat`s |
 | `Coalesce` | 1 | 1 | — | `??`; `inputs=[left]`, `child_blocks=[rhs_block]`, yields RHS when left is Nil/Pending |
 | `Copy` | 1 | 0 | — | identity / variable reference. **Special case:** a `Copy` with no inputs and a `name` is a *binding phantom* — unlisted, see [Binding phantoms and builtins](#binding-phantoms-and-builtins) |
 | `Phi` | 1 | 0 | — | join point; `inputs=[pre_control_flow_value]`. Must precede its control-flow term in the same block (see Phi rules) |

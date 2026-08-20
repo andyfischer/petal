@@ -96,6 +96,7 @@ pub struct Program {
     pub has_errors: bool,            // true if any Error terms
     pub functions: Vec<FunctionDef>, // function definitions
     pub match_arms: HashMap<TermId, Vec<MatchArmMeta>>,
+    pub class_names: BTreeSet<String>, // declared classes (runtime dispatch gate)
 }
 ```
 
@@ -117,6 +118,7 @@ pub struct Term {
     pub state_key: Option<StateKey>,   // for StateInit/Read/Write
     pub child_blocks: SmallVec<[BlockId; 2]>,
     pub in_loop: bool,
+    pub collect: bool,                 // value-position loop collects its results
 }
 ```
 
@@ -142,6 +144,7 @@ pub struct Block {
     pub id: BlockId,
     pub parent_term_id: Option<TermId>, // null for root & function bodies
     pub entry: Option<TermId>,          // first term in the linked list
+    pub terms: Vec<TermId>,             // execution order (the wire form)
     pub param_names: Vec<String>,       // for fn bodies & for-loop vars
     pub register_count: u16,            // frame size
     pub phi_outs: Vec<PhiOut>,          // rebinding carry-outs
@@ -157,7 +160,8 @@ that references the function.
 ### TermOp
 
 The operation a term performs. All variants and their IR serialization are
-documented in [CLI.md](../CLI.md#termop--serdes-externally-tagged-encoding);
+documented in the TermOp table of
+[CLI.md's Program JSON Schema](../CLI.md#program-json-schema);
 the important groups are:
 
 - **Loads** — `Constant`, `Error`, `Copy`
@@ -204,7 +208,9 @@ two `"hello"` literals share the same entry.
 ### SourceMap
 
 Maps each `TermId` to a `SourceSpan` (`{line, column, offset}` for start
-and end). This powers error messages, `explain`, `show-provenance`, and
+and end, plus a file index for multi-file programs; serialized as a compact
+array — see [Dump format conventions](../CLI.md#dump-format-conventions)).
+This powers error messages, `explain`, `show-provenance`, and
 the trace buffer's `line`/`column` fields.
 
 ### Functions and Closures

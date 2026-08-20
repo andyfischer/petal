@@ -18,6 +18,11 @@ quickly test Petal snippets without shelling out manually.
 | `TraceEmits({code})` | Run with emit tracing; per output channel, every emitted value with the call that produced it and per-argument edit info. The observation half of direct manipulation (see docs/direct-manipulation.md). |
 | `ProposeEdit({code, channel, emit, arg?, to?, goals?, configurable?, static?})` | Goal-based edit query: propose source edits that make argument `arg` of the call behind emit `emit` on `channel` evaluate to `to`. Pass `goals: [{arg, to}, …]` instead for a multi-goal batch resolved consistently. Multiple proposals when several variables feed the value; narrow with `configurable`/`static`, or declare knobs in-source with `config let`. |
 
+The `Show*` tools return exactly what the CLI's `--json` dumps emit
+(`show-tokens` / `show-ast` / `show-ir` / `show-bytecode`) — span encoding,
+id conventions, and the omit-defaults rule are documented once in
+[CLI.md's Dump format conventions](../CLI.md#dump-format-conventions).
+
 ```
 TestSnippet({ code: 'print("hello")' })
 ```

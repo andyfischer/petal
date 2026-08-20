@@ -1,0 +1,218 @@
+// scroll — wrapping scroll, per-scanline parallax, and a locked status bar.
+//
+//   cargo run -- carts/scroll.ptl
+//   LEFT/RIGHT   change the scroll speed (it goes negative)
+//   A            stop / start
+//
+// The whole picture is one 64x30 tile map, 512 pixels wide, scrolled past a
+// 256-pixel window. Three things are being shown at once:
+//
+//   * `set_scroll` wraps. The camera counts up forever and the map repeats —
+//     nothing here clamps or resets, and there is no seam.
+//   * `set_scroll_at` overrides the horizontal scroll for one scanline, so
+//     giving each horizontal band its own fraction of the camera buys parallax
+//     from a single-layer background. Sky moves at a quarter speed, clouds at
+//     a half, the ground at full.
+//   * Scanlines 0-15 are pinned to x = 0, which is the status-bar split every
+//     NES game used: a HUD that does not move, over a field that does.
+
+// ── Palettes ──────────────────────────────────────────────────────────────
+// The backdrop is dark, and the sky is a *tile*, not the backdrop. That is
+// what makes the status bar free: the top two map rows are left blank, so the
+// backdrop shows through as a black bar with nothing drawn into it.
+
+set_backdrop(black)
+palette(0, white, gray, red)             // status bar text
+palette(1, light_blue, purple, indigo)   // sky + distant mountains
+palette(2, light_blue, white, pale_blue) // sky + clouds
+palette(3, green, brown, maroon)         // grass + dirt
+
+// ── Artwork ───────────────────────────────────────────────────────────────
+
+define_art(0, ["........"])                    // blank: the status bar's ground
+
+define_art(1, [                                // solid sky
+  "11111111", "11111111", "11111111", "11111111",
+  "11111111", "11111111", "11111111", "11111111"
+])
+
+define_art(2, [                                // mountain: left slope
+  "11111112",
+  "11111122",
+  "11111222",
+  "11112222",
+  "11122222",
+  "11222222",
+  "12222222",
+  "22222222"
+])
+
+define_art(3, [                                // mountain: right slope
+  "21111111",
+  "22111111",
+  "22211111",
+  "22221111",
+  "22222111",
+  "22222211",
+  "22222221",
+  "22222222"
+])
+
+define_art(4, [                                // mountain: solid body
+  "22222222", "22222222", "22222222", "22222222",
+  "22222222", "22222222", "22222222", "22222222"
+])
+
+define_art(5, [                                // cloud: left half
+  "11111111",
+  "11111111",
+  "11112211",
+  "11222221",
+  "12222222",
+  "12222222",
+  "11111111",
+  "11111111"
+])
+
+define_art(6, [                                // cloud: right half
+  "11111111",
+  "11221111",
+  "12222211",
+  "22222221",
+  "22222211",
+  "22221111",
+  "11111111",
+  "11111111"
+])
+
+define_art(7, [                                // grass over dirt
+  "11111111",
+  "11111111",
+  "12121121",
+  "22222222",
+  "22322232",
+  "22222222",
+  "23222322",
+  "22222222"
+])
+
+define_art(8, [                                // dirt
+  "22222222",
+  "23222232",
+  "22222222",
+  "22322222",
+  "32222223",
+  "22222222",
+  "22232222",
+  "23222222"
+])
+
+// ── The map ───────────────────────────────────────────────────────────────
+// 64 cells wide is exactly two screens; the scroll wraps at that boundary. The
+// terrain is generated rather than authored, so the whole 512-pixel strip is a
+// dozen lines of Petal and the seam at column 63 -> 0 stays continuous (the
+// sine below has an integer number of periods across the map).
+
+let cols = 64
+set_map_size(cols, 30)
+fill_map(0, 0)
+
+// The ridge line: rows 4..8, two full periods across the map's 64 columns, so
+// the column that meets column 0 after a wrap has the same height.
+fn ridge(x)
+  4 + int(round(2 + 2 * sin(x * 2 * pi() * 2 / cols)))
+end
+
+for x in range(0, cols) do
+  // Sky fills both parallax bands; the mountains and clouds sit inside it.
+  for y in range(2, 10) do
+    set_tile(x, y, 1, 1)
+  end
+  for y in range(10, 17) do
+    set_tile(x, y, 1, 2)
+  end
+
+  // Mountain body down to the horizon, capped by the slope tile that matches
+  // the direction the ridge is heading — rising columns get the left slope.
+  let peak = ridge(x)
+  for y in range(peak, 10) do
+    set_tile(x, y, 4, 1)
+  end
+  // Only the columns where the ridge actually steps get a slope tile; a flat
+  // stretch keeps its flat top, which is what stops the range looking like a
+  // row of identical triangles.
+  if ridge(x + 1) < peak then
+    set_tile(x, peak - 1, 2, 1)
+  elsif ridge(x - 1) < peak then
+    set_tile(x, peak - 1, 3, 1)
+  end
+
+  // Ground: one grass row and dirt beneath it.
+  set_tile(x, 17, 7, 3)
+  for y in range(18, 30) do
+    set_tile(x, y, 8, 3)
+  end
+end
+
+// Clouds, two tiles wide, dropped at a few columns.
+for c in [3, 14, 22, 35, 44, 57] do
+  set_tile(c, 11 + c % 3, 5, 2)
+  set_tile(c + 1, 11 + c % 3, 6, 2)
+end
+
+// ── The camera ────────────────────────────────────────────────────────────
+// `cam` is never wrapped or clamped by the cart — it just counts. Wrapping is
+// the hardware's job, and letting the number grow is the honest way to show
+// that it really is.
+
+state var cam = 0.0
+state var speed = 1.5
+state var running = true
+
+if btnp("a") then
+  set running = !running
+end
+if btn_repeat("right", 0.3, 0.05) then
+  set speed = min(8.0, speed + 0.5)
+end
+if btn_repeat("left", 0.3, 0.05) then
+  set speed = max(-8.0, speed - 0.5)
+end
+if running then
+  set cam = cam + speed
+end
+
+set_scroll(cam, 0)
+
+// ── The parallax split ────────────────────────────────────────────────────
+// One `set_scroll_at` per scanline. The bands are declared as data — first
+// scanline, then the fraction of the camera that band moves at — so adding a
+// layer is one line and the boundaries can never disagree with the map.
+
+let bands = [
+  [0, 0.0],      // status bar: pinned, whatever the camera does
+  [16, 0.25],    // distant mountains
+  [80, 0.5],     // clouds
+  [136, 1.0]     // ground, the layer the player would stand on
+]
+
+for i in range(0, len(bands)) do
+  let first = bands[i][0]
+  let rate = bands[i][1]
+  let last = if i + 1 < len(bands) then bands[i + 1][0] else screen_h end
+  for y in range(first, last) do
+    set_scroll_at(y, int(cam * rate))
+  end
+end
+
+// ── The status bar ────────────────────────────────────────────────────────
+// Written into map row 0, which the split above holds still. `cam` and its
+// wrapped value are both shown: watch the right-hand number run to 511 and
+// roll over while the picture stays continuous.
+
+let wrapped = pmod(int(cam), map_w())
+
+map_text(1, 0, "SCROLL {int(cam)}", 0)
+map_text_right(31, 0, "WRAP {wrapped}/{map_w()}", 0)
+map_text(1, 1, "SPD {speed}  " ++ (if running then "RUN " else "STOP" end), 0)
+map_text_right(31, 1, "A STOP  LR SPEED", 0)

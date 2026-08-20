@@ -1,0 +1,215 @@
+// music_demo — the tracker driver, with the notes it is playing on screen.
+//
+//   cargo run -- carts/music_demo.ptl
+//   A         next song
+//   B         pause / resume
+//   SELECT    fire a sound effect over the music
+//   START     restart from the top
+//
+// `nes_sound` is a FamiTracker-shaped driver written entirely in Petal: songs
+// are patterns of rows, an order list says which pattern each of the four
+// channels plays, and `music_tick()` once a frame reads the current row,
+// steps every instrument envelope and writes the four chip registers.
+//
+// None of that is visible from the outside, so this cart draws it: the pattern
+// grid with the playhead on the row the driver is actually on, and a meter per
+// channel showing the note and volume that row resolved to. If the driver ever
+// stops advancing, or loops in the wrong place, or leaves a channel ringing,
+// you can see it here rather than having to hear it.
+//
+// The numbers below are read back out of the *song data* at the position
+// `music_pos()` reports — the driver publishes its playhead, not its voices —
+// so this is an independent reading of what should be sounding, which is
+// exactly what makes it useful as a check.
+
+set_backdrop(black)
+palette(0, white, gray, dark_gray)      // the grid
+palette(1, yellow, orange, red)         // the playhead row
+palette(2, green, dark_green, olive)    // volume meters
+palette(3, pale_cyan, teal, navy)       // headings
+
+define_art(0, ["........"])
+define_art(1, ["11111111", "11111111", "11111111", "11111111",
+               "11111111", "11111111", "11111111", "11111111"])
+
+set_map_size(32, 30)
+fill_map(0, 0)
+
+sfx_standard()
+
+// ── The songs ─────────────────────────────────────────────────────────────
+// Rebuilt every frame, like all cart state. `music_play` is idempotent on the
+// song's name, so re-handing it the same song keeps the playhead where it is —
+// and re-handing it an *edited* song of the same name swaps the notes in under
+// the playhead, which is how editing a pattern is audible on save.
+
+let songs = [song_title(), song_gameplay()]
+let effects = ["coin", "jump", "hit", "explode"]
+
+state var pick = 0
+state var fx = 0
+
+if btnp("a") then
+  set pick = pmod(pick + 1, len(songs))
+end
+
+let tune = songs[pick]
+music_play(tune)
+
+if btnp("b") then
+  if music_playing() then
+    music_pause()
+  else
+    music_resume()
+  end
+end
+if btnp("start") then
+  music_restart()
+end
+if btnp("select") then
+  sfx_play(effects[fx])
+  set fx = pmod(fx + 1, len(effects))
+end
+
+let pos = music_pos()
+let chans = ["p1", "p2", "tri", "noise"]
+let heads = ["PULSE1", "PULSE2", "TRI", "NOISE"]
+
+// ── Reading the song at the playhead ──────────────────────────────────────
+
+// The pattern a channel is playing in the current order frame, or -1.
+fn pattern_of(tune, order_index, ch)
+  if order_index < 0 || order_index >= len(tune.order) then
+    -1
+  else
+    tune.order[order_index][ch] ?? -1
+  end
+end
+
+// How many rows this order frame lasts: the longest pattern it names. A short
+// pattern under a long one simply holds, which is how a 4-row drum loop rides
+// beneath a 16-row melody — and why the grid below can run past the end of a
+// column and must draw blanks rather than fall over.
+fn frame_rows(tune, order_index)
+  let n = 0
+  for ch in chans do
+    let pi = pattern_of(tune, order_index, ch)
+    if pi >= 0 && pi < len(tune.patterns) then
+      n = max(n, len(tune.patterns[pi]))
+    end
+  end
+  n
+end
+
+fn row_at(tune, order_index, ch, r)
+  let pi = pattern_of(tune, order_index, ch)
+  if pi < 0 || pi >= len(tune.patterns) then
+    nil
+  else
+    let pat = tune.patterns[pi]
+    if r >= 0 && r < len(pat) then pat[r] else nil end
+  end
+end
+
+// One tracker cell: "C-4 12", "--- ..", "... .." — the note and the volume
+// column, in the notation the pattern was written in.
+fn cell_text(tune, order_index, ch, r)
+  let x = row_at(tune, order_index, ch, r)
+  if x == nil then
+    "       "
+  else
+    let n = if x.note == note_none then "..."
+            elsif x.note == note_off then "---"
+            else note_name(x.note) end
+    let v = if x.vol >= 0 then pad_num(x.vol, 2) else ".." end
+    n ++ " " ++ v
+  end
+end
+
+// What a channel should be sounding right now: scan the frame from row 0 to
+// the playhead, keeping the last note and the last volume column, exactly as
+// the driver's own voice state does.
+fn sounding(tune, pos, ch)
+  let note = -1
+  let vol = 15
+  for r in range(0, pos.row + 1) do
+    let x = row_at(tune, pos.order, ch, r)
+    if x != nil then
+      if x.vol >= 0 then
+        vol = x.vol
+      end
+      if x.note == note_off then
+        note = -1
+      elsif x.note >= 0 then
+        note = x.note
+      end
+    end
+  end
+  {note: note, vol: if note < 0 then 0 else vol end}
+end
+
+// ── The screen ────────────────────────────────────────────────────────────
+
+map_text_center(0, "MUSIC DEMO", 3)
+
+map_text(1, 2, upper(pos.name), 1)
+map_text(13, 2, "ORD {pos.order + 1}/{len(tune.order)}", 0)
+map_text(22, 2, "ROW {pad_num(pos.row, 2)}", 0)
+map_text_right(31, 3, "TICKS/ROW {pos.ticks}", 0)
+map_text(1, 3, if music_playing() then "PLAYING" else "PAUSED " end, 0)
+
+// Channel headings over four 7-character columns.
+for c in range(0, 4) do
+  map_text(1 + c * 8, 5, heads[c], 3)
+end
+
+// The pattern grid: 12 rows with the playhead four rows down, so you can see
+// what is coming as well as what just went by. The window stops at both ends
+// of the frame rather than scrolling past them — a column of blanks under the
+// playhead would read as the driver having run off the end of the song, which
+// is exactly the failure this screen exists to make visible.
+let visible = 12
+let lead = 4
+let total = frame_rows(tune, pos.order)
+let first_row = clamp(pos.row - lead, 0, max(0, total - visible))
+
+for i in range(0, visible) do
+  let r = first_row + i
+  let y = 7 + i
+  let pal = if r == pos.row then 1 else 0 end
+  map_text(0, y, if r == pos.row then ">" else " " end, pal)
+  if r >= 0 && r < total then
+    for c in range(0, 4) do
+      map_text(1 + c * 8, y, cell_text(tune, pos.order, chans[c], r), pal)
+    end
+  else
+    for c in range(0, 4) do
+      map_text(1 + c * 8, y, "       ", 0)
+    end
+  end
+end
+
+// ── The meters ────────────────────────────────────────────────────────────
+// Note name and a 15-step volume bar per channel. The noise channel has
+// periods rather than pitches, so its "note" is shown as the period the driver
+// will hand the chip — which is the number that actually changes the sound.
+
+for c in range(0, 4) do
+  let y = 20 + c * 2
+  let s = sounding(tune, pos, chans[c])
+  let label = if s.note < 0 then "----"
+              elsif chans[c] == "noise" then "P" ++ pad_num(noise_period(s.note), 2)
+              else note_name(s.note) end
+
+  map_text(1, y, heads[c], 0)
+  map_text(8, y, label, if s.vol > 0 then 1 else 0 end)
+  map_rect(13, y, 15, 1, 0, 0)
+  map_rect(13, y, s.vol, 1, 1, 2)
+end
+
+map_text(1, 28, "A SONG  B PAUSE  SEL SFX", 0)
+
+// The pump. Once a frame, after everything else, unconditionally — including
+// on a paused frame, because that is the tick that lets a running sound effect
+// finish instead of being frozen with it.
+music_tick()

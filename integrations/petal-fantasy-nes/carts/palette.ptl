@@ -1,0 +1,248 @@
+// palette — the 64-color master palette, color cycling, and a fade routine.
+//
+//   cargo run -- carts/palette.ptl
+//   SELECT        next demo
+//   LEFT/RIGHT    page through the master palette / speed the cycle
+//   UP/DOWN       fade level (on the fade screen)
+//   A             stop the cycle / stop the auto-fade
+//
+// Three screens, because they all want the palette registers to themselves —
+// which is itself the lesson. The console has 8 four-color palettes and every
+// palette's color 0 is the same backdrop, so **25 of the 64 colors can be on
+// screen at one time**, 13 of them on the background. That is not a limitation
+// of this demo; it is the hardware, and every cart lives inside it.
+
+set_backdrop(black)
+
+start_scene("master")
+
+let screens = ["master", "cycle", "fade"]
+if btnp("select") then
+  set_scene(screens[pmod(index_of(screens, scene()) + 1, len(screens))])
+end
+
+set_map_size(32, 30)
+fill_map(0, 0)
+
+// Sprite palette 4 is the one thing reserved on every screen: the labels. The
+// master-palette browser needs all four background palettes for swatches, so
+// its text has to be sprites.
+palette(4, white, gray, black)
+
+// Three solid tiles, one per palette entry. Everything below is painted with
+// these: a swatch is a rectangle of "entry 2" cells, and its color is decided
+// entirely by which palette the cell names. Repainting a picture by rewriting
+// four palette registers — and not one of the 960 map cells — is what makes
+// both the cycling and the fade below cost nothing.
+
+define_art(0, ["........"])
+define_art(1, ["11111111", "11111111", "11111111", "11111111",
+               "11111111", "11111111", "11111111", "11111111"])
+define_art(2, ["22222222", "22222222", "22222222", "22222222",
+               "22222222", "22222222", "22222222", "22222222"])
+define_art(3, ["33333333", "33333333", "33333333", "33333333",
+               "33333333", "33333333", "33333333", "33333333"])
+
+// ── The fade routine ──────────────────────────────────────────────────────
+// Copy these two functions into any cart. The master palette is laid out as
+// four rows of 16: $0x dark, $1x medium, $2x bright, $3x pale, the same hue in
+// each column. So fading is *arithmetic on the color index* — subtract 16 to
+// go one step darker, add 16 to go one step lighter — and a whole screen fades
+// by rewriting eight palette registers, with no per-pixel work at all.
+//
+//   for i in range(0, 4) do
+//     palette(i, fade(c1, lv), fade(c2, lv), fade(c3, lv))
+//   end
+//
+// `level` is in steps: negative fades to black, positive to white, and +-4 is
+// all the way there from any starting color.
+
+let fade_black = 15         // $0F, the master palette's true black
+let fade_white = 48         // $30, its true white
+
+fn fade(c, level)
+  let out = c
+  for i in range(0, abs(level)) do
+    if level < 0 then
+      out = if out < 16 then fade_black else out - 16 end
+    else
+      out = if out >= 48 then fade_white else out + 16 end
+    end
+  end
+  out
+end
+
+// A whole palette faded at once — the form a cart actually calls.
+fn faded(cs, level)
+  let out = []
+  for c in cs do
+    out = append(out, fade(c, level))
+  end
+  out
+end
+
+// ── Screen 1: the master palette ──────────────────────────────────────────
+// Twelve swatches at a time — three entries in each of the four background
+// palettes, which is every background color the hardware can hold at once
+// besides the backdrop. Paging through the 64 is the honest way to show them.
+
+fn screen_master()
+  state var page = 0
+
+  let per_page = 12
+  let pages = int((64 + per_page - 1) / per_page)
+  if btnp("right") then
+    set page = pmod(page + 1, pages)
+  end
+  if btnp("left") then
+    set page = pmod(page - 1, pages)
+  end
+
+  let first = page * per_page
+  let shown = min(per_page, 64 - first)
+
+  // Swatch i lands in palette i/3, entry i%3 + 1. Unused slots are set to the
+  // backdrop so a short last page draws nothing rather than a stale color.
+  for p in range(0, 4) do
+    let cs = []
+    for e in range(0, 3) do
+      let i = p * 3 + e
+      cs = append(cs, if i < shown then first + i else backdrop() end)
+    end
+    palette(p, cs)
+  end
+
+  for i in range(0, shown) do
+    let col = i % 4
+    let row = int(i / 4)
+    map_rect(2 + col * 7, 5 + row * 7, 6, 6, i % 3 + 1, int(i / 3))
+    text_sprites((2 + col * 7) * 8, (11 + row * 7) * 8, str(first + i), 4)
+  end
+
+  text_sprites(16, 8, "MASTER {first}-{first + shown - 1}", 4)
+  text_sprites_right(240, 8, "PAGE {page + 1}/{pages}", 4)
+end
+
+// ── Screen 2: color cycling ───────────────────────────────────────────────
+// Nine horizontal bars, each permanently assigned one (palette, entry) slot.
+// The map is written once and never again; the animation is a rotation of the
+// nine colors through those nine registers. This is how NES-era waterfalls,
+// lava and conveyor belts moved without touching a single tile.
+
+let ramp = [17, 33, 49, 60, 44, 28, 26, 42, 58]   // blues into greens
+
+fn screen_cycle()
+  state var phase = 0
+  state var speed = 4
+  state var running = true
+
+  if btnp("a") then
+    set running = !running
+  end
+  if btn_repeat("right", 0.3, 0.08) then
+    set speed = min(20, speed + 1)
+  end
+  if btn_repeat("left", 0.3, 0.08) then
+    set speed = max(0, speed - 1)
+  end
+  if running then
+    set phase = phase + speed
+  end
+
+  // Only palettes 0-2 hold the ramp; palette 3 is kept as plain white so the
+  // text stays readable no matter where the cycle currently is.
+  let step = int(phase / 8)
+  for p in range(0, 3) do
+    let cs = []
+    for e in range(0, 3) do
+      cs = append(cs, ramp[pmod(p * 3 + e + step, len(ramp))])
+    end
+    palette(p, cs)
+  end
+  palette(3, white, gray, dark_gray)
+
+  for i in range(0, 9) do
+    map_rect(0, 5 + i * 2, 32, 2, i % 3 + 1, int(i / 3))
+  end
+
+  map_text(1, 1, "COLOR CYCLING", 3)
+  map_text(1, 2, "9 BARS, 0 TILE WRITES PER FRAME", 3)
+  map_text(1, 25, "SPEED {speed}  " ++ (if running then "RUN " else "STOP" end), 3)
+  map_text(1, 27, "LR SPEED  A STOP  SEL NEXT", 3)
+end
+
+// ── Screen 3: fade to black and to white ──────────────────────────────────
+// A picture drawn once, then faded by rewriting three palettes. The text keeps
+// its own unfaded palette, which is exactly the trick a game uses to hold a
+// "PAUSED" or "GAME OVER" caption legible over a dimmed playfield.
+
+let sky = [17, 33, 49]        // navy / sky / pale blue
+let hill = [26, 42, 58]       // greens
+let sun = [22, 39, 56]        // red / orange / pale yellow
+
+fn screen_fade()
+  state var level = 0
+  state var auto = true
+
+  if btnp("a") then
+    set auto = !auto
+  end
+  if auto then
+    // A slow triangle wave between -4 and +4, so the screen fades all the way
+    // out to black, back up through its own colors, and on out to white.
+    set level = int(round(4 * sin(time() * 0.8)))
+  else
+    if btn_repeat("up", 0.3, 0.1) then
+      set level = min(4, level + 1)
+    end
+    if btn_repeat("down", 0.3, 0.1) then
+      set level = max(-4, level - 1)
+    end
+  end
+
+  palette(0, faded(sky, level))
+  palette(1, faded(hill, level))
+  palette(2, faded(sun, level))
+  palette(3, white, gray, dark_gray)      // the caption: never faded
+
+  // Sky, in three bands, light at the horizon.
+  map_rect(0, 0, 32, 6, 1, 0)
+  map_rect(0, 6, 32, 5, 2, 0)
+  map_rect(0, 11, 32, 4, 3, 0)
+
+  // A sun: a stepped disc plus a highlight, so the fade is visible acting on
+  // more than one palette entry at a time.
+  let disc = [2, 4, 6, 6, 4, 2]
+  for i in range(0, len(disc)) do
+    map_rect(24 - int(disc[i] / 2), 2 + i, disc[i], 1, 3, 2)
+  end
+  map_rect(23, 4, 2, 2, 2, 2)
+
+  // Hills.
+  map_rect(0, 15, 32, 2, 1, 1)
+  map_rect(0, 17, 32, 4, 2, 1)
+  map_rect(0, 21, 32, 9, 3, 1)
+
+  // The caption sits on a panel of blank cells, which show the backdrop. The
+  // backdrop is not faded either, so the panel and its text stay put while the
+  // picture above them goes all the way to black and all the way to white.
+  map_rect(0, 24, 32, 6, 0, 3)
+
+  let toward = if level < 0 then "TO BLACK" elsif level > 0 then "TO WHITE" else "NONE    " end
+  map_text(1, 25, "FADE {level}  {toward}", 3)
+  map_text(1, 27, "UD LEVEL  A AUTO  SEL NEXT", 3)
+end
+
+// ── Dispatch ──────────────────────────────────────────────────────────────
+
+if scene() == "master" then
+  screen_master()
+elsif scene() == "cycle" then
+  screen_cycle()
+else
+  screen_fade()
+end
+
+if scene() == "master" then
+  text_sprites(16, 224, "LR PAGE  SEL NEXT", 4)
+end

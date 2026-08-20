@@ -1,0 +1,182 @@
+// sprites — everything the sprite layer can do, on one screen.
+//
+//   cargo run -- carts/sprites.ptl
+//   A          toggle the 8-per-scanline drop-out
+//
+// Five bands, each proving one thing: metasprites, a walk cycle, the two flip
+// bits, behind-background priority, and what happens when a cart asks for more
+// than 64 sprites. Every label is written into the background *map* rather than
+// drawn with `text_sprites`, because the whole point of the bottom band is to
+// spend the sprite budget deliberately — a HUD made of sprites would eat into
+// the number under test and make the demo lie.
+
+set_backdrop(navy)
+palette(0, white, gray, dark_gray)     // labels
+palette(1, brown, orange, black)       // the wall the priority band hides behind
+palette(4, peach, red, black)          // the hero
+palette(5, pale_cyan, teal, black)     // his flipped copies
+palette(6, yellow, orange, red)        // the confetti in the budget band
+
+// ── Artwork ───────────────────────────────────────────────────────────────
+// The hero is one 16x16 grid of string art sliced into four tiles by
+// `define_meta`. Only the legs change between animation frames, so the body is
+// written once and each frame is body + its own four rows — Petal building the
+// artwork instead of three near-identical copies drifting apart.
+
+let body = [
+  "....########....",
+  "...#--------#...",
+  "...#-##--##-#...",
+  "...#--------#...",
+  "...#-######-#...",
+  "....#------#....",
+  "....########....",
+  "...##oooooo##...",
+  "..##oooooooo##--",
+  "..#o#oooooo#o#--",
+  "..#o#oooooo#o#..",
+  "..###oooooo###.."
+]
+
+fn walker(legs)
+  flat([body, legs])
+end
+
+let stand = walker([
+  "....oo....oo....",
+  "....oo....oo....",
+  "....##....##....",
+  "....##....##...."
+])
+
+let step_l = walker([
+  "...ooo....oo....",
+  "..ooo.....oo....",
+  "..##......##....",
+  "..##......##...."
+])
+
+let step_r = walker([
+  "....oo....ooo...",
+  "....oo.....ooo..",
+  "....##......##..",
+  "....##......##.."
+])
+
+// Tile 0 is the one the map is cleared to, so it is deliberately left blank —
+// artwork starts at 1. Three animation frames of 4 tiles each: bases 1, 5, 9.
+// `define_meta` returns the metasprite, so the cart never counts tiles by hand.
+define_art(0, ["........"])
+
+let hero_stand = define_meta(1, stand, 4)
+let hero_a = define_meta(5, step_l, 4)
+let hero_b = define_meta(9, step_r, 4)
+
+// A brick for the wall, and a star for the sprite-budget band.
+define_art(13, [
+  "33333333",
+  "31111113",
+  "31111113",
+  "33333333",
+  "31111113",
+  "31111113",
+  "31111113",
+  "33333333"
+])
+
+define_art(14, [
+  "...11...",
+  "...11...",
+  ".111111.",
+  "11122111",
+  "11122111",
+  ".111111.",
+  "...11...",
+  "...11..."
+])
+
+// ── Background ────────────────────────────────────────────────────────────
+
+set_map_size(32, 30)
+fill_map(0, 0)
+
+map_text_center(0, "SPRITE SHOWCASE", 0)
+
+// A wall for band 3 to hide behind: two rows of brick across the middle.
+map_rect(8, 14, 16, 2, 13, 1)
+
+// ── Band 1: metasprites + animation ───────────────────────────────────────
+// A metasprite is one record describing a group of tiles; drawing it costs one
+// sprite per tile out of the 64. The 16x16 hero is 4 of them.
+
+map_text(1, 2, "1 METASPRITE 16X16 = 4 SPRITES", 0)
+
+draw_meta(24, 24, hero_stand)
+
+// The same character walking: `anim` picks the frame off the wall clock, so
+// the cycle does not drift and never needs a counter of its own.
+let walk = anim([hero_a, hero_stand, hero_b, hero_stand], 8)
+draw_meta(72, 24, walk)
+
+// ── Band 2: the flip bits ─────────────────────────────────────────────────
+// `flip(fx, fy)` builds the flags. Flipping a metasprite mirrors the *layout*
+// as well as each tile, so the halves do not swap places.
+
+map_text(1, 7, "2 FLIP X AND Y", 0)
+
+// The hero carries an outstretched arm on his right and his legs are mid-step,
+// so which bits are set is visible at a glance — a symmetric character would
+// make flip-x look like nothing happened.
+let flips = [flip(false, false), flip(true, false), flip(false, true), flip(true, true)]
+let labels = ["NONE", "X", "Y", "XY"]
+for i in range(0, len(flips)) do
+  draw_meta(24 + i * 44, 64, meta(hero_a.base, 2, 2, 5), flips[i])
+  map_text(int((24 + i * 44) / 8), 10, labels[i], 0)
+end
+
+// ── Band 3: behind-background priority ────────────────────────────────────
+// `behind_bg` puts a sprite behind every non-transparent background pixel.
+// Both heroes below stand at the same y, half-sunk into the wall: the left one
+// covers the bricks, the right one is covered by them.
+
+map_text(1, 12, "3 PRIORITY: FRONT VS BEHIND", 0)
+
+draw_meta(80, 104, hero_stand, 0)
+draw_meta(160, 104, meta(hero_stand.base, 2, 2, 5), behind_bg)
+
+map_text(9, 16, "FRONT", 0)
+map_text(19, 16, "BEHIND", 0)
+
+// ── Band 4: the 64-sprite cap ─────────────────────────────────────────────
+// Sprites are drawn in the order they are pushed and the 65th onward is simply
+// dropped, so the row below stops partway across. The count is computed rather
+// than written down, which means it stays honest if a band above is edited.
+
+let used_before = 4 + 4 + 16 + 8
+let asked = 48
+let drawn = min(asked, 64 - used_before)
+
+map_text(1, 18, "4 64-SPRITE CAP", 0)
+map_text(1, 19, "ASKED {asked}  DREW {drawn}  REST DROPPED", 0)
+
+for i in range(0, asked) do
+  sprite(4 + i * 5, 160, 14, 6)
+end
+
+// ── The 8-per-scanline drop-out ───────────────────────────────────────────
+// Real hardware also gives up after 8 sprites on any one scanline, which is
+// what makes NES games flicker. It is off by default because it surprises
+// people; turn it on and band 4 gets much shorter still.
+
+state var scanline_limit = false
+if btnp("a") then
+  set scanline_limit = !scanline_limit
+end
+set_sprite_limit(scanline_limit)
+
+map_text(1, 22, "A: 8-PER-SCANLINE LIMIT " ++ (if scanline_limit then "ON " else "OFF" end), 0)
+map_text(1, 23, "ON = 8 SPRITES PER SCANLINE MAX", 0)
+map_text(1, 24, "WHICH IS WHY NES GAMES", 0)
+map_text(1, 25, "FLICKER WHEN THE SCREEN IS BUSY", 0)
+map_text(1, 27, "EVERY LABEL HERE IS A MAP TILE,", 0)
+map_text(1, 28, "SO IT COSTS NONE OF THE 64", 0)

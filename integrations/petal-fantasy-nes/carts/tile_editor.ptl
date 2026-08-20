@@ -1,0 +1,256 @@
+// tile_editor — draw an 8x8 tile on the console, then paste it into a cart.
+//
+//   cargo run -- carts/tile_editor.ptl
+//   PAD          move the cursor (hold to repeat)
+//   A            paint the cursor pixel with the current ink (hold and move)
+//   B            next ink
+//   SELECT       recolor the current ink (hold to sweep the master palette)
+//   START        print the `define_art(...)` source to the terminal
+//
+// The console's artwork is Petal source: `define_art(index, rows)` takes eight
+// strings of eight characters and that *is* the tile. So the art tool does not
+// need to be a separate program with its own file format — it can be a cart,
+// running on the same hardware as the game, and its output is a paragraph of
+// Petal you paste into one.
+//
+// Which makes this the shortest description of the whole console: the artwork,
+// the editor for the artwork, and the game are all the same kind of thing.
+//
+// Two hardware facts show through and are worth knowing before you draw:
+//
+//   * Ink 0 is not a color. Color 0 of every palette is the shared backdrop,
+//     so ink 0 is "see through" — a sprite shows the background there and a
+//     background tile shows the backdrop. It is drawn as a dotted checker here
+//     for the same reason image editors do it, and printed as `.`.
+//   * The other three inks are the palette, not the tile. The same eight rows
+//     drawn with a different `palette(...)` are a different-looking tile, which
+//     is why the recolor button changes the palette register and never touches
+//     a single pixel of the art.
+
+set_backdrop(black)
+
+// ── State ─────────────────────────────────────────────────────────────────
+// The drawing is eight strings, exactly the shape `define_art` wants, so the
+// tile is redefined straight from the edit buffer every frame with no
+// conversion step — there is nothing to get out of sync.
+
+state var art_rows = [
+  "..3333..",
+  ".322223.",
+  "32211223",
+  "32111123",
+  "32111123",
+  "32211223",
+  ".322223.",
+  "..3333.."
+]
+state var ink = 2
+state var cx = 3
+state var cy = 3
+state var inks = [39, 22, 48]     // the colors of inks 1, 2, 3
+
+let slot = 1                      // the pattern-table index being edited
+
+// ── Palettes ──────────────────────────────────────────────────────────────
+
+palette(0, inks)                  // the tile, background copy
+palette(1, white, gray, dark_gray)   // the interface
+palette(2, dark_gray, black, black)  // the transparency checker
+palette(4, inks)                  // the tile, sprite copy
+palette(5, white, black, black)   // the cursor
+
+// ── Fixed artwork ─────────────────────────────────────────────────────────
+// Tile `slot` is the drawing. Everything else here is the tool's own chrome,
+// which is itself defined the same way — there is no privileged path.
+
+define_art(0, ["........"])
+define_art(2, ["11111111", "11111111", "11111111", "11111111",
+               "11111111", "11111111", "11111111", "11111111"])
+define_art(3, ["22222222", "22222222", "22222222", "22222222",
+               "22222222", "22222222", "22222222", "22222222"])
+define_art(4, ["33333333", "33333333", "33333333", "33333333",
+               "33333333", "33333333", "33333333", "33333333"])
+
+// One quadrant of the cursor box. The other three are this tile flipped, which
+// is what the sprite flip bits are for and saves three tiles of pattern table.
+define_art(5, [
+  "11111111",
+  "1.......",
+  "1.......",
+  "1.......",
+  "1.......",
+  "1.......",
+  "1.......",
+  "1......."
+])
+
+// The "nothing here" checker, drawn under ink 0.
+define_art(6, [
+  "1.1.1.1.",
+  ".1.1.1.1",
+  "1.1.1.1.",
+  ".1.1.1.1",
+  "1.1.1.1.",
+  ".1.1.1.1",
+  "1.1.1.1.",
+  ".1.1.1.1"
+])
+
+define_art(slot, art_rows)
+
+set_map_size(32, 30)
+fill_map(0, 0)
+
+// ── Reading and writing the drawing ───────────────────────────────────────
+// A row is a string, so painting is a string splice rather than an array poke.
+// It reads oddly the first time and is the reason the buffer can be handed
+// straight to `define_art` and straight to `log` with no marshalling at either
+// end — the storage format and the source format are the same format.
+
+let ink_chars = [".", "1", "2", "3"]
+
+fn pixel_at(rows, x, y)
+  let c = char_at(rows[y], x)
+  index_of(ink_chars, c)
+end
+
+fn painted(rows, x, y, value)
+  let out = []
+  for j in range(0, len(rows)) do
+    if j == y then
+      out = append(out, char_slice(rows[j], 0, x) ++ ink_chars[value] ++ char_slice(rows[j], x + 1))
+    else
+      out = append(out, rows[j])
+    end
+  end
+  out
+end
+
+// ── Input ─────────────────────────────────────────────────────────────────
+
+if btn_repeat("left", 0.3, 0.06) then
+  set cx = pmod(cx - 1, 8)
+end
+if btn_repeat("right", 0.3, 0.06) then
+  set cx = pmod(cx + 1, 8)
+end
+if btn_repeat("up", 0.3, 0.06) then
+  set cy = pmod(cy - 1, 8)
+end
+if btn_repeat("down", 0.3, 0.06) then
+  set cy = pmod(cy + 1, 8)
+end
+
+if btnp("b") then
+  set ink = pmod(ink + 1, 4)
+end
+
+// Held, not tapped: painting while the pad is moving is how you draw a line.
+if btn("a") then
+  set art_rows = painted(art_rows, cx, cy, ink)
+end
+
+// Recoloring ink 0 would mean recoloring the backdrop, which every palette on
+// screen shares — including the one this interface is written in. The hardware
+// would allow it; the tool declines, and says why on screen.
+if ink > 0 && btn_repeat("select", 0.35, 0.05) then
+  let cs = inks
+  cs[ink - 1] = pmod(cs[ink - 1] + 1, 64)
+  set inks = cs
+end
+
+// ── The source, printed on demand ─────────────────────────────────────────
+// The whole point of the cart. `log` goes to the terminal the console was
+// launched from, so this lands next to your editor rather than on a screen you
+// would have to transcribe from.
+
+fn source_text(slot, rows, inks)
+  let q = "\""
+  let out = "define_art({slot}, [\n"
+  for j in range(0, len(rows)) do
+    out = out ++ "  " ++ q ++ rows[j] ++ q ++ (if j < len(rows) - 1 then ",\n" else "\n" end)
+  end
+  out ++ "])\npalette(0, {inks[0]}, {inks[1]}, {inks[2]})"
+end
+
+if btnp("start") then
+  log("\n" ++ source_text(slot, art_rows, inks))
+end
+
+// ── The canvas ────────────────────────────────────────────────────────────
+// Eight by eight pixels at two cells each: 16 cells square, cols 1-16, rows
+// 3-18. Empty pixels get the checker so the grid is legible even when most of
+// the tile is transparent.
+
+let canvas_x = 1
+let canvas_y = 3
+
+for y in range(0, 8) do
+  for x in range(0, 8) do
+    let v = pixel_at(art_rows, x, y)
+    let tile = if v == 0 then 6 else 1 + v end
+    let pal = if v == 0 then 2 else 0 end
+    map_rect(canvas_x + x * 2, canvas_y + y * 2, 2, 2, tile, pal)
+  end
+end
+
+// The cursor: one bracket tile, four sprites, four flip combinations. It blinks
+// so it stays visible over a white pixel and over a black one.
+if blink(2.0) then
+  let px = (canvas_x + cx * 2) * 8
+  let py = (canvas_y + cy * 2) * 8
+  sprite(px, py, 5, 5, flip(false, false))
+  sprite(px + 8, py, 5, 5, flip(true, false))
+  sprite(px, py + 8, 5, 5, flip(false, true))
+  sprite(px + 8, py + 8, 5, 5, flip(true, true))
+end
+
+// ── The panel ─────────────────────────────────────────────────────────────
+
+map_text_center(0, "TILE EDITOR", 1)
+map_text_center(1, "DRAW IT HERE, PASTE IT THERE", 1)
+
+map_text(18, 3, "INK", 1)
+for i in range(0, 4) do
+  let y = 4 + i
+  map_text(18, y, if i == ink then ">" else " " end, 1)
+  map_text(19, y, str(i), 1)
+  if i == 0 then
+    map_rect(21, y, 2, 1, 6, 2)
+    map_text(24, y, "BG", 1)
+  else
+    map_rect(21, y, 2, 1, 1 + i, 0)
+    map_text(24, y, str(inks[i - 1]), 1)
+  end
+end
+
+// Tiled: the same tile laid next to itself, which is the only way to see
+// whether its edges line up — the question every background tile has to answer.
+map_text(18, 9, "TILED", 1)
+map_rect(19, 10, 6, 6, slot, 0)
+
+// As a sprite, in all four flips, over the backdrop: ink 0 reads as see-through
+// here in a way it never does on the canvas.
+map_text(18, 16, "SPRITE", 1)
+sprite(152, 136, slot, 4, flip(false, false))
+sprite(160, 136, slot, 4, flip(true, false))
+sprite(152, 144, slot, 4, flip(false, true))
+sprite(160, 144, slot, 4, flip(true, true))
+
+// ── The source, on screen ─────────────────────────────────────────────────
+// The same text START prints, so you can see what you are about to get.
+
+let quote = char_at("\"", 0)
+map_text(1, 20, "DEFINE_ART({slot}, [", 1)
+for j in range(0, 8) do
+  map_text(1, 21 + j, "  " ++ quote ++ art_rows[j] ++ quote ++ (if j < 7 then "," else "" end), 1)
+end
+map_text(1, 29, "])", 1)
+
+map_text(16, 21, "PAD   MOVE", 1)
+map_text(16, 22, "A     PAINT", 1)
+map_text(16, 23, "B     NEXT INK", 1)
+map_text(16, 24, if ink == 0 then "SEL   FIXED BG" else "SEL   RECOLOR" end, 1)
+map_text(16, 25, "START LOG SOURCE", 1)
+map_text(16, 27, "INK {ink}", 1)
+map_text(16, 28, "PIX {cx},{cy}", 1)

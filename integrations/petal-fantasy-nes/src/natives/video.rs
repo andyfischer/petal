@@ -432,9 +432,11 @@ fn native_load_tiles_png(cxt: &mut PetalCxt) -> NativeResult {
 // Decoded PNG tilesets, keyed by path and invalidated by modification time so
 // editing the art file hot-reloads it like the cart itself. Failures are
 // cached too: without that, a broken path would print once per frame.
+/// A decoded tileset plus the modification time it was decoded at.
+type CachedPng = (u128, Result<Vec<Tile>, String>);
+
 thread_local! {
-    static PNG_CACHE: RefCell<HashMap<String, (u128, Result<Vec<Tile>, String>)>> =
-        RefCell::new(HashMap::new());
+    static PNG_CACHE: RefCell<HashMap<String, CachedPng>> = RefCell::new(HashMap::new());
 }
 
 fn apply_load_png(path: &str, base: usize, ppu: &mut Ppu) {

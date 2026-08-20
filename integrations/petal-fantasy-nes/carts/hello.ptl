@@ -4,12 +4,6 @@
 // one sprite around with the d-pad. Run it with:
 //
 //   cargo run -- carts/hello.ptl
-//
-// Honest about the skeleton it was written against: the PPU rasterizer is
-// still a stub that fills the screen with the backdrop color, so today this
-// cart renders as a flat blue field. Every call below is real and reaches the
-// host — the tiles, map and sprite are applied once the PPU task lands, with
-// no change to this file.
 
 // ── Palettes ──────────────────────────────────────────────────────────────
 // Colors are indices into the fixed 64-entry master palette, never RGB. Petal

@@ -134,8 +134,16 @@ fn resolve_path(rel: &str) -> Option<PathBuf> {
     from_crate.exists().then_some(from_crate)
 }
 
-/// The `.ptl` files in `dir`, sorted, with the launcher itself excluded — it is
-/// the menu, not an entry on it.
+/// Name of the entry script inside a multi-file cart directory.
+const CART_ENTRY: &str = "game.ptl";
+
+/// The carts in `dir`, sorted, with the launcher itself excluded — it is the
+/// menu, not an entry on it.
+///
+/// A cart is either a single `.ptl` file or a directory holding a `game.ptl`
+/// entry script plus the modules it imports; the showcase game is the second
+/// shape, and a launcher that only saw loose files could not boot it. Only one
+/// level deep, and a directory is named for itself rather than for `game`.
 fn scan_carts(dir: &Path) -> Vec<CartEntry> {
     let mut carts = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -143,13 +151,20 @@ fn scan_carts(dir: &Path) -> Vec<CartEntry> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("ptl") {
-            continue;
-        }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        if stem == "launcher" {
+        if path.is_dir() {
+            let entry_script = path.join(CART_ENTRY);
+            if entry_script.is_file() {
+                carts.push(CartEntry {
+                    name: stem.to_string(),
+                    path: entry_script.to_string_lossy().into_owned(),
+                });
+            }
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("ptl") || stem == "launcher" {
             continue;
         }
         carts.push(CartEntry {

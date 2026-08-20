@@ -926,7 +926,7 @@ mod tests {
     fn hashed_tile_writes_skip_unchanged_data() {
         let mut ppu = Ppu::new();
         let mut decodes = 0;
-        let mut define = |ppu: &mut Ppu, hash: u64, decodes: &mut i32| {
+        let define = |ppu: &mut Ppu, hash: u64, decodes: &mut i32| {
             ppu.define_tile_hashed(3, hash, || {
                 *decodes += 1;
                 solid(2)

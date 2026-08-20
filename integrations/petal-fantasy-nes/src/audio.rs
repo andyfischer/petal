@@ -773,8 +773,8 @@ fn mix_voices(bank: &HashMap<String, Sound>, voices: &mut Vec<Voice>, out: &mut 
         };
         let available = sound.samples.len().saturating_sub(voice.cursor);
         let n = available.min(out.len());
-        for i in 0..n {
-            out[i] += sound.samples[voice.cursor + i] * voice.volume;
+        for (o, s) in out[..n].iter_mut().zip(&sound.samples[voice.cursor..]) {
+            *o += s * voice.volume;
         }
         voice.cursor += n;
     }
@@ -791,14 +791,13 @@ fn mix_dsp(dsp: &DspBus, out: &mut [f32]) {
         return;
     }
     let n = dsp.block.len().min(out.len());
-    for i in 0..n {
+    for (i, (o, b)) in out.iter_mut().zip(&dsp.block).take(n).enumerate() {
         let t = if n > 1 {
             i as f32 / (n - 1) as f32
         } else {
             1.0
         };
-        let gain = dsp.gain_from + (dsp.gain_to - dsp.gain_from) * t;
-        out[i] += dsp.block[i] * gain;
+        *o += b * (dsp.gain_from + (dsp.gain_to - dsp.gain_from) * t);
     }
 }
 

@@ -21,7 +21,8 @@ describe("lists", () => {
     const ir = showIrJson("let xs = []");
     const allocs = termsByOp(ir, "AllocList");
     expect(allocs.length).toBeGreaterThanOrEqual(1);
-    expect(allocs[0].inputs).toHaveLength(0);
+    // schema 0.2 omits empty `inputs` from the wire entirely.
+    expect(allocs[0].inputs).toBeUndefined();
   });
 });
 

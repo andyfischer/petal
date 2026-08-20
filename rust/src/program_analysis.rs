@@ -713,11 +713,13 @@ mod tests {
             id: root_block,
             parent_term_id: None,
             entry: terms.first().map(|t| t.id),
+            terms: terms.iter().map(|t| t.id).collect(),
             param_names: vec![],
             register_count: terms.len() as u16,
             phi_outs: vec![],
         }];
         Program {
+            schema: crate::program::IR_SCHEMA_VERSION.to_string(),
             id: ProgramId(0),
             source: String::new(),
             terms,

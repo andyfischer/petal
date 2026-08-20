@@ -76,17 +76,30 @@ describe("calc emitter — output matches the real Petal compiler", () => {
 });
 
 describe("calc emitter — produces a valid IR contract", () => {
-  it("emits the leading print phantom before the entry term", () => {
+  it("calls print through BuiltinCall by name — no phantom terms", () => {
     const ir = compileCalcToIr("print 1 + 2") as any;
-    expect(ir.terms[0]).toMatchObject({ op: "Copy", name: "print", inputs: [] });
-    // entry points at the first real (listed) term, not the phantom.
-    expect(ir.blocks[0].entry).toBe(1);
-    expect(ir.has_errors).toBe(false);
+    // schema 0.2: builtins resolve by name via a string constant; no phantom
+    // Copy terms and no dependence on Petal's builtin registration order.
+    expect(ir.schema).toBe("0.2");
+    expect(ir.terms.every((t: any) => t.name !== "print")).toBe(true);
+    const call = ir.terms.find(
+      (t: any) => typeof t.op === "object" && "BuiltinCall" in t.op
+    );
+    expect(call).toBeDefined();
+    expect(ir.constants.values[call.op.BuiltinCall]).toEqual({ String: "print" });
+    // Ordering is the block's declarative `terms` array; every term is listed.
+    expect(ir.blocks[0].terms).toEqual(ir.terms.map((t: any) => t.id));
+    // Registers are omitted — the loader recomputes them.
+    expect(ir.terms.every((t: any) => t.register === undefined)).toBe(true);
   });
 
-  it("a program with no print emits no phantom and no output", () => {
+  it("a program with no print emits no BuiltinCall and no output", () => {
     const ir = compileCalcToIr("let x = 1 + 1") as any;
-    expect(ir.terms.every((t: any) => t.name !== "print")).toBe(true);
+    expect(
+      ir.terms.every(
+        (t: any) => !(typeof t.op === "object" && "BuiltinCall" in t.op)
+      )
+    ).toBe(true);
     expect(runIr(JSON.stringify(ir))).toBe("");
   });
 

@@ -422,8 +422,11 @@ machine-readable output.
 #### AST JSON Schema
 
 All AST enum types use serde's externally-tagged representation. `Stmt` and
-`Expr` are serialized as `{kind: <variant>, span: SourceSpan}` — the
-`<variant>` shapes are listed in the `StmtKind` and `ExprKind` tables below.
+`Expr` are serialized as `{kind: <variant>, span: SourceSpan}` — `SourceSpan`
+is the same compact array encoding the IR uses
+(`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`, see
+[Program JSON Schema](#program-json-schema)), and the `<variant>` shapes are
+listed in the `StmtKind` and `ExprKind` tables below.
 The canonical definitions live in `rust/src/ast.rs`; the tables below cover
 the common variants but are not exhaustive.
 
@@ -608,6 +611,7 @@ The text form is designed to be read without cross-referencing:
 
 ```json
 {
+  "schema": "0.2",
   "id": 0,
   "source": "...",
   "terms": [...],
@@ -615,7 +619,6 @@ The text form is designed to be read without cross-referencing:
   "root_block": 0,
   "constants": {"values": [...]},
   "source_map": {"term_spans": {...}},
-  "has_errors": false,
   "functions": [...],
   "match_arms": {...}
 }
@@ -635,22 +638,29 @@ returns this view by default.)
 
 #### Program JSON Schema
 
-The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize as their inner integer (e.g. `TermId(5)` becomes `5`).
+The IR JSON is the complete compiled `Program` struct — **schema 0.2** (see
+[docs/dev/ir-as-target.md](dev/ir-as-target.md) for the full emit-target
+contract and the legacy-v0 tolerance rules). All ID newtypes serialize as
+their inner integer (e.g. `TermId(5)` becomes `5`). **Defaults are omitted on
+the wire**: any field whose value is its default — a `null` option, an empty
+array/string/map, a `false` boolean — is simply absent, and loaders treat
+absence as the default.
 
 **Top-level Program**:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `schema` | `string` | Wire-format version, `"0.2"`. The loader also accepts documents with no `schema` field (legacy v0 shapes) |
 | `id` | `number` | Program ID (always 0 for CLI) |
-| `source` | `string` | Original source code |
+| `source` | `string` | Original source code (omitted when empty) |
 | `terms` | `Term[]` | All terms in the program |
 | `blocks` | `Block[]` | All blocks in the program |
 | `root_block` | `number` | BlockId of the root/entry block |
 | `constants` | `{"values": ConstantValue[]}` | Constant table |
-| `source_map` | `{"term_spans": {}}` | TermId → SourceSpan mapping (string keys) |
-| `has_errors` | `boolean` | Whether the program has parse errors |
-| `functions` | `FunctionDef[]` | All function definitions |
-| `match_arms` | `{[termId: string]: MatchArmMeta[]}` | Match term → arm metadata (string keys) |
+| `source_map` | `{"term_spans": {}}` | TermId → SourceSpan mapping (string keys); omitted when empty |
+| `has_errors` | `boolean` | Whether the program has parse errors (omitted when `false`) |
+| `functions` | `FunctionDef[]` | All function definitions (omitted when empty) |
+| `match_arms` | `{[termId: string]: MatchArmMeta[]}` | Match term → arm metadata (string keys); omitted when empty |
 
 **Term**:
 
@@ -658,16 +668,18 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 |-------|------|-------------|
 | `id` | `number` | Unique term ID |
 | `op` | `TermOp` | The operation (see TermOp table below) |
-| `inputs` | `number[]` | TermIds of input dataflow edges |
+| `inputs` | `number[]` | TermIds of input dataflow edges (omitted when empty) |
 | `block_id` | `number` | BlockId this term belongs to |
-| `block_next` | `number \| null` | Next term in block's linked list |
-| `block_prev` | `number \| null` | Previous term in block's linked list |
-| `name` | `string \| null` | Variable name if this is a binding |
-| `register` | `number` | Register index for evaluation |
-| `state_key` | `number \| null` | State key for StateInit/StateRead/StateWrite |
-| `child_blocks` | `number[]` | BlockIds of child blocks (for control flow) |
+| `name` | `string` | Variable name if this is a binding (omitted when none) |
+| `register` | `number` | Register index for evaluation. Optional for imports — when any term omits it, the loader recomputes the whole assignment |
+| `state_key` | `number` | State key for StateInit/StateRead/StateWrite (omitted otherwise) |
+| `child_blocks` | `number[]` | BlockIds of child blocks, for control flow (omitted when empty) |
 | `in_loop` | `boolean` | Omitted when `false`. Marks state terms inside a loop body for per-iteration state. |
 | `collect` | `boolean` | Omitted when `false`. On a `ForLoop`/`NumericForLoop` term, marks a value-position loop (`x = for …`) that collects each iteration's body result into a list. |
+
+Execution order within a block is the block's ordered `terms` array (below).
+The in-memory `entry`/`block_next`/`block_prev` linked list is not serialized;
+legacy documents that carry it (and no block `terms` arrays) still load.
 
 **TermOp** — serde's externally-tagged encoding:
 
@@ -690,8 +702,9 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Not | `"Not"` | [operand] | none | Logical not |
 | And | `"And"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
 | Or | `"Or"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
+| Coalesce | `"Coalesce"` | [left] | [rhs_block] | `??` — yields the RHS when the left is Nil/Pending |
 | Concat | `"Concat"` | [left, right] | none | String concatenation (`++`) |
-| Copy | `"Copy"` | [source] or [] | none | Variable reference. Empty inputs = phantom (builtin/param) |
+| Copy | `"Copy"` | [source] or [] | none | Variable reference. No inputs + a `name` = binding phantom (builtin/param/capture/self) — never listed in a block's `terms` array |
 | Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. |
 | Branch | `"Branch"` | [condition] | [then_block, else_block] | if/else |
 | ForLoop | `"ForLoop"` | [iterable] | [body_block] | for-in loop. Yields a list of each iteration's body result when `collect` is set (value-position `x = for …`). |
@@ -703,7 +716,8 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | MakeClosure | `{"MakeClosure": fid}` | [captured_values...] | none | Create closure for FunctionId |
 | MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [function-overloading.md](function-overloading.md). |
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
-| MethodCall | `{"MethodCall": cid}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then scope/builtin lookup with `object` prepended. |
+| MethodCall | `{"MethodCall": {"name": cid, "hint": cid?}}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then the receiver's class, then a builtin with `object` prepended. `hint` (omitted when absent) names a class for live-edit dispatch. |
+| BuiltinCall | `{"BuiltinCall": cid}` | [arg0, arg1, ...] | none | Direct builtin call; `cid` is a String constant holding the builtin's name, resolved by name at lower time. |
 | StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
 | StateWrite | `"StateWrite"` | [value] or [value, explicit_key] | none | `state_key` set. Forwards the same `explicit_key` from the matching `StateInit` so the runtime resolves to the same `RuntimeStateKey`. |
@@ -714,8 +728,10 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | AllocMap | `{"AllocMap": {"fields": [cid, ...], "class": cid?}}` | [val0, val1, ...] | none | Field names as ConstantIds. `class` is present only for a class constructor's allocation, naming the class the record is tagged with (see [language-guide.md](language-guide.md#classes--methods)); it is omitted for a plain record literal. |
 | AllocMapSpread | `{"AllocMapSpread": {"entries": [...]}}` | [spread_src..., named_value...] | none | Record literal with `...spread`. Each entry is `Spread(idx)` or `Named{key, idx}` referencing positions in `inputs`. |
 | GetField | `{"GetField": cid}` | [object] | none | |
+| GetFieldOpt | `{"GetFieldOpt": cid}` | [object] | none | Tolerant read: missing field / Nil object yields Nil (left side of `??`) |
 | SetField | `{"SetField": cid}` | [object, value] | none | |
 | GetIndex | `"GetIndex"` | [object, index] | none | |
+| GetIndexOpt | `"GetIndexOpt"` | [object, index] | none | Tolerant read: missing key / Nil object yields Nil |
 | SetIndex | `"SetIndex"` | [object, index, value] | none | |
 | AllocElement | `{"AllocElement": {"tag": cid, "prop_keys": [cid, ...]}}` | [prop_val0, ..., child0, ...] | none | JSX-like element. `prop_keys.len()` separates prop values from children in `inputs`. |
 | MakeEnumVariant | `{"MakeEnumVariant": cid}` | [field_values...] | none | Variant name as ConstantId |
@@ -726,38 +742,42 @@ The IR JSON is the complete compiled `Program` struct. All ID newtypes serialize
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `number` | Unique block ID |
-| `parent_term_id` | `number \| null` | TermId that created this block (null for root and function bodies) |
-| `entry` | `number \| null` | TermId of first term in this block's linked list |
-| `param_names` | `string[]` | Parameter names (function params, for-loop variable) |
-| `register_count` | `number` | Total registers needed for this block's frame |
-| `phi_outs` | `PhiOut[]` | Carry-outs: when this block's frame pops, copy each `src_term`'s register into the parent block's `Phi` term register. Drives the rebinding-as-pure-dataflow model. |
+| `parent_term_id` | `number` | TermId that created this block (omitted for root and function bodies) |
+| `terms` | `number[]` | The block's TermIds in execution order (omitted when empty). Binding phantoms are not listed. |
+| `param_names` | `string[]` | Parameter names (function params, for-loop variable); omitted when empty |
+| `register_count` | `number` | Total registers needed for this block's frame. Optional for imports — recomputed/filled by the loader |
+| `phi_outs` | `PhiOut[]` | Carry-outs: when this block's frame pops, copy each `src_term`'s register into the parent block's `Phi` term register. Drives the rebinding-as-pure-dataflow model. Omitted when empty. |
 
 **FunctionDef**:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `number` | FunctionId |
-| `name` | `string \| null` | Function name (null for lambdas) |
-| `params` | `string[]` | Parameter names |
+| `name` | `string` | Function name (omitted for lambdas) |
+| `params` | `string[]` | Parameter names (omitted when empty) |
 | `body_block` | `number` | BlockId of the function body |
-| `capture_names` | `string[]` | Names of captured variables |
-| `capture_registers` | `number[]` | Which body registers receive captured values (parallel to `capture_names`) |
-| `self_ref_register` | `number \| null` | Body register for self-reference (enables recursion) |
-| `register_count` | `number` | Total registers for function frame |
+| `capture_names` | `string[]` | Names of captured variables (omitted when empty) |
+| `capture_registers` | `number[]` | Which body registers receive captured values (parallel to `capture_names`). Optional for imports — re-derived from the body block's binding phantoms when registers are omitted |
+| `self_ref_register` | `number` | Body register for self-reference (enables recursion). Optional for imports, like `capture_registers` |
+| `register_count` | `number` | Total registers for function frame. Optional for imports |
 
 **MatchArmMeta**:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `pattern` | `Pattern` | The pattern to match (same AST Pattern type) |
-| `guard_block` | `number \| null` | BlockId for guard expression, if any |
+| `guard_block` | `number` | BlockId for guard expression (omitted when none) |
 | `body_block` | `number` | BlockId for the arm body |
 
 **ConstantValue**: `"Nil"`, `{"Bool": true}`, `{"Int": 42}`, `{"Float": 12345678901234}` (u64 bits), `{"String": "hello"}`
 
-**SourceSpan**: `{"start": SourcePosition, "end": SourcePosition}`
-
-**SourcePosition**: `{"line": number, "column": number, "offset": number}`
+**SourceSpan** — a compact lossless array, shared by the IR `source_map` and
+the AST JSON:
+`[startLine, startCol, startOffset, endLine, endCol, endOffset]`, with a
+seventh element (the `source_map.files` index) appended only when nonzero
+(non-entry file). Lines and columns are 1-based, offsets 0-based bytes. On
+input, the loader also accepts the legacy object form
+`{"start": {"line", "column", "offset"}, "end": {…}, "file"?}`.
 
 ### `show-bytecode` — Bytecode lowering
 
@@ -955,12 +975,20 @@ bindings = white) so the output stays readable even on mid-sized programs.
 
 ## Builtin Phantom Terms
 
-Every program starts with **one phantom term per registered built-in
-function** (`t0`, `t1`, …) in the root block. These are `Copy` terms with
-empty inputs; their `name` field holds the builtin name. The IDs follow
-the registration order in `rust/src/builtins/mod.rs`, which is the source
-of truth. Registration order is load-bearing: reordering it would renumber
-every IR snapshot, so built-ins can only be appended.
+Every **compiled** program starts with one phantom term per registered
+built-in function (`t0`, `t1`, …) in the root block. These are `Copy` terms
+with no inputs; their `name` field holds the builtin name. The IDs follow
+the registration order in `rust/src/builtins/mod.rs`. Registration order is
+load-bearing for compiled snapshots: reordering it would renumber every IR
+snapshot, so built-ins can only be appended.
+
+The phantoms exist for name resolution and for using a builtin as a
+first-class *value*; a direct call like `print(x)` compiles to a
+`BuiltinCall` naming the builtin via a string constant instead. The runtime
+seeds native function values into phantom registers **by name** when the
+root frame is pushed — so an imported IR document (schema 0.2) needs no
+phantoms at all unless it wants a builtin as a value, and never depends on
+registration order. See [docs/dev/ir-as-target.md](dev/ir-as-target.md).
 
 `includes` is a JS-compat alias for `contains`. `map`, `filter`, `reduce`,
 and `forEach` are declared as natives so name resolution finds them, but
@@ -968,9 +996,8 @@ the evaluator dispatches them as intrinsics (they need access to the
 evaluator to call their function argument).
 
 User-defined terms are numbered after the phantom terms (the first user
-term's ID is the number of registered builtins). Phantom terms are **not connected to
-the block's linked list** (`block_next`/`block_prev` are `null`, and the
-block's `entry` points to the first user term).
+term's ID is the number of registered builtins). Phantom terms are **not
+listed** in any block's `terms` array — they don't execute.
 
 Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) register
 additional natives before compiling programs. Those natives add more
@@ -983,19 +1010,12 @@ first non-phantom term is host-provided; the default text output and the
 
 ### Walking a block's terms
 
-Each block has an `entry` field pointing to its first term. Follow `block_next` to walk the linked list:
+Each block carries its TermIds in execution order:
 
 ```javascript
 function walkBlock(program, blockId) {
   const block = program.blocks.find(b => b.id === blockId);
-  const terms = [];
-  let tid = block.entry;
-  while (tid !== null) {
-    const term = program.terms.find(t => t.id === tid);
-    terms.push(term);
-    tid = term.block_next;
-  }
-  return terms;
+  return (block.terms ?? []).map(tid => program.terms[tid]); // terms[i].id === i
 }
 ```
 

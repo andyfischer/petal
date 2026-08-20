@@ -158,6 +158,7 @@ pub enum TermOp {
     /// receiver's own class. See `crate::typecheck::MethodDispatch`.
     MethodCall {
         name: ConstantId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<ConstantId>,
     },
     /// Static builtin call: inputs=[arg0, arg1, ...], builtin name as constant.
@@ -288,25 +289,57 @@ impl TermOp {
 // Term
 // ---------------------------------------------------------------------------
 
+/// `skip_serializing_if` helper for SmallVec fields (the derive needs a
+/// callable path, and inherent `is_empty` doesn't name the generic).
+fn smallvec_empty<A: smallvec::Array>(v: &SmallVec<A>) -> bool {
+    v.is_empty()
+}
+
+/// Sentinel a deserialized term's `register` defaults to when the wire form
+/// omits it (schema v0.2 makes registers optional). A real register can never
+/// be `u16::MAX`: `register_count` is a `u16`, so an assignment reaching
+/// 65535 registers would already overflow the frame. The IR loader recomputes
+/// every register when it sees this value — see
+/// `Program::recompute_registers` in `ir_validate.rs`.
+pub const REGISTER_UNSET: RegisterIndex = RegisterIndex(u16::MAX);
+
+fn register_unset() -> RegisterIndex {
+    REGISTER_UNSET
+}
+
 /// A single expression/node in the program graph.
 #[derive(Serialize, Deserialize)]
 pub struct Term {
     pub id: TermId,
     pub op: TermOp,
     /// Input terms (dataflow edges)
+    #[serde(default, skip_serializing_if = "smallvec_empty")]
     pub inputs: SmallVec<[TermId; 4]>,
     /// The block this term belongs to
     pub block_id: BlockId,
-    /// Linked list ordering within the block
+    /// Linked list ordering within the block. In-memory only since schema
+    /// v0.2: the wire form is the block's ordered `terms` array, and the
+    /// loader rebuilds these links from it (`Program::relink_block_terms`).
+    /// Legacy v0 documents that still carry the links deserialize them
+    /// (`skip_serializing` without `skip_deserializing`), and the loader
+    /// reconstructs the `terms` arrays from the walk instead.
+    #[serde(default, skip_serializing)]
     pub block_next: Option<TermId>,
+    #[serde(default, skip_serializing)]
     pub block_prev: Option<TermId>,
     /// Optional name for binding terms (variable declarations)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Register assignment for evaluation
+    /// Register assignment for evaluation. Optional on the wire: when any
+    /// term omits it, the loader recomputes the whole assignment (see
+    /// [`REGISTER_UNSET`]). `show-ir --json` always emits it.
+    #[serde(default = "register_unset")]
     pub register: RegisterIndex,
     /// For state terms: unique identifier for state reconciliation
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_key: Option<StateKey>,
     /// Child blocks for control flow terms (Branch, ForLoop, WhileLoop, Match, And, Or)
+    #[serde(default, skip_serializing_if = "smallvec_empty")]
     pub child_blocks: SmallVec<[BlockId; 2]>,
     /// True if this state term is inside a loop body (for per-iteration state).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -333,12 +366,29 @@ pub struct Term {
 pub struct Block {
     pub id: BlockId,
     /// The term that creates this block's scope. None for the root block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_term_id: Option<TermId>,
     /// Entry point for this block's term list. None for empty blocks.
+    /// In-memory only since schema v0.2 (rebuilt from `terms` on load); still
+    /// deserialized so legacy v0 documents can be walked. See `Term::block_next`.
+    #[serde(default, skip_serializing)]
     pub entry: Option<TermId>,
+    /// The block's terms in execution order — the schema v0.2 wire form of
+    /// the intra-block ordering (replacing the `entry`/`block_next`/
+    /// `block_prev` linked list, which is derived from this on load).
+    /// Maintained by the compiler in lockstep with the linked list
+    /// (`Compiler::emit_term` is the single append site). Binding phantoms
+    /// (params, captures, self-refs, builtins) are deliberately *not* listed —
+    /// they don't execute.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terms: Vec<TermId>,
     /// Parameter names for function body blocks and for-loop bodies
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub param_names: Vec<String>,
-    /// Total registers needed for this block's frame
+    /// Total registers needed for this block's frame. Optional on the wire
+    /// (recomputed when registers are omitted; filled from the max register
+    /// when absent).
+    #[serde(default)]
     pub register_count: u16,
     /// Phi carry-outs: when this block's frame pops, copy each `src_term`'s
     /// register value to the parent frame at each `dest_term`'s register.
@@ -364,14 +414,24 @@ pub struct PhiOut {
 #[derive(Serialize, Deserialize)]
 pub struct FunctionDef {
     pub id: FunctionId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<String>,
     pub body_block: BlockId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capture_names: Vec<String>,
-    /// Which body registers get capture values (indexed same as captures)
+    /// Which body registers get capture values (indexed same as captures).
+    /// Optional on the wire when registers are omitted: the loader re-derives
+    /// each entry from the body block's binding phantom of the same name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capture_registers: Vec<RegisterIndex>,
-    /// Which body register gets the self-reference for recursion
+    /// Which body register gets the self-reference for recursion. Re-derived
+    /// (from a body-block phantom named after the function) when registers
+    /// are omitted on the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub self_ref_register: Option<RegisterIndex>,
+    #[serde(default)]
     pub register_count: u16,
 }
 
@@ -406,6 +466,7 @@ pub struct OverloadEntry {
 #[derive(Serialize, Deserialize)]
 pub struct MatchArmMeta {
     pub pattern: Pattern,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guard_block: Option<BlockId>,
     pub body_block: BlockId,
 }
@@ -414,12 +475,30 @@ pub struct MatchArmMeta {
 // Program
 // ---------------------------------------------------------------------------
 
+/// The IR JSON schema version this build reads and writes. The loader also
+/// accepts documents with no `schema` field at all (pre-v0.2 "schema v0"
+/// shapes — see docs/dev/ir-as-target.md).
+pub const IR_SCHEMA_VERSION: &str = "0.2";
+
+fn default_schema() -> String {
+    IR_SCHEMA_VERSION.to_string()
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// A compiled program ready for execution.
 #[derive(Serialize, Deserialize)]
 pub struct Program {
+    /// Wire-format version tag (see [`IR_SCHEMA_VERSION`]). Serialized on
+    /// every dump; a document without one deserializes to the current version
+    /// and `Program::validate` rejects any other value.
+    #[serde(default = "default_schema")]
+    pub schema: String,
     pub id: ProgramId,
     /// Original source text. Optional for imported IR (see docs/ir-as-target.md).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
 
     // IR data
@@ -428,14 +507,15 @@ pub struct Program {
     pub root_block: BlockId,
     pub constants: ConstantTable,
     /// Source spans. Optional for imported IR.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "SourceMap::is_empty")]
     pub source_map: SourceMap,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub has_errors: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub functions: Vec<FunctionDef>,
     #[serde(
         default,
+        skip_serializing_if = "HashMap::is_empty",
         serialize_with = "serialize_termid_map",
         deserialize_with = "deserialize_termid_map"
     )]
@@ -461,7 +541,7 @@ pub struct Program {
     /// and the lint round-trip asserts that formatting a file leaves its IR
     /// byte-identical — which a hash set's iteration order would break at
     /// random.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub class_names: std::collections::BTreeSet<String>,
 }
 

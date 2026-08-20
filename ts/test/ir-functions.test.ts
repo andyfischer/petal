@@ -71,7 +71,8 @@ describe("closures and captures", () => {
 describe("lambdas", () => {
   it("creates a FunctionDef with null name for lambdas", () => {
     const ir = showIrJson("let f = fn(x) -> x + 1");
-    const lambda = ir.functions.find((f: any) => f.name === null);
+    // schema 0.2 omits a null name from the wire entirely.
+    const lambda = ir.functions.find((f: any) => f.name === undefined);
     expect(lambda).toBeDefined();
     expect(lambda.params).toEqual(["x"]);
   });

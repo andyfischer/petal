@@ -1,854 +1,838 @@
 {
+  "schema": "0.2",
   "id": 0,
   "source": "fn counter()\n  state c = 0\n  c = c + 1\n  c\nend\nprint(counter())\nprint(counter())\nprint(counter())",
   "terms": [
     {
       "id": 0,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "print",
-      "register": 0,
-      "state_key": null,
-      "child_blocks": []
+      "register": 0
     },
     {
       "id": 1,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "range",
-      "register": 1,
-      "state_key": null,
-      "child_blocks": []
+      "register": 1
     },
     {
       "id": 2,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "len",
-      "register": 2,
-      "state_key": null,
-      "child_blocks": []
+      "register": 2
     },
     {
       "id": 3,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "push",
-      "register": 3,
-      "state_key": null,
-      "child_blocks": []
+      "register": 3
     },
     {
       "id": 4,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "str",
-      "register": 4,
-      "state_key": null,
-      "child_blocks": []
+      "register": 4
     },
     {
       "id": 5,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "abs",
-      "register": 5,
-      "state_key": null,
-      "child_blocks": []
+      "register": 5
     },
     {
       "id": 6,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "sqrt",
-      "register": 6,
-      "state_key": null,
-      "child_blocks": []
+      "register": 6
     },
     {
       "id": 7,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "floor",
-      "register": 7,
-      "state_key": null,
-      "child_blocks": []
+      "register": 7
     },
     {
       "id": 8,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "ceil",
-      "register": 8,
-      "state_key": null,
-      "child_blocks": []
+      "register": 8
     },
     {
       "id": 9,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "float",
-      "register": 9,
-      "state_key": null,
-      "child_blocks": []
+      "register": 9
     },
     {
       "id": 10,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "int",
-      "register": 10,
-      "state_key": null,
-      "child_blocks": []
+      "register": 10
     },
     {
       "id": 11,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "random",
-      "register": 11,
-      "state_key": null,
-      "child_blocks": []
+      "register": 11
     },
     {
       "id": 12,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "type",
-      "register": 12,
-      "state_key": null,
-      "child_blocks": []
+      "register": 12
     },
     {
       "id": 13,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "append",
-      "register": 13,
-      "state_key": null,
-      "child_blocks": []
+      "register": 13
     },
     {
       "id": 14,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "pop",
-      "register": 14,
-      "state_key": null,
-      "child_blocks": []
+      "register": 14
     },
     {
       "id": 15,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "keys",
-      "register": 15,
-      "state_key": null,
-      "child_blocks": []
+      "register": 15
     },
     {
       "id": 16,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "values",
-      "register": 16,
-      "state_key": null,
-      "child_blocks": []
+      "register": 16
     },
     {
       "id": 17,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "contains",
-      "register": 17,
-      "state_key": null,
-      "child_blocks": []
+      "register": 17
     },
     {
       "id": 18,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "min",
-      "register": 18,
-      "state_key": null,
-      "child_blocks": []
+      "register": 18
     },
     {
       "id": 19,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "max",
-      "register": 19,
-      "state_key": null,
-      "child_blocks": []
+      "register": 19
     },
     {
       "id": 20,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "round",
-      "register": 20,
-      "state_key": null,
-      "child_blocks": []
+      "register": 20
     },
     {
       "id": 21,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "dual",
-      "register": 21,
-      "state_key": null,
-      "child_blocks": []
+      "register": 21
     },
     {
       "id": 22,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "value_of",
-      "register": 22,
-      "state_key": null,
-      "child_blocks": []
+      "register": 22
     },
     {
       "id": 23,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "deriv_of",
-      "register": 23,
-      "state_key": null,
-      "child_blocks": []
+      "register": 23
     },
     {
       "id": 24,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "sort",
-      "register": 24,
-      "state_key": null,
-      "child_blocks": []
+      "register": 24
     },
     {
       "id": 25,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "reverse",
-      "register": 25,
-      "state_key": null,
-      "child_blocks": []
+      "register": 25
     },
     {
       "id": 26,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "join",
-      "register": 26,
-      "state_key": null,
-      "child_blocks": []
+      "register": 26
     },
     {
       "id": 27,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
       "name": "split",
-      "register": 27,
-      "state_key": null,
-      "child_blocks": []
+      "register": 27
     },
     {
       "id": 28,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "enumerate",
-      "register": 28,
-      "state_key": null,
-      "child_blocks": []
+      "name": "upper",
+      "register": 28
     },
     {
       "id": 29,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "zip",
-      "register": 29,
-      "state_key": null,
-      "child_blocks": []
+      "name": "lower",
+      "register": 29
     },
     {
       "id": 30,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "slice",
-      "register": 30,
-      "state_key": null,
-      "child_blocks": []
+      "name": "enumerate",
+      "register": 30
     },
     {
       "id": 31,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "flat",
-      "register": 31,
-      "state_key": null,
-      "child_blocks": []
+      "name": "zip",
+      "register": 31
     },
     {
       "id": 32,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "includes",
-      "register": 32,
-      "state_key": null,
-      "child_blocks": []
+      "name": "slice",
+      "register": 32
     },
     {
       "id": 33,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "sin",
-      "register": 33,
-      "state_key": null,
-      "child_blocks": []
+      "name": "flat",
+      "register": 33
     },
     {
       "id": 34,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "cos",
-      "register": 34,
-      "state_key": null,
-      "child_blocks": []
+      "name": "includes",
+      "register": 34
     },
     {
       "id": 35,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "tan",
-      "register": 35,
-      "state_key": null,
-      "child_blocks": []
+      "name": "sin",
+      "register": 35
     },
     {
       "id": 36,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "atan2",
-      "register": 36,
-      "state_key": null,
-      "child_blocks": []
+      "name": "cos",
+      "register": 36
     },
     {
       "id": 37,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "pi",
-      "register": 37,
-      "state_key": null,
-      "child_blocks": []
+      "name": "tan",
+      "register": 37
     },
     {
       "id": 38,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "clamp",
-      "register": 38,
-      "state_key": null,
-      "child_blocks": []
+      "name": "atan2",
+      "register": 38
     },
     {
       "id": 39,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "lerp",
-      "register": 39,
-      "state_key": null,
-      "child_blocks": []
+      "name": "pi",
+      "register": 39
     },
     {
       "id": 40,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "map_range",
-      "register": 40,
-      "state_key": null,
-      "child_blocks": []
+      "name": "clamp",
+      "register": 40
     },
     {
       "id": 41,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "distance",
-      "register": 41,
-      "state_key": null,
-      "child_blocks": []
+      "name": "lerp",
+      "register": 41
     },
     {
       "id": 42,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "mag",
-      "register": 42,
-      "state_key": null,
-      "child_blocks": []
+      "name": "map_range",
+      "register": 42
     },
     {
       "id": 43,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "pow",
-      "register": 43,
-      "state_key": null,
-      "child_blocks": []
+      "name": "distance",
+      "register": 43
     },
     {
       "id": 44,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "sign",
-      "register": 44,
-      "state_key": null,
-      "child_blocks": []
+      "name": "mag",
+      "register": 44
     },
     {
       "id": 45,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "fract",
-      "register": 45,
-      "state_key": null,
-      "child_blocks": []
+      "name": "pow",
+      "register": 45
     },
     {
       "id": 46,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "smoothstep",
-      "register": 46,
-      "state_key": null,
-      "child_blocks": []
+      "name": "sign",
+      "register": 46
     },
     {
       "id": 47,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "radians",
-      "register": 47,
-      "state_key": null,
-      "child_blocks": []
+      "name": "fract",
+      "register": 47
     },
     {
       "id": 48,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "degrees",
-      "register": 48,
-      "state_key": null,
-      "child_blocks": []
+      "name": "smoothstep",
+      "register": 48
     },
     {
       "id": 49,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "exp",
-      "register": 49,
-      "state_key": null,
-      "child_blocks": []
+      "name": "radians",
+      "register": 49
     },
     {
       "id": 50,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "log",
-      "register": 50,
-      "state_key": null,
-      "child_blocks": []
+      "name": "degrees",
+      "register": 50
     },
     {
       "id": 51,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "noise",
-      "register": 51,
-      "state_key": null,
-      "child_blocks": []
+      "name": "exp",
+      "register": 51
     },
     {
       "id": 52,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "noise_seed",
-      "register": 52,
-      "state_key": null,
-      "child_blocks": []
+      "name": "log",
+      "register": 52
     },
     {
       "id": 53,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "random_int",
-      "register": 53,
-      "state_key": null,
-      "child_blocks": []
+      "name": "noise",
+      "register": 53
     },
     {
       "id": 54,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "choose",
-      "register": 54,
-      "state_key": null,
-      "child_blocks": []
+      "name": "noise_seed",
+      "register": 54
     },
     {
       "id": 55,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "hsv",
-      "register": 55,
-      "state_key": null,
-      "child_blocks": []
+      "name": "random_int",
+      "register": 55
     },
     {
       "id": 56,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "hsl",
-      "register": 56,
-      "state_key": null,
-      "child_blocks": []
+      "name": "choose",
+      "register": 56
     },
     {
       "id": 57,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "color_lerp",
-      "register": 57,
-      "state_key": null,
-      "child_blocks": []
+      "name": "hsv",
+      "register": 57
     },
     {
       "id": 58,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "vec2",
-      "register": 58,
-      "state_key": null,
-      "child_blocks": []
+      "name": "hsl",
+      "register": 58
     },
     {
       "id": 59,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "normalize",
-      "register": 59,
-      "state_key": null,
-      "child_blocks": []
+      "name": "color_lerp",
+      "register": 59
     },
     {
       "id": 60,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "dot",
-      "register": 60,
-      "state_key": null,
-      "child_blocks": []
+      "name": "vec2",
+      "register": 60
     },
     {
       "id": 61,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "limit",
-      "register": 61,
-      "state_key": null,
-      "child_blocks": []
+      "name": "normalize",
+      "register": 61
     },
     {
       "id": 62,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "map",
-      "register": 62,
-      "state_key": null,
-      "child_blocks": []
+      "name": "dot",
+      "register": 62
     },
     {
       "id": 63,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "filter",
-      "register": 63,
-      "state_key": null,
-      "child_blocks": []
+      "name": "limit",
+      "register": 63
     },
     {
       "id": 64,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "reduce",
-      "register": 64,
-      "state_key": null,
-      "child_blocks": []
+      "name": "map",
+      "register": 64
     },
     {
       "id": 65,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "forEach",
-      "register": 65,
-      "state_key": null,
-      "child_blocks": []
+      "name": "filter",
+      "register": 65
     },
     {
       "id": 66,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "assert",
-      "register": 66,
-      "state_key": null,
-      "child_blocks": []
+      "name": "reduce",
+      "register": 66
     },
     {
       "id": 67,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "assert_eq",
-      "register": 67,
-      "state_key": null,
-      "child_blocks": []
+      "name": "forEach",
+      "register": 67
     },
     {
       "id": 68,
       "op": "Copy",
-      "inputs": [],
       "block_id": 0,
-      "block_next": null,
-      "block_prev": null,
-      "name": "counter",
-      "register": 68,
-      "state_key": null,
-      "child_blocks": []
+      "name": "assert",
+      "register": 68
     },
     {
       "id": 69,
       "op": "Copy",
-      "inputs": [],
-      "block_id": 1,
-      "block_next": null,
-      "block_prev": null,
-      "name": "counter",
-      "register": 0,
-      "state_key": null,
-      "child_blocks": []
+      "block_id": 0,
+      "name": "assert_eq",
+      "register": 69
     },
     {
       "id": 70,
-      "op": "StateInit",
-      "inputs": [],
+      "op": "Copy",
+      "block_id": 0,
+      "name": "f64_array",
+      "register": 70
+    },
+    {
+      "id": 71,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "set_at",
+      "register": 71
+    },
+    {
+      "id": 72,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "swap",
+      "register": 72
+    },
+    {
+      "id": 73,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "hsv_deg",
+      "register": 73
+    },
+    {
+      "id": 74,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "hsl_deg",
+      "register": 74
+    },
+    {
+      "id": 75,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "symbol",
+      "register": 75
+    },
+    {
+      "id": 76,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "push_output",
+      "register": 76
+    },
+    {
+      "id": 77,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "binding",
+      "register": 77
+    },
+    {
+      "id": 78,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "last",
+      "register": 78
+    },
+    {
+      "id": 79,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "drop_last",
+      "register": 79
+    },
+    {
+      "id": 80,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "remove",
+      "register": 80
+    },
+    {
+      "id": 81,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "is_valid",
+      "register": 81
+    },
+    {
+      "id": 82,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "__pending",
+      "register": 82
+    },
+    {
+      "id": 83,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "__resolve",
+      "register": 83
+    },
+    {
+      "id": 84,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "__reject",
+      "register": 84
+    },
+    {
+      "id": 85,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "is_loading",
+      "register": 85
+    },
+    {
+      "id": 86,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "is_error",
+      "register": 86
+    },
+    {
+      "id": 87,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "is_pending",
+      "register": 87
+    },
+    {
+      "id": 88,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "is_ready",
+      "register": 88
+    },
+    {
+      "id": 89,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "error_of",
+      "register": 89
+    },
+    {
+      "id": 90,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "or_else",
+      "register": 90
+    },
+    {
+      "id": 91,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "resource_key",
+      "register": 91
+    },
+    {
+      "id": 92,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect",
+      "register": 92
+    },
+    {
+      "id": 93,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.center_x",
+      "register": 93
+    },
+    {
+      "id": 94,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.center_y",
+      "register": 94
+    },
+    {
+      "id": 95,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.right",
+      "register": 95
+    },
+    {
+      "id": 96,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.bottom",
+      "register": 96
+    },
+    {
+      "id": 97,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.inset",
+      "register": 97
+    },
+    {
+      "id": 98,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "Rect.offset",
+      "register": 98
+    },
+    {
+      "id": 99,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "__declare_method",
+      "register": 99
+    },
+    {
+      "id": 100,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "parse_float",
+      "register": 100
+    },
+    {
+      "id": 101,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "parse_int",
+      "register": 101
+    },
+    {
+      "id": 102,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "chars",
+      "register": 102
+    },
+    {
+      "id": 103,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "char_len",
+      "register": 103
+    },
+    {
+      "id": 104,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "char_at",
+      "register": 104
+    },
+    {
+      "id": 105,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "char_slice",
+      "register": 105
+    },
+    {
+      "id": 106,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "index_of",
+      "register": 106
+    },
+    {
+      "id": 107,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "sort_by",
+      "register": 107
+    },
+    {
+      "id": 108,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "prepend",
+      "register": 108
+    },
+    {
+      "id": 109,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "concat",
+      "register": 109
+    },
+    {
+      "id": 110,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "fixed",
+      "register": 110
+    },
+    {
+      "id": 111,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "commas",
+      "register": 111
+    },
+    {
+      "id": 112,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "pad_start",
+      "register": 112
+    },
+    {
+      "id": 113,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "pad_end",
+      "register": 113
+    },
+    {
+      "id": 114,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "format",
+      "register": 114
+    },
+    {
+      "id": 115,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "safe_div",
+      "register": 115
+    },
+    {
+      "id": 116,
+      "op": "Copy",
+      "block_id": 0,
+      "name": "counter",
+      "register": 116
+    },
+    {
+      "id": 117,
+      "op": "Copy",
       "block_id": 1,
-      "block_next": 72,
-      "block_prev": null,
+      "name": "counter",
+      "register": 0
+    },
+    {
+      "id": 118,
+      "op": "StateInit",
+      "block_id": 1,
       "name": "c",
       "register": 1,
       "state_key": 3102445089172487244,
@@ -857,310 +841,203 @@
       ]
     },
     {
-      "id": 71,
+      "id": 119,
       "op": {
         "Constant": 0
       },
-      "inputs": [],
       "block_id": 2,
-      "block_next": null,
-      "block_prev": null,
-      "name": null,
-      "register": 0,
-      "state_key": null,
-      "child_blocks": []
+      "register": 0
     },
     {
-      "id": 72,
+      "id": 120,
       "op": "Copy",
       "inputs": [
-        70
+        118
       ],
       "block_id": 1,
-      "block_next": 73,
-      "block_prev": 70,
-      "name": null,
-      "register": 2,
-      "state_key": null,
-      "child_blocks": []
+      "register": 2
     },
     {
-      "id": 73,
+      "id": 121,
       "op": {
         "Constant": 1
       },
-      "inputs": [],
       "block_id": 1,
-      "block_next": 74,
-      "block_prev": 72,
-      "name": null,
-      "register": 3,
-      "state_key": null,
-      "child_blocks": []
+      "register": 3
     },
     {
-      "id": 74,
+      "id": 122,
       "op": "Add",
       "inputs": [
-        72,
-        73
+        120,
+        121
       ],
       "block_id": 1,
-      "block_next": 75,
-      "block_prev": 73,
-      "name": null,
-      "register": 4,
-      "state_key": null,
-      "child_blocks": []
+      "register": 4
     },
     {
-      "id": 75,
+      "id": 123,
       "op": "StateWrite",
       "inputs": [
-        74
+        122
       ],
       "block_id": 1,
-      "block_next": 76,
-      "block_prev": 74,
-      "name": null,
       "register": 5,
-      "state_key": 3102445089172487244,
-      "child_blocks": []
+      "state_key": 3102445089172487244
     },
     {
-      "id": 76,
+      "id": 124,
       "op": "Copy",
       "inputs": [
-        74
+        122
       ],
       "block_id": 1,
-      "block_next": 77,
-      "block_prev": 75,
       "name": "c",
       "register": 6,
-      "state_key": 3102445089172487244,
-      "child_blocks": []
+      "state_key": 3102445089172487244
     },
     {
-      "id": 77,
+      "id": 125,
       "op": "Copy",
       "inputs": [
-        76
+        124
       ],
       "block_id": 1,
-      "block_next": null,
-      "block_prev": 76,
-      "name": null,
-      "register": 7,
-      "state_key": null,
-      "child_blocks": []
+      "register": 7
     },
     {
-      "id": 78,
+      "id": 126,
       "op": {
         "MakeClosure": 0
       },
-      "inputs": [],
       "block_id": 0,
-      "block_next": 79,
-      "block_prev": null,
       "name": "counter",
-      "register": 69,
-      "state_key": null,
-      "child_blocks": []
+      "register": 117
     },
     {
-      "id": 79,
+      "id": 127,
       "op": "Copy",
       "inputs": [
-        0
+        126
       ],
       "block_id": 0,
-      "block_next": 80,
-      "block_prev": 78,
-      "name": null,
-      "register": 70,
-      "state_key": null,
-      "child_blocks": []
+      "register": 118
     },
     {
-      "id": 80,
+      "id": 128,
+      "op": "Call",
+      "inputs": [
+        127
+      ],
+      "block_id": 0,
+      "register": 119
+    },
+    {
+      "id": 129,
+      "op": {
+        "BuiltinCall": 2
+      },
+      "inputs": [
+        128
+      ],
+      "block_id": 0,
+      "register": 120
+    },
+    {
+      "id": 130,
       "op": "Copy",
       "inputs": [
-        78
+        126
       ],
       "block_id": 0,
-      "block_next": 81,
-      "block_prev": 79,
-      "name": null,
-      "register": 71,
-      "state_key": null,
-      "child_blocks": []
+      "register": 121
     },
     {
-      "id": 81,
+      "id": 131,
       "op": "Call",
       "inputs": [
-        80
+        130
       ],
       "block_id": 0,
-      "block_next": 82,
-      "block_prev": 80,
-      "name": null,
-      "register": 72,
-      "state_key": null,
-      "child_blocks": []
+      "register": 122
     },
     {
-      "id": 82,
-      "op": "Call",
+      "id": 132,
+      "op": {
+        "BuiltinCall": 2
+      },
       "inputs": [
-        79,
-        81
+        131
       ],
       "block_id": 0,
-      "block_next": 83,
-      "block_prev": 81,
-      "name": null,
-      "register": 73,
-      "state_key": null,
-      "child_blocks": []
+      "register": 123
     },
     {
-      "id": 83,
+      "id": 133,
       "op": "Copy",
       "inputs": [
-        0
+        126
       ],
       "block_id": 0,
-      "block_next": 84,
-      "block_prev": 82,
-      "name": null,
-      "register": 74,
-      "state_key": null,
-      "child_blocks": []
+      "register": 124
     },
     {
-      "id": 84,
-      "op": "Copy",
-      "inputs": [
-        78
-      ],
-      "block_id": 0,
-      "block_next": 85,
-      "block_prev": 83,
-      "name": null,
-      "register": 75,
-      "state_key": null,
-      "child_blocks": []
-    },
-    {
-      "id": 85,
+      "id": 134,
       "op": "Call",
       "inputs": [
-        84
+        133
       ],
       "block_id": 0,
-      "block_next": 86,
-      "block_prev": 84,
-      "name": null,
-      "register": 76,
-      "state_key": null,
-      "child_blocks": []
+      "register": 125
     },
     {
-      "id": 86,
-      "op": "Call",
+      "id": 135,
+      "op": {
+        "BuiltinCall": 2
+      },
       "inputs": [
-        83,
-        85
+        134
       ],
       "block_id": 0,
-      "block_next": 87,
-      "block_prev": 85,
-      "name": null,
-      "register": 77,
-      "state_key": null,
-      "child_blocks": []
-    },
-    {
-      "id": 87,
-      "op": "Copy",
-      "inputs": [
-        0
-      ],
-      "block_id": 0,
-      "block_next": 88,
-      "block_prev": 86,
-      "name": null,
-      "register": 78,
-      "state_key": null,
-      "child_blocks": []
-    },
-    {
-      "id": 88,
-      "op": "Copy",
-      "inputs": [
-        78
-      ],
-      "block_id": 0,
-      "block_next": 89,
-      "block_prev": 87,
-      "name": null,
-      "register": 79,
-      "state_key": null,
-      "child_blocks": []
-    },
-    {
-      "id": 89,
-      "op": "Call",
-      "inputs": [
-        88
-      ],
-      "block_id": 0,
-      "block_next": 90,
-      "block_prev": 88,
-      "name": null,
-      "register": 80,
-      "state_key": null,
-      "child_blocks": []
-    },
-    {
-      "id": 90,
-      "op": "Call",
-      "inputs": [
-        87,
-        89
-      ],
-      "block_id": 0,
-      "block_next": null,
-      "block_prev": 89,
-      "name": null,
-      "register": 81,
-      "state_key": null,
-      "child_blocks": []
+      "register": 126
     }
   ],
   "blocks": [
     {
       "id": 0,
-      "parent_term_id": null,
-      "entry": 78,
-      "param_names": [],
-      "register_count": 82
+      "terms": [
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135
+      ],
+      "register_count": 127
     },
     {
       "id": 1,
-      "parent_term_id": null,
-      "entry": 70,
-      "param_names": [],
+      "terms": [
+        118,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125
+      ],
       "register_count": 8
     },
     {
       "id": 2,
-      "parent_term_id": 70,
-      "entry": 71,
-      "param_names": [],
+      "parent_term_id": 118,
+      "terms": [
+        119
+      ],
       "register_count": 1
     }
   ],
@@ -1172,229 +1049,146 @@
       },
       {
         "Int": 1
+      },
+      {
+        "String": "print"
       }
     ]
   },
   "source_map": {
     "term_spans": {
-      "82": {
-        "start": {
-          "line": 6,
-          "column": 1,
-          "offset": 47
-        },
-        "end": {
-          "line": 6,
-          "column": 17,
-          "offset": 63
-        }
-      },
-      "83": {
-        "start": {
-          "line": 7,
-          "column": 1,
-          "offset": 64
-        },
-        "end": {
-          "line": 7,
-          "column": 6,
-          "offset": 69
-        }
-      },
-      "90": {
-        "start": {
-          "line": 8,
-          "column": 1,
-          "offset": 81
-        },
-        "end": {
-          "line": 8,
-          "column": 17,
-          "offset": 97
-        }
-      },
-      "84": {
-        "start": {
-          "line": 7,
-          "column": 7,
-          "offset": 70
-        },
-        "end": {
-          "line": 7,
-          "column": 14,
-          "offset": 77
-        }
-      },
-      "73": {
-        "start": {
-          "line": 3,
-          "column": 11,
-          "offset": 37
-        },
-        "end": {
-          "line": 3,
-          "column": 12,
-          "offset": 38
-        }
-      },
-      "88": {
-        "start": {
-          "line": 8,
-          "column": 7,
-          "offset": 87
-        },
-        "end": {
-          "line": 8,
-          "column": 14,
-          "offset": 94
-        }
-      },
-      "71": {
-        "start": {
-          "line": 2,
-          "column": 13,
-          "offset": 25
-        },
-        "end": {
-          "line": 2,
-          "column": 14,
-          "offset": 26
-        }
-      },
-      "72": {
-        "start": {
-          "line": 3,
-          "column": 7,
-          "offset": 33
-        },
-        "end": {
-          "line": 3,
-          "column": 8,
-          "offset": 34
-        }
-      },
-      "80": {
-        "start": {
-          "line": 6,
-          "column": 7,
-          "offset": 53
-        },
-        "end": {
-          "line": 6,
-          "column": 14,
-          "offset": 60
-        }
-      },
-      "81": {
-        "start": {
-          "line": 6,
-          "column": 7,
-          "offset": 53
-        },
-        "end": {
-          "line": 6,
-          "column": 16,
-          "offset": 62
-        }
-      },
-      "85": {
-        "start": {
-          "line": 7,
-          "column": 7,
-          "offset": 70
-        },
-        "end": {
-          "line": 7,
-          "column": 16,
-          "offset": 79
-        }
-      },
-      "89": {
-        "start": {
-          "line": 8,
-          "column": 7,
-          "offset": 87
-        },
-        "end": {
-          "line": 8,
-          "column": 16,
-          "offset": 96
-        }
-      },
-      "77": {
-        "start": {
-          "line": 4,
-          "column": 3,
-          "offset": 41
-        },
-        "end": {
-          "line": 4,
-          "column": 4,
-          "offset": 42
-        }
-      },
-      "86": {
-        "start": {
-          "line": 7,
-          "column": 1,
-          "offset": 64
-        },
-        "end": {
-          "line": 7,
-          "column": 17,
-          "offset": 80
-        }
-      },
-      "74": {
-        "start": {
-          "line": 3,
-          "column": 7,
-          "offset": 33
-        },
-        "end": {
-          "line": 3,
-          "column": 12,
-          "offset": 38
-        }
-      },
-      "79": {
-        "start": {
-          "line": 6,
-          "column": 1,
-          "offset": 47
-        },
-        "end": {
-          "line": 6,
-          "column": 6,
-          "offset": 52
-        }
-      },
-      "87": {
-        "start": {
-          "line": 8,
-          "column": 1,
-          "offset": 81
-        },
-        "end": {
-          "line": 8,
-          "column": 6,
-          "offset": 86
-        }
-      }
+      "121": [
+        3,
+        11,
+        37,
+        3,
+        12,
+        38
+      ],
+      "125": [
+        4,
+        3,
+        41,
+        4,
+        4,
+        42
+      ],
+      "131": [
+        7,
+        7,
+        70,
+        7,
+        16,
+        79
+      ],
+      "119": [
+        2,
+        13,
+        25,
+        2,
+        14,
+        26
+      ],
+      "135": [
+        8,
+        1,
+        81,
+        8,
+        17,
+        97
+      ],
+      "126": [
+        1,
+        1,
+        0,
+        5,
+        4,
+        46
+      ],
+      "128": [
+        6,
+        7,
+        53,
+        6,
+        16,
+        62
+      ],
+      "132": [
+        7,
+        1,
+        64,
+        7,
+        17,
+        80
+      ],
+      "133": [
+        8,
+        7,
+        87,
+        8,
+        14,
+        94
+      ],
+      "134": [
+        8,
+        7,
+        87,
+        8,
+        16,
+        96
+      ],
+      "127": [
+        6,
+        7,
+        53,
+        6,
+        14,
+        60
+      ],
+      "129": [
+        6,
+        1,
+        47,
+        6,
+        17,
+        63
+      ],
+      "122": [
+        3,
+        7,
+        33,
+        3,
+        12,
+        38
+      ],
+      "120": [
+        3,
+        7,
+        33,
+        3,
+        8,
+        34
+      ],
+      "130": [
+        7,
+        7,
+        70,
+        7,
+        14,
+        77
+      ]
     }
   },
-  "has_errors": false,
   "functions": [
     {
       "id": 0,
       "name": "counter",
-      "params": [],
       "body_block": 1,
-      "capture_names": [],
-      "capture_registers": [],
       "self_ref_register": 0,
       "register_count": 8
     }
   ],
-  "match_arms": {}
+  "class_names": [
+    "Rect"
+  ]
 }

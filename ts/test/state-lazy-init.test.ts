@@ -38,7 +38,8 @@ describe("lazy state init — IR shape", () => {
   it("StateInit with no explicit key has empty inputs (init moved to child block)", () => {
     const ir = showIrJson("state x = 42");
     const inits = termsByOp(ir, "StateInit");
-    expect(inits[0].inputs).toEqual([]);
+    // schema 0.2 omits empty `inputs` from the wire entirely.
+    expect(inits[0].inputs).toBeUndefined();
   });
 
   it("StateInit with explicit key has [key] inputs (init moved to child block)", () => {

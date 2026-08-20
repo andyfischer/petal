@@ -760,6 +760,14 @@ pub fn user_only_json(program: &Program) -> serde_json::Value {
                 .as_u64()
                 .is_some_and(|id| !filter.block_is_prelude(BlockId(id as u32)))
         });
+        // A kept block's ordered `terms` array may still list filtered terms
+        // (the root block lists the prelude's top-level terms); drop those so
+        // the view has no dangling ids.
+        for b in blocks.iter_mut() {
+            if let Some(Value::Array(terms)) = b.get_mut("terms") {
+                terms.retain(|t| t.as_u64().is_some_and(|id| kept_terms.contains(&id)));
+            }
+        }
     }
     if let Some(Value::Array(functions)) = obj.get_mut("functions") {
         functions.retain(|f| {
@@ -1006,6 +1014,7 @@ mod tests {
             .collect();
         assert!(names.contains(&"x"), "param binding missing: {:?}", names);
         // Every input reference resolves within the view (no dangling ids).
+        // `inputs` is omitted when empty (schema v0.2), so tolerate absence.
         let ids: std::collections::HashSet<u64> = view["terms"]
             .as_array()
             .unwrap()
@@ -1013,8 +1022,20 @@ mod tests {
             .map(|t| t["id"].as_u64().unwrap())
             .collect();
         for t in view["terms"].as_array().unwrap() {
-            for input in t["inputs"].as_array().unwrap() {
+            let Some(inputs) = t.get("inputs").and_then(|i| i.as_array()) else {
+                continue;
+            };
+            for input in inputs {
                 assert!(ids.contains(&input.as_u64().unwrap()), "dangling input");
+            }
+        }
+        // Same for the kept blocks' terms arrays.
+        for b in view["blocks"].as_array().unwrap() {
+            let Some(terms) = b.get("terms").and_then(|t| t.as_array()) else {
+                continue;
+            };
+            for t in terms {
+                assert!(ids.contains(&t.as_u64().unwrap()), "dangling block term");
             }
         }
     }

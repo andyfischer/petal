@@ -47,7 +47,7 @@ function badIr(): string {
   const fBody = ir.functions[0].body_block;
   const foreign = ir.terms.find((t: any) => t.block_id === fBody).id;
   const victim = ir.terms
-    .filter((t: any) => t.block_id === ir.root_block && t.inputs.length)
+    .filter((t: any) => t.block_id === ir.root_block && t.inputs?.length)
     .pop();
   // Term ids equal their index, enforced by ir_validate.rs.
   ir.terms[victim.id].inputs[0] = foreign;

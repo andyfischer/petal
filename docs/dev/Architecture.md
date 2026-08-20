@@ -125,7 +125,9 @@ Terms participate in **two graphs** at once:
 1. **Dataflow** — via `inputs`. A term's inputs are the terms whose values
    it consumes. This graph is a DAG.
 2. **Block ordering** — via `block_next`/`block_prev`. Each block holds a
-   linked list that defines execution order within that scope.
+   linked list that defines execution order within that scope. (In-memory
+   only: the serialized IR carries an ordered `terms` array per block, and
+   the loader rebuilds these links from it.)
 
 The evaluator walks the block's linked list; it evaluates dataflow inputs
 by reading the corresponding register (they've already run).
@@ -370,10 +372,12 @@ Built-ins live in `src/builtins/` (one module per topic: `io`, `math`,
 `handle`, `pending`, `output`).
 Each registers into the `NativeFnTable` at startup.
 
-Registration order **is load-bearing** — the compiler allocates a
-"phantom" `Copy` term in every program's root block for each native, and
-that term's ID must match the native's table ID. Don't reorder
-registrations; append only. See `builtins/mod.rs`.
+The compiler allocates a "phantom" `Copy` term in every compiled program's
+root block for each native (the VM seeds native function values into those
+registers **by name** at root-frame push, so imported IR needs no phantoms
+— see docs/dev/ir-as-target.md). Registration order still numbers the
+phantom terms of compiled programs, so reordering would renumber every IR
+snapshot: don't reorder registrations; append only. See `builtins/mod.rs`.
 
 Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) add their
 own natives via `Env::register_native` before loading any program. Those

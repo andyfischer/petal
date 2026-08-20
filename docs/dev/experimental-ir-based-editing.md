@@ -25,9 +25,11 @@ graph:
 
 Each `Term` is in **two graphs at once**: the **dataflow DAG** via
 `inputs: SmallVec<[TermId;4]>` (ordered value edges) and the **intra-block
-execution order** via `block_next`/`block_prev` (a linked list; `Block.entry` is
-the head). Other fields: `op: TermOp`, `block_id`, `name` (binding label),
-`register`, `state_key`, `child_blocks`, `in_loop`.
+execution order** via `block_next`/`block_prev` (an in-memory linked list;
+`Block.entry` is the head; on the wire this is the block's ordered `terms`
+array, from which the links are rebuilt on load). Other fields: `op: TermOp`,
+`block_id`, `name` (binding label), `register`, `state_key`, `child_blocks`,
+`in_loop`.
 
 `TermOp` ([`program.rs`](../../rust/src/program.rs)) is the operation vocabulary:
 arithmetic/comparison, `Copy`, `Phi`, `Branch`, `Return`, `Constant(id)`,
@@ -45,7 +47,9 @@ serialization of `Program`, matching `show-ir --json` byte-for-byte.
 - **Emit:** `petal show-ir --json` →
   [`cli/handlers.rs`](../../rust/src/cli/handlers.rs) (`serde_json::to_string_pretty`).
 - **Load:** `Program::from_json` ([`ir_validate.rs`](../../rust/src/ir_validate.rs))
-  → `rebuild_indexes()` (rebuilds the `block_terms` index + constant dedup) →
+  → relink the intra-block linked list from the blocks' `terms` arrays →
+  `rebuild_indexes()` (rebuilds the `block_terms` index + constant dedup) →
+  recompute registers when the document omits them →
   `validate()` (structural invariants).
 - **Run:** `petal run --ir <file|->` → `env.load_program_ir`
   ([`env/mod.rs`](../../rust/src/env/mod.rs)) → same bytecode-VM path as a
@@ -58,11 +62,12 @@ without touching source text.
 
 - **Foreign-language emitter (the canonical builder pattern):**
   [`ts/tools/calc-to-ir.ts`](../../ts/tools/calc-to-ir.ts) is a complete
-  standalone front-end for a toy "calc" language that emits Petal IR JSON sharing
-  **zero code** with Petal. Its `Emitter` class shows the mechanics: a deduped
-  constant table (`constId`), phantom builtin `Copy` terms in leading slots
-  (`addPhantom`), and `addListed` threading the `block_next`/`block_prev` linked
-  list. This is the model for programmatic construction. Golden fixtures live in
+  standalone front-end for a toy "calc" language that emits Petal IR JSON
+  (schema 0.2) sharing **zero code** with Petal. Its `Emitter` class shows the
+  mechanics: a deduped constant table (`constId`), builtins called by name via
+  `BuiltinCall`, and an ordered per-block `terms` array for execution order
+  (registers omitted — the loader recomputes them). This is the model for
+  programmatic construction. Golden fixtures live in
   [`ts/test/fixtures/ir/`](../../ts/test/fixtures/ir/).
 - **Read/rewrite passes over the graph (Rust):**
   [`rust/src/program_analysis.rs`](../../rust/src/program_analysis.rs) —

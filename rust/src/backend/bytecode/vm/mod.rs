@@ -128,15 +128,28 @@ pub struct Vm<'a> {
 }
 
 impl<'a> Vm<'a> {
-    /// Push the root activation record for a fresh run. Native function values
-    /// are seeded into the low registers exactly as the graph engine's
-    /// `push_root_frame` does (the compiler assigns builtin phantom terms to
-    /// those registers).
+    /// Push the root activation record for a fresh run. Native function
+    /// values are seeded into the root block's builtin binding phantoms,
+    /// matched **by name**: any unexecuted `Copy` with no inputs whose name
+    /// resolves in the native table gets that native's function value in its
+    /// register. For compiled programs (one phantom per registered native,
+    /// in registration order) this reproduces the old positional seeding
+    /// exactly; for imported IR it means an emitter that wants a builtin as
+    /// a first-class value emits *one* named phantom at any register — no
+    /// registration-order coupling (see docs/dev/ir-as-target.md).
     pub fn push_root_frame(&mut self) {
         let mut frame = self.frame_from_pool(None, self.bc.root.reg_count, None, None);
-        for i in 0..self.native_fns.count() {
-            if i < frame.regs.len() {
-                frame.regs[i] = Value::NativeFunction(NativeFnId(i as u32));
+        if let Some(tids) = self.program.block_terms.get(&self.program.root_block) {
+            for &tid in tids {
+                let term = self.program.get_term(tid);
+                if matches!(term.op, crate::program::TermOp::Copy)
+                    && term.inputs.is_empty()
+                    && let Some(name) = term.name.as_deref()
+                    && let Some(nid) = self.native_fns.lookup_name(name)
+                    && (term.register.0 as usize) < frame.regs.len()
+                {
+                    frame.regs[term.register.0 as usize] = Value::NativeFunction(nid);
+                }
             }
         }
         self.stack.vm_frames.push(frame);

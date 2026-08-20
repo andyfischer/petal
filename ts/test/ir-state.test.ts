@@ -26,11 +26,13 @@ describe("state keyword", () => {
     // hold only the explicit key (if any), not the init value.
     const ir = showIrJson("state count = 0");
     const init = termsByOp(ir, "StateInit")[0];
-    expect(init.inputs).toHaveLength(0);
+    // schema 0.2 omits empty `inputs`, and blocks carry an ordered `terms`
+    // array instead of an `entry` pointer.
+    expect(init.inputs).toBeUndefined();
     expect(init.child_blocks).toHaveLength(1);
     const initBlock = ir.blocks.find((b: any) => b.id === init.child_blocks[0]);
     expect(initBlock).toBeDefined();
-    expect(initBlock.entry).not.toBeNull();
+    expect(initBlock.terms.length).toBeGreaterThan(0);
   });
 
   it("state assignment emits StateWrite", () => {

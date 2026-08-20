@@ -86,9 +86,9 @@ looked up in the native table and called with the receiver prepended
 one native table for all receiver types.
 
 The compiled-in builtins (`rust/src/builtins/`) are registered through the same
-table by `register_builtins`. Registration **order is load-bearing** (phantom
-term indices in the IR are assigned in registration order — append, never
-reorder). `map`/`filter`/`reduce`/`forEach` register placeholder fns but are
+table by `register_builtins`. Registration order numbers the phantom terms in
+compiled IR (append, never reorder, or every IR snapshot renumbers); the
+runtime itself binds phantoms to natives by *name*, not position. `map`/`filter`/`reduce`/`forEach` register placeholder fns but are
 dispatched specially by the evaluators because they call back into closures;
 ordinary natives **cannot invoke Petal closures**.
 

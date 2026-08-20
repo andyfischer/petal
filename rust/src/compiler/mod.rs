@@ -417,6 +417,7 @@ impl Compiler {
         }
 
         Ok(Program {
+            schema: crate::program::IR_SCHEMA_VERSION.to_string(),
             id: program_id,
             source: entry.source.clone(),
             terms: self.terms,
@@ -786,6 +787,7 @@ impl Compiler {
             id,
             parent_term_id: parent_term,
             entry: None,
+            terms: Vec::new(),
             param_names: Vec::new(),
             register_count: 0,
             phi_outs: Vec::new(),
@@ -1001,6 +1003,11 @@ impl Compiler {
             // First term in block — set as entry
             self.blocks[block_id.0 as usize].entry = Some(term_id);
         }
+
+        // The ordered terms array is the wire form of this linked list
+        // (schema v0.2); this is its single append site, so the two stay in
+        // lockstep by construction.
+        self.blocks[block_id.0 as usize].terms.push(term_id);
 
         self.last_term_in_block.insert(block_id, term_id);
         term_id

@@ -4,12 +4,13 @@
 // "the dataflow IR as a legible target", ticket idea-34b8348d).
 //
 // This is a tiny, self-contained front-end for a toy arithmetic language
-// ("calc") that compiles straight to Petal IR JSON. It deliberately shares NO
-// code with Petal's own lexer/parser/compiler — its only contract with Petal is
-// the documented IR import format (docs/ir-as-target.md). Pipe its output into
-// `petal run --ir -` and the program runs; because the loaded IR is identical
-// to a compiled Program, it also gets provenance, slicing, ExplainTerm, and
-// state-preserving live-reload for free.
+// ("calc") that compiles straight to Petal IR JSON (schema 0.2). It
+// deliberately shares NO code with Petal's own lexer/parser/compiler — its
+// only contract with Petal is the documented IR import format
+// (docs/dev/ir-as-target.md). Pipe its output into `petal run --ir -` and the
+// program runs; because the loaded IR is identical to a compiled Program, it
+// also gets provenance, slicing, ExplainTerm, and state-preserving
+// live-reload for free.
 //
 //   calc grammar (one statement per line; '#' starts a comment):
 //     let <name> = <expr>
@@ -189,87 +190,62 @@ function parse(source: string): Stmt[] {
 // IR emitter
 // ---------------------------------------------------------------------------
 //
-// Emits a single-block Program. Every term gets register == id and
-// register_count == terms.length, which the loader accepts (it can reassign).
-// Builtin "phantom" terms (here: print) are Copy terms with a name and no
-// inputs, deliberately NOT threaded into the block's linked list — exactly as
-// `petal show-ir --json` emits them. Real terms form the linked list that the
-// evaluator walks from `entry`.
+// Emits a single-block schema-0.2 Program, exercising everything the format
+// lets an emitter leave out:
+//
+// - Ordering is declarative: the block's `terms` array lists term ids in
+//   execution order. No linked list to maintain.
+// - Registers are omitted entirely — the loader recomputes the assignment.
+// - Builtins are called through `BuiltinCall` with the builtin's *name* as a
+//   string constant. No phantom terms, and no dependence on Petal's builtin
+//   registration order.
+// - Defaulted fields (`name`, `inputs` when empty, `functions`, `has_errors`,
+//   `source_map`, ...) are simply absent.
 
 interface Term {
   id: number;
-  op: string | { Constant: number };
-  inputs: number[];
+  op: string | { Constant: number } | { BuiltinCall: number };
+  inputs?: number[];
   block_id: number;
-  block_next: number | null;
-  block_prev: number | null;
-  name: string | null;
-  register: number;
-  state_key: null;
-  child_blocks: number[];
+  name?: string;
 }
+
+type Constant = { Int: number } | { String: string };
 
 const BIN_OP: Record<string, string> = { "+": "Add", "-": "Sub", "*": "Mul", "/": "Div" };
 
 class Emitter {
   private terms: Term[] = [];
-  private constants: { Int: number }[] = [];
+  private constants: Constant[] = [];
   private env = new Map<string, number>(); // calc var name -> term id holding its value
-  private printPhantom: number | null = null;
-  private firstListed: number | null = null;
-  private lastListed: number | null = null;
+  private order: number[] = []; // execution order (the block's `terms` array)
 
   /** Allocate a constant slot (deduped) and return its index. */
-  private constId(value: number): number {
-    const existing = this.constants.findIndex((c) => c.Int === value);
+  private constId(value: number | string): number {
+    const want = JSON.stringify(
+      typeof value === "number" ? { Int: value } : { String: value }
+    );
+    const existing = this.constants.findIndex((c) => JSON.stringify(c) === want);
     if (existing >= 0) return existing;
-    this.constants.push({ Int: value });
+    this.constants.push(JSON.parse(want));
     return this.constants.length - 1;
   }
 
-  /** Append a phantom builtin term (not in the linked list). */
-  private addPhantom(name: string): number {
+  /** Append a term and record it in the block's execution order. */
+  private add(op: Term["op"], inputs: number[], name?: string): number {
     const id = this.terms.length;
-    this.terms.push({
-      id,
-      op: "Copy",
-      inputs: [],
-      block_id: 0,
-      block_next: null,
-      block_prev: null,
-      name,
-      register: id,
-      state_key: null,
-      child_blocks: [],
-    });
-    return id;
-  }
-
-  /** Append a real term and thread it onto the block's linked list. */
-  private addListed(op: Term["op"], inputs: number[], name: string | null): number {
-    const id = this.terms.length;
-    this.terms.push({
-      id,
-      op,
-      inputs,
-      block_id: 0,
-      block_next: null,
-      block_prev: this.lastListed,
-      name,
-      register: id,
-      state_key: null,
-      child_blocks: [],
-    });
-    if (this.lastListed !== null) this.terms[this.lastListed].block_next = id;
-    if (this.firstListed === null) this.firstListed = id;
-    this.lastListed = id;
+    const term: Term = { id, op, block_id: 0 };
+    if (inputs.length > 0) term.inputs = inputs;
+    if (name !== undefined) term.name = name;
+    this.terms.push(term);
+    this.order.push(id);
     return id;
   }
 
   private emitExpr(e: Expr): number {
     switch (e.kind) {
       case "int":
-        return this.addListed({ Constant: this.constId(e.value) }, [], null);
+        return this.add({ Constant: this.constId(e.value) }, []);
       case "var": {
         const ref = this.env.get(e.name);
         if (ref === undefined) throw new Error(`calc: undefined variable '${e.name}'`);
@@ -277,59 +253,38 @@ class Emitter {
       }
       case "neg": {
         // Lower unary minus to (0 - operand) so we need no Neg op.
-        const zero = this.addListed({ Constant: this.constId(0) }, [], null);
+        const zero = this.add({ Constant: this.constId(0) }, []);
         const operand = this.emitExpr(e.operand);
-        return this.addListed("Sub", [zero, operand], null);
+        return this.add("Sub", [zero, operand]);
       }
       case "bin": {
         const left = this.emitExpr(e.left);
         const right = this.emitExpr(e.right);
-        return this.addListed(BIN_OP[e.op], [left, right], null);
+        return this.add(BIN_OP[e.op], [left, right]);
       }
     }
   }
 
-  private printId(): number {
-    if (this.printPhantom === null) this.printPhantom = this.addPhantom("print");
-    return this.printPhantom;
-  }
-
   emit(stmts: Stmt[]): unknown {
-    // Phantom builtins must occupy the leading term slots, before the block's
-    // `entry` (the first real term) — that is where the evaluator resolves them
-    // to their native functions. Allocate `print` up front if the program uses
-    // it, so it lands at t0 rather than after the arithmetic terms.
-    if (stmts.some((s) => s.kind === "print")) this.printId();
-
     for (const stmt of stmts) {
       if (stmt.kind === "let") {
         const valueId = this.emitExpr(stmt.expr);
         // Bind the name to a named Copy so the value is legible in the graph.
-        const bound = this.addListed("Copy", [valueId], stmt.name);
+        const bound = this.add("Copy", [valueId], stmt.name);
         this.env.set(stmt.name, bound);
       } else {
         const argId = this.emitExpr(stmt.expr);
-        this.addListed("Call", [this.printId(), argId], null);
+        this.add({ BuiltinCall: this.constId("print") }, [argId]);
       }
     }
 
     return {
+      schema: "0.2",
       id: 0,
       terms: this.terms,
-      blocks: [
-        {
-          id: 0,
-          parent_term_id: null,
-          entry: this.firstListed,
-          param_names: [],
-          register_count: this.terms.length,
-        },
-      ],
+      blocks: [{ id: 0, terms: this.order }],
       root_block: 0,
       constants: { values: this.constants },
-      has_errors: false,
-      functions: [],
-      match_arms: {},
     };
   }
 }

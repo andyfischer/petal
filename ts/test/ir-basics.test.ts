@@ -104,7 +104,9 @@ describe("variables and registers", () => {
     expect(ir.root_block).toBe(0);
     const rootBlock = ir.blocks.find((b: any) => b.id === 0);
     expect(rootBlock).toBeDefined();
-    expect(rootBlock.parent_term_id).toBeNull();
+    // schema 0.2: a root block has no parent term, and defaulted fields are
+    // omitted from the wire rather than serialized as null.
+    expect(rootBlock.parent_term_id).toBeUndefined();
   });
 
   it("root block register_count covers all terms", () => {

@@ -219,11 +219,12 @@ function shellEscape(s: string): string {
 }
 
 /** Get only the "user" terms (after builtins) from IR JSON.
- *  Builtin phantom terms are Copy ops with no inputs and a name. */
+ *  Builtin phantom terms are Copy ops with no inputs and a name.
+ *  Note: since schema 0.2 empty `inputs` is omitted on the wire. */
 export function userTerms(ir: any): any[] {
   return ir.terms.filter(
     (t: any) =>
-      !(t.op === "Copy" && t.inputs.length === 0 && t.name != null)
+      !(t.op === "Copy" && (t.inputs ?? []).length === 0 && t.name != null)
   );
 }
 

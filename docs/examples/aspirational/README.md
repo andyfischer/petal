@@ -15,7 +15,7 @@ sketch should be rewritten against the real API and moved into
 
 | File | Targets |
 |------|---------|
-| `differentiation.ptl` | High-level `grad()` / `gradients()` API for automatic differentiation (forward-mode dual numbers already work — see `/examples/differentiation.ptl`). |
+| `differentiation.ptl` | High-level `grad()` / `gradients()` API for automatic differentiation (forward-mode dual numbers already work — see `/examples/console/differentiation.ptl`). |
 | `gradient_descent.ptl` | Optimizer sugar on top of `grad()`. |
 | `live_editing.ptl` | Hot-reload with state reconciliation across edits. |
 | `metaprogramming.ptl` | Programs as first-class values: `Program.current()`, `.terms()`, `.functions()`. |

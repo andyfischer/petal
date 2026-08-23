@@ -479,7 +479,7 @@ Petal has built-in forward-mode automatic differentiation via `Value::Dual
 `round`, `float`) propagate derivatives through the chain rule. `exp`,
 `log`, and `pow` (in `builtins/creative_coding.rs`) currently operate on
 the primal only and drop the derivative. See
-`examples/differentiation.ptl`.
+`examples/console/differentiation.ptl`.
 
 Reverse-mode (back-propagation through the dataflow graph) is a design
 goal but not yet implemented — see [goals.md](goals.md) for the vision,

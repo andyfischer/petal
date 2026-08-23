@@ -1,5 +1,5 @@
 // Spreadsheet formula engine, lifted verbatim from
-// examples/testbed/25-spreadsheet/app.ptl (the formula engine + sheet seed),
+// examples/productivity/spreadsheet/app.ptl (the formula engine + sheet seed),
 // with a driver that recomputes the whole 26x8 grid. Mirrors the work that
 // example's panel does whenever a cell is edited.
 

@@ -246,7 +246,7 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
 | `termByName(ir, name)` / `termById(ir, id)` | Lookup |
 | `termsByOp(ir, op)` | Filter by op |
 
-`ts/test/test-samples.test.ts` sanity-runs every `examples/*.ptl` (3s timeout per file).
+`ts/test/test-samples.test.ts` sanity-runs every `examples/console/*.ptl` (3s timeout per file).
 
 ---
 

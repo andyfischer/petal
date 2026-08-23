@@ -1,22 +1,36 @@
 # Examples
 
-Example programs demonstrating Petal language features. Run any example with:
+Runnable Petal programs, grouped by what they are:
+
+| Directory | What's in it |
+|-----------|--------------|
+| [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
+| [`games/`](games/) | Games — pong, breakout, snake |
+| [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust |
+| [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
+| [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal, e.g. [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/) |
+
+The `games/`, `productivity/`, and `dashboards/` entries are Garden panel apps:
+pure Petal, each with its own README and a `./launch.sh`. See
+[AUTHORING.md](AUTHORING.md) for how they're built.
+
+## Console programs
+
+Run any one with:
 
 ```bash
-./ts/bin/run-petal.ts run examples/<name>.ptl
+./ts/bin/run-petal.ts run examples/console/<name>.ptl
 ```
 
 `run-petal.ts` rebuilds the compiler if any Rust source is newer than the
 binary, then forwards its arguments to `petal`. It's the recommended way to
 test Petal locally.
 
-Or run all examples with pass/fail reporting:
+Or run all of them with pass/fail reporting:
 
 ```bash
 ./ts/bin/test-examples.ts
 ```
-
-## Programs
 
 | File | Description | Features |
 |------|-------------|----------|
@@ -48,3 +62,6 @@ Or run all examples with pass/fail reporting:
 | `differentiation.ptl` | Gradient descent with dual numbers | `dual`, `value_of`, `deriv_of` |
 | `imports.ptl` | Module imports | `import`, qualified/selective forms |
 | `text_utils.ptl` | Library module imported by `imports.ptl` | `fn` exports (no standalone output) |
+
+`text_utils.ptl` is not a standalone program — it exists as the import target
+for `imports.ptl`, and lives here because the golden corpus covers it.

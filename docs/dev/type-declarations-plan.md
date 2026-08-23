@@ -356,7 +356,7 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
 - **Chunk G — Docs & examples.** `language-guide.md` Types section gains the
   annotation grammar; `Builtins.md` cross-links casts as the sanctioned
   conversions; update `goals.md` "Types as a projection"; add an
-  `examples/typed.ptl`; update `README.md:13` from aspiration to reality.
+  `examples/console/typed.ptl`; update `README.md:13` from aspiration to reality.
 
 ---
 

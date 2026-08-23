@@ -177,7 +177,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
 - `petal-fps` is **Shape B** — it depends on the library and adds only its
   delta (a software-framebuffer 3D rasterizer and the `triangle3d` native
   family): one small `Host` impl plus its rasterizer and font.
-- [`petal-fantasy-nes`](../integrations/petal-fantasy-nes/) is **Shape B at the
+- [`petal-fantasy-nes`](../examples/custom-integrations/petal-fantasy-nes/) is **Shape B at the
   integration tier** — an NES-style fantasy console whose "carts" are `.ptl`
   scripts. Its delta is two emulated chips (a PPU-shaped tile/sprite rasterizer
   and an APU-shaped sound chip), the natives that feed them, and a Petal-source
@@ -189,8 +189,8 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   open the device, `end_frame` to fill it, and Petal functions called *by* the
   host to synthesize samples), and a host that ships a **prelude written in
   Petal** rather than in Rust. See its
-  [design](../integrations/petal-fantasy-nes/docs/design.md) and
-  [LANGUAGE_NOTES](../integrations/petal-fantasy-nes/LANGUAGE_NOTES.md).
+  [design](../examples/custom-integrations/petal-fantasy-nes/docs/design.md) and
+  [LANGUAGE_NOTES](../examples/custom-integrations/petal-fantasy-nes/LANGUAGE_NOTES.md).
 
 ### The design: one `Host` trait over a generic loop
 

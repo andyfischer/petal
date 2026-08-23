@@ -51,7 +51,7 @@ Two consequences worth internalizing:
 - **A panel re-runs its whole script every frame.** There is no incremental
   evaluation. Anything expensive that does not change per frame belongs behind
   a `state` variable with a revision check — which is what
-  `examples/testbed/25-spreadsheet` does for its formula recompute.
+  `examples/productivity/spreadsheet` does for its formula recompute.
 
 ## What the optimizer does
 
@@ -92,7 +92,7 @@ strictly more instructions. Toggle them between runs, never inside one.
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
-`examples/testbed/25-spreadsheet` recomputing its whole grid:
+`examples/productivity/spreadsheet` recomputing its whole grid:
 
 - **Interpreter dispatch is now the dominant cost** (~55% of samples across
   `step_in` / `exec_inst` / `run_batch`). Cutting it further means retiring

@@ -34,7 +34,7 @@ Branch: `main`
 | E2 — the checker | ✅ done | `12f1a45` | `rust/src/typecheck/`: scoped env, shallow infer, 5 check sites, `Diagnostic` |
 | E3 — surface (run/check) | ✅ done | `a9bf3e3` | `Program.warnings`; `check`/`run` stderr carets + `check --json warnings[]` |
 | F — surface + MCP + strict | ✅ done | `fada42e`,`f638449` | run/check text+JSON+carets; `check --strict`; MCP CheckSnippet/TestSnippet warnings |
-| G — docs & examples | ✅ done | `4b3d9d7` | Language_Guide Types section, CLI/Builtins/goals reconcile, `examples/typed.ptl`, README |
+| G — docs & examples | ✅ done | `4b3d9d7` | Language_Guide Types section, CLI/Builtins/goals reconcile, `examples/console/typed.ptl`, README |
 | H — `state` annotations | ✅ done | (audit) | `state x: t = …` in all three spellings; checked like a `var` cell |
 | I — editor support | ✅ done | (audit) | tree-sitter models `type_annotation`/`return_type`/`parameter`; vim `petalType` |
 | J — parameterized-type error | ✅ done | (audit) | `list<int>` gets one targeted message instead of three positional ones |
@@ -185,7 +185,7 @@ The runtime is untouched — annotations are stripped to names for codegen.
   promotion, explicit casts). `CLI.md` `check` documents warnings + `--strict`.
   `Builtins.md` cross-links the casts. `goals.md` "Types as a projection" rows
   reconciled (🟡, user-writable + warning-only). `README.md` types line flipped
-  to a shipped feature. `examples/typed.ptl` (+ `test/example-golden/typed.json`)
+  to a shipped feature. `examples/console/typed.ptl` (+ `test/example-golden/typed.json`)
   runs clean and is in the manifest.
 
 ### `var` / `set` cells — DONE
@@ -280,7 +280,7 @@ cd editor-support/tree-sitter-petal && npx tree-sitter generate && npx tree-sitt
 
 # End-to-end spot checks
 B=rust/target/debug/petal
-$B run examples/typed.ptl                            # runs clean, no warnings
+$B run examples/console/typed.ptl                            # runs clean, no warnings
 $B check --json -e 'let x: int = "hi"'               # {"ok":true,"warnings":[…]}
 $B check --strict -e 'let x: int = "hi"'; echo $?    # exit 1
 $B show-ast --json -e 'let x: banana = 5'            # ty: {name:"banana",resolved:null}

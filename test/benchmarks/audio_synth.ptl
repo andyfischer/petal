@@ -3,7 +3,7 @@
 // returning `count` samples in -1..1. The question this answers is whether a
 // cart can synthesize its own audio in realtime (`enable_dsp`) or only ahead of
 // time (`register_sound`); see
-// integrations/petal-fantasy-nes/docs/audio-feasibility.md for the verdict.
+// examples/custom-integrations/petal-fantasy-nes/docs/audio-feasibility.md for the verdict.
 //
 // One 60fps frame at 44100Hz is 735 samples, so a block is 735 and the unit
 // that matters is microseconds-per-block against a 16.6ms frame.

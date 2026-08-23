@@ -80,7 +80,7 @@ make build
 rust/target/debug/petal run -e 'print("hello, world!")'
 
 # Run an example
-rust/target/debug/petal run examples/fizzbuzz.ptl
+rust/target/debug/petal run examples/console/fizzbuzz.ptl
 ```
 
 For the full list of developer scripts, see [Developer Scripts & Commands](docs/dev/scripts.md).
@@ -93,7 +93,7 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [`dist/`](dist/) | Release distribution: the `install.sh` / `uninstall.sh` scripts hosted at petal-lang.org |
 | [`docs/`](docs/README.md) | Language documentation for using Petal |
 | [`docs/dev/`](docs/dev/) | Documentation for developing on Petal |
-| [`examples/`](examples/README.md) | Runnable example `.ptl` programs demonstrating language features |
+| [`examples/`](examples/README.md) | Runnable examples: `console/` language demos, `games/` + `productivity/` + `dashboards/` panel apps, and `custom-integrations/` domain-specific hosts |
 | [`editor-support/`](editor-support/README.md) | Editor/IDE tooling |
 | [`ts/`](ts/) | TypeScript tooling, including: dev wrappers, MCP servers, and the vitest integration test suite |
 | [`test/`](test/README.md) | Automated tests |
@@ -149,6 +149,7 @@ Example applications built on top of one of the integrations above.
 | [diagram-canvas](sample-apps/diagram-canvas/README.md) | petal-web-canvas | Canvas-based diagram visualization with live source editor |
 | [petal-fps](sample-apps/petal-fps/README.md) | petal-desktop-sdl | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
 | [side-scroller](sample-apps/side-scroller/README.md) | petal-desktop-sdl | 2D side-scrolling platformer written almost entirely in Petal |
+| [petal-fantasy-nes](examples/custom-integrations/petal-fantasy-nes/README.md) | petal-desktop-sdl | NES-style fantasy console driven entirely by Petal carts |
 
 ## License
 

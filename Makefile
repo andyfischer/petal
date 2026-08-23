@@ -12,7 +12,7 @@ help: ## Show this help
 build: ## Build the Petal compiler (debug)
 	cd rust && cargo build
 
-test: build ## Run the full vitest suite (also runs every examples/*.ptl)
+test: build ## Run the full vitest suite (also runs every examples/console/*.ptl)
 	cd ts && npx vitest run
 
 test-examples: build ## Print each example program's output for manual inspection

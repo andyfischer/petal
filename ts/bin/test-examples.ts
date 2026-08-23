@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const examplesDir = join(repoRoot, 'examples');
+const examplesDir = join(repoRoot, 'examples', 'console');
 const goldenDir = join(repoRoot, 'test', 'example-golden');
 const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
 const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');

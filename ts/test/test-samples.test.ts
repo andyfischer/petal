@@ -4,7 +4,7 @@ import { resolve, basename } from "path";
 import { readdirSync } from "fs";
 
 const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
-const EXAMPLES_DIR = resolve(__dirname, "../../examples");
+const EXAMPLES_DIR = resolve(__dirname, "../../examples/console");
 const TIMEOUT = 3000;
 
 import { ensureBuild } from "./helpers";

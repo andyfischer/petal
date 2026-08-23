@@ -6,13 +6,27 @@ monthly spend limit; 35 agents died on that error, not on anything technical.
 **Built and committed (all self-reported `complete`, all verified against a
 live headless Garden):**
 
-| Track | Apps |
-|---|---|
-| Simple games | 01 Pong, 02 Breakout, 03 Snake |
-| Everyday UI | 13 Calculator, 14 Todo, 15 Notes |
-| Business | 23 CRM contact manager, 24 Kanban, 25 Spreadsheet |
-| Media & creative | 33 Paint, 34 Vector editor, 35 Photo adjust |
-| Dataviz | 41 Analytics dashboard, 42 Server monitoring, 43 Finance dashboard |
+| Track | App | Lives at | Debrief |
+|---|---|---|---|
+| Simple games | 01 Pong | `examples/games/pong/` | [pong.md](pong.md) |
+| Simple games | 02 Breakout | `examples/games/breakout/` | [breakout.md](breakout.md) |
+| Simple games | 03 Snake | `examples/games/snake/` | [snake.md](snake.md) |
+| Everyday UI | 13 Calculator | `examples/productivity/calculator/` | [calculator.md](calculator.md) |
+| Everyday UI | 14 Todo | `examples/productivity/todo/` | [todo.md](todo.md) |
+| Everyday UI | 15 Notes | `examples/productivity/notes/` | [notes.md](notes.md) |
+| Business | 23 CRM contact manager | `examples/productivity/crm-contact-manager/` | [crm-contact-manager.md](crm-contact-manager.md) |
+| Business | 24 Kanban | `examples/productivity/kanban/` | [kanban.md](kanban.md) |
+| Business | 25 Spreadsheet | `examples/productivity/spreadsheet/` | [spreadsheet.md](spreadsheet.md) |
+| Media & creative | 33 Paint | `examples/productivity/paint/` | [paint.md](paint.md) |
+| Media & creative | 34 Vector editor | `examples/productivity/vector-editor/` | [vector-editor.md](vector-editor.md) |
+| Media & creative | 35 Photo adjust | `examples/productivity/photo-adjust/` | [photo-adjust.md](photo-adjust.md) |
+| Dataviz | 41 Analytics dashboard | `examples/dashboards/analytics-dashboard/` | [analytics-dashboard.md](analytics-dashboard.md) |
+| Dataviz | 42 Server monitoring | `examples/dashboards/server-monitoring/` | [server-monitoring.md](server-monitoring.md) |
+| Dataviz | 43 Finance dashboard | `examples/dashboards/finance-dashboard/` | [finance-dashboard.md](finance-dashboard.md) |
+
+The `NN` numbers are the challenge-run slot ids; the app directories and these
+debrief files dropped the numeric prefix when `examples/` was reorganized. The
+numbers are still how the notes below cross-reference each app.
 
 Creative/graphical experiments (47–50) were never reached. Remaining: 04, 05,
 06, 07, 08, 09, 10, 11, 12, 16–22, 26–32, 36–40, 44–50.

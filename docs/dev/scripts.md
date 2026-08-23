@@ -11,7 +11,7 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 | Command | Description |
 |---------|-------------|
 | `make build` | Build the Petal compiler (debug) — `cd rust && cargo build`. Binary lands at `rust/target/debug/petal`. |
-| `make test` | Build, then run the full vitest suite (which also runs every `examples/*.ptl`). |
+| `make test` | Build, then run the full vitest suite (which also runs every `examples/console/*.ptl`). |
 | `make test-examples` | Print each example program's output for manual inspection. |
 | `make clean` | Remove Rust build artifacts (`cargo clean`). |
 
@@ -36,7 +36,7 @@ See [testing.md](testing.md) for the full testing guide.
 | `cd ts && npx vitest run` | Run the integration suite once. |
 | `npm test` | Run the vitest suite from the repo root (delegates to `ts`). |
 | `npm run test:watch` | Vitest in watch mode from the repo root. |
-| `./ts/bin/test-examples.ts` | Run every `examples/*.ptl` on the bytecode VM at both optimization levels (opts on / `--no-opt`), require byte-identical output between them, and require both to match the frozen `test/example-golden/` corpus. |
+| `./ts/bin/test-examples.ts` | Run every `examples/console/*.ptl` on the bytecode VM at both optimization levels (opts on / `--no-opt`), require byte-identical output between them, and require both to match the frozen `test/example-golden/` corpus. |
 | `./ts/bin/test-examples.ts --full` | Same, but print full output rather than an 8-line preview. |
 | `./ts/bin/gen-example-golden.ts` | Re-baseline the `test/example-golden/` corpus from the current VM output. Run deliberately — a golden update asserts the intended behavior changed. |
 

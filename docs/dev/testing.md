@@ -35,7 +35,7 @@ for the full, growing set):
 - `gc.test.ts` / `loop-state.test.ts` / `loop-carry-limitations.test.ts` / `is-callable.test.ts`
 - `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
 - `modules.test.ts` — multi-file import cases (`fixtures/modules/*.ptl`), `-I`, IR file table
-- `test-samples.test.ts` — every `examples/*.ptl` file runs without error
+- `test-samples.test.ts` — every `examples/console/*.ptl` file runs without error
 
 **Helpers** (`ts/test/helpers.ts`):
 - The binary is built once per test session by `ts/test/global-setup.ts`
@@ -51,7 +51,7 @@ for the full, growing set):
 
 ### Example-based tests
 
-`ts/test/test-samples.test.ts` runs every `examples/*.ptl` file through the `petal` binary
+`ts/test/test-samples.test.ts` runs every `examples/console/*.ptl` file through the `petal` binary
 and asserts it exits without error (3 s timeout per file). These are included in the
 normal vitest run:
 

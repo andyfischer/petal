@@ -6,7 +6,7 @@
 // `Cannot call nil` — pointing at the call site with no mention of declaration
 // order. That made mutual recursion impossible, which is table stakes for
 // parsers, tree-walkers and state machines: a recursive-descent parser is
-// mutually recursive by construction. Two apps in examples/testbed worked
+// mutually recursive by construction. Two apps in examples/ (the panel apps) worked
 // around it (a restructured shunting-yard expression parser, and a
 // `var _expr = nil … set _expr = parse_cmp` trampoline).
 //

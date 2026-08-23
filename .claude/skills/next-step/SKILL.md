@@ -58,7 +58,7 @@ If TDD doesn't fit the task (e.g. documentation-only changes), skip the failing-
 ## Step 6: Final Verification
 
 1. Run the full test suite one final time to confirm everything passes.
-2. If there are example programs (`examples/*.ptl`), run a quick smoke test with `./bin/test-each.sh` to check for regressions.
+2. If there are example programs (`examples/console/*.ptl`), run a quick smoke test with `./bin/test-each.sh` to check for regressions.
 
 ## Step 7: Update docs
 

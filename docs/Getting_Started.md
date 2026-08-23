@@ -44,11 +44,11 @@ rust/target/debug/petal run hello.ptl
 
 ## Running the Examples
 
-The `examples/` directory contains a set of example programs:
+The `examples/console/` directory contains a set of example programs:
 
 ```bash
 # Run a single example
-rust/target/debug/petal run examples/fizzbuzz.ptl
+rust/target/debug/petal run examples/console/fizzbuzz.ptl
 
 # Run all examples with pass/fail reporting
 ./ts/bin/test-examples.ts
@@ -64,7 +64,7 @@ Examples below use `./ts/bin/run-petal.ts` (the recommended wrapper); substitute
 
 ```bash
 # Run a program
-./ts/bin/run-petal.ts run examples/hello.ptl
+./ts/bin/run-petal.ts run examples/console/hello.ptl
 ./ts/bin/run-petal.ts run -e 'print("hi")'
 
 # Show lexer tokens

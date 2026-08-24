@@ -18,6 +18,13 @@
 //!    `any` and is left alone — and are applied as two minimal string splices
 //!    per cast, so comments and layout inside the argument survive.
 //!
+//! 3. **`if`-chain to `match`** ([`to_match`]) — rewrite an `if`/`elsif` chain
+//!    that tests one subject against string/bool/nil literals into a `match`.
+//!    Like the cast rule it detects over the AST and applies span splices, and
+//!    the splices only ever cover the glue between the arms, so every pattern
+//!    and body survives verbatim. It runs after the cast rule on the cast
+//!    rule's output, which means a re-parse: the casts moved the spans.
+//!
 //! Because the cast rule changes tokens (not just whitespace), [`lint_source`]
 //! gates it: if the original source compiles, the rewritten source must compile
 //! too, or lint refuses to produce output. That is a weaker gate than
@@ -37,9 +44,11 @@ use crate::env::Env;
 
 mod casts;
 mod reindent;
+mod to_match;
 
 use casts::{apply_cast_edits, plan_cast_edits};
 pub use reindent::reindent;
+use to_match::{apply_match_edits, plan_match_edits};
 
 /// Context the compile gate needs to compile the source the same way
 /// `petal run` would: module search dirs and the file's own path (imports
@@ -58,6 +67,8 @@ pub struct LintOutcome {
     pub reindented_lines: usize,
     /// Identity casts removed.
     pub casts_removed: usize,
+    /// `if`/`elsif` chains rewritten as a `match`.
+    pub chains_to_match: usize,
     /// Human-readable notes.
     pub notes: Vec<String>,
 }
@@ -92,17 +103,46 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     };
 
     if casts_removed > 0 {
+        notes.push(format!("removed {casts_removed} redundant cast(s)"));
+    }
+
+    // Pass 3 — `if`-chain to `match`. The cast splices moved every offset, so
+    // this re-parses rather than reusing the AST above.
+    let (chars, stmts) = if casts_removed > 0 {
+        let chars: Vec<char> = rewritten.chars().collect();
+        let (_tree, stmts) = crate::rewrite::parse_ast(&rewritten)?;
+        (chars, stmts)
+    } else {
+        (chars, stmts)
+    };
+    let (match_edits, chains_to_match) = plan_match_edits(&stmts, &chars);
+    let rewritten = if match_edits.is_empty() {
+        rewritten
+    } else {
+        apply_match_edits(&chars, &match_edits)
+    };
+    if chains_to_match > 0 {
+        notes.push(format!(
+            "rewrote {chains_to_match} if/elsif chain(s) as match"
+        ));
+    }
+
+    if casts_removed > 0 || chains_to_match > 0 {
         // Only meaningful when the original compiles here at all; a file whose
-        // imports don't resolve outside its app gets the detection rule alone.
+        // imports don't resolve outside its app gets the detection rules alone.
         if compile_ir(source, opts).is_ok()
             && let Err(e) = compile_ir(&rewritten, opts)
         {
             return Err(format!(
-                "lint bug: removing an identity cast broke compilation — refusing to \
-                 produce output ({e})"
+                "lint bug: a rewrite broke compilation — refusing to produce output ({e})"
             ));
         }
-        notes.push(format!("removed {casts_removed} redundant cast(s)"));
+    }
+    if chains_to_match > 0 {
+        // A structural check the compile gate can't make: the rewrite must
+        // have turned exactly the chains we counted into matches, and left
+        // every other `if` alone.
+        verify_chain_counts(&stmts, &rewritten, chains_to_match)?;
     }
 
     let output = reindent(&rewritten)?;
@@ -111,8 +151,65 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         output,
         reindented_lines,
         casts_removed,
+        chains_to_match,
         notes,
     })
+}
+
+/// Count `if` and `match` nodes before and after. Converting `n` chains must
+/// remove exactly `n` `if` nodes (a chain's `elsif`s are `If` nodes too, so
+/// the arms beyond the first come off as well) and add exactly `n` `match`
+/// nodes. Anything else means a splice landed somewhere unintended, and the
+/// linter refuses the file rather than writing it.
+fn verify_chain_counts(
+    before: &[crate::ast::Stmt],
+    after: &str,
+    chains: usize,
+) -> Result<(), String> {
+    let (_tree, after_stmts) = crate::rewrite::parse_ast(after)
+        .map_err(|e| format!("lint bug: match rewrite no longer parses ({e})"))?;
+    let (if_before, match_before) = count_nodes(before);
+    let (if_after, match_after) = count_nodes(&after_stmts);
+    if match_after != match_before + chains {
+        return Err(format!(
+            "lint bug: rewriting {chains} if-chain(s) produced {} new match(es) — \
+             refusing to produce output",
+            match_after.saturating_sub(match_before)
+        ));
+    }
+    // Each converted chain contributes one `If` node per arm.
+    if if_after >= if_before || if_before - if_after < chains {
+        return Err(format!(
+            "lint bug: rewriting {chains} if-chain(s) removed only {} if node(s) — \
+             refusing to produce output",
+            if_before.saturating_sub(if_after)
+        ));
+    }
+    Ok(())
+}
+
+fn count_nodes(stmts: &[crate::ast::Stmt]) -> (usize, usize) {
+    use crate::ast::{Expr, ExprKind, ExprVisitor, walk_expr};
+    #[derive(Default)]
+    struct Counter {
+        ifs: usize,
+        matches: usize,
+    }
+    impl ExprVisitor for Counter {
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::If { .. } => self.ifs += 1,
+                ExprKind::Match { .. } => self.matches += 1,
+                _ => {}
+            }
+            walk_expr(self, e);
+        }
+    }
+    let mut c = Counter::default();
+    for s in stmts {
+        c.visit_stmt(s);
+    }
+    (c.ifs, c.matches)
 }
 
 fn count_changed_lines(before: &str, after: &str) -> usize {
@@ -201,8 +298,11 @@ mod tests {
                 panic!("lint broke compilation for {}: {}", path.display(), e);
             }
             // A file the rules leave alone must be byte-identical in IR too,
-            // which pins the formatting pass as semantics-free.
-            if outcome.casts_removed == 0 {
+            // which pins the formatting pass as semantics-free. Both semantic
+            // rules change the IR on purpose — one deletes a call, the other
+            // replaces an `if` chain with a `match` — so a file either of them
+            // touched is exempt here and gated by compilation above instead.
+            if outcome.casts_removed == 0 && outcome.chains_to_match == 0 {
                 assert_eq!(
                     compile_ir(&src, &opts).ok(),
                     compile_ir(&outcome.output, &opts).ok(),

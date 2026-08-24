@@ -1,10 +1,10 @@
 # Linter plan (`petal lint`)
 
-Status: **shipped** (`rust/src/lint/` — mod.rs + reindent.rs + casts.rs):
-`petal lint` with report / `--fix` / `--check` / `-e` modes, `petal lint-fix
-<file>` as the in-place alias, the token-driven 2-space re-indenter (plus
-trailing-whitespace trim and single trailing newline), and the identity-cast
-rule. A corpus property test
+Status: **shipped** (`rust/src/lint/` — mod.rs + reindent.rs + casts.rs +
+to_match.rs): `petal lint` with report / `--fix` / `--check` / `-e` modes,
+`petal lint-fix <file>` as the in-place alias, the token-driven 2-space
+re-indenter (plus trailing-whitespace trim and single trailing newline), the
+identity-cast rule, and the if-chain-to-`match` rule. A corpus property test
 (`lint_preserves_compilation_over_repo_corpus`) asserts that every repo `.ptl`
 that compiles still compiles after linting, that a file with no cast fixes has
 byte-identical IR, and that linting is idempotent. Remaining: the rest of the
@@ -27,6 +27,55 @@ describe the desugarer:
   the residual read of `x` at the call site when the lifted call was the whole
   statement.
 - The v1 desugarer does not lift `@` out of match arms or `while` conditions.
+
+### The if-chain-to-`match` rule (2026-08-23)
+
+An `if`/`elsif` chain that tests one subject against literals is a `match`
+written the long way — it re-reads the subject and re-spells `==` once per arm:
+
+```
+if ch == "@" then "spawn"          match ch
+elsif ch == "o" then "coin"    -->    when "@" -> "spawn"
+elsif ch == "w" then "walker"         when "o" -> "coin"
+else nil                              when "w" -> "walker"
+end                                   when _ -> nil
+                                    end
+```
+
+Detection is over the AST (`lint/to_match.rs`), the rewrite is span splices,
+and the splices only ever cover the *glue* — `if`, `==`, `then`,
+`elsif <subject> ==`, `else`. Every arm's pattern and body is preserved as the
+author wrote it, comments and layout included, and the chain's trailing `end`
+needs no edit at all because `match` closes the same way. Indentation is not
+this rule's problem: the re-indenter runs after it.
+
+A chain with no `else` gains `when _ -> nil`. That arm is load-bearing, not
+cosmetic: an `if` that falls off the end yields nil, but a `match` with no arm
+left is the runtime error `No matching pattern for value`.
+
+**What it refuses, and why.**
+
+| Refused | Why |
+| --- | --- |
+| Numeric literals | `==` compares an int against a float numerically (`1 == 1.0` is true), while `backend::pattern::match_pattern` requires the tags to agree, so `when 1` does **not** match `1.0`. Rewriting `n == 1` would quietly change which arm a float subject takes. `String`/`Bool`/`Nil` have no cross-type rule and are exactly equivalent — those are the literals the rule accepts. |
+| A subject that could compute | `match` reads the subject once where the chain read it per arm. A name or a field path off a name is safe to move; a call or an index is left alone. |
+| A comment in the glue | A comment between `then` and the next `elsif` has no home in the `match`, so the whole chain is skipped rather than dropping it. Comments *inside* an arm body survive, since the rule never touches a body. |
+| Bodies that are not a single expression | A `->` arm takes an expression. Multi-statement arms would need the `do … end` form, which this rule does not emit — and where a chain is really control flow rather than a lookup, the `match` is not obviously the better spelling. |
+| Fewer than three arms | At two arms `if … else … end` is the plainer spelling and the repetition the rule exists to remove is one line. |
+
+**Safeguard.** The rule changes structure, so as with the cast rule the
+correctness argument is the detection rule plus a compile gate. On top of that
+it runs a structural check (`verify_chain_counts`): converting *n* chains must
+add exactly *n* `Match` nodes and remove at least *n* `If` nodes, or lint
+refuses to produce output. Verified end to end by running every runnable `.ptl`
+in the repo before and after — 29 chains across 12 files, byte-identical stdout
+and exit status — plus 4 more chains in `~/worlds-fair/ui/ptl`.
+
+**Still to revisit.** When `==` on a `Pending` becomes strict (it absorbs; see
+`value.rs`), `==` and `match_pattern` will diverge for a Pending subject and
+this rule's safe-literal set needs re-deriving. Numeric chains could also be
+admitted where the type checker can prove the subject is an `int` — the same
+`typecheck` machinery the cast rule already leans on.
 
 ### The identity-cast rule (2026-08-02)
 
@@ -185,9 +234,9 @@ Not a rule, despite appearances: a trailing bare `nil` at the end of a `fn`
 body (16 occurrences there) is load-bearing — Petal's last expression is the
 implicit result, so deleting it changes what the function returns.
 
-Shipped: 2-space indent + identity casts, behind `--fix` / `lint-fix`, with
-`--check` (exit non-zero if not normalized, print nothing on success — CI
-mode).
+Shipped: 2-space indent + identity casts + if-chain-to-`match`, behind
+`--fix` / `lint-fix`, with `--check` (exit non-zero if not normalized, print
+nothing on success — CI mode).
 
 ## CLI shape
 

@@ -907,8 +907,9 @@ pub(super) fn handle_lint(
         unreachable!()
     };
     let summary = format!(
-        "{}: {} line(s) reformatted, {} redundant cast(s) removed",
-        path, outcome.reindented_lines, outcome.casts_removed
+        "{}: {} line(s) reformatted, {} redundant cast(s) removed, {} if-chain(s) \
+         rewritten as match",
+        path, outcome.reindented_lines, outcome.casts_removed, outcome.chains_to_match
     );
     if check {
         // CI mode: no output on success, one stderr line on failure.

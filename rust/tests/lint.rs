@@ -862,3 +862,371 @@ fn unparseable_source_is_an_error() {
     assert!(lint_source("fn (", &LintOptions::default()).is_err());
     assert!(lint_source("let = 3\n", &LintOptions::default()).is_err());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pass 3 — `if`/`elsif` chain to `match`
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn string_chain_becomes_a_match() {
+    assert_lints_to(
+        "\
+fn object_kind(ch)
+  if ch == \"@\" then \"spawn\"
+  elsif ch == \"o\" then \"coin\"
+  elsif ch == \"w\" then \"walker\"
+  else nil
+  end
+end
+",
+        "\
+fn object_kind(ch)
+  match ch
+    when \"@\" -> \"spawn\"
+    when \"o\" -> \"coin\"
+    when \"w\" -> \"walker\"
+    when _ -> nil
+  end
+end
+",
+    );
+}
+
+/// An `if` that falls off the end yields nil, but a `match` with no arm left
+/// is a runtime error — so the wildcard has to be written out.
+#[test]
+fn a_chain_with_no_else_gains_an_explicit_nil_arm() {
+    assert_lints_to(
+        "\
+fn f(c)
+  if c == \"a\" then 1
+  elsif c == \"b\" then 2
+  elsif c == \"c\" then 3
+  end
+end
+",
+        "\
+fn f(c)
+  match c
+    when \"a\" -> 1
+    when \"b\" -> 2
+    when \"c\" -> 3
+    when _ -> nil
+  end
+end
+",
+    );
+}
+
+#[test]
+fn bool_and_nil_literals_convert() {
+    assert_lints_to(
+        "\
+fn f(c)
+  if c == true then \"yes\"
+  elsif c == false then \"no\"
+  elsif c == nil then \"unset\"
+  else \"other\"
+  end
+end
+",
+        "\
+fn f(c)
+  match c
+    when true -> \"yes\"
+    when false -> \"no\"
+    when nil -> \"unset\"
+    when _ -> \"other\"
+  end
+end
+",
+    );
+}
+
+#[test]
+fn a_field_path_is_a_valid_subject() {
+    assert_lints_to(
+        "\
+fn f(ev)
+  if ev.kind == \"down\" then 1
+  elsif ev.kind == \"up\" then 2
+  elsif ev.kind == \"move\" then 3
+  else 0
+  end
+end
+",
+        "\
+fn f(ev)
+  match ev.kind
+    when \"down\" -> 1
+    when \"up\" -> 2
+    when \"move\" -> 3
+    when _ -> 0
+  end
+end
+",
+    );
+}
+
+/// `==` compares an int against a float numerically (`1 == 1.0` is true) while
+/// `when 1` does not match `1.0`, so a numeric chain is left alone: rewriting
+/// it would change which arm a float subject takes.
+#[test]
+fn numeric_literals_are_never_converted() {
+    assert_fixed_point(
+        "\
+fn f(n)
+  if n == 1 then \"a\"
+  elsif n == 2 then \"b\"
+  elsif n == 3 then \"c\"
+  else \"z\"
+  end
+end
+",
+    );
+}
+
+/// Two arms is `if … else … end`, which is the plainer spelling.
+#[test]
+fn a_two_arm_chain_stays_an_if() {
+    assert_fixed_point(
+        "\
+fn f(c)
+  if c == \"a\" then 1
+  elsif c == \"b\" then 2
+  else 3
+  end
+end
+",
+    );
+}
+
+#[test]
+fn a_chain_over_two_different_subjects_stays_an_if() {
+    assert_fixed_point(
+        "\
+fn f(c, d)
+  if c == \"a\" then 1
+  elsif d == \"b\" then 2
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+}
+
+/// `match` reads the subject once where the chain read it per arm, so nothing
+/// that could compute is moved into the head.
+#[test]
+fn a_call_subject_stays_an_if() {
+    assert_fixed_point(
+        "\
+fn f()
+  if key() == \"a\" then 1
+  elsif key() == \"b\" then 2
+  elsif key() == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+}
+
+/// A `->` arm takes an expression; a multi-statement arm would need the
+/// `do … end` form, which this rule does not emit.
+#[test]
+fn a_multi_statement_arm_stays_an_if() {
+    assert_fixed_point(
+        "\
+fn f(c)
+  if c == \"a\" then
+    print(1)
+    print(2)
+  elsif c == \"b\" then 2
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+}
+
+/// A comment in the glue between arms has no home in the `match`, so the whole
+/// chain is skipped rather than dropping it. (The re-indenter still moves the
+/// comment line, so this is not a fixed point — what matters is that the
+/// `elsif`s survive and the comment is still there.)
+#[test]
+fn a_comment_between_arms_blocks_the_fix() {
+    let outcome = lint_outcome(
+        "\
+fn f(c)
+  if c == \"a\" then 1
+  elsif c == \"b\" then 2
+  // fall through to c
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+    assert_eq!(outcome.chains_to_match, 0);
+    assert!(outcome.output.contains("elsif"), "{}", outcome.output);
+    assert!(
+        outcome.output.contains("// fall through to c"),
+        "{}",
+        outcome.output
+    );
+}
+
+#[test]
+fn a_trailing_comment_on_an_arm_blocks_the_fix() {
+    assert_fixed_point(
+        "\
+fn f(c)
+  if c == \"a\" then 1 // first
+  elsif c == \"b\" then 2
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+}
+
+/// The rule rewrites the glue only, so a comment inside an arm's *body* is
+/// carried across untouched.
+#[test]
+fn a_comment_inside_an_arm_body_survives() {
+    assert_lints_to(
+        "\
+fn f(c)
+  if c == \"a\" then g(1, // why
+    2)
+  elsif c == \"b\" then 2
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+        "\
+fn f(c)
+  match c
+    when \"a\" -> g(1, // why
+      2)
+    when \"b\" -> 2
+    when \"c\" -> 3
+    when _ -> 4
+  end
+end
+",
+    );
+}
+
+#[test]
+fn a_nested_chain_converts_too() {
+    let outcome = lint_outcome(
+        "\
+fn f(a, b)
+  if a == \"x\" then
+    if b == \"p\" then 1
+    elsif b == \"q\" then 2
+    elsif b == \"r\" then 3
+    else 0
+    end
+  elsif a == \"y\" then 9
+  elsif a == \"z\" then 8
+  else 7
+  end
+end
+",
+    );
+    // The outer arm holds a single statement that is itself an `if`
+    // expression, so it satisfies the one-expression rule and both chains
+    // convert. Their splices are disjoint — the inner ones fall entirely
+    // inside a body span the outer rewrite preserves.
+    assert_eq!(outcome.chains_to_match, 2);
+    assert!(outcome.output.contains("match a"), "{}", outcome.output);
+    assert!(outcome.output.contains("match b"), "{}", outcome.output);
+    assert!(!outcome.output.contains("elsif"), "{}", outcome.output);
+}
+
+#[test]
+fn a_chain_in_statement_position_converts() {
+    assert_lints_to(
+        "\
+fn f(c)
+  if c == \"a\" then print(1)
+  elsif c == \"b\" then print(2)
+  elsif c == \"c\" then print(3)
+  end
+  print(\"done\")
+end
+",
+        "\
+fn f(c)
+  match c
+    when \"a\" -> print(1)
+    when \"b\" -> print(2)
+    when \"c\" -> print(3)
+    when _ -> nil
+  end
+  print(\"done\")
+end
+",
+    );
+}
+
+#[test]
+fn outcome_counts_converted_chains() {
+    let outcome = lint_outcome(
+        "\
+fn f(c)
+  if c == \"a\" then 1
+  elsif c == \"b\" then 2
+  elsif c == \"c\" then 3
+  else 4
+  end
+end
+",
+    );
+    assert_eq!(outcome.chains_to_match, 1);
+    assert_eq!(outcome.casts_removed, 0);
+    assert!(
+        outcome.notes.iter().any(|n| n.contains("1 if/elsif chain")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+/// The two semantic rules compose: the cast inside an arm body goes, and the
+/// chain around it becomes a `match`.
+#[test]
+fn casts_and_the_match_rule_compose_in_one_pass() {
+    let outcome = lint_outcome(
+        "\
+fn f(c, n: int)
+  if c == \"a\" then int(n)
+  elsif c == \"b\" then int(n) + 1
+  elsif c == \"c\" then 3
+  else 0
+  end
+end
+",
+    );
+    assert_eq!(outcome.casts_removed, 2);
+    assert_eq!(outcome.chains_to_match, 1);
+    assert_eq!(
+        outcome.output,
+        "\
+fn f(c, n: int)
+  match c
+    when \"a\" -> n
+    when \"b\" -> n + 1
+    when \"c\" -> 3
+    when _ -> 0
+  end
+end
+",
+    );
+}

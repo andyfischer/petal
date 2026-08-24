@@ -25,6 +25,7 @@ To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <c
 | `check` | Lex + parse + compile + lower only (no execution) |
 | `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
 | `lint-fix` | `lint --fix <file>` under its own name |
+| `ir-equal` | Compare two files' compiled IR, ignoring spans and layout |
 | `lsp` | Serve the language server over stdio (editors spawn this) |
 | `explain` | Run with trace, walk back from a term to its ancestors |
 | `pending-report` | Run, then report every live pending resource |
@@ -211,6 +212,9 @@ petal lint --fix <file.ptl>      # rewrite the file in place
 petal lint --check <file.ptl>    # CI mode: exit 0/1, no output on success
 petal lint -e '<code>'           # lint inline code, print result to stdout
 
+petal lint --fix --verify <f>    # prove the rewrite before writing it
+petal lint --fix --verify=strict <f>   # demand full IR equality
+
 petal lint-fix <file.ptl>        # same as 'lint --fix <file.ptl>'
 ```
 
@@ -245,6 +249,73 @@ elements, so nothing can bind across the boundary once the parens are gone.
 There is deliberately **no** rebind rule: an earlier version rewrote `x = f(x)`
 to `f(@x)`. The `@` operator is still part of the language, but it reads as
 sugar you have to learn, so the linter no longer pushes code into it.
+
+#### `--verify` — prove the rewrite
+
+`--verify` compiles the original and the fixed text and compares their IR
+(`petal ir-equal`, below). Nothing is written unless the comparison is
+acceptable, and a rewrite that cannot be accepted exits **3** — distinct from
+the plain "needs changes" exit 1. It works with `--fix` and with `--check`.
+
+Two modes, because the passes differ in kind:
+
+| Mode | Demands | A semantic pass fired |
+|---|---|---|
+| `--verify` (= `--verify=ir`, the default) | The formatting pass must not change the IR | Allowed: reported as an expected IR change, file still written |
+| `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
+
+Formatting is the only pass that is supposed to be IR-invisible. The identity-
+cast rule deletes a call and the `if`-chain-to-`match` rule replaces a chain of
+`Branch` terms with a `Match` term, so both *do* change the IR by design —
+that is the point of them. On such a file the default mode proves the part it
+can (re-indentation applied on top of the semantic rewrite is IR-equal), prints
+the first difference, and says plainly that run-diff verification is what would
+prove the rest:
+
+```
+$ petal lint --fix --verify app.ptl
+lint: rewrote 1 if/elsif chain(s) as match
+verify: rewrite changed IR (0 cast(s) removed, 1 if-chain(s) rewritten as match);
+        formatting alone was proven IR-equal. First difference:
+function `label` body: statement count differs (at 2:6)
+  original: 4
+  rewritten: 2
+verify: run-diff verification needed for the semantic passes
+```
+
+If formatting *alone* ever moves the IR, that is a linter bug: `--verify`
+reports it as one and refuses to write, whatever the mode.
+
+### `ir-equal` — Are two files the same program?
+
+```
+petal ir-equal <a.ptl> <b.ptl>          # exit 0 equal, 1 different, 2 can't tell
+petal ir-equal --json <a.ptl> <b.ptl>   # {"equal": bool, "diff"?: {...}}
+```
+
+Compiles both files and compares their term graphs, ignoring everything
+positional: source text, spans, file ids, the source map, comments and
+whitespace, and the numeric ids of terms, blocks and constants (constants are
+compared **by value**, since interning order shifts). Compared: functions and
+their parameters and captures, each block's ordered terms and phi carry-outs,
+each term's op, input edges, name, state key and flags, and match-arm patterns.
+
+Exit codes are a three-way answer, not a boolean: **0** equivalent, **1**
+different (the first difference is printed, with the *original's* line:column),
+**2** a side failed to compile — "can't tell", which must never be read as
+"not equal". `--json` mirrors this: `{"equal": true}`, `{"equal": false,
+"diff": {location, what, left, right, line, column}}`, or `{"equal": false,
+"error": "..."}` for the exit-2 case.
+
+Two deliberate strictness choices: **variable names are semantic** (Petal keeps
+binding names in the IR and hashes them into `state` keys, so a rename is
+reported as a difference), and a `Copy`-only refactor that changes dataflow
+*sharing* is reported even when each term looks alike. Both err toward saying
+"different": an `ir-equal` pass is meant to be proof.
+
+This is the `ir-equal` step of the verification plan in
+[dev/refactor-verification.md](dev/refactor-verification.md); the Rust API
+behind it is `petal::ir_equiv::ir_equivalent`.
 
 ### `lsp` — Serve the language server
 

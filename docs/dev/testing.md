@@ -123,3 +123,19 @@ deliberately with `--update-golden`.
 
 Plans live in `test/verify-plans/`. The design, and what is still unbuilt, is
 in [refactor-verification.md](refactor-verification.md).
+
+### Refactor verification (IR equivalence)
+
+`petal::ir_equiv::ir_equivalent(a, b)` answers "are these two compiled programs
+the same program?", ignoring everything positional (spans, file ids, the source
+map, comments, whitespace, and the numeric ids of terms/blocks/constants —
+constants compare by value). It is exposed as `petal ir-equal <a> <b>` (exit 0
+equal / 1 different / 2 a side failed to compile) and used by
+`petal lint --fix --verify`, which refuses to write a rewrite it cannot accept
+(exit 3). Its unit tests live in `rust/src/ir_equiv.rs`; the CLI and lint
+contracts are covered by `ts/test/ir-equal.test.ts`. The load-bearing use is
+`lint::tests::reindent_is_ir_equal_over_repo_corpus`: every `.ptl` in the repo
+that compiles standalone is mangled (three extra spaces of indentation on every
+line), re-indented, and asserted IR-equal to the original — the property that
+makes the formatting pass safe to run over the whole corpus. See
+[refactor-verification.md](refactor-verification.md) for the wider plan.

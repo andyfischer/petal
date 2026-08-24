@@ -86,6 +86,18 @@ pub enum Command {
     Lint {
         fix: bool,
         check: bool,
+        /// Prove the rewrite before writing it: compile the original and the
+        /// fixed text and compare their IR (`crate::ir_equiv`). A rewrite that
+        /// changes the IR is never written; see `handle_lint`.
+        verify: Option<crate::lint::VerifyMode>,
+    },
+    /// Compare two source files' compiled IR, ignoring everything positional
+    /// (spans, comments, whitespace). Exit 0 when equivalent, 1 when not,
+    /// 2 when a side fails to compile. The `<file>` in `CliArgs::source` is
+    /// the original; `other` is the rewritten side.
+    IrEqual {
+        json: bool,
+        other: String,
     },
     Explain {
         json: bool,
@@ -259,12 +271,28 @@ Commands:
                                  --trace: emit per-term events to stderr
                                  (PETAL_DEBUG=1 also enables trace)
   run -e <code>                  Execute inline code
-  lint [--fix | --check] <file>  Normalize source (2-space indent, drop identity
+  lint [--fix | --check] [--verify[=ir|strict]] <file>
+                                 Normalize source (2-space indent, drop identity
                                  casts like int(n) where n is already an int)
                                  default: report and exit 1 if changes needed
                                  --fix: rewrite the file in place
                                  --check: CI mode, exit 0/1 with no output on success
+                                 --verify: prove the rewrite before writing it —
+                                 compile both sides and compare their IR. Not
+                                 provably equal means no write and exit 3.
+                                 --verify=ir (the default) accepts the semantic
+                                 passes (identity casts, if-chain to match) as
+                                 expected-to-differ and only proves the
+                                 formatting pass; --verify=strict demands IR
+                                 equality of the whole rewrite, so a file with a
+                                 semantic rewrite pending exits 3 and needs a
+                                 run-diff instead
   lint -e <code>                 Lint inline code, print result to stdout
+  ir-equal [--json] <a.ptl> <b.ptl>
+                                 Compare two files' compiled IR, ignoring spans,
+                                 comments and whitespace. Exit 0 equivalent,
+                                 1 with the first difference, 2 if a side fails
+                                 to compile
   lint-fix <file>                Same as 'lint --fix <file>': rewrite in place.
                                  Makes no change if the file fails to parse.
   show-ir [--json] [--all] [--user-only] <file>
@@ -541,8 +569,11 @@ pub fn execute(cli: CliArgs) {
             set_error_format(error_format);
             handlers::handle_check(json, strict, ir, &source, &source_input, &include_dirs);
         }
-        Command::Lint { fix, check } => {
-            handlers::handle_lint(fix, check, &source, &source_input, &include_dirs);
+        Command::Lint { fix, check, verify } => {
+            handlers::handle_lint(fix, check, verify, &source, &source_input, &include_dirs);
+        }
+        Command::IrEqual { json, other } => {
+            handlers::handle_ir_equal(json, &other, &source, &source_input, &include_dirs);
         }
         Command::ShowTokens { json } => {
             handlers::handle_show_tokens(json, &source);

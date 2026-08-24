@@ -893,9 +893,106 @@ pub(super) fn handle_check(
     }
 }
 
+/// `petal ir-equal <a.ptl> <b.ptl>` — the standalone IR comparison, which is
+/// also what the TS verifier's `ir-equal` step shells out to. Exit 0 when the
+/// two compile to the same program, 1 with the first difference when they
+/// don't, 2 when a side fails to compile (an answer of "can't tell", which
+/// must not be mistaken for "not equal").
+pub(super) fn handle_ir_equal(
+    json: bool,
+    other_path: &str,
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    let other = match fs::read_to_string(other_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", other_path, e);
+            process::exit(2);
+        }
+    };
+    let origin = source_origin(source_input);
+    let result =
+        crate::ir_equiv::sources_equivalent(source, &other, include_dirs, origin.as_deref());
+    match result {
+        Err(msg) => {
+            if json {
+                println!("{}", serde_json::json!({ "equal": false, "error": msg }));
+            } else {
+                eprintln!("Error: {}", msg);
+            }
+            process::exit(2);
+        }
+        Ok(Ok(())) => {
+            if json {
+                println!("{}", serde_json::json!({ "equal": true }));
+            } else {
+                println!("IR is equivalent");
+            }
+        }
+        Ok(Err(diff)) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "equal": false, "diff": diff.to_json() })
+                );
+            } else {
+                println!("IR differs\n{}", diff);
+            }
+            process::exit(1);
+        }
+    }
+}
+
+/// Exit code for "the rewrite could not be proven equivalent" — distinct from
+/// the plain "needs changes" exit 1 that `lint` and `lint --check` use.
+const VERIFY_FAILED_EXIT: i32 = 3;
+
+/// Run `--verify` over a computed rewrite. Returns only when the file may be
+/// written; otherwise reports the diff and exits [`VERIFY_FAILED_EXIT`].
+fn run_lint_verify(
+    mode: crate::lint::VerifyMode,
+    source: &str,
+    outcome: &crate::lint::LintOutcome,
+    opts: &crate::lint::LintOptions,
+) {
+    use crate::lint::VerifyVerdict;
+    match crate::lint::verify_rewrite(source, outcome, mode, opts) {
+        Ok(VerifyVerdict::Unchanged) => {}
+        Ok(VerifyVerdict::Equal) => {
+            eprintln!("verify: IR unchanged — the rewrite is provably equivalent");
+        }
+        Ok(VerifyVerdict::SemanticChange {
+            diff,
+            casts_removed,
+            chains_to_match,
+        }) => {
+            // Expected, not a failure: these passes exist to change the IR.
+            // Say so plainly rather than dressing it up as a proof.
+            eprintln!(
+                "verify: rewrite changed IR ({} cast(s) removed, {} if-chain(s) rewritten as \
+                 match); formatting alone was proven IR-equal. First difference:\n{}\n\
+                 verify: run-diff verification needed for the semantic passes \
+                 (docs/dev/refactor-verification.md §5); use --verify=strict to refuse this file.",
+                casts_removed, chains_to_match, diff
+            );
+        }
+        Err(failure) => {
+            eprintln!("verify: {}", failure.message);
+            if let Some(diff) = &failure.diff {
+                eprintln!("{}", diff);
+            }
+            eprintln!("verify: refusing to write.");
+            process::exit(VERIFY_FAILED_EXIT);
+        }
+    }
+}
+
 pub(super) fn handle_lint(
     fix: bool,
     check: bool,
+    verify: Option<crate::lint::VerifyMode>,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -910,6 +1007,11 @@ pub(super) fn handle_lint(
     };
     for note in &outcome.notes {
         eprintln!("lint: {}", note);
+    }
+    // Verification runs before any output decision, so `--check --verify` and
+    // `--fix --verify` agree on whether the rewrite is acceptable at all.
+    if let Some(mode) = verify {
+        run_lint_verify(mode, source, &outcome, &opts);
     }
     let changed = outcome.changed(source);
 

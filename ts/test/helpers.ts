@@ -114,6 +114,18 @@ function capture(
 }
 
 /**
+ * Run the built binary with arbitrary arguments, capturing stdout, stderr and
+ * the exit code. For subcommands whose exit code is part of the contract
+ * (`ir-equal`, `lint --verify`).
+ */
+export function petalCapture(
+  args: string[],
+  input?: string
+): { stdout: string; stderr: string; code: number } {
+  return capture(args, input);
+}
+
+/**
  * `petal check --json -e <code>`, parsed, tolerating a non-zero exit — unlike
  * [`checkJson`], which throws. Use when the failure object *is* the assertion.
  */

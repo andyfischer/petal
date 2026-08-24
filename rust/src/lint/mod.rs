@@ -33,6 +33,13 @@
 //! dropped when its argument's static type is `int`, and `int()` on an `int` is
 //! the identity (`rust/src/builtins/math.rs`).
 //!
+//! [`verify_rewrite`] (`petal lint --verify`) is the gate on top of all of
+//! this: it compiles both sides and compares their IR with
+//! [`crate::ir_equiv::ir_equivalent`], so a rewrite that cannot be accepted is
+//! never written. Only the formatting pass is required to be IR-invisible; the
+//! other two change the IR by design, and the default mode says so rather than
+//! calling it a failure. See docs/dev/refactor-verification.md §7.
+//!
 //! A note on what is *not* here: an earlier slice rewrote `x = f(x)` to the
 //! rebind form `f(@x)`. That rule is gone. The `@` operator remains a language
 //! feature, but it reads as sugar that has to be learned, so the linter no
@@ -69,6 +76,11 @@ pub struct LintOutcome {
     pub casts_removed: usize,
     /// `if`/`elsif` chains rewritten as a `match`.
     pub chains_to_match: usize,
+    /// The text after the semantic passes but *before* re-indentation — the
+    /// input the formatting pass was handed. `--verify` compares this against
+    /// [`LintOutcome::output`] to prove the formatting pass on its own, which
+    /// is the only part of the rewrite that is supposed to leave the IR alone.
+    pub pre_format: String,
     /// Human-readable notes.
     pub notes: Vec<String>,
 }
@@ -76,6 +88,11 @@ pub struct LintOutcome {
 impl LintOutcome {
     pub fn changed(&self, original: &str) -> bool {
         self.output != original
+    }
+
+    /// Did a pass that is *expected* to change the IR run on this file?
+    pub fn has_semantic_rewrite(&self) -> bool {
+        self.casts_removed > 0 || self.chains_to_match > 0
     }
 }
 
@@ -152,6 +169,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         reindented_lines,
         casts_removed,
         chains_to_match,
+        pre_format: rewritten,
         notes,
     })
 }
@@ -219,6 +237,118 @@ fn count_changed_lines(before: &str, after: &str) -> usize {
     let mut n = (0..common).filter(|&i| a[i] != b[i]).count();
     n += a.len().max(b.len()) - common;
     n
+}
+
+// ---------------------------------------------------------------------------
+// `--verify`
+// ---------------------------------------------------------------------------
+
+/// How hard `--verify` insists on IR equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyMode {
+    /// The default. The formatting pass must leave the IR untouched; the two
+    /// semantic passes (identity casts, `if`-chain to `match`) are *allowed*
+    /// to change it, and the report says so, because "the IR differs" is the
+    /// intended outcome of deleting a call or replacing a branch chain.
+    Ir,
+    /// The whole rewrite must be IR-equal to the original. A file with a
+    /// semantic rewrite pending fails this, on purpose: it wants the run-diff
+    /// verification of docs/dev/refactor-verification.md §5, not a write.
+    Strict,
+}
+
+/// The verdict of a successful verification.
+pub enum VerifyVerdict {
+    /// Nothing to prove: the lint made no change to this file.
+    Unchanged,
+    /// The whole rewrite is IR-equal to the original. This is proof.
+    Equal,
+    /// The formatting pass was proven IR-equal, and the semantic passes
+    /// changed the IR as designed. Not proof of behavior preservation — the
+    /// caller should say so and, if it needs proof, run a run-diff.
+    SemanticChange {
+        /// The first difference between the original and the final text.
+        diff: crate::ir_equiv::IrDiff,
+        casts_removed: usize,
+        chains_to_match: usize,
+    },
+}
+
+/// A verification that could not be completed, or that failed.
+pub struct VerifyFailure {
+    pub message: String,
+    pub diff: Option<crate::ir_equiv::IrDiff>,
+}
+
+impl VerifyFailure {
+    fn msg(message: impl Into<String>) -> Self {
+        VerifyFailure {
+            message: message.into(),
+            diff: None,
+        }
+    }
+}
+
+/// Prove (or refuse) a lint rewrite by comparing compiled IR.
+///
+/// (`VerifyFailure` carries a diff report, so it is large by nature; it is
+/// produced once per file and never on a hot path.)
+///
+/// The caller must not write the file when this returns `Err`. See
+/// [`VerifyMode`] for what each mode demands and
+/// docs/dev/refactor-verification.md §7 for why this exists.
+#[allow(clippy::result_large_err)]
+pub fn verify_rewrite(
+    source: &str,
+    outcome: &LintOutcome,
+    mode: VerifyMode,
+    opts: &LintOptions,
+) -> Result<VerifyVerdict, VerifyFailure> {
+    use crate::ir_equiv::sources_equivalent;
+
+    if !outcome.changed(source) {
+        return Ok(VerifyVerdict::Unchanged);
+    }
+    let origin = opts.origin.as_deref();
+    let whole = sources_equivalent(source, &outcome.output, &opts.include_dirs, origin)
+        .map_err(VerifyFailure::msg)?;
+    let diff = match whole {
+        Ok(()) => return Ok(VerifyVerdict::Equal),
+        Err(diff) => diff,
+    };
+    if mode == VerifyMode::Strict {
+        return Err(VerifyFailure {
+            message: "the rewrite is not IR-equal to the original".to_string(),
+            diff: Some(diff),
+        });
+    }
+    if !outcome.has_semantic_rewrite() {
+        // Formatting alone must never move the IR — this is a linter bug.
+        return Err(VerifyFailure {
+            message: "lint bug: formatting alone changed the IR".to_string(),
+            diff: Some(diff),
+        });
+    }
+    // Semantic passes ran. Prove the part that is supposed to be inert: the
+    // re-indentation applied on top of them.
+    let formatting = sources_equivalent(
+        &outcome.pre_format,
+        &outcome.output,
+        &opts.include_dirs,
+        origin,
+    )
+    .map_err(VerifyFailure::msg)?;
+    if let Err(fmt_diff) = formatting {
+        return Err(VerifyFailure {
+            message: "lint bug: re-indenting the rewritten source changed the IR".to_string(),
+            diff: Some(fmt_diff),
+        });
+    }
+    Ok(VerifyVerdict::SemanticChange {
+        diff,
+        casts_removed: outcome.casts_removed,
+        chains_to_match: outcome.chains_to_match,
+    })
 }
 
 /// Compile `source` and return its entry program's serialized IR, minus the
@@ -321,5 +451,115 @@ mod tests {
             checked += 1;
         }
         assert!(checked > 50, "expected a real corpus, checked {checked}");
+    }
+
+    /// Reindentation must be *provably* semantics-free, over the whole repo
+    /// corpus, using the real equivalence primitive rather than a JSON
+    /// comparison of two serialized programs.
+    ///
+    /// The stimulus matters: every `.ptl` in the repo is already lint-clean,
+    /// so `reindent(src) == src` and comparing those two proves nothing. Each
+    /// file is therefore *mangled* first — three extra spaces on the front of
+    /// every non-empty line — and the reindented mangled source is compared
+    /// against the original. Files containing a multi-line token (raw string,
+    /// JSX text) are skipped, because there the extra spaces would be content
+    /// rather than layout and the mangle itself would change the program.
+    #[test]
+    fn reindent_is_ir_equal_over_repo_corpus() {
+        use crate::ir_equiv::{ir_equivalent, sources_equivalent};
+
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root");
+        let mut files = Vec::new();
+        collect_ptl(repo_root, &mut files);
+        files.sort();
+        let mut checked = 0;
+        let mut mangled_checked = 0;
+        for path in &files {
+            let Ok(src) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let opts = LintOptions {
+                include_dirs: vec![],
+                origin: Some(path.clone()),
+            };
+            // Only files that compile standalone can be compared at all.
+            if compile_ir(&src, &opts).is_err() {
+                continue;
+            }
+            let Ok(formatted) = reindent(&src) else {
+                continue;
+            };
+            match sources_equivalent(&src, &formatted, &[], Some(path)) {
+                Ok(Ok(())) => {}
+                Ok(Err(diff)) => panic!("reindent changed IR for {}:\n{}", path.display(), diff),
+                Err(e) => panic!("reindent broke compilation for {}: {}", path.display(), e),
+            }
+            checked += 1;
+
+            let Some(mangled) = mangle_indentation(&src) else {
+                continue;
+            };
+            let remangled = match reindent(&mangled) {
+                Ok(t) => t,
+                Err(e) => panic!("reindent failed on mangled {}: {}", path.display(), e),
+            };
+            assert_eq!(
+                remangled,
+                formatted,
+                "reindent did not undo the mangle for {}",
+                path.display()
+            );
+            match sources_equivalent(&src, &remangled, &[], Some(path)) {
+                Ok(Ok(())) => {}
+                Ok(Err(diff)) => panic!(
+                    "reindent of mangled source changed IR for {}:\n{}",
+                    path.display(),
+                    diff
+                ),
+                Err(e) => panic!("mangled {} did not compile: {}", path.display(), e),
+            }
+            mangled_checked += 1;
+        }
+        assert!(checked > 150, "expected a real corpus, checked {checked}");
+        assert!(
+            mangled_checked > 150,
+            "expected most of the corpus to be manglable, got {mangled_checked}"
+        );
+
+        // A program really is equivalent to itself, so the walk above can't be
+        // passing by accident of never comparing anything.
+        let src = "let x = 1\nprint(x)\n";
+        let (env, pid) = crate::ir_equiv::compile_for_compare(src, &[], None).expect("compile");
+        let program = env.get_program(pid).expect("program");
+        assert!(ir_equivalent(program, program).is_ok());
+    }
+
+    /// Add three spaces to the front of every non-empty line. Returns `None`
+    /// when the file has a token spanning more than one line (a raw string or
+    /// JSX text), where leading whitespace is content rather than layout and
+    /// the mangle itself would change the program.
+    fn mangle_indentation(src: &str) -> Option<String> {
+        let mut lexer = crate::lexer::Lexer::new(src);
+        lexer.tokenize().ok()?;
+        let multiline = lexer.tokens_with_spans().any(|(token, span)| {
+            !matches!(
+                token,
+                crate::lexer::Token::Newline | crate::lexer::Token::Eof
+            ) && span.end.line > span.start.line
+        });
+        if multiline {
+            return None;
+        }
+        let mut out = String::with_capacity(src.len() + src.lines().count() * 3);
+        for line in src.lines() {
+            if !line.trim().is_empty() {
+                out.push_str("   ");
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        Some(out)
     }
 }

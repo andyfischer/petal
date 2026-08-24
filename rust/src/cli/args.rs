@@ -62,6 +62,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
         }
         "show-ir" => parse_show_ir_args(&args[1..]),
+        "ir-equal" => parse_ir_equal_args(&args[1..]),
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
@@ -293,6 +294,7 @@ fn parse_lsp_args(args: &[String]) -> CliArgs {
 fn parse_lint_args(args: &[String]) -> CliArgs {
     let mut fix = false;
     let mut check = false;
+    let mut verify: Option<crate::lint::VerifyMode> = None;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -300,6 +302,15 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
         match args[i].as_str() {
             "--fix" => fix = true,
             "--check" => check = true,
+            "--verify" | "--verify=ir" => verify = Some(crate::lint::VerifyMode::Ir),
+            "--verify=strict" => verify = Some(crate::lint::VerifyMode::Strict),
+            other if other.starts_with("--verify=") => {
+                eprintln!(
+                    "Unknown --verify mode '{}' (expected 'ir' or 'strict')",
+                    &other["--verify=".len()..]
+                );
+                process::exit(1);
+            }
             "-e" => {
                 i += 1;
                 if i >= args.len() {
@@ -321,8 +332,39 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     });
 
     CliArgs {
-        command: Command::Lint { fix, check },
+        command: Command::Lint { fix, check, verify },
         source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `ir-equal [--json] <a.ptl> <b.ptl>` — the two-file IR comparison. The
+/// first path is the original (its spans are what diffs point at), the second
+/// the rewritten side.
+fn parse_ir_equal_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal ir-equal [--json] <a.ptl> <b.ptl>";
+    let mut json = false;
+    let mut paths: Vec<String> = Vec::new();
+    for arg in args {
+        match arg.as_str() {
+            "--json" => json = true,
+            other if other.starts_with("--") => {
+                eprintln!("Unexpected option '{}'. {}", other, usage);
+                process::exit(1);
+            }
+            other => paths.push(other.to_string()),
+        }
+    }
+    if paths.len() != 2 {
+        eprintln!("ir-equal takes exactly two files. {}", usage);
+        process::exit(1);
+    }
+    CliArgs {
+        command: Command::IrEqual {
+            json,
+            other: paths[1].clone(),
+        },
+        source: SourceInput::File(paths[0].clone()),
         include_dirs: Vec::new(),
     }
 }
@@ -354,6 +396,7 @@ fn parse_lint_fix_args(args: &[String]) -> CliArgs {
         command: Command::Lint {
             fix: true,
             check: false,
+            verify: None,
         },
         source,
         include_dirs: Vec::new(),

@@ -26,6 +26,7 @@ pub mod handle;
 pub mod heap;
 pub mod inspect;
 pub mod ir_display;
+pub mod ir_equiv;
 pub mod ir_serialize;
 pub mod ir_validate;
 pub mod lexer;

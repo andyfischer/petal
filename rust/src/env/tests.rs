@@ -3082,3 +3082,60 @@ mod observation_tests {
         assert!(!observed.get_observations_json(opid, osid).is_empty());
     }
 }
+
+/// `Env::set_seed` — the determinism knob the refactor verifier relies on
+/// (docs/dev/refactor-verification.md §1).
+mod seed_tests {
+    use super::super::*;
+
+    /// Run `source` with `seed` and return everything it printed.
+    fn run_seeded(seed: u64, source: &str) -> Vec<String> {
+        let mut env = Env::new();
+        env.set_seed(seed);
+        let pid = env.load_program(source).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        env.take_output()
+    }
+
+    const DRAWS: &str = "print(random(0, 1))\nprint(random(0, 1))\nprint(random(0, 1))\n";
+
+    #[test]
+    fn same_seed_gives_identical_sequence() {
+        assert_eq!(run_seeded(7, DRAWS), run_seeded(7, DRAWS));
+    }
+
+    #[test]
+    fn different_seeds_diverge() {
+        assert_ne!(run_seeded(7, DRAWS), run_seeded(8, DRAWS));
+    }
+
+    /// Zero is not a legal xorshift state, so it maps to a constant — and must
+    /// still be a *stable* stream, not a fresh clock seed each time.
+    #[test]
+    fn zero_seed_is_stable() {
+        assert_eq!(run_seeded(0, DRAWS), run_seeded(0, DRAWS));
+    }
+
+    /// The seed is set once, not re-applied per frame: three `reset_stack`
+    /// frames draw three *different* numbers, and the whole sequence replays.
+    #[test]
+    fn seed_governs_a_whole_multi_frame_session() {
+        fn session(seed: u64) -> Vec<String> {
+            let mut env = Env::new();
+            env.set_seed(seed);
+            let pid = env.load_program("print(random(0, 1))\n").unwrap();
+            let sid = env.create_stack(pid).unwrap();
+            for _ in 0..3 {
+                env.run(sid).unwrap();
+                env.reset_stack(sid).unwrap();
+            }
+            env.take_output()
+        }
+        let first = session(11);
+        assert_eq!(first.len(), 3);
+        assert_ne!(first[0], first[1], "frames must not repeat the same draw");
+        assert_ne!(first[1], first[2]);
+        assert_eq!(first, session(11));
+    }
+}

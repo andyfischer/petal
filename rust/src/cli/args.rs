@@ -3,7 +3,43 @@
 
 use std::process;
 
-use super::{CliArgs, Command, SourceInput, print_usage};
+use super::{CliArgs, Command, ErrorFormat, SourceInput, print_usage};
+
+/// Parse a `--seed` value: decimal, or hex with a `0x` prefix (the same two
+/// spellings `PETAL_SEED` accepts). Unlike the env var, a bad value here is a
+/// hard error — the user typed it on this command line and meant it.
+fn parse_seed(text: &str) -> u64 {
+    let text = text.trim();
+    let parsed = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => text.parse::<u64>().ok(),
+    };
+    match parsed {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "Invalid --seed value '{}': expected a u64 (decimal or 0x-hex)",
+                text
+            );
+            process::exit(1);
+        }
+    }
+}
+
+/// Parse a `--error-format` value.
+fn parse_error_format(text: &str) -> ErrorFormat {
+    match text {
+        "full" => ErrorFormat::Full,
+        "bare" => ErrorFormat::Bare,
+        other => {
+            eprintln!(
+                "Invalid --error-format '{}': expected 'full' or 'bare'",
+                other
+            );
+            process::exit(1);
+        }
+    }
+}
 
 pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
@@ -57,6 +93,8 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     let mut trace_pending = false;
     let mut observe = false;
     let mut trace_emits = false;
+    let mut seed: Option<u64> = None;
+    let mut error_format = ErrorFormat::Full;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -79,6 +117,22 @@ fn parse_run_args(args: &[String]) -> CliArgs {
                 }
                 record_trace = Some(args[i].clone());
             }
+            "--seed" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected a number after --seed");
+                    process::exit(1);
+                }
+                seed = Some(parse_seed(&args[i]));
+            }
+            "--error-format" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected 'full' or 'bare' after --error-format");
+                    process::exit(1);
+                }
+                error_format = parse_error_format(&args[i]);
+            }
             "-e" => {
                 i += 1;
                 if i >= args.len() {
@@ -95,7 +149,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] <file>");
+        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--seed <n>] [--error-format full|bare] <file>");
         process::exit(1);
     });
 
@@ -111,6 +165,8 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             trace_pending,
             observe,
             trace_emits,
+            seed,
+            error_format,
         },
         source,
         include_dirs: Vec::new(),
@@ -310,6 +366,7 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut strict = false;
     let mut ir = false;
+    let mut error_format = ErrorFormat::Full;
     let mut source: Option<SourceInput> = None;
     let mut i = 0;
 
@@ -318,6 +375,14 @@ fn parse_check_args(args: &[String]) -> CliArgs {
             "--json" => json = true,
             "--strict" => strict = true,
             "--ir" => ir = true,
+            "--error-format" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Expected 'full' or 'bare' after --error-format");
+                    process::exit(1);
+                }
+                error_format = parse_error_format(&args[i]);
+            }
             "-e" => {
                 i += 1;
                 if i >= args.len() {
@@ -334,12 +399,19 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     }
 
     let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal check [--json] [--strict] [--ir] <file>  |  petal check -e <code>");
+        eprintln!(
+            "Usage: petal check [--json] [--strict] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>"
+        );
         process::exit(1);
     });
 
     CliArgs {
-        command: Command::Check { json, strict, ir },
+        command: Command::Check {
+            json,
+            strict,
+            ir,
+            error_format,
+        },
         source,
         include_dirs: Vec::new(),
     }

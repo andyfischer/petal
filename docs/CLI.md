@@ -46,8 +46,8 @@ per-term execution trace.
 ### `run` — Execute a program
 
 ```
-petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--no-opt] [--dup-stats] [--trace-pending] <file.ptl>
-petal run [--json] [--trace] [--record-trace <path>] [--observe] [--no-opt] [--dup-stats] [--trace-pending] -e '<code>'
+petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--no-opt] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] <file.ptl>
+petal run [--json] [--trace] [--record-trace <path>] [--observe] [--no-opt] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] -e '<code>'
 ```
 
 Runs the program and prints any output to stdout. Exits with code 1 on error.
@@ -91,12 +91,32 @@ Flags:
   report to stderr after the run. Environment variable `PETAL_TRACE_PENDING=1`
   also enables it. For the report as the primary output, see
   [`pending-report`](#pending-report--report-live-pending-resources).
+- `--seed <n>` — seed the random-number generator, so `random`, `random_int`
+  and `choose` replay identically across invocations. Decimal or `0x`-hex; 0 is
+  remapped (xorshift has no zero state). Without it the seed comes from the
+  wall clock and two runs of the same program differ.
+
+  The environment variable `PETAL_SEED=<n>` does the same for **every** command
+  and every embedder (`petal-ui`'s headless harness, garden) with no code
+  change; the flag wins when both are set. Embedders can also call
+  `Env::set_seed(n)` before the first run — the seed is applied once and the
+  PRNG then advances naturally across runs, frames and forks, so a whole
+  session replays rather than every frame drawing the same numbers.
+- `--error-format <full|bare>` — how errors are printed on stderr. `full`
+  (the default) is `Error: <message> [line N, column M]` followed by the
+  echoed source line and a caret. `bare` prints only the message text: no
+  `Error:` prefix, no position suffix, no snippet — so two sources that differ
+  only in indentation or blank lines fail *identically*. That is what makes
+  before/after diffing of a mechanical refactor meaningful (see
+  [refactor verification](dev/refactor-verification.md)). Position stripping is
+  the same step the `--json` error object uses for its `message` field.
+  `check` accepts the flag too; `--json` output is unaffected.
 
 ### `check` — Validate without running
 
 ```
-petal check [--json] [--strict] [--ir] <file.ptl>
-petal check [--json] [--strict] -e '<code>'
+petal check [--json] [--strict] [--ir] [--error-format full|bare] <file.ptl>
+petal check [--json] [--strict] [--error-format full|bare] -e '<code>'
 ```
 
 Lex, parse, compile, and lower the program to bytecode but do not execute it.
@@ -108,6 +128,9 @@ a program that aborts on first run.
 Flags:
 
 - `--strict` — see below.
+- `--error-format <full|bare>` — as on
+  [`run`](#run--execute-a-program): `bare` prints just the message, with no
+  position suffix and no caret block.
 - `--ir` — check `<file>` as JSON IR (the output of `show-ir --json`) instead
   of source; use `-` to read from stdin, exactly as
   [`run --ir`](#run--execute-a-program) does. The IR is validated

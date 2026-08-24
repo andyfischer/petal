@@ -34,18 +34,50 @@ pub use effects::{
 // xorshift64* PRNG. State lives per run in `ExecutionContext::rng_state` (seeded by
 // `initial_seed()`), so each run and fork has isolated randomness.
 
+/// Fallback state for an xorshift PRNG, which cannot run from 0.
+pub const FALLBACK_SEED: u64 = 0x9E3779B97F4A7C15;
+
+/// Map a caller-supplied seed onto a usable xorshift state: 0 is not a legal
+/// state, so it becomes [`FALLBACK_SEED`]. Every other seed passes through, so
+/// `--seed N` and `PETAL_SEED=N` name the same stream.
+pub fn normalize_seed(seed: u64) -> u64 {
+    if seed == 0 { FALLBACK_SEED } else { seed }
+}
+
+/// The seed requested by the `PETAL_SEED` environment variable, if any.
+/// Decimal, or hex with a `0x` prefix. An unparseable value is ignored (the
+/// clock seed wins) rather than being an error — this knob is set by wrappers
+/// and CI, and a typo should not take a run down.
+pub fn seed_from_env() -> Option<u64> {
+    let raw = std::env::var("PETAL_SEED").ok()?;
+    let text = raw.trim();
+    let value = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok()?,
+        None => text.parse::<u64>().ok()?,
+    };
+    Some(normalize_seed(value))
+}
+
 /// The seed a fresh [`ExecutionContext`](crate::execution_context::ExecutionContext)
-/// initializes its `rng_state` to.
+/// initializes its `rng_state` to. `PETAL_SEED` overrides it, which is what
+/// makes an embedder (petal-ui's `Headless`, garden) reproducible with no code
+/// change of its own.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn initial_seed() -> u64 {
+    if let Some(seed) = seed_from_env() {
+        return seed;
+    }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0x9E3779B97F4A7C15)
+        .unwrap_or(FALLBACK_SEED)
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn initial_seed() -> u64 {
+    if let Some(seed) = seed_from_env() {
+        return seed;
+    }
     // `SystemTime::now()` traps on `wasm32-unknown-unknown` (no system clock).
     // Use a monotonically-bumped counter mixed with a constant so that repeated
     // process lifetimes still get distinct seeds.

@@ -167,6 +167,24 @@ impl Env {
         flags
     }
 
+    /// Seed the random-number generator of every execution context in this
+    /// env, so `random()` / `random_int()` / `choose()` replay identically.
+    ///
+    /// Apply it *once*, before the first run: the PRNG then advances naturally
+    /// across runs, `reset_stack` frames and forks (a fork copies the state it
+    /// was forked at), which is what makes a whole multi-frame session — not
+    /// just its first frame — reproducible. Re-seeding every frame would
+    /// instead hand every frame the same numbers.
+    ///
+    /// Seed 0 is remapped ([`normalize_seed`](crate::builtins::normalize_seed)),
+    /// since xorshift has no valid zero state.
+    pub fn set_seed(&mut self, seed: u64) {
+        let state = crate::builtins::normalize_seed(seed);
+        for ctx in self.contexts.values_mut() {
+            ctx.rng_state = state;
+        }
+    }
+
     /// Shared access to one execution context.
     fn ctx(&self, ck: ContextKey) -> &ExecutionContext {
         self.contexts.get(&ck).expect("context exists")

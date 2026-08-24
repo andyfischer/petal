@@ -40,6 +40,7 @@ pub(super) fn handle_run(
     trace_pending: bool,
     observe: bool,
     trace_emits: bool,
+    seed: Option<u64>,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -53,6 +54,11 @@ pub(super) fn handle_run(
     // and prints the frame pending report after the run.
     let trace_pending = trace_pending || std::env::var("PETAL_TRACE_PENDING").is_ok();
     let mut env = make_env(include_dirs);
+    // Seed before the first run so the whole session replays; the flag wins
+    // over PETAL_SEED (which `Env::new` already applied).
+    if let Some(seed) = seed {
+        env.set_seed(seed);
+    }
     if no_opt {
         env.set_opt_flags(OptFlags::none());
     }

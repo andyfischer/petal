@@ -36,6 +36,7 @@ for the full, growing set):
 - `lexer.test.ts` / `error-positions.test.ts` / `js-compat.test.ts`
 - `modules.test.ts` — multi-file import cases (`fixtures/modules/*.ptl`), `-I`, IR file table
 - `test-samples.test.ts` — every `examples/console/*.ptl` file runs without error
+- `seed.test.ts` / `error-format.test.ts` — the two determinism knobs (below)
 
 **Helpers** (`ts/test/helpers.ts`):
 - The binary is built once per test session by `ts/test/global-setup.ts`
@@ -63,3 +64,20 @@ npx vitest test/test-samples.test.ts   # Run just the sample tests
 For a quick eyeball-check that prints the first few lines of each example's
 output, run `./ts/bin/test-examples.ts` (add `--full` for full output).
 
+
+### Deterministic runs
+
+Two knobs make a run byte-reproducible, which is what before/after diffing of a
+mechanical refactor needs (see [refactor-verification.md](refactor-verification.md)):
+
+- **`petal run --seed <n>`**, or `PETAL_SEED=<n>` for any command and any
+  embedder, fixes the `random` / `random_int` / `choose` stream. Without one,
+  the seed comes from the wall clock and even an *old-vs-old* diff fails.
+  Embedders call `Env::set_seed(n)` once before the first run; the PRNG then
+  advances naturally across frames and forks.
+- **`petal run --error-format bare`** (also on `check`) prints just the error
+  message — no `[line N, column M]`, no echoed source line or caret — so a
+  re-indenting refactor does not show up as an output diff.
+
+Covered by `ts/test/seed.test.ts`, `ts/test/error-format.test.ts`, and the
+`env::tests::seed_tests` / `cli::tests` Rust unit tests.

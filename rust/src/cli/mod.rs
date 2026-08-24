@@ -12,6 +12,38 @@ use std::process;
 mod args;
 mod handlers;
 
+/// How human-readable (non-`--json`) errors are printed.
+///
+/// `Bare` exists for differential testing: two sources that differ only in
+/// indentation or blank lines must produce byte-identical error output, which
+/// the position suffix and the echoed source line break. See
+/// docs/dev/refactor-verification.md.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ErrorFormat {
+    /// `Error: msg [line N, column M]` plus the caret snippet (the default).
+    #[default]
+    Full,
+    /// Just the message text — no `Error:` prefix, no position, no snippet.
+    Bare,
+}
+
+/// Set by [`execute`] from `--error-format`, read by the `die*` helpers.
+/// A global rather than a parameter because every handler already funnels its
+/// failures through `die`/`die_with`/`die_error`, and threading a mode through
+/// all of them would touch far more code than it explains.
+static BARE_ERRORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn set_error_format(format: ErrorFormat) {
+    BARE_ERRORS.store(
+        format == ErrorFormat::Bare,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn bare_errors() -> bool {
+    BARE_ERRORS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub enum Command {
     Run {
         json: bool,
@@ -34,6 +66,11 @@ pub enum Command {
         /// with their resolved source attribution after the run — the
         /// observation half of direct manipulation (docs/direct-manipulation.md).
         trace_emits: bool,
+        /// Seed the run's PRNG (`--seed N`), so `random()` replays. Overrides
+        /// `PETAL_SEED`; without either, the seed comes from the clock.
+        seed: Option<u64>,
+        /// How errors are printed (`--error-format full|bare`).
+        error_format: ErrorFormat,
     },
     Check {
         json: bool,
@@ -43,6 +80,8 @@ pub enum Command {
         /// Load the input as JSON IR (`show-ir --json` output) instead of
         /// source, then check it lowers — same flag as `run --ir`.
         ir: bool,
+        /// How errors are printed (`--error-format full|bare`).
+        error_format: ErrorFormat,
     },
     Lint {
         fix: bool,
@@ -168,12 +207,12 @@ fn print_usage() {
 Usage: petal <command> [options] <file>
 
 Commands:
-  check [--json] [--strict] [--ir] <file>
+  check [--json] [--strict] [--ir] [--error-format full|bare] <file>
                                  Lex+parse+compile+lower without executing
                                  (exit 0/1)
                                  --ir: check <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
-  run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--trace-pending] <file>
+  run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] <file>
                                  Execute a program
                                  --ir: load <file> as JSON IR (show-ir --json
                                  output) instead of source; use '-' for stdin
@@ -193,6 +232,14 @@ Commands:
                                  produced it and dump values + call sites +
                                  per-argument edit info after the run; --json
                                  emits the structured report
+                                 --seed <n>: seed the PRNG so random() replays
+                                 (decimal or 0x-hex; PETAL_SEED=<n> does the
+                                 same for every command, flag wins)
+                                 --error-format bare: print only the error
+                                 message on stderr, with no [line N, column M]
+                                 suffix and no echoed source line / caret, so
+                                 two sources differing only in layout fail
+                                 identically. Also on 'check'.
   propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+
                [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>
                                  Run with emit tracing, then propose source
@@ -297,10 +344,44 @@ fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> 
             obj["warnings"] = warnings;
         }
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+    } else if bare_errors() {
+        eprintln!("{}", bare_error_text(err));
     } else {
         eprintln!("Error: {}", err);
     }
     process::exit(1);
+}
+
+/// Reduce a rendered error to just its message text: drop the `Caused by:` /
+/// `Stack trace:` sections, drop the echoed source line and caret, and strip
+/// the `[line N, column M]` suffix from every line that has one.
+///
+/// Position stripping reuses [`parse_line_column`], the same function the
+/// `--json` error object uses for its `message` field, so the two views never
+/// drift apart.
+fn bare_error_text(err: &str) -> String {
+    let head = err
+        .split("\nCaused by:")
+        .next()
+        .unwrap_or(err)
+        .split("\nStack trace:")
+        .next()
+        .unwrap_or(err);
+    head.lines()
+        .filter(|line| !is_snippet_line(line))
+        .map(|line| parse_line_column(line).0)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Is this one of the three lines `format_source_snippet` emits (`  |`,
+/// `2 | source`, `  |   ^^^`)? Everything before the gutter bar is a line
+/// number or blanks, which no message line looks like.
+fn is_snippet_line(line: &str) -> bool {
+    match line.split_once('|') {
+        Some((gutter, _)) => gutter.chars().all(|c| c.is_ascii_digit() || c == ' '),
+        None => false,
+    }
 }
 
 /// [`die_with`] for a typed front-end failure ([`crate::error::LoadError`]).
@@ -366,6 +447,10 @@ fn die_error(
 
 /// Print a plain `Error: …` line and exit(1), for commands with no JSON mode.
 fn die_plain(err: &str) -> ! {
+    if bare_errors() {
+        eprintln!("{}", bare_error_text(err));
+        process::exit(1);
+    }
     eprintln!("Error: {}", err);
     process::exit(1);
 }
@@ -398,7 +483,10 @@ pub fn execute(cli: CliArgs) {
             trace_pending,
             observe,
             trace_emits,
+            seed,
+            error_format,
         } => {
+            set_error_format(error_format);
             handlers::handle_run(
                 json,
                 trace,
@@ -410,6 +498,7 @@ pub fn execute(cli: CliArgs) {
                 trace_pending,
                 observe,
                 trace_emits,
+                seed,
                 &source,
                 &source_input,
                 &include_dirs,
@@ -443,7 +532,13 @@ pub fn execute(cli: CliArgs) {
         Command::Explain { json, term } => {
             handlers::handle_explain(json, term, &source, &source_input, &include_dirs);
         }
-        Command::Check { json, strict, ir } => {
+        Command::Check {
+            json,
+            strict,
+            ir,
+            error_format,
+        } => {
+            set_error_format(error_format);
             handlers::handle_check(json, strict, ir, &source, &source_input, &include_dirs);
         }
         Command::Lint { fix, check } => {
@@ -546,4 +641,29 @@ fn parse_position_body(rest: &str) -> Option<(u32, u32)> {
     let close = rest.find(']')?;
     let (l, c) = rest[..close].split_once(", column ")?;
     Some((l.trim().parse().ok()?, c.trim().parse().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_error_drops_position_snippet_and_sections() {
+        let full = "Cannot access field 'foo' on int [line 2, column 7]\n  |\n2 | print(x.foo.bar)\n  |       ^^^^^\nCaused by:\n  x [line 1, column 9]";
+        assert_eq!(bare_error_text(full), "Cannot access field 'foo' on int");
+    }
+
+    #[test]
+    fn bare_error_keeps_every_diagnostic_of_a_multi_error_render() {
+        let full = "Unexpected token: '=' [line 1, column 9]\n  |\n1 | let x = =\n  |         ^\nUnexpected token: ')' [line 3, column 2]";
+        assert_eq!(
+            bare_error_text(full),
+            "Unexpected token: '='\nUnexpected token: ')'"
+        );
+    }
+
+    #[test]
+    fn bare_error_leaves_a_positionless_message_alone() {
+        assert_eq!(bare_error_text("Stack not found"), "Stack not found");
+    }
 }

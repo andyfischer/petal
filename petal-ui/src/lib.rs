@@ -23,6 +23,8 @@
 //!   delivered through the module system as an implicit import.
 //! - [`harness`]: a headless test driver so widget logic is unit-testable
 //!   with no renderer attached.
+//! - [`scenario`]: declarative, replayable input scripts for that driver
+//!   (hand-written or generated from a seed), used by the `petal-ui-run` CLI.
 //!
 //! The standard owns *semantics* (what `key_pressed` means, what a drag is);
 //! the host keeps *policy* (which keys it reserves, when a script ticks,
@@ -42,6 +44,7 @@ pub mod harness;
 pub mod host_data;
 pub mod input;
 pub mod pending;
+pub mod scenario;
 pub mod text;
 
 /// Version of the petal-ui contract, exposed to scripts as `ui_version()`.

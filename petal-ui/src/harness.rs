@@ -55,11 +55,46 @@ impl Headless {
     }
 
     pub fn with_size(source: &str, width: i32, height: i32) -> Result<Self, String> {
+        Self::build(source, None, width, height)
+    }
+
+    /// Load a script from a file at 800×600. Imports resolve relative to the
+    /// file's own directory (the app-beside-its-modules layout every UI
+    /// example uses), which [`new`](Self::new) cannot do — it has only text.
+    pub fn from_file(path: &std::path::Path) -> Result<Self, String> {
+        Self::from_file_with_size(path, 800, 600)
+    }
+
+    /// [`from_file`](Self::from_file) with an explicit drawable size.
+    pub fn from_file_with_size(
+        path: &std::path::Path,
+        width: i32,
+        height: i32,
+    ) -> Result<Self, String> {
+        let source =
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Self::build(&source, Some(path), width, height)
+    }
+
+    fn build(
+        source: &str,
+        origin: Option<&std::path::Path>,
+        width: i32,
+        height: i32,
+    ) -> Result<Self, String> {
         let mut env = Env::new();
         crate::register_all(&mut env);
         input::bind_dimensions(&mut env, width, height);
         input::bind_frame_info(&mut env, 0.0, 0);
-        let program_id = env.load_program(source)?;
+        if let Some(dir) = origin.and_then(|p| p.parent())
+            && !dir.as_os_str().is_empty()
+        {
+            env.add_module_path(dir.to_path_buf());
+        }
+        let program_id = match origin {
+            Some(path) => env.load_program_at(source, path)?,
+            None => env.load_program(source)?,
+        };
         let stack_id = env.create_stack(program_id)?;
         Ok(Self {
             env,

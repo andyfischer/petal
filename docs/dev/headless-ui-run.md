@@ -1,0 +1,155 @@
+# `petal-ui-run` — the headless UI driver
+
+`petal run` cannot run a UI app: it dies at `screen_width()`, because the
+input/draw contract is the host's job. `petal-ui-run` is that host, with no
+renderer attached. It drives [`petal_ui::harness::Headless`] for N frames,
+feeds it a scripted input scenario, and writes one JSON line per frame.
+
+It exists so a UI app's behavior is *comparable* across a refactor: everything
+that would otherwise differ run-to-run has a knob, and the driver pins all of
+them (see [refactor-verification.md](refactor-verification.md) §1–3).
+
+```
+petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
+             [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
+             [--out trace.jsonl] [--error-format full|bare]
+```
+
+Build it with `cd petal-ui && cargo build`; the binary lands at
+`petal-ui/target/debug/petal-ui-run`.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--size WxH` | `800x600` (or the scenario's `size`) | Drawable size bound as `screen_width()`/`screen_height()`. |
+| `--frames N` | `60` (or the scenario's `frames`) | How many frames to run. |
+| `--seed N` | unseeded (wall clock) | `Env::set_seed` before the first frame — pins `random`, `random_int`, `choose`, and Perlin noise. |
+| `--scenario` | none | A scenario file (below) or `monkey:<seed>`. |
+| `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
+| `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. |
+| `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
+
+Imports resolve relative to the app's own directory, so an app that imports a
+sibling module (`examples/games/snake/`-style layouts) runs from any working
+directory.
+
+Exit codes: **0** clean, **1** a runtime error in some frame (its record is
+written first, with `error` set, and the run stops there), **2** a compile or
+usage error (message on stderr, no trace).
+
+## The JSONL record
+
+One object per line, one line per frame, frames numbered from 0:
+
+```json
+{"frame": 12,
+ "commands": [{"op": "rect", "x": 10, "y": 10, "w": 100, "h": 40, "r": 255, "g": 255, "b": 255}],
+ "state": {"score": 3, "dir": "left"},
+ "prints": ["spawned at 4,7"],
+ "result": null,
+ "error": null}
+```
+
+- `commands` — the frame's `DrawCommand`s, serialized as the draw protocol
+  spells them (`op`-tagged, defaults omitted).
+- `state` — every `state` variable, keyed by module-qualified name
+  (`Headless::state()`).
+- `prints` — what *this frame* printed, drained per frame.
+- `result` — the value the script's top level returned.
+- `error` — `null`, or the runtime error message on the frame that failed.
+
+Object keys are emitted in sorted order, which is what makes two traces
+byte-comparable with `cmp`.
+
+> **`print` still echoes to stdout.** `ExecutionContext::echo` has no
+> `Env`-level setter, so a script's `print` output goes to the process's stdout
+> *as well as* into the record's `prints`. Write the trace to a file
+> (`--out trace.jsonl`) whenever the app prints — a trace on stdout would have
+> the echoed lines interleaved with the JSONL.
+
+## Scenario files
+
+A scenario is a declarative list of input events keyed by frame — no scripting
+language, so a human can read one, hand-edit it, and check it in beside the app
+it drives. `--size`/`--frames` on the command line override the file's.
+
+```json
+{ "size": [1280, 850], "frames": 120,
+  "events": [
+    {"at": 5,  "mouse_move": [640, 400]},
+    {"at": 6,  "mouse_down": 0}, {"at": 7, "mouse_up": 0},
+    {"at": 9,  "click": [100, 200]},
+    {"at": 20, "key": "left"},
+    {"at": 25, "key_down": "a"}, {"at": 30, "key_up": "a"},
+    {"at": 40, "text": "hello"},
+    {"at": 50, "scroll": [0, -3]},
+    {"at": 60, "modifiers": {"shift": true}} ] }
+```
+
+`at: N` delivers the event to frame N — it is fed to the harness before that
+frame runs, so frame N sees its edge. Key names must be canonical
+(`petal_ui::input::KEY_NAMES`: `"left"`, not `"ArrowLeft"`); a non-canonical
+name is a usage error rather than an event that silently drives nothing. Mouse
+buttons are `0`/`1`/`2` or `"left"`/`"right"`/`"middle"`.
+
+Two spellings are shorthand and expand at parse time, matching what
+`Headless::click` / `Headless::key` do:
+
+- `click: [x, y]` → `mouse_move` + `mouse_down` at N, `mouse_up` at N+1.
+- `key: "name"` → `key_down` + `key_up`, both at N.
+
+### Monkey scenarios
+
+`--scenario monkey:<seed>` generates one instead: pseudo-random clicks inside
+the window, keys from the canonical list, and short typed text, spread over the
+frame count. It is a plain xorshift over integers, so the same seed gives the
+same events on every platform, and a failing run is replayable from
+`(app, --seed, monkey seed)` alone.
+
+The generator is `Scenario::monkey(seed, frames, size)` in
+`petal-ui/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
+out in the format above, for a repro bundle.
+
+## Determinism
+
+```sh
+petal-ui-run examples/games/snake/app.ptl --seed 3 --scenario monkey:7 \
+  --frames 120 --size 1280x850 --out /tmp/a.jsonl
+```
+
+Run twice, `cmp /tmp/a.jsonl /tmp/b.jsonl` — identical. What is pinned: the
+per-frame `dt` and clock (the harness's fixed 1/60 s), input (the scenario),
+the RNG (`--seed`), and `host_data` (`--host-data`, which answers nil for any
+question a fixture does not cover). `--error-format bare` removes the last
+position-dependent text from the trace, so a re-indenting refactor cannot
+change an error message.
+
+## host_data fixtures
+
+A JSON array of answers; a `(kind, arg)` with no entry answers nil.
+
+```json
+[ {"kind": "commit", "arg": "abc", "value": {"title": "first", "n": 42}},
+  {"kind": "branches", "arg": "", "value": ["main", "dev"]} ]
+```
+
+JSON numbers keep their int/float distinction (`42` is an `Int`, `0.42` a
+`Float`) — a truncated fraction is unrecoverable downstream.
+
+## Status
+
+All 15 checked-in UI apps under `examples/dashboards`, `examples/games`, and
+`examples/productivity` run clean under this driver, as do
+`sample-apps/diagram-canvas/examples/*` and `sample-apps/side-scroller/game.ptl`.
+
+What does not, and why — each fails as a *runtime* error on the frame that
+first reaches the missing native, so its record carries the name:
+
+| Corpus | Missing |
+|---|---|
+| `sample-apps/petal-fps/examples/*` | `sky_gradient` and the rest of the petal-fps renderer's natives |
+| `examples/custom-integrations/petal-fantasy-nes/carts/*` | `set_backdrop` and the cart palette bindings the fantasy-NES host installs |
+| `sample-apps/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
+
+Those need their own embedder, not this one. An app that calls a native no
+host registered is an `Unknown builtin: <name>` runtime error, not a compile
+error — the driver still writes the frame record, then exits 1.

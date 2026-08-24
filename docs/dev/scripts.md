@@ -39,6 +39,8 @@ See [testing.md](testing.md) for the full testing guide.
 | `./ts/bin/test-examples.ts` | Run every `examples/console/*.ptl` on the bytecode VM at both optimization levels (opts on / `--no-opt`), require byte-identical output between them, and require both to match the frozen `test/example-golden/` corpus. |
 | `./ts/bin/test-examples.ts --full` | Same, but print full output rather than an 8-line preview. |
 | `./ts/bin/gen-example-golden.ts` | Re-baseline the `test/example-golden/` corpus from the current VM output. Run deliberately — a golden update asserts the intended behavior changed. |
+| `cd petal-ui && cargo run --bin petal-ui-run -- <app.ptl> [flags]` | Drive a **UI** app headlessly for N frames and write a JSONL frame trace (draw commands, `state`, prints, errors). Deterministic given `--seed` and `--scenario`, so before/after traces are comparable. See [headless-ui-run.md](headless-ui-run.md). |
+| `petal-ui-run <app.ptl> --scenario monkey:7 --frames 120 --out trace.jsonl` | The same, driven by a generated pseudo-random input scenario — breadth over the UI apps for zero authoring cost. |
 
 ## Benchmarking
 

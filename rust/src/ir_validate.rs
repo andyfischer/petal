@@ -85,7 +85,10 @@ impl Program {
             let mut cur = self.blocks[b].entry;
             while let Some(t) = cur {
                 if t.0 as usize >= n_terms {
-                    return Err(format!("b{}: linked list references t{} out of range", b, t.0));
+                    return Err(format!(
+                        "b{}: linked list references t{} out of range",
+                        b, t.0
+                    ));
                 }
                 if list.len() >= n_terms {
                     return Err(format!("b{}: term linked list does not terminate", b));
@@ -104,7 +107,10 @@ impl Program {
             let list = self.blocks[b].terms.clone();
             for t in &list {
                 if t.0 as usize >= n_terms {
-                    return Err(format!("b{}: terms array references t{} out of range", b, t.0));
+                    return Err(format!(
+                        "b{}: terms array references t{} out of range",
+                        b, t.0
+                    ));
                 }
             }
             self.blocks[b].entry = list.first().copied();
@@ -171,9 +177,9 @@ impl Program {
             let block_id = self.terms[i].block_id;
             let next = counts.entry(block_id).or_insert(0);
             self.terms[i].register = RegisterIndex(*next);
-            *next = next.checked_add(1).ok_or_else(|| {
-                format!("b{}: register assignment overflows u16", block_id.0)
-            })?;
+            *next = next
+                .checked_add(1)
+                .ok_or_else(|| format!("b{}: register assignment overflows u16", block_id.0))?;
         }
         for block in &mut self.blocks {
             block.register_count = counts.get(&block.id).copied().unwrap_or(0);
@@ -232,12 +238,10 @@ impl Program {
             .get(block.0 as usize)
             .map(|b| b.terms.iter().copied().collect())
             .unwrap_or_default();
-        all.iter()
-            .copied()
-            .find(|tid| {
-                let term = &self.terms[tid.0 as usize];
-                !listed.contains(tid) && is_binding_phantom(term) && term.name.as_deref() == Some(name)
-            })
+        all.iter().copied().find(|tid| {
+            let term = &self.terms[tid.0 as usize];
+            !listed.contains(tid) && is_binding_phantom(term) && term.name.as_deref() == Some(name)
+        })
     }
 
     /// Fill in any block `register_count` the wire form omitted (absent
@@ -367,7 +371,10 @@ impl Program {
             }
             for &tid in &block.terms {
                 if tid.0 >= n_terms {
-                    return Err(format!("b{}: terms array references t{} out of range", i, tid.0));
+                    return Err(format!(
+                        "b{}: terms array references t{} out of range",
+                        i, tid.0
+                    ));
                 }
                 if self.terms[tid.0 as usize].block_id != block.id {
                     return Err(format!(
@@ -405,7 +412,8 @@ impl Program {
         // must stay OFF the list (it only names a register — executing it
         // would read nothing).
         for term in &self.terms {
-            if matches!(term.op, TermOp::Copy) && listed_in.contains_key(&term.id)
+            if matches!(term.op, TermOp::Copy)
+                && listed_in.contains_key(&term.id)
                 && term.inputs.len() != 1
             {
                 return Err(format!(
@@ -543,10 +551,16 @@ mod tests {
         let json = serde_json::to_value(&p).unwrap();
         assert_eq!(json["schema"], "0.2");
         assert_eq!(json["blocks"][0]["terms"], serde_json::json!([0, 1, 2, 3]));
-        assert!(json["blocks"][0].get("entry").is_none(), "entry is in-memory only");
+        assert!(
+            json["blocks"][0].get("entry").is_none(),
+            "entry is in-memory only"
+        );
         assert!(json["terms"][0].get("block_next").is_none());
         assert!(json["terms"][0].get("name").is_none(), "null name omitted");
-        assert!(json["terms"][0].get("inputs").is_none(), "empty inputs omitted");
+        assert!(
+            json["terms"][0].get("inputs").is_none(),
+            "empty inputs omitted"
+        );
         assert!(json.get("functions").is_none(), "empty functions omitted");
         assert!(json.get("has_errors").is_none(), "false has_errors omitted");
     }

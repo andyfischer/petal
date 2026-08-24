@@ -270,7 +270,10 @@ mod tests {
         // Legacy v0 object form.
         let verbose = r#"{"start":{"line":1,"column":2,"offset":3},
                           "end":{"line":4,"column":5,"offset":6}}"#;
-        assert_eq!(serde_json::from_str::<SourceSpan>(verbose).unwrap(), span(0));
+        assert_eq!(
+            serde_json::from_str::<SourceSpan>(verbose).unwrap(),
+            span(0)
+        );
         let verbose_file = r#"{"start":{"line":1,"column":2,"offset":3},
                                "end":{"line":4,"column":5,"offset":6},"file":2}"#;
         assert_eq!(

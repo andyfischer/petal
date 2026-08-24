@@ -2547,9 +2547,10 @@ impl PanelView {
                             weight: *weight,
                             italic: *italic,
                             spacing: *spacing,
-                            font: font
-                                .as_deref()
-                                .map_or(garden_render::FontRole::Mono, garden_render::FontRole::from_name),
+                            font: font.as_deref().map_or(
+                                garden_render::FontRole::Mono,
+                                garden_render::FontRole::from_name,
+                            ),
                         },
                     );
                 }

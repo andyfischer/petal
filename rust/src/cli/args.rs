@@ -411,7 +411,9 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
     }
 
     if user_only && !json {
-        eprintln!("--user-only requires --json (text output is already filtered; use --all to see everything)");
+        eprintln!(
+            "--user-only requires --json (text output is already filtered; use --all to see everything)"
+        );
         process::exit(1);
     }
     if user_only && all {

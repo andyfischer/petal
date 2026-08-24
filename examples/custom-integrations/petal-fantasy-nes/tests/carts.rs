@@ -52,7 +52,10 @@ fn crate_dir() -> PathBuf {
 fn carts() -> Vec<(String, PathBuf)> {
     let dir = crate_dir().join("carts");
     let mut found = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("carts/ is missing").flatten() {
+    for entry in std::fs::read_dir(&dir)
+        .expect("carts/ is missing")
+        .flatten()
+    {
         let path = entry.path();
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;

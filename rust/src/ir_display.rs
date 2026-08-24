@@ -126,7 +126,10 @@ impl IrFilter {
 
     /// True when the term's source lives in a non-entry file (prelude/import).
     pub fn term_is_prelude(&self, t: TermId) -> bool {
-        self.term_prelude.get(t.0 as usize).copied().unwrap_or(false)
+        self.term_prelude
+            .get(t.0 as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// True when the block belongs to a non-entry file (prelude/import).
@@ -302,7 +305,10 @@ pub fn display_program_with(program: &Program, hide_noise: bool) -> String {
             &state_names,
             &guard_of,
             &body_fn,
-            block_phantoms.get(&bid).map(|v| v.as_slice()).unwrap_or(&[]),
+            block_phantoms
+                .get(&bid)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
         );
     }
 
@@ -409,7 +415,12 @@ fn render_block(
         String::new()
     };
 
-    writeln!(out, "block{}{} regs={}", block.id.0, label, block.register_count).unwrap();
+    writeln!(
+        out,
+        "block{}{} regs={}",
+        block.id.0, label, block.register_count
+    )
+    .unwrap();
 
     // Bindings header: params/captures/self with their term ids and
     // registers, so the (hidden) phantom binding terms leave no dangling
@@ -530,9 +541,7 @@ fn render_term(
     // binding phantoms are exempt: the block header already names them.
     let fmt_input = |i: &TermId| -> String {
         let input = program.get_term(*i);
-        if hide_noise
-            && let Some(name) = input.name.as_deref()
-        {
+        if hide_noise && let Some(name) = input.name.as_deref() {
             let phantom = is_phantom(program, input);
             let hidden = phantom || filter.term_is_prelude(*i);
             let header_covers =
@@ -564,12 +573,10 @@ fn render_term(
     // Compact source location: `@line:col`, prefixed with the file's display
     // name for non-entry files (`@std:21:1`).
     let loc_str = match program.source_map.get(term.id) {
-        Some(span) if span.start.line > 0 => {
-            match program.source_map.file_name_for_span(span) {
-                Some(file) => format!(" @{}:{}:{}", file, span.start.line, span.start.column),
-                None => format!(" @{}:{}", span.start.line, span.start.column),
-            }
-        }
+        Some(span) if span.start.line > 0 => match program.source_map.file_name_for_span(span) {
+            Some(file) => format!(" @{}:{}:{}", file, span.start.line, span.start.column),
+            None => format!(" @{}:{}", span.start.line, span.start.column),
+        },
         _ => String::new(),
     };
 
@@ -612,9 +619,11 @@ fn state_id(term: &Term, state_names: &HashMap<u64, String>) -> String {
     match term.state_key {
         Some(key) => {
             let key_str = format!("key={:#x}", key.0);
-            match term.name.as_deref().or_else(|| {
-                state_names.get(&key.0).map(|s| s.as_str())
-            }) {
+            match term
+                .name
+                .as_deref()
+                .or_else(|| state_names.get(&key.0).map(|s| s.as_str()))
+            {
                 Some(name) => format!("({}, {})", name, key_str),
                 None => format!("({})", key_str),
             }
@@ -739,7 +748,8 @@ pub fn user_only_json(program: &Program) -> serde_json::Value {
     // phantoms of entry-file blocks stay — visible terms reference them, and
     // they carry the param/register mapping.
     let keep_term = |t: &Term| {
-        !filter.term_is_prelude(t.id) && !(is_phantom(program, t) && t.block_id == program.root_block)
+        !filter.term_is_prelude(t.id)
+            && !(is_phantom(program, t) && t.block_id == program.root_block)
     };
     let kept_terms: std::collections::HashSet<u64> = program
         .terms
@@ -824,7 +834,11 @@ mod tests {
         let text = display_program(&program);
         // No prelude term lines (`; std::x` binding comments) — the only
         // `std::` allowed is the inline annotation on a hidden-input reference.
-        assert!(!text.contains("; std::"), "prelude bindings leaked:\n{}", text);
+        assert!(
+            !text.contains("; std::"),
+            "prelude bindings leaked:\n{}",
+            text
+        );
         assert!(!text.contains("is_empty"), "prelude fn leaked:\n{}", text);
         assert!(
             !text.contains("\"reduce\""),
@@ -904,7 +918,11 @@ mod tests {
         assert!(text.contains("AllocMap{x, y}"), "{}", text);
         assert!(text.contains("GetField(.x)"), "{}", text);
         assert!(text.contains("Constant(1)"), "{}", text);
-        assert!(text.contains("AllocElement(box, props=[width])"), "{}", text);
+        assert!(
+            text.contains("AllocElement(box, props=[width])"),
+            "{}",
+            text
+        );
     }
 
     #[test]

@@ -1720,8 +1720,14 @@ fn widget_style_records_may_be_partial() {
             })
             .collect();
         assert!(rect_colors.contains(&(255, 0, 0)), "button bg override");
-        assert!(rect_colors.contains(&(0, 255, 0)), "scrollbar thumb override");
-        assert!(rect_colors.contains(&(255, 255, 0)), "text field bg override");
+        assert!(
+            rect_colors.contains(&(0, 255, 0)),
+            "scrollbar thumb override"
+        );
+        assert!(
+            rect_colors.contains(&(255, 255, 0)),
+            "text field bg override"
+        );
         assert!(
             rect_colors.contains(&(58, 64, 76)),
             "the scrollbar track it did NOT override still comes from the theme: {rect_colors:?}"
@@ -1777,7 +1783,10 @@ fn aligned_text_takes_a_style_record() {
             })
             .collect();
         assert_eq!(xs.len(), 2, "both aligned forms drew: {cmds:?}");
-        assert!(xs[0] < 100, "right-aligned text sits left of its right edge");
+        assert!(
+            xs[0] < 100,
+            "right-aligned text sits left of its right edge"
+        );
         assert!(
             xs[1] > xs[0],
             "centered text starts further right than right-aligned text at the same edge"
@@ -1822,8 +1831,15 @@ fn draw_text_field_renders_the_stock_box() {
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         assert!(
-            cmds.iter()
-                .any(|c| matches!(c, DrawCommand::Line { r: 60, g: 140, b: 255, .. })),
+            cmds.iter().any(|c| matches!(
+                c,
+                DrawCommand::Line {
+                    r: 60,
+                    g: 140,
+                    b: 255,
+                    ..
+                }
+            )),
             "a focused field draws the accent caret: {cmds:?}"
         );
     });

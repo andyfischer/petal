@@ -5,7 +5,9 @@ use std::time::Instant;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: bench_panel <file.ptl> [frames] [WxH]");
+    let path = args
+        .first()
+        .expect("usage: bench_panel <file.ptl> [frames] [WxH]");
     let frames: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(60);
     let (w, h) = args
         .get(2)

@@ -159,7 +159,14 @@ impl Printer {
         }
     }
 
-    fn assign_like(&mut self, kind: &str, target: &AssignTarget, value: &Expr, stmt: &Stmt, depth: usize) {
+    fn assign_like(
+        &mut self,
+        kind: &str,
+        target: &AssignTarget,
+        value: &Expr,
+        stmt: &Stmt,
+        depth: usize,
+    ) {
         match target {
             AssignTarget::Name(name) => {
                 self.line(depth, &format!("{kind} {name}"), Some(&stmt.span));

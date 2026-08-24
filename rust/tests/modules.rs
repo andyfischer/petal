@@ -622,10 +622,7 @@ fn core_prelude_resolves_inside_a_registered_module() {
 fn core_prelude_resolves_inside_an_explicitly_imported_module() {
     // Same rule for a module the *script* imports, not just a host prelude.
     check_output(
-        &[(
-            "helper",
-            "export fn total(xs)\n  sum(xs)\nend",
-        )],
+        &[("helper", "export fn total(xs)\n  sum(xs)\nend")],
         "import helper\nprint(helper.total([1, 2, 3]))",
         &["6"],
     );

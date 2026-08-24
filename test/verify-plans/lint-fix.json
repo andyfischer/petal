@@ -1,0 +1,40 @@
+{
+  "name": "lint-fix",
+  "mode": "source",
+  "size": "1280x850",
+  "corpus": [
+    "examples",
+    "sample-apps",
+    "test",
+    "garden",
+    "docs/examples",
+    "~/garden",
+    "~/.garden",
+    "~/worlds-fair/ui/ptl"
+  ],
+  "steps": [
+    {
+      "check": "compiles"
+    },
+    {
+      "check": "ir-equal",
+      "stop_on": "pass"
+    },
+    {
+      "check": "control-run",
+      "stop_on": "fail",
+      "frames": 30
+    },
+    {
+      "check": "run-diff",
+      "seeds": [
+        1
+      ],
+      "frames": 30,
+      "scenarios": [
+        "checked-in",
+        "monkey:2"
+      ]
+    }
+  ]
+}

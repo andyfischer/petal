@@ -63,3 +63,24 @@ describe("--error-format bare", () => {
     expect(r.text).toMatch(/error-format/);
   });
 });
+
+const WARNS = "state s = 0\nfn f()\n  s\nend\nprint(f())\ns = 1";
+
+describe("--error-format bare on type-checker warnings", () => {
+  it("keeps the message but drops the position line and the caret block", () => {
+    const full = stderrOf(["check", "-e", WARNS]);
+    const bare = stderrOf(["check", "--error-format", "bare", "-e", WARNS]);
+
+    expect(full.status).toBe(0);
+    expect(bare.status).toBe(0);
+    expect(full.text).toMatch(/ --> \[line 3, column \d+\]/);
+    expect(full.text).toContain("^");
+
+    expect(bare.text).toContain("warning: `s` is a `state` binding written");
+    expect(bare.text).not.toContain("-->");
+    expect(bare.text).not.toContain("^");
+    // The whole point: re-indenting the function body must not move the text.
+    const indented = stderrOf(["check", "--error-format", "bare", "-e", WARNS.replace("\n  s\n", "\n      s\n")]);
+    expect(indented.text).toBe(bare.text);
+  });
+});

@@ -30,3 +30,4 @@ CLAUDE.local.md
 # Agent worktrees (each is its own git repo)
 .claude/worktrees/
 .temp
+verify-runs/

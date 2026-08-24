@@ -1,0 +1,42 @@
+{
+  "name": "compiler",
+  "mode": "binary",
+  "size": "1280x850",
+  "corpus": [
+    "examples",
+    "sample-apps",
+    "test",
+    "garden",
+    "~/garden",
+    "~/.garden",
+    "~/worlds-fair/ui/ptl"
+  ],
+  "steps": [
+    {
+      "check": "compiles"
+    },
+    {
+      "check": "control-run",
+      "stop_on": "fail",
+      "frames": 30
+    },
+    {
+      "check": "run-diff",
+      "seeds": [
+        1,
+        2
+      ],
+      "frames": 30,
+      "scenarios": [
+        "checked-in",
+        "monkey:2"
+      ]
+    },
+    {
+      "check": "golden",
+      "frames": 60,
+      "scenario": "monkey:1",
+      "seed": 1
+    }
+  ]
+}

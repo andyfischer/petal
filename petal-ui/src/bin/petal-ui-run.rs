@@ -138,6 +138,9 @@ fn run() -> Result<i32, String> {
         .unwrap_or(DEFAULT_FRAMES);
 
     let mut ui = Headless::from_file_with_size(&args.app, size.0, size.1)?;
+    // Prints belong in the trace's `prints` field and nowhere else: echoing
+    // them to stdout as well would interleave them with the JSONL.
+    ui.env.set_echo(false);
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
     }

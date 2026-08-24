@@ -185,6 +185,23 @@ impl Env {
         }
     }
 
+    /// Turn stdout echoing of `print` on or off for every execution context in
+    /// this env (see [`ExecutionContext::echo`]).
+    ///
+    /// Prints always accumulate in the context's output buffer; `echo` only
+    /// controls whether they *also* go to the process's real stdout. An
+    /// embedder that reports prints itself — a headless driver writing a
+    /// machine-readable trace, say — wants it off, so its stdout carries
+    /// nothing but the trace.
+    ///
+    /// Like [`set_seed`](Self::set_seed), apply it before the first run;
+    /// contexts created later (forks) inherit the setting from their parent.
+    pub fn set_echo(&mut self, on: bool) {
+        for ctx in self.contexts.values_mut() {
+            ctx.set_echo(on);
+        }
+    }
+
     /// Shared access to one execution context.
     fn ctx(&self, ck: ContextKey) -> &ExecutionContext {
         self.contexts.get(&ck).expect("context exists")

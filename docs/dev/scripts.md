@@ -41,6 +41,8 @@ See [testing.md](testing.md) for the full testing guide.
 | `./ts/bin/gen-example-golden.ts` | Re-baseline the `test/example-golden/` corpus from the current VM output. Run deliberately — a golden update asserts the intended behavior changed. |
 | `cd petal-ui && cargo run --bin petal-ui-run -- <app.ptl> [flags]` | Drive a **UI** app headlessly for N frames and write a JSONL frame trace (draw commands, `state`, prints, errors). Deterministic given `--seed` and `--scenario`, so before/after traces are comparable. See [headless-ui-run.md](headless-ui-run.md). |
 | `petal-ui-run <app.ptl> --scenario monkey:7 --frames 120 --out trace.jsonl` | The same, driven by a generated pseudo-random input scenario — breadth over the UI apps for zero authoring cost. |
+| `./ts/bin/verify.ts --plan <plan> --before <ref\|dir> --after <dir>` | Prove a refactor was behavior-preserving: run a plan of checks (`compiles`, `ir-equal`, `control-run`, `run-diff`, `golden`) over a corpus, one verdict per file, replay bundle per failure. Source A/B; use `--before-bin`/`--after-bin` for binary A/B. Plans in `test/verify-plans/`. See [testing.md](testing.md#verifying-a-refactor). |
+| `./ts/bin/verify.ts --plan compiler ... --update-golden` | Re-baseline `test/ui-golden/index.json` (a sha256 per UI app trace) from the after side. Run deliberately. |
 
 ## Benchmarking
 

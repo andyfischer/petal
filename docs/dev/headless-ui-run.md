@@ -25,7 +25,7 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--seed N` | unseeded (wall clock) | `Env::set_seed` before the first frame — pins `random`, `random_int`, `choose`, and Perlin noise. |
 | `--scenario` | none | A scenario file (below) or `monkey:<seed>`. |
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
-| `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. |
+| `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
 
 Imports resolve relative to the app's own directory, so an app that imports a
@@ -60,11 +60,9 @@ One object per line, one line per frame, frames numbered from 0:
 Object keys are emitted in sorted order, which is what makes two traces
 byte-comparable with `cmp`.
 
-> **`print` still echoes to stdout.** `ExecutionContext::echo` has no
-> `Env`-level setter, so a script's `print` output goes to the process's stdout
-> *as well as* into the record's `prints`. Write the trace to a file
-> (`--out trace.jsonl`) whenever the app prints — a trace on stdout would have
-> the echoed lines interleaved with the JSONL.
+`print` output appears *only* here. The driver calls `Env::set_echo(false)`
+before the first frame, so a script's prints do not also go to the process's
+stdout — a trace written to stdout is nothing but JSONL, even for a chatty app.
 
 ## Scenario files
 

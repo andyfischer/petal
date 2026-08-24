@@ -40,7 +40,7 @@ fn set_error_format(format: ErrorFormat) {
     );
 }
 
-fn bare_errors() -> bool {
+pub(super) fn bare_errors() -> bool {
     BARE_ERRORS.load(std::sync::atomic::Ordering::Relaxed)
 }
 

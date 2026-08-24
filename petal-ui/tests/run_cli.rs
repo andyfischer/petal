@@ -166,6 +166,28 @@ fn prints_are_captured_per_frame() {
     assert_eq!(recs[2]["prints"], serde_json::json!(["tick 3"]));
 }
 
+/// `print` must not echo to the process's stdout: the driver turns echoing off
+/// (`Env::set_echo(false)`), so a printing app's trace on stdout is still
+/// nothing but JSONL — one parseable object per line, no interleaved text.
+#[test]
+fn printing_app_leaves_stdout_clean_jsonl() {
+    let s = Scratch::new("print-echo");
+    let app = s.write("app.ptl", "state n = 0\nn = n + 1\nprint(\"tick {n}\")\n");
+    let (code, stdout, err) = run(&[app.to_str().unwrap(), "--frames", "3"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "one line per frame, got: {stdout:?}");
+    for (i, line) in lines.iter().enumerate() {
+        let rec: serde_json::Value =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("line {i} is not JSON: {e}"));
+        assert_eq!(rec["frame"], i);
+        assert_eq!(
+            rec["prints"],
+            serde_json::json!([format!("tick {}", i + 1)])
+        );
+    }
+}
+
 // ── Determinism ──────────────────────────────────────────────────────────
 
 #[test]

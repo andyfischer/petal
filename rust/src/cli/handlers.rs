@@ -765,10 +765,19 @@ fn warning_position(program: &Program, span: &crate::source_map::SourceSpan) -> 
 /// Render a program's type-checker warnings as human-readable text (for
 /// stderr). Each diagnostic becomes a `warning:` line, a ` --> <position>`
 /// line, and (when a real span + source exist) a caret snippet.
+///
+/// Under `--error-format bare` the position line and the snippet are dropped,
+/// for the same reason they are dropped from errors: they encode where the
+/// diagnostic sits in the file, so a re-indenting refactor would change them
+/// without changing anything about the program. Only the message survives.
 fn render_warnings_text(program: &Program) -> String {
+    let bare = super::bare_errors();
     let mut out = String::new();
     for d in &program.warnings {
         out.push_str(&format!("warning: {}\n", d.message));
+        if bare {
+            continue;
+        }
         out.push_str(&format!(" --> {}\n", warning_position(program, &d.span)));
         let src = program
             .source_map

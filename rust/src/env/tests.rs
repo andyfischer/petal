@@ -3139,3 +3139,33 @@ mod seed_tests {
         assert_eq!(first, session(11));
     }
 }
+
+/// [`Env::set_echo`] — the embedder-level switch for whether `print` also
+/// reaches the process's stdout. A headless driver that reports prints itself
+/// turns it off so its own output channel stays clean.
+mod echo_tests {
+    use super::super::*;
+
+    fn ctx_echo(env: &Env) -> Vec<bool> {
+        env.contexts.values().map(|c| c.echo).collect()
+    }
+
+    #[test]
+    fn set_echo_reaches_every_context_and_output_is_collected_either_way() {
+        let mut env = Env::new();
+        assert!(ctx_echo(&env).iter().all(|&e| e), "echoing by default");
+
+        env.set_echo(false);
+        assert!(ctx_echo(&env).iter().all(|&e| !e), "every context silenced");
+
+        // Silencing the echo does not silence the buffer: take_output still
+        // returns what the program printed.
+        let pid = env.load_program("print(\"hi\")\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), vec!["hi".to_string()]);
+
+        env.set_echo(true);
+        assert!(ctx_echo(&env).iter().all(|&e| e), "and it turns back on");
+    }
+}

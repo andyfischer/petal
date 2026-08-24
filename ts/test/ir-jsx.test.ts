@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showTokensJson,
   tokenKinds,
   showAstJson,
@@ -9,7 +8,6 @@ import {
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("JSX elements", () => {
   describe("lexer", () => {

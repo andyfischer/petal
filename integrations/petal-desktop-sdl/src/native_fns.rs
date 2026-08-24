@@ -167,8 +167,7 @@ fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{DrawCommand, take_draw_commands};
-    use petal_ui::draw::reset_canvas_ids;
+    use petal_ui::draw::{DrawCommand, reset_canvas_ids, take_draw_commands};
 
     #[test]
     fn offscreen_canvas_emits_stream_commands() {

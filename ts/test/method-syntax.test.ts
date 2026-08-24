@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { ensureBuild, runPetal, showIrJson, userTerms, termsByOp } from './helpers';
+import { describe, it, expect } from 'vitest';
+import { runPetal, showIrJson, userTerms, termsByOp } from './helpers';
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe('method syntax', () => {
   it('calls builtin len() on a list', () => {

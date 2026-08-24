@@ -1,40 +1,17 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { execSync } from "child_process";
+import { describe, it, expect } from "vitest";
 import { resolve } from "path";
 import {
-  ensureBuild,
   runPetal,
+  runPetalFile,
+  runPetalFileError,
   checkJson,
   checkJsonAllowFail,
+  checkFileJson,
   showAstJson,
   runWithStderr,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
-
-const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 const FIXTURES = resolve(__dirname, "fixtures/classes");
-
-/// `petal check --json` on a real file, so module visibility is exercised.
-function checkFileJson(path: string): any {
-  return JSON.parse(
-    execSync(`${PETAL} check --json ${path}`, { encoding: "utf-8", timeout: 10000 })
-  );
-}
-
-/// The stderr of a run that is expected to fail.
-function runFileError(path: string): string {
-  try {
-    execSync(`${PETAL} run ${path}`, {
-      encoding: "utf-8",
-      timeout: 10000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    throw new Error(`expected ${path} to fail, but it succeeded`);
-  } catch (e: any) {
-    return (e.stderr || "").trim();
-  }
-}
 
 // Classes & user-declared methods. See docs/language-guide.md (Classes &
 // Methods). A class is a named record type: instances are ordinary records
@@ -476,10 +453,7 @@ describe("classes across modules", () => {
   // on a built-in class and an importer may extend an imported one. The class
   // *name* — constructor and type alike — follows `export`.
   it("dispatches methods declared in an imported module", () => {
-    const out = execSync(`${PETAL} run ${FIXTURES}/main.ptl`, {
-      encoding: "utf-8",
-      timeout: 10000,
-    }).trim();
+    const out = runPetalFile(`${FIXTURES}/main.ptl`);
     expect(out.split("\n")).toEqual(["40", "Circle 12", "4"]);
   });
 
@@ -492,15 +466,12 @@ describe("classes across modules", () => {
   });
 
   it("the private class still runs — the annotation is warning-only", () => {
-    const out = execSync(`${PETAL} run ${FIXTURES}/private-type.ptl`, {
-      encoding: "utf-8",
-      timeout: 10000,
-    }).trim();
+    const out = runPetalFile(`${FIXTURES}/private-type.ptl`);
     expect(out).toBe("7");
   });
 
   it("names both files when two modules declare the same class", () => {
-    const stderr = runFileError(`${FIXTURES}/dup/entry.ptl`);
+    const stderr = runPetalFileError(`${FIXTURES}/dup/entry.ptl`);
     expect(stderr).toMatch(/class `Dup` is already declared/);
     expect(stderr).toMatch(/dup_a\.ptl/);
     expect(stderr).toMatch(/dup_b\.ptl/);
@@ -510,7 +481,7 @@ describe("classes across modules", () => {
   // the entry file's line 1, which is what an unattributed span made it do:
   // the caret pointed at a comment in a different file than the message named.
   it("attributes a module's compile error to that module, not the entry file", () => {
-    const stderr = runFileError(`${FIXTURES}/dup/entry.ptl`);
+    const stderr = runPetalFileError(`${FIXTURES}/dup/entry.ptl`);
     expect(stderr).toContain("dup_b.ptl:");
     expect(stderr).not.toMatch(/Two unrelated modules/);
   });

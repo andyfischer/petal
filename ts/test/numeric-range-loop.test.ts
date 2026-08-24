@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, showIrJson, termsByOp } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, showIrJson, termsByOp } from "./helpers";
 
-beforeAll(ensureBuild);
 
 function ops(ir: any): string[] {
   return ir.terms.map((t: any) =>

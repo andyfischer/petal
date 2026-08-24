@@ -22,6 +22,19 @@ pub enum ConstantValue {
 }
 
 impl ConstantValue {
+    /// Compact literal rendering for display: numbers and booleans bare,
+    /// strings quoted, `nil` for Nil. Shared by the IR display and the
+    /// bytecode disassembler.
+    pub fn display_compact(&self) -> String {
+        match self {
+            ConstantValue::Nil => "nil".to_string(),
+            ConstantValue::Bool(b) => b.to_string(),
+            ConstantValue::Int(n) => n.to_string(),
+            ConstantValue::Float(bits) => f64::from_bits(*bits).to_string(),
+            ConstantValue::String(s) => format!("{:?}", s),
+        }
+    }
+
     pub fn from_f64(f: f64) -> Self {
         ConstantValue::Float(f.to_bits())
     }

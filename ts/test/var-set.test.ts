@@ -8,11 +8,10 @@
 // function and control-flow boundaries, which plain `=` never could. See
 // sections 6c and 6d for cells and the containment invariant.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   checkJson,
   checkJsonAllowFail,
-  ensureBuild,
   runPetal,
   runPetalError,
   showAstJson,
@@ -23,7 +22,6 @@ import {
   showProvenanceJson,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("var / set syntax", () => {
   it("declares and writes a cell", () => {

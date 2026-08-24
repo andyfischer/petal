@@ -19,18 +19,13 @@
 // `Cannot call nil`.
 
 import { describe, it, expect } from "vitest";
-import { execSync } from "child_process";
 import { resolve } from "path";
-import { runPetal, checkText, checkJsonAllowFail } from "./helpers";
+import { runPetal, runPetalFile, checkText, checkJsonAllowFail } from "./helpers";
 
-const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
 const FIXTURES = resolve(__dirname, "fixtures/hoisting");
 
 function runFile(name: string): string {
-  return execSync(`${PETAL} run ${resolve(FIXTURES, name)}`, {
-    encoding: "utf-8",
-    timeout: 10000,
-  }).trim();
+  return runPetalFile(resolve(FIXTURES, name));
 }
 
 describe("forward references between top-level functions", () => {

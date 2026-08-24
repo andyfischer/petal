@@ -27,7 +27,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use petal_ui::harness::Headless;
-use petal_ui::host_data::HostData;
 use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
@@ -59,17 +58,14 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut args = Args {
-        app: PathBuf::new(),
-        size: None,
-        frames: None,
-        seed: None,
-        scenario: None,
-        host_data: None,
-        out: None,
-        bare_errors: false,
-    };
     let mut app: Option<PathBuf> = None;
+    let mut size = None;
+    let mut frames = None;
+    let mut seed = None;
+    let mut scenario = None;
+    let mut host_data = None;
+    let mut out = None;
+    let mut bare_errors = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -81,26 +77,26 @@ fn parse_args() -> Result<Args, String> {
                 println!("{USAGE}");
                 std::process::exit(0);
             }
-            "--size" => args.size = Some(parse_size(&value("--size")?)?),
+            "--size" => size = Some(parse_size(&value("--size")?)?),
             "--frames" => {
-                args.frames = Some(
+                frames = Some(
                     value("--frames")?
                         .parse()
                         .map_err(|_| "--frames needs an integer".to_string())?,
                 )
             }
             "--seed" => {
-                args.seed = Some(
+                seed = Some(
                     value("--seed")?
                         .parse()
                         .map_err(|_| "--seed needs an integer".to_string())?,
                 )
             }
-            "--scenario" => args.scenario = Some(value("--scenario")?),
-            "--host-data" => args.host_data = Some(PathBuf::from(value("--host-data")?)),
-            "--out" => args.out = Some(PathBuf::from(value("--out")?)),
+            "--scenario" => scenario = Some(value("--scenario")?),
+            "--host-data" => host_data = Some(PathBuf::from(value("--host-data")?)),
+            "--out" => out = Some(PathBuf::from(value("--out")?)),
             "--error-format" => {
-                args.bare_errors = match value("--error-format")?.as_str() {
+                bare_errors = match value("--error-format")?.as_str() {
                     "bare" => true,
                     "full" => false,
                     other => return Err(format!("unknown --error-format `{other}`")),
@@ -117,8 +113,16 @@ fn parse_args() -> Result<Args, String> {
             }
         }
     }
-    args.app = app.ok_or_else(|| format!("no script given\n{USAGE}"))?;
-    Ok(args)
+    Ok(Args {
+        app: app.ok_or_else(|| format!("no script given\n{USAGE}"))?,
+        size,
+        frames,
+        seed,
+        scenario,
+        host_data,
+        out,
+        bare_errors,
+    })
 }
 
 fn run() -> Result<i32, String> {
@@ -165,31 +169,27 @@ fn run() -> Result<i32, String> {
         // `print` output is drained per frame, so each record holds only what
         // that frame printed — including the frame that failed.
         let prints = ui.env.take_output();
-        let record = match outcome {
-            Ok(()) => {
-                let result = petal::value::value_to_json(&ui.result, ui.env.heap());
-                serde_json::json!({
-                    "frame": frame,
-                    "commands": ui.commands,
-                    "state": ui.state(),
-                    "prints": prints,
-                    "result": result,
-                    "error": Json::Null,
-                })
-            }
+        // The success and failure records differ only in these three fields.
+        let (commands, result, error) = match outcome {
+            Ok(()) => (
+                serde_json::to_value(&ui.commands).unwrap(),
+                petal::value::value_to_json(&ui.result, ui.env.heap()),
+                Json::Null,
+            ),
             Err(e) => {
                 failed = true;
                 let message = if args.bare_errors { bare_error(&e) } else { e };
-                serde_json::json!({
-                    "frame": frame,
-                    "commands": [],
-                    "state": ui.state(),
-                    "prints": prints,
-                    "result": Json::Null,
-                    "error": message,
-                })
+                (Json::Array(Vec::new()), Json::Null, Json::String(message))
             }
         };
+        let record = serde_json::json!({
+            "frame": frame,
+            "commands": commands,
+            "state": ui.state(),
+            "prints": prints,
+            "result": result,
+            "error": error,
+        });
         writeln!(out, "{record}").map_err(|e| format!("writing trace: {e}"))?;
         if failed {
             break;
@@ -268,57 +268,12 @@ fn strip_position(line: &str) -> &str {
     }
 }
 
-/// Build a `host_data` provider from a fixture file: a JSON array of
-/// `{"kind": ..., "arg": ..., "value": ...}` answers. A `(kind, arg)` with no
-/// entry answers nil, exactly as a host with no data for the question would.
+/// Build a `host_data` provider from a fixture file (see
+/// [`petal_ui::host_data::fixture_provider`] for the format). This wrapper
+/// only reads the file and prefixes errors with its path.
 fn fixture_provider(path: &Path) -> Result<petal_ui::host_data::DataProvider, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let json: Json = serde_json::from_str(&text)
         .map_err(|e| format!("{}: invalid JSON: {e}", path.display()))?;
-    let entries = json
-        .as_array()
-        .ok_or_else(|| format!("{}: fixtures must be a JSON array", path.display()))?;
-    let mut table: Vec<((String, String), HostData)> = Vec::new();
-    for (i, e) in entries.iter().enumerate() {
-        let obj = e
-            .as_object()
-            .ok_or_else(|| format!("{}: fixture {i} must be an object", path.display()))?;
-        let as_key = |v: Option<&Json>| match v {
-            None | Some(Json::Null) => String::new(),
-            Some(Json::String(s)) => s.clone(),
-            Some(other) => other.to_string(),
-        };
-        let kind = as_key(obj.get("kind"));
-        let arg = as_key(obj.get("arg"));
-        let value = json_to_host_data(obj.get("value").unwrap_or(&Json::Null));
-        table.push(((kind, arg), value));
-    }
-    Ok(Box::new(move |kind: &str, arg: &str| {
-        table
-            .iter()
-            .find(|((k, a), _)| k == kind && a == arg)
-            .map(|(_, v)| v.clone())
-            .unwrap_or(HostData::Nil)
-    }))
-}
-
-/// JSON → [`HostData`], keeping the int/float distinction the source made
-/// (a truncated `0.42` is unrecoverable downstream — see `host_data.rs`).
-fn json_to_host_data(v: &Json) -> HostData {
-    match v {
-        Json::Null => HostData::Nil,
-        Json::Bool(b) => HostData::Bool(*b),
-        Json::Number(n) => match n.as_i64() {
-            Some(i) => HostData::Int(i),
-            None => HostData::Float(n.as_f64().unwrap_or(0.0)),
-        },
-        Json::String(s) => HostData::Str(s.clone()),
-        Json::Array(items) => HostData::List(items.iter().map(json_to_host_data).collect()),
-        Json::Object(fields) => HostData::Record(
-            fields
-                .iter()
-                .map(|(k, v)| (k.clone(), json_to_host_data(v)))
-                .collect(),
-        ),
-    }
+    petal_ui::host_data::fixture_provider(&json).map_err(|e| format!("{}: {e}", path.display()))
 }

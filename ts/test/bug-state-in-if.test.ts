@@ -15,10 +15,9 @@
 //   if key_pressed("space") { jumping = true }
 // silently drops the assignment, making conditional state updates impossible.
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, showIrJson, termsByOp } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { showIrJson, termsByOp } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("state assignment inside if block", () => {
   it("top-level state assignment emits StateWrite", () => {

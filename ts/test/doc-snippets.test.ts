@@ -15,11 +15,10 @@
 
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { resolve, join } from "node:path";
+import { petalCapture } from "./helpers";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..");
-const PETAL = resolve(repoRoot, "rust/target/debug/petal");
 
 const EXCLUDED = [/(^|\/)dev\//, /(^|\/)examples\//];
 const SKIP_TAGS = new Set(["ignore", "no-check"]);
@@ -70,23 +69,13 @@ function extractSnippets(relFile: string): Snippet[] {
 }
 
 function petalCheck(code: string): { ok: boolean; err: string } {
-  const r = spawnSync(PETAL, ["check", "-e", code], {
-    encoding: "utf8",
-    timeout: 10000,
-  });
-  return { ok: r.status === 0, err: (r.stderr || "").trim() };
+  const r = petalCapture(["check", "-e", code]);
+  return { ok: r.code === 0, err: r.stderr.trim() };
 }
 
 function petalRun(code: string): { ok: boolean; stdout: string; stderr: string } {
-  const r = spawnSync(PETAL, ["run", "-e", code], {
-    encoding: "utf8",
-    timeout: 10000,
-  });
-  return {
-    ok: r.status === 0,
-    stdout: r.stdout || "",
-    stderr: (r.stderr || "").trim(),
-  };
+  const r = petalCapture(["run", "-e", code]);
+  return { ok: r.code === 0, stdout: r.stdout, stderr: r.stderr.trim() };
 }
 
 /**

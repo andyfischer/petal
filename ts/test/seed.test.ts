@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
-import { resolve } from "path";
-
-const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
+import { PETAL } from "./helpers";
 
 const DRAWS = "print(random(0, 1))\nprint(random(0, 1))\nprint(random(0, 1))";
 

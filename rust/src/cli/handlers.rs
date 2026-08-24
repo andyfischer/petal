@@ -9,13 +9,17 @@ use std::process;
 use crate::backend::OptFlags;
 use crate::dot_graph::program_to_dot;
 use crate::env::Env;
+use crate::stack::StackKey;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
 use crate::program::{Program, ProgramId, Term, TermId};
 use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
 
-use super::{SourceInput, die, die_error, die_plain, die_with, error_json_value};
+use super::{
+    ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain, die_with, error_json_value,
+    print_json,
+};
 
 /// `petal lsp` — serve the language server on stdin/stdout until the client
 /// disconnects. A broken pipe is how an editor normally shuts us down, so that
@@ -28,23 +32,26 @@ pub(super) fn handle_lsp() {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_run(
-    json: bool,
-    trace: bool,
-    record_trace: Option<String>,
-    ir: bool,
-    dup_stats: bool,
-    profile: bool,
-    no_opt: bool,
-    trace_pending: bool,
-    observe: bool,
-    trace_emits: bool,
-    seed: Option<u64>,
+    opts: &RunOpts,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
+    let &RunOpts {
+        json,
+        trace,
+        ir,
+        dup_stats,
+        profile,
+        no_opt,
+        trace_pending,
+        observe,
+        trace_emits,
+        seed,
+        ..
+    } = opts;
+    let record_trace = opts.record_trace.as_deref();
     if trace || std::env::var("PETAL_DEBUG").is_ok() {
         unsafe {
             std::env::set_var("PETAL_TRACE", "1");
@@ -77,28 +84,13 @@ pub(super) fn handle_run(
     if profile {
         env.profile_mut().set_enabled(true);
     }
-    let pid = if ir {
-        // The IR loader is a deserializer, not the front end; it has no phase
-        // of its own, and reported "parse" before the phase channel existed.
-        match env.load_program_ir(source) {
-            Ok(pid) => pid,
-            Err(e) => die(json, &e, "parse"),
-        }
-    } else {
-        match load_into(&mut env, source, source_input) {
-            Ok(pid) => pid,
-            Err(e) => die_error(json, &e, serde_json::Value::Null, source),
-        }
-    };
+    let pid = load_or_die(&mut env, json, ir, source, source_input);
     // Surface type-checker warnings on stderr before running. Warnings go to
     // stderr even in --json mode, so JSON consumers of stdout are unaffected.
     if let Some(program) = env.get_program(pid) {
         eprint_warnings(program);
     }
-    let sid = match env.create_stack(pid) {
-        Ok(sid) => sid,
-        Err(e) => die(json, &e, "compile"),
-    };
+    let sid = stack_or_die(&mut env, json, pid);
     if trace_pending {
         env.enable_pending_trace(sid);
     }
@@ -111,7 +103,7 @@ pub(super) fn handle_run(
     // reported values the ones the run finished (or died) with.
     let observed = observe.then(|| env.get_observations_json(pid, sid));
 
-    if let Some(path) = &record_trace {
+    if let Some(path) = record_trace {
         write_trace_to_file(&env, pid, path);
     }
 
@@ -140,7 +132,7 @@ pub(super) fn handle_run(
     if trace_emits {
         let report = emit_trace_report(&env, pid);
         if json {
-            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            print_json(&report);
         } else {
             print_emit_trace_text(&report);
         }
@@ -155,7 +147,7 @@ pub(super) fn handle_run(
             // the error object rather than being printed beside it.
             let mut obj = error_json_value(&e, "runtime");
             obj["observations"] = serde_json::Value::Object(map);
-            println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+            print_json(&obj);
             process::exit(1);
         }
         (run_result, observed) => {
@@ -179,7 +171,7 @@ pub(super) fn handle_run(
 /// mistaken for a bare name.
 fn print_observations(json: bool, map: &serde_json::Map<String, serde_json::Value>) {
     if json {
-        println!("{}", serde_json::to_string_pretty(map).unwrap());
+        print_json(map);
         return;
     }
     println!();
@@ -211,14 +203,8 @@ pub(super) fn handle_pending_report(
     include_dirs: &[PathBuf],
 ) {
     let mut env = make_env(include_dirs);
-    let pid = match load_into(&mut env, source, source_input) {
-        Ok(pid) => pid,
-        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
-    };
-    let sid = match env.create_stack(pid) {
-        Ok(sid) => sid,
-        Err(e) => die(json, &e, "compile"),
-    };
+    let pid = load_or_die(&mut env, json, false, source, source_input);
+    let sid = stack_or_die(&mut env, json, pid);
     // Record absorptions too, so a caller inspecting the report sees per-frame
     // absorption counts populated.
     env.enable_pending_trace(sid);
@@ -226,7 +212,7 @@ pub(super) fn handle_pending_report(
 
     let report = env.pending_report(pid, sid);
     if json {
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        print_json(&report);
     } else {
         print_pending_report_text(&report);
     }
@@ -420,15 +406,8 @@ fn print_emit_trace_text(report: &serde_json::Value) {
 /// and propose source edits that make each addressed argument evaluate to its
 /// requested value. Several `--arg`/`--to` pairs form a batch resolved
 /// consistently. See docs/direct-manipulation.md for the protocol.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_propose_edit(
-    json: bool,
-    channel: &str,
-    emit: usize,
-    goals: &[(usize, String)],
-    configurable: &[String],
-    pinned: &[String],
-    apply: bool,
+    opts: &ProposeEditOpts,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -438,19 +417,22 @@ pub(super) fn handle_propose_edit(
     };
     use crate::provenance;
 
+    let &ProposeEditOpts {
+        json,
+        emit,
+        apply,
+        ref channel,
+        ref goals,
+        ref configurable,
+        ref pinned,
+    } = opts;
     let mut env = make_env(include_dirs);
     env.enable_emit_trace(true);
     // The per-term trace supplies the values the arithmetic solver inverts
     // against; without it only statically-known siblings can be used.
     env.trace_mut().enable();
-    let pid = match load_into(&mut env, source, source_input) {
-        Ok(pid) => pid,
-        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
-    };
-    let sid = match env.create_stack(pid) {
-        Ok(sid) => sid,
-        Err(e) => die(json, &e, "compile"),
-    };
+    let pid = load_or_die(&mut env, json, false, source, source_input);
+    let sid = stack_or_die(&mut env, json, pid);
     if let Err(e) = env.run(sid) {
         die(json, &e, "runtime");
     }
@@ -542,18 +524,19 @@ pub(super) fn handle_propose_edit(
                 ),
             }
         }
-        let SourceInput::File(path) = source_input else {
-            die(json, "--apply needs a file path, not inline code", "apply");
+        let Some(path) = source_origin(source_input) else {
+            die(
+                json,
+                "--apply needs a file path (not inline code or stdin)",
+                "apply",
+            );
         };
-        if path == "-" {
-            die(json, "--apply needs a file path, not inline code", "apply");
-        }
         let edited = match apply_edits(source, &chosen) {
             Ok(s) => s,
             Err(e) => die(json, &e.message, "apply"),
         };
-        if let Err(e) = fs::write(path, &edited) {
-            die(json, &format!("writing '{}': {}", path, e), "apply");
+        if let Err(e) = fs::write(&path, &edited) {
+            die(json, &format!("writing '{}': {}", path.display(), e), "apply");
         }
         true
     } else {
@@ -596,12 +579,12 @@ pub(super) fn handle_propose_edit(
         });
         // A single goal also reports through the original flat keys, so
         // existing harnesses keep parsing.
-        if let ([(arg_index, to)], [ps]) = (goals, &per_goal[..]) {
+        if let ([(arg_index, to)], [ps]) = (goals.as_slice(), &per_goal[..]) {
             out["arg"] = serde_json::json!(arg_index);
             out["goal"] = serde_json::json!(to);
             out["proposals"] = serde_json::Value::Array(proposals_json(ps));
         }
-        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        print_json(&out);
         return;
     }
 
@@ -660,7 +643,7 @@ fn parse_goal_value(to: &str) -> crate::static_value::StaticValue {
 
 pub(super) fn handle_explain(
     json: bool,
-    term_query: String,
+    term_query: &str,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -676,10 +659,7 @@ pub(super) fn handle_explain(
     let _ = env.run(sid);
 
     let program = env.get_program(pid).expect("program");
-    let target_id = match program.find_term(&term_query) {
-        Some(id) => id,
-        None => term_not_found(program, &term_query),
-    };
+    let target_id = resolve_term(program, term_query);
 
     let entries = env.trace().explain(program, env.heap(), target_id, 16);
 
@@ -689,7 +669,7 @@ pub(super) fn handle_explain(
         if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
             "unnamed".to_string()
         } else {
-            term_query.clone()
+            term_query.to_string()
         }
     });
 
@@ -702,7 +682,7 @@ pub(super) fn handle_explain(
             "complete": entries.complete,
             "truncated": entries.truncated,
         });
-        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        print_json(&out);
     } else {
         println!("Explain t{} ({}):", target_id.0, header_name);
         println!("  Provenance chain:");
@@ -833,63 +813,49 @@ pub(super) fn handle_check(
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below
     // is unchanged: the lowering gate is the point of `check` either way.
-    // The IR loader is not a front-end phase and has no `LoadError`; it reports
-    // exactly as `run --ir` does (a plain string tagged `"parse"`).
-    let loaded = if ir {
-        match env.load_program_ir(source) {
-            Ok(pid) => Ok(pid),
-            Err(e) => die(json, &e, "parse"),
+    let pid = load_or_die(&mut env, json, ir, source, source_input);
+    let program = env.get_program(pid);
+    // `check` answers "will this run?", so it must lower to bytecode as
+    // well as compile: a program can compile cleanly and still fail to
+    // lower, and `check` is what CI and editors call. Use the same flags
+    // a run would, so `check` and `run` agree on what lowers.
+    if let Some(program) = program
+        && let Err(e) = crate::backend::bytecode::lower_with_flags(
+            program,
+            crate::env::Env::opt_flags_from_env(),
+        )
+    {
+        // Warnings are about the source, not the lowering, so report
+        // them even though the program can't run — a sweep over a
+        // corpus must not score a broken file as warning-free.
+        if !json {
+            eprint_warnings(program);
         }
+        die_with(json, &e, "lower", warnings_json(program));
+    }
+    let warning_count = program.map_or(0, |p| p.warnings.len());
+    if json {
+        let warnings = program
+            .map(warnings_json)
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+        let mut obj = serde_json::json!({ "ok": true, "warnings": warnings });
+        if is_empty {
+            obj["warning"] = serde_json::json!("empty program");
+        }
+        println!("{}", obj);
     } else {
-        load_into(&mut env, source, source_input)
-    };
-    match loaded {
-        Ok(pid) => {
-            let program = env.get_program(pid);
-            // `check` answers "will this run?", so it must lower to bytecode as
-            // well as compile: a program can compile cleanly and still fail to
-            // lower, and `check` is what CI and editors call. Use the same flags
-            // a run would, so `check` and `run` agree on what lowers.
-            if let Some(program) = program
-                && let Err(e) = crate::backend::bytecode::lower_with_flags(
-                    program,
-                    crate::env::Env::opt_flags_from_env(),
-                )
-            {
-                // Warnings are about the source, not the lowering, so report
-                // them even though the program can't run — a sweep over a
-                // corpus must not score a broken file as warning-free.
-                if !json {
-                    eprint_warnings(program);
-                }
-                die_with(json, &e, "lower", warnings_json(program));
-            }
-            let warning_count = program.map_or(0, |p| p.warnings.len());
-            if json {
-                let warnings = program
-                    .map(warnings_json)
-                    .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
-                let mut obj = serde_json::json!({ "ok": true, "warnings": warnings });
-                if is_empty {
-                    obj["warning"] = serde_json::json!("empty program");
-                }
-                println!("{}", obj);
-            } else {
-                if let Some(program) = program {
-                    eprint_warnings(program);
-                }
-                if is_empty {
-                    eprintln!("warning: empty program");
-                }
-                // Otherwise silent on success, like most linters
-            }
-            // `--strict` turns warnings into a non-zero exit (for CI); plain
-            // `check` always succeeds. Output above is unchanged either way.
-            if strict && warning_count > 0 {
-                process::exit(1);
-            }
+        if let Some(program) = program {
+            eprint_warnings(program);
         }
-        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
+        if is_empty {
+            eprintln!("warning: empty program");
+        }
+        // Otherwise silent on success, like most linters
+    }
+    // `--strict` turns warnings into a non-zero exit (for CI); plain
+    // `check` always succeeds. Output above is unchanged either way.
+    if strict && warning_count > 0 {
+        process::exit(1);
     }
 }
 
@@ -1107,7 +1073,7 @@ pub(super) fn handle_show_ast(json: bool, source: &str) {
     match crate::cst::parse_source(source, ENTRY_FILE) {
         Ok((_tree, stmts)) => {
             if json {
-                println!("{}", serde_json::to_string_pretty(&stmts).unwrap());
+                print_json(&stmts);
             } else {
                 print!("{}", crate::ast_display::display_stmts(&stmts));
             }
@@ -1129,12 +1095,9 @@ pub(super) fn handle_show_ir(
         if user_only {
             // Filtered debugging view — see `ir_display::user_only_json`.
             // NOT the `run --ir` interchange format.
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&crate::ir_display::user_only_json(&program)).unwrap()
-            );
+            print_json(&crate::ir_display::user_only_json(&program));
         } else {
-            println!("{}", serde_json::to_string_pretty(&program).unwrap());
+            print_json(&program);
         }
     } else {
         print!("{}", display_program_with(&program, !all));
@@ -1156,10 +1119,7 @@ pub(super) fn handle_show_bytecode(
     match lower_with_flags(&program, flags) {
         Ok(bc) => {
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&disasm::render_json(&bc, &program)).unwrap()
-                );
+                print_json(&disasm::render_json(&bc, &program));
             } else {
                 print!("{}", disasm::render_text(&bc, &program));
             }
@@ -1170,14 +1130,14 @@ pub(super) fn handle_show_bytecode(
 
 pub(super) fn handle_show_provenance(
     json: bool,
-    term_query: String,
+    term_query: &str,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     let program = compile_source(source, source_input, include_dirs);
 
-    let root_id = resolve_terms(&program, std::slice::from_ref(&term_query))[0];
+    let root_id = resolve_term(&program, term_query);
 
     let root_term = program.get_term(root_id);
     let prov = program.trace_provenance(root_id);
@@ -1205,7 +1165,7 @@ pub(super) fn handle_show_provenance(
             "frontier": frontier_to_json(&program, &prov.frontier),
             "complete": prov.is_complete(),
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        print_json(&output);
     } else {
         println!(
             "Provenance of t{} ({}):",
@@ -1294,14 +1254,14 @@ fn frontier_to_json(
 
 pub(super) fn handle_show_dependents(
     json: bool,
-    term_query: String,
+    term_query: &str,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     let program = compile_source(source, source_input, include_dirs);
 
-    let root_id = resolve_terms(&program, std::slice::from_ref(&term_query))[0];
+    let root_id = resolve_term(&program, term_query);
 
     let root_term = program.get_term(root_id);
     let deps = program.trace_dependents(root_id);
@@ -1321,7 +1281,7 @@ pub(super) fn handle_show_dependents(
             "dependents": dependents_json,
             "edges": edges_json,
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        print_json(&output);
     } else {
         println!(
             "Dependents of t{} ({}):",
@@ -1400,7 +1360,7 @@ pub(super) fn handle_show_slice(
             "complete": frontier.is_empty(),
             "frontier": frontier_to_json(&program, &frontier),
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        print_json(&output);
     } else {
         println!(
             "Slice for targets: {}",
@@ -1488,6 +1448,38 @@ fn load_into(
     env.load_program_diag(source, source_origin(input).as_deref())
 }
 
+/// Load `source` into `env` — as JSON IR under `--ir`, as Petal source
+/// otherwise — exiting through the JSON-aware error path on failure.
+fn load_or_die(
+    env: &mut Env,
+    json: bool,
+    ir: bool,
+    source: &str,
+    input: &SourceInput,
+) -> ProgramId {
+    if ir {
+        // The IR loader is a deserializer, not the front end; it has no phase
+        // of its own, and reported "parse" before the phase channel existed.
+        match env.load_program_ir(source) {
+            Ok(pid) => pid,
+            Err(e) => die(json, &e, "parse"),
+        }
+    } else {
+        match load_into(env, source, input) {
+            Ok(pid) => pid,
+            Err(e) => die_error(json, &e, serde_json::Value::Null, source),
+        }
+    }
+}
+
+/// Compile `pid`'s program into a runnable stack, exiting on failure.
+fn stack_or_die(env: &mut Env, json: bool, pid: ProgramId) -> StackKey {
+    match env.create_stack(pid) {
+        Ok(sid) => sid,
+        Err(e) => die(json, &e, "compile"),
+    }
+}
+
 /// Print a "not found" error for a `--term` lookup with a did-you-mean hint
 /// listing up to 10 available named terms, then exit.
 fn term_not_found(program: &Program, query: &str) -> ! {
@@ -1505,17 +1497,18 @@ fn term_not_found(program: &Program, query: &str) -> ! {
     process::exit(1);
 }
 
+/// Resolve one `--term` name/id query, exiting with the `term_not_found`
+/// hint when it does not resolve.
+fn resolve_term(program: &Program, query: &str) -> TermId {
+    program
+        .find_term(query)
+        .unwrap_or_else(|| term_not_found(program, query))
+}
+
 /// Resolve `--term` name/id queries to term ids, exiting with a
 /// `term_not_found` hint on the first query that does not resolve.
 fn resolve_terms(program: &Program, queries: &[String]) -> Vec<TermId> {
-    let mut ids = Vec::new();
-    for query in queries {
-        match program.find_term(query) {
-            Some(id) => ids.push(id),
-            None => term_not_found(program, query),
-        }
-    }
-    ids
+    queries.iter().map(|q| resolve_term(program, q)).collect()
 }
 
 /// Render dataflow graph edges to the `[{ "from", "to", "kind" }]` JSON shape

@@ -1,13 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   runPetal,
   runPetalError,
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("function definitions", () => {
   it("creates a FunctionDef for fn declarations", () => {

@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect } from "vitest";
 import { resolve } from "path";
 import {
-  ensureBuild,
   runPetal,
   showIrJsonRaw,
   runIr,
@@ -9,7 +8,6 @@ import {
   runIrError,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 const FIXTURES = resolve(__dirname, "fixtures/ir");
 

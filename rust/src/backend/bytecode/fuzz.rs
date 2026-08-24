@@ -132,11 +132,6 @@ impl Gen {
         Some(matching[i].name.clone())
     }
 
-    /// A random rebindable (non-frozen) int variable, if any.
-    fn pick_mutable_int(&mut self) -> Option<String> {
-        self.pick_mutable_int_var().map(|(name, _)| name)
-    }
-
     /// A random rebindable int variable plus whether it is a `var`. Writes have
     /// to know: `=` on a cell and `set` on a `let` are both hard errors, so
     /// picking the wrong keyword would fail every oracle identically and test

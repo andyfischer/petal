@@ -47,6 +47,8 @@ pub mod stack;
 pub mod static_value;
 pub mod stats;
 pub mod symbol;
+#[cfg(test)]
+mod test_corpus;
 pub mod trace;
 pub mod transfer_state;
 pub mod trivia;

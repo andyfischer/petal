@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   userTerms,
   showProvenanceJson,
@@ -10,7 +9,6 @@ import {
   dataflowText,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 /** Local alias kept so the existing assertions below read unchanged. */
 const showProvenance = showProvenanceJson;

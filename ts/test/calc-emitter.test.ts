@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runIr, runIrError, runPetal } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runIr, runIrError, runPetal } from "./helpers";
 import { compileCalcToIr, compileCalcToIrJson } from "../tools/calc-to-ir";
 
-beforeAll(ensureBuild);
 
 // The reference external emitter (M4 of idea-34b8348d): a toy "calc" language
 // that compiles directly to Petal IR JSON and runs via `petal run --ir`. These

@@ -1,12 +1,10 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   runPetal,
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("per-iteration loop state", () => {
   describe("for loops", () => {

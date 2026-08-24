@@ -1,12 +1,10 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showTokensJson,
   showAstJson,
   runPetal,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("pipe operator |>", () => {
   it("lexes |> as a Pipe token", () => {

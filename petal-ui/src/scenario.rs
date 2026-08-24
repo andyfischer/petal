@@ -106,11 +106,6 @@ impl Scenario {
         }
     }
 
-    /// The last frame any event targets, or 0 for an empty scenario.
-    pub fn last_frame(&self) -> usize {
-        self.events.iter().map(|e| e.at).max().unwrap_or(0)
-    }
-
     /// A deterministic pseudo-random scenario: clicks inside a `size` window,
     /// keys drawn from [`input::KEY_NAMES`], and short typed text, spread over
     /// `frames` frames. Same seed → same events, on any platform (a plain

@@ -1,13 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   userTerms,
   termByName,
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("constants", () => {
   it("interns integer constants", () => {

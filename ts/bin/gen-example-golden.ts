@@ -10,41 +10,34 @@
 // bytecode diff; investigate the diff first.
 //
 // Usage:  ./ts/bin/gen-example-golden.ts
-import { spawnSync } from 'node:child_process';
-import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const examplesDir = join(repoRoot, 'examples', 'console');
-const goldenDir = join(repoRoot, 'test', 'example-golden');
-const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
-const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
+import {
+    buildPetal, examplesDir, goldenDir, goldenPath, listExamples, runExample,
+} from './example-corpus.ts';
 
-const build = spawnSync(
-    'cargo',
-    ['build', '--quiet', '--manifest-path', cargoToml],
-    { stdio: 'inherit' },
-);
-if (build.status !== 0) process.exit(build.status ?? 1);
+buildPetal();
 
 mkdirSync(goldenDir, { recursive: true });
 
-const files = readdirSync(examplesDir).filter(f => f.endsWith('.ptl')).sort();
+const files = listExamples();
 let count = 0;
 for (const file of files) {
-    const filePath = join(examplesDir, file);
-    const result = spawnSync(petal, [filePath], {
-        encoding: 'utf-8',
-    });
+    const result = runExample(join(examplesDir, file));
+    if (result.status === null) {
+        // Killed by a signal (e.g. a timeout): freezing `null` would make every
+        // later signal death "match". Fail the regen instead.
+        console.error(`petal died on a signal for ${file}; refusing to freeze a null status`);
+        process.exit(1);
+    }
     const golden = {
         example: file,
         status: result.status,
-        stdout: result.stdout ?? '',
-        stderr: result.stderr ?? '',
+        stdout: result.stdout,
+        stderr: result.stderr,
     };
-    const out = join(goldenDir, file.replace(/\.ptl$/, '.json'));
-    writeFileSync(out, JSON.stringify(golden, null, 2) + '\n');
+    writeFileSync(goldenPath(file), JSON.stringify(golden, null, 2) + '\n');
     count++;
 }
 console.log(`Wrote ${count} golden captures to ${goldenDir}`);

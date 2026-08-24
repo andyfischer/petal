@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 // Pins behavior for edge cases in loop carries. The break-mid-body cases
 // verify that the shared carry-slot register allocation keeps the slot in

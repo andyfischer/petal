@@ -17,7 +17,7 @@ use crate::program::{
 /// register (builtin bindings, params, captures, self-refs, match-pattern
 /// variables)? Structural check only; "not listed in any block's `terms`
 /// array" is enforced separately by `validate`.
-fn is_binding_phantom(term: &Term) -> bool {
+pub(crate) fn is_binding_phantom(term: &Term) -> bool {
     matches!(term.op, TermOp::Copy) && term.inputs.is_empty() && term.name.is_some()
 }
 

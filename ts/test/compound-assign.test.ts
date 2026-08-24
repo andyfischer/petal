@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, showAstJson } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, showAstJson } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("compound assignment operators", () => {
   it("handles += on variables", () => {

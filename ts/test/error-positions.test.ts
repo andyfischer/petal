@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetalError } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetalError } from "./helpers";
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe("error positions", () => {
   it("reports line and column for division by zero", () => {

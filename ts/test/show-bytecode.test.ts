@@ -4,10 +4,9 @@
 // disassembled string (`text` — the shape a human reads). These tests pin the
 // row shape and the text-form spacing conventions documented in docs/CLI.md.
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, showBytecodeJson, showBytecodeText } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { showBytecodeJson, showBytecodeText } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 const SNIPPET = "let xs = map([1, 2, 3], fn(x) x * 2 end)\nprint(xs)";
 

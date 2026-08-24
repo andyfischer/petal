@@ -2,9 +2,8 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ensureBuild, petalCapture } from "./helpers";
+import { petalCapture } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 // `petal ir-equal` and `petal lint --verify` — the refactor-verification
 // primitives from docs/dev/refactor-verification.md (§5 ir-equal, §7

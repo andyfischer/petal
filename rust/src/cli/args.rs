@@ -3,7 +3,10 @@
 
 use std::process;
 
-use super::{CliArgs, Command, ErrorFormat, SourceInput, print_usage};
+use super::{CliArgs, Command, ErrorFormat, ProposeEditOpts, RunOpts, SourceInput, print_usage};
+
+/// The "no source given" message shared by the show/query commands.
+const MISSING_SOURCE: &str = "Expected a file path or -e <code>";
 
 /// Parse a `--seed` value: decimal, or hex with a `0x` prefix (the same two
 /// spellings `PETAL_SEED` accepts). Unlike the env var, a bad value here is a
@@ -41,6 +44,45 @@ fn parse_error_format(text: &str) -> ErrorFormat {
     }
 }
 
+/// Consume and return the value following a flag, exiting with `expected`
+/// when the command line ends first.
+fn take<'a>(args: &'a [String], i: &mut usize, expected: &str) -> &'a str {
+    *i += 1;
+    if *i >= args.len() {
+        eprintln!("{expected}");
+        process::exit(1);
+    }
+    &args[*i]
+}
+
+/// The argument loop shared by every source-taking command: `-e <code>`
+/// becomes an inline source, and every other token is offered to `on_flag`,
+/// which returns whether it recognized `args[*i]` (advancing `i` past a
+/// flag's value via [`take`]). An unrecognized token falls through as a file
+/// path — the historical contract of every per-command loop this replaced.
+/// Exits with `usage` when no source was given.
+fn parse_source_args(
+    args: &[String],
+    usage: &str,
+    mut on_flag: impl FnMut(&[String], &mut usize) -> bool,
+) -> SourceInput {
+    let mut source: Option<SourceInput> = None;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "-e" {
+            let code = take(args, &mut i, "Expected code after -e");
+            source = Some(SourceInput::Inline(code.to_string()));
+        } else if !on_flag(args, &mut i) {
+            source = Some(SourceInput::File(args[i].clone()));
+        }
+        i += 1;
+    }
+    source.unwrap_or_else(|| {
+        eprintln!("{usage}");
+        process::exit(1);
+    })
+}
+
 pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
 
@@ -66,13 +108,15 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
-        "show-provenance" => parse_provenance_args(&args[1..]),
+        "show-provenance" => parse_term_query_args(&args[1..], |json, term| {
+            Command::ShowProvenance { json, term }
+        }),
         "propose-edit" => parse_propose_edit_args(&args[1..]),
         "show-dependents" => parse_term_query_args(&args[1..], |json, term| {
             Command::ShowDependents { json, term }
         }),
         "show-slice" => parse_slice_args(&args[1..]),
-        "show-graph" => parse_show_with_all(&args[1..], |_json, all| Command::ShowGraph { all }),
+        "show-graph" => parse_show_graph_args(&args[1..]),
         "pending-report" => parse_show_args(&args[1..], |json| Command::PendingReport { json }),
         _ => {
             // Shorthand: `petal <file> [flags]` runs the file (same as
@@ -84,91 +128,38 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    let mut json = false;
-    let mut trace = false;
-    let mut record_trace: Option<String> = None;
-    let mut ir = false;
-    let mut dup_stats = false;
-    let mut profile = false;
-    let mut no_opt = false;
-    let mut trace_pending = false;
-    let mut observe = false;
-    let mut trace_emits = false;
-    let mut seed: Option<u64> = None;
-    let mut error_format = ErrorFormat::Full;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--json" => json = true,
-            "--trace" => trace = true,
-            "--observe" => observe = true,
-            "--trace-emits" => trace_emits = true,
-            "--ir" => ir = true,
-            "--dup-stats" => dup_stats = true,
-            "--profile" => profile = true,
-            "--no-opt" => no_opt = true,
-            "--trace-pending" => trace_pending = true,
+    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--seed <n>] [--error-format full|bare] <file>";
+    let mut o = RunOpts::default();
+    let source = parse_source_args(args, usage, |args, i| {
+        match args[*i].as_str() {
+            "--json" => o.json = true,
+            "--trace" => o.trace = true,
+            "--observe" => o.observe = true,
+            "--trace-emits" => o.trace_emits = true,
+            "--ir" => o.ir = true,
+            "--dup-stats" => o.dup_stats = true,
+            "--profile" => o.profile = true,
+            "--no-opt" => o.no_opt = true,
+            "--trace-pending" => o.trace_pending = true,
             "--record-trace" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected path after --record-trace");
-                    process::exit(1);
-                }
-                record_trace = Some(args[i].clone());
+                o.record_trace =
+                    Some(take(args, i, "Expected path after --record-trace").to_string())
             }
-            "--seed" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected a number after --seed");
-                    process::exit(1);
-                }
-                seed = Some(parse_seed(&args[i]));
-            }
+            "--seed" => o.seed = Some(parse_seed(take(args, i, "Expected a number after --seed"))),
             "--error-format" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected 'full' or 'bare' after --error-format");
-                    process::exit(1);
-                }
-                error_format = parse_error_format(&args[i]);
+                o.error_format = parse_error_format(take(
+                    args,
+                    i,
+                    "Expected 'full' or 'bare' after --error-format",
+                ))
             }
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Usage: petal run -e <code>");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            _ => return false,
         }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--seed <n>] [--error-format full|bare] <file>");
-        process::exit(1);
+        true
     });
 
     CliArgs {
-        command: Command::Run {
-            json,
-            trace,
-            record_trace,
-            ir,
-            dup_stats,
-            profile,
-            no_opt,
-            trace_pending,
-            observe,
-            trace_emits,
-            seed,
-            error_format,
-        },
+        command: Command::Run(o),
         source,
         include_dirs: Vec::new(),
     }
@@ -183,6 +174,7 @@ fn parse_run_args(args: &[String]) -> CliArgs {
 fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+ \
                  [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>";
+    let value_after = |flag: &str| format!("Expected a value after {flag}. {usage}");
     let mut json = false;
     let mut apply = false;
     let mut channel: Option<String> = None;
@@ -191,25 +183,16 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     let mut pending_arg: Option<usize> = None;
     let mut configurable: Vec<String> = Vec::new();
     let mut pinned: Vec<String> = Vec::new();
-    let mut source: Option<SourceInput> = None;
 
-    fn take<'a>(args: &'a [String], i: &mut usize, flag: &str, usage: &str) -> &'a str {
-        *i += 1;
-        if *i >= args.len() {
-            eprintln!("Expected a value after {flag}. {usage}");
-            process::exit(1);
-        }
-        &args[*i]
-    }
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
+    let source = parse_source_args(args, usage, |args, i| {
+        match args[*i].as_str() {
             "--json" => json = true,
             "--apply" => apply = true,
-            "--channel" => channel = Some(take(args, &mut i, "--channel", usage).to_string()),
+            "--channel" => {
+                channel = Some(take(args, i, &value_after("--channel")).to_string());
+            }
             "--emit" => {
-                emit = take(args, &mut i, "--emit", usage).parse().ok();
+                emit = take(args, i, &value_after("--emit")).parse().ok();
                 if emit.is_none() {
                     eprintln!("--emit takes a 0-based index. {usage}");
                     process::exit(1);
@@ -220,7 +203,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                     eprintln!("--arg given twice without a --to between them. {usage}");
                     process::exit(1);
                 }
-                pending_arg = take(args, &mut i, "--arg", usage).parse().ok();
+                pending_arg = take(args, i, &value_after("--arg")).parse().ok();
                 if pending_arg.is_none() {
                     eprintln!("--arg takes a 0-based index. {usage}");
                     process::exit(1);
@@ -231,28 +214,22 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                     eprintln!("--to needs an --arg before it. {usage}");
                     process::exit(1);
                 };
-                goals.push((arg_index, take(args, &mut i, "--to", usage).to_string()));
+                goals.push((arg_index, take(args, i, &value_after("--to")).to_string()));
             }
             "--configurable" => {
-                configurable.push(take(args, &mut i, "--configurable", usage).to_string())
+                configurable.push(take(args, i, &value_after("--configurable")).to_string())
             }
-            "--static" => pinned.push(take(args, &mut i, "--static", usage).to_string()),
-            "-e" => {
-                let code = take(args, &mut i, "-e", usage).to_string();
-                source = Some(SourceInput::Inline(code));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            "--static" => pinned.push(take(args, i, &value_after("--static")).to_string()),
+            _ => return false,
         }
-        i += 1;
-    }
+        true
+    });
 
     if pending_arg.is_some() {
         eprintln!("--arg without a matching --to. {usage}");
         process::exit(1);
     }
-    let (Some(channel), Some(emit), Some(source)) = (channel, emit, source) else {
+    let (Some(channel), Some(emit)) = (channel, emit) else {
         eprintln!("{usage}");
         process::exit(1);
     };
@@ -262,7 +239,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     }
 
     CliArgs {
-        command: Command::ProposeEdit {
+        command: Command::ProposeEdit(ProposeEditOpts {
             json,
             channel,
             emit,
@@ -270,7 +247,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
             configurable,
             pinned,
             apply,
-        },
+        }),
         source,
         include_dirs: Vec::new(),
     }
@@ -295,41 +272,27 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     let mut fix = false;
     let mut check = false;
     let mut verify: Option<crate::lint::VerifyMode> = None;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--fix" => fix = true,
-            "--check" => check = true,
-            "--verify" | "--verify=ir" => verify = Some(crate::lint::VerifyMode::Ir),
-            "--verify=strict" => verify = Some(crate::lint::VerifyMode::Strict),
-            other if other.starts_with("--verify=") => {
-                eprintln!(
-                    "Unknown --verify mode '{}' (expected 'ir' or 'strict')",
-                    &other["--verify=".len()..]
-                );
-                process::exit(1);
-            }
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
+    let source = parse_source_args(
+        args,
+        "Usage: petal lint [--fix | --check] <file>  |  petal lint -e <code>",
+        |args, i| {
+            match args[*i].as_str() {
+                "--fix" => fix = true,
+                "--check" => check = true,
+                "--verify" | "--verify=ir" => verify = Some(crate::lint::VerifyMode::Ir),
+                "--verify=strict" => verify = Some(crate::lint::VerifyMode::Strict),
+                other if other.starts_with("--verify=") => {
+                    eprintln!(
+                        "Unknown --verify mode '{}' (expected 'ir' or 'strict')",
+                        &other["--verify=".len()..]
+                    );
                     process::exit(1);
                 }
-                source = Some(SourceInput::Inline(args[i].clone()));
+                _ => return false,
             }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
-        }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Usage: petal lint [--fix | --check] <file>  |  petal lint -e <code>");
-        process::exit(1);
-    });
+            true
+        },
+    );
 
     CliArgs {
         command: Command::Lint { fix, check, verify },
@@ -410,43 +373,26 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     let mut strict = false;
     let mut ir = false;
     let mut error_format = ErrorFormat::Full;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--json" => json = true,
-            "--strict" => strict = true,
-            "--ir" => ir = true,
-            "--error-format" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected 'full' or 'bare' after --error-format");
-                    process::exit(1);
+    let source = parse_source_args(
+        args,
+        "Usage: petal check [--json] [--strict] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>",
+        |args, i| {
+            match args[*i].as_str() {
+                "--json" => json = true,
+                "--strict" => strict = true,
+                "--ir" => ir = true,
+                "--error-format" => {
+                    error_format = parse_error_format(take(
+                        args,
+                        i,
+                        "Expected 'full' or 'bare' after --error-format",
+                    ))
                 }
-                error_format = parse_error_format(&args[i]);
+                _ => return false,
             }
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
-        }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!(
-            "Usage: petal check [--json] [--strict] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>"
-        );
-        process::exit(1);
-    });
+            true
+        },
+    );
 
     CliArgs {
         command: Command::Check {
@@ -462,30 +408,12 @@ fn parse_check_args(args: &[String]) -> CliArgs {
 
 fn parse_show_args(args: &[String], make_cmd: impl Fn(bool) -> Command) -> CliArgs {
     let mut json = false;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--json" => json = true,
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| match args[*i].as_str() {
+        "--json" => {
+            json = true;
+            true
         }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Expected a file path or -e <code>");
-        process::exit(1);
+        _ => false,
     });
 
     CliArgs {
@@ -502,28 +430,15 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut all = false;
     let mut user_only = false;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
+        match args[*i].as_str() {
             "--json" => json = true,
             "--all" => all = true,
             "--user-only" => user_only = true,
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            _ => return false,
         }
-        i += 1;
-    }
+        true
+    });
 
     if user_only && !json {
         eprintln!(
@@ -536,11 +451,6 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
         process::exit(1);
     }
 
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Expected a file path or -e <code>");
-        process::exit(1);
-    });
-
     CliArgs {
         command: Command::ShowIr {
             json,
@@ -552,85 +462,46 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// Like `parse_show_args` but also accepts `--all` to include phantom builtin
-/// terms in the output. Used by `show-graph`.
-fn parse_show_with_all(args: &[String], make_cmd: impl Fn(bool, bool) -> Command) -> CliArgs {
-    let mut json = false;
+/// Parse args for `show-graph`: `--all` includes phantom builtin terms.
+fn parse_show_graph_args(args: &[String]) -> CliArgs {
     let mut all = false;
-    let mut source: Option<SourceInput> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--json" => json = true,
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
+        match args[*i].as_str() {
             "--all" => all = true,
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
+            // Previously parsed and silently discarded; saying so beats
+            // emitting DOT to a caller that asked for JSON.
+            "--json" => {
+                eprintln!("show-graph has no --json output (it emits DOT)");
+                process::exit(1);
             }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            _ => return false,
         }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Expected a file path or -e <code>");
-        process::exit(1);
+        true
     });
 
     CliArgs {
-        command: make_cmd(json, all),
+        command: Command::ShowGraph { all },
         source,
         include_dirs: Vec::new(),
     }
 }
 
-fn parse_provenance_args(args: &[String]) -> CliArgs {
-    parse_term_query_args(args, |json, term| Command::ShowProvenance { json, term })
-}
-
-/// Parse args for commands that take --term, --json, and a source (provenance, dependents).
+/// Parse args for commands that take --term, --json, and a source
+/// (explain, provenance, dependents).
 fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Command) -> CliArgs {
     let mut json = false;
-    let mut source: Option<SourceInput> = None;
     let mut term: Option<String> = None;
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
+        match args[*i].as_str() {
             "--json" => json = true,
             "--term" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected term name or id after --term");
-                    process::exit(1);
-                }
-                term = Some(args[i].clone());
+                term = Some(
+                    take(args, i, "Expected term name or id after --term").to_string(),
+                );
             }
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            _ => return false,
         }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Expected a file path or -e <code>");
-        process::exit(1);
+        true
     });
 
     let term = term.unwrap_or_else(|| {
@@ -647,39 +518,16 @@ fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Com
 
 fn parse_slice_args(args: &[String]) -> CliArgs {
     let mut json = false;
-    let mut source: Option<SourceInput> = None;
     let mut terms: Vec<String> = Vec::new();
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
+        match args[*i].as_str() {
             "--json" => json = true,
             "--term" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected term name or id after --term");
-                    process::exit(1);
-                }
-                terms.push(args[i].clone());
+                terms.push(take(args, i, "Expected term name or id after --term").to_string());
             }
-            "-e" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Expected code after -e");
-                    process::exit(1);
-                }
-                source = Some(SourceInput::Inline(args[i].clone()));
-            }
-            _ => {
-                source = Some(SourceInput::File(args[i].clone()));
-            }
+            _ => return false,
         }
-        i += 1;
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("Expected a file path or -e <code>");
-        process::exit(1);
+        true
     });
 
     if terms.is_empty() {

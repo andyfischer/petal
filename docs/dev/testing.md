@@ -40,8 +40,9 @@ for the full, growing set):
 
 **Helpers** (`ts/test/helpers.ts`):
 - The binary is built once per test session by `ts/test/global-setup.ts`
-  (wired via `globalSetup` in `vitest.config.ts`); the old `ensureBuild()`
-  helper is now a no-op kept for compatibility
+  (wired via `globalSetup` in `vitest.config.ts`); helpers export `PETAL`,
+  the path of the built binary, and `petalCapture(args, input?)`, the
+  argv-based spawn every other helper builds on
 - `showIrJson(code)` — compiles Petal code, returns parsed IR JSON (`petal show-ir --json -e '...'`)
 - `showAstJson(code)` — returns parsed AST JSON (`petal show-ast --json -e '...'`)
 - `showTokensJson(code)` — returns parsed token list (`petal show-tokens --json -e '...'`)

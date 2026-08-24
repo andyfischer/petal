@@ -93,6 +93,14 @@ interface Outcome {
 
 interface Run { code: number; stdout: string; stderr: string }
 
+/** A concrete driver invocation: which binary and its argv. */
+interface Cmd { bin: string; args: string[] }
+
+/** Result of the compiles step: `both` = failed identically on both sides. */
+interface CompileCheck { ok: boolean; detail: string; both: boolean; warnNote: string }
+
+interface IrEqualCheck { state: 'pass' | 'fail' | 'skip'; detail: string }
+
 // ── Small helpers ────────────────────────────────────────────────────────
 
 function fail(msg: string): never {
@@ -334,8 +342,15 @@ const UI_RE = new RegExp(`\\b(${UI_NATIVES.join('|')})\\s*\\(`);
 /** `import foo`, `import foo as f`, `import foo: a, b` — the imported module name. */
 const IMPORT_RE = /^\s*import\s+([A-Za-z_][A-Za-z0-9_./]*)/gm;
 
+/** Read a file (memoized — classification reads each corpus file twice). */
+const readCache = new Map<string, string>();
 function read(path: string): string {
-    try { return readFileSync(path, 'utf-8'); } catch { return ''; }
+    const hit = readCache.get(path);
+    if (hit !== undefined) return hit;
+    let text = '';
+    try { text = readFileSync(path, 'utf-8'); } catch { /* missing reads as empty */ }
+    readCache.set(path, text);
+    return text;
 }
 
 /**
@@ -411,7 +426,7 @@ function scenarioSpecs(t: Target, kind: Kind, step: PlanStep, plan: Plan, frames
 }
 
 function driverArgs(kind: Kind, side: Side, path: string, seed: number, sc: ScenarioSpec,
-                    frames: number, size: string): { bin: string; args: string[] } {
+                    frames: number, size: string): Cmd {
     if (kind === 'ui') {
         return {
             bin: side.uiRun,
@@ -473,7 +488,7 @@ interface Ctx {
     outDir: string;
     irEqualAvailable: boolean;
     golden: Record<string, string>;
-    goldenDirty: { v: boolean };
+    goldenDirty: boolean;
 }
 
 function bundleDir(ctx: Ctx, t: Target): string {
@@ -491,7 +506,7 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
                     sc: ScenarioSpec, frames: number, size: string, note: string) {
     const b = driverArgs(kind, ctx.before, t.before, seed, sc, frames, size);
     const a = driverArgs(kind, ctx.after, t.after, seed, sc, frames, size);
-    const line = (r: { bin: string; args: string[] }, out: string) =>
+    const line = (r: Cmd, out: string) =>
         [r.bin, ...r.args].map(shellQuote).join(' ') +
         (kind === 'ui' ? ` --out "$DIR/${out}"` : ` > "$DIR/${out}" 2>&1`);
     writeFileSync(join(dir, 'repro.sh'), [
@@ -519,8 +534,7 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
  * a warnings-only difference is reported and the pipeline continues — the run
  * itself is the real evidence.
  */
-async function checkCompiles(ctx: Ctx, t: Target)
-        : Promise<{ ok: boolean; detail: string; both: boolean; warnNote: string }> {
+async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
     const one = (s: Side, p: string) => exec(s.petal, ['check', '--error-format', 'bare', p]);
     const [b, a] = await Promise.all([one(ctx.before, t.before), one(ctx.after, t.after)]);
     const split = (r: Run) => {
@@ -547,11 +561,11 @@ async function checkCompiles(ctx: Ctx, t: Target)
     return { ok: true, both: false, detail: '', warnNote };
 }
 
-async function checkIrEqual(ctx: Ctx, t: Target): Promise<{ state: 'pass' | 'fail' | 'skip'; detail: string }> {
+async function checkIrEqual(ctx: Ctx, t: Target): Promise<IrEqualCheck> {
     if (!ctx.irEqualAvailable) return { state: 'skip', detail: 'ir-equal unavailable' };
     const r = await exec(ctx.after.petal, ['ir-equal', t.before, t.after]);
     if (r.code === 0) return { state: 'pass', detail: '' };
-    return { state: 'fail', detail: (r.stdout + r.stderr).trim().split('\n')[0] ?? '' };
+    return { state: 'fail', detail: (r.stdout + r.stderr).trim().split('\n')[0] };
 }
 
 async function traceHash(kind: Kind, side: Side, path: string, seed: number, sc: ScenarioSpec,
@@ -582,7 +596,7 @@ async function traceToFile(kind: Kind, side: Side, path: string, seed: number, s
 
 async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome> {
     const steps: string[] = [];
-    let kind = staticKind(t, mods);
+    const kind = staticKind(t, mods);
     const size = ctx.plan.size ?? '800x600';
 
     if (kind === 'module') {
@@ -632,10 +646,12 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             const frames = ctx.opts.frames ?? step.frames ?? 60;
             const seed = step.seeds?.[0] ?? 1;
             const sc = scenarioSpecs(t, kind, step, ctx.plan, frames)[0];
-            const [x, y] = [
-                await traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
-                await traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
-            ];
+            // Both runs are deliberately the *before* side: this step measures
+            // the app's own determinism, not the refactor.
+            const [x, y] = await Promise.all([
+                traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
+                traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
+            ]);
             if (x.hash !== y.hash) {
                 const dir = bundleDir(ctx, t);
                 const a = await traceToFile(kind, ctx.before, t.before, seed, sc, frames, size, join(dir, 'before.a'));
@@ -689,16 +705,21 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             steps.push('golden');
             const frames = step.frames ?? 60;
             const seed = step.seed ?? 1;
+            const scStr = step.scenario ?? 'monkey:1';
             const sc: ScenarioSpec = {
-                id: (step.scenario ?? 'monkey:1').replace(/[:/\\]/g, '-'),
-                args: ['--scenario', step.scenario ?? 'monkey:1'],
-                describe: { kind: 'monkey', monkeySeed: 1, frames, size },
+                id: scStr.replace(/[:/\\]/g, '-'),
+                args: ['--scenario', scStr],
+                // Record what was actually driven — a checked-in scenario file
+                // must not be described as monkey seed 1.
+                describe: scStr.startsWith('monkey:')
+                    ? { kind: 'monkey', monkeySeed: parseInt(scStr.slice(7), 10) || 1, frames, size }
+                    : { kind: 'checked-in', path: scStr },
             };
             const key = `${t.rel}/${sc.id}-s${seed}`;
             const got = await traceHash(kind, ctx.after, t.after, seed, sc, frames, size);
             if (ctx.opts.updateGolden) {
                 ctx.golden[key] = got.hash;
-                ctx.goldenDirty.v = true;
+                ctx.goldenDirty = true;
             } else if (ctx.golden[key] && ctx.golden[key] !== got.hash) {
                 verdict = 'changed';
                 detail = `golden mismatch for ${key} (rerun with --update-golden to re-baseline)`;
@@ -768,9 +789,10 @@ async function main() {
     const goldenPath = join(repoRoot, 'test', 'ui-golden', 'index.json');
     const golden: Record<string, string> = existsSync(goldenPath)
         ? JSON.parse(readFileSync(goldenPath, 'utf-8')).traces ?? {} : {};
-    const goldenDirty = { v: false };
 
-    const ctx: Ctx = { plan, opts, before, after, outDir, irEqualAvailable, golden, goldenDirty };
+    const ctx: Ctx = {
+        plan, opts, before, after, outDir, irEqualAvailable, golden, goldenDirty: false,
+    };
 
     writeFileSync(join(outDir, 'plan.json'), JSON.stringify({
         plan, resolved: {
@@ -805,7 +827,7 @@ async function main() {
     };
     await Promise.all(Array.from({ length: Math.min(opts.jobs, targets.length || 1) }, worker));
 
-    if (goldenDirty.v) {
+    if (ctx.goldenDirty) {
         mkdirSync(dirname(goldenPath), { recursive: true });
         writeFileSync(goldenPath, `${JSON.stringify({
             note: 'sha256 of each UI app trace; see docs/dev/refactor-verification.md §5',

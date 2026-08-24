@@ -8,48 +8,19 @@
 // Usage:
 //   ./bin/test-examples.ts            # differential + golden sweep, 8-line preview
 //   ./bin/test-examples.ts --full     # same, full output
-import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const examplesDir = join(repoRoot, 'examples', 'console');
-const goldenDir = join(repoRoot, 'test', 'example-golden');
-const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
-const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
+import {
+    RunResult, buildPetal, examplesDir, listExamples, loadGolden, runExample,
+} from './example-corpus.ts';
 
 const full = process.argv.includes('--full');
-
-interface RunResult {
-    status: number | null;
-    stdout: string;
-    stderr: string;
-}
 
 // The two bytecode optimization levels the sweep diffs against each other.
 const OPT_LEVELS = [
     { label: 'opts', args: [] as string[] },
     { label: 'no-opt', args: ['--no-opt'] },
 ];
-
-function runExample(filePath: string, optArgs: string[]): RunResult {
-    const result = spawnSync(petal, [filePath, ...optArgs], {
-        encoding: 'utf-8',
-    });
-    return {
-        status: result.status,
-        stdout: result.stdout ?? '',
-        stderr: result.stderr ?? '',
-    };
-}
-
-function loadGolden(name: string): RunResult | null {
-    const path = join(goldenDir, name.replace(/\.ptl$/, '.json'));
-    if (!existsSync(path)) return null;
-    const g = JSON.parse(readFileSync(path, 'utf-8'));
-    return { status: g.status, stdout: g.stdout, stderr: g.stderr };
-}
 
 function printPreview(output: string) {
     if (full) {
@@ -91,14 +62,9 @@ function diff(labelA: string, a: RunResult, labelB: string, b: RunResult): strin
     return null;
 }
 
-const build = spawnSync(
-    'cargo',
-    ['build', '--quiet', '--manifest-path', cargoToml],
-    { stdio: 'inherit' },
-);
-if (build.status !== 0) process.exit(build.status ?? 1);
+buildPetal();
 
-const files = readdirSync(examplesDir).filter(f => f.endsWith('.ptl')).sort();
+const files = listExamples();
 let pass = 0;
 let fail = 0;
 let missingGolden = 0;

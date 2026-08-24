@@ -7,7 +7,8 @@ use sdl2::surface::Surface;
 use sdl2::ttf::Font;
 use sdl2::video::Window;
 
-use crate::commands::DrawCommand;
+use petal_ui::draw::DrawCommand;
+
 use crate::font::FontBook;
 
 /// Render targets that can also render TTF text. `texture_creator()` is not

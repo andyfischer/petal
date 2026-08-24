@@ -351,34 +351,7 @@ mod tests {
         assert!(unbalanced.is_err());
     }
 
-    fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path
-                    .file_name()
-                    .is_some_and(|n| n == "node_modules" || n == "target")
-                {
-                    continue;
-                }
-                collect_ptl(&path, out);
-            } else if path.extension().is_some_and(|e| e == "ptl") {
-                out.push(path);
-            }
-        }
-    }
-
-    fn repo_ptl_files() -> Vec<std::path::PathBuf> {
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
-        files
-    }
+    use crate::test_corpus::repo_ptl_files;
 
     /// The definitive proof: the CST round-trips every real Petal program in the
     /// repo, exactly as `trivia::reconstruct` does — the tree loses nothing the

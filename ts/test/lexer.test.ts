@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showTokensJson,
   showTokensText,
   tokenKinds,
@@ -8,7 +7,6 @@ import {
   runPetalError,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("token dump format", () => {
   // JSON rows are uniform: {kind, value?, span} where span is

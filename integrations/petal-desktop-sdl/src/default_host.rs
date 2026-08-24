@@ -17,7 +17,8 @@ use sdl2::video::Window;
 use petal::env::Env;
 use petal::stack::StackKey;
 
-use crate::commands::{DrawCommand, take_draw_commands, take_draw_commands_for};
+use petal_ui::draw::{DrawCommand, take_draw_commands, take_draw_commands_for};
+
 use crate::font::{self, FontBook};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};

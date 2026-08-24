@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, showAstJson } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, showAstJson } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 // Chunk B/E1: optional type annotations on `let` bindings and function/lambda
 // parameters. Annotations are parsed and surfaced on the AST but not yet

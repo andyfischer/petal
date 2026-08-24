@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal } from "./helpers";
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe("enumerate builtin", () => {
   it("returns index-value pairs", () => {

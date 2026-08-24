@@ -9,12 +9,9 @@
 //   • `len`/`slice` are byte-indexed, so the obvious "first letter" loop
 //     silently produced wrong data for a non-ASCII name.
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, runPetalError } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, runPetalError } from "./helpers";
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe("clamp preserves int-ness", () => {
   it("returns an int for three int arguments", () => {

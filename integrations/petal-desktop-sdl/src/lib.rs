@@ -20,7 +20,6 @@
 //! [`renderer`] SDL-canvas primitives) are public so hosts can compose them.
 
 pub mod audio;
-pub mod commands;
 pub mod default_host;
 pub mod font;
 pub mod game_loop;

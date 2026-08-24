@@ -382,9 +382,11 @@ fn example_apps_run_headlessly() {
         "examples/productivity/kanban/app.ptl",
     ] {
         let app = root.join(rel);
-        if !app.exists() {
-            continue;
-        }
+        assert!(
+            app.exists(),
+            "example app missing: {} (moved or renamed?)",
+            app.display()
+        );
         let s = Scratch::new(&rel.replace('/', "-"));
         let out = s.path("t.jsonl");
         let (code, _, err) = run(&[

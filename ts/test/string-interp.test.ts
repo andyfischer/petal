@@ -1,11 +1,9 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showTokensJson,
   runPetal,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("string interpolation", () => {
   it("lexes a string with interpolation into parts", () => {

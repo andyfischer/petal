@@ -5,10 +5,9 @@
 // escape hatch for genuine mutation is `var` + `set`.
 // See docs/dev/var-next-steps.md (Why the feature exists).
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, checkJson, checkJsonAllowFail } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { checkJson, checkJsonAllowFail } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 /**
  * Every reported site. Compiler errors arrive newline-joined in a single

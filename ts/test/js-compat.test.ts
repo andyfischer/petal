@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, showIrJson, userTerms } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, showIrJson, userTerms } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("range() single argument", () => {
   it("range(n) produces 0..n", () => {

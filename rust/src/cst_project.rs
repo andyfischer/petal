@@ -1530,36 +1530,12 @@ mod tests {
         assert_eq!((inner_id, outer_id, last_id), (0, 1, 2));
     }
 
-    fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path
-                    .file_name()
-                    .is_some_and(|n| n == "node_modules" || n == "target")
-                {
-                    continue;
-                }
-                collect_ptl(&path, out);
-            } else if path.extension().is_some_and(|e| e == "ptl") {
-                out.push(path);
-            }
-        }
-    }
-
     /// The definitive 3c proof: for every repo program that parses, the AST
     /// projected from the CST is identical — including spans — to the AST the
     /// parser builds directly.
     #[test]
     fn projected_ast_matches_parser_over_repo_corpus() {
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
+        let files = crate::test_corpus::repo_ptl_files();
 
         let mut checked = 0;
         for path in &files {

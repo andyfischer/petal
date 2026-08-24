@@ -237,31 +237,7 @@ mod tests {
     /// snippets. Any file that lexes cleanly must reconstruct byte-for-byte.
     #[test]
     fn round_trips_entire_repo_corpus() {
-        fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else {
-                return;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if path
-                        .file_name()
-                        .is_some_and(|n| n == "node_modules" || n == "target")
-                    {
-                        continue;
-                    }
-                    collect_ptl(&path, out);
-                } else if path.extension().is_some_and(|e| e == "ptl") {
-                    out.push(path);
-                }
-            }
-        }
-
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
+        let files = crate::test_corpus::repo_ptl_files();
         assert!(
             files.len() > 50,
             "expected a real corpus, found {}",
@@ -324,31 +300,7 @@ mod tests {
     /// form of the "spans tile the source" guarantee.
     #[test]
     fn no_other_trivia_in_repo_corpus() {
-        fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-            let Ok(entries) = std::fs::read_dir(dir) else {
-                return;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if path
-                        .file_name()
-                        .is_some_and(|n| n == "node_modules" || n == "target")
-                    {
-                        continue;
-                    }
-                    collect_ptl(&path, out);
-                } else if path.extension().is_some_and(|e| e == "ptl") {
-                    out.push(path);
-                }
-            }
-        }
-
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
+        let files = crate::test_corpus::repo_ptl_files();
 
         let mut checked = 0;
         for path in &files {

@@ -47,7 +47,7 @@ use std::collections::VecDeque;
 use std::fmt;
 
 use crate::constant_table::{ConstantId, ConstantValue};
-use crate::program::{BlockId, FunctionDef, MapSpreadEntry, Program, Term, TermId, TermOp};
+use crate::program::{BlockId, FunctionDef, MapSpreadEntry, Program, TermId, TermOp};
 use crate::source_map::SourceSpan;
 
 /// The first difference found between two programs.
@@ -624,11 +624,6 @@ fn op_key(p: &Program, op: &TermOp) -> String {
         // Everything else carries no ids at all.
         other => format!("{:?}", other),
     }
-}
-
-/// Human-readable op name for a term, for callers building their own reports.
-pub fn term_op_name(p: &Program, t: &Term) -> String {
-    op_key(p, &t.op)
 }
 
 // ---------------------------------------------------------------------------

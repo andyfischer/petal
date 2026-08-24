@@ -6,10 +6,9 @@
 // Each case also pins the `message`, so a refactor of the phase channel is
 // visible here if it disturbs the wording users actually read.
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, checkJsonAllowFail } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { checkJsonAllowFail } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 /** Assert the phase and message of a program that must fail `check`. */
 const expectPhase = (code: string, phase: string, message: string) => {

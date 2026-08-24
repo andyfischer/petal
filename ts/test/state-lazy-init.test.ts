@@ -17,15 +17,13 @@
 // value into StateInit's register on pop. A pop-time hook inserts that
 // value into the persistent state map.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   runPetal,
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("lazy state init — IR shape", () => {
   it("StateInit has a child_block holding the init expression", () => {

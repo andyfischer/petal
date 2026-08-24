@@ -25,7 +25,7 @@ use crate::source_map::{ENTRY_FILE, FileId};
 /// builtin function table alone is ~70 phantom Copy terms), so display
 /// helpers hide them by default.
 pub fn is_phantom(program: &Program, term: &Term) -> bool {
-    if !matches!(term.op, TermOp::Copy) || !term.inputs.is_empty() || term.name.is_none() {
+    if !crate::ir_validate::is_binding_phantom(term) {
         return false;
     }
     match program.source_map.get(term.id) {
@@ -167,15 +167,9 @@ impl IrFilter {
 // ---------------------------------------------------------------------------
 
 /// Resolve a constant to a compact literal for display (strings quoted).
-/// Same convention as the bytecode disassembler's `kconst`.
+/// Shares `ConstantValue::display_compact` with the bytecode disassembler.
 fn kconst(program: &Program, k: ConstantId) -> String {
-    match program.constants.get(k) {
-        ConstantValue::Nil => "nil".to_string(),
-        ConstantValue::Bool(b) => b.to_string(),
-        ConstantValue::Int(n) => n.to_string(),
-        ConstantValue::Float(bits) => f64::from_bits(*bits).to_string(),
-        ConstantValue::String(s) => format!("{:?}", s),
-    }
+    program.constants.get(k).display_compact()
 }
 
 /// Resolve a constant that names something (a field, method, class, enum

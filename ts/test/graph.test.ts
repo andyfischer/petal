@@ -1,21 +1,12 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild } from "./helpers";
-import { execSync } from "child_process";
-import { resolve } from "path";
-
-const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
-
-beforeAll(() => {
-  ensureBuild();
-});
-
-function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
+import { describe, it, expect } from "vitest";
+import { petalCapture } from "./helpers";
 
 function showGraph(code: string): string {
-  const cmd = [PETAL, "show-graph", "-e", shellEscape(code)].join(" ");
-  return execSync(cmd, { encoding: "utf-8", timeout: 10000 }).trim();
+  const r = petalCapture(["show-graph", "-e", code]);
+  if (r.code !== 0) {
+    throw new Error(`show-graph exited ${r.code}: ${r.stderr.trim()}`);
+  }
+  return r.stdout.trim();
 }
 
 describe("show-graph", () => {

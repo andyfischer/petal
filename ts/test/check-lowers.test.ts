@@ -24,16 +24,14 @@
 // what the gate needs to observe. The IR is built here rather than checked in
 // as a blob so it can never drift from the IR format.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   checkText,
   checkIrText,
   checkIrJsonAllowFail,
   showIrJsonRaw,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 const GOOD_SOURCE = `fn f()
   1

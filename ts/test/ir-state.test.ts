@@ -1,11 +1,9 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 describe("state keyword", () => {
   it("emits StateInit for state declaration", () => {

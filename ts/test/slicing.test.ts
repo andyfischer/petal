@@ -1,15 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   showDependentsJson,
   showSliceJson,
   dataflowText,
 } from "./helpers";
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe("dataflow slicing", () => {
   describe("show-dependents", () => {

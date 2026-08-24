@@ -66,6 +66,64 @@ pub enum HostData {
     Record(Vec<(String, HostData)>),
 }
 
+impl HostData {
+    /// JSON → [`HostData`], keeping the int/float distinction the source made
+    /// (a truncated `0.42` is unrecoverable downstream — see the type docs).
+    pub fn from_json(v: &serde_json::Value) -> HostData {
+        use serde_json::Value as Json;
+        match v {
+            Json::Null => HostData::Nil,
+            Json::Bool(b) => HostData::Bool(*b),
+            Json::Number(n) => match n.as_i64() {
+                Some(i) => HostData::Int(i),
+                None => HostData::Float(n.as_f64().unwrap_or(0.0)),
+            },
+            Json::String(s) => HostData::Str(s.clone()),
+            Json::Array(items) => HostData::List(items.iter().map(HostData::from_json).collect()),
+            Json::Object(fields) => HostData::Record(
+                fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), HostData::from_json(v)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+/// Build a [`DataProvider`] from a fixture table: a JSON array of
+/// `{"kind": ..., "arg": ..., "value": ...}` answers. A `(kind, arg)` with no
+/// entry answers nil, exactly as a host with no data for the question would.
+/// `kind`/`arg` may be JSON strings (used as-is; a missing or null key means
+/// `""`) or any other JSON value (matched by its serialized form).
+pub fn fixture_provider(json: &serde_json::Value) -> Result<DataProvider, String> {
+    use serde_json::Value as Json;
+    let entries = json
+        .as_array()
+        .ok_or_else(|| "fixtures must be a JSON array".to_string())?;
+    let mut table: Vec<((String, String), HostData)> = Vec::new();
+    for (i, e) in entries.iter().enumerate() {
+        let obj = e
+            .as_object()
+            .ok_or_else(|| format!("fixture {i} must be an object"))?;
+        let as_key = |v: Option<&Json>| match v {
+            None | Some(Json::Null) => String::new(),
+            Some(Json::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+        };
+        let kind = as_key(obj.get("kind"));
+        let arg = as_key(obj.get("arg"));
+        let value = HostData::from_json(obj.get("value").unwrap_or(&Json::Null));
+        table.push(((kind, arg), value));
+    }
+    Ok(Box::new(move |kind: &str, arg: &str| {
+        table
+            .iter()
+            .find(|((k, a), _)| k == kind && a == arg)
+            .map(|(_, v)| v.clone())
+            .unwrap_or(HostData::Nil)
+    }))
+}
+
 /// A host-side, on-demand data source behind the `host_data(kind, arg)` native.
 /// Called synchronously inside the frame, so implementations should answer from
 /// a cache or a quick lookup rather than blocking.

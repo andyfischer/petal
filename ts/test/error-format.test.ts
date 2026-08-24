@@ -1,12 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "child_process";
-import { resolve } from "path";
-
-const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
+import { petalCapture } from "./helpers";
 
 function stderrOf(args: string[]) {
-  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000 });
-  return { text: r.stderr, status: r.status };
+  const r = petalCapture(args);
+  return { text: r.stderr, status: r.code };
 }
 
 const RUNTIME_ERR = "let x = 1\nprint(x.foo.bar)";

@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   showIrJson,
   showIrJsonRaw,
   runPetal,
@@ -8,7 +7,6 @@ import {
   termsByOp,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 /** Resolve the string constant a ConstantId-carrying op points at. */
 function constString(ir: any, cid: number): any {

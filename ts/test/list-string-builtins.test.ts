@@ -1,9 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, runPetalError } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, runPetalError } from "./helpers";
 
-beforeAll(() => {
-  ensureBuild();
-});
 
 describe("sort builtin", () => {
   it("sorts a list of integers", () => {

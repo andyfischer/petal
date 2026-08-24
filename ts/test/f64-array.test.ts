@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { ensureBuild, runPetal, runPetalError } from "./helpers";
+import { describe, it, expect } from "vitest";
+import { runPetal, runPetalError } from "./helpers";
 
-beforeAll(ensureBuild);
 
 describe("f64_array — construction and length", () => {
   it("f64_array(n) creates a zero-filled array of length n", () => {

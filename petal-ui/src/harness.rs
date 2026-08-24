@@ -58,14 +58,10 @@ impl Headless {
         Self::build(source, None, width, height)
     }
 
-    /// Load a script from a file at 800×600. Imports resolve relative to the
-    /// file's own directory (the app-beside-its-modules layout every UI
-    /// example uses), which [`new`](Self::new) cannot do — it has only text.
-    pub fn from_file(path: &std::path::Path) -> Result<Self, String> {
-        Self::from_file_with_size(path, 800, 600)
-    }
-
-    /// [`from_file`](Self::from_file) with an explicit drawable size.
+    /// Load a script from a file at an explicit drawable size. Imports resolve
+    /// relative to the file's own directory (the app-beside-its-modules layout
+    /// every UI example uses), which [`new`](Self::new) cannot do — it has
+    /// only text.
     pub fn from_file_with_size(
         path: &std::path::Path,
         width: i32,

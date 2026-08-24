@@ -5,7 +5,6 @@
 use serde_json::{Value as Json, json};
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst};
-use crate::constant_table::ConstantValue;
 use crate::program::Program;
 
 /// Render a lowered program as annotated text, one function per section.
@@ -62,13 +61,7 @@ fn reglist(rs: &[u16]) -> String {
 
 /// Resolve a constant to a compact literal for display.
 fn kconst(program: &Program, k: crate::constant_table::ConstantId) -> String {
-    match program.constants.get(k) {
-        ConstantValue::Nil => "nil".to_string(),
-        ConstantValue::Bool(b) => b.to_string(),
-        ConstantValue::Int(n) => n.to_string(),
-        ConstantValue::Float(bits) => f64::from_bits(*bits).to_string(),
-        ConstantValue::String(s) => format!("{:?}", s),
-    }
+    program.constants.get(k).display_compact()
 }
 
 fn render_inst(inst: &Inst, program: &Program) -> String {

@@ -47,7 +47,6 @@
 
 use std::path::PathBuf;
 
-use crate::env::Env;
 
 mod casts;
 mod reindent;
@@ -355,14 +354,8 @@ pub fn verify_rewrite(
 /// source text and source map (whitespace edits move spans). Used as a
 /// does-it-still-compile gate, and by the corpus test to compare programs.
 fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, String> {
-    let mut env = Env::new();
-    for dir in &opts.include_dirs {
-        env.add_module_path(dir.clone());
-    }
-    let pid = match &opts.origin {
-        Some(path) => env.load_program_at(source, path)?,
-        None => env.load_program(source)?,
-    };
+    let (env, pid) =
+        crate::ir_equiv::compile_for_compare(source, &opts.include_dirs, opts.origin.as_deref())?;
     let program = env
         .get_program(pid)
         .ok_or_else(|| "compiled program missing".to_string())?;
@@ -378,37 +371,13 @@ fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, Str
 mod tests {
     use super::*;
 
-    fn collect_ptl(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path
-                    .file_name()
-                    .is_some_and(|n| n == "node_modules" || n == "target")
-                {
-                    continue;
-                }
-                collect_ptl(&path, out);
-            } else if path.extension().is_some_and(|e| e == "ptl") {
-                out.push(path);
-            }
-        }
-    }
-
     /// The linter-plan safeguard, as a property test over the whole repo
     /// corpus: every program that compiles must still compile after linting,
     /// and linting must be a fixed point. (A program with no casts to remove
     /// gets formatting only, which cannot change semantics at all.)
     #[test]
     fn lint_preserves_compilation_over_repo_corpus() {
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
+        let files = crate::test_corpus::repo_ptl_files();
         let mut checked = 0;
         for path in &files {
             let Ok(src) = std::fs::read_to_string(path) else {
@@ -421,12 +390,13 @@ mod tests {
             let Ok(outcome) = lint_source(&src, &opts) else {
                 continue;
             };
-            if compile_ir(&src, &opts).is_err() {
-                continue; // formatting-only file; nothing to compare
-            }
-            if let Err(e) = compile_ir(&outcome.output, &opts) {
-                panic!("lint broke compilation for {}: {}", path.display(), e);
-            }
+            let Ok(src_ir) = compile_ir(&src, &opts) else {
+                continue; // doesn't compile standalone; nothing to compare
+            };
+            let out_ir = match compile_ir(&outcome.output, &opts) {
+                Ok(ir) => ir,
+                Err(e) => panic!("lint broke compilation for {}: {}", path.display(), e),
+            };
             // A file the rules leave alone must be byte-identical in IR too,
             // which pins the formatting pass as semantics-free. Both semantic
             // rules change the IR on purpose — one deletes a call, the other
@@ -434,8 +404,8 @@ mod tests {
             // touched is exempt here and gated by compilation above instead.
             if outcome.casts_removed == 0 && outcome.chains_to_match == 0 {
                 assert_eq!(
-                    compile_ir(&src, &opts).ok(),
-                    compile_ir(&outcome.output, &opts).ok(),
+                    src_ir,
+                    out_ir,
                     "formatting changed IR for {}",
                     path.display()
                 );
@@ -468,12 +438,7 @@ mod tests {
     fn reindent_is_ir_equal_over_repo_corpus() {
         use crate::ir_equiv::{ir_equivalent, sources_equivalent};
 
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root");
-        let mut files = Vec::new();
-        collect_ptl(repo_root, &mut files);
-        files.sort();
+        let files = crate::test_corpus::repo_ptl_files();
         let mut checked = 0;
         let mut mangled_checked = 0;
         for path in &files {

@@ -44,34 +44,61 @@ pub(super) fn bare_errors() -> bool {
     BARE_ERRORS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Every flag `petal run` accepts, carried as one struct from the parser to
+/// [`handlers::handle_run`].
+#[derive(Default)]
+pub struct RunOpts {
+    pub json: bool,
+    pub trace: bool,
+    pub record_trace: Option<String>,
+    /// Load the input as JSON IR (`show-ir --json` output) instead of source.
+    pub ir: bool,
+    pub dup_stats: bool,
+    /// Count instructions, builtin calls and collections during the run and
+    /// print the histogram to stderr afterwards (see `crate::profile`).
+    pub profile: bool,
+    pub no_opt: bool,
+    /// Turn on the pending absorption trace and print the frame pending
+    /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
+    pub trace_pending: bool,
+    /// Record the last value bound to every named term and dump the lot
+    /// after the run — "what is everything right now", including after a
+    /// runtime error.
+    pub observe: bool,
+    /// Trace every buffered emit back to its call site and dump the values
+    /// with their resolved source attribution after the run — the
+    /// observation half of direct manipulation (docs/direct-manipulation.md).
+    pub trace_emits: bool,
+    /// Seed the run's PRNG (`--seed N`), so `random()` replays. Overrides
+    /// `PETAL_SEED`; without either, the seed comes from the clock.
+    pub seed: Option<u64>,
+    /// How errors are printed (`--error-format full|bare`).
+    pub error_format: ErrorFormat,
+}
+
+/// The arguments of one `petal propose-edit` invocation (see
+/// [`Command::ProposeEdit`]).
+pub struct ProposeEditOpts {
+    pub json: bool,
+    /// Output channel the emit was pushed into (e.g. "draw_commands").
+    pub channel: String,
+    /// 0-based index of the emit within the channel's buffer.
+    pub emit: usize,
+    /// The goals, one per `--arg <k> --to <value>` pair: 0-based argument
+    /// position and the value it should evaluate to, as source-ish text
+    /// (`55`, `2.5`, `true`, `hello`).
+    pub goals: Vec<(usize, String)>,
+    /// Variables the host prefers to edit (`--configurable name`).
+    pub configurable: Vec<String>,
+    /// Variables that must not be edited (`--static name`).
+    pub pinned: Vec<String>,
+    /// Apply the edit to the file in place — only when exactly one
+    /// proposal remains after policy filtering.
+    pub apply: bool,
+}
+
 pub enum Command {
-    Run {
-        json: bool,
-        trace: bool,
-        record_trace: Option<String>,
-        ir: bool,
-        dup_stats: bool,
-        /// Count instructions, builtin calls and collections during the run and
-        /// print the histogram to stderr afterwards (see `crate::profile`).
-        profile: bool,
-        no_opt: bool,
-        /// Turn on the pending absorption trace and print the frame pending
-        /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
-        trace_pending: bool,
-        /// Record the last value bound to every named term and dump the lot
-        /// after the run — "what is everything right now", including after a
-        /// runtime error.
-        observe: bool,
-        /// Trace every buffered emit back to its call site and dump the values
-        /// with their resolved source attribution after the run — the
-        /// observation half of direct manipulation (docs/direct-manipulation.md).
-        trace_emits: bool,
-        /// Seed the run's PRNG (`--seed N`), so `random()` replays. Overrides
-        /// `PETAL_SEED`; without either, the seed comes from the clock.
-        seed: Option<u64>,
-        /// How errors are printed (`--error-format full|bare`).
-        error_format: ErrorFormat,
-    },
+    Run(RunOpts),
     Check {
         json: bool,
         /// Exit non-zero when type-checker warnings exist (for CI). Plain
@@ -145,24 +172,7 @@ pub enum Command {
     /// should be VALUE" — with candidate source edits (see
     /// `crate::direct_manipulation`). Repeated `--arg`/`--to` pairs form a
     /// batch that must resolve consistently (a drag changes x and y at once).
-    ProposeEdit {
-        json: bool,
-        /// Output channel the emit was pushed into (e.g. "draw_commands").
-        channel: String,
-        /// 0-based index of the emit within the channel's buffer.
-        emit: usize,
-        /// The goals, one per `--arg <k> --to <value>` pair: 0-based argument
-        /// position and the value it should evaluate to, as source-ish text
-        /// (`55`, `2.5`, `true`, `hello`).
-        goals: Vec<(usize, String)>,
-        /// Variables the host prefers to edit (`--configurable name`).
-        configurable: Vec<String>,
-        /// Variables that must not be edited (`--static name`).
-        pinned: Vec<String>,
-        /// Apply the edit to the file in place — only when exactly one
-        /// proposal remains after policy filtering.
-        apply: bool,
-    },
+    ProposeEdit(ProposeEditOpts),
     /// Serve the language server over stdio. Takes no source file — documents
     /// arrive over the protocol.
     Lsp,
@@ -355,6 +365,12 @@ fn read_source(input: &SourceInput) -> String {
     }
 }
 
+/// Pretty-print a serializable value to stdout — the one spelling of "emit
+/// this command's `--json` output".
+fn print_json(value: &impl serde::Serialize) {
+    println!("{}", serde_json::to_string_pretty(value).unwrap());
+}
+
 /// Print an error and exit(1). In `--json` mode the error is emitted as a JSON
 /// object tagged with `phase`; otherwise as a plain `Error: …` line on stderr.
 fn die(json: bool, err: &str, phase: &str) -> ! {
@@ -371,7 +387,7 @@ fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> 
         if !warnings.is_null() {
             obj["warnings"] = warnings;
         }
-        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        print_json(&obj);
     } else if bare_errors() {
         eprintln!("{}", bare_error_text(err));
     } else {
@@ -469,7 +485,7 @@ fn die_error(
             })
             .collect(),
     );
-    println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+    print_json(&obj);
     process::exit(1);
 }
 
@@ -500,65 +516,18 @@ pub fn execute(cli: CliArgs) {
     let source = read_source(&source_input);
 
     match command {
-        Command::Run {
-            json,
-            trace,
-            record_trace,
-            ir,
-            dup_stats,
-            profile,
-            no_opt,
-            trace_pending,
-            observe,
-            trace_emits,
-            seed,
-            error_format,
-        } => {
-            set_error_format(error_format);
-            handlers::handle_run(
-                json,
-                trace,
-                record_trace,
-                ir,
-                dup_stats,
-                profile,
-                no_opt,
-                trace_pending,
-                observe,
-                trace_emits,
-                seed,
-                &source,
-                &source_input,
-                &include_dirs,
-            );
+        Command::Run(opts) => {
+            set_error_format(opts.error_format);
+            handlers::handle_run(&opts, &source, &source_input, &include_dirs);
         }
-        Command::ProposeEdit {
-            json,
-            channel,
-            emit,
-            goals,
-            configurable,
-            pinned,
-            apply,
-        } => {
-            handlers::handle_propose_edit(
-                json,
-                &channel,
-                emit,
-                &goals,
-                &configurable,
-                &pinned,
-                apply,
-                &source,
-                &source_input,
-                &include_dirs,
-            );
+        Command::ProposeEdit(opts) => {
+            handlers::handle_propose_edit(&opts, &source, &source_input, &include_dirs);
         }
         Command::PendingReport { json } => {
             handlers::handle_pending_report(json, &source, &source_input, &include_dirs);
         }
         Command::Explain { json, term } => {
-            handlers::handle_explain(json, term, &source, &source_input, &include_dirs);
+            handlers::handle_explain(json, &term, &source, &source_input, &include_dirs);
         }
         Command::Check {
             json,
@@ -592,10 +561,10 @@ pub fn execute(cli: CliArgs) {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);
         }
         Command::ShowProvenance { json, term } => {
-            handlers::handle_show_provenance(json, term, &source, &source_input, &include_dirs);
+            handlers::handle_show_provenance(json, &term, &source, &source_input, &include_dirs);
         }
         Command::ShowDependents { json, term } => {
-            handlers::handle_show_dependents(json, term, &source, &source_input, &include_dirs);
+            handlers::handle_show_dependents(json, &term, &source, &source_input, &include_dirs);
         }
         Command::ShowSlice { json, terms } => {
             handlers::handle_show_slice(json, terms, &source, &source_input, &include_dirs);

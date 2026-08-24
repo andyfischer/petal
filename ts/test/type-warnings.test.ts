@@ -1,13 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  ensureBuild,
   checkJson,
   checkText,
   checkStrict,
   runWithStderr,
 } from "./helpers";
 
-beforeAll(() => ensureBuild());
 
 // Chunk E: type-checker warnings surfaced by `petal check` and `petal run`.
 // Warnings are non-fatal: `check` still exits 0 and `run` still executes the

@@ -41,22 +41,24 @@ let LANES = [
 ]
 
 fn tag_color(t)
-  if t == "render" then #d98a4a
-  elsif t == "input" then #5b9dff
-  elsif t == "vm" then #e0655f
-  elsif t == "prelude" then #3fae7a
-  elsif t == "docs" then #a98ce0
-  elsif t == "tooling" then #46b1c9
-  else DIM
+  match t
+    when "render" -> #d98a4a
+    when "input" -> #5b9dff
+    when "vm" -> #e0655f
+    when "prelude" -> #3fae7a
+    when "docs" -> #a98ce0
+    when "tooling" -> #46b1c9
+    when _ -> DIM
   end
 end
 
 fn who_color(w)
-  if w == "AF" then #5b9dff
-  elsif w == "EK" then #d98a4a
-  elsif w == "JN" then #3fae7a
-  elsif w == "MR" then #a98ce0
-  else DIM
+  match w
+    when "AF" -> #5b9dff
+    when "EK" -> #d98a4a
+    when "JN" -> #3fae7a
+    when "MR" -> #a98ce0
+    when _ -> DIM
   end
 end
 
@@ -99,7 +101,7 @@ state cols = [
 state sel_id = "c6"
 state scrolls = [0, 0, 0, 0]
 state drag = {active: false, col: 0, idx: 0, card: Card("", "", "", "", 0, 0),
-              ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
+  ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
 state moves = 0
 
 // ── Layout metrics (recomputed every frame — the pane can resize) ─────────
@@ -246,7 +248,7 @@ fn plan(cs, d, sc, mx, my)
     slot_list(base[c], col_x(c) + COL_PAD, tops[c], gi, dh)
   end
   {base: base, tops: tops, tcol: tcol, tidx: tidx, dh: dh,
-   slots: slots, lifting: lifting}
+    slots: slots, lifting: lifting}
 end
 
 // ── Drawing ──────────────────────────────────────────────────────────────
@@ -256,9 +258,9 @@ fn draw_card(r, card, mode)
     draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), 12, #000000, 120)
   end
   let bg = if mode == "lift" then CARD_LIFT
-    elsif mode == "hover" then CARD_HOV
-    else CARD_BG
-    end
+  elsif mode == "hover" then CARD_HOV
+  else CARD_BG
+  end
   draw_rect_rounded(r, 12, bg)
   if mode == "lift" then
     draw_rect_outline(r, ACCENT, 170, 1)
@@ -277,7 +279,7 @@ fn draw_card(r, card, mode)
   draw_rect_rounded(rect(r.x + CARD_PAD, r.y + CARD_PAD, pw, 17), 8, tc, 38)
   draw_text(card.tag, {x: r.x + CARD_PAD + 8, y: r.y + CARD_PAD + 4}, 10, tc)
   draw_circle({x: r.x + r.w - CARD_PAD - 4, y: r.y + CARD_PAD + 8}, 4,
-              pri_color(card.pri))
+    pri_color(card.pri))
 
   // Title, one or two wrapped lines.
   let lines = card_lines(card)
@@ -367,7 +369,7 @@ end
 if mouse_pressed(0) && hit_c >= 0 then
   sel_id = cols[hit_c][hit_i].id
   drag = {active: true, col: hit_c, idx: hit_i, card: cols[hit_c][hit_i],
-          ox: mx - hit_x, oy: my - hit_y, sx: mx, sy: my, moved: false}
+    ox: mx - hit_x, oy: my - hit_y, sx: mx, sy: my, moved: false}
 end
 
 // A press on bare well space clears the selection.
@@ -402,7 +404,7 @@ if mouse_released(0) && drag.active then
     moves = moves + 1
   end
   drag = {active: false, col: 0, idx: 0, card: drag.card,
-          ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
+    ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
 end
 
 // Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
@@ -510,7 +512,7 @@ end
 draw_text("Petal Board", {x: M, y: 24}, {size: 25, color: TEXT})
 let move_note = if moves == 1 then "1 card moved" else "{moves} cards moved" end
 draw_text(fit_parts(["sprint 24", "{n_cards} cards", move_note], W / 2, 11),
-          {x: M + 2, y: 60}, {size: 11, color: DIM, spacing: 1})
+  {x: M + 2, y: 60}, {size: 11, color: DIM, spacing: 1})
 
 let bar_w = 260
 let bar_x = W - M - bar_w
@@ -532,11 +534,11 @@ for c in range(0, 4) do
   // Lane header, above the surface so the surface stays a clean card well.
   draw_circle({x: x + 6, y: BOARD_TOP + 12}, 4, lane.color)
   draw_text(lane.name, {x: x + 18, y: BOARD_TOP + 5},
-            {size: 12, color: TEXT, spacing: 1})
+    {size: 12, color: TEXT, spacing: 1})
   let over = lane.limit > 0 && cnt > lane.limit
   let ctext = if lane.limit > 0 then "{cnt}/{lane.limit}" else str(cnt) end
   draw_text_right(ctext, x + COL_W, BOARD_TOP + 5, 12,
-                  if over then DANGER else FAINT end)
+    if over then DANGER else FAINT end)
   draw_rect(rect(x, BOARD_TOP + 24, COL_W, 2), lane.color, 90)
 
   // Card well.
@@ -556,9 +558,9 @@ for c in range(0, 4) do
     else
       let card = P.base[c][s.i]
       let mode = if card.id == sel_id then "sel"
-        elsif !P.lifting && c == hit_c && s.i == hit_i then "hover"
-        else "plain"
-        end
+      elsif !P.lifting && c == hit_c && s.i == hit_i then "hover"
+      else "plain"
+      end
       draw_card(s.r, card, mode)
     end
   end
@@ -582,15 +584,15 @@ if sel.c >= 0 then
   draw_circle({x: M + 10, y: fy + 27}, 10, wc, 46)
   draw_text_center(card.who, M + 10, fy + 22, 10, wc)
   draw_text(ellipsize(card.title, W / 2 - 120, 13), {x: M + 30, y: fy + 14},
-            {size: 13, color: TEXT})
+    {size: 13, color: TEXT})
   draw_text(fit_parts([LANES[sel.c].name, card.tag, pri_name(card.pri),
-                       "{card.pts} pts"], W / 2 - 120, 10),
-            {x: M + 30, y: fy + 32}, {size: 10, color: FAINT, spacing: 1})
+    "{card.pts} pts"], W / 2 - 120, 10),
+    {x: M + 30, y: fy + 32}, {size: 10, color: FAINT, spacing: 1})
 else
   draw_text("nothing selected", {x: M, y: fy + 22}, {size: 12, color: FAINT})
 end
 
 let hints = fit_parts(["drag a card", "arrows select", "shift+arrows move",
-                       "1-4 send to lane", "p priority", "esc deselect"],
-                      W - M * 2 - 440, 11)
+  "1-4 send to lane", "p priority", "esc deselect"],
+  W - M * 2 - 440, 11)
 draw_text_right(hints, W - M, fy + 22, 11, FAINT)

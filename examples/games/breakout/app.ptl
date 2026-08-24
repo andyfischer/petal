@@ -125,8 +125,8 @@ end
 
 fn mix(a, b, t)
   {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
-   g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
-   b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+    g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+    b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
 end
 
 // Sample the brick ramp at row `row` of `rows`.
@@ -142,10 +142,10 @@ end
 fn cell_hp(lvl, row, col)
   let p = lvl % 4
   let solid = if p == 0 then true
-    elsif p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
-    elsif p == 2 then (row + col) % 3 != 0
-    else !(col % 4 == 1 && row % 3 != 0)
-    end
+  elsif p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
+  elsif p == 2 then (row + col) % 3 != 0
+  else !(col % 4 == 1 && row % 3 != 0)
+  end
   if !solid then 0 else 3 - row / 3 end
 end
 
@@ -286,7 +286,7 @@ if advance then
     set phase = "play"
     let ang = random(-0.55, 0.55) - 1.5708
     set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0,
-                  vx: speed * cos(ang), vy: speed * sin(ang)}]
+      vx: speed * cos(ang), vy: speed * sin(ang)}]
     set bits = burst(bits, balls[0].x, balls[0].y, 12, C_BALL, 0.0, -1.0, 1.0)
   elsif phase == "play" then
     set phase = "paused"
@@ -412,7 +412,7 @@ if phase == "play" then
                 if random(0.0, 1.0) < drop_chance then
                   let pk = choose(POWERS)
                   set drops = append(drops, {x: float(q.x + q.w / 2), y: float(q.y + q.h / 2),
-                                             vy: 132.0, k: pk.key, spin: random(0.0, 3.0)})
+                    vy: 132.0, k: pk.key, spin: random(0.0, 3.0)})
                 end
               else
                 set bits = burst(bits, x, y, 5, bc, 0.0, 0.0, 0.55)
@@ -519,7 +519,7 @@ if phase == "play" || phase == "serve" then
         let a1 = atan2(b.vy, b.vx)
         for s in [-0.42, 0.42] do
           set extra = append(extra, {x: b.x, y: b.y,
-                                     vx: speed * cos(a1 + s), vy: speed * sin(a1 + s)})
+            vx: speed * cos(a1 + s), vy: speed * sin(a1 + s)})
         end
       end
       for e in extra do
@@ -553,7 +553,7 @@ set bits = for p in bits do
   let nl = p.life - sdt
   if nl <= 0.0 then continue end
   {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt,
-   vx: p.vx * 0.92, vy: p.vy * 0.92 + 210.0 * sdt, life: nl}
+    vx: p.vx * 0.92, vy: p.vy * 0.92 + 210.0 * sdt, life: nl}
 end
 
 let decay = min(1.0, sdt * 4.5)
@@ -594,8 +594,8 @@ tx_right(str(left), cell2, 46, if left > 0 then S_STAT else S_STATD end)
 let cmult = 1 + combo / 6
 tx_right("COMBO", cell3, 30, S_LABEL)
 tx_right(if combo == 0 then "—" elsif cmult > 1 then "{combo}  ×{cmult}" else str(combo) end,
-         cell3, 46,
-         if cmult > 1 then {...S_STAT, color: #ffd166} elsif combo > 0 then S_STAT else S_STATD end)
+  cell3, 46,
+  if cmult > 1 then {...S_STAT, color: #ffd166} elsif combo > 0 then S_STAT else S_STATD end)
 tx_right("BEST COMBO {best_combo}   ·   {broken} BRICKS BROKEN", cell3, 76, S_HINT)
 
 // ── Draw: court ──────────────────────────────────────────────────────────
@@ -662,14 +662,14 @@ end
 for p in trail do
   let f = p.life / 0.30
   draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(float(BR) * f * 0.85)),
-              C_BALL, int(70.0 * f * f))
+    C_BALL, int(70.0 * f * f))
 end
 
 // Particles
 for p in bits do
   let f = p.life / p.max
   draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(p.sz * f + 0.5)),
-              p.c, int(225.0 * f))
+    p.c, int(225.0 * f))
 end
 
 // Falling power-ups
@@ -716,7 +716,7 @@ end
 
 // Which wall you are looking at, top-left inside the court.
 tx("LEVEL {level}  ·  " ++ LAYOUTS[level % 4], int(fl) + 2, int(ft) + 12,
-   {...S_BADGE, color: C_MUTE})
+  {...S_BADGE, color: C_MUTE})
 
 // Active power-ups, laid out right-to-left along the same rail.
 var badges = []
@@ -764,17 +764,18 @@ if phase != "play" then
   let card = rect(cx - bw / 2, ccy - 62, bw, 124)
   draw_rect_rounded(card, 14, C_COURT)
   draw_rect_outline(card, C_EDGE, 255, 1)
-  let accent = if phase == "over" then C_WARN
-    elsif phase == "cleared" then #ffd166
-    elsif phase == "paused" then C_DIM
-    else C_PADDLE end
+  let accent = match phase
+    when "over" -> C_WARN
+    when "cleared" -> #ffd166
+    when "paused" -> C_DIM
+    when _ -> C_PADDLE end
   draw_rect_rounded(rect(card.x + 22, ccy - 28, 3, 56), 2, accent, 200)
   tx_center(banner, cx + 9, ccy - 36, {...S_BIG, color: accent})
   tx_center(subbanner, cx + 9, ccy + 14, S_SUB)
 
   if phase == "title" then
     tx_center("bounce the ball  ·  clear every brick  ·  catch what falls",
-              cx, ccy + 84, {size: 12, color: C_MUTE})
+      cx, ccy + 84, {size: 12, color: C_MUTE})
     // The drop legend: what each falling pill does, in its own colour.
     var total = 0
     for p in POWERS do
@@ -792,7 +793,7 @@ if phase != "play" then
   end
   if phase == "over" then
     tx_center("FINAL {score}   ·   LEVEL {level}   ·   {broken} BRICKS",
-              cx, ccy + 82, {size: 12, color: C_MUTE})
+      cx, ccy + 82, {size: 12, color: C_MUTE})
   end
 end
 
@@ -815,12 +816,13 @@ set fx = fx + chip(fx, fy, "MOUSE", "track")
 set fx = fx + chip(fx, fy, "SPACE", "launch · pause")
 set fx = fx + chip(fx, fy, "R", "restart")
 
-let status = if phase == "play" then "IN PLAY"
-  elsif phase == "paused" then "PAUSED"
-  elsif phase == "over" then "GAME OVER"
-  elsif phase == "cleared" then "LEVEL CLEAR"
-  else "READY TO LAUNCH"
-  end
+let status = match phase
+  when "play" -> "IN PLAY"
+  when "paused" -> "PAUSED"
+  when "over" -> "GAME OVER"
+  when "cleared" -> "LEVEL CLEAR"
+  when _ -> "READY TO LAUNCH"
+end
 tx_right("{int(speed * slowf)} px/s   ·   {status}", W - PAD, fy + 7, S_HINT)
 
 // ── Observation mirrors (readable in /state → panel.values) ──────────────

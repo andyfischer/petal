@@ -1,14 +1,14 @@
 // Garden layout script — edit while Garden is running and the layout hot-reloads.
 
 layout(
-    column([
-        row([
-            editor("README.md"),
-            editor("docs/architecture.md"),
-            editor("CLAUDE.md"),
-        ]),
-        editor("init.ptl"),
-    ], [0.7, 0.3])
+  column([
+    row([
+      editor("README.md"),
+      editor("docs/architecture.md"),
+      editor("CLAUDE.md"),
+    ]),
+    editor("init.ptl"),
+  ], [0.7, 0.3])
 )
 
 // Optional: override any subset of the dark theme. Colors are hex strings —

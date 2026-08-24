@@ -86,7 +86,7 @@ let left_max = max(left_min + 40, w - 340)
 
 fn spinner()
   let frames = ["|", "/", "-", "\\"]
-  frames[int(frame_count() / 6) % 4]
+  frames[(frame_count() / 6) % 4]
 end
 
 fn left_width(frac, wpx, lo, hi)
@@ -305,7 +305,7 @@ if cat_ready && len(cat_err) == 0 then
   // The path yields to the right-aligned summary: reserve the width `sub`
   // actually measures rather than a fixed 24-character guess at it.
   draw_text(ellipsize(cat.path, w - 2 * PAD - text_width(sub, FS) - 16, FS),
-            {x: PAD, y: PAD + 21}, FS, DIM)
+    {x: PAD, y: PAD + 21}, FS, DIM)
   draw_text_right(sub, w - PAD, PAD + 21, FS, DIM)
 end
 draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)

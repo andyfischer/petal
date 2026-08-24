@@ -2,11 +2,11 @@
 // Demonstrates state, mouse input, and dynamic drawing
 
 state nodes = [
-    {x: 150, y: 150, label: "Alpha",   active: true},
-    {x: 400, y: 100, label: "Beta",    active: false},
-    {x: 650, y: 150, label: "Gamma",   active: true},
-    {x: 250, y: 350, label: "Delta",   active: false},
-    {x: 550, y: 350, label: "Epsilon", active: true}
+  {x: 150, y: 150, label: "Alpha",   active: true},
+  {x: 400, y: 100, label: "Beta",    active: false},
+  {x: 650, y: 150, label: "Gamma",   active: true},
+  {x: 250, y: 350, label: "Delta",   active: false},
+  {x: 550, y: 350, label: "Epsilon", active: true}
 ]
 state dragging = -1
 state drag_offset_x = 0
@@ -31,65 +31,65 @@ let label_color = #dcdceb
 
 // Connections between nodes (indices)
 let connections = [
-    [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
+  [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
 ]
 
 // Handle mouse press: start drag or toggle
 if pressed then
-    for i in range(0, len(nodes)) do
-        let n = nodes[i]
-        let dx = float(mx - n.x)
-        let dy = float(my - n.y)
-        let dist = dx * dx + dy * dy
-        if dist < float(node_r * node_r) then
-            dragging = i
-            drag_offset_x = n.x - mx
-            drag_offset_y = n.y - my
-        end
+  for i in range(0, len(nodes)) do
+    let n = nodes[i]
+    let dx = float(mx - n.x)
+    let dy = float(my - n.y)
+    let dist = dx * dx + dy * dy
+    if dist < float(node_r * node_r) then
+      dragging = i
+      drag_offset_x = n.x - mx
+      drag_offset_y = n.y - my
     end
+  end
 end
 
 // Handle drag
 if down && dragging >= 0 then
-    let n = nodes[dragging]
-    nodes[dragging] = {
-        x: mx + drag_offset_x,
-        y: my + drag_offset_y,
-        label: n.label,
-        active: n.active
-    }
+  let n = nodes[dragging]
+  nodes[dragging] = {
+    x: mx + drag_offset_x,
+    y: my + drag_offset_y,
+    label: n.label,
+    active: n.active
+  }
 else
-    // Release: if we were dragging and didn't move much, toggle
-    if !down && dragging >= 0 then
-        let n = nodes[dragging]
-        let dx = float(mx - n.x + drag_offset_x)
-        let dy = float(my - n.y + drag_offset_y)
-        let moved = dx * dx + dy * dy
-        if moved < 25.0 then
-            nodes[dragging] = {
-                x: n.x, y: n.y,
-                label: n.label,
-                active: !n.active
-            }
-        end
+  // Release: if we were dragging and didn't move much, toggle
+  if !down && dragging >= 0 then
+    let n = nodes[dragging]
+    let dx = float(mx - n.x + drag_offset_x)
+    let dy = float(my - n.y + drag_offset_y)
+    let moved = dx * dx + dy * dy
+    if moved < 25.0 then
+      nodes[dragging] = {
+        x: n.x, y: n.y,
+        label: n.label,
+        active: !n.active
+      }
     end
-    dragging = -1
+  end
+  dragging = -1
 end
 
 // Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
-    _draw_line(x1, y1, x2, y2, r, g, b)
+  _draw_line(x1, y1, x2, y2, r, g, b)
 end
 fn draw_line(a, b, color)
-    _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
+  _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
 end
 fn draw_text(text, x, y, size, r, g, b)
-    _draw_text(text, x, y, size, r, g, b)
+  _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-    _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
 end
 
 // === DRAW ===
@@ -99,41 +99,41 @@ draw_text("Interactive Nodes — drag to move, click to toggle", {x: 20, y: 10},
 
 // Draw connections
 for conn in connections do
-    let a = nodes[conn[0]]
-    let b = nodes[conn[1]]
+  let a = nodes[conn[0]]
+  let b = nodes[conn[1]]
 
-    let both_active = a.active && b.active
-    let c = if both_active then conn_active else conn_inactive end
+  let both_active = a.active && b.active
+  let c = if both_active then conn_active else conn_inactive end
 
-    draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
+  draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
 end
 
 // Draw nodes
 for i in range(0, len(nodes)) do
-    let n = nodes[i]
-    let hover_dx = float(mx - n.x)
-    let hover_dy = float(my - n.y)
-    let hover = (hover_dx * hover_dx + hover_dy * hover_dy) < float(node_r * node_r)
+  let n = nodes[i]
+  let hover_dx = float(mx - n.x)
+  let hover_dy = float(my - n.y)
+  let hover = (hover_dx * hover_dx + hover_dy * hover_dy) < float(node_r * node_r)
 
-    if n.active then
-        // Active: green glow
-        if hover then
-            draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
-        end
-        draw_circle(n.x, n.y, node_r, active_outer.r, active_outer.g, active_outer.b)
-        draw_circle(n.x, n.y, node_r - 4, active_inner.r, active_inner.g, active_inner.b)
-    else
-        // Inactive: dim
-        if hover then
-            draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
-        end
-        draw_circle(n.x, n.y, node_r, inactive_outer.r, inactive_outer.g, inactive_outer.b)
-        draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
+  if n.active then
+    // Active: green glow
+    if hover then
+      draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
     end
+    draw_circle(n.x, n.y, node_r, active_outer.r, active_outer.g, active_outer.b)
+    draw_circle(n.x, n.y, node_r - 4, active_inner.r, active_inner.g, active_inner.b)
+  else
+    // Inactive: dim
+    if hover then
+      draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
+    end
+    draw_circle(n.x, n.y, node_r, inactive_outer.r, inactive_outer.g, inactive_outer.b)
+    draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
+  end
 
-    // Label
-    let tw = len(n.label) * 7
-    draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
+  // Label
+  let tw = len(n.label) * 7
+  draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
 end
 
 // Status bar

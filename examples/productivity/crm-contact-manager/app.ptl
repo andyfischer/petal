@@ -55,7 +55,7 @@ let HEAD_Y   = TOP_H + 14
 let HEAD_H   = 26
 let ROWS_TOP = HEAD_Y + HEAD_H + 8
 let ROWS_H   = H - FOOT_H - ROWS_TOP
-let VISIBLE  = int(ROWS_H / ROW_H)
+let VISIBLE  = ROWS_H / ROW_H
 
 let STAGES = ["Lead", "Qualified", "Proposal", "Customer", "Churned"]
 
@@ -108,20 +108,22 @@ state saves    = 0            // count of form saves (observable in /state)
 
 // ── small helpers ───────────────────────────────────────────────────────────
 fn stage_color(s)
-  if s == "Lead" then VIOLET
-  elsif s == "Qualified" then ACCENT
-  elsif s == "Proposal" then AMBER
-  elsif s == "Customer" then TEAL
-  else ROSE
+  match s
+    when "Lead" -> VIOLET
+    when "Qualified" -> ACCENT
+    when "Proposal" -> AMBER
+    when "Customer" -> TEAL
+    when _ -> ROSE
   end
 end
 
 fn stage_rank(s)
-  if s == "Lead" then 0
-  elsif s == "Qualified" then 1
-  elsif s == "Proposal" then 2
-  elsif s == "Customer" then 3
-  else 4
+  match s
+    when "Lead" -> 0
+    when "Qualified" -> 1
+    when "Proposal" -> 2
+    when "Customer" -> 3
+    when _ -> 4
   end
 end
 
@@ -151,9 +153,9 @@ end
 fn freshness(days)
   let f = clamp(1.0 - float(days) / 45.0, 0.0, 1.0)
   let c = if days <= 7 then TEAL
-    elsif days <= 30 then AMBER
-    else ROSE
-    end
+  elsif days <= 30 then AMBER
+  else ROSE
+  end
   {frac: f, color: c}
 end
 
@@ -190,12 +192,13 @@ end
 // A short, deterministic history for a contact: the newest entry reflects the
 // stage the deal is actually in, the older two are the same for everyone.
 fn activity(c)
-  let head = if c.stage == "Lead" then "Inbound enquiry received"
-    elsif c.stage == "Qualified" then "Discovery call completed"
-    elsif c.stage == "Proposal" then "Proposal sent for review"
-    elsif c.stage == "Customer" then "Contract countersigned"
-    else "Cancellation confirmed"
-    end
+  let head = match c.stage
+    when "Lead" -> "Inbound enquiry received"
+    when "Qualified" -> "Discovery call completed"
+    when "Proposal" -> "Proposal sent for review"
+    when "Customer" -> "Contract countersigned"
+    when _ -> "Cancellation confirmed"
+  end
   [
     {label: head, ago_days: c.days},
     {label: "Follow-up email from {c.owner}", ago_days: c.days + 6 + c.id % 9},
@@ -235,11 +238,12 @@ end
 
 // ── sorting ─────────────────────────────────────────────────────────────────
 fn sort_val(c, key)
-  if key == "name" then lower(c.name)
-  elsif key == "company" then lower(c.company)
-  elsif key == "stage" then stage_rank(c.stage)
-  elsif key == "value" then c.value
-  else c.days
+  match key
+    when "name" -> lower(c.name)
+    when "company" -> lower(c.company)
+    when "stage" -> stage_rank(c.stage)
+    when "value" -> c.value
+    when _ -> c.days
   end
 end
 
@@ -396,7 +400,7 @@ end
 
 // Wheel over the table.
 if point_in(mx, my, rows_rect) then
-  scroll = int(clamp(int(scroll + scroll_y()), 0, max(0, n_rows - VISIBLE)))
+  scroll = clamp(int(scroll + scroll_y()), 0, max(0, n_rows - VISIBLE))
 end
 
 // Keyboard navigation — only when no text field owns the keyboard.
@@ -536,8 +540,8 @@ if do_save then
   contacts = for c in contacts do
     if c.id == ed_id then
       {...c, name: ed_name, title: ed_title, company: ed_co, email: ed_email,
-             phone: ed_phone, stage: ed_stage,
-             value: if len(ed_value) > 0 then int(ed_value) else 0 end}
+        phone: ed_phone, stage: ed_stage,
+        value: if len(ed_value) > 0 then int(ed_value) else 0 end}
     else
       c
     end
@@ -606,7 +610,7 @@ draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5, FAINT, 0)
 draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5.5, if q_focus then ACCENT else FAINT end)
 draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 3.6, if q_focus then #10141b else CARD end)
 draw_line({x: search_r.x + 21, y: search_r.y + 18}, {x: search_r.x + 25, y: search_r.y + 22},
-          if q_focus then ACCENT else FAINT end)
+  if q_focus then ACCENT else FAINT end)
 let qx = search_r.x + 34
 if len(q) == 0 && !q_focus then
   draw_text("Search contacts, companies, tags…", {x: qx, y: search_r.y + 9}, {size: FS, color: FAINT})
@@ -622,9 +626,9 @@ if !q_focus then
 end
 
 let sort_label = if sort_key == "days" then "last contact"
-  elsif sort_key == "value" then "deal size"
-  else sort_key
-  end
+elsif sort_key == "value" then "deal size"
+else sort_key
+end
 let dir_label = if sort_dir == 1 then "ascending" else "descending" end
 draw_text_right("sorted by {sort_label} · {dir_label}", TABLE_X + TABLE_W - 22, 22, FS_SM, FAINT)
 
@@ -677,7 +681,7 @@ for i in range(0, shown) do
   let nm_x = cx0 + 34
   let nm_w = w_name - 46
   draw_text(ellipsize(c.name, nm_w, FS_ROW), {x: nm_x, y: y + 8},
-            {size: FS_ROW, color: if on then WHITE else TEXT end})
+    {size: FS_ROW, color: if on then WHITE else TEXT end})
   draw_text(ellipsize(c.title, nm_w, FS_SM), {x: nm_x, y: y + 26}, {size: FS_SM, color: FAINT})
 
   // company + owner
@@ -689,7 +693,7 @@ for i in range(0, shown) do
 
   // deal value
   draw_text_right(money(c.value), cols[3].x + cols[3].w - 4, y + 16, FS_ROW,
-                  if on then TEXT else DIM end)
+    if on then TEXT else DIM end)
 
   // last contact: a freshness dot and the phrase, on the row's centre line
   let fresh = freshness(c.days)
@@ -707,7 +711,7 @@ clip_none()
 if n_rows == 0 then
   draw_text("No contacts match this filter.", {x: cx0, y: ROWS_TOP + 40}, {size: FS_ROW, color: DIM})
   draw_text("Clear the search with Escape, or pick a different segment.",
-            {x: cx0, y: ROWS_TOP + 64}, {size: FS, color: FAINT})
+    {x: cx0, y: ROWS_TOP + 64}, {size: FS, color: FAINT})
 end
 
 // scrollbar
@@ -724,7 +728,7 @@ draw_rect(rect(TABLE_X, H - FOOT_H, TABLE_W, 1), LINE)
 let foot = if n_rows == 0 then "no results" else "{n_rows} contacts · {money_big(pipeline)} in view" end
 draw_text(foot, {x: cx0, y: H - 26}, {size: FS_SM, color: FAINT})
 draw_text_right("click a header to sort  ·  ↑↓ select  ·  / search", TABLE_X + TABLE_W - 22, H - 26,
-                FS_SM, FAINT)
+  FS_SM, FAINT)
 
 // ── inspector ───────────────────────────────────────────────────────────────
 draw_rect(rect(DETAIL_X, 0, DETAIL_W, H), SURFACE)
@@ -787,14 +791,14 @@ else
     draw_text_right(join(selected.tags, " · "), dx + dw, ry2 + 64, FS, DIM)
 
     draw_text("Tab moves between fields · Return saves", {x: dx, y: act_y - 26},
-              {size: FS_SM, color: FAINT})
+      {size: FS_SM, color: FAINT})
     if btn(act1, "Save changes", 1, true) then end
     if btn(act2, "Cancel", 0, false) then end
   else
     draw_text(ellipsize(selected.name, dw - 70, FS_XL), {x: dx + 66, y: hy + 6},
-              {size: FS_XL, color: TEXT})
+      {size: FS_XL, color: TEXT})
     draw_text(ellipsize(selected.title, dw - 70, FS), {x: dx + 66, y: hy + 34},
-              {size: FS, color: DIM})
+      {size: FS, color: DIM})
     chip(dx + 66, hy + 56, selected.stage, stage_color(selected.stage))
 
     let by = hy + 96
@@ -807,11 +811,11 @@ else
 
     detail_row(dx, by, dw, "COMPANY", selected.company, TEXT)
     detail_row(dx, by + 46, dw, "EMAIL", selected.email, ACCENT)
-    detail_row(dx, by + 92, int(dw / 2) - 8, "PHONE", selected.phone, TEXT)
-    detail_row(dx + int(dw / 2) + 8, by + 92, int(dw / 2) - 8, "OWNER", selected.owner, TEXT)
-    detail_row(dx, by + 138, int(dw / 2) - 8, "DEAL VALUE", money(selected.value), TEAL)
-    detail_row(dx + int(dw / 2) + 8, by + 138, int(dw / 2) - 8, "LAST CONTACT",
-               ago(selected.days), if selected.days > 30 then AMBER else TEXT end)
+    detail_row(dx, by + 92, (dw / 2) - 8, "PHONE", selected.phone, TEXT)
+    detail_row(dx + (dw / 2) + 8, by + 92, (dw / 2) - 8, "OWNER", selected.owner, TEXT)
+    detail_row(dx, by + 138, (dw / 2) - 8, "DEAL VALUE", money(selected.value), TEAL)
+    detail_row(dx + (dw / 2) + 8, by + 138, (dw / 2) - 8, "LAST CONTACT",
+      ago(selected.days), if selected.days > 30 then AMBER else TEXT end)
 
     let ty2 = by + 188
     draw_text("TAGS", {x: dx, y: ty2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
@@ -823,7 +827,7 @@ else
 
     let ny = ty2 + 54
     draw_text("NOTES", {x: dx, y: ny}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-    let lines = preview(selected.notes, int(dw / 7), 5).lines
+    let lines = preview(selected.notes, dw / 7, 5).lines
     for i in range(0, len(lines)) do
       draw_text(lines[i], {x: dx, y: ny + 18 + i * 19}, {size: FS, color: DIM})
     end

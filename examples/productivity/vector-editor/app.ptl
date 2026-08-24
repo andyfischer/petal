@@ -77,8 +77,8 @@ end
 // open context menu shows through it. The prelude keeps its menu rect
 // private, so estimate it and skip the text bands it will cover.
 let MENU_ITEMS = ["Bring to front", "Bring forward", "Send backward",
-                  "Send to back", "Duplicate", "Toggle visibility",
-                  "Toggle lock", "Delete"]
+  "Send to back", "Duplicate", "Toggle visibility",
+  "Toggle lock", "Delete"]
 
 fn menu_est(m)
   if !m.open then
@@ -113,14 +113,14 @@ end
 
 fn mk(id, name, kind, x, y, w, h, rot, fill, alpha)
   {id: id, name: name, kind: kind, x: float(x), y: float(y),
-   w: float(w), h: float(h), rot: float(rot), fill: fill, alpha: alpha,
-   vis: true, lock: false, text: "", sp: 0}
+    w: float(w), h: float(h), rot: float(rot), fill: fill, alpha: alpha,
+    vis: true, lock: false, text: "", sp: 0}
 end
 
 fn mktext(id, name, x, y, w, h, fill, txt, sp)
   {id: id, name: name, kind: "text", x: float(x), y: float(y),
-   w: float(w), h: float(h), rot: 0.0, fill: fill, alpha: 255,
-   vis: true, lock: false, text: txt, sp: sp}
+    w: float(w), h: float(h), rot: 0.0, fill: fill, alpha: 255,
+    vis: true, lock: false, text: txt, sp: sp}
 end
 
 fn centerof(s)
@@ -138,12 +138,13 @@ fn tool_hint(id)
 end
 
 fn kind_label(k)
-  if k == "rect" then "Rectangle"
-  elsif k == "ellipse" then "Ellipse"
-  elsif k == "tri" then "Triangle"
-  elsif k == "star" then "Star"
-  elsif k == "line" then "Line"
-  else "Text"
+  match k
+    when "rect" -> "Rectangle"
+    when "ellipse" -> "Ellipse"
+    when "tri" -> "Triangle"
+    when "star" -> "Star"
+    when "line" -> "Line"
+    when _ -> "Text"
   end
 end
 
@@ -305,7 +306,7 @@ fn fill_fan(pts, cx, cy, c, a)
     let p = pts[i]
     let q = pts[(i + 1) % len(pts)]
     fill_triangle(int(cx), int(cy), int(p[0]), int(p[1]), int(q[0]), int(q[1]),
-                  c.r, c.g, c.b, a)
+      c.r, c.g, c.b, a)
   end
 end
 
@@ -334,7 +335,7 @@ fn draw_shape(s, ox, oy)
     draw_text(s.text, {x: int(ox + s.x), y: int(oy + s.y + (s.h - float(st.size) * 1.4) / 2.0)}, st)
   elsif (s.kind == "rect" || s.kind == "line") && s.rot == 0.0 then
     draw_rect(int(ox + s.x), int(oy + s.y), max(1, int(s.w)), max(1, int(s.h)),
-              s.fill.r, s.fill.g, s.fill.b, s.alpha)
+      s.fill.r, s.fill.g, s.fill.b, s.alpha)
   else
     let c = centerof(s)
     fill_fan(world_pts(s, ox, oy), ox + c.x, oy + c.y, s.fill, s.alpha)
@@ -345,7 +346,7 @@ end
 //  0 nw  1 n  2 ne  3 e  4 se  5 s  6 sw  7 w   ·  8 = rotate
 
 let HDIR = [[-1.0, -1.0], [0.0, -1.0], [1.0, -1.0], [1.0, 0.0],
-            [1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [-1.0, 0.0]]
+  [1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [-1.0, 0.0]]
 
 fn local_to_panel(s, ox, oy, lx, ly)
   let c = centerof(s)
@@ -389,7 +390,7 @@ state tool = "select"
 state grid = true
 state snap = true
 state drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
-              doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+  doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 state scrub = {field: "", x0: 0.0, v0: 0.0, doc0: []}
 state lscroll = 0
 state menu = menu_state()
@@ -471,7 +472,7 @@ let vis_rows = max(1, list_r.h / ROW_H)
 
 let ALIGN = ["left", "hcenter", "right", "top", "vcenter", "bottom"]
 let ORDERS = [{id: "back", t: "Back"}, {id: "backward", t: "↓"},
-              {id: "forward", t: "↑"}, {id: "front", t: "Front"}]
+  {id: "forward", t: "↑"}, {id: "front", t: "Front"}]
 
 let over_canvas = point_in(mx, my, canvas)
 let blocked = menu_blocking(menu)
@@ -512,7 +513,7 @@ end
 if key_pressed("escape") then
   sel = []
   drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
-          doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+    doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 end
 if key_pressed("a") then
   sel = for s in doc do s.id end
@@ -693,13 +694,14 @@ let scrub_over = if one >= 0 then scrub_fields(cur, f_x, f_y, f_w, f_h, f_r, f_a
 
 if !blocked && one >= 0 && mouse_pressed(0) && scrub_over != "" then
   let s = doc[one]
-  let v = if scrub_over == "x" then s.x
-    elsif scrub_over == "y" then s.y
-    elsif scrub_over == "w" then s.w
-    elsif scrub_over == "h" then s.h
-    elsif scrub_over == "rot" then s.rot
-    else float(s.alpha)
-    end
+  let v = match scrub_over
+    when "x" -> s.x
+    when "y" -> s.y
+    when "w" -> s.w
+    when "h" -> s.h
+    when "rot" -> s.rot
+    when _ -> float(s.alpha)
+  end
   scrub = {field: scrub_over, x0: float(mx), v0: v, doc0: doc}
 end
 if scrub.field != "" && !mouse_down(0) then
@@ -733,9 +735,9 @@ if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
       let s = doc[one]
       let c = centerof(s)
       drag = {mode: if hh == 8 then "rotate" else "scale" end, h: hh,
-              sx: float(mx), sy: float(my),
-              ang0: degrees(atan2(float(my) - (oy + c.y), float(mx) - (ox + c.x))) - s.rot,
-              base: [s], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+        sx: float(mx), sy: float(my),
+        ang0: degrees(atan2(float(my) - (oy + c.y), float(mx) - (ox + c.x))) - s.rot,
+        base: [s], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
     else
       // topmost visible shape under the pointer
       let hitid = -1
@@ -763,16 +765,16 @@ if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
           if contains(sel, s.id) then base = append(base, s) end
         end
         drag = {mode: "move", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
-                base: base, doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+          base: base, doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
       else
         if !mod_shift() then sel = [] end
         drag = {mode: "marquee", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
-                base: [], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
+          base: [], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
       end
     end
   else
     drag = {mode: "create", h: -1, sx: float(mx), sy: float(my), ang0: 0.0,
-            base: [], doc0: doc, moved: false, kind: tool, nx: 0.0, ny: 0.0}
+      base: [], doc0: doc, moved: false, kind: tool, nx: 0.0, ny: 0.0}
   end
 end
 
@@ -895,8 +897,8 @@ if drag.mode != "none" && !mouse_down(0) then
       s.rot = degrees(atan2(dy, dx))
     else
       s = mk(next_id, "{kind_label(drag.kind)} {next_id}", drag.kind,
-             snapv(x0, 8.0, snap), snapv(y0, 8.0, snap),
-             max(6.0, x1 - x0), max(6.0, y1 - y0), 0, FILLS[3], 255)
+        snapv(x0, 8.0, snap), snapv(y0, 8.0, snap),
+        max(6.0, x1 - x0), max(6.0, y1 - y0), 0, FILLS[3], 255)
     end
     hist = push_hist(hist, drag.doc0)
     fut = []
@@ -912,7 +914,7 @@ if drag.mode != "none" && !mouse_down(0) then
     ops = ops + 1
   end
   drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
-          doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
+    doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 end
 
 // ── Pointer: rail, header, inspector, layer rows ─────────────────────────
@@ -1101,7 +1103,7 @@ if drag.mode == "create" && drag.moved then
     seg(drag.sx, drag.sy, mx, my, MINT, 220, 3)
   else
     let ghost = mk(0, "", drag.kind, x0 - ox, y0 - oy, max(4.0, x1 - x0), max(4.0, y1 - y0),
-                   0, FILLS[3], 150)
+      0, FILLS[3], 150)
     draw_shape(ghost, ox, oy)
   end
   draw_rect_outline(int(x0), int(y0), int(x1 - x0), int(y1 - y0), ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
@@ -1244,15 +1246,15 @@ fn tool_icon(id, r, c)
   let cy = r.y + r.h / 2
   if id == "select" then
     fill_poly([[cx - 6, cy - 9], [cx + 7, cy + 2], [cx + 1, cy + 2], [cx - 1, cy + 9]],
-              c.r, c.g, c.b, 245)
+      c.r, c.g, c.b, 245)
   elsif id == "rect" then
     draw_rect_outline(cx - 10, cy - 7, 20, 15, c.r, c.g, c.b, 255, 2)
   elsif id == "ellipse" then
     draw_circle(cx, cy, 9, c.r, c.g, c.b, 60)
     draw_circle(cx, cy, 9, c.r, c.g, c.b, 255)
     draw_circle(cx, cy, 7, if hovered(r) then HOVER.r else PANEL.r end,
-                if hovered(r) then HOVER.g else PANEL.g end,
-                if hovered(r) then HOVER.b else PANEL.b end, 255)
+      if hovered(r) then HOVER.g else PANEL.g end,
+      if hovered(r) then HOVER.b else PANEL.b end, 255)
   elsif id == "tri" then
     fill_poly([[cx, cy - 9], [cx + 10, cy + 8], [cx - 10, cy + 8]], c.r, c.g, c.b, 235)
   elsif id == "star" then
@@ -1287,7 +1289,7 @@ for i in range(0, len(TOOLS)) do
   end
   tool_icon(t.id, r, if on || hov then TEXT else DIM end)
   draw_text(upper(t.key), {x: r.x + r.w - 11, y: r.y + r.h - 14}, 9,
-            if on then ACCENT else FAINT end)
+    if on then ACCENT else FAINT end)
 end
 
 // ── Inspector ────────────────────────────────────────────────────────────
@@ -1309,7 +1311,7 @@ if one2 >= 0 then
   let s = doc[one2]
   draw_text(ellipsize(s.name, pw, 17), {x: px, y: name_y}, 17, TEXT)
   draw_text("{kind_label(s.kind)}   ·   #{s.id}   ·   layer {one2 + 1} of {len(doc)}",
-            {x: px, y: kind_y}, 11, DIM)
+    {x: px, y: kind_y}, 11, DIM)
 elsif len(sel) > 1 then
   draw_text("{len(sel)} objects", {x: px, y: name_y}, 17, TEXT)
   draw_text("multiple selection   ·   align & stack", {x: px, y: kind_y}, 11, DIM)
@@ -1326,9 +1328,9 @@ field(f_y, "Y", if act then n0(sv.y) else "—" end, act, scrub.field == "y" || 
 field(f_w, "W", if act then n0(sv.w) else "—" end, act, scrub.field == "w" || (act && scrub_over == "w"), clear_of(mr, f_w.y, f_w.h))
 field(f_h, "H", if act then n0(sv.h) else "—" end, act, scrub.field == "h" || (act && scrub_over == "h"), clear_of(mr, f_h.y, f_h.h))
 field(f_r, "ROTATION", if act then n0(sv.rot) ++ "°" else "—" end, act,
-      scrub.field == "rot" || (act && scrub_over == "rot"), clear_of(mr, f_r.y, f_r.h))
+  scrub.field == "rot" || (act && scrub_over == "rot"), clear_of(mr, f_r.y, f_r.h))
 field(f_a, "OPACITY", if act then n0(float(sv.alpha) * 100.0 / 255.0) ++ "%" else "—" end, act,
-      scrub.field == "alpha" || (act && scrub_over == "alpha"), clear_of(mr, f_a.y, f_a.h))
+  scrub.field == "alpha" || (act && scrub_over == "alpha"), clear_of(mr, f_a.y, f_a.h))
 
 if clear_of(mr, fill_lbl, 14) then caps("FILL", px, fill_lbl, FAINT) end
 let cur_fill = if act then hex_of(sv.fill) else "" end
@@ -1428,7 +1430,7 @@ for i in range(0, len(row_rects)) do
       dot(ch.x + 8, ch.y + 8, 7, s.fill, if s.vis then 255 else 90 end)
     elsif s.kind == "tri" then
       fill_poly([[ch.x + 8, ch.y + 1], [ch.x + 15, ch.y + 15], [ch.x + 1, ch.y + 15]],
-                s.fill.r, s.fill.g, s.fill.b, if s.vis then 255 else 90 end)
+        s.fill.r, s.fill.g, s.fill.b, if s.vis then 255 else 90 end)
     elsif s.kind == "text" then
       if clear_of(mr, r.y, r.h) then
         draw_text("T", {x: ch.x + 4, y: ch.y + 2}, 13, if s.vis then s.fill else FAINT end)
@@ -1446,11 +1448,11 @@ for i in range(0, len(row_rects)) do
         let p = pl[k]
         let q = pl[(k + 1) % 10]
         fill_triangle(ch.x + 8, ch.y + 8, int(p[0]), int(p[1]), int(q[0]), int(q[1]),
-                      s.fill.r, s.fill.g, s.fill.b, if s.vis then 235 else 80 end)
+          s.fill.r, s.fill.g, s.fill.b, if s.vis then 235 else 80 end)
       end
     else
       draw_rect(ch.x + 1, ch.y + 3, 14, 11, s.fill.r, s.fill.g, s.fill.b,
-                if s.vis then 255 else 90 end)
+        if s.vis then 255 else 90 end)
     end
     let namec = if !s.vis then #4a5468 elsif on then TEXT else #c3ccdb end
     if clear_of(mr, r.y, r.h) then
@@ -1470,7 +1472,7 @@ for i in range(0, len(row_rects)) do
     let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
     let lc = if hovered(lockr) then TEXT elsif s.lock then #f0a83c else #3d4658 end
     draw_rect_rounded(lockr.x + 5, lockr.y + 9, 12, 8, 2, lc.r, lc.g, lc.b,
-                      if s.lock then 235 else 120 end)
+      if s.lock then 235 else 120 end)
     if s.lock then
       draw_rect_outline(lockr.x + 7, lockr.y + 4, 8, 6, lc.r, lc.g, lc.b, 235, 2)
     else
@@ -1486,15 +1488,15 @@ draw_rect(0, H - STATUS_H, W, STATUS_H, PANEL.r, PANEL.g, PANEL.b)
 seg(0, H - STATUS_H, W, H - STATUS_H, #000000, 150, 1)
 
 let hint = if drag.mode == "scale" then "Scaling — ⇧ keeps the aspect, ⌥ scales about the center"
-  elsif drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
-  elsif drag.mode == "move" then "Moving — ⌥ ignores the snap grid"
-  elsif drag.mode == "marquee" then "Marquee — release to select what it touches"
-  elsif drag.mode == "create" then "Drag out the shape, release to place it"
-  elsif tool != "select" then tool_hint(tool)
-  elsif len(sel) == 0 then "Click to select  ·  drag a marquee over the locked backdrop  ·  ⇧-click adds"
-  elsif len(sel) == 1 then "Drag to move  ·  handles scale  ·  the top knob rotates  ·  [ ] restack  ·  D duplicates"
-  else "{len(sel)} objects  ·  align from the inspector  ·  arrows nudge  ·  [ ] restack"
-  end
+elsif drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
+elsif drag.mode == "move" then "Moving — ⌥ ignores the snap grid"
+elsif drag.mode == "marquee" then "Marquee — release to select what it touches"
+elsif drag.mode == "create" then "Drag out the shape, release to place it"
+elsif tool != "select" then tool_hint(tool)
+elsif len(sel) == 0 then "Click to select  ·  drag a marquee over the locked backdrop  ·  ⇧-click adds"
+elsif len(sel) == 1 then "Drag to move  ·  handles scale  ·  the top knob rotates  ·  [ ] restack  ·  D duplicates"
+else "{len(sel)} objects  ·  align from the inspector  ·  arrows nudge  ·  [ ] restack"
+end
 if clear_of(mr, H - STATUS_H, STATUS_H) then
   draw_text(hint, {x: 22, y: H - STATUS_H + 11}, 12, DIM)
 end

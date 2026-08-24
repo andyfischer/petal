@@ -16,22 +16,22 @@ time += delta
 
 // Initialize vehicles
 if len(vehicles) == 0 then
-    for i in range(0, 12) do
-        let t = float(i)
-        vehicles = append(vehicles, {
-            x: random(0.0, sw),
-            y: random(0.0, sh),
-            vx: random(-50.0, 50.0),
-            vy: random(-50.0, 50.0),
-            max_speed: 120.0 + random(0.0, 80.0),
-            max_force: 200.0 + random(0.0, 150.0),
-            wander_angle: random(0.0, PI * 2.0),
-            r: int(100.0 + t * 12.0),
-            g: int(180.0 + random(0.0, 75.0)),
-            b: int(200.0 + random(0.0, 55.0)),
-            mode: i % 3
-        })
-    end
+  for i in range(0, 12) do
+    let t = float(i)
+    vehicles = append(vehicles, {
+      x: random(0.0, sw),
+      y: random(0.0, sh),
+      vx: random(-50.0, 50.0),
+      vy: random(-50.0, 50.0),
+      max_speed: 120.0 + random(0.0, 80.0),
+      max_force: 200.0 + random(0.0, 150.0),
+      wander_angle: random(0.0, PI * 2.0),
+      r: int(100.0 + t * 12.0),
+      g: int(180.0 + random(0.0, 75.0)),
+      b: int(200.0 + random(0.0, 55.0)),
+      mode: i % 3
+    })
+  end
 end
 
 // Update target to mouse position
@@ -40,114 +40,114 @@ target_y = float(mouse_y())
 
 // Helper: limit vector magnitude
 fn limit_vec(vx, vy, max_val)
-    let mag = sqrt(vx * vx + vy * vy)
-    if mag > max_val then
-        { x: vx / mag * max_val, y: vy / mag * max_val }
-    else
-        { x: vx, y: vy }
-    end
+  let mag = sqrt(vx * vx + vy * vy)
+  if mag > max_val then
+    { x: vx / mag * max_val, y: vy / mag * max_val }
+  else
+    { x: vx, y: vy }
+  end
 end
 
 // Update vehicles
 let new_vehicles = []
 for v in vehicles do
-    let steer_x = 0.0
-    let steer_y = 0.0
+  let steer_x = 0.0
+  let steer_y = 0.0
 
-    if v.mode == 0 then
-        // SEEK: steer toward target
-        let dx = target_x - v.x
-        let dy = target_y - v.y
-        let dist = sqrt(dx * dx + dy * dy) + 0.1
+  if v.mode == 0 then
+    // SEEK: steer toward target
+    let dx = target_x - v.x
+    let dy = target_y - v.y
+    let dist = sqrt(dx * dx + dy * dy) + 0.1
 
-        // Desired velocity (arrive behavior: slow down near target)
-        let desired_speed = v.max_speed
-        if dist < 100.0 then
-            desired_speed = v.max_speed * dist / 100.0
-        end
-        let desired_vx = dx / dist * desired_speed
-        let desired_vy = dy / dist * desired_speed
-
-        steer_x = desired_vx - v.vx
-        steer_y = desired_vy - v.vy
-    elsif v.mode == 1 then
-        // FLEE: steer away from target
-        let dx = v.x - target_x
-        let dy = v.y - target_y
-        let dist = sqrt(dx * dx + dy * dy) + 0.1
-
-        if dist < 200.0 then
-            let desired_vx = dx / dist * v.max_speed
-            let desired_vy = dy / dist * v.max_speed
-            steer_x = desired_vx - v.vx
-            steer_y = desired_vy - v.vy
-        end
-    else
-        // WANDER: random steering
-        let wander_r = 50.0
-        let wander_d = 80.0
-        let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
-
-        // Project a circle in front of the vehicle
-        let cx = v.x + v.vx / speed * wander_d
-        let cy = v.y + v.vy / speed * wander_d
-
-        // Pick a point on the circle
-        let wx = cx + cos(v.wander_angle) * wander_r
-        let wy = cy + sin(v.wander_angle) * wander_r
-
-        steer_x = wx - v.x - v.vx
-        steer_y = wy - v.y - v.vy
+    // Desired velocity (arrive behavior: slow down near target)
+    let desired_speed = v.max_speed
+    if dist < 100.0 then
+      desired_speed = v.max_speed * dist / 100.0
     end
+    let desired_vx = dx / dist * desired_speed
+    let desired_vy = dy / dist * desired_speed
 
-    // Limit steering force
-    let steer = limit_vec(steer_x, steer_y, v.max_force)
+    steer_x = desired_vx - v.vx
+    steer_y = desired_vy - v.vy
+  elsif v.mode == 1 then
+    // FLEE: steer away from target
+    let dx = v.x - target_x
+    let dy = v.y - target_y
+    let dist = sqrt(dx * dx + dy * dy) + 0.1
 
-    // Apply steering
-    let nvx = v.vx + steer.x * delta
-    let nvy = v.vy + steer.y * delta
-
-    // Limit speed
-    let vel = limit_vec(nvx, nvy, v.max_speed)
-    nvx = vel.x
-    nvy = vel.y
-
-    // Update position
-    let nx = v.x + nvx * delta
-    let ny = v.y + nvy * delta
-
-    // Wrap around edges
-    if nx < 0.0 then nx = sw end
-    if nx > sw then nx = 0.0 end
-    if ny < 0.0 then ny = sh end
-    if ny > sh then ny = 0.0 end
-
-    // Wander angle drifts
-    let new_wander = v.wander_angle + random(-0.5, 0.5)
-
-    // Trail
-    if frame_count() % 2 == 0 then
-        trails = append(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
+    if dist < 200.0 then
+      let desired_vx = dx / dist * v.max_speed
+      let desired_vy = dy / dist * v.max_speed
+      steer_x = desired_vx - v.vx
+      steer_y = desired_vy - v.vy
     end
+  else
+    // WANDER: random steering
+    let wander_r = 50.0
+    let wander_d = 80.0
+    let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
 
-    new_vehicles = append(new_vehicles, {
-        x: nx, y: ny, vx: nvx, vy: nvy,
-        max_speed: v.max_speed, max_force: v.max_force,
-        wander_angle: new_wander,
-        r: v.r, g: v.g, b: v.b, mode: v.mode
-    })
+    // Project a circle in front of the vehicle
+    let cx = v.x + v.vx / speed * wander_d
+    let cy = v.y + v.vy / speed * wander_d
+
+    // Pick a point on the circle
+    let wx = cx + cos(v.wander_angle) * wander_r
+    let wy = cy + sin(v.wander_angle) * wander_r
+
+    steer_x = wx - v.x - v.vx
+    steer_y = wy - v.y - v.vy
+  end
+
+  // Limit steering force
+  let steer = limit_vec(steer_x, steer_y, v.max_force)
+
+  // Apply steering
+  let nvx = v.vx + steer.x * delta
+  let nvy = v.vy + steer.y * delta
+
+  // Limit speed
+  let vel = limit_vec(nvx, nvy, v.max_speed)
+  nvx = vel.x
+  nvy = vel.y
+
+  // Update position
+  let nx = v.x + nvx * delta
+  let ny = v.y + nvy * delta
+
+  // Wrap around edges
+  if nx < 0.0 then nx = sw end
+  if nx > sw then nx = 0.0 end
+  if ny < 0.0 then ny = sh end
+  if ny > sh then ny = 0.0 end
+
+  // Wander angle drifts
+  let new_wander = v.wander_angle + random(-0.5, 0.5)
+
+  // Trail
+  if frame_count() % 2 == 0 then
+    trails = append(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
+  end
+
+  new_vehicles = append(new_vehicles, {
+    x: nx, y: ny, vx: nvx, vy: nvy,
+    max_speed: v.max_speed, max_force: v.max_force,
+    wander_angle: new_wander,
+    r: v.r, g: v.g, b: v.b, mode: v.mode
+  })
 end
 vehicles = new_vehicles
 
 // Age trails
 let new_trails = []
 for t in trails do
-    let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8 }
-    if nt.life > 0.0 then new_trails = append(new_trails, nt) end
+  let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8 }
+  if nt.life > 0.0 then new_trails = append(new_trails, nt) end
 end
 trails = new_trails
 if len(trails) > 2000 then
-    trails = slice(trails, len(trails) - 1500, len(trails))
+  trails = slice(trails, len(trails) - 1500, len(trails))
 end
 
 // === Drawing ===
@@ -155,9 +155,9 @@ clear(10, 12, 20)
 
 // Draw trails
 for t in trails do
-    let alpha = t.life * 0.5
-    draw_circle(int(t.x), int(t.y), 2,
-                int(float(t.r) * alpha), int(float(t.g) * alpha), int(float(t.b) * alpha))
+  let alpha = t.life * 0.5
+  draw_circle(int(t.x), int(t.y), 2,
+    int(float(t.r) * alpha), int(float(t.g) * alpha), int(float(t.b) * alpha))
 end
 
 // Draw target
@@ -168,35 +168,35 @@ draw_circle(int(target_x), int(target_y), 2, 255, 100, 100)
 
 // Draw vehicles as triangles (using lines)
 for v in vehicles do
-    let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
-    let heading_x = v.vx / speed
-    let heading_y = v.vy / speed
+  let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
+  let heading_x = v.vx / speed
+  let heading_y = v.vy / speed
 
-    // Triangle points
-    let size = 12.0
-    let nose_x = v.x + heading_x * size
-    let nose_y = v.y + heading_y * size
-    let left_x = v.x - heading_x * size * 0.6 + heading_y * size * 0.5
-    let left_y = v.y - heading_y * size * 0.6 - heading_x * size * 0.5
-    let right_x = v.x - heading_x * size * 0.6 - heading_y * size * 0.5
-    let right_y = v.y - heading_y * size * 0.6 + heading_x * size * 0.5
+  // Triangle points
+  let size = 12.0
+  let nose_x = v.x + heading_x * size
+  let nose_y = v.y + heading_y * size
+  let left_x = v.x - heading_x * size * 0.6 + heading_y * size * 0.5
+  let left_y = v.y - heading_y * size * 0.6 - heading_x * size * 0.5
+  let right_x = v.x - heading_x * size * 0.6 - heading_y * size * 0.5
+  let right_y = v.y - heading_y * size * 0.6 + heading_x * size * 0.5
 
-    // Fill body
-    draw_circle(int(v.x), int(v.y), 6, v.r / 2, v.g / 2, v.b / 2)
+  // Fill body
+  draw_circle(int(v.x), int(v.y), 6, v.r / 2, v.g / 2, v.b / 2)
 
-    // Triangle outline
-    draw_line(int(nose_x), int(nose_y), int(left_x), int(left_y), v.r, v.g, v.b)
-    draw_line(int(left_x), int(left_y), int(right_x), int(right_y), v.r, v.g, v.b)
-    draw_line(int(right_x), int(right_y), int(nose_x), int(nose_y), v.r, v.g, v.b)
+  // Triangle outline
+  draw_line(int(nose_x), int(nose_y), int(left_x), int(left_y), v.r, v.g, v.b)
+  draw_line(int(left_x), int(left_y), int(right_x), int(right_y), v.r, v.g, v.b)
+  draw_line(int(right_x), int(right_y), int(nose_x), int(nose_y), v.r, v.g, v.b)
 
-    // Mode indicator
-    if v.mode == 0 then
-        // Seeker - dot at nose
-        draw_circle(int(nose_x), int(nose_y), 3, 100, 255, 100)
-    elsif v.mode == 1 then
-        // Fleer - red warning
-        draw_circle(int(nose_x), int(nose_y), 3, 255, 100, 100)
-    end
+  // Mode indicator
+  if v.mode == 0 then
+    // Seeker - dot at nose
+    draw_circle(int(nose_x), int(nose_y), 3, 100, 255, 100)
+  elsif v.mode == 1 then
+    // Fleer - red warning
+    draw_circle(int(nose_x), int(nose_y), 3, 255, 100, 100)
+  end
 end
 
 // Legend

@@ -548,8 +548,8 @@ end
 let FOOT_H = 78
 let list_top = body_y + 34
 let list_avail = body_h - 34 - FOOT_H - S3
-let VIS_ROWS = max(4, int(list_avail) / 56)
-let ROW_H = int(list_avail) / VIS_ROWS
+let VIS_ROWS = max(4, list_avail / 56)
+let ROW_H = list_avail / VIS_ROWS
 let list_r = rect(fleet_x, list_top, fleet_w, ROW_H * VIS_ROWS)
 let foot_r = rect(fleet_x, body_y + body_h - FOOT_H, fleet_w, FOOT_H)
 
@@ -604,7 +604,7 @@ for k in range(0, VIS_ROWS) do
     let v = sample(hst, sel_metric, tick)
     tx_right(fmt_bare(sel_metric, v), rr.x + rr.w - 16, ry - 2, T_BODY, if lv > 0 then lc else TEXT end)
     sparkline(rect(rr.x + rr.w - 100, ry + 22, 84, 14), hst, sel_metric, tick, 20,
-              if is_sel then M_COLOR[sel_metric] else FAINT end, 0)
+      if is_sel then M_COLOR[sel_metric] else FAINT end, 0)
   end
 end
 clip_none()
@@ -659,7 +659,7 @@ for m in range(0, 4) do
   tx_right(dstr, tr.x + tr.w - 14, tr.y + 14, T_MICRO, dc)
 
   sparkline(rect(tr.x + 14, tr.y + 74, tr.w - 28, 20), host, m, tick, 44, mc,
-            if active then 46 else 24 end)
+    if active then 46 else 24 end)
 
   if clicked(tr) then
     sel_metric = m
@@ -725,10 +725,10 @@ let plot = rect(chart_r.x + 66, chart_r.y + 72, chart_r.w - 66 - S4 - 4, chart_r
 // the bottom third of the card to make room for a line it will never touch.
 let head = hi * 1.10
 let vmax = if hi > M_WARN[sel_metric] * 0.80 then
-    min(max(head, M_WARN[sel_metric] * 1.06), M_MAX[sel_metric])
-  else
-    min(head, M_MAX[sel_metric])
-  end
+  min(max(head, M_WARN[sel_metric] * 1.06), M_MAX[sel_metric])
+else
+  min(head, M_MAX[sel_metric])
+end
 let vmin = max(0.0, lo - (vmax - lo) * 0.14)
 
 fn plot_y(p, v, vmin, vmax)
@@ -779,8 +779,8 @@ for k in range(0, WINDOW) do
     let base = plot.y + plot.h
     fill_poly([[px, py], [x, y], [x, base], [px, base]], mc.r, mc.g, mc.b, 13)
     fill_poly([[px, py], [x, y],
-               [x, y + (base - y) * 0.42], [px, py + (base - py) * 0.42]],
-              mc.r, mc.g, mc.b, 24)
+      [x, y + (base - y) * 0.42], [px, py + (base - py) * 0.42]],
+      mc.r, mc.g, mc.b, 24)
     draw_line(px, py, x, y, mc.r, mc.g, mc.b, 255, 2)
   end
   px = x
@@ -872,7 +872,7 @@ for c in range(0, NCORE) do
   if v > busiest then busiest = v end
 end
 tx_right("peak core " ++ dec(busiest, 1) ++ "%", cores_r.x + cores_r.w - S4, legend_y - 1.0, T_MICRO,
-         if busiest >= 90.0 then CRIT elsif busiest >= 78.0 then WARN else DIM end)
+  if busiest >= 90.0 then CRIT elsif busiest >= 78.0 then WARN else DIM end)
 
 // ── Alert feed ───────────────────────────────────────────────────────────────
 
@@ -912,10 +912,10 @@ for k in range(0, a_vis) do
     tx(hn.name, ar.x + 16, ar.y + 8, T_SMALL, if al.ack then DIM else TEXT end)
     let sev_lbl = upper(sev_word(al.sev))
     draw_text(sev_lbl, {x: ar.x + 16 + text_width(hn.name, T_SMALL) + 10, y: ar.y + 10},
-              {size: T_MICRO, color: sc, spacing: 1.2})
+      {size: T_MICRO, color: sc, spacing: 1.2})
     tx_right(ago(tick - al.t), ar.x + ar.w - 10, ar.y + 9, T_MICRO, FAINT)
     tx(ellipsize(al.text, ar.w - 28, T_MICRO), ar.x + 16, ar.y + 27, T_MICRO,
-       if al.ack then FAINT else DIM end)
+      if al.ack then FAINT else DIM end)
 
     if clicked(ar) then
       sel_host = al.host

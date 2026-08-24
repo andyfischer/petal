@@ -180,9 +180,9 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
     let spread = branch_spread_angle / 2.0
     let heir_a = leaf_heir == 0
     grow(id ++ ".a", if heir_a then lineage else id ++ ".a" end,
-         depth + 1, handoff, -spread, fork_share, end_radius, 0.0)
+      depth + 1, handoff, -spread, fork_share, end_radius, 0.0)
     grow(id ++ ".b", if heir_a then id ++ ".b" else lineage end,
-         depth + 1, handoff, spread, 1.0 - fork_share, end_radius, 0.0)
+      depth + 1, handoff, spread, 1.0 - fork_share, end_radius, 0.0)
   else
     bud(lineage, handoff)
   end
@@ -200,11 +200,11 @@ let root_y = float(ground_y)
 let trunk_half = 2.0 * max_segment_radius
 
 grow("r" ++ str(generation), "L" ++ str(generation), 0,
-     {x: root_x, y: root_y,
-      lx: root_x - trunk_half, ly: root_y,
-      rx: root_x + trunk_half, ry: root_y,
-      angle: 0.0},
-     0.0, 1.0, max_segment_radius, 0.0)
+  {x: root_x, y: root_y,
+    lx: root_x - trunk_half, ly: root_y,
+    rx: root_x + trunk_half, ry: root_y,
+    angle: 0.0},
+  0.0, 1.0, max_segment_radius, 0.0)
 
 // Leaves last, so a blade is never buried under a branch drawn after it —
 // the same two-pass order the Flash renderer used.

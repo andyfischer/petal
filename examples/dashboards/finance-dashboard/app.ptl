@@ -165,7 +165,7 @@ end
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 let MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 let YEAR = "2025"
 
@@ -366,10 +366,10 @@ fn build_view(txns, income, ci, mi, mo, sort_mode)
   let all_months = zeros12()
   let cat_totals = zeros(len(CATS))
   let bucket = if ci < 0 then
-      zeros(len(CATS))
-    else
-      zeros(len(CATS[ci].merchants))
-    end
+    zeros(len(CATS))
+  else
+    zeros(len(CATS[ci].merchants))
+  end
   let rows = []
   let total = 0.0
 
@@ -408,9 +408,9 @@ fn build_view(txns, income, ci, mi, mo, sort_mode)
     let here = sum_of(bucket)
     slices = [
       {label: CATS[ci].merchants[mi].name, value: bucket[mi],
-       color: CATS[ci].color, key: mi},
+        color: CATS[ci].color, key: mi},
       {label: "rest of " ++ CATS[ci].name, value: max(0.0, here - bucket[mi]),
-       color: color_lerp(CATS[ci].color, #1b2130, 0.66), key: -1},
+        color: color_lerp(CATS[ci].color, #1b2130, 0.66), key: -1},
     ]
   end
 
@@ -424,8 +424,8 @@ fn build_view(txns, income, ci, mi, mo, sort_mode)
   rows = sorted_by_rank(rows, rranks)
 
   {slices: slices, months: months, all_months: all_months, rows: rows,
-   total: total, grand: sum_of(all_months), cat_totals: cat_totals,
-   income: income, inc_total: sum_of(income), spend_total: sum_of(all_months)}
+    total: total, grand: sum_of(all_months), cat_totals: cat_totals,
+    income: income, inc_total: sum_of(income), spend_total: sum_of(all_months)}
 end
 
 // ── Card chrome ──────────────────────────────────────────────────────────────
@@ -516,16 +516,16 @@ fn nice_top(v)
     let mag = pow(10.0, floor(log(v) / log(10.0)))
     let n = v / mag
     let mult = if n <= 1.0 then 1.0
-      elsif n <= 1.5 then 1.5
-      elsif n <= 2.0 then 2.0
-      elsif n <= 2.5 then 2.5
-      elsif n <= 3.0 then 3.0
-      elsif n <= 4.0 then 4.0
-      elsif n <= 5.0 then 5.0
-      elsif n <= 6.0 then 6.0
-      elsif n <= 8.0 then 8.0
-      else 10.0
-      end
+    elsif n <= 1.5 then 1.5
+    elsif n <= 2.0 then 2.0
+    elsif n <= 2.5 then 2.5
+    elsif n <= 3.0 then 3.0
+    elsif n <= 4.0 then 4.0
+    elsif n <= 5.0 then 5.0
+    elsif n <= 6.0 then 6.0
+    elsif n <= 8.0 then 8.0
+    else 10.0
+    end
     mult * mag
   end
 end
@@ -537,11 +537,11 @@ fn axis_scale(maxv, target)
   let mag = pow(10.0, floor(log(raw) / log(10.0)))
   let n = raw / mag
   let mult = if n <= 1.0 then 1.0
-    elsif n <= 2.0 then 2.0
-    elsif n <= 2.5 then 2.5
-    elsif n <= 5.0 then 5.0
-    else 10.0
-    end
+  elsif n <= 2.0 then 2.0
+  elsif n <= 2.5 then 2.5
+  elsif n <= 5.0 then 5.0
+  else 10.0
+  end
   let step = mult * mag
   let ndiv = max(1, int(ceil(maxv / step)))
   {step: step, ndiv: ndiv, top: step * float(ndiv)}
@@ -573,23 +573,23 @@ fn draw_columns(plot, vals, base_c, hot, marked, t)
     let y = plot.y + plot.h * (1.0 - float(g) / float(sc.ndiv))
     draw_line(plot.x, y, plot.x + plot.w, y, GRID.r, GRID.g, GRID.b, 255, 1)
     text_right(axis_label(sc.step * float(g), sc.step), plot.x - 10.0, y - 6.0,
-               {size: T_MICRO, color: FAINT})
+      {size: T_MICRO, color: FAINT})
   end
   for i in range(0, len(vals)) do
     let slot = col_rect(plot, i, len(vals))
     let h = plot.h * (vals[i] / top) * t
     let c = if i == hot then color_lerp(base_c, WHITE, 0.32)
-      elsif marked >= 0 && i != marked then color_lerp(base_c, SURFACE, 0.58)
-      else base_c
-      end
+    elsif marked >= 0 && i != marked then color_lerp(base_c, SURFACE, 0.58)
+    else base_c
+    end
     draw_rect_rounded(slot.x, plot.y + plot.h - h, slot.w, max(2.0, h), 4,
-                      c.r, c.g, c.b)
+      c.r, c.g, c.b)
     let lc = if i == marked then ACCENT elsif i == hot then TEXT else FAINT end
     text_mid(MONTHS[i], slot.x + slot.w / 2.0, plot.y + plot.h + 10.0,
-             {size: T_MICRO, color: lc})
+      {size: T_MICRO, color: lc})
     if i == marked then
       draw_line(slot.x - 3.0, plot.y + plot.h + 3.0, slot.x + slot.w + 3.0,
-                plot.y + plot.h + 3.0, ACCENT.r, ACCENT.g, ACCENT.b, 255, 2)
+        plot.y + plot.h + 3.0, ACCENT.r, ACCENT.g, ACCENT.b, 255, 2)
     end
   end
   // Mean line last, so it sits over the columns.
@@ -605,7 +605,7 @@ fn draw_columns(plot, vals, base_c, hot, marked, t)
     let slot = col_rect(plot, hot, len(vals))
     let h = plot.h * (vals[hot] / top) * t
     text_mid(money(vals[hot]), slot.x + slot.w / 2.0, plot.y + plot.h - h - 18.0,
-             {size: T_SMALL, color: TEXT})
+      {size: T_SMALL, color: TEXT})
   end
   top
 end
@@ -665,7 +665,7 @@ fn dashed(x0, y0, x1, y1, c, a)
       let t0 = float(i) / float(steps)
       let t1 = float(i + 1) / float(steps)
       draw_line(lerp(x0, x1, t0), lerp(y0, y1, t0),
-                lerp(x0, x1, t1), lerp(y0, y1, t1), c.r, c.g, c.b, a, 1)
+        lerp(x0, x1, t1), lerp(y0, y1, t1), c.r, c.g, c.b, a, 1)
     end
   end
 end
@@ -808,7 +808,7 @@ clear(BG.r, BG.g, BG.b)
 
 let key0 = scope_key(sel_cat, sel_mer, month, sort_mode)
 _cache = if _cache_key == key0 then _cache
-  else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
+else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
 _cache_key = key0
 let pre = _cache
 let total_pre = sum_of(for s in pre.slices do s.value end)
@@ -827,7 +827,7 @@ let leg_y0 = int(dcy) - len(pre.slices) * LEG_H / 2
 let hot_leg = leg_hit(leg_x, leg_y0, leg_w, len(pre.slices))
 
 let bplot = rect(r_bars.x + S3 + 46, r_bars.y + 50,
-                 r_bars.w - S3 * 2 - 46, r_bars.h - 50 - S3 - 22)
+  r_bars.w - S3 * 2 - 46, r_bars.h - 50 - S3 - 22)
 let hot_col = col_hit(bplot, 12)
 
 let parts = crumb_parts(level, sel_cat, sel_mer)
@@ -857,10 +857,10 @@ end
 
 // Which slice the pointer or the keyboard is asking to descend into.
 let pick = if mouse_pressed(0) && hot_slice >= 0 then hot_slice
-  elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
-  elsif key_pressed("return") || key_pressed("enter") || key_pressed("right") then want_sel
-  else -1
-  end
+elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
+elsif key_pressed("return") || key_pressed("enter") || key_pressed("right") then want_sel
+else -1
+end
 
 if pick >= 0 && pick < n_slices && level < 2 then
   let s = pre.slices[pick]
@@ -927,16 +927,16 @@ let ease = 1.0 - pow(1.0 - anim, 3.0)
 
 let key1 = scope_key(sel_cat, sel_mer, month, sort_mode)
 _cache = if _cache_key == key1 then _cache
-  else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
+else build_view(_txns, _income, sel_cat, sel_mer, month, sort_mode) end
 _cache_key = key1
 let view = _cache
 let slices = view.slices
 let total = sum_of(for s in slices do s.value end)
 
 let scope_name = if level == 0 then "All spending"
-  elsif level == 1 then CATS[sel_cat].name
-  else CATS[sel_cat].merchants[sel_mer].name
-  end
+elsif level == 1 then CATS[sel_cat].name
+else CATS[sel_cat].merchants[sel_mer].name
+end
 // Low-chroma steel means "all of it"; a drill picks up the category's own hue.
 let scope_color = if level == 0 then STEEL else CATS[sel_cat].color end
 let line_color = if level == 0 then POS else CATS[sel_cat].color end
@@ -948,7 +948,7 @@ draw_circle({x: PAD + 5, y: 27}, 5.0, scope_color)
 let mark_st = {size: T_HEAD, color: TEXT, spacing: 2.0}
 text_at("LEDGER", PAD + 18, 18, mark_st)
 text_at("personal accounts", PAD + 22 + text_w("LEDGER", mark_st), 23,
-        {size: T_SMALL, color: FAINT})
+  {size: T_SMALL, color: FAINT})
 
 let sepw = text_w("  >  ", CRUMB)
 let cbx = PAD
@@ -958,7 +958,7 @@ for i in range(0, len(parts)) do
   text_at(parts[i], cbx, 46, {size: T_SMALL, color: c})
   if i == hot_crumb && !last then
     draw_line(cbx, 61, cbx + text_w(parts[i], CRUMB), 61,
-              ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
+      ACCENT.r, ACCENT.g, ACCENT.b, 200, 1)
   end
   cbx = cbx + text_w(parts[i], CRUMB)
   if !last then
@@ -968,7 +968,7 @@ for i in range(0, len(parts)) do
 end
 
 text_right("up/down pick   enter drill in   esc back   n/p month   t sort",
-           W - PAD, 47, {size: T_MICRO, color: FAINT})
+  W - PAD, 47, {size: T_MICRO, color: FAINT})
 let mp_w = text_w(month_label, {size: T_MICRO}) + 18
 let mp_c = if month < 0 then DIM else ACCENT end
 draw_rect_rounded(rect(W - PAD - mp_w, 16, mp_w, 22), 11, mp_c, 32)
@@ -985,64 +985,64 @@ if level == 0 then
   let rate = net / max(inc, 1.0) * 100.0
   let best = argmax_of(view.all_months)
   kpi_tile(kpi_rect(r_kpis, 0, kw), "INCOME  12 MO", money(inc),
-           "avg " ++ money(inc / 12.0) ++ " per month", DIM, view.income, POS, ease)
+    "avg " ++ money(inc / 12.0) ++ " per month", DIM, view.income, POS, ease)
   kpi_tile(kpi_rect(r_kpis, 1, kw), "SPENDING  12 MO", money(spend),
-           "avg " ++ money(spend / 12.0) ++ " per month", DIM, view.all_months, NEG, ease)
+    "avg " ++ money(spend / 12.0) ++ " per month", DIM, view.all_months, NEG, ease)
   kpi_tile(kpi_rect(r_kpis, 2, kw), "NET SAVED", money(net),
-           "heaviest month " ++ MONTHS[best], DIM,
-           for i in range(0, 12) do max(0.0, view.income[i] - view.all_months[i]) end,
-           ACCENT, ease)
+    "heaviest month " ++ MONTHS[best], DIM,
+    for i in range(0, 12) do max(0.0, view.income[i] - view.all_months[i]) end,
+    ACCENT, ease)
   kpi_tile(kpi_rect(r_kpis, 3, kw), "SAVINGS RATE", pct(rate),
-           if rate >= 25.0 then "ahead of the 25% target" else "under the 25% target" end,
-           if rate >= 25.0 then POS else NEG end,
-           for i in range(0, 12) do
-             max(0.0, (view.income[i] - view.all_months[i]) / max(view.income[i], 1.0) * 100.0)
-           end, AMBER, ease)
+    if rate >= 25.0 then "ahead of the 25% target" else "under the 25% target" end,
+    if rate >= 25.0 then POS else NEG end,
+    for i in range(0, 12) do
+      max(0.0, (view.income[i] - view.all_months[i]) / max(view.income[i], 1.0) * 100.0)
+    end, AMBER, ease)
 else
   let scope_total = sum_of(view.months)
   let share = scope_total / max(view.grand, 1.0) * 100.0
   let big = argmax_of(view.months)
   kpi_tile(kpi_rect(r_kpis, 0, kw), upper(scope_name) ++ "  12 MO", money(scope_total),
-           if len(view.rows) == 1 then "1 transaction in view"
-             else str(len(view.rows)) ++ " transactions in view" end,
-           DIM, view.months, scope_color, ease)
+    if len(view.rows) == 1 then "1 transaction in view"
+    else str(len(view.rows)) ++ " transactions in view" end,
+    DIM, view.months, scope_color, ease)
   let avg_note = if level == 2 then "over the last 12 months"
-    else "across " ++ str(len(slices)) ++ " merchants" end
+  else "across " ++ str(len(slices)) ++ " merchants" end
   kpi_tile(kpi_rect(r_kpis, 1, kw), "MONTHLY AVERAGE", money(scope_total / 12.0),
-           avg_note, DIM, view.months, scope_color, ease)
+    avg_note, DIM, view.months, scope_color, ease)
   kpi_tile(kpi_rect(r_kpis, 2, kw), "HEAVIEST MONTH", money(max_of(view.months)),
-           MONTHS[big] ++ " " ++ YEAR, DIM, view.months, scope_color, ease)
+    MONTHS[big] ++ " " ++ YEAR, DIM, view.months, scope_color, ease)
   kpi_tile(kpi_rect(r_kpis, 3, kw), "SHARE OF SPENDING", pct(share),
-           "of " ++ money(view.grand) ++ " spent this year", DIM,
-           for i in range(0, 12) do
-             view.months[i] / max(view.all_months[i], 1.0) * 100.0
-           end, scope_color, ease)
+    "of " ++ money(view.grand) ++ " spent this year", DIM,
+    for i in range(0, 12) do
+      view.months[i] / max(view.all_months[i], 1.0) * 100.0
+    end, scope_color, ease)
 end
 
 // ── Donut card ───────────────────────────────────────────────────────────────
 
 card(r_donut)
 let d_title = if level == 0 then "SPENDING BY CATEGORY"
-  elsif level == 1 then upper(CATS[sel_cat].name) ++ " BY MERCHANT"
-  else "SHARE OF " ++ upper(CATS[sel_cat].name)
-  end
+elsif level == 1 then upper(CATS[sel_cat].name) ++ " BY MERCHANT"
+else "SHARE OF " ++ upper(CATS[sel_cat].name)
+end
 card_head(r_donut, d_title, if month < 0 then "12 months" else month_label end)
 
 draw_donut(dcx, dcy, d_in, d_out, slices, total, hot_slice,
-           if hot_leg >= 0 then hot_leg else legend_sel end, ease)
+  if hot_leg >= 0 then hot_leg else legend_sel end, ease)
 
 let focus = if hot_slice >= 0 then hot_slice
-  elsif hot_leg >= 0 then hot_leg
-  elsif legend_sel < len(slices) then legend_sel
-  else -1
-  end
+elsif hot_leg >= 0 then hot_leg
+elsif legend_sel < len(slices) then legend_sel
+else -1
+end
 if focus >= 0 && len(slices) > 0 then
   let s = slices[focus]
   let p = s.value / max(total, 0.0001) * 100.0
   text_mid(pct(p), dcx, dcy - 26, {size: T_HERO, color: s.color})
   text_mid(money(s.value), dcx, dcy + 6, {size: T_SMALL, color: TEXT})
   text_mid(ellipsize(s.label, d_in * 1.8, T_MICRO), dcx, dcy + 22,
-           {size: T_MICRO, color: DIM})
+    {size: T_MICRO, color: DIM})
 else
   text_mid(money(total), dcx, dcy - 14, {size: T_HERO, color: TEXT})
   text_mid("total", dcx, dcy + 16, {size: T_MICRO, color: DIM})
@@ -1059,16 +1059,16 @@ for i in range(0, len(slices)) do
   let amt = money(s.value)
   let aw = text_w(amt, {size: T_SMALL})
   text_at(ellipsize(s.label, lr.w - aw - 26, T_SMALL), lr.x + 16, lr.y + 6,
-          {size: T_SMALL, color: if on then TEXT else DIM end})
+    {size: T_SMALL, color: if on then TEXT else DIM end})
   text_right(amt, lr.x + lr.w, lr.y + 6,
-             {size: T_SMALL, color: if on then TEXT else FAINT end})
+    {size: T_SMALL, color: if on then TEXT else FAINT end})
 end
 
 // ── Column chart card ────────────────────────────────────────────────────────
 
 card(r_bars)
 let b_title = if level == 0 then "MONTHLY SPENDING"
-  else upper(scope_name) ++ " BY MONTH" end
+else upper(scope_name) ++ " BY MONTH" end
 card_head(r_bars, b_title, "click a column to filter that month")
 draw_columns(bplot, view.months, scope_color, hot_col, month, ease)
 
@@ -1093,7 +1093,7 @@ for g in range(0, lsc.ndiv + 1) do
   let y = lplot.y + lplot.h * (1.0 - float(g) / float(lsc.ndiv))
   draw_line(lplot.x, y, lplot.x + lplot.w, y, GRID.r, GRID.g, GRID.b, 255, 1)
   text_right(axis_label(lerp(lo_n, hi, float(g) / float(lsc.ndiv)), lsc.step),
-             lplot.x - 10.0, y - 6.0, {size: T_MICRO, color: FAINT})
+    lplot.x - 10.0, y - 6.0, {size: T_MICRO, color: FAINT})
 end
 
 let pts = for i in range(0, 12) do
@@ -1108,7 +1108,7 @@ if level == 0 then
   dashed(lplot.x, by, lplot.x + lplot.w, by, DIM, 110)
 else
   dashed(lplot.x, ly(lplot, 0.0, lo_n, hi),
-         lplot.x + lplot.w, ly(lplot, vals[11] * ease, lo_n, hi), DIM, 110)
+    lplot.x + lplot.w, ly(lplot, vals[11] * ease, lo_n, hi), DIM, 110)
 end
 
 polyline(pts, line_color, 2.0, 255)
@@ -1118,17 +1118,17 @@ for i in range(0, 12) do
   end
   let on = i == month
   draw_circle({x: pts[i][0], y: pts[i][1]}, if on then 5.0 else 2.5 end,
-              if on then WHITE else line_color end)
+    if on then WHITE else line_color end)
 end
 text_at(if level == 0 then "closing " ++ money(vals[11])
-        else "year to date " ++ money(vals[11]) end,
-        lplot.x + 4, lplot.y - 12, {size: T_MICRO, color: DIM})
+else "year to date " ++ money(vals[11]) end,
+  lplot.x + 4, lplot.y - 12, {size: T_MICRO, color: DIM})
 
 // ── Transactions card ────────────────────────────────────────────────────────
 
 card(r_table)
 let sort_note = if sort_mode == 0 then "newest first  ·  t sorts by amount"
-  else "largest first  ·  t sorts by date" end
+else "largest first  ·  t sorts by date" end
 card_head(r_table, "TRANSACTIONS  " ++ str(len(view.rows)), sort_note)
 
 let col_date = tplot.x
@@ -1142,7 +1142,7 @@ text_at("MERCHANT", col_desc, tplot.y + 2, HDR)
 text_at("CATEGORY", col_cat, tplot.y + 2, HDR)
 text_right("AMOUNT", col_amt, tplot.y + 2, HDR)
 draw_line(tplot.x, tplot.y + 18, tplot.x + tplot.w, tplot.y + 18,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
 
 clip(int(t_view.x) - 8, int(t_view.y), int(t_view.w) + 16, int(t_view.h))
 for i in range(0, t_rows_visible) do
@@ -1158,9 +1158,9 @@ for i in range(0, t_rows_visible) do
     let c = CATS[t.cat]
     let mname = c.merchants[t.mer].name
     text_at(MONTHS[t.m] ++ " " ++ str(t.day), col_date, ry + 5,
-            {size: T_SMALL, color: FAINT})
+      {size: T_SMALL, color: FAINT})
     text_at(ellipsize(mname, col_cat - col_desc - 18, T_SMALL), col_desc, ry + 5,
-            {size: T_SMALL, color: TEXT})
+      {size: T_SMALL, color: TEXT})
     draw_rect_rounded(rect(col_cat, ry + 8, 8, 8), 2, c.color)
     text_at(c.name, col_cat + 16, ry + 5, {size: T_SMALL, color: DIM})
     text_right(money_cents(t.amt), col_amt, ry + 5, {size: T_SMALL, color: TEXT})
@@ -1169,6 +1169,6 @@ end
 clip_none()
 if len(view.rows) == 0 then
   text_at("no transactions in this scope", tplot.x, t_view.y + 14,
-          {size: T_SMALL, color: FAINT})
+    {size: T_SMALL, color: FAINT})
 end
 draw_scrollbar(t_view, len(view.rows), t_rows_visible, table_scroll)

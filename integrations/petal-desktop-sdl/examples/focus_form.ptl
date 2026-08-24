@@ -28,7 +28,7 @@ fc = focus_update(fc, ids)
 clear(bg.r, bg.g, bg.b)
 draw_text("PROFILE", {x: 40, y: 28}, 28, accent)
 draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
-          {x: 40, y: 64}, 13, dim)
+  {x: 40, y: 64}, 13, dim)
 
 // Two text fields.
 draw_text("Name", {x: 40, y: 100}, 14, dim)

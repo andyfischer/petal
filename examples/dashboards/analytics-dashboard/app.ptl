@@ -181,17 +181,17 @@ end
 fn build_metrics()
   [
     {key: "rev", label: "REVENUE", unit: "usd", color: C_REV,
-     note: "gross, net of refunds",
-     data: make_series(3, 8400.0, 0.62, 0.16, 0.34)},
+      note: "gross, net of refunds",
+      data: make_series(3, 8400.0, 0.62, 0.16, 0.34)},
     {key: "usr", label: "ACTIVE USERS", unit: "count", color: C_USERS,
-     note: "daily active, deduped",
-     data: make_series(11, 14200.0, 0.41, 0.11, 0.28)},
+      note: "daily active, deduped",
+      data: make_series(11, 14200.0, 0.41, 0.11, 0.28)},
     {key: "cvr", label: "CONVERSION", unit: "pct", color: C_CONV,
-     note: "visit to paid signup",
-     data: make_series(23, 3.05, 0.29, 0.14, 0.12)},
+      note: "visit to paid signup",
+      data: make_series(23, 3.05, 0.29, 0.14, 0.12)},
     {key: "chn", label: "CHURN", unit: "pct", color: C_CHURN,
-     note: "30-day rolling logo churn",
-     data: make_series(41, 2.42, -0.31, 0.13, 0.05)},
+      note: "30-day rolling logo churn",
+      data: make_series(41, 2.42, -0.31, 0.13, 0.05)},
   ]
 end
 
@@ -353,11 +353,11 @@ fn nice_step(span, target)
   let mag = pow(10.0, floor(log(max(raw, 0.000001)) / log(10.0)))
   let norm = raw / mag
   let mult = if norm <= 1.0 then 1.0
-    elsif norm <= 2.0 then 2.0
-    elsif norm <= 2.5 then 2.5
-    elsif norm <= 5.0 then 5.0
-    else 10.0
-    end
+  elsif norm <= 2.0 then 2.0
+  elsif norm <= 2.5 then 2.5
+  elsif norm <= 5.0 then 5.0
+  else 10.0
+  end
   mult * mag
 end
 
@@ -404,8 +404,8 @@ end
 fn polyline(ys, plot, color, width)
   for i in range(0, len(ys) - 1) do
     draw_line(x_of(i, len(ys), plot), ys[i],
-              x_of(i + 1, len(ys), plot), ys[i + 1],
-              color.r, color.g, color.b, 255, width)
+      x_of(i + 1, len(ys), plot), ys[i + 1],
+      color.r, color.g, color.b, 255, width)
   end
 end
 
@@ -430,10 +430,10 @@ fn sparkline(r, xs, color, alpha)
   end
   for i in range(0, n - 1) do
     draw_line(x_of(i, n, plot), ys[i], x_of(i + 1, n, plot), ys[i + 1],
-              color.r, color.g, color.b, int(220.0 * alpha), 1.6)
+      color.r, color.g, color.b, int(220.0 * alpha), 1.6)
   end
   draw_circle(x_of(n - 1, n, plot), ys[n - 1], 2.6, color.r, color.g, color.b,
-              int(255.0 * alpha))
+    int(255.0 * alpha))
 end
 
 // ── Responsive grid ──────────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ let brand_w = text_w("Meridian", {size: 21, color: TEXT})
 text_at("Analytics", content_x + brand_w + 10, head_y + 6, {size: 15, color: FAINT})
 
 text_at("Northwind Labs  ·  production  ·  all regions",
-        content_x, head_y + 30, {size: 10, color: FAINT, spacing: 0.4})
+  content_x, head_y + 30, {size: 10, color: FAINT, spacing: 0.4})
 
 // Range pills, right-aligned in the header.
 let pill_h = 28
@@ -556,7 +556,7 @@ draw_circle(live_x - live_w - 11, head_y + 39, 3.0, POS.r, POS.g, POS.b, 190)
 
 // header rule
 draw_line(content_x, head_y + 56, content_x + content_w, head_y + 56,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
 
 // ── Selected metric / range ──────────────────────────────────────────────────
 
@@ -567,10 +567,10 @@ let win = tail(full, rng.days)
 let cur = win[len(win) - 1]
 let first = win[0]
 let head_val = if metric.unit == "count" || metric.unit == "usd" then
-    series_sum(win)
-  else
-    series_sum(win) / float(len(win))
-  end
+  series_sum(win)
+else
+  series_sum(win) / float(len(win))
+end
 let delta_pct = (cur - first) / max(abs(first), 0.000001) * 100.0
 
 if prev_sel != sel || prev_range != range_i then
@@ -625,10 +625,10 @@ let donut_w = min(380, int(float(content_w) * 0.27))
 let chart_w = if two_up then content_w - donut_w - S3 else content_w end
 let chart_r = rect(content_x, row2_y, chart_w, row2_h)
 let donut_r = if two_up then
-    rect(content_x + content_w - donut_w, row2_y, donut_w, row2_h)
-  else
-    r3_cells[3]
-  end
+  rect(content_x + content_w - donut_w, row2_y, donut_w, row2_h)
+else
+  r3_cells[3]
+end
 
 for i in range(0, 4) do
   let m = metrics[i]
@@ -649,22 +649,22 @@ for i in range(0, 4) do
   let mfirst = mw[0]
   let mdelta = (mcur - mfirst) / max(abs(mfirst), 0.000001) * 100.0
   let head = if m.unit == "pct" then
-      series_sum(mw) / float(len(mw))
-    else
-      series_sum(mw)
-    end
+    series_sum(mw) / float(len(mw))
+  else
+    series_sum(mw)
+  end
 
   let pad = S3
   text_at(m.label, r.x + pad, r.y + pad, {size: 10, color: DIM, spacing: 1.5})
   text_at(fmt_headline(head, m.unit), r.x + pad, r.y + pad + 20,
-          {size: 28, color: if is_sel then TEXT else #cdd5e1 end})
+    {size: 28, color: if is_sel then TEXT else #cdd5e1 end})
   delta_chip(r.x + pad, r.y + r.h - pad - 20, mdelta, m.key == "chn")
 
   // Sparkline occupies the lower-right quadrant of the card.
   let sp_w = min(r.w * 0.44, 150.0)
   let sp = rect(r.x + r.w - pad - sp_w, r.y + r.h - pad - 46, sp_w, 44)
   sparkline(sp, resample(mw, min(len(mw), 46)), m.color,
-            if is_sel then 1.0 else 0.55 end)
+    if is_sel then 1.0 else 0.55 end)
 end
 
 // ── Main chart + donut row ───────────────────────────────────────────────────
@@ -675,18 +675,18 @@ let chart_body = card_head(chart_r, metric.label ++ "  /  DAILY", chart_note)
 
 // Headline inside the chart card.
 text_at(fmt_value(cur, metric.unit), chart_body.x, chart_body.y - 4,
-        {size: 28, color: TEXT})
+  {size: 28, color: TEXT})
 let hv_w = text_w(fmt_value(cur, metric.unit), {size: 28, color: TEXT})
 delta_chip(chart_body.x + hv_w + S2, chart_body.y + 6, delta_pct,
-           metric.key == "chn")
+  metric.key == "chn")
 let agg = if metric.unit == "pct" then "avg" else "Σ" end
 text_right("{agg} {fmt_headline(shown_head, metric.unit)} over range",
-           chart_body.x + chart_body.w, chart_body.y + 8, {size: 10, color: FAINT})
+  chart_body.x + chart_body.w, chart_body.y + 8, {size: 10, color: FAINT})
 
 // Plot area
 let gutter = 54
 let plot = rect(chart_body.x + gutter, chart_body.y + 44,
-                chart_body.w - gutter, chart_body.h - 44 - 24)
+  chart_body.w - gutter, chart_body.h - 44 - 24)
 
 // Sample count: enough to read, few enough to draw fast.
 let nsamp = min(rng.days, 90)
@@ -729,14 +729,14 @@ else
     let bh = plot.y + plot.h - by
     if bh > 1.0 then
       draw_rect_rounded(bx, by, bw, bh, min(3.0, bw / 2.0),
-                        metric.color.r, metric.color.g, metric.color.b, 210)
+        metric.color.r, metric.color.g, metric.color.b, 210)
     end
   end
 end
 
 // baseline
 draw_line(plot.x, plot.y + plot.h, plot.x + plot.w, plot.y + plot.h,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
 
 // X labels
 let day0 = SPAN - rng.days + 1
@@ -744,7 +744,7 @@ let xt = 0
 while xt < nsamp do
   let d = day0 + int(float(xt) * float(rng.days) / float(nsamp))
   text_center(day_short(d), x_of(xt, nsamp, plot), plot.y + plot.h + 9,
-              {size: 10, color: FAINT})
+    {size: 10, color: FAINT})
   xt = xt + max(1, int(float(nsamp) / 6.0))
 end
 
@@ -762,7 +762,7 @@ if show_readout && hover_i >= 0 && hover_i < nsamp then
   let hx = x_of(hover_i, nsamp, plot)
   let hy = ys[hover_i]
   draw_line(hx, plot.y, hx, plot.y + plot.h, metric.color.r, metric.color.g,
-            metric.color.b, 90, 1)
+    metric.color.b, 90, 1)
   draw_circle(hx, hy, 5.0, BG.r, BG.g, BG.b, 255)
   draw_circle(hx, hy, 3.6, metric.color.r, metric.color.g, metric.color.b, 255)
 
@@ -848,7 +848,7 @@ for i in range(0, len(PLANS)) do
   let on = plan_hover == i
   if on then
     draw_rect_rounded(lg_x - 8.0, ly - 5.0, donut_body.w - (lg_x - donut_body.x) + 6.0,
-                      lg_step - 6.0, 6, 255, 255, 255, 10)
+      lg_step - 6.0, 6, 255, 255, 255, 10)
   end
   draw_rect_rounded(rect(lg_x, ly + 3.0, 8, 8), 2, p.color)
   let pct_s = dec(p.pct, 0) ++ "%"
@@ -856,16 +856,16 @@ for i in range(0, len(PLANS)) do
   let name_avail = donut_body.x + donut_body.w - (lg_x + 16.0) - text_w(pct_s, name_style) - 12.0
   text_at(ellipsize(p.name, name_avail, 12), lg_x + 16.0, ly, name_style)
   text_right(pct_s, donut_body.x + donut_body.w, ly,
-             {size: 12, color: if on then TEXT else DIM end})
+    {size: 12, color: if on then TEXT else DIM end})
 end
 
 let stat_y = donut_body.y + donut_body.h - 34
 draw_line(donut_body.x, stat_y - 12, donut_body.x + donut_body.w, stat_y - 12,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 170, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 170, 1)
 text_at("ARPA", donut_body.x, stat_y, {size: 10, color: FAINT, spacing: 1.0})
 text_at("$412", donut_body.x, stat_y + 14, {size: 15, color: TEXT})
 text_at("NET RETENTION", donut_body.x + donut_body.w / 2.0, stat_y,
-        {size: 10, color: FAINT, spacing: 1.0})
+  {size: 10, color: FAINT, spacing: 1.0})
 text_at("118%", donut_body.x + donut_body.w / 2.0, stat_y + 14, {size: 15, color: POS})
 
 // ── Row 3: stacked columns · sources · pages ─────────────────────────────────
@@ -888,7 +888,7 @@ for g in range(1, 3) do
   draw_line(sc_plot.x, gy, sc_plot.x + sc_plot.w, gy, GRID.r, GRID.g, GRID.b, 255, 1)
 end
 draw_line(sc_plot.x, sc_plot.y + sc_plot.h, sc_plot.x + sc_plot.w, sc_plot.y + sc_plot.h,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 255, 1)
 let colw = sc_plot.w / 7.0
 for d in range(0, 7) do
   let row = channels[d]
@@ -898,7 +898,7 @@ for d in range(0, 7) do
   let hot_col = point_in(mouse_x(), mouse_y(), rect(cx0, sc_plot.y, colw, sc_plot.h + 24))
   if hot_col then
     draw_rect_rounded(cx0 + 1.0, sc_plot.y - 6.0, colw - 2.0, sc_plot.h + 30.0, 6,
-                      255, 255, 255, 9)
+      255, 255, 255, 9)
   end
   let acc = 0.0
   for k in range(0, 3) do
@@ -912,11 +912,11 @@ for d in range(0, 7) do
   end
   let lab_col = if hot_col then TEXT else FAINT end
   text_center(WEEKDAYS[d], cx0 + colw / 2.0, sc_plot.y + sc_plot.h + 8,
-              {size: 10, color: lab_col})
+    {size: 10, color: lab_col})
   if hot_col then
     text_center(compact(acc), cx0 + colw / 2.0,
-                sc_plot.y + sc_plot.h * (1.0 - acc / stack_max) - 15.0,
-                {size: 10, color: TEXT})
+      sc_plot.y + sc_plot.h * (1.0 - acc / stack_max) - 15.0,
+      {size: 10, color: TEXT})
   end
 end
 // legend strip
@@ -951,7 +951,7 @@ for i in range(0, src_n) do
   let fillw = bar_w * float(s.v) / float(src_max)
   let c = if s.d >= 0.0 then C_REV else #7c8698 end
   draw_rect_rounded(src_body.x, bar_y, max(4.0, fillw), 5, 2.5,
-                    c.r, c.g, c.b, if hot then 255 else 205 end)
+    c.r, c.g, c.b, if hot then 255 else 205 end)
 end
 
 // (c) table — top pages
@@ -975,12 +975,12 @@ for i in range(0, pg_n) do
   let vw = text_w(vtxt, {size: 12, color: DIM})
   let avail = pg_body.w - dw - vw - 30.0
   text_at(ellipsize(p.path, avail, 12), pg_body.x, ty,
-          {size: 12, color: if hot then TEXT else #c3cbd8 end})
+    {size: 12, color: if hot then TEXT else #c3cbd8 end})
   text_right(vtxt, pg_body.x + pg_body.w - dw - 14.0, ty, {size: 12, color: DIM})
   text_right(dtxt, pg_body.x + pg_body.w, ty, {size: 10, color: dcol})
   if i < pg_n - 1 then
     draw_line(pg_body.x, rr.y + prowh - 0.5, pg_body.x + pg_body.w, rr.y + prowh - 0.5,
-              HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 120, 1)
+      HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 120, 1)
   end
 end
 
@@ -988,12 +988,12 @@ end
 
 let foot_y = row3_y + row3_block_h + S2
 draw_line(content_x, foot_y, content_x + content_w, foot_y,
-          HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 160, 1)
+  HAIRLINE.r, HAIRLINE.g, HAIRLINE.b, 160, 1)
 let other_mode = if chart_mode == "area" then "bars" else "area" end
 let hints = "1-4 / ↑↓ metric      ←→ range      t  {other_mode}      h  readout"
 text_at(hints, content_x, foot_y + 11, {size: 10, color: FAINT, spacing: 0.3})
 text_right("{nsamp} points  ·  {chart_mode}  ·  {w}×{h}", content_x + content_w,
-           foot_y + 11, {size: 10, color: FAINT})
+  foot_y + 11, {size: 10, color: FAINT})
 
 // ── Range pills drawn last so their hover sits above the header rule ─────────
 

@@ -607,7 +607,7 @@ draw_rect_outline(mem_chip, CARD_EDGE)
 draw_text("M", {x: mem_chip.x + 9, y: mem_chip.y + 5}, {size: T_MICRO, color: if mem_set then TEAL else FAINT end})
 let mtxt = if mem_set then group(fmt(memory)) else "—" end
 draw_text_right(ellipsize_tail(mtxt, mem_chip.w - 40, T_MICRO), mem_chip.x + mem_chip.w - 9, mem_chip.y + 5, T_MICRO,
-                if mem_hot then TEXT else if mem_set then DIM else FAINT end end)
+  if mem_hot then TEXT else if mem_set then DIM else FAINT end end)
 
 if len(err) > 0 then
   draw_text(err, {x: mem_chip.x + mem_chip.w + 14, y: disp_r.y + 19}, {size: T_SMALL, color: RED})

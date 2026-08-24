@@ -33,9 +33,9 @@ state grid_size   = 20
 state tool        = 1
 state slot        = 0
 state slot_files  = [
-    "side-scroller/levels/01_first_steps.lvl",
-    "side-scroller/levels/02_cavern.lvl",
-    "side-scroller/levels/03_sky_ruins.lvl"
+  "side-scroller/levels/01_first_steps.lvl",
+  "side-scroller/levels/02_cavern.lvl",
+  "side-scroller/levels/03_sky_ruins.lvl"
 ]
 state slot_titles = ["First Steps", "Cavern Dive", "Sky Ruins"]
 // `level` is the document being edited, and `delete_at` edits it from inside a
@@ -51,23 +51,23 @@ state hover_world = {x: 0, y: 0}
 // ----------------------------- HELPERS --------------------------------
 
 fn clamp(v, lo, hi)
-    max(lo, min(v, hi))
+  max(lo, min(v, hi))
 end
 
 fn snap(n)
-    if grid_snap then
-        (n / grid_size) * grid_size
-    else
-        n
-    end
+  if grid_snap then
+    (n / grid_size) * grid_size
+  else
+    n
+  end
 end
 
 fn say(s)
-    set msg = s; set msg_t = 2.0
+  set msg = s; set msg_t = 2.0
 end
 
 fn aabb(ax, ay, aw, ah, bx, by, bw, bh)
-    ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+  ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 end
 
 // ----------------------------- LEVEL FORMAT ---------------------------
@@ -75,124 +75,124 @@ end
 // has no imports.
 
 fn empty_level()
-    {
-        name: "Untitled",
-        width: 2400,
-        bg_r: 110, bg_g: 180, bg_b: 240,
-        start: {x: 100.0, y: 400.0},
-        goal:  {x: 2200.0, y: 400.0},
-        plats: [],
-        oneways: [],
-        coins: [],
-        spikes: [],
-        enemies: [],
-        checks: []
-    }
+  {
+    name: "Untitled",
+    width: 2400,
+    bg_r: 110, bg_g: 180, bg_b: 240,
+    start: {x: 100.0, y: 400.0},
+    goal:  {x: 2200.0, y: 400.0},
+    plats: [],
+    oneways: [],
+    coins: [],
+    spikes: [],
+    enemies: [],
+    checks: []
+  }
 end
 
 fn parse_level(src)
-    let L = empty_level()
-    let lines = split(src, "\n")
-    for raw in lines do
-        let toks = split(raw, " ")
-        if len(toks) == 0 then continue end
-        let tag = toks[0]
-        if tag == "" then continue end
-        if tag == "name" then
-            L.name = join(slice(toks, 1, len(toks)), " ")
-        elsif tag == "width" then
-            L.width = int(toks[1])
-        elsif tag == "bg" then
-            L.bg_r = int(toks[1]); L.bg_g = int(toks[2]); L.bg_b = int(toks[3])
-        elsif tag == "start" then
-            L.start = {x: float(toks[1]), y: float(toks[2])}
-        elsif tag == "goal" then
-            L.goal = {x: float(toks[1]), y: float(toks[2])}
-        elsif tag == "plat" then
-            L.plats = append(L.plats, {
-                x: int(toks[1]), y: int(toks[2]),
-                w: int(toks[3]), h: int(toks[4])
-            })
-        elsif tag == "oneway" then
-            L.oneways = append(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
-        elsif tag == "coin" then
-            L.coins = append(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
-        elsif tag == "spike" then
-            L.spikes = append(L.spikes, {x: int(toks[1]), y: int(toks[2])})
-        elsif tag == "goomba" then
-            L.enemies = append(L.enemies, {
-                kind: "goomba",
-                x: float(toks[1]), y: float(toks[2]),
-                origin_y: float(toks[2]),
-                patrol: float(toks[3])
-            })
-        elsif tag == "jumper" then
-            L.enemies = append(L.enemies, {
-                kind: "jumper",
-                x: float(toks[1]), y: float(toks[2]),
-                origin_y: float(toks[2]),
-                patrol: 0.0
-            })
-        elsif tag == "check" then
-            L.checks = append(L.checks, {x: int(toks[1]), y: int(toks[2])})
-        end
+  let L = empty_level()
+  let lines = split(src, "\n")
+  for raw in lines do
+    let toks = split(raw, " ")
+    if len(toks) == 0 then continue end
+    let tag = toks[0]
+    if tag == "" then continue end
+    if tag == "name" then
+      L.name = join(slice(toks, 1, len(toks)), " ")
+    elsif tag == "width" then
+      L.width = int(toks[1])
+    elsif tag == "bg" then
+      L.bg_r = int(toks[1]); L.bg_g = int(toks[2]); L.bg_b = int(toks[3])
+    elsif tag == "start" then
+      L.start = {x: float(toks[1]), y: float(toks[2])}
+    elsif tag == "goal" then
+      L.goal = {x: float(toks[1]), y: float(toks[2])}
+    elsif tag == "plat" then
+      L.plats = append(L.plats, {
+        x: int(toks[1]), y: int(toks[2]),
+        w: int(toks[3]), h: int(toks[4])
+      })
+    elsif tag == "oneway" then
+      L.oneways = append(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
+    elsif tag == "coin" then
+      L.coins = append(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
+    elsif tag == "spike" then
+      L.spikes = append(L.spikes, {x: int(toks[1]), y: int(toks[2])})
+    elsif tag == "goomba" then
+      L.enemies = append(L.enemies, {
+        kind: "goomba",
+        x: float(toks[1]), y: float(toks[2]),
+        origin_y: float(toks[2]),
+        patrol: float(toks[3])
+      })
+    elsif tag == "jumper" then
+      L.enemies = append(L.enemies, {
+        kind: "jumper",
+        x: float(toks[1]), y: float(toks[2]),
+        origin_y: float(toks[2]),
+        patrol: 0.0
+      })
+    elsif tag == "check" then
+      L.checks = append(L.checks, {x: int(toks[1]), y: int(toks[2])})
     end
-    L
+  end
+  L
 end
 
 fn serialize_level(L)
-    let lines = []
-    lines = append(lines, "name {L.name}")
-    lines = append(lines, "width {L.width}")
-    lines = append(lines, "bg {L.bg_r} {L.bg_g} {L.bg_b}")
-    lines = append(lines, "start {L.start.x} {L.start.y}")
-    lines = append(lines, "goal {L.goal.x} {L.goal.y}")
-    for p in L.plats do
-        lines = append(lines, "plat {p.x} {p.y} {p.w} {p.h}")
+  let lines = []
+  lines = append(lines, "name {L.name}")
+  lines = append(lines, "width {L.width}")
+  lines = append(lines, "bg {L.bg_r} {L.bg_g} {L.bg_b}")
+  lines = append(lines, "start {L.start.x} {L.start.y}")
+  lines = append(lines, "goal {L.goal.x} {L.goal.y}")
+  for p in L.plats do
+    lines = append(lines, "plat {p.x} {p.y} {p.w} {p.h}")
+  end
+  for o in L.oneways do
+    lines = append(lines, "oneway {o.x} {o.y} {o.w}")
+  end
+  for c in L.coins do
+    lines = append(lines, "coin {c.x} {c.y}")
+  end
+  for s in L.spikes do
+    lines = append(lines, "spike {s.x} {s.y}")
+  end
+  for e in L.enemies do
+    if e.kind == "goomba" then
+      lines = append(lines, "goomba {int(e.x)} {int(e.origin_y)} {int(e.patrol)}")
+    else
+      lines = append(lines, "jumper {int(e.x)} {int(e.origin_y)} 0")
     end
-    for o in L.oneways do
-        lines = append(lines, "oneway {o.x} {o.y} {o.w}")
-    end
-    for c in L.coins do
-        lines = append(lines, "coin {c.x} {c.y}")
-    end
-    for s in L.spikes do
-        lines = append(lines, "spike {s.x} {s.y}")
-    end
-    for e in L.enemies do
-        if e.kind == "goomba" then
-            lines = append(lines, "goomba {int(e.x)} {int(e.origin_y)} {int(e.patrol)}")
-        else
-            lines = append(lines, "jumper {int(e.x)} {int(e.origin_y)} 0")
-        end
-    end
-    for ck in L.checks do
-        lines = append(lines, "check {ck.x} {ck.y}")
-    end
-    join(lines, "\n")
+  end
+  for ck in L.checks do
+    lines = append(lines, "check {ck.x} {ck.y}")
+  end
+  join(lines, "\n")
 end
 
 // ----------------------------- LOAD / SAVE ----------------------------
 
 fn load_slot(idx)
-    let path = slot_files[idx]
-    let src  = load_text_file(path)
-    if len(src) == 0 then
-        let L = empty_level()
-        L.name = slot_titles[idx]
-        say("New empty level (file not found)")
-        L
-    else
-        say("Loaded {path}")
-        parse_level(src)
-    end
+  let path = slot_files[idx]
+  let src  = load_text_file(path)
+  if len(src) == 0 then
+    let L = empty_level()
+    L.name = slot_titles[idx]
+    say("New empty level (file not found)")
+    L
+  else
+    say("Loaded {path}")
+    parse_level(src)
+  end
 end
 
 fn save_slot(idx)
-    let path = slot_files[idx]
-    let txt  = serialize_level(get level)
-    let ok   = save_text_file(path, txt)
-    if ok then say("Saved {path}") else say("Save failed!") end
+  let path = slot_files[idx]
+  let txt  = serialize_level(get level)
+  let ok   = save_text_file(path, txt)
+  if ok then say("Saved {path}") else say("Save failed!") end
 end
 
 if level == nil then set level = load_slot(slot); loaded_slot = slot end
@@ -228,10 +228,10 @@ if key_pressed("]") then slot = (slot + 1) % len(slot_files) end
 if key_pressed("s") then save_slot(slot) end
 if key_pressed("l") then set level = load_slot(slot); loaded_slot = slot end
 if key_pressed("n") then
-    let L = empty_level()
-    L.name = slot_titles[slot]
-    set level = L
-    say("Cleared")
+  let L = empty_level()
+  L.name = slot_titles[slot]
+  set level = L
+  say("Cleared")
 end
 
 // mouse position in world coords
@@ -242,123 +242,123 @@ hover_world = {x: snap(mwx), y: snap(mwy)}
 // ----------------------------- TOOL ACTIONS ---------------------------
 
 fn delete_at(wx, wy)
-    // attempt to delete topmost item at (wx,wy)
-    // search from "front" (last list pushed first): try plats, oneways, coins,
-    // spikes, enemies, checks.
-    let i = len(get level.plats) - 1
-    while i >= 0 do
-        let p = get level.plats[i]
-        if wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h then
-            set level.plats = filter_index(get level.plats, i)
-            return true
-        end
-        i = i - 1
+  // attempt to delete topmost item at (wx,wy)
+  // search from "front" (last list pushed first): try plats, oneways, coins,
+  // spikes, enemies, checks.
+  let i = len(get level.plats) - 1
+  while i >= 0 do
+    let p = get level.plats[i]
+    if wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h then
+      set level.plats = filter_index(get level.plats, i)
+      return true
     end
-    let j = len(get level.oneways) - 1
-    while j >= 0 do
-        let o = get level.oneways[j]
-        if wx >= o.x && wx <= o.x + o.w && wy >= o.y - 4 && wy <= o.y + 10 then
-            set level.oneways = filter_index(get level.oneways, j)
-            return true
-        end
-        j = j - 1
+    i = i - 1
+  end
+  let j = len(get level.oneways) - 1
+  while j >= 0 do
+    let o = get level.oneways[j]
+    if wx >= o.x && wx <= o.x + o.w && wy >= o.y - 4 && wy <= o.y + 10 then
+      set level.oneways = filter_index(get level.oneways, j)
+      return true
     end
-    let k = len(get level.coins) - 1
-    while k >= 0 do
-        let c = get level.coins[k]
-        if abs(wx - c.x) < 14 && abs(wy - c.y) < 14 then
-            set level.coins = filter_index(get level.coins, k)
-            return true
-        end
-        k = k - 1
+    j = j - 1
+  end
+  let k = len(get level.coins) - 1
+  while k >= 0 do
+    let c = get level.coins[k]
+    if abs(wx - c.x) < 14 && abs(wy - c.y) < 14 then
+      set level.coins = filter_index(get level.coins, k)
+      return true
     end
-    let m = len(get level.spikes) - 1
-    while m >= 0 do
-        let s = get level.spikes[m]
-        if wx >= s.x && wx <= s.x + 24 && wy >= s.y && wy <= s.y + 16 then
-            set level.spikes = filter_index(get level.spikes, m)
-            return true
-        end
-        m = m - 1
+    k = k - 1
+  end
+  let m = len(get level.spikes) - 1
+  while m >= 0 do
+    let s = get level.spikes[m]
+    if wx >= s.x && wx <= s.x + 24 && wy >= s.y && wy <= s.y + 16 then
+      set level.spikes = filter_index(get level.spikes, m)
+      return true
     end
-    let n = len(get level.enemies) - 1
-    while n >= 0 do
-        let e = get level.enemies[n]
-        if abs(wx - int(e.x) - 12) < 16 && abs(wy - int(e.origin_y) - 11) < 16 then
-            set level.enemies = filter_index(get level.enemies, n)
-            return true
-        end
-        n = n - 1
+    m = m - 1
+  end
+  let n = len(get level.enemies) - 1
+  while n >= 0 do
+    let e = get level.enemies[n]
+    if abs(wx - int(e.x) - 12) < 16 && abs(wy - int(e.origin_y) - 11) < 16 then
+      set level.enemies = filter_index(get level.enemies, n)
+      return true
     end
-    let cc = len(get level.checks) - 1
-    while cc >= 0 do
-        let ck = get level.checks[cc]
-        if abs(wx - ck.x - 12) < 14 && wy > ck.y - 36 && wy < ck.y then
-            set level.checks = filter_index(get level.checks, cc)
-            return true
-        end
-        cc = cc - 1
+    n = n - 1
+  end
+  let cc = len(get level.checks) - 1
+  while cc >= 0 do
+    let ck = get level.checks[cc]
+    if abs(wx - ck.x - 12) < 14 && wy > ck.y - 36 && wy < ck.y then
+      set level.checks = filter_index(get level.checks, cc)
+      return true
     end
-    false
+    cc = cc - 1
+  end
+  false
 end
 
 fn filter_index(list, idx)
-    let out = []
-    let i = 0
-    while i < len(list) do
-        if i != idx then out = append(out, list[i]) end
-        i = i + 1
-    end
-    out
+  let out = []
+  let i = 0
+  while i < len(list) do
+    if i != idx then out = append(out, list[i]) end
+    i = i + 1
+  end
+  out
 end
 
 // place
 if mouse_pressed(1) then
-    let wx = hover_world.x
-    let wy = hover_world.y
-    if tool == 1 then
-        drag_start = {x: wx, y: wy}
-    elsif tool == 2 then
-        drag_start = {x: wx, y: wy}
-    elsif tool == 3 then
-        set level.coins = append(level.coins, {x: wx, y: wy, collected: false})
-    elsif tool == 4 then
-        set level.spikes = append(level.spikes, {x: wx, y: wy})
-    elsif tool == 5 then
-        set level.enemies = append(level.enemies, {
-            kind: "goomba", x: float(wx), y: float(wy) - 22.0,
-            origin_y: float(wy) - 22.0, patrol: 100.0
-        })
-    elsif tool == 6 then
-        set level.enemies = append(level.enemies, {
-            kind: "jumper", x: float(wx), y: float(wy) - 24.0,
-            origin_y: float(wy) - 24.0, patrol: 0.0
-        })
-    elsif tool == 7 then
-        set level.checks = append(level.checks, {x: wx, y: wy})
-    elsif tool == 8 then
-        set level.start = {x: float(wx), y: float(wy)}
-    elsif tool == 9 then
-        set level.goal = {x: float(wx), y: float(wy)}
-    end
+  let wx = hover_world.x
+  let wy = hover_world.y
+  if tool == 1 then
+    drag_start = {x: wx, y: wy}
+  elsif tool == 2 then
+    drag_start = {x: wx, y: wy}
+  elsif tool == 3 then
+    set level.coins = append(level.coins, {x: wx, y: wy, collected: false})
+  elsif tool == 4 then
+    set level.spikes = append(level.spikes, {x: wx, y: wy})
+  elsif tool == 5 then
+    set level.enemies = append(level.enemies, {
+      kind: "goomba", x: float(wx), y: float(wy) - 22.0,
+      origin_y: float(wy) - 22.0, patrol: 100.0
+    })
+  elsif tool == 6 then
+    set level.enemies = append(level.enemies, {
+      kind: "jumper", x: float(wx), y: float(wy) - 24.0,
+      origin_y: float(wy) - 24.0, patrol: 0.0
+    })
+  elsif tool == 7 then
+    set level.checks = append(level.checks, {x: wx, y: wy})
+  elsif tool == 8 then
+    set level.start = {x: float(wx), y: float(wy)}
+  elsif tool == 9 then
+    set level.goal = {x: float(wx), y: float(wy)}
+  end
 end
 
 // release: finalise plat/oneway drag
 if mouse_down(1) == false && drag_start != nil then
-    let wx = hover_world.x
-    let wy = hover_world.y
-    let x0 = min(drag_start.x, wx)
-    let y0 = min(drag_start.y, wy)
-    let x1 = max(drag_start.x, wx)
-    let y1 = max(drag_start.y, wy)
-    let w  = max(grid_size, x1 - x0)
-    let h  = max(grid_size, y1 - y0)
-    if tool == 1 then
-        set level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
-    elsif tool == 2 then
-        set level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
-    end
-    drag_start = nil
+  let wx = hover_world.x
+  let wy = hover_world.y
+  let x0 = min(drag_start.x, wx)
+  let y0 = min(drag_start.y, wy)
+  let x1 = max(drag_start.x, wx)
+  let y1 = max(drag_start.y, wy)
+  let w  = max(grid_size, x1 - x0)
+  let h  = max(grid_size, y1 - y0)
+  if tool == 1 then
+    set level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
+  elsif tool == 2 then
+    set level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
+  end
+  drag_start = nil
 end
 
 if mouse_pressed(3) then delete_at(mwx, mwy) end
@@ -366,26 +366,26 @@ if mouse_pressed(3) then delete_at(mwx, mwy) end
 // ----------------------------- DRAW -----------------------------------
 
 fn world_x(wx)
-    wx - int(cam_x)
+  wx - int(cam_x)
 end
 
 clear(level.bg_r, level.bg_g, level.bg_b)
 
 // grid
 if grid_snap then
-    let gx = -int(cam_x) % grid_size
-    let i = 0
-    while i < SCREEN_W / grid_size + 2 do
-        let x = gx + i * grid_size
-        draw_line(x, 36, x, SCREEN_H, 50, 50, 70)
-        i = i + 1
-    end
-    let j = 0
-    while j < SCREEN_H / grid_size do
-        let y = j * grid_size
-        draw_line(0, y, SCREEN_W, y, 50, 50, 70)
-        j = j + 1
-    end
+  let gx = -int(cam_x) % grid_size
+  let i = 0
+  while i < SCREEN_W / grid_size + 2 do
+    let x = gx + i * grid_size
+    draw_line(x, 36, x, SCREEN_H, 50, 50, 70)
+    i = i + 1
+  end
+  let j = 0
+  while j < SCREEN_H / grid_size do
+    let y = j * grid_size
+    draw_line(0, y, SCREEN_W, y, 50, 50, 70)
+    j = j + 1
+  end
 end
 
 // level boundary
@@ -394,38 +394,38 @@ draw_line(bx_end, 0, bx_end, SCREEN_H, 200, 80, 80)
 
 // platforms
 for p in level.plats do
-    draw_rect(world_x(p.x), p.y, p.w, p.h, 110, 70, 40)
-    draw_rect(world_x(p.x), p.y, p.w, 5, 60, 170, 55)
+  draw_rect(world_x(p.x), p.y, p.w, p.h, 110, 70, 40)
+  draw_rect(world_x(p.x), p.y, p.w, 5, 60, 170, 55)
 end
 for o in level.oneways do
-    draw_rect(world_x(o.x), o.y, o.w, 6, 200, 160, 90)
+  draw_rect(world_x(o.x), o.y, o.w, 6, 200, 160, 90)
 end
 for c in level.coins do
-    draw_circle(world_x(c.x), c.y, 8, 255, 210, 40)
-    draw_circle(world_x(c.x) - 2, c.y - 2, 4, 255, 240, 130)
+  draw_circle(world_x(c.x), c.y, 8, 255, 210, 40)
+  draw_circle(world_x(c.x) - 2, c.y - 2, 4, 255, 240, 130)
 end
 for s in level.spikes do
-    draw_line(world_x(s.x) + 2, s.y + 16, world_x(s.x) + 8, s.y, 220, 220, 230)
-    draw_line(world_x(s.x) + 8, s.y, world_x(s.x) + 14, s.y + 16, 220, 220, 230)
-    draw_line(world_x(s.x) + 12, s.y + 16, world_x(s.x) + 18, s.y + 4, 200, 200, 210)
-    draw_line(world_x(s.x) + 18, s.y + 4, world_x(s.x) + 22, s.y + 16, 200, 200, 210)
+  draw_line(world_x(s.x) + 2, s.y + 16, world_x(s.x) + 8, s.y, 220, 220, 230)
+  draw_line(world_x(s.x) + 8, s.y, world_x(s.x) + 14, s.y + 16, 220, 220, 230)
+  draw_line(world_x(s.x) + 12, s.y + 16, world_x(s.x) + 18, s.y + 4, 200, 200, 210)
+  draw_line(world_x(s.x) + 18, s.y + 4, world_x(s.x) + 22, s.y + 16, 200, 200, 210)
 end
 for e in level.enemies do
-    let ex = world_x(int(e.x))
-    let ey = int(e.origin_y)
-    if e.kind == "goomba" then
-        draw_rect(ex, ey, 24, 22, 120, 70, 30)
-        draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
-        draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
-    else
-        draw_rect(ex, ey, 24, 24, 60, 170, 80)
-        draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
-        draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
-    end
+  let ex = world_x(int(e.x))
+  let ey = int(e.origin_y)
+  if e.kind == "goomba" then
+    draw_rect(ex, ey, 24, 22, 120, 70, 30)
+    draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
+    draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
+  else
+    draw_rect(ex, ey, 24, 24, 60, 170, 80)
+    draw_rect(ex + 6, ey + 6, 4, 5, 255, 255, 255)
+    draw_rect(ex + 14, ey + 6, 4, 5, 255, 255, 255)
+  end
 end
 for ck in level.checks do
-    draw_rect(world_x(ck.x) + 6, ck.y - 32, 3, 32, 200, 200, 220)
-    draw_rect(world_x(ck.x) + 9, ck.y - 30, 14, 9, 240, 80, 90)
+  draw_rect(world_x(ck.x) + 6, ck.y - 32, 3, 32, 200, 200, 220)
+  draw_rect(world_x(ck.x) + 9, ck.y - 30, 14, 9, 240, 80, 90)
 end
 
 // start
@@ -439,17 +439,17 @@ draw_text("G", world_x(int(level.goal.x)) + 18, int(level.goal.y) - 76, 16, 255,
 
 // drag preview
 if drag_start != nil then
-    let wx = hover_world.x
-    let wy = hover_world.y
-    let x0 = min(drag_start.x, wx)
-    let y0 = min(drag_start.y, wy)
-    let w  = max(grid_size, abs(wx - drag_start.x))
-    let h  = max(grid_size, abs(wy - drag_start.y))
-    if tool == 1 then
-        draw_rect_outline(world_x(x0), y0, w, h, 220, 220, 100)
-    elsif tool == 2 then
-        draw_rect_outline(world_x(x0), y0, w, 6, 200, 160, 90)
-    end
+  let wx = hover_world.x
+  let wy = hover_world.y
+  let x0 = min(drag_start.x, wx)
+  let y0 = min(drag_start.y, wy)
+  let w  = max(grid_size, abs(wx - drag_start.x))
+  let h  = max(grid_size, abs(wy - drag_start.y))
+  if tool == 1 then
+    draw_rect_outline(world_x(x0), y0, w, h, 220, 220, 100)
+  elsif tool == 2 then
+    draw_rect_outline(world_x(x0), y0, w, 6, 200, 160, 90)
+  end
 end
 
 // cursor crosshair (in screen coords)
@@ -465,28 +465,28 @@ draw_rect(0, 0, SCREEN_W, 34, 25, 30, 50)
 draw_text("EDITOR  -  slot {slot + 1}/3  -  {level.name}", 8, 8, 18, 230, 230, 250)
 
 let tools_row = [
-    {n: 1, label: "plat"},
-    {n: 2, label: "oneway"},
-    {n: 3, label: "coin"},
-    {n: 4, label: "spike"},
-    {n: 5, label: "goomba"},
-    {n: 6, label: "jumper"},
-    {n: 7, label: "check"},
-    {n: 8, label: "start"},
-    {n: 9, label: "goal"}
+  {n: 1, label: "plat"},
+  {n: 2, label: "oneway"},
+  {n: 3, label: "coin"},
+  {n: 4, label: "spike"},
+  {n: 5, label: "goomba"},
+  {n: 6, label: "jumper"},
+  {n: 7, label: "check"},
+  {n: 8, label: "start"},
+  {n: 9, label: "goal"}
 ]
 let tx = 8
 for t in tools_row do
-    let sel = t.n == tool
-    let bg_r = if sel then 230 else 50 end
-    let bg_g = if sel then 200 else 60 end
-    let bg_b = if sel then 80  else 80 end
-    draw_rect(tx, SCREEN_H - 30, 96, 26, bg_r, bg_g, bg_b)
-    draw_text("{t.n} {t.label}", tx + 6, SCREEN_H - 26, 16,
-              if sel then 30 else 230 end,
-              if sel then 30 else 230 end,
-              if sel then 30 else 250 end)
-    tx = tx + 100
+  let sel = t.n == tool
+  let bg_r = if sel then 230 else 50 end
+  let bg_g = if sel then 200 else 60 end
+  let bg_b = if sel then 80  else 80 end
+  draw_rect(tx, SCREEN_H - 30, 96, 26, bg_r, bg_g, bg_b)
+  draw_text("{t.n} {t.label}", tx + 6, SCREEN_H - 26, 16,
+    if sel then 30 else 230 end,
+    if sel then 30 else 230 end,
+    if sel then 30 else 250 end)
+  tx = tx + 100
 end
 
 // status
@@ -498,6 +498,6 @@ draw_text(stats, 8, SCREEN_H - 52, 16, 200, 200, 230)
 draw_text("@ {hover_world.x},{hover_world.y}", SCREEN_W - 200, 8, 16, 200, 200, 230)
 
 if msg_t > 0.0 then
-    draw_rect(SCREEN_W/2 - 200, 44, 400, 26, 0, 0, 0)
-    draw_text(msg, SCREEN_W/2 - 190, 48, 18, 255, 230, 120)
+  draw_rect(SCREEN_W/2 - 200, 44, 400, 26, 0, 0, 0)
+  draw_text(msg, SCREEN_W/2 - 190, 48, 18, 255, 230, 120)
 end

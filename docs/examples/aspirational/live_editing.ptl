@@ -64,8 +64,8 @@ anim.run()
 
 // Add a new state variable
 let recon2 = anim.edit(
-    "state x = 0",
-    "state x = 0\n    state y = 100"
+  "state x = 0",
+  "state x = 0\n    state y = 100"
 )
 print("Added 'y' state variable:")
 print("  Preserved:", recon2.preserved, " Initialized:", recon2.initialized)

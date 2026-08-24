@@ -7,12 +7,12 @@ a = a + 1
 
 // conditional — always true
 if true then
-    b = b + 1
+  b = b + 1
 end
 
 // conditional on input
 if key_down("w") then
-    c = c + 1
+  c = c + 1
 end
 
 log("a=" ++ str(a) ++ " b=" ++ str(b) ++ " c=" ++ str(c))

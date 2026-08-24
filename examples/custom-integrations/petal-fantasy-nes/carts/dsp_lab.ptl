@@ -41,9 +41,9 @@ palette(3, cyan, teal, navy)            // waveforms
 
 define_art(0, ["........"])
 define_art(1, ["11111111", "11111111", "11111111", "11111111",
-               "11111111", "11111111", "11111111", "11111111"])
+  "11111111", "11111111", "11111111", "11111111"])
 define_art(2, ["33333333", "33333333", "33333333", "33333333",
-               "33333333", "33333333", "33333333", "33333333"])
+  "33333333", "33333333", "33333333", "33333333"])
 
 set_map_size(32, 30)
 fill_map(0, 0)
@@ -59,7 +59,7 @@ let dsp_budget_ms = 2.0
 
 // One frame's worth of samples: what the host asks the realtime callback for,
 // and therefore the divisor that turns `dsp_cost_ms()` into a per-sample cost.
-let block_samples = int(sample_rate / 60)
+let block_samples = sample_rate / 60
 
 // ── The synthesis primitives ──────────────────────────────────────────────
 // `nes_sound` ships the oscillators and envelopes (`osc_*`, `env_*`); this is
@@ -92,7 +92,7 @@ fn snd_coin(start, count, rate)
   // to read as one sound.
   render_block(start, count, rate, fn(t, i) ->
     osc_square(t, if t < 0.06 then 988.0 else 1480.0 end, 2)
-      * env_ad(t, 0.005, 0.30) * 0.6)
+    * env_ad(t, 0.005, 0.30) * 0.6)
 end
 
 fn snd_thud(start, count, rate)
@@ -258,7 +258,7 @@ if realtime then
     set dsp_on = !dsp_on
   end
   let step = (if btn_repeat("right", 0.3, 0.04) then 1 else 0 end) -
-             (if btn_repeat("left", 0.3, 0.04) then 1 else 0 end)
+  (if btn_repeat("left", 0.3, 0.04) then 1 else 0 end)
   if step != 0 then
     let k = knobs[pick]
     if pick == 0 then
@@ -381,7 +381,7 @@ end
 
 fn screen_realtime(pick, knobs, vals, on)
   let shown = [note_name(vals[0]), wave_names[vals[1]],
-               str(vals[2]), str(vals[3]), str(vals[4])]
+    str(vals[2]), str(vals[3]), str(vals[4])]
 
   map_text(1, 4, if on then "SYNTH ON " else "SYNTH OFF" end, 1)
   map_text_right(31, 4, "{block_samples} SPL/FRAME", 0)
@@ -419,9 +419,9 @@ fn screen_realtime(pick, knobs, vals, on)
 
   let headroom = if ms <= 0.0 then 0.0 else dsp_budget_ms / ms end
   let verdict = if ms <= 0.0 then "MEASURING..."
-                elsif frac < 0.5 then "VIABLE: {round(headroom, 1)}X HEADROOM"
-                elsif frac < 1.0 then "TIGHT: {round(headroom, 1)}X HEADROOM"
-                else "OVER SLICE: HOST FADES IT OUT" end
+  elsif frac < 0.5 then "VIABLE: {round(headroom, 1)}X HEADROOM"
+  elsif frac < 1.0 then "TIGHT: {round(headroom, 1)}X HEADROOM"
+  else "OVER SLICE: HOST FADES IT OUT" end
   map_text(1, 26, verdict, if frac < 0.75 then 2 else 1 end)
 
   map_text(1, 28, "UD PICK  LR CHANGE  A GATE", 0)

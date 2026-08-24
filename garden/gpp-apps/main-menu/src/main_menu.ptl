@@ -123,7 +123,7 @@ let folder_label = "Open Folder…"
 // and a test that clicks Open by reading its geometry beats one that hardcodes it.
 let open_button = {x: col_x, y: btn_y, w: text_width(open_label, FS) + 32, h: BTN_H}
 let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
-                     w: text_width(folder_label, FS) + 32, h: BTN_H}
+  w: text_width(folder_label, FS) + 32, h: BTN_H}
 
 let content_top = btn_y + BTN_H + 26
 let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - PAD}

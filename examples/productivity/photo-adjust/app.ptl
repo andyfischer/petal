@@ -75,7 +75,7 @@ end
 
 fn fbm(x, y)
   vnoise(x, y) * 0.6 + vnoise(x * 2.3 + 5.2, y * 2.3 + 1.3) * 0.3 +
-    vnoise(x * 4.7 + 9.1, y * 4.7 + 7.7) * 0.1
+  vnoise(x * 4.7 + 9.1, y * 4.7 + 7.7) * 0.1
 end
 
 // ── Float colour (0..1) ──────────────────────────────────────────────────
@@ -163,7 +163,7 @@ fn scene_alpine(u, v)
       let base = 0.28 + float(k) * 0.12
       let amp = 0.090 - float(k) * 0.022
       let ridge = base + amp * sin(u * (4.6 - float(k) * 1.1) + float(k) * 2.1) -
-        amp * 0.9 * fbm(u * (3.4 + float(k) * 1.8) + float(k) * 3.0, 2.0)
+      amp * 0.9 * fbm(u * (3.4 + float(k) * 1.8) + float(k) * 3.0, 2.0)
       if v > ridge then
         let depth = (v - ridge) * 5.0
         let rock = cmix(fc(0.44, 0.49, 0.58), fc(0.19, 0.24, 0.32), clamp(depth, 0.0, 1.0))
@@ -277,7 +277,7 @@ end
 fn scene_desert(u, v)
   let horizon = 0.44
   let mesa = horizon - 0.014 - 0.055 * max(0.0, sin(u * 2.7 + 0.5)) *
-    (0.45 + 0.75 * fbm(u * 1.9, 7.0)) - 0.016 * fbm(u * 6.0, 3.0)
+  (0.45 + 0.75 * fbm(u * 1.9, 7.0)) - 0.016 * fbm(u * 6.0, 3.0)
   if v < horizon then
     let t = v / horizon
     let sky = cmix(fc(0.09, 0.27, 0.62), fc(0.90, 0.89, 0.82), pow(t, 1.5))
@@ -395,15 +395,15 @@ let PRESETS = [
 
 fn adj_of(vals)
   {ev: float(vals[0]) / 100.0,
-   co: float(vals[1]) / 100.0,
-   hi: float(vals[2]) / 100.0,
-   sh: float(vals[3]) / 100.0,
-   sa: float(vals[4]) / 100.0,
-   tp: float(vals[5]) / 100.0,
-   tn: float(vals[6]) / 100.0,
-   fa: float(vals[7]) / 100.0,
-   gr: float(vals[8]) / 100.0,
-   vg: float(vals[9]) / 100.0}
+    co: float(vals[1]) / 100.0,
+    hi: float(vals[2]) / 100.0,
+    sh: float(vals[3]) / 100.0,
+    sa: float(vals[4]) / 100.0,
+    tp: float(vals[5]) / 100.0,
+    tn: float(vals[6]) / 100.0,
+    fa: float(vals[7]) / 100.0,
+    gr: float(vals[8]) / 100.0,
+    vg: float(vals[9]) / 100.0}
 end
 
 fn develop(c0, a, u, v, gain)
@@ -445,8 +445,8 @@ fn develop(c0, a, u, v, gain)
   if a.fa > 0.0 then
     let f = a.fa
     set c = fc(c.r * (1.0 - 0.26 * f) + 0.155 * f,
-               c.g * (1.0 - 0.26 * f) + 0.150 * f,
-               c.b * (1.0 - 0.26 * f) + 0.170 * f)
+      c.g * (1.0 - 0.26 * f) + 0.150 * f,
+      c.b * (1.0 - 0.26 * f) + 0.170 * f)
   end
 
   // grain: fixed-pattern per sample so it never shimmers between frames

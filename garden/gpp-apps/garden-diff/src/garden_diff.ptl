@@ -196,7 +196,7 @@ let PROBE_SECS = 9.0
 
 fn spinner()
   let frames = ["|", "/", "-", "\\"]
-  frames[int(frame_count() / 6) % 4]
+  frames[(frame_count() / 6) % 4]
 end
 
 // ── data ────────────────────────────────────────────────────────────────────
@@ -343,12 +343,12 @@ let wrap_r = rect(pill_x + unified_w + split_w + stat_w + commits_w + 36, PAD - 
 // every caller. The body regions bind their own x/y further down, where the
 // notice / PR bands have already pushed the layout into place.
 let pill_y = PAD + 8
-let refresh_x = refresh_r.x + int(refresh_w / 2)
-let unified_x = unified_r.x + int(unified_w / 2)
-let split_x = split_r.x + int(split_w / 2)
-let stat_x = stat_r.x + int(stat_w / 2)
-let commits_x = commits_r.x + int(commits_w / 2)
-let wrap_x = wrap_r.x + int(wrap_w / 2)
+let refresh_x = refresh_r.x + (refresh_w / 2)
+let unified_x = unified_r.x + (unified_w / 2)
+let split_x = split_r.x + (split_w / 2)
+let stat_x = stat_r.x + (stat_w / 2)
+let commits_x = commits_r.x + (commits_w / 2)
+let wrap_x = wrap_r.x + (wrap_w / 2)
 
 // ── input: mode switch + PR-block toggle (mouse) ──────────────────────────────
 // A press here also hands keyboard focus back from any focused region (the host
@@ -559,7 +559,7 @@ else
   let list_w = 0
   // `clamp` yields a float; these feed pixel geometry and row indexing, which
   // must stay integral, so every clamped value here is re-`int`ed.
-  if mode != "stat" && mode != "commits" then list_w = int(clamp(int(float(w) * 0.24), 180, 340)) end
+  if mode != "stat" && mode != "commits" then list_w = clamp(int(float(w) * 0.24), 180, 340) end
   let views_x = PAD
   if list_w > 0 then views_x = PAD + list_w + 13 end
   let views_w = w - PAD - views_x
@@ -586,7 +586,7 @@ else
     // `scroll_y()` is fractional (trackpads report sub-tick deltas), so round it
     // into whole rows — the row index has to stay an integer.
     if point_in(mx, my, list_rect) then
-      list_scroll = int(clamp(int(list_scroll + scroll_y()), 0, max_scroll))
+      list_scroll = clamp(int(list_scroll + scroll_y()), 0, max_scroll)
     end
 
     // Scrollbar: a track down the column's right edge with a thumb sized to the
@@ -611,8 +611,8 @@ else
       end
       if !mouse_down(0) && !mouse_pressed(0) then list_drag = false end
       if grabbing && span > 0 then
-        let frac = float(my - body_top - int(thumb_h / 2)) / float(span)
-        list_scroll = int(clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll))
+        let frac = float(my - body_top - (thumb_h / 2)) / float(span)
+        list_scroll = clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll)
         list_thumb_y = body_top + int(float(span) * float(list_scroll) / float(max_scroll))
       end
       draw_rect(track, TRACK)
@@ -664,14 +664,14 @@ else
     if commit_scroll > cmax then commit_scroll = cmax end
     let clist_r = rect(PAD, body_top, w - 2 * PAD, body_h)
     if point_in(mx, my, clist_r) then
-      commit_scroll = int(clamp(int(commit_scroll + scroll_y()), 0, cmax))
+      commit_scroll = clamp(int(commit_scroll + scroll_y()), 0, cmax)
     end
 
     if !commits_ready then
       draw_text("loading commits {spinner()}", {x: PAD, y: body_top + 4}, FS, DIM)
     elsif commit_rows == 0 then
       draw_text("no commits yet — this review is uncommitted work vs {doc.base}",
-                {x: PAD, y: body_top + 4}, FS, DIM)
+        {x: PAD, y: body_top + 4}, FS, DIM)
     else
       let cshown = min(cvisible, commit_rows - commit_scroll)
       for i in range(0, cshown) do

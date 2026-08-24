@@ -88,10 +88,12 @@ string. The rule deletes them. Three parts:
    conservatism: anything it cannot prove infers `any` and is left alone.
 2. **A builtin result-type table** (`typecheck/builtin_types.rs`) is what makes
    the rule find anything at all, since almost no real Petal source carries
-   annotations. It lists only certainties: `len` is an `int`, `clamp` is always
-   a `float` even for int arguments, `round`/`floor`/`abs` *preserve* int-ness
-   rather than producing one, and `reverse`/`slice`/`get` — whose result type
-   is a runtime question — are deliberately absent. The table also feeds
+   annotations. It lists only certainties: `len` is an `int`,
+   `round`/`floor`/`abs` *preserve* int-ness rather than producing one, `clamp`
+   preserves it the same way (an all-int clamp is still an int, so
+   `xs[clamp(i, 0, len(xs) - 1)]` type-checks as an index), and
+   `reverse`/`slice`/`get` — whose result type is a runtime question — are
+   deliberately absent. The table also feeds
    `check_module`, which is now meaningfully more informed.
 3. **The rewrite** (`lint/casts.rs`) is two span splices per cast, so comments
    and layout inside the argument survive, and it re-checks each span against

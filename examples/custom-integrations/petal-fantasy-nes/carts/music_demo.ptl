@@ -30,7 +30,7 @@ palette(3, pale_cyan, teal, navy)       // headings
 
 define_art(0, ["........"])
 define_art(1, ["11111111", "11111111", "11111111", "11111111",
-               "11111111", "11111111", "11111111", "11111111"])
+  "11111111", "11111111", "11111111", "11111111"])
 
 set_map_size(32, 30)
 fill_map(0, 0)
@@ -119,8 +119,8 @@ fn cell_text(tune, order_index, ch, r)
     "       "
   else
     let n = if x.note == note_none then "..."
-            elsif x.note == note_off then "---"
-            else note_name(x.note) end
+    elsif x.note == note_off then "---"
+    else note_name(x.note) end
     let v = if x.vol >= 0 then pad_num(x.vol, 2) else ".." end
     n ++ " " ++ v
   end
@@ -198,8 +198,8 @@ for c in range(0, 4) do
   let y = 20 + c * 2
   let s = sounding(tune, pos, chans[c])
   let label = if s.note < 0 then "----"
-              elsif chans[c] == "noise" then "P" ++ pad_num(noise_period(s.note), 2)
-              else note_name(s.note) end
+  elsif chans[c] == "noise" then "P" ++ pad_num(noise_period(s.note), 2)
+  else note_name(s.note) end
 
   map_text(1, y, heads[c], 0)
   map_text(8, y, label, if s.vol > 0 then 1 else 0 end)

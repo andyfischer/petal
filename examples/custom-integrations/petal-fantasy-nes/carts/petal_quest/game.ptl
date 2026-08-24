@@ -215,9 +215,9 @@ end
 
 fn new_hero(x, y)
   {x: float(x), y: float(y), vx: 0.0, vy: 0.0,
-   face: 1, ground: false, coyote: 0, buffer: 0,
-   mode: "live",              // live | hurt | dying
-   timer: 0, invuln: 0, star: 0, anim_t: 0.0}
+    face: 1, ground: false, coyote: 0, buffer: 0,
+    mode: "live",              // live | hurt | dying
+    timer: 0, invuln: 0, star: 0, anim_t: 0.0}
 end
 
 // ── Sound effects ─────────────────────────────────────────────────────────
@@ -246,45 +246,45 @@ fn sfx_bank()
   {
     // A rising chirp — the pitch envelope is what makes it read as "up".
     jump: {ch: "p2", note: "C-5", pri: 2, duty: 2, mode: 0,
-           vol: [12, 12, 11, 10, 8, 6, 4, 2, 1],
-           pitch: [0.0, 1.5, 3.0, 4.2, 5.2, 6.0, 6.5, 6.8, 7.0]},
+      vol: [12, 12, 11, 10, 8, 6, 4, 2, 1],
+      pitch: [0.0, 1.5, 3.0, 4.2, 5.2, 6.0, 6.5, 6.8, 7.0]},
     // Landing: a short low thud you feel more than hear.
     land: {ch: "noise", note: "C-2", pri: 1, duty: 0, mode: 0,
-           vol: [6, 4, 2, 1], pitch: [0.0]},
+      vol: [6, 4, 2, 1], pitch: [0.0]},
     // The universal pickup: a fifth up on frame four.
     coin: {ch: "p2", note: "E-5", pri: 2, duty: 1, mode: 0,
-           vol: [13, 13, 13, 13, 12, 12, 11, 9, 7, 5, 3, 1],
-           pitch: [0.0, 0.0, 0.0, 0.0, 7.0]},
+      vol: [13, 13, 13, 13, 12, 12, 11, 9, 7, 5, 3, 1],
+      pitch: [0.0, 0.0, 0.0, 0.0, 7.0]},
     // Menu blip: quiet and low priority, so it never steps on anything.
     select: {ch: "p2", note: "G-5", pri: 1, duty: 1, mode: 0,
-             vol: [8, 8, 6, 4, 2], pitch: [0.0]},
+      vol: [8, 8, 6, 4, 2], pitch: [0.0]},
     // Damage: short, dissonant, falling. High priority — being hurt is the
     // one event that must never be masked by anything else.
     hit: {ch: "p2", note: "A-4", pri: 6, duty: 0, mode: 0,
-          vol: [15, 14, 12, 10, 7, 4, 2, 1],
-          pitch: [0.0, -1.5, -3.5, -5.5, -7.5, -9.5, -11.5, -13.5]},
+      vol: [15, 14, 12, 10, 7, 4, 2, 1],
+      pitch: [0.0, -1.5, -3.5, -5.5, -7.5, -9.5, -11.5, -13.5]},
     // An enemy squashed: a fat duty falling fast.
     stomp: {ch: "p2", note: "G-4", pri: 3, duty: 3, mode: 0,
-            vol: [13, 12, 10, 8, 5, 3, 1],
-            pitch: [3.0, 1.0, -1.5, -4.0, -6.5, -8.5, -10.0]},
+      vol: [13, 12, 10, 8, 5, 3, 1],
+      pitch: [3.0, 1.0, -1.5, -4.0, -6.5, -8.5, -10.0]},
     // Powerup: a major arpeggio climbing out of the pickup.
     power: {ch: "p2", note: "C-5", pri: 5, duty: 2, mode: 0,
-            vol: [13, 13, 13, 13, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
-            pitch: [0.0, 4.0, 7.0, 12.0, 7.0, 12.0, 16.0, 19.0,
-                    12.0, 16.0, 19.0, 24.0, 19.0, 24.0]},
+      vol: [13, 13, 13, 13, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
+      pitch: [0.0, 4.0, 7.0, 12.0, 7.0, 12.0, 16.0, 19.0,
+        12.0, 16.0, 19.0, 24.0, 19.0, 24.0]},
     // The banner: the level-clear fanfare's opening flourish.
     goal: {ch: "p2", note: "C-5", pri: 7, duty: 1, mode: 0,
-           vol: [14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
-           pitch: [0.0, 0.0, 4.0, 4.0, 7.0, 7.0, 12.0, 12.0, 12.0,
-                   16.0, 16.0, 19.0, 19.0, 24.0, 24.0, 24.0, 24.0]},
+      vol: [14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
+      pitch: [0.0, 0.0, 4.0, 4.0, 7.0, 7.0, 12.0, 12.0, 12.0,
+        16.0, 16.0, 19.0, 19.0, 24.0, 24.0, 24.0, 24.0]},
     // The boss taking a hit: short-mode noise, metallic.
     clang: {ch: "noise", note: "A-2", pri: 5, duty: 0, mode: 1,
-            vol: [15, 12, 14, 11, 13, 10, 8, 6, 4, 2, 1], pitch: [0.0]},
+      vol: [15, 12, 14, 11, 13, 10, 8, 6, 4, 2, 1], pitch: [0.0]},
     // The boss dying: long noise sweeping down into a rumble.
     boom: {ch: "noise", note: "D#3", pri: 8, duty: 0, mode: 0,
-           vol: [15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-           pitch: [0.0, -2.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0,
-                   -10.0, -11.0, -12.0, -13.0, -14.0, -15.0, -16.0, -17.0]}
+      vol: [15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+      pitch: [0.0, -2.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0,
+        -10.0, -11.0, -12.0, -13.0, -14.0, -15.0, -16.0, -17.0]}
   }
 end
 
@@ -484,22 +484,23 @@ end
 
 // Terrain legend -> background slot. Anything not listed is air.
 fn terrain_slot(ch)
-  if ch == "#" then B_TOP
-  elsif ch == "=" then B_FILL
-  elsif ch == "B" then B_BRICK
-  elsif ch == "X" then B_HARD
-  elsif ch == "[" then B_LEDGE_L
-  elsif ch == "-" then B_LEDGE_M
-  elsif ch == "]" then B_LEDGE_R
-  elsif ch == "*" then 8
-  elsif ch == "%" then 9
-  elsif ch == "," then 10
-  elsif ch == "(" then 11
-  elsif ch == ")" then 12
-  elsif ch == "|" then 13
-  elsif ch == "^" then B_SPIKE
-  elsif ch == "F" then B_BANNER
-  else B_AIR
+  match ch
+    when "#" -> B_TOP
+    when "=" -> B_FILL
+    when "B" -> B_BRICK
+    when "X" -> B_HARD
+    when "[" -> B_LEDGE_L
+    when "-" -> B_LEDGE_M
+    when "]" -> B_LEDGE_R
+    when "*" -> 8
+    when "%" -> 9
+    when "," -> 10
+    when "(" -> 11
+    when ")" -> 12
+    when "|" -> 13
+    when "^" -> B_SPIKE
+    when "F" -> B_BANNER
+    when _ -> B_AIR
   end
 end
 
@@ -528,15 +529,16 @@ end
 
 // One legend character -> a spawned object, or nil for terrain.
 fn object_kind(ch)
-  if ch == "@" then "spawn"
-  elsif ch == "o" then "coin"
-  elsif ch == "w" then "walker"
-  elsif ch == "j" then "jumper"
-  elsif ch == "b" then "flyer"
-  elsif ch == "H" then "life"
-  elsif ch == "S" then "star"
-  elsif ch == "K" then "boss"
-  else nil
+  match ch
+    when "@" -> "spawn"
+    when "o" -> "coin"
+    when "w" -> "walker"
+    when "j" -> "jumper"
+    when "b" -> "flyer"
+    when "H" -> "life"
+    when "S" -> "star"
+    when "K" -> "boss"
+    when _ -> nil
   end
 end
 
@@ -759,7 +761,7 @@ end
 // coyote time and the walkers' ledge test both want.
 fn grounded(lv, x, y, w, h)
   box_solid(lv, x, y + 1.0, w, h) ||
-    oneway_block(lv, x, w, y + float(h), y + float(h) + 1.0)
+  oneway_block(lv, x, w, y + float(h), y + float(h) + 1.0)
 end
 
 // ── Painting the map ──────────────────────────────────────────────────────
@@ -889,8 +891,8 @@ fn spawn_entities(lv)
   for s in lv.spawns do
     if s.kind == "walker" || s.kind == "jumper" || s.kind == "flyer" then
       out = append(out, {kind: s.kind, x: s.x, y: s.y, hx: s.x, hy: s.y,
-                         vx: if s.kind == "walker" then -0.45 else 0.0 end,
-                         vy: 0.0, face: -1, t: 0, alive: true})
+        vx: if s.kind == "walker" then -0.45 else 0.0 end,
+        vy: 0.0, face: -1, t: 0, alive: true})
     end
   end
   out
@@ -1176,8 +1178,8 @@ end
 
 fn ent_tile(e)
   let base = if e.kind == "walker" then T_SLIME
-             elsif e.kind == "jumper" then T_HOP
-             else T_BAT end
+  elsif e.kind == "jumper" then T_HOP
+  else T_BAT end
   let fps = if e.kind == "flyer" then 8.0 else 3.5 end
   base + anim([0, 1], fps, time() + float(int(e.hx)) * 0.01) * 4
 end
@@ -1345,7 +1347,7 @@ fn update_boss(g, cam)
       let dy = h.y - bs.y
       let d = max(24.0, sqrt(dx * dx + dy * dy))
       g.shots = append(g.shots, {x: bs.x + 12.0, y: bs.y + 20.0,
-                                 vx: dx / d * 1.9, vy: dy / d * 1.9})
+        vx: dx / d * 1.9, vy: dy / d * 1.9})
       sfx("select")
     end
     if bs.t > 150 then
@@ -1495,7 +1497,7 @@ fn game_frame()
     end
   else
     cam = clamp(g.hero.x + float(HERO_BW) / 2.0 - 128.0, 0.0,
-                float(max(0, lv.cols * 8 - 256)))
+      float(max(0, lv.cols * 8 - 256)))
   end
 
   g = update_hero(g, lv, if arena then cam else -1.0 end)
@@ -1664,11 +1666,11 @@ fn title_frame()
   let t = scene_time()
   let hx = 40.0 + sin(t * 0.9) * 20.0
   draw_meta(hx, 152.0, meta(T_HERO + anim([2, 3, 4, 3], 8.0) * 4, 2, 2, PAL_HERO),
-            flip(cos(t * 0.9) < 0.0, false))
+    flip(cos(t * 0.9) < 0.0, false))
   draw_meta(190.0 + sin(t * 0.6) * 26.0, 152.0,
-            meta(T_SLIME + anim([0, 1], 3.0) * 4, 2, 2, PAL_ENEMY), 0)
+    meta(T_SLIME + anim([0, 1], 3.0) * 4, 2, 2, PAL_ENEMY), 0)
   draw_meta(120.0, 60.0 + sin(t * 1.7) * 6.0,
-            meta(T_BAT + anim([0, 1], 8.0) * 4, 2, 2, PAL_BOSS), 0)
+    meta(T_BAT + anim([0, 1], 8.0) * 4, 2, 2, PAL_BOSS), 0)
   sprite(150, 150, T_COIN + anim([0, 1, 2, 1], 8.0), PAL_ITEM)
   0
 end
@@ -1703,10 +1705,10 @@ fn options_frame()
   map_text_center(4, "OPTIONS", 1)
 
   let items = ["MUSIC     " ++ on_off(g.opts.music),
-               "SOUND     " ++ on_off(g.opts.sfx),
-               "SCANLINES " ++ on_off(g.opts.crt),
-               "SCALE     " ++ str(g.opts.scale) ++ "X",
-               "BACK"]
+    "SOUND     " ++ on_off(g.opts.sfx),
+    "SCANLINES " ++ on_off(g.opts.crt),
+    "SCALE     " ++ str(g.opts.scale) ++ "X",
+    "BACK"]
   let m = map_menu("options", 4, 10, items, 2)
   map_text_center(24, "B - BACK", 2)
 
@@ -1896,27 +1898,21 @@ font_tiles(T_FONT, 3)          // white ink in every palette this cart uses
 
 let g0 = game()
 let world_now = if scene() == "game" || scene() == "clear" then
-                  level_cache(g0.level).world
-                else
-                  0
-                end
+  level_cache(g0.level).world
+else
+  0
+end
 ensure_art(world_now)
 
 let sc = scene()
-if sc == "options" then
-  options_frame()
-elsif sc == "howto" then
-  howto_frame()
-elsif sc == "game" then
-  game_frame()
-elsif sc == "clear" then
-  clear_frame()
-elsif sc == "gameover" then
-  gameover_frame()
-elsif sc == "victory" then
-  victory_frame()
-else
-  title_frame()
+match sc
+  when "options" -> options_frame()
+  when "howto" -> howto_frame()
+  when "game" -> game_frame()
+  when "clear" -> clear_frame()
+  when "gameover" -> gameover_frame()
+  when "victory" -> victory_frame()
+  when _ -> title_frame()
 end
 
 audio_frame()

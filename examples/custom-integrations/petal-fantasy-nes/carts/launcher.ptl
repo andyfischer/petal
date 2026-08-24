@@ -269,10 +269,10 @@ else
   // Scroll the window only once the selection would leave it, keeping the
   // cursor mid-list on long lists and pinned at the top on short ones.
   let first = if count <= LIST_ROWS then
-      0
-    else
-      clamp(selected - int(LIST_ROWS / 2), 0, count - LIST_ROWS)
-    end
+    0
+  else
+    clamp(selected - (LIST_ROWS / 2), 0, count - LIST_ROWS)
+  end
   let last = min(count, first + LIST_ROWS)
 
   for i in range(first, last) do
@@ -295,7 +295,7 @@ else
 
   // The cursor is the one moving thing on the screen; the two-frame bob is
   // what keeps the boot screen from looking frozen.
-  let bob = if int(frame / 16) % 2 == 0 then 0 else 1 end
+  let bob = if (frame / 16) % 2 == 0 then 0 else 1 end
   let cursor_row = LIST_TOP + selected - first
   sprite((LIST_X - 2) * 8 + bob, cursor_row * 8, TILE_CURSOR, 4)
 end
@@ -305,6 +305,6 @@ end
 let HELP = "UP DOWN MOVE - ESC QUITS"
 text_at(centered(HELP), 26, HELP, 0)
 
-if count > 0 && int(frame / 24) % 2 == 0 then
+if count > 0 && (frame / 24) % 2 == 0 then
   text_at(centered("PRESS START"), 27, "PRESS START", 1)
 end

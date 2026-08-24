@@ -18,71 +18,71 @@ let trail_len = 5
 
 // Flow field — the angle a particle should travel at a given point + time.
 fn field_angle(px, py, t)
-    let n = sin(px * field_scale + t) * cos(py * field_scale * 0.7 + t * 0.5)
-    n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
-    n += cos(px * field_scale * 1.5 - py * field_scale + t * 0.3) * 0.3
-    n * PI * 2.0
+  let n = sin(px * field_scale + t) * cos(py * field_scale * 0.7 + t * 0.5)
+  n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
+  n += cos(px * field_scale * 1.5 - py * field_scale + t * 0.3) * 0.3
+  n * PI * 2.0
 end
 
 // Hue (0..1) -> warm-to-cool rgb record, riding around the color wheel.
 fn hue_color(h)
-    let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
-    let cr = 0
-    let cg = 0
-    let cb = 0
-    if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 60
-    elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 60
-    elsif hmod < 3.0 then cr = 60; cg = 255; cb = int((hmod - 2.0) * 255.0)
-    elsif hmod < 4.0 then cr = 60; cg = int((4.0 - hmod) * 255.0); cb = 255
-    elsif hmod < 5.0 then cr = int((hmod - 4.0) * 195.0) + 60; cg = 60; cb = 255
-    else cr = 255; cg = 60; cb = int((6.0 - hmod) * 195.0) + 60
-    end
-    {r: cr, g: cg, b: cb}
+  let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
+  let cr = 0
+  let cg = 0
+  let cb = 0
+  if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 60
+  elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 60
+  elsif hmod < 3.0 then cr = 60; cg = 255; cb = int((hmod - 2.0) * 255.0)
+  elsif hmod < 4.0 then cr = 60; cg = int((4.0 - hmod) * 255.0); cb = 255
+  elsif hmod < 5.0 then cr = int((hmod - 4.0) * 195.0) + 60; cg = 60; cb = 255
+  else cr = 255; cg = 60; cb = int((6.0 - hmod) * 195.0) + 60
+  end
+  {r: cr, g: cg, b: cb}
 end
 
 // Seed particles on the first frame.
 if len(particles) == 0 then
-    for i in range(0, num_particles) do
-        particles = append(particles, {
-            x: random(0.0, sw),
-            y: random(0.0, sh),
-            speed: random(28.0, 88.0),
-            hue: random(0.0, 1.0),
-            trail: []
-        })
-    end
+  for i in range(0, num_particles) do
+    particles = append(particles, {
+      x: random(0.0, sw),
+      y: random(0.0, sh),
+      speed: random(28.0, 88.0),
+      hue: random(0.0, 1.0),
+      trail: []
+    })
+  end
 end
 
 // Advance every particle one step along the field.
 let new_particles = []
 for p in particles do
-    let angle = field_angle(p.x, p.y, field_time)
-    let nx = p.x + cos(angle) * p.speed * delta
-    let ny = p.y + sin(angle) * p.speed * delta
+  let angle = field_angle(p.x, p.y, field_time)
+  let nx = p.x + cos(angle) * p.speed * delta
+  let ny = p.y + sin(angle) * p.speed * delta
 
-    // Build the new trail: current position first, then the old trail,
-    // capped at trail_len. Wrapping particles start a fresh trail so the
-    // jump to a new position is never connected to the old one.
-    let new_trail = []
-    let wrapped = nx < 0.0 || nx > sw || ny < 0.0 || ny > sh
-    if wrapped then
-        nx = random(0.0, sw)
-        ny = random(0.0, sh)
-    else
-        new_trail = append(new_trail, {x: p.x, y: p.y})
-        for t in p.trail do
-            if len(new_trail) < trail_len then
-                new_trail = append(new_trail, t)
-            end
-        end
+  // Build the new trail: current position first, then the old trail,
+  // capped at trail_len. Wrapping particles start a fresh trail so the
+  // jump to a new position is never connected to the old one.
+  let new_trail = []
+  let wrapped = nx < 0.0 || nx > sw || ny < 0.0 || ny > sh
+  if wrapped then
+    nx = random(0.0, sw)
+    ny = random(0.0, sh)
+  else
+    new_trail = append(new_trail, {x: p.x, y: p.y})
+    for t in p.trail do
+      if len(new_trail) < trail_len then
+        new_trail = append(new_trail, t)
+      end
     end
+  end
 
-    new_particles = append(new_particles, {
-        x: nx, y: ny,
-        speed: p.speed,
-        hue: p.hue,
-        trail: new_trail
-    })
+  new_particles = append(new_particles, {
+    x: nx, y: ny,
+    speed: p.speed,
+    hue: p.hue,
+    trail: new_trail
+  })
 end
 particles = new_particles
 
@@ -90,22 +90,22 @@ particles = new_particles
 clear(8, 8, 16)
 
 for p in particles do
-    let col = hue_color(p.hue + field_angle(p.x, p.y, field_time) * 0.05)
+  let col = hue_color(p.hue + field_angle(p.x, p.y, field_time) * 0.05)
 
-    // Trailing dots: older points are smaller and dimmer.
-    for k in range(0, len(p.trail)) do
-        let t = p.trail[k]
-        let fade = 1.0 - float(k + 1) / float(trail_len + 1)
-        draw_circle(int(t.x), int(t.y), 1,
-            int(float(col.r) * fade * 0.7),
-            int(float(col.g) * fade * 0.7),
-            int(float(col.b) * fade * 0.7))
-    end
+  // Trailing dots: older points are smaller and dimmer.
+  for k in range(0, len(p.trail)) do
+    let t = p.trail[k]
+    let fade = 1.0 - float(k + 1) / float(trail_len + 1)
+    draw_circle(int(t.x), int(t.y), 1,
+      int(float(col.r) * fade * 0.7),
+      int(float(col.g) * fade * 0.7),
+      int(float(col.b) * fade * 0.7))
+  end
 
-    // Head: a soft halo under a bright core.
-    draw_circle(int(p.x), int(p.y), 2, col.r / 4, col.g / 4, col.b / 4)
-    draw_circle(int(p.x), int(p.y), 1,
-        min(255, col.r + 40), min(255, col.g + 40), min(255, col.b + 40))
+  // Head: a soft halo under a bright core.
+  draw_circle(int(p.x), int(p.y), 2, col.r / 4, col.g / 4, col.b / 4)
+  draw_circle(int(p.x), int(p.y), 1,
+    min(255, col.r + 40), min(255, col.g + 40), min(255, col.b + 40))
 end
 
 draw_text("Flow Field", 16, 12, 14, 120, 120, 150)

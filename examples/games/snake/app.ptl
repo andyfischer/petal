@@ -306,16 +306,18 @@ clear(BG.r, BG.g, BG.b)
 // Header
 draw_text("SNAKE", {x: PAD, y: PAD - 2}, {size: 30, color: TEXT, spacing: 7})
 draw_text("grid simulation · fixed-step accumulator · petal panel",
-          {x: PAD + 1, y: PAD + 38}, {size: 13, color: FAINT, spacing: 1})
+  {x: PAD + 1, y: PAD + 38}, {size: 13, color: FAINT, spacing: 1})
 
-let phase_label = if phase == "ready" then "READY"
-  elsif phase == "playing" then "RUNNING"
-  elsif phase == "paused" then "PAUSED"
-  else "GAME OVER" end
-let phase_color = if phase == "over" then DANGER
-  elsif phase == "paused" then GOLD
-  elsif phase == "playing" then BODY_HI
-  else DIM end
+let phase_label = match phase
+  when "ready" -> "READY"
+  when "playing" -> "RUNNING"
+  when "paused" -> "PAUSED"
+  when _ -> "GAME OVER" end
+let phase_color = match phase
+  when "over" -> DANGER
+  when "paused" -> GOLD
+  when "playing" -> BODY_HI
+  when _ -> DIM end
 let pill_w = text_width(phase_label, 11) + 26
 let pill = rect(side.x + side_w - pill_w, PAD + 4, pill_w, 26)
 draw_rect_rounded(pill, 13, mix(BG, phase_color, 0.16))
@@ -344,7 +346,7 @@ draw_rect_outline(rect(bx, by, board_w, board_h), wall_c, 255, 2)
 
 fn cell_rect(ox, oy, c, inset)
   rect(ox + cell_x(c) * CELL + inset, oy + cell_y(c) * CELL + inset,
-       CELL - inset * 2, CELL - inset * 2)
+    CELL - inset * 2, CELL - inset * 2)
 end
 
 // Food — a soft halo, the fruit, and a highlight.
@@ -394,10 +396,10 @@ for i in range(0, length) do
       let ly = min(ay, cy2)
       let horiz = ay == cy2
       let jr = if horiz then
-          rect(bx + lx * CELL + CELL / 2, by + ly * CELL + 4, CELL, CELL - 8)
-        else
-          rect(bx + lx * CELL + 4, by + ly * CELL + CELL / 2, CELL - 8, CELL)
-        end
+        rect(bx + lx * CELL + CELL / 2, by + ly * CELL + 4, CELL, CELL - 8)
+      else
+        rect(bx + lx * CELL + 4, by + ly * CELL + CELL / 2, CELL - 8, CELL)
+      end
       draw_rect(jr, col)
     end
   end
@@ -436,17 +438,17 @@ end
 
 if phase == "ready" then
   overlay(rect(bx, by, board_w, board_h), "32 × 23 GRID", "SNAKE",
-          "Arrow keys or WASD to start",
-          "space pauses · R restarts · T toggles wall wrap", HEAD)
+    "Arrow keys or WASD to start",
+    "space pauses · R restarts · T toggles wall wrap", HEAD)
 elsif phase == "paused" then
   overlay(rect(bx, by, board_w, board_h), "HELD", "PAUSED",
-          "space or the Resume button to continue",
-          "score {score} · length {length} · level {lvl}", GOLD)
+    "space or the Resume button to continue",
+    "score {score} · length {length} · level {lvl}", GOLD)
 elsif phase == "over" then
   let verdict = if score >= best then "a new personal best" else "best so far is {best}" end
   overlay(rect(bx, by, board_w, board_h), "FINAL SCORE", "{score}",
-          "{apples} apples in {int(run_time)}s — {verdict}",
-          "press R or Restart to go again", DANGER)
+    "{apples} apples in {int(run_time)}s — {verdict}",
+    "press R or Restart to go again", DANGER)
 end
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -473,7 +475,7 @@ draw_line(sc.x + 18, sc.y + 100, sc.x + side_w - 18, sc.y + 100, EDGE.r, EDGE.g,
 let meter = rect(sc.x + 18, sc.y + 130, side_w - 36, 6)
 draw_rect_rounded(meter, 3, #0c1017)
 draw_rect_rounded(rect(meter.x, meter.y, meter.w * (lvl + 1) / 10, 6), 3,
-                  mix(BODY_HI, DANGER, float(lvl) / 9.0))
+  mix(BODY_HI, DANGER, float(lvl) / 9.0))
 draw_text("SPEED LEVEL {lvl}", {x: meter.x, y: sc.y + 110}, {size: 11, color: DIM, spacing: 2})
 draw_text_right("{int(1.0 / step_time)} steps/s", meter.x + meter.w, sc.y + 110, 11, FAINT)
 
@@ -497,10 +499,10 @@ if bonus >= 0 && phase == "playing" then
   draw_rect_rounded(nr, 8, mix(CARD, GOLD, 0.14))
   draw_circle({x: nr.x + 20, y: nr.y + 17}, 6, GOLD)
   draw_text("Golden apple — {int(bonus_left) + 1}s left",
-            {x: nr.x + 36, y: nr.y + 10}, {size: 13, color: GOLD})
+    {x: nr.x + 36, y: nr.y + 10}, {size: 13, color: GOLD})
 else
   draw_text("Every 5th apple drops a golden one.",
-            {x: side.x + 2, y: note_y + 10}, {size: 13, color: FAINT})
+    {x: side.x + 2, y: note_y + 10}, {size: 13, color: FAINT})
 end
 
 // Buttons
@@ -513,10 +515,11 @@ fn chip(r, text, on, accent)
   draw_text_center(text, r.x + r.w / 2, r.y + (r.h - 13) / 2, 13, fg)
 end
 
-let pause_label = if phase == "playing" then "Pause"
-  elsif phase == "paused" then "Resume"
-  elsif phase == "ready" then "Start"
-  else "Play again" end
+let pause_label = match phase
+  when "playing" -> "Pause"
+  when "paused" -> "Resume"
+  when "ready" -> "Start"
+  when _ -> "Play again" end
 chip(b_pause, pause_label, phase == "paused", GOLD)
 chip(b_reset, "Restart", false, DANGER)
 chip(b_wrap, if wrap then "Wall wrap: ON" else "Wall wrap: OFF" end, wrap, ACCENT)

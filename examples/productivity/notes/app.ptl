@@ -63,7 +63,7 @@ let BODY_W = EDW - EPAD - 36
 let BODY_Y = 158
 let FOOT_H = 44
 let BODY_H = H - BODY_Y - FOOT_H - 14
-let MAXC   = int(BODY_W / CW)         // wrap width, in characters
+let MAXC   = BODY_W / CW         // wrap width, in characters
 
 // ── the store ───────────────────────────────────────────────────────────────
 // `saved` is the persisted document; `notes` is the working copy. Values are
@@ -71,134 +71,134 @@ let MAXC   = int(BODY_W / CW)         // wrap width, in characters
 // through `notes` can reach into it. Save commits, Revert restores.
 state notes = [
   {id: 1, book: "Journal", pinned: true, mins: 14,
-   title: "Morning, the long table",
-   lines: [
-     "Woke before the alarm again. The light through the east window",
-     "reaches the long table for about forty minutes in August and then",
-     "gives it up for the rest of the day.",
-     "",
-     "Three things I want to keep hold of this week:",
-     "",
-     "  - finish the reading notes before starting anything new",
-     "  - walk the loop past the reservoir at least twice",
-     "  - call Ines back, properly, not a message",
-     "",
-     "The tomatoes on the sill have gone leggy from reaching. I keep",
-     "meaning to turn the tray a quarter every morning and I keep",
-     "forgetting until the stems have already decided.",
-     "",
-     "Later --",
-     "",
-     "Walked to the market for coffee and came back with coffee, two",
-     "heads of fennel and a chipped enamel jug I did not need and could",
-     "not leave. The woman selling it said it had been her mother's and",
-     "then, seeing my face, said that about everything on the table.",
-     "",
-     "Read forty pages standing up because sitting down would have meant",
-     "admitting the afternoon was over.",
-     "",
-     "Things I noticed and want to write about properly some other time: the way the light comes off the wet road after the sprinklers run at four; how nobody in this neighbourhood says goodbye on the phone, they just stop; the two cats on Ellery Street who have divided the block along a line only they can see.",
-     "",
-     "Tomorrow --",
-     "",
-     "  - the fennel, before it goes soft",
-     "  - the reading notes, first thing, before anything else opens",
-     "  - ring the letting agent about the window that will not close",
-     "",
-     "Bed early. The light comes back at five whether or not I am ready",
-     "for it, and I would rather meet it than be met by it.",
-   ]},
+    title: "Morning, the long table",
+    lines: [
+      "Woke before the alarm again. The light through the east window",
+      "reaches the long table for about forty minutes in August and then",
+      "gives it up for the rest of the day.",
+      "",
+      "Three things I want to keep hold of this week:",
+      "",
+      "  - finish the reading notes before starting anything new",
+      "  - walk the loop past the reservoir at least twice",
+      "  - call Ines back, properly, not a message",
+      "",
+      "The tomatoes on the sill have gone leggy from reaching. I keep",
+      "meaning to turn the tray a quarter every morning and I keep",
+      "forgetting until the stems have already decided.",
+      "",
+      "Later --",
+      "",
+      "Walked to the market for coffee and came back with coffee, two",
+      "heads of fennel and a chipped enamel jug I did not need and could",
+      "not leave. The woman selling it said it had been her mother's and",
+      "then, seeing my face, said that about everything on the table.",
+      "",
+      "Read forty pages standing up because sitting down would have meant",
+      "admitting the afternoon was over.",
+      "",
+      "Things I noticed and want to write about properly some other time: the way the light comes off the wet road after the sprinklers run at four; how nobody in this neighbourhood says goodbye on the phone, they just stop; the two cats on Ellery Street who have divided the block along a line only they can see.",
+      "",
+      "Tomorrow --",
+      "",
+      "  - the fennel, before it goes soft",
+      "  - the reading notes, first thing, before anything else opens",
+      "  - ring the letting agent about the window that will not close",
+      "",
+      "Bed early. The light comes back at five whether or not I am ready",
+      "for it, and I would rather meet it than be met by it.",
+  ]},
   {id: 2, book: "Work", pinned: true, mins: 52,
-   title: "Panel runtime - open questions",
-   lines: [
-     "Notes ahead of Thursday's review. None of this is decided.",
-     "",
-     "1. Sleep window. A panel stops ticking ten seconds after the last",
-     "   input. Fine for a form, wrong for a clock. Do we want an opt-in",
-     "   keep-awake, or is a host timer the honest answer?",
-     "",
-     "2. Text measurement is exact now, which means every layout that was",
-     "   quietly wrong is visibly wrong. Good trade.",
-     "",
-     "3. Modifier chords never reach a script - the host keeps them. That",
-     "   rules out the whole cmd-key vocabulary an editor expects.",
-     "",
-     "Ask Priya whether the diff viewer hit the same wall.",
-   ]},
+    title: "Panel runtime - open questions",
+    lines: [
+      "Notes ahead of Thursday's review. None of this is decided.",
+      "",
+      "1. Sleep window. A panel stops ticking ten seconds after the last",
+      "   input. Fine for a form, wrong for a clock. Do we want an opt-in",
+      "   keep-awake, or is a host timer the honest answer?",
+      "",
+      "2. Text measurement is exact now, which means every layout that was",
+      "   quietly wrong is visibly wrong. Good trade.",
+      "",
+      "3. Modifier chords never reach a script - the host keeps them. That",
+      "   rules out the whole cmd-key vocabulary an editor expects.",
+      "",
+      "Ask Priya whether the diff viewer hit the same wall.",
+  ]},
   {id: 3, book: "Ideas", pinned: false, mins: 190,
-   title: "A quieter kind of search",
-   lines: [
-     "What if search never navigated anywhere? It only dims what does not match and leaves everything exactly where it was, so you never lose your place while you are looking for something.",
-     "",
-     "The cost is that you cannot find what is not already on screen, which is most things. Unless the dimming applies to the list and the highlighting applies to the page - two behaviours, one field, and the reader never has to decide which one they wanted.",
-     "",
-     "Worth a prototype. An afternoon, no more.",
-   ]},
+    title: "A quieter kind of search",
+    lines: [
+      "What if search never navigated anywhere? It only dims what does not match and leaves everything exactly where it was, so you never lose your place while you are looking for something.",
+      "",
+      "The cost is that you cannot find what is not already on screen, which is most things. Unless the dimming applies to the list and the highlighting applies to the page - two behaviours, one field, and the reader never has to decide which one they wanted.",
+      "",
+      "Worth a prototype. An afternoon, no more.",
+  ]},
   {id: 4, book: "Recipes", pinned: false, mins: 1180,
-   title: "Buckwheat pancakes, the good ratio",
-   lines: [
-     "120g buckwheat, 60g plain, 2 eggs, 400ml buttermilk, a good pinch",
-     "of salt, half a teaspoon of bicarb.",
-     "",
-     "Whisk the dry first. Buttermilk in slowly or it goes lumpy and no",
-     "amount of beating fixes it afterwards. Rest the batter thirty",
-     "minutes on the counter - this is the part everyone skips and it is",
-     "the part that matters.",
-     "",
-     "Medium-low heat. They want longer than you think on the first side",
-     "and about half that on the second.",
-   ]},
+    title: "Buckwheat pancakes, the good ratio",
+    lines: [
+      "120g buckwheat, 60g plain, 2 eggs, 400ml buttermilk, a good pinch",
+      "of salt, half a teaspoon of bicarb.",
+      "",
+      "Whisk the dry first. Buttermilk in slowly or it goes lumpy and no",
+      "amount of beating fixes it afterwards. Rest the batter thirty",
+      "minutes on the counter - this is the part everyone skips and it is",
+      "the part that matters.",
+      "",
+      "Medium-low heat. They want longer than you think on the first side",
+      "and about half that on the second.",
+  ]},
   {id: 5, book: "Reading", pinned: false, mins: 1520,
-   title: "The Overstory - marginalia",
-   lines: [
-     "p.148 - \"The best arguments in the world won't change a person's",
-     "mind. The only thing that can do that is a good story.\" Underlined",
-     "twice by whoever had this copy before me.",
-     "",
-     "The structural conceit (roots, trunk, crown, seeds) does real work",
-     "for the first two hundred pages and then becomes a promise the",
-     "book has to keep whether or not it still wants to.",
-     "",
-     "Still: nothing else I have read makes time feel that long.",
-   ]},
+    title: "The Overstory - marginalia",
+    lines: [
+      "p.148 - \"The best arguments in the world won't change a person's",
+      "mind. The only thing that can do that is a good story.\" Underlined",
+      "twice by whoever had this copy before me.",
+      "",
+      "The structural conceit (roots, trunk, crown, seeds) does real work",
+      "for the first two hundred pages and then becomes a promise the",
+      "book has to keep whether or not it still wants to.",
+      "",
+      "Still: nothing else I have read makes time feel that long.",
+  ]},
   {id: 6, book: "Work", pinned: false, mins: 2600,
-   title: "Interview loop - compiler role",
-   lines: [
-     "Four stages. Nothing longer than two hours of anyone's evening.",
-     "",
-     "  1. Phone screen, 30m - one small parsing problem, out loud",
-     "  2. Pairing, 90m - extend a real interpreter, our repo, our mess",
-     "  3. Design, 60m - error recovery in a parser they have not seen",
-     "  4. Team, 45m - no whiteboard, no puzzles",
-     "",
-     "The take-home is gone. It was filtering for free time, not skill.",
-   ]},
+    title: "Interview loop - compiler role",
+    lines: [
+      "Four stages. Nothing longer than two hours of anyone's evening.",
+      "",
+      "  1. Phone screen, 30m - one small parsing problem, out loud",
+      "  2. Pairing, 90m - extend a real interpreter, our repo, our mess",
+      "  3. Design, 60m - error recovery in a parser they have not seen",
+      "  4. Team, 45m - no whiteboard, no puzzles",
+      "",
+      "The take-home is gone. It was filtering for free time, not skill.",
+  ]},
   {id: 7, book: "Journal", pinned: false, mins: 4300,
-   title: "Reservoir loop, late",
-   lines: [
-     "Went out at nine, which is later than sensible now the evenings",
-     "are shortening. The path on the far side has no lights and I",
-     "walked the last kilometre mostly by memory of where the ruts are.",
-     "",
-     "Two herons on the spillway, standing the way they do, as if being",
-     "still were a job with a wage attached.",
-   ]},
+    title: "Reservoir loop, late",
+    lines: [
+      "Went out at nine, which is later than sensible now the evenings",
+      "are shortening. The path on the far side has no lights and I",
+      "walked the last kilometre mostly by memory of where the ruts are.",
+      "",
+      "Two herons on the spillway, standing the way they do, as if being",
+      "still were a job with a wage attached.",
+  ]},
   {id: 8, book: "Ideas", pinned: false, mins: 7800,
-   title: "Objects that explain themselves",
-   lines: [
-     "Every widget carrying a one-line account of why it is the size it is. Not a tooltip - a debug overlay that reads the layout code and prints the constraint that actually won.",
-     "",
-     "Half of my layout bugs are me being wrong about which rule was binding.",
-   ]},
+    title: "Objects that explain themselves",
+    lines: [
+      "Every widget carrying a one-line account of why it is the size it is. Not a tooltip - a debug overlay that reads the layout code and prints the constraint that actually won.",
+      "",
+      "Half of my layout bugs are me being wrong about which rule was binding.",
+  ]},
   {id: 9, book: "Recipes", pinned: false, mins: 10200,
-   title: "Preserved lemons, small batch",
-   lines: [
-     "Six unwaxed lemons, quartered nearly through, packed hard with",
-     "coarse salt and pressed into a jar until the juice covers them.",
-     "",
-     "Four weeks in the dark. Turn the jar when you remember. The rind",
-     "is the point; the flesh goes in the bin without ceremony.",
-   ]},
+    title: "Preserved lemons, small batch",
+    lines: [
+      "Six unwaxed lemons, quartered nearly through, packed hard with",
+      "coarse salt and pressed into a jar until the juice covers them.",
+      "",
+      "Four weeks in the dark. Turn the jar when you remember. The rind",
+      "is the point; the flesh goes in the bin without ceremony.",
+  ]},
 ]
 state saved   = notes                 // the persisted document
 state history = []                    // undo snapshots, oldest first
@@ -230,12 +230,13 @@ state click_y = 0
 let BOOKS = ["Journal", "Work", "Ideas", "Recipes", "Reading"]
 
 fn book_color(b)
-  if b == "Journal" then SAGE
-  elsif b == "Work" then BLUE
-  elsif b == "Ideas" then GOLD
-  elsif b == "Recipes" then ACCENT
-  elsif b == "Reading" then VIOLET
-  else GHOST
+  match b
+    when "Journal" -> SAGE
+    when "Work" -> BLUE
+    when "Ideas" -> GOLD
+    when "Recipes" -> ACCENT
+    when "Reading" -> VIOLET
+    when _ -> GHOST
   end
 end
 
@@ -439,10 +440,10 @@ fn insert_text(lines, p, txt)
     end
   end
   let np = if len(parts) == 1 then
-      {line: p.line, col: p.col + len(last)}
-    else
-      {line: p.line + len(parts) - 1, col: len(last)}
-    end
+    {line: p.line, col: p.col + len(last)}
+  else
+    {line: p.line + len(parts) - 1, col: len(last)}
+  end
   {lines: out, cur: np}
 end
 
@@ -706,10 +707,10 @@ draw_text(if dirty then "unsaved" else "saved" end,
   {x: PAD + 15, y: foot_y + 16}, {size: FS_SM, color: save_c})
 let since_save = now - flash
 let stamp = if dirty then "autosaving in a moment"
-  elsif since_save < 4 then "written just now"
-  elsif saves == 0 then "opened from disk"
-  else "{saves} writes this session"
-  end
+elsif since_save < 4 then "written just now"
+elsif saves == 0 then "opened from disk"
+else "{saves} writes this session"
+end
 draw_text(stamp, {x: PAD, y: foot_y + 40}, {size: FS_MICRO, color: GHOST})
 
 let undo_r = rect(10, H - 40, RAIL_W - 20, 26)
@@ -761,7 +762,7 @@ if !new_hot then
   draw_rect_outline(newr, RULE)
 end
 let plus_c = if new_hot then WHITE else INK_SOFT
-  end
+end
 stroke(newr.x + 8, newr.y + 16, newr.x + 18, newr.y + 16, plus_c, 255, 1.6)
 stroke(newr.x + 13, newr.y + 11, newr.x + 13, newr.y + 21, plus_c, 255, 1.6)
 
@@ -953,7 +954,7 @@ if mouse_pressed(0) && point_in(mx, my, body_r) && note != nil then
   let p = hit_pos(rows, doc, mx, my, bscroll)
   focus = "body"
   let dbl = click_count() >= 2 ||
-    (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
+  (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
   click_t = now
   click_x = mx
   click_y = my
@@ -1018,10 +1019,10 @@ if bfocus && note != nil then
     moved = true
     keep_goal = true
     let step = if key_pressed("up") then -1
-      elsif key_pressed("down") then 1
-      elsif key_pressed("pageup") then -int(BODY_H / LH) + 1
-      else int(BODY_H / LH) - 1
-      end
+    elsif key_pressed("down") then 1
+    elsif key_pressed("pageup") then -(BODY_H / LH) + 1
+    else (BODY_H / LH) - 1
+    end
     let nr = iclamp(ri + step, 0, len(rows) - 1)
     let row = rows[nr]
     cur = {line: row.li, col: iclamp(row.a + goal, row.a, row.b)}
@@ -1259,7 +1260,7 @@ let lo2 = sel_lo(anchor, cur)
 let hi2 = sel_hi(anchor, cur)
 let hassel2 = !pos_eq(anchor, cur)
 let first_row = max(0, int(bscroll / LH) - 1)
-let last_row = min(len(rows2), first_row + int(BODY_H / LH) + 3)
+let last_row = min(len(rows2), first_row + (BODY_H / LH) + 3)
 
 for i in range(first_row, last_row) do
   let r = rows2[i]
@@ -1311,7 +1312,11 @@ let sel_chars = if hassel2 then sel_len(doc2, lo2, hi2) else 0 end
 let pos_txt = if hassel2 then "{sel_chars} selected" else "Ln {cur.line + 1}, Col {cur.col + 1}" end
 draw_text(pos_txt, {x: EDX + EPAD, y: fy + 15}, {size: FS_TINY, color: FAINT})
 
-let focus_txt = if focus == "body" then "editing" elsif focus == "title" then "renaming" elsif focus == "search" then "searching" else "browsing" end
+let focus_txt = match focus
+  when "body" -> "editing"
+  when "title" -> "renaming"
+  when "search" -> "searching"
+  when _ -> "browsing" end
 draw_text_center(focus_txt, EDX + EDW / 2, fy + 15, FS_TINY, INK_SOFT)
 
 let hint = if now - flash < 2.2 then "saved" else "tab moves focus  ·  ctrl+s saves" end

@@ -61,71 +61,71 @@ let SOMEDAY = 9000
 // `prio` is 0 none / 1 low / 2 medium / 3 high.
 state tasks = [
   {id: 1,  title: "Send the Q3 roadmap deck to Priya", list: "Product", done: false, prio: 3, due: -2,
-   notes: "She only needs the three headline bets, not the appendix. Cut slides 9-14 before sending.",
-   subs: [{t: "Trim appendix", done: true}, {t: "Re-render the timeline", done: false}, {t: "Ask Dan for the churn number", done: false}], age: 6},
+    notes: "She only needs the three headline bets, not the appendix. Cut slides 9-14 before sending.",
+    subs: [{t: "Trim appendix", done: true}, {t: "Re-render the timeline", done: false}, {t: "Ask Dan for the churn number", done: false}], age: 6},
   {id: 2,  title: "Renew the domain before it lapses", list: "Errands", done: false, prio: 3, due: -1,
-   notes: "Auto-renew was turned off after the card expired. Two-year term is cheaper.",
-   subs: [], age: 11},
+    notes: "Auto-renew was turned off after the card expired. Two-year term is cheaper.",
+    subs: [], age: 11},
   {id: 3,  title: "Review Wes's pull request on the parser", list: "Product", done: false, prio: 2, due: 0,
-   notes: "Big one — 40 files. Focus on the error recovery path; the rest is mechanical renaming.",
-   subs: [{t: "Read the design note first", done: true}, {t: "Run the fuzzer overnight", done: false}], age: 2},
+    notes: "Big one — 40 files. Focus on the error recovery path; the rest is mechanical renaming.",
+    subs: [{t: "Read the design note first", done: true}, {t: "Run the fuzzer overnight", done: false}], age: 2},
   {id: 4,  title: "Water the fig tree", list: "Home", done: false, prio: 1, due: 0,
-   notes: "Every four days in summer. It drops leaves when it is thirsty and sulks for a fortnight after.",
-   subs: [], age: 1},
+    notes: "Every four days in summer. It drops leaves when it is thirsty and sulks for a fortnight after.",
+    subs: [], age: 1},
   {id: 5,  title: "Book the dentist for the cracked filling", list: "Errands", done: false, prio: 2, due: 0,
-   notes: "Dr Okafor's office takes calls after 9am. Ask whether the old crown is still under warranty.",
-   subs: [], age: 4},
+    notes: "Dr Okafor's office takes calls after 9am. Ask whether the old crown is still under warranty.",
+    subs: [], age: 4},
   {id: 6,  title: "Write the release notes for 0.14", list: "Product", done: false, prio: 2, due: 1,
-   notes: "Lead with the panel runtime. The migration section matters more than the feature list — three people asked about it already.",
-   subs: [{t: "Draft the migration section", done: false}, {t: "Collect the contributor list", done: false}, {t: "Screenshot the new inspector", done: false}], age: 3},
+    notes: "Lead with the panel runtime. The migration section matters more than the feature list — three people asked about it already.",
+    subs: [{t: "Draft the migration section", done: false}, {t: "Collect the contributor list", done: false}, {t: "Screenshot the new inspector", done: false}], age: 3},
   {id: 7,  title: "Call the bank about the duplicate charge", list: "Errands", done: false, prio: 2, due: 2,
-   notes: "Transaction on the 3rd, posted twice. Reference number is in the statement PDF.",
-   subs: [], age: 5},
+    notes: "Transaction on the 3rd, posted twice. Reference number is in the statement PDF.",
+    subs: [], age: 5},
   {id: 8,  title: "Replace the kitchen tap washer", list: "Home", done: false, prio: 1, due: 3,
-   notes: "Half-inch fibre washer. The hardware shop on Mercer has them loose rather than in a kit of forty.",
-   subs: [{t: "Measure the old one", done: true}], age: 9},
+    notes: "Half-inch fibre washer. The hardware shop on Mercer has them loose rather than in a kit of forty.",
+    subs: [{t: "Measure the old one", done: true}], age: 9},
   {id: 9,  title: "Draft the hiring loop for the compiler role", list: "Product", done: false, prio: 3, due: 4,
-   notes: "Four stages, no take-home longer than two hours. Borrow the debugging exercise from the platform loop.",
-   subs: [{t: "Write the phone screen rubric", done: false}, {t: "Pick the pairing problem", done: false}], age: 8},
+    notes: "Four stages, no take-home longer than two hours. Borrow the debugging exercise from the platform loop.",
+    subs: [{t: "Write the phone screen rubric", done: false}, {t: "Pick the pairing problem", done: false}], age: 8},
   {id: 10, title: "Finish 'The Overstory'", list: "Reading", done: false, prio: 1, due: 6,
-   notes: "About two hundred pages left. The middle section is slow but the last third reportedly pays it back.",
-   subs: [], age: 34},
+    notes: "About two hundred pages left. The middle section is slow but the last third reportedly pays it back.",
+    subs: [], age: 34},
   {id: 11, title: "Sketch the onboarding empty states", list: "Product", done: false, prio: 2, due: 9,
-   notes: "Three of them: no projects, no tasks in a project, and search with no hits. Each needs one sentence and one action.",
-   subs: [{t: "No projects", done: false}, {t: "Empty project", done: false}, {t: "No search results", done: false}], age: 7},
+    notes: "Three of them: no projects, no tasks in a project, and search with no hits. Each needs one sentence and one action.",
+    subs: [{t: "No projects", done: false}, {t: "Empty project", done: false}, {t: "No search results", done: false}], age: 7},
   {id: 12, title: "Service the bike before the spring ride", list: "Errands", done: false, prio: 1, due: 12,
-   notes: "New chain, both brake pads, and true the rear wheel. Drop it off on a Tuesday — they are quiet then.",
-   subs: [], age: 20},
+    notes: "New chain, both brake pads, and true the rear wheel. Drop it off on a Tuesday — they are quiet then.",
+    subs: [], age: 20},
   {id: 13, title: "Re-pot the monstera into the tall planter", list: "Home", done: false, prio: 1, due: 18,
-   notes: "It has been root-bound since autumn. Needs bark-heavy mix, not the dense potting soil.",
-   subs: [], age: 26},
+    notes: "It has been root-bound since autumn. Needs bark-heavy mix, not the dense potting soil.",
+    subs: [], age: 26},
   {id: 14, title: "Read the incremental computation paper", list: "Reading", done: false, prio: 2, due: 21,
-   notes: "Adapton. Two colleagues have now recommended it in the same week, which is usually a signal.",
-   subs: [], age: 15},
+    notes: "Adapton. Two colleagues have now recommended it in the same week, which is usually a signal.",
+    subs: [], age: 15},
   {id: 15, title: "Plan the summer trip to the coast", list: "Home", done: false, prio: 1, due: 40,
-   notes: "Late June, four nights. The cottage with the bad wifi and the good porch, if it is still listed.",
-   subs: [{t: "Check the ferry timetable", done: false}], age: 30},
+    notes: "Late June, four nights. The cottage with the bad wifi and the good porch, if it is still listed.",
+    subs: [{t: "Check the ferry timetable", done: false}], age: 30},
   {id: 16, title: "Learn enough Rust macros to stop copying code", list: "Reading", done: false, prio: 1, due: SOMEDAY,
-   notes: "The little book of macros, then rewrite the four hand-expanded builder impls in the render crate.",
-   subs: [], age: 60},
+    notes: "The little book of macros, then rewrite the four hand-expanded builder impls in the render crate.",
+    subs: [], age: 60},
   {id: 17, title: "Digitise the box of family photographs", list: "Home", done: false, prio: 0, due: SOMEDAY,
-   notes: "Roughly six hundred prints. Borrow the flatbed scanner rather than buying one for a weekend of work.",
-   subs: [], age: 120},
+    notes: "Roughly six hundred prints. Borrow the flatbed scanner rather than buying one for a weekend of work.",
+    subs: [], age: 120},
   {id: 18, title: "Write up the panel runtime post-mortem", list: "Product", done: false, prio: 1, due: SOMEDAY,
-   notes: "What the sleep/wake heuristic cost us, and why the immediate-mode pass was still the right call.",
-   subs: [], age: 45},
+    notes: "What the sleep/wake heuristic cost us, and why the immediate-mode pass was still the right call.",
+    subs: [], age: 45},
   {id: 19, title: "Ship the debug-server input endpoints", list: "Product", done: true, prio: 3, due: -4,
-   notes: "Key, text and mouse injection all land through the same dispatch as real input.",
-   subs: [{t: "Key injection", done: true}, {t: "Mouse drag", done: true}], age: 12},
+    notes: "Key, text and mouse injection all land through the same dispatch as real input.",
+    subs: [{t: "Key injection", done: true}, {t: "Mouse drag", done: true}], age: 12},
   {id: 20, title: "Return the library books", list: "Errands", done: true, prio: 2, due: -3,
-   notes: "Two of the three were already overdue. The fine was smaller than expected.",
-   subs: [], age: 14},
+    notes: "Two of the three were already overdue. The fine was smaller than expected.",
+    subs: [], age: 14},
   {id: 21, title: "Fix the flickering hallway light", list: "Home", done: true, prio: 2, due: -1,
-   notes: "It was the starter, not the tube. Kept the spare tube for the garage fitting.",
-   subs: [], age: 10},
+    notes: "It was the starter, not the tube. Kept the spare tube for the garage fitting.",
+    subs: [], age: 10},
   {id: 22, title: "Reply to Ingrid about the workshop", list: "Product", done: true, prio: 1, due: 0,
-   notes: "Said yes to the March slot, ninety minutes, hands-on rather than a talk.",
-   subs: [], age: 3},
+    notes: "Said yes to the March slot, ninety minutes, hands-on rather than a talk.",
+    subs: [], age: 3},
 ]
 
 // ── view state ──────────────────────────────────────────────────────────────
@@ -145,11 +145,12 @@ state completed_today = 2
 let PROJECTS = ["Product", "Home", "Errands", "Reading"]
 
 fn list_color(name)
-  if name == "Product" then BLUE
-  elsif name == "Home" then GREEN
-  elsif name == "Errands" then AMBER
-  elsif name == "Reading" then VIOLET
-  else TEAL
+  match name
+    when "Product" -> BLUE
+    when "Home" -> GREEN
+    when "Errands" -> AMBER
+    when "Reading" -> VIOLET
+    when _ -> TEAL
   end
 end
 
@@ -213,21 +214,23 @@ fn group_key(t)
 end
 
 fn group_label(k)
-  if k == "over" then "OVERDUE"
-  elsif k == "today" then "TODAY"
-  elsif k == "soon" then "NEXT SEVEN DAYS"
-  elsif k == "later" then "LATER"
-  elsif k == "someday" then "SOMEDAY"
-  else "COMPLETED"
+  match k
+    when "over" -> "OVERDUE"
+    when "today" -> "TODAY"
+    when "soon" -> "NEXT SEVEN DAYS"
+    when "later" -> "LATER"
+    when "someday" -> "SOMEDAY"
+    when _ -> "COMPLETED"
   end
 end
 
 fn group_color(k)
-  if k == "over" then RED
-  elsif k == "today" then AMBER
-  elsif k == "soon" then BLUE
-  elsif k == "done" then GREEN
-  else FAINT
+  match k
+    when "over" -> RED
+    when "today" -> AMBER
+    when "soon" -> BLUE
+    when "done" -> GREEN
+    when _ -> FAINT
   end
 end
 
@@ -622,9 +625,9 @@ end
 
 // Due date nudging: "," pulls a task a day earlier, "." pushes it a day later.
 let nudge = if !typing && has_sel && key_pressed(",") then -1
-  elsif !typing && has_sel && key_pressed(".") then 1
-  else 0
-  end
+elsif !typing && has_sel && key_pressed(".") then 1
+else 0
+end
 if nudge != 0 then
   tasks = for t in tasks do
     if t.id == sel_id && t.due < SOMEDAY then
@@ -681,7 +684,7 @@ if focus == "title" then ed_title = edited(ed_title, typed, backsp) end
 let parsed = parse_line(compose, if lst == "All" then "Product" else lst end)
 if focus == "compose" && submitted && len(parsed.title) > 0 then
   tasks = append(tasks, {id: next_id, title: parsed.title, list: parsed.list, done: false,
-                         prio: parsed.prio, due: parsed.due, notes: "", subs: [], age: 0})
+    prio: parsed.prio, due: parsed.due, notes: "", subs: [], age: 0})
   sel_id = next_id
   next_id = next_id + 1
   compose = ""
@@ -840,7 +843,7 @@ else
 end
 if q_on && int(time() * 2) % 2 == 0 then
   draw_line({x: qx + text_width(q, FS) + 1, y: search_r.y + 8},
-            {x: qx + text_width(q, FS) + 1, y: search_r.y + 24}, AMBER)
+    {x: qx + text_width(q, FS) + 1, y: search_r.y + 24}, AMBER)
 end
 
 draw_rect(rect(MX, TOP_H, MAIN_W, 1), LINE)
@@ -893,7 +896,7 @@ for i in range(0, len(SEGS)) do
   draw_text_center(SEGS[i], r.x + r.w / 2, r.y + 7, FS_SM, if on then TEXT else FAINT end)
 end
 draw_text_right("!  !!  ·  @today @tomorrow @week @someday  ·  #product #home",
-                MX + MAIN_W - 22, seg_y + 8, FS_MICRO, GHOST)
+  MX + MAIN_W - 22, seg_y + 8, FS_MICRO, GHOST)
 
 // ── feed ────────────────────────────────────────────────────────────────────
 clip(MX, FEED_TOP, MAIN_W, FEED_H)
@@ -946,7 +949,7 @@ for it in items do
     end
     draw_circle({x: tx + 4, y: iy + 38}, 3, list_color(t.list), if t.done then 120 else 235 end)
     draw_text(fit_parts(meta, avail - 16, FS_SM), {x: tx + 14, y: iy + 32},
-              {size: FS_SM, color: if t.done then GHOST else FAINT end})
+      {size: FS_SM, color: if t.done then GHOST else FAINT end})
 
     // right edge: priority pip + due phrase
     let dcol = due_color(t.due, t.done)
@@ -1017,7 +1020,7 @@ else
   // status + list + due chips
   let chip_y = 188
   let sx = chip(dx, chip_y, if cur.done then "Completed" else "Open" end,
-                if cur.done then GREEN else AMBER end, true)
+    if cur.done then GREEN else AMBER end, true)
   let lx2 = chip(dx + sx + 8, chip_y, cur.list, list_color(cur.list), true)
   chip(dx + sx + lx2 + 16, chip_y, due_label(cur.due), due_color(cur.due, cur.done), true)
 

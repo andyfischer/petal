@@ -61,8 +61,8 @@ end
 
 fn mix(a, b, t)
   {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
-   g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
-   b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+    g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+    b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
 end
 
 fn seg(x1, y1, x2, y2, c, a, wd)
@@ -85,7 +85,7 @@ end
 
 fn to_uv(art, mx, my)
   [clamp(float(mx - art.x) / float(art.w), 0.0, 1.0),
-   clamp(float(my - art.y) / float(art.h), 0.0, 1.0)]
+    clamp(float(my - art.y) / float(art.h), 0.0, 1.0)]
 end
 
 fn ellipse_outline(cx, cy, rx, ry, c, a, wd)
@@ -160,7 +160,7 @@ fn draw_stroke(art, s)
       seg(x0, y1, x0, y0, c, a, wd)
     elsif s.kind == "ellipse" then
       ellipse_outline((p.x + q.x) / 2.0, (p.y + q.y) / 2.0,
-                      abs(q.x - p.x) / 2.0, abs(q.y - p.y) / 2.0, c, a, wd)
+        abs(q.x - p.x) / 2.0, abs(q.y - p.y) / 2.0, c, a, wd)
     end
   end
 end
@@ -297,12 +297,12 @@ fn build_layout(w, h, nrows)
   end
 
   {header: header, status: status, rail: rail, panel: panel, canvas: canvas,
-   art: art, btn_undo: btn_undo, btn_redo: btn_redo, btn_clear: btn_clear,
-   btn_grid: btn_grid, tool_rects: tool_rects, px: px, pw: pw,
-   lbl_color: lbl_color, chip: chip, swatches: swatches, lbl_brush: lbl_brush,
-   size_row: size_row, size_slider: size_slider, alpha_row: alpha_row,
-   alpha_slider: alpha_slider, preview: preview, lbl_hist: lbl_hist,
-   list_r: list_r, rows: rows}
+    art: art, btn_undo: btn_undo, btn_redo: btn_redo, btn_clear: btn_clear,
+    btn_grid: btn_grid, tool_rects: tool_rects, px: px, pw: pw,
+    lbl_color: lbl_color, chip: chip, swatches: swatches, lbl_brush: lbl_brush,
+    size_row: size_row, size_slider: size_slider, alpha_row: alpha_row,
+    alpha_slider: alpha_slider, preview: preview, lbl_hist: lbl_hist,
+    list_r: list_r, rows: rows}
 end
 
 // ── Chrome widgets ───────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ fn tool_icon(id, r, c)
     seg(cx - 9, cy + 8, cx + 9, cy + 8, c, 255, 2)
   elsif id == "fill" then
     fill_poly([[cx - 8, cy - 1], [cx - 1, cy - 9], [cx + 7, cy - 1], [cx - 1, cy + 7]],
-              c.r, c.g, c.b, 220)
+      c.r, c.g, c.b, 220)
     dot(cx + 8, cy + 6, 3.0, c, 255)
   end
 end
@@ -484,7 +484,7 @@ if start_paint && tool == "fill" then
   sel = -1
 elsif start_paint then
   cur = {kind: kind, color: paint_c, size: paint_w, alpha: paint_a,
-         pts: [to_uv(art, mx, my)], active: true}
+    pts: [to_uv(art, mx, my)], active: true}
   sel = -1
 end
 
@@ -513,7 +513,7 @@ if cur.active && !mouse_down(0) then
     hist = append(hist, strokes)
     fut = []
     strokes = append(strokes, {kind: cur.kind, color: cur.color, size: cur.size,
-                               alpha: cur.alpha, pts: cur.pts})
+      alpha: cur.alpha, pts: cur.pts})
     ops = ops + 1
   end
   cur = {kind: "", color: #000000, size: 0, alpha: 0, pts: [], active: false}
@@ -566,7 +566,7 @@ if len(strokes) == 0 && !cur.active then
   let ec = #b8b3a8
   draw_text_center("blank canvas", art.x + art.w / 2, art.y + art.h / 2 - 22, 20, ec)
   draw_text_center("drag to paint  ·  press U to bring the sketch back",
-                   art.x + art.w / 2, art.y + art.h / 2 + 6, 12, ec)
+    art.x + art.w / 2, art.y + art.h / 2 + 6, 12, ec)
 end
 if grid then
   let gx = art.x + 40
@@ -619,7 +619,7 @@ dot(36, 33, 9, #2f6fed, 210)
 label("PETAL PAINT", 62, 15, DIM)
 draw_text("morning-ridge", {x: 62, y: 31}, 17, TEXT)
 draw_text("{art.w} × {art.h} pt   ·   {len(strokes)} strokes   ·   {len(hist)} undo",
-          {x: 62 + text_width("morning-ridge", 17) + 16, y: 36}, 11, FAINT)
+  {x: 62 + text_width("morning-ridge", 17) + 16, y: 36}, 11, FAINT)
 
 pill(L.btn_grid, "Grid", "G", grid, true)
 pill(L.btn_undo, "Undo", "U", false, len(hist) > 0)
@@ -645,7 +645,7 @@ for i in range(0, len(TOOLS)) do
   let ic = if on then TEXT elsif hov then TEXT else DIM end
   tool_icon(t.id, r, ic)
   draw_text(t.key, {x: r.x + r.w - 12, y: r.y + r.h - 15}, 9,
-            if on then ACCENT else FAINT end)
+    if on then ACCENT else FAINT end)
 end
 
 // ── Draw: right panel ────────────────────────────────────────────────────
@@ -657,7 +657,7 @@ plate(L.chip, 8, color, OUTLINE)
 let fgc = on_color(color)
 draw_text(hex_of(color), {x: L.chip.x + 14, y: L.chip.y + 13}, 16, fgc)
 draw_text("ink {ink + 1} of {len(INKS)}", {x: L.chip.x + 14, y: L.chip.y + 33}, 11,
-          mix(color, fgc, 0.55))
+  mix(color, fgc, 0.55))
 draw_text_right("{opacity * 100 / 255}%", L.chip.x + L.chip.w - 14, L.chip.y + 20, 13, fgc)
 
 for i in range(0, len(INKS)) do
@@ -684,7 +684,7 @@ plate(L.preview, 8, PAPER, OUTLINE)
 clip(L.preview.x, L.preview.y, L.preview.w, L.preview.h)
 if tool == "eraser" then
   seg(L.preview.x + 8, L.preview.y + L.preview.h / 2,
-      L.preview.x + L.preview.w - 8, L.preview.y + L.preview.h / 2, #55606f, 255, 26)
+    L.preview.x + L.preview.w - 8, L.preview.y + L.preview.h / 2, #55606f, 255, 26)
 end
 let pcy = float(L.preview.y + L.preview.h / 2)
 let ppx = float(L.preview.x + 14)
@@ -718,10 +718,13 @@ for i in range(0, len(L.rows)) do
   end
   draw_rect_rounded(r.x + 10, r.y + 8, 14, 14, 4, PAPER.r, PAPER.g, PAPER.b)
   draw_rect_rounded(r.x + 13, r.y + 11, 8, 8, 3, s.color.r, s.color.g, s.color.b, s.alpha)
-  let nm = if s.kind == "fill" then "Fill" elsif s.kind == "brush" then "Brush"
-    elsif s.kind == "eraser" then "Eraser"
-    elsif s.kind == "line" then "Line" elsif s.kind == "rect" then "Rectangle"
-    else "Ellipse" end
+  let nm = match s.kind
+    when "fill" -> "Fill"
+    when "brush" -> "Brush"
+    when "eraser" -> "Eraser"
+    when "line" -> "Line"
+    when "rect" -> "Rectangle"
+    when _ -> "Ellipse" end
   if !hidden then
     draw_text(nm, {x: r.x + 34, y: r.y + 8}, 12, if on then TEXT else DIM end)
     let meta = if s.kind == "fill" then "wash" else "{s.size} px · {len(s.pts)} pt" end
@@ -746,15 +749,15 @@ draw_rect_rounded(20, L.status.y + 8, text_width(tname, 11) + 20, 20, 6, ELEV.r,
 draw_text(tname, {x: 30, y: sy + 1}, 11, TEXT)
 
 let coords = if over_art then
-    "{int(float(mx - art.x) * 1000.0 / float(art.w))}, {int(float(my - art.y) * 1000.0 / float(art.h))}"
-  else "—" end
+  "{int(float(mx - art.x) * 1000.0 / float(art.w))}, {int(float(my - art.y) * 1000.0 / float(art.h))}"
+else "—" end
 draw_text(coords, {x: 30 + text_width(tname, 11) + 26, y: sy + 1}, 11, FAINT)
 
 draw_text_right("{ops} edits   ·   {len(strokes)} strokes", W - 24, sy + 1, 11, FAINT)
 
 let hints = fit_parts(["drag to paint", "1–6 tools", "[ ] size", "U / R undo·redo",
-                       "G grid", "C clear", "right-click a stroke"],
-                      float(W) * 0.60, 11)
+  "G grid", "C clear", "right-click a stroke"],
+  float(W) * 0.60, 11)
 draw_text_center(hints, W / 2 + 40, sy + 1, 11, mix(FAINT, DIM, 0.4))
 
 // ── Tooltip for the hovered tool (drawn last, over the canvas) ───────────
@@ -766,7 +769,7 @@ if tip >= 0 then
   draw_rect_rounded(tr.x + 1, tr.y + 3, tr.w, tr.h, 8, 0, 0, 0, 110)
   plate(tr, 8, ELEV, OUTLINE)
   fill_triangle(tr.x - 6, tr.y + 20, tr.x + 1, tr.y + 14, tr.x + 1, tr.y + 26,
-                ELEV.r, ELEV.g, ELEV.b)
+    ELEV.r, ELEV.g, ELEV.b)
   draw_text(t.name, {x: tr.x + 12, y: tr.y + 8}, 12, TEXT)
   draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 10, FAINT)
 end

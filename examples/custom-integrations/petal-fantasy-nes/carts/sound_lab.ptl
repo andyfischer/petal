@@ -26,7 +26,7 @@ palette(3, cyan, teal, navy)           // the waveform sketch
 
 define_art(0, ["........"])
 define_art(1, ["11111111", "11111111", "11111111", "11111111",
-               "11111111", "11111111", "11111111", "11111111"])
+  "11111111", "11111111", "11111111", "11111111"])
 
 set_map_size(32, 30)
 fill_map(0, 0)
@@ -78,7 +78,7 @@ end
 // land on a particular duty. `btn_repeat` gives the first press for free.
 let k = rows[cursor]
 let step = (if btn_repeat("right", 0.3, 0.03) then 1 else 0 end) -
-           (if btn_repeat("left", 0.3, 0.03) then 1 else 0 end)
+(if btn_repeat("left", 0.3, 0.03) then 1 else 0 end)
 
 let c = cfg
 if step != 0 then

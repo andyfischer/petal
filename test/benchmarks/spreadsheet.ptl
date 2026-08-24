@@ -55,10 +55,11 @@ end
 // Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
 // half-filled column works), text does not read as anything.
 fn as_num(v)
-  if v.k == "num" then v
-  elsif v.k == "empty" then vnum(0.0)
-  elsif v.k == "err" then v
-  else verr("#VALUE!")
+  match v.k
+    when "num" -> v
+    when "empty" -> vnum(0.0)
+    when "err" -> v
+    when _ -> verr("#VALUE!")
   end
 end
 
@@ -406,12 +407,13 @@ fn parse_add(cx, toks, i0)
 end
 
 fn cmp_apply(op, x, y)
-  if op == ">" then x.n > y.n
-  elsif op == "<" then x.n < y.n
-  elsif op == ">=" then x.n >= y.n
-  elsif op == "<=" then x.n <= y.n
-  elsif op == "<>" then x.n != y.n
-  else x.n == y.n
+  match op
+    when ">" -> x.n > y.n
+    when "<" -> x.n < y.n
+    when ">=" -> x.n >= y.n
+    when "<=" -> x.n <= y.n
+    when "<>" -> x.n != y.n
+    when _ -> x.n == y.n
   end
 end
 
@@ -423,9 +425,9 @@ fn parse_cmp(cx, toks, i0)
     let x = as_num(a.v)
     let y = as_num(b.v)
     let v = if x.k == "err" then x
-      elsif y.k == "err" then y
-      else vnum(if cmp_apply(t.s, x, y) then 1.0 else 0.0 end)
-      end
+    elsif y.k == "err" then y
+    else vnum(if cmp_apply(t.s, x, y) then 1.0 else 0.0 end)
+    end
     {v: v, i: b.i}
   else
     a
@@ -518,10 +520,11 @@ fn fmt_num(x)
 end
 
 fn display(v)
-  if v.k == "num" then fmt_num(v.n)
-  elsif v.k == "text" then v.s
-  elsif v.k == "err" then v.s
-  else ""
+  match v.k
+    when "num" -> fmt_num(v.n)
+    when "text" -> v.s
+    when "err" -> v.s
+    when _ -> ""
   end
 end
 

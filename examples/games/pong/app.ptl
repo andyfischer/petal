@@ -507,8 +507,8 @@ if phase != "play" then
   draw_rect_rounded(card, 14, C_COURT)
   draw_rect_outline(card, C_EDGE, 255, 1)
   let accent = if phase == "over" then (if s_you >= win_score then C_YOU else C_CPU end)
-    elsif phase == "paused" then C_DIM
-    else C_TEXT end
+  elsif phase == "paused" then C_DIM
+  else C_TEXT end
   draw_rect_rounded(rect(card.x + 20, cy - 26, 3, 52), 2, accent, 190)
   tx_center(banner, cx + 8, cy - 34, {...S_BIG, color: accent})
   tx_center(subbanner, cx + 8, cy + 14, S_SUB)
@@ -537,11 +537,12 @@ set fx = fx + chip(fx, fy, "SPACE", "serve · pause")
 set fx = fx + chip(fx, fy, "R", "restart")
 set fx = fx + chip(fx, fy, "MOUSE", "track paddle")
 
-let status = if phase == "play" then "RALLY IN PLAY"
-  elsif phase == "paused" then "PAUSED"
-  elsif phase == "over" then "MATCH OVER"
-  else "AWAITING SERVE"
-  end
+let status = match phase
+  when "play" -> "RALLY IN PLAY"
+  when "paused" -> "PAUSED"
+  when "over" -> "MATCH OVER"
+  when _ -> "AWAITING SERVE"
+end
 tx_right("first to {win_score}   ·   {status}", W - PAD, fy + 7, S_HINT)
 
 // ── Observation mirrors (readable in /state panel.values) ────────────────

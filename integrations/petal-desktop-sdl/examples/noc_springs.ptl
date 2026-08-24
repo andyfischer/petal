@@ -20,48 +20,48 @@ let damping = 5.0
 
 // Initialize grid of nodes connected by springs
 if len(nodes) == 0 then
-    let offset_x = (sw - float(grid_w - 1) * spacing) / 2.0
-    let offset_y = 80.0
+  let offset_x = (sw - float(grid_w - 1) * spacing) / 2.0
+  let offset_y = 80.0
 
-    for y in range(0, grid_h) do
-        for x in range(0, grid_w) do
-            let pinned = y == 0 && (x == 0 || x == grid_w / 2 || x == grid_w - 1)
-            nodes = append(nodes, {
-                x: offset_x + float(x) * spacing,
-                y: offset_y + float(y) * spacing,
-                vx: 0.0,
-                vy: 0.0,
-                pinned: pinned
-            })
-        end
+  for y in range(0, grid_h) do
+    for x in range(0, grid_w) do
+      let pinned = y == 0 && (x == 0 || x == grid_w / 2 || x == grid_w - 1)
+      nodes = append(nodes, {
+        x: offset_x + float(x) * spacing,
+        y: offset_y + float(y) * spacing,
+        vx: 0.0,
+        vy: 0.0,
+        pinned: pinned
+      })
     end
+  end
 
-    // Horizontal springs
-    for y in range(0, grid_h) do
-        for x in range(0, grid_w - 1) do
-            let a = y * grid_w + x
-            let b = a + 1
-            springs = append(springs, { a: a, b: b, rest_len: spacing })
-        end
+  // Horizontal springs
+  for y in range(0, grid_h) do
+    for x in range(0, grid_w - 1) do
+      let a = y * grid_w + x
+      let b = a + 1
+      springs = append(springs, { a: a, b: b, rest_len: spacing })
     end
+  end
 
-    // Vertical springs
-    for y in range(0, grid_h - 1) do
-        for x in range(0, grid_w) do
-            let a = y * grid_w + x
-            let b = a + grid_w
-            springs = append(springs, { a: a, b: b, rest_len: spacing })
-        end
+  // Vertical springs
+  for y in range(0, grid_h - 1) do
+    for x in range(0, grid_w) do
+      let a = y * grid_w + x
+      let b = a + grid_w
+      springs = append(springs, { a: a, b: b, rest_len: spacing })
     end
+  end
 
-    // Diagonal springs (structural stability)
-    for y in range(0, grid_h - 1) do
-        for x in range(0, grid_w - 1) do
-            let a = y * grid_w + x
-            springs = append(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
-            springs = append(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
-        end
+  // Diagonal springs (structural stability)
+  for y in range(0, grid_h - 1) do
+    for x in range(0, grid_w - 1) do
+      let a = y * grid_w + x
+      springs = append(springs, { a: a, b: a + grid_w + 1, rest_len: spacing * 1.414 })
+      springs = append(springs, { a: a + 1, b: a + grid_w, rest_len: spacing * 1.414 })
     end
+  end
 end
 
 // Mouse interaction - drag nodes
@@ -69,84 +69,84 @@ let mx = float(mouse_x())
 let my = float(mouse_y())
 
 if mouse_pressed(0) then
-    let best = -1
-    let best_dist = 30.0
-    for i in range(0, len(nodes)) do
-        let n = nodes[i]
-        let dx = n.x - mx
-        let dy = n.y - my
-        let d = sqrt(dx * dx + dy * dy)
-        if d < best_dist then
-            best_dist = d
-            best = i
-        end
+  let best = -1
+  let best_dist = 30.0
+  for i in range(0, len(nodes)) do
+    let n = nodes[i]
+    let dx = n.x - mx
+    let dy = n.y - my
+    let d = sqrt(dx * dx + dy * dy)
+    if d < best_dist then
+      best_dist = d
+      best = i
     end
-    dragging = best
+  end
+  dragging = best
 end
 
 if !mouse_down(0) then
-    dragging = -1
+  dragging = -1
 end
 
 if dragging >= 0 then
-    nodes[dragging] = {
-        x: mx, y: my, vx: 0.0, vy: 0.0,
-        pinned: nodes[dragging].pinned
-    }
+  nodes[dragging] = {
+    x: mx, y: my, vx: 0.0, vy: 0.0,
+    pinned: nodes[dragging].pinned
+  }
 end
 
 // Physics: apply spring forces
 for s in springs do
-    let na = nodes[s.a]
-    let nb = nodes[s.b]
+  let na = nodes[s.a]
+  let nb = nodes[s.b]
 
-    let dx = nb.x - na.x
-    let dy = nb.y - na.y
-    let dist = sqrt(dx * dx + dy * dy) + 0.001
-    let stretch = dist - s.rest_len
-    let force = stiffness * stretch
+  let dx = nb.x - na.x
+  let dy = nb.y - na.y
+  let dist = sqrt(dx * dx + dy * dy) + 0.001
+  let stretch = dist - s.rest_len
+  let force = stiffness * stretch
 
-    let fx = force * dx / dist
-    let fy = force * dy / dist
+  let fx = force * dx / dist
+  let fy = force * dy / dist
 
-    if !na.pinned then
-        nodes[s.a] = {
-            x: na.x, y: na.y,
-            vx: na.vx + fx * delta,
-            vy: na.vy + fy * delta,
-            pinned: false
-        }
-    end
-    if !nb.pinned then
-        nodes[s.b] = {
-            x: nb.x, y: nb.y,
-            vx: nb.vx - fx * delta,
-            vy: nb.vy - fy * delta,
-            pinned: false
-        }
-    end
+  if !na.pinned then
+    nodes[s.a] = {
+      x: na.x, y: na.y,
+      vx: na.vx + fx * delta,
+      vy: na.vy + fy * delta,
+      pinned: false
+    }
+  end
+  if !nb.pinned then
+    nodes[s.b] = {
+      x: nb.x, y: nb.y,
+      vx: nb.vx - fx * delta,
+      vy: nb.vy - fy * delta,
+      pinned: false
+    }
+  end
 end
 
 // Update positions
 for i in range(0, len(nodes)) do
-    let n = nodes[i]
-    if !n.pinned && i != dragging then
-        // Gravity
-        let grav = 200.0
-        // Damping
-        let dvx = n.vx * (1.0 - damping * delta)
-        let dvy = (n.vy + grav * delta) * (1.0 - damping * delta)
-        let nx = n.x + dvx * delta
-        let ny = n.y + dvy * delta
+  let n = nodes[i]
+  if !n.pinned && i != dragging then
+    // Gravity
+    let grav = 200.0
+    // Damping
+    let dvx = n.vx * (1.0 - damping * delta)
+    let dvy = (n.vy + grav * delta) * (1.0 - damping * delta)
+    let nx = n.x + dvx * delta
+    let ny = n.y + dvy * delta
 
-        // Floor
-        if ny > sh - 20.0 then
-            ny = sh - 20.0
-            dvy = -abs(dvy) * 0.3
-        end
-
-        nodes[i] = { x: nx, y: ny, vx: dvx, vy: dvy, pinned: false }
+    // Floor
+    if ny > sh - 20.0 then
+      ny = sh - 20.0
+      dvy = -abs(dvy) * 0.3
     end
+
+    nodes[i] = { x: nx, y: ny, vx: dvx, vy: dvy, pinned: false }
+  end
 end
 
 // === Drawing ===
@@ -154,37 +154,37 @@ clear(12, 15, 25)
 
 // Draw springs
 for s in springs do
-    let na = nodes[s.a]
-    let nb = nodes[s.b]
-    let dx = nb.x - na.x
-    let dy = nb.y - na.y
-    let dist = sqrt(dx * dx + dy * dy)
-    let stretch = abs(dist - s.rest_len) / s.rest_len
+  let na = nodes[s.a]
+  let nb = nodes[s.b]
+  let dx = nb.x - na.x
+  let dy = nb.y - na.y
+  let dist = sqrt(dx * dx + dy * dy)
+  let stretch = abs(dist - s.rest_len) / s.rest_len
 
-    // Color based on stretch: green = relaxed, red = stretched
-    let cr = int(min(255.0, stretch * 500.0))
-    let cg = int(max(0.0, 80.0 - stretch * 200.0))
-    let cb = int(max(0.0, 120.0 - stretch * 300.0))
+  // Color based on stretch: green = relaxed, red = stretched
+  let cr = int(min(255.0, stretch * 500.0))
+  let cg = int(max(0.0, 80.0 - stretch * 200.0))
+  let cb = int(max(0.0, 120.0 - stretch * 300.0))
 
-    draw_line(int(na.x), int(na.y), int(nb.x), int(nb.y), max(20, cr), max(20, cg), max(20, cb))
+  draw_line(int(na.x), int(na.y), int(nb.x), int(nb.y), max(20, cr), max(20, cg), max(20, cb))
 end
 
 // Draw nodes
 for i in range(0, len(nodes)) do
-    let n = nodes[i]
-    if n.pinned then
-        // Pinned nodes are gold
-        draw_circle(int(n.x), int(n.y), 6, 200, 180, 50)
-        draw_circle(int(n.x), int(n.y), 4, 255, 220, 80)
-    elsif i == dragging then
-        // Dragged node
-        draw_circle(int(n.x), int(n.y), 8, 255, 100, 100)
-    else
-        // Regular nodes
-        let speed = sqrt(n.vx * n.vx + n.vy * n.vy)
-        let bright = int(min(255.0, 80.0 + speed * 0.5))
-        draw_circle(int(n.x), int(n.y), 4, bright, bright, min(255, bright + 40))
-    end
+  let n = nodes[i]
+  if n.pinned then
+    // Pinned nodes are gold
+    draw_circle(int(n.x), int(n.y), 6, 200, 180, 50)
+    draw_circle(int(n.x), int(n.y), 4, 255, 220, 80)
+  elsif i == dragging then
+    // Dragged node
+    draw_circle(int(n.x), int(n.y), 8, 255, 100, 100)
+  else
+    // Regular nodes
+    let speed = sqrt(n.vx * n.vx + n.vy * n.vy)
+    let bright = int(min(255.0, 80.0 + speed * 0.5))
+    draw_circle(int(n.x), int(n.y), 4, bright, bright, min(255, bright + 40))
+  end
 end
 
 // Floor

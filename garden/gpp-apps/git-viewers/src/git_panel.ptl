@@ -142,7 +142,7 @@ let git_commits = log.commits
 // A spinner glyph cycling on the frame clock (single monospace size → text).
 fn spinner()
   let frames = ["|", "/", "-", "\\"]
-  frames[int(frame_count() / 6) % 4]
+  frames[(frame_count() / 6) % 4]
 end
 
 // Pass 1: positions from the current fractions, so the divider hit zones sit

@@ -86,7 +86,7 @@ export let pale_red = 54         // $36
 export let brown = 23            // $17
 export let orange = 39           // $27
 export let peach = 55            // $37 — named `peach` and not `tan`, which
-                                 //       would shadow the `tan()` builtin
+//       would shadow the `tan()` builtin
 
 export let olive = 24            // $18
 export let yellow = 40           // $28
@@ -324,7 +324,7 @@ export fn meta_of(parts)
     w = max(w, p.dx + 8)
     h = max(h, p.dy + 8)
   end
-  {base: -1, w: int(w / 8), h: int(h / 8), pal: 0, parts: parts}
+  {base: -1, w: w / 8, h: h / 8, pal: 0, parts: parts}
 end
 
 // Define a metasprite from one grid of string art, `base` upward. The grid's
@@ -1027,8 +1027,8 @@ export fn menu_update(id, count)
     s = pmod(s, count)
     _menu_sel(id, true, s)
     {index: s,
-     chosen: if btnp("a") || btnp("start") then s else -1 end,
-     cancelled: btnp("b")}
+      chosen: if btnp("a") || btnp("start") then s else -1 end,
+      cancelled: btnp("b")}
   end
 end
 

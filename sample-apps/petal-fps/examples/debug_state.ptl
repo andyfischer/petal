@@ -5,7 +5,7 @@ log("frame start: counter=" ++ str(counter) ++ " marker=" ++ str(marker) ++ " ke
 
 counter = counter + 1
 if key_down("w") then
-    marker = true
+  marker = true
 end
 
 log("frame end: counter=" ++ str(counter) ++ " marker=" ++ str(marker))

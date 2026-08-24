@@ -125,9 +125,9 @@ if abs(wind_x) > 5.0 then
   if wind_x < 0.0 then dir = -1 end
   draw_line(arrow_x, arrow_y, arrow_x + arrow_len * dir, arrow_y, 200, 200, 100)
   draw_line(arrow_x + arrow_len * dir, arrow_y,
-            arrow_x + arrow_len * dir - 10 * dir, arrow_y - 5, 200, 200, 100)
+    arrow_x + arrow_len * dir - 10 * dir, arrow_y - 5, 200, 200, 100)
   draw_line(arrow_x + arrow_len * dir, arrow_y,
-            arrow_x + arrow_len * dir - 10 * dir, arrow_y + 5, 200, 200, 100)
+    arrow_x + arrow_len * dir - 10 * dir, arrow_y + 5, 200, 200, 100)
   draw_text("WIND", arrow_x - 15, arrow_y - 20, 12, 200, 200, 100)
 end
 
@@ -164,16 +164,16 @@ for obj in objects do
   draw_circle(int(obj.x), int(obj.y), radius, cr, cg, cb)
   // Highlight
   draw_circle(int(obj.x) - radius / 3, int(obj.y) - radius / 3,
-              max(2, radius / 3), min(255, cr + 80), min(255, cg + 80), min(255, cb + 80))
+    max(2, radius / 3), min(255, cr + 80), min(255, cg + 80), min(255, cb + 80))
 
   // Velocity vector
   let vlen = min(30.0, sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * 0.08)
   if vlen > 2.0 then
     let vd = sqrt(obj.vx * obj.vx + obj.vy * obj.vy) + 0.1
     draw_line(int(obj.x), int(obj.y),
-              int(obj.x + obj.vx / vd * vlen),
-              int(obj.y + obj.vy / vd * vlen),
-              200, 200, 200)
+      int(obj.x + obj.vx / vd * vlen),
+      int(obj.y + obj.vy / vd * vlen),
+      200, 200, 200)
   end
 end
 

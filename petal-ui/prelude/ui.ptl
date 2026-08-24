@@ -1222,18 +1222,18 @@ export fn drag_update(ds, item_id, r)
   // A press inside `r` claims the drag, unless another item already holds it.
   if !d.dragging && !d.dropped && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
     d = {dragging: true, id: item_id, dx: 0, dy: 0, dropped: false,
-         sx: mouse_x(), sy: mouse_y(), at: -1}
+      sx: mouse_x(), sy: mouse_y(), at: -1}
   end
   if d.dragging && d.id == item_id then
     let dx = mouse_x() - d.sx
     let dy = mouse_y() - d.sy
     if mouse_down(0) then
       d = {dragging: true, id: item_id, dx: dx, dy: dy, dropped: false,
-           sx: d.sx, sy: d.sy, at: -1}
+        sx: d.sx, sy: d.sy, at: -1}
     else
       // The button came up: report the drop, keeping the final offset.
       d = {dragging: false, id: item_id, dx: dx, dy: dy, dropped: true,
-           sx: d.sx, sy: d.sy, at: frame_count()}
+        sx: d.sx, sy: d.sy, at: frame_count()}
     end
   end
   d

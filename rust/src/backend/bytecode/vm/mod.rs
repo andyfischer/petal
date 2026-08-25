@@ -39,7 +39,7 @@ mod frame;
 mod intrinsics;
 mod native;
 
-pub use frame::{LoopCursor, VmFrame};
+pub use frame::{FramePath, LoopCursor, VmFrame};
 
 /// Retention cap for [`Stack::vm_frame_pool`]: deep recursion can push the
 /// pool's high-water mark far above steady-state needs; beyond this many
@@ -138,7 +138,9 @@ impl<'a> Vm<'a> {
     /// a first-class value emits *one* named phantom at any register — no
     /// registration-order coupling (see docs/dev/ir-as-target.md).
     pub fn push_root_frame(&mut self) {
-        let mut frame = self.frame_from_pool(None, self.bc.root.reg_count, None, None);
+        // The root frame runs on the empty path, which is what keeps every
+        // top-level `state` slot byte-identical to the pre-path scheme.
+        let mut frame = self.frame_from_pool(None, self.bc.root.reg_count, None, None, None);
         if let Some(tids) = self.program.block_terms.get(&self.program.root_block) {
             for &tid in tids {
                 let term = self.program.get_term(tid);

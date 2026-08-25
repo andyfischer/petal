@@ -109,7 +109,8 @@ impl Compiler {
                         for arg in args {
                             inputs.push(self.compile_expr(arg));
                         }
-                        return self.emit_term(TermOp::Call, inputs, None);
+                        let callee = super::callee_text(function);
+                        return self.emit_call_term(TermOp::Call, inputs, &callee);
                     }
                     // A site the checker pinned to one class calls that class's
                     // method directly, as an ordinary `Call` whose callee is the
@@ -159,12 +160,13 @@ impl Compiler {
                         // someone else's block.
                         .and_then(|qname| self.resolve_local_term(&qname));
                     let obj_tid = self.compile_expr(object);
+                    let callee_text = super::callee_text(function);
                     if let Some(callee) = static_callee {
                         let mut inputs: SmallVec<[TermId; 4]> = smallvec![callee, obj_tid];
                         for arg in args {
                             inputs.push(self.compile_expr(arg));
                         }
-                        return self.emit_term(TermOp::Call, inputs, None);
+                        return self.emit_call_term(TermOp::Call, inputs, &callee_text);
                     }
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
@@ -180,13 +182,13 @@ impl Compiler {
                         .get(&span)
                         .cloned()
                         .map(|class| self.constants.intern(ConstantValue::String(class)));
-                    self.emit_term(
+                    self.emit_call_term(
                         TermOp::MethodCall {
                             name: field_const,
                             hint,
                         },
                         inputs,
-                        None,
+                        &callee_text,
                     )
                 } else {
                     // A bare identifier that currently resolves in scope to
@@ -208,15 +210,16 @@ impl Compiler {
                         for arg in args {
                             inputs.push(self.compile_expr(arg));
                         }
-                        let name_cid = self.constants.intern(ConstantValue::String(name));
-                        self.emit_term(TermOp::BuiltinCall(name_cid), inputs, None)
+                        let name_cid = self.constants.intern(ConstantValue::String(name.clone()));
+                        self.emit_call_term(TermOp::BuiltinCall(name_cid), inputs, &name)
                     } else {
                         let func_tid = self.compile_expr(function);
                         let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
                         for arg in args {
                             inputs.push(self.compile_expr(arg));
                         }
-                        self.emit_term(TermOp::Call, inputs, None)
+                        let callee = super::callee_text(function);
+                        self.emit_call_term(TermOp::Call, inputs, &callee)
                     }
                 }
             }

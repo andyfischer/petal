@@ -10,9 +10,11 @@
 //   - top-level declarations hash exactly the string they always did, so
 //     persisted state carries across this change.
 //
-// Per-callsite keying is a separate matter (docs/dev/state-callsite-keying-
-// plan.md, Phase 2): here a function's declaration still has one slot no
-// matter how many places call it.
+// Since Phase 2 of docs/dev/state-callsite-keying-plan.md, a declaration's
+// *slot* is that id under the call path that reached it — so the way to watch
+// one declaration accumulate is to reach it the same way twice, which is what
+// `run_twice` does (the frame-loop model: same callsites, same paths, next
+// run). Per-callsite splitting itself is pinned in tests/state_call_paths.rs.
 
 use petal::compiler::Compiler;
 use petal::env::Env;
@@ -27,6 +29,20 @@ fn run(src: &str) -> Vec<String> {
     env.take_output()
 }
 
+/// Run `src` twice on one stack and return both runs' print output. Every
+/// callsite is reached by the same path on both runs, so a declaration that
+/// owns its own slot shows its second value on the second run — and one that
+/// wrongly shares a slot with another declaration shows *that* one's.
+fn run_twice(src: &str) -> Vec<String> {
+    let mut env = Env::new();
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    env.take_output()
+}
+
 fn key(name: &str) -> StateKey {
     StateKey(Compiler::hash_state_name(name))
 }
@@ -37,7 +53,8 @@ fn key(name: &str) -> StateKey {
 fn same_state_name_in_two_functions_does_not_collide() {
     // The historical bug: both `count`s hashed to `hash("count")`, so `b`
     // resumed `a`'s counter and the printed sequence was 1, 2, 3, 4.
-    let out = run("\
+    let out = run_twice(
+        "\
 fn a()
   state count = 0
   count += 1
@@ -50,15 +67,15 @@ fn b()
 end
 print(a())
 print(b())
-print(a())
-print(b())
-");
+",
+    );
     assert_eq!(out, ["1", "101", "2", "102"]);
 }
 
 #[test]
 fn a_nested_fn_does_not_collide_with_its_parent() {
-    let out = run("\
+    let out = run_twice(
+        "\
 fn outer()
   fn inner()
     state n = 100
@@ -71,8 +88,8 @@ fn outer()
   print(inner())
 end
 outer()
-outer()
-");
+",
+    );
     assert_eq!(out, ["1", "101", "2", "102"]);
 }
 
@@ -81,7 +98,8 @@ fn two_declarations_of_one_name_in_one_function_do_not_collide() {
     // The shadow ordinal: the `else` branch's `n` is a different declaration
     // from the `then` branch's, even though both spell the same name in the
     // same function.
-    let out = run("\
+    let out = run_twice(
+        "\
 fn f(which)
   if which then
     state n = 0
@@ -95,16 +113,16 @@ fn f(which)
 end
 print(f(true))
 print(f(false))
-print(f(true))
-print(f(false))
-");
+",
+    );
     assert_eq!(out, ["1", "51", "2", "52"]);
 }
 
 #[test]
 fn lambdas_bound_to_different_names_do_not_collide() {
     // A bound lambda contributes its binding name to the chain.
-    let out = run("\
+    let out = run_twice(
+        "\
 let g = fn(x)
   state c = 0
   c += x
@@ -117,9 +135,8 @@ let h = fn(x)
 end
 print(g(1))
 print(h(10))
-print(g(1))
-print(h(10))
-");
+",
+    );
     assert_eq!(out, ["1", "10", "2", "20"]);
 }
 
@@ -154,12 +171,14 @@ fn a_module_function_does_not_collide_with_an_entry_function() {
     );
     let pid = env
         .load_program(
-            "import m\nfn tick()\n  state count = 0\n  count += 1\n  count\nend\nprint(tick())\nprint(m.tick())\nprint(tick())",
+            "import m\nfn tick()\n  state count = 0\n  count += 1\n  count\nend\nprint(tick())\nprint(m.tick())",
         )
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
-    assert_eq!(env.take_output(), ["1", "101", "2"]);
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1", "101", "2", "102"]);
 }
 
 // ── Key shape ────────────────────────────────────────────────────
@@ -216,9 +235,9 @@ fn an_in_function_declaration_leaves_the_top_level_key_alone() {
 // ── Unchanged behavior ───────────────────────────────────────────
 
 #[test]
-fn one_declaration_still_has_one_slot_across_callsites() {
-    // Phase 0 is semantics-preserving: callsites still share the declaration's
-    // single slot. (Phase 2 of the plan is what splits these.)
+fn one_declaration_gets_one_slot_per_callsite() {
+    // The Phase 2 flip: three callsites of one declaration, three slots. Before
+    // it, this printed 1, 2, 3.
     let out = run("\
 fn bump()
   state count = 0
@@ -229,11 +248,13 @@ print(bump())
 print(bump())
 print(bump())
 ");
-    assert_eq!(out, ["1", "2", "3"]);
+    assert_eq!(out, ["1", "1", "1"]);
 }
 
 #[test]
 fn an_explicit_key_still_slots_by_its_value() {
+    // An explicit key is absolute — it ignores the call path — so the two
+    // callsites of `cell` per id share a slot even though their paths differ.
     let out = run("\
 fn cell(id, amount)
   state(id) total = 0

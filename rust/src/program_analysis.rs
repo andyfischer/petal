@@ -748,7 +748,8 @@ mod tests {
             register: RegisterIndex(id as u16),
             state_key: None,
             child_blocks: SmallVec::new(),
-            in_loop: false,
+            path_pop: 0,
+            call_site: None,
             collect: false,
             is_config: false,
         }

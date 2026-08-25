@@ -31,8 +31,9 @@ pub fn transfer_stack_state(
     stack: &mut Stack,
     new_state_keys: &HashSet<StateKey>,
 ) -> TransferStateResult {
-    // Match on the base key: a runtime key also carries loop indices, which the
-    // new program's declarations say nothing about.
+    // Match on the base key: a runtime key also carries the call path that
+    // reached it, which the new program's declarations say nothing about. Paths
+    // that no longer occur are swept by the untouched-key GC after the next run.
     let preserved = stack
         .state
         .keys()
@@ -90,7 +91,7 @@ mod stack_state_tests {
     use crate::stack::{RuntimeStateKey, StackKey, StackStatus};
     use crate::value::Value;
 
-    /// A stack holding one state entry per given base key, all at loop depth 0.
+    /// A stack holding one state entry per given base key, all on the root path.
     fn stack_with_state(keys: &[u64]) -> Stack {
         let mut stack = Stack::new(StackKey(0), ProgramId(0), ContextKey(0));
         for (i, k) in keys.iter().enumerate() {
@@ -102,7 +103,7 @@ mod stack_state_tests {
     fn key(base: u64) -> RuntimeStateKey {
         RuntimeStateKey {
             base: StateKey(base),
-            loop_indices: Default::default(),
+            path: Default::default(),
         }
     }
 
@@ -126,14 +127,15 @@ mod stack_state_tests {
         assert!(!stack.state.contains_key(&key(2)));
     }
 
-    /// Keys are matched on `base` alone: every iteration's entry for a surviving
-    /// declaration is kept, and each counts once toward `state_preserved`.
+    /// Keys are matched on `base` alone — the path is an opaque tail — so every
+    /// path's entry for a surviving declaration is kept, and each counts once
+    /// toward `state_preserved`.
     #[test]
     fn loop_indexed_entries_follow_their_base_declaration() {
         let mut stack = Stack::new(StackKey(0), ProgramId(0), ContextKey(0));
         for i in 0..3usize {
             let mut k = key(1);
-            k.loop_indices.push(crate::stack::LoopKeyPart::Index(i));
+            k.path.push(crate::stack::PathPart::Index(i));
             stack.state.insert(k, Value::Int(i as i64));
         }
 

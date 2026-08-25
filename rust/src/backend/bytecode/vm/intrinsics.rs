@@ -14,14 +14,20 @@ impl<'a> Vm<'a> {
     /// return its result. Used by the synchronous higher-order intrinsics and by
     /// `Env::call_function` (the host-facing "invoke one function" API). Works
     /// from any frame depth, including a fresh VM with no root frame.
+    ///
+    /// `site` is the callsite id the callee's frame path gets. An intrinsic
+    /// passes the id of the `map`/`filter`/… call driving it, so a closure with
+    /// `state` in it keeps one slot per intrinsic call site; the host entry
+    /// point passes an id derived from the function's name (plan §2.5).
     pub(crate) fn call_closure_sync(
         &mut self,
         callable: Value,
         call_args: &[Value],
+        site: u64,
     ) -> Result<Value, String> {
         let cid = calls::resolve_callable(self.program, self.closures, callable, call_args.len())?;
         let target_depth = self.stack.vm_frames.len();
-        self.push_closure_frame(cid, call_args, None, None)?;
+        self.push_closure_frame(cid, call_args, None, None, site)?;
         self.stack.last_pop_result = None;
 
         loop {
@@ -42,7 +48,7 @@ impl<'a> Vm<'a> {
         }
     }
 
-    pub(super) fn builtin_map(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_map(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("map() expects 2 arguments (list, function)".into());
         };
@@ -52,12 +58,12 @@ impl<'a> Vm<'a> {
         let elements = self.heap.get_list(list_id).to_vec();
         let mut results = Vec::with_capacity(elements.len());
         for elem in elements {
-            results.push(self.call_closure_sync(*func, &[elem])?);
+            results.push(self.call_closure_sync(*func, &[elem], site)?);
         }
         Ok(Value::List(self.heap.alloc_list(results)))
     }
 
-    pub(super) fn builtin_filter(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_filter(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("filter() expects 2 arguments (list, function)".into());
         };
@@ -67,14 +73,14 @@ impl<'a> Vm<'a> {
         let elements = self.heap.get_list(list_id).to_vec();
         let mut results = Vec::new();
         for elem in elements {
-            if self.call_closure_sync(*func, &[elem])?.is_truthy() {
+            if self.call_closure_sync(*func, &[elem], site)?.is_truthy() {
                 results.push(elem);
             }
         }
         Ok(Value::List(self.heap.alloc_list(results)))
     }
 
-    pub(super) fn builtin_reduce(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_reduce(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, initial, func] = args else {
             return Err("reduce() expects 3 arguments (list, initial, function)".into());
         };
@@ -84,7 +90,7 @@ impl<'a> Vm<'a> {
         let elements = self.heap.get_list(list_id).to_vec();
         let mut acc = *initial;
         for elem in elements {
-            acc = self.call_closure_sync(*func, &[acc, elem])?;
+            acc = self.call_closure_sync(*func, &[acc, elem], site)?;
         }
         Ok(acc)
     }
@@ -101,8 +107,8 @@ impl<'a> Vm<'a> {
     /// Equality (`0` / `false`) answers `false`, and the merge below only ever
     /// moves an element ahead of an earlier one on a strict `true`, which is
     /// what makes the sort stable.
-    fn sorts_before(&mut self, func: Value, a: Value, b: Value) -> Result<bool, String> {
-        match self.call_closure_sync(func, &[a, b])? {
+    fn sorts_before(&mut self, func: Value, a: Value, b: Value, site: u64) -> Result<bool, String> {
+        match self.call_closure_sync(func, &[a, b], site)? {
             Value::Int(n) => Ok(n < 0),
             Value::Float(f) => Ok(f < 0.0),
             Value::Bool(t) => Ok(t),
@@ -123,19 +129,24 @@ impl<'a> Vm<'a> {
     /// Stability comes from the tie rule: the right run's head is taken only
     /// when it sorts *strictly* before the left run's head, so equal elements
     /// keep the order they were given in.
-    fn merge_sort_by(&mut self, items: Vec<Value>, func: Value) -> Result<Vec<Value>, String> {
+    fn merge_sort_by(
+        &mut self,
+        items: Vec<Value>,
+        func: Value,
+        site: u64,
+    ) -> Result<Vec<Value>, String> {
         if items.len() <= 1 {
             return Ok(items);
         }
         let mut right = items;
         let left: Vec<Value> = right.drain(..right.len() / 2).collect();
-        let left = self.merge_sort_by(left, func)?;
-        let right = self.merge_sort_by(right, func)?;
+        let left = self.merge_sort_by(left, func, site)?;
+        let right = self.merge_sort_by(right, func, site)?;
 
         let mut out = Vec::with_capacity(left.len() + right.len());
         let (mut i, mut j) = (0usize, 0usize);
         while i < left.len() && j < right.len() {
-            if self.sorts_before(func, right[j], left[i])? {
+            if self.sorts_before(func, right[j], left[i], site)? {
                 out.push(right[j]);
                 j += 1;
             } else {
@@ -150,7 +161,7 @@ impl<'a> Vm<'a> {
 
     /// `sort(list, cmp)` — the comparator form of `sort`. The one-argument
     /// `sort(list)` never reaches here; see the dispatcher in `vm::native`.
-    pub(super) fn builtin_sort_cmp(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_sort_cmp(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("sort() expects 1 or 2 arguments (list, comparator)".into());
         };
@@ -158,7 +169,7 @@ impl<'a> Vm<'a> {
             return Err("sort() expects a list as first argument".into());
         };
         let elements = self.heap.get_list(list_id).to_vec();
-        let sorted = self.merge_sort_by(elements, *func)?;
+        let sorted = self.merge_sort_by(elements, *func, site)?;
         Ok(Value::List(self.heap.alloc_list(sorted)))
     }
 
@@ -176,7 +187,7 @@ impl<'a> Vm<'a> {
     /// stable — elements with equal keys keep their original order either way,
     /// which is what makes sorting a table by one column and then another
     /// produce the composed ordering.
-    pub(super) fn builtin_sort_by(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_sort_by(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let (list, func, dir) = match args {
             [list, func] => (list, func, Value::Bool(false)),
             [list, func, dir] => (list, func, *dir),
@@ -210,7 +221,7 @@ impl<'a> Vm<'a> {
         let elements = self.heap.get_list(list_id).to_vec();
         let mut keyed: Vec<(crate::builtins::SortKey, Value)> = Vec::with_capacity(elements.len());
         for elem in elements {
-            let key = self.call_closure_sync(*func, &[elem])?;
+            let key = self.call_closure_sync(*func, &[elem], site)?;
             keyed.push((crate::builtins::SortKey::of(self.heap, key), elem));
         }
         // `Vec::sort_by` is stable, and reversing the comparison keeps it so:
@@ -224,7 +235,7 @@ impl<'a> Vm<'a> {
         Ok(Value::List(self.heap.alloc_list(sorted)))
     }
 
-    pub(super) fn builtin_for_each(&mut self, args: &[Value]) -> Result<Value, String> {
+    pub(super) fn builtin_for_each(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("forEach() expects 2 arguments (list, function)".into());
         };
@@ -233,7 +244,7 @@ impl<'a> Vm<'a> {
         };
         let elements = self.heap.get_list(list_id).to_vec();
         for elem in elements {
-            self.call_closure_sync(*func, &[elem])?;
+            self.call_closure_sync(*func, &[elem], site)?;
         }
         Ok(Value::Nil)
     }

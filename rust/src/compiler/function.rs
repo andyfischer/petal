@@ -153,10 +153,10 @@ impl Compiler {
         let name_c = self
             .constants
             .intern(ConstantValue::String(DECLARE_METHOD_BUILTIN.to_string()));
-        self.emit_term(
+        self.emit_call_term(
             TermOp::BuiltinCall(name_c),
             smallvec![class_tid, method_tid, func],
-            None,
+            DECLARE_METHOD_BUILTIN,
         );
     }
 
@@ -175,6 +175,11 @@ impl Compiler {
         // Names the body's `state` declarations by their enclosing functions
         // (see `Compiler::state_key_for`).
         self.push_fn_name_chain(name.as_deref());
+        // Loop nesting is per-function: a body's loops are the only ones whose
+        // `Index` parts land on this function's frame path, so a `state` write
+        // inside one measures its depth from the function's own entry — not
+        // from a loop the *declaration of this function* happens to sit in.
+        let saved_loop_depth = std::mem::take(&mut self.loop_depth);
         let (body_block, saved_block) = self.begin_function_scope(params);
 
         // Self-reference phantom for recursion (if named)
@@ -193,6 +198,7 @@ impl Compiler {
 
         self.closure_def_ends.pop();
         self.pop_fn_name_chain();
+        self.loop_depth = saved_loop_depth;
         self.end_function_scope(name, params, body_block, saved_block, self_ref_register)
     }
 

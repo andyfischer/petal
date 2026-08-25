@@ -274,10 +274,11 @@ impl Compiler {
 
     /// `state name = init` / `state(key) name = init`.
     ///
-    /// Lazy initialization: the init expression lives in a child block that
-    /// is only entered the first time the (state_key, loop_indices) tuple is
-    /// encountered. The explicit key (if any) is computed eagerly in the
-    /// parent block — its value determines which slot to consult.
+    /// Lazy initialization: the init expression lives in a child block that is
+    /// only entered the first time this declaration is reached on a given call
+    /// path (the `(decl id, path)` slot). The explicit key (if any) is computed
+    /// eagerly in the parent block — its value alone determines which slot to
+    /// consult, since a keyed slot ignores the path (plan §2.2).
     fn compile_state_decl(
         &mut self,
         name: &str,
@@ -302,7 +303,10 @@ impl Compiler {
         }
         let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
-        self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
+        // Remember how deep in loops the declaration sits, so a later
+        // reassignment can pop back to its slot (see `Term::path_pop`).
+        self.state_decl_depths
+            .insert(state_key_const, self.loop_depth);
         // Declaration ids are unique by construction (the shadow ordinal in
         // `state_key_for` separates otherwise identical sites), so a duplicate
         // here means two sites hashed to one slot and one of them would be
@@ -695,7 +699,6 @@ impl Compiler {
             && let Some(init_tid) = self.find_state_init(existing_tid)
         {
             let state_key = self.terms[init_tid.0 as usize].state_key;
-            let in_loop = self.terms[init_tid.0 as usize].in_loop;
             // StateInit's inputs are [explicit_key]? (the init value
             // lives in a child block for lazy evaluation). Forward the
             // key to StateWrite so the runtime resolves to the same
@@ -706,7 +709,12 @@ impl Compiler {
             }
             let write_tid = self.emit_term(TermOp::StateWrite, write_inputs, None);
             self.terms[write_tid.0 as usize].state_key = state_key;
-            self.terms[write_tid.0 as usize].in_loop = in_loop;
+            // A write nested deeper in loops than the declaration still belongs
+            // to the declaration's slot: record how many loop levels to pop.
+            let decl_depth = state_key
+                .and_then(|k| self.state_decl_depths.get(&k).copied())
+                .unwrap_or(self.loop_depth);
+            self.terms[write_tid.0 as usize].path_pop = self.loop_depth.saturating_sub(decl_depth);
             // Propagate the state key onto the Copy below so the
             // next reassignment can still resolve to the StateInit
             // (the Copy replaces the existing scope binding).

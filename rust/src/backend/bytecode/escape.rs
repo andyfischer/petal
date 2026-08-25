@@ -180,6 +180,37 @@ pub fn analyze(program: &Program) -> InPlaceSet {
     InPlaceSet { terms }
 }
 
+/// Whether a term in `block` runs on the **empty state path**: at module scope,
+/// outside every loop. Such a term's declaration id alone names one runtime
+/// slot; anything else picks up a `Call` part (it is inside a function body,
+/// which is only ever entered by a call) or an `Index` part (it is inside a
+/// loop) and addresses a slot per path.
+///
+/// Walks the block tree upward: a loop's body block hangs off its loop term, a
+/// function body block has no parent term at all — so the walk ends either at
+/// the root block (statically empty) or at a parentless block that is not the
+/// root (a function body).
+fn static_empty_path(program: &Program, block: BlockId) -> bool {
+    let mut cur = block;
+    loop {
+        if cur == program.root_block {
+            return true;
+        }
+        let Some(parent_term) = program.blocks[cur.0 as usize].parent_term_id else {
+            // A function body block: reached only through a call.
+            return false;
+        };
+        let term = program.get_term(parent_term);
+        if matches!(
+            term.op,
+            TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop
+        ) {
+            return false;
+        }
+        cur = term.block_id;
+    }
+}
+
 /// The accumulator's *backbone*: the fresh root, the loop-carried phis that
 /// carry it, and the `Copy` aliases that connect them. Everything else in the
 /// value-web hangs off this inside the loop regions.
@@ -336,17 +367,22 @@ impl<'p> Analysis<'p> {
         let mut multi_slot_keys: HashSet<StateKey> = HashSet::new();
         for term in &program.terms {
             let Some(key) = term.state_key else { continue };
-            // `in_loop` mixes the live loop indices into the runtime key, and an
-            // explicit `state(expr)` key hashes a runtime value into it. Either
-            // way the base key no longer names one slot — and a write executed at
-            // a *deeper* loop nest than the read then commits to a different slot
-            // than the one it just mutated.
+            // A non-empty runtime path mixes live context — the callsite chain
+            // and the loop iterations reaching this term — into the runtime key,
+            // and an explicit `state(expr)` key hashes a runtime value into it.
+            // Either way the base key no longer names one slot, and a write
+            // executed under a different path than the read commits to a
+            // different slot than the one it just mutated. Only a declaration
+            // whose path is statically empty — a top-level `state` outside every
+            // loop — addresses exactly one slot (plan §3.7).
             let explicit_key = match term.op {
                 TermOp::StateInit => !term.inputs.is_empty(),
                 TermOp::StateWrite => term.inputs.len() > 1,
                 _ => false,
             };
-            if term.in_loop || explicit_key {
+            let decl_on_a_path =
+                matches!(term.op, TermOp::StateInit) && !static_empty_path(program, term.block_id);
+            if explicit_key || decl_on_a_path {
                 multi_slot_keys.insert(key);
             }
             match term.op {

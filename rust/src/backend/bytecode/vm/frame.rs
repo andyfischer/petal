@@ -9,7 +9,11 @@ use super::*;
 
 use super::super::isa::LoopSlot;
 use crate::program::StateKey;
-use crate::stack::{LoopKeyPart, RuntimeStateKey};
+use crate::stack::{PathPart, RuntimeStateKey};
+
+/// A frame's state path. Sized for a UI tree's typical depth (a handful of
+/// nested calls and loops), so the common case never allocates.
+pub type FramePath = SmallVec<[PathPart; 4]>;
 
 /// A per-call activation record: one flat register file plus loop cursors.
 #[derive(Clone)]
@@ -27,8 +31,13 @@ pub struct VmFrame {
     /// Loop cursors, indexed by [`LoopSlot`]. A slot is `Some` while its loop is
     /// active (set by a `*Init` op, cleared by `LoopPop`); grown on demand.
     pub loops: Vec<Option<LoopCursor>>,
-    /// Active loop-index context, outermost-first, for state-key resolution.
-    pub loop_idx: SmallVec<[LoopKeyPart; 2]>,
+    /// This frame's **state path**: the caller's path plus the `Call` part for
+    /// the callsite that pushed it, plus one `Index` part per loop currently
+    /// iterating *in this frame* (pushed by `*Init`, bumped by `*Next`, popped
+    /// by `LoopPop`). Composed incrementally at push time, so resolving a
+    /// state key is a clone of this vector rather than a walk of the frame
+    /// stack. The root frame's path is empty.
+    pub path: FramePath,
     /// The `Call` term that created this frame (for stack-trace annotation).
     /// `None` for the root frame and synchronous-intrinsic frames.
     pub call_site: Option<TermId>,
@@ -48,7 +57,7 @@ impl VmFrame {
             regs: vec![Value::Nil; reg_count as usize],
             dst_in_caller,
             loops: Vec::new(),
-            loop_idx: SmallVec::new(),
+            path: FramePath::new(),
             call_site,
         }
     }
@@ -70,12 +79,13 @@ impl VmFrame {
         self.call_site = call_site;
     }
 
-    /// Empty the frame for the pool: registers, cursors, and loop context are
-    /// cleared so a pooled frame holds no values (the pool is not a GC root).
+    /// Empty the frame for the pool: registers, cursors, and the state path are
+    /// cleared so a pooled frame holds no values (the pool is not a GC root)
+    /// and no stale path can leak into the next call that reuses it.
     pub(super) fn recycle(&mut self) {
         self.regs.clear();
         self.loops.clear();
-        self.loop_idx.clear();
+        self.path.clear();
     }
 }
 
@@ -138,20 +148,48 @@ impl LoopCursor {
 impl<'a> Vm<'a> {
     /// An initialized frame, reusing a pooled register file when one is
     /// available (the steady-state case for every call after warm-up).
+    ///
+    /// `site` is the callsite id this frame is entered through: the new frame's
+    /// path is the innermost live frame's path (its own callsite chain plus any
+    /// loop iterations it is inside right now) with `Call(site)` appended. With
+    /// no frames on the stack — the host entry point — that is the root path
+    /// `[Call(site)]`; `None` is the program root, which runs on the empty path.
+    ///
+    /// The path is *extended into* the pooled frame rather than assigned from a
+    /// freshly built one: `recycle` empties the vector but keeps its buffer, so
+    /// a warm pool copies the caller's parts without an allocation per call.
     pub(super) fn frame_from_pool(
         &mut self,
         func: Option<FunctionId>,
         reg_count: u16,
         dst_in_caller: Option<Reg>,
         call_site: Option<TermId>,
+        site: Option<u64>,
     ) -> VmFrame {
-        match self.stack.vm_frame_pool.pop() {
+        let mut frame = match self.stack.vm_frame_pool.pop() {
             Some(mut f) => {
                 f.reset(func, reg_count, dst_in_caller, call_site);
                 f
             }
             None => VmFrame::new(func, reg_count, dst_in_caller, call_site),
+        };
+        if let Some(site) = site {
+            if let Some(caller) = self.stack.vm_frames.last() {
+                frame.path.extend_from_slice(&caller.path);
+            }
+            frame.path.push(PathPart::Call(site));
         }
+        frame
+    }
+
+    /// The compile-time callsite id of the call term that is pushing a frame.
+    /// Hand-written IR and synthetic calls carry none; they share id 0, which
+    /// is exactly the "one callsite" behaviour they had before.
+    pub(super) fn site_of(&self, call_site: Option<TermId>) -> u64 {
+        call_site
+            .and_then(|tid| self.program.terms.get(tid.0 as usize))
+            .and_then(|t| t.call_site)
+            .unwrap_or(0)
     }
 
     /// Grow frame `fi`'s loop-cursor vector so `slot` is addressable.
@@ -162,41 +200,66 @@ impl<'a> Vm<'a> {
         }
     }
 
-    /// Set the innermost active loop-index context entry to `idx` (the current
-    /// 0-based iteration), for per-iteration state keying.
+    /// Push an `Index` part for a loop that is starting in frame `fi`. Every
+    /// loop pushes one — a state declaration inside a loop body is keyed per
+    /// iteration wherever the loop runs, at any frame depth.
+    pub(super) fn push_loop_idx(&mut self, fi: usize) {
+        self.stack.vm_frames[fi].path.push(PathPart::Index(0));
+    }
+
+    /// Set the innermost active loop's `Index` part to `idx` (the current
+    /// 0-based iteration). The innermost active loop's part is always last:
+    /// the frame's `Call` prefix is fixed, and any nested loop pushed after it
+    /// pops its own part at `LoopPop`. Guarded on the part actually being an
+    /// `Index` so unbalanced hand-written IR cannot rewrite a `Call` part and
+    /// silently misroute every slot below it.
     pub(super) fn set_loop_idx_top(&mut self, fi: usize, idx: usize) {
-        if let Some(last) = self.stack.vm_frames[fi].loop_idx.last_mut() {
-            *last = LoopKeyPart::Index(idx);
+        if let Some(last @ PathPart::Index(_)) = self.stack.vm_frames[fi].path.last_mut() {
+            *last = PathPart::Index(idx);
         }
     }
 
-    /// Resolve a state term's runtime key. An explicit `state(expr)` key hashes
-    /// its value; otherwise a term inside a loop keys by the loop-index context
-    /// gathered across *all* active frames (outermost first), matching the graph
-    /// engine's `loop_key_parts`; a non-loop term keys by base alone.
+    /// Pop the innermost active loop's `Index` part (at `LoopPop`), with the
+    /// same guard as [`set_loop_idx_top`](Self::set_loop_idx_top).
+    pub(super) fn pop_loop_idx(&mut self, fi: usize) {
+        let path = &mut self.stack.vm_frames[fi].path;
+        if matches!(path.last(), Some(PathPart::Index(_))) {
+            path.pop();
+        }
+    }
+
+    /// Resolve a state declaration's runtime slot key.
+    ///
+    /// An explicit `state(expr)` key is **absolute**: it hashes its value and
+    /// ignores the call path entirely, so two callsites asking for the same
+    /// entity get the same slot (plan §2.2). Otherwise the slot is the
+    /// declaration id under the current frame's path — the callsite chain that
+    /// reached it and the loop iterations it is inside — which the frame has
+    /// already composed incrementally.
+    ///
+    /// `path_pop` drops that many innermost loop `Index` parts, so a
+    /// reassignment nested deeper in loops than its declaration still addresses
+    /// the declaration's slot (`Term::path_pop`); it is 0 at the declaration
+    /// itself and ignored under an explicit key.
     pub(super) fn state_key(
         &self,
+        fi: usize,
         base: StateKey,
-        in_loop: bool,
         explicit: Option<Value>,
+        path_pop: u32,
     ) -> RuntimeStateKey {
-        let loop_indices = match explicit {
+        let path = match explicit {
             Some(kv) => {
                 let mut v = SmallVec::new();
-                v.push(LoopKeyPart::Explicit(crate::value::hash_value(
-                    &kv, self.heap,
-                )));
+                v.push(PathPart::Key(crate::value::hash_value(&kv, self.heap)));
                 v
             }
-            None if in_loop => {
-                let mut parts: SmallVec<[LoopKeyPart; 2]> = SmallVec::new();
-                for frame in &self.stack.vm_frames {
-                    parts.extend(frame.loop_idx.iter().cloned());
-                }
-                parts
+            None => {
+                let live = &self.stack.vm_frames[fi].path;
+                let keep = live.len().saturating_sub(path_pop as usize);
+                live[..keep].into()
             }
-            None => SmallVec::new(),
         };
-        RuntimeStateKey { base, loop_indices }
+        RuntimeStateKey { base, path }
     }
 }

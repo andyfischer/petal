@@ -90,26 +90,12 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         JumpIfTrue { cond, to } => format!("jump_if_true r{} -> {}", cond, to),
         JumpIfPresent { cond, to } => format!("jump_if_present r{} -> {}", cond, to),
         JumpIfPending { cond, to } => format!("jump_if_pending r{} -> {}", cond, to),
-        ForEachInit {
-            iter,
-            slot,
-            idx_ctx,
-        } => {
-            format!("foreach_init r{} slot{} idx_ctx={}", iter, slot, idx_ctx)
-        }
+        ForEachInit { iter, slot } => format!("foreach_init r{} slot{}", iter, slot),
         ForEachNext { slot, var, exit } => {
             format!("foreach_next slot{} -> r{} else -> {}", slot, var, exit)
         }
-        RangeInit {
-            start,
-            end,
-            slot,
-            idx_ctx,
-        } => {
-            format!(
-                "range_init r{}..r{} slot{} idx_ctx={}",
-                start, end, slot, idx_ctx
-            )
+        RangeInit { start, end, slot } => {
+            format!("range_init r{}..r{} slot{}", start, end, slot)
         }
         RangeNext { slot, var, exit } => {
             format!("range_next slot{} -> r{} else -> {}", slot, var, exit)
@@ -269,33 +255,33 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         StateInit {
             dst,
             base,
-            in_loop,
             after,
             key,
         } => format!(
-            "r{} = state_init k{} in_loop={} after@{}{}",
+            "r{} = state_init k{} after@{}{}",
             dst,
             base.0,
-            in_loop,
             after,
             opt_key(key)
         ),
-        StateRead { dst, base, in_loop } => {
-            format!("r{} = state_read k{} in_loop={}", dst, base.0, in_loop)
-        }
+        StateRead {
+            dst,
+            base,
+            path_pop,
+        } => format!("r{} = state_read k{}{}", dst, base.0, pop(path_pop)),
         StateWrite {
             dst,
             base,
-            in_loop,
             val,
             key,
             init,
+            path_pop,
         } => format!(
-            "r{} = state_write{} k{} in_loop={} = r{}{}",
+            "r{} = state_write{} k{}{} = r{}{}",
             dst,
             if *init { " init" } else { "" },
             base.0,
-            in_loop,
+            pop(path_pop),
             val,
             opt_key(key)
         ),
@@ -311,6 +297,15 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         ),
         MatchFail { subject } => format!("match_fail r{}", subject),
         Error { msg } => format!("error {}", kconst(program, *msg)),
+    }
+}
+
+/// The path-pop suffix on a state access, printed only when it is nonzero (a
+/// reassignment nested deeper in loops than its declaration).
+fn pop(path_pop: &u32) -> String {
+    match path_pop {
+        0 => String::new(),
+        n => format!(" pop{n}"),
     }
 }
 

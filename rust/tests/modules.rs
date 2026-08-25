@@ -355,14 +355,18 @@ fn a_module_function_state_is_keyed_below_its_module() {
             .is_some(),
         "the module's top-level `n` keeps its qualified-name key"
     );
-    assert_eq!(
-        format!(
-            "{:?}",
-            env.get_state(sid, StateKey(Compiler::hash_state_name("m::draw/n")))
-                .unwrap()
-        ),
-        "Int(1001)"
-    );
+    // `m::draw/n` is reached through a call, so its slot sits on a call path
+    // rather than at the empty path `get_state` addresses — find it by base id.
+    let by_base = |name: &str| -> Vec<String> {
+        let base = StateKey(Compiler::hash_state_name(name));
+        env.get_all_state(sid)
+            .unwrap()
+            .iter()
+            .filter(|(k, _)| k.base == base)
+            .map(|(_, v)| format!("{v:?}"))
+            .collect()
+    };
+    assert_eq!(by_base("m::draw/n"), ["Int(1001)"]);
 }
 
 #[test]

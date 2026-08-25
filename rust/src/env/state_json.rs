@@ -8,7 +8,10 @@ use super::*;
 
 impl Env {
     /// Serialize all state variables to a JSON map keyed by variable name.
-    /// Per-iteration state entries are suffixed with their loop indices.
+    /// Entries reached through a call path are suffixed with that path (call
+    /// parts as `c<hash>`, loop iterations as the index, explicit keys as
+    /// `k<hash>`). Phase 3 of the call-path plan replaces this with a proper
+    /// path renderer.
     pub fn get_state_json(
         &self,
         program_id: ProgramId,
@@ -36,15 +39,16 @@ impl Env {
                     .get(&key.base)
                     .cloned()
                     .unwrap_or_else(|| format!("unknown_{}", key.base.0));
-                let name = if key.loop_indices.is_empty() {
+                let name = if key.path.is_empty() {
                     base_name
                 } else {
                     let suffix: Vec<String> = key
-                        .loop_indices
+                        .path
                         .iter()
                         .map(|p| match p {
-                            crate::stack::LoopKeyPart::Index(i) => i.to_string(),
-                            crate::stack::LoopKeyPart::Explicit(h) => format!("k{}", h),
+                            crate::stack::PathPart::Index(i) => i.to_string(),
+                            crate::stack::PathPart::Key(h) => format!("k{}", h),
+                            crate::stack::PathPart::Call(h) => format!("c{}", h),
                         })
                         .collect();
                     format!("{}[{}]", base_name, suffix.join(","))

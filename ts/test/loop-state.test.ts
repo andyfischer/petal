@@ -77,24 +77,11 @@ describe("per-iteration loop state", () => {
   });
 
   describe("IR properties", () => {
-    it("state inside for-loop has in_loop flag set", () => {
-      const ir = showIrJson(`
-        for x in [1, 2] do
-          state count = 0
-        end
-      `);
-      const inits = termsByOp(ir, "StateInit");
-      expect(inits.length).toBeGreaterThanOrEqual(1);
-      expect(inits[0].in_loop).toBe(true);
-    });
-
-    it("top-level state does not have in_loop flag", () => {
-      const ir = showIrJson("state count = 0");
-      const inits = termsByOp(ir, "StateInit");
-      expect(inits[0].in_loop).toBeUndefined(); // skipped when false
-    });
-
-    it("StateWrite inside loop inherits in_loop from StateInit", () => {
+    // Loop nesting is no longer a flag on the state term: every loop pushes an
+    // Index part onto the running frame's path, and the slot is that path. What
+    // the IR still has to carry is `path_pop` — how many loop levels a write
+    // sits below its declaration, so it commits to the declaration's slot.
+    it("a write at the declaration's own loop level pops nothing", () => {
       const ir = showIrJson(`
         for x in [1, 2] do
           state count = 0
@@ -103,7 +90,37 @@ describe("per-iteration loop state", () => {
       `);
       const writes = termsByOp(ir, "StateWrite");
       expect(writes.length).toBeGreaterThanOrEqual(1);
-      expect(writes[0].in_loop).toBe(true);
+      expect(writes[0].path_pop).toBeUndefined(); // skipped when zero
+    });
+
+    it("a write to a top-level state inside a loop pops that loop", () => {
+      const ir = showIrJson(`
+        state total = 0
+        for x in [1, 2] do
+          total += x
+        end
+      `);
+      const writes = termsByOp(ir, "StateWrite").filter(
+        (w: any) => w.path_pop !== undefined,
+      );
+      expect(writes.length).toBe(1);
+      expect(writes[0].path_pop).toBe(1);
+    });
+
+    it("a call term carries a stable callsite id", () => {
+      const ir = showIrJson(`
+        fn f()
+          state n = 0
+        end
+        f()
+        f()
+      `);
+      const calls = termsByOp(ir, "Call");
+      expect(calls.length).toBe(2);
+      // Both callsites are named, and the two are distinct — that is what
+      // gives each its own slot.
+      expect(typeof calls[0].call_site).toBe("number");
+      expect(calls[0].call_site).not.toBe(calls[1].call_site);
     });
   });
 

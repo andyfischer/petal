@@ -108,7 +108,8 @@ impl<'a> Vm<'a> {
             Value::Closure(_) | Value::OverloadSet(_) => {
                 let cid =
                     calls::resolve_callable(self.program, self.closures, callable, args.len())?;
-                self.push_closure_frame(cid, args, Some(dst), call_site)?;
+                let site = self.site_of(call_site);
+                self.push_closure_frame(cid, args, Some(dst), call_site, site)?;
             }
             Value::NativeFunction(nid) => {
                 let v = self.call_native_or_intrinsic(nid, args, call_site)?;
@@ -307,12 +308,17 @@ impl<'a> Vm<'a> {
     /// Push a closure activation record onto the frame stack. Mirrors the graph
     /// engine's `build_closure_frame`, but sizes and populates the *flat*
     /// register file using the lowered function's binding metadata.
+    ///
+    /// `site` is the callsite id pushed onto the new frame's state path — the
+    /// compile-time hash of the callee's canonical text at this call site, which
+    /// is what gives each callsite of a function its own `state` slots.
     pub(super) fn push_closure_frame(
         &mut self,
         cid: ClosureId,
         args: &[Value],
         dst: Option<Reg>,
         call_site: Option<TermId>,
+        site: u64,
     ) -> Result<(), String> {
         let bc = self.bc;
         let program = self.program;
@@ -341,7 +347,8 @@ impl<'a> Vm<'a> {
         }
 
         self.profile.record_call();
-        let mut frame = self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site);
+        let mut frame =
+            self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];

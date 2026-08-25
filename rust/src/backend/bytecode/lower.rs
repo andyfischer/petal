@@ -315,12 +315,12 @@ impl<'p> FnLowerer<'p> {
             TermOp::StateRead => Inst::StateRead {
                 dst,
                 base: term.state_key.expect("StateRead without state_key"),
-                in_loop: term.in_loop,
+                path_pop: term.path_pop,
             },
             TermOp::StateWrite => Inst::StateWrite {
                 dst,
                 base: term.state_key.expect("StateWrite without state_key"),
-                in_loop: term.in_loop,
+                path_pop: term.path_pop,
                 val: self.flat(ins[0])?,
                 // Inputs are [value] or [value, explicit_key]; the key is last.
                 key: (ins.len() > 1)
@@ -587,11 +587,7 @@ impl<'p> FnLowerer<'p> {
         // A Pending iterable absorbs: skip the loop entirely (zero iterations)
         // and yield the Pending as the loop value (overriding collection).
         let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: iter, to: 0 });
-        self.push(Inst::ForEachInit {
-            iter,
-            slot,
-            idx_ctx: true,
-        });
+        self.push(Inst::ForEachInit { iter, slot });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next, collect_dst)?;
@@ -619,12 +615,7 @@ impl<'p> FnLowerer<'p> {
         } else {
             None
         };
-        self.push(Inst::RangeInit {
-            start,
-            end,
-            slot,
-            idx_ctx: true,
-        });
+        self.push(Inst::RangeInit { start, end, slot });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
         self.emit_counted_loop(body_block, slot, cont, next, collect_dst)
@@ -840,14 +831,12 @@ impl<'p> FnLowerer<'p> {
     fn emit_state_init(&mut self, term: &Term) -> Result<(), String> {
         let dst = self.flat(term.id)?;
         let base = term.state_key.expect("StateInit without state_key");
-        let in_loop = term.in_loop;
         // The explicit `state(expr)` key, if any, is the only input.
         let key = term.inputs.first().map(|&t| self.flat(t)).transpose()?;
 
         let si = self.emit_placeholder(Inst::StateInit {
             dst,
             base,
-            in_loop,
             after: 0,
             key,
         });
@@ -865,10 +854,11 @@ impl<'p> FnLowerer<'p> {
                 self.push(Inst::StateWrite {
                     dst,
                     base,
-                    in_loop,
                     val: init_res,
                     key,
                     init: true,
+                    // The commit write sits at the declaration: same path.
+                    path_pop: 0,
                 });
             }
             None => {
@@ -877,10 +867,10 @@ impl<'p> FnLowerer<'p> {
                 self.push(Inst::StateWrite {
                     dst,
                     base,
-                    in_loop,
                     val: dst,
                     key,
                     init: true,
+                    path_pop: 0,
                 });
             }
         }

@@ -10,21 +10,30 @@ use crate::execution_context::ContextKey;
 use crate::program::{ProgramId, StateKey};
 use crate::value::Value;
 
-/// Part of a compound runtime state key representing one loop nesting level.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LoopKeyPart {
-    /// Keyed by iteration index (default for loops).
+/// One dynamic step on the path from the program root to a `state`
+/// declaration. See docs/dev/state-callsite-keying-plan.md §2.1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PathPart {
+    /// A call: the compile-time hash identifying the *callsite* the frame was
+    /// pushed from (`Term::call_site`), so a helper called from three places
+    /// holds three independent slots.
+    Call(u64),
+    /// One loop iteration: the 0-based iteration index, pushed by a `for`/
+    /// `while` at every level of the live frame stack.
     Index(usize),
-    /// Keyed by an explicit hashed value (Phase 2: `state(expr)`).
-    Explicit(u64),
+    /// An explicit `state(expr)` key, hashed. Absolute: a keyed slot's path is
+    /// exactly `[Key(h)]`, ignoring the call path entirely (plan §2.2).
+    Key(u64),
 }
 
-/// Runtime state key combining the static StateKey with loop iteration context.
-/// Top-level state (not in a loop) has an empty `loop_indices`.
+/// Runtime state key: a declaration id (`base`) plus the call path that reached
+/// it. Top-level state has an empty `path`; an explicit `state(expr)` key has
+/// exactly one `Key` part; everything else carries one `Call` part per enclosing
+/// call and one `Index` part per enclosing loop iteration, outermost first.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RuntimeStateKey {
     pub base: StateKey,
-    pub loop_indices: SmallVec<[LoopKeyPart; 2]>,
+    pub path: SmallVec<[PathPart; 4]>,
 }
 
 /// Unique identifier for a stack within an Env.

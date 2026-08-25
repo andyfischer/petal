@@ -307,6 +307,11 @@ fn register_unset() -> RegisterIndex {
     REGISTER_UNSET
 }
 
+/// `skip_serializing_if` helper for count fields whose default is 0.
+fn is_zero_u32(n: &u32) -> bool {
+    *n == 0
+}
+
 /// A single expression/node in the program graph.
 #[derive(Serialize, Deserialize)]
 pub struct Term {
@@ -341,9 +346,26 @@ pub struct Term {
     /// Child blocks for control flow terms (Branch, ForLoop, WhileLoop, Match, And, Or)
     #[serde(default, skip_serializing_if = "smallvec_empty")]
     pub child_blocks: SmallVec<[BlockId; 2]>,
-    /// True if this state term is inside a loop body (for per-iteration state).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub in_loop: bool,
+    /// For a `StateWrite`/`StateRead`: how many innermost loop `Index` parts to
+    /// drop from the live frame path so the access lands on the slot its
+    /// **declaration** owns — the number of loop bodies between the declaration
+    /// and this access, which are always in the same function (assigning to a
+    /// captured binding is rejected). Zero for a same-depth access, and always
+    /// zero on a `StateInit`, which *is* the declaration. This is what keeps the
+    /// top-level accumulator idiom (`state xs = []` plus `xs = append(xs, i)`
+    /// inside a `for`) writing to the one persisted slot.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub path_pop: u32,
+    /// For a call term (`Call`/`MethodCall`/`BuiltinCall`): the stable
+    /// **callsite id** — a hash of the canonical callee text plus its ordinal
+    /// among identically-spelled callees in the enclosing function, qualified
+    /// by module and enclosing-function chain. Pushed onto the callee frame's
+    /// path as [`crate::stack::PathPart::Call`], which is what gives each
+    /// callsite of a function its own `state` slots. Name/structure-derived so
+    /// it survives a hot reload; see
+    /// `Compiler::call_site_for` and docs/dev/state-callsite-keying-plan.md §3.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_site: Option<u64>,
     /// For a loop control term (`ForLoop`/`NumericForLoop`/`WhileLoop`): collect
     /// each iteration's body result into a list and yield it as the term's
     /// value. Set only when the loop is used in value position (`x = for …`);

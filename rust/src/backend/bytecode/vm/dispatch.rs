@@ -10,7 +10,6 @@ use super::super::isa::Inst;
 use crate::backend::{calls, ops};
 use crate::closure_table::ClosureTable;
 use crate::program::TermOp;
-use crate::stack::LoopKeyPart;
 
 impl<'a> Vm<'a> {
     pub(super) fn exec_inst(
@@ -56,11 +55,7 @@ impl<'a> Vm<'a> {
             }
 
             // --- loops ---
-            Inst::ForEachInit {
-                iter,
-                slot,
-                idx_ctx,
-            } => {
+            Inst::ForEachInit { iter, slot } => {
                 let v = self.reg(fi, *iter);
                 let Value::List(list_id) = v else {
                     return Err(format!("Cannot iterate over {}", v.type_name()));
@@ -72,11 +67,7 @@ impl<'a> Vm<'a> {
                     i: 0,
                     acc: Vec::new(),
                 });
-                if *idx_ctx {
-                    self.stack.vm_frames[fi]
-                        .loop_idx
-                        .push(LoopKeyPart::Index(0));
-                }
+                self.push_loop_idx(fi);
             }
             Inst::ForEachNext { slot, var, exit } => {
                 let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
@@ -100,12 +91,7 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            Inst::RangeInit {
-                start,
-                end,
-                slot,
-                idx_ctx,
-            } => {
+            Inst::RangeInit { start, end, slot } => {
                 let (s, e) = (self.reg(fi, *start), self.reg(fi, *end));
                 let (Value::Int(s), Value::Int(e)) = (s, e) else {
                     return Err("numeric for-loop bounds must be integers".into());
@@ -117,11 +103,7 @@ impl<'a> Vm<'a> {
                     iter: 0,
                     acc: Vec::new(),
                 });
-                if *idx_ctx {
-                    self.stack.vm_frames[fi]
-                        .loop_idx
-                        .push(LoopKeyPart::Index(0));
-                }
+                self.push_loop_idx(fi);
             }
             Inst::RangeNext { slot, var, exit } => {
                 let action = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
@@ -152,9 +134,7 @@ impl<'a> Vm<'a> {
                     iteration: 0,
                     acc: Vec::new(),
                 });
-                self.stack.vm_frames[fi]
-                    .loop_idx
-                    .push(LoopKeyPart::Index(0));
+                self.push_loop_idx(fi);
             }
             Inst::LoopBumpIdx { slot } => {
                 let it = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
@@ -170,7 +150,7 @@ impl<'a> Vm<'a> {
                 if let Some(cell) = self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
                     *cell = None;
                 }
-                self.stack.vm_frames[fi].loop_idx.pop();
+                self.pop_loop_idx(fi);
             }
             Inst::LoopCollect { slot, src } => {
                 let v = self.reg(fi, *src);
@@ -422,8 +402,12 @@ impl<'a> Vm<'a> {
             }
 
             // --- state ---
-            Inst::StateRead { dst, base, in_loop } => {
-                let key = self.state_key(*base, *in_loop, None);
+            Inst::StateRead {
+                dst,
+                base,
+                path_pop,
+            } => {
+                let key = self.state_key(fi, *base, None, *path_pop);
                 self.stack.touched_state_keys.insert(key.clone());
                 let v = self.stack.state.get(&key).copied().unwrap_or(Value::Nil);
                 self.set(fi, *dst, v);
@@ -431,14 +415,14 @@ impl<'a> Vm<'a> {
             Inst::StateWrite {
                 dst,
                 base,
-                in_loop,
                 val,
                 key,
                 init,
+                path_pop,
             } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
-                let k = self.state_key(*base, *in_loop, explicit);
+                let k = self.state_key(fi, *base, explicit, *path_pop);
                 self.stack.touched_state_keys.insert(k.clone());
                 // A pending StateInit result is not committed: leave the slot
                 // uninitialized so the init block re-runs next frame until it
@@ -452,12 +436,13 @@ impl<'a> Vm<'a> {
             Inst::StateInit {
                 dst,
                 base,
-                in_loop,
                 after,
                 key,
             } => {
                 let explicit = key.map(|r| self.reg(fi, r));
-                let k = self.state_key(*base, *in_loop, explicit);
+                // A `StateInit` *is* the declaration: it always resolves at the
+                // frame's own path, so nothing to pop.
+                let k = self.state_key(fi, *base, explicit, 0);
                 self.stack.touched_state_keys.insert(k.clone());
                 // Cache hit: load the slot and skip the inline init block; miss:
                 // fall through to compute and commit the init value.

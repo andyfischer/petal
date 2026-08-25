@@ -13,7 +13,7 @@
 //! parameters, captures and registers; each block's parameter names, register
 //! count, ordered term list and phi carry-outs; each term's op, its constants
 //! *by value*, its input edges (as a graph shape, not as raw ids), its name,
-//! state key, register, and the `in_loop` / `collect` / `is_config` flags;
+//! state key, callsite id, register, and the `collect` / `is_config` flags;
 //! match-arm patterns and their guard/body blocks; the program's declared
 //! class names and its `has_errors` flag.
 //!
@@ -382,7 +382,7 @@ impl<'p> Cmp<'p> {
         if key_a != key_b {
             return Err(IrDiff::new(label, "op", key_a, key_b).at(span));
         }
-        let scalars: [(&str, String, String); 4] = [
+        let scalars: [(&str, String, String); 5] = [
             (
                 "name",
                 format!("{:?}", term_a.name),
@@ -394,9 +394,14 @@ impl<'p> Cmp<'p> {
                 format!("{:?}", term_b.state_key.map(|k| k.0)),
             ),
             (
-                "loop flag",
-                term_a.in_loop.to_string(),
-                term_b.in_loop.to_string(),
+                "call site",
+                format!("{:?}", term_a.call_site),
+                format!("{:?}", term_b.call_site),
+            ),
+            (
+                "state path pop",
+                term_a.path_pop.to_string(),
+                term_b.path_pop.to_string(),
             ),
             (
                 "collect flag",

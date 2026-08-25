@@ -165,26 +165,25 @@ pub enum Inst {
     },
 
     // --- loops (replace Frame.loop_states) ---
-    /// Snapshot `iter`'s list into loop slot `slot`; push a loop-index context
-    /// entry if `idx_ctx` (state keying).
+    /// Snapshot `iter`'s list into loop slot `slot` and push an `Index` part
+    /// onto the frame's state path (per-iteration state keying).
     ForEachInit {
         iter: Reg,
         slot: LoopSlot,
-        idx_ctx: bool,
     },
     /// Advance the ForEach cursor: on exhaustion jump to `exit`; else write the
-    /// element into `var` and bump the loop-index context.
+    /// element into `var` and bump the frame path's innermost `Index` part.
     ForEachNext {
         slot: LoopSlot,
         var: Reg,
         exit: Label,
     },
-    /// Initialize an integer range cursor `[start, end)` into `slot`.
+    /// Initialize an integer range cursor `[start, end)` into `slot` and push an
+    /// `Index` part onto the frame's state path.
     RangeInit {
         start: Reg,
         end: Reg,
         slot: LoopSlot,
-        idx_ctx: bool,
     },
     /// Advance the range cursor: on exhaustion jump to `exit`; else write the
     /// current integer into `var`.
@@ -193,11 +192,12 @@ pub enum Inst {
         var: Reg,
         exit: Label,
     },
-    /// Initialize a while-loop's iteration counter (loop-index context) in `slot`.
+    /// Initialize a while-loop's iteration counter in `slot` and push its
+    /// `Index` part onto the frame's state path.
     WhileInit {
         slot: LoopSlot,
     },
-    /// Bump a while-loop's per-iteration index context in `slot`.
+    /// Bump a while-loop's per-iteration path index in `slot`.
     LoopBumpIdx {
         slot: LoopSlot,
     },
@@ -352,23 +352,25 @@ pub enum Inst {
         val: Reg,
     },
 
-    // --- state (nested keys resolved from the frame's loop-index context) ---
+    // --- state (slots resolved from the frame's call path; see `Vm::state_key`) ---
     /// Lazy state init. The init expression's block is lowered *inline*
     /// immediately after this op (followed by a `StateWrite` that commits it).
     /// On a cache hit the slot's value is loaded into `dst` and control jumps to
     /// `after` (past the inline init block); on a miss it falls through to run
-    /// the init block. `key` is the explicit `state(expr)` key register, if any.
+    /// the init block. `key` is the explicit `state(expr)` key register, if any;
+    /// when present it makes the slot absolute, ignoring the frame's path.
     StateInit {
         dst: Reg,
         base: StateKey,
-        in_loop: bool,
         after: Label,
         key: Option<Reg>,
     },
     StateRead {
         dst: Reg,
         base: StateKey,
-        in_loop: bool,
+        /// Loop `Index` parts to drop from the frame path to reach the
+        /// declaration's slot (see [`crate::program::Term::path_pop`]).
+        path_pop: u32,
     },
     /// Commit `val` into the state slot and mirror it into `dst`. `init` marks
     /// the write that commits a `StateInit` block's result: such a write does
@@ -378,10 +380,14 @@ pub enum Inst {
     StateWrite {
         dst: Reg,
         base: StateKey,
-        in_loop: bool,
         val: Reg,
         key: Option<Reg>,
         init: bool,
+        /// Loop `Index` parts to drop from the frame path to reach the
+        /// declaration's slot — nonzero for a reassignment nested deeper in
+        /// loops than its `state` declaration, which is what makes the
+        /// top-level accumulator idiom persist to one slot.
+        path_pop: u32,
     },
 
     // --- match (fat op; reuses the graph engine's match_pattern) ---

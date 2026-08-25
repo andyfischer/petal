@@ -621,7 +621,8 @@ impl Env {
     // ── State inspection ─────────────────────────────────────────
 
     /// Get the current value of a single top-level state variable.
-    /// For per-iteration state, use `get_all_state` and filter by base key.
+    /// For state reached through a call path, use `get_all_state` and filter by
+    /// base key.
     ///
     /// # Contract: the returned `Value` is a snapshot, not a handle
     /// Read it — or copy what you need out of it — **before the next run of this
@@ -636,10 +637,10 @@ impl Env {
     /// [`Env::get_state_json`], which serializes immediately.
     pub fn get_state(&self, stack_id: StackKey, key: StateKey) -> Option<Value> {
         let stack = self.stacks.get(&stack_id)?;
-        // Find the first entry with matching base key (top-level state has empty loop_indices)
+        // Top-level state runs on the root frame, whose path is empty.
         let runtime_key = RuntimeStateKey {
             base: key,
-            loop_indices: smallvec::SmallVec::new(),
+            path: smallvec::SmallVec::new(),
         };
         stack.state.get(&runtime_key).copied()
     }
@@ -663,7 +664,7 @@ impl Env {
     pub fn set_state(&mut self, stack_id: StackKey, key: StateKey, value: Value) {
         let runtime_key = RuntimeStateKey {
             base: key,
-            loop_indices: smallvec::SmallVec::new(),
+            path: smallvec::SmallVec::new(),
         };
         // A `state var`'s slot holds a cell, and the script reads that cell —
         // replacing the slot outright would strand every `CellRead` compiled

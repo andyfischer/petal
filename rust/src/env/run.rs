@@ -203,6 +203,12 @@ impl Env {
     /// function observes that variable as of the last `run` and cannot write it
     /// back into the persistent state map. To feed fresh state into a call, pass
     /// it through `args`, or `run`/`transfer_state` again to recapture.
+    ///
+    /// A host call runs with no caller frame, so the function's own `state`
+    /// declarations are keyed under a root path derived from the name called
+    /// (plan §2.5): repeated host calls of one function share their slots with
+    /// each other, but not with any in-program call of the same function. The
+    /// workaround, as always, is a top-level `state var`.
     pub fn call_function(
         &mut self,
         stack_id: StackKey,
@@ -239,7 +245,7 @@ impl Env {
             &mut self.observations,
             &mut self.profile,
         )
-        .call_closure_sync(callable, args)
+        .call_closure_sync(callable, args, host_call_site(name))
     }
 
     /// Run one frame without disturbing the source execution at all.
@@ -266,6 +272,14 @@ impl Env {
         self.drop_fork(fork);
         result
     }
+}
+
+/// The root path part for a host-invoked function (`Env::call_function`).
+/// Derived from the name the host asked for, so every host call of one function
+/// lands on the same slots; the `host ` marker (a space cannot appear in an
+/// identifier) keeps it disjoint from every compiled callsite id.
+fn host_call_site(name: &str) -> u64 {
+    crate::compiler::Compiler::hash_state_name(&format!("host {name}"))
 }
 
 /// Bundle `Env`'s runtime borrows into a [`Vm`] for one dispatch. The borrows

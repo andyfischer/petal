@@ -29,6 +29,28 @@ use crate::program::*;
 use crate::source_map::{ENTRY_FILE, SourceFile, SourceMap, SourceSpan};
 use crate::types::FnSignature;
 
+/// The canonical text of a callee expression, for the callsite id
+/// (`Compiler::call_site_for`): the source spelling with trivia stripped, so
+/// `f`, `obj.method` and `m::f` each render as themselves regardless of how the
+/// call was laid out. Structure-derived rather than span-derived, which is what
+/// lets a callsite id survive edits elsewhere in the file.
+///
+/// Shapes with no name to render — a call through an expression
+/// (`(pick())(x)`), an interpolation, a literal — collapse to `<expr>`. They
+/// are still separated from each other by the ordinal, so two such callsites in
+/// one function keep distinct slots; only their *stability* is weaker, and a
+/// callee with no name has nothing more stable to offer.
+pub(super) fn callee_text(expr: &Expr) -> String {
+    match &expr.kind {
+        ExprKind::Ident(name) => name.clone(),
+        ExprKind::CellGet(name) => name.clone(),
+        ExprKind::FieldAccess { object, field } => format!("{}.{}", callee_text(object), field),
+        ExprKind::OptionalAccess(inner) => callee_text(inner),
+        ExprKind::IndexAccess { object, .. } => format!("{}[]", callee_text(object)),
+        _ => "<expr>".to_string(),
+    }
+}
+
 /// Info about a captured variable in the current function being compiled.
 struct CaptureInfo {
     /// Term in the outer scope providing the value
@@ -85,9 +107,6 @@ pub struct Compiler {
 
     // Track function body blocks so capture phantoms are created in the right block
     function_body_blocks: Vec<BlockId>,
-
-    // Track loop nesting depth so state terms know if they're inside a loop
-    loop_depth: u32,
 
     // Value-position tracking, so a `for` in a position whose value is used
     // collects into a list (see `compile_stmts`).
@@ -240,6 +259,22 @@ pub struct Compiler {
     // of one name in one function (or a lambda whose binding name collides
     // with a sibling `fn`) land in distinct slots.
     state_decl_ordinals: HashMap<String, u32>,
+    // Loop-body nesting depth of the code being compiled, reset at every
+    // function boundary. Only its *difference* between a `state` declaration
+    // and a later assignment to that variable is used: that difference is the
+    // number of loop `Index` parts the write has to drop to reach the
+    // declaration's slot (`Term::path_pop`).
+    loop_depth: u32,
+    // Loop-body nesting depth each `state` declaration was compiled at, so a
+    // reassignment can compute its `path_pop`. Keyed by declaration id, which
+    // is unique per declaration site.
+    state_decl_depths: HashMap<StateKey, u32>,
+    // Next ordinal for each callsite base string (module + enclosing-function
+    // chain + canonical callee text). Bumped once per compiled call term, so
+    // two calls to `f()` in one function get distinct callsite ids while the
+    // same call in a different function is counted separately. See
+    // `call_site_for`.
+    call_site_ordinals: HashMap<String, u32>,
     // Set just before compiling the initializer of `let f = x -> …`, and taken
     // by the lambda's `compile_function` so it joins the name chain as `f`.
     pending_lambda_name: Option<String>,
@@ -299,7 +334,6 @@ impl Compiler {
             closure_def_ends: Vec::new(),
             capture_stack: Vec::new(),
             function_body_blocks: Vec::new(),
-            loop_depth: 0,
             stmt_value_used: false,
             value_used: true,
             overloaded_fns: HashMap::new(),
@@ -316,7 +350,10 @@ impl Compiler {
             state_inits: HashMap::new(),
             fn_name_chain: Vec::new(),
             lambda_counts: vec![0],
+            loop_depth: 0,
+            state_decl_depths: HashMap::new(),
             state_decl_ordinals: HashMap::new(),
+            call_site_ordinals: HashMap::new(),
             pending_lambda_name: None,
             builtin_phantoms: HashMap::new(),
             current_module: None,
@@ -809,16 +846,7 @@ impl Compiler {
     /// shadow ordinal.
     pub(super) fn state_key_for(&mut self, name: &str) -> StateKey {
         let mut base = String::new();
-        if let Some(m) = &self.current_module {
-            base.push_str(m);
-            base.push_str("::");
-        }
-        for f in &self.fn_name_chain {
-            base.push_str(f);
-            // Neither identifiers nor module names contain '/', so a nested
-            // declaration's string can never collide with a top-level one's.
-            base.push('/');
-        }
+        base.push_str(&self.lexical_scope_prefix());
         base.push_str(name);
 
         let ordinal = self.state_decl_ordinals.entry(base.clone()).or_insert(0);
@@ -827,6 +855,70 @@ impl Compiler {
             base.push_str(&format!("#{ordinal}"));
         }
         StateKey(Self::hash_state_name(&base))
+    }
+
+    /// The lexical position code is being compiled at, as a string: the module
+    /// qualifier (`"ui::"`, empty in the entry file) followed by each enclosing
+    /// function's chain entry (`"draw/row/"`, empty at module scope). Shared by
+    /// the two name-derived ids — [`state_key_for`](Self::state_key_for) and
+    /// [`call_site_for`](Self::call_site_for) — so both are scoped the same way.
+    fn lexical_scope_prefix(&self) -> String {
+        let mut out = String::new();
+        if let Some(m) = &self.current_module {
+            out.push_str(m);
+            out.push_str("::");
+        }
+        for f in &self.fn_name_chain {
+            out.push_str(f);
+            // Neither identifiers nor module names contain '/', so a nested
+            // declaration's string can never collide with a top-level one's.
+            out.push('/');
+        }
+        out
+    }
+
+    /// The *callsite id* for a call being compiled: a hash of the canonical
+    /// callee text (`f`, `obj.method`, `m::f` — see [`callee_text`]) plus its
+    /// ordinal among identically-spelled callees in the same function, all
+    /// qualified by the enclosing module and function chain.
+    ///
+    /// The callee frame pushes this onto its path as
+    /// [`PathPart::Call`](crate::stack::PathPart::Call), so each callsite of a
+    /// function reaches its own `state` slots (plan §2.1). Like the declaration
+    /// id it is derived from *names*, never from `TermId`s or spans, so an edit
+    /// elsewhere in the file leaves it alone. Renaming the callee, or inserting
+    /// an earlier call to the same callee in the same function, does change it —
+    /// and drops that callsite's subtree of state on reload, the same accepted
+    /// loss as renaming a state variable (docs/program-modification.md).
+    ///
+    /// Must be called exactly once per compiled call term: it bumps the ordinal.
+    pub(super) fn call_site_for(&mut self, callee: &str) -> u64 {
+        // The leading marker keeps the callsite namespace disjoint from the
+        // declaration-id one: a space cannot appear in an identifier, so no
+        // callsite string can ever equal a `state_key_for` string.
+        let mut base = format!("call {}{}", self.lexical_scope_prefix(), callee);
+        let ordinal = self.call_site_ordinals.entry(base.clone()).or_insert(0);
+        let ordinal = std::mem::replace(ordinal, *ordinal + 1);
+        if ordinal > 0 {
+            base.push_str(&format!("#{ordinal}"));
+        }
+        Self::hash_state_name(&base)
+    }
+
+    /// Emit a call term (`Call`/`MethodCall`/`BuiltinCall`) carrying its
+    /// callsite id, derived from `callee`'s canonical text. The single place a
+    /// call term is created, so no call can silently reach the runtime without
+    /// a path part.
+    pub(super) fn emit_call_term(
+        &mut self,
+        op: TermOp,
+        inputs: SmallVec<[TermId; 4]>,
+        callee: &str,
+    ) -> TermId {
+        let site = self.call_site_for(callee);
+        let tid = self.emit_term(op, inputs, None);
+        self.terms[tid.0 as usize].call_site = Some(site);
+        tid
     }
 
     /// The name the function about to be compiled contributes to the
@@ -1091,7 +1183,8 @@ impl Compiler {
             register: reg,
             state_key: None,
             child_blocks: SmallVec::new(),
-            in_loop: false,
+            path_pop: 0,
+            call_site: None,
             collect: false,
             is_config: false,
         };
@@ -1144,7 +1237,8 @@ impl Compiler {
             register: reg,
             state_key: None,
             child_blocks: SmallVec::new(),
-            in_loop: false,
+            path_pop: 0,
+            call_site: None,
             collect: false,
             is_config: false,
         });

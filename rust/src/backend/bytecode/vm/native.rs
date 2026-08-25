@@ -159,18 +159,22 @@ impl<'a> Vm<'a> {
         {
             self.profile.record_native(nid.0);
         }
+        // The closures an intrinsic drives are called from *this* call site, so
+        // they all share its path part: `map(xs, widget)` gives `widget`'s
+        // `state` one slot per `map` call site, not one per element.
+        let site = self.site_of(origin);
         if nf.intrinsic_sort_by == Some(nid) {
-            self.builtin_sort_by(args)
+            self.builtin_sort_by(args, site)
         } else if sort_with_cmp {
-            self.builtin_sort_cmp(args)
+            self.builtin_sort_cmp(args, site)
         } else if nf.intrinsic_map == Some(nid) {
-            self.builtin_map(args)
+            self.builtin_map(args, site)
         } else if nf.intrinsic_filter == Some(nid) {
-            self.builtin_filter(args)
+            self.builtin_filter(args, site)
         } else if nf.intrinsic_reduce == Some(nid) {
-            self.builtin_reduce(args)
+            self.builtin_reduce(args, site)
         } else if nf.intrinsic_for_each == Some(nid) {
-            self.builtin_for_each(args)
+            self.builtin_for_each(args, site)
         } else {
             self.call_native_fn(nid, args, false, origin)
         }

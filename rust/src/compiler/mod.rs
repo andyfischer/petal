@@ -837,6 +837,18 @@ impl Compiler {
     /// did — `"scroll"` in the entry file, `"ui::scroll"` in a module — so
     /// existing programs' persisted state survives this change untouched.
     ///
+    /// The declaration id is only *half* of a slot. At runtime it is the `base`
+    /// of a [`RuntimeStateKey`](crate::stack::RuntimeStateKey), whose `path` is
+    /// the live chain of callsites and loop iterations that reached the
+    /// declaration ([`PathPart`](crate::stack::PathPart), composed per frame by
+    /// the VM out of the ids [`call_site_for`](Self::call_site_for) hands the
+    /// call terms). So one declaration owns *many* slots — one per call path —
+    /// and this id is the static part they all share, which is exactly why hot
+    /// reload can match on it alone (`transfer_stack_state`) and treat the path
+    /// as an opaque tail. A declaration at module scope, outside every loop,
+    /// runs on the empty path and so owns exactly one slot for the whole
+    /// program; that is the case every existing embedder inspects by name.
+    ///
     /// Consequence (documented in docs/module-system.md): moving a `state`
     /// decl between files or functions, or renaming a module or an enclosing
     /// function, changes its key and drops that state on reload — the same

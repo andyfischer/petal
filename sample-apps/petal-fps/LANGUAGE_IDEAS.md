@@ -27,14 +27,51 @@ math in petal-fps would shrink from ~40 lines to ~8.
 
 ---
 
-## 2. `state` keyword inside functions doesn't work as you'd hope
+## 2. `state` keyword inside functions doesn't work as you'd hope  *(SHIPPED)*
 
 **Friction**: I want to define `fn project(p)` that uses `cy_, sy, focal`
 computed once per frame from camera state. Today I have to hoist those
 computations to the top-level scope so the closure captures them. If I put
 them inside a function I'd recompute every call.
 
-**Proposed**: A `cached(expr)` form or a memoization decorator
+**Status**: Both halves of this are answered — the keying one by a language
+change, the caching one by an idiom that change made sound.
+
+The headline complaint was that a `state` inside a function was not really
+*inside* it: the slot was keyed by the variable's name alone, so every callsite
+shared one cell and two functions that happened to pick the same name silently
+shared it too. A slot is now `(declaration, call path)` — the declaration id
+comes from the full name path (module, enclosing functions, variable, shadow
+ordinal) and the path from the callsites and loop iterations that reached it. So
+a `state` in a helper gets one cell per callsite, and per iteration of a loop
+around the call, with nothing hoisted to keep them apart. Top-level `state` is
+unchanged: the path is empty there, so a name is one cell for the program.
+
+The per-frame cache the Friction actually wanted is the third option in the
+original proposal, and it needs no new syntax. An explicit key is **absolute** —
+it ignores the call path entirely — and §18's lazy init only evaluates the
+init expression on a key *miss*, so keying on the frame counter gives a value
+computed once per frame and reused by every call that frame:
+
+```petal
+state frame = 0
+frame = frame + 1
+
+fn project(p)
+  state(frame) cam = camera_basis()   // runs once per frame…
+  ...                                 // …every call this frame reuses it
+end
+```
+
+The run-completion sweep drops the previous frame's key, so the cache does not
+grow: exactly one live slot at a time. (Checked with a printing init and two
+calls per frame — one "compute" line per frame, and one `k…/cam` slot in the
+state dump.)
+
+See `docs/dev/state-callsite-keying-plan.md` for the model and
+`rust/tests/state_call_paths.rs` for the contract.
+
+**Proposed (original)**: A `cached(expr)` form or a memoization decorator
 `@cached_per_frame fn ...`. Or expose `frame_count()` as a key so per-frame
 caches are first-class. Or just a `let` evaluated lazily once.
 
@@ -81,12 +118,24 @@ keys per-iteration state by a domain identifier — survives reordering and
 item removal. Lazy init (§18) means the init RHS only fires on first
 encounter of each key, and the run-completion sweep drops state for
 keys whose item was removed from the list. See
-`docs/Architecture.md` (the "State" section), `ts/test/loop-state.test.ts`
+`docs/dev/Architecture.md` (the "State" section), `ts/test/loop-state.test.ts`
 and `ts/test/state-lazy-init.test.ts` for the contract.
 
-The default form `for x in items { state n = ... }` (no explicit key) is
-still index-keyed and silently breaks under reorder; the explicit-key form
-is the right choice for any list whose contents are dynamic.
+**Update (call-path keying)**: the unkeyed form is now part of the *defined*
+model rather than an accident of the implementation. A slot is
+`(declaration, path)`, and each loop iteration contributes an `Index` part to
+that path — so `for x in items do state n = … end` is one cell per index, and
+so is a `state` declared inside a function *called from* the loop:
+`for e in enemies do draw_enemy(e) end` gives each iteration its own cells
+inside `draw_enemy` without the helper being changed at all. That is the
+per-iteration state this entry wanted, now reaching through calls.
+
+Because an `Index` part is a position by construction, the reorder caveat
+stands, and it is deliberate rather than a wart: an unkeyed cell belongs to the
+*slot* in the list, not to the item that happened to be there. `state(x.id) n =
+…` remains the answer when it should belong to the item — an explicit key is
+absolute, so it ignores the loop index and the call path alike and follows the
+item across a reorder, a removal, or a move into a different helper.
 
 ---
 

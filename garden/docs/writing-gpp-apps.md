@@ -263,7 +263,22 @@ The pushed script is an ordinary Petal graphical panel (see
 `docs/petal-graphical-panels.md` for the full API). Key pieces you get:
 
 - **Per-frame model.** The whole script runs every frame; there's no retained
-  scene. Keep UI state in `state` vars (persist across frames).
+  scene. Keep UI state in `state` vars (persist across frames). Declare them at
+  the **top level** — that is one cell per name for the whole panel, and it is
+  what every drawer in this repo does. A `state` written *inside a function* is
+  a different thing: it is keyed by the call path that reached it, so each
+  callsite — and each iteration of a `for` around the call — gets its own cell.
+  That is exactly what you want for a reusable row/widget helper
+  (`fn row(item) state hovered = false … end` gives every row its own hover),
+  and exactly what you do *not* want for a value two functions are meant to
+  share: hoist that one to a top-level `state var` and reach it with
+  `get`/`set`. When a per-item cell must follow the item rather than its
+  position in the list, key it — `state(item.id) hovered = false` is absolute,
+  ignores the call path, and so survives a reorder. Note that the debug server
+  flattens these: `panes[].panel.values` reports an in-function binding once,
+  under its function-qualified name (`row.hovered`), holding whichever call
+  wrote it last in the frame — top-level names are the ones you can assert on
+  cell by cell.
 - **Drawing**, in panel-local pixels, colors as `#rrggbb` (0–255 sRGB):
   `draw_rect(rect(x,y,w,h), color)`, `draw_text(s, {x, y}, size, color)`,
   `draw_line`/`draw_circle`/`draw_rect_outline`/…, `clip(x,y,w,h)`/`clip_none`
@@ -455,6 +470,15 @@ end
 Notice the pattern: a selection change re-keys the second `query`; the host
 requests the new diff over the pipe, caches it, and the next frame renders it —
 all with no per-frame wire traffic.
+
+Notice too that `sel`, `loaded` and `commits` are declared at the **top level**,
+where each is a single cell for the panel: the row loop reads and writes them
+across iterations and they mean the same thing on the next frame. That is the
+default shape for drawer state, and the reason this drawer needs no keying.
+Moving one of those declarations down into a helper would change what it means —
+it would become one cell per callsite of that helper, per loop iteration — so
+factor a drawer into helpers that take state as parameters and return values,
+and keep the cells themselves at the top.
 
 ### Persisting drawer UI state
 

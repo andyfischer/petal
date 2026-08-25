@@ -28,10 +28,52 @@ x += 100.0 * dt()        // move 100 pixels per second
 draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 ```
 
+### Where a `state` cell lives
+
+A `state` slot is identified by its declaration **and by the call path that
+reached it** — the chain of callsites and loop iterations running from the top
+of the file down to the declaration.
+
+- **At the top level** — what every example in this guide uses — the path is
+  empty, so a declaration is one cell for the whole game. `state score = 0` is
+  *the* score, readable and writable from anywhere in the file.
+- **Inside a function**, each callsite gets its own cell, and a call made inside
+  a `for`/`while` gets one cell per iteration. So
+
+  ```petal
+  fn enemy(x)
+    state hp = 100                       // one cell per caller, automatically
+    draw_rect(int(x), 200, 16, 16, 255, 0, 0)
+  end
+  enemy(100.0)                           // its own hp
+  enemy(300.0)                           // its own hp
+  for i in range(0, 8) do
+    enemy(float(i) * 40.0)               // eight more, one cell each
+  end
+  ```
+
+  needs no manual keying to give each enemy its own health. Two functions that
+  each declare `state t` never share a cell either.
+- **`state(expr) name = …` overrides the path.** An explicit key is *absolute*:
+  every callsite asking for the same key value reaches the same cell, in or out
+  of a loop. Reach for it when a cell belongs to a domain object rather than to
+  a position — `state(e.id) hp = 100` follows the enemy when the list is
+  reordered, where the unkeyed form above stays with the loop index.
+- Cells that are deliberately shared across functions go at the top level as
+  `state var`, read and written with `get` / `set`.
+
 ### Hot reload
 
 Edit your `.ptl` file while the game is running. Changes apply immediately and
 `state` variables are preserved (as long as they have the same name).
+
+For a `state` inside a function the call path has to survive the edit too. The
+callsite id is derived from the callee's spelling and its position among calls
+to that same name in the enclosing function — never from line numbers — so
+editing elsewhere in the file is free, but renaming the called function, or
+inserting an *earlier* call to it in the same function, moves those cells and
+they re-initialize. That is the same accepted loss as renaming a `state`
+variable, and the orphaned cells are swept after the next frame.
 
 ## Game API Reference
 
@@ -110,6 +152,10 @@ let speed = 200.0         // local, reset every frame
 state score = 0           // persistent across frames
 state player_x = 400.0    // initialized once
 ```
+
+At the top level each `state` name is one cell. Inside a function it is one
+cell per callsite (and per loop iteration around the call) — see
+[Where a `state` cell lives](#where-a-state-cell-lives).
 
 ### Control flow
 

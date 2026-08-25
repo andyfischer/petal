@@ -24,6 +24,19 @@
 //! rather than as a mistake. That earns a warning, and the fix is to take the
 //! value as a parameter.
 //!
+//! "The slot" is singular here because this pass is scoped to *module-level*
+//! `state`. A slot is `(declaration id, call path)`: the id comes from the
+//! declaration's name path (`Compiler::state_key_for`) and the path from the
+//! callsites and loop iterations that reached it, so a declaration inside a
+//! function owns one slot per call path. A module-level declaration outside
+//! every loop runs on the root — the empty path — and therefore owns exactly
+//! one slot for the whole program, which is what makes "the value the slot held
+//! when the file reached the `fn`" a well-defined thing to be a frame behind
+//! of. In-function `state` is left alone — the rebindings collected below are
+//! module-level only (see [`ModuleRebinds`]) — and the lag shape named here is
+//! about a *re-run of the file* reinitialising a name from its slot, which is
+//! the module-scope story specifically.
+//!
 //! It is only a warning: the behaviour is well-defined and sometimes what the
 //! author wanted, so a whole program must not fail to compile over it.
 //!

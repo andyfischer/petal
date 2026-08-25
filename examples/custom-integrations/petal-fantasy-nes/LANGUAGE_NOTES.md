@@ -9,10 +9,10 @@ severe test of the language away from its home ground of "draw a few shapes".
 **The verdict: yes, with two caveats.** The frame model is the right model for
 this kind of app and the ergonomics of it are genuinely good — the console's
 whole authoring surface fell out of the language rather than being imposed on
-it. The caveats are that `state` has a name-scoping bug serious enough to
-corrupt a cart silently (§1), and that per-character string work costs more
-than everything else in a frame put together — which is exactly the work an
-art-from-strings console does most of (§9, and "What was slow").
+it. The caveats are that `state` had a name-scoping bug serious enough to
+corrupt a cart silently (§1 — since fixed), and that per-character string work
+costs more than everything else in a frame put together — which is exactly the
+work an art-from-strings console does most of (§9, and "What was slow").
 
 Every snippet below was run on the console (`fantasy-nes --screenshot … --frames
 n`); every number was measured, not estimated.
@@ -128,10 +128,10 @@ prelude in the host language would have been a wall.
 
 ## What was awkward
 
-### 1. `state` cells are keyed by name, and the name is not scoped to the function
+### 1. `state` cells are keyed by name, and the name is not scoped to the function — **fixed**
 
-This is a bug, and it is the most dangerous one found. Two functions in one
-file that each declare a `state` variable of the same name share one cell:
+This was a bug, and the most dangerous one found. Two functions in one file that
+each declared a `state` variable of the same name shared one cell:
 
 ```petal
 fn hero_timer()
@@ -148,31 +148,43 @@ log("hero " ++ str(hero_timer()) ++ "  enemy " ++ str(enemy_timer()))
 ```
 
 ```
-hero 1  enemy 2
-hero 3  enemy 4
+hero 1  enemy 2          # what it used to print: one cell, two timers,
+hero 3  enemy 4          # and the `= 100` initializer silently ignored
 hero 5  enemy 6
 ```
 
-Two independent timers, one cell, and the `= 100` initializer silently ignored.
-Nothing warns. The prelude works around it by prefixing every state variable
-`_nes_*` and routing shared state through single-writer accessor functions; the
-`petal-ui` prelude has the same hazard and no such convention. A cart that
-writes `state var t` in two helpers gets a bug that looks like a game-logic
-bug.
+**Status**: Fixed, and the fix is the one this entry guessed at — the scoping
+that already separated modules now runs all the way down to the declaration
+site. A cell is keyed by `(declaration, call path)`. The declaration id is a
+hash of the *whole* name path — module, enclosing function chain, variable name,
+shadow ordinal — so `hero_timer`'s `t` and `enemy_timer`'s `t` are different
+declarations and can no longer be confused; the path adds the callsites and loop
+iterations that reached the declaration, so each callsite of a helper gets its
+own cell too. The same source now prints what it always looked like it should:
 
-The keyed form does the right thing and is the workaround to reach for:
-
-```petal
-fn timer(who)
-  state(who) var t = 0
-  set t = t + 1
-  t
-end
+```
+hero 1  enemy 101
+hero 2  enemy 102
+hero 3  enemy 103
 ```
 
-State cells *are* scoped per module (a cart's `state cur` does not collide with
-the sound driver's), so the fix looks like extending that scoping down to the
-declaration site.
+Consequences for this prelude. The single-writer accessor wrappers
+(`_backdrop_cell`, `_font_cell`, `_map_cell`, `_scroll_cell`, `_scene_cell`,
+`_solid_cell`) existed only to launder the one-declaration-is-one-slot rule, and
+they are gone: each is a top-level `state var` read with `get` and written with
+`set`, which is now *the* way to share a cell across functions. The `_nes_*`
+name prefix stayed, but it no longer defends against anything — it survives
+purely so `nes::_nes_scroll` reads as the console's own bookkeeping next to a
+cart's `scroll` in a host state dump.
+
+`state(id)` is still the right tool, for a different job than this entry
+proposed. An explicit key is *absolute* — it ignores the call path — so it is
+how two entry points deliberately reach one cell: `btn_repeat` (two widgets
+asking about one button share its repeat phase) and `_menu_sel`, the one
+accessor wrapper left, where `state(id)` is what makes the cursor one slot per
+menu instead of one per callsite.
+
+See `docs/dev/state-callsite-keying-plan.md`.
 
 ### 2. Shadowing a `state var` with a `let` is an internal error
 
@@ -405,7 +417,7 @@ Not language issues, but they cost the same time and are worth listing:
 | | |
 |---|---|
 | Would build a console in Petal again | Yes |
-| Blocking for this class of app | §1 (`state` name collisions); §8 was too, and is now fixed |
+| Blocking for this class of app | §1 (`state` name collisions) and §8 — both now fixed |
 | Highest-value additions | A non-allocating string/char API (§9), bitwise ops + hex literals (§5), string-literal record keys (§4) |
 | Best surprise | Realtime audio synthesis at 0.32 ms/frame (§F) |
 | Best-loved feature | The frame model, and the hot reload that falls out of it (§A) |

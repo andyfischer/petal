@@ -510,6 +510,13 @@ impl Compiler {
         self.method_dispatch = dispatch;
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
+        // `state-shared-callsites`: in-function state whose enclosing function
+        // has several callsites (or one in a loop) — see
+        // docs/dev/state-callsite-keying-plan.md.
+        self.warnings
+            .extend(crate::typecheck::state_callsites::check_state_callsites(
+                &stmts,
+            ));
         // After the checker, before the file's statements: a hoisted body is
         // compiled here and wants the dispatch table the checker just built.
         self.prescan_emit(&stmts);

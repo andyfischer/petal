@@ -240,23 +240,38 @@ alias name) stays silent, as everywhere else in Petal.
 
 ### `state` keys are module-qualified
 
-A module's `state scroll = 0` gets the persistent-state key
-`hash("ui::scroll")`; the **entry file keeps bare-name hashing**, so every
-pre-module program's hot-reload state survives unchanged. Consequences:
+A `state` slot is `(declaration id, call path)` — see
+[State](language-guide.md#one-slot-per-call-path). The module qualifier lives in
+the **declaration id**, which is a hash of the declaration's full name path:
+module qualifier, enclosing function chain, variable name. A module's top-level
+`state scroll = 0` is `hash("ui::scroll")`, a `state row = 0` inside that
+module's `fn draw` is `hash("ui::draw/row")`, and the **entry file keeps
+bare-name hashing** (`hash("scroll")`, `hash("draw/row")`), so every pre-module
+program's hot-reload state survives unchanged. Consequences:
 
-- Two modules declaring `state scroll` no longer share a slot.
+- Two modules declaring `state scroll` no longer share a slot — and neither do
+  two functions declaring `state row`, in the same module or across modules.
 - Moving a `state` declaration between files, or renaming a module, changes
   its key and **drops that state on reload** — the same class of event as
-  renaming the variable. (`Env::diff_state` remains available to hosts that
-  want a migration affordance.)
-- `transfer_state` needed no changes; it already operates on the key space.
+  renaming the variable, or renaming the function it sits in. (`Env::diff_state`
+  remains available to hosts that want a migration affordance.)
+- `transfer_state` needed no changes; it already operates on the key space, and
+  it matches on the declaration id alone — the call path is an opaque tail.
+
+Callsite ids, the other half of a runtime key, are qualified the same way: the
+enclosing module and function chain plus the callee as written (`f`,
+`obj.method`, `ui.button`). So a call to `ui.button` from the entry file and one
+from inside another module are different callsites, reaching different slots
+inside `button`.
 
 ### Host-visible names
 
 Root-frame function harvesting qualifies module functions:
 `env.call_function(stack, "ui::button", args)` invokes a module's function
 directly; entry-file functions keep their bare names. State JSON and
-`--term` lookups likewise see module state under `ui::scroll`-style names.
+`--term` lookups likewise see module state under `ui::scroll`-style names —
+top-level declarations, that is, which is what hosts address; a slot reached
+through a call path renders as that path and is not addressable by name.
 
 ## Diagnostics
 
@@ -294,8 +309,9 @@ imported `palette.ptl` hot-reloads the script that imports it.
 
 Reloading is unchanged mechanically: recompile (which re-runs the module
 walk) with `Env::compile_program_at(pid, source, path)` and
-`transfer_state`. State whose (module-qualified) key survives the recompile
-is preserved.
+`transfer_state`. State whose (module-qualified) declaration id survives the
+recompile is preserved, call path and all; slots whose path no longer occurs
+are swept after the next run.
 
 ## Embedder API summary
 

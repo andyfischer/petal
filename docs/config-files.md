@@ -242,7 +242,12 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
   the program to run. If you need computed config, run the file as a program
   (`Env::run_source`) instead — this API is the no-execution path.
 - **`state` is not configuration.** Its value only exists while the program runs
-  and changes as it runs; it reads as `NotStatic`.
+  and changes as it runs; it reads as `NotStatic`. A declaration does not even
+  name a single value: the slot it reads is chosen by the
+  [call path](language-guide.md#one-slot-per-call-path) that reached it, so one
+  `state` inside a function can be a dozen live values at once. The source text
+  of its initializer is all a static read could offer, and that is not what a
+  caller asking for config wants.
 - **Writing flattens.** `should_set_value` replaces the whole right-hand side, so
   a conditional binding loses its conditional (see above) — unless the goal
   already holds, in which case nothing is written.

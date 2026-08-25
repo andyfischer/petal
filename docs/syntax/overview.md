@@ -214,8 +214,12 @@ queries stop there. See the [Language Guide](../language-guide.md#var-and-set).
 
 ### `state`
 
-Persistent variables that are initialised once and survive across calls (and
-across hot reloads). The key to Petal's control-flow-keyed state model:
+Persistent variables that are initialised once and survive across runs (and
+across hot reloads). The slot is keyed by the **call path** that reached the
+declaration — the chain of callsites and loop iterations — so each callsite of a
+helper, each recursion depth, and each iteration of a caller's `for` holds its
+own value, React-`useState`-style. A top-level `state` runs on the empty path:
+one declaration, one slot.
 
 ```petal
 fn counter()
@@ -225,8 +229,9 @@ fn counter()
 end
 ```
 
-`state var` combines the two — a cell that persists — and `state(key) var`
-gives each key its own cell:
+`state(key)` opts out of the path entirely and keys by the value instead: same
+key ⇒ same slot, whoever asks. `state var` combines persistence with a cell —
+one cell per path, or per key:
 
 ```petal
 fn hit(id)

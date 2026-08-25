@@ -42,7 +42,7 @@ fn square(x)
   x * x
 end
 
-// Persistent state across calls
+// Persistent state — one slot per call path, kept across runs and hot reloads
 fn counter()
   state count = 0
   count += 1

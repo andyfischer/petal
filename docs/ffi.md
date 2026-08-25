@@ -161,21 +161,39 @@ object — that is the main gap for a game-engine embedding.
 Scripts keep state across runs with the `state` keyword:
 
 ```petal
-state score = 0            // initialized on first run only
-state(item.id) hp = 100    // explicit key: per-entity state inside a loop
+state score = 0            // top level: one slot, initialized on first run only
+state(item.id) hp = 100    // explicit key: one slot per entity, wherever it is reached from
 ```
 
 - Storage is `Stack::state: HashMap<RuntimeStateKey, Value>` — on the stack,
   surviving `reset_stack` + `run`, one map per stack.
-- `StateKey` is a **hash of the variable name** (module-qualified for module
-  state, e.g. `"ui::scroll"`); declaration order doesn't matter. A `state`
-  inside a loop is additionally keyed by loop index or an explicit
-  `state(key)` expression, giving per-iteration / per-entity slots.
+- A runtime key is `RuntimeStateKey { base: StateKey, path }`. The `base` is the
+  **declaration id**: a hash of the declaration's full name path — module
+  qualifier, enclosing function chain, variable name (`"score"`, `"ui::scroll"`,
+  `"ui::draw/row"`). Declaration order doesn't matter.
+- The `path` is the chain of callsites and loop iterations that reached the
+  declaration, so each callsite of a function, each recursion depth and each
+  iteration of a caller's loop gets its own slot
+  ([State](language-guide.md#one-slot-per-call-path)). A top-level declaration
+  runs on the empty path — one declaration, one slot, which is what every host
+  API below addresses. `state(key)` is absolute: it keys by the value and
+  ignores the path.
 - After each run, `sweep_untouched_state` drops keys the run didn't touch — so
-  state for deleted code or removed list items doesn't leak.
+  state for deleted code, removed list items, or paths an edit no longer
+  produces doesn't leak.
 - `get_state_json` / `set_state_from_json` serialize it for tooling, and
   `fork_execution` + `run_speculative` run what-if frames against a forked
-  copy.
+  copy. `Env::get_state`/`set_state` and the JSON setters are **top-level
+  only** — they synthesize empty-path keys, and a pathed slot has no name to
+  address it by. In `get_state_json` a pathed slot renders as its path
+  (`[3]/row/hovered`), which no bare declaration name can collide with.
+
+**Host-invoked functions get a root path of their own.** `Env::call_function`
+runs with no caller frame, so it starts a path derived from the function's
+qualified name: repeated host calls of the same function share slots with each
+other — what an event handler wants — but not with in-program calls of that
+same function. When a value must be shared across both, put it in a top-level
+`state var` and read it with `get`.
 
 ## Hot reload
 
@@ -189,12 +207,17 @@ let new_program = env.compile_program_at(pid, &source, &path)?;
 let result = env.transfer_state(stack, new_program)?;  // { state_preserved, state_dropped }
 ```
 
-`transfer_state` keeps every state value whose name-hash key still exists in
+`transfer_state` keeps every state value whose declaration id still exists in
 the new program, drops the rest, clears all closures and the cached function
 table (they reference old code; recaptured on next run), and invalidates
-cached bytecode. Because `StateKey` is a name hash, reordering declarations
-preserves state; renaming a variable or moving it between modules drops it
-(`diff_state` exists for hosts that want a migration affordance).
+cached bytecode. It matches on the declaration id alone and treats the call path
+as an opaque tail. Because that id is a name hash, reordering declarations
+preserves state; renaming a variable, or moving it between functions or modules,
+drops it. A call-structure edit — renaming a callee, inserting an earlier call to
+the same callee, extracting or inlining a helper — keeps the declaration but
+moves its slots to a new path, so the reader sees a fresh value and the orphan is
+swept after the next run (`diff_state` exists for hosts that want a migration
+affordance).
 
 ## Immutability and the in-place gate
 

@@ -127,9 +127,9 @@ above it is meant to read the one that was in scope where it was written.
 Nothing is reported.
 
 A module-level `state` is different. Rebinding it with `=` does not create a
-new binding — it writes the persisted slot, and the *next* run of the file
-initialises the name from that slot. So a function above the write reads one
-run behind, every run:
+new binding — it writes the persisted slot (module scope is one path, so there
+is exactly one), and the *next* run of the file initialises the name from that
+slot. So a function above the write reads one run behind, every run:
 
 ```petal ignore
 state scroll = 0
@@ -156,7 +156,10 @@ overwhelmingly common case, and why constants, helpers and `fn`s all keep
 reading exactly as before. Three shapes are deliberately left alone: `let`, as
 above; an inline callback (`map(xs, fn(a) … end)`), which runs inside the
 statement that created it, so nothing can move underneath it; and a binding
-local to an enclosing *function*, since only module-level ones are checked.
+local to an enclosing *function*, since only module-level ones are checked (an
+in-function `state` is a different slot per
+[call path](#one-slot-per-call-path), and the lag rule is about the one
+module-level slot a whole run shares).
 `var`/`state var` are exempt too — a bare outer-cell read is already a hard
 error there, and the `get` it demands is a live read that cannot lag.
 
@@ -1421,38 +1424,88 @@ end
 
 ## State
 
-The `state` keyword declares persistent variables that survive across function calls.
-State is initialized once and retains its value on subsequent calls:
+The `state` keyword declares a persistent variable: initialized once, then
+keeping its value from one run of the program to the next, and across a
+[hot reload](program-modification.md). It is how a script that re-runs every
+frame remembers anything.
+
+```petal
+state hits = 0
+hits += 1
+print(hits)   // 1 on the first run, 2 on the second, ...
+```
+
+### One slot per call path
+
+*Which* slot a declaration reads is decided by the declaration **and the path
+that reached it**: the chain of callsites and loop iterations running from the
+top of the program down to this execution. Reached the same way ⇒ the same
+slot. Reached a different way ⇒ a different slot. That is React's `useState`
+rule, with the call path standing in for the component instance.
+
+The consequences are the whole point:
+
+- **Two callsites of a helper hold two independent values.**
+- **Recursion gets one slot per depth** — each recursive call extends the path.
+- **A function called inside a `for` gets one slot per iteration**, so a list's
+  positions key its rows automatically.
+- **Two functions that declare the same state name never collide.** A
+  declaration's identity is its name plus the enclosing module and function
+  chain, so `count` in `fn a` and `count` in `fn b` are different declarations.
+- **Top-level `state` is unaffected.** Module scope runs on the empty path, so a
+  file-level declaration is exactly one slot, as it always was.
 
 ```petal
 fn counter()
-    state count = 0
-    count += 1
-    count
+    state n = 0
+    n += 1
+    n
 end
 
-print(counter())  // 1
-print(counter())  // 2
-print(counter())  // 3
+fn left()   counter() end
+fn right()  counter() end
+
+print(left(), right())   // 1 1 — two callsites, two slots
 ```
 
-State enables patterns like accumulators, caches, and reactive components:
+Within one run, a path is normally reached only once: reaching the same callsite
+twice takes a loop or a recursive call, and both of those extend the path. So an
+in-function counter counts *runs* (frames), not calls — the program above prints
+`1 1`, then `2 2` on its second run. To count calls within a run, key the slot
+explicitly or share one top-level cell (both below).
 
 ```petal
-fn running_average(value)
-    state total = 0
-    state count = 0
-    total += value
-    count += 1
-    total / count
+fn walk(n)
+    state visits = 0
+    visits += 1
+    if n > 0 then walk(n - 1) end
+    visits
+end
+print(walk(3))   // 1 — depths 3, 2, 1, 0 are four slots, each on its first visit
+```
+
+```petal
+fn tick(label)
+    state n = 0
+    n += 1
+    label ++ ":" ++ str(n)
+end
+
+for label in ["a", "b", "c"] do
+    print(tick(label))   // a:1  b:1  c:1, then a:2  b:2  c:2 on the next run
 end
 ```
 
-State is preserved during hot reload — if you edit and save a file while it's running,
-existing state values carry over to the new code.
+Positional keying is React's un-keyed list behaviour, including its cost:
+reorder the list and the values stay with the *positions*, not the items. When
+it is the item's identity that matters, say so with a key.
 
-A `state` declaration can also be **keyed** — `state(key)` gives each distinct
-key its own slot, so one declaration site holds independent state per entity:
+### Keyed state — `state(key)`
+
+`state(expr) name = …` keys the slot by the value of `expr` and **ignores the
+call path entirely**. It is absolute: every execution of that declaration with
+the same key value lands on the same slot, no matter which caller, how deep, or
+which loop iteration it arrived from.
 
 ```petal
 fn health(id, damage)
@@ -1463,13 +1516,52 @@ end
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
 ```
 
-Keys are hashed with the declaration's control-flow position, and a slot that
-goes untouched for a run is reclaimed.
+That makes `state(key)` the tool for anything whose identity outlives its
+position: entities in a list that reorders, a tree node reached one level deeper
+each frame, an input's repeat phase that two widgets are meant to share. Keys
+are hashed, one slot per (declaration, key value), and a slot that goes
+untouched for a whole run is reclaimed.
+
+### Sharing on purpose
+
+Because every caller is a different path, a helper cannot be used to launder a
+shared value — funnelling reads and writes through one accessor function that
+holds a single `state` gives each caller its own slot, not a shared one.
+Deliberately shared state is a **top-level `state var`**: module scope is one
+path, so there is exactly one cell, and `get`/`set` keep every live read and
+write visible at the site that does it.
+
+```petal
+state var theme = "dark"
+
+fn ui_theme()      get theme end
+fn theme_set(t)    set theme = t end
+
+theme_set("light")
+print(ui_theme())   // light
+```
+
+### Callbacks run at the builtin's callsite
+
+`map`, `filter`, `reduce`, `forEach` and the other higher-order builtins call
+your function from a single place — the builtin's own callsite — so a `state`
+inside the callback has one slot shared by every element of that call:
+
+```petal
+fn seen(x)
+    state n = 0
+    n += 1
+    n
+end
+print(map([10, 20, 30], seen))   // [1, 2, 3] — one shared slot, not three
+```
+
+Use a `for` loop when you want a slot per element, or key it: `state(x) n = 0`.
 
 ### `state var`
 
 `state var` combines persistence with a [mutable cell](#var-and-set): the slot
-holds the cell, so the value survives across calls and hot reloads *and* can be
+holds the cell, so the value survives across runs and hot reloads *and* can be
 written with `set` from inside another function or a callback.
 
 ```petal
@@ -1478,9 +1570,23 @@ set hits = hits + 1
 print(hits)
 ```
 
+The slot is path-keyed like any other, so a `state var` at the top level is one
+shared cell while a `state var` inside a function is one cell per call path.
 `state(key) var` works too — one cell per key, created on first touch. Reach for
 `state var` only when a plain `state` cannot express the write; a `state` read
 still carries its dataflow edges, and a cell read does not.
+
+### State and hot reload
+
+Every part of a slot's identity is derived from names, never from positions in
+the file: the declaration from its name and enclosing module/function chain,
+each callsite from the callee's spelling plus its ordinal among identically
+spelled calls in that function. So editing elsewhere in the file — reordering
+declarations, adding lines, reformatting — preserves state. Renaming a state
+variable, renaming a callee, or inserting an *earlier* call to the same callee
+changes an identity, and that slot (or that callsite's subtree of slots) starts
+fresh. See
+[program-modification.md](program-modification.md#state-preserving-hot-reload-transfer_state).
 
 ## JSX-like Elements
 

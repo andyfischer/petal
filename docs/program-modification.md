@@ -156,13 +156,17 @@ Flow:
 Returns `TransferStateResult { state_preserved, state_dropped }`.
 
 **State reconciliation is by name-hash, order-independent.** `StateKey(u64)`
-([`program.rs`](../rust/src/program.rs)) is a **hash of the state variable's
-name**, computed at compile time by `Compiler::state_key_for`
-([`compiler/mod.rs`](../rust/src/compiler/mod.rs)) — bare name for entry-file
-`state`, qualified `"module::name"` for module state. The runtime key is
-`RuntimeStateKey { base: StateKey, loop_indices }`
-([`stack.rs`](../rust/src/stack.rs)); `transfer_state` matches on `base` only.
-Migration semantics (pinned by tests in `transfer_state.rs`):
+([`program.rs`](../rust/src/program.rs)) is the **declaration id**: a hash of the
+declaration's full name path — module qualifier, enclosing function chain,
+variable name — computed at compile time by `Compiler::state_key_for`
+([`compiler/mod.rs`](../rust/src/compiler/mod.rs)). A top-level `state` in the
+entry file is the bare name, in a module `"ui::scroll"`, inside a function
+`"ui::draw/row"`. The runtime key is `RuntimeStateKey { base: StateKey, path }`
+([`stack.rs`](../rust/src/stack.rs)), where `path` is the chain of callsites and
+loop iterations that reached the declaration (see
+[State](language-guide.md#one-slot-per-call-path)); `transfer_state` matches on
+`base` only and treats the path as an opaque tail. Migration semantics (pinned
+by tests in `transfer_state.rs`):
 
 - **Addition** — new key absent in old state → `StateInit` runs, default-initializes.
 - **Removal** — old key absent in new program → dropped in the `retain`.
@@ -171,10 +175,25 @@ Migration semantics (pinned by tests in `transfer_state.rs`):
 A separate per-run GC (`Stack.touched_state_keys` +
 `sweep_untouched_state`, [`stack.rs`](../rust/src/stack.rs)) reclaims state whose
 declaration wasn't visited on a run (e.g. per-iteration state for a removed list
-item).
+item). This is also what cleans up after a call-structure edit: entries whose
+path no longer occurs survive the transfer but are swept after the next run.
 
-**Known limitation:** renaming a `state` var — or moving/renaming its module —
-changes its `StateKey` and **drops the value** (it reads as remove + add).
+**Known limitations.** Both are the same class of event — an identity the edit
+changed — and both read as remove + add:
+
+- Renaming a `state` var, moving it between functions, renaming the function it
+  sits in, or moving/renaming its module changes its `StateKey` and **drops the
+  value**.
+- Editing the call structure around a callsite **orphans that callsite's subtree
+  of state**. A callsite's id is the callee's spelling plus its ordinal among
+  identically spelled calls in the enclosing function, so renaming the callee,
+  inserting an *earlier* call to the same callee, extracting the call into a new
+  helper, or inlining one moves every slot below it to a fresh path. The
+  declaration survives the transfer; the reader lands on a freshly initialised
+  slot and the orphan is swept. Everything else — reordering declarations,
+  editing elsewhere in the file, reformatting, adding a call to a *different*
+  callee — leaves the path alone. (Structural path repair in `transfer_state` is
+  future work.)
 
 ### Class instances across a reload
 
@@ -236,10 +255,15 @@ Over the agent JSON protocol and MCP (see
 
 | Surface | Effect |
 |---|---|
-| `set_state {name, value}` / `DiagramSetState` | Mutate one live state var by name (`set_state_json`) |
+| `set_state {name, value}` / `DiagramSetState` | Mutate one live **top-level** state var by name (`set_state_json`) |
 | `input {keys_down, mouse, text}` / `DiagramInput` | Inject keyboard/mouse/text into the next frame |
 | `pause` / `resume` / `step {n}` | Control the frame loop (advances at fixed `dt=1/60`) |
 | host bindings (`set_binding_for`) | Change host→script uniform inputs |
+
+`set_state` addresses declarations that run on the empty call path — top-level
+`state`, module-qualified for module state. A slot reached through a call path
+shows up in a `state` dump under that path (`[3]/row/hovered`) and has no
+name to set it by; drive it from a top-level cell instead.
 
 These modify **runtime state or inputs**, not the program. **There is no
 over-the-wire source-swap / `reload` command** — reload is file-watcher-driven
@@ -296,8 +320,10 @@ direct-manipulation and goal-driven editing.
 
 ## Known limitations
 
-- **Hot-reload reconciliation is by name.** Renaming a `state` variable (or its
-  module) changes its key and drops the value (see Live editing).
+- **Hot-reload reconciliation is by name.** Renaming a `state` variable (or the
+  function or module it sits in) changes its key and drops the value; editing
+  the call structure around a callsite orphans that callsite's subtree of state
+  (see Live editing).
 - **Reverse-mode AD does not exist** — only forward-mode sensitivity, so "given a
   target output, which inputs should change" is not answerable today.
 - **IR editing is experimental** — the graph-query passes are read-only and there

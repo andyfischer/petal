@@ -1,5 +1,11 @@
 // State Machine
 // Using enums and state to model a traffic light controller.
+//
+// The light's phase is the *program's* state, not the state of any one call, so
+// it lives in top-level `state var` cells: one cell for the whole program, read
+// with `get` and written with `set` from anywhere. Declaring it inside
+// `traffic_light()` instead would give the controller a fresh cell for every
+// tick of the loop below — a light that is forever on its first frame.
 
 enum Light
   Red,
@@ -7,31 +13,31 @@ enum Light
   Green,
 end
 
-fn traffic_light()
-  state current = Red
-  state ticks_in_state = 0
+state var current = Red
+state var ticks_in_state = 0
 
-  ticks_in_state = ticks_in_state + 1
+fn traffic_light()
+  set ticks_in_state = get ticks_in_state + 1
 
   // Transition rules
-  let next = match current
-    when Red if ticks_in_state >= 5 do
-      ticks_in_state = 0
+  let next = match get current
+    when Red if get ticks_in_state >= 5 do
+      set ticks_in_state = 0
       Green
     end
-    when Green if ticks_in_state >= 4 do
-      ticks_in_state = 0
+    when Green if get ticks_in_state >= 4 do
+      set ticks_in_state = 0
       Yellow
     end
-    when Yellow if ticks_in_state >= 2 do
-      ticks_in_state = 0
+    when Yellow if get ticks_in_state >= 2 do
+      set ticks_in_state = 0
       Red
     end
     when other -> other
   end
-  current = next
+  set current = next
 
-  current
+  get current
 end
 
 fn light_symbol(light)

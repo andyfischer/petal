@@ -1,13 +1,20 @@
 // Particle System
-// Demonstrates per-iteration state for simulating multiple independent objects.
+// Simulating several independent objects out of one `state` declaration site.
+//
+// Each particle needs its own position and velocity, and a particle is an
+// entity with an id — so the declarations are keyed with `state(id)`. A keyed
+// slot is *absolute*: the same key reaches the same cell no matter which
+// callsite, loop iteration, or frame asked for it, so particle 2 keeps its own
+// trajectory across every frame of the simulation below.
+//
+// Without the key, all four particles would share one set of cells and the
+// "simulation" would be a single particle updated four times per frame.
 
 fn update_particle(id)
-  // Each particle gets its own position and velocity state,
-  // keyed by the enclosing loop iteration (the particle id).
-  state x = 0.0
-  state y = 0.0
-  state vx = float(id + 1) * 1.5
-  state vy = float(id + 1) * 0.8
+  state(id) x = 0.0
+  state(id) y = 0.0
+  state(id) vx = float(id + 1) * 1.5
+  state(id) vy = float(id + 1) * 0.8
 
   // Update position
   x = x + vx

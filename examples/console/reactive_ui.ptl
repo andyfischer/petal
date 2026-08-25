@@ -1,7 +1,18 @@
 // Reactive UI Sketch
-// Demonstrates how inline state enables a React-like component model.
-// Each component is a function. State is co-located with the view logic, and
-// persists across render frames.
+// Inline state gives Petal a React-like component model: a component is a
+// function, its state sits next to its view logic, and that state outlives the
+// frame that drew it.
+//
+// Two kinds of state show up in any real UI, and they are declared differently:
+//
+//   - The app model — one copy, written by event handlers. That is a top-level
+//     `state var`: one cell for the program, read with `get`, written with
+//     `set` from wherever the event lands.
+//   - A widget's own memory — one copy *per widget instance*. That is a `state`
+//     inside the widget function. Giving it a key, `state(id)`, pins the cell
+//     to the instance's identity, so the two buttons below keep independent
+//     click counts out of a single declaration and would keep them across a
+//     reorder of the list they were drawn in. This is React's `key` prop.
 
 enum Event
   None(),
@@ -9,8 +20,13 @@ enum Event
   Clear(),
 end
 
-fn button(label, clicked)
-  state click_count = 0
+// The app model: one cell, shared by every function that touches it.
+state var items = ["Buy groceries", "Write code", "Read a book"]
+
+// A widget. `id` names this button instance; the `click_count` cell belongs to
+// that name, not to the `button` function as a whole.
+fn button(id, label, clicked)
+  state(id) click_count = 0
   if clicked then
     click_count = click_count + 1
   end
@@ -22,29 +38,29 @@ fn button(label, clicked)
 end
 
 fn todo_app(event)
-  state items = ["Buy groceries", "Write code", "Read a book"]
-
-  // Handle events (a real UI runtime would feed these per frame).
-  let was_add = match event
+  // Handle this frame's event (a real UI runtime would feed these from input).
+  let pressed = match event
     when Add(text) do
-      items = append(items, text)
-      true
+      set items = append(get items, text)
+      "add"
     end
     when Clear() do
-      items = []
-      false
+      set items = []
+      "clear"
     end
-    when None() -> false
+    when None() -> ""
   end
 
-  let add_btn = button("Add", was_add)
+  let add_btn = button("add", "Add", pressed == "add")
+  let clear_btn = button("clear", "Clear", pressed == "clear")
 
-  print("  Todo App ({len(items)} items)")
+  let list = get items
+  print("  Todo App ({len(list)} items)")
   print("  --------")
-  for i in range(0, len(items)) do
-    print("  [ ] {items[i]}")
+  for i in range(0, len(list)) do
+    print("  [ ] {list[i]}")
   end
-  print("  [{add_btn.label}]")
+  print("  [{add_btn.label}]  [{clear_btn.label}]")
   print("")
 end
 
@@ -52,12 +68,13 @@ print("Reactive UI Demo")
 print("=================")
 print("")
 
-// Simulate 4 render frames with different events.
+// Simulate render frames, one event each.
 let events = [
   None(),
   Add("Water plants"),
   Add("Call Alex"),
-  None()
+  Clear(),
+  Add("Start over"),
 ]
 
 for frame in range(0, len(events)) do

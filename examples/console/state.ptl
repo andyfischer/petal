@@ -1,51 +1,90 @@
-// State Management
-// The 'state' keyword creates persistent variables that survive across invocations.
+// State
+// `state` declares storage that belongs to a declaration site and outlives the
+// call that created it: the value is still there on the next call, the next
+// frame, and — in a live-editing host — after a hot reload.
+//
+// Which cell a declaration gets depends on how the declaration is reached:
+//
+//   state x       at the top level   one cell for the whole program
+//   state x       in a function      one cell per call path — per callsite,
+//                                    and per iteration of the loops that led
+//                                    there
+//   state(key) x  anywhere           one cell per key value, ignoring the
+//                                    call path entirely
+//   state var x   anywhere           the cell holds a mutable box, so `set`
+//                                    can write it from another function
+//
+// Rule of thumb: a top-level `state var` when several places must agree on one
+// value, `state(key)` when the value belongs to an entity that has an id, and a
+// plain in-function `state` when it belongs to the use site itself.
 
-// A counter that increments each time it's called.
-fn counter()
-  state count = 0
+// ── One cell for the whole program ───────────────────────────────────────
+// Cross-function shared state is a top-level `state var`. Inside a function a
+// bare read needs `get`, so every use site shows that it is touching the one
+// shared cell rather than a local of its own.
+
+state var total = 0
+
+fn accumulate(value)
+  set total = get total + value
+  get total
+end
+
+print("Accumulator")
+print("===========")
+for i in range(1, 6) do
+  print("After adding", i, "-> total:", accumulate(i))
+end
+
+// ── One cell per entity ──────────────────────────────────────────────────
+// `state(key)` keys the cell by the key's *value*, so the same entity reaches
+// the same cell no matter which callsite, loop iteration, or recursion depth
+// asked for it. This is Petal's answer to React's `key` prop, and it is
+// absolute — which is what makes it survive a list being reordered.
+
+fn hit(id)
+  state(id) count = 0
   count = count + 1
   count
 end
 
-print("Counter Demo")
-print("============")
-print("Call 1:", counter())
-print("Call 2:", counter())
-print("Call 3:", counter())
+print("")
+print("Per-entity counters")
+print("===================")
+for id in ["goblin", "orc", "goblin", "goblin", "orc"] do
+  print("  {id} hit {hit(id)}x")
+end
 
-// An accumulator that maintains a running total
-fn accumulator(value)
-  state total = 0
-  total = total + value
-  total
+// ── One cell per use site ────────────────────────────────────────────────
+// A plain `state` inside a function belongs to the declaration, and to the path
+// that reached it — the way a React component instance owns its `useState`
+// slots. The two widgets below both name their counter `renders`, and they get
+// two different cells: a declaration is identified by where it is written, not
+// by the name it picked. So both report their first render, rather than the
+// footer inheriting the header's count.
+//
+// Call-path keying extends that to callsites: a second call of one widget gets
+// a second cell, and a widget drawn once per list item gets one cell per item —
+// list keying by position, for free. That part is landing in stages; until it
+// does, all the callsites of a function still share one cell, and `petal lint`
+// reports the declarations where the difference will show.
+
+fn header(title)
+  state renders = 0
+  renders = renders + 1
+  "{title} (render {renders})"
+end
+
+fn footer(note)
+  state renders = 0
+  renders = renders + 1
+  "{note} (render {renders})"
 end
 
 print("")
-print("Accumulator Demo")
-print("================")
-for i in range(1, 6) do
-  print("After adding", i, "-> total:", accumulator(i))
-end
-
-// State inside conditionals: each branch gets its own state
-fn branch_counter(flag)
-  if flag then
-    state true_count = 0
-    true_count = true_count + 1
-    print("  true branch called", true_count, "times")
-  else
-    state false_count = 0
-    false_count = false_count + 1
-    print("  false branch called", false_count, "times")
-  end
-end
-
-print("")
-print("Branch State Demo")
-print("=================")
-branch_counter(true)
-branch_counter(true)
-branch_counter(false)
-branch_counter(true)
-branch_counter(false)
+print("Per-use-site state")
+print("==================")
+let head = header("Todo")
+let foot = footer("v1.0")
+print("  {head}")
+print("  {foot}")

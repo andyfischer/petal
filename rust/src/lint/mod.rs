@@ -47,7 +47,6 @@
 
 use std::path::PathBuf;
 
-
 mod casts;
 mod reindent;
 mod to_match;

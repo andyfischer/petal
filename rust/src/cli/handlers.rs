@@ -9,12 +9,12 @@ use std::process;
 use crate::backend::OptFlags;
 use crate::dot_graph::program_to_dot;
 use crate::env::Env;
-use crate::stack::StackKey;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
 use crate::program::{Program, ProgramId, Term, TermId};
 use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
+use crate::stack::StackKey;
 
 use super::{
     ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain, die_with, error_json_value,
@@ -536,7 +536,11 @@ pub(super) fn handle_propose_edit(
             Err(e) => die(json, &e.message, "apply"),
         };
         if let Err(e) = fs::write(&path, &edited) {
-            die(json, &format!("writing '{}': {}", path.display(), e), "apply");
+            die(
+                json,
+                &format!("writing '{}': {}", path.display(), e),
+                "apply",
+            );
         }
         true
     } else {

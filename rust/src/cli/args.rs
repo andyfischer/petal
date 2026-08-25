@@ -495,9 +495,7 @@ fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Com
         match args[*i].as_str() {
             "--json" => json = true,
             "--term" => {
-                term = Some(
-                    take(args, i, "Expected term name or id after --term").to_string(),
-                );
+                term = Some(take(args, i, "Expected term name or id after --term").to_string());
             }
             _ => return false,
         }

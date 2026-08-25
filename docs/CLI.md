@@ -313,7 +313,8 @@ positional: source text, spans, file ids, the source map, comments and
 whitespace, and the numeric ids of terms, blocks and constants (constants are
 compared **by value**, since interning order shifts). Compared: functions and
 their parameters and captures, each block's ordered terms and phi carry-outs,
-each term's op, input edges, name, state key and flags, and match-arm patterns.
+each term's op, input edges, name, state key, callsite id and flags, and
+match-arm patterns.
 
 Exit codes are a three-way answer, not a boolean: **0** equivalent, **1**
 different (the first difference is printed, with the *original's* line:column),
@@ -327,6 +328,29 @@ binding names in the IR and hashes them into `state` keys, so a rename is
 reported as a difference), and a `Copy`-only refactor that changes dataflow
 *sharing* is reported even when each term looks alike. Both err toward saying
 "different": an `ir-equal` pass is meant to be proof.
+
+**Call structure is semantic too.** A `state` slot is keyed by the call path
+that reaches it, so each call term carries a `call_site` id — a hash of the
+callee's spelling plus its ordinal among identically-spelled callees in the
+enclosing function — and `ir-equal` compares it. Consequences for anyone
+reading a report:
+
+- Extracting a helper, inlining one, or moving a call to a different function
+  changes the path its callees run on, and therefore which `state` slots they
+  reach. `ir-equal` reporting such a rewrite as different is **correct, not
+  noise** — the two programs genuinely differ in what state they share.
+- So does *adding an earlier call to the same callee* in one function: it
+  shifts the later call's ordinal. Adding a call to a *different* callee does
+  not.
+- Everything else is untouched: reformatting, renaming a local that is not a
+  callee, reordering unrelated statements, and edits elsewhere in the file all
+  stay IR-equal, because the id is derived from names and structure rather than
+  from term ids or spans.
+
+A program with no `state` anywhere still reports these differences — `ir-equal`
+compares the IR, not a reachability analysis over it. When a refactor is meant
+to move calls, the tool that proves it is a run diff (`ts/bin/verify.ts`, see
+docs/dev/refactor-verification.md), not `ir-equal`.
 
 This is the `ir-equal` step of the verification plan in
 [dev/refactor-verification.md](dev/refactor-verification.md); the Rust API
@@ -426,6 +450,16 @@ which):
 | `blockN` | BlockId | `block1` |
 | `kN` | state key (a `u64`) — bytecode text, decimal; the IR text prints the same key as `key=0x…` hex | `k677…`, `key=0x5dff…` |
 | `slotN` | loop-cursor slot (bytecode only) | `slot0` |
+
+A state key names the *declaration*; the slot it selects at runtime is that key
+plus the call path that reached it (see
+[state-callsite-keying-plan.md](dev/state-callsite-keying-plan.md) §2). The path
+is a runtime value, so no static dump prints one — what the dumps carry is its
+static half: a call term's `call_site` id in `show-ir --json`, and `popN` on a
+`state_read`/`state_write` in the bytecode text (the number of enclosing loop
+steps the access drops to land on its declaration's slot, omitted when zero). A
+live path appears only in host state dumps, where `Env::get_state_json` renders
+it as `counter#1/[3]/count`.
 
 **Defaults are omitted in JSON.** Every JSON dump skips a field whose value
 is its default — a `null` option, a `false` boolean, an empty
@@ -792,7 +826,9 @@ The text form is designed to be read without cross-referencing:
   inline with its name: `Copy [t162(std::sum)]`.
 - **State ops show their identity**: `StateInit(count, key=0x5dff…)` /
   `StateRead(...)` / `StateWrite(...)` carry the state's name and key, so a
-  write visibly links to its init.
+  write visibly links to its init. The key identifies the *declaration*; which
+  slot it lands in also depends on the runtime call path, which no static dump
+  can show (see [Dump format conventions](#dump-format-conventions)).
 - **Phi carry-outs** print as a block footer: `phi-out: t126 -> t120 (x)`
   means "when this block's frame pops, copy `t126`'s value into `t120`'s
   register" (the `Phi` term for `x` in the parent block; see `Block.phi_outs`).
@@ -872,7 +908,8 @@ absence as the default (the shared rule — see
 | `register` | `number` | Register index for evaluation. Optional for imports — when any term omits it, the loader recomputes the whole assignment |
 | `state_key` | `number` | State key for StateInit/StateRead/StateWrite (omitted otherwise) |
 | `child_blocks` | `number[]` | BlockIds of child blocks, for control flow (omitted when empty) |
-| `in_loop` | `boolean` | Omitted when `false`. Marks state terms inside a loop body for per-iteration state. |
+| `path_pop` | `number` | Omitted when `0`. On a `StateRead`/`StateWrite`: how many enclosing loop steps the access drops from the live call path to address the slot its declaration owns (a `state` declared outside a loop and reassigned inside one). Always `0` on a `StateInit`, which *is* the declaration. |
+| `call_site` | `number` | Omitted when absent. On a `Call`/`MethodCall`/`BuiltinCall`: the callsite id (a `u64`) the callee's frame pushes onto its call path, which is what gives each callsite of a function its own `state` slots. Derived from the callee's spelling, its ordinal among identically-spelled callees in the enclosing function, and that function's module/name chain — never from term ids or spans, so it survives a hot reload. Hand-written IR may omit it; a call with no id contributes a shared id of `0`, i.e. one slot per declaration as before call-path keying. |
 | `collect` | `boolean` | Omitted when `false`. On a `ForLoop`/`NumericForLoop` term, marks a value-position loop (`x = for …`) that collects each iteration's body result into a list. |
 
 Execution order within a block is the block's ordered `terms` array (below).

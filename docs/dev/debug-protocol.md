@@ -40,12 +40,26 @@ so future additions stay backwards-compatible.
 | `pause` | — | Freeze frame loop. |
 | `resume` | — | Resume real-time playback. |
 | `step` | `n: int` (default `1`) | Advance N frames at fixed `dt = 1/60`. |
-| `state` | — | Dump all runtime state vars as JSON. |
-| `set_state` | `name: string`, `value: json` | Mutate one state var. |
+| `state` | — | Dump all runtime state vars as JSON. Top-level vars key by their (module-qualified) name; see the note below for in-function ones. |
+| `set_state` | `name: string`, `value: json` | Mutate one **top-level** state var. |
 | `capture_draw_commands` | — | Speculative run, no side effects. |
 | `input` | `keys_down?: string[]`, `mouse?: MouseInput`, `text?: string` | Inject input. `text` is delivered to the next frame's `text_input()`. |
 | `screenshot` | — | Return current frame as PNG data URL. |
 | `pending_report` | — | Structured per-frame report of every live pending resource. Replies in `pending`. |
+
+### `state` keys and the call path
+
+A `state` slot is keyed by its declaration *and* the call path that reached it,
+so a `state` inside a function holds one value per callsite / loop iteration.
+That shows up here only in the key strings `state` returns: a top-level
+declaration is still the bare name it has always been (`score`, `ui::theme`),
+while a pathed slot renders its path, name last — `counter#1/count`,
+`[3]/row/hovered`, `k1234…/leaf` (call step, loop step, explicit `state(key)`
+step). A pathed name always contains a `/`; a top-level one never does.
+
+`set_state` addresses top-level names only. Pathed keys are not settable and
+are rejected with the usual `No state variable named '…'` error — a value the
+host means to drive from outside belongs in a top-level `state var`.
 
 ### `MouseInput`
 

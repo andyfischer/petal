@@ -175,8 +175,8 @@ The same PNG encoder is used by the `--screenshot out.png --frames N` CLI flag.
 
 ### set_state
 
-Directly set a Petal state variable by name. Supports null, booleans, numbers,
-and strings.
+Directly set a **top-level** Petal state variable by name. Supports null,
+booleans, numbers, and strings.
 
 ```json
 {"cmd": "set_state", "name": "score", "value": 42}
@@ -185,6 +185,12 @@ and strings.
 ```json
 {"ok": true}
 ```
+
+A `state` declared inside a function is keyed by the call path that reached it,
+so it has no bare name to address: the `state` dump lists it under a pathed key
+(`counter#1/count`, `[3]/row/hovered`), and `set_state` rejects that key with
+`No state variable named '…'`. Anything an agent drives from outside belongs in
+a top-level `state var`. See docs/dev/debug-protocol.md for the key shapes.
 
 ## Error Handling
 

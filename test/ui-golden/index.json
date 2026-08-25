@@ -1,5 +1,5 @@
 {
-  "note": "sha256 of each UI app trace; see docs/dev/refactor-verification.md \u00a75",
+  "note": "sha256 of each UI app trace; see docs/dev/refactor-verification.md §5",
   "config": {
     "frames": 60,
     "scenario": "monkey:1",
@@ -27,7 +27,7 @@
     "examples/productivity/vector-editor/app.ptl/monkey-1-s1": "463199d9c24ea5d5db7176f6f32d2955c64f3c4cbde341e70602b207fdd34e8f",
     "garden/examples/panels/direct-manipulation.ptl/monkey-1-s1": "ab9f91cf9394e2bc118a2219855a879821ace923a8365046b68a519e3ade3c0c",
     "garden/examples/panels/drag-to-edit.ptl/monkey-1-s1": "5ac344f426b930fe91f1cab91c0bb9a2f8c56be21381d56dad2c1de297fe9114",
-    "garden/examples/panels/plant.ptl/monkey-1-s1": "585e69ba3c915eef265228ca789e53a39867d240047a16f9e806fa8a09627c30",
+    "garden/examples/panels/plant.ptl/monkey-1-s1": "7cc42770c1692cfd68945dcab955f891b33abadeda2c979e34a13dc1d56798cf",
     "garden/examples/panels/shapes.ptl/monkey-1-s1": "bfcd2b5076623e5276568c7daeb61dd55c17ed140f00fd69d781b3f15c5ee20c",
     "garden/examples/panels/sketch.ptl/monkey-1-s1": "ae7b42ada8a234875e80fe82f65329c9d71002f369fa95515f46d68c32a390a8",
     "sample-apps/diagram-canvas/examples/flowchart.ptl/monkey-1-s1": "1f1beeeab49e819308d7fd55755a16a3e47474676ad05ff3211e042422ab94ce",

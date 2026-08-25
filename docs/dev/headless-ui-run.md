@@ -52,7 +52,11 @@ One object per line, one line per frame, frames numbered from 0:
 - `commands` — the frame's `DrawCommand`s, serialized as the draw protocol
   spells them (`op`-tagged, defaults omitted).
 - `state` — every `state` variable, keyed by module-qualified name
-  (`Headless::state()`).
+  (`Headless::state()`). A slot reached through a call path is keyed by that
+  path instead, name last (`counter#1/count`, `[3]/row/hovered`,
+  `k1234…/leaf`); top-level names are unchanged. An app that gains or loses
+  such a slot changes its trace's byte shape, so its `test/ui-golden`
+  hash rotates.
 - `prints` — what *this frame* printed, drained per frame.
 - `result` — the value the script's top level returned.
 - `error` — `null`, or the runtime error message on the frame that failed.

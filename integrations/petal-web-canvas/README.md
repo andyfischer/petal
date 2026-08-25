@@ -106,6 +106,13 @@ declaration is skipped with a one-time console warning.
 Under the hood this is `PetalRuntime.set_state_json` — no per-frame recompile,
 no WASM reload.
 
+Props bind to **top-level** `state` declarations only. A `state` inside a
+function is keyed by the call path that reaches it (one slot per callsite / loop
+iteration), so it has no bare name: `getState()` returns it under a pathed key
+like `counter#1/count`, and `setProp` cannot address it — that key is skipped
+with the same warning as any unmatched prop. Keep host-driven values at top
+level, which is where every prop-bound declaration already lives.
+
 ## Examples
 
 `examples/*.ptl`:

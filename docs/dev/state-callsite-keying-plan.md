@@ -466,7 +466,7 @@ Landed over 2026-08-24/25 on `state-callsite-keying`:
 | Phase | Commit(s) | What |
 |---|---|---|
 | 0 — decl ids | `54688db` | `state_key_for` derives the declaration id from the full name path; same-name collisions gone; top-level keys byte-identical |
-| 1 — lint + migration | `4043b8d`, `b059275`, `ac27e4a` | `state-shared-callsites` warning; console examples rewritten as teaching examples; the `_theme_slot`/`_cell` accessor idiom deleted from `ui.ptl`/`nes.ptl`/`nes_sound.ptl`/`game.ptl` |
+| 1 — lint + migration | `4043b8d`, `b059275`, `ac27e4a` | `state-shared-callsites` warning (temporary; deleted after the flip — see below); console examples rewritten as teaching examples; the `_theme_slot`/`_cell` accessor idiom deleted from `ui.ptl`/`nes.ptl`/`nes_sound.ptl`/`game.ptl` |
 | 2 — the flip | `66fd42f`, `d77ef70`, `e65e195` | `PathPart`, per-frame path, `in_loop`/`idx_ctx` removal, `call_site` on call terms, escape restriction, the test sweep |
 | 3 — tooling | `3e348e2` | one path renderer in `get_state_json`, `ir-equal` sensitivity docs, dump docs, one golden re-baselined |
 | 4 — docs | this commit and its siblings | §6's rewrite list |
@@ -543,25 +543,30 @@ call); `fib(27)` within noise; a 3M-iteration top-level state loop ~6%; a
 shallow call-heavy widget tree with no state ~5%. The rolling-hash mitigation
 stays designed-but-deferred, as §3.2 allowed.
 
+### Resolved after the flip
+
+- **The `state-shared-callsites` lint was deleted** (user decision,
+  2026-08-25). It was a Phase 1 *migration* warning, and the flip made its
+  premise false: it announced that "`state` is moving to per-call-path keying"
+  and fired on an in-function `state` with several callsites — which is now the
+  intended per-callsite-counter idiom and behaves correctly. Gone with it:
+  `rust/src/typecheck/state_callsites.rs`, its registration in
+  `compiler/mod.rs`, `rust/tests/state_shared_callsites.rs`, and its row in
+  `docs/CLI.md`'s compile-time-lints table.
+
+- **Code doc-comments named in §6** are clean. `escape.rs` no longer mentions
+  `in_loop` anywhere (the Phase 2 commits took those comments with the field),
+  and `transfer_state.rs`'s test-module comment now says "pathed keys" instead
+  of "loop-indexed keys".
+
 ### Still outstanding
 
 - **Phase 5 — ecosystem.** The vendored WASM build for petal-lang.org and
   hotlaps has not been rebuilt/re-vendored (`~/biz/petal-lang.org/docs/
   how-to-update-petal.md`). Their scripts are top-level-only, so no source
   changes are needed — only the rebuild.
-- **The `state-shared-callsites` lint is now stale**
-  (`rust/src/typecheck/state_callsites.rs`). Its message is future-tense
-  ("`state` is moving to per-call-path keying") and it fires on code that is
-  correct by design under the shipped model — an in-function `state` with
-  several callsites is now the intended per-callsite-counter idiom. It breaks
-  no test, but it is a warn-by-design false positive and needs a decision:
-  reword as an informational note, narrow it to the accessor shape it was
-  written for, or delete it.
 - **Structural path repair in `transfer_state`** (§3.5, explicitly out of scope
   for v1): remapping old paths onto new ones when a single callsite ordinal
   shifted. Worth revisiting if the accepted-loss class (deleting the first of
   two `f()` calls hands the survivor the first one's state) causes pain in the
   Garden live-editing workflow.
-- **Code doc-comments named in §6** that no phase owned: `escape.rs`'s module
-  docs still mention `in_loop` at ~98 and ~279, and `transfer_state.rs`'s
-  test-module comment still says "loop-indexed keys".

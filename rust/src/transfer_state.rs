@@ -81,7 +81,7 @@ impl Env {
 /// Unit tests for the stack-local half, driven against a bare `Stack` — no
 /// program, no Env, no run loop. The `transfer_state_*` tests below cover the
 /// same reshaping end-to-end through real programs; these pin the reshaping
-/// rules themselves, including cases (loop-indexed keys, a mid-run stack with
+/// rules themselves, including cases (pathed keys, a mid-run stack with
 /// captured functions) that are awkward to set up through a source program.
 #[cfg(test)]
 mod stack_state_tests {

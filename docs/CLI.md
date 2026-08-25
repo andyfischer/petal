@@ -163,12 +163,8 @@ or `{message, line, column, phase, errors, ...}` on a hard failure — see
 
 The same `warnings` channel carries a handful of checks that are not about
 types: a discarded pure call (`push(xs, x)` whose new list is thrown away), a
-function that captures a module `state` rebound below it (one run behind), a
-call to a declaration further down the file that could not be hoisted, and:
-
-| Lint | Fires on |
-| --- | --- |
-| `state-shared-callsites` | A `state` declared **inside a function** whose enclosing function is called from two or more places, or from inside a `for`/`while`. Those calls all reach one slot today, and will each get their own once `state` is keyed by call path (see [dev/state-callsite-keying-plan.md](dev/state-callsite-keying-plan.md)). If the sharing is deliberate, move the value to a top-level `state var` and read and write it with `get`/`set` — one cell under both rules. `state(key) name = …` never fires: an explicit key is absolute and ignores the call path. |
+function that captures a module `state` rebound below it (one run behind), and
+a call to a declaration further down the file that could not be hoisted.
 
 Lints follow the same rules as every other warning: non-fatal, on stderr in
 text mode, in the `warnings` array with `--json`, and turned into a non-zero

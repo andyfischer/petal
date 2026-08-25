@@ -54,9 +54,13 @@ One object per line, one line per frame, frames numbered from 0:
 - `state` — every `state` variable, keyed by module-qualified name
   (`Headless::state()`). A slot reached through a call path is keyed by that
   path instead, name last (`counter#1/count`, `[3]/row/hovered`,
-  `k1234…/leaf`); top-level names are unchanged. An app that gains or loses
-  such a slot changes its trace's byte shape, so its `test/ui-golden`
-  hash rotates.
+  `k1234…/leaf`); top-level names are unchanged. Those key strings are derived
+  from names and structure, never from spans, so they are stable run to run and
+  across platforms — but an edit that adds, removes or *moves* a call around a
+  `state` changes which slots exist and what they are called, so the app's
+  `test/ui-golden` hash rotates. That rotation is a real behavior change to
+  eyeball, not formatting noise; see
+  [refactor-verification.md](refactor-verification.md).
 - `prints` — what *this frame* printed, drained per frame.
 - `result` — the value the script's top level returned.
 - `error` — `null`, or the runtime error message on the frame that failed.

@@ -178,6 +178,21 @@ The checks:
    semantic rewrite (`if`→`match`) it fails and we fall through. (A weaker
    variant, `bytecode-equal` post-optimization, might catch more semantic
    rewrites; worth an experiment.)
+
+   **Call structure is part of the IR being compared** (since call-path keyed
+   `state` landed, 2026-08-25). Each call term carries a `call_site` id and
+   `ir_equiv` compares it, so *extract a helper*, *inline one*, *move a call
+   into another function*, or *add an earlier call to the same callee* are all
+   reported as differences. That is correct, not noise: a `state` slot is
+   keyed by the call path that reaches it, so those rewrites genuinely change
+   which state is shared with what. The consequence for this plan is that
+   **`ir-equal` is not the check for a call-moving refactor** — it will
+   correctly refuse to certify one. Fall through to `run-diff`, which compares
+   observable behavior and is the only thing that can say a call move was
+   safe. The reverse is unchanged: reformatting, re-indenting, renaming a
+   non-callee local, and edits elsewhere in the file all still pass, because
+   the id is derived from names and structure rather than positions. See
+   [../CLI.md](../CLI.md) (`ir-equal`) for the exact sensitivity list.
 3. **control-run** — run the *before* side twice with the same seed/scenario.
    If they differ, the file is reported as nondeterministic and skipped, with
    the first divergence shown so the missing knob can be added.
@@ -218,7 +233,12 @@ PETAL_SEED=2 petal-ui run examples/games/snake/app.ptl \
 
 - `petal lint --fix --verify`: after rewriting, run `ir-equal` (and `run-diff`
   for semantic passes like `to_match`) on the file it just changed; refuse to
-  write on failure. Makes the linter self-checking.
+  write on failure. Makes the linter self-checking. The formatting pass never
+  touches call structure, so `--verify` still proves it outright; the
+  identity-cast pass *deletes call terms*, which renumbers later calls to the
+  same callee in that function — one more reason it is in the
+  expected-to-differ set that `--verify=ir` waves through and `--verify=strict`
+  sends to a run-diff.
 - `make test`: run the UI golden check (step 5) over the checked-in scenarios,
   so the apps get the same regression protection console examples have.
 - CI: `verify --plan compiler.json` on PRs touching `rust/src/backend` or

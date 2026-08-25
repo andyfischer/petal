@@ -76,8 +76,10 @@ field on the result rather than a convention:
   over-approximating is the correct answer, and the previous `Downstream (0)`
   on a `set` was not.
 - `explain`: runs the program, so it resolves the boundary to the exact write
-  (matched on `CellId`, so one declaration term minting several cells —
-  `state(key) var`, or a `var` in a loop body — does not confuse two of them)
+  (matched on `CellId`, so one declaration term minting several cells does not
+  confuse two of them — `state(key) var`, a `var` in a loop body, or a
+  `state var` inside a function, which since call-path keying mints one cell
+  per callsite and per loop iteration around it)
   and **continues the chain through it**, valuing everything after the hop as
   of that write's execution. It also lists every recorded write in order, and
   reports `truncated` when `max_depth` cuts the chain short.
@@ -176,8 +178,8 @@ override with `PETAL_DEBUG_URL`). All responses share the shape
 | `DiagramPause` | — | Freeze frame loop for inspection |
 | `DiagramResume` | — | Resume real-time playback |
 | `DiagramStep(n)` | `draw_commands[]` | Advance N frames (fixed `dt = 1/60`) |
-| `DiagramState` | `state{}` | Dump all runtime state vars as JSON |
-| `DiagramSetState(name, value)` | updated `state{}` | Mutate a state var |
+| `DiagramState` | `state{}` | Dump all runtime state vars as JSON. Top-level vars key by their bare name; a slot reached through a call path keys by that path, name last (`counter/count`) — see [debug-protocol.md](debug-protocol.md) |
+| `DiagramSetState(name, value)` | updated `state{}` | Mutate a **top-level** state var (pathed keys are not addressable) |
 | `DiagramCaptureDrawCommands` | `draw_commands[]` | Speculative run, no side effects |
 | `DiagramScreenshot` | `screenshot: data:image/png;base64…`, `file` | PNG saved to `./temp/` |
 | `DiagramInput({keys_down, mouse})` | — | Inject keyboard/mouse state |

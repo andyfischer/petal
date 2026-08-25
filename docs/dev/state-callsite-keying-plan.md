@@ -1,7 +1,14 @@
 # Plan: call-path keyed `state` (React-`useState` semantics)
 
-Status: **proposed** — research complete, not started.
-Date: 2026-08-24
+Status: **IMPLEMENTED** — 2026-08-25. Phases 0-4 landed; Phase 5 (ecosystem
+re-vendor) is the only piece outstanding.
+Date: 2026-08-24 (planned), 2026-08-25 (shipped)
+
+The sections below are preserved as written, as the *intent*. Where the
+implementation diverged from them, [§10](#10-what-actually-shipped) is
+authoritative — read it before trusting a detail here. The user-facing
+description of the shipped semantics lives in docs/language-guide.md and
+docs/dev/Architecture.md ("State" → "Keying").
 
 ## 1. Motivation
 
@@ -449,3 +456,112 @@ state-lazy-init/bug-state-in-if ts suites, ui-golden hashes.
 - **Do we want sugar for the shared case later?** (`state shared x`, or a
   `module state` form) — out of scope; the top-level `state var` idiom is the
   answer for v1, and the lint points at it.
+
+---
+
+## 10. What actually shipped
+
+Landed over 2026-08-24/25 on `state-callsite-keying`:
+
+| Phase | Commit(s) | What |
+|---|---|---|
+| 0 — decl ids | `54688db` | `state_key_for` derives the declaration id from the full name path; same-name collisions gone; top-level keys byte-identical |
+| 1 — lint + migration | `4043b8d`, `b059275`, `ac27e4a` | `state-shared-callsites` warning; console examples rewritten as teaching examples; the `_theme_slot`/`_cell` accessor idiom deleted from `ui.ptl`/`nes.ptl`/`nes_sound.ptl`/`game.ptl` |
+| 2 — the flip | `66fd42f`, `d77ef70`, `e65e195` | `PathPart`, per-frame path, `in_loop`/`idx_ctx` removal, `call_site` on call terms, escape restriction, the test sweep |
+| 3 — tooling | `3e348e2` | one path renderer in `get_state_json`, `ir-equal` sensitivity docs, dump docs, one golden re-baselined |
+| 4 — docs | this commit and its siblings | §6's rewrite list |
+
+The semantics in §2 shipped as specified: per-callsite slots, per-iteration
+slots, one slot per recursion depth, absolute `state(key)`, unchanged
+top-level state, and the §2.5 host-entry rule (`hash("host " ‖ name)`).
+
+### Deviations from the plan
+
+1. **`Term::path_pop` was added — the plan has no such field.** §3.4 said only
+   to delete the `in_loop` copy-through, and §7 predicted the two
+   `state_lifecycle.rs` in-loop accumulation tests would "now assert
+   per-iteration". Implemented literally, that does not produce per-iteration
+   semantics; it produces a *broken* slot. `state xs = []` at top level with
+   `xs = append(xs, i)` inside a `for` writes `{xs,[Index(i)]}` while the
+   `StateInit` and every reader address `{xs,[]}`, so the persisted slot stays
+   `[]` and the accumulation is lost. (Verified by hand-zeroing `path_pop` in
+   a `show-ir --json` document: the run leaves `xs: []` plus four orphan
+   `[0]/xs` … `[3]/xs` slots.) `path_pop` is the static count of loop bodies
+   between a declaration and an access — always well-defined, because
+   assigning to a captured binding is a compile error, so the two are always
+   in one function. Both `state_lifecycle` tests therefore still assert
+   base-slot accumulation.
+2. **`call_site` is a `Term` field, not a side table or an `Inst` operand.**
+   §3.4 left the choice open. `Program.terms` already *is* the `TermId`-indexed
+   table, so lookup is an array index on the hot call path, and the field rides
+   the IR serialization and `ir_equiv` comparison that `state_key` already used.
+3. **`VmFrame` carries the whole path, not a parent pointer.** §3.3 offered
+   either. `recycle()` clears the vector but keeps its buffer and
+   `frame_from_pool` extends the caller's parts into it, so a warm pool copies
+   without allocating — which took the shallow-call cost from ~15% to ~5%.
+4. **`StmtKind::State.id` was deleted, not repurposed** (§8.7 offered both). It
+   is a global parse-order counter; the shadow ordinal has to be per-function
+   and per-name, so the compiler derives its own in `state_key_for`.
+5. **escape.rs needed no fixture adjustments.** §3.7 predicted "adjusted
+   fixtures" for `copy_elision.rs` / `backend/bytecode/tests.rs`; the v1 rule
+   ("state-rooted elision only where the `StateInit`'s path is statically
+   empty") left all four `inplace_fires_*` fixtures green unchanged.
+6. **The state-JSON rendering changed shape more than §3.6 implies, and rotated
+   exactly one golden — not all of them.** Loop and explicit-key parts became
+   ordinary path steps (`[0]/[1]/xs`, `k1234…/leaf`) rather than keeping the
+   old `name[0,1]` / `name[k…]` suffix, which is what §8.5's "one renderer"
+   costs. §3.6 predicted "**all** `test/ui-golden/index.json` hashes rotate";
+   in fact Phase 2 rotated none and Phase 3 rotated one
+   (`garden/examples/panels/plant.ptl`, the `state(key)` lineage app), because
+   almost no traced app has in-function `state` at all. That diff was
+   machine-checked before re-baselining: `state` was the only field that moved
+   in any of 60 frames, and rewriting each old key `name[parts]` to
+   `parts/name` reproduced the new trace exactly.
+7. **Intrinsic closures get the intrinsic's callsite, not a per-element index.**
+   `map`/`filter`/`reduce`/`sort`/`forEach` thread the `BuiltinCall` term's
+   `call_site` through to the closure, so `map(xs, widget)` gives `widget`'s
+   `state` one slot per `map` callsite, shared across elements. §2.1 defines
+   `Index` parts as coming from `for`/`while` only and is silent on intrinsics;
+   per-element keying there would be a follow-up.
+8. **`ir_equiv` compares `path_pop` too**, not just `call_site` (§3.4).
+9. **Callsite labels in host dumps are display-only and numbered globally.**
+   §3.6 asked for `main/counter#1/count`; the `#n` in a rendered label is
+   assigned per identical callee spelling in *term* order across the whole
+   program, not per enclosing function as the compiler numbers ordinals. The
+   slot is keyed by the hash, never by the string, so this costs a reader
+   accuracy and nothing else.
+10. **Hand-written IR and legacy documents degrade rather than fail.** A call
+    term with no `call_site` contributes id 0, so every such call shares one
+    part — exactly the pre-flip one-slot-per-declaration behavior. A stale
+    `in_loop` field is ignored (unknown fields deserialize away).
+
+### Measured cost (§9's open question)
+
+Release binaries, pre-flip vs post-flip on identical sources: deep recursion
+(depth 300, 6M calls) 3.62 s → 5.06 s (**1.40×**, the O(depth) path copy per
+call); `fib(27)` within noise; a 3M-iteration top-level state loop ~6%; a
+shallow call-heavy widget tree with no state ~5%. The rolling-hash mitigation
+stays designed-but-deferred, as §3.2 allowed.
+
+### Still outstanding
+
+- **Phase 5 — ecosystem.** The vendored WASM build for petal-lang.org and
+  hotlaps has not been rebuilt/re-vendored (`~/biz/petal-lang.org/docs/
+  how-to-update-petal.md`). Their scripts are top-level-only, so no source
+  changes are needed — only the rebuild.
+- **The `state-shared-callsites` lint is now stale**
+  (`rust/src/typecheck/state_callsites.rs`). Its message is future-tense
+  ("`state` is moving to per-call-path keying") and it fires on code that is
+  correct by design under the shipped model — an in-function `state` with
+  several callsites is now the intended per-callsite-counter idiom. It breaks
+  no test, but it is a warn-by-design false positive and needs a decision:
+  reword as an informational note, narrow it to the accessor shape it was
+  written for, or delete it.
+- **Structural path repair in `transfer_state`** (§3.5, explicitly out of scope
+  for v1): remapping old paths onto new ones when a single callsite ordinal
+  shifted. Worth revisiting if the accepted-loss class (deleting the first of
+  two `f()` calls hands the survivor the first one's state) causes pain in the
+  Garden live-editing workflow.
+- **Code doc-comments named in §6** that no phase owned: `escape.rs`'s module
+  docs still mention `in_loop` at ~98 and ~279, and `transfer_state.rs`'s
+  test-module comment still says "loop-indexed keys".

@@ -61,6 +61,15 @@ step). A pathed name always contains a `/`; a top-level one never does.
 are rejected with the usual `No state variable named '…'` error — a value the
 host means to drive from outside belongs in a top-level `state var`.
 
+For an agent polling `state` across frames: within one loaded program the key
+strings are stable, so diffing two dumps is meaningful. Across a hot reload
+they are not a stable identity — the callee names and `#n` ordinals in a path
+are a *display* label recovered from the program, and an edit that adds a call
+can renumber them, while an edit that moves a call genuinely moves the slot.
+Match on the trailing variable name (after the last `/`) when following one
+declaration across an edit, and use a top-level `state var` for anything the
+agent needs to address reliably.
+
 ### `MouseInput`
 
 The canonical shape is an object:

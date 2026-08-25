@@ -172,6 +172,17 @@ loading state on frame 1. With it, that line means exactly what it looks like:
 "initialize this state from the fetch, once it arrives." This is likely the
 single most-used pattern of the whole feature.
 
+The rule is **per slot, not per declaration**, and since call-path keying
+(2026-08-25) a slot is the declaration plus the call path that reached it. So
+`fn card(id) state u = fetch(user_url(id)) … end` called from a `for` over ten
+ids issues ten independent fetches into ten slots, each committing when its own
+resolves — nine cards render while the tenth is still pending, with no
+`state(key)` needed. Two callsites of one such helper likewise do not share a
+loading state. The mechanics: `Inst::StateWrite` skips the store insert when
+`init` is set and the value is Pending (`vm/dispatch.rs`), and the key it would
+have written is the fully-pathed `RuntimeStateKey`, so nothing about the
+no-commit rule is key-scheme-dependent.
+
 Implementation note: this makes `StateInit`'s "miss" path re-enterable across
 frames, which interacts with the phi/loop-carry machinery
 (`compiler/phi.rs`) — needs a dedicated test alongside the existing

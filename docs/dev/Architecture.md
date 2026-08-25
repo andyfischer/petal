@@ -117,7 +117,8 @@ pub struct Term {
     pub register: RegisterIndex,       // stack slot for result
     pub state_key: Option<StateKey>,   // for StateInit/Read/Write
     pub child_blocks: SmallVec<[BlockId; 2]>,
-    pub in_loop: bool,
+    pub path_pop: u32,                 // StateRead/Write: loop steps to drop
+    pub call_site: Option<u64>,        // Call/MethodCall/BuiltinCall: callsite id
     pub collect: bool,                 // value-position loop collects its results
 }
 ```
@@ -410,29 +411,82 @@ result, source line/column) into a ring buffer. Default capacity is
   even though the term sits in the root block that re-runs every frame.
 - `StateRead` — reads the current value for the resolved runtime key.
 - `StateWrite` — writes a new value (used for `+=`, direct assignment).
-  Forwards the same explicit-key input as the matching `StateInit` so the
-  resolved `RuntimeStateKey` agrees.
+  Forwards the same explicit-key input as the matching `StateInit`, and
+  carries its own `path_pop` (how many loop levels lie between that
+  declaration and this write), so the resolved `RuntimeStateKey` agrees with
+  the declaration's.
 
 ### Keying
 
-Each declaration gets a static `StateKey` hashed from its source-level
-name. The runtime composes a `RuntimeStateKey` per access:
+A slot is a **declaration** plus the **call path that reached it** — the
+React-`useState` model. One `state` declaration inside a function therefore
+holds one value per callsite, per loop iteration around that callsite, and
+per recursion depth. Both halves of the key are derived from names and
+structure, never from `TermId`s or spans, so they survive a hot reload. The
+full spec is [state-callsite-keying-plan.md](state-callsite-keying-plan.md).
 
-- Top-level `state x`: `RuntimeStateKey { base, loop_indices: [] }`
-- Inside a loop, default form `state x`: `loop_indices` filled from each
-  active loop's iteration index. Stable as long as the iterated list
-  doesn't reorder or shrink.
-- Explicit-key form `state(expr) x`: the computed `expr` is hashed into
-  `loop_indices: [Explicit(hash)]`. This is the recommended form when an
-  iterated collection has a domain identifier (entity id, slot name) —
-  state survives reordering and item removal, since the key follows the
-  data.
+**The declaration id** (`Term::state_key`, a `StateKey`, built by
+`Compiler::state_key_for`) hashes the declaration's full name path: the
+module qualifier (`ui::`), the enclosing function-name chain (`draw/row/`),
+the variable name, and a shadow ordinal (`#1`, `#2`, …) separating repeated
+declarations of one name in one function. A top-level declaration hashes
+exactly its bare (module-qualified) name — the same key it had before
+call-path keying, so persisted state carried over the change untouched. Two
+functions declaring the same state name can no longer collide.
+
+**The path** (`RuntimeStateKey::path`, `stack.rs`) is a `SmallVec` of
+`PathPart`s, composed incrementally as the program runs rather than walked
+at access time:
+
+- `Call(site)` — pushed onto a frame's path when it is entered, taken from
+  `Term::call_site` on the call term (`Compiler::call_site_for`): a hash of
+  the callee's canonical text (`f`, `obj.method`, `m::f`), its ordinal among
+  identically-spelled callees in the enclosing function, and that function's
+  module/name chain.
+- `Index(i)` — the current 0-based iteration of an enclosing `for`/`while`,
+  pushed at *every* level of the live frame stack, not just the declaring
+  function's. Positional: reordering the iterated list moves the slots.
+- `Key(h)` — an explicit `state(expr)` key, hashed.
+
+`Vm::state_key` (`vm/frame.rs`) then composes an access:
+
+- Top-level `state x`: the root path is empty, so the key is
+  `{ base, path: [] }` — byte-identical to the pre-path scheme.
+- `state x` in a function: the frame's whole live path — its callsite chain
+  plus whatever loop iterations it is inside right now.
+- Explicit-key `state(expr) x` is **absolute**: the path is exactly
+  `[Key(hash)]` and the call path is ignored. This is the escape hatch for
+  "same entity ⇒ same slot, no matter who asks", and the recommended form
+  when an iterated collection has a domain identifier (entity id, slot
+  name) — state then survives reordering, removal and a change of recursion
+  depth, because the key follows the data.
+- A reassignment nested deeper in loops than its declaration drops that many
+  innermost `Index` parts (`Term::path_pop`, a compile-time count), so the
+  accumulator idiom — `state xs = []` at the top level, `xs = append(xs, i)`
+  inside a `for` — still writes the one persisted slot.
+- A host call (`Env::call_function`) has no caller frame, so it runs on a
+  root path of a single `Call` part derived from the name the host asked
+  for: repeated host calls of one function share slots with each other, but
+  never with an in-program call of the same function.
 
 That means:
 
-- Reordering code doesn't reshuffle state across hot reloads.
-- Renaming or deleting a state variable drops the old slot cleanly.
+- Editing anywhere that isn't the call structure around a `state` — adding
+  statements, renaming an unrelated local, reformatting — leaves every slot
+  where it was across a hot reload.
+- Renaming or deleting a state variable, or moving its declaration between
+  functions or modules, drops the old slot cleanly.
 - Adding a new state variable falls through to `StateInit` on the next tick.
+- Renaming a callee, or adding/removing an *earlier* call to the same callee
+  in the same function, shifts that callsite's ordinal and therefore its id.
+  The slots below the old id are orphaned (the sweep below reclaims them) and
+  the call adopts whatever the id it moved onto holds — so deleting the first
+  of two `f()` calls hands the survivor the first one's state. Same
+  accepted-loss class as renaming a state variable; `state(key)` is the
+  escape hatch when a slot must be immune to it.
+- Genuinely shared, cross-function state is a top-level `state var` cell read
+  and written with `get`/`set` — not a function wrapping a `state`, which now
+  gives each of its callers a private slot.
 
 ### Lifecycle
 
@@ -440,8 +494,9 @@ That means:
 `sweep_untouched_state`. Every `StateInit`/`StateRead`/`StateWrite`
 records the `RuntimeStateKey` it touched; on completion, entries that
 weren't touched this run are dropped. This is what reclaims state for
-removed list items and for `state` declarations deleted on hot reload —
-without it, the persistent store would grow unboundedly.
+removed list items, for `state` declarations deleted on hot reload, and for
+call paths a run stopped taking (a branch not entered, a callsite an edit
+removed) — without it, the persistent store would grow unboundedly.
 
 `reset_stack` preserves the state store while rewinding execution — that's
 what makes `petal-sdl`'s hot reload work. `snapshot_state` /

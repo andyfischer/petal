@@ -102,8 +102,9 @@ introduces over the raw `show-ir` dump is the validation pass.
 - **Defaults are omitted on the wire.** Every field whose value is its default
   — `null` options (`name`, `state_key`, `parent_term_id`, `self_ref_register`,
   `hint`, …), empty arrays (`inputs`, `child_blocks`, `param_names`,
-  `capture_names`, `functions`, …), `false` booleans (`has_errors`, `in_loop`,
-  `collect`), empty strings/maps (`source`, `source_map`, `match_arms`) — is
+  `capture_names`, `functions`, …), `false` booleans (`has_errors`,
+  `collect`), zero counts (`path_pop`), empty strings/maps (`source`,
+  `source_map`, `match_arms`) — is
   simply absent. Loaders must treat absence as the default; emitters may write
   the explicit default value, which loads identically.
 - **Execution order is declarative**: each block carries an ordered `terms`
@@ -170,13 +171,20 @@ table and file-tagged spans (see docs/module-system.md):
   "register": 4,                   // optional — omit and the loader reassigns
   "state_key": 1234,               // required for State* ops, else omitted
   "child_blocks": [BlockId, ...],  // omitted when empty
-  "in_loop": true                  // omitted when false
+  "path_pop": 1,                   // StateRead/StateWrite only; omitted when 0
+  "call_site": 8765                // call ops only; omitted when absent
 }
 ```
 
 `block_id` is required and must agree with the block whose `terms` array
 lists the term (the redundancy is deliberate: it makes single-term lookups
 O(1) and lets the validator catch listing mistakes).
+
+`state_key`, `path_pop` and `call_site` together carry the **static half of
+the state-keying contract** — see [State keying](#state-keying) below. An
+emitter that never emits `State*` ops can ignore all three; one that does
+must read that section, because `call_site` lives on *call* terms, not on
+state terms.
 
 ### Binding phantoms and builtins
 
@@ -229,12 +237,12 @@ emitter should not imitate that.
 | `Return` | 0 or 1 | 0 | — | `inputs=[value]`, or empty for bare return |
 | `MakeClosure` | = `capture_names.len()` | 0 | `FunctionId` | inputs are captured values, in capture order |
 | `MakeOverloadSet` | ≥1 | 0 | — | inputs are closure terms, one per arity |
-| `Call` | ≥1 | 0 | — | `inputs=[callable, arg0, ...]` |
-| `MethodCall` | ≥1 | 0 | `{name: ConstantId, hint?: ConstantId}` | `inputs=[object, arg0, ...]`; `hint` (omitted when absent) names a class for live-edit dispatch |
-| `BuiltinCall` | ≥0 | 0 | `ConstantId` (builtin name, a String constant) | direct builtin call, resolved by name at lower time; `inputs=[arg0, ...]` — **the way an emitter calls a builtin** |
-| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); optional `inputs=[explicit_key]` for `state(expr) name` |
-| `StateRead` | 0 | 0 | — | `state_key` required |
-| `StateWrite` | 1 or 2 | 0 | — | `inputs=[value]` or `[value, explicit_key]`, `state_key` required |
+| `Call` | ≥1 | 0 | — | `inputs=[callable, arg0, ...]`; optional `call_site` ([State keying](#state-keying)) |
+| `MethodCall` | ≥1 | 0 | `{name: ConstantId, hint?: ConstantId}` | `inputs=[object, arg0, ...]`; `hint` (omitted when absent) names a class for live-edit dispatch; optional `call_site` |
+| `BuiltinCall` | ≥0 | 0 | `ConstantId` (builtin name, a String constant) | direct builtin call, resolved by name at lower time; `inputs=[arg0, ...]` — **the way an emitter calls a builtin**; optional `call_site` |
+| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); optional `inputs=[explicit_key]` for `state(expr) name`. `path_pop` is ignored here (the lowering forces 0): a `StateInit` *is* the declaration |
+| `StateRead` | 0 | 0 | — | `state_key` required; optional `path_pop` |
+| `StateWrite` | 1 or 2 | 0 | — | `inputs=[value]` or `[value, explicit_key]`, `state_key` required; optional `path_pop` |
 | `CellNew` | 1 | 0 | — | allocate the cell behind a `var`; `inputs=[init]` |
 | `CellRead` | 1 | 0 | — | dereference a cell; `inputs=[cell]` |
 | `CellWrite` | 2 | 0 | — | write through a cell (`set x = …`); `inputs=[cell, value]` |
@@ -248,6 +256,41 @@ emitter should not imitate that.
 | `AllocElement` | = `prop_keys.len()` + #children | 0 | `{tag: ConstantId, prop_keys: [ConstantId]}` | first `prop_keys.len()` inputs are prop values, the rest are children |
 | `MakeEnumVariant` | ≥0 | 0 | `ConstantId` (variant name) | inputs are field values |
 | `Match` | 1 | = #arms | — | `inputs=[subject]`, `child_blocks` are arm body blocks; arm metadata in `match_arms[termId]` |
+
+### State keying
+
+A persistent state **slot** is a pair: the declaration's `state_key`, plus
+the **call path** the running program took to reach it. Two executions land
+on the same slot only if they arrive through the same declaration via the
+same chain of callsites and loop iterations, so one `state` declaration
+inside a function holds one value per callsite (see
+[state-callsite-keying-plan.md](state-callsite-keying-plan.md) for the full
+semantics). The path itself is a runtime value — the VM builds it as frames
+are pushed and loops iterate — so the IR carries only its *static* half,
+across three fields:
+
+| Field | On | Meaning |
+|---|---|---|
+| `state_key` | `StateInit` / `StateRead` / `StateWrite` | the **declaration id**: a `u64` naming the declaration site. Petal's compiler hashes the module qualifier, the enclosing function-name chain, the variable name and a shadow ordinal, so a top-level declaration hashes its bare name. An emitter is free to pick any `u64`, as long as it is stable across recompiles of unchanged source (that stability is the whole hot-reload contract) and unique per declaration. |
+| `call_site` | `Call` / `MethodCall` / `BuiltinCall` | the **callsite id**: the `u64` the callee's frame pushes onto its path. Petal's compiler hashes the callee's canonical text, its ordinal among identically-spelled callees in the same function, and that function's module/name chain — names and structure only, never term ids or spans. |
+| `path_pop` | `StateRead` / `StateWrite` | how many *innermost loop steps* this access drops from the live path to reach the slot its declaration owns — i.e. the number of loop bodies between the declaration and this access. |
+
+Rules for an emitter:
+
+- **Omitting `call_site` is legal and means "id 0".** Every call with no id
+  shares one path part, which reproduces the older one-slot-per-declaration
+  behavior. A document with no `state` anywhere can ignore the field
+  entirely.
+- **`path_pop` is not optional if you emit both a `StateInit` outside a loop
+  and a write to it inside one.** A top-level `state xs = []` reassigned
+  inside a `for` needs `path_pop: 1` on that `StateWrite`, or the write lands
+  on a per-iteration slot the reader never looks at, and the value is
+  silently lost. The count is static because Petal rejects assigning to a
+  captured binding, so a declaration and its writes are always in one
+  function.
+- **An explicit `state(expr)` key ignores the path entirely** (and therefore
+  `path_pop`): the slot is `state_key` plus the hash of the key value. That
+  is the way to say "same entity ⇒ same slot, whoever asks".
 
 ### Block
 
@@ -333,7 +376,12 @@ A program is a valid import iff:
 8. **State integrity** — every `StateRead`/`StateWrite` `state_key` has a
    matching `StateInit` with the same key; `state_key` is present exactly for
    `State*` ops. (This is the same invariant the compiler-side state-correctness
-   audit enforces.)
+   audit enforces.) The invariant is stated over **declaration ids** only: it
+   says every access names a declared slot, not that it reaches the same
+   *runtime* slot, which depends on the call path and is unknowable
+   statically. `path_pop` and `call_site` are unvalidated — a wrong value
+   misroutes a slot rather than producing an invalid document (see
+   [State keying](#state-keying)).
 9. **Registers** (if provided) — every term's register is
    `< register_count` of its block. If any register is omitted, the loader
    assigns the whole file itself — which requires the binding phantoms for
@@ -362,6 +410,11 @@ phantom terms in registration order. The loader still accepts all of that:
 - Builtin phantoms are matched by name when the root frame is pushed, so
   their ids/positions/registration order no longer matter; a phantom whose
   name is not a registered native is simply left unseeded (it reads as Nil).
+- A term's `in_loop` flag, which predates call-path keying, is ignored (an
+  unknown field loads without error). Such a document still runs, but its
+  in-function `state` now keys by the live call path, and its calls carry no
+  `call_site`, so every callsite shares id 0 — the one-slot-per-declaration
+  behavior it was written against. See [State keying](#state-keying).
 
 New emitters should target schema 0.2 and none of the legacy forms.
 

@@ -44,8 +44,11 @@ machinery entirely; that is what makes writes from inside a conditional, a
 function, or a closure work at all. Closure capture needed no changes: captures
 are by value and the captured value *is* the cell id, giving Lua/JS upvalue
 semantics for free. `state var` puts the `CellNew` inside the `StateInit` block,
-so the slot holds the cell and persistence is automatic — including one cell per
-key for `state(key) var`.
+so the slot holds the cell and persistence is automatic — and since a slot is a
+declaration plus the call path that reached it, that is one cell per slot: one
+per explicit key for `state(key) var`, one per callsite/iteration for a
+`state var` declared inside a function, and exactly one for the top-level
+`state var` cell that is now the idiom for shared cross-function state.
 
 ### Containment
 
@@ -123,7 +126,12 @@ warning, and it is scoped to *reactive* bindings only:
 - **Module-level `state` still warns.** `x = e` on a `state` does not create a
   new binding; it emits a `StateWrite` into the persisted slot, and the next run
   initialises the name from that slot. So the read really is one run behind,
-  every run — the hazard the rule was written for.
+  every run — the hazard the rule was written for. Call-path keying (2026-08-25)
+  left this rule intact, and sharpened why it stops at module scope: a
+  module-level declaration is exactly the one that runs on the empty path, so it
+  has a single slot that every function in the module reads. A `state` declared
+  *inside* a function is one slot per call path, is not a module binding, and is
+  not scanned.
 - **`var`/`state var` stay exempt** for the pre-existing reason: a bare
   outer-cell read is already a hard error, and the `get` it demands is a live
   read that cannot lag.

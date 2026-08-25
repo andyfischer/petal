@@ -37,9 +37,11 @@ traditional imperative languages struggle to provide. Four pillars:
 
 2. **First-class state.** Inline `state` (React-`useState`-like, but a language
    primitive) declared where it's used, including inside loops and conditionals
-   for per-iteration / per-branch state. State creates *temporal edges* in the
-   dataflow graph, so stateful computation stays traceable and differentiable
-   across time steps.
+   for per-iteration / per-branch state. A slot is the declaration plus the
+   **call path** that reached it, so a helper holding a `state` gives each of
+   its callers an independent value, exactly as a React component instance gets
+   its own hook slots. State creates *temporal edges* in the dataflow graph, so
+   stateful computation stays traceable and differentiable across time steps.
 
 3. **Projectional views.** Derive simplified representations of a program by
    focusing on one aspect — program slices, scenario-based views (only the
@@ -117,6 +119,7 @@ mounting are still aspirational.
 
 | Capability | Status | Notes |
 |---|---|---|
+| `state` is per *use*, React-`useState`-style | ✅ | Landed 2026-08-25. The pillar's headline promise was false for two years: the slot key was the variable name alone, so `state` in a function was a C `static` local — every callsite shared one value, and two functions declaring the same name collided silently. A slot is now the declaration id plus the call path that reached it, so callsites, loop iterations and recursion depths get independent values, and `state(key)` is the documented absolute escape hatch. Shared cross-function state is a top-level `state var` cell. See [state-callsite-keying-plan.md](state-callsite-keying-plan.md). |
 | State correctness under repeated reassignment / SSA `Copy` masking | ⚠️ | A second `state` reassignment per frame previously dropped silently (SSA `Copy` masked the `StateInit`); fixed, but no invariant check exists yet. **Add the compiler-side check** (`StateWrite` count == top-level reassignment count) and property-test the Phi/state machinery. State trust is existential for the pitch. |
 
 ### Goal 3 — Projectional views

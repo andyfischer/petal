@@ -65,9 +65,9 @@ end
 //
 // Call-path keying extends that to callsites: a second call of one widget gets
 // a second cell, and a widget drawn once per list item gets one cell per item —
-// list keying by position, for free. That part is landing in stages; until it
-// does, all the callsites of a function still share one cell, and `petal lint`
-// reports the declarations where the difference will show.
+// list keying by position, for free. Within one run a path is normally reached
+// only once, so an in-function counter like `renders` counts runs (frames),
+// not calls; to count calls, key the cell or share a top-level one, as above.
 
 fn header(title)
   state renders = 0

@@ -11,8 +11,11 @@
 import { join } from 'node:path';
 
 import {
-    RunResult, buildPetal, examplesDir, listExamples, loadGolden, runExample,
+    buildPetal, examplesDir, listExamples, loadGolden, runExample,
 } from './example-corpus.ts';
+// `RunResult` is an interface: Node's type stripping needs the `type` form,
+// which erases the specifier instead of emitting a missing-export import.
+import type { RunResult } from './example-corpus.ts';
 
 const full = process.argv.includes('--full');
 

@@ -122,18 +122,23 @@ describe("per-iteration loop state", () => {
     });
 
     it("explicit key survives list reordering", () => {
+      // One declaration, reached from two loops that visit the ids in
+      // opposite orders: the explicit key — not the iteration index — decides
+      // the slot, so each id resumes its own count. (The declaration has to
+      // be shared: two `state count` declarations would be two distinct
+      // declaration ids, hence two independent sets of slots.)
       const output = runPetal(`
-        let items = [{id: "x"}, {id: "y"}]
-        for item in items do
-          state(item.id) count = 0
+        fn bump(id)
+          state(id) count = 0
           count += 1
+          count
+        end
+        for item in [{id: "x"}, {id: "y"}] do
+          bump(item.id)
         end
         // Reversed order
-        let items2 = [{id: "y"}, {id: "x"}]
-        for item in items2 do
-          state(item.id) count = 0
-          count += 1
-          print(item.id, count)
+        for item in [{id: "y"}, {id: "x"}] do
+          print(item.id, bump(item.id))
         end
       `);
       // Both were incremented once in first loop, now get incremented again

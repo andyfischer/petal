@@ -299,6 +299,9 @@ fn runtime_error_in_module_names_the_file() {
 
 #[test]
 fn same_state_name_in_two_modules_gets_distinct_slots() {
+    // The module qualifier is the outermost part of a declaration id
+    // (`Compiler::state_key_for`); the rest of the name path is covered by
+    // tests/state_decl_ids.rs.
     let m1 = "state scroll = 0\nscroll += 1\nexport fn get1()\n  scroll\nend";
     let m2 = "state scroll = 0\nscroll += 10\nexport fn get2()\n  scroll\nend";
     check_output(
@@ -309,10 +312,11 @@ fn same_state_name_in_two_modules_gets_distinct_slots() {
 }
 
 #[test]
-fn entry_file_state_keys_stay_bare_named() {
-    // The entry file keeps bare-name hashing, so existing host code that
-    // computes keys via hash_state_name keeps working (and hot-reload state
-    // of pre-module programs survives).
+fn top_level_state_keys_hash_the_qualified_name() {
+    // A top-level declaration id is the hash of its qualified name and
+    // nothing else — bare in the entry file, `module::name` in a module — so
+    // host code that computes keys via `hash_state_name` keeps working and
+    // hot-reload state survives across builds.
     let mut env = Env::new();
     env.register_module("m", "state n = 0\nn += 5");
     let pid = env.load_program("import m\nstate n = 100\nn += 1").unwrap();
@@ -328,6 +332,36 @@ fn entry_file_state_keys_stay_bare_named() {
     assert_eq!(
         format!("{:?}", env.get_state(sid, module_key).unwrap()),
         "Int(5)"
+    );
+}
+
+#[test]
+fn a_module_function_state_is_keyed_below_its_module() {
+    // In-function declarations extend the qualified name with the enclosing
+    // function chain, so a module's `ui::draw`-scoped `n` shares a slot with
+    // neither the module's top-level `n` nor the entry file's.
+    let m = "state n = 0\nexport fn draw()\n  state n = 1000\n  n += 1\n  n\nend";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env
+        .load_program("import m\nstate n = 0\nn += 1\nprint(m.draw())\nprint(n)")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1001", "1"]);
+
+    assert!(
+        env.get_state(sid, StateKey(Compiler::hash_state_name("m::n")))
+            .is_some(),
+        "the module's top-level `n` keeps its qualified-name key"
+    );
+    assert_eq!(
+        format!(
+            "{:?}",
+            env.get_state(sid, StateKey(Compiler::hash_state_name("m::draw/n")))
+                .unwrap()
+        ),
+        "Int(1001)"
     );
 }
 

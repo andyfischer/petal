@@ -172,6 +172,9 @@ impl Compiler {
         def_end: Option<u32>,
     ) -> TermId {
         self.closure_def_ends.push(def_end);
+        // Names the body's `state` declarations by their enclosing functions
+        // (see `Compiler::state_key_for`).
+        self.push_fn_name_chain(name.as_deref());
         let (body_block, saved_block) = self.begin_function_scope(params);
 
         // Self-reference phantom for recursion (if named)
@@ -189,6 +192,7 @@ impl Compiler {
         self.compile_stmts(body, true);
 
         self.closure_def_ends.pop();
+        self.pop_fn_name_chain();
         self.end_function_scope(name, params, body_block, saved_block, self_ref_register)
     }
 

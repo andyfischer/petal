@@ -47,11 +47,7 @@ pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, Str
             line_starts.push(i as u32 + 1);
         }
     }
-    let mut p = Projector {
-        line_starts,
-        file,
-        next_state_id: 0,
-    };
+    let mut p = Projector { line_starts, file };
     child_nodes(root).iter().map(|n| p.stmt(n)).collect()
 }
 
@@ -59,10 +55,6 @@ struct Projector {
     /// Char offset of each line start, for offset → line/column conversion.
     line_starts: Vec<u32>,
     file: FileId,
-    /// Mirrors the parser's running `state` id counter. Ids are allocated in
-    /// parse order — notably *after* a state's init expression is parsed, so a
-    /// state nested inside the init (via a lambda body) gets the lower id.
-    next_state_id: usize,
 }
 
 // ---- Red-tree access helpers ----
@@ -399,15 +391,11 @@ impl Projector {
                     2 => (Some(&nodes[0]), &nodes[1]),
                     n => return Err(format!("state statement with {n} expression nodes")),
                 };
-                // Parse order: key, then init, then the id — so states nested
-                // inside the init (via lambda bodies) take lower ids.
                 let key = match key_node {
                     Some(k) => Some(self.expr(k)?),
                     None => None,
                 };
                 let init = self.expr(init_node)?;
-                let id = self.next_state_id;
-                self.next_state_id += 1;
                 let is_var = direct_tokens(node)
                     .iter()
                     .any(|t| matches!(t.token(), Some(Token::Var)));
@@ -415,7 +403,6 @@ impl Projector {
                     name,
                     ty,
                     init,
-                    id,
                     key,
                     is_var,
                 }
@@ -1503,31 +1490,10 @@ mod tests {
     }
 
     #[test]
-    fn state_ids_allocate_in_parse_order() {
-        // A state nested inside another state's init (via a lambda body) is
-        // parsed — and must be numbered — before the outer state's own id.
+    fn state_nested_in_an_init_projects() {
+        // A state nested inside another state's init (via a lambda body) is a
+        // shape both pipelines have to agree on.
         assert_projects("state outer = fn()\n  state inner = 1\n  inner\nend\nstate last = 2\n");
-        let stmts =
-            projected_ast("state outer = fn()\n  state inner = 1\n  inner\nend\nstate last = 2\n")
-                .unwrap();
-        let StmtKind::State {
-            id: outer_id,
-            ref init,
-            ..
-        } = stmts[0].kind
-        else {
-            panic!("expected state stmt");
-        };
-        let StmtKind::State { id: last_id, .. } = stmts[1].kind else {
-            panic!("expected state stmt");
-        };
-        let ExprKind::Lambda { ref body, .. } = init.kind else {
-            panic!("expected lambda")
-        };
-        let StmtKind::State { id: inner_id, .. } = body[0].kind else {
-            panic!("expected nested state stmt");
-        };
-        assert_eq!((inner_id, outer_id, last_id), (0, 1, 2));
     }
 
     /// The definitive 3c proof: for every repo program that parses, the AST

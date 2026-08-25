@@ -109,7 +109,6 @@ pub struct Parser {
     tokens: Vec<Token>,
     token_spans: Vec<SourceSpan>,
     pos: usize,
-    next_state_id: usize,
     /// CST event stream, recorded alongside AST construction. The tree built
     /// from it is the authoritative parse artifact (see
     /// [`crate::cst::parse_source`]); read it back with [`Parser::cst_events`]
@@ -127,7 +126,6 @@ impl Parser {
             tokens,
             token_spans,
             pos: 0,
-            next_state_id: 0,
             events: EventBuilder::new(),
             pending_optional: false,
         }
@@ -671,15 +669,12 @@ impl Parser {
         let ty = self.parse_type_annotation()?;
         self.expect_initializer(if is_var { "state var" } else { "state" }, &name)?;
         let init = self.parse_expr()?;
-        let id = self.next_state_id;
-        self.next_state_id += 1;
         self.ev_close();
         let mut stmt = self.mk_stmt(
             StmtKind::State {
                 name,
                 ty,
                 init,
-                id,
                 key,
                 is_var,
             },

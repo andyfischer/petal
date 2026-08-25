@@ -225,6 +225,25 @@ pub struct Compiler {
     // simple scope_lookup chain can no longer reach the StateInit).
     state_inits: HashMap<StateKey, TermId>,
 
+    // ── State declaration identity (see `state_key_for`) ─────────────
+    //
+    // The lexically enclosing functions of the code being compiled, outermost
+    // first; empty at module scope. A named `fn` contributes its name (the
+    // internal `"name#arity"` for an overload variant), a lambda its binding
+    // name when it has one and a per-enclosing-function ordinal otherwise.
+    fn_name_chain: Vec<String>,
+    // Unnamed-lambda counter, one per level of `fn_name_chain` plus one for
+    // module scope at index 0 — so `lambda_counts.len() == fn_name_chain.len() + 1`.
+    lambda_counts: Vec<u32>,
+    // Next shadow ordinal for each state-declaration base string. Bumped once
+    // per compiled `state` declaration, which is what makes two declarations
+    // of one name in one function (or a lambda whose binding name collides
+    // with a sibling `fn`) land in distinct slots.
+    state_decl_ordinals: HashMap<String, u32>,
+    // Set just before compiling the initializer of `let f = x -> …`, and taken
+    // by the lambda's `compile_function` so it joins the name chain as `f`.
+    pending_lambda_name: Option<String>,
+
     // Builtin name → the phantom Copy TermId created for that builtin during
     // `compile()`. Used at call sites to detect a bare, unshadowed builtin call
     // and compile it to a static `BuiltinCall` instead of a dynamic `Call`.
@@ -295,6 +314,10 @@ impl Compiler {
             imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
+            fn_name_chain: Vec::new(),
+            lambda_counts: vec![0],
+            state_decl_ordinals: HashMap::new(),
+            pending_lambda_name: None,
             builtin_phantoms: HashMap::new(),
             current_module: None,
             error_file: None,
@@ -753,18 +776,90 @@ impl Compiler {
         hasher.finish()
     }
 
-    /// The state key for `name` declared in the current compilation context:
-    /// module state keys are qualified (`"ui::scroll"`) so two modules'
-    /// same-named `state` decls get distinct slots; the entry file keeps
-    /// bare-name hashing so existing programs' hot-reload state survives.
+    /// The *declaration id* for a `state` declaration of `name` in the current
+    /// compilation context: a hash of everything that identifies the
+    /// declaration site by name rather than by position, so it survives the
+    /// edits hot reload has to tolerate. The parts, in order:
+    ///
+    /// - the module qualifier (`"ui::"`), absent in the entry file;
+    /// - the enclosing function-name chain (`"draw/row/"`), empty at module
+    ///   scope — this is what stops two functions that declare the same state
+    ///   name from silently sharing one slot;
+    /// - the variable name;
+    /// - a shadow ordinal (`"#1"`, `"#2"`, … — omitted for the first), which
+    ///   separates repeated declarations of one name in one function.
+    ///
+    /// Top-level declarations therefore hash exactly the string they always
+    /// did — `"scroll"` in the entry file, `"ui::scroll"` in a module — so
+    /// existing programs' persisted state survives this change untouched.
+    ///
     /// Consequence (documented in docs/module-system.md): moving a `state`
-    /// decl between files, or renaming a module, changes its key and drops
-    /// that state on reload — same class of event as renaming the variable.
-    pub(super) fn state_key_for(&self, name: &str) -> StateKey {
-        match &self.current_module {
-            Some(m) => StateKey(Self::hash_state_name(&format!("{m}::{name}"))),
-            None => StateKey(Self::hash_state_name(name)),
+    /// decl between files or functions, or renaming a module or an enclosing
+    /// function, changes its key and drops that state on reload — the same
+    /// class of event as renaming the variable.
+    ///
+    /// Must be called exactly once per compiled declaration: it bumps the
+    /// shadow ordinal.
+    pub(super) fn state_key_for(&mut self, name: &str) -> StateKey {
+        let mut base = String::new();
+        if let Some(m) = &self.current_module {
+            base.push_str(m);
+            base.push_str("::");
         }
+        for f in &self.fn_name_chain {
+            base.push_str(f);
+            // Neither identifiers nor module names contain '/', so a nested
+            // declaration's string can never collide with a top-level one's.
+            base.push('/');
+        }
+        base.push_str(name);
+
+        let ordinal = self.state_decl_ordinals.entry(base.clone()).or_insert(0);
+        let ordinal = std::mem::replace(ordinal, *ordinal + 1);
+        if ordinal > 0 {
+            base.push_str(&format!("#{ordinal}"));
+        }
+        StateKey(Self::hash_state_name(&base))
+    }
+
+    /// The name the function about to be compiled contributes to the
+    /// declaration-id chain (see `state_key_for`): its own name if it has one,
+    /// else the binding name of the `let` it is the initializer of, else an
+    /// ordinal among the unnamed lambdas of the enclosing function.
+    pub(super) fn push_fn_name_chain(&mut self, name: Option<&str>) {
+        let pending = self.pending_lambda_name.take();
+        let entry = match name {
+            Some(n) => n.to_string(),
+            None => match pending {
+                Some(n) => n,
+                None => {
+                    let count = self
+                        .lambda_counts
+                        .last_mut()
+                        .expect("lambda_counts always holds the module-scope entry");
+                    let ordinal = std::mem::replace(count, *count + 1);
+                    format!("<lambda {ordinal}>")
+                }
+            },
+        };
+        self.fn_name_chain.push(entry);
+        self.lambda_counts.push(0);
+    }
+
+    pub(super) fn pop_fn_name_chain(&mut self) {
+        self.fn_name_chain.pop();
+        self.lambda_counts.pop();
+    }
+
+    /// Compile the initializer of `let name = value`, remembering the binding
+    /// name for a lambda so it names that lambda in the declaration-id chain.
+    pub(super) fn compile_bound_expr(&mut self, name: &str, value: &Expr) -> TermId {
+        if matches!(value.kind, ExprKind::Lambda { .. }) {
+            self.pending_lambda_name = Some(name.to_string());
+        }
+        let tid = self.compile_expr(value);
+        self.pending_lambda_name = None;
+        tid
     }
 
     /// Display name for a term declared at module scope: qualified for module

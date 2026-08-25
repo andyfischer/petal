@@ -43,7 +43,7 @@ impl Compiler {
                 is_config,
                 ..
             } => {
-                let val_tid = self.compile_expr(value);
+                let val_tid = self.compile_bound_expr(name, value);
                 self.note_shadow(name);
                 if *is_var {
                     // The binding is the *cell*, not the initial value. Every
@@ -185,11 +185,10 @@ impl Compiler {
                 // does for `let`/`fn`.
                 ty: _,
                 init,
-                id: _,
                 key,
                 is_var,
             } => {
-                self.compile_state_decl(name, init, key.as_ref(), *is_var);
+                self.compile_state_decl(name, init, key.as_ref(), *is_var, stmt_span);
             }
 
             // Imports are extracted and resolved by the module loader before
@@ -279,11 +278,18 @@ impl Compiler {
     /// is only entered the first time the (state_key, loop_indices) tuple is
     /// encountered. The explicit key (if any) is computed eagerly in the
     /// parent block — its value determines which slot to consult.
-    fn compile_state_decl(&mut self, name: &str, init: &Expr, key: Option<&Expr>, is_var: bool) {
-        // Module state keys are module-qualified; the entry file keeps
-        // bare-name hashing (see `state_key_for`). The term's display name is
-        // qualified the same way so state JSON / diffs stay unambiguous when
-        // two modules declare the same state name.
+    fn compile_state_decl(
+        &mut self,
+        name: &str,
+        init: &Expr,
+        key: Option<&Expr>,
+        is_var: bool,
+        span: SourceSpan,
+    ) {
+        // The declaration id folds in the module, the enclosing functions and a
+        // shadow ordinal (see `state_key_for`), so every declaration site owns
+        // its own slot. The term's display name is module-qualified so state
+        // JSON / diffs stay unambiguous when two modules declare one name.
         let state_key_const = self.state_key_for(name);
         let key_tid = key.map(|key_expr| self.compile_expr(key_expr));
 
@@ -297,7 +303,24 @@ impl Compiler {
         let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
         self.terms[state_tid.0 as usize].in_loop = self.loop_depth > 0;
-        self.state_inits.insert(state_key_const, state_tid);
+        // Declaration ids are unique by construction (the shadow ordinal in
+        // `state_key_for` separates otherwise identical sites), so a duplicate
+        // here means two sites hashed to one slot and one of them would be
+        // silently unreachable — `find_state_init` resolves a rebind through
+        // this map, so the loser's writes would land on the winner's slot.
+        if self
+            .state_inits
+            .insert(state_key_const, state_tid)
+            .is_some()
+        {
+            self.error_at(
+                span,
+                format!(
+                    "internal error: `state {name}` hashes to a slot already \
+                     claimed by another declaration; rename the variable"
+                ),
+            );
+        }
 
         // Compile the init expression into a fresh child block. The
         // init block's last term register is read on pop and copied

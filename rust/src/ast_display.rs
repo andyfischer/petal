@@ -140,7 +140,6 @@ impl Printer {
                 name,
                 ty,
                 init,
-                id: _, // internal declaration counter, not a source fact
                 key,
                 is_var,
             } => {

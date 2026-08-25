@@ -375,7 +375,6 @@ pub enum StmtKind {
         #[serde(skip_serializing_if = "Option::is_none")]
         ty: Option<TypeAnn>,
         init: Expr,
-        id: usize,
         /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
         #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<Expr>,

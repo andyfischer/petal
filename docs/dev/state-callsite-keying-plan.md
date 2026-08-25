@@ -545,6 +545,29 @@ stays designed-but-deferred, as §3.2 allowed.
 
 ### Resolved after the flip
 
+- **Phase 5 — ecosystem: done 2026-08-25.** The WASM build was rebuilt and
+  re-vendored for `~/biz/petal-lang.org` and `~/biz/hotlaps` (both stamped
+  `petalCommit: bad26bc`, up from `ffdc68c`), and `~/worlds-fair` — a consumer
+  §5's survey missed entirely — re-vendored its wholesale copy of the source
+  (`vendor/petal/`, 90 files, +14915/-2074).
+
+  §5 was wrong to call the ecosystem top-level-only. Two scripts needed real
+  source changes: `~/biz/petal-lang.org`'s live `state.ptl` snippet (whose
+  `counter() // 2` comment the flip falsified) and `~/worlds-fair`'s
+  `ui/ptl/host/garden.ptl`, whose `wf_fixture()` shared three in-function
+  `state` values across two callsites. That one was a genuine behavior break,
+  and subtler than predicted: two callsites alone stay in step, because both
+  run once per frame and see the same key edges. They diverge only when one
+  caller is skipped — `screens/hud.ptl` returns early while the model is
+  pending — after which the two pickers never re-agree. Migrated to module-level
+  cells, with a regression test.
+
+  The re-vendors also surfaced breakage unrelated to `state`, which nothing had
+  been checking: three syntax/semantic drifts in the site's hand-authored Petal
+  (trailing commas in enum variants, the removed `fn(x) { … }` lambda form, and
+  `push` no longer mutating) left two docs-site tour blocks failing to parse
+  outright.
+
 - **The `state-shared-callsites` lint was deleted** (user decision,
   2026-08-25). It was a Phase 1 *migration* warning, and the flip made its
   premise false: it announced that "`state` is moving to per-call-path keying"
@@ -561,10 +584,13 @@ stays designed-but-deferred, as §3.2 allowed.
 
 ### Still outstanding
 
-- **Phase 5 — ecosystem.** The vendored WASM build for petal-lang.org and
-  hotlaps has not been rebuilt/re-vendored (`~/biz/petal-lang.org/docs/
-  how-to-update-petal.md`). Their scripts are top-level-only, so no source
-  changes are needed — only the rebuild.
+- **The installed `garden` binary is stale.** `~/.cargo/bin/garden` dates from
+  2026-08-04 and predates the `get` keyword, so it rejects any script using a
+  top-level `state var` cell — i.e. exactly the migration idiom this change
+  tells people to adopt. A `garden-dev.ts --headless` loop against a migrated
+  script fails with `Expected 'then', got …` until Garden is rebuilt from
+  `garden/` (`./garden/install-local.sh`). The vendored-Petal test paths are
+  unaffected.
 - **Structural path repair in `transfer_state`** (§3.5, explicitly out of scope
   for v1): remapping old paths onto new ones when a single callsite ordinal
   shifted. Worth revisiting if the accepted-loss class (deleting the first of

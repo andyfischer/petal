@@ -94,13 +94,31 @@
 //! the conditions above discharge. A state-rooted web additionally requires
 //! (see [`Analysis::state_web_ok`]):
 //!
-//! * **One slot, one reader.** The key must name a single runtime slot: no term
-//!   for it may be `in_loop` or carry an explicit `state(expr)` key, since
-//!   `RuntimeStateKey` mixes the *live* loop indices in at execution time — a
-//!   write from inside a deeper loop then commits to a different slot than the
-//!   one it just mutated, and one declaration inside a loop becomes a slot per
-//!   iteration. It must also have exactly one `StateInit`/`StateRead` term —
-//!   this web's root — so no second read hands the id elsewhere.
+//! * **One slot, one reader.** The key must name a single runtime slot, and a
+//!   base key only does that when its **path is statically empty**. A
+//!   `RuntimeStateKey` is `(declaration id, path)`, and the path is composed
+//!   from *live* context: a `Call` part per frame on the way in, an `Index`
+//!   part per enclosing loop iteration, or a single `Key` part hashed from an
+//!   explicit `state(expr)` value. Only a declaration at module scope, outside
+//!   every loop, runs on the empty path and therefore owns exactly one slot for
+//!   the whole program. A declaration *inside a function* is a slot per
+//!   callsite chain that reaches it, one inside a loop is a slot per iteration,
+//!   and an explicit key is a slot per runtime value — in each case the base key
+//!   alone cannot say which slot a read filled or a write commits to, so no web
+//!   may root on one (plan §3.7). Accesses are checked against the same rule
+//!   rather than assumed: a `StateWrite` nested deeper in loops than its
+//!   declaration is fine, because its `path_pop` drops exactly those `Index`
+//!   parts and lands it back on the declaration's slot — that is the top-level
+//!   accumulator (`state xs = []` plus `xs = append(xs, i)` in a `for`), which
+//!   is the shape this whole section exists to optimize. The key must also have
+//!   exactly one `StateInit`/`StateRead` term — this web's root — so no second
+//!   read hands the id elsewhere.
+//!
+//!   This is deliberately the coarse v1 rule. Winning back the in-function
+//!   cases needs a "the path is statically fixed at this site" analysis (a
+//!   declaration whose every access provably shares one live path), which is
+//!   out of scope until profiles ask for it; post-migration the accumulator
+//!   patterns live at top level anyway.
 //! * **Immediate commit.** Every mutation in the web feeds a `StateWrite` of
 //!   that same key directly. The slot therefore holds the mutated id at every
 //!   instruction boundary, which is exactly what value semantics commits there
@@ -180,34 +198,49 @@ pub fn analyze(program: &Program) -> InPlaceSet {
     InPlaceSet { terms }
 }
 
-/// Whether a term in `block` runs on the **empty state path**: at module scope,
-/// outside every loop. Such a term's declaration id alone names one runtime
-/// slot; anything else picks up a `Call` part (it is inside a function body,
-/// which is only ever entered by a call) or an `Index` part (it is inside a
-/// loop) and addresses a slot per path.
+/// Whether a state term addresses the **empty state path** — the one slot a
+/// declaration id owns all by itself.
 ///
-/// Walks the block tree upward: a loop's body block hangs off its loop term, a
-/// function body block has no parent term at all — so the walk ends either at
-/// the root block (statically empty) or at a parentless block that is not the
-/// root (a function body).
-fn static_empty_path(program: &Program, block: BlockId) -> bool {
-    let mut cur = block;
+/// A `RuntimeStateKey` is `(declaration id, path)`, and every path part comes
+/// from live context: a `Call` part per frame entered on the way in, an `Index`
+/// part per enclosing loop iteration. So the base key names one fixed slot only
+/// for a term at module scope, outside every loop.
+///
+/// The one exception is [`Term::path_pop`](crate::program::Term::path_pop): a
+/// `StateWrite`/`StateRead` nested `path_pop` loop levels deeper than its
+/// declaration drops exactly that many innermost `Index` parts at runtime, so it
+/// lands back on the declaration's slot. Such an access still counts as empty —
+/// that is what keeps the top-level accumulator (`state xs = []` with
+/// `xs = append(xs, i)` inside a `for`) eligible.
+///
+/// Walks the block tree upward, spending one `path_pop` per loop crossed: a
+/// loop's body block hangs off its loop term, a function body block has no
+/// parent term at all — so the walk ends either at the root block (empty iff
+/// every crossed loop was paid for) or at a parentless block that is not the
+/// root, which is a function body and only ever reached through a call.
+fn addresses_the_empty_path(program: &Program, term: &Term) -> bool {
+    let mut cur = term.block_id;
+    let mut pops = term.path_pop;
     loop {
         if cur == program.root_block {
-            return true;
+            return pops == 0;
         }
         let Some(parent_term) = program.blocks[cur.0 as usize].parent_term_id else {
-            // A function body block: reached only through a call.
+            // A function body block: reached only through a call, and no
+            // `path_pop` can drop a `Call` part.
             return false;
         };
-        let term = program.get_term(parent_term);
+        let parent = program.get_term(parent_term);
         if matches!(
-            term.op,
+            parent.op,
             TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop
         ) {
-            return false;
+            if pops == 0 {
+                return false;
+            }
+            pops -= 1;
         }
-        cur = term.block_id;
+        cur = parent.block_id;
     }
 }
 
@@ -275,11 +308,14 @@ struct Analysis<'p> {
     /// carriers — the forward direction of a spine link. Lets a state-rooted
     /// backbone be extended past the seed's backward cone.
     phi_by_init: HashMap<TermId, Vec<TermId>>,
-    /// Base state keys that do **not** address one fixed runtime slot: some term
-    /// for them is `in_loop` (its `RuntimeStateKey` picks up the live loop
-    /// indices, so one declaration becomes a slot per iteration) or carries an
-    /// explicit `state(expr)` key (the slot depends on a runtime value). A base
-    /// key alone does not identify the slot for these, so no web may root on one.
+    /// Base state keys that do **not** address one fixed runtime slot: some
+    /// state term for them sits off the statically empty path (see
+    /// [`addresses_the_empty_path`] — inside a function body, so its
+    /// `RuntimeStateKey` picks up a `Call` part per callsite chain, or inside a
+    /// loop it does not pop back out of, so it picks up an `Index` part per
+    /// iteration) or carries an explicit `state(expr)` key (a `Key` part hashed
+    /// from a runtime value). A base key alone does not identify the slot for
+    /// these, so no web may root on one.
     multi_slot_keys: HashSet<StateKey>,
     /// Structural execution order: each term's position in a depth-first walk of
     /// the block tree (a term, then the child blocks it introduces, then the next
@@ -375,14 +411,20 @@ impl<'p> Analysis<'p> {
             // different slot than the one it just mutated. Only a declaration
             // whose path is statically empty — a top-level `state` outside every
             // loop — addresses exactly one slot (plan §3.7).
+            //
+            // `Copy` carriers also inherit the key (so a chain of reassignments
+            // still resolves to the `StateInit`), but they touch no slot and
+            // carry no `path_pop`, so only the three real state ops are judged.
             let explicit_key = match term.op {
                 TermOp::StateInit => !term.inputs.is_empty(),
                 TermOp::StateWrite => term.inputs.len() > 1,
                 _ => false,
             };
-            let decl_on_a_path =
-                matches!(term.op, TermOp::StateInit) && !static_empty_path(program, term.block_id);
-            if explicit_key || decl_on_a_path {
+            let off_the_empty_path = matches!(
+                term.op,
+                TermOp::StateInit | TermOp::StateRead | TermOp::StateWrite
+            ) && !addresses_the_empty_path(program, term);
+            if explicit_key || off_the_empty_path {
                 multi_slot_keys.insert(key);
             }
             match term.op {

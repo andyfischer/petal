@@ -768,13 +768,13 @@ fn inplace_does_not_fire_on_a_hoisted_writer_of_per_iteration_state() {
 
 #[test]
 fn inplace_does_not_fire_on_per_iteration_state() {
-    // `state c` *inside* a loop is one runtime slot per iteration
-    // (`RuntimeStateKey` carries the live loop indices), and the write from the
-    // inner loop carries a longer index list than the read that created the
-    // slot — so it commits to a *different* slot than the one it mutated. Value
-    // semantics leaves the read slot untouched across runs; an in-place write
-    // would quietly accumulate into it. Found by the multi-run sweep below;
-    // a single-run parity check cannot see it.
+    // `state c` *inside* a loop declares on a non-empty path, so it is one
+    // runtime slot per iteration — the base key names a whole family of slots,
+    // and each iteration's read hands back a different persisted id. Proving
+    // one iteration holds its container exclusively says nothing about the
+    // siblings, so an in-place write here would quietly accumulate across runs
+    // into slots value semantics leaves untouched. Found by the multi-run sweep
+    // below; a single-run parity check cannot see it.
     let code = "for i in range(0, 2) do\n  state c = [0, 0]\n  for j in range(0, 2) do\n    c[j] = c[j] + i\n  end\n  print(c[0], c[1])\nend";
     assert_stateful_parity(code, 4);
     assert_eq!(
@@ -782,6 +782,49 @@ fn inplace_does_not_fire_on_per_iteration_state() {
         0,
         "per-iteration state must not be in-place"
     );
+}
+
+#[test]
+fn inplace_state_rule_is_the_statically_empty_path() {
+    // The v1 state-rooted rule (plan §3.7/§8.8): a state web may root only on a
+    // declaration whose path is *statically empty* — module scope, outside every
+    // loop. Everything else is a slot per call path, per iteration, or per key
+    // value, so the base key does not name the slot the mutation must commit to.
+    let fires = [
+        // The shape the rule exists to keep: the declaration is top-level and
+        // the write, though nested in loops, pops back to its slot (`path_pop`).
+        "state xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs))",
+        "state xs = []\nfor i in range(0, 2) do\n  for j in range(0, 2) do\n    xs = append(xs, j)\n  end\nend\nprint(len(xs))",
+        // An `if` adds no path part, so a guarded top-level accumulator is still
+        // on the empty path.
+        "state xs = []\nlet go = 1\nif go == 1 then\n  for i in range(0, 4) do\n    xs = append(xs, i)\n  end\nend\nprint(len(xs))",
+        // `while` pushes an `Index` part like `for`, and the write pops it.
+        "state xs = []\nvar n = 0\nwhile n < 4 do\n  xs = append(xs, n)\n  set n = n + 1\nend\nprint(len(xs))",
+    ];
+    for code in fires {
+        assert_inplace_parity(code);
+        assert!(
+            inplace_count(code) >= 1,
+            "top-level state accumulator should fire: {code}"
+        );
+    }
+
+    let rejected = [
+        // In a function body: one slot per callsite chain reaching it.
+        "fn go()\n  state xs = []\n  for i in range(0, 4) do\n    xs = append(xs, i)\n  end\n  len(xs)\nend\nprint(go())",
+        // Declared inside a `while` body: a slot per iteration, same as `for`.
+        "var n = 0\nwhile n < 2 do\n  state c = [0, 0]\n  for j in range(0, 2) do\n    c[j] = c[j] + n\n  end\n  print(c[0], c[1])\n  set n = n + 1\nend",
+        // An explicit key is absolute but runtime-valued: a slot per key.
+        "state(1) xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs))",
+    ];
+    for code in rejected {
+        assert_stateful_parity(code, 3);
+        assert_eq!(
+            inplace_count(code),
+            0,
+            "state off the statically empty path must not fire: {code}"
+        );
+    }
 }
 
 #[test]

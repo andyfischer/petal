@@ -370,6 +370,56 @@ fn a_module_function_state_is_keyed_below_its_module() {
 }
 
 #[test]
+fn a_module_functions_state_is_per_callsite_across_the_module_boundary() {
+    // Call paths cross module boundaries like any other call: an exported
+    // helper called twice from the entry file and once from inside its own
+    // module holds three independent values. Callsite ids are qualified by the
+    // module and enclosing function they are written in, so the module's own
+    // call and the entry file's cannot collide.
+    let m = "\
+export fn tick()
+  state n = 0
+  n += 1
+  n
+end
+export fn internal()
+  tick()
+end
+";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env
+        .load_program("import m\nprint(m.tick())\nprint(m.tick())\nprint(m.internal())")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1", "1", "1"]);
+
+    let base = StateKey(Compiler::hash_state_name("m::tick/n"));
+    let slots = env
+        .get_all_state(sid)
+        .unwrap()
+        .keys()
+        .filter(|k| k.base == base)
+        .count();
+    assert_eq!(slots, 3, "three callsites, three slots");
+
+    // A second run finds each of the three where it left it.
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["2", "2", "2"]);
+    assert_eq!(
+        env.get_all_state(sid)
+            .unwrap()
+            .keys()
+            .filter(|k| k.base == base)
+            .count(),
+        3,
+        "and no fourth slot appeared"
+    );
+}
+
+#[test]
 fn hot_reload_of_module_preserves_its_state() {
     let mut env = Env::new();
     env.register_module("counter", "state n = 0\nn += 1\nexport fn read()\n  n\nend");

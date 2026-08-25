@@ -47,6 +47,45 @@ fn time_and_elapsed() {
 }
 
 #[test]
+fn each_elapsed_callsite_is_its_own_timer() {
+    // `elapsed()` captures `time()` into a `state` slot inside the function, so
+    // under call-path keying (docs/dev/state-callsite-keying-plan.md) each
+    // callsite starts its own clock at the frame it first runs on. That is what
+    // makes "one timer per thing being timed" the default instead of the single
+    // global timer the pre-Phase-2 language could offer.
+    let src = "state a = 0.0\n\
+               state b = 0.0\n\
+               a = elapsed()\n\
+               if time() > 11.0 then\n\
+                 b = elapsed()\n\
+               end";
+    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+
+    ui.time = 10.0;
+    ui.frame().unwrap();
+    assert_eq!(
+        ui.state_float("a"),
+        Some(0.0),
+        "first callsite starts at 10"
+    );
+    assert_eq!(ui.state_float("b"), Some(0.0), "second has not run yet");
+
+    ui.time = 12.0;
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("a"), Some(2.0));
+    assert_eq!(
+        ui.state_float("b"),
+        Some(0.0),
+        "the second callsite's timer starts on its own first frame, not the first's"
+    );
+
+    ui.time = 20.0;
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("a"), Some(10.0), "started at 10");
+    assert_eq!(ui.state_float("b"), Some(8.0), "started at 12");
+}
+
+#[test]
 fn hovered_and_clicked_edges() {
     let src = "state hovers = 0\n\
                state hits = 0\n\

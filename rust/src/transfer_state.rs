@@ -146,6 +146,44 @@ mod stack_state_tests {
         assert_eq!(stack.state.len(), 3);
     }
 
+    /// The same rule over the *other* two path parts: a `Call` chain and an
+    /// absolute `Key` are as opaque to the transfer as a loop index is. The
+    /// declaration surviving the edit is the whole test — which callsites
+    /// reached it, and whether they still exist in the new program, is decided
+    /// by the untouched-key sweep after the next run, not here.
+    #[test]
+    fn call_and_key_paths_are_opaque_to_the_transfer_too() {
+        use crate::stack::PathPart;
+
+        let mut stack = Stack::new(StackKey(0), ProgramId(0), ContextKey(0));
+        let paths: [&[PathPart]; 4] = [
+            &[],
+            &[PathPart::Call(0xaa)],
+            &[
+                PathPart::Index(2),
+                PathPart::Call(0xbb),
+                PathPart::Call(0xbb),
+            ],
+            &[PathPart::Key(0xcc)],
+        ];
+        for (i, path) in paths.iter().enumerate() {
+            let mut k = key(1);
+            k.path.extend_from_slice(path);
+            stack.state.insert(k, Value::Int(i as i64));
+        }
+        // A second declaration, on one path, that the new program has dropped.
+        let mut gone = key(2);
+        gone.path.push(PathPart::Call(0xdd));
+        stack.state.insert(gone, Value::Int(99));
+
+        let result = transfer_stack_state(&mut stack, &keys(&[1]));
+
+        assert_eq!(result.state_preserved, 4, "every path of base 1 survives");
+        assert_eq!(result.state_dropped, 1, "base 2 has no declaration left");
+        assert_eq!(stack.state.len(), 4);
+        assert!(stack.state.keys().all(|k| k.base == StateKey(1)));
+    }
+
     /// A program with no `state` declarations drops everything.
     #[test]
     fn an_empty_declaration_set_drops_all_state() {
@@ -288,6 +326,40 @@ mod tests {
             2,
             0,
             &["10 20"],
+        );
+    }
+
+    #[test]
+    fn transfer_state_preserves_a_pathed_slot_per_callsite() {
+        // Hot reload with in-function state: one declaration, two callsites, so
+        // two entries — both preserved, both resumed on their own path. The edit
+        // between the versions touches neither callsite's spelling nor its
+        // ordinal, which is exactly the stability the callsite hash promises
+        // (plan §3.1).
+        check_transfer_both_opt_levels(
+            "\
+fn counter()
+  state n = 0
+  n += 1
+  n
+end
+print(counter())
+print(counter())
+",
+            &["1", "1"],
+            "\
+fn counter()
+  state n = 0
+  n += 1
+  n
+end
+let untouched = 1 + 1
+print(counter())
+print(counter())
+",
+            2,
+            0,
+            &["2", "2"],
         );
     }
 

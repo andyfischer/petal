@@ -19,12 +19,12 @@
 // Declaration *ids* — the other half of the key — are pinned in
 // tests/state_decl_ids.rs.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use petal::compiler::Compiler;
 use petal::env::Env;
-use petal::program::StateKey;
-use petal::stack::PathPart;
+use petal::program::{StateKey, TermOp};
+use petal::stack::{PathPart, RuntimeStateKey};
 use petal::value::Value;
 
 /// Run `src` once and return its print output.
@@ -53,6 +53,18 @@ fn run_n(src: &str, times: usize) -> Vec<String> {
 
 fn base(name: &str) -> StateKey {
     StateKey(Compiler::hash_state_name(name))
+}
+
+/// Every live path for the declaration named `name`, as a set so ordering of
+/// the state map never decides a test.
+fn paths_of(env: &Env, sid: petal::stack::StackKey, name: &str) -> HashSet<Vec<PathPart>> {
+    let b = base(name);
+    env.snapshot_state(sid)
+        .unwrap()
+        .keys()
+        .filter(|k| k.base == b)
+        .map(|k| k.path.to_vec())
+        .collect()
 }
 
 // ── Per-callsite isolation ───────────────────────────────────────
@@ -496,4 +508,306 @@ print(counter())
         .map(|k| k.path.to_vec())
         .collect();
     assert_eq!(paths.len(), 2, "one slot per callsite, the orphan swept");
+}
+
+// ── `state var` cells are pathed too ─────────────────────────────
+
+#[test]
+fn a_state_var_in_a_function_holds_one_cell_per_callsite() {
+    // A `state var`'s slot holds the *cell*; `set` writes through it, so no
+    // `StateWrite` is ever emitted. Path keying applies to the slot that holds
+    // the cell, so each callsite gets a cell of its own — and each keeps its
+    // value across runs, because the init block only runs on a path's first
+    // visit.
+    let src = "\
+fn c()
+  state var n = 0
+  set n = n + 1
+  get n
+end
+print(c())
+print(c())
+";
+    let mut env = Env::new();
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    // No `StateWrite`: `set` goes through the cell (plan §7's last bullet).
+    let program = env.get_program(pid).unwrap();
+    assert!(
+        !program
+            .terms
+            .iter()
+            .any(|t| matches!(t.op, TermOp::StateWrite)),
+        "a `state var` needs no StateWrite to persist"
+    );
+
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1", "1"], "two callsites, two cells");
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(
+        env.take_output(),
+        ["2", "2"],
+        "each cell persists on its own path"
+    );
+
+    // Two cells, both reached through one call part.
+    let paths = paths_of(&env, sid, "c/n");
+    assert_eq!(paths.len(), 2);
+    for p in &paths {
+        assert!(
+            matches!(p[..], [PathPart::Call(_)]),
+            "expected [Call], got {p:?}"
+        );
+        // and the slot really does hold a cell, not the value
+        let key = RuntimeStateKey {
+            base: base("c/n"),
+            path: p.iter().copied().collect(),
+        };
+        let Some(Value::Cell(cell)) = env.snapshot_state(sid).unwrap().get(&key).copied() else {
+            panic!("a `state var` slot holds a cell");
+        };
+        assert_eq!(env.heap().cell_read(cell), Value::Int(2));
+    }
+}
+
+// ── Upgrade compatibility for top-level slots (§2.3) ─────────────
+
+#[test]
+fn a_top_level_slot_written_by_an_older_build_is_picked_up_verbatim() {
+    // The upgrade contract: a top-level declaration's key is still
+    // `hash(name)` on the empty path, byte-identical to the pre-path builds.
+    // A snapshot taken then — modelled here by synthesizing the key by hand —
+    // restores into this build and the program resumes from it rather than
+    // re-running its init.
+    let mut env = Env::new();
+    let pid = env.load_program("state count = 0\ncount += 1").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    let mut old_snapshot: HashMap<RuntimeStateKey, Value> = HashMap::new();
+    old_snapshot.insert(
+        RuntimeStateKey {
+            base: base("count"),
+            path: Default::default(),
+        },
+        Value::Int(41),
+    );
+    env.restore_state(sid, old_snapshot);
+
+    env.run(sid).unwrap();
+    assert_eq!(
+        env.get_state(sid, base("count")).unwrap(),
+        Value::Int(42),
+        "the persisted 41 was resumed, not re-initialized to 0"
+    );
+    assert_eq!(
+        env.snapshot_state(sid).unwrap().len(),
+        1,
+        "and no second slot appeared beside it"
+    );
+}
+
+// ── The path unwinds correctly on every exit ─────────────────────
+
+#[test]
+fn breaking_out_of_a_loop_leaves_no_stale_index_part() {
+    // `break` jumps to the loop's exit label, which sits *before* `LoopPop` —
+    // so the iteration's `Index` part is popped on the way out. A leftover part
+    // would be invisible in the printed output and would quietly give every
+    // later call in the same frame a different slot each run.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+fn widget()
+  state n = 0
+  n += 1
+  n
+end
+for i in range(0, 3) do
+  if i == 1 then
+    break
+  end
+end
+print(widget())
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1"]);
+
+    let paths = paths_of(&env, sid, "widget/n");
+    assert_eq!(paths.len(), 1);
+    assert!(
+        matches!(paths.iter().next().unwrap()[..], [PathPart::Call(_)]),
+        "the call after the loop runs on the root path, got {paths:?}"
+    );
+
+    // And a second run lands in the same slot rather than a fresh one.
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["2"]);
+    assert_eq!(paths_of(&env, sid, "widget/n").len(), 1);
+}
+
+#[test]
+fn continuing_a_loop_keeps_one_index_part_per_iteration() {
+    // `continue` jumps to the loop's `*Next`, which resets the innermost
+    // `Index` part rather than pushing a second one — so a skipped iteration
+    // costs one path, not one path per `continue`.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+fn widget()
+  state n = 0
+  n += 1
+  n
+end
+for i in range(0, 4) do
+  if i == 1 then
+    continue
+  end
+  widget()
+end
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let paths = paths_of(&env, sid, "widget/n");
+    assert_eq!(paths.len(), 3, "iterations 0, 2 and 3 called the widget");
+    let mut indices: Vec<usize> = paths
+        .iter()
+        .map(|p| match p[..] {
+            [PathPart::Index(i), PathPart::Call(_)] => i,
+            ref other => panic!("expected [Index, Call], got {other:?}"),
+        })
+        .collect();
+    indices.sort_unstable();
+    assert_eq!(indices, [0, 2, 3], "the skipped iteration left no slot");
+}
+
+#[test]
+fn returning_from_inside_nested_loops_leaves_no_stale_index_part() {
+    // The frame that returns is recycled, and `recycle` clears its path, so an
+    // early `return` out of two loops cannot leak `Index` parts into the next
+    // call's path.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+fn search()
+  for i in range(0, 3) do
+    for j in range(0, 3) do
+      if j == 1 then
+        return i + j
+      end
+    end
+  end
+  -1
+end
+fn widget()
+  state n = 0
+  n += 1
+  n
+end
+search()
+print(widget())
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1"]);
+
+    let paths = paths_of(&env, sid, "widget/n");
+    assert_eq!(paths.len(), 1);
+    assert!(
+        matches!(paths.iter().next().unwrap()[..], [PathPart::Call(_)]),
+        "expected [Call] after the early return, got {paths:?}"
+    );
+}
+
+// ── Intrinsic higher-order calls (documented v1 gap) ─────────────
+
+#[test]
+fn a_closure_run_by_map_shares_one_slot_across_the_elements() {
+    // §2.1 defines `Index` parts as coming from `for`/`while` only, so the
+    // per-element calls `map` makes all carry the *`map` callsite's* part and
+    // nothing per element: one slot, incremented three times. Two `map`
+    // callsites are still two slots. Pinned so a future decision to key
+    // intrinsic iteration per element is a deliberate, visible change.
+    let out = run("\
+fn w(x)
+  state n = 0
+  n += 1
+  n
+end
+print(map([1, 2, 3], w))
+print(map([1, 2, 3], w))
+");
+    assert_eq!(out, ["[1, 2, 3]", "[1, 2, 3]"]);
+}
+
+// ── Garbage collection, continued ────────────────────────────────
+
+#[test]
+fn a_visited_explicit_key_survives_a_sweep_that_takes_its_positional_neighbour() {
+    // Two declarations reached through the same loop: one positional, one
+    // keyed by the item. Shrinking the list drops the positional slot for the
+    // iteration that no longer happens, while the keyed slot for an item that
+    // is still visited stays — even though the *path* it was first reached by
+    // is gone, because an explicit key is absolute (§2.2).
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+state var items = [\"a\", \"b\"]
+for x in get items do
+  state pos = 0
+  pos += 1
+  state(x) tagged = 0
+  tagged += 1
+end
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(paths_of(&env, sid, "pos").len(), 2);
+    assert_eq!(paths_of(&env, sid, "tagged").len(), 2);
+
+    // Drop "a": "b" moves from index 1 to index 0.
+    let b = env.heap_mut().alloc_string("b".to_string());
+    let shorter = env.heap_mut().alloc_list(vec![Value::String(b)]);
+    env.set_state(sid, base("items"), Value::List(shorter));
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+
+    assert_eq!(
+        paths_of(&env, sid, "pos").len(),
+        1,
+        "the second iteration no longer happens, so its positional slot is swept"
+    );
+    let tagged = paths_of(&env, sid, "tagged");
+    assert_eq!(
+        tagged.len(),
+        1,
+        "\"a\" was not visited, so its keyed slot is swept too"
+    );
+    // "b"'s keyed slot was visited from a different position and survived with
+    // its count: 1 from the first run plus 1 from the second.
+    let key = RuntimeStateKey {
+        base: base("tagged"),
+        path: tagged.iter().next().unwrap().iter().copied().collect(),
+    };
+    assert_eq!(
+        env.snapshot_state(sid).unwrap().get(&key).copied(),
+        Some(Value::Int(2)),
+        "the keyed slot followed its item across the reindex"
+    );
 }

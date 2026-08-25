@@ -45,6 +45,18 @@ describe("state keyword", () => {
     expect(write.state_key).not.toBeNull();
   });
 
+  it("StateInit never carries a path_pop — it *is* the declaration", () => {
+    // `path_pop` says how many loop levels an access sits below the slot it
+    // means. A declaration sits on its own slot by definition, whatever depth
+    // it is written at, so it never pops.
+    const ir = showIrJson(
+      "for i in [1, 2] do\n  state count = 0\n  count = count + 1\nend",
+    );
+    for (const init of termsByOp(ir, "StateInit")) {
+      expect(init.path_pop).toBeUndefined();
+    }
+  });
+
   it("state reference produces Copy of StateInit", () => {
     const ir = showIrJson("state count = 0\nlet x = count");
     // In the same scope, referencing state produces a Copy pointing at the StateInit term

@@ -1,6 +1,7 @@
 // Lazy state initialization: the RHS of `state x = expr` should only be
-// evaluated on first encounter of (state_key, loop_indices). Subsequent
-// encounters skip the init expression entirely.
+// evaluated on first encounter of the runtime key — the declaration id plus
+// the call path that reached it (see docs/dev/state-callsite-keying-plan.md).
+// Subsequent encounters skip the init expression entirely.
 //
 // This matters for:
 //   - Performance: per-iteration `state x = expensive_init(item)` runs N times
@@ -104,6 +105,50 @@ describe("lazy state init — runtime", () => {
     `);
     // Three iterations, three first-time inits per iteration key.
     expect(out).toBe("init\n10\ninit\n20\ninit\n30");
+  });
+
+  it("init runs once per callsite, not once per declaration", () => {
+    // The path is part of the runtime key, so each callsite's slot has its own
+    // first visit — and each pays for the init exactly once, however many times
+    // that callsite is reached.
+    const out = runPetal(`
+      fn make()
+        state x = fn()
+          print("init")
+          1
+        end()
+        x
+      end
+      fn twice()
+        make()
+        make()
+      end
+      twice()
+      make()
+    `);
+    // Three callsites of `make` (two inside `twice`, one at the top level).
+    expect(out).toBe("init\ninit\ninit");
+  });
+
+  it("init runs once per iteration of the loop the callsite sits in", () => {
+    const out = runPetal(`
+      fn make(i)
+        state x = fn()
+          print("init", i)
+          i
+        end()
+        x
+      end
+      for i in [1, 2] do
+        make(i)
+      end
+      for i in [1, 2] do
+        make(i)
+      end
+    `);
+    // Two callsites × two iterations each = four first visits; the second loop
+    // is a different callsite, so it does not reuse the first loop's slots.
+    expect(out).toBe("init 1\ninit 2\ninit 1\ninit 2");
   });
 
   it("explicit-key init runs once per unique key, not per visit", () => {

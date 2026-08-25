@@ -41,6 +41,12 @@ fn state_list_accumulated_in_loop_persists_across_runs() {
     // a run. Under value semantics this only works if the in-loop reassignment
     // emits a StateWrite to the base slot (see compiler/phi.rs) — otherwise the
     // appended value lives only in loop registers and is lost when the run ends.
+    //
+    // Call-path keying does not change this. The *declaration* is what the path
+    // keys, and this one is reached at the root, on the empty path (plan §2.3:
+    // top-level `state` is untouched). The writes sit one loop level below it
+    // and pop back to it (`Term::path_pop`). What per-iteration keying looks
+    // like — a declaration *inside* the loop — is the next test.
     let mut env = Env::new();
     let pid = env
         .load_program("state items = []\nfor i in range(0, 3) do\n  items = append(items, i)\nend")
@@ -66,6 +72,43 @@ fn state_list_accumulated_in_loop_persists_across_runs() {
         6,
         "second run should accumulate onto the persisted list"
     );
+    assert_eq!(
+        env.snapshot_state(sid).unwrap().len(),
+        1,
+        "one declaration on the root path is one slot — the loop it is written \
+         from adds no per-iteration strays"
+    );
+}
+
+#[test]
+fn state_declared_inside_a_loop_is_one_slot_per_iteration() {
+    // The other half of the rule, and the companion to the test above: move the
+    // declaration *into* the loop and the path that reaches it now carries the
+    // iteration, so each iteration owns a slot and each accumulates on its own
+    // across runs (plan §2.1). This is the keying `examples/console/particles.
+    // ptl` always claimed to have.
+    let mut env = Env::new();
+    let pid = env
+        .load_program("for i in range(0, 3) do\n  state seen = 0\n  seen += 1\nend")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+
+    env.run(sid).unwrap();
+    let after_one = env.get_all_state(sid).unwrap();
+    assert_eq!(after_one.len(), 3, "three iterations, three slots");
+    assert!(
+        after_one.values().all(|v| format!("{v:?}") == "Int(1)"),
+        "each iteration's own slot starts at 0, got {after_one:?}"
+    );
+
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    let after_two = env.get_all_state(sid).unwrap();
+    assert_eq!(after_two.len(), 3, "the same three slots, not three more");
+    assert!(
+        after_two.values().all(|v| format!("{v:?}") == "Int(2)"),
+        "each slot resumed where its own iteration left it, got {after_two:?}"
+    );
 }
 
 #[test]
@@ -74,7 +117,9 @@ fn state_list_mutated_by_index_in_loop_persists_across_runs() {
     // must persist across runs. Under value semantics the index assignment desugars
     // to a functional rebuild + rebind of `grid`; routing the rebind through the
     // same machinery as plain name assignment means the StateWrite to the base slot
-    // fires, so the per-iteration writes survive when the run ends.
+    // fires, so the per-iteration writes survive when the run ends. Routing it
+    // there also gives it the declaration's `path_pop`, so under call-path keying
+    // it still addresses the root-path slot rather than the iteration's.
     let mut env = Env::new();
     let pid = env
         .load_program(
@@ -168,6 +213,114 @@ fn untouched_state_keys_are_swept_after_run() {
         after, 1,
         "expected 1 entry after GC sweep (only \"a\" was visited), got {}",
         after
+    );
+}
+
+#[test]
+fn a_callsite_that_stops_running_has_its_slot_swept() {
+    // The sweep is keyed on the whole runtime key, so it reaches call paths as
+    // well as loop indices: one declaration reached through two callsites is two
+    // entries, and the one whose callsite is skipped this run is collected.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+fn widget()
+  state n = 0
+  n += 1
+  n
+end
+state var both = true
+widget()
+if get both then
+  widget()
+end
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let widget_slots = |env: &Env| {
+        let b = StateKey(petal::compiler::Compiler::hash_state_name("widget/n"));
+        env.get_all_state(sid)
+            .unwrap()
+            .keys()
+            .filter(|k| k.base == b)
+            .count()
+    };
+    assert_eq!(widget_slots(&env), 2, "two callsites, two slots");
+
+    // Turn the second callsite off; its slot is unvisited on the next run.
+    env.set_state(
+        sid,
+        StateKey(petal::compiler::Compiler::hash_state_name("both")),
+        petal::value::Value::Bool(false),
+    );
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(
+        widget_slots(&env),
+        1,
+        "the skipped callsite's path was not visited, so it is swept"
+    );
+}
+
+#[test]
+fn an_explicit_key_reached_by_a_new_path_keeps_its_value() {
+    // The counterpart to the sweep: an explicit key is absolute, so visiting it
+    // through a *different* call path on a later run finds the same slot rather
+    // than allocating a second one — and nothing is left unvisited to collect.
+    // This is the plant.ptl lineage contract, where the same leaf is reached one
+    // recursion level deeper every frame.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "\
+fn leaf(id)
+  state(id) age = 0
+  age += 1
+  age
+end
+fn wrap(id)
+  leaf(id)
+end
+state var deep = false
+if get deep then
+  print(wrap(\"x\"))
+else
+  print(leaf(\"x\"))
+end
+",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1"]);
+
+    // Same key, now reached one call deeper.
+    env.set_state(
+        sid,
+        StateKey(petal::compiler::Compiler::hash_state_name("deep")),
+        petal::value::Value::Bool(true),
+    );
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(
+        env.take_output(),
+        ["2"],
+        "the absolute key found its slot from the deeper path"
+    );
+
+    let b = StateKey(petal::compiler::Compiler::hash_state_name("leaf/age"));
+    assert_eq!(
+        env.get_all_state(sid)
+            .unwrap()
+            .keys()
+            .filter(|k| k.base == b)
+            .count(),
+        1,
+        "one key, one slot — the deeper path did not fork it"
     );
 }
 

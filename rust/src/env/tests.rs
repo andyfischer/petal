@@ -2142,6 +2142,70 @@ mod pending_state_init_chunk_i_tests {
             "each iteration's pending state init must stay uncommitted"
         );
     }
+
+    /// The no-commit rule is per *slot*, and under call-path keying a slot is
+    /// per callsite — so one callsite resolving must not commit another's.
+    /// `"a"` resolves at the end of frame 1 and `"b"` never does: frame 2 has to
+    /// commit exactly one of the two paths and keep re-initializing the other.
+    #[test]
+    fn a_pending_init_commits_per_call_path() {
+        let mut env = Env::new();
+        let src = "\
+fn load(k)
+  state v = __pending(k)
+  v
+end
+let a = load(\"a\")
+let b = load(\"b\")
+__resolve(\"a\", 7)
+a
+";
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+
+        /// Every committed value of the `load/v` declaration, one per path.
+        fn committed(env: &Env, sid: crate::stack::StackKey) -> Vec<String> {
+            let base = StateKey(crate::compiler::Compiler::hash_state_name("load/v"));
+            let mut vals: Vec<String> = env
+                .get_all_state(sid)
+                .unwrap()
+                .iter()
+                .filter(|(k, _)| k.base == base)
+                .map(|(_, v)| format!("{v:?}"))
+                .collect();
+            vals.sort();
+            vals
+        }
+
+        let f1 = env.run(sid).unwrap();
+        assert!(
+            matches!(f1, Value::Pending(_)),
+            "frame 1: the `a` callsite is still loading, got {f1:?}"
+        );
+        assert!(
+            committed(&env, sid).is_empty(),
+            "frame 1: neither path committed, got {:?}",
+            committed(&env, sid)
+        );
+
+        env.reset_stack(sid).unwrap();
+        let f2 = env.run(sid).unwrap();
+        assert_eq!(
+            f2,
+            Value::Int(7),
+            "frame 2: the resolved callsite's init re-ran and committed"
+        );
+        assert_eq!(
+            committed(&env, sid),
+            vec!["Int(7)".to_string()],
+            "frame 2: only the resolved path holds a value; `b`'s path re-inits"
+        );
+
+        // And it stays that way — the unresolved path never caches its Pending.
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(committed(&env, sid), vec!["Int(7)".to_string()]);
+    }
 }
 
 /// Chunk J of the pending-values feature: PROVENANCE on every Pending. When a

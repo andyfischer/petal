@@ -28,10 +28,10 @@
 // works anywhere a rect is taken.
 //
 // One implementation note, because it looks like paranoia otherwise: every
-// `state` variable in this file is named `_nes_something`. A state slot is
-// identified by the declared *name*, program-wide — two `state var cur` in two
-// different functions are one slot — so an unprefixed name here would quietly
-// share storage with a cart's own `state var cur`, and the cart would win.
+// `state` variable in this file is named `_nes_something`. A module's state is
+// reported to the host under its module-qualified name, so the prefix is what
+// makes `nes::_nes_scroll` read as the console's own bookkeeping next to a
+// cart's `scroll` in a state dump.
 
 // ── Screen geometry ───────────────────────────────────────────────────────
 // The console's fixed dimensions. `screen_width()`/`screen_height()` come from
@@ -110,24 +110,20 @@ export let pale_cyan = 60        // $3C
 
 let _native_set_backdrop = set_backdrop
 
+state var _nes_backdrop = 15
+
 // The universal color 0: the screen behind everything, and the transparent
 // entry of every palette. Remembered so `palette(i, c1, c2, c3)` can fill it
 // in, so call this *before* the palettes that rely on it (or just call it at
 // the top of the cart, which is where it belongs anyway).
 export fn set_backdrop(c)
-  _backdrop_cell(true, c)
+  set _nes_backdrop = c
   _native_set_backdrop(c)
 end
 
 // The current backdrop index.
 export fn backdrop()
-  _backdrop_cell(false, 0)
-end
-
-fn _backdrop_cell(write, v)
-  state var _nes_backdrop = 15
-  if write then set _nes_backdrop = v end
-  _nes_backdrop
+  get _nes_backdrop
 end
 
 // `palette(i, c1, c2, c3)` — the three colors that are actually this
@@ -486,13 +482,9 @@ let _FONT_GLYPHS = [
 let _FONT_DEFAULT_BASE = 448
 
 // Where the font lives, what color index its ink uses, and the last frame it
-// was written to the pattern table. One module slot, one write port — the
-// petal-ui `_theme_slot` pattern.
-fn _font_cell(write, v)
-  state var _nes_font = {base: _FONT_DEFAULT_BASE, ink: 1, at: -1}
-  if write then set _nes_font = v end
-  _nes_font
-end
+// was written to the pattern table. One module cell, read with `get` and
+// written with `set` — the petal-ui theme pattern.
+state var _nes_font = {base: _FONT_DEFAULT_BASE, ink: 1, at: -1}
 
 // `pattern` -> the 8 rows of 8 digits `define_tile` takes, with `#` painted in
 // color `ink` and the glyph left-aligned in the cell (so text advances 8px and
@@ -558,13 +550,13 @@ end
 
 export fn font_tiles(base, ink)
   _install_font(base, ink)
-  _font_cell(true, {base: base, ink: ink, at: frame_count()})
+  set _nes_font = {base: base, ink: ink, at: frame_count()}
   base + len(_FONT_GLYPHS)
 end
 
 // The tile index the font currently starts at.
 export fn font_base()
-  _font_cell(false, 0).base
+  (get _nes_font).base
 end
 
 // Make sure the glyphs are in the pattern table before something draws with
@@ -572,10 +564,10 @@ end
 // no setup call at all — and re-running it each frame also heals the font if
 // the cart's own artwork happened to overwrite those tiles.
 fn _ensure_font()
-  let f = _font_cell(false, 0)
+  let f = get _nes_font
   if f.at != frame_count() then
     _install_font(f.base, f.ink)
-    _font_cell(true, {base: f.base, ink: f.ink, at: frame_count()})
+    set _nes_font = {base: f.base, ink: f.ink, at: frame_count()}
   end
   f.base
 end
@@ -686,24 +678,21 @@ end
 let _native_set_map_size = set_map_size
 let _native_set_scroll = set_scroll
 
-export fn set_map_size(w_cells, h_cells)
-  _map_cell(true, {w: w_cells, h: h_cells})
-  _native_set_map_size(w_cells, h_cells)
-end
+state var _nes_map = {w: 32, h: 30}
+state var _nes_scroll = {x: 0, y: 0}
 
-fn _map_cell(write, v)
-  state var _nes_map = {w: 32, h: 30}
-  if write then set _nes_map = v end
-  _nes_map
+export fn set_map_size(w_cells, h_cells)
+  set _nes_map = {w: w_cells, h: h_cells}
+  _native_set_map_size(w_cells, h_cells)
 end
 
 // The map's size in cells and in pixels.
 export fn map_cols()
-  _map_cell(false, 0).w
+  (get _nes_map).w
 end
 
 export fn map_rows()
-  _map_cell(false, 0).h
+  (get _nes_map).h
 end
 
 export fn map_w()
@@ -715,25 +704,19 @@ export fn map_h()
 end
 
 export fn set_scroll(x, y)
-  _scroll_cell(true, {x: x, y: y})
+  set _nes_scroll = {x: x, y: y}
   _native_set_scroll(px(x), px(y))
-end
-
-fn _scroll_cell(write, v)
-  state var _nes_scroll = {x: 0, y: 0}
-  if write then set _nes_scroll = v end
-  _nes_scroll
 end
 
 // The current scroll position — the world coordinate at the top-left of the
 // screen. Named `cam_*` and not `scroll_*` because petal-ui already publishes
 // `scroll_x()`/`scroll_y()` for the mouse wheel.
 export fn cam_x()
-  _scroll_cell(false, 0).x
+  (get _nes_scroll).x
 end
 
 export fn cam_y()
-  _scroll_cell(false, 0).y
+  (get _nes_scroll).y
 end
 
 // Point the camera at a world position, clamped so the view never runs past
@@ -942,20 +925,16 @@ end
 // where per-scene setup goes. Switching to the scene you are already in
 // re-enters it, so "restart level" is `set_scene(scene())`.
 
-fn _scene_cell(write, v)
-  state var _nes_scene = {name: "", pending: "", req: -1, at: -1, at_time: 0}
-  if write then set _nes_scene = v end
-  _nes_scene
-end
+state var _nes_scene = {name: "", pending: "", req: -1, at: -1, at_time: 0}
 
 // Read the live scene, applying a pending switch once the frame that
 // requested it is over. Every accessor goes through this, so the switch lands
 // on the first read of the new frame no matter which one it is.
 fn _scene_now()
-  let s = _scene_cell(false, 0)
+  let s = get _nes_scene
   if s.pending != "" && frame_count() != s.req then
     let n = {name: s.pending, pending: "", req: -1, at: frame_count(), at_time: time()}
-    _scene_cell(true, n)
+    set _nes_scene = n
     n
   else
     s
@@ -971,7 +950,7 @@ end
 // "nothing pending" sentinel — so switching to it does nothing.
 export fn set_scene(name)
   let s = _scene_now()
-  _scene_cell(true, {name: s.name, pending: name, req: frame_count(), at: s.at, at_time: s.at_time})
+  set _nes_scene = {name: s.name, pending: name, req: frame_count(), at: s.at, at_time: s.at_time}
 end
 
 // Set the scene *only if the cart has not started one yet*, immediately. The
@@ -979,7 +958,7 @@ end
 // switch that has already happened.
 export fn start_scene(name)
   if _scene_now().name == "" then
-    _scene_cell(true, {name: name, pending: "", req: -1, at: frame_count(), at_time: time()})
+    set _nes_scene = {name: name, pending: "", req: -1, at: frame_count(), at_time: time()}
   end
 end
 
@@ -1032,9 +1011,10 @@ export fn menu_update(id, count)
   end
 end
 
-// The one slot per menu id holding its cursor, with a single write port — the
-// shape petal-ui uses for its theme, and the only way `menu_update` and
-// `menu_index` can be looking at the same cursor.
+// The one slot per menu id holding its cursor, with a single write port. The
+// explicit `state(id)` key is what makes it one slot per menu rather than one
+// module cell, and it is the only way `menu_update` and `menu_index` can be
+// looking at the same cursor.
 fn _menu_sel(id, write, v)
   state(id) var _nes_menu_sel = 0
   if write then set _nes_menu_sel = v end
@@ -1116,28 +1096,24 @@ end
 // whole set every frame, which is what keeps re-running the cart from piling
 // up duplicate ranges.
 
-fn _solid_cell(write, v)
-  state var _nes_solid = []
-  if write then set _nes_solid = v end
-  _nes_solid
-end
+state var _nes_solid = []
 
 // Declare the solid tile range, replacing whatever was declared before.
 export fn set_solid(first, last)
-  _solid_cell(true, [[first, last]])
+  set _nes_solid = [[first, last]]
 end
 
 // Add another solid range on top of the current set. Because `set_solid`
 // resets, the idiomatic order is one `set_solid` followed by any number of
 // `add_solid`s, re-run every frame.
 export fn add_solid(first, last)
-  _solid_cell(true, append(_solid_cell(false, 0), [first, last]))
+  set _nes_solid = append(get _nes_solid, [first, last])
 end
 
 // Is this tile index solid?
 export fn solid_tile(t)
   let hit = false
-  for r in _solid_cell(false, 0) do
+  for r in get _nes_solid do
     if t >= r[0] && t <= r[1] then
       hit = true
     end

@@ -140,56 +140,30 @@ let SCORE_GOAL = 200
 let BOSS_HP = 5
 
 // ── State ─────────────────────────────────────────────────────────────────
-// Two slots and one write port each, the shape the preludes use: one
-// declaration site is one slot, and every entry point sees the same cell.
+// One top-level cell per thing the cart remembers across frames, read with
+// `get` and written with `set`. Module scope is what makes them shared — every
+// entry point sees the same cell — and what carries them across a hot reload.
+// `nil` is the "not built yet" sentinel — the reader function for each cell is
+// what fills it in.
 
-fn game_slot(write, v)
-  state var _pq_game = nil
-  if write then set _pq_game = v end
-  _pq_game
-end
-
-fn level_slot(write, v)
-  state var _pq_level = nil
-  if write then set _pq_level = v end
-  _pq_level
-end
-
-fn tune_slot(write, v)
-  state var _pq_tunes = nil
-  if write then set _pq_tunes = v end
-  _pq_tunes
-end
-
-fn art_slot(write, v)
-  state var _pq_art = nil
-  if write then set _pq_art = v end
-  _pq_art
-end
-
-fn hud_slot(write, v)
-  state var _pq_hud = nil
-  if write then set _pq_hud = v end
-  _pq_hud
-end
-
-fn paint_slot(write, v)
-  state var _pq_paint = nil
-  if write then set _pq_paint = v end
-  _pq_paint
-end
+state var _pq_game = nil
+state var _pq_level = nil
+state var _pq_tunes = nil
+state var _pq_art = nil
+state var _pq_hud = nil
+state var _pq_paint = nil
 
 fn game()
-  let g = game_slot(false, 0)
+  let g = get _pq_game
   if g == nil then
     g = new_game()
-    game_slot(true, g)
+    set _pq_game = g
   end
   g
 end
 
 fn put_game(g)
-  game_slot(true, g)
+  set _pq_game = g
   0
 end
 
@@ -288,17 +262,13 @@ fn sfx_bank()
   }
 end
 
-fn sfx_slot(write, v)
-  state var _pq_sfx = nil
-  if write then set _pq_sfx = v end
-  _pq_sfx
-end
+state var _pq_sfx = nil
 
 fn sfx_state()
-  let s = sfx_slot(false, 0)
+  let s = get _pq_sfx
   if s == nil then
     s = {p2: {name: "", t: 0}, noise: {name: "", t: 0}, frame: -1, bank: sfx_bank()}
-    sfx_slot(true, s)
+    set _pq_sfx = s
   end
   s
 end
@@ -316,7 +286,7 @@ fn sfx(name)
     let held = cur.name != "" && s.bank[cur.name].pri > d.pri
     if !held then
       s[d.ch] = {name: name, t: 0}
-      sfx_slot(true, s)
+      set _pq_sfx = s
     end
   end
   0
@@ -349,18 +319,18 @@ fn sfx_tick()
       end
     end
   end
-  sfx_slot(true, s)
+  set _pq_sfx = s
   0
 end
 
 // The three tunes, built once. `song_gameplay()` parses tracker text, so
 // rebuilding it every frame would cost more than the rest of the cart.
 fn tunes()
-  let t = tune_slot(false, 0)
+  let t = get _pq_tunes
   if t == nil then
     let g = song_gameplay()
     t = {title: song_title(), play: g, boss: boss_song(g)}
-    tune_slot(true, t)
+    set _pq_tunes = t
   end
   t
 end
@@ -441,12 +411,12 @@ fn define_group(i, world)
 end
 
 fn ensure_art(world)
-  let a = art_slot(false, 0)
+  let a = get _pq_art
   if a == nil || a.world != world then
     for i in range(0, ART_GROUPS) do
       define_group(i, world)
     end
-    art_slot(true, {world: world})
+    set _pq_art = {world: world}
   else
     define_group(frame_count() % ART_GROUPS, world)
   end
@@ -632,10 +602,10 @@ end
 // dropping the hero, his score or his lives.
 fn level_cache(n)
   let src = maps.level(n)
-  let c = level_slot(false, 0)
+  let c = get _pq_level
   if c == nil || c.id != n || c.chunks != src.chunks || c.world != src.world then
     c = build_level(n, src, if c == nil then 1 else c.rev + 1 end)
-    level_slot(true, c)
+    set _pq_level = c
   end
   c
 end
@@ -791,12 +761,12 @@ fn repaint_all(lv, cam)
   for c in range(lo, hi + 1) do
     paint_column(lv, c)
   end
-  paint_slot(true, {id: lv.rev, lo: lo, hi: hi})
+  set _pq_paint = {id: lv.rev, lo: lo, hi: hi}
   0
 end
 
 fn paint_window(lv, cam)
-  let p = paint_slot(false, 0)
+  let p = get _pq_paint
   let c0 = int(floor(cam / 8.0))
   let lo = max(0, c0 - PAINT_BEHIND)
   let hi = min(lv.cols - 1, c0 + PAINT_AHEAD)
@@ -816,7 +786,7 @@ fn paint_window(lv, cam)
     // The window is 64 cells; anything older than that has been overwritten
     // by the wrap and must be repainted if the camera ever comes back.
     plo = max(plo, phi - 63)
-    paint_slot(true, {id: lv.rev, lo: plo, hi: phi})
+    set _pq_paint = {id: lv.rev, lo: plo, hi: phi}
   end
   0
 end
@@ -829,7 +799,7 @@ end
 
 fn draw_hud(g, lv)
   let key = "{g.score}/{g.coins}/{g.lives}/{g.level}/{lv.name}"
-  let h = hud_slot(false, 0)
+  let h = get _pq_hud
   if h == nil || h.key != key then
     map_rect(0, 0, 32, 4, B_AIR, PAL_HUD)
     map_text(1, 1, "SCORE", PAL_HUD)
@@ -843,7 +813,7 @@ fn draw_hud(g, lv)
     // The level's name on the bottom row of the bar, where it doubles as the
     // rule between the status bar and the play area.
     map_text_center(3, lv.name, PAL_HUD)
-    hud_slot(true, {key: key})
+    set _pq_hud = {key: key}
   end
   0
 end
@@ -851,7 +821,7 @@ end
 // Force the next `draw_hud` to redraw, after something else has written over
 // the status rows (a title screen, a pause banner).
 fn dirty_hud()
-  hud_slot(true, nil)
+  set _pq_hud = nil
   0
 end
 

@@ -470,16 +470,11 @@ end
 // current one without a generic record-merge builtin.
 let _THEME_KEYS = ["bg", "panel", "text", "dim", "accent", "outline", "hover", "selection"]
 
-// The single module state slot holding the live palette. `writing` is the write
-// port: one function so there is exactly one `state` declaration, i.e. exactly
-// one slot, shared by every caller and preserved across hot reload.
-fn _theme_slot(writing, v)
-  state cur = theme
-  if writing then
-    cur = v
-  end
-  cur
-end
+// The module cell holding the live palette: one slot, shared by every caller
+// and preserved across hot reload. A top-level `state var` is the sanctioned
+// shape for cross-function shared state — the `get` at each read site keeps
+// the sharing visible.
+state var _live_theme = theme
 
 // The live palette a widget paints with: `ui_theme()`, with the module default
 // standing in if a caller ever emptied it.
@@ -492,7 +487,7 @@ end
 // The live palette. Widgets read this through `_palette`, never `theme`
 // directly.
 export fn ui_theme()
-  _theme_slot(false, 0)
+  get _live_theme
 end
 
 // Merge `t`'s keys onto the live palette and return the result. Call it once
@@ -508,12 +503,12 @@ export fn theme_set(t)
   for k in keys(t) do
     next[k] = t[k]
   end
-  _theme_slot(true, next)
+  set _live_theme = next
 end
 
 // Back to the built-in dark palette.
 export fn theme_reset()
-  _theme_slot(true, theme)
+  set _live_theme = theme
 end
 
 // Project a host palette record — Garden's `palette()` / `panel_theme()`, whose

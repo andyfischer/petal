@@ -377,11 +377,12 @@ export fn song(spec)
 end
 
 // ── Driver state ──────────────────────────────────────────────────────────
-// Everything the driver remembers lives in one record behind one `state` slot,
-// for the same reason `ui.ptl`'s theme does: one declaration site is one slot,
-// shared by every entry point and carried across a hot reload. That is what
-// makes a reload mid-song resume on the same row of the same pattern instead
-// of restarting the tune every time the file is saved.
+// Everything the driver remembers lives in one record behind one module cell,
+// for the same reason `ui.ptl`'s theme does: a top-level `state var` is one
+// slot, shared by every entry point and carried across a hot reload. That is
+// what makes a reload mid-song resume on the same row of the same pattern
+// instead of restarting the tune every time the file is saved. `_snd`/`_put`
+// are its read and write ports, so the `get`/`set` stay in one place.
 //
 // (`state` is a keyword, so the field naming here avoids it entirely; the
 // current song is `tune`.)
@@ -416,20 +417,14 @@ fn _fresh()
   }
 end
 
-fn _slot(writing, v)
-  state cur = _fresh()
-  if writing then
-    cur = v
-  end
-  cur
-end
+state var _nes_snd = _fresh()
 
 fn _snd()
-  _slot(false, 0)
+  get _nes_snd
 end
 
 fn _put(s)
-  _slot(true, s)
+  set _nes_snd = s
 end
 
 // ── Transport ─────────────────────────────────────────────────────────────

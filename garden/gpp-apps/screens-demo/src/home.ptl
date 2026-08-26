@@ -1,25 +1,28 @@
 // screens-demo — HOME screen. A fixed panel drawer (no data). Pressing `n`
-// navigates to the detail screen via the built-in `navigate` mutation.
-let P = palette()
-let BG     = P.window_bg
-let TEXT   = P.text
-let DIM    = P.text_dim
-let GREEN  = P.green
-let ACCENT = P.accent
-
+// navigates to the detail screen via the first-class `navigate` request.
+//
+// Built entirely on the petal-ui component library: `ui_theme()` mirrors the
+// host palette in Garden and falls back to the built-in theme under a bare
+// `petal-ui-run`, so this screen runs headlessly too.
+let T = ui_theme()
 let w = screen_width()
 let h = screen_height()
-clear(BG.r, BG.g, BG.b)
+clear(T.bg.r, T.bg.g, T.bg.b)
 
-// A bold accent band identifies the screen at a glance.
-draw_rect(rect(0, 0, w, 8), GREEN)
-draw_rect(rect(40, 60, 6, 40), GREEN)
+// The screen's identity band: HOME is the green screen.
+draw_rect(rect(0, 0, w, 4), T.success)
 
-draw_text("HOME", {x: 62, y: 62}, 14, TEXT)
-draw_text("screen 1 of 2", {x: 62, y: 92}, 14, GREEN)
+let cw = min(460, w - 48)
+let c = card(rect((w - cw) / 2, 56, cw, 132))
+draw_text("HOME", {x: c.x, y: c.y}, {size: T.font_xl, color: T.text, weight: 700})
+let tag = "screen 1 of 2"
+pill(c.x + c.w - text_width(tag, T.font_sm) - 14, c.y + 4, tag, T.success)
 
-draw_text("press  n  →  navigate to DETAIL", {x: 40, y: 150}, 14, TEXT)
-draw_text("(the host fetches DETAIL's source over the navigate mutation)", {x: 40, y: 178}, 14, DIM)
+draw_text("Press n to navigate to DETAIL.", {x: c.x, y: c.y + 44}, T.font_md, T.text)
+draw_text("The host fetches DETAIL's source over the navigate request.",
+          {x: c.x, y: c.y + 68}, T.font_sm, T.dim)
+
+hint_bar(rect(0, h - 26, w, 26), [hint("n", "open DETAIL")])
 
 if key_pressed("n") then
   navigate("detail.ptl")

@@ -46,10 +46,9 @@ const repo = join(work, "repo");
 
 const checks = new Checks();
 
-// The drawer's own row geometry: rows are ROW_H tall and their offsets inside
-// the scrolled content are published as `row_off`, so a click target is read
-// from the panel rather than hardcoded.
-const ROW_H = 38;
+// The drawer's row geometry — its ROW_H constant and every row's offset inside
+// the scrolled content (`row_off`) — is published by the panel, so click
+// targets are read from the drawer rather than hardcoded here.
 
 // --- fixture: a git repo with two files, and two homes ------------------------
 await mkdir(repo, { recursive: true });
@@ -177,7 +176,8 @@ if (!windowed) {
 const firstFileRow = await pnum("project_count");
 const rowOff = (await pstate("row_off")) as number[];
 const rowY = (await pnum("content_top")) + rowOff[firstFileRow] - (await pnum("scroll_px"));
-await g.clickPaneLocal((await pnum("col_x")) + 20, rowY + ROW_H / 2);
+const rowH = await pnum("ROW_H");
+await g.clickPaneLocal((await pnum("col_x")) + 20, rowY + rowH / 2);
 
 const paneFile = await waitUntil(async () => (await g.pane()).file, (f) => !!f, {
   tries: 100,

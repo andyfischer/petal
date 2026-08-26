@@ -1,24 +1,29 @@
 // screens-demo — DETAIL screen. Reached by navigating from HOME. Pressing
 // `b` calls navigate_back() (the in-script history API); the host's Ctrl+[ /
 // Ctrl+] and :back / :forward drive the same stack.
-let P = palette()
-let BG     = P.window_bg
-let TEXT   = P.text
-let DIM    = P.text_dim
-let ORANGE = P.orange
-
+//
+// Like home.ptl this paints with `ui_theme()` only, so it also runs under a
+// bare `petal-ui-run`.
+let T = ui_theme()
 let w = screen_width()
 let h = screen_height()
-clear(BG.r, BG.g, BG.b)
+clear(T.bg.r, T.bg.g, T.bg.b)
 
-draw_rect(rect(0, 0, w, 8), ORANGE)
-draw_rect(rect(40, 60, 6, 40), ORANGE)
+// The screen's identity band: DETAIL is the amber screen.
+draw_rect(rect(0, 0, w, 4), T.warn)
 
-draw_text("DETAIL", {x: 62, y: 62}, 14, TEXT)
-draw_text("screen 2 of 2", {x: 62, y: 92}, 14, ORANGE)
+let cw = min(460, w - 48)
+let c = card(rect((w - cw) / 2, 56, cw, 132))
+draw_text("DETAIL", {x: c.x, y: c.y}, {size: T.font_xl, color: T.text, weight: 700})
+let tag = "screen 2 of 2"
+pill(c.x + c.w - text_width(tag, T.font_sm) - 14, c.y + 4, tag, T.warn)
 
-draw_text("press  b  →  back to HOME   (or Ctrl+[ , :back)", {x: 40, y: 150}, 14, TEXT)
-draw_text("Ctrl+]  /  :forward  returns here", {x: 40, y: 178}, 14, DIM)
+draw_text("Press b to go back to HOME.", {x: c.x, y: c.y + 44}, T.font_md, T.text)
+draw_text("The host owns the history stack; :forward returns here.",
+          {x: c.x, y: c.y + 68}, T.font_sm, T.dim)
+
+hint_bar(rect(0, h - 26, w, 26),
+         [hint("b", "back to HOME"), hint("ctrl+[", ":back"), hint("ctrl+]", ":forward")])
 
 if key_pressed("b") then
   navigate_back()

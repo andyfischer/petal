@@ -32,11 +32,13 @@
 // The host observes every named binding a frame makes and reports it at the
 // debug server (/state → panes[].panel.values), so `recents_ready`,
 // `project_count`, `file_count`, `pr_count`, `selected`, `row_count`,
-// `open_button` and `last_action` are the handles the integration test drives
-// this screen by — the script publishes nothing.
+// `open_button`, `ROW_H` and `last_action` are the handles the integration
+// test drives this screen by — the script publishes nothing.
 //
-// Garden renders all panel text at its one monospace size, so every draw_text
-// here uses size 14: hierarchy comes from color, never from size.
+// Visually this is built on the petal-ui component library (prelude level 3,
+// petal-ui/docs/components.md): `ui_theme()` mirrors Garden's palette
+// automatically, buttons/hint bar come from the prelude, and hierarchy uses
+// the theme's type scale (Garden honors per-draw text sizes).
 
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state selected = 0
@@ -51,33 +53,25 @@ state recents = { projects: [], files: [], prs: [] }
 state recents_ready = false
 state recents_err = ""
 
-// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+// ── theme ────────────────────────────────────────────────────────────────────
+// `ui_theme()` resolves to the host palette in Garden (bound every frame), so
+// the semantic tokens below already ARE Garden's colors. `palette()` is kept
+// only for the two hues the theme vocabulary doesn't carry (blue, purple) —
+// the per-section identity colors.
+let T = ui_theme()
 let P = palette()
-let BG     = P.window_bg
-let CARD   = P.panel
-let SEL    = P.sel
-let HOVER  = P.hover
-let LINE   = P.border
-let TEXT   = P.text
-let MUT    = P.text_mut
-let DIM    = P.text_dim
-let FAINT  = P.text_faint
-let ACCENT = P.accent
-let BLUE   = P.blue
-let GREEN  = P.green
-let PURPLE = P.purple
-let RED    = P.red
 
-let FS = 14
+let FS = T.font_md
 
 // ── geometry ─────────────────────────────────────────────────────────────────
 let w = screen_width()
 let h = screen_height()
 let PAD = 24
-let ROW_H = 38          // two text lines: the name, then its dim context line
+let ROW_H = 44          // two text lines: the name, then its dim context line
 let HEAD_H = 30         // a section heading + its rule
 let HINT_H = 26         // the dim one-liner an empty section shows instead
-let GAP = 18
+let GAP = 20
+let HB_H = 28           // the bottom keyboard-hint bar
 
 // A centered column: the screen is a start page, not a dense list, so it stays
 // readable rather than stretching a file path across a 2000px window.
@@ -114,7 +108,7 @@ let row_count = len(rows)
 
 // ── header + the two Open buttons ─────────────────────────────────────────────
 let title_y = PAD
-let btn_y = title_y + 52
+let btn_y = title_y + 62
 let BTN_H = 30
 let open_label = "Open File…"
 let folder_label = "Open Folder…"
@@ -126,7 +120,7 @@ let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
   w: text_width(folder_label, FS) + 32, h: BTN_H}
 
 let content_top = btn_y + BTN_H + 26
-let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - PAD}
+let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - HB_H - 6}
 
 // ── layout pass: every row's offset inside the scrolled content ───────────────
 // Computed before input so a click and the draw agree on where a row is.
@@ -165,25 +159,14 @@ if key_pressed("home") then selected = 0; key_moved = true end
 if key_pressed("end") then selected = row_count - 1; key_moved = true end
 selected = int(clamp(selected, 0, max(0, row_count - 1)))
 
-// ── input: clicks (buttons, then rows) ────────────────────────────────────────
+// ── input: row clicks ─────────────────────────────────────────────────────────
 // `activate` names the row to open this frame (-1 = none): a click on it, or
 // Enter on the selection. Resolved before the mutations so both paths take one
-// code path.
+// code path. (The Open buttons are prelude `button(...)` calls in the draw
+// section below — they sit outside `content_rect`, so the two click regions
+// can't collide.)
 let activate = -1
-let clicked_button = false
-if mouse_pressed(0) then
-  if point_in(mouse_x(), mouse_y(), open_button) then
-    clicked_button = true
-    last_action = "open_file_dialog"
-    mutate("open_file_dialog", { mode: "file" })
-  elsif point_in(mouse_x(), mouse_y(), folder_button) then
-    clicked_button = true
-    last_action = "open_file_dialog"
-    mutate("open_file_dialog", { mode: "folder" })
-  end
-end
-
-if mouse_pressed(0) && !clicked_button && point_in(mouse_x(), mouse_y(), content_rect) then
+if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
   for i in range(0, row_count) do
     let ry = content_top + row_off[i] - scroll_px
     if point_in(mouse_x(), mouse_y(), rect(content_rect.x, ry, content_rect.w, ROW_H)) then
@@ -218,53 +201,56 @@ end
 scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
 
 // ── draw: chrome ──────────────────────────────────────────────────────────────
-clear(BG.r, BG.g, BG.b)
-draw_text("Garden", {x: col_x, y: title_y}, FS, ACCENT)
-draw_text("a place to start", {x: col_x, y: title_y + 20}, FS, FAINT)
+clear(T.bg.r, T.bg.g, T.bg.b)
+draw_text("Garden", {x: col_x, y: title_y}, {size: T.font_xl, color: T.accent, weight: 700})
+draw_text("a place to start", {x: col_x, y: title_y + 32}, T.font_md, T.dim)
 
-// Two pills: the primary Open carries the accent border, the folder one the
-// ordinary hairline — same shape, so the pair reads as one control group.
-fn draw_button(r, label, accented)
-  let bg = CARD
-  if hovered(r) then bg = HOVER end
-  draw_rect(r, bg)
-  let border = LINE
-  if accented || hovered(r) then border = ACCENT end
-  draw_rect_outline(r, border)
-  let fg = MUT
-  if accented then fg = TEXT end
-  draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, fg)
+// Two prelude buttons (hover/press eased by the library): the primary Open is
+// the filled accent button, the folder one the plain themed pill — same shape,
+// so the pair reads as one control group.
+if button(open_button, open_label,
+          {bg: T.accent, hover: mix(T.accent, T.text, 0.2),
+           fg: contrast_text(T.accent), outline: T.accent, size: FS}) then
+  last_action = "open_file_dialog"
+  mutate("open_file_dialog", { mode: "file" })
 end
-draw_button(open_button, open_label, true)
-draw_button(folder_button, folder_label, false)
+if button(folder_button, folder_label, {size: FS}) then
+  last_action = "open_file_dialog"
+  mutate("open_file_dialog", { mode: "folder" })
+end
 
 if len(recents_err) > 0 then
-  draw_text(ellipsize(recents_err, col_w, FS), {x: col_x, y: btn_y + BTN_H + 6}, FS, RED)
+  draw_text(ellipsize(recents_err, col_w, FS), {x: col_x, y: btn_y + BTN_H + 6}, FS, T.danger)
 end
 
 // ── draw: the three sections ──────────────────────────────────────────────────
 clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
 
+// A section heading: a small tracked-out label, the count right-aligned, and a
+// hairline rule under both.
 fn draw_heading(label, count, y)
-  draw_text(label, {x: col_x, y: y}, FS, ACCENT)
-  if count > 0 then draw_text_right("{count}", col_x + col_w, y, FS, FAINT) end
-  draw_line({x: col_x, y: y + 20}, {x: col_x + col_w, y: y + 20}, LINE)
+  draw_text(label, {x: col_x, y: y}, {size: T.font_sm, color: T.muted, weight: 600, spacing: 0.8})
+  if count > 0 then
+    draw_text_right("{count}", col_x + col_w, y + 1, T.font_sm, T.dim)
+  end
+  draw_line({x: col_x, y: y + 20}, {x: col_x + col_w, y: y + 20}, T.outline)
 end
 
-draw_heading("Recent Projects", project_count, content_top + proj_head - scroll_px)
-draw_heading("Recent Files", file_count, content_top + file_head - scroll_px)
-draw_heading("Recent Pull Requests", pr_count, content_top + pr_head - scroll_px)
+draw_heading("RECENT PROJECTS", project_count, content_top + proj_head - scroll_px)
+draw_heading("RECENT FILES", file_count, content_top + file_head - scroll_px)
+draw_heading("RECENT PULL REQUESTS", pr_count, content_top + pr_head - scroll_px)
 
 // An empty section says so rather than collapsing — on a first launch all three
 // are empty, and three headings over blank space would read as a failure.
+let hint_fg = mix(T.dim, T.bg, 0.35)
 if project_count == 0 then
-  draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, FAINT)
+  draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
 if file_count == 0 then
-  draw_text("No recent files yet", {x: col_x, y: content_top + file_head + HEAD_H - scroll_px}, FS, FAINT)
+  draw_text("No recent files yet", {x: col_x, y: content_top + file_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
 if pr_count == 0 then
-  draw_text("No recent pull requests yet", {x: col_x, y: content_top + pr_head + HEAD_H - scroll_px}, FS, FAINT)
+  draw_text("No recent pull requests yet", {x: col_x, y: content_top + pr_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
 
 for i in range(0, row_count) do
@@ -274,42 +260,46 @@ for i in range(0, row_count) do
   // Cull rows scrolled out of the viewport: nothing below draws for them.
   if ry + ROW_H > content_rect.y && ry < content_rect.y + content_rect.h then
     if i == selected then
-      draw_rect(row_r, SEL)
+      draw_rect_rounded(row_r, T.radius_sm, T.selection)
+      // The keyboard focus ring: the selection is where Enter lands.
+      draw_rect_outline(row_r, T.accent, 90)
     elsif hovered(row_r) then
-      draw_rect(row_r, HOVER)
+      draw_rect_rounded(row_r, T.radius_sm, T.hover)
     end
-    let name_c = MUT
-    if i == selected then name_c = TEXT end
-    let tx = row_r.x + 12
-    let avail = row_r.w - 24
+    let name_c = if i == selected then T.text else T.muted end
+    let tx = row_r.x + 16
+    let avail = row_r.w - 32
+    // The section identity bar: green project / blue file / purple PR.
+    let bar_c = T.success
+    if row.kind == "file" then bar_c = P.blue end
+    if row.kind == "pr" then bar_c = P.purple end
+    draw_rect_rounded(rect(row_r.x + 3, ry + 8, 3, ROW_H - 16), 1, bar_c)
     if row.kind == "project" then
       let p = projects[row.idx]
-      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), GREEN)
-      draw_text(ellipsize_tail(p.name, avail, FS), {x: tx, y: ry + 3}, FS, name_c)
-      draw_text(ellipsize(p.path, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+      draw_text(ellipsize_tail(p.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
+      draw_text(ellipsize(p.path, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
     elsif row.kind == "file" then
       let f = files[row.idx]
-      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), BLUE)
-      draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 3}, FS, name_c)
+      draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
       // The head of a long path is the expendable part — `ellipsize` keeps the
       // tail, which is what tells two same-named files apart.
       let ctx = f.dir
       if len(f.project_name) > 0 then ctx = "{f.project_name} · {f.dir}" end
-      draw_text(ellipsize(ctx, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+      draw_text(ellipsize(ctx, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
     else
       let pr = prs[row.idx]
-      draw_rect(rect(row_r.x, ry + 4, 3, ROW_H - 8), PURPLE)
-      draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 3}, FS, name_c)
+      draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
       if len(pr.title) > 0 then
-        draw_text(ellipsize_tail(pr.title, avail, FS), {x: tx, y: ry + 20}, FS, FAINT)
+        draw_text(ellipsize_tail(pr.title, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
       end
     end
   end
 end
 clip_none()
 
-// A hint only while there is something to walk — the keys do nothing on an
+// A hint bar only while there is something to walk — the keys do nothing on an
 // empty screen, and saying otherwise is worse than saying nothing.
 if row_count > 0 then
-  draw_text_right("↑↓ move · Enter open", col_x + col_w, h - PAD + 4, FS, FAINT)
+  hint_bar(rect(0, h - HB_H, w, HB_H),
+           [hint("↑↓/jk", "move"), hint("return", "open")])
 end

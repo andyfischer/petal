@@ -1,0 +1,103 @@
+// sysmon — the drawer. A live process monitor as a Petal graphical panel,
+// served by the Python app beside it (app.py; see
+// docs/writing-gpp-apps-python.md).
+//
+// Data arrives through query("procs", "<field>:<dir>") — the sort spec is
+// UI state (the table's click-to-sort header), so re-sorting re-keys the
+// query and the Python side answers with a freshly sorted sample:
+//
+//   query("procs", spec) → {
+//     procs:      [[pid, user, cpu, mem, rss, command] …],   // sorted, capped
+//     proc_count: int,  cpu_total: float,  ncpu: int,
+//     load1/load5/load15: float,  rss_total_gb: float }
+//
+// Everything visual is the ui prelude component library (components.md):
+// table (sortable headers, keyboard nav, scrollbar), badge/pill for the
+// header stats, progress_bar as the CPU meter, load_state for the async
+// fetch, hint_bar along the bottom.
+//
+// The integration test drives this drawer via /state → panel.values:
+// `ready`, `row_count`, `proc_count` and `sort_spec` are its handles.
+
+state tbl = table_state()
+state sort_seeded = false
+state ls = load_state()
+
+// Default sort: CPU%, heaviest first (table_state starts unsorted).
+if !sort_seeded then
+  tbl = {...tbl, sort_col: 2, sort_asc: false}
+  sort_seeded = true
+end
+
+let T = ui_theme()
+clear(T.bg.r, T.bg.g, T.bg.b)
+
+// The table's recorded sort request → the query key. The Python side sorts.
+let SORT_FIELDS = ["pid", "user", "cpu", "mem", "rss", "command"]
+let sort_field = "cpu"
+if tbl.sort_col >= 0 && tbl.sort_col < len(SORT_FIELDS) then
+  sort_field = SORT_FIELDS[tbl.sort_col]
+end
+let sort_dir = if tbl.sort_asc then "asc" else "desc" end
+let sort_spec = sort_field ++ ":" ++ sort_dir
+
+ls = load_poll(ls, sort_spec, query("procs", sort_spec))
+let ready = load_ready(ls)
+
+// ── Layout ───────────────────────────────────────────────────────────────
+let page = pad(rect(0, 0, screen_width(), screen_height()), 16, 12)
+let split_hints = cut_bottom(page, 26)
+let split_head = cut_top(split_hints.rest, 40)
+let header = split_head.cut
+let body = cut_top(split_head.rest, 8).rest
+
+// ── Header: title + live stats ───────────────────────────────────────────
+draw_text("sysmon", {x: header.x, y: header.y + 6}, {size: T.font_lg, color: T.text, weight: 700})
+
+let row_count = 0
+let proc_count = 0
+if ready then
+  let d = ls.value
+  proc_count = d.proc_count
+  row_count = len(d.procs)
+
+  let by = header.y + 6
+  let b1 = badge(header.x + 92, by, str(d.proc_count) ++ " processes")
+  let cpu_frac = clamp(d.cpu_total / (float(d.ncpu) * 100.0), 0.0, 1.0)
+  let cpu_color = T.success
+  if cpu_frac > 0.7 then
+    cpu_color = T.danger
+  elsif cpu_frac > 0.35 then
+    cpu_color = T.warn
+  end
+  let b2 = pill(b1.x + b1.w + 8, by, "cpu " ++ str(d.cpu_total) ++ "%", cpu_color)
+  let b3 = pill(b2.x + b2.w + 8, by, "load " ++ str(d.load1) ++ " / " ++ str(d.load5) ++ " / " ++ str(d.load15), T.accent)
+  let b4 = badge(b3.x + b3.w + 8, by, "rss " ++ str(d.rss_total_gb) ++ " GB")
+
+  // A CPU meter across whatever header width is left.
+  let meter_x = b4.x + b4.w + 16
+  let meter_w = header.x + header.w - meter_x
+  if meter_w > 80 then
+    progress_bar(rect(meter_x, header.y + 14, meter_w, 8), cpu_frac)
+  end
+end
+
+// ── Body: the sortable process table ─────────────────────────────────────
+if draw_load(body, ls) then
+  let cols = [
+    {label: "PID", w: 70},
+    {label: "USER", w: 110},
+    {label: "CPU %", w: 80},
+    {label: "MEM %", w: 80},
+    {label: "RSS", w: 80},
+    // No `w` = the flex share of the leftover (a `w` >= 1 would be fixed px).
+    {label: "COMMAND"},
+  ]
+  tbl = table(tbl, body, cols, ls.value.procs)
+end
+
+hint_bar(split_hints.cut, [
+  hint("click header", "sort"),
+  hint("j/k", "move"),
+  hint("wheel", "scroll"),
+])

@@ -25,6 +25,7 @@ no `enum`s, namespaces, or constructor parameter properties.
 | `diff-review-integration-test.ts` | The `garden-diff` review client end to end, against a throwaway git repo. |
 | `git-panel-integration-test.ts` | The `:Git` history browser (`git-log` GPP app). |
 | `gpp-test-app-integration-test.ts` | The gpp-test-app fixture's pane states: healthy panel, soft query error, and the runtime-error card. |
+| `python-gpp-integration-test.ts` | The Python GPP client (`gpp-python/`): the library's unit tests, then both Python apps (sysmon, repo-stats) booted headless — live data, screenshots, and the soft error path. |
 | `main-menu-integration-test.ts` | The start screen a bare `garden` opens, on a recents database seeded by really opening files under a throwaway `$HOME`. |
 | `multi-window-integration-test.ts` | Two real OS windows and the per-window debug addressing. Windowed-only. |
 | `screenshot-consistency-test.ts` | The debug server's settle-then-capture contract, asserted down to the captured PNG's pixels. |

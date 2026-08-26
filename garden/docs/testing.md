@@ -97,6 +97,15 @@ frame error raising the panel error card (`runtime-error`). The whole GPP v2
 pipeline — spawn, version handshake, `setScript`, the query round-trip, both
 error paths — stands between the launch and the assertions.
 
+**Python GPP apps** (`tools/python-gpp-integration-test.ts`) — the first
+non-Rust client. Runs `gpp-python/test_gpp.py` (the library's own protocol
+tests over in-memory streams), then boots garden headless on
+`process("python3", …)` panes: `sysmon` (live `ps aux` data reaching the
+drawer's table, frames advancing, a rendered screenshot) and `repo-stats`
+(the git dashboard on this repo, plus the non-repo directory surfacing a
+clean APP error with no frame error). Proves the v2 spec in `docs/gpp.md` is
+sufficient to implement a client from, in another language.
+
 **The start screen** (`tools/main-menu-integration-test.ts`) — the `main-menu`
 panel a bare `garden` opens, under a redirected `$HOME` so its recents database
 is hermetic. It seeds that database by *running* Garden (a first launch opens

@@ -9,9 +9,10 @@ A Rust app is built on the **`petal-query`** crate (`../petal-query`): you
 declare a handler per `query(kind, arg)` — each returning a `Reply` with the
 value (or error) and **how cacheable it is** (`CachePolicy`) — and
 `petal-query` runs the whole protocol loop for you. You do **not** hand-roll
-the stdio handshake or the response plumbing. (An app in another language
-implements the loop from the wire spec directly — it is small; see
-[`gpp.md`](gpp.md).)
+the stdio handshake or the response plumbing. (A **Python** app is built on the stdlib-only
+`gpp-python/gpp.py` — see [`writing-gpp-apps-python.md`](writing-gpp-apps-python.md);
+any other language implements the loop from the wire spec directly — it is
+small; see [`gpp.md`](gpp.md).)
 
 Read `docs/gpp.md` for the wire reference, `../petal-query/README.md` for the
 provider API, and `docs/petal-graphical-panels.md` for the panel draw/input

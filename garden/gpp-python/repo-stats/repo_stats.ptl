@@ -1,0 +1,118 @@
+// repo-stats — the drawer. A git repository dashboard as a Petal graphical
+// panel, served by the Python app beside it (app.py; see
+// docs/writing-gpp-apps-python.md).
+//
+//   query("stats", "") → {
+//     repo, branch: string,  total, sampled: int,
+//     weeks:   [{label, count} …]      // oldest → newest, one per ISO week
+//     max_week: int,
+//     authors: [{name, count, frac} …],
+//     recent:  [{short, subject, author, when} …] }
+//
+// Built on the ui component library (components.md): cards for the three
+// sections, pill/badge header stats, split_h/cut_* RectCut layout,
+// load_state for the async fetch, empty_state for a commitless repo.
+//
+// Test handles (via /state → panel.values): `ready`, `commit_count`,
+// `author_count`, `week_count`.
+
+state ls = load_state()
+
+let T = ui_theme()
+clear(T.bg.r, T.bg.g, T.bg.b)
+
+ls = load_poll(ls, "stats", query("stats", ""))
+let ready = load_ready(ls)
+
+let page = pad(rect(0, 0, screen_width(), screen_height()), 16, 12)
+let split_head = cut_top(page, 40)
+let header = split_head.cut
+let body = cut_top(split_head.rest, 6).rest
+
+// ── Header ───────────────────────────────────────────────────────────────
+let commit_count = 0
+let author_count = 0
+let week_count = 0
+let title = "repo-stats"
+if ready then title = ls.value.repo end
+draw_text(title, {x: header.x, y: header.y + 6}, {size: T.font_lg, color: T.text, weight: 700})
+
+if ready then
+  let d = ls.value
+  commit_count = d.total
+  author_count = len(d.authors)
+  week_count = len(d.weeks)
+  let bx = header.x + text_width(title, T.font_lg) + 16
+  let b1 = pill(bx, header.y + 6, d.branch, T.accent)
+  let b2 = badge(b1.x + b1.w + 8, header.y + 6, str(d.total) ++ " commits")
+  if d.sampled < d.total then
+    badge(b2.x + b2.w + 8, header.y + 6, "charting last " ++ str(d.sampled))
+  end
+end
+
+// ── Body ─────────────────────────────────────────────────────────────────
+if draw_load(body, ls) then
+  let d = ls.value
+  if d.total == 0 then
+    empty_state(body, "No commits yet", "commit something and come back")
+  else
+    let split_chart = cut_top(body, 190)
+    let lower = cut_top(split_chart.rest, 12).rest
+    let halves = split_h(lower, 0.42, 16)
+
+    // Commits per week: one bar per ISO week, hover reads the exact count.
+    let c = card(split_chart.cut)
+    draw_text("Commits per week", {x: c.x, y: c.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
+    let chart = rect(c.x, c.y + 22, c.w, c.h - 40)
+    let n = len(d.weeks)
+    let maxc = max(1, d.max_week)
+    let bw = float(chart.w) / float(n)
+    for i in range(0, n) do
+      let wk = d.weeks[i]
+      let bh = int(float(chart.h) * float(wk.count) / float(maxc))
+      if wk.count > 0 && bh < 2 then bh = 2 end
+      let bar = rect(chart.x + int(float(i) * bw) + 1, chart.y + chart.h - bh, max(2, int(bw) - 2), bh)
+      let color = mix(T.accent, T.bg, 0.25)
+      if hovered(rect(bar.x, chart.y, bar.w, chart.h)) then
+        color = T.accent
+        draw_text_center(str(wk.count) ++ " · wk " ++ wk.label, bar.x + bar.w / 2, chart.y - 4, T.font_sm, T.muted)
+      end
+      draw_rect(bar, color)
+    end
+    draw_line({x: chart.x, y: chart.y + chart.h}, {x: chart.x + chart.w, y: chart.y + chart.h}, T.border)
+    draw_text(d.weeks[0].label, {x: chart.x, y: chart.y + chart.h + 6}, T.font_sm, T.dim)
+    draw_text_right(d.weeks[n - 1].label, chart.x + chart.w, chart.y + chart.h + 6, T.font_sm, T.dim)
+
+    // Top authors: name + share bar.
+    let a = card(halves.a)
+    draw_text("Top authors", {x: a.x, y: a.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
+    let arow_h = 30
+    for i in range(0, len(d.authors)) do
+      let au = d.authors[i]
+      let ry = a.y + 24 + i * arow_h
+      if ry + arow_h <= a.y + a.h then
+        draw_text(ellipsize(au.name, a.w - 70, T.font_md), {x: a.x, y: ry}, T.font_md, T.text)
+        draw_text_right(str(au.count), a.x + a.w, ry, T.font_md, T.muted)
+        let track = rect(a.x, ry + T.font_md + 4, a.w, 4)
+        draw_rect(track, T.hover)
+        draw_rect(rect(track.x, track.y, int(float(track.w) * au.frac), 4), T.accent)
+      end
+    end
+
+    // Recent commits.
+    let r = card(halves.b)
+    draw_text("Recent commits", {x: r.x, y: r.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
+    let crow_h = 24
+    let hash_w = 64
+    for i in range(0, len(d.recent)) do
+      let cm = d.recent[i]
+      let ry = r.y + 24 + i * crow_h
+      if ry + crow_h <= r.y + r.h then
+        draw_text(cm.short, {x: r.x, y: ry}, T.font_md, T.accent)
+        let when_w = text_width(cm.when, T.font_sm) + 8
+        draw_text(ellipsize(cm.subject, r.w - hash_w - when_w - 12, T.font_md), {x: r.x + hash_w, y: ry}, T.font_md, T.text)
+        draw_text_right(cm.when, r.x + r.w, ry + 1, T.font_sm, T.dim)
+      end
+    end
+  end
+end

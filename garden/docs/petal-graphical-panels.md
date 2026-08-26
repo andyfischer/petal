@@ -258,10 +258,16 @@ calls documented under "Interactivity" below. All of these —
 and the `ui` prelude widgets (`rect`/`point_in`/`hovered`, the record `draw_*`
 overloads, `button`, `list_update`, `scroll_update`, `truncate_tail`, `wrap`, `preview`,
 `fit_parts`, `ensure_visible_px`,
-`draw_text_right`, and the `context_menu` family — `menu_state`, `menu_item`,
+`draw_text_right`, the `context_menu` family — `menu_state`, `menu_item`,
 `menu_sep`, `menu_open_on_right_click`, `menu_blocking`, `menu_show`,
-`menu_close`, `menu_rect`) — come from `petal-ui` as an implicit import, so
-scripts call them bare.
+`menu_close`, `menu_rect` — and the level-3 component set: RectCut layout
+(`cut_left/right/top/bottom`, `split_h/v`, `pad`, `hstack/vstack`, `row/col`),
+`checkbox`, `toggle`, `radio_group`, `slider`, `tab_bar`, `splitter`, `table`,
+`modal`, `tooltip`, `spinner`, `progress_bar`, `badge`/`pill`, `card`,
+`empty_state`, `hint_bar`, `wrap_px` and the `load_state` family) — come from
+`petal-ui` as an implicit import, so scripts call them bare. The component
+reference is [`petal-ui/docs/components.md`](../../petal-ui/docs/components.md);
+the showcase panel is `examples/panels/gallery.ptl`.
 
 **The whole Petal builtin table is available too.** A panel is an ordinary Petal
 program with extra natives registered, not a sandboxed subset: everything in
@@ -278,15 +284,18 @@ host-specific natives another embedder registers.
 
 Three things a panel used to have to reimplement are also in the prelude now:
 
-- **Theming.** `ui_theme()` is the live palette every widget paints with;
-  `theme_set({panel: …, text: …})` merges new colors into it (leave a key out
-  and it keeps its current value) and `theme_reset()` restores the dark
-  default. `theme_set(theme_from_palette(palette()))` adopts Garden's own
-  scheme. Every widget — `button`, `context_menu`, `text_field`,
-  `draw_scrollbar`, `section_label` — also takes an optional trailing `style`
-  record that overrides the theme for that one call, and a style may name only
-  the keys it cares about. A light-themed panel is a `theme_set` call, not a
-  reimplemented widget set.
+- **Theming.** `ui_theme()` is the live palette every widget paints with. In
+  Garden it **defaults to the host palette automatically**: the panel host
+  binds the resolved `palette()` each frame (petal-ui's `bind_host_palette`),
+  so prelude widgets paint in Garden's colors with no script-side setup —
+  `theme_set(theme_from_palette(palette()))` is no longer needed (it still
+  works). `theme_set({panel: …, text: …})` merges explicit colors over that
+  (leave a key out and it keeps its value) and outranks the host palette until
+  `theme_reset()`. The theme also carries spacing/radius/type scales
+  (`space`, `radius`, `font_md`, …). Every widget takes an optional trailing
+  `style` record that overrides the theme for that one call, and a style may
+  name only the keys it cares about. A light-themed panel is a `theme_set`
+  call, not a reimplemented widget set.
 - **Drag and drop.** `drag_state()` plus one `drag_update(ds, id, rect)` per
   draggable item per frame yields `{dragging, id, dx, dy, dropped}`;
   `insertion_index(rects, y)` (and `insertion_index_x`) turns the drop position
@@ -307,6 +316,15 @@ Plus the small helpers apps kept hand-rolling: `mix`/`lerp_color(a, b, t)`,
 > level and `garden --version --json` lists every export as `name/arity`
 > (`prelude.exports`), derived from the prelude actually compiled into that
 > binary. `GET /version` reports the same to a running app.
+
+> **Landed 2026-08-26** (petal-ui prelude level 3): the component-library
+> expansion — host-palette theme resolution, semantic tokens + scales, RectCut
+> layout, motion helpers, caret editing in `text_field`, and the widget set
+> (`checkbox`, `toggle`, `radio_group`, `slider`, `tab_bar`, `splitter`,
+> `table`, `modal`, `tooltip`, `spinner`, `progress_bar`, `badge`/`pill`,
+> `card`, `empty_state`, `hint_bar`, `wrap_px`, `load_state` family). All
+> additive; same runtime-failure caveat on older binaries. Reference:
+> `petal-ui/docs/components.md`.
 
 A **context menu** is two calls, because an immediate-mode pass has to reconcile
 z-order with input order: the menu must be *drawn* last to sit on top, but its

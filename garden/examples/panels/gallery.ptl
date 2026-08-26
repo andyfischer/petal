@@ -1,0 +1,286 @@
+// Gallery — every petal-ui prelude component on one panel, in themed
+// sections behind a tab bar. Doubles as the component library's visual
+// fixture: it runs headlessly under petal-ui-run (no Garden natives), and in
+// Garden it picks up the host palette automatically through `ui_theme()`.
+//
+//   panel("examples/panels/gallery.ptl")                      // in a layout
+//   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
+//
+// See petal-ui/docs/components.md for the API of everything shown here.
+// (Sections are written inline rather than as functions: top-level `state`
+// is assigned all over, and assigning to a captured outer variable from
+// inside a function is an error by design.)
+
+// ── State ─────────────────────────────────────────────────────────────────
+state tab = 0
+state fc = focus_state()
+state light = false
+state agree = true
+state notify = false
+state wifi = true
+state channel = 1
+state volume = 0.65
+state name_buf = "petal"
+state filter_buf = ""
+state files = list_state()
+state tbl = table_state()
+state sp = splitter_state(0.45)
+state md = modal_state()
+state ls = load_state()
+state menu = menu_state()
+state last_action = "—"
+
+// ── Demo data + pure helpers ──────────────────────────────────────────────
+let FILE_ROWS = [
+  ["drag-to-edit.ptl", 56], ["direct-manipulation.ptl", 57], ["gallery.ptl", 240],
+  ["plant.ptl", 216], ["shapes.ptl", 93], ["sketch.ptl", 47],
+  ["db_view.ptl", 474], ["git_panel.ptl", 649], ["main_menu.ptl", 315],
+  ["garden_diff.ptl", 988],
+]
+
+// Selection sort by column `ci` (string compare via str()): the table widget
+// records the sort *request*; the caller owns the data and orders the rows.
+fn sorted_rows(rows, ci, asc)
+  if ci < 0 then return rows end
+  let used = []
+  for j in range(0, len(rows)) do
+    used = append(used, false)
+  end
+  let out = []
+  for n in range(0, len(rows)) do
+    let best = -1
+    for j in range(0, len(rows)) do
+      if !used[j] then
+        if best < 0 then
+          best = j
+        elsif asc && str(rows[j][ci]) < str(rows[best][ci]) then
+          best = j
+        elsif !asc && str(rows[j][ci]) > str(rows[best][ci]) then
+          best = j
+        end
+      end
+    end
+    used[best] = true
+    out = append(out, rows[best])
+  end
+  out
+end
+
+fn label(text, x, y)
+  let t = ui_theme()
+  draw_text(text, {x: x, y: y}, {size: t.font_sm, color: t.dim, weight: 600, spacing: 0.5})
+end
+
+// ── Theme (applies before anything draws) ─────────────────────────────────
+if light then
+  theme_set({bg: #f4f6f9, panel: #ffffff, surface: #ffffff, overlay: #e7ebf1,
+             text: #23272e, muted: #4d5561, dim: #7a8390,
+             outline: #d4d9e0, border: #d4d9e0, border_strong: #b9c1cc,
+             hover: #eaeef4, selection: #cfe1fb})
+else
+  theme_reset()
+end
+
+let T = ui_theme()
+clear(T.bg.r, T.bg.g, T.bg.b)
+
+let screen = rect(0, 0, screen_width(), screen_height())
+let page = pad(screen, 16, 12)
+let strip = cut_top(page, 34)
+tab = tab_bar(strip.cut, ["Controls", "Data", "Layout", "Overlays", "Theme"], tab)
+let body = cut_bottom(cut_top(strip.rest, 16).rest, 30).rest
+
+// ── Controls ──────────────────────────────────────────────────────────────
+if tab == 0 then
+  let halves = split_h(body, 0.5, 24)
+  let left = halves.a
+  let right = halves.b
+
+  label("BUTTONS", left.x, left.y)
+  if button(rect(left.x, left.y + 20, 110, 28), "Default") then
+    last_action = "button"
+  end
+  if button(rect(left.x + 118, left.y + 20, 110, 28), "Accented",
+            {bg: T.accent, hover: mix(T.accent, T.text, 0.2), fg: contrast_text(T.accent), outline: T.accent}) then
+    last_action = "accent button"
+  end
+
+  label("CHECKBOX + TOGGLE", left.x, left.y + 64)
+  agree = checkbox(rect(left.x, left.y + 84, 200, 22), "I agree to nothing", agree)
+  notify = checkbox(rect(left.x, left.y + 110, 200, 22), "Notify me", notify)
+  wifi = toggle(rect(left.x, left.y + 140, 40, 22), wifi)
+  draw_text(if wifi then "on" else "off" end, {x: left.x + 48, y: left.y + 144}, T.font_sm, T.muted)
+
+  label("RADIO", left.x, left.y + 176)
+  channel = radio_group(rect(left.x, left.y + 196, 200, 72), ["Stable", "Beta", "Nightly"], channel)
+
+  label("SLIDER + PROGRESS", right.x, right.y)
+  volume = slider(rect(right.x, right.y + 16, 220, 20), volume, 0.0, 1.0)
+  progress_bar(rect(right.x, right.y + 44, 220, 8), volume)
+  progress_bar(rect(right.x, right.y + 60, 220, 8), -1.0)
+  spinner(right.x + 250, right.y + 40, 12)
+  draw_text(spinner_glyph(), {x: right.x + 275, y: right.y + 33}, T.font_md, T.dim)
+
+  label("TEXT FIELDS", right.x, right.y + 92)
+  let res = text_field(fc, "name", rect(right.x, right.y + 112, 220, 26), name_buf)
+  fc = res.focus
+  name_buf = res.text
+  if res.submitted then last_action = "submit: " ++ name_buf end
+  let res2 = text_field(fc, "filter", rect(right.x, right.y + 146, 220, 26), filter_buf)
+  fc = res2.focus
+  filter_buf = res2.text
+  draw_text("click to focus · arrows move the caret · alt-backspace", {x: right.x, y: right.y + 180}, T.font_sm, mix(T.dim, T.bg, 0.3))
+
+  draw_text("last action: " ++ last_action, {x: left.x, y: body.y + body.h - 20}, T.font_sm, T.muted)
+end
+
+// ── Data ──────────────────────────────────────────────────────────────────
+if tab == 1 then
+  let s = splitter(sp, body, {min_a: 180, min_b: 260})
+  sp = s.state
+
+  label("LIST", s.a.x, s.a.y)
+  let lr = rect(s.a.x, s.a.y + 20, s.a.w, 240)
+  let rows = 10
+  files = list_update(files, len(FILE_ROWS), rows, lr)
+  for i in range(0, min(rows, len(FILE_ROWS) - files.scroll)) do
+    let idx = files.scroll + i
+    let rr = list_row_rect(lr, rows, idx, files.scroll)
+    if idx == files.selected then
+      draw_rect(rr, T.selection)
+    end
+    draw_text(ellipsize(FILE_ROWS[idx][0], rr.w - 16, T.font_md), {x: rr.x + 8, y: rr.y + (rr.h - T.font_md) / 2}, T.font_md, T.text)
+  end
+  draw_scrollbar(lr, len(FILE_ROWS), rows, files.scroll)
+
+  label("TABLE (click a header to sort)", s.b.x, s.b.y)
+  let shown = sorted_rows(FILE_ROWS, tbl.sort_col, tbl.sort_asc)
+  let tr = rect(s.b.x, s.b.y + 20, s.b.w, 28 + 6 * 26)
+  tbl = table(tbl, tr, [{label: "Name", w: 0.65}, {label: "Lines", w: 0.35}], shown)
+
+  label("BADGES + LOAD STATE", s.b.x, tr.y + tr.h + 16)
+  let by = tr.y + tr.h + 34
+  let b1 = badge(s.b.x, by, "v2.1")
+  let b2 = pill(b1.x + b1.w + 8, by, "passing", T.success)
+  let b3 = pill(b2.x + b2.w + 8, by, "3 warnings", T.warn)
+  pill(b3.x + b3.w + 8, by, "1 error", T.danger)
+
+  // The blessed async pattern: loading for the first moments, then ready.
+  if time() < 1.5 then
+    ls = load_begin(ls, "demo")
+  elsif !load_ready(ls) then
+    ls = load_ok(ls, "42 rows in 12ms")
+  end
+  let lbox = rect(s.b.x, by + 34, s.b.w, 54)
+  if draw_load(lbox, ls) then
+    let c = card(lbox, {pad: 8, shadow: false})
+    draw_text("Loaded: " ++ ls.value, {x: c.x, y: c.y + 4}, T.font_md, T.text)
+  end
+end
+
+// ── Layout ────────────────────────────────────────────────────────────────
+if tab == 2 then
+  label("RECTCUT — cut_top / cut_left / rest", body.x, body.y)
+  let demo = rect(body.x, body.y + 20, body.w, 150)
+  let dtop = cut_top(demo, 36)
+  let dleft = cut_left(dtop.rest, 160)
+  draw_rect(pad(dtop.cut, 2), mix(T.accent, T.bg, 0.75))
+  draw_rect(pad(dleft.cut, 2), mix(T.success, T.bg, 0.75))
+  draw_rect(pad(dleft.rest, 2), mix(T.warn, T.bg, 0.82))
+  draw_text("cut_top(r, 36)", {x: dtop.cut.x + 10, y: dtop.cut.y + 10}, T.font_sm, T.text)
+  draw_text("cut_left(rest, 160)", {x: dleft.cut.x + 10, y: dleft.cut.y + 10}, T.font_sm, T.text)
+  draw_text("rest", {x: dleft.rest.x + 10, y: dleft.rest.y + 10}, T.font_sm, T.text)
+
+  label("HSTACK × VSTACK", body.x, body.y + 190)
+  let grid_r = rect(body.x, body.y + 210, body.w, 120)
+  for column in hstack(grid_r, 4, 8) do
+    for cell in vstack(column, 3, 8) do
+      draw_rect_rounded(cell, T.radius_sm, T.overlay)
+    end
+  end
+
+  label("ROW — fixed | flex | flex | fixed", body.x, body.y + 350)
+  let bar = rect(body.x, body.y + 370, body.w, 30)
+  let parts = row(bar, [90, 0.6, 0.4, 120], 8)
+  let names = ["90px", "0.6", "0.4", "120px"]
+  for i in range(0, len(parts)) do
+    draw_rect_rounded(parts[i], T.radius_sm, mix(T.accent, T.bg, 0.7))
+    draw_text_center(names[i], parts[i].x + parts[i].w / 2, parts[i].y + 8, T.font_sm, T.text)
+  end
+end
+
+// ── Overlays ──────────────────────────────────────────────────────────────
+if tab == 3 then
+  label("CARD + EMPTY STATE + TOOLTIP", body.x, body.y)
+  let halves = split_h(rect(body.x, body.y + 20, body.w, 170), 0.5, 24)
+  let c = card(halves.a)
+  draw_text("A card", {x: c.x, y: c.y}, {size: T.font_md, color: T.text, weight: 600})
+  draw_text("Rounded border, soft shadow,", {x: c.x, y: c.y + 24}, T.font_sm, T.muted)
+  draw_text("padded content rect.", {x: c.x, y: c.y + 40}, T.font_sm, T.muted)
+  empty_state(halves.b, "No results", "Try a broader query")
+
+  label("MODAL", body.x, body.y + 210)
+  if !modal_blocking(md) && button(rect(body.x, body.y + 230, 130, 28), "Open dialog…") then
+    md = modal_open(md)
+  end
+
+  label("CONTEXT MENU (right-click below)", body.x, body.y + 280)
+  let zone = rect(body.x, body.y + 300, 260, 60)
+  draw_rect_rounded(zone, T.radius_sm, T.overlay)
+  draw_text_center("right-click me", zone.x + zone.w / 2, zone.y + 22, T.font_sm, T.dim)
+  menu = menu_open_on_right_click(menu, zone, "gallery")
+  let picked = context_menu(menu, [menu_item("Copy"), menu_item("Paste"), menu_sep(), menu_item("Delete", false)])
+  menu = picked.menu
+  if picked.index >= 0 then
+    last_action = "menu: " ++ picked.label
+  end
+  draw_text("last action: " ++ last_action, {x: body.x, y: body.y + 380}, T.font_sm, T.muted)
+
+  // The tooltip draws late so it sits over the card it annotates.
+  tooltip(halves.a, "Cards return their content rect")
+end
+
+// ── Theme ─────────────────────────────────────────────────────────────────
+if tab == 4 then
+  label("LIGHT / DARK", body.x, body.y)
+  light = checkbox(rect(body.x, body.y + 18, 240, 22), "Light theme (theme_set)", light)
+
+  label("COLOR TOKENS", body.x, body.y + 60)
+  let names = ["bg", "panel", "surface", "overlay", "text", "muted", "dim",
+               "accent", "success", "warn", "danger", "outline", "border_strong",
+               "hover", "selection"]
+  let cell_w = 150
+  let per_row = max(1, body.w / cell_w)
+  for i in range(0, len(names)) do
+    let cx = body.x + (i % per_row) * cell_w
+    let cy = body.y + 80 + (i / per_row) * 46
+    draw_rect_rounded(rect(cx, cy, 36, 24), T.radius_sm, T[names[i]])
+    draw_rect_outline(rect(cx, cy, 36, 24), T.outline)
+    draw_text(names[i], {x: cx + 44, y: cy + 5}, T.font_sm, T.muted)
+  end
+
+  label("TYPE SCALE", body.x, body.y + 280)
+  draw_text("font_sm " ++ str(T.font_sm), {x: body.x, y: body.y + 300}, T.font_sm, T.text)
+  draw_text("font_md " ++ str(T.font_md), {x: body.x, y: body.y + 320}, T.font_md, T.text)
+  draw_text("font_lg " ++ str(T.font_lg), {x: body.x, y: body.y + 344}, T.font_lg, T.text)
+  draw_text("font_xl " ++ str(T.font_xl), {x: body.x, y: body.y + 372}, T.font_xl, T.text)
+
+  label("RADII", body.x + 300, body.y + 280)
+  draw_rect_rounded(rect(body.x + 300, body.y + 304, 60, 36), T.radius_sm, T.overlay)
+  draw_rect_rounded(rect(body.x + 370, body.y + 304, 60, 36), T.radius, T.overlay)
+  draw_rect_rounded(rect(body.x + 440, body.y + 304, 60, 36), T.radius_lg, T.overlay)
+end
+
+// ── Chrome: hint bar + modal (last, so the dialog sits on top) ────────────
+hint_bar(rect(0, screen_height() - 26, screen_width(), 26),
+         [hint("tab", "cycle focus"), hint("j/k", "move"), hint("esc", "close dialog")])
+
+let m = modal(md, 380, 190, "A modal dialog")
+md = m.modal
+if m.open then
+  draw_text("Escape or a click outside closes it.", {x: m.content.x, y: m.content.y}, T.font_md, T.muted)
+  if button(rect(m.content.x, m.content.y + 46, 90, 28), "Done") then
+    md = modal_close(md)
+    last_action = "modal done"
+  end
+end

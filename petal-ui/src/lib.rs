@@ -67,7 +67,20 @@ pub const UI_VERSION: i64 = 1;
 /// - 1 — the prelude as of the first release (`UI_VERSION` 1).
 /// - 2 — `luma(c)`, `contrast_text(bg)`, `text_field_update(fc, id, r, buf)`
 ///   and the 4-argument `draw_text_field(r, text, has, style)` (2026-08-12).
-pub const PRELUDE_LEVEL: u32 = 2;
+/// - 3 — the component-library expansion (2026-08-25): host-palette theme
+///   resolution ([`input::bind_host_palette`]; `ui_theme()` defaults from the
+///   host, semantic tokens + spacing/radius/type scales on `theme`), RectCut
+///   layout (`cut_left/right/top/bottom`, `split_h/split_v`, `pad`,
+///   `hstack/vstack`, `row/col`), motion (`approach`, `ease_out`,
+///   `ease_in_out`), and the widget set: `spinner`/`spinner_glyph`,
+///   `progress_bar`, `checkbox`, `toggle`, `radio_group`, `slider`, `tab_bar`,
+///   `tooltip`, the modal family (`modal_state` … `modal`), `badge`/`pill`,
+///   `card`, `empty_state`, `hint`/`hint_bar`, `splitter_state`/`splitter`,
+///   the table family (`table_state`/`table_col_rects`/`table`), `wrap_px`,
+///   the load-state family (`load_state` … `draw_load`), and caret editing in
+///   `text_field` (`{focus, text, caret, submitted}`, 5-argument
+///   `draw_text_field(r, text, has, caret, style)`).
+pub const PRELUDE_LEVEL: u32 = 3;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

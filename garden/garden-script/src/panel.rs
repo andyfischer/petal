@@ -1139,6 +1139,7 @@ impl PanelHost {
         input::bind_time(&mut self.env, self.start.elapsed().as_secs_f64());
         input::bind_input(&mut self.env, &self.input);
         bind_panel_theme(&mut self.env, &self.theme);
+        bind_host_palette(&mut self.env, &self.theme);
         bind_nav_arg(&mut self.env, &self.nav_arg);
         bind_mutation_results(&mut self.env, &self.mutation_results);
         self.last_input = self.snapshot_input();
@@ -2144,6 +2145,27 @@ fn bind_panel_theme(env: &mut Env, theme: &PanelTheme) {
     env.set_binding(sym, Value::Map(record_id));
 }
 
+/// Publish the *resolved* palette (host theme overlaid on
+/// [`FALLBACK_PALETTE`], extra host keys carried through — the same resolution
+/// [`native_palette`] performs) through petal-ui's host-palette binding, so
+/// `ui_theme()` — and with it every prelude widget — paints in Garden's colors
+/// without the drawer calling `theme_set` at all. Bound each frame beside
+/// [`bind_panel_theme`], so a live theme change repaints prelude widgets on
+/// the next frame like everything else.
+fn bind_host_palette(env: &mut Env, theme: &PanelTheme) {
+    let mut colors: Vec<(&str, [u8; 4])> =
+        Vec::with_capacity(FALLBACK_PALETTE.len() + theme.colors.len());
+    for (key, rgba) in FALLBACK_PALETTE {
+        colors.push((key, theme.get(key).unwrap_or(*rgba)));
+    }
+    for (key, rgba) in &theme.colors {
+        if !FALLBACK_PALETTE.iter().any(|(k, _)| *k == key.as_str()) {
+            colors.push((key.as_str(), *rgba));
+        }
+    }
+    petal_ui::input::bind_host_palette(env, &colors);
+}
+
 /// Bind the resolved mutation replies for `mutate_result(handle)` to read, as a
 /// record keyed by the handle's decimal spelling (Petal record keys are strings).
 ///
@@ -2890,6 +2912,57 @@ mod tests {
                 r: 200,
                 g: 100,
                 b: 50,
+                a: 255,
+                radius: 0
+            }]
+        );
+    }
+
+    #[test]
+    fn host_palette_defaults_ui_theme_for_prelude_widgets() {
+        // The palette bridge: `ui_theme()` resolves from the host palette bound
+        // each frame (petal-ui's `bind_host_palette`), so a drawer built on
+        // prelude widgets paints in Garden's colors without calling `theme_set`.
+        // With no theme injected the resolved palette is FALLBACK_PALETTE, so
+        // the ui accent is its `accent` (0x58a6ff)…
+        let f = write_script(
+            "let t = ui_theme()\n\
+             draw_rect(0, 0, 1, 1, t.accent.r, t.accent.g, t.accent.b)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(10, 10);
+        let cmds = host.frame(0.016, 1).unwrap();
+        assert_eq!(
+            cmds,
+            vec![PanelCmd::Rect {
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1,
+                r: 0x58,
+                g: 0xa6,
+                b: 0xff,
+                a: 255,
+                radius: 0
+            }]
+        );
+
+        // …and an injected host theme overrides it on the next frame, like
+        // every other per-frame input.
+        let mut theme = PanelTheme::new();
+        theme.set("accent", [9, 8, 7, 255]);
+        host.set_theme(theme);
+        let cmds = host.frame(0.016, 2).unwrap();
+        assert_eq!(
+            cmds,
+            vec![PanelCmd::Rect {
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1,
+                r: 9,
+                g: 8,
+                b: 7,
                 a: 255,
                 radius: 0
             }]

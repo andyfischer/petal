@@ -511,6 +511,37 @@ pub fn bind_dimensions(env: &mut Env, width: i32, height: i32) {
     bind_int(env, SYM_SCREEN_HEIGHT, height as i64);
 }
 
+/// The binding [`bind_host_palette`] fills and the `ui` prelude reads (through
+/// the core `binding` builtin — no native involved, so embedders that never
+/// bind it stay untouched): a record of `{ r, g, b, a }` color records keyed
+/// by the host's semantic names, in Garden's `palette()` vocabulary
+/// (`window_bg`, `panel`, `text`, `text_mut`, `text_dim`, `accent`, `border`,
+/// `border_focused`, `sel`, `hover`, `green`, `orange`, `red`, …).
+pub const HOST_PALETTE_BINDING: &str = "__ui_host_palette";
+
+/// Publish the host's palette so `ui_theme()` — and with it every prelude
+/// widget — defaults to the host's colors with zero script-side setup
+/// (resolution: explicit `theme_set` > this palette > the built-in theme).
+/// Call it once at startup, or each frame beside [`bind_input`] when the
+/// palette can change live. Hosts that never call it lose nothing: the
+/// prelude falls back to its built-in dark theme.
+pub fn bind_host_palette(env: &mut Env, colors: &[(&str, [u8; 4])]) {
+    let mut record: indexmap::IndexMap<String, Value> =
+        indexmap::IndexMap::with_capacity(colors.len());
+    for (key, [r, g, b, a]) in colors {
+        let mut color: indexmap::IndexMap<String, Value> = indexmap::IndexMap::with_capacity(4);
+        color.insert("r".to_string(), Value::Int(*r as i64));
+        color.insert("g".to_string(), Value::Int(*g as i64));
+        color.insert("b".to_string(), Value::Int(*b as i64));
+        color.insert("a".to_string(), Value::Int(*a as i64));
+        let id = env.heap_mut().alloc_map(color);
+        record.insert((*key).to_string(), Value::Map(id));
+    }
+    let id = env.heap_mut().alloc_map(record);
+    let sym = env.intern_symbol(HOST_PALETTE_BINDING);
+    env.set_binding(sym, Value::Map(id));
+}
+
 /// Read back the bound drawable size (e.g. for screenshot sizing).
 pub fn dimensions(env: &mut Env) -> (u32, u32) {
     let read = |env: &mut Env, name: &str| -> i64 {

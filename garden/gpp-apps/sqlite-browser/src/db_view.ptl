@@ -1,7 +1,7 @@
 // sqlite-browser — the drawer for browsing and visualizing a SQLite database.
 //
 // A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
-// viewers and pr-browser this is a FIXED, GENERIC script that bakes in no data:
+// viewers this is a FIXED, GENERIC script that bakes in no data:
 // everything is loaded at runtime through the async `query(kind, arg)` native
 // (petal-query on Petal's pending values), answered by the sqlite-browser
 // subprocess, which opens the database read-only:
@@ -18,6 +18,15 @@
 // into a selectable `text_view`. For the OVERVIEW (left row 0): a horizontal
 // BAR CHART of every object's row count — the "visualizer".
 //
+// The widgets are the `ui` prelude's component library (petal-ui
+// docs/components.md): the draggable divider is a `splitter`, the catalog is
+// `list_state`/`list_update` (+ `list_row_rect` and the prelude
+// `draw_scrollbar`), the overview scrolls with `scroll_update`, the chart bars
+// are `progress_bar`s, headings are `section_label`, load/empty states use
+// `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a `hint_bar`.
+// The prelude widgets pick up Garden's colors automatically through the bound
+// host palette.
+//
 // Two focusable regions — the catalog (left) and the detail (right) — cycle with
 // Tab (or click). j/k, arrows, PageUp/PageDown, Home/End move within the focused
 // region; the wheel scrolls whatever region the pointer is over. A draggable
@@ -32,8 +41,8 @@ state fc = focus_set(focus_state(), "catalog")
 state cat_lst = list_state()
 state detail_scroll = 0
 state over_scroll = 0
-state left_frac = 0.30
-state drag_div = 0
+// The draggable divider (catalog ↔ detail), as a prelude splitter.
+state sp = splitter_state(0.30)
 
 // data caches (query results, held in `state` so we poll only until ready)
 state cat = { path: "", name: "", tables: [] }
@@ -47,12 +56,11 @@ state prev_sel = -1
 
 // ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
 // One `palette()` call yields the full active scheme, always complete, so the
-// drawer paints in Garden's colors in every theme. Local names keep the drawing
-// code below unchanged.
+// drawer paints in Garden's colors in every theme. The prelude widgets resolve
+// the same palette on their own through `ui_theme()`.
 let P = palette()
 let BG     = P.window_bg
 let PANEL  = P.panel
-let CARD   = P.panel
 let SEL    = P.sel
 let SELDIM = P.hover
 let HOVER  = P.hover
@@ -67,7 +75,6 @@ let RED    = P.red
 let ORANGE = P.orange
 let PURPLE = P.purple
 let BLUE   = P.blue
-let THUMB  = P.scrollbar_thumb
 let TRACK  = P.border
 
 let FS = 14
@@ -76,22 +83,12 @@ let FS = 14
 let w = screen_width()
 let h = screen_height()
 let PAD = 12
+let HINT_H = 26                   // keyboard hint bar along the bottom edge
+let ch = h - HINT_H               // content height (everything above the hints)
 let header_h = 44
 let content_top = PAD + header_h
 let LINE_H = 17
 let ROW_H = 38
-
-let left_min = 190
-let left_max = max(left_min + 40, w - 340)
-
-fn spinner()
-  let frames = ["|", "/", "-", "\\"]
-  frames[(frame_count() / 6) % 4]
-end
-
-fn left_width(frac, wpx, lo, hi)
-  int(clamp(float(wpx) * frac, float(lo), float(hi)))
-end
 
 fn commafmt(n)
   // Group an integer's digits with commas: 1234567 → "1,234,567".
@@ -109,48 +106,6 @@ fn commafmt(n)
     end
     out
   end
-end
-
-// A list with free wheel scrolling; only keyboard moves re-ensure visibility.
-fn nav_list(lst, count, rows, row_h, r, active)
-  let sel = lst.selected
-  let scroll = lst.scroll
-  let moved = false
-  if active then
-    if key_pressed("down") || key_pressed("j") then sel = sel + 1; moved = true end
-    if key_pressed("up") || key_pressed("k") then sel = sel - 1; moved = true end
-    if key_pressed("pagedown") then sel = sel + rows; moved = true end
-    if key_pressed("pageup") then sel = sel - rows; moved = true end
-    if key_pressed("home") then sel = 0; moved = true end
-    if key_pressed("end") then sel = count - 1; moved = true end
-  end
-  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
-    let row = scroll + int(float(mouse_y() - r.y) / float(row_h))
-    if row >= 0 && row < count then sel = row end
-  end
-  if hovered(r) then scroll = scroll + scroll_y() end
-  sel = int(clamp(sel, 0, max(0, count - 1)))
-  if moved then scroll = ensure_visible(scroll, sel, rows) end
-  scroll = int(clamp(scroll, 0, max(0, count - rows)))
-  { selected: sel, scroll: scroll }
-end
-
-fn draw_scrollbar(r, count, rows, scroll)
-  if count > rows then
-    let track_x = r.x + r.w - 4
-    let th2 = max(24, int(float(r.h) * float(rows) / float(count)))
-    let span = r.h - th2
-    let ty = r.y + int(float(span) * float(scroll) / float(max(1, count - rows)))
-    draw_rect(rect(track_x, r.y, 3, r.h), PANEL)
-    draw_rect(rect(track_x, ty, 3, th2), THUMB)
-  end
-end
-
-fn section_label(label, x, y, active)
-  let c = DIM
-  if active then c = ACCENT end
-  draw_text(label, {x: x, y: y}, FS, c)
-  if active then draw_rect(rect(x, y + 19, text_width(label, FS), 2), ACCENT) end
 end
 
 // ── data: the catalog (loaded once, refreshed via cache policy on re-query) ──
@@ -175,35 +130,38 @@ for i in range(0, table_count) do
   if tables[i].rows > max_rows then max_rows = tables[i].rows end
 end
 
-// ── geometry pass ─────────────────────────────────────────────────────────────
-let left_w = left_width(left_frac, w, left_min, left_max)
+// ── layout + divider input: the prelude splitter ─────────────────────────────
+// The splitter both updates its drag state and draws its divider line, so the
+// canvas is cleared first and the panel fill painted right after (the fill
+// stops one pixel short of the divider).
+clear(BG.r, BG.g, BG.b)
+let content_r = rect(PAD, content_top - 10, w - 2 * PAD, ch - content_top + 10)
+let s = splitter(sp, content_r, { min_a: 190, min_b: 340 })
+sp = s.state
+// The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap).
+let left_w = s.a.w + 4
 let div_x = PAD + left_w
+draw_rect(rect(0, 0, div_x, ch), PANEL)
+let dragging = sp.drag
 
-// ── input: draggable divider ──────────────────────────────────────────────────
-let vdiv_hit = rect(div_x - 4, content_top - 10, 9, h - content_top + 10)
-if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), vdiv_hit) then drag_div = 1 end
-if !mouse_down(0) then drag_div = 0 end
-if drag_div == 1 then left_frac = clamp(float(mouse_x() - PAD) / float(w), 0.14, 0.66) end
-let dragging = drag_div != 0
-left_w = left_width(left_frac, w, left_min, left_max)
-div_x = PAD + left_w
-
-let cat_rect = rect(PAD, content_top + 24, left_w - 10, h - PAD - content_top - 24)
-let cat_rows = max(1, int(float(cat_rect.h) / float(ROW_H)))
+let cat_rows = max(1, int(float(ch - PAD - content_top - 24) / float(ROW_H)))
+let cat_rect = rect(PAD, content_top + 24, left_w - 10, cat_rows * ROW_H)
 
 let right_x = div_x + 14
 let right_w = w - right_x - PAD
 
 // ── input: focus ring (Tab, click-to-focus) ───────────────────────────────────
 fc = focus_update(fc, ["catalog", "detail"])
-let detail_rect = rect(right_x - 6, content_top, right_w + 6, h - PAD - content_top)
+let detail_rect = rect(right_x - 6, content_top, right_w + 6, ch - PAD - content_top)
 if mouse_pressed(0) && !dragging then
   if point_in(mouse_x(), mouse_y(), cat_rect) then fc = focus_set(fc, "catalog") end
   if point_in(mouse_x(), mouse_y(), detail_rect) then fc = focus_set(fc, "detail") end
 end
 
 // ── input: catalog selection, lazy detail fetch on change ──────────────────────
-cat_lst = nav_list(cat_lst, left_count, cat_rows, ROW_H, cat_rect, focused(fc, "catalog"))
+// The prelude list: keyboard nav gated on focus, click-select, and a wheel
+// that scrolls the window freely without dragging the selection along.
+cat_lst = list_update(cat_lst, left_count, cat_rows, cat_rect, focused(fc, "catalog"))
 let selected = cat_lst.selected
 
 // row 0 = Overview (no query); rows 1.. = tables/views
@@ -236,36 +194,38 @@ if ncols > 0 then schema_rows = min(4, max(1, int((ncols + 2) / 3))) end
 let schema_h = 0
 if !is_overview then schema_h = 10 + schema_rows * LINE_H end
 let grid_top = content_top + 26 + schema_h
-let grid_rows = max(1, int(float(h - PAD - grid_top) / float(LINE_H)))
-let grid_rect = rect(right_x - 6, grid_top, right_w + 6, h - PAD - grid_top)
+let grid_rows = max(1, int(float(ch - PAD - grid_top) / float(LINE_H)))
+let grid_rect = rect(right_x - 6, grid_top, right_w + 6, ch - PAD - grid_top)
 
 // overview scroll region
-let over_rect = rect(right_x - 6, content_top + 60, right_w + 6, h - PAD - content_top - 60)
+let over_rect = rect(right_x - 6, content_top + 60, right_w + 6, ch - PAD - content_top - 60)
 let over_rows = max(1, int(float(over_rect.h) / float(ROW_H)))
 
-// ── input: detail scrolling (wheel over the region; keys when focused) ────────
+// ── input: detail scrolling ───────────────────────────────────────────────────
+// The prelude scroll region handles the hover-scoped wheel + PageUp/PageDown;
+// the vim-style extras (j/k, space, home/end) stay app-side. Only the face
+// actually showing gets its scroll region updated — over_rect and grid_rect
+// overlap, so an ungated pair would let the overview's wheel silently disturb
+// a table view's saved scroll position (and vice versa).
 let detail_lines = len(detail.lines)
-if focused(fc, "detail") || hovered(detail_rect) then
+if is_overview then
+  over_scroll = scroll_update(over_scroll, table_count, over_rows, over_rect, focused(fc, "detail"))
+else
+  detail_scroll = scroll_update(detail_scroll, detail_lines, grid_rows, grid_rect, focused(fc, "detail"))
+end
+if focused(fc, "detail") then
   if is_overview then
-    if hovered(over_rect) then over_scroll = over_scroll + scroll_y() end
-    if focused(fc, "detail") then
-      if key_pressed("down") || key_pressed("j") then over_scroll = over_scroll + 1 end
-      if key_pressed("up") || key_pressed("k") then over_scroll = over_scroll - 1 end
-      if key_pressed("pagedown") || key_pressed("space") then over_scroll = over_scroll + over_rows end
-      if key_pressed("pageup") then over_scroll = over_scroll - over_rows end
-      if key_pressed("home") then over_scroll = 0 end
-      if key_pressed("end") then over_scroll = table_count end
-    end
+    if key_pressed("down") || key_pressed("j") then over_scroll = over_scroll + 1 end
+    if key_pressed("up") || key_pressed("k") then over_scroll = over_scroll - 1 end
+    if key_pressed("space") then over_scroll = over_scroll + over_rows end
+    if key_pressed("home") then over_scroll = 0 end
+    if key_pressed("end") then over_scroll = table_count end
   else
-    if hovered(grid_rect) then detail_scroll = detail_scroll + scroll_y() end
-    if focused(fc, "detail") then
-      if key_pressed("down") || key_pressed("j") then detail_scroll = detail_scroll + 1 end
-      if key_pressed("up") || key_pressed("k") then detail_scroll = detail_scroll - 1 end
-      if key_pressed("pagedown") || key_pressed("space") then detail_scroll = detail_scroll + grid_rows end
-      if key_pressed("pageup") then detail_scroll = detail_scroll - grid_rows end
-      if key_pressed("home") then detail_scroll = 0 end
-      if key_pressed("end") then detail_scroll = detail_lines end
-    end
+    if key_pressed("down") || key_pressed("j") then detail_scroll = detail_scroll + 1 end
+    if key_pressed("up") || key_pressed("k") then detail_scroll = detail_scroll - 1 end
+    if key_pressed("space") then detail_scroll = detail_scroll + grid_rows end
+    if key_pressed("home") then detail_scroll = 0 end
+    if key_pressed("end") then detail_scroll = detail_lines end
   end
 end
 detail_scroll = int(clamp(detail_scroll, 0, max(0, detail_lines - grid_rows)))
@@ -283,12 +243,9 @@ if focused(fc, "detail") then focus_id = 1 end
 let has_error = len(cat_err) > 0 || len(detail_err) > 0
 
 // ── draw: chrome ───────────────────────────────────────────────────────────────
-clear(BG.r, BG.g, BG.b)
-draw_rect(rect(0, 0, div_x, h), PANEL)
-
 // header: database name + path + object count
 let dbname = cat.name
-if !cat_ready then dbname = "opening database {spinner()}" end
+if !cat_ready then dbname = "opening database {spinner_glyph()}" end
 if len(cat_err) > 0 then dbname = "could not open database" end
 draw_text(ellipsize_tail(dbname, w - 2 * PAD, FS), {x: PAD, y: PAD}, FS, TEXT)
 if cat_ready && len(cat_err) == 0 then
@@ -310,21 +267,13 @@ if cat_ready && len(cat_err) == 0 then
 end
 draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
 
-// vertical divider (draggable)
-let vcol = LINE
-if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then vcol = ACCENT end
-draw_rect(rect(div_x, content_top - 10, 1, h - content_top + 10), vcol)
-if drag_div == 1 || (point_in(mouse_x(), mouse_y(), vdiv_hit) && !dragging) then
-  draw_rect(rect(div_x - 1, (content_top + h) / 2 - 14, 3, 28), ACCENT)
-end
-
 // ── draw: catalog section ───────────────────────────────────────────────────────
 section_label("TABLES · {table_count}", PAD, content_top, focused(fc, "catalog"))
 if len(cat_err) > 0 then
   draw_text("open error:", {x: PAD + 4, y: cat_rect.y + 4}, FS, RED)
   draw_text(ellipsize(cat_err, cat_rect.w, FS), {x: PAD + 4, y: cat_rect.y + 22}, FS, MUT)
 elsif !cat_ready then
-  draw_text("loading {spinner()}", {x: PAD + 4, y: cat_rect.y + 4}, FS, DIM)
+  draw_text("loading {spinner_glyph()}", {x: PAD + 4, y: cat_rect.y + 4}, FS, DIM)
 end
 
 let count_w = 78
@@ -333,8 +282,8 @@ clip(cat_rect.x, cat_rect.y, cat_rect.w, cat_rect.h)
 let cvis = int(clamp(left_count - cat_lst.scroll, 0, cat_rows + 1))
 for i in range(0, cvis) do
   let idx = i + cat_lst.scroll
-  let ry = cat_rect.y + i * ROW_H
-  let row_r = rect(cat_rect.x, ry, cat_rect.w, ROW_H)
+  let row_r = list_row_rect(cat_rect, cat_rows, idx, cat_lst.scroll)
+  let ry = row_r.y
   if idx == selected then
     let selbg = SELDIM
     if focused(fc, "catalog") then selbg = SEL end
@@ -372,7 +321,7 @@ if is_overview then
   draw_text_right("largest: {commafmt(max_rows)}", w - PAD, content_top, FS, DIM)
   draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
   if table_count == 0 then
-    draw_text("no tables in this database", {x: right_x, y: content_top + 40}, FS, FAINT)
+    empty_state(over_rect, "No tables", "this database has no objects")
   end
   let bar_label_w = 0
   for i in range(0, table_count) do
@@ -393,11 +342,11 @@ if is_overview then
     if t.kind == "view" then col = PURPLE end
     // label (right-aligned into its gutter)
     draw_text_right(ellipsize(t.name, bar_label_w - 10, FS), over_rect.x + bar_label_w - 10, cy - 8, FS, MUT)
-    // track + bar
-    let bw = int(float(bar_max) * float(t.rows) / float(max_rows))
-    if bw < 2 && t.rows > 0 then bw = 2 end
-    draw_rect(rect(bar_x, cy - 8, bar_max, 16), TRACK)
-    draw_rect(rect(bar_x, cy - 8, bw, 16), col)
+    // track + bar: a prelude progress bar, floored so a nonempty table is
+    // always visibly nonzero.
+    let frac = float(t.rows) / float(max_rows)
+    if t.rows > 0 && frac * float(bar_max) < 2.0 then frac = 2.0 / float(max(1, bar_max)) end
+    progress_bar(rect(bar_x, cy - 8, bar_max, 16), frac, { track: TRACK, fill: col, radius: 3 })
     // value
     draw_text(commafmt(t.rows), {x: bar_x + bar_max + 8, y: cy - 8}, FS, DIM)
   end
@@ -425,7 +374,8 @@ else
     // window-wide budget let a long error run past the pane edge.
     draw_text(ellipsize(detail_err, right_w, FS), {x: right_x, y: content_top + 60}, FS, MUT)
   elsif detail_loading && detail_lines == 0 then
-    draw_text("loading {spinner()}", {x: right_x, y: content_top + 40}, FS, DIM)
+    spinner(grid_rect.x + grid_rect.w / 2, grid_rect.y + 48, 12)
+    draw_text_center("loading table", grid_rect.x + grid_rect.w / 2, grid_rect.y + 72, FS, DIM)
   else
     // schema strip: flow column chips across up to schema_rows lines
     let sx = right_x
@@ -459,7 +409,7 @@ else
 
     // the data grid (selectable text_view with per-line styles)
     if detail_lines == 0 then
-      draw_text("(no rows)", {x: right_x, y: grid_top + 4}, FS, FAINT)
+      empty_state(grid_rect, "No rows", "")
     else
       let dlines = []
       let dstyles = []
@@ -472,3 +422,8 @@ else
     end
   end
 end
+
+// ── draw: keyboard hints ─────────────────────────────────────────────────────
+hint_bar(rect(0, ch, w, HINT_H),
+  [hint("tab", "cycle focus"), hint("j/k", "move"), hint("pgup/pgdn", "page"),
+   hint("drag", "resize columns")])

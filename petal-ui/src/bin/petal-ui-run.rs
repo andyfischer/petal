@@ -142,6 +142,10 @@ fn run() -> Result<i32, String> {
         .unwrap_or(DEFAULT_FRAMES);
 
     let mut ui = Headless::from_file_with_size(&args.app, size.0, size.1)?;
+    // Garden-panel host natives (`palette`, `query`, `text_view`, …) answer
+    // as inert, deterministic stubs, so panel drawers run headlessly instead
+    // of dying at `Unknown builtin` (see [`petal_ui::panel_stubs`]).
+    petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
     // Prints belong in the trace's `prints` field and nowhere else: echoing
     // them to stdout as well would interleave them with the JSONL.
     ui.env.set_echo(false);

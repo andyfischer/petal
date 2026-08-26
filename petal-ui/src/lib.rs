@@ -43,6 +43,7 @@ pub mod draw;
 pub mod harness;
 pub mod host_data;
 pub mod input;
+pub mod panel_stubs;
 pub mod pending;
 pub mod scenario;
 pub mod text;

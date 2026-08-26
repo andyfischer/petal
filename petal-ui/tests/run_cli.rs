@@ -412,3 +412,52 @@ fn example_apps_run_headlessly() {
         );
     }
 }
+
+// ── Garden panel-native stubs ────────────────────────────────────────────
+
+/// The driver registers `petal_ui::panel_stubs`, so a Garden panel drawer's
+/// host natives (`palette`, `query`, `mutate`, the stores and text-view
+/// regions) answer deterministically instead of `Unknown builtin`.
+#[test]
+fn garden_panel_natives_answer_as_deterministic_stubs() {
+    let s = Scratch::new("panel-stubs");
+    let app = s.write(
+        "app.ptl",
+        "state loading = 0\n\
+         state handle = 0\n\
+         state stored = \"\"\n\
+         state no_nav = 0\n\
+         let P = palette()\n\
+         clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)\n\
+         let rd = query(\"doc\", {id: 7})\n\
+         if is_loading(rd) then loading = loading + 1 end\n\
+         handle = mutate(\"apply\", {n: 1})\n\
+         stored = panel_store_get(\"k\") ?? \"empty\"\n\
+         panel_store_set(\"k\", \"v\")\n\
+         text_view(1, 0, 0, 100, 50, \"body\")\n\
+         emit(\"status\", {text: \"hi\"})\n\
+         if nav_arg() == nil then no_nav = 1 end\n",
+    );
+    let out = s.path("t.jsonl");
+    let (code, _, err) = run(&[
+        app.to_str().unwrap(),
+        "--frames",
+        "3",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "stderr: {err}");
+    let recs = records(&out);
+    assert_eq!(recs.len(), 3);
+    // `query` never resolves: the loading branch runs every frame.
+    assert_eq!(recs[2]["state"]["loading"], 3);
+    // `mutate` hands out env-lifetime-unique handles, like Garden's native.
+    assert_eq!(recs[0]["state"]["handle"], 1);
+    assert_eq!(recs[2]["state"]["handle"], 3);
+    // The store is inert: `panel_store_set` persists nothing.
+    assert_eq!(recs[2]["state"]["stored"], "empty");
+    assert_eq!(recs[0]["state"]["no_nav"], 1, "nav_arg answers nil");
+    // `text_view` emits the same Host draw command Garden's native does.
+    let cmds = serde_json::to_string(&recs[0]["commands"]).unwrap();
+    assert!(cmds.contains("text_view"), "no text_view command: {cmds}");
+}

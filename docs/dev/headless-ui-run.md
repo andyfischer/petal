@@ -141,11 +141,40 @@ A JSON array of answers; a `(kind, arg)` with no entry answers nil.
 JSON numbers keep their int/float distinction (`42` is an `Int`, `0.42` a
 `Float`) — a truncated fraction is unrecoverable downstream.
 
+## Garden panel natives are stubbed
+
+A Garden panel drawer calls host natives beyond the petal-ui contract —
+`palette()`, `query`/`invalidate`, `emit`/`mutate`/`claim_key`, the
+`navigate` family, `panel_store_get/set`, and the `text_view`/`edit_view`
+regions. The driver registers inert, deterministic stand-ins for all of them
+(`petal_ui::panel_stubs`), so the drawers under `garden/examples/panels/` and
+`garden/gpp-apps/*/src/` run headlessly instead of dying at
+`Unknown builtin: palette` on frame 0:
+
+| Native | Stubbed answer |
+|---|---|
+| `palette()` | Garden's fallback palette — the same colors a themeless Garden resolves |
+| `panel_theme()` | `{}` |
+| `query(kind, arg)` | a loading pending value, forever — a headless run exercises the drawer's loading/spinner path |
+| `invalidate`, `emit`, `claim_key`, `navigate`/`navigate_replace`/`navigate_back`/`navigate_forward`, `panel_store_set` | arguments validated, then dropped |
+| `mutate(name, arg)` | a unique handle (1, 2, …); `mutate_result(handle)` answers nil |
+| `nav_arg()`, `panel_store_get(key)` | nil |
+| `text_view`, `edit_view`, `edit_view_projection`, `text_view_line_styles`, `text_view_scroll_to`, `text_view_wrap` | the same `Host` draw commands Garden's natives emit, so the regions appear in the trace |
+| `edit_view_text(id)`, `edit_view_edits(id)` | `""` / `[]` |
+
+Every stub's answer is a pure function of the script's own calls, so traces
+stay byte-identical run to run, and an app that never touches these natives is
+unaffected. A drawer whose whole UI hides behind a ready `query` shows its
+loading state here — deterministic and intended; drive real data through the
+garden integration tests instead.
+
 ## Status
 
 All 15 checked-in UI apps under `examples/dashboards`, `examples/games`, and
 `examples/productivity` run clean under this driver, as do
-`sample-apps/diagram-canvas/examples/*` and `sample-apps/side-scroller/game.ptl`.
+`sample-apps/diagram-canvas/examples/*`, `sample-apps/side-scroller/game.ptl`,
+and — through the panel-native stubs above — every `garden/examples/panels/*.ptl`
+and the six `garden/gpp-apps/*/src/*.ptl` drawers.
 
 What does not, and why — each fails as a *runtime* error on the frame that
 first reaches the missing native, so its record carries the name:

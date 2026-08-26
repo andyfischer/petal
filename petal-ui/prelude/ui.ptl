@@ -42,10 +42,13 @@ end
 // `time()` is an absolute clock in seconds, published by the host each frame
 // (monotonic, read fresh — never a running sum of `dt()`, so it does not
 // drift). `elapsed()` reports the seconds since it was first called: it
-// captures the clock once into `state` and subtracts. The captured `start` is
-// a single module state slot, so `elapsed()` is one global timer measured from
-// the app's first `elapsed()` call — for independent timers, capture your own
-// `state t0 = time()` at the call site and subtract `time() - t0`.
+// captures the clock once into `state` and subtracts. That `state` is keyed by
+// the call path, so the capture is per *callsite*: every `elapsed()` in a
+// program is its own timer, started on the first frame that callsite runs —
+// which is what makes "one timer per thing being timed" the default. A call
+// inside a loop gets one timer per iteration by the same rule. For a single
+// app-global clock instead, capture it once into a top-level cell
+// (`state var t0 = time()`) and subtract, or use an absolute `state(key)`.
 export fn elapsed()
   state start = time()
   time() - start

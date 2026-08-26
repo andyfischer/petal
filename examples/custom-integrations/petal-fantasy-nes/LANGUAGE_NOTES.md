@@ -180,9 +180,25 @@ cart's `scroll` in a host state dump.
 `state(id)` is still the right tool, for a different job than this entry
 proposed. An explicit key is *absolute* — it ignores the call path — so it is
 how two entry points deliberately reach one cell: `btn_repeat` (two widgets
-asking about one button share its repeat phase) and `_menu_sel`, the one
-accessor wrapper left, where `state(id)` is what makes the cursor one slot per
-menu instead of one per callsite.
+asking about one button share its repeat phase) and `_menu_sel`, where
+`state(id)` is what makes the cursor one slot per menu instead of one per
+callsite.
+
+The wrappers that held **caches** rather than shared writes went the same way,
+for a reason worth stating separately because it costs speed rather than
+correctness. `_art_table()` and `_font_index()` read like memos — `state` runs
+an initializer only on a slot's first touch — but the slot is per path, and both
+are called from inside loops (once per art pixel, once per character drawn), so
+each was rebuilding its whole table every iteration. Both are top-level cells
+now. `_font_rows` is the third shape: its build genuinely varies by argument, so
+it stays in a function and keys itself absolutely with `state(ink)` — one build
+per ink color, shared by every caller.
+
+One placement rule came out of that. `_nes_font_index` sits *below*
+`_build_font_index` in the file, because that builder reads `_FONT_CHARS`, a
+value the file computes at run time: such a function cannot be hoisted, so a
+top-level call above its declaration reads nil. The compiler warns before it
+fails, and the fix is to move the cell down.
 
 See `docs/dev/state-callsite-keying-plan.md`.
 

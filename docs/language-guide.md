@@ -1541,6 +1541,24 @@ theme_set("light")
 print(ui_theme())   // light
 ```
 
+The same trap has a quieter form: a **cache** behind an accessor. `state` only
+runs its initializer on a slot's first touch, so wrapping an expensive build in
+a function reads like a memo — but the memo is per path, so a caller inside a
+loop rebuilds it on every iteration and never gets a hit.
+
+```petal
+fn char_table()
+    state var t = build_table()   // once per callsite, once per iteration
+    get t
+end
+
+state var char_table = build_table()   // once for the program — what you meant
+```
+
+Hoist the declaration to the top level when the cache is global, or key it with
+`state(k)` when it varies by some argument (`state(ink) var rows =
+build_rows(ink)` gives one build per ink, shared by every caller).
+
 ### Callbacks run at the builtin's callsite
 
 `map`, `filter`, `reduce`, `forEach` and the other higher-order builtins call

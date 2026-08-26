@@ -109,6 +109,64 @@ print(slot(false, 0))
 }
 
 #[test]
+fn a_lazy_cache_behind_an_accessor_rebuilds_once_per_call_path() {
+    // The other half of the accessor migration, and the one that costs
+    // performance rather than correctness: `fn table() state var t = build() …`
+    // reads like a memo, but the initializer runs once per *path*, so a caller
+    // in a loop rebuilds it every iteration. Both prelude caches that still
+    // looked like this — `nes.ptl`'s `_nes_art_table` and `_nes_font_index`,
+    // read once per pixel and once per character drawn — are top-level cells
+    // now for exactly this reason.
+    let out = run("\
+state var builds = 0
+fn build()
+  set builds = get builds + 1
+  7
+end
+fn cached()
+  state var t = build()
+  get t
+end
+for i in range(0, 4) do
+  cached()
+end
+print(get builds)
+");
+    assert_eq!(out, ["4"], "one build per loop iteration, not one overall");
+}
+
+#[test]
+fn a_top_level_cache_cell_is_built_exactly_once() {
+    // The migration for the test above: hoist the declaration to the top level
+    // and the initializer runs once for the program, however deep or looped the
+    // readers are. (An absolute `state(key)` is the other answer, and is what
+    // `nes.ptl`'s per-ink `_nes_font_rows` uses.)
+    let out = run_n(
+        "\
+state var builds = 0
+fn build()
+  set builds = get builds + 1
+  7
+end
+state var table = build()
+fn read()
+  get table
+end
+for i in range(0, 4) do
+  read()
+end
+print(get builds)
+",
+        3,
+    );
+    assert_eq!(
+        out,
+        ["1", "1", "1"],
+        "built once, and not rebuilt on later frames"
+    );
+}
+
+#[test]
 fn a_top_level_state_var_is_the_shared_cell() {
     // §2.4's migration idiom: one cell, one path, `get`/`set` at the seams.
     let out = run("\

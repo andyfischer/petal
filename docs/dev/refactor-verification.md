@@ -136,9 +136,9 @@ hand list:
 | nes cart | under `carts/` | fantasy-nes `--screenshot` / frame trace |
 | module | imported by something else, not an entry | skip as entry; covered via its importers |
 
-Corpus roots: this repo (`examples/`, `sample-apps/`, `test/`), plus the
-external projects in `CLAUDE.local.md` (`~/garden`, `~/.garden`,
-`~/worlds-fair/ui/ptl`). Config file lists roots; the tool globs.
+Corpus roots: this repo (`examples/`, `sample-apps/`, `test/`, `garden/` —
+Garden lives in-tree now), plus the external projects in `CLAUDE.local.md`
+(`~/.garden`, `~/worlds-fair/ui/ptl`). Config file lists roots; the tool globs.
 
 ### 5. Multi-step verification plan
 
@@ -159,7 +159,7 @@ A plan is a list of steps, each a named check with a `stop_on: pass|fail`:
 
 ```json
 { "name": "lint-fix",
-  "corpus": ["examples", "sample-apps", "test", "~/garden", "~/worlds-fair/ui/ptl"],
+  "corpus": ["examples", "sample-apps", "test", "garden", "~/worlds-fair/ui/ptl"],
   "steps": [
     {"check": "compiles"},
     {"check": "ir-equal",      "stop_on": "pass"},

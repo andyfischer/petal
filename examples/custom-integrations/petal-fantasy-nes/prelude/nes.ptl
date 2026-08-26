@@ -169,11 +169,12 @@ end
 // its keys win over the table above.
 
 // The default character table, built once (record literals cannot carry
-// punctuation keys, so it is assembled rather than written out).
-fn _art_table()
-  state var _nes_art_table = _build_art_table()
-  _nes_art_table
-end
+// punctuation keys, so it is assembled rather than written out). It is a
+// top-level cell, not a `state` inside an accessor: an in-function `state` is
+// keyed by the call path, so a cache behind one would rebuild itself once per
+// callsite — and once per iteration when the caller sits in a loop, which is
+// exactly where `_art_color` is called from.
+state var _nes_art_table = _build_art_table()
 
 fn _build_art_table()
   let t = {}
@@ -191,7 +192,7 @@ fn _build_art_table()
 end
 
 fn _art_color(ch, remap)
-  remap[ch] ?? (_art_table()[ch] ?? 0)
+  remap[ch] ?? ((get _nes_art_table)[ch] ?? 0)
 end
 
 // One authored line -> a string of color digits, unpadded.
@@ -518,12 +519,6 @@ fn _build_font_rows(ink)
   out
 end
 
-// char -> glyph number, built once.
-fn _font_index()
-  state var _nes_font_index = _build_font_index()
-  _nes_font_index
-end
-
 fn _build_font_index()
   let m = {}
   let cs = chars(_FONT_CHARS)
@@ -532,6 +527,14 @@ fn _build_font_index()
   end
   m
 end
+
+// char -> glyph number, built once. A top-level cell for the same reason as
+// `_nes_art_table` above: `glyph()` runs once per character drawn, so a
+// call-path-keyed `state` behind an accessor would rebuild the whole index per
+// character rather than caching it. It sits *below* `_build_font_index`
+// because that builder reads `_FONT_CHARS`, a value the file computes at run
+// time — which makes it un-hoistable, so a call above it would read nil.
+state var _nes_font_index = _build_font_index()
 
 fn _install_font(base, ink)
   let rows = _font_rows(ink)
@@ -576,7 +579,7 @@ end
 // is folded) resolve through the same table; anything the font does not carry
 // draws as a space.
 export fn glyph(ch)
-  _ensure_font() + (_font_index()[upper(ch)] ?? 0)
+  _ensure_font() + ((get _nes_font_index)[upper(ch)] ?? 0)
 end
 
 // ── Text ──────────────────────────────────────────────────────────────────

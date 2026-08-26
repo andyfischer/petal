@@ -8,7 +8,7 @@
   },
   "traces": {
     "examples/custom-integrations/petal-fantasy-nes/carts/launcher.ptl/monkey-1-s1": "1edb790b2a3cff117e4ba74d2a50cfa05044758bfbcb1f151798903b0f60e777",
-    "examples/custom-integrations/petal-fantasy-nes/prelude/nes.ptl/monkey-1-s1": "aecd7a6e44c8e76aef6f59d9c2fc3838c3023ba4e6e94f8a6f37d4027bed2690",
+    "examples/custom-integrations/petal-fantasy-nes/prelude/nes.ptl/monkey-1-s1": "5b84a8a0c28944df7f874befa7af2e77acc11f38e77795cfb75d2fc102c1301d",
     "examples/custom-integrations/petal-fantasy-nes/prelude/nes_sound.ptl/monkey-1-s1": "b2583a8edfbdd7cac4fb3f542d476fe7f5a680472e266a89c4110ec854639649",
     "examples/dashboards/analytics-dashboard/app.ptl/monkey-1-s1": "e18e3e202bac4f2ff342b94fbb59dffb5df3607e10bec90037559001711c7af9",
     "examples/dashboards/finance-dashboard/app.ptl/monkey-1-s1": "a866d61408f4d5f11a0c76c2b2474141d71c69c0adbada5d4b50c995f9442458",

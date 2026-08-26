@@ -1,7 +1,8 @@
 # Plan: call-path keyed `state` (React-`useState` semantics)
 
-Status: **IMPLEMENTED** — 2026-08-25. Phases 0-4 landed; Phase 5 (ecosystem
-re-vendor) is the only piece outstanding.
+Status: **IMPLEMENTED** — 2026-08-25. Phases 0-5 landed. What remains is one
+deliberately deferred item (structural path repair in `transfer_state`); see
+[§10](#10-what-actually-shipped).
 Date: 2026-08-24 (planned), 2026-08-25 (shipped)
 
 The sections below are preserved as written, as the *intent*. Where the
@@ -582,15 +583,52 @@ stays designed-but-deferred, as §3.2 allowed.
   and `transfer_state.rs`'s test-module comment now says "pathed keys" instead
   of "loop-indexed keys".
 
+### Follow-up: the cache shape of the accessor idiom (2026-08-26)
+
+Phase 1 retired the accessor wrappers that laundered a *shared write*
+(`_backdrop_cell` and friends). It missed the ones that hold a *cache*, because
+they do not look like the pattern: `fn table() state var t = build() … end` has
+one declaration, no writer, and reads as a memo. Under call-path keying the
+initializer runs once per path, so a caller inside a loop rebuilds it every
+iteration and never hits.
+
+Two survived in `nes.ptl`, both on hot paths — `_art_table()` (once per art
+pixel) and `_font_index()` (once per character drawn) — and are top-level cells
+now. `_font_rows` is untouched: its build varies by argument, and `state(ink)`
+is absolute, so it already caches per ink across all callers. `ui.ptl`'s
+`elapsed()` is also untouched — its per-callsite capture is deliberate and
+pinned by `each_elapsed_callsite_is_its_own_timer`; only its stale doc comment,
+which still promised "one global timer", was corrected.
+
+Placement matters for the hoisted version: `_nes_font_index` has to sit below
+`_build_font_index`, because that builder reads a value the file computes at run
+time and so cannot be hoisted. The compiler warns ("cannot be hoisted: its body
+reads a value the file computes at run time") before the run fails on
+`Cannot call nil`.
+
+`rust/tests/state_call_paths.rs` gained the pair
+`a_lazy_cache_behind_an_accessor_rebuilds_once_per_call_path` and
+`a_top_level_cache_cell_is_built_exactly_once`; the language guide's "Sharing on
+purpose" section gained the cache case. The `nes.ptl` trace was machine-checked
+before re-baselining its golden: over 60 frames `state` was the only field that
+moved, by exactly the two added cache keys, with no shared key changing value.
+
+The stale `~/.cargo/bin/garden` noted below has since been rebuilt
+(`./garden/install-local.sh`); it now stamps `e778baa` and runs a top-level
+`state var` cell headless, so the migration idiom works in the live-editing
+workflow.
+
+A full `verify.ts --plan compiler` sweep over the whole corpus — 207 files
+across this repo, `~/.garden` and `~/worlds-fair/ui/ptl` — reports 125
+identical traces and zero changed or compile-error files.
+
+The ecosystem sweep behind this found nothing else — no unmigrated in-function
+`state` remains in `garden/`, `~/.garden`, `~/worlds-fair/ui/ptl`, `~/tools`, or
+the three `~/biz` Petal apps, and all three vendoring consumers have their
+re-vendor committed.
+
 ### Still outstanding
 
-- **The installed `garden` binary is stale.** `~/.cargo/bin/garden` dates from
-  2026-08-04 and predates the `get` keyword, so it rejects any script using a
-  top-level `state var` cell — i.e. exactly the migration idiom this change
-  tells people to adopt. A `garden-dev.ts --headless` loop against a migrated
-  script fails with `Expected 'then', got …` until Garden is rebuilt from
-  `garden/` (`./garden/install-local.sh`). The vendored-Petal test paths are
-  unaffected.
 - **Structural path repair in `transfer_state`** (§3.5, explicitly out of scope
   for v1): remapping old paths onto new ones when a single callsite ordinal
   shifted. Worth revisiting if the accepted-loss class (deleting the first of

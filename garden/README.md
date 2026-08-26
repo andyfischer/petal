@@ -142,7 +142,7 @@ see [architecture.md](docs/architecture.md).
 
 ### Git, diff & PR views
 
-`:Git` / `garden git log` open the git history browser — a panel-mode GPP app
+`:Git` / `garden git log` open the git history browser — a GPP app
 (`gpp-apps/git-viewers`): a commit/file list beside the selected file's line diff,
 with draggable dividers, collapsible hunks, and a **⟳ Refresh**.
 
@@ -233,10 +233,10 @@ Full protocol: [debug-server.md](docs/debug-server.md).
 | `garden-script` | Petal embedding, layout tree, hot reload |
 | `garden-app` | App core (panes, editor views, input) + window/terminal/headless frontends |
 | `gpp` | Garden Pane Protocol: the JSON-RPC contract for subprocess-backed panes |
-| `gpp-apps/directory-browser` | Lines-mode GPP client: a navigable directory listing |
-| `gpp-apps/git-viewers` | Panel-mode GPP app behind `:Git` (`git-log`) |
-| `gpp-apps/garden-diff` | Panel-mode GPP client: the one diff/review tool — editable split, unified, stat (`:Diff`/`:Review*`/`:PR`, `garden diff`, `garden pr`) |
-| `gpp-apps/sqlite-browser` | Panel-mode GPP client: a read-only SQLite/Postgres browser + visualizer (`garden sqlite-browser db.sqlite` or `… postgres://host/db`) |
+| `gpp-apps/directory-browser` | GPP app: the netrw-style directory listing (`garden <dir>`, `:E`, `-`) |
+| `gpp-apps/git-viewers` | GPP app behind `:Git` (`git-log`) |
+| `gpp-apps/garden-diff` | GPP app: the one diff/review tool — editable split, unified, stat (`:Diff`/`:Review*`/`:PR`, `garden diff`, `garden pr`) |
+| `gpp-apps/sqlite-browser` | GPP app: a read-only SQLite/Postgres browser + visualizer (`garden sqlite-browser db.sqlite` or `… postgres://host/db`) |
 
 ### Internal only
 
@@ -277,6 +277,6 @@ The JetBrains Mono Project Authors, licensed under the SIL Open Font License
 - [keybindings.md](docs/keybindings.md) — vim editing layer + global shortcuts
 - [debug-server.md](docs/debug-server.md) — live inspection/automation protocol
 - [gpp.md](docs/gpp.md) — the Garden Pane Protocol for subprocess-backed panes
-- [writing-gpp-apps.md](docs/writing-gpp-apps.md) — how to write a panel-mode GPP app
+- [writing-gpp-apps.md](docs/writing-gpp-apps.md) — how to write a GPP app
 - [petal-graphical-panels.md](docs/petal-graphical-panels.md) — Petal-drawn panel panes
 - [testing.md](docs/testing.md) — the layered test strategy

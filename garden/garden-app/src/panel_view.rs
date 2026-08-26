@@ -30,7 +30,7 @@ use crate::app::Mods;
 use crate::editor_view::{EditorView, ScrollAxis};
 
 use crate::panel_tess as tess;
-use crate::process_pane::ProcessPane;
+use crate::process_pane::{PendingRequest, ProcessPane};
 use crate::script_client::{ProcessQueryProvider, Shared};
 use crate::theme::Theme;
 
@@ -450,7 +450,7 @@ pub struct PanelView {
     /// (the Petal-IDE live binding). Gates the recompile so an unchanged buffer
     /// re-scanned every awake frame is a no-op. `None` until the first live apply.
     live_source_hash: Option<u64>,
-    /// For a **panel-mode GPP pane** (the script-push protocol): the subprocess
+    /// For a **GPP script-client pane**: the subprocess
     /// that pushed this script and answers its `query` requests, plus the shared
     /// query cache the attached [`ProcessQueryProvider`] reads. `None` for an
     /// in-process built-in panel (`:Diff`/`:Git`), whose provider is local Rust.
@@ -478,6 +478,12 @@ pub struct PanelView {
     /// direct-manipulation mode. Off for every ordinary panel, which therefore
     /// pays nothing for it.
     trace_origins: bool,
+    /// [`ClientEvent`]s (and a data-changed flag) collected while a bounded
+    /// request wait ([`await_response`](Self::await_response)) drained other
+    /// envelopes, handed to the next [`pump_client`](Self::pump_client) so
+    /// nothing a client said mid-wait is lost.
+    pending_events: Vec<ClientEvent>,
+    pending_changed: bool,
     /// The layout-declared explicit navigation allowlist (`panel(script, {
     /// screens: [...] })`). **Empty means not declared** — the implicit
     /// script-directory default applies. When non-empty it *narrows* that
@@ -491,9 +497,10 @@ pub struct PanelView {
 /// A client-directed signal surfaced by [`PanelView::pump_client`] for the `App`
 /// to act on (the panel runtime can't reach the pane set itself).
 pub enum ClientEvent {
-    /// The script asked the host to open a file in this pane (`openPath`).
+    /// Open a file in this pane — the reserved client `emit("open_path")`
+    /// event, or the host-owned `open_path` mutation.
     OpenPath(String),
-    /// The client set the pane's status text (`setStatus`).
+    /// Set the pane's status text — the reserved client `emit("status")` event.
     SetStatus(String),
     /// The script asked to navigate (browser-history API: `navigate` /
     /// `navigate_replace` / `navigate_back` / `navigate_forward`). The app layer
@@ -523,21 +530,6 @@ fn json_to_status(v: serde_json::Value) -> String {
         serde_json::Value::String(s) => s,
         other => other.to_string(),
     }
-}
-
-/// Extract the target screen's source from a `navigate` [`gpp::MutateResult`]: the
-/// built-in mutation returns `{ "screen", "source" }`; a handler error (e.g. an
-/// undeclared screen) comes back as `error`. Anything else is a malformed reply.
-fn mutate_source(m: gpp::MutateResult) -> Result<String, String> {
-    if let Some(err) = m.error {
-        return Err(err);
-    }
-    m.value
-        .as_ref()
-        .and_then(|v| v.get("source"))
-        .and_then(|s| s.as_str())
-        .map(str::to_string)
-        .ok_or_else(|| "navigate: client reply had no source".to_string())
 }
 
 /// One visited screen in a panel's browser-style history stack. State is scoped
@@ -610,6 +602,8 @@ impl PanelView {
             cursor: 0,
             nav_events: Vec::new(),
             trace_origins: false,
+            pending_events: Vec::new(),
+            pending_changed: false,
             screens: Vec::new(),
         }
     }
@@ -629,7 +623,7 @@ impl PanelView {
         &self.screens
     }
 
-    /// Attach the pushing subprocess (a panel-mode GPP client) and the shared
+    /// Attach the pushing subprocess (a GPP client) and the shared
     /// query cache its provider reads. After this, [`pump_client`](Self::pump_client)
     /// bridges the script's `query` calls to `query` requests over the pipe.
     /// `name` rebuilds the host if the client re-pushes its script.
@@ -644,9 +638,17 @@ impl PanelView {
         self.client.is_some()
     }
 
-    /// Drain the client's pipe and drive the query round-trip for a panel-mode
-    /// GPP pane. Applies `queryResult` answers and client-pushed `invalidate`s to
-    /// the shared cache, then flushes any queued `query` requests to the client.
+    /// The attached client's spawn command, or `None` for an in-process panel.
+    /// Reported by the debug server so a harness can tell which app drives the
+    /// pane.
+    pub fn client_name(&self) -> Option<&str> {
+        self.client.as_ref().map(|_| self.client_name.as_str())
+    }
+
+    /// Drain the client's pipe and drive the query round-trip for a GPP
+    /// script-client pane. Applies id-correlated query answers and client-pushed
+    /// `invalidate`s to the shared cache, then flushes any queued `query`
+    /// requests to the client.
     /// A re-pushed `setScript` hot-reloads the host (keeping the query cache).
     ///
     /// With `wait: Some(dur)`, after flushing new requests it blocks up to `dur`
@@ -654,14 +656,21 @@ impl PanelView {
     /// paint the first frame with data instead of a spinner. `None` is fully
     /// non-blocking, for the steady-state poll tick.
     ///
-    /// Returns `(events, changed)`: `events` are `openPath`/`setStatus` for the
-    /// `App` to act on; `changed` is true when new data landed (redraw wanted).
+    /// Returns `(events, changed)`: `events` are the client events (open-path /
+    /// status / navigate / mutate) for the `App` to act on; `changed` is true
+    /// when new data landed (redraw wanted).
     pub fn pump_client(&mut self, wait: Option<Duration>) -> (Vec<ClientEvent>, bool) {
         if self.client.is_none() {
             return (Vec::new(), false);
         }
+        // Events (and data changes) a bounded request wait collected while it
+        // was draining come first, in arrival order.
+        let mut events = std::mem::take(&mut self.pending_events);
+        let mut changed = std::mem::take(&mut self.pending_changed);
         let incoming = self.client.as_ref().unwrap().try_drain();
-        let (mut events, mut changed) = self.apply_client_envelopes(incoming);
+        let (fresh, fresh_changed) = self.apply_client_envelopes(incoming);
+        events.extend(fresh);
+        changed |= fresh_changed;
 
         let sent = self.flush_query_outbox();
         if let (Some(dur), true) = (wait, sent) {
@@ -676,22 +685,39 @@ impl PanelView {
         (events, changed)
     }
 
-    /// Apply a batch of client→host envelopes to the shared cache and collect any
-    /// `openPath`/`setStatus` events. Returns `(events, changed)`.
+    /// Apply a batch of client→host envelopes. Responses correlate to their
+    /// request **by id** through the client's pending table: a query answer
+    /// resolves the shared cache (an error response resolves it errored).
+    /// Notifications are `setScript` (hot reload), `invalidate`, and
+    /// client-raised `emit` events — the reserved `open_path` / `status` become
+    /// [`ClientEvent`]s, anything else is ignored. Returns `(events, changed)`.
     fn apply_client_envelopes(&mut self, envs: Vec<gpp::Envelope>) -> (Vec<ClientEvent>, bool) {
         let mut events = Vec::new();
         let mut changed = false;
         for env in envs {
-            // A `queryResult` is a response (id + result, no method).
-            if env.method.is_none() && env.result.is_some() {
-                if let (Ok(r), Some(shared)) = (
-                    env.result_as::<gpp::QueryResult>(),
-                    self.client_shared.as_ref(),
-                ) {
-                    shared
-                        .borrow_mut()
-                        .resolve(r.kind, r.arg, r.value, r.error, r.cache_control);
-                    changed = true;
+            if env.is_response() {
+                let pending = env
+                    .id
+                    .and_then(|id| self.client.as_mut().and_then(|c| c.complete(id)));
+                match pending {
+                    Some(PendingRequest::Query { kind, arg }) => {
+                        if let Some(shared) = self.client_shared.as_ref() {
+                            if let Some(err) = env.error {
+                                shared
+                                    .borrow_mut()
+                                    .resolve(kind, &arg, None, Some(err.message), None);
+                            } else if let Ok(r) = env.result_as::<gpp::QueryResult>() {
+                                shared
+                                    .borrow_mut()
+                                    .resolve(kind, &arg, r.value, None, r.cache);
+                            }
+                            changed = true;
+                        }
+                    }
+                    // A mutate/navigate response landing here means its bounded
+                    // wait already gave up and reported a timeout; nothing
+                    // useful is left to do with the late answer.
+                    Some(_) | None => {}
                 }
                 continue;
             }
@@ -717,14 +743,22 @@ impl PanelView {
                         changed = true;
                     }
                 }
-                Some(gpp::method::OPEN_PATH) => {
-                    if let Ok(p) = env.params_as::<gpp::OpenPathParams>() {
-                        events.push(ClientEvent::OpenPath(p.path));
-                    }
-                }
-                Some(gpp::method::SET_STATUS) => {
-                    if let Ok(p) = env.params_as::<gpp::SetStatusParams>() {
-                        events.push(ClientEvent::SetStatus(p.text));
+                Some(gpp::method::EMIT) => {
+                    if let Ok(p) = env.params_as::<gpp::EmitParams>() {
+                        match p.event.as_str() {
+                            gpp::event::OPEN_PATH => {
+                                if let Some(path) = p.arg.get("path").and_then(|v| v.as_str()) {
+                                    events.push(ClientEvent::OpenPath(path.to_string()));
+                                }
+                            }
+                            gpp::event::STATUS => {
+                                if let Some(text) = p.arg.get("text").and_then(|v| v.as_str()) {
+                                    events.push(ClientEvent::SetStatus(text.to_string()));
+                                }
+                            }
+                            // Unknown client events are reserved: skipped.
+                            _ => {}
+                        }
                     }
                 }
                 _ => {}
@@ -744,7 +778,7 @@ impl PanelView {
         let sent = !outbox.is_empty();
         if let Some(client) = self.client.as_mut() {
             for (kind, arg) in outbox {
-                client.send_query(&kind, &arg);
+                client.send_query(&kind, arg);
             }
         }
         sent
@@ -899,71 +933,95 @@ impl PanelView {
     }
 
     /// Fetch a navigation target screen's source from the attached subprocess
-    /// client via the built-in `navigate` **mutation**, blocking up to `wait` for
-    /// the answer. This is how a subprocess panel navigates: the client owns the
-    /// screen sources, the host owns the history stack, and this round-trip bridges
-    /// them. Non-mutate envelopes drained while waiting (renders, `queryResult`s)
-    /// are applied normally so nothing is lost. Returns the target's `.ptl` source,
-    /// or an error string (no client, timeout, undeclared screen, malformed reply).
+    /// client via a first-class `navigate` **request**, blocking up to `wait`
+    /// for the id-correlated answer. This is how a subprocess panel navigates:
+    /// the client owns the screen sources, the host owns the history stack, and
+    /// this round-trip bridges them. `nav_arg` is the subject the two-argument
+    /// `navigate(screen, arg)` form carried (Null otherwise). Other envelopes
+    /// drained while waiting are applied normally so nothing is lost. Returns
+    /// the target's `.ptl` source, or an error string (no client, timeout,
+    /// undeclared screen, malformed reply).
     pub(crate) fn client_fetch_screen(
         &mut self,
         screen: &str,
         nav_arg: &serde_json::Value,
         wait: Duration,
     ) -> Result<String, String> {
-        // `arg` is the subject `navigate(screen, arg)` carried. A client that
-        // registered its own `navigate` handler needs it to prime data for the
-        // target screen; the built-in handler ignores it. Absent for the
-        // one-argument form, so an app that never passes one sees the shape it
-        // always did.
-        let mut arg = serde_json::json!({ "screen": screen });
-        if !nav_arg.is_null() {
-            arg["arg"] = nav_arg.clone();
-        }
         let id = match self.client.as_mut() {
-            Some(client) => client.send_mutate(petal_query::gpp::NAVIGATE, arg),
+            Some(client) => client.send_navigate(screen, nav_arg.clone()),
             None => return Err("panel has no client to navigate".to_string()),
         };
+        match self.await_response(id, wait) {
+            Some(Ok(result)) => serde_json::from_value::<gpp::NavigateResult>(result)
+                .map(|r| r.source)
+                .map_err(|_| "navigate: client reply had no source".to_string()),
+            Some(Err(message)) => Err(message),
+            None => Err(format!("navigate: no response for screen '{screen}'")),
+        }
+    }
+
+    /// Block up to `wait` for the response answering request `id`, applying
+    /// every other envelope that arrives meanwhile through the normal path
+    /// (their events and data changes are queued for the next
+    /// [`pump_client`](Self::pump_client), so nothing a client says mid-wait is
+    /// lost). Returns the response's `result` (`Ok`) or its error message
+    /// (`Err`); `None` on timeout or when there is no client.
+    fn await_response(
+        &mut self,
+        id: u64,
+        wait: Duration,
+    ) -> Option<Result<serde_json::Value, String>> {
         let deadline = Instant::now() + wait;
-        let mut leftover = Vec::new();
-        let mut result: Option<Result<String, String>> = None;
-        while result.is_none() {
+        loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                break;
+                return None;
             }
             let batch = match self.client.as_ref() {
                 Some(client) => client.drain_for(remaining),
-                None => break,
+                None => return None,
             };
             if batch.is_empty() {
-                break; // nothing arrived before the deadline
+                return None; // nothing arrived before the deadline
             }
-            for env in batch {
-                // A `mutateResult` is a response (id + result, no method) whose
-                // result carries `name` — distinct from a `queryResult` (kind/arg).
-                if result.is_none() && env.id == Some(id) && env.method.is_none() {
-                    if let Ok(m) = env.result_as::<gpp::MutateResult>() {
-                        result = Some(mutate_source(m));
-                        continue;
+            let mut rest = batch.into_iter();
+            while let Some(env) = rest.next() {
+                if env.is_response() && env.id == Some(id) {
+                    if let Some(client) = self.client.as_mut() {
+                        client.complete(id);
                     }
+                    let outcome = match env.error {
+                        Some(err) => Err(err.message),
+                        None => Ok(env.result.unwrap_or(serde_json::Value::Null)),
+                    };
+                    // Whatever came after the match still gets applied.
+                    self.apply_pending(rest.collect());
+                    return Some(outcome);
                 }
-                leftover.push(env);
+                self.apply_pending(vec![env]);
             }
         }
-        // Fold whatever else we drained back through the normal path.
-        let _ = self.apply_client_envelopes(leftover);
-        result.unwrap_or_else(|| Err(format!("navigate: no response for screen '{screen}'")))
+    }
+
+    /// Apply envelopes drained outside the pump path, queuing their events and
+    /// data-changed flag for the next [`pump_client`](Self::pump_client).
+    fn apply_pending(&mut self, envs: Vec<gpp::Envelope>) {
+        if envs.is_empty() {
+            return;
+        }
+        let (events, changed) = self.apply_client_envelopes(envs);
+        self.pending_events.extend(events);
+        self.pending_changed |= changed;
     }
 
     /// Relay a script `mutate(name, arg)` to the pane's subprocess as a GPP
-    /// `mutate` request and block up to `wait` for its `mutateResult` — the
-    /// general form of [`client_fetch_screen`](Self::client_fetch_screen) (which
-    /// is just the built-in `navigate` mutation). Returns the reply's value on
-    /// success (an app-registered `on_mutation` handler's `Reply`, JSON-stringified
+    /// `mutate` request and block up to `wait` for its id-correlated response —
+    /// the sibling of [`client_fetch_screen`](Self::client_fetch_screen) (the
+    /// first-class `navigate` request). Returns the reply's value on success
+    /// (an app-registered `on_mutation` handler's `Reply`, JSON-stringified
     /// for a status line), or an `Err` on a handler error / no client / timeout.
-    /// Non-`mutateResult` envelopes drained while waiting are folded back through
-    /// the normal path so nothing is lost.
+    /// Other envelopes drained while waiting are applied through the normal
+    /// path so nothing is lost.
     /// Report what a mutation resolved to back to the script, under the handle
     /// `mutate(...)` handed it. The next frame's `mutate_result(handle)` answers
     /// with it.
@@ -987,36 +1045,14 @@ impl PanelView {
             Some(client) => client.send_mutate(name, arg),
             None => return Err(format!("panel has no subprocess to handle '{name}'")),
         };
-        let deadline = Instant::now() + wait;
-        let mut leftover = Vec::new();
-        let mut result: Option<Result<Option<String>, String>> = None;
-        while result.is_none() {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
+        match self.await_response(id, wait) {
+            Some(Ok(result)) => {
+                let r: gpp::MutateResult = serde_json::from_value(result).unwrap_or_default();
+                Ok(r.value.map(json_to_status))
             }
-            let batch = match self.client.as_ref() {
-                Some(client) => client.drain_for(remaining),
-                None => break,
-            };
-            if batch.is_empty() {
-                break;
-            }
-            for env in batch {
-                if result.is_none() && env.id == Some(id) && env.method.is_none() {
-                    if let Ok(m) = env.result_as::<gpp::MutateResult>() {
-                        result = Some(match m.error {
-                            Some(err) => Err(err),
-                            None => Ok(m.value.map(json_to_status)),
-                        });
-                        continue;
-                    }
-                }
-                leftover.push(env);
-            }
+            Some(Err(message)) => Err(message),
+            None => Err(format!("mutate '{name}': no response")),
         }
-        let _ = self.apply_client_envelopes(leftover);
-        result.unwrap_or_else(|| Err(format!("mutate '{name}': no response")))
     }
 
     /// Navigate to `screen` (a browser link click): snapshot the current entry's
@@ -1214,16 +1250,12 @@ impl PanelView {
 
     /// Whether the script claimed `name` under the modifier bits `mods`
     /// (`1=shift 2=ctrl 4=alt 8=cmd`) — i.e. the host must forward this chord
-    /// instead of applying its own shortcut. See [`key_claims`](Self::key_claims).
+    /// instead of applying its own shortcut. The claims are drained from the
+    /// script's `claim_key(...)` calls each frame.
     pub fn claims_key(&self, name: &str, mods: u8) -> bool {
         self.key_claims.iter().any(|(claim, claim_mods)| {
             claim.eq_ignore_ascii_case(name) && claim_mods.is_none_or(|m| m == mods)
         })
-    }
-
-    /// The chords the script currently claims, for tests and introspection.
-    pub fn key_claims(&self) -> &[(String, Option<u8>)] {
-        &self.key_claims
     }
 
     /// Feed typed text (IME/paste) as `text_input`, with no accompanying key
@@ -3486,16 +3518,17 @@ edit_view_projection(1, {{
         assert!(!pv.region_scroll_h(1, RECT, CELL, 4.0));
     }
 
-    /// A minimal GPP panel-mode client, as a shell script: it answers the
-    /// `initialize` handshake, then watches stdin for the host's `emit`
-    /// notification. When it sees `("divider", 42)` it replies with a
-    /// `setStatus` notification — so the test can observe, purely through the
-    /// public `pump_client` API, that a script's `emit(event, arg)` crossed the
-    /// pipe with its event *and* arg intact. Substring matches are
-    /// order-independent (serde_json may order object keys either way).
+    /// A minimal GPP client, as a shell script: it answers the `initialize`
+    /// handshake (protocol 2), then watches stdin for the host's `emit`
+    /// notification. When it sees `("divider", 42)` it replies with the
+    /// reserved `emit("status", …)` notification — so the test can observe,
+    /// purely through the public `pump_client` API, that a script's
+    /// `emit(event, arg)` crossed the pipe with its event *and* arg intact.
+    /// Substring matches are order-independent (serde_json may order object
+    /// keys either way).
     const EMIT_ECHO_CLIENT: &str = r#"
 read -r line
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"echo","mode":"panel"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"name":"echo"}}'
 while IFS= read -r line; do
   case "$line" in
     *'"method":"emit"'*)
@@ -3503,7 +3536,7 @@ while IFS= read -r line; do
         *'"event":"divider"'*)
           case "$line" in
             *'"arg":42'*)
-              printf '%s\n' '{"jsonrpc":"2.0","method":"setStatus","params":{"text":"divider=42"}}'
+              printf '%s\n' '{"jsonrpc":"2.0","method":"emit","params":{"event":"status","arg":{"text":"divider=42"}}}'
               ;;
           esac ;;
       esac ;;
@@ -3513,8 +3546,9 @@ done
 
     /// End-to-end over a real pipe: a panel script's `emit("divider", 42)` is
     /// drained by [`PanelView::tick`] and written to the attached subprocess as
-    /// a GPP `emit` notification; the stub client answers with `setStatus`,
-    /// which surfaces back through `pump_client` as a [`ClientEvent`].
+    /// a GPP `emit` notification; the stub client answers with the reserved
+    /// `emit("status", …)` event, which surfaces back through `pump_client` as
+    /// a [`ClientEvent`].
     #[test]
     fn script_emit_reaches_the_client_over_the_pipe() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
@@ -3535,7 +3569,7 @@ done
         // One frame: the script emits, tick drains + forwards over the pipe.
         assert!(pv.tick(Instant::now(), RECT, CELL));
 
-        // The stub's `setStatus` answer arrives asynchronously; poll for it.
+        // The stub's `emit("status")` answer arrives asynchronously; poll for it.
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             let (events, _) = pv.pump_client(None);
@@ -3547,40 +3581,40 @@ done
             }
             assert!(
                 Instant::now() < deadline,
-                "emit never reached the client (no setStatus reply)"
+                "emit never reached the client (no status reply)"
             );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
 
-    /// A stub panel-mode client that answers the built-in `navigate` mutation:
-    /// `b.ptl` resolves to a source, any other screen errors. Echoes the request
-    /// `id` so the host correlates the response.
+    /// A stub client that answers the first-class `navigate` request: `b.ptl`
+    /// resolves to a source, any other screen gets an APP error response.
+    /// Echoes the request `id` — the only correlation a v2 response carries.
     const NAV_STUB_CLIENT: &str = r#"
 read -r line
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"nav-stub","mode":"panel"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"name":"nav-stub"}}'
 while IFS= read -r line; do
   # The host serializes params through a serde_json::Value, so wire keys are
   # alphabetically ordered — match on the screen substring, not field order.
   case "$line" in
     *'"screen":"b.ptl"'*)
       id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","value":{"screen":"b.ptl","source":"state marker = 2"}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"screen":"b.ptl","source":"state marker = 2"}}\n' "$id"
       ;;
-    *'"method":"mutate"'*)
+    *'"method":"navigate"'*)
       id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"no such screen"}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"no such screen"}}\n' "$id"
       ;;
   esac
 done
 "#;
 
-    /// End-to-end over a real pipe (GPP Phase 4): a subprocess panel navigates by
-    /// fetching the target screen's source from the client via the built-in
-    /// `navigate` **mutation**; the host then drives its own history stack with it,
-    /// keeping the client attached across the source swap.
+    /// End-to-end over a real pipe: a subprocess panel navigates by fetching
+    /// the target screen's source from the client via the first-class
+    /// `navigate` **request**; the host then drives its own history stack with
+    /// it, keeping the client attached across the source swap.
     #[test]
-    fn subprocess_navigation_fetches_source_via_mutation() {
+    fn subprocess_navigation_fetches_source_via_navigate_request() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(f, "state marker = 1\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();

@@ -33,14 +33,10 @@ impl App {
             .and_then(|s| s.path().parent().map(|p| p.to_path_buf()));
         let mut old: Vec<Pane> = self.panes.drain(..).collect();
 
-        // Build each new pane, collecting any process panes that spawned during
-        // the rebuild so their initial render can be drained afterwards (the
-        // borrow on `self` must end first).
+        // Build each new pane, collecting the GPP clients that spawned during
+        // the rebuild so they can be primed after the borrow on `self` ends
+        // (their first frame of data comes from the query round-trip).
         let mut new_panes = Vec::with_capacity(slots.len());
-        let mut spawned: Vec<usize> = Vec::new();
-        // Panel-mode (script-push) clients spawned this rebuild, primed after the
-        // borrow on `self` ends (like `spawned`, but their first data comes from
-        // the query round-trip rather than an initial `render`).
         let mut spawned_clients: Vec<usize> = Vec::new();
         // Panel scripts that could not be given a pane at all this rebuild (the
         // stub host itself failed), reported once the borrow on `self` ends. An
@@ -56,7 +52,7 @@ impl App {
                 } => {
                     let reused = old
                         .iter()
-                        .position(|p| !p.is_process() && p.file == file)
+                        .position(|p| !p.is_panel() && p.file == file)
                         .map(|i| old.remove(i).view);
                     let mut view = reused.unwrap_or_else(|| EditorView::open(file.as_deref()));
                     // Apply the (possibly reload-updated) per-pane config.
@@ -65,7 +61,7 @@ impl App {
                     Pane::editor(rect, file, view)
                 }
                 PaneContent::Process { command, args } => {
-                    // Move a matching live process across untouched.
+                    // Move a matching live client across untouched.
                     let reused = old
                         .iter()
                         .position(|p| process_matches(p, &command, &args))
@@ -77,18 +73,12 @@ impl App {
                         let mut view = EditorView::open(None);
                         let (rows, cols) = process_dims(&view, rect, cell);
                         match ProcessPane::spawn(&command, &args, idx as u64, rows, cols) {
-                            Ok(process) => match process.mode() {
-                                // A panel-mode client pushes a Petal UI script the
-                                // host runs; a Lines client pushes text `render`s.
-                                gpp::ClientMode::Panel => {
-                                    spawned_clients.push(idx);
-                                    build_script_client_pane(rect, view, process, command, args)
-                                }
-                                gpp::ClientMode::Lines => {
-                                    spawned.push(idx);
-                                    Pane::process(rect, view, process, command, args)
-                                }
-                            },
+                            // The client pushes a Petal UI script the host runs;
+                            // prime its first frame once the borrow ends.
+                            Ok(process) => {
+                                spawned_clients.push(idx);
+                                build_script_client_pane(rect, view, process, command, args)
+                            }
                             Err(err) => {
                                 // Never crash: show the error in a plain editor.
                                 let mut msg = format!("could not start {command}: {err}");
@@ -199,14 +189,6 @@ impl App {
         // refresh the toolbar's IR-open state.
         self.attach_ir_providers();
 
-        // Drain each freshly-spawned process's initial messages so its first
-        // listing shows immediately.
-        for idx in spawned {
-            if let Some(process) = self.panes.get(idx).and_then(|p| p.process.as_ref()) {
-                let msgs = process.drain_for(Duration::from_millis(250));
-                self.apply_process_messages(idx, msgs);
-            }
-        }
         // Prime each freshly-spawned script client so its first frame has data.
         for idx in spawned_clients {
             self.prime_script_client(idx);
@@ -214,18 +196,11 @@ impl App {
     }
 
     /// Re-solve pane rects without touching buffers (e.g. after a resize).
-    /// Process-backed panes are told their new size so the subprocess can
-    /// re-render at the right dimensions.
     pub(in crate::app) fn reposition_panes(&mut self) {
-        let cell = self.viewport.cell;
         let slots = layout::solve(self.layout(), self.pane_area());
         if slots.len() == self.panes.len() {
             for (pane, slot) in self.panes.iter_mut().zip(slots) {
                 pane.rect = slot.rect;
-                let (rows, cols) = process_dims(&pane.view, pane.rect, cell);
-                if let Some(process) = pane.process.as_mut() {
-                    process.send_resize(rows, cols);
-                }
             }
             self.recompute_dividers();
         } else {
@@ -287,7 +262,7 @@ impl App {
         for i in 0..self.panes.len() {
             let pane = &mut self.panes[i];
             // Process and panel panes have no file buffer to stamp.
-            if pane.is_process() || pane.is_panel() {
+            if pane.is_panel() {
                 continue;
             }
             let Some(stamp) = pane.view.buffer.disk_changed() else {
@@ -360,7 +335,7 @@ impl App {
             // or it would linger forever with no panel left to reconcile it away.
             let mut cleared = false;
             for pane in &mut self.panes {
-                if pane.is_panel() || pane.is_process() {
+                if pane.is_panel() {
                     continue;
                 }
                 if pane.view.error_line.is_some() {
@@ -382,7 +357,7 @@ impl App {
         // read only for matched paths, so unrelated editors cost nothing.
         let mut sources: HashMap<PathBuf, String> = HashMap::new();
         for pane in &self.panes {
-            if pane.is_panel() || pane.is_process() {
+            if pane.is_panel() {
                 continue;
             }
             let Some(file) = &pane.file else { continue };
@@ -438,7 +413,7 @@ impl App {
             })
             .collect();
         for pane in &mut self.panes {
-            if pane.is_panel() || pane.is_process() {
+            if pane.is_panel() {
                 continue;
             }
             let Some(file) = pane.file.clone() else {
@@ -520,7 +495,7 @@ impl App {
         let mut changed = false;
         let mut detail = None;
         for pane in &mut self.panes {
-            if pane.is_panel() || pane.is_process() {
+            if pane.is_panel() {
                 continue;
             }
             let Some(file) = pane.file.clone() else {
@@ -626,7 +601,7 @@ impl App {
             .as_ref()
             .and_then(|s| s.path().parent().map(|p| p.to_path_buf()));
         let source = self.panes.iter().find_map(|pane| {
-            if pane.is_panel() || pane.is_process() {
+            if pane.is_panel() {
                 return None;
             }
             let file = pane.file.as_ref()?;
@@ -694,7 +669,7 @@ pub(in crate::app) fn resolve_script(script: &str, base: Option<&std::path::Path
     }
 }
 
-/// Build a **panel-mode GPP pane** from a just-spawned client: wait briefly for
+/// Build a **GPP script-client pane** from a just-spawned client: wait briefly for
 /// its initial `setScript` push, compile the pushed Petal source into a
 /// `PanelHost`, attach a pipe-backed [`ProcessQueryProvider`] over a fresh shared
 /// cache, and wrap it as a script-client pane (renders as a panel, persists as a
@@ -711,7 +686,7 @@ pub(in crate::app) fn build_script_client_pane(
         Some(source) => source,
         None => {
             view.set_external_content(
-                &format!("{command}: panel-mode GPP client sent no script"),
+                &format!("{command}: GPP client sent no script"),
                 None,
             );
             return Pane::editor(rect, None, view);
@@ -738,7 +713,7 @@ pub(in crate::app) fn build_script_client_pane(
     }
 }
 
-/// Block up to `timeout` for a panel-mode client's initial `setScript`
+/// Block up to `timeout` for a client's initial `setScript`
 /// notification, returning its source (ignoring any other early envelopes).
 fn wait_for_set_script(process: &ProcessPane, timeout: Duration) -> Option<String> {
     let deadline = Instant::now() + timeout;
@@ -757,12 +732,12 @@ fn wait_for_set_script(process: &ProcessPane, timeout: Duration) -> Option<Strin
     }
 }
 
-/// Whether `pane` is a live process pane — Lines (`process`) or panel-mode
-/// script client (`panel` + `command_args`) — spawned for the same command+args,
-/// so it can be moved across a rebuild rather than respawned (keeping the child,
-/// its pushed script, and the panel's scroll/selection state).
+/// Whether `pane` is a live GPP script-client pane (`panel` + `command_args`)
+/// spawned for the same command+args, so it can be moved across a rebuild
+/// rather than respawned (keeping the child, its pushed script, and the
+/// panel's scroll/selection state).
 fn process_matches(pane: &Pane, command: &str, args: &[String]) -> bool {
-    (pane.process.is_some() || pane.panel.as_ref().is_some_and(|pv| pv.has_client()))
+    pane.panel.as_ref().is_some_and(|pv| pv.has_client())
         && pane
             .command_args
             .as_ref()

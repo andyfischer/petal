@@ -19,8 +19,8 @@ Both load their data on demand rather than baking it in — the drawer asks for 
 diff/log through the async `query` native and inspects the pending value while it
 loads (see "Interactivity" below).
 
-These began as in-process built-in panels but are now delivered as **panel-mode
-GPP apps** (`gpp-apps/git-viewers`, bin `git-log`; the diff views live in
+These began as in-process built-in panels but are now delivered as **GPP
+apps** (`gpp-apps/git-viewers`, bin `git-log`; the diff views live in
 `gpp-apps/garden-diff`): the app pushes the Petal drawer — colocated in that crate
 as `git-viewers/src/git_panel.ptl` / `garden-diff/src/garden_diff.ptl` — which the host still runs
 in-process using the exact panel draw/input vocabulary this doc describes, and
@@ -53,7 +53,7 @@ PaneContent::Panel { script }  ──►  Pane { panel: Some(PanelView) }
   `bind_*` helpers, runs the script, and drains
   `petal_ui::draw::take_draw_commands`, projecting each `DrawCommand` onto a
   `Vec<PanelCmd>`. Garden adds the
-  `emit(event, arg)` push native (panel-mode GPP script→client signals; see
+  `emit(event, arg)` push native (GPP script→client signals; see
   below), the `text_view` selectable-region pair (plus `text_view_scroll_to` to
   scroll one programmatically and `text_view_wrap` to soft-wrap it), the
   `panel_theme()` host-theme
@@ -138,7 +138,7 @@ animation test is neither a sleep nor a stream of fake keypresses.
 A trap for any script that wants to **poll on a timer**: a panel reads `time()`
 only on a frame, and it only runs frames while awake, so a `time() >= next` check
 does not fire on its own once the panel sleeps. A poll survives only if something
-re-stamps activity within each `PANEL_WAKE` — a query's `queryResult` does, which
+re-stamps activity within each `PANEL_WAKE` — a query's answer landing does, which
 is why `garden-diff`'s staleness probe works at all. The consequence is that the
 interval must stay meaningfully **under 10s**: at exactly 10s the poll and the
 sleep race and the poll dies (measured — two probes, then nothing until a
@@ -533,7 +533,7 @@ panel_store_set("todos", json_stringify(todos))
 ## Asking the host to act: `mutate`
 
 `mutate(name, arg)` is the panel vocabulary's one effectful call. In a
-panel-mode GPP pane it is a request to the pane's **subprocess**
+GPP pane it is a request to the pane's **subprocess**
 (`on_mutation`, see `gpp.md`); the reply becomes the status note, an error the
 status error.
 

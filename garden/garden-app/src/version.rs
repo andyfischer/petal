@@ -58,6 +58,10 @@ pub const HOST_FEATURES: &[&str] = &[
     "debug.tick",        // landed in 216ec76, 2026-08-12
     "debug.version",     // landed with this module
     "debug.windows",
+    // The Garden Pane Protocol this build speaks: v2 — panel-only, JSON-RPC
+    // responses correlated by id, JSON query args, version handshake. See
+    // docs/gpp.md.
+    "gpp.protocol-2",
     // `GET /state?values=…` / `?values_prefix=…` narrowing.
     "state.values-filter", // landed in 57b2c8e, 2026-08-12
     // `/state`'s `identity` block carries a `build` object.

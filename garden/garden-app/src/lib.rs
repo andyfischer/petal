@@ -491,10 +491,10 @@ fn load_config_script(init_override: Option<&Path>) -> Option<ScriptHost> {
 /// CLI counterpart of the `:Git` ex command.
 ///
 /// The only subcommand is `log`, the history browser. Like `:Git` it is the
-/// `git-log` panel-mode GPP client (`gpp-apps/git-viewers`): a
+/// `git-log` GPP client (`gpp-apps/git-viewers`): a
 /// [`LayoutNode::Process`] over the current directory that pushes the history
 /// drawer and answers its `query(...)` requests by shelling `git`, mirroring how
-/// `garden pr` opens `pr-browser`. More git views (status, blame, …) will hang
+/// `garden pr` opens `garden-diff`. More git views (status, blame, …) will hang
 /// off this dispatch later.
 fn resolve_git_subcommand(args: &[String]) -> LayoutNode {
     match args.first().map(String::as_str) {

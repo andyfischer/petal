@@ -78,7 +78,7 @@ fn run() -> std::io::Result<()> {
     })
     // One table/view: its column schema + a page of rows as a formatted grid.
     .query("table", |state: &mut State, ctx| {
-        let name = ctx.arg.to_string();
+        let name = ctx.arg_str().to_string();
         let value = state.backend().and_then(|b| table_value(b, &name));
         Reply::from(value).cache(live_policy())
     });

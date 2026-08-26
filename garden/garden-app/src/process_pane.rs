@@ -1,17 +1,25 @@
-//! Host side of the Garden Pane Protocol (GPP): one child process driving the
-//! text content of a pane over newline-delimited JSON-RPC on stdio.
+//! Host side of the Garden Pane Protocol (GPP v2): one child process serving
+//! the data behind a panel pane over newline-delimited JSON-RPC on stdio.
 //!
 //! [`ProcessPane`] owns the child, a writer over its stdin (host -> client),
 //! and a background reader thread that forwards every [`gpp::Envelope`] it
 //! reads from stdout to an mpsc channel (client -> host), mirroring the
-//! thread+channel shape of [`crate::debug`]. The host pushes subscribed keys
-//! and resizes; the client answers with `render` / `setKeymap` / `openPath` /
-//! `setStatus` notifications, which [`crate::app::App`] drains and applies.
+//! thread+channel shape of [`crate::debug`]. The host issues `query` /
+//! `mutate` / `navigate` requests on the running drawer's behalf and forwards
+//! its `emit` events; the client answers responses and pushes `setScript` /
+//! `invalidate` / `emit` notifications, which
+//! [`PanelView::pump_client`](crate::panel_view::PanelView::pump_client) drains
+//! and applies.
+//!
+//! Responses correlate to requests **by id only**, so this type also keeps the
+//! [`PendingRequest`] table — what each outstanding id was asking — which the
+//! drain side consults via [`complete`](ProcessPane::complete).
 //!
 //! All wire failures (a broken pipe means the child is gone) are swallowed and
 //! logged to stderr rather than panicking, so a misbehaving client can never
 //! take the editor down.
 
+use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -19,47 +27,59 @@ use std::thread;
 use std::time::Duration;
 
 use gpp::{
-    method, ClientMode, EmitParams, Envelope, InitializeParams, InitializeResult, Key, KeyParams,
-    MouseKind, MouseParams, MutateParams, QueryParams, ResizeParams, Takeover,
+    method, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams,
+    NavigateParams, QueryParams, PROTOCOL_VERSION,
 };
 
-/// A pane whose content is driven by a GPP child process.
+/// The capability names this host reports in its `initialize` request.
+/// `hotReload` says a later `setScript` push swaps the running drawer in place.
+const HOST_CAPABILITIES: &[&str] = &["query", "mutate", "navigate", "emit", "hotReload"];
+
+/// What an outstanding request id was asking, so an id-correlated response can
+/// be routed without the client echoing anything back.
+#[derive(Clone, Debug)]
+pub enum PendingRequest {
+    /// A `query` request: the cache key to resolve when the answer lands.
+    Query {
+        kind: String,
+        arg: serde_json::Value,
+    },
+    /// A `mutate` request. The bounded wait that issued it consumes the
+    /// response by id, so nothing beyond the discriminant is needed.
+    Mutate,
+    /// A `navigate` request — consumed by its bounded wait, like `Mutate`.
+    Navigate,
+}
+
+/// A GPP client subprocess serving one panel pane.
 pub struct ProcessPane {
     child: Child,
     /// Writer over the child's stdin (host -> client messages).
     stdin: BufWriter<ChildStdin>,
     /// Envelopes read from the child's stdout by the reader thread.
     rx: Receiver<Envelope>,
-    /// Keys this client wants forwarded (canonical GPP key names). Consulted
-    /// only at the [`Takeover::Keymap`] level; ignored under `Keyboard`, which
-    /// forwards everything non-reserved.
-    keymap: Vec<String>,
-    /// Which rendering model this client drives. `Lines` clients push `render`;
-    /// `Panel` clients push a Petal UI script and answer `query` requests. See
-    /// [`gpp::ClientMode`] and `docs/gpp.md`.
-    mode: ClientMode,
-    /// How much host behavior this client takes over. See [`gpp::Takeover`].
-    takeover: Takeover,
-    /// Whether this client opted into `mouse` notifications (clicks on the
-    /// pane's content are forwarded instead of moving the passive cursor).
-    mouse: bool,
     /// Display name reported in the `initialize` response.
     name: String,
     /// This pane's id, handed to the client at initialize time.
     #[allow(dead_code)]
     pane_id: u64,
-    /// Next request id (the initialize request used id 1).
+    /// Next request id (the initialize request used id 1). Only requests
+    /// consume ids; notifications carry none.
     next_id: u64,
+    /// Outstanding requests by id, removed by [`complete`](Self::complete).
+    pending: HashMap<u64, PendingRequest>,
 }
 
 impl ProcessPane {
     /// Spawn `command` with `args`, perform the synchronous `initialize`
     /// handshake, and start the reader thread.
     ///
-    /// The handshake writes an `initialize` request (id 1) and reads exactly one
-    /// message directly from stdout, expecting the matching response carrying an
-    /// [`InitializeResult`]; only then is the reader thread started. If the child
-    /// dies or answers with the wrong message an [`std::io::Error`] is returned.
+    /// The handshake writes an `initialize` request (id 1, `protocol: 2`) and
+    /// reads exactly one message directly from stdout, expecting the matching
+    /// response carrying an [`InitializeResult`] that also reports protocol 2;
+    /// only then is the reader thread started. A client that dies, answers with
+    /// the wrong message, replies with an error, or speaks a different protocol
+    /// major returns an [`std::io::Error`] — the caller surfaces it in the pane.
     pub fn spawn(
         command: &str,
         args: &[String],
@@ -87,11 +107,13 @@ impl ProcessPane {
             1,
             method::INITIALIZE,
             InitializeParams {
+                protocol: PROTOCOL_VERSION,
                 pane_id,
                 rows,
                 cols,
                 args: args.to_vec(),
                 cwd,
+                capabilities: HOST_CAPABILITIES.iter().map(|c| c.to_string()).collect(),
             },
         );
         gpp::write_message(&mut stdin, &init)?;
@@ -102,12 +124,28 @@ impl ProcessPane {
                 "GPP client exited before responding to initialize",
             )
         })?;
+        if let Some(err) = response.error {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("GPP client refused initialize: {}", err.message),
+            ));
+        }
         let result: InitializeResult = response.result_as().map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("GPP initialize response was not an InitializeResult: {e}"),
             )
         })?;
+        if result.protocol != PROTOCOL_VERSION {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "GPP protocol mismatch: this garden speaks {PROTOCOL_VERSION}, \
+                     '{}' speaks {} (rebuild the client)",
+                    result.name, result.protocol
+                ),
+            ));
+        }
 
         // Hand the live reader to a thread that forwards every envelope until
         // the child closes stdout.
@@ -124,59 +162,27 @@ impl ProcessPane {
             child,
             stdin,
             rx,
-            keymap: result.keymap,
-            mode: result.mode,
-            takeover: result.takeover,
-            mouse: result.mouse,
             name: result.name,
             pane_id,
             next_id: 2,
+            pending: HashMap::new(),
         })
     }
 
-    /// Forward a subscribed key press to the client as a `key` notification.
-    pub fn send_key(&mut self, key: Key, ctrl: bool, shift: bool, cmd: bool) {
-        self.notify(
-            method::KEY,
-            KeyParams {
-                key: key.to_name(),
-                ctrl,
-                shift,
-                cmd,
-            },
-        );
-    }
-
-    /// Tell the client its pane was resized.
-    pub fn send_resize(&mut self, rows: u32, cols: u32) {
-        self.notify(method::RESIZE, ResizeParams { rows, cols });
-    }
-
-    /// Forward a mouse press on content row `line` (0-based, scroll-adjusted)
-    /// at char column `col` as a `mouse` notification. Only called when the
-    /// client opted in (see [`mouse`](Self::mouse)).
-    pub fn send_mouse(&mut self, line: usize, col: usize, kind: MouseKind) {
-        self.notify(method::MOUSE, MouseParams { line, col, kind });
-    }
-
-    /// Which rendering model this client drives (`Lines` vs `Panel`).
-    pub fn mode(&self) -> ClientMode {
-        self.mode
-    }
-
-    /// Send a `query` **request** (host -> client) for `(kind, arg)` — the pipe
-    /// side of the panel data channel. The client answers with a `queryResult`
-    /// response (correlated by the echoed `kind`/`arg`, not the id). Only used
-    /// for [`ClientMode::Panel`] clients.
-    pub fn send_query(&mut self, kind: &str, arg: &str) {
-        let id = self.next_id;
-        self.next_id += 1;
+    /// Send a `query` request (host -> client) for `(kind, arg)` — the pipe
+    /// side of the panel data channel. The client answers with an
+    /// id-correlated response; [`complete`](Self::complete) recovers the key.
+    pub fn send_query(&mut self, kind: &str, arg: serde_json::Value) {
+        let id = self.fresh_id(PendingRequest::Query {
+            kind: kind.to_string(),
+            arg: arg.clone(),
+        });
         let env = Envelope::request(
             id,
             method::QUERY,
             QueryParams {
                 kind: kind.to_string(),
-                arg: arg.to_string(),
+                arg,
             },
         );
         if let Err(err) = gpp::write_message(&mut self.stdin, &env) {
@@ -184,12 +190,10 @@ impl ProcessPane {
         }
     }
 
-    /// Forward a script-emitted user intent to the client as an `emit`
+    /// Forward a drawer-emitted user intent to the client as an `emit`
     /// notification (host -> client). Fire-and-forget — a notification, so no
     /// reply is expected (or possible). `arg` is the JSON tree the script
-    /// passed to `emit(event, arg)`. Only used for [`ClientMode::Panel`]
-    /// clients: [`PanelView::tick`](crate::panel_view::PanelView::tick) drains
-    /// each frame's emitted events here.
+    /// passed to `emit(event, arg)`.
     pub fn send_emit(&mut self, event: &str, arg: serde_json::Value) {
         self.notify(
             method::EMIT,
@@ -200,15 +204,11 @@ impl ProcessPane {
         );
     }
 
-    /// Send a `mutate` **request** (host -> client) — an effectful call the host
-    /// makes on the script's behalf, awaiting a `mutateResult` response. Returns
-    /// the request `id` so the caller can correlate the answer (mutations, unlike
-    /// queries, are not idempotent by content, so they correlate by id). Only used
-    /// for [`ClientMode::Panel`] clients; the host drives navigation with the
-    /// built-in `navigate` mutation.
+    /// Send a `mutate` request (host -> client) — an effectful call the host
+    /// makes on the script's behalf, awaiting an id-correlated response.
+    /// Returns the request `id`.
     pub fn send_mutate(&mut self, name: &str, arg: serde_json::Value) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.fresh_id(PendingRequest::Mutate);
         let env = Envelope::request(
             id,
             method::MUTATE,
@@ -223,14 +223,40 @@ impl ProcessPane {
         id
     }
 
+    /// Send a `navigate` request (host -> client): fetch the UI source of
+    /// `screen`, carrying the navigation subject `arg` (Null for the
+    /// one-argument `navigate(screen)` form). Returns the request `id`.
+    pub fn send_navigate(&mut self, screen: &str, arg: serde_json::Value) -> u64 {
+        let id = self.fresh_id(PendingRequest::Navigate);
+        let env = Envelope::request(
+            id,
+            method::NAVIGATE,
+            NavigateParams {
+                screen: screen.to_string(),
+                arg,
+            },
+        );
+        if let Err(err) = gpp::write_message(&mut self.stdin, &env) {
+            eprintln!("garden: GPP navigate to {} failed: {err}", self.name);
+        }
+        id
+    }
+
+    /// Take the [`PendingRequest`] a response with `id` answers, if the id is
+    /// one of ours. A second call for the same id returns `None` (each request
+    /// gets exactly one response).
+    pub fn complete(&mut self, id: u64) -> Option<PendingRequest> {
+        self.pending.remove(&id)
+    }
+
     /// Non-blocking: collect every envelope the reader thread has queued so far.
     pub fn try_drain(&self) -> Vec<Envelope> {
         self.rx.try_iter().collect()
     }
 
     /// Block up to `dur` for the first envelope, then drain the rest without
-    /// waiting. Used right after sending a key so the client's reply feels
-    /// synchronous.
+    /// waiting. Used while priming a fresh pane (and while a bounded request
+    /// wait runs) so the reply feels synchronous.
     pub fn drain_for(&self, dur: Duration) -> Vec<Envelope> {
         let mut out = Vec::new();
         if let Ok(env) = self.rx.recv_timeout(dur) {
@@ -240,54 +266,17 @@ impl ProcessPane {
         out
     }
 
-    /// Keys this client wants forwarded (canonical GPP key names).
-    pub fn keymap(&self) -> &[String] {
-        &self.keymap
-    }
-
-    /// Replace the forwarded-key set (a `setKeymap` notification arrived).
-    pub fn set_keymap(&mut self, keys: Vec<String>) {
-        self.keymap = keys;
-    }
-
-    /// How much host behavior this client takes over.
-    pub fn takeover(&self) -> Takeover {
-        self.takeover
-    }
-
-    /// Change the takeover level at runtime (a `setKeymap` notification carried
-    /// a new `takeover`).
-    pub fn set_takeover(&mut self, takeover: Takeover) {
-        self.takeover = takeover;
-    }
-
-    /// Whether this client opted into mouse-click forwarding.
-    pub fn mouse(&self) -> bool {
-        self.mouse
-    }
-
-    /// Change the mouse opt-in at runtime (a `setKeymap` notification carried
-    /// a new `mouse`).
-    pub fn set_mouse(&mut self, mouse: bool) {
-        self.mouse = mouse;
-    }
-
-    /// Whether this client subscribed to the canonical key `name` (relevant
-    /// only at the [`Takeover::Keymap`] level).
-    pub fn subscribes(&self, name: &str) -> bool {
-        self.keymap.iter().any(|k| k == name)
-    }
-
-    /// The client's display name.
-    pub fn name(&self) -> &str {
-        &self.name
+    /// Mint a request id and record what it asks.
+    fn fresh_id(&mut self, pending: PendingRequest) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.pending.insert(id, pending);
+        id
     }
 
     /// Send one notification, swallowing a broken pipe (the child has gone).
+    /// Notifications carry no id and consume none.
     fn notify(&mut self, method: &str, params: impl serde::Serialize) {
-        // Bump the id even though notifications carry none, keeping the counter
-        // monotonic for any future request use.
-        self.next_id += 1;
         let env = Envelope::notification(method, params);
         if let Err(err) = gpp::write_message(&mut self.stdin, &env) {
             eprintln!("garden: GPP write to {} failed: {err}", self.name);
@@ -312,8 +301,8 @@ pub fn directory_browser_bin() -> String {
     sibling_bin("directory-browser", "GARDEN_DIRECTORY_BROWSER_BIN")
 }
 
-/// Resolve the `git-log` GPP client binary — the panel-mode app that backs
-/// `:Git` / `garden git log` — by the same rules as [`directory_browser_bin`]:
+/// Resolve the `git-log` GPP client binary — the app that backs `:Git` /
+/// `garden git log` — by the same rules as [`directory_browser_bin`]:
 /// `$GARDEN_GIT_LOG_BIN`, else a sibling of the running executable, else the bare
 /// name on `$PATH`. A separate workspace binary (in `gpp-apps/git-viewers`);
 /// build the whole workspace (`cargo build`) so it lands beside `garden`.
@@ -330,8 +319,8 @@ pub fn garden_diff_bin() -> String {
     sibling_bin("garden-diff", "GARDEN_DIFF_BIN")
 }
 
-/// Resolve the `main-menu` GPP client binary — the panel-mode app a bare
-/// `garden` opens (recent projects / files / PRs) — by the same rules as
+/// Resolve the `main-menu` GPP client binary — the app a bare `garden` opens
+/// (recent projects / files / PRs) — by the same rules as
 /// [`directory_browser_bin`]: `$GARDEN_MAIN_MENU_BIN`, else a sibling of the
 /// running executable, else the bare name on `$PATH`. A separate workspace
 /// binary (in `gpp-apps/main-menu`); build the whole workspace so it lands

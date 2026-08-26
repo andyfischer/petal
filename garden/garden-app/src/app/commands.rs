@@ -75,8 +75,8 @@ impl App {
     /// (vim's `:s//rep/`); running a substitution also updates that
     /// last-search pattern, like vim.
     fn substitute(&mut self, sub: Substitution) {
-        if self.focused_is_process() {
-            self.status_error = Some("E: cannot edit a process pane".to_string());
+        if self.focused_is_panel() {
+            self.status_error = Some("E: cannot edit a panel pane".to_string());
             return;
         }
         let Some(pane) = self.panes.get_mut(self.focus) else {
@@ -162,8 +162,8 @@ impl App {
     /// wrap` / `:set nowrap`). A process pane is a passive render surface whose
     /// rows must stay 1:1 with the client's content, so wrapping stays off there.
     fn set_wrap(&mut self, on: bool) {
-        if self.focused_is_process() {
-            self.status_error = Some("E: cannot wrap a process pane".to_string());
+        if self.focused_is_panel() {
+            self.status_error = Some("E: cannot wrap a panel pane".to_string());
             return;
         }
         let visible = self.focused_visible_lines();
@@ -310,13 +310,11 @@ impl App {
         }
     }
 
-    /// Whether the focused pane is process-backed (a GPP client drives it). The
-    /// editing ex commands (`:w`, `:s`) report a friendly error instead of
-    /// touching the passive render surface a client owns.
-    fn focused_is_process(&self) -> bool {
-        self.panes
-            .get(self.focus)
-            .is_some_and(super::Pane::is_process)
+    /// Whether the focused pane is a panel — in-process or driven by a GPP
+    /// client. The editing ex commands (`:w`, `:s`) report a friendly error
+    /// instead of touching a pane whose pixels a script owns.
+    fn focused_is_panel(&self) -> bool {
+        self.panes.get(self.focus).is_some_and(super::Pane::is_panel)
     }
 
     /// Replace the focused pane's buffer with a fresh, untitled one (File ▸ New).
@@ -576,7 +574,7 @@ impl App {
         let Some(pane) = self.panes.get_mut(self.focus) else {
             return;
         };
-        if pane.is_process() || pane.is_panel() {
+        if pane.is_panel() {
             return;
         }
         let view = &mut pane.view;
@@ -594,8 +592,8 @@ impl App {
     /// reports an error and returns `false`; `:wq` uses the result to avoid
     /// quitting on a failed write.
     fn save_focused(&mut self) -> bool {
-        if self.focused_is_process() {
-            self.status_error = Some("E: cannot write a process pane".to_string());
+        if self.focused_is_panel() {
+            self.status_error = Some("E: cannot write a panel pane".to_string());
             return false;
         }
         // A save-protected file (e.g. the Petal-IDE scratch): don't overwrite
@@ -637,8 +635,8 @@ impl App {
     /// re-point to the new file, so it is no longer protected and future saves
     /// write there directly.
     fn save_focused_as(&mut self, path: &str) -> bool {
-        if self.focused_is_process() {
-            self.status_error = Some("E: cannot write a process pane".to_string());
+        if self.focused_is_panel() {
+            self.status_error = Some("E: cannot write a panel pane".to_string());
             return false;
         }
         let target = PathBuf::from(path.trim());

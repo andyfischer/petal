@@ -27,8 +27,10 @@ export interface PaneState {
   dirty?: boolean;
   cursor?: Cursor;
   line_count?: number;
-  process?: { name?: string };
   panel?: {
+    /** The GPP client app driving this pane (its spawn command), or null for
+     *  an in-process panel. */
+    client?: string | null;
     values?: Record<string, unknown>;
     /** Which panel frame `values` came from, and whether that is the frame
      *  that just ran: a key missing from a *stale* map means the frame that

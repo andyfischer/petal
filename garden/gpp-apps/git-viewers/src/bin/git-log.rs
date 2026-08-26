@@ -41,12 +41,13 @@ fn main() {
         // working-tree diff (`@worktree`, and `@full:@worktree`) is live, so it
         // is never cached.
         .query("commit", |repo: &mut PathBuf, ctx| {
-            let policy = if ctx.arg.contains(WORKTREE_ARG) {
+            let arg = ctx.arg_str();
+            let policy = if arg.contains(WORKTREE_ARG) {
                 CachePolicy::no_store()
             } else {
                 CachePolicy::immutable()
             };
-            Reply::value(git_commit(repo, ctx.arg)).cache(policy)
+            Reply::value(git_commit(repo, arg)).cache(policy)
         });
     let result = gpp::serve(provider, PanelUi::new("git-log", UI_SCRIPT));
 

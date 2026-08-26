@@ -15,7 +15,7 @@
 //!   [`Cache`] is a keyed answer store with in-flight de-duplication, a request
 //!   outbox, and [`CachePolicy`]-driven freshness (fresh / stale-while-
 //!   revalidate / expired), generic over the stored value type so it links no
-//!   renderer. It graduates Garden's hand-rolled `SharedQueryState`.
+//!   renderer.
 //!
 //! [`CachePolicy`] is the shared vocabulary that crosses the wire between them:
 //! a provider stamps each [`Reply`] with one, and the host's [`Cache`] honors it.
@@ -29,23 +29,25 @@
 //! [`stale_while_revalidate`](CachePolicy::stale_while_revalidate)); and
 //! [`CachePolicy::no_store`] always re-asks while still showing the last value.
 //!
-//! # Relationship to `gpp`
+//! # Relationship to the `gpp` crate
 //!
-//! Garden's `gpp` crate is the canonical Garden Pane Protocol. petal-query's
-//! [`wire`] module re-implements only the query/panel subset so a provider needs
-//! no dependency on Garden, and the one genuinely shared type — [`CachePolicy`]
-//! — lives here and is re-used by `gpp`, so the `cacheControl` field cannot drift.
+//! Garden's `gpp` crate (`garden/gpp`) is the **single** wire definition of the
+//! Garden Pane Protocol — the JSON-RPC envelope, every message shape, and
+//! [`CachePolicy`] itself, which this crate re-exports. petal-query depends on
+//! it and adds the client-side machinery: the [`Provider`] handler API and the
+//! [`gpp::serve`](crate::gpp::serve) protocol loop.
 
 pub mod cache;
-pub mod cache_control;
 pub mod gpp;
 pub mod provider;
-pub mod wire;
 
+pub use ::gpp::{CachePolicy, Freshness};
 pub use cache::{Cache, Lookup};
-pub use cache_control::{CachePolicy, Freshness};
-pub use provider::{EmitContext, MutateContext, Provider, QueryContext, Reply};
+pub use provider::{
+    EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply,
+};
 
 /// Version of the petal-query provider/cache contract. Bump when the wire shapes
-/// or [`CachePolicy`] semantics change incompatibly.
-pub const QUERY_VERSION: i64 = 1;
+/// or [`CachePolicy`] semantics change incompatibly. Version 2 is the GPP v2
+/// protocol: panel-only, id-correlated responses, JSON query args.
+pub const QUERY_VERSION: i64 = 2;

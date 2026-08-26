@@ -468,7 +468,7 @@ curl -s -X POST $BASE/key -d '{"key":"w","op":"up"}'     # stop
 ```
 
 Holding is a **panel** capability: only a panel script has a notion of a held
-key, so over an editor or process pane a `down` acts like a tap and an `up` is
+key, so over an editor pane a `down` acts like a tap and an `up` is
 dropped. `Cmd`/`Ctrl`+`Q` still quits rather than being held.
 
 Input endpoints reply with a small acknowledgment of where things landed:

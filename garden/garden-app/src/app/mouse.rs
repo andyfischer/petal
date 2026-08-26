@@ -4,11 +4,9 @@
 //! [`ClickCounter`](super::ClickCounter)) and passed into [`App::mouse_down`].
 //!
 //! What a press *does* inside the hit pane is decided by [`classify_mouse_down`],
-//! a pure function of the pane kind: a panel consumes the click itself, a GPP
-//! process pane whose client opted in gets it forwarded as a `mouse`
-//! notification, and everything else places the editor cursor / starts a drag.
-
-use std::time::Duration;
+//! a pure function of the pane kind: a panel (in-process or GPP script-client)
+//! consumes the click itself, and everything else places the editor cursor /
+//! starts a drag.
 
 use crate::editor_view::{EditorView, ScrollAxis};
 
@@ -173,7 +171,6 @@ impl App {
         // and the hover highlight use.
         let Some(target) = self.panes.iter().position(|p| {
             !p.is_panel()
-                && !p.is_process()
                 && p.file
                     .as_ref()
                     .is_some_and(|f| super::panes::resolve_script(f, script_dir.as_deref()) == path)
@@ -268,7 +265,6 @@ impl App {
             .and_then(|s| s.path().parent().map(|p| p.to_path_buf()));
         self.panes.iter().position(|p| {
             !p.is_panel()
-                && !p.is_process()
                 && p.file
                     .as_ref()
                     .is_some_and(|f| super::panes::resolve_script(f, script_dir.as_deref()) == path)
@@ -551,10 +547,7 @@ impl App {
             }
         }
 
-        let target = classify_mouse_down(
-            self.panes[idx].is_panel(),
-            self.panes[idx].process.as_ref().is_some_and(|p| p.mouse()),
-        );
+        let target = classify_mouse_down(self.panes[idx].is_panel());
         match target {
             // A panel pane consumes the click itself: set its pane-local mouse
             // position, queue a left-button press edge, and tick it now. No editor
@@ -578,28 +571,6 @@ impl App {
                 // gesture + `mouse_released` edge).
                 self.drag = Some(Drag::Panel(idx));
                 self.tick_panel_at(idx);
-                self.needs_redraw = true;
-            }
-            // A process pane whose client opted in gets the click forwarded as
-            // a `mouse` notification carrying the content row it landed on
-            // (scroll-adjusted) — instead of the passive-view cursor placement.
-            // The host-side focus change above still happened, and scrolling
-            // stays host-side; no drag selection starts (like a panel, the
-            // content isn't the user's to select).
-            MouseTarget::Process => {
-                let cell = self.viewport.cell;
-                let pane = &self.panes[idx];
-                let p = pane.view.position_for_click(pane.rect, cell, x, y);
-                let msgs = {
-                    let Some(process) = self.panes[idx].process.as_mut() else {
-                        return;
-                    };
-                    process.send_mouse(p.line, p.col, mouse_kind(clicks));
-                    // Like a forwarded key: wait briefly so the client's re-render
-                    // feels synchronous.
-                    process.drain_for(Duration::from_millis(120))
-                };
-                self.apply_process_messages(idx, msgs);
                 self.needs_redraw = true;
             }
             MouseTarget::Editor => {
@@ -969,35 +940,18 @@ impl App {
 enum MouseTarget {
     /// A panel pane consumes the click itself (script-side input).
     Panel,
-    /// A GPP client that opted in gets the click as a `mouse` notification.
-    Process,
     /// Host default: place the editor cursor / start a drag selection.
     Editor,
 }
 
 /// Decide where a press inside a pane goes, as a pure function of the pane
-/// kind. `process_mouse` is whether the pane is process-backed **and** its
-/// client opted into mouse forwarding (see [`gpp::InitializeResult::mouse`]);
-/// a process pane that didn't opt in keeps today's editor-surface behavior,
-/// so old clients are unaffected.
-fn classify_mouse_down(is_panel: bool, process_mouse: bool) -> MouseTarget {
+/// kind: a panel (in-process or GPP script-client) consumes clicks itself,
+/// everything else keeps the editor-surface behavior.
+fn classify_mouse_down(is_panel: bool) -> MouseTarget {
     if is_panel {
         MouseTarget::Panel
-    } else if process_mouse {
-        MouseTarget::Process
     } else {
         MouseTarget::Editor
-    }
-}
-
-/// Map a frontend multi-click count to the GPP wire kind: the first press of
-/// any sequence is a `click`, the second and later presses arrive as `double`
-/// (a triple-click's third press is still "activate", like a file manager).
-fn mouse_kind(clicks: u32) -> gpp::MouseKind {
-    if clicks >= 2 {
-        gpp::MouseKind::Double
-    } else {
-        gpp::MouseKind::Click
     }
 }
 
@@ -1005,23 +959,12 @@ fn mouse_kind(clicks: u32) -> gpp::MouseKind {
 mod tests {
     use super::*;
 
-    /// A panel always consumes the click; an opted-in process pane gets it
-    /// forwarded; every other pane (editor, or a process pane whose client
-    /// never opted in — e.g. an older GPP client) keeps the editor behavior.
+    /// A panel always consumes the click; every other pane keeps the editor
+    /// behavior.
     #[test]
-    fn classify_routes_by_pane_kind_and_opt_in() {
-        assert_eq!(classify_mouse_down(true, false), MouseTarget::Panel);
-        assert_eq!(classify_mouse_down(true, true), MouseTarget::Panel);
-        assert_eq!(classify_mouse_down(false, true), MouseTarget::Process);
-        assert_eq!(classify_mouse_down(false, false), MouseTarget::Editor);
-    }
-
-    #[test]
-    fn click_counts_map_to_wire_kinds() {
-        assert_eq!(mouse_kind(0), gpp::MouseKind::Click);
-        assert_eq!(mouse_kind(1), gpp::MouseKind::Click);
-        assert_eq!(mouse_kind(2), gpp::MouseKind::Double);
-        assert_eq!(mouse_kind(3), gpp::MouseKind::Double);
+    fn classify_routes_by_pane_kind() {
+        assert_eq!(classify_mouse_down(true), MouseTarget::Panel);
+        assert_eq!(classify_mouse_down(false), MouseTarget::Editor);
     }
 
     /// Sub-tick motion is carried, not dropped: four tenths of a tick deliver

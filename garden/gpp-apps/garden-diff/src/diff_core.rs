@@ -3,7 +3,7 @@
 //!
 //! Forked from `garden-app`'s `diff.rs` + `projection/` (which live in the host
 //! binary with no lib target, so a subprocess crate can't import them — the same
-//! reimplement-per-app pattern as `git-viewers` and `pr-browser`).
+//! reimplement-per-app pattern as `git-viewers`).
 //!
 //! Both editable views — the unified stream and the split's after column — are
 //! described here as **projections** (`garden_core::projection`): every line

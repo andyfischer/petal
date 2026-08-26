@@ -33,11 +33,12 @@ garden-app     frontend-independent app core + pluggable frontends
 gpp            Garden Pane Protocol: the shared JSON-RPC contract a
                subprocess uses to drive a pane's content over stdio
 gpp-apps/       GPP client binaries (one crate per dir):
-  directory-browser  (Lines mode) a navigable directory listing (vim-netrw style)
-  git-viewers        (Panel mode) the reference script-push app — one bin,
+  directory-browser  a navigable directory listing (vim-netrw style):
+                     a `browser.ptl` drawer + a `query("list")` provider
+  git-viewers        the reference GPP app — one bin,
                      `git-log` (backs `:Git`): it pushes a Petal drawer +
                      answers query() by shelling git
-  garden-diff        (Panel mode) the one diff/review tool, backing `:Diff
+  garden-diff        the one diff/review tool, backing `:Diff
                      [--stat]` / `:Review*` / `:PR` and the `garden diff` /
                      `garden pr` CLIs: an editable unified stream (edit the
                      diff to edit the change), a read-only BEFORE (base)
@@ -46,32 +47,30 @@ gpp-apps/       GPP client binaries (one crate per dir):
                      mode (description, conversation, inline review comments
                      threaded into the unified view). Both editable views are
                      projections; `^S` writes back via mutate("apply", …)
-  sqlite-browser     (Panel mode) a read-only SQLite *and* Postgres browser +
+  sqlite-browser     a read-only SQLite *and* Postgres browser +
                      visualizer: table/view catalog with row counts, a
                      column-aligned data grid, and an Overview bar chart —
                      engine chosen by arg (file path vs postgres:// URL) behind
                      a db::Backend trait (rusqlite / postgres crate)
-  gpp-test-app       (Panel mode) a fixture: the launch arg (ok / runtime-error
+  gpp-test-app       a fixture: the launch arg (ok / runtime-error
                      / runtime-error-long / query-error) drives the host into
                      that panel state, so the error card etc. can be reproduced
                      for a screenshot or test
 ```
 
-GPP has two client modes (`gpp::ClientMode`): **Lines** (the original — push text
-`render`s; `directory-browser` uses it) and **Panel** (push a Petal UI script the
-host runs, drive it by answering `query` requests over the pipe; `git-viewers`,
-`garden-diff`, and `sqlite-browser` use it). Panel mode makes a GPP client and an in-process panel the
-same architecture — a Petal drawer + a query provider, local Rust or pipe-proxied
-— which is why `:Git`/`:Diff` are now themselves panel-mode GPP apps.
-See the "Panel mode" section of
-`docs/gpp.md`, and the how-to in `docs/writing-gpp-apps.md`.
+GPP v2 is **panel-only**: every client pushes a Petal UI script the host runs,
+and drives it by answering `query` / `mutate` / `navigate` requests over the
+pipe. That makes a GPP client and an in-process panel the same architecture — a
+Petal drawer + a query provider, local Rust or pipe-proxied — which is why
+`:Git`/`:Diff` are themselves GPP apps. The wire is fully specified in
+`docs/gpp.md`; the how-to is `docs/writing-gpp-apps.md`.
 
 Dependency direction: `garden-app → {garden-core, garden-render, garden-script,
 gpp}`. The four lower crates do not depend on each other; `garden-script`
 additionally depends on the upstream `petal` and `petal-ui` crates (the language
 core and the standard input/draw + `ui`-prelude contract for panels). The GPP
 clients (`directory-browser`, `git-viewers`, `garden-diff`, and any future one)
-depend only on `gpp`.
+depend only on `petal-query`, which itself builds on `gpp`.
 See the Garden Pane Protocol
 section below for how the host drives a subprocess-backed pane.
 
@@ -456,7 +455,7 @@ quit: `App::apply_runtime_layout` (in `app/input.rs`) calls
 not only rearrangements that mutate the layout: a pane's *content* also changes
 out-of-band — `:e`/File ▸ Open swaps its file, File ▸ New empties it, `:E`/`-`
 and `:Git` turn it into a GPP browser, and a browser selecting a file
-(`openPath`) turns it back into an editor. Each of these calls `App::sync_layout`
+(the host-owned `open_path` mutation) turns it back into an editor. Each of these calls `App::sync_layout`
 (`app/input.rs`), which reconstructs the whole tree from the live panes —
 `layout_from_panes` keeps the active tree's rows/columns/ratios but replaces
 every leaf (in solver order) with `Pane::to_layout_node`, via
@@ -568,7 +567,7 @@ off.
   `_`-prefixed plumbing, and function values) so the `petal-ui` prelude's ~95
   bindings don't bury the dozen that are yours. Beside that, Garden adds a
   small native set beside the standard one — `emit(event, arg)` (the fire-and-forget script→client push channel of
-  panel-mode GPP: `PanelHost::take_emitted` drains each frame's events in call
+  GPP: `PanelHost::take_emitted` drains each frame's events in call
   order as `(String, serde_json::Value)` pairs and `PanelView::tick` forwards
   them to the pane's subprocess as GPP `emit` notifications; no reply, and
   dropped in a panel with no attached client), the browser-style **history
@@ -612,7 +611,7 @@ off.
   from `PanelView::tick` with `Theme::to_panel_theme`, so a live `POST /theme`
   recolors a drawer next frame and drawers paint in the app's colors instead of a
   hardcoded palette — the plain-data carrier is `garden_script::PanelTheme`).
-  `palette()` is the shared accessor every panel-mode GPP app uses: it overlays
+  `palette()` is the shared accessor every GPP app uses: it overlays
   the injected theme onto a built-in fallback so it is always complete (every key
   resolves with no guard), where bare `panel_theme()` returns exactly what was
   injected (empty when nothing was) — plus its monospace text metric
@@ -632,7 +631,7 @@ off.
   `Value::Pending` the script inspects with `is_loading`/`is_error`/`error_of`/
   `??`. This is Garden's prototype of a future upstream `petal-query` (the same
   path `host_data` took); the Git history browser (`:Git`, now the `git-log`
-  panel-mode GPP app) is its first user, loading its log and diffs at runtime —
+  GPP app) is its first user, loading its log and diffs at runtime —
   through a local background-threaded provider when the drawer runs in-process, or
   a pipe-proxy provider (`ProcessQueryProvider`) when it is pushed by a
   `git-viewers` subprocess (the drawer is identical either way).
@@ -1172,47 +1171,39 @@ snapshots that history into a bug/feature report. The whole feature lives in
 
 ## Garden Pane Protocol (GPP) — subprocess-backed panes
 
-A GPP pane reuses the host's existing `EditorView`/`Buffer` purely as a **render
-surface**: vim and editing are disabled, and a child process pushes the full
-text to display. The model is "fat subprocess, thin host" — all logic lives in
-the client; the host just shows what it is told and forwards a subscribed subset
-of keystrokes. The first client is `directory-browser`, so `garden src/` opens a
-navigable listing (like vim's netrw). The wire protocol is fully specified in
-`docs/gpp.md`; this section covers the in-tree pieces.
+A GPP pane is driven by a **client subprocess** over newline-delimited JSON-RPC
+on stdio — protocol **v2**, panel-only: right after the handshake the client
+pushes a Petal UI drawer (`setScript`) that the host compiles and runs in its
+in-process panel runtime, and the client then serves the drawer's data by
+answering the host's `query` / `mutate` / `navigate` requests. All input and
+rendering stay host-side; only data crosses the pipe. The first client is
+`directory-browser`, so `garden src/` opens a navigable listing (like vim's
+netrw). The wire protocol is fully specified in `docs/gpp.md`; this section
+covers the in-tree pieces.
 
-How much host behavior a client replaces is a **layered, opt-in takeover**
-(`gpp::Takeover`, declared in the `initialize` response): `Keymap` (the
-default/lightest — only subscribed keys forwarded, the host scrolls for the
-rest) or `Keyboard` (almost-full — every non-reserved key forwarded). The host
-**command bar (`:`) and the global chords** (Cmd/Ctrl editing shortcuts, `Ctrl+W`
-window nav, quit) are reserved at *every* layer and never reach the client, so
-`:w`/`:q`/`:E` and window navigation keep working inside any process pane.
-`App::open_path` (`:e`) drops the `ProcessPane` and turns the pane back into a
-normal editor — the way out of a browser.
+- **`gpp` crate (the single wire definition)**: the on-the-wire types and
+  transport, depended on by the host and (via `petal-query`) every client. A
+  JSON-RPC 2.0 `Envelope` (`request` / `notification` / `response` /
+  `error_response` constructors; responses correlate **by id**); typed params
+  per message (`InitializeParams` with `protocol: 2` + capability lists,
+  `SetScriptParams`, `QueryParams` with an arbitrary-JSON `arg`,
+  `QueryResult` + the shared `CachePolicy`, `MutateParams`/`MutateResult`,
+  `NavigateParams`/`NavigateResult`, `EmitParams`, `InvalidateParams`);
+  method-name constants under `gpp::method`, reserved emit-event names under
+  `gpp::event`, error codes under `gpp::error_code`; and newline-framed
+  `write_message` / `read_message` helpers (one compact JSON object per line,
+  `Ok(None)` at EOF). It depends only on serde/serde_json so any client can
+  link it alone.
 
-- **`gpp` crate (shared contract)**: the on-the-wire types and transport, used
-  by both the host and every client. A JSON-RPC 2.0 `Envelope` (`request` /
-  `notification` / `response` constructors); typed params per message
-  (`InitializeParams`, `RenderParams`, `KeyParams`, `MouseParams`,
-  `ResizeParams`, `SetKeymapParams`, `OpenPathParams`, `SetStatusParams`,
-  plus `StyleSpan`/`StyleKind` for `render`'s optional per-line foreground color
-  spans, `BgSpan`/`BgKind` for its optional per-line background bands (the
-  column-scoped tints a rich diff/review client paints behind its rows — see
-  `docs/gpp.md`), and `MouseKind` for click forwarding); method-name constants
-  under `gpp::method`; a canonical `Key` enum with `to_name`/`from_name` for the
-  shared key encoding; and newline-framed `write_message` / `read_message`
-  helpers (one compact JSON object per line, `Ok(None)` at EOF). It has no
-  Garden dependencies — it is a standalone library so external clients can
-  depend on just it.
-
-- **`directory-browser` (`gpp-apps/directory-browser`)**: the reference client.
-  Split into a pure `Browser` core (listing, sorting, selection movement,
-  activation — directories sort before files, `..` is prepended, the selected
-  row is prefixed `"> "`) and a thin stdio `run` loop that wires the core to the
-  GPP transport. It subscribes to navigation keys (`j/k/Up/Down`, `Enter/l/Right`
-  to descend or open, `h/Left/Backspace/-` to go up, `g/G`, space), re-renders on
-  each one, and on selecting a file sends `openPath` so the host swaps in a real
-  editor.
+- **`directory-browser` (`gpp-apps/directory-browser`)**: the smallest complete
+  client. A pure listing core (`list_entries` / `listing_value` — directories
+  sort before files, case-insensitively; hidden files shown; unit-tested with
+  no stdio) behind a one-kind provider (`query("list", dir)`), plus the
+  colocated `browser.ptl` drawer: j/k (arrows, space) move the selection,
+  `g`/`G` jump, Enter/l/Right descends into a directory, h/Left/Backspace/`-`
+  goes up, `~` jumps home, a click selects and a double-click activates.
+  Selecting a file calls the host-owned `mutate("open_path", …)`, which swaps
+  the pane back to a real editor.
 
 - **`git-viewers` (`gpp-apps/git-viewers`)**: the reference **Panel-mode**
   (script-push) app — one bin (`git-log`) over the protocol loop + git/diff
@@ -1225,14 +1216,12 @@ normal editor — the way out of a browser.
   crate's second bin, the read-only `git-diff` viewer, was retired once
   `garden-diff` covered its views — including `--stat`.)
 
-  Panel-mode apps never draw or handle keys themselves — the host runs the pushed
+  GPP apps never draw or handle keys themselves — the host runs the pushed
   drawer as an in-process [panel](petal-graphical-panels.md) and forwards the
-  `query` calls it makes over the pipe (see the "Panel mode" section of
-  `docs/gpp.md`, the design record in
-  `docs/gpp.md`, and the how-to in
+  `query` calls it makes over the pipe (see `docs/gpp.md`, and the how-to in
   `docs/writing-gpp-apps.md`). The git/diff invocations and the pure parsing live
-  in `lib.rs` and are unit-tested against real temporary repositories. Like the
-  other browsers they never send `openPath` — they are read-only viewers.
+  in `lib.rs` and are unit-tested against real temporary repositories. They
+  never open files — they are read-only viewers.
 
 - **`garden-diff` (`gpp-apps/garden-diff`)**: the **editable** diff reviewer
   behind every diff/review entry point — `:Diff [--stat]`,
@@ -1247,8 +1236,8 @@ normal editor — the way out of a browser.
   Unlike every other GPP app it is not read-only — see its own section below
   (git/diff/splice logic in `src/diff_core.rs`).
 
-- **`sqlite-browser` (`gpp-apps/sqlite-browser`)**: a **Panel-mode**
-  [`petal_query::App`] that browses and visualizes a relational database. Despite
+- **`sqlite-browser` (`gpp-apps/sqlite-browser`)**: a read-only GPP app
+  (a `petal_query::Provider`) that browses and visualizes a relational database. Despite
   the name it speaks to **two engines**: the launch argument is classified by
   `db::Source::from_arg` — a file path is **SQLite**
   (`process("/abs/sqlite-browser", ["/abs/db.sqlite"])`), a `postgres://…` URL is
@@ -1283,47 +1272,25 @@ normal editor — the way out of a browser.
   the child, a buffered writer over its stdin (host → client), and a background
   reader thread that forwards every envelope from stdout to an mpsc channel
   (client → host) — mirroring the thread+channel shape of `debug.rs`. `spawn`
-  does the **synchronous handshake**: it writes the `initialize` request (id 1)
-  and blocks reading exactly the one response the client must send first, *then*
-  starts the reader thread (so the handshake line is never consumed by the
-  thread). It exposes `send_key` / `send_resize` (host → client notifications),
-  `try_drain` (non-blocking) and `drain_for(dur)` (block briefly for the reply
-  after a key so it feels synchronous), plus `keymap()` / `set_keymap()` and
-  `name()`. `Drop` sends `shutdown`, drops stdin (EOF), then kills+reaps the
-  child as a backstop. All wire errors are logged, never panicked — a
-  misbehaving client cannot take the editor down.
-
-- **`App` wiring (`garden-app/src/app/`)**: a `Pane` (in `app/types.rs`) carries
-  an `Option<ProcessPane>`; `is_process()` is true when present. On layout rebuild
-  (`app/panes.rs`) a `PaneContent::Process { command, args }` slot either moves a
-  matching live process across or spawns a fresh one (then drains its initial
-  `render`). A focused process pane routes keys through `process_key`
-  (`app/input.rs`), whose policy is a pure, unit-tested function
-  `classify_process_key(key, mods, takeover, subscribed)`: `Cmd`/`Ctrl`+`Q`
-  quits, `:` opens the host command line, the other Cmd/Ctrl chords stay with
-  the host, and past that a `Keymap` client gets only its subscribed keys
-  forwarded (other keys scroll the view) while a `Keyboard` client gets every
-  remaining key. A forwarded key's reply is drained and applied immediately.
-  `apply_process_messages` applies a drained batch —
-  `render` replaces the surface buffer, selects `cursorLine`, and applies the
-  optional per-line `styles` (semantic spans — added/removed/hunk/title/dim/
-  comment — mapped to theme colors by `editor_view::style_color` and drawn
-  instead of syntax highlighting) and `backgrounds` (per-line column-scoped
-  bands — added/removed/comment/selected/header — mapped by `editor_view::bg_color`
-  to translucent tints and drawn behind the text, under selection and the
-  caret), `setKeymap`
-  updates the forwarded set (and optionally the takeover layer and mouse
-  opt-in), `setStatus`
-  updates the status note, and `openPath`
-  drops the `ProcessPane` (shutting the child down) and reopens the pane as a
-  normal editor on the path. A client that opted into mouse forwarding
-  (`initialize`'s `mouse: true`) receives clicks as `mouse` notifications with
-  the scroll-adjusted content row (`app/mouse.rs::classify_mouse_down` routes
-  them; both browsers use click-to-select, double-click-to-activate). `/state` reports each process pane's `takeover`
-  beside its name and keymap. `poll_processes` drains every process pane on the
-  same ~200ms tick as the script/file polls, so unsolicited renders appear
-  without a keypress. `/state` reports each pane's `kind` (`"process"` vs
-  `"editor"`) and, for a process pane, its `process` name + keymap.
+  does the **synchronous handshake**: it writes the `initialize` request (id 1,
+  `protocol: 2`, the host capability list) and blocks reading exactly the one
+  response the client must send first, *then* starts the reader thread (so the
+  handshake line is never consumed by the thread); an error response, a
+  malformed result, or a protocol-major mismatch fails the spawn cleanly and
+  the caller surfaces the reason in the pane. It mints the request ids
+  (`send_query` / `send_mutate` / `send_navigate`; notifications — `send_emit`
+  — consume none) and keeps the `PendingRequest` table that routes an
+  id-correlated response back to what it answered (`complete(id)`), so nothing
+  is echoed on the wire. Draining is `try_drain` (non-blocking, the ~200ms
+  poll tick) and `drain_for` (bounded, used while priming a fresh pane and
+  inside the mutate/navigate waits). `PanelView::pump_client` applies a drained
+  batch: a query response resolves the shared `petal_query::Cache` (an error
+  response resolves it errored), `setScript` hot-swaps the running drawer
+  (state preserved), `invalidate` drops a cached key, and a client `emit`
+  becomes a `ClientEvent` for the reserved `open_path` / `status` events.
+  `Drop` sends `shutdown`, closes stdin, and kills/reaps the child. `/state`
+  reports each GPP pane as a `panel` whose `panel.client` names the spawn
+  command.
 
 - **`garden <dir>` startup (`garden-app/src/main.rs`)**: a single positional
   argument that is a directory resolves to a `LayoutNode::Process` running the
@@ -1337,15 +1304,16 @@ normal editor — the way out of a browser.
   `:Explore`) command and the `-` key open the directory browser *in place*,
   listing the focused file's parent directory (the cwd for a pathless buffer) —
   vim-netrw / vim-vinegar style. `App::open_directory_browser` spawns the same
-  `directory-browser` client and swaps the focused pane to process-backed; the
-  reverse trip (selecting a file) is the normal `openPath` flow above. `:E`
+  `directory-browser` client and swaps the focused pane to a script-client
+  panel; the reverse trip (selecting a file) is the host-owned `open_path`
+  mutation. `:E`
   parses to `Command::Explore` (`command_line.rs`); `-` returns
   `vim::Action::OpenDirectoryBrowser` from the Normal-mode handler (vim's `-`
   line motion is repurposed). On spawn failure the current buffer is kept and
   the error surfaces in the status bar.
 
 - **GPP apps back `:Git` and every diff/review command**: those commands no
-  longer open an in-process built-in panel — they spawn the panel-mode GPP apps
+  longer open an in-process built-in panel — they spawn the GPP apps
   `git-log` (`:Git`) and `garden-diff` (`:Diff`, `:Review*`, `:PR`; see the
   sections below), which push the drawer the host runs in-process and answer its
   `query` over the pipe. `process_pane::git_log_bin()` / `garden_diff_bin()`
@@ -1356,7 +1324,7 @@ normal editor — the way out of a browser.
 ## `:Diff` / `:Review` / `:PR` — the `garden-diff` review (the one diff tool)
 
 `:Diff [--stat] [rev]`, `:Review`/`:Review2`/`:ReviewSplit [base]`, and
-`:PR [number]` all replace the focused pane with the **`garden-diff`** panel-mode
+`:PR [number]` all replace the focused pane with the **`garden-diff`**
 GPP app (`gpp-apps/garden-diff`, bin `garden-diff`) via `App::open_garden_diff`;
 the `garden diff [--stat] [base|PR#]` and `garden pr [n|--local base]` CLIs build
 the same client as their startup layout. It is the unified successor to three
@@ -1562,10 +1530,10 @@ out, since the notice and PR bands move them) as plainly-named `let` bindings,
 which the host **observes** and reports at `/state` → `panes[].panel.values`, so
 that test clicks by geometry it reads rather than hard-codes.
 
-## `:Git` — the `git-log` panel-mode GPP app
+## `:Git` — the `git-log` GPP app
 
 `:Git` (→ `Command::Git` → `App::open_git_viewer`) replaces the focused pane with
-the `git-log` panel-mode GPP app (`gpp-apps/git-viewers`, bin `git-log`), a
+the `git-log` GPP app (`gpp-apps/git-viewers`, bin `git-log`), a
 history browser: a two-line commit list and the selected commit's file list
 stacked in a left column, the selected file's line diff (numbered old/new gutter,
 add/del row tinting) on the right. Three focusable regions cycle with Tab or a

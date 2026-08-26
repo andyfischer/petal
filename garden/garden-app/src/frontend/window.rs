@@ -506,7 +506,6 @@ impl ApplicationHandler<DebugRequest> for Handler {
         for (id, state) in self.windows.iter_mut() {
             state.app.poll_script();
             state.app.poll_files();
-            state.app.poll_processes();
             state.app.poll_lsp();
             state.app.poll_script_clients();
             state.app.poll_event_log();

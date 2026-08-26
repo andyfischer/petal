@@ -1,6 +1,7 @@
-//! Process-backed (GPP) panes: applying the messages a subprocess pushes
-//! (`render`, `setKeymap`, `setStatus`, `openPath`) and opening the directory
-//! browser in the focused pane.
+//! Subprocess-backed (GPP) panes: driving the query round-trip for each
+//! script-client pane, acting on client events (open-path / status /
+//! navigation / mutations), and opening the built-in client apps in the
+//! focused pane.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -15,10 +16,10 @@ use super::panes::process_dims;
 use super::App;
 
 /// How long the host blocks for a subprocess client to answer the `navigate`
-/// mutation with the target screen's source. Navigation is user-initiated and
+/// request with the target screen's source. Navigation is user-initiated and
 /// rare, so a short synchronous wait (like [`prime_script_client`]'s query
 /// priming) keeps the swap feeling immediate without hanging on a wedged client.
-const NAV_MUTATION_TIMEOUT: Duration = Duration::from_millis(500);
+const NAV_REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// How long the host blocks for a subprocess client to answer a script
 /// `mutate(name, arg)` request (e.g. a save that writes files). User-initiated
@@ -27,104 +28,9 @@ const NAV_MUTATION_TIMEOUT: Duration = Duration::from_millis(500);
 const MUTATE_TIMEOUT: Duration = Duration::from_millis(2000);
 
 impl App {
-    /// Apply a drained batch of GPP messages to pane `pane_idx`: `render`
-    /// replaces the passive view's content, `setKeymap` swaps the forwarded-key
-    /// set, `setStatus` updates the status note, and `openPath` turns the GPP
-    /// pane into a normal editor on the path (shutting the subprocess down).
-    pub(in crate::app) fn apply_process_messages(
-        &mut self,
-        pane_idx: usize,
-        msgs: Vec<gpp::Envelope>,
-    ) {
-        if msgs.is_empty() {
-            return;
-        }
-        let cell = self.viewport.cell;
-        // Set when an `openPath` turned this pane from a browser into an editor,
-        // so the persisted layout is re-synced once after the batch.
-        let mut content_changed = false;
-        for env in msgs {
-            if env.is_method(gpp::method::RENDER) {
-                let Ok(params) = env.params_as::<gpp::RenderParams>() else {
-                    continue;
-                };
-                let Some(pane) = self.panes.get_mut(pane_idx) else {
-                    continue;
-                };
-                let text = params.lines.join("\n");
-                pane.view.set_external_content(&text, params.cursor_line);
-                if let Some(styles) = params.styles {
-                    pane.view.set_external_styles(styles);
-                }
-                if let Some(backgrounds) = params.backgrounds {
-                    pane.view.set_external_backgrounds(backgrounds);
-                }
-                if let Some(title) = params.title {
-                    pane.view.set_external_title(Some(title));
-                }
-                let visible = EditorView::visible_lines(pane.rect, cell.1);
-                let visible_cols = pane.view.visible_cols(pane.rect, cell.0);
-                pane.view.ensure_cursor_visible(visible, visible_cols);
-                if let Some(status) = params.status {
-                    self.status_note = Some(status);
-                }
-            } else if env.is_method(gpp::method::SET_KEYMAP) {
-                let Ok(params) = env.params_as::<gpp::SetKeymapParams>() else {
-                    continue;
-                };
-                if let Some(process) = self
-                    .panes
-                    .get_mut(pane_idx)
-                    .and_then(|p| p.process.as_mut())
-                {
-                    process.set_keymap(params.keys);
-                    if let Some(takeover) = params.takeover {
-                        process.set_takeover(takeover);
-                    }
-                    if let Some(mouse) = params.mouse {
-                        process.set_mouse(mouse);
-                    }
-                }
-            } else if env.is_method(gpp::method::SET_STATUS) {
-                let Ok(params) = env.params_as::<gpp::SetStatusParams>() else {
-                    continue;
-                };
-                self.status_note = Some(params.text);
-            } else if env.is_method(gpp::method::OPEN_PATH) {
-                let Ok(params) = env.params_as::<gpp::OpenPathParams>() else {
-                    continue;
-                };
-                if let Some(pane) = self.panes.get_mut(pane_idx) {
-                    // The pane becomes a normal editor on the path; `set_editor`
-                    // drops the ProcessPane (shutting the child down).
-                    pane.set_editor(Some(params.path));
-                    content_changed = true;
-                }
-            }
-        }
-        if content_changed {
-            // A browser became a plain editor; persist so a later split/reload
-            // shows the opened file, not a fresh browser.
-            self.sync_layout();
-        }
-        self.needs_redraw = true;
-    }
-
-    /// Drain and apply pending messages from every process-backed pane. Called
-    /// by each frontend on the reload tick, beside [`poll_files`](App::poll_files).
-    pub fn poll_processes(&mut self) {
-        for i in 0..self.panes.len() {
-            let msgs = match self.panes.get(i).and_then(|p| p.process.as_ref()) {
-                Some(process) => process.try_drain(),
-                None => continue,
-            };
-            self.apply_process_messages(i, msgs);
-        }
-    }
-
-    /// Drive the query round-trip for every **panel-mode GPP pane** (the
-    /// script-push protocol): apply the client's `queryResult` answers to the
-    /// shared cache and flush the queries the script asked for. Non-blocking —
+    /// Drive the query round-trip for every **GPP script-client pane**: apply
+    /// the client's query answers to the shared cache and flush the queries the
+    /// script asked for. Non-blocking —
     /// answers land here on a later tick and the panel re-renders. Called on the
     /// reload tick, *before* [`tick_panels`](App::tick_panels) so freshly landed
     /// data is on screen the same cycle. See
@@ -158,8 +64,7 @@ impl App {
 
     /// Run the first few query round-trips for a just-spawned script client
     /// *synchronously* (waiting briefly for each answer), so the pane paints with
-    /// data instead of a spinner the moment it appears — the panel-mode analogue
-    /// of draining a Lines client's initial `render`.
+    /// data instead of a spinner the moment it appears.
     pub(in crate::app) fn prime_script_client(&mut self, idx: usize) {
         let now = Instant::now();
         // Bounded rounds: a run issues queries, a pump waits for the answers; a
@@ -191,11 +96,12 @@ impl App {
         self.needs_redraw = true;
     }
 
-    /// Act on a script client's `openPath`/`setStatus`/`navigate` signals:
-    /// `openPath` turns the pane into a normal editor (dropping the client) and
-    /// re-syncs the layout, exactly like a Lines client's `openPath`; `setStatus`
-    /// sets the status note; `navigate` resolves the target screen against the
-    /// panel's script-directory whitelist and swaps the running screen in place
+    /// Act on a script client's open-path / status / navigate / mutate signals:
+    /// `OpenPath` (the reserved `emit("open_path")` event, or the host-owned
+    /// `open_path` mutation) turns the pane into a normal editor (dropping the
+    /// client) and re-syncs the layout; `SetStatus` (the reserved
+    /// `emit("status")` event) sets the status note; `Navigate` resolves the
+    /// target screen and swaps the running screen in place
     /// ([`navigate_panel`](Self::navigate_panel)).
     pub(in crate::app) fn handle_client_events(&mut self, idx: usize, events: Vec<ClientEvent>) {
         let mut content_changed = false;
@@ -286,8 +192,8 @@ impl App {
         };
         // How the target screen's source is resolved differs by pane kind:
         //  - A **subprocess** (pushed-script) pane has no on-disk screens; the
-        //    client owns them. Fetch the source over the pipe via the built-in
-        //    `navigate` mutation (the client's declared screens are its allowlist).
+        //    client owns them. Fetch the source over the pipe via the first-class
+        //    `navigate` request (the client's declared screens are its allowlist).
         //  - An **in-process** `panel(...)` pane resolves a sibling `.ptl` against
         //    its origin script directory, narrowed by the explicit `screens` list.
         let is_client = self
@@ -300,7 +206,7 @@ impl App {
                 .panes
                 .get_mut(idx)
                 .and_then(|p| p.panel.as_mut())
-                .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_MUTATION_TIMEOUT))
+                .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_REQUEST_TIMEOUT))
             {
                 Some(Ok(source)) => source,
                 Some(Err(reason)) => {
@@ -399,7 +305,7 @@ impl App {
             .panes
             .get_mut(idx)
             .and_then(|p| p.panel.as_mut())
-            .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_MUTATION_TIMEOUT));
+            .map(|pv| pv.client_fetch_screen(&screen, &arg, NAV_REQUEST_TIMEOUT));
         match fetched {
             Some(Ok(source)) => {
                 if let Some(pv) = self.panes.get_mut(idx).and_then(|p| p.panel.as_mut()) {
@@ -599,9 +505,9 @@ impl App {
     }
 
     /// Replace the focused pane with the GPP directory browser listing `dir`
-    /// (the `:E` command and the `-` key, vim-netrw style). The pane's editor
-    /// view becomes the passive render surface the browser drives; selecting a
-    /// file there reopens the pane as an editor via the normal `openPath` flow.
+    /// (the `:E` command and the `-` key, vim-netrw style). The client pushes
+    /// its netrw-style drawer and serves the listing; selecting a file there
+    /// reopens the pane as an editor via the host-owned `open_path` mutation.
     /// On spawn failure the current buffer is left untouched and the error
     /// surfaces in the status bar.
     pub(in crate::app) fn open_directory_browser(&mut self, dir: &str) {
@@ -614,7 +520,7 @@ impl App {
         );
     }
 
-    /// Replace the focused pane with the `git-log` panel-mode GPP client — the
+    /// Replace the focused pane with the `git-log` GPP client — the
     /// `:Git` history browser (commit list + per-commit files + numbered diff),
     /// rooted at the focused file's repository. The client pushes the production
     /// history drawer the host runs in-process and answers its `query("log")` /
@@ -631,7 +537,7 @@ impl App {
         );
     }
 
-    /// Replace the focused pane with the `garden-diff` panel-mode GPP client — the
+    /// Replace the focused pane with the `garden-diff` GPP client — the
     /// editable before/after (and unified) review, rooted at the focused file's
     /// repository. `extra` is the client args after the repo dir: a base ref for
     /// `:Diff`/`:Review*`, or `--pr [number]` for `:PR`. The client answers its
@@ -659,18 +565,14 @@ impl App {
     }
 
     /// Swap the focused pane to a GPP client backed by `command` rooted at `dir`
-    /// (used by `:E`, `:PR`, `:Git`, `:Diff`): spawn the client and adopt whichever
-    /// [`ClientMode`](gpp::ClientMode) it reports, then persist so a later
-    /// split/reload keeps the pane. On spawn failure the pane is left untouched and
-    /// a `could not start {what}` error (with a `NotFound` build hint) surfaces in
-    /// the status bar.
+    /// (used by `:E`, `:PR`, `:Git`, `:Diff`): spawn the client, build a
+    /// script-client pane from its pushed drawer ([`build_script_client_pane`]),
+    /// prime its first frame of query data, then persist so a later
+    /// split/reload keeps the pane. On spawn failure the pane is left untouched
+    /// and a `could not start {what}` error (with a `NotFound` build hint)
+    /// surfaces in the status bar.
     ///
-    /// - A **Lines** client (`directory-browser`) becomes a process-backed pane
-    ///   via [`Pane::set_process`](super::Pane::set_process), whose initial
-    ///   `render` is drained so its listing shows immediately.
-    /// - A **Panel** client (`git-log`, `garden-diff`) pushes a Petal UI script the
-    ///   host runs in-process; the pane becomes a script client
-    ///   ([`build_script_client_pane`]) primed with its first frame of data.
+    /// [`build_script_client_pane`]: super::panes::build_script_client_pane
     fn open_browser(
         &mut self,
         command: String,
@@ -699,29 +601,14 @@ impl App {
             }
         };
 
-        match process.mode() {
-            gpp::ClientMode::Panel => {
-                // The client pushes a Petal UI script; build a script-client pane
-                // and prime its first frame of query data so it paints immediately.
-                let view = EditorView::open(None);
-                let pane =
-                    super::panes::build_script_client_pane(rect, view, process, command, args);
-                if let Some(slot) = self.panes.get_mut(idx) {
-                    *slot = pane;
-                }
-                self.prime_script_client(idx);
-            }
-            gpp::ClientMode::Lines => {
-                if let Some(pane) = self.panes.get_mut(idx) {
-                    pane.set_process(process, command, args);
-                }
-                // Drain the client's initial render so its listing shows immediately.
-                if let Some(process) = self.panes.get(idx).and_then(|p| p.process.as_ref()) {
-                    let msgs = process.drain_for(Duration::from_millis(250));
-                    self.apply_process_messages(idx, msgs);
-                }
-            }
+        // The client pushes a Petal UI script; build a script-client pane and
+        // prime its first frame of query data so it paints immediately.
+        let view = EditorView::open(None);
+        let pane = super::panes::build_script_client_pane(rect, view, process, command, args);
+        if let Some(slot) = self.panes.get_mut(idx) {
+            *slot = pane;
         }
+        self.prime_script_client(idx);
         // The pane became a client; persist so a later split/reload keeps it one.
         self.sync_layout();
         self.needs_redraw = true;

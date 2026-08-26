@@ -128,7 +128,6 @@ fn run_loop(config: AppConfig) -> io::Result<()> {
         if last_reload.elapsed() >= RELOAD_POLL {
             app.poll_script();
             app.poll_files();
-            app.poll_processes();
             app.poll_lsp();
             app.poll_script_clients();
             app.tick_panels(); // panels animate at the poll cadence here

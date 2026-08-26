@@ -4,8 +4,8 @@
 //! decide, on later frames, whether to serve the cached value, quietly refetch
 //! it in the background, or drop it and show a spinner. It is the pull-model
 //! cousin of an HTTP `Cache-Control` header: the value crosses the wire on a
-//! [`QueryResult`](crate::wire::QueryResult)'s `cacheControl` field and is
-//! interpreted by the host's [`Cache`](crate::cache::Cache).
+//! query response's `cache` field and is interpreted by the host's query cache
+//! (`petal_query::Cache`).
 //!
 //! # The model
 //!
@@ -30,7 +30,7 @@
 //!
 //! ```
 //! use std::time::Duration;
-//! use petal_query::CachePolicy;
+//! use gpp::CachePolicy;
 //!
 //! // A commit diff addressed by hash never changes — cache it forever.
 //! let immutable = CachePolicy::forever();
@@ -49,8 +49,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 /// How cacheable one query answer is. Attached by a provider to each answer and
-/// honored by the host's [`Cache`](crate::cache::Cache). See the [module
-/// docs](self) for the model.
+/// honored by the host's query cache. See the [module docs](self) for the model.
 ///
 /// The default ([`forever`](Self::forever)) preserves Garden's historical
 /// cache-until-invalidate behavior, so an answer with no policy is unchanged.
@@ -130,8 +129,7 @@ impl CachePolicy {
     }
 
     /// The freshness of an answer of this policy at `age` (time since it was
-    /// fetched). Pure; the [`Cache`](crate::cache::Cache) calls it with a real
-    /// elapsed time.
+    /// fetched). Pure; the host's cache calls it with a real elapsed time.
     pub fn freshness_at(&self, age: Duration) -> Freshness {
         if self.no_store {
             // Never fresh, never expired: always serve + always revalidate.

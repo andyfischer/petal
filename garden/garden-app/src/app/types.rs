@@ -10,7 +10,6 @@ use garden_script::LayoutNode;
 
 use crate::editor_view::EditorView;
 use crate::panel_view::PanelView;
-use crate::process_pane::ProcessPane;
 use crate::theme::ThemeScheme;
 
 /// The presentation geometry a frontend renders with: logical size, monospace
@@ -45,12 +44,6 @@ impl Mods {
     /// [key claims](crate::panel_view::PanelView::claims_key).
     pub fn bits(self) -> u8 {
         (self.shift as u8) | (self.ctrl as u8) << 1 | (self.alt as u8) << 2 | (self.cmd as u8) << 3
-    }
-
-    /// Whether any modifier is held — i.e. this key press is a *chord*, not a
-    /// plain character. A chord never produces `text_input()`.
-    pub fn any(self) -> bool {
-        self.cmd || self.ctrl || self.alt || self.shift
     }
 
     /// Whether a **command** modifier is held (`Cmd`/`Ctrl`/`Alt`). Shift is
@@ -302,12 +295,9 @@ pub struct Pane {
     /// edit only once per distinct disk change. `None` while in sync (or after
     /// a reload).
     pub external_conflict: Option<garden_core::DiskStamp>,
-    /// The GPP subprocess driving this pane, when it is process-backed. The
-    /// pane's [`view`](Self::view) is then a passive render surface: the
-    /// subprocess pushes content and editing is disabled.
-    pub process: Option<ProcessPane>,
-    /// The `(command, args)` a process pane was spawned for, so a rebuild can
-    /// reuse the live child instead of respawning it. `None` for editor panes.
+    /// The `(command, args)` a script-client pane was spawned for, so a rebuild
+    /// can reuse the live child instead of respawning it. `None` for editor
+    /// panes.
     pub command_args: Option<(String, Vec<String>)>,
     /// The Petal runtime driving this pane, when it is a `panel(...)` pane. The
     /// pane's [`view`](Self::view) is then only a passive title/status carrier;
@@ -330,7 +320,6 @@ impl Pane {
             file,
             view,
             external_conflict: None,
-            process: None,
             command_args: None,
             panel: None,
             read_only: false,
@@ -347,44 +336,18 @@ impl Pane {
             file: None,
             view,
             external_conflict: None,
-            process: None,
             command_args: None,
             panel: Some(panel),
             read_only: false,
         }
     }
 
-    /// A process-backed pane around an already-prepared `view` (sized by the
-    /// caller before the child was spawned) and the spawned `process`. Seeds the
-    /// titlebar with the client name until the first `render`, matching
-    /// [`set_process`](Self::set_process); the construction counterpart used when
-    /// rebuilding panes from the layout.
-    pub fn process(
-        rect: Rect,
-        mut view: EditorView,
-        process: ProcessPane,
-        command: String,
-        args: Vec<String>,
-    ) -> Pane {
-        view.set_external_title(Some(process.name().to_string()));
-        Pane {
-            rect,
-            file: None,
-            view,
-            external_conflict: None,
-            process: Some(process),
-            command_args: Some((command, args)),
-            panel: None,
-            read_only: false,
-        }
-    }
-
-    /// A **panel-mode GPP pane** (the script-push protocol): the client pushed
-    /// the Petal `panel` and answers its `query`s over the pipe (held *inside*
+    /// A **GPP script-client pane**: the client pushed the Petal `panel` and
+    /// answers its `query`s over the pipe (the [`ProcessPane`] is held *inside*
     /// `panel`), so the pane renders/handles input as a panel but persists as a
-    /// `process(command, args)` node. `is_process()` is deliberately false (the
-    /// pipe is not a `ProcessPane` at the pane level) so input/render route to the
-    /// panel; `command_args` is set so it round-trips as a process.
+    /// `process(command, args)` node — `command_args` is what round-trips it.
+    ///
+    /// [`ProcessPane`]: crate::process_pane::ProcessPane
     pub fn script_client(
         rect: Rect,
         mut view: EditorView,
@@ -398,16 +361,10 @@ impl Pane {
             file: None,
             view,
             external_conflict: None,
-            process: None,
             command_args: Some((command, args)),
             panel: Some(panel),
             read_only: false,
         }
-    }
-
-    /// Whether this pane's content is driven by a GPP subprocess.
-    pub fn is_process(&self) -> bool {
-        self.process.is_some()
     }
 
     /// Whether this pane's pixels are drawn by a Petal panel script.
@@ -422,7 +379,7 @@ impl Pane {
     /// not a stale snapshot — define the persisted layout (see
     /// [`App::layout_from_panes`](super::App)).
     ///
-    /// `command_args` is checked before `panel` so a **panel-mode GPP client**
+    /// `command_args` is checked before `panel` so a **GPP client**
     /// (which renders as a panel but carries its spawned command) persists — and
     /// re-spawns — as a `process(...)` node, re-pushing its script on reload,
     /// rather than as an unloadable panel path.
@@ -461,7 +418,6 @@ impl Pane {
         // a content change (`:e`, File ▸ New, exiting a browser) so a later
         // `sync_layout` doesn't persist the gutter back off.
         let line_numbers = self.view.show_line_numbers;
-        self.process = None;
         self.command_args = None;
         self.panel = None;
         self.read_only = false;
@@ -471,22 +427,6 @@ impl Pane {
         self.file = file;
     }
 
-    /// Turn this pane into a process-backed GPP browser: its view becomes a
-    /// fresh passive render surface the subprocess drives, seeded with the
-    /// client name as a titlebar until the first `render`. The counterpart to
-    /// [`set_editor`](Self::set_editor) — the one way to make a pane a browser,
-    /// so file/conflict/process/command fields can't drift out of sync.
-    pub fn set_process(&mut self, process: ProcessPane, command: String, args: Vec<String>) {
-        let mut view = EditorView::open(None);
-        view.set_external_title(Some(process.name().to_string()));
-        self.view = view;
-        self.file = None;
-        self.external_conflict = None;
-        self.process = Some(process);
-        self.command_args = Some((command, args));
-        self.panel = None;
-        self.read_only = false;
-    }
 }
 
 /// A panel pane's titlebar/status label: the script's file name (its full path

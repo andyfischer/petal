@@ -7,8 +7,8 @@
 //! colocated `.ptl` drawer:
 //!
 //! - `ok` (default)             — a healthy panel that just paints.
-//! - `runtime-error`            — reproduces the pr-browser crash: `len(nil)`
-//!   raises "Cannot get length of nil [line N, column M]" mid-frame, so the host
+//! - `runtime-error`            — a classic drawer crash: `len(nil)` raises
+//!   "Cannot get length of nil [line N, column M]" mid-frame, so the host
 //!   shows the error card over a live frame.
 //! - `runtime-error-long`       — a runtime error with a long message, to
 //!   exercise the card's word-wrapping.

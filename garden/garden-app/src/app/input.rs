@@ -1,12 +1,8 @@
 //! Key routing and text injection. Translated key presses from every frontend
 //! (and the debug server's `/key`) enter through [`App::apply_key`], which
-//! dispatches the `:` command line, the `Ctrl+W` window prefix, process-pane
+//! dispatches the `:` command line, the `Ctrl+W` window prefix, panel-pane
 //! forwarding, the global Cmd/Ctrl editing shortcuts, and finally the vim
 //! layer. Focus movement between panes lives here too.
-
-use std::time::Duration;
-
-use gpp::Takeover;
 
 use garden_script::{LayoutNode, NavIntent};
 
@@ -108,12 +104,6 @@ impl App {
         if mods.ctrl && !mods.cmd && matches!(key, Key::Char('w' | 'W')) {
             self.window_cmd_pending = true;
             return KeyOutcome::Handled;
-        }
-
-        // A process-backed focused pane handles input itself (forwarding
-        // subscribed keys to the subprocess); vim/editing is disabled there.
-        if self.panes.get(self.focus).is_some_and(Pane::is_process) {
-            return self.process_key(key, mods);
         }
 
         // A focused panel pane consumes plain keys (forwarded to its script);
@@ -268,68 +258,6 @@ impl App {
         }
         self.needs_redraw = true;
         KeyOutcome::Handled
-    }
-
-    /// Route a key press for a process-backed focused pane.
-    ///
-    /// The disposition is decided by [`classify_process_key`], a pure function
-    /// of the key, the modifiers, the client's [`gpp::Takeover`] level, and
-    /// whether the client subscribed to the key. Whatever the takeover level:
-    /// `Cmd`/`Ctrl`+`Q` quits, `:` opens the host command line (the command bar
-    /// is reserved at every level), and the other Cmd/Ctrl chords stay with the
-    /// host so they can never mutate the passive render surface. Beyond that, a
-    /// `Keymap` client gets only its subscribed keys forwarded (everything else
-    /// scrolls the view); a `Keyboard` client gets every remaining key.
-    fn process_key(&mut self, key: Key, mods: Mods) -> KeyOutcome {
-        let (takeover, subscribed) =
-            match self.panes.get(self.focus).and_then(|p| p.process.as_ref()) {
-                Some(proc) => (
-                    proc.takeover(),
-                    vim_key_to_gpp(key).is_some_and(|k| proc.subscribes(&k.to_name())),
-                ),
-                None => return KeyOutcome::Ignored,
-            };
-
-        match classify_process_key(key, mods, takeover, subscribed) {
-            ProcessKey::Quit => KeyOutcome::Quit,
-            ProcessKey::CommandBar => {
-                self.command_line = Some(CommandLine::new());
-                self.needs_redraw = true;
-                KeyOutcome::Handled
-            }
-            ProcessKey::Forward => {
-                let gpp_key = vim_key_to_gpp(key).expect("Forward implies a forwardable key");
-                let idx = self.focus;
-                let msgs = {
-                    let Some(process) = self.panes[idx].process.as_mut() else {
-                        return KeyOutcome::Ignored;
-                    };
-                    process.send_key(gpp_key, mods.ctrl, mods.shift, mods.cmd);
-                    process.drain_for(Duration::from_millis(120))
-                };
-                self.apply_process_messages(idx, msgs);
-                self.needs_redraw = true;
-                KeyOutcome::Handled
-            }
-            ProcessKey::Scroll => {
-                let visible = self.focused_visible_lines();
-                // Keys scroll whole rows; only the wheel moves by fractions.
-                let lines = match key {
-                    Key::Up => -1.0,
-                    Key::Down => 1.0,
-                    Key::PageUp => -(visible as f32),
-                    Key::PageDown => visible as f32,
-                    _ => return KeyOutcome::Ignored,
-                };
-                if let Some(pane) = self.panes.get_mut(self.focus) {
-                    let visible_cols = pane.view.visible_cols(pane.rect, self.viewport.cell.0);
-                    pane.view.scroll_by(lines, visible, visible_cols);
-                    self.needs_redraw = true;
-                }
-                KeyOutcome::Handled
-            }
-            ProcessKey::Ignore => KeyOutcome::Ignored,
-        }
     }
 
     /// Whether the focused panel's script claimed this exact key + chord with
@@ -942,61 +870,6 @@ fn project_root(start: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
-/// What the host should do with a key arriving at a focused process pane.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum ProcessKey {
-    /// Quit the editor (`Cmd`/`Ctrl`+`Q`).
-    Quit,
-    /// Open the host command line (`:`). Reserved at every takeover level.
-    CommandBar,
-    /// Forward the key to the client as a `key` notification.
-    Forward,
-    /// Host default: scroll the passive view (arrows / page keys).
-    Scroll,
-    /// Swallow the key — a host chord we don't forward, or nothing to do.
-    Ignore,
-}
-
-/// Decide what a focused process pane does with a key, as a pure function of
-/// the takeover level. This is the single place the GPP takeover layering is
-/// expressed (see [`gpp::Takeover`]); [`App::process_key`] just carries out the
-/// verdict.
-///
-/// Reserved at every level, in priority order: `Cmd`/`Ctrl`+`Q` quits; `:`
-/// (with no Cmd/Ctrl) opens the command bar; any other Cmd/Ctrl chord is a
-/// host-global shortcut and is never forwarded as a plain key. Past the
-/// reserved set, `Keymap` forwards only subscribed keys (others scroll), and
-/// `Keyboard` forwards every remaining key.
-fn classify_process_key(key: Key, mods: Mods, takeover: Takeover, subscribed: bool) -> ProcessKey {
-    if (mods.cmd || mods.ctrl) && matches!(key, Key::Char('q' | 'Q')) {
-        return ProcessKey::Quit;
-    }
-    // The command bar is reserved even under a full keyboard takeover, and even
-    // if the client lists `:` in its keymap — this is what keeps `:w`/`:q`/`:E`
-    // working inside a process pane.
-    if !mods.cmd && !mods.ctrl && matches!(key, Key::Char(':')) {
-        return ProcessKey::CommandBar;
-    }
-    // Other Cmd/Ctrl chords are host-global (clipboard, save, …) and must never
-    // reach the client as plain keys. (`Ctrl+W` window nav is intercepted
-    // before we ever get here.)
-    if mods.cmd || mods.ctrl {
-        return ProcessKey::Ignore;
-    }
-    // A key with no canonical GPP encoding can't be forwarded.
-    if vim_key_to_gpp(key).is_none() {
-        return ProcessKey::Ignore;
-    }
-    match takeover {
-        Takeover::Keyboard => ProcessKey::Forward,
-        Takeover::Keymap if subscribed => ProcessKey::Forward,
-        Takeover::Keymap => match key {
-            Key::Up | Key::Down | Key::PageUp | Key::PageDown => ProcessKey::Scroll,
-            _ => ProcessKey::Ignore,
-        },
-    }
-}
-
 /// What the host should do with a key arriving at a focused panel pane.
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum PanelKey {
@@ -1115,29 +988,6 @@ fn panel_key_name(key: Key) -> Option<String> {
     })
 }
 
-/// Translate a vim toolkit key into the canonical GPP key it forwards as.
-/// `Key::Ctrl` never reaches here (Ctrl chords arrive as `mods.ctrl` + a
-/// `Char`), so it has no mapping.
-fn vim_key_to_gpp(key: Key) -> Option<gpp::Key> {
-    Some(match key {
-        Key::Char(c) => gpp::Key::Char(c),
-        Key::Enter => gpp::Key::Enter,
-        Key::Tab => gpp::Key::Tab,
-        Key::Backspace => gpp::Key::Backspace,
-        Key::Delete => gpp::Key::Delete,
-        Key::Escape => gpp::Key::Escape,
-        Key::Left => gpp::Key::Left,
-        Key::Right => gpp::Key::Right,
-        Key::Up => gpp::Key::Up,
-        Key::Down => gpp::Key::Down,
-        Key::Home => gpp::Key::Home,
-        Key::End => gpp::Key::End,
-        Key::PageUp => gpp::Key::PageUp,
-        Key::PageDown => gpp::Key::PageDown,
-        Key::Ctrl(_) => return None,
-    })
-}
-
 /// Copy the selection to the clipboard (a no-op without one; the selection
 /// stays). Shared by Cmd+C and Ctrl+C.
 fn clipboard_copy(clipboard: &mut dyn Clipboard, view: &EditorView) {
@@ -1220,75 +1070,8 @@ mod tests {
         alt: false,
     };
 
-    /// The command bar is reserved at every takeover level, even when a
-    /// `Keyboard` client would otherwise receive everything, and even if the
-    /// client tried to subscribe to `:`.
-    #[test]
-    fn colon_always_opens_command_bar() {
-        for takeover in [Takeover::Keymap, Takeover::Keyboard] {
-            for subscribed in [false, true] {
-                assert_eq!(
-                    classify_process_key(Key::Char(':'), NONE, takeover, subscribed),
-                    ProcessKey::CommandBar,
-                );
-            }
-        }
-    }
-
-    /// Quit works from a process pane regardless of takeover level.
-    #[test]
-    fn quit_chords_quit() {
-        assert_eq!(
-            classify_process_key(Key::Char('q'), CMD, Takeover::Keyboard, true),
-            ProcessKey::Quit,
-        );
-        assert_eq!(
-            classify_process_key(Key::Char('q'), CTRL, Takeover::Keymap, false),
-            ProcessKey::Quit,
-        );
-    }
-
-    /// Other Cmd/Ctrl chords stay with the host — they're never forwarded as
-    /// plain keys, so they can't mutate the passive render surface.
-    #[test]
-    fn other_modified_chords_stay_with_host() {
-        for takeover in [Takeover::Keymap, Takeover::Keyboard] {
-            assert_eq!(
-                classify_process_key(Key::Char('s'), CMD, takeover, true),
-                ProcessKey::Ignore,
-            );
-            assert_eq!(
-                classify_process_key(Key::Char('v'), CTRL, takeover, true),
-                ProcessKey::Ignore,
-            );
-        }
-    }
-
-    /// A `Keymap` client gets only its subscribed keys; everything else does
-    /// the host default (scroll for arrows/page keys, ignore otherwise).
-    #[test]
-    fn keymap_forwards_only_subscribed() {
-        assert_eq!(
-            classify_process_key(Key::Char('j'), NONE, Takeover::Keymap, true),
-            ProcessKey::Forward,
-        );
-        assert_eq!(
-            classify_process_key(Key::Char('j'), NONE, Takeover::Keymap, false),
-            ProcessKey::Ignore,
-        );
-        // Unsubscribed navigation keys scroll the passive view.
-        assert_eq!(
-            classify_process_key(Key::Down, NONE, Takeover::Keymap, false),
-            ProcessKey::Scroll,
-        );
-        assert_eq!(
-            classify_process_key(Key::PageUp, NONE, Takeover::Keymap, false),
-            ProcessKey::Scroll,
-        );
-    }
-
-    /// A focused panel forwards plain keys under their canonical names, but keeps
-    /// the same reserved chords as a process pane (quit, command bar, host chords).
+    /// A focused panel forwards plain keys under their canonical names, but
+    /// keeps the reserved chords (quit, command bar, host chords).
     #[test]
     fn panel_key_reserved_and_forwarded() {
         assert_eq!(
@@ -1439,21 +1222,4 @@ mod tests {
         }
     }
 
-    /// A `Keyboard` client gets every non-reserved key, subscribed or not —
-    /// including the arrows the `Keymap` level would have scrolled.
-    #[test]
-    fn keyboard_forwards_everything_nonreserved() {
-        assert_eq!(
-            classify_process_key(Key::Char('x'), NONE, Takeover::Keyboard, false),
-            ProcessKey::Forward,
-        );
-        assert_eq!(
-            classify_process_key(Key::Down, NONE, Takeover::Keyboard, false),
-            ProcessKey::Forward,
-        );
-        assert_eq!(
-            classify_process_key(Key::Enter, NONE, Takeover::Keyboard, false),
-            ProcessKey::Forward,
-        );
-    }
 }

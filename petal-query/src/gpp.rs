@@ -1,11 +1,12 @@
-//! Garden Pane Protocol adapter: run a generic [`Provider`] as a panel-mode GPP
+//! Garden Pane Protocol adapter: run a generic [`Provider`] as a GPP v2 client
 //! app over stdio.
 //!
 //! This is where the **editor/presentation** concerns live — the pane name and
 //! the UI script — kept out of the transport-agnostic [`Provider`]. A GPP
-//! panel-mode app is "a web server for one page": it names the pane, ships a
-//! Petal UI script once (the page), then answers the `query(kind, arg)` calls
-//! that script makes (the data).
+//! app is "a web server for one page": it names the pane, ships a Petal UI
+//! script once (the page), then answers the `query(kind, arg)` calls that
+//! script makes (the data), plus `mutate` / `navigate` requests and `emit`
+//! notifications.
 //!
 //! ```no_run
 //! use petal_query::{Provider, Reply};
@@ -22,28 +23,30 @@
 //!
 //! The pane name may also be derived from the built state (a provider that
 //! titles the pane from what it just loaded) via [`PanelUi::title`].
+//!
+//! The wire itself — envelope, message shapes, cache policy — is the `gpp`
+//! crate; this module is the client-side protocol loop over it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex};
 
+use crate::provider::{
+    EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply,
+};
 use crate::CachePolicy;
-use crate::provider::{MutateContext, Provider, Reply};
-use crate::wire::{
-    self, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams, MutateResult,
-    QueryParams, QueryResult, SetScriptParams, method,
+use ::gpp::{
+    error_code, method, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams,
+    MutateResult, NavigateParams, NavigateResult, QueryParams, QueryResult, SetScriptParams,
+    PROTOCOL_VERSION,
 };
 
-/// The built-in mutation name for browser-style navigation between a panel's
-/// screens. When a subprocess panel app declares [`screens`](PanelUi::screen) and
-/// does not register its own `navigate` handler, the GPP layer answers a
-/// `navigate` mutation by returning the requested screen's UI source, letting the
-/// host swap screens and own the history stack. Its `arg` is `{ "screen": name }`
-/// and it returns `{ "screen": name, "source": <ptl source> }`.
-pub const NAVIGATE: &str = "navigate";
+/// The capability names a `petal-query` app reports in its `initialize`
+/// response: the requests it answers and the pushes it makes.
+const CLIENT_CAPABILITIES: &[&str] = &["query", "mutate", "navigate", "emit", "setScript"];
 
-/// The GPP presentation for a panel-mode app: the pane name (static, or derived
+/// The GPP presentation for an app: the pane name (static, or derived
 /// from the built state) and the UI script the host runs. Supplied by the app —
 /// the GPP layer — not by the transport-agnostic [`Provider`].
 pub struct PanelUi<S> {
@@ -51,8 +54,8 @@ pub struct PanelUi<S> {
     title_fn: Option<Box<dyn FnOnce(&S) -> String>>,
     script: String,
     /// Additional navigable screens (name → UI source) beyond the home `script`.
-    /// The declared set doubles as the navigation allowlist: a `navigate` mutation
-    /// to an undeclared screen is refused. Empty means a single-screen app.
+    /// The declared set doubles as the navigation allowlist: a `navigate` request
+    /// for an undeclared screen is refused. Empty means a single-screen app.
     screens: HashMap<String, String>,
 }
 
@@ -69,22 +72,22 @@ impl<S> PanelUi<S> {
 
     /// Derive the pane's display name from the built state instead of the static
     /// name, called once after the state is built from the handshake — so an app
-    /// can title the pane from what it just loaded (e.g. `retro — <session id>`).
+    /// can title the pane from what it just loaded (e.g. `db — <file>`).
     pub fn title(mut self, title: impl FnOnce(&S) -> String + 'static) -> PanelUi<S> {
         self.title_fn = Some(Box::new(title));
         self
     }
 
     /// Declare a navigable screen `name` served from `source`. The host's
-    /// browser-style navigation (`navigate(name)`) fetches this source via the
-    /// built-in [`NAVIGATE`] mutation; the set of declared screens is the
-    /// navigation allowlist. Fluent — chain one `.screen(...)` per screen.
+    /// browser-style navigation (`navigate(name)`) fetches this source via a
+    /// `navigate` request; the set of declared screens is the navigation
+    /// allowlist. Fluent — chain one `.screen(...)` per screen.
     ///
     /// The home `script` from [`new`](Self::new) is screen 0 and need not be
     /// re-declared here (the host already holds it); declare the screens it can
-    /// navigate *to*. An app that wants navigation effects (logging, priming data)
-    /// can instead register its own `navigate` handler with
-    /// [`Provider::on_mutation`], which takes precedence over this built-in.
+    /// navigate *to*. An app that wants navigation effects (logging, priming
+    /// data) registers [`Provider::on_navigate`] instead, which replaces this
+    /// built-in lookup.
     pub fn screen(mut self, name: impl Into<String>, source: impl Into<String>) -> PanelUi<S> {
         self.screens.insert(name.into(), source.into());
         self
@@ -108,7 +111,7 @@ struct PlainSink<'a, W: Write>(RefCell<&'a mut W>);
 
 impl<W: Write> Sink for PlainSink<'_, W> {
     fn send(&self, env: &Envelope) -> io::Result<()> {
-        wire::write_message(&mut *self.0.borrow_mut(), env)
+        gpp::write_message(&mut *self.0.borrow_mut(), env)
     }
 }
 
@@ -132,7 +135,7 @@ impl Sink for ScriptSink {
             .writer
             .lock()
             .map_err(|_| io::Error::other("gpp sink poisoned"))?;
-        wire::write_message(&mut *w, env)
+        gpp::write_message(&mut *w, env)
     }
 }
 
@@ -162,7 +165,7 @@ impl ScriptSink {
     }
 }
 
-/// Run `provider` as a panel-mode GPP app on stdio until `shutdown` / EOF,
+/// Run `provider` as a GPP client app on stdio until `shutdown` / EOF,
 /// presenting it with `ui` (pane name + UI script). Blocks the calling thread;
 /// this is an app's `main`.
 pub fn serve<S: 'static>(provider: Provider<S>, ui: PanelUi<S>) -> io::Result<()> {
@@ -210,6 +213,24 @@ pub fn serve_on<S: 'static, R: BufRead, W: Write>(
     serve_core(provider, ui, reader, &sink, |_| {})
 }
 
+/// Map a handler [`Reply`] onto the wire: a value becomes a success response
+/// carrying it (with the cache policy unless it is the default), an error an
+/// [`error_code::APP`] error response, and "still loading" an empty result.
+fn query_response(id: u64, reply: Reply) -> Envelope {
+    let (value, error, policy) = reply.into_parts();
+    match error {
+        Some(message) => Envelope::error_response(id, error_code::APP, message),
+        None => Envelope::response(
+            id,
+            QueryResult {
+                value,
+                // Omit a forever policy so the default adds nothing to the wire.
+                cache: (policy != CachePolicy::forever()).then_some(policy),
+            },
+        ),
+    }
+}
+
 /// The protocol loop, over any [`Sink`]. `on_ready` runs once the panel's script
 /// has been pushed.
 fn serve_core<S: 'static, R: BufRead, K: Sink>(
@@ -219,15 +240,37 @@ fn serve_core<S: 'static, R: BufRead, K: Sink>(
     writer: &K,
     on_ready: impl FnOnce(&K),
 ) -> io::Result<()> {
-    // 1. Handshake: read `initialize`, build state, reply in panel mode.
-    let init_env = match wire::read_message(reader)? {
+    // 1. Handshake: read `initialize`, check the protocol version, build state,
+    //    reply.
+    let init_env = match gpp::read_message(reader)? {
         Some(env) if env.is_method(method::INITIALIZE) => env,
         _ => return Ok(()), // EOF or unexpected first message
     };
     let id = init_env.id.unwrap_or(1);
-    let init: InitializeParams = init_env
-        .params_as()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let init: InitializeParams = match init_env.params_as() {
+        Ok(init) => init,
+        Err(e) => {
+            writer.send(&Envelope::error_response(
+                id,
+                error_code::INVALID_PARAMS,
+                format!("bad initialize params: {e}"),
+            ))?;
+            return Ok(());
+        }
+    };
+    if init.protocol != PROTOCOL_VERSION {
+        // A major mismatch ends the session cleanly: the host reads this error
+        // and surfaces it in the pane instead of a wedged panel.
+        writer.send(&Envelope::error_response(
+            id,
+            error_code::PROTOCOL_MISMATCH,
+            format!(
+                "this app speaks gpp protocol {PROTOCOL_VERSION}, the host sent {}",
+                init.protocol
+            ),
+        ))?;
+        return Ok(());
+    }
 
     let mut state = provider.build(&init);
 
@@ -247,8 +290,9 @@ fn serve_core<S: 'static, R: BufRead, K: Sink>(
     writer.send(&Envelope::response(
         id,
         InitializeResult {
+            protocol: PROTOCOL_VERSION,
             name,
-            mode: "panel".to_string(),
+            capabilities: CLIENT_CAPABILITIES.iter().map(|c| c.to_string()).collect(),
         },
     ))?;
 
@@ -262,34 +306,96 @@ fn serve_core<S: 'static, R: BufRead, K: Sink>(
     on_ready(writer);
 
     // 3. Answer requests until shutdown / EOF.
-    while let Some(env) = wire::read_message(reader)? {
+    while let Some(env) = gpp::read_message(reader)? {
         if env.is_method(method::QUERY) {
             let req_id = env.id.unwrap_or(0);
             let q: QueryParams = match env.params_as() {
                 Ok(q) => q,
                 Err(e) => {
-                    eprintln!("petal-query: bad query params: {e}");
+                    writer.send(&Envelope::error_response(
+                        req_id,
+                        error_code::INVALID_PARAMS,
+                        format!("bad query params: {e}"),
+                    ))?;
                     continue;
                 }
             };
             let reply = provider.answer(
                 &mut state,
-                &crate::provider::QueryContext {
+                &QueryContext {
                     kind: &q.kind,
                     arg: &q.arg,
                     init: &init,
                 },
             );
-            let (value, error, policy) = reply.into_parts();
-            let result = QueryResult {
-                kind: q.kind,
-                arg: q.arg,
-                value,
-                error,
-                // Omit a forever policy so the wire is unchanged for the default.
-                cache_control: (policy != CachePolicy::forever()).then_some(policy),
+            writer.send(&query_response(req_id, reply))?;
+        } else if env.is_method(method::MUTATE) {
+            let req_id = env.id.unwrap_or(0);
+            let m: MutateParams = match env.params_as() {
+                Ok(m) => m,
+                Err(e) => {
+                    writer.send(&Envelope::error_response(
+                        req_id,
+                        error_code::INVALID_PARAMS,
+                        format!("bad mutate params: {e}"),
+                    ))?;
+                    continue;
+                }
             };
-            writer.send(&Envelope::response(req_id, result))?;
+            let reply = provider.mutate(
+                &mut state,
+                &MutateContext {
+                    name: &m.name,
+                    arg: &m.arg,
+                    init: &init,
+                },
+            );
+            let (value, error, _policy) = reply.into_parts();
+            let response = match error {
+                Some(message) => Envelope::error_response(req_id, error_code::APP, message),
+                None => Envelope::response(req_id, MutateResult { value }),
+            };
+            writer.send(&response)?;
+        } else if env.is_method(method::NAVIGATE) {
+            let req_id = env.id.unwrap_or(0);
+            let n: NavigateParams = match env.params_as() {
+                Ok(n) => n,
+                Err(e) => {
+                    writer.send(&Envelope::error_response(
+                        req_id,
+                        error_code::INVALID_PARAMS,
+                        format!("bad navigate params: {e}"),
+                    ))?;
+                    continue;
+                }
+            };
+            // A registered on_navigate handler wins (side effects + source);
+            // otherwise the built-in serves a declared screen. The declared set
+            // is the allowlist: an undeclared screen is refused.
+            let outcome = provider
+                .navigate(
+                    &mut state,
+                    &NavigateContext {
+                        screen: &n.screen,
+                        arg: &n.arg,
+                        init: &init,
+                    },
+                )
+                .unwrap_or_else(|| match screens.get(&n.screen) {
+                    Some(source) => Ok(source.clone()),
+                    None => Err(format!("no such screen '{}'", n.screen)),
+                });
+            let response = match outcome {
+                Ok(source) => Envelope::response(
+                    req_id,
+                    NavigateResult {
+                        screen: n.screen,
+                        source,
+                    },
+                ),
+                Err(message) => Envelope::error_response(req_id, error_code::APP, message),
+            };
+            writer.send(&response)?;
         } else if env.is_method(method::EMIT) {
             let p: EmitParams = match env.params_as() {
                 Ok(p) => p,
@@ -300,66 +406,25 @@ fn serve_core<S: 'static, R: BufRead, K: Sink>(
             };
             provider.handle_emit(
                 &mut state,
-                &crate::provider::EmitContext {
+                &EmitContext {
                     event: &p.event,
                     arg: &p.arg,
                     init: &init,
                 },
             );
-        } else if env.is_method(method::MUTATE) {
-            let req_id = env.id.unwrap_or(0);
-            let m: MutateParams = match env.params_as() {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("petal-query: bad mutate params: {e}");
-                    continue;
-                }
-            };
-            // An app-registered handler wins; otherwise the built-in `navigate`
-            // serves a declared screen's source. An unregistered, non-navigate
-            // mutation falls through to `provider.mutate`, which errors.
-            let reply = if !provider.has_mutation(&m.name) && m.name == NAVIGATE {
-                builtin_navigate(&screens, &m.arg)
-            } else {
-                provider.mutate(
-                    &mut state,
-                    &MutateContext {
-                        name: &m.name,
-                        arg: &m.arg,
-                        init: &init,
-                    },
-                )
-            };
-            let (value, error, _policy) = reply.into_parts();
-            writer.send(&Envelope::response(
-                req_id,
-                MutateResult {
-                    name: m.name,
-                    value,
-                    error,
-                },
-            ))?;
         } else if env.is_method(method::SHUTDOWN) {
             return Ok(());
+        } else if let (Some(req_id), Some(m)) = (env.id, env.method.as_deref()) {
+            // An unknown *request* deserves an answer, or the host would wait
+            // out its timeout; unknown notifications are silently skipped.
+            writer.send(&Envelope::error_response(
+                req_id,
+                error_code::METHOD_NOT_FOUND,
+                format!("unknown method '{m}'"),
+            ))?;
         }
-        // `resize`, `invalidate`, and unknown notifications need no action.
     }
     Ok(())
-}
-
-/// Answer the built-in [`NAVIGATE`] mutation: look the requested `screen` up in
-/// the panel's declared `screens` and return its source. The declared set is the
-/// allowlist — an undeclared screen is an error, so a script can only navigate to
-/// screens the app shipped. `arg` is `{ "screen": name }`; on success the reply
-/// value is `{ "screen": name, "source": <ptl source> }`.
-fn builtin_navigate(screens: &HashMap<String, String>, arg: &serde_json::Value) -> Reply {
-    let Some(screen) = arg.get("screen").and_then(|v| v.as_str()) else {
-        return Reply::error("navigate: missing 'screen' argument".to_string());
-    };
-    match screens.get(screen) {
-        Some(source) => Reply::json(serde_json::json!({ "screen": screen, "source": source })),
-        None => Reply::error(format!("navigate: no such screen '{screen}'")),
-    }
 }
 
 #[cfg(test)]
@@ -372,40 +437,58 @@ mod tests {
     fn input(envs: Vec<Envelope>) -> Cursor<Vec<u8>> {
         let mut buf = Vec::new();
         for env in &envs {
-            wire::write_message(&mut buf, env).unwrap();
+            gpp::write_message(&mut buf, env).unwrap();
         }
         Cursor::new(buf)
     }
 
     fn init_req() -> Envelope {
-        Envelope {
-            jsonrpc: "2.0".into(),
-            id: Some(1),
-            method: Some(method::INITIALIZE.into()),
-            params: Some(json!({
-                "paneId": 0, "rows": 40, "cols": 120,
-                "args": ["/repo"], "cwd": "/repo"
-            })),
-            result: None,
-            error: None,
-        }
+        Envelope::request(
+            1,
+            method::INITIALIZE,
+            InitializeParams {
+                protocol: PROTOCOL_VERSION,
+                pane_id: 0,
+                rows: 40,
+                cols: 120,
+                args: vec!["/repo".to_string()],
+                cwd: "/repo".to_string(),
+                capabilities: vec![],
+            },
+        )
     }
 
-    fn query_req(id: u64, kind: &str, arg: &str) -> Envelope {
-        Envelope {
-            jsonrpc: "2.0".into(),
-            id: Some(id),
-            method: Some(method::QUERY.into()),
-            params: Some(
-                serde_json::to_value(QueryParams {
-                    kind: kind.into(),
-                    arg: arg.into(),
-                })
-                .unwrap(),
-            ),
-            result: None,
-            error: None,
-        }
+    fn query_req(id: u64, kind: &str, arg: serde_json::Value) -> Envelope {
+        Envelope::request(
+            id,
+            method::QUERY,
+            QueryParams {
+                kind: kind.into(),
+                arg,
+            },
+        )
+    }
+
+    fn mutate_req(id: u64, name: &str, arg: serde_json::Value) -> Envelope {
+        Envelope::request(
+            id,
+            method::MUTATE,
+            MutateParams {
+                name: name.into(),
+                arg,
+            },
+        )
+    }
+
+    fn navigate_req(id: u64, screen: &str, arg: serde_json::Value) -> Envelope {
+        Envelope::request(
+            id,
+            method::NAVIGATE,
+            NavigateParams {
+                screen: screen.into(),
+                arg,
+            },
+        )
     }
 
     fn shutdown() -> Envelope {
@@ -415,14 +498,21 @@ mod tests {
     fn output(buf: &[u8]) -> Vec<Envelope> {
         let mut reader = std::io::BufReader::new(buf);
         let mut out = Vec::new();
-        while let Some(env) = wire::read_message(&mut reader).unwrap() {
+        while let Some(env) = gpp::read_message(&mut reader).unwrap() {
             out.push(env);
         }
         out
     }
 
+    /// The response with `id` in the output, panicking when absent.
+    fn response_with_id(msgs: &[Envelope], id: u64) -> &Envelope {
+        msgs.iter()
+            .find(|e| e.is_response() && e.id == Some(id))
+            .unwrap_or_else(|| panic!("no response with id {id}"))
+    }
+
     #[test]
-    fn handshake_pushes_panel_mode_and_script() {
+    fn handshake_reports_protocol_2_and_pushes_the_script() {
         let mut r = input(vec![init_req(), shutdown()]);
         let mut w: Vec<u8> = Vec::new();
         serve_on(
@@ -433,10 +523,39 @@ mod tests {
         )
         .unwrap();
         let msgs = output(&w);
-        assert_eq!(msgs[0].result.as_ref().unwrap()["mode"], "panel");
-        assert_eq!(msgs[0].result.as_ref().unwrap()["name"], "demo");
+        let init = msgs[0].result.as_ref().unwrap();
+        assert_eq!(init["protocol"], 2);
+        assert_eq!(init["name"], "demo");
+        assert!(init["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "query"));
         assert!(msgs[1].is_method(method::SET_SCRIPT));
         assert_eq!(msgs[1].params.as_ref().unwrap()["source"], "SCRIPT");
+    }
+
+    #[test]
+    fn a_protocol_mismatch_is_refused_with_a_clean_error() {
+        let old = Envelope::request(
+            1,
+            method::INITIALIZE,
+            json!({ "paneId": 0, "rows": 5, "cols": 5, "args": [], "cwd": "." }),
+        );
+        let mut r = input(vec![old]);
+        let mut w: Vec<u8> = Vec::new();
+        serve_on(
+            Provider::stateless(),
+            PanelUi::new("demo", "S"),
+            &mut r,
+            &mut w,
+        )
+        .unwrap();
+        let msgs = output(&w);
+        assert_eq!(msgs.len(), 1, "no script push after a refused handshake");
+        let err = msgs[0].error.as_ref().unwrap();
+        assert_eq!(err.code, error_code::PROTOCOL_MISMATCH);
+        assert!(err.message.contains("protocol 2"));
     }
 
     #[test]
@@ -453,11 +572,11 @@ mod tests {
     }
 
     #[test]
-    fn dispatches_query_with_state_and_policy() {
+    fn queries_answer_by_id_with_json_args_and_policies() {
         let mut r = input(vec![
             init_req(),
-            query_req(5, "log", ""),
-            query_req(6, "commit", "abc"),
+            query_req(5, "log", json!("")),
+            query_req(6, "table", json!({ "name": "users", "page": 2 })),
             shutdown(),
         ]);
         let mut w: Vec<u8> = Vec::new();
@@ -466,68 +585,99 @@ mod tests {
                 Reply::json(json!({ "repo": repo.clone() }))
                     .max_age(std::time::Duration::from_secs(3))
             })
-            .query("commit", |_repo, ctx| {
-                Reply::json(json!({ "hash": ctx.arg }))
+            .query("table", |_repo, ctx| {
+                Reply::json(json!({ "page": ctx.arg["page"] }))
             });
         serve_on(provider, PanelUi::new("git", "S"), &mut r, &mut w).unwrap();
 
         let msgs = output(&w);
-        let log = msgs[2].result.as_ref().unwrap();
+        let log = response_with_id(&msgs, 5).result.as_ref().unwrap();
         assert_eq!(log["value"]["repo"], "/repo");
-        assert_eq!(log["cacheControl"]["maxAgeMs"], 3000);
-        let commit = msgs[3].result.as_ref().unwrap();
-        assert_eq!(commit["value"]["hash"], "abc");
-        assert!(commit.get("cacheControl").is_none());
-    }
-
-    fn mutate_req(id: u64, name: &str, arg: serde_json::Value) -> Envelope {
-        Envelope {
-            jsonrpc: "2.0".into(),
-            id: Some(id),
-            method: Some(method::MUTATE.into()),
-            params: Some(
-                serde_json::to_value(MutateParams {
-                    name: name.into(),
-                    arg,
-                })
-                .unwrap(),
-            ),
-            result: None,
-            error: None,
-        }
+        assert_eq!(log["cache"]["maxAgeMs"], 3000);
+        // No kind/arg echo anywhere in the result — the id is the correlation.
+        assert!(log.get("kind").is_none());
+        assert!(log.get("arg").is_none());
+        let table = response_with_id(&msgs, 6).result.as_ref().unwrap();
+        assert_eq!(table["value"]["page"], 2);
+        assert!(table.get("cache").is_none(), "forever adds nothing");
     }
 
     #[test]
-    fn builtin_navigate_serves_a_declared_screen_and_refuses_others() {
+    fn a_failed_query_is_an_error_response() {
+        let mut r = input(vec![init_req(), query_req(4, "boom", json!("")), shutdown()]);
+        let mut w: Vec<u8> = Vec::new();
+        let provider =
+            Provider::stateless().query("boom", |_s, _ctx| Reply::error("upstream failed"));
+        serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
+        let resp = output(&w)
+            .into_iter()
+            .find(|e| e.id == Some(4))
+            .expect("a response for id 4");
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, error_code::APP);
+        assert_eq!(err.message, "upstream failed");
+    }
+
+    #[test]
+    fn a_loading_reply_is_an_empty_result() {
+        let mut r = input(vec![init_req(), query_req(4, "slow", json!("")), shutdown()]);
+        let mut w: Vec<u8> = Vec::new();
+        let provider = Provider::stateless().query("slow", |_s, _ctx| Reply::loading());
+        serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
+        let msgs = output(&w);
+        let resp = response_with_id(&msgs, 4);
+        assert_eq!(resp.result.as_ref().unwrap(), &json!({}));
+    }
+
+    #[test]
+    fn navigate_serves_a_declared_screen_and_refuses_others() {
         let mut r = input(vec![
             init_req(),
-            mutate_req(7, NAVIGATE, json!({ "screen": "b.ptl" })),
-            mutate_req(8, NAVIGATE, json!({ "screen": "missing.ptl" })),
+            navigate_req(7, "b.ptl", json!(null)),
+            navigate_req(8, "missing.ptl", json!(null)),
             shutdown(),
         ]);
         let mut w: Vec<u8> = Vec::new();
         let ui = PanelUi::new("home", "HOME").screen("b.ptl", "SOURCE_B");
         serve_on(Provider::stateless(), ui, &mut r, &mut w).unwrap();
         let msgs = output(&w);
-        // The declared screen resolves to its source; an undeclared one errors.
-        let ok = msgs[2].result.as_ref().unwrap();
-        assert_eq!(ok["name"], "navigate");
-        assert_eq!(ok["value"]["source"], "SOURCE_B");
-        assert_eq!(ok["value"]["screen"], "b.ptl");
-        assert!(
-            ok.get("cacheControl").is_none(),
-            "mutations are never cached"
-        );
-        let err = msgs[3].result.as_ref().unwrap();
-        assert!(err["error"].as_str().unwrap().contains("no such screen"));
+        let ok = response_with_id(&msgs, 7).result.as_ref().unwrap();
+        assert_eq!(ok["screen"], "b.ptl");
+        assert_eq!(ok["source"], "SOURCE_B");
+        let refused = msgs.iter().find(|e| e.id == Some(8)).unwrap();
+        let err = refused.error.as_ref().unwrap();
+        assert_eq!(err.code, error_code::APP);
+        assert!(err.message.contains("no such screen"));
     }
 
     #[test]
-    fn app_registered_mutation_takes_precedence_and_is_effectful() {
+    fn a_custom_navigate_handler_takes_precedence_and_sees_the_arg() {
+        let mut r = input(vec![
+            init_req(),
+            navigate_req(7, "detail.ptl", json!({ "id": 9 })),
+            shutdown(),
+        ]);
+        let mut w: Vec<u8> = Vec::new();
+        let provider = Provider::new(|_| 0i64).on_navigate(|visits: &mut i64, ctx| {
+            *visits += 1;
+            Ok(format!("// {} for id {} visit {visits}", ctx.screen, ctx.arg["id"]))
+        });
+        // The declared screen would say something else; the handler wins.
+        let ui = PanelUi::new("home", "HOME").screen("detail.ptl", "DECLARED");
+        serve_on(provider, ui, &mut r, &mut w).unwrap();
+        let msgs = output(&w);
+        let ok = response_with_id(&msgs, 7).result.as_ref().unwrap();
+        assert_eq!(ok["source"], "// detail.ptl for id 9 visit 1");
+    }
+
+    #[test]
+    fn mutations_dispatch_are_effectful_and_error_by_envelope() {
         let mut r = input(vec![
             init_req(),
             mutate_req(9, "select", json!({ "row": 3 })),
-            query_req(10, "selected", ""),
+            query_req(10, "selected", json!("")),
+            mutate_req(11, "unknown", json!(null)),
             shutdown(),
         ]);
         let mut w: Vec<u8> = Vec::new();
@@ -540,8 +690,18 @@ mod tests {
             .query("selected", |s: &mut i64, _ctx| Reply::json(*s));
         serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
         let msgs = output(&w);
-        assert_eq!(msgs[2].result.as_ref().unwrap()["value"]["ok"], true);
-        assert_eq!(msgs[3].result.as_ref().unwrap()["value"], 3);
+        assert_eq!(
+            response_with_id(&msgs, 9).result.as_ref().unwrap()["value"]["ok"],
+            true
+        );
+        assert_eq!(
+            response_with_id(&msgs, 10).result.as_ref().unwrap()["value"],
+            3
+        );
+        let unknown = msgs.iter().find(|e| e.id == Some(11)).unwrap();
+        let err = unknown.error.as_ref().unwrap();
+        assert_eq!(err.code, error_code::APP);
+        assert!(err.message.contains("no mutation handler"));
     }
 
     #[test]
@@ -553,12 +713,7 @@ mod tests {
                 arg: json!({ "left_frac": 300 }),
             },
         );
-        let mut r = input(vec![
-            init_req(),
-            emit,
-            query_req(2, "state", ""),
-            shutdown(),
-        ]);
+        let mut r = input(vec![init_req(), emit, query_req(2, "state", json!("")), shutdown()]);
         let mut w: Vec<u8> = Vec::new();
         let provider = Provider::new(|_| 0i64)
             .on_emit("ui_state", |s: &mut i64, ctx| {
@@ -566,7 +721,38 @@ mod tests {
             })
             .query("state", |s: &mut i64, _ctx| Reply::json(*s));
         serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
-        assert_eq!(output(&w)[2].result.as_ref().unwrap()["value"], 300);
+        let msgs = output(&w);
+        assert_eq!(
+            response_with_id(&msgs, 2).result.as_ref().unwrap()["value"],
+            300
+        );
+    }
+
+    #[test]
+    fn an_unknown_request_gets_method_not_found() {
+        let mut r = input(vec![
+            init_req(),
+            Envelope::request(12, "futureThing", json!({})),
+            Envelope::notification("futureNotification", json!({})),
+            shutdown(),
+        ]);
+        let mut w: Vec<u8> = Vec::new();
+        serve_on(
+            Provider::stateless(),
+            PanelUi::new("demo", "S"),
+            &mut r,
+            &mut w,
+        )
+        .unwrap();
+        let msgs = output(&w);
+        let unknown = msgs.iter().find(|e| e.id == Some(12)).unwrap();
+        assert_eq!(
+            unknown.error.as_ref().unwrap().code,
+            error_code::METHOD_NOT_FOUND
+        );
+        // The unknown notification was skipped without an answer: only the
+        // initialize response, the script push, and the one error went out.
+        assert_eq!(msgs.len(), 3);
     }
 
     /// A writer several threads can hold, so a test can read what the sink and

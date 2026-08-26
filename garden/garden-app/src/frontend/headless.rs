@@ -202,7 +202,6 @@ impl Frontend for HeadlessFrontend {
             }
             app.poll_script();
             app.poll_files();
-            app.poll_processes();
             app.poll_lsp();
             app.poll_script_clients();
             app.tick_panels(); // panels animate at the poll cadence here

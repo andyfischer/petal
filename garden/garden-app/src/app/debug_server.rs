@@ -212,6 +212,9 @@ impl App {
         })
     }
 
+    /// The unfiltered `/state` document — the form the in-memory tests assert
+    /// on (the debug server itself always goes through the filtered form).
+    #[cfg(test)]
     pub(in crate::app) fn state_json(&mut self) -> Value {
         self.state_json_filtered(&debug::ValueFilter::default())
     }
@@ -236,20 +239,12 @@ impl App {
             .map(|(i, pane)| {
                 json!({
                     "index": i,
-                    "kind": if pane.is_process() {
-                        "process"
-                    } else if pane.is_panel() {
-                        "panel"
-                    } else {
-                        "editor"
-                    },
-                    "process": pane.process.as_ref().map(|proc| json!({
-                        "name": proc.name(),
-                        "takeover": proc.takeover(),
-                        "keymap": proc.keymap(),
-                    })),
+                    "kind": if pane.is_panel() { "panel" } else { "editor" },
                     "panel": pane.panel.as_ref().map(|pv| json!({
                         "script": pv.script(),
+                        // The GPP client app driving this pane (its spawn
+                        // command), or null for an in-process panel.
+                        "client": pv.client_name(),
                         "awake": pv.is_awake(std::time::Instant::now()),
                         "frame": pv.frame_count(),
                         // Every value the panel's last good frame bound, keyed

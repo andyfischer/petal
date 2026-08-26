@@ -1,9 +1,10 @@
 //! [`Provider`] — the generic query-request / provider-response core.
 //!
 //! A provider is "a web server for data": it answers `query(kind, arg)` calls
-//! against a per-run state `S`, and optionally reacts to fire-and-forget
-//! `emit(event, arg)` signals. That's the whole abstraction — it knows nothing
-//! about panes, UI scripts, or any particular transport, so it drops into any
+//! against a per-run state `S`, optionally reacts to fire-and-forget
+//! `emit(event, arg)` signals, runs effectful `mutation(name, arg)` calls, and
+//! serves screen sources for `navigate` requests. It knows nothing about panes,
+//! UI scripts, or any particular transport, so it drops into any
 //! query/response setting.
 //!
 //! ```no_run
@@ -25,8 +26,8 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::cache_control::CachePolicy;
-use crate::wire::InitializeParams;
+use crate::cache::CachePolicy;
+use ::gpp::InitializeParams;
 
 /// A provider's answer to one `query(kind, arg)`: the value (or an error) plus
 /// how cacheable it is. Build one with [`Reply::json`] / [`Reply::error`] /
@@ -60,6 +61,8 @@ impl Reply {
     }
 
     /// An error answer; the script surfaces `message` via `error_of` / `??`.
+    /// On the wire this becomes a JSON-RPC error response
+    /// ([`gpp::error_code::APP`]).
     pub fn error(message: impl Into<String>) -> Reply {
         Reply {
             outcome: Some(Err(message.into())),
@@ -69,7 +72,7 @@ impl Reply {
 
     /// "Still loading": neither value nor error. The host keeps the script's
     /// spinner up without re-requesting until the app pushes an
-    /// [`invalidate`](crate::wire::method::INVALIDATE) or the key is re-queried.
+    /// [`invalidate`](gpp::method::INVALIDATE) or the key is re-queried.
     /// Use when the real work is happening on a background thread the handler
     /// only polls.
     pub fn loading() -> Reply {
@@ -136,10 +139,21 @@ pub struct QueryContext<'a> {
     /// The query kind (matches the registered handler; useful when one closure
     /// serves several kinds).
     pub kind: &'a str,
-    /// The query argument (a commit hash, a file path, a filter string, …).
-    pub arg: &'a str,
+    /// The query argument — **any JSON value** (a commit hash string, a filter
+    /// record, …). GPP v2 carries it verbatim, so composite keys need no string
+    /// encoding. [`arg_str`](Self::arg_str) is the shorthand for the common
+    /// string case.
+    pub arg: &'a serde_json::Value,
     /// The handshake parameters, so a handler can consult `cwd`/`args`/size.
     pub init: &'a InitializeParams,
+}
+
+impl QueryContext<'_> {
+    /// The argument as a string — its `str` content when it is a JSON string,
+    /// `""` otherwise. The common case for handlers keyed by a scalar arg.
+    pub fn arg_str(&self) -> &str {
+        self.arg.as_str().unwrap_or("")
+    }
 }
 
 /// The context handed to an `emit` handler: the `event` name and its JSON `arg`,
@@ -160,7 +174,7 @@ pub struct EmitContext<'a> {
 /// beside `query` (a cacheable pull) and `emit` (a fire-and-forget push). Like
 /// `emit` its handler takes `&mut S` and may have side effects; unlike `emit` it
 /// returns a [`Reply`], and unlike `query` its result is **never cached**. Use it
-/// for GraphQL-style writes: navigate to a screen, commit a change, run a command.
+/// for GraphQL-style writes: commit a change, run a command, save a file.
 pub struct MutateContext<'a> {
     /// The mutation name (matches the registered handler).
     pub name: &'a str,
@@ -170,9 +184,23 @@ pub struct MutateContext<'a> {
     pub init: &'a InitializeParams,
 }
 
+/// The context handed to a custom `navigate` handler (see
+/// [`Provider::on_navigate`]): the target `screen`, the subject `arg` the
+/// two-argument `navigate(screen, arg)` form carried (`Null` otherwise), and
+/// the handshake params.
+pub struct NavigateContext<'a> {
+    /// The screen the script navigated to.
+    pub screen: &'a str,
+    /// The navigation subject (`nav_arg()` on the target screen), or `Null`.
+    pub arg: &'a serde_json::Value,
+    /// The handshake parameters.
+    pub init: &'a InitializeParams,
+}
+
 type QueryHandler<S> = Box<dyn FnMut(&mut S, &QueryContext) -> Reply>;
 type EmitHandler<S> = Box<dyn FnMut(&mut S, &EmitContext)>;
 type MutationHandler<S> = Box<dyn FnMut(&mut S, &MutateContext) -> Reply>;
+type NavigateHandler<S> = Box<dyn FnMut(&mut S, &NavigateContext) -> Result<String, String>>;
 
 /// A query/response provider over a per-run state `S`: a set of `kind` → handler
 /// and `event` → handler registrations, plus a `build_state` that materializes
@@ -190,6 +218,7 @@ pub struct Provider<S> {
     pub(crate) query_handlers: HashMap<String, QueryHandler<S>>,
     pub(crate) emit_handlers: HashMap<String, EmitHandler<S>>,
     pub(crate) mutation_handlers: HashMap<String, MutationHandler<S>>,
+    pub(crate) navigate_handler: Option<NavigateHandler<S>>,
 }
 
 impl Provider<()> {
@@ -208,6 +237,7 @@ impl<S: 'static> Provider<S> {
             query_handlers: HashMap::new(),
             emit_handlers: HashMap::new(),
             mutation_handlers: HashMap::new(),
+            navigate_handler: None,
         }
     }
 
@@ -224,7 +254,7 @@ impl<S: 'static> Provider<S> {
     }
 
     /// Register a handler for `emit(event, …)`. Fire-and-forget: the handler
-    /// acts on the signal (persist state, open a path) and returns nothing.
+    /// acts on the signal (persist state, kick a refresh) and returns nothing.
     pub fn on_emit(
         mut self,
         event: impl Into<String>,
@@ -245,6 +275,21 @@ impl<S: 'static> Provider<S> {
     ) -> Provider<S> {
         self.mutation_handlers
             .insert(name.into(), Box::new(handler));
+        self
+    }
+
+    /// Register a custom handler for the `navigate` request, replacing the
+    /// built-in declared-screens lookup (see
+    /// [`PanelUi::screen`](crate::gpp::PanelUi::screen)). The handler runs its
+    /// side effects (log the visit, prime the target screen's data) and returns
+    /// the target screen's UI **source** — or an `Err` to refuse the
+    /// navigation. Back/forward re-issue `navigate` for the restored entry, so
+    /// write the handler to be idempotent per visit.
+    pub fn on_navigate(
+        mut self,
+        handler: impl FnMut(&mut S, &NavigateContext) -> Result<String, String> + 'static,
+    ) -> Provider<S> {
+        self.navigate_handler = Some(Box::new(handler));
         self
     }
 
@@ -278,9 +323,7 @@ impl<S: 'static> Provider<S> {
         }
     }
 
-    /// Whether a mutation `name` has a registered handler. Lets a transport fall
-    /// back to a built-in (e.g. `gpp`'s screen-serving `navigate`) only when the
-    /// app has not overridden it.
+    /// Whether a mutation `name` has a registered handler.
     pub fn has_mutation(&self, name: &str) -> bool {
         self.mutation_handlers.contains_key(name)
     }
@@ -295,6 +338,19 @@ impl<S: 'static> Provider<S> {
             None => Reply::error(format!("no mutation handler for '{}'", ctx.name)),
         }
     }
+
+    /// Run the custom `navigate` handler, if one is registered. `None` means
+    /// no custom handler — the caller falls back to the declared-screens
+    /// lookup.
+    pub fn navigate(
+        &mut self,
+        state: &mut S,
+        ctx: &NavigateContext,
+    ) -> Option<Result<String, String>> {
+        self.navigate_handler
+            .as_mut()
+            .map(|handler| handler(state, ctx))
+    }
 }
 
 #[cfg(test)]
@@ -304,11 +360,13 @@ mod tests {
 
     fn init() -> InitializeParams {
         InitializeParams {
+            protocol: gpp::PROTOCOL_VERSION,
             pane_id: 0,
             rows: 40,
             cols: 120,
             args: vec!["/repo".to_string()],
             cwd: "/repo".to_string(),
+            capabilities: vec![],
         }
     }
 
@@ -320,11 +378,12 @@ mod tests {
             });
         let init = init();
         let mut state = p.build(&init);
+        let arg = json!("");
         let reply = p.answer(
             &mut state,
             &QueryContext {
                 kind: "log",
-                arg: "",
+                arg: &arg,
                 init: &init,
             },
         );
@@ -334,15 +393,59 @@ mod tests {
     }
 
     #[test]
+    fn arg_is_arbitrary_json_and_arg_str_covers_the_string_case() {
+        let mut p = Provider::stateless()
+            .query("table", |_s, ctx| {
+                // A composite key needs no string encoding.
+                Reply::json(json!({
+                    "name": ctx.arg["name"],
+                    "page": ctx.arg["page"],
+                }))
+            })
+            .query("commit", |_s, ctx| Reply::json(json!(ctx.arg_str())));
+        let init = init();
+        let mut state = p.build(&init);
+
+        let arg = json!({ "name": "users", "page": 3 });
+        let (v, _, _) = p
+            .answer(
+                &mut state,
+                &QueryContext {
+                    kind: "table",
+                    arg: &arg,
+                    init: &init,
+                },
+            )
+            .into_parts();
+        let v = v.unwrap();
+        assert_eq!(v["name"], "users");
+        assert_eq!(v["page"], 3);
+
+        let arg = json!("abc123");
+        let (v, _, _) = p
+            .answer(
+                &mut state,
+                &QueryContext {
+                    kind: "commit",
+                    arg: &arg,
+                    init: &init,
+                },
+            )
+            .into_parts();
+        assert_eq!(v.unwrap(), json!("abc123"));
+    }
+
+    #[test]
     fn unregistered_kind_answers_null() {
         let mut p = Provider::stateless();
         let init = init();
         let mut state = p.build(&init);
+        let arg = json!("");
         let reply = p.answer(
             &mut state,
             &QueryContext {
                 kind: "nope",
-                arg: "",
+                arg: &arg,
                 init: &init,
             },
         );
@@ -413,6 +516,49 @@ mod tests {
         let (v, e, _) = reply.into_parts();
         assert!(v.is_none());
         assert!(e.unwrap().contains("no mutation handler"));
+    }
+
+    #[test]
+    fn custom_navigate_handler_runs_with_screen_and_arg() {
+        let mut p = Provider::new(|_| Vec::<String>::new()).on_navigate(
+            |visits: &mut Vec<String>, ctx| {
+                visits.push(format!("{}:{}", ctx.screen, ctx.arg["id"]));
+                Ok(format!("// source for {}", ctx.screen))
+            },
+        );
+        let init = init();
+        let mut state = p.build(&init);
+        let arg = json!({ "id": 7 });
+        let out = p
+            .navigate(
+                &mut state,
+                &NavigateContext {
+                    screen: "detail.ptl",
+                    arg: &arg,
+                    init: &init,
+                },
+            )
+            .expect("handler registered");
+        assert_eq!(out.unwrap(), "// source for detail.ptl");
+        assert_eq!(state, vec!["detail.ptl:7"]);
+    }
+
+    #[test]
+    fn no_navigate_handler_reports_none() {
+        let mut p = Provider::stateless();
+        let init = init();
+        let mut state = p.build(&init);
+        let arg = json!(null);
+        assert!(p
+            .navigate(
+                &mut state,
+                &NavigateContext {
+                    screen: "x.ptl",
+                    arg: &arg,
+                    init: &init,
+                },
+            )
+            .is_none());
     }
 
     #[test]

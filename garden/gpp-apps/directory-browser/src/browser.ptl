@@ -1,0 +1,194 @@
+// directory-browser — the drawer.
+//
+// A netrw-style directory listing as a Petal graphical panel (see
+// docs/petal-graphical-panels.md). Like every GPP drawer this is a FIXED,
+// GENERIC script that bakes in no data: the listing arrives at runtime through
+// the async `query(kind, arg)` native, answered by the directory-browser
+// subprocess reading the filesystem:
+//
+//   query("list", dir) → {
+//     path:    "<canonical absolute dir>",
+//     parent:  "<absolute parent>" | nil,        // nil at the filesystem root
+//     home:    "<the user's home dir>" | nil,
+//     entries: [ { name, is_dir, path } … ] }    // dirs first, case-insensitive
+//
+// `dir` is "" for "the launch directory" (the pane's argument / cwd); once the
+// first listing lands the drawer latches the canonical path so every later
+// query is keyed by a real absolute path.
+//
+// Keyboard feel (vim-netrw): j/k (and arrows, space) move, g/G (Home/End) jump,
+// Enter/l/Right activates the selected row (descend into a directory, open a
+// file), h/Left/Backspace/- go to the parent, ~ jumps to the home directory.
+// A click selects a row; a double-click activates it.
+//
+// OPENING A FILE GOES TO THE HOST, NOT THE APP: `mutate("open_path", { path })`
+// is intercepted by App::host_mutation, which swaps this pane for a normal
+// editor (ending the GPP session).
+//
+// The host observes every named binding a frame makes and reports it at the
+// debug server (/state → panes[].panel.values), so `cur_dir`, `listing_ready`,
+// `row_count`, `selected`, `rows`, `content_top`, `scroll_px`, `ROW_H` and
+// `last_action` are the handles the integration test drives this screen by —
+// the script publishes nothing.
+
+// ── panel-local UI state ─────────────────────────────────────────────────────
+state dir = ""          // "" = the launch dir; latched to the canonical path
+state selected = 0
+state scroll_px = 0
+// The last activation this panel performed. A mutation is a one-frame edge;
+// the test reads the name a frame (or several) after the click that caused it.
+state last_action = ""
+
+// ── palette (the host color scheme via palette()) ────────────────────────────
+let P = palette()
+let BG     = P.window_bg
+let SEL    = P.sel
+let HOVER  = P.hover
+let TEXT   = P.text
+let MUT    = P.text_mut
+let FAINT  = P.text_faint
+let ACCENT = P.accent
+let BLUE   = P.blue
+let RED    = P.red
+
+let FS = 14
+let PAD = 12
+let ROW_H = 22
+
+let w = screen_width()
+let h = screen_height()
+
+// ── data ─────────────────────────────────────────────────────────────────────
+let rd = query("list", dir)
+let listing_ready = is_ready(rd)
+let listing_err = ""
+if is_error(rd) then listing_err = error_of(rd) ?? "could not list directory" end
+
+let cur_dir = dir
+let has_parent = false
+let parent_dir = ""
+let home_dir = ""
+let entries = []
+if listing_ready then
+  cur_dir = rd.path
+  // Latch the canonical path so later queries key by it (and the titlebar-ish
+  // header shows the real location, symlinks resolved).
+  if dir == "" then dir = rd.path end
+  if rd.parent != nil then
+    has_parent = true
+    parent_dir = rd.parent
+  end
+  home_dir = rd.home ?? ""
+  entries = rd.entries
+end
+
+// The flat row model: an optional ".." row, then the entries.
+let rows = []
+if has_parent then rows = append(rows, { name: "..", is_dir: true, path: parent_dir }) end
+for e in entries do rows = append(rows, e) end
+let row_count = len(rows)
+
+// ── geometry ─────────────────────────────────────────────────────────────────
+let header_h = 36
+let content_top = header_h
+let content_rect = {x: 0, y: content_top, w: w, h: h - content_top}
+let content_h = row_count * ROW_H
+
+// ── input: keyboard ──────────────────────────────────────────────────────────
+let key_moved = false
+if key_pressed("j") || key_pressed("down") || key_pressed("space") then selected = selected + 1; key_moved = true end
+if key_pressed("k") || key_pressed("up") then selected = selected - 1; key_moved = true end
+if key_pressed("g") || key_pressed("home") then selected = 0; key_moved = true end
+if key_pressed("G") || key_pressed("end") then selected = row_count - 1; key_moved = true end
+selected = int(clamp(selected, 0, max(0, row_count - 1)))
+
+// `activate` names the row to act on this frame (-1 = none): Enter/l/Right on
+// the selection, or a double-click on a row. The host spells Return "return".
+let activate = -1
+if key_pressed("return") || key_pressed("l") || key_pressed("right") then activate = selected end
+
+// Go up (h/Left/Backspace/-) and home (~) change the directory directly.
+let go_dir = ""
+if (key_pressed("h") || key_pressed("left") || key_pressed("backspace") || key_pressed("-")) && has_parent then
+  go_dir = parent_dir
+end
+if key_pressed("~") && len(home_dir) > 0 then go_dir = home_dir end
+
+// ── input: mouse (click selects, double-click activates) ─────────────────────
+if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
+  for i in range(0, row_count) do
+    let ry = content_top + i * ROW_H - scroll_px
+    if point_in(mouse_x(), mouse_y(), rect(0, ry, w, ROW_H)) then
+      selected = i
+      if click_count() >= 2 then activate = i end
+    end
+  end
+end
+
+// ── the activation itself ────────────────────────────────────────────────────
+if activate >= 0 && activate < row_count && listing_ready then
+  let row = rows[activate]
+  if row.is_dir then
+    go_dir = row.path
+  else
+    last_action = "open_path"
+    mutate("open_path", { path: row.path })
+  end
+end
+
+if len(go_dir) > 0 then
+  last_action = "chdir"
+  dir = go_dir
+  selected = 0
+  scroll_px = 0
+end
+
+// ── input: scrolling ─────────────────────────────────────────────────────────
+if hovered(content_rect) then scroll_px = scroll_px + scroll_y() * 24 end
+if key_moved && row_count > 0 then
+  scroll_px = ensure_visible_px(scroll_px, selected * ROW_H, ROW_H, content_rect.h)
+end
+scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
+
+// ── draw ─────────────────────────────────────────────────────────────────────
+clear(BG.r, BG.g, BG.b)
+
+// Header: the browsed directory (the drawer's own "title"), then a rule.
+draw_text(ellipsize(cur_dir, w - 2 * PAD, FS), {x: PAD, y: 9}, FS, ACCENT)
+draw_line({x: 0, y: header_h - 6}, {x: w, y: header_h - 6}, P.border)
+
+if len(listing_err) > 0 then
+  draw_text(ellipsize(listing_err, w - 2 * PAD, FS), {x: PAD, y: content_top + 6}, FS, RED)
+elsif !listing_ready then
+  draw_text("loading…", {x: PAD, y: content_top + 6}, FS, FAINT)
+elsif row_count == 0 then
+  draw_text("(empty directory)", {x: PAD, y: content_top + 6}, FS, FAINT)
+end
+
+clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
+for i in range(0, row_count) do
+  let row = rows[i]
+  let ry = content_top + i * ROW_H - scroll_px
+  // Cull rows scrolled out of the viewport.
+  if ry + ROW_H > content_rect.y && ry < content_rect.y + content_rect.h then
+    let row_r = rect(0, ry, w, ROW_H)
+    if i == selected then
+      draw_rect(row_r, SEL)
+    elsif hovered(row_r) then
+      draw_rect(row_r, HOVER)
+    end
+    let name_c = MUT
+    if i == selected then name_c = TEXT end
+    let label = row.name
+    if row.is_dir then
+      label = label ++ "/"
+      draw_rect(rect(0, ry + 3, 3, ROW_H - 6), BLUE)
+    end
+    draw_text(ellipsize_tail(label, w - 2 * PAD, FS), {x: PAD, y: ry + 3}, FS, name_c)
+  end
+end
+clip_none()
+
+if row_count > 0 then
+  draw_text_right("j/k move · Enter open · - up · ~ home", w - PAD, h - ROW_H, FS, FAINT)
+end

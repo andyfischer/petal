@@ -169,13 +169,13 @@ impl LspManager {
 
 impl super::App {
     /// Reconcile open editor documents with the language servers. Called once
-    /// per poll tick beside `poll_processes`.
+    /// per poll tick beside `poll_script_clients`.
     pub fn poll_lsp(&mut self) {
         // Snapshot the eligible open files first: (path, revision). Reading
         // text is deferred until a revision actually differs.
         let mut visible: Vec<(PathBuf, u64)> = Vec::new();
         for pane in &self.panes {
-            if pane.is_panel() || pane.is_process() {
+            if pane.is_panel() {
                 continue;
             }
             let Some(path) = pane.view.buffer.path() else {
@@ -304,7 +304,7 @@ impl super::App {
     fn buffer_text(&self, path: &std::path::Path) -> Option<String> {
         self.panes
             .iter()
-            .filter(|p| !p.is_panel() && !p.is_process())
+            .filter(|p| !p.is_panel())
             .find(|p| p.view.buffer.path() == Some(path))
             .map(|p| p.view.buffer.text())
     }

@@ -1,22 +1,25 @@
-//! The host side of a **panel-mode GPP client** (the script-push protocol; see
+//! The host side of a **GPP client pane** (the script-push protocol; see
 //! `docs/gpp.md`).
 //!
-//! A panel-mode client pushes a Petal UI script the host runs in its in-process
+//! A GPP client pushes a Petal UI script the host runs in its in-process
 //! [`PanelHost`](garden_script::PanelHost), and answers the script's
 //! `query(kind, arg)` calls over the pipe. This module is the bridge: a
 //! [`ProcessQueryProvider`] implements the synchronous, in-frame
 //! [`QueryProvider`] contract by reading a shared cache and **enqueuing** a pipe
 //! request for any key it needs; the owning [`PanelView`](crate::panel_view)
-//! flushes that queue to the subprocess and feeds `queryResult` answers back into
-//! the cache on the poll tick.
+//! flushes that queue to the subprocess and feeds the id-correlated query
+//! answers back into the cache on the poll tick.
 //!
-//! The cache itself is [`petal_query::Cache`], the reusable graduation of what
-//! used to be a hand-rolled `HashMap` here. It honors the
-//! [`CachePolicy`](petal_query::CachePolicy) each answer carries on its
-//! `cacheControl` field: a fresh answer is served without a refetch, a stale one
-//! is served *and* re-requested in the background (stale-while-revalidate), and
-//! an expired one falls back to a spinner while it refetches. An answer with no
-//! policy is fresh forever (cache until `invalidate`) — the historical behavior.
+//! The cache itself is [`petal_query::Cache`], keyed by `(kind, arg)` where the
+//! arg is **any JSON value** (GPP v2 carries query args verbatim). The script's
+//! `query(kind, arg)` native still passes a string arg, which this bridge wraps
+//! as a JSON string — the wire and cache are ready for richer keys the moment
+//! the script side grows them. The cache honors the
+//! [`CachePolicy`](petal_query::CachePolicy) each answer carries: a fresh
+//! answer is served without a refetch, a stale one is served *and* re-requested
+//! in the background (stale-while-revalidate), and an expired one falls back to
+//! a spinner while it refetches. An answer with no policy is fresh forever
+//! (cache until `invalidate`) — the historical behavior.
 //!
 //! Everything here runs on the main thread (the `PanelHost` and its provider are
 //! not `Send`, and the pipe is drained on the main thread), so the shared state
@@ -53,7 +56,7 @@ impl SharedQueryState {
     /// Report the current [`QueryState`] for `(kind, arg)` and schedule any fetch
     /// the cache's freshness policy calls for. Called synchronously inside a
     /// frame by [`ProcessQueryProvider::query`].
-    pub fn lookup(&mut self, kind: &str, arg: &str) -> QueryState {
+    pub fn lookup(&mut self, kind: &str, arg: &serde_json::Value) -> QueryState {
         match self.cache.lookup(kind, arg, Instant::now()) {
             Lookup::Ready(v) => QueryState::Ready(v),
             Lookup::Errored(e) => QueryState::Errored(e),
@@ -61,21 +64,21 @@ impl SharedQueryState {
         }
     }
 
-    /// Record a `queryResult` answer from the client. A `value` resolves the key
-    /// to a ready entry; an `error` (with no value) to an errored entry; neither
-    /// leaves it pending (the client is still working — we keep waiting without
-    /// re-requesting). The answer is stamped with `cache_control` (or
-    /// [`CachePolicy::forever`] when the client sent none) so later frames apply
-    /// its freshness.
+    /// Record a query answer from the client. A `value` resolves the key to a
+    /// ready entry; an `error` (with no value) to an errored entry; neither
+    /// leaves it pending (the client acknowledged the request but is still
+    /// working — we keep waiting without re-requesting). The answer is stamped
+    /// with `cache` (or [`CachePolicy::forever`] when the client sent none) so
+    /// later frames apply its freshness.
     pub fn resolve(
         &mut self,
         kind: String,
-        arg: String,
+        arg: &serde_json::Value,
         value: Option<serde_json::Value>,
         error: Option<String>,
-        cache_control: Option<CachePolicy>,
+        cache: Option<CachePolicy>,
     ) {
-        let policy = cache_control.unwrap_or_default();
+        let policy = cache.unwrap_or_default();
         let now = Instant::now();
         match (value, error) {
             (Some(v), _) => {
@@ -91,12 +94,12 @@ impl SharedQueryState {
 
     /// Drop a cached/requested key so the next `query` re-requests it — the
     /// client-pushed `invalidate` and the script's own `invalidate` both land here.
-    pub fn invalidate(&mut self, kind: &str, arg: &str) {
+    pub fn invalidate(&mut self, kind: &str, arg: &serde_json::Value) {
         self.cache.invalidate(kind, arg);
     }
 
     /// Take the queued `(kind, arg)` requests to send to the client this tick.
-    pub fn take_outbox(&mut self) -> Vec<(String, String)> {
+    pub fn take_outbox(&mut self) -> Vec<(String, serde_json::Value)> {
         self.cache.take_outbox()
     }
 }
@@ -118,15 +121,19 @@ impl ProcessQueryProvider {
 
 impl QueryProvider for ProcessQueryProvider {
     fn query(&mut self, kind: &str, arg: &str) -> QueryState {
-        self.shared.borrow_mut().lookup(kind, arg)
+        // The script native's arg is a string; on the wire (and in the cache)
+        // it is the JSON string value.
+        let arg = serde_json::Value::String(arg.to_string());
+        self.shared.borrow_mut().lookup(kind, &arg)
     }
 
     fn invalidate(&mut self, kind: &str, arg: &str) {
-        self.shared.borrow_mut().invalidate(kind, arg);
+        let arg = serde_json::Value::String(arg.to_string());
+        self.shared.borrow_mut().invalidate(kind, &arg);
     }
 }
 
-/// Project a `serde_json::Value` (a `queryResult`'s payload) onto the
+/// Project a `serde_json::Value` (a query answer's payload) onto the
 /// [`HostData`] tree the panel data channel speaks. JSON writes both integers
 /// and reals as `number`, so the split is recovered from the literal: a value
 /// that is exactly an integer becomes an [`Int`](HostData::Int), anything
@@ -163,6 +170,10 @@ mod tests {
     use serde_json::json;
     use std::time::Duration;
 
+    fn key(arg: &str) -> serde_json::Value {
+        json!(arg)
+    }
+
     #[test]
     fn miss_enqueues_once_and_reports_loading() {
         let shared = new_shared();
@@ -173,7 +184,7 @@ mod tests {
         // Re-querying the same key every frame does NOT re-enqueue.
         assert_eq!(provider.query("log", ""), QueryState::Loading);
         let outbox = shared.borrow_mut().take_outbox();
-        assert_eq!(outbox, vec![("log".to_string(), "".to_string())]);
+        assert_eq!(outbox, vec![("log".to_string(), key(""))]);
         // After draining, still no duplicate request (it's marked requested).
         assert_eq!(provider.query("log", ""), QueryState::Loading);
         assert!(shared.borrow_mut().take_outbox().is_empty());
@@ -188,7 +199,7 @@ mod tests {
 
         shared.borrow_mut().resolve(
             "commit".into(),
-            "abc".into(),
+            &key("abc"),
             Some(json!({ "body": "diff", "n": 3 })),
             None,
             None,
@@ -214,7 +225,7 @@ mod tests {
         provider.query("log", "");
         shared
             .borrow_mut()
-            .resolve("log".into(), "".into(), None, Some("no repo".into()), None);
+            .resolve("log".into(), &key(""), None, Some("no repo".into()), None);
         assert_eq!(
             provider.query("log", ""),
             QueryState::Errored("no repo".into())
@@ -229,7 +240,7 @@ mod tests {
         shared.borrow_mut().take_outbox();
         shared
             .borrow_mut()
-            .resolve("log".into(), "".into(), Some(json!({})), None, None);
+            .resolve("log".into(), &key(""), Some(json!({})), None, None);
         assert!(matches!(provider.query("log", ""), QueryState::Ready(_)));
 
         // Invalidate (as a client push or a script call) drops it; next query
@@ -238,8 +249,25 @@ mod tests {
         assert_eq!(provider.query("log", ""), QueryState::Loading);
         assert_eq!(
             shared.borrow_mut().take_outbox(),
-            vec![("log".to_string(), "".to_string())]
+            vec![("log".to_string(), key(""))]
         );
+    }
+
+    #[test]
+    fn a_client_pushed_json_invalidate_matches_the_script_key() {
+        // The client's invalidate carries a JSON arg; the script's string arg
+        // wraps to the same JSON string, so the keys meet.
+        let shared = new_shared();
+        let mut provider = ProcessQueryProvider::new(shared.clone());
+        provider.query("log", "x");
+        shared.borrow_mut().take_outbox();
+        shared
+            .borrow_mut()
+            .resolve("log".into(), &key("x"), Some(json!(1)), None, None);
+        assert!(matches!(provider.query("log", "x"), QueryState::Ready(_)));
+
+        shared.borrow_mut().invalidate("log", &json!("x"));
+        assert_eq!(provider.query("log", "x"), QueryState::Loading);
     }
 
     #[test]
@@ -253,7 +281,7 @@ mod tests {
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "live".into(),
-            "".into(),
+            &key(""),
             Some(json!({ "n": 1 })),
             None,
             Some(CachePolicy::no_store()),
@@ -262,7 +290,7 @@ mod tests {
         // Served AND a refetch was enqueued.
         assert_eq!(
             shared.borrow_mut().take_outbox(),
-            vec![("live".to_string(), "".to_string())]
+            vec![("live".to_string(), key(""))]
         );
     }
 
@@ -277,7 +305,7 @@ mod tests {
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "now".into(),
-            "".into(),
+            &key(""),
             Some(json!(1)),
             None,
             Some(CachePolicy::max_age(Duration::from_millis(0))),
@@ -286,7 +314,7 @@ mod tests {
         assert_eq!(provider.query("now", ""), QueryState::Loading);
         assert_eq!(
             shared.borrow_mut().take_outbox(),
-            vec![("now".to_string(), "".to_string())]
+            vec![("now".to_string(), key(""))]
         );
     }
 
@@ -325,7 +353,7 @@ mod tests {
 
     #[test]
     fn resolved_floats_reach_the_script_side_unrounded() {
-        // End of the client->host leg: what a `queryResult` carrying a float
+        // End of the client->host leg: what a query answer carrying a float
         // hands the panel runtime. The HUD bug was this exact shape — a meter
         // fraction that read back as 0.
         let shared = new_shared();
@@ -334,7 +362,7 @@ mod tests {
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "hud".into(),
-            "".into(),
+            &key(""),
             Some(json!({ "meters": [{ "label": "cpu", "fill": 0.42 }] })),
             None,
             None,

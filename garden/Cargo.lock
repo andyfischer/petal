@@ -821,7 +821,7 @@ dependencies = [
 name = "directory-browser"
 version = "0.1.0"
 dependencies = [
- "gpp",
+ "petal-query",
  "serde_json",
 ]
 
@@ -1541,7 +1541,6 @@ dependencies = [
 name = "gpp"
 version = "0.1.0"
 dependencies = [
- "petal-query",
  "serde",
  "serde_json",
 ]
@@ -2760,6 +2759,7 @@ dependencies = [
 name = "petal-query"
 version = "0.1.0"
 dependencies = [
+ "gpp",
  "serde",
  "serde_json",
 ]

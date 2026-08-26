@@ -299,16 +299,16 @@ pub struct EditorView {
     /// `render` messages (e.g. the browsed directory). When set it overrides
     /// the buffer-path title, which a process-backed pane doesn't have.
     external_title: Option<String>,
-    /// Per-line semantic style spans supplied from outside the buffer — a GPP
-    /// `render` with `styles`. When non-empty they replace syntax highlighting
-    /// for the lines they cover (a process pane has no language anyway); a line
-    /// with no entry renders plain. Cleared by every content replacement.
-    external_styles: Vec<Vec<gpp::StyleSpan>>,
-    /// Per-line background spans supplied from outside the buffer — a GPP
-    /// `render` with `backgrounds`. Each span tints a char-column range of its
-    /// line, drawn under the text. A line with no entry renders no background.
-    /// Cleared by every content replacement, like [`Self::external_styles`].
-    external_backgrounds: Vec<Vec<gpp::BgSpan>>,
+    /// Per-line semantic style spans supplied from outside the buffer (a panel
+    /// `text_view`'s line styling). When non-empty they replace syntax
+    /// highlighting for the lines they cover; a line with no entry renders
+    /// plain. Cleared by every content replacement.
+    external_styles: Vec<Vec<StyleSpan>>,
+    /// Per-line background spans supplied from outside the buffer. Each span
+    /// tints a char-column range of its line, drawn under the text. A line with
+    /// no entry renders no background. Cleared by every content replacement,
+    /// like [`Self::external_styles`].
+    external_backgrounds: Vec<Vec<BgSpan>>,
     /// Per-pane config: draw the line-number gutter. Defaults to `false`; set
     /// from the layout script's `editor(path, { line_numbers: true })`.
     pub show_line_numbers: bool,
@@ -806,49 +806,33 @@ impl EditorView {
         self.scroll.top = self.scroll.top.min(last);
     }
 
-    /// Set the per-line semantic style spans accompanying externally-supplied
-    /// content (a GPP `render` with `styles`); call right after
-    /// [`set_external_content`](Self::set_external_content), which clears them.
-    pub fn set_external_styles(&mut self, styles: Vec<Vec<gpp::StyleSpan>>) {
-        self.external_styles = styles;
-    }
-
-    /// Set the per-line background spans accompanying externally-supplied
-    /// content (a GPP `render` with `backgrounds`); call right after
-    /// [`set_external_content`](Self::set_external_content), which clears them.
-    pub fn set_external_backgrounds(&mut self, backgrounds: Vec<Vec<gpp::BgSpan>>) {
-        self.external_backgrounds = backgrounds;
-    }
-
     /// Apply per-line *semantic* styling to externally-supplied content: each
     /// `names[i]` tags line `i` with one of the palette names — `added`,
     /// `removed`, `hunk`, `title`, `dim`, `comment` — and the whole line is
     /// drawn in that foreground color, with a translucent background band for
     /// the diff kinds (`added`/`removed`/`hunk`). Any other value (including
-    /// `""`) leaves the line plain. This is a thin, script-facing wrapper over
-    /// [`set_external_styles`](Self::set_external_styles) /
-    /// [`set_external_backgrounds`](Self::set_external_backgrounds) that spares
-    /// the caller from computing char-column spans: it spans each whole line
-    /// using the buffer's own line lengths. Call after
+    /// `""`) leaves the line plain. It spares the caller from computing
+    /// char-column spans by spanning each whole line using the buffer's own
+    /// line lengths. Call after
     /// [`set_external_content`](Self::set_external_content), which clears styling.
     /// It backs a panel `text_view`'s line-styling side channel.
     pub fn set_external_line_styles(&mut self, names: &[String]) {
         let n = names.len().min(self.buffer.line_count());
-        let mut styles: Vec<Vec<gpp::StyleSpan>> = Vec::with_capacity(n);
-        let mut bgs: Vec<Vec<gpp::BgSpan>> = Vec::with_capacity(n);
+        let mut styles: Vec<Vec<StyleSpan>> = Vec::with_capacity(n);
+        let mut bgs: Vec<Vec<BgSpan>> = Vec::with_capacity(n);
         for (i, name) in names.iter().take(n).enumerate() {
             let len = self.buffer.line_len(i);
-            let (fg, bg): (Option<gpp::StyleKind>, Option<gpp::BgKind>) = match name.as_str() {
-                "added" => (Some(gpp::StyleKind::Added), Some(gpp::BgKind::Added)),
-                "removed" => (Some(gpp::StyleKind::Removed), Some(gpp::BgKind::Removed)),
-                "hunk" => (Some(gpp::StyleKind::Hunk), Some(gpp::BgKind::Header)),
-                "title" => (Some(gpp::StyleKind::Title), None),
-                "dim" => (Some(gpp::StyleKind::Dim), None),
-                "comment" => (Some(gpp::StyleKind::Comment), None),
+            let (fg, bg): (Option<StyleKind>, Option<BgKind>) = match name.as_str() {
+                "added" => (Some(StyleKind::Added), Some(BgKind::Added)),
+                "removed" => (Some(StyleKind::Removed), Some(BgKind::Removed)),
+                "hunk" => (Some(StyleKind::Hunk), Some(BgKind::Header)),
+                "title" => (Some(StyleKind::Title), None),
+                "dim" => (Some(StyleKind::Dim), None),
+                "comment" => (Some(StyleKind::Comment), None),
                 _ => (None, None),
             };
             styles.push(match fg {
-                Some(style) if len > 0 => vec![gpp::StyleSpan {
+                Some(style) if len > 0 => vec![StyleSpan {
                     start: 0,
                     end: len,
                     style,
@@ -856,7 +840,7 @@ impl EditorView {
                 _ => Vec::new(),
             });
             bgs.push(match bg {
-                Some(kind) if len > 0 => vec![gpp::BgSpan {
+                Some(kind) if len > 0 => vec![BgSpan {
                     start: 0,
                     end: len,
                     kind,
@@ -2319,37 +2303,69 @@ fn in_rect(r: Rect, x: f32, y: f32) -> bool {
     x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 }
 
+/// The semantic style of one externally-styled span — the panel `text_view`
+/// per-line styling vocabulary (see `text_view_line_styles`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StyleKind {
+    Added,
+    Removed,
+    Hunk,
+    Title,
+    Dim,
+    Comment,
+}
+
+/// One styled run within a line: char columns `[start, end)` (end exclusive).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct StyleSpan {
+    start: usize,
+    end: usize,
+    style: StyleKind,
+}
+
+/// The kind of background band painted behind a run of a line.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BgKind {
+    Added,
+    Removed,
+    Header,
+}
+
+/// One background run within a line: char columns `[start, end)`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct BgSpan {
+    start: usize,
+    end: usize,
+    kind: BgKind,
+}
+
 /// A color-resolved run within one line, in char columns: `[start, end)`.
-/// Syntax spans and external GPP style spans both reduce to this before
+/// Syntax spans and external style spans both reduce to this before
 /// drawing, so [`push_colored_runs`] has a single code path.
 type ColorRun = (usize, usize, Color);
 
-/// The themed color for one external (GPP `render`) style kind. Picked from
-/// the existing dark palette: diff adds are string-green, removals the error
-/// red, hunk headers function-blue, titles the type accent, and dim text the
-/// comment gray.
-fn style_color(style: gpp::StyleKind, theme: &theme::Theme) -> Color {
+/// The themed color for one external style kind. Picked from the existing dark
+/// palette: diff adds are string-green, removals the error red, hunk headers
+/// function-blue, titles the type accent, and dim text the comment gray.
+fn style_color(style: StyleKind, theme: &theme::Theme) -> Color {
     match style {
-        gpp::StyleKind::Added => theme.syntax_string,
-        gpp::StyleKind::Removed => theme.error_text,
-        gpp::StyleKind::Hunk => theme.syntax_function,
-        gpp::StyleKind::Title => theme.syntax_type,
-        gpp::StyleKind::Dim => theme.text_dim,
-        gpp::StyleKind::Comment => theme.syntax_function,
+        StyleKind::Added => theme.syntax_string,
+        StyleKind::Removed => theme.error_text,
+        StyleKind::Hunk => theme.syntax_function,
+        StyleKind::Title => theme.syntax_type,
+        StyleKind::Dim => theme.text_dim,
+        StyleKind::Comment => theme.syntax_function,
     }
 }
 
-/// The themed background color for one external (GPP `render`) background kind.
-/// These are translucent tints so they read on any theme background: diff rows
-/// pick up a faint green/red, comment blocks a muted blue band, a selected row
-/// the theme's selection tint, and a header band a light neutral wash.
-fn bg_color(kind: gpp::BgKind, theme: &theme::Theme) -> Color {
+/// The themed background color for one external background kind. Translucent
+/// tints so they read on any theme background: diff rows pick up a faint
+/// green/red, and a header band a light neutral wash.
+fn bg_color(kind: BgKind, _theme: &theme::Theme) -> Color {
     match kind {
-        gpp::BgKind::Added => theme::DIFF_ADDED_TINT,
-        gpp::BgKind::Removed => theme::DIFF_REMOVED_TINT,
-        gpp::BgKind::Comment => theme::rgba(0x6a, 0x82, 0xb8, 0.18),
-        gpp::BgKind::Selected => theme.selection,
-        gpp::BgKind::Header => theme::rgba(0x9a, 0xa4, 0xb2, 0.10),
+        BgKind::Added => theme::DIFF_ADDED_TINT,
+        BgKind::Removed => theme::DIFF_REMOVED_TINT,
+        BgKind::Header => theme::rgba(0x9a, 0xa4, 0xb2, 0.10),
     }
 }
 
@@ -3658,21 +3674,21 @@ mod tests {
 
     #[test]
     fn external_styles_render_colored_runs() {
-        // A GPP render with styles: whole-line added/removed colors, a styled
+        // External style spans: whole-line added/removed colors, a styled
         // head with a plain tail, and an unstyled line rendering default.
         let mut v = view("+new line\n-old line\nplain");
-        v.set_external_styles(vec![
-            vec![gpp::StyleSpan {
+        v.external_styles = vec![
+            vec![StyleSpan {
                 start: 0,
                 end: 9,
-                style: gpp::StyleKind::Added,
+                style: StyleKind::Added,
             }],
-            vec![gpp::StyleSpan {
+            vec![StyleSpan {
                 start: 0,
                 end: 4,
-                style: gpp::StyleKind::Removed,
+                style: StyleKind::Removed,
             }],
-        ]);
+        ];
 
         let theme = theme::Theme::default();
         let rect = Rect {
@@ -3699,37 +3715,25 @@ mod tests {
     #[test]
     fn external_style_palette_maps_to_theme_colors() {
         let theme = theme::Theme::default();
-        assert_eq!(
-            style_color(gpp::StyleKind::Added, &theme),
-            theme.syntax_string
-        );
-        assert_eq!(
-            style_color(gpp::StyleKind::Removed, &theme),
-            theme.error_text
-        );
-        assert_eq!(
-            style_color(gpp::StyleKind::Hunk, &theme),
-            theme.syntax_function
-        );
-        assert_eq!(
-            style_color(gpp::StyleKind::Title, &theme),
-            theme.syntax_type
-        );
+        assert_eq!(style_color(StyleKind::Added, &theme), theme.syntax_string);
+        assert_eq!(style_color(StyleKind::Removed, &theme), theme.error_text);
+        assert_eq!(style_color(StyleKind::Hunk, &theme), theme.syntax_function);
+        assert_eq!(style_color(StyleKind::Title, &theme), theme.syntax_type);
         // Dim shares text_dim with the gutter, so check the mapping directly.
-        assert_eq!(style_color(gpp::StyleKind::Dim, &theme), theme.text_dim);
+        assert_eq!(style_color(StyleKind::Dim, &theme), theme.text_dim);
     }
 
     #[test]
     fn new_external_content_clears_stale_styles() {
-        // A later render without styles (e.g. an older client, or a view that
-        // stopped styling) must drop back to plain rendering.
+        // A later content replacement without styles (a view that stopped
+        // styling) must drop back to plain rendering.
         let mut v = view("");
         v.set_external_content("+styled", None);
-        v.set_external_styles(vec![vec![gpp::StyleSpan {
+        v.external_styles = vec![vec![StyleSpan {
             start: 0,
             end: 7,
-            style: gpp::StyleKind::Added,
-        }]]);
+            style: StyleKind::Added,
+        }]];
         v.set_external_content("plain again", None);
 
         let theme = theme::Theme::default();

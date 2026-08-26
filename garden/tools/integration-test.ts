@@ -15,13 +15,13 @@
 // Usage:  node tools/integration-test.ts [--window]
 // Exit:   0 if every assertion passes, 1 otherwise.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { cargoBuild, launchGarden } from "./lib/app.ts";
 import { Checks } from "./lib/check.ts";
 import type { DebugClient } from "./lib/debug-client.ts";
-import { makeWorkDir, removeOnExit, sleep } from "./lib/util.ts";
+import { makeWorkDir, removeOnExit, sleep, waitUntil } from "./lib/util.ts";
 
 const mode = process.argv.includes("--window") ? [] : ["--headless"];
 
@@ -172,12 +172,15 @@ checks.check("% jumps to the matching bracket", (await g.pane()).cursor?.col, 4)
 await g.key("%"); // and back from the ')' to the '('
 checks.check("% jumps back to the opening bracket", (await g.pane()).cursor?.col, 0);
 
-// --- directory browser (GPP subprocess pane) --------------------------------
-// `garden <dir>` opens the directory-browser GPP client in pane 0: a navigable
-// listing whose text the subprocess pushes over the Garden Pane Protocol. The
-// host forwards the subscribed navigation keys; selecting a file asks the host
-// to swap the pane for a normal editor (openPath). This is a separate app
-// instance because it is launched on a directory argument, not the .ptl script.
+// --- directory browser (GPP script-client pane) ------------------------------
+// `garden <dir>` opens the directory-browser GPP app in pane 0: it pushes the
+// netrw-style `browser.ptl` drawer (which the host runs as an in-process panel)
+// and answers its `query("list", dir)` calls over the pipe. Keyboard and mouse
+// are handled by the drawer script; selecting a file goes through the
+// host-owned `open_path` mutation, which swaps the pane back to a normal
+// editor. This is a separate app instance because it is launched on a
+// directory argument, not the .ptl script. Assertions read the drawer's own
+// named bindings at /state → panes[].panel.values (see writing-gpp-apps.md).
 console.log("running directory-browser checks...");
 app.kill();
 
@@ -185,6 +188,9 @@ const dbroot = join(work, "dbtree");
 await mkdir(join(dbroot, "subdir"), { recursive: true });
 await writeFile(join(dbroot, "file_a.txt"), "hello world\n");
 await writeFile(join(dbroot, "subdir", "inner.txt"), "second\n");
+// The drawer reports canonical paths (macOS $TMPDIR is a symlink), so compare
+// against the resolved fixture path.
+const realDbroot = await realpath(dbroot);
 
 const browser = await launchGarden({
   args: [...mode, dbroot],
@@ -193,33 +199,46 @@ const browser = await launchGarden({
 });
 const b = browser.client;
 
-// The pane is process-backed; the subprocess identifies itself as the browser.
-checks.check("pane 0 is a process pane", (await b.pane()).kind, "process");
-checks.check("the process is directory-browser", (await b.pane()).process?.name, "directory-browser");
+// The pane is a panel driven by the directory-browser client; wait for its
+// first listing to land (the query round-trip is async).
+await waitUntil(() => b.panelValue("listing_ready"), (v) => v === true, { tries: 100, intervalMs: 50 });
+checks.check("pane 0 is a panel pane", (await b.pane()).kind, "panel");
+checks.checkContains(
+  "the client is directory-browser",
+  String((await b.pane()).panel?.client ?? ""),
+  "directory-browser",
+);
+checks.check("the drawer lists the launch dir", await b.panelValue("cur_dir"), realDbroot);
 
-// The initial listing shows ".." then the dir and file, with "> " on row 0.
-checks.check("listing marks the selected row", await b.firstLine(), "> ../");
-checks.check("listing shows the subdir", await countLines(b, "subdir/"), 1);
-checks.check("listing shows the file", await countLines(b, "file_a.txt"), 1);
+// Rows: "..", then the dir, then the file (dirs sort before files).
+checks.check("the listing has 3 rows", await b.panelValue("row_count"), 3);
+checks.check("rows are .. / subdir / file_a.txt", await rowNames(b), ["..", "subdir", "file_a.txt"]);
+checks.check("the selection starts at the top", await b.panelValue("selected"), 0);
 
-// j moves the selection marker down a row.
+// j moves the selection down a row.
 await b.key("j");
-checks.check("j moves the selection down", await selectedRow(b), 2);
+checks.check("j moves the selection down", await b.panelValue("selected"), 1);
 
-// Selection is now on "subdir/"; Enter descends into it.
+// Selection is now on "subdir"; Enter descends into it.
 await b.key("enter");
-checks.check("Enter descends into the subdir", await countLines(b, "inner.txt"), 1);
+await waitUntil(() => b.panelValue("cur_dir"), (v) => v === join(realDbroot, "subdir"), {
+  tries: 100,
+  intervalMs: 50,
+});
+checks.check("Enter descends into the subdir", await b.panelValue("cur_dir"), join(realDbroot, "subdir"));
+checks.check("the subdir listing shows its file", await rowNames(b), ["..", "inner.txt"]);
 
-// Go back up (Enter on the "..") to the original directory.
-await b.key("enter");
-checks.check("Enter on .. returns to the parent", await countLines(b, "file_a.txt"), 1);
+// `-` goes back up to the parent (vim-vinegar style).
+await b.key("-");
+await waitUntil(() => b.panelValue("cur_dir"), (v) => v === realDbroot, { tries: 100, intervalMs: 50 });
+checks.check("- returns to the parent", await b.panelValue("cur_dir"), realDbroot);
 
-// Select file_a.txt (rows: ".." , "subdir/", "file_a.txt") and open it.
-await b.key("j");
-await b.key("j");
-checks.check("selection lands on the file", (await b.bufferLines())[2], "> file_a.txt");
+// Select file_a.txt (the last row) and open it: the drawer's open_path
+// mutation is answered by the host, which swaps in a real editor.
+await b.key("end");
+checks.check("End selects the last row (the file)", await b.panelValue("selected"), 2);
 await b.key("enter");
-await sleep(300); // the openPath swap drops the subprocess and loads the editor
+await waitUntil(async () => (await b.pane()).kind, (k) => k === "editor", { tries: 100, intervalMs: 50 });
 checks.check("opening a file swaps in an editor", (await b.pane()).kind, "editor");
 checks.check("the opened editor shows the file", await b.firstLine(), "hello world");
 
@@ -237,14 +256,10 @@ async function firstLineOf(path: string): Promise<string> {
   return (await readFile(path, "utf8")).split("\n")[0];
 }
 
-/** Lines of pane 0's buffer containing `needle` (the shell test's `grep -c`). */
-async function countLines(c: DebugClient, needle: string): Promise<number> {
-  return (await c.bufferLines()).filter((l) => l.includes(needle)).length;
-}
-
-/** 1-based row of the browser's "> " selection marker. */
-async function selectedRow(c: DebugClient): Promise<number> {
-  return (await c.bufferLines()).findIndex((l) => l.startsWith("> ")) + 1;
+/** The names of the browser drawer's rows, from its observed `rows` binding. */
+async function rowNames(c: DebugClient): Promise<string[]> {
+  const rows = (await c.panelValue("rows")) as { name?: string }[] | undefined;
+  return (rows ?? []).map((r) => String(r.name ?? ""));
 }
 
 /** Search-match quads in the scene (theme::SEARCH_MATCH). */

@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# The netrw-style directory browser behind `garden <dir>` and `:E` / `-`: a
+# GPP app that pushes the colocated `browser.ptl` drawer and answers its
+# directory-listing queries. Opening a file goes through the host-handled
+# `open_path` mutation, which swaps the pane back to a normal editor.
 [dependencies]
-gpp = { path = "../../gpp" }
+petal-query = { workspace = true }
 serde_json = "1"

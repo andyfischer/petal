@@ -3248,24 +3248,24 @@ fn navigate_from_a_navigated_screen_resolves_against_the_origin_dir() {
     );
 }
 
-/// A stub panel-mode client whose `navigate` handler has a **side effect**: it
+/// A stub client whose `navigate` handler has a **side effect**: it
 /// answers `b.ptl` with a fresh source every time, numbering the visit. The
 /// numbering stands in for the real thing an app's `on_mutation("navigate")`
 /// handler does — priming the data the target screen reads — and makes it
 /// observable whether the host asked again.
 const NAV_REPLAY_CLIENT: &str = r#"
 read -r line
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"replay-stub","mode":"panel"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"name":"replay-stub"}}'
 visits=0
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
   case "$line" in
     *'"screen":"b.ptl"'*)
       visits=$((visits+1))
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","value":{"screen":"b.ptl","source":"let visits = %s"}}}\n' "$id" "$visits"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"screen":"b.ptl","source":"let visits = %s"}}\n' "$id" "$visits"
       ;;
-    *'"method":"mutate"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"no such screen"}}\n' "$id"
+    *'"method":"navigate"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"no such screen"}}\n' "$id"
       ;;
   esac
 done
@@ -3342,7 +3342,7 @@ fn back_and_forward_re_issue_the_navigate_mutation() {
 /// request — a client that has moved on, or lost the data the screen needs.
 const NAV_REPLAY_ONCE_CLIENT: &str = r#"
 read -r line
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"once-stub","mode":"panel"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"name":"once-stub"}}'
 served=0
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
@@ -3350,13 +3350,13 @@ while IFS= read -r line; do
     *'"screen":"b.ptl"'*)
       if [ "$served" = "0" ]; then
         served=1
-        printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","value":{"screen":"b.ptl","source":"let visits = 1"}}}\n' "$id"
+        printf '{"jsonrpc":"2.0","id":%s,"result":{"screen":"b.ptl","source":"let visits = 1"}}\n' "$id"
       else
-        printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"screen is gone"}}\n' "$id"
+        printf '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"screen is gone"}}\n' "$id"
       fi
       ;;
-    *'"method":"mutate"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"name":"navigate","error":"no such screen"}}\n' "$id"
+    *'"method":"navigate"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":1,"message":"no such screen"}}\n' "$id"
       ;;
   esac
 done
@@ -4745,7 +4745,7 @@ fn a_malformed_open_pr_mutation_is_a_status_error() {
     app.mutate_panel(0, "open_pr", json!({}), 1);
     assert!(app.status_error.as_deref().unwrap().contains("open_pr"));
 
-    assert!(!app.panes[0].is_process(), "nothing was opened");
+    assert!(!app.panes[0].is_panel(), "nothing was opened");
 }
 
 /// A native modal would block this thread forever with no window to dismiss it

@@ -25,8 +25,8 @@ the first place to add a test for any new behavior.
 | Panel tessellation | `garden-app/src/panel_tess.rs` (`#[cfg(test)]`) | pure geometry→mesh-triangle tessellation for Petal panels |
 | State / event log | `garden-app/src/state.rs`, `event_log.rs`, `recents.rs` | the SQLite state dir: window ids, migrations (incl. upgrading an existing DB in place), event buffering, `:report` capture, recently-opened files/projects/PRs and repo-root detection (temp-dir DBs) |
 | Terminal grid | `garden-app/src/frontend/grid.rs` (`#[cfg(test)]`) | Scene→character-grid rasterization for the TUI frontend |
-| GPP contract | `gpp/src/lib.rs` (`#[cfg(test)]`) | envelope/param serde round-trips and the key-name encoding |
-| GPP clients | `gpp-apps/*/src/` | each Lines-mode browser's pure core (listing/log navigation, activation); the `git-log` app's git plumbing (`cargo test -p git-viewers`) and `garden-diff`'s diff parsing, projection **spec** (per-line origins, hunk spans), comment weaving, and write-back splicing (`cargo test -p garden-diff`) — the *semantics* of editing a projection live in `garden-core`, not here, all against real temporary repos |
+| GPP contract | `gpp/src/lib.rs` (`#[cfg(test)]`) | v2 envelope/param serde round-trips (id-only correlation, error responses, cache policies) and the NDJSON framing |
+| GPP clients | `gpp-apps/*/src/` | directory-browser's pure listing core (sorting, paths); the `git-log` app's git plumbing (`cargo test -p git-viewers`) and `garden-diff`'s diff parsing, projection **spec** (per-line origins, hunk spans), comment weaving, and write-back splicing (`cargo test -p garden-diff`) — the *semantics* of editing a projection live in `garden-core`, not here, all against real temporary repos |
 
 Run everything:
 
@@ -81,13 +81,21 @@ gives that state (and its click targets) plain `let` names, which the host
 observes and reports by name — no publishing call in the script.
 
 **Git history browser** (`tools/git-panel-integration-test.ts`) — the same
-harness for the `:Git` panel, driving the `git-log` panel-mode GPP app via
+harness for the `:Git` panel, driving the `git-log` GPP app via
 `garden git log`: a multi-commit fixture with a dirty worktree, asserting
 commit/file selection, the Tab focus ring, lazy per-commit fetches through
 `query`, and hover-scoped wheel scrolling. The app's git plumbing and pure
 parsing have *unit-level* coverage in `gpp-apps/git-viewers` (`cargo test -p
 git-viewers`), tested against scratch repos — faster to iterate on than the full
 harness.
+
+**GPP fixture states** (`tools/gpp-test-app-integration-test.ts`) — boots
+`garden --subprocess gpp-test-app <mode>` and asserts the pane state each mode
+is defined to produce: a healthy panel that keeps ticking (`ok`), a failed
+query surfaced through `error_of` with no frame error (`query-error`), and a
+frame error raising the panel error card (`runtime-error`). The whole GPP v2
+pipeline — spawn, version handshake, `setScript`, the query round-trip, both
+error paths — stands between the launch and the assertions.
 
 **The start screen** (`tools/main-menu-integration-test.ts`) — the `main-menu`
 panel a bare `garden` opens, under a redirected `$HOME` so its recents database

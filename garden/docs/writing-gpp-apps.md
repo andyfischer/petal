@@ -1,30 +1,32 @@
 # Writing GPP apps
 
 A **GPP app** is a subprocess that drives the content of a Garden pane over a
-small JSON-RPC protocol on stdio (the Garden Pane Protocol). This guide is a
-practical, build-it walkthrough for the **panel-mode** ("script-push") style of
-app — the current, richer model, where your app pushes a **Petal UI script** the
-host runs in-process and drives with data over the pipe.
+small JSON-RPC protocol on stdio (the Garden Pane Protocol, **v2**). This guide
+is a practical, build-it walkthrough: your app pushes a **Petal UI script** the
+host runs in-process, then serves that script's data over the pipe.
 
-A panel-mode app is built on the **`petal-query`** crate (`../petal-query`):
-you declare a handler per `query(kind, arg)` — each returning a `Reply` with the
-value (or error) and **how cacheable it is** (`CachePolicy`) — and `petal-query`
-runs the whole protocol loop for you. You do **not** hand-roll the stdio
-handshake or the `QueryResult` plumbing.
+A Rust app is built on the **`petal-query`** crate (`../petal-query`): you
+declare a handler per `query(kind, arg)` — each returning a `Reply` with the
+value (or error) and **how cacheable it is** (`CachePolicy`) — and
+`petal-query` runs the whole protocol loop for you. You do **not** hand-roll
+the stdio handshake or the response plumbing. (An app in another language
+implements the loop from the wire spec directly — it is small; see
+[`gpp.md`](gpp.md).)
 
-Read `docs/gpp.md` for the wire reference, `../petal-query/README.md` for
-the provider API, and `docs/petal-graphical-panels.md` for the panel draw/input
+Read `docs/gpp.md` for the wire reference, `../petal-query/README.md` for the
+provider API, and `docs/petal-graphical-panels.md` for the panel draw/input
 vocabulary. The complete worked example this guide tracks is
-`gpp-apps/git-viewers` — the in-use app behind `:Git`. Its `git-log` bin keeps the
-git plumbing in `src/lib.rs`, declares its query handlers with a
-`petal_query::App`, and `include_str!`s a colocated production drawer
-(`src/git_panel.ptl`). Copy it to start. `gpp-apps/session-retro` is the reference
-for a **stateful** provider (in-memory caches + `on_emit` persistence);
-`gpp-apps/garden-diff` for both an **editable** one (`edit_view` regions carrying
-editable projections, written back with `mutate("apply", …)` — the only GPP app
-that is not read-only; see [Editable panels](#editable-panels-mutate-write-back)
-below) and a
-**network-backed** one (the `gh` CLI, in its PR mode).
+`gpp-apps/git-viewers` — the in-use app behind `:Git`. Its `git-log` bin keeps
+the git plumbing in `src/lib.rs`, declares its query handlers on a
+`petal_query::Provider`, and `include_str!`s a colocated production drawer
+(`src/git_panel.ptl`). Copy it to start. `gpp-apps/directory-browser` is the
+smallest complete app (one query kind, a host-owned mutation);
+`gpp-apps/garden-diff` is the reference for an **editable** app (`edit_view`
+regions carrying editable projections, written back with `mutate("apply", …)` —
+the only GPP app that is not read-only; see
+[Editable panels](#editable-panels-mutate-write-back) below) and a
+**network-backed** one (the `gh` CLI, in its PR mode); `gpp-apps/screens-demo`
+for multi-screen navigation.
 
 ## The mental model
 
@@ -37,41 +39,22 @@ Think **web browser + web server**:
   whatever a subprocess can do — shell out to `git`/`gh`, read files, hit a
   network service.
 
-The win over the old "push text lines every frame" model: the interaction loop
-runs host-side with **zero pipe traffic**, so scrolling a diff or moving a
-selection is instant, and only real data crosses the wire. The same Petal script
-that a built-in panel runs (`:Git`) can run in your app — the only difference is
-whether the data provider is local Rust or your subprocess.
+The interaction loop runs host-side with **zero pipe traffic**, so scrolling a
+diff or moving a selection is instant, and only real data crosses the wire. The
+same Petal script that an in-process `panel(...)` pane runs can run in your app
+— the only difference is whether the data provider is local Rust or your
+subprocess.
 
-### Panel mode vs. Lines mode
+## Anatomy of an app
 
-GPP has two client modes (`gpp::ClientMode`):
+A GPP app is a normal Rust binary in the workspace with two parts:
 
-- **Lines** (the original, still the default): you push full-screen **text**
-  (`render` with `lines`/`styles`/`backgrounds`) every frame and subscribe to a
-  few keys. Good for simple, list-shaped, text-only views. See the "Lines mode"
-  parts of `docs/gpp.md`.
-- **Panel** (this guide): you push a **Petal UI script** and answer `query`
-  requests. Choose this for anything rich — 2-D layout, draggable dividers,
-  selectable/copyable text, master-detail, spinners, live data.
-
-Pick Panel mode when you want graphical UI or on-demand data; pick Lines mode for
-a plain scrollable/colored list where a per-frame text buffer is enough.
-
-## Anatomy of a panel-mode app
-
-A panel-mode app is a normal Rust binary in the workspace with two parts:
-
-1. **A Petal UI script** (a colocated `src/*.ptl`, embedded with `include_str!`) —
-   the "page": it draws, handles input, and calls `query(kind, arg)` for its data.
-2. **A stdio loop** (`src/main.rs`, or `src/bin/<name>.rs` for a multi-bin crate)
-   — handshake, push the script, then answer the `query` requests that come back,
-   plus `shutdown`.
-
-`git-viewers` factors the common loop into a `run(name, script, make_handler)`
-helper in `src/lib.rs` and declares two thin bins (`[[bin]]`) that each pass their
-own drawer + query handler — the pattern for shipping several related views from
-one crate. A single-view app can put the loop straight in `src/main.rs`.
+1. **A Petal UI script** (a colocated `src/*.ptl`, embedded with `include_str!`)
+   — the "page": it draws, handles input, and calls `query(kind, arg)` for its
+   data.
+2. **A `main.rs`** (or `src/bin/<name>.rs` for a multi-bin crate) that builds a
+   `petal_query::Provider` — the handlers — and hands it to `gpp::serve` with a
+   `PanelUi` (the pane name + the script).
 
 Your app **never draws** and **never handles keys** itself; the host does, by
 running your script. Your app only ships the script and answers data requests.
@@ -80,8 +63,8 @@ JSON-over-pipe data server) — only the *UI* is Petal.
 
 ## Step 1 — the crate
 
-Add a workspace member depending on `petal-query` (+ `serde_json`). A single-bin
-skeleton:
+Add a workspace member depending on `petal-query` (+ `serde_json`). A
+single-bin skeleton:
 
 ```toml
 [package]
@@ -95,22 +78,11 @@ petal-query = { workspace = true }
 serde_json = "1"
 ```
 
-(An app depends on `petal-query`, not `gpp` — the query/panel wire it needs lives
-in `petal_query::wire`, so it links no Garden crate.)
+(`petal-query` itself depends on the `gpp` crate — the single wire definition —
+and re-exports what an app needs, so an app never links `gpp` directly.)
 
 For several views from one crate, follow `gpp-apps/git-viewers/Cargo.toml`: a
-shared `[lib]` plus one `[[bin]]` per view —
-
-```toml
-[lib]
-name = "git_viewers"
-path = "src/lib.rs"
-
-[[bin]]
-name = "git-log"
-path = "src/bin/git-log.rs"
-
-```
+shared `[lib]` plus one `[[bin]]` per view.
 
 Add `"gpp-apps/my-app"` to the workspace `members` in the root `Cargo.toml`. GPP
 client binaries deliberately are **not** dependencies of `garden-app`, so build
@@ -118,52 +90,67 @@ the whole workspace (`cargo build`) to produce your binary beside `garden`.
 
 ## Step 2 — declare the app
 
-`petal_query::App` is the whole loop: it does the handshake, pushes your script,
-and dispatches every `query`/`emit` to the handler you registered. You write only
-the handlers. A single-bin app puts this in `src/main.rs`, `include_str!`'ing the
-drawer from a sibling `.ptl`:
+`Provider` + `gpp::serve` is the whole loop: the handshake (protocol version
+check included), the script push, and the dispatch of every
+`query`/`mutate`/`navigate`/`emit` to the handler you registered. You write
+only the handlers. A single-bin app puts this in `src/main.rs`,
+`include_str!`'ing the drawer from a sibling `.ptl`:
 
 ```rust
 use std::path::PathBuf;
 use std::time::Duration;
-use petal_query::{App, CachePolicy, Reply};
+use petal_query::{Provider, Reply};
+use petal_query::gpp::{self, PanelUi};
 
 const UI_SCRIPT: &str = include_str!("ui.ptl");
 
 fn main() -> std::io::Result<()> {
-    // The state is built from the handshake (`init.args` / `init.cwd` are how you
-    // learn what to show — a dir, a repo, a PR number) and handed to every
-    // handler by `&mut` reference. Use `App::stateless(name, script)` if you
-    // don't need any.
-    App::new("my-app", UI_SCRIPT, |init| PathBuf::from(init.repo_arg()))
+    // The state is built from the handshake (`init.args` / `init.cwd` are how
+    // you learn what to show — a dir, a repo, a PR number) and handed to every
+    // handler by `&mut` reference. Use `Provider::stateless()` if you don't
+    // need any.
+    let provider = Provider::new(|init| PathBuf::from(init.repo_arg()))
         .query("log", |repo: &mut PathBuf, _ctx| {
             // Answer with a value + how cacheable it is. See Step 3.
             Reply::from(fetch_log(repo)).max_age(Duration::from_secs(3))
         })
         .query("commit", |repo: &mut PathBuf, ctx| {
             // A commit addressed by hash never changes — cache it forever.
-            Reply::from(fetch_commit(repo, ctx.arg))
+            Reply::from(fetch_commit(repo, ctx.arg_str()))
         })
         // Optional: react to the script's `emit(event, arg)` — fire-and-forget
-        // (persist UI state, open a path). Omit if your app has no use for it.
-        .on_emit("ui_state", |repo: &mut PathBuf, ctx| persist(&ctx.arg))
-        .serve()
+        // (persist UI state, kick a refresh). Omit if your app has no use for it.
+        .on_emit("ui_state", |_repo, ctx| persist(ctx.arg));
+
+    gpp::serve(provider, PanelUi::new("my-app", UI_SCRIPT))
 }
 ```
 
-What `App` guarantees for you (the rules you'd otherwise hand-roll):
+What the loop guarantees for you (the rules you'd otherwise hand-roll):
 
-- It replies to `initialize` in panel mode **before** anything else, then sends
-  `setScript` immediately — the pane shows a spinner until the script arrives.
-- A **`query` is a request**; your handler's `Reply` becomes the `queryResult`
-  response (value/error + cache policy). Unregistered kinds answer `null`.
+- It answers `initialize` (verifying `protocol: 2` — a mismatched host is
+  refused with a clean error) **before** anything else, then sends `setScript`
+  immediately.
+- A **`query` is a request**; your handler's `Reply` becomes the id-correlated
+  response (a `{ value, cache? }` result, or a JSON-RPC error for
+  `Reply::error`). Unregistered kinds answer `null`.
+- A **`mutate` is a request**; `on_mutation` handlers return a `Reply` the same
+  way (never cached). An unregistered mutation is an error.
+- A **`navigate` request** is served from your declared screens (or your
+  `on_navigate` handler — see [Multi-screen navigation](#multi-screen-navigation-optional)).
 - An **`emit` is a notification** (no reply); `on_emit` handlers are
   fire-and-forget. An app that registers none is unaffected by emits.
-- It exits on `shutdown` **or** stdin EOF. **Never panic** in a handler — return
-  `Reply::error(..)`; log to stderr (the host inherits it) for diagnostics.
+- An unknown *request* is answered `METHOD_NOT_FOUND`; unknown notifications
+  are skipped — forward compatibility.
+- It exits on `shutdown` **or** stdin EOF. **Never panic** in a handler —
+  return `Reply::error(..)`; log to stderr (the host inherits it) for
+  diagnostics.
+- `PanelUi::title(|state| …)` derives the pane's display name from the built
+  state (e.g. the browsed directory) instead of the static name.
 
-For several views from one crate (like `git-viewers`), keep shared plumbing in
-`src/lib.rs` and give each `[[bin]]` its own `App` with its own drawer + handlers.
+Handler contexts carry the request's `kind`/`name`/`event`/`screen`, its JSON
+`arg` (`ctx.arg`, any `serde_json::Value`; `ctx.arg_str()` for the common
+string case), and the handshake `InitializeParams` (`ctx.init`).
 
 ## Step 3 — answering queries
 
@@ -171,9 +158,11 @@ A handler returns a `Reply`:
 
 - `Reply::json(value)` — a value (anything `Serialize`; a `HostData`-shaped JSON
   tree). `Reply::from(result)` maps a `Result<T, E>` (Ok → value, Err → error).
-- `Reply::error(msg)` — the script surfaces it via `error_of` / `??`.
+- `Reply::error(msg)` — a JSON-RPC error response on the wire; the script
+  surfaces it via `error_of` / `??`.
 - `Reply::loading()` — neither: the host keeps the script spinning without
-  re-requesting (use when a background thread will fill it in later).
+  re-requesting (use when a background thread will fill it in later, then push
+  an `invalidate`).
 
 …and stamps it with a **cache policy** (default `forever`):
 
@@ -194,7 +183,7 @@ cache honors the policy you attach:
 
 | Policy | When to use |
 |---|---|
-| `CachePolicy::forever()` / `immutable()` (default) | The value at this key can't change — a commit hash, a content digest, a loaded session snapshot. |
+| `CachePolicy::forever()` / `immutable()` (default) | The value at this key can't change — a commit hash, a content digest. |
 | `CachePolicy::max_age(d)` | Changes over time; a stale value is worse than a brief spinner. Hard-expires at `d`. |
 | `…​.stale_while_revalidate(s)` | …but you'd rather show the old value than a spinner: within `s` past `max_age`, the stale value is served *and* re-fetched in the background. |
 | `CachePolicy::no_store()` | Live data — always served, always revalidated. |
@@ -203,8 +192,8 @@ Pick the policy per `(kind, arg)`: `git-log` gives its `log` a short `max_age`
 with a stale window, but a `commit` diff addressed by hash is `immutable()`; the
 working-tree diff (`@worktree`) is `no_store()`. `garden-diff` treats its whole
 projection as one fresh-forever answer and drops it only on a save (the host
-drives editing and scrolling locally). A `forever` policy adds
-nothing to the wire, so the default costs nothing.
+drives editing and scrolling locally). A `forever` policy adds nothing to the
+wire, so the default costs nothing.
 
 ### The data shape (JSON → Petal)
 
@@ -236,6 +225,13 @@ serde_json::json!({ "commits": [ { "hash": h, "short": s, "subject": subj } ] })
 
 is read in the script as `data.commits`, each `c.hash` / `c.short` / `c.subject`.
 Design these shapes to match exactly what your script reads.
+
+**Query args are JSON.** The wire carries `arg` verbatim — a string, a record,
+a list — so a composite key (`{ "table": "users", "page": 3 }`) needs no string
+encoding; the host caches per `(kind, arg)`. Petal's script-side `query`
+native currently passes a string arg, which arrives at your handler as a JSON
+string (`ctx.arg_str()` reads it); a client in another language, or a future
+script-side extension, can key by any JSON value today.
 
 **Soft errors and nil fields.** A convenient convention is a soft `error` field
 baked into an otherwise-successful reply (a non-fatal failure the drawer shows in
@@ -330,14 +326,15 @@ The pushed script is an ordinary Petal graphical panel (see
   theme's native alpha. **A drawer that puts a `text_view` over a custom
   background must paint that background from `palette().panel`** — otherwise a
   fixed dark card collides with the host-themed editor text in a light scheme (low
-  contrast). Any of the git/PR/retro/sqlite drawers under `gpp-apps/` is a worked
+  contrast). Any of the git/diff/sqlite drawers under `gpp-apps/` is a worked
   example. (The lower-level `panel_theme()` native returns exactly what the host
   injected — an **empty record** when nothing is — and backs `palette()`; prefer
   `palette()` unless you specifically need to detect the no-theme case.)
 - **Input** (the focused pane receives it): `key_pressed("j")`,
-  `mouse_x()`/`mouse_y()`, `mouse_pressed(0)`, `drag_active()`, `scroll_y()`,
-  `text_input()`, `mod_shift()`… plus the `ui` prelude (`button`, `list_update`,
-  focus helpers). The command bar (`:`) and global chords stay with the host.
+  `mouse_x()`/`mouse_y()`, `mouse_pressed(0)`, `click_count()`, `drag_active()`,
+  `scroll_y()`, `text_input()`, `mod_shift()`… plus the `ui` prelude (`button`,
+  `list_update`, focus helpers). The command bar (`:`) and global chords stay
+  with the host. The host spells Return `"return"` (never `"enter"`).
 - **Data**: `query(kind, arg)` returns the value when ready, else a **pending**
   value you inspect with `is_ready` / `is_loading` / `is_error` / `error_of` /
   `??`. `invalidate(kind, arg)` drops a cached answer so the next `query`
@@ -360,6 +357,11 @@ The pushed script is an ordinary Petal graphical panel (see
 
   The app sees `EmitParams { event: "divider", arg: { "pos": … } }`; apps that
   never look at `emit` keep working unchanged.
+- **Asking Garden to act**: `mutate(name, arg)` with one of the **host-owned
+  names** (`open_path`, `open_project`, `open_pr`, `open_file_dialog` — see
+  `gpp.md`) is answered by the host itself and never reaches your app — this is
+  how the directory browser opens a file and the main menu opens a project.
+  Every other name is forwarded to your `on_mutation` handler.
 - **Selectable/copyable text**: `text_view(id, x, y, w, h, text)` embeds a real
   editor region (highlight-to-select, Cmd-C, native scroll) instead of glyphs;
   `text_view_line_styles(id, styles)` adds a per-line semantic color
@@ -367,29 +369,20 @@ The pushed script is an ordinary Petal graphical panel (see
   `text_view_scroll_to(id, line)` scrolls the region so that 0-based line is at
   the top — programmatic navigation (e.g. a file list that jumps the diff beside
   it). That one is an *action*, not frame state: the host applies it once, so
-  emit it only on the frame the navigation happens, never every frame. It is an
-  anchor rather than a scroll, so a line near the end still reaches the top row
-  and the region shows blank space below it; only the buffer's own bounds clamp
-  it (a line number past the end lands on the last line).
-  `text_view_wrap(id, wrap)` soft-wraps the region's long lines to its width
-  instead of letting them run off the right edge — frame state, so declare it on
-  every frame the region should wrap. It is opt-in per region because wrapping
-  slides a *row-aligned* pair of regions (a side-by-side before/after diff) out
-  of step, while a single full-width body only gains from it. Everything else
-  stays wrap-aware: clicks, the caret, per-line styling and scroll-to-line all
-  keep addressing buffer lines, not screen rows. Use this for
-  any diff/code/log body the user might want to copy. A region declared while a
-  `clip(...)` is active is clipped by it — text included — so a region can sit
-  inside a scrolling viewport. **Input routing**: a
+  emit it only on the frame the navigation happens, never every frame.
+  `text_view_wrap(id, wrap)` soft-wraps the region's long lines to its width —
+  frame state, so declare it on every frame the region should wrap. Everything
+  else stays wrap-aware: clicks, the caret, per-line styling and scroll-to-line
+  all keep addressing buffer lines, not screen rows. Use this for any
+  diff/code/log body the user might want to copy. A region declared while a
+  `clip(...)` is active is clipped by it — text included. **Input routing**: a
   region only consumes an input it can act on. While its content *overflows*
   its rect, the region owns the wheel over it and — once a click focused it —
-  the nav keys (`j`/`k`/arrows/page/space/home/end), even at the top/bottom
-  boundary; when the content fits, wheel and keys all fall through to the
-  script (`scroll_y()`, `key_pressed(...)`), so script-side navigation keeps
-  working over selectable text. Clicks are always *teed*: the region starts a
-  native selection **and** the script still sees `mouse_pressed()`/`mouse_x/y()`
-  for its own click semantics (row selection, toggles). Escape returns key
-  focus from a region to the script; Cmd/Ctrl-C and Cmd/Ctrl-A stay native.
+  the nav keys, even at the top/bottom boundary; when the content fits, wheel
+  and keys all fall through to the script. Clicks are always *teed*: the region
+  starts a native selection **and** the script still sees
+  `mouse_pressed()`/`mouse_x/y()` for its own click semantics. Escape returns
+  key focus from a region to the script; Cmd/Ctrl-C and Cmd/Ctrl-A stay native.
 - **Editable text**: `edit_view(id, x, y, w, h, seed)` embeds a fully editable
   region — the host's real vim `EditorView`, seeded once with `seed` — and
   `edit_view_text(id)` reads the current buffer back. Click to focus, edit with
@@ -486,14 +479,10 @@ Some drawer state is neither report *data* (it comes from the user, not the
 data source) nor throwaway per-frame state (it should outlive a relaunch) — a
 draggable divider's position, a chosen sort order, a collapsed/expanded flag.
 The recommended pattern is a small **`emit` → subprocess → state file → `query`**
-round-trip. `session-retro` is the reference implementation; it persists the
-divider width so it survives both view changes and relaunches of the same
-session:
+round-trip:
 
 1. **Drawer → app, on the edge.** Guard `emit` with an interaction edge (here,
-   drag-END) so it fires **once per adjustment**, not every awake frame. Ints
-   cross the wire safely (the JSON→Petal bridge coerces every number to an int),
-   so scale a fraction:
+   drag-END) so it fires **once per adjustment**, not every awake frame:
 
    ```petal
    // detect dragging → not-dragging this frame, then push the new width ×1000
@@ -503,26 +492,23 @@ session:
    was_dragging = dragging
    ```
 
-2. **App persists it, keyed by session id, atomically.** In the loop's `emit`
-   arm, merge the pushed fields into a retained object and write it to an
-   XDG-ish path (`$XDG_STATE_HOME/garden/<app>/<session-id>.json`, falling back
-   to `~/.local/state`). Write a temp file and `rename` it over the target so a
+2. **App persists it, atomically.** Register an `on_emit("ui_state", …)`
+   handler that merges the pushed fields into a retained object on your state
+   and writes it to an XDG-ish path
+   (`$XDG_STATE_HOME/garden/<app>/<key>.json`, falling back to
+   `~/.local/state`). Write a temp file and `rename` it over the target so a
    crash mid-write can't corrupt it. **Persistence failures are non-fatal** —
    log to stderr and keep serving; never break the request/response flow:
 
    ```rust
-   } else if env.is_method(method::EMIT) {
-       let p: EmitParams = match env.params_as() {
-           Ok(p) => p,
-           Err(e) => { eprintln!("bad emit: {e}"); continue; }
-       };
-       if p.event == "ui_state" {
-           if let Some(obj) = p.arg.as_object() {
-               // merge obj into `ui_state`, then save_ui_state(&session_key, &ui_state)
-               // (temp-write + atomic rename; all errors logged, not fatal)
+   .on_emit("ui_state", |state: &mut State, ctx| {
+       if let Some(obj) = ctx.arg.as_object() {
+           state.ui_state.extend(obj.clone());
+           if let Err(e) = save_ui_state(&state.key, &state.ui_state) {
+               eprintln!("my-app: could not persist ui_state: {e}");
            }
        }
-   }
+   })
    ```
 
 3. **App re-serves it via a query; drawer restores once at load.** Load the
@@ -540,24 +526,23 @@ session:
    end
    ```
 
-**Why subprocess-side, keyed by session id — not host-side panel state?** The
-host's panel runtime is deliberately stateless across a pane's relaunches (a
-reload/split/restore re-spawns the app, which re-pushes its script — see Step 5),
-so there is nowhere host-side for per-session UI state to live. The subprocess,
-by contrast, already owns a **stable per-session key** (the transcript's session
-id) and a place to write, and it re-serves the value on the next launch's
-`query`. Keeping it here also leaves the host's contract untouched: a plain
-`emit`/`query` pair, no new protocol. The one caveat is that `emit` is delivered
-on the next poll tick, so a test that relaunches to check persistence should
-poll for the state file (or the restored value) rather than assume it landed
-synchronously.
+**Why subprocess-side — not host-side panel state?** The host's panel runtime
+is deliberately stateless across a pane's relaunches (a reload/split/restore
+re-spawns the app, which re-pushes its script — see Step 5), so there is
+nowhere host-side for per-session UI state to live. The subprocess, by
+contrast, owns a stable key and a place to write, and it re-serves the value on
+the next launch's `query`. Keeping it there also leaves the host's contract
+untouched: a plain `emit`/`query` pair, no new protocol. The one caveat is that
+`emit` is delivered on the next poll tick, so a test that relaunches to check
+persistence should poll for the state file (or the restored value) rather than
+assume it landed synchronously.
 
 ## Multi-screen navigation (optional)
 
-A panel-mode app can have **more than one screen** and give the user browser-style
-back/forward across them. Declare each navigable screen's source on the `PanelUi`
-with `.screen(name, source)`; the declared set is also the **allowlist** (a
-`navigate` to an undeclared screen is refused):
+An app can have **more than one screen** and give the user browser-style
+back/forward across them. Declare each navigable screen's source on the
+`PanelUi` with `.screen(name, source)`; the declared set is also the
+**allowlist** (a `navigate` to an undeclared screen is refused):
 
 ```rust
 const HOME: &str = include_str!("home.ptl");
@@ -573,31 +558,28 @@ Then a screen navigates with the same script API as an in-process panel — the
 browser-history natives `navigate("detail.ptl")` / `navigate_replace(...)` /
 `navigate_back()` / `navigate_forward()` (and the host's `Ctrl+[`/`Ctrl+]` +
 `:back`/`:forward` drive them too). Under the hood the host fetches the target
-screen's source from your app over the built-in **`navigate` mutation** and owns
-the history stack + per-entry `state` restore; your app just supplies source.
+screen's source from your app with GPP v2's first-class **`navigate` request**
+and owns the history stack + per-entry `state` restore; your app just supplies
+source. `gpp-apps/screens-demo` is the worked example.
 
 `navigate("detail.ptl", { id: 7 })` additionally carries the subject the target
-screen is for. The target screen reads it back with `nav_arg()`, and it arrives at
-your handler as `ctx.arg["arg"]`. The host stores it on the history entry, so
+screen is for. The target screen reads it back with `nav_arg()`, and it arrives
+at your handler as `ctx.arg`. The host stores it on the history entry, so
 *back* and *forward* return to that screen with the argument it was opened with
 rather than an empty one. See
 [petal-graphical-panels.md](petal-graphical-panels.md#navigating-navigatescreen--navigatescreen-arg).
 
 An app that needs **navigation side effects** (log the visit, prime data for the
-target screen) registers its own handler instead — it takes precedence over the
-built-in, and must return the target `source` itself:
+target screen) registers an `on_navigate` handler instead — it replaces the
+built-in declared-screens lookup, and returns the target screen's `source` (or
+an `Err` to refuse the navigation):
 
 ```rust
-provider.on_mutation("navigate", |state: &mut S, ctx| {
-    let screen = ctx.arg["screen"].as_str().unwrap_or_default();
-    state.active_screen = screen.to_string();          // the effect
-    Reply::json(serde_json::json!({ "screen": screen, "source": source_for(screen) }))
+provider.on_navigate(|state: &mut S, ctx| {
+    state.active_screen = ctx.screen.to_string();       // the effect
+    Ok(source_for(ctx.screen)?)                          // the source
 })
 ```
-
-More broadly, `on_mutation(name, handler)` is the general **mutation** primitive:
-an effectful, uncached request/response (the fourth quadrant beside `query` and
-`emit`). `navigate` is just the first built-in use.
 
 **Back and forward re-issue it.** Restoring a history entry replays the *host's*
 record of that visit — its source, its `state` snapshot, its navigation argument
@@ -609,16 +591,11 @@ once per visit, not once per screen. Returning a changed `source` swaps the
 running program in; returning the same one costs nothing.
 
 The replay is best effort, because the user's back/forward must not fail: the
-cursor has already moved when the mutation is sent, so if your app is gone, slow
+cursor has already moved when the request is sent, so if your app is gone, slow
 (500 ms), or rejects the screen, the entry stays on its cached source and the
 reason appears in the pane's status note. The seed entry is never replayed —
 nothing navigated to it, and its screen name is the pane's own origin rather than
 one your app declared. In-process `panel(...)` panes have no provider to re-ask.
-
-Probe for it with the `panel.nav-replay` feature flag (see
-[debug-server.md](debug-server.md)) if your app must also work against an older
-`garden`; without it, key your `query` data by its `arg` rather than by hidden
-per-screen context.
 
 A script-issued `mutate(name, arg)` hands the drawer a **handle**, and
 `mutate_result(handle)` reads back `{ ok, value, error }` once your handler has
@@ -659,9 +636,9 @@ because it is the simpler case and the rest of the pattern is identical.
    end
    ```
 
-3. **Handle the mutation in the app** with `Provider::on_mutation(name, handler)`
-   (the same registration `navigate` uses). Do the effect — here, splice the edited
-   text back into the files — and return a `Reply` (a status string, or
+3. **Handle the mutation in the app** with `Provider::on_mutation(name, handler)`.
+   Do the effect — here, splice the edited text back into the files — and return
+   a `Reply` (a status string the host shows in the status bar, or
    `Reply::error(..)` the drawer can surface). **Validate before writing** — a
    text write-back is only as good as the assumption that the buffer still has the
    shape you projected, so check that before touching a file rather than
@@ -678,10 +655,6 @@ because it is the simpler case and the rest of the pattern is identical.
    });
    gpp::serve(provider, PanelUi::new("garden-diff", UI_SCRIPT))
    ```
-
-   (garden-diff drives its provider with the lower-level `Provider` + `gpp::serve`
-   rather than `App`, so it can register `on_mutation`; the `.query(...)` handlers
-   are declared the same way.)
 
 **Region lifetime gotcha.** A region's editor state is pruned when the region
 isn't declared for a frame (e.g. you switch to a mode that hides it). If unsaved
@@ -785,8 +758,8 @@ the live table — and the user's edits — alone.
 
 ## Step 5 — launching it
 
-The host spawns a panel-mode app the same way as any GPP client — a `process`
-node in a layout script:
+The host spawns a GPP app the same way as any client — a `process` node in a
+layout script:
 
 ```petal
 layout(process("/abs/path/to/target/debug/my-app", ["/some/dir"]))
@@ -796,9 +769,10 @@ The command is run with `Command::new(command)`, so a **bare name is resolved on
 `$PATH`**; during development use an **absolute path** (as above) or put the
 binary on `PATH`. The `args` list becomes `InitializeParams::args`, and the pane's
 `cwd` is passed too — that's how the app learns what to operate on. (Garden's
-own clients — the directory browser, `git-log`, and `garden-diff` — get a
-sibling-of-`garden` resolver when launched via `:E`/`:Git`/`:Diff`/`:PR`; a
-generic `process(...)` does not, so be explicit.)
+own clients — the directory browser, `git-log`, `garden-diff`, `main-menu` —
+get a sibling-of-`garden` resolver when launched via `:E`/`:Git`/`:Diff`/`:PR`;
+a generic `process(...)` does not, so be explicit.) `garden --subprocess
+<app> [args…]` runs any client as the whole layout.
 
 The pane **renders and handles input as a panel** but **persists as a
 `process(...)` node**: a reload, split, or window restore re-spawns your app,
@@ -821,11 +795,11 @@ curl -s -X POST localhost:8080/key -d '{"key":"j"}'         # forwarded to the s
 curl -s localhost:8080/screenshot -o /tmp/shot.png          # offscreen render
 ```
 
-A working app shows `panes[0].kind == "panel"`, an incrementing `frame`, and a
-`values` object holding whatever your script bound this frame — including the
-data that came back over `query`. That map is Petal's *observation* buffer: the
-last value bound to every named term, so the drawer above needs no publishing
-step for a test to read its `sel`:
+A working app shows `panes[0].kind == "panel"`, a `panel.client` naming your
+spawn command, an incrementing `frame`, and a `values` object holding whatever
+your script bound this frame — including the data that came back over `query`.
+That map is Petal's *observation* buffer: the last value bound to every named
+term, so the drawer above needs no publishing step for a test to read its `sel`:
 
 ```bash
 curl -s localhost:8080/state | jq '.panes[0].panel.values.sel'    # → 0
@@ -848,13 +822,14 @@ one-frame edges (`mouse_released`, `click_count`, `scroll_y`, `text_input`) are
 cleared by the next idle tick, count them into a `state` var rather than
 sampling them; the counter is observed under its own name.
 
-Assert on `values` for deterministic integration tests — the pattern the
-built-in git panel uses.
+Assert on `values` for deterministic integration tests — the pattern
+`tools/integration-test.ts` (the directory browser) and the git/menu/diff
+harnesses all use.
 
 ## Gotchas and current limits
 
 - **The pushed script runs in-process in the host.** A runaway script
-  (`while true`) hangs the editor — panel-mode apps are **trusted code** (your
+  (`while true`) hangs the editor — GPP apps are **trusted code** (your
   own), not sandboxed downloads, until Petal ships a bounded/interruptible run.
   Your app *process* is still isolated (its logic can't hang the host); the
   *script* is not.
@@ -866,9 +841,9 @@ built-in git panel uses.
 - **Selectable text needs `text_view`.** Script-drawn `draw_text` glyphs can't be
   selected or copied — route any body the user might copy through a `text_view`.
 - **`emit` needs a subprocess.** `emit(event, arg)` reaches your app only in a
-  panel-mode GPP pane; in a plain in-process `panel(script)` pane there is no
-  client to deliver to, so the events are silently dropped. `openPath` (turn
-  the pane into an editor on a file) and `setStatus` from the app work too.
+  GPP pane; in a plain in-process `panel(script)` pane there is no client to
+  deliver to, so the events are silently dropped. The host-owned `mutate`
+  names work everywhere.
 - **`query` latency is ~one poll tick** in steady state (answers are applied on
   the ~200ms poll before the next frame). The first frame is primed synchronously
   so a freshly opened app paints with data, not a spinner.
@@ -877,22 +852,22 @@ built-in git panel uses.
 
 1. New workspace-member crate depending on `petal-query` + `serde_json`.
 2. `src/ui.ptl` — the Petal drawer, `include_str!`'d.
-3. `src/main.rs` — build a `petal_query::App`, register a `.query(kind, …)`
+3. `src/main.rs` — build a `petal_query::Provider`, register a `.query(kind, …)`
    handler per kind (each returning a `Reply` with a `CachePolicy`), an
-   `.on_emit(…)` per event you care about, and call `.serve()`.
+   `.on_mutation(…)` / `.on_emit(…)` / `.on_navigate(…)` per call you care
+   about, and hand it to `gpp::serve` with a `PanelUi`.
 4. Define your `(kind, arg)` → JSON shapes to match what the script reads, and
    choose a cache policy per kind.
 5. `cargo build`; launch via `process("/abs/path", [args])`; verify over the
    debug server.
 
-Reference implementations: `gpp-apps/git-viewers` (the `git-log` app behind
-`:Git`; full cache-policy range), `gpp-apps/garden-diff` (the *editable* diff
-review behind `:Diff` / `:Review*` / `:PR` and the `garden diff` / `garden pr`
-CLIs — `edit_view` + editable projections + a `mutate("apply", …)` write-back,
-and `gh`-backed in PR mode),
-`gpp-apps/session-retro` (stateful + `on_emit` persistence),
-`gpp-apps/sqlite-browser` (a read-only SQLite browser + visualizer via
-`rusqlite` — catalog, schema+data grid, and an Overview bar chart). Provider API:
-`../petal-query/README.md`. Protocol reference:
-`docs/gpp.md`. Draw/input API: `docs/petal-graphical-panels.md`. Design rationale:
-`docs/gpp.md`.
+Reference implementations: `gpp-apps/directory-browser` (the smallest complete
+app: one query kind + the host-owned `open_path` mutation),
+`gpp-apps/git-viewers` (the `git-log` app behind `:Git`; full cache-policy
+range), `gpp-apps/garden-diff` (the *editable* diff review behind `:Diff` /
+`:Review*` / `:PR` — `edit_view` + editable projections + a
+`mutate("apply", …)` write-back, and `gh`-backed in PR mode),
+`gpp-apps/sqlite-browser` (a read-only SQLite/Postgres browser + visualizer),
+`gpp-apps/screens-demo` (multi-screen navigation), and `gpp-apps/gpp-test-app`
+(the error-state fixture). Provider API: `../petal-query/README.md`. Protocol
+reference: `docs/gpp.md`. Draw/input API: `docs/petal-graphical-panels.md`.

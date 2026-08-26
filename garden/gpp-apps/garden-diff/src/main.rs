@@ -554,7 +554,7 @@ fn run() -> std::io::Result<()> {
         // thing, `commit:<sha>` / `since:<sha>` for a slice of it (see
         // [`Scope`]). The host caches per argument, so switching back to a
         // scope already looked at costs nothing.
-        let scope = Scope::parse(ctx.arg);
+        let scope = Scope::parse(ctx.arg_str());
         // Rebuild every time the host asks. The host answers `doc` from its own
         // query cache and only re-requests after an `invalidate`, so caching it
         // here as well meant a refresh — the ⟳ pill, the staleness probe, a save

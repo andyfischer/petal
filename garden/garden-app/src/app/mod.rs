@@ -552,7 +552,7 @@ impl App {
     /// renderer draws the whole scene atomically into an offscreen target).
     /// Passes run back-to-back, so `dt ≈ 0` and time-based animation is not
     /// fast-forwarded; asleep panels never tick — their cached commands are
-    /// already steady. Out of scope: data a panel-mode GPP client fetches
+    /// already steady. Out of scope: data a GPP client fetches
     /// asynchronously (`query` round-trips) — poll `/state` for that.
     pub fn settle_panels(&mut self) {
         /// Upper bound on settle passes, to stay responsive with panels that

@@ -80,7 +80,7 @@ JSON-specific issues (beyond phantom/prelude inclusion):
   exported to third parties.
 - **Null/default noise.** Every term prints `"name": null`,
   `"state_key": null`, `"block_next": null`, empty `inputs`/`child_blocks`
-  arrays; `in_loop`/`collect`/`phi_outs` already skip-if-default, the rest
+  arrays; `collect`/`path_pop`/`phi_outs` already skip-if-default, the rest
   should too.
 - `source_map.term_spans` is keyed by stringified TermIds with two nested
   6-field endpoint objects per span — the bulkiest encoding available.

@@ -1,5 +1,5 @@
 //! How `Env::get_state_json` names a slot now that a slot is a declaration
-//! plus the call path that reached it (docs/dev/state-callsite-keying-plan.md
+//! plus the call path that reached it (docs/dev/state-call-paths.md
 //! §3.6). One renderer covers every path shape: the parts root-to-leaf,
 //! `/`-separated, variable name last.
 //!
@@ -107,7 +107,7 @@ fn nested_loop_indices_are_separate_path_steps() {
 
 #[test]
 fn an_explicit_key_renders_as_k_hash_and_nothing_else() {
-    // `state(expr)` is absolute (plan §2.2): the path is exactly the key, so
+    // `state(expr)` is absolute (§2.2): the path is exactly the key, so
     // the rendering shows the key and no callsite — which is the point, since
     // two callsites reach the same slot.
     let pairs = state_pairs("fn leaf(id)\n  state(id) v = id\n  v\nend\nleaf(7)\nleaf(9)");

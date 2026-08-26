@@ -105,8 +105,8 @@
 //!   callsite chain that reaches it, one inside a loop is a slot per iteration,
 //!   and an explicit key is a slot per runtime value — in each case the base key
 //!   alone cannot say which slot a read filled or a write commits to, so no web
-//!   may root on one (plan §3.7). Accesses are checked against the same rule
-//!   rather than assumed: a `StateWrite` nested deeper in loops than its
+//!   may root on one (docs/dev/state-call-paths.md §3.7). Accesses are checked
+//!   against the same rule rather than assumed: a `StateWrite` nested deeper in loops than its
 //!   declaration is fine, because its `path_pop` drops exactly those `Index`
 //!   parts and lands it back on the declaration's slot — that is the top-level
 //!   accumulator (`state xs = []` plus `xs = append(xs, i)` in a `for`), which
@@ -410,7 +410,7 @@ impl<'p> Analysis<'p> {
             // executed under a different path than the read commits to a
             // different slot than the one it just mutated. Only a declaration
             // whose path is statically empty — a top-level `state` outside every
-            // loop — addresses exactly one slot (plan §3.7).
+            // loop — addresses exactly one slot (§3.7).
             //
             // `Copy` carriers also inherit the key (so a chain of reassignments
             // still resolves to the `StateInit`), but they touch no slot and

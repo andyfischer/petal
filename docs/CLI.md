@@ -449,7 +449,7 @@ which):
 
 A state key names the *declaration*; the slot it selects at runtime is that key
 plus the call path that reached it (see
-[state-callsite-keying-plan.md](dev/state-callsite-keying-plan.md) §2). The path
+[state-call-paths.md](dev/state-call-paths.md) §2). The path
 is a runtime value, so no static dump prints one — what the dumps carry is its
 static half: a call term's `call_site` id in `show-ir --json`, and `popN` on a
 `state_read`/`state_write` in the bytecode text (the number of enclosing loop

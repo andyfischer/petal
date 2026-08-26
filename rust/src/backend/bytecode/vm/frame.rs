@@ -117,22 +117,25 @@ pub enum LoopCursor {
 }
 
 impl LoopCursor {
-    /// Push a value onto this cursor's collection accumulator.
-    pub(super) fn push_acc(&mut self, v: Value) {
+    /// This cursor's collection accumulator, whichever cursor shape holds it.
+    /// Every variant carries one, so the accessors below never branch on the
+    /// loop kind.
+    fn acc_mut(&mut self) -> &mut Vec<Value> {
         match self {
             LoopCursor::ForEach { acc, .. }
             | LoopCursor::Range { acc, .. }
-            | LoopCursor::While { acc, .. } => acc.push(v),
+            | LoopCursor::While { acc, .. } => acc,
         }
+    }
+
+    /// Push a value onto this cursor's collection accumulator.
+    pub(super) fn push_acc(&mut self, v: Value) {
+        self.acc_mut().push(v);
     }
 
     /// Take this cursor's collection accumulator, leaving it empty.
     pub(super) fn take_acc(&mut self) -> Vec<Value> {
-        match self {
-            LoopCursor::ForEach { acc, .. }
-            | LoopCursor::Range { acc, .. }
-            | LoopCursor::While { acc, .. } => std::mem::take(acc),
-        }
+        std::mem::take(self.acc_mut())
     }
 
     /// This cursor's collection accumulator (GC root).
@@ -232,10 +235,10 @@ impl<'a> Vm<'a> {
     ///
     /// An explicit `state(expr)` key is **absolute**: it hashes its value and
     /// ignores the call path entirely, so two callsites asking for the same
-    /// entity get the same slot (plan §2.2). Otherwise the slot is the
-    /// declaration id under the current frame's path — the callsite chain that
-    /// reached it and the loop iterations it is inside — which the frame has
-    /// already composed incrementally.
+    /// entity get the same slot (docs/dev/state-call-paths.md §2.2).
+    /// Otherwise the slot is the declaration id under the current frame's path
+    /// — the callsite chain that reached it and the loop iterations it is
+    /// inside — which the frame has already composed incrementally.
     ///
     /// `path_pop` drops that many innermost loop `Index` parts, so a
     /// reassignment nested deeper in loops than its declaration still addresses

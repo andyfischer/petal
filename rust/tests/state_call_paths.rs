@@ -1,5 +1,5 @@
 // Call-path keyed `state` — the Phase 2 semantics of
-// docs/dev/state-callsite-keying-plan.md.
+// docs/dev/state-call-paths.md.
 //
 // A slot is `(declaration id, path)`, where the path is the chain of callsites
 // and loop iterations that reached the declaration. Two executions land in the
@@ -590,7 +590,7 @@ print(c())
     let pid = env.load_program(src).unwrap();
     let sid = env.create_stack(pid).unwrap();
 
-    // No `StateWrite`: `set` goes through the cell (plan §7's last bullet).
+    // No `StateWrite`: `set` goes through the cell (§2.4).
     let program = env.get_program(pid).unwrap();
     assert!(
         !program

@@ -68,7 +68,7 @@ grow: exactly one live slot at a time. (Checked with a printing init and two
 calls per frame — one "compute" line per frame, and one `k…/cam` slot in the
 state dump.)
 
-See `docs/dev/state-callsite-keying-plan.md` for the model and
+See `docs/dev/state-call-paths.md` for the model and
 `rust/tests/state_call_paths.rs` for the contract.
 
 **Proposed (original)**: A `cached(expr)` form or a memoization decorator

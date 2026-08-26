@@ -786,9 +786,9 @@ fn inplace_does_not_fire_on_per_iteration_state() {
 
 #[test]
 fn inplace_state_rule_is_the_statically_empty_path() {
-    // The v1 state-rooted rule (plan §3.7/§8.8): a state web may root only on a
-    // declaration whose path is *statically empty* — module scope, outside every
-    // loop. Everything else is a slot per call path, per iteration, or per key
+    // The v1 state-rooted rule (docs/dev/state-call-paths.md §3.7): a state web
+    // may root only on a declaration whose path is *statically empty* — module
+    // scope, outside every loop. Everything else is a slot per call path, per iteration, or per key
     // value, so the base key does not name the slot the mutation must commit to.
     let fires = [
         // The shape the rule exists to keep: the declaration is top-level and

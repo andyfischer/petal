@@ -335,7 +335,7 @@ mod tests {
         // two entries — both preserved, both resumed on their own path. The edit
         // between the versions touches neither callsite's spelling nor its
         // ordinal, which is exactly the stability the callsite hash promises
-        // (plan §3.1).
+        // (docs/dev/state-call-paths.md §3.1).
         check_transfer_both_opt_levels(
             "\
 fn counter()

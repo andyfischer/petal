@@ -49,7 +49,7 @@ fn time_and_elapsed() {
 #[test]
 fn each_elapsed_callsite_is_its_own_timer() {
     // `elapsed()` captures `time()` into a `state` slot inside the function, so
-    // under call-path keying (docs/dev/state-callsite-keying-plan.md) each
+    // under call-path keying (docs/dev/state-call-paths.md) each
     // callsite starts its own clock at the frame it first runs on. That is what
     // makes "one timer per thing being timed" the default instead of the single
     // global timer the pre-Phase-2 language could offer.

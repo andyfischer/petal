@@ -1,4 +1,4 @@
-// Call-path keyed `state` (docs/dev/state-callsite-keying-plan.md, Phase 2),
+// Call-path keyed `state` (docs/dev/state-call-paths.md),
 // observed end to end through the CLI.
 //
 // A slot is `(declaration id, path)` — the chain of callsites and loop

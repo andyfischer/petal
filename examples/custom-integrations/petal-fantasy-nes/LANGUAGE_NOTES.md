@@ -200,7 +200,7 @@ value the file computes at run time: such a function cannot be hoisted, so a
 top-level call above its declaration reads nil. The compiler warns before it
 fails, and the fix is to move the cell down.
 
-See `docs/dev/state-callsite-keying-plan.md`.
+See `docs/dev/state-call-paths.md`.
 
 ### 2. Shadowing a `state var` with a `let` is an internal error
 

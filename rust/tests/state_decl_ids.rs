@@ -10,7 +10,7 @@
 //   - top-level declarations hash exactly the string they always did, so
 //     persisted state carries across this change.
 //
-// Since Phase 2 of docs/dev/state-callsite-keying-plan.md, a declaration's
+// Under call-path keying (docs/dev/state-call-paths.md), a declaration's
 // *slot* is that id under the call path that reached it — so the way to watch
 // one declaration accumulate is to reach it the same way twice, which is what
 // `run_twice` does (the frame-loop model: same callsites, same paths, next

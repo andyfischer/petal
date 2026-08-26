@@ -11,7 +11,7 @@ use crate::program::{ProgramId, StateKey};
 use crate::value::Value;
 
 /// One dynamic step on the path from the program root to a `state`
-/// declaration. See docs/dev/state-callsite-keying-plan.md §2.1.
+/// declaration. See docs/dev/state-call-paths.md §2.1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PathPart {
     /// A call: the compile-time hash identifying the *callsite* the frame was
@@ -22,7 +22,7 @@ pub enum PathPart {
     /// `while` at every level of the live frame stack.
     Index(usize),
     /// An explicit `state(expr)` key, hashed. Absolute: a keyed slot's path is
-    /// exactly `[Key(h)]`, ignoring the call path entirely (plan §2.2).
+    /// exactly `[Key(h)]`, ignoring the call path entirely (§2.2).
     Key(u64),
 }
 

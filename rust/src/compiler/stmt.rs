@@ -278,7 +278,8 @@ impl Compiler {
     /// only entered the first time this declaration is reached on a given call
     /// path (the `(decl id, path)` slot). The explicit key (if any) is computed
     /// eagerly in the parent block — its value alone determines which slot to
-    /// consult, since a keyed slot ignores the path (plan §2.2).
+    /// consult, since a keyed slot ignores the path
+    /// (docs/dev/state-call-paths.md §2.2).
     fn compile_state_decl(
         &mut self,
         name: &str,

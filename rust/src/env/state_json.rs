@@ -133,8 +133,8 @@ impl Env {
 /// Render one runtime state key as the name hosts see it: the call path that
 /// reached the slot, root-to-leaf, `/`-separated, with the variable name last.
 ///
-/// The single renderer for every part shape (plan §8.5 — the old code had one
-/// special case per shape):
+/// The single renderer for every part shape (docs/dev/state-call-paths.md §3.6
+/// — the old code had one special case per shape):
 ///
 /// | Path | Renders as |
 /// |------|------------|
@@ -189,14 +189,8 @@ fn call_site_labels(program: &crate::program::Program) -> HashMap<u64, String> {
         if labels.contains_key(&site) {
             continue;
         }
-        let text = callee_display(program, term);
-        let n = seen.entry(text.clone()).or_insert(0);
-        let ordinal = std::mem::replace(n, *n + 1);
-        let label = if ordinal == 0 {
-            text
-        } else {
-            format!("{text}#{ordinal}")
-        };
+        let mut label = callee_display(program, term);
+        crate::compiler::append_ordinal(&mut seen, &mut label);
         labels.insert(site, label);
     }
     labels
@@ -205,6 +199,11 @@ fn call_site_labels(program: &crate::program::Program) -> HashMap<u64, String> {
 /// The callee a call term names, for [`call_site_labels`]. A `Call`'s callee is
 /// its first input, which is typically a `Copy` of the binding the `fn`
 /// declared — so follow the copy chain to the term that carries the name.
+///
+/// The display-side counterpart of `compiler::callee_text`, which reads the
+/// same spelling off the *AST* to mint the id. The two need not agree — nothing
+/// resolves a label back to a slot — so this one renders a method as `.name`
+/// rather than reconstructing the receiver.
 fn callee_display(program: &crate::program::Program, term: &crate::program::Term) -> String {
     const UNNAMED: &str = "<expr>";
     match &term.op {

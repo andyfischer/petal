@@ -737,22 +737,14 @@ mod tests {
     }
 
     fn make_term(id: u32, op: TermOp, inputs: Vec<u32>, name: Option<&str>) -> Term {
-        Term {
-            id: TermId(id),
+        Term::new(
+            TermId(id),
             op,
-            inputs: inputs.into_iter().map(TermId).collect(),
-            block_id: BlockId(0),
-            block_next: None,
-            block_prev: None,
-            name: name.map(|s| s.to_string()),
-            register: RegisterIndex(id as u16),
-            state_key: None,
-            child_blocks: SmallVec::new(),
-            path_pop: 0,
-            call_site: None,
-            collect: false,
-            is_config: false,
-        }
+            inputs.into_iter().map(TermId).collect(),
+            BlockId(0),
+            name.map(|s| s.to_string()),
+            RegisterIndex(id as u16),
+        )
     }
 
     /// A `MethodCall` reaches the function it dispatches to through the

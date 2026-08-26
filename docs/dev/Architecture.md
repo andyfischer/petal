@@ -423,7 +423,7 @@ React-`useState` model. One `state` declaration inside a function therefore
 holds one value per callsite, per loop iteration around that callsite, and
 per recursion depth. Both halves of the key are derived from names and
 structure, never from `TermId`s or spans, so they survive a hot reload. The
-full spec is [state-callsite-keying-plan.md](state-callsite-keying-plan.md).
+full spec is [state-call-paths.md](state-call-paths.md).
 
 **The declaration id** (`Term::state_key`, a `StateKey`, built by
 `Compiler::state_key_for`) hashes the declaration's full name path: the

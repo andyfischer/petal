@@ -43,10 +43,11 @@ fn state_list_accumulated_in_loop_persists_across_runs() {
     // appended value lives only in loop registers and is lost when the run ends.
     //
     // Call-path keying does not change this. The *declaration* is what the path
-    // keys, and this one is reached at the root, on the empty path (plan §2.3:
-    // top-level `state` is untouched). The writes sit one loop level below it
-    // and pop back to it (`Term::path_pop`). What per-iteration keying looks
-    // like — a declaration *inside* the loop — is the next test.
+    // keys, and this one is reached at the root, on the empty path
+    // (docs/dev/state-call-paths.md §2.3: top-level `state` is untouched). The
+    // writes sit one loop level below it and pop back to it
+    // (`Term::path_pop`). What per-iteration keying looks like — a declaration
+    // *inside* the loop — is the next test.
     let mut env = Env::new();
     let pid = env
         .load_program("state items = []\nfor i in range(0, 3) do\n  items = append(items, i)\nend")
@@ -85,7 +86,7 @@ fn state_declared_inside_a_loop_is_one_slot_per_iteration() {
     // The other half of the rule, and the companion to the test above: move the
     // declaration *into* the loop and the path that reaches it now carries the
     // iteration, so each iteration owns a slot and each accumulates on its own
-    // across runs (plan §2.1). This is the keying `examples/console/particles.
+    // across runs (§2.1). This is the keying `examples/console/particles.
     // ptl` always claimed to have.
     let mut env = Env::new();
     let pid = env

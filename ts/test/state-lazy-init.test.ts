@@ -1,6 +1,6 @@
 // Lazy state initialization: the RHS of `state x = expr` should only be
 // evaluated on first encounter of the runtime key — the declaration id plus
-// the call path that reached it (see docs/dev/state-callsite-keying-plan.md).
+// the call path that reached it (see docs/dev/state-call-paths.md).
 // Subsequent encounters skip the init expression entirely.
 //
 // This matters for:

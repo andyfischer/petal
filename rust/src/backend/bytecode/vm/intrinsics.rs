@@ -18,7 +18,8 @@ impl<'a> Vm<'a> {
     /// `site` is the callsite id the callee's frame path gets. An intrinsic
     /// passes the id of the `map`/`filter`/… call driving it, so a closure with
     /// `state` in it keeps one slot per intrinsic call site; the host entry
-    /// point passes an id derived from the function's name (plan §2.5).
+    /// point passes an id derived from the function's name
+    /// (docs/dev/state-call-paths.md §2.5).
     pub(crate) fn call_closure_sync(
         &mut self,
         callable: Value,

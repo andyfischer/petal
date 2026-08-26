@@ -206,9 +206,9 @@ impl Env {
     ///
     /// A host call runs with no caller frame, so the function's own `state`
     /// declarations are keyed under a root path derived from the name called
-    /// (plan §2.5): repeated host calls of one function share their slots with
-    /// each other, but not with any in-program call of the same function. The
-    /// workaround, as always, is a top-level `state var`.
+    /// (docs/dev/state-call-paths.md §2.5): repeated host calls of one function
+    /// share their slots with each other, but not with any in-program call of
+    /// the same function. The workaround, as always, is a top-level `state var`.
     pub fn call_function(
         &mut self,
         stack_id: StackKey,

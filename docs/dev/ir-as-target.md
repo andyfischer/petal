@@ -264,7 +264,7 @@ the **call path** the running program took to reach it. Two executions land
 on the same slot only if they arrive through the same declaration via the
 same chain of callsites and loop iterations, so one `state` declaration
 inside a function holds one value per callsite (see
-[state-callsite-keying-plan.md](state-callsite-keying-plan.md) for the full
+[state-call-paths.md](state-call-paths.md) for the full
 semantics). The path itself is a runtime value — the VM builds it as frames
 are pushed and loops iterate — so the IR carries only its *static* half,
 across three fields:

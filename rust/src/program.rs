@@ -363,7 +363,7 @@ pub struct Term {
     /// path as [`crate::stack::PathPart::Call`], which is what gives each
     /// callsite of a function its own `state` slots. Name/structure-derived so
     /// it survives a hot reload; see
-    /// `Compiler::call_site_for` and docs/dev/state-callsite-keying-plan.md §3.1.
+    /// `Compiler::call_site_for` and docs/dev/state-call-paths.md §3.1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_site: Option<u64>,
     /// For a loop control term (`ForLoop`/`NumericForLoop`/`WhileLoop`): collect
@@ -377,6 +377,39 @@ pub struct Term {
     /// pinning the rest (see `direct_manipulation::propose_edits`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_config: bool,
+}
+
+impl Term {
+    /// A term carrying no optional metadata: `state_key`, `child_blocks`,
+    /// `path_pop`, `call_site`, `collect` and `is_config` all at their
+    /// serialization defaults, and the block links unset. The single place
+    /// those defaults are written down, so adding a `Term` field does not mean
+    /// hunting down every construction site.
+    pub fn new(
+        id: TermId,
+        op: TermOp,
+        inputs: SmallVec<[TermId; 4]>,
+        block_id: BlockId,
+        name: Option<String>,
+        register: RegisterIndex,
+    ) -> Term {
+        Term {
+            id,
+            op,
+            inputs,
+            block_id,
+            block_next: None,
+            block_prev: None,
+            name,
+            register,
+            state_key: None,
+            child_blocks: SmallVec::new(),
+            path_pop: 0,
+            call_site: None,
+            collect: false,
+            is_config: false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,9 @@
 //
 // A FIXED, generic panel script (like the git-log viewer): it bakes in no data and
 // loads everything through `query("doc")`, answered by the garden-diff
-// subprocess (which shells `git`/`gh`). Three view modes, switched by the header
-// pills (mouse — works even while the editor is focused, since a click outside a
-// region defocuses it):
+// subprocess (which shells `git`/`gh`). Three view modes, switched by the
+// header tab bar (mouse — works even while the editor is focused, since a
+// click outside a region defocuses it):
 //
 //   • UNIFIED (default, editable) — one column, the classic +/-/context stream,
 //     in an `edit_view` carrying an **editable projection** (`edit_view_projection`):
@@ -55,7 +55,7 @@
 // number/title/author, its description, and the conversation comments.
 //
 // A review outlives the working tree it describes, so the header carries a ⟳
-// reload pill and the panel polls for change on its own (see "staleness probe"):
+// reload button and the panel polls for change on its own (see "staleness probe"):
 // a doc that moved on disk is adopted silently when nothing is unsaved, and
 // otherwise only flagged — "changed on disk · click reload" — so an edit in
 // progress is never swapped out from under the user.
@@ -140,12 +140,11 @@ state pr_open = true         // whether the PR discussion block is expanded
 // Soft-wrap the unified view's long lines to the column width instead of
 // letting them run off the right edge (a diff of prose, or of code with long
 // string literals, is unreadable clipped). On by default; the header's `wrap`
-// pill turns it off when the exact columns matter. Only the unified view offers
-// it — split's two regions are row-aligned, and wrapping one would slide it out
-// of step with the other.
+// toggle turns it off when the exact columns matter. Only the unified view
+// offers it — split's two regions are row-aligned, and wrapping one would slide
+// it out of step with the other.
 state uni_wrap = true
-state sel = 0                // selected file-column row (index into doc.outline)
-state list_scroll = 0        // first visible file-column row
+state flist = list_state()   // file-column list: {selected, scroll} (prelude)
 state list_drag = false      // dragging the file column's scrollbar thumb?
 // ── staleness ──────────────────────────────────────────────────────────────
 // A review is a window onto a moving working tree: a rebase, an agent editing
@@ -159,19 +158,21 @@ state probing = false        // a staleness re-query is in flight
 state next_probe = 0.0       // `time()` (seconds since panel start) of the next probe
 state probes = 0             // completed probes; observed by name, so tests can wait on it
 
-// ── palette ───────────────────────────────────────────────────────────────
-let P = palette()
-let BG = P.window_bg
-let LINE = P.border
-let TEXT = P.text
-let DIM = P.text_dim
-let ACCENT = P.accent
-let RED = P.red
-let GREEN = P.green
-let ROWALT = P.hover
-let TRACK = P.scrollbar_track
-let THUMB = P.scrollbar_thumb
-let SELBG = P.sel
+// ── theme ─────────────────────────────────────────────────────────────────
+// `ui_theme()` resolves to Garden's palette automatically (the host binds it
+// every frame), so the prelude widgets used below and these aliases paint from
+// the same tokens. The SCREAMING aliases just keep the body readable.
+let T = ui_theme()
+let BG = T.bg
+let LINE = T.border
+let TEXT = T.text
+let DIM = T.dim
+let ACCENT = T.accent
+let RED = T.danger
+let GREEN = T.success
+let ROWALT = T.hover
+let TRACK = T.overlay
+let SELBG = T.selection
 
 let FS = 14
 let w = screen_width()
@@ -193,11 +194,6 @@ let header_h = 38
 // second of margin. Raising this any further needs a real timer from the host,
 // not a bigger number.
 let PROBE_SECS = 9.0
-
-fn spinner()
-  let frames = ["|", "/", "-", "\\"]
-  frames[(frame_count() / 6) % 4]
-end
 
 // ── data ────────────────────────────────────────────────────────────────────
 if !ready then
@@ -298,7 +294,7 @@ if ready && len(err) == 0 && !stale then
   end
 end
 
-// ── header: mode pills (click to switch view) ─────────────────────────────────
+// ── header: title + mode tabs (click to switch view) ──────────────────────────
 let title = "diff"
 if ready then title = "diff vs {doc.base}" end
 if has_pr then title = "PR #{doc.pr.number}" end
@@ -308,50 +304,55 @@ if has_pr then title = "PR #{doc.pr.number}" end
 if ready && len(scope) > 0 then title = "diff ▸ {scope_label}" end
 if has_pr && len(scope) > 0 then title = "PR #{doc.pr.number} ▸ {scope_label}" end
 if len(err) > 0 then title = "diff error" end
-if !ready && len(err) == 0 then title = "loading diff {spinner()}" end
+if !ready && len(err) == 0 then title = "loading diff {spinner_glyph()}" end
 
-// Pills read in the order the views are reached for: unified (the default —
+// Tabs read in the order the views are reached for: unified (the default —
 // what "show me the diff" means), then the editable split, the diagram, and
 // last the commit list, which is about the review rather than about the change.
 let pills_x = PAD + text_width(title, FS) + 24
-// The ⟳ reload pill leads the row: it belongs to the review as a whole rather
-// than to any one view, and leading keeps it in one place — the wrap pill comes
-// and goes with the mode, and the right edge is the hint's. Icon-only (28px), so
-// four pills plus a reload still fit a narrow header.
+// The ⟳ reload button leads the row: it belongs to the review as a whole
+// rather than to any one view, and leading keeps it in one place — the wrap
+// toggle comes and goes with the mode, and the right edge is the hint's.
+// Icon-only (28px), so the tab strip still fits a narrow header.
 let refresh_w = 28
 let refresh_r = rect(pills_x, PAD - 3, refresh_w, 23)
-let pill_x = pills_x + refresh_w + 8
-let unified_w = text_width("unified", FS) + 20
-let split_w = text_width("split", FS) + 20
-let stat_w = text_width("stat", FS) + 20
-let unified_r = rect(pill_x, PAD - 3, unified_w, 23)
-let split_r = rect(pill_x + unified_w + 6, PAD - 3, split_w, 23)
-let stat_r = rect(pill_x + unified_w + split_w + 12, PAD - 3, stat_w, 23)
-let commits_w = text_width("commits", FS) + 20
-let commits_r = rect(pill_x + unified_w + split_w + stat_w + 18, PAD - 3, commits_w, 23)
-// The wrap toggle rides at the end of the pill row, and only in unified mode —
-// it is the only view that wraps.
-let wrap_w = text_width("wrap", FS) + 20
-let wrap_r = rect(pill_x + unified_w + split_w + stat_w + commits_w + 36, PAD - 3, wrap_w, 23)
+// The mode switch is the prelude `tab_bar`. This geometry mirrors its layout
+// (each tab is its label plus 24px, with a 4px gap) so the per-tab centres can
+// be named for tests below. The strip's bottom edge sits exactly on the header
+// hairline, so the active tab's underline reads against it.
+let TABS = ["unified", "split", "stat", "commits"]
+let tabs_x = pills_x + refresh_w + 8
+let unified_w = text_width("unified", FS) + 24
+let split_w = text_width("split", FS) + 24
+let stat_w = text_width("stat", FS) + 24
+let commits_w = text_width("commits", FS) + 24
+let tabs_r = rect(tabs_x, PAD, unified_w + split_w + stat_w + commits_w + 12, 30)
+// The wrap toggle (a prelude checkbox) rides at the end of the tab strip, and
+// only in unified mode — it is the only view that wraps.
+let wrap_w = text_width("wrap", FS) + 26
+let wrap_r = rect(tabs_r.x + tabs_r.w + 18, PAD - 3, wrap_w, 23)
 
 // ── hit targets for tests ────────────────────────────────────────────────────
-// The centre of each pill, named so a scripted test can click a control without
-// re-deriving this file's geometry. Naming a value is the whole mechanism: the
-// host observes every named binding a frame makes and reports it at the debug
-// server as `panes[].panel.values`. The `*_r` rects are observable too, but a
-// centre is what a click wants, so it is bound once here rather than computed by
-// every caller. The body regions bind their own x/y further down, where the
-// notice / PR bands have already pushed the layout into place.
-let pill_y = PAD + 8
+// The centre of each header control, named so a scripted test can click one
+// without re-deriving this file's geometry. Naming a value is the whole
+// mechanism: the host observes every named binding a frame makes and reports it
+// at the debug server as `panes[].panel.values`. The rects are observable too,
+// but a centre is what a click wants, so it is bound once here rather than
+// computed by every caller. The body regions bind their own x/y further down,
+// where the notice / PR bands have already pushed the layout into place.
+// `pill_y` keeps its historical name — it is the tab strip's centre line now.
+let pill_y = tabs_r.y + 15
 let refresh_x = refresh_r.x + (refresh_w / 2)
-let unified_x = unified_r.x + (unified_w / 2)
-let split_x = split_r.x + (split_w / 2)
-let stat_x = stat_r.x + (stat_w / 2)
-let commits_x = commits_r.x + (commits_w / 2)
+let unified_x = tabs_x + unified_w / 2
+let split_x = tabs_x + unified_w + 4 + split_w / 2
+let stat_x = tabs_x + unified_w + split_w + 8 + stat_w / 2
+let commits_x = tabs_x + unified_w + split_w + stat_w + 12 + commits_w / 2
 let wrap_x = wrap_r.x + (wrap_w / 2)
 
-// ── input: mode switch + PR-block toggle (mouse) ──────────────────────────────
-// A press here also hands keyboard focus back from any focused region (the host
+// ── input ─────────────────────────────────────────────────────────────────────
+// The header controls are prelude widgets now (button / tab_bar / checkbox), so
+// they handle their own clicks where they draw, in the chrome section below.
+// A press there also hands keyboard focus back from any focused region (the host
 // clears it on a press outside every region), so switching mid-edit is safe.
 // A hidden region is dropped and re-seeded from the doc on return, so unsaved
 // edits do not survive a view switch — save (or stay) before switching. The
@@ -360,36 +361,6 @@ let wrap_x = wrap_r.x + (wrap_w / 2)
 // re-seeding from edited text would leave the two out of step.
 let mx = mouse_x()
 let my = mouse_y()
-let refresh_hover = point_in(mx, my, refresh_r)
-// ⟳ — drop the doc query and re-enter the loader. This is the manual half of the
-// staleness story (the probe above is the automatic half): it is also how a
-// *stale* view with unsaved edits is finally taken, which is why it is a click
-// and not something the panel does on its own.
-if ready && len(err) == 0 && mouse_pressed(0) && refresh_hover && !menu_blocking(menu) then
-  invalidate("doc", scope)
-  // The commit list is part of the review too — a new commit is exactly the
-  // kind of thing a reload is asked for.
-  commits_ready = false
-  commits_asked = false
-  ready = false
-  stale = false
-  probing = false
-  next_probe = time() + PROBE_SECS
-end
-// The mode pills, guarded against the reload click above so one press is not
-// handled twice (git_panel's `!refresh_hover` guard) — and against an open
-// context menu, which owns the pointer for the frame (see `menu_blocking`).
-if ready && len(err) == 0 && mouse_pressed(0) && !refresh_hover && !menu_blocking(menu) then
-  let want = mode
-  if point_in(mx, my, split_r) then want = "split" end
-  if point_in(mx, my, unified_r) then want = "unified" end
-  if point_in(mx, my, stat_r) then want = "stat" end
-  if point_in(mx, my, commits_r) then want = "commits" end
-  if want != mode then mode = want end
-  if mode == "unified" && point_in(mx, my, wrap_r) then uni_wrap = !uni_wrap end
-end
-
-
 
 // ── save: ^S writes the focused editable view back ────────────────────────────
 // Both editable views save the same way: they send the *edits* the host's
@@ -417,56 +388,74 @@ end
 let content_top = PAD + header_h
 clear(BG.r, BG.g, BG.b)
 draw_text(title, {x: PAD, y: PAD}, FS, TEXT)
-
-// One header pill: filled with the accent when it is the active view, outlined
-// otherwise. Captures the palette / metrics lets above.
-fn pill(r, label, on)
-  if on then
-    draw_rect(r, ACCENT)
-    draw_text(label, {x: r.x + 10, y: PAD}, FS, BG)
-  else
-    draw_rect_outline(r, LINE)
-    draw_text(label, {x: r.x + 10, y: PAD}, FS, DIM)
-  end
+// While the doc loads the body is empty: say so in the middle of it too, with
+// the prelude's arc spinner (the title already carries the text glyph).
+if !ready && len(err) == 0 then
+  spinner(w / 2, h / 2, 14)
 end
 
-// The ⟳ reload pill. The glyph is drawn geometry, not a font character (Garden's
-// mono font has no ⟳): a ring — an outer disc with the pill's own background
-// punched back out of it — notched open at the top right and capped with an
-// arrowhead, so it reads as a clockwise reload arrow. `hole` must therefore be
-// exactly what is behind the glyph, which is why it follows the pill's fill.
-// Filled with the accent when the view is stale: the reload is the thing to do
-// next, so the control itself is the marker.
-fn refresh_pill(r, on, hover)
+// The ⟳ reload control: a prelude `button` carrying a drawn glyph (Garden's
+// mono font has no ⟳) — an annular arc left open at its end and capped with an
+// arrowhead, so it reads as a circular reload arrow. Filled with the accent
+// while the view is stale: the reload is the thing to do next, so the control
+// itself is the marker. Returns the button's click. Captures the theme lets.
+fn refresh_button(r, on)
+  let sty = {}
+  if on then sty = {bg: ACCENT, hover: ACCENT, outline: ACCENT} end
+  let click = button(r, "", sty)
   let glyph = DIM
-  let hole = BG
   if on then
-    draw_rect(r, ACCENT)
-    glyph = BG
-    hole = ACCENT
-  elsif hover then
-    draw_rect(r, ROWALT)
-    draw_rect_outline(r, ACCENT)
+    glyph = contrast_text(ACCENT)
+  elsif hovered(r) then
     glyph = ACCENT
-    hole = ROWALT
-  else
-    draw_rect_outline(r, LINE)
   end
-  let ix = r.x + 14
-  let iy = r.y + 11
-  draw_circle({x: ix, y: iy}, 6, glyph)
-  draw_circle({x: ix, y: iy}, 3, hole)
-  draw_rect(rect(ix, iy - 8, 8, 6), hole)
-  fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, glyph.r, glyph.g, glyph.b)
+  let gx = float(r.x) + float(r.w) / 2.0
+  let gy = float(r.y) + float(r.h) / 2.0
+  let a0 = 2.6
+  let a1 = a0 + 4.9
+  fill_arc(gx, gy, 4.0, 6.4, a0, a1, glyph.r, glyph.g, glyph.b, 255)
+  // The arrowhead: tip along the arc's tangent at its open end, base spanning
+  // the ring's thickness.
+  let ex = gx + 5.2 * cos(a1)
+  let ey = gy + 5.2 * sin(a1)
+  fill_triangle(ex - sin(a1) * 4.5, ey + cos(a1) * 4.5,
+    ex + cos(a1) * 3.0, ey + sin(a1) * 3.0,
+    ex - cos(a1) * 3.0, ey - sin(a1) * 3.0,
+    glyph.r, glyph.g, glyph.b)
+  click
 end
 
 if ready && len(err) == 0 then
-  refresh_pill(refresh_r, stale, refresh_hover)
-  pill(unified_r, "unified", mode == "unified")
-  pill(split_r, "split", mode == "split")
-  pill(stat_r, "stat", mode == "stat")
-  pill(commits_r, "commits", mode == "commits")
-  if mode == "unified" then pill(wrap_r, "wrap", uni_wrap) end
+  // ⟳ — drop the doc query and re-enter the loader. This is the manual half of
+  // the staleness story (the probe above is the automatic half): it is also how
+  // a *stale* view with unsaved edits is finally taken, which is why it is a
+  // click and not something the panel does on its own. Stands down while a
+  // context menu is open — that click belongs to the menu (`menu_blocking`).
+  if refresh_button(refresh_r, stale) && !menu_blocking(menu) then
+    invalidate("doc", scope)
+    // The commit list is part of the review too — a new commit is exactly the
+    // kind of thing a reload is asked for.
+    commits_ready = false
+    commits_asked = false
+    ready = false
+    stale = false
+    probing = false
+    next_probe = time() + PROBE_SECS
+  end
+  // The mode switch: the prelude tab bar, its underline sitting on the header
+  // hairline. Its click stands down while a context menu is open, like every
+  // other handler here.
+  let mode_idx = 0
+  if mode == "split" then mode_idx = 1 end
+  if mode == "stat" then mode_idx = 2 end
+  if mode == "commits" then mode_idx = 3 end
+  let picked_tab = tab_bar(tabs_r, TABS, mode_idx, {size: FS})
+  if !menu_blocking(menu) && picked_tab != mode_idx then
+    mode = TABS[int(picked_tab)]
+  end
+  if mode == "unified" then
+    uni_wrap = checkbox(wrap_r, "wrap", uni_wrap)
+  end
 
   let nfiles = "{len(doc.files)} files"
   if len(doc.files) == 1 then nfiles = "1 file" end
@@ -487,13 +476,13 @@ if ready && len(err) == 0 then
   // Unsaved work is called out where the hint lives, because switching views
   // discards it: a projection cannot be re-seeded from its own edited text, so
   // the region's buffer is dropped the frame it stops being declared. The
-  // marker is the only warning the user gets before clicking a pill.
+  // marker is the only warning the user gets before clicking a tab.
   if unsaved then
     hint = "unsaved edits  ·  ^S saves  ·  switching views discards them"
     hint_color = ACCENT
   end
   // A stale view says so where the hint lives rather than in a band of its own:
-  // the header already carries four pills, and a fifth line of chrome would cost
+  // the header already carries four tabs, and a fifth line of chrome would cost
   // the diff a row on every narrow window to say nothing most of the time.
   if stale then
     hint = "changed on disk  ·  click reload"
@@ -522,17 +511,23 @@ else
   if has_pr then
     let meta = "#{doc.pr.number}  {doc.pr.title}"
     draw_text(meta, {x: PAD, y: content_top}, FS, TEXT)
+    // The PR's state as a prelude status pill beside the title: open reads
+    // success, merged reads accent, closed reads danger.
+    if len(doc.pr.status) > 0 then
+      let stc = DIM
+      if doc.pr.status == "open" then stc = GREEN end
+      if doc.pr.status == "merged" then stc = ACCENT end
+      if doc.pr.status == "closed" then stc = RED end
+      pill(PAD + text_width(meta, FS) + 12, content_top - 1, doc.pr.status, stc)
+    end
     let sub = "@{doc.pr.author}  ·  {doc.pr.base_ref} ← {doc.pr.head_ref}"
-    if len(doc.pr.status) > 0 then sub = "{sub}  ·  {doc.pr.status}" end
     draw_text(sub, {x: PAD, y: content_top + 18}, FS, DIM)
-    // Toggle pill for the discussion block.
+    // The discussion block's toggle: a prelude button.
     let tog = "hide discussion"
     if !pr_open then tog = "show discussion" end
     let tog_w = text_width(tog, FS) + 16
     let tog_r = rect(w - PAD - tog_w, content_top - 2, tog_w, 21)
-    draw_rect_outline(tog_r, LINE)
-    draw_text(tog, {x: tog_r.x + 8, y: content_top}, FS, DIM)
-    if mouse_pressed(0) && point_in(mx, my, tog_r) then pr_open = !pr_open end
+    if button(tog_r, tog, { size: FS }) then pr_open = !pr_open end
     body_offset = 40
     if pr_open then
       // The description + conversation comments in their own selectable /
@@ -569,61 +564,65 @@ else
     let rows = doc.outline
     let list_rows = len(rows)
     let list_row_h = 20
-    let list_rect = rect(PAD, body_top, list_w, body_h)
+    let bar_x = PAD + list_w - 10
     let list_visible = max(1, int(float(body_h) / float(list_row_h)))
     let max_scroll = max(0, list_rows - list_visible)
-    let bar_x = PAD + list_w - 10
-    // A save reloads the doc, and the new outline can be shorter — never index
-    // it with a selection or offset left over from the old one.
-    if sel >= list_rows then sel = 0 end
-    if list_scroll > max_scroll then list_scroll = max_scroll end
+    // The rows' hit rect leaves the right 12px to the scrollbar, and its height
+    // is a whole number of rows so the prelude list's row math is exact.
+    let list_rect = rect(PAD, body_top, list_w - 12, list_visible * list_row_h)
 
     draw_text("FILES", {x: PAD, y: label_y}, FS, DIM)
     draw_rect(rect(views_x - 7, view_top - 4, 1, h - view_top - PAD + 4), LINE)
 
-    // Wheel over the column scrolls it; the diff regions never see it (they only
-    // capture the wheel over their own rect).
-    // `scroll_y()` is fractional (trackpads report sub-tick deltas), so round it
-    // into whole rows — the row index has to stay an integer.
-    if point_in(mx, my, list_rect) then
-      list_scroll = clamp(int(list_scroll + scroll_y()), 0, max_scroll)
+    // A press on a row selects it AND jumps the diff beside it — re-clicking
+    // the already-selected row jumps again — so the pressed row is derived
+    // here rather than from the prelude list's selection delta.
+    let pressed_row = -1
+    if mouse_pressed(0) && point_in(mx, my, list_rect) && !menu_blocking(menu) then
+      let prow = int(flist.scroll) + int(float(my - body_top) / float(list_row_h))
+      if prow >= 0 && prow < list_rows then pressed_row = prow end
     end
+    // The prelude list: click-select plus the hover-scoped wheel (the diff
+    // regions never see it — they only capture the wheel over their own rect).
+    // Keyboard nav stays off (`active` false): j/k belong to the regions' vim.
+    // It also clamps for us — a save reloads the doc, and the new outline can
+    // be shorter than the selection or offset left over from the old one.
+    flist = list_update(flist, list_rows, list_visible, list_rect, false)
+    if pressed_row >= 0 then jump = pressed_row end
+    let sel = int(flist.selected)
+    let list_scroll = int(flist.scroll)
 
-    // Scrollbar: a track down the column's right edge with a thumb sized to the
-    // visible fraction. Press anywhere on the track to jump there, then drag.
+    // Scrollbar: prelude-drawn; the track stays grabbable (press anywhere on it
+    // to jump there, then drag) — `draw_scrollbar` paints, this block steers.
     let overflowing = list_rows > list_visible
     if overflowing then
       let track = rect(bar_x, body_top, 8, body_h)
-      let thumb_h = max(24, int(float(body_h) * float(list_visible) / float(list_rows)))
-      let span = body_h - thumb_h
-      let list_thumb_y = body_top
-      if max_scroll > 0 then
-        list_thumb_y = body_top + int(float(span) * float(list_scroll) / float(max_scroll))
-      end
-      // A press on the track jumps the thumb under the pointer and starts a
-      // drag. `pressed` is checked alongside `list_drag` because a click whose
-      // press and release land in one frame never sees `mouse_down` — it must
-      // still take effect.
+      // `pressed` is checked alongside `list_drag` because a click whose press
+      // and release land in one frame never sees `mouse_down` — it must still
+      // take effect.
       let grabbing = list_drag
       if mouse_pressed(0) && point_in(mx, my, track) then
         list_drag = true
         grabbing = true
       end
       if !mouse_down(0) && !mouse_pressed(0) then list_drag = false end
-      if grabbing && span > 0 then
-        let frac = float(my - body_top - (thumb_h / 2)) / float(span)
-        list_scroll = clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll)
-        list_thumb_y = body_top + int(float(span) * float(list_scroll) / float(max_scroll))
+      if grabbing then
+        let thumb_h = max(12, int(float(body_h) * float(list_visible) / float(list_rows)))
+        let span = body_h - thumb_h
+        if span > 0 then
+          let frac = float(my - body_top - (thumb_h / 2)) / float(span)
+          list_scroll = clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll)
+          flist = { selected: sel, scroll: list_scroll }
+        end
       end
-      draw_rect(track, TRACK)
-      draw_rect(rect(bar_x, list_thumb_y, 8, thumb_h), THUMB)
+      draw_scrollbar(rect(PAD, body_top, list_w - 2, body_h), list_rows, list_visible, list_scroll, { width: 8 })
       // The track's centre line — the x a test drags the thumb along. Bound
       // rather than drawn inline, so the gesture is addressable by name.
       let list_bar_x = bar_x + 4
     end
 
-    // Rows. A press selects (and navigates); the row under the pointer lights up
-    // so the column reads as a control rather than a caption.
+    // Rows. The row under the pointer lights up so the column reads as a
+    // control rather than a caption.
     let shown = min(list_visible, list_rows - list_scroll)
     for i in range(0, shown) do
       let idx = list_scroll + i
@@ -634,10 +633,6 @@ else
         draw_rect(row_r, SELBG)
       elsif point_in(mx, my, row_r) then
         draw_rect(row_r, ROWALT)
-      end
-      if mouse_pressed(0) && point_in(mx, my, row_r) && !menu_blocking(menu) then
-        sel = idx
-        jump = idx
       end
       let tx = PAD + 6 + r.depth * 12
       let avail = list_w - 18 - (tx - PAD)
@@ -657,22 +652,22 @@ else
     let commit_row_h = 40
     let commit_rows = len(commits)
     let cvisible = max(1, int(float(body_h) / float(commit_row_h)))
-    let cmax = max(0, commit_rows - cvisible)
     // The list reloads (⟳ picks up a new commit); never index it with an offset
     // left over from a longer one.
     if csel >= commit_rows then csel = 0 end
-    if commit_scroll > cmax then commit_scroll = cmax end
     let clist_r = rect(PAD, body_top, w - 2 * PAD, body_h)
-    if point_in(mx, my, clist_r) then
-      commit_scroll = clamp(int(commit_scroll + scroll_y()), 0, cmax)
-    end
+    // The prelude scroll region: hover-scoped wheel, clamped (which also covers
+    // an offset left over from a longer list). `scroll_y()` is fractional
+    // (trackpads report sub-tick deltas), so the offset is re-`int`ed — the row
+    // index has to stay an integer.
+    commit_scroll = int(scroll_update(commit_scroll, commit_rows, cvisible, clist_r, false))
 
     if !commits_ready then
-      draw_text("loading commits {spinner()}", {x: PAD, y: body_top + 4}, FS, DIM)
+      draw_text("loading commits {spinner_glyph()}", {x: PAD, y: body_top + 4}, FS, DIM)
     elsif commit_rows == 0 then
-      draw_text("no commits yet — this review is uncommitted work vs {doc.base}",
-        {x: PAD, y: body_top + 4}, FS, DIM)
+      empty_state(clist_r, "no commits yet", "this review is uncommitted work vs {doc.base}")
     else
+      draw_scrollbar(clist_r, commit_rows, cvisible, commit_scroll)
       let cshown = min(cvisible, commit_rows - commit_scroll)
       for i in range(0, cshown) do
         let idx = commit_scroll + i
@@ -688,7 +683,8 @@ else
           draw_rect(row_r, ROWALT)
         end
         // The newest commit leads the list and is what "the latest commit"
-        // means, so it is worth marking rather than making the reader count.
+        // means, so it is worth marking rather than making the reader count —
+        // a prelude status pill, tinted with the accent.
         let sha_color = ACCENT
         if idx > 0 then sha_color = DIM end
         draw_text(c.short, {x: PAD + 8, y: y + 4}, FS, sha_color)
@@ -698,7 +694,7 @@ else
         draw_text_right(c.date, w - PAD - 8, y + 4, FS, DIM)
         draw_text("@{c.author}", {x: subj_x, y: y + 21}, FS, DIM)
         if idx == 0 then
-          draw_text_right("latest", w - PAD - 8, y + 21, FS, ACCENT)
+          pill(w - PAD - 8 - (text_width("latest", 12) + 14), y + 19, "latest", ACCENT)
         end
         draw_line({x: PAD, y: y + commit_row_h - 1}, {x: w - PAD, y: y + commit_row_h - 1}, LINE)
 
@@ -785,128 +781,133 @@ else
     // ── STAT: the per-file changed-lines diagram ──────────────────────────────
     draw_text("STAT · changed lines per file", {x: PAD, y: label_y}, FS, DIM)
     let n = len(doc.files)
-    let total_add = 0
-    let total_del = 0
-    let maxtotal = 1
-    for f in doc.files do
-      total_add = total_add + f.added
-      total_del = total_del + f.removed
-      let t = f.added + f.removed
-      if t > maxtotal then maxtotal = t end
-    end
-
-    // Totals line + a full-width stacked bar of the add/remove split.
-    let sum_y = body_top
-    let files_word = "files"
-    if n == 1 then files_word = "file" end
-    let seg = "{n} {files_word} changed"
-    draw_text(seg, {x: PAD, y: sum_y}, FS, DIM)
-    let sx = PAD + text_width("{seg} ", FS)
-    draw_text("+{total_add}", {x: sx, y: sum_y}, FS, GREEN)
-    sx = sx + text_width("+{total_add} ", FS)
-    draw_text("-{total_del}", {x: sx, y: sum_y}, FS, RED)
-
-    let bar_y = sum_y + 24
-    let bar_h = 8
-    let bar_w = w - PAD * 2
-    draw_rect(rect(PAD, bar_y, bar_w, bar_h), TRACK)
-    let grand = total_add + total_del
-    if grand > 0 then
-      let gw = int(float(bar_w) * float(total_add) / float(grand))
-      draw_rect(rect(PAD, bar_y, gw, bar_h), GREEN)
-      draw_rect(rect(PAD + gw, bar_y, bar_w - gw, bar_h), RED)
-    end
-
-    let head_bottom = bar_y + bar_h + 14
-    draw_line({x: PAD, y: head_bottom}, {x: w - PAD, y: head_bottom}, LINE)
-
-    // ── file rows ─────────────────────────────────────────────────────────────
-    // The host pre-groups the flat file list into `outline`: a dir row naming a
-    // shared path prefix, then the files under it with only their remainder,
-    // indented (see `file_outline.rs`). Rows are drawn in the order given.
-    let rows = doc.outline
-    let total_rows = len(rows)
-    let rows_top = head_bottom + 12
-    let avail = h - rows_top - PAD
-    let ROW_H = 26
-    let max_rows = max(1, int(float(avail) / float(ROW_H)))
-    let show = total_rows
-    let truncated = false
-    if total_rows > max_rows then
-      show = max_rows - 1
-      if show < 1 then show = 1 end
-      truncated = true
-    end
-
-    // Column geometry: the name column is sized in pixels, and every label is
-    // clipped against its own measured width.
-    let label_w = clamp(int(float(w) * 0.34), 130, 340)
-    let counts_w = 130
-    let bar_x0 = PAD + label_w
-    let bar_x1 = w - PAD - counts_w
-    let track_w = max(20, bar_x1 - bar_x0)
-
-    let INDENT = 14
-
-    for i in range(0, show) do
-      let f = rows[i]
-      let y = rows_top + i * ROW_H
-      let cy = y + int(float(ROW_H) / 2.0)
-      let ty = cy - 8
-      let text_x = PAD + 12 + f.depth * INDENT
-      // What is left of the name column once this row's indent is spent.
-      let name_px = label_w - 12 - f.depth * INDENT
-
-      if i % 2 == 1 then draw_rect(rect(PAD, y, w - PAD * 2, ROW_H), ROWALT) end
-
-      // A dir row is a heading for the rows under it: the prefix in the accent
-      // color, its subtree's totals on the right, and none of the per-file
-      // furniture (stripe, magnitude bar).
-      if f.dir then
-        draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, ACCENT)
-        draw_text_right("+{f.added}", w - PAD - 62, ty, FS, DIM)
-        draw_text_right("-{f.removed}", w - PAD, ty, FS, DIM)
-        continue
+    if n == 0 then
+      // Nothing to chart: the prelude empty-state instead of a zero-row table.
+      empty_state(rect(PAD, body_top, w - 2 * PAD, body_h), "nothing to diff", "the working tree matches {doc.base}")
+    else
+      let total_add = 0
+      let total_del = 0
+      let maxtotal = 1
+      for f in doc.files do
+        total_add = total_add + f.added
+        total_del = total_del + f.removed
+        let t = f.added + f.removed
+        if t > maxtotal then maxtotal = t end
       end
 
-      // Left accent: green when net-add, red when net-remove.
-      let accent = RED
-      if f.added >= f.removed then accent = GREEN end
-      draw_rect(rect(PAD, y + 4, 3, ROW_H - 8), accent)
+      // Totals line + a full-width stacked bar of the add/remove split.
+      let sum_y = body_top
+      let files_word = "files"
+      if n == 1 then files_word = "file" end
+      let seg = "{n} {files_word} changed"
+      draw_text(seg, {x: PAD, y: sum_y}, FS, DIM)
+      let sx = PAD + text_width("{seg} ", FS)
+      draw_text("+{total_add}", {x: sx, y: sum_y}, FS, GREEN)
+      sx = sx + text_width("+{total_add} ", FS)
+      draw_text("-{total_del}", {x: sx, y: sum_y}, FS, RED)
 
-      draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, TEXT)
+      let bar_y = sum_y + 24
+      let bar_h = 8
+      let bar_w = w - PAD * 2
+      draw_rect(rect(PAD, bar_y, bar_w, bar_h), TRACK)
+      let grand = total_add + total_del
+      if grand > 0 then
+        let gw = int(float(bar_w) * float(total_add) / float(grand))
+        draw_rect(rect(PAD, bar_y, gw, bar_h), GREEN)
+        draw_rect(rect(PAD + gw, bar_y, bar_w - gw, bar_h), RED)
+      end
 
-      let tf = f.added + f.removed
-      if f.binary then
-        draw_text("binary", {x: bar_x0, y: ty}, FS, DIM)
-      else
-        // Proportional magnitude bar; sqrt-scaled so a huge file doesn't crush
-        // the small ones into invisibility.
-        let by = cy - 4
-        draw_rect(rect(bar_x0, by, track_w, 8), TRACK)
-        if tf > 0 then
-          let frac = sqrt(float(tf) / float(maxtotal))
-          let len_px = int(float(track_w) * frac)
-          let gw = int(float(len_px) * float(f.added) / float(tf))
-          draw_rect(rect(bar_x0, by, gw, 8), GREEN)
-          draw_rect(rect(bar_x0 + gw, by, len_px - gw, 8), RED)
+      let head_bottom = bar_y + bar_h + 14
+      draw_line({x: PAD, y: head_bottom}, {x: w - PAD, y: head_bottom}, LINE)
+
+      // ── file rows ─────────────────────────────────────────────────────────────
+      // The host pre-groups the flat file list into `outline`: a dir row naming a
+      // shared path prefix, then the files under it with only their remainder,
+      // indented (see `file_outline.rs`). Rows are drawn in the order given.
+      let rows = doc.outline
+      let total_rows = len(rows)
+      let rows_top = head_bottom + 12
+      let avail = h - rows_top - PAD
+      let ROW_H = 26
+      let max_rows = max(1, int(float(avail) / float(ROW_H)))
+      let show = total_rows
+      let truncated = false
+      if total_rows > max_rows then
+        show = max_rows - 1
+        if show < 1 then show = 1 end
+        truncated = true
+      end
+
+      // Column geometry: the name column is sized in pixels, and every label is
+      // clipped against its own measured width.
+      let label_w = clamp(int(float(w) * 0.34), 130, 340)
+      let counts_w = 130
+      let bar_x0 = PAD + label_w
+      let bar_x1 = w - PAD - counts_w
+      let track_w = max(20, bar_x1 - bar_x0)
+
+      let INDENT = 14
+
+      for i in range(0, show) do
+        let f = rows[i]
+        let y = rows_top + i * ROW_H
+        let cy = y + int(float(ROW_H) / 2.0)
+        let ty = cy - 8
+        let text_x = PAD + 12 + f.depth * INDENT
+        // What is left of the name column once this row's indent is spent.
+        let name_px = label_w - 12 - f.depth * INDENT
+
+        if i % 2 == 1 then draw_rect(rect(PAD, y, w - PAD * 2, ROW_H), ROWALT) end
+
+        // A dir row is a heading for the rows under it: the prefix in the accent
+        // color, its subtree's totals on the right, and none of the per-file
+        // furniture (stripe, magnitude bar).
+        if f.dir then
+          draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, ACCENT)
+          draw_text_right("+{f.added}", w - PAD - 62, ty, FS, DIM)
+          draw_text_right("-{f.removed}", w - PAD, ty, FS, DIM)
+          continue
         end
+
+        // Left accent: green when net-add, red when net-remove.
+        let accent = RED
+        if f.added >= f.removed then accent = GREEN end
+        draw_rect(rect(PAD, y + 4, 3, ROW_H - 8), accent)
+
+        draw_text(ellipsize_tail(f.label, name_px, FS), {x: text_x, y: ty}, FS, TEXT)
+
+        let tf = f.added + f.removed
+        if f.binary then
+          draw_text("binary", {x: bar_x0, y: ty}, FS, DIM)
+        else
+          // Proportional magnitude bar; sqrt-scaled so a huge file doesn't crush
+          // the small ones into invisibility.
+          let by = cy - 4
+          draw_rect(rect(bar_x0, by, track_w, 8), TRACK)
+          if tf > 0 then
+            let frac = sqrt(float(tf) / float(maxtotal))
+            let len_px = int(float(track_w) * frac)
+            let gw = int(float(len_px) * float(f.added) / float(tf))
+            draw_rect(rect(bar_x0, by, gw, 8), GREEN)
+            draw_rect(rect(bar_x0 + gw, by, len_px - gw, 8), RED)
+          end
+        end
+
+        // Counts in two fixed right-aligned columns so +/- line up down the list;
+        // a zero count renders dim rather than shouting green/red at nothing.
+        let cadd = DIM
+        if f.added > 0 then cadd = GREEN end
+        let cdel = DIM
+        if f.removed > 0 then cdel = RED end
+        draw_text_right("+{f.added}", w - PAD - 62, ty, FS, cadd)
+        draw_text_right("-{f.removed}", w - PAD, ty, FS, cdel)
       end
 
-      // Counts in two fixed right-aligned columns so +/- line up down the list;
-      // a zero count renders dim rather than shouting green/red at nothing.
-      let cadd = DIM
-      if f.added > 0 then cadd = GREEN end
-      let cdel = DIM
-      if f.removed > 0 then cdel = RED end
-      draw_text_right("+{f.added}", w - PAD - 62, ty, FS, cadd)
-      draw_text_right("-{f.removed}", w - PAD, ty, FS, cdel)
-    end
-
-    if truncated then
-      let more = total_rows - show
-      let y = rows_top + show * ROW_H + 2
-      draw_text("… and {more} more rows", {x: PAD + 12, y: y}, FS, DIM)
+      if truncated then
+        let more = total_rows - show
+        let y = rows_top + show * ROW_H + 2
+        draw_text("… and {more} more rows", {x: PAD + 12, y: y}, FS, DIM)
+      end
     end
   end
 end
@@ -972,7 +973,7 @@ end
 // it is computed, above. What is left below is the handful of values that were
 // only ever expressions: a name is what makes them readable.
 //
-// The pill hit targets are bound with the pill geometry near the top, and each
+// The header hit targets are bound with the tab geometry near the top, and each
 // body region binds its own x/y where the notice / PR bands have settled it.
 let menu_open = menu_blocking(menu)
 let has_error = len(err) > 0

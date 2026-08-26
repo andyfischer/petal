@@ -183,9 +183,8 @@ fn host_palette_defaults_the_theme_and_theme_set_outranks_it() {
 }
 
 fn rects_with_color(cmds: &[DrawCommand], rgb: (u8, u8, u8)) -> bool {
-    cmds.iter().any(|c| {
-        matches!(c, DrawCommand::Rect { r, g, b, .. } if (*r, *g, *b) == rgb)
-    })
+    cmds.iter()
+        .any(|c| matches!(c, DrawCommand::Rect { r, g, b, .. } if (*r, *g, *b) == rgb))
 }
 
 #[test]
@@ -255,7 +254,10 @@ fn progress_bar_fill_is_proportional() {
         let rs = rects(&cmds);
         assert_eq!(rs.len(), 2, "track + sweeping segment: {cmds:?}");
         let (x, _, w, _) = rs[1];
-        assert!(x >= 10 && x + w as i32 <= 110, "segment clipped to the track");
+        assert!(
+            x >= 10 && x + w as i32 <= 110,
+            "segment clipped to the track"
+        );
     });
 }
 
@@ -340,11 +342,19 @@ fn slider_press_jumps_and_drag_tracks() {
         ui.mouse_move(60, 10);
         ui.mouse_down(0);
         ui.frame().unwrap();
-        assert_eq!(ui.state_float("v"), Some(0.5), "press jumps to the position");
+        assert_eq!(
+            ui.state_float("v"),
+            Some(0.5),
+            "press jumps to the position"
+        );
 
         ui.mouse_move(200, 10); // way past the right edge: clamps to 1.0
         ui.frame().unwrap();
-        assert_eq!(ui.state_float("v"), Some(1.0), "drag keeps tracking, clamped");
+        assert_eq!(
+            ui.state_float("v"),
+            Some(1.0),
+            "drag keeps tracking, clamped"
+        );
 
         ui.mouse_up(0);
         ui.frame().unwrap();
@@ -480,7 +490,11 @@ fn modal_click_outside_closes_and_inside_does_not() {
 
         ui.click(700, 500).unwrap();
         assert_eq!(ui.state()["blocked"], false, "a click outside closes");
-        assert_eq!(ui.state_int("opens"), Some(1), "the guarded button did not re-fire");
+        assert_eq!(
+            ui.state_int("opens"),
+            Some(1),
+            "the guarded button did not re-fire"
+        );
     });
 }
 
@@ -513,7 +527,10 @@ fn card_returns_the_padded_content_rect() {
             Some("[26, 26, 168, 68]"),
             "content is the card inset by the theme's space_lg"
         );
-        assert!(rects(&cmds).len() >= 3, "shadow + border + surface: {cmds:?}");
+        assert!(
+            rects(&cmds).len() >= 3,
+            "shadow + border + surface: {cmds:?}"
+        );
     });
 }
 
@@ -565,10 +582,18 @@ fn table_header_click_cycles_sort_request() {
         assert_eq!(tb_field(ui, "sort_asc"), true);
 
         ui.click(200, 14).unwrap();
-        assert_eq!(tb_field(ui, "sort_asc"), false, "second click flips direction");
+        assert_eq!(
+            tb_field(ui, "sort_asc"),
+            false,
+            "second click flips direction"
+        );
 
         ui.click(50, 14).unwrap();
-        assert_eq!(tb_field(ui, "sort_col"), 0, "another header restarts ascending");
+        assert_eq!(
+            tb_field(ui, "sort_col"),
+            0,
+            "another header restarts ascending"
+        );
         assert_eq!(tb_field(ui, "sort_asc"), true);
     });
 }
@@ -587,7 +612,10 @@ fn table_rows_select_by_click_and_keyboard() {
         assert_eq!(tb_field(ui, "selected"), 3, "list keys navigate the table");
         ui.key("end").unwrap();
         assert_eq!(tb_field(ui, "selected"), 9);
-        assert!(tb_field(ui, "scroll").as_i64().unwrap() > 0, "selection scrolled into view");
+        assert!(
+            tb_field(ui, "scroll").as_i64().unwrap() > 0,
+            "selection scrolled into view"
+        );
     });
 }
 
@@ -598,7 +626,10 @@ fn table_draws_headers_cells_and_sort_arrow() {
         let ts = texts(&ui.commands);
         assert!(ts.contains(&"A".to_string()) && ts.contains(&"B".to_string()));
         assert!(ts.contains(&"a".to_string()) && ts.contains(&"1".to_string()));
-        assert!(!ts.iter().any(|t| t == "▲" || t == "▼"), "no arrow before a sort");
+        assert!(
+            !ts.iter().any(|t| t == "▲" || t == "▼"),
+            "no arrow before a sort"
+        );
 
         ui.click(50, 14).unwrap();
         ui.frame().unwrap();
@@ -623,7 +654,10 @@ fn wrap_px_wraps_on_the_pixel_budget() {
     run_headless(src, |ui| {
         ui.frame().unwrap();
         let st = ui.state();
-        assert_eq!(st["a"], "aaa|bbb|ccc", "42px pair does not fit a 40px budget");
+        assert_eq!(
+            st["a"], "aaa|bbb|ccc",
+            "42px pair does not fit a 40px budget"
+        );
         assert_eq!(st["b"], "aaa bbb|ccc", "but fits 45px");
         assert_eq!(st["hard"], "abc|def|gh", "an oversized token hard-breaks");
     });
@@ -823,7 +857,11 @@ fn caret_clamps_when_the_buffer_shrinks_externally() {
         ui.click(190, 12).unwrap(); // focus, caret at end (6)
         assert_eq!(ui.state_int("caret"), Some(6));
         ui.frame().unwrap(); // n == 3: buf externally replaced by "xy"
-        assert_eq!(ui.state_int("caret"), Some(2), "caret clamps to the new end");
+        assert_eq!(
+            ui.state_int("caret"),
+            Some(2),
+            "caret clamps to the new end"
+        );
         ui.text("z").unwrap();
         assert_eq!(ui.state_string("buf").as_deref(), Some("xyz"));
     });
@@ -888,7 +926,8 @@ fn gallery_runs_headlessly_across_all_tabs() {
         .join("../garden/examples/panels/gallery.ptl");
     let mut ui = Headless::from_file_with_size(&path, 900, 700)
         .unwrap_or_else(|e| panic!("gallery failed to load: {e}"));
-    ui.frame().unwrap_or_else(|e| panic!("gallery frame 1: {e}"));
+    ui.frame()
+        .unwrap_or_else(|e| panic!("gallery frame 1: {e}"));
 
     // Tab strip: page pad 16/12 → tabs start at (16, 12), height 34, size 14.
     // Widths: text_width(label)×0.6 + 24, gap 4.

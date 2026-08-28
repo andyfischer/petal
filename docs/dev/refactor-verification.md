@@ -213,7 +213,7 @@ if any `changed`. Verdicts: `identical-ir`, `identical-trace`,
 Every run writes a bundle under a scratch/artifacts dir:
 
 ```
-verify-runs/<timestamp>/<file>/
+.temp/verify-runs/<timestamp>/<file>/
   plan.json              # the plan as resolved for this file
   scenario.json          # exact events, including generated monkey ones
   seed                   # PETAL_SEED used
@@ -226,7 +226,7 @@ context, e.g.
 
 ```sh
 PETAL_SEED=2 petal-ui run examples/games/snake/app.ptl \
-  --scenario verify-runs/.../scenario.json --frames 120 --out /tmp/a.jsonl
+  --scenario .temp/verify-runs/.../scenario.json --frames 120 --out /tmp/a.jsonl
 ```
 
 ### 7. Integration points
@@ -257,7 +257,7 @@ PETAL_SEED=2 petal-ui run examples/games/snake/app.ptl \
 **P2 — verifier — done**
 - ✅ `ts/bin/verify.ts` with `compiles`, `control-run`, `run-diff`, `golden`
 - ✅ Corpus classification by evidence (§4); console + ui drivers
-- ✅ Artifact bundle + `repro.sh` (§6), under `verify-runs/` (gitignored)
+- ✅ Artifact bundle + `repro.sh` (§6), under `.temp/verify-runs/` (gitignored)
 - ✅ Monkey scenario generator (in `petal-ui/src/scenario.rs`)
 - 🔶 `ir-equal` is wired into the plan but the `petal ir-equal` subcommand is
   landing separately; verify probes `petal --help` for it and reports the step

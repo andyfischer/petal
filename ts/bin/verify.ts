@@ -20,7 +20,7 @@
 //   --after <dir>            source A/B; defaults to the working tree
 //   --before-bin/--after-bin binary A/B: two `petal` binaries
 //   --before-ui-bin/--after-ui-bin   ditto for petal-ui-run (default: the built one)
-//   --out <dir>              artifacts dir (default verify-runs/<plan>-<ISO>)
+//   --out <dir>              artifacts dir (default .temp/verify-runs/<plan>-<ISO>)
 //   --only <glob>            restrict the corpus (matched against the relative path)
 //   --jobs N                 parallelism (default cpus-1)
 //   --frames N               override the plan's frame count
@@ -739,7 +739,7 @@ async function main() {
     const plan = loadPlan(opts.plan);
 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const outDir = opts.out ?? join(repoRoot, 'verify-runs', `${plan.name}-${stamp}`);
+    const outDir = opts.out ?? join(repoRoot, '.temp', 'verify-runs', `${plan.name}-${stamp}`);
     mkdirSync(outDir, { recursive: true });
 
     const defaultPetal = join(repoRoot, 'rust', 'target', 'debug', 'petal');

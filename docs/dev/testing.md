@@ -110,7 +110,7 @@ dir) or a directory. Each file gets one row — its `kind` (`console`, `ui`,
 `compile-error`, `unsupported`, `module`). The process exits non-zero if
 anything is `changed` or `compile-error`.
 
-A failure leaves a replay bundle under `verify-runs/<plan>-<timestamp>/<file>/`:
+A failure leaves a replay bundle under `.temp/verify-runs/<plan>-<timestamp>/<file>/`:
 the resolved `plan.json`, the `scenario.json` and `seed` used, both traces, and
 a `repro.sh` that reproduces the diff from any working directory with no other
 context. Useful flags: `--only <substring|glob>`, `--jobs N`, `--frames N`,

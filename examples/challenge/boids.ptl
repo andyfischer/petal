@@ -1,0 +1,261 @@
+// boids.ptl — Craig Reynolds' Boids flocking simulation, in the console.
+//
+// 72 boids in a toroidal 2D field steer by the three classic rules —
+// separation, alignment, cohesion — with a speed clamp and wrap-around edges.
+// Placement is deterministic (a pure index hash, no `random` at all), so two
+// runs are byte-identical. Every SAMPLE_EVERY frames the field is rendered as
+// an ASCII occupancy grid and the mean distance to the flock centroid is
+// printed, so the flock's convergence is both visible and measurable.
+//
+// Run:  ./ts/bin/run-petal.ts run examples/challenge/boids.ptl
+
+// ---------------------------------------------------------------- tuning ---
+
+config let BOID_COUNT   = 72
+config let FRAMES       = 150
+config let SAMPLE_EVERY = 30
+
+config let FIELD_W = 96.0
+config let FIELD_H = 48.0
+
+config let VIEW_RADIUS = 14.0   // cohesion / alignment neighbourhood
+config let SEP_RADIUS  = 3.5    // personal-space neighbourhood
+
+config let COHESION_W   = 0.012
+config let ALIGNMENT_W  = 0.075
+config let SEPARATION_W = 0.55
+
+config let MAX_SPEED = 1.1
+config let MIN_SPEED = 0.35
+
+config let GRID_W = 64
+config let GRID_H = 22
+
+let RAMP = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"]
+
+// ------------------------------------------------------------------ data ---
+
+class Boid
+  x: num,
+  y: num,
+  vx: num,
+  vy: num,
+end
+
+// --------------------------------------------------------------- helpers ---
+
+// Deterministic value hash in [0, 1). No `random`, so no seed to pin: the
+// initial flock is a pure function of the boid index. Two quadratic mixing
+// rounds mod a prime — a plain LCG stays linear in `i` and lines the boids up
+// on a diagonal.
+fn hash01(i: num, salt: num) -> num
+  var s = ((i + 1) * 2654435761 + salt * 40503 + 1013904223) % 2147483647
+  for _round in range(0, 2) do
+    set s = (s * s + s * 374761393 + 12345) % 2147483647
+  end
+  float(s % 1000003) / 1000003.0
+end
+
+// Shortest signed offset on a wrapped axis of length `size`.
+fn wrap_delta(d: num, size: num) -> num
+  if d > size / 2.0 then d - size
+  elsif d < 0.0 - size / 2.0 then d + size
+  else d
+  end
+end
+
+fn wrap_coord(v: num, size: num) -> num
+  if v < 0.0 then v + size
+  elsif v >= size then v - size
+  else v
+  end
+end
+
+fn make_boids(n: num) -> list
+  for i in range(0, n) do
+    let angle = hash01(i, 7) * 6.283185307179586
+    let speed = MIN_SPEED + hash01(i, 13) * (MAX_SPEED - MIN_SPEED)
+    Boid(
+      hash01(i, 1) * FIELD_W,
+      hash01(i, 2) * FIELD_H,
+      cos(angle) * speed,
+      sin(angle) * speed,
+    )
+  end
+end
+
+// ------------------------------------------------------------ simulation ---
+
+// One boid's next state, given the whole flock.
+fn Boid.steer(self: Boid, flock: list) -> Boid
+  var sep_x = 0.0
+  var sep_y = 0.0
+  var ali_x = 0.0
+  var ali_y = 0.0
+  var coh_x = 0.0
+  var coh_y = 0.0
+  var neighbours = 0
+
+  let view2 = VIEW_RADIUS * VIEW_RADIUS
+  let sep2 = SEP_RADIUS * SEP_RADIUS
+
+  let half_w = FIELD_W / 2.0
+  let half_h = FIELD_H / 2.0
+  let sx = self.x
+  let sy = self.y
+
+  for other in flock do
+    // wrap_delta, inlined: this is the innermost loop of the whole program.
+    let rx = other.x - sx
+    let ry = other.y - sy
+    let dx = if rx > half_w then rx - FIELD_W
+    elsif rx < 0.0 - half_w then rx + FIELD_W
+    else rx
+    end
+    let dy = if ry > half_h then ry - FIELD_H
+    elsif ry < 0.0 - half_h then ry + FIELD_H
+    else ry
+    end
+    let d2 = dx * dx + dy * dy
+    if d2 > 0.0 && d2 < view2 then
+      set neighbours = neighbours + 1
+      set coh_x = coh_x + dx
+      set coh_y = coh_y + dy
+      set ali_x = ali_x + other.vx
+      set ali_y = ali_y + other.vy
+      if d2 < sep2 then
+        // Push away, weighted by 1/distance so close crowding dominates.
+        set sep_x = sep_x - dx / d2
+        set sep_y = sep_y - dy / d2
+      end
+    end
+  end
+
+  let n = float(neighbours)
+  let ax = if neighbours == 0 then 0.0
+  else
+    (coh_x / n) * COHESION_W
+    + (ali_x / n - self.vx) * ALIGNMENT_W
+    + sep_x * SEPARATION_W
+  end
+  let ay = if neighbours == 0 then 0.0
+  else
+    (coh_y / n) * COHESION_W
+    + (ali_y / n - self.vy) * ALIGNMENT_W
+    + sep_y * SEPARATION_W
+  end
+
+  let nvx = self.vx + ax
+  let nvy = self.vy + ay
+  let speed = sqrt(nvx * nvx + nvy * nvy)
+  let scale = if speed > MAX_SPEED then MAX_SPEED / speed
+  elsif speed < MIN_SPEED && speed > 0.0 then MIN_SPEED / speed
+  else 1.0
+  end
+  let fvx = nvx * scale
+  let fvy = nvy * scale
+
+  Boid(
+    wrap_coord(self.x + fvx, FIELD_W),
+    wrap_coord(self.y + fvy, FIELD_H),
+    fvx,
+    fvy,
+  )
+end
+
+fn step(flock: list) -> list
+  for b in flock do b.steer(flock) end
+end
+
+// ------------------------------------------------------------- reporting ---
+
+// Mean distance to the centroid, measured in the wrapped metric via the
+// circular mean of each axis (a plain average is meaningless on a torus).
+fn cohesion(flock: list) -> num
+  let n = float(len(flock))
+  var sx = 0.0
+  var sy = 0.0
+  var cx = 0.0
+  var cy = 0.0
+  let kx = 6.283185307179586 / FIELD_W
+  let ky = 6.283185307179586 / FIELD_H
+  for b in flock do
+    set sx = sx + sin(b.x * kx)
+    set cx = cx + cos(b.x * kx)
+    set sy = sy + sin(b.y * ky)
+    set cy = cy + cos(b.y * ky)
+  end
+  let mx = wrap_coord(atan2(sx / n, cx / n) / kx, FIELD_W)
+  let my = wrap_coord(atan2(sy / n, cy / n) / ky, FIELD_H)
+
+  var total = 0.0
+  for b in flock do
+    let dx = wrap_delta(b.x - mx, FIELD_W)
+    let dy = wrap_delta(b.y - my, FIELD_H)
+    set total = total + sqrt(dx * dx + dy * dy)
+  end
+  total / n
+end
+
+fn mean_speed(flock: list) -> num
+  var total = 0.0
+  for b in flock do
+    set total = total + sqrt(b.vx * b.vx + b.vy * b.vy)
+  end
+  total / float(len(flock))
+end
+
+fn occupancy(flock: list) -> list
+  var counts = for r in range(0, GRID_H) do
+    for c in range(0, GRID_W) do 0 end
+  end
+  for b in flock do
+    let c = int(b.x / FIELD_W * float(GRID_W))
+    let r = int(b.y / FIELD_H * float(GRID_H))
+    let cc = min(max(c, 0), GRID_W - 1)
+    let rr = min(max(r, 0), GRID_H - 1)
+    set counts[rr][cc] = counts[rr][cc] + 1
+  end
+  get counts
+end
+
+fn render(flock: list) -> nil
+  let counts = occupancy(flock)
+  let border = "+" ++ join(for c in range(0, GRID_W) do "-" end, "") ++ "+"
+  print(border)
+  for row in counts do
+    let cells = for n in row do RAMP[min(n, len(RAMP) - 1)] end
+    print("|" ++ join(cells, "") ++ "|")
+  end
+  print(border)
+  nil
+end
+
+fn report(frame: num, flock: list) -> nil
+  render(flock)
+  print(
+    "frame {frame}"
+    ++ "   mean dist to centroid: {round(cohesion(flock), 3)}"
+    ++ "   mean speed: {round(mean_speed(flock), 3)}"
+  )
+  print("")
+  nil
+end
+
+// ------------------------------------------------------------------ main ---
+
+print("Boids — {BOID_COUNT} boids, {FRAMES} frames, field {FIELD_W} x {FIELD_H}")
+print("rules: separation {SEPARATION_W}, alignment {ALIGNMENT_W}, cohesion {COHESION_W}")
+print("")
+
+var flock = make_boids(BOID_COUNT)
+report(0, get flock)
+
+for frame in range(1, FRAMES + 1) do
+  set flock = step(get flock)
+  if frame % SAMPLE_EVERY == 0 then
+    report(frame, get flock)
+  end
+end
+
+print("done.")

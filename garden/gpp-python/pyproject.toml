@@ -1,0 +1,27 @@
+# gpp is installable so an app can live anywhere (`pip install -e
+# garden/gpp-python`) instead of shimming sys.path at the top of every
+# app.py — but it stays a plain source tree with zero runtime dependencies,
+# so the sys.path shim keeps working just as well.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpp"
+version = "2.0.0"
+description = "Stdlib-only Python client library for the Garden Pane Protocol v2"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Petal / Garden" }]
+keywords = ["garden", "petal", "gpp", "jsonrpc", "tui"]
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/andyfischer/petal/blob/main/garden/docs/writing-gpp-apps-python.md"
+
+[tool.setuptools]
+packages = ["gpp"]
+
+[tool.setuptools.package-data]
+gpp = ["py.typed"]

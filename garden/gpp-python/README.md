@@ -1,11 +1,26 @@
 # gpp-python — Python GPP apps
 
-`gpp.py` is a **stdlib-only** Python client library for the Garden Pane
+`gpp/` is a **stdlib-only** Python client library for the Garden Pane
 Protocol v2 (`../docs/gpp.md`), mirroring the Rust `petal-query` API: a
-`Provider` with `query` / `on_mutation` / `on_emit` / `on_navigate` handlers,
-a `PanelUi` (pane name + Petal drawer + declared screens), and `serve()`
-running the whole stdio protocol loop. No pip installs, ever — Python ≥ 3.8
-and `git`/`ps` are all the apps need.
+`Provider` with `query` / `on_mutation` / `on_emit` / `on_navigate` handlers
+(positional or decorator), a `PanelUi` (pane name + Petal drawer + declared
+screens), `background()` for work that must not stall the pane, `TestHarness`
+for protocol-level tests, and `serve()` running the whole stdio loop. No
+runtime dependencies, ever — Python ≥ 3.9 and `git`/`ps` are all the apps
+need. Import it from the source tree (`sys.path.insert`, what the in-tree
+apps do) or install it (`pip install -e garden/gpp-python`).
+
+```
+gpp/
+  protocol.py    envelopes, error codes, Init, Ctx, script_args
+  cache.py       CachePolicy, Reply
+  provider.py    Provider — registration + the public dispatch calls
+  panel.py       PanelUi
+  sink.py        ScriptSink (thread-safe pushes) + the drawer watcher
+  background.py  background() / run_in_background() — off-loop handlers
+  serve.py       the protocol loop (serve / serve_on)
+  testing.py     TestHarness — real serve sessions over in-memory streams
+```
 
 The build-your-own guide is
 [`../docs/writing-gpp-apps-python.md`](../docs/writing-gpp-apps-python.md);
@@ -54,8 +69,9 @@ cd garden && node tools/python-gpp-integration-test.ts   # boots garden headless
 ## Writing a new app
 
 Copy `sysmon/`, then: register a `query` handler per data kind (return
-`Reply.json(value).max_age(...)` or raise `AppError`), point
-`PanelUi.from_file` at your drawer, and call `serve(provider, ui)`. The full
+`Reply.json(value).max_age(...)` or raise `AppError`; wrap anything slow in
+`background(...)`), point `PanelUi.from_file` at your drawer, and call
+`serve(provider, ui)`. The full
 walkthrough — including cache policy choice, the JSON→Petal data shape, and
 headless verification over the debug server — is
 `../docs/writing-gpp-apps-python.md`.

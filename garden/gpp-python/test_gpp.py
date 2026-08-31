@@ -1,68 +1,50 @@
 #!/usr/bin/env python3
-"""Unit tests for gpp.py — the protocol loop over in-memory streams.
+"""Unit tests for the `gpp` package — the protocol loop over in-memory streams,
+the provider's public dispatch, replies/cache policies, decorators, background
+handlers and the test harness.
 
-Run:  python3 garden/gpp-python/test_gpp.py
-Mirrors petal-query's serve_core tests: handshake, protocol mismatch, query
-answers by id with JSON args and cache policies, error/loading replies,
-mutations, navigation, emit dispatch, and the forward-compatibility rules.
+Run:  python3 garden/gpp-python/test_gpp.py     (also on system python 3.9)
+Mirrors petal-query's serve_core + provider tests: handshake, protocol
+mismatch, query answers by id with JSON args and cache policies,
+error/loading replies, mutations, navigation, emit dispatch, and the
+forward-compatibility rules.
 """
 
 import io
 import json
+import os
+import threading
 import unittest
 
 from gpp import (
     AppError,
+    BackgroundQuery,
     CachePolicy,
+    Ctx,
     ErrorCode,
     Init,
     PanelUi,
     Provider,
     Reply,
     ScriptSink,
+    TestHarness,
+    background,
     script_args,
     serve_on,
 )
+from gpp.testing import by_id, init_req, notif, req, run
 
 
-def init_req(protocol=2, args=None, cwd="/repo"):
-    return {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocol": protocol,
-            "paneId": 0,
-            "rows": 40,
-            "cols": 120,
-            "args": args if args is not None else ["/repo"],
-            "cwd": cwd,
-            "capabilities": ["query", "mutate", "navigate", "emit", "hotReload"],
-        },
-    }
+def init_ctx(arg="", **kw):
+    """A Ctx for a direct provider dispatch (no host, no session)."""
+    return Ctx(Init({"args": ["/repo"], "cwd": "/repo"}), arg, **kw)
 
 
-def req(req_id, method, params):
-    return {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
-
-
-def notif(method, params):
-    return {"jsonrpc": "2.0", "method": method, "params": params}
-
-
-def run(provider, ui, messages):
-    """Feed `messages` (dicts) to serve_on; return the output envelopes."""
-    lines = "".join(json.dumps(m) + "\n" for m in messages)
-    out = io.StringIO()
-    serve_on(provider, ui, io.StringIO(lines), out)
-    return [json.loads(line) for line in out.getvalue().splitlines()]
-
-
-def by_id(msgs, req_id):
-    for m in msgs:
-        if m.get("id") == req_id and "method" not in m:
-            return m
-    raise AssertionError(f"no response with id {req_id} in {msgs}")
+class SessionRunTests(unittest.TestCase):
+    def test_the_library_harness_replaces_the_hand_rolled_runner(self):
+        # `run` is the helper every app's tests used to copy; it now ships.
+        msgs = run(Provider(), PanelUi("d", "S"), [init_req(), notif("shutdown", {})])
+        self.assertEqual(msgs[0]["result"]["protocol"], 2)
 
 
 class HandshakeTests(unittest.TestCase):
@@ -284,6 +266,348 @@ class SinkTests(unittest.TestCase):
                           "params": {"kind": "log", "arg": ""}})
         self.assertEqual(json.loads(lines[2])["params"],
                          {"event": "status", "arg": {"text": "3 files"}})
+
+
+class ReplyTests(unittest.TestCase):
+    def test_max_age_keeps_a_stale_window_set_earlier(self):
+        # The documented bug: .stale_while_revalidate(...) then .max_age(...)
+        # used to throw the window away because max_age built a fresh policy.
+        wire = Reply.json(1).stale_while_revalidate(60).max_age(3)._policy.to_wire()
+        self.assertEqual(wire, {"maxAgeMs": 3000, "staleWhileRevalidateMs": 60000})
+        # …and the other order agrees.
+        other = Reply.json(1).max_age(3).stale_while_revalidate(60)._policy.to_wire()
+        self.assertEqual(other, wire)
+
+    def test_forever_is_the_default_and_is_statable(self):
+        self.assertIsNone(Reply.json(1)._policy.to_wire())
+        self.assertIsNone(Reply.json(1).max_age(3).forever()._policy.to_wire())
+
+    def test_no_store_replaces_the_whole_policy(self):
+        self.assertEqual(Reply.json(1).max_age(3).no_store()._policy.to_wire(), {"noStore": True})
+
+    def test_from_result_maps_values_exceptions_and_callables(self):
+        self.assertEqual(Reply.from_result({"x": 1}).into_parts()[0], {"x": 1})
+        self.assertEqual(Reply.from_result(AppError("nope")).into_parts()[1], "nope")
+        self.assertEqual(Reply.from_result(lambda: 7).into_parts()[0], 7)
+        # A callable that raises becomes the error, so a handler can say
+        # `return Reply.from_result(lambda: risky())`.
+        failed = Reply.from_result(lambda: 1 / 0)
+        self.assertTrue(failed.is_error())
+        self.assertIn("ZeroDivisionError", failed.into_parts()[1])
+        # An AppError from a callable keeps its bare message (no type prefix).
+        def refuse():
+            raise AppError("not a git repo")
+        self.assertEqual(Reply.from_result(refuse).into_parts()[1], "not a git repo")
+        # A Reply passes through untouched, policy included.
+        passthrough = Reply.from_result(Reply.json(1).max_age(2))
+        self.assertEqual(passthrough._policy.to_wire(), {"maxAgeMs": 2000})
+
+    def test_into_parts_splits_the_three_outcomes(self):
+        self.assertEqual(Reply.json(1).into_parts()[:2], (1, None))
+        self.assertEqual(Reply.error("e").into_parts()[:2], (None, "e"))
+        self.assertEqual(Reply.loading().into_parts()[:2], (None, None))
+        self.assertTrue(Reply.loading().is_loading())
+
+
+class ProviderDispatchTests(unittest.TestCase):
+    """The public dispatch surface: one call per handler, no stdio session."""
+
+    def test_build_then_answer_dispatches_like_the_rust_provider(self):
+        provider = Provider(lambda init: init.repo_arg()).query(
+            "log", lambda repo, ctx: Reply.json({"repo": repo, "kind": ctx.kind}))
+        init = Init({"args": ["/repo"], "cwd": "/repo"})
+        state = provider.build(init)
+        reply = provider.answer(state, Ctx(init, "", kind="log"))
+        self.assertEqual(reply.into_parts()[0], {"repo": "/repo", "kind": "log"})
+
+    def test_answer_wraps_plain_values_and_catches_handler_bugs(self):
+        provider = Provider().query("n", lambda s, c: {"x": 1}).query("bug", lambda s, c: 1 / 0)
+        self.assertEqual(provider.answer(None, init_ctx(kind="n")).into_parts()[0], {"x": 1})
+        self.assertIn("ZeroDivisionError",
+                      provider.answer(None, init_ctx(kind="bug")).into_parts()[1])
+
+    def test_answer_of_an_unregistered_kind_is_a_null_value(self):
+        self.assertEqual(Provider().answer(None, init_ctx(kind="nope")).into_parts()[:2],
+                         (None, None))
+
+    def test_mutate_dispatches_and_reports_unknown_names(self):
+        provider = Provider(lambda i: {"n": 0})
+        provider.on_mutation("bump", lambda s, c: Reply.json(s["n"] + c.arg))
+        state = {"n": 1}
+        self.assertEqual(provider.mutate(state, init_ctx(2, name="bump")).into_parts()[0], 3)
+        self.assertIn("no mutation handler",
+                      provider.mutate(state, init_ctx(name="nope")).into_parts()[1])
+        self.assertTrue(provider.has_mutation("bump"))
+        self.assertFalse(provider.has_mutation("nope"))
+
+    def test_handle_emit_is_fire_and_forget_and_swallows_bugs(self):
+        seen = []
+        provider = Provider().on_emit("ui", lambda s, c: seen.append(c.arg))
+        provider.on_emit("bug", lambda s, c: 1 / 0)
+        provider.handle_emit(None, init_ctx({"x": 1}, event="ui"))
+        provider.handle_emit(None, init_ctx(None, event="nope"))  # no handler: no-op
+        provider.handle_emit(None, init_ctx(None, event="bug"))   # a bug must not raise
+        self.assertEqual(seen, [{"x": 1}])
+        self.assertTrue(provider.has_emit("ui"))
+
+    def test_navigate_dispatch_returns_the_source_or_none(self):
+        provider = Provider()
+        self.assertFalse(provider.has_navigate())
+        # No custom handler: None, so the caller falls back to declared screens.
+        self.assertIsNone(provider.navigate(None, init_ctx(screen="x.ptl")))
+        provider.on_navigate(lambda s, c: "// %s" % c.screen)
+        self.assertTrue(provider.has_navigate())
+        self.assertEqual(provider.navigate(None, init_ctx(screen="x.ptl")), "// x.ptl")
+
+    def test_navigate_refusal_raises_app_error(self):
+        def refuse(s, ctx):
+            raise AppError("no such screen '%s'" % ctx.screen)
+        provider = Provider().on_navigate(refuse)
+        with self.assertRaises(AppError):
+            provider.navigate(None, init_ctx(screen="x.ptl"))
+
+    def test_has_query_reports_registrations(self):
+        provider = Provider().query("a", lambda s, c: 1)
+        self.assertTrue(provider.has_query("a"))
+        self.assertFalse(provider.has_query("b"))
+
+    def test_stateless_builds_none(self):
+        self.assertIsNone(Provider.stateless().build(Init({})))
+
+
+class DecoratorTests(unittest.TestCase):
+    def test_every_registration_has_a_decorator_form(self):
+        provider = Provider(lambda init: {"seen": []})
+
+        @provider.query("log")
+        def log(state, ctx):
+            return Reply.json("log:%s" % ctx.arg_str())
+
+        @provider.mutation("apply")
+        def apply_(state, ctx):
+            return Reply.json("applied %s" % ctx.arg)
+
+        @provider.emit("divider")
+        def divider(state, ctx):
+            state["seen"].append(ctx.arg)
+
+        @provider.navigate
+        def nav(state, ctx):
+            return "// %s" % ctx.screen
+
+        # The decorators give the plain function back, so the module name
+        # still refers to something callable and testable on its own.
+        self.assertTrue(callable(log) and callable(nav))
+
+        h = TestHarness(provider)
+        self.assertEqual(h.query("log", "x").value(), "log:x")
+        self.assertEqual(h.mutate("apply", 3).value(), "applied 3")
+        self.assertEqual(h.navigate("detail.ptl").source(), "// detail.ptl")
+        state = {"seen": []}
+        provider.handle_emit(state, init_ctx(9, event="divider"))
+        self.assertEqual(state["seen"], [9])
+
+    def test_the_positional_form_stays_fluent(self):
+        provider = (
+            Provider()
+            .query("a", lambda s, c: 1)
+            .on_mutation("m", lambda s, c: Reply.json(2))
+            .on_emit("e", lambda s, c: None)
+            .on_navigate(lambda s, c: "src")
+        )
+        self.assertIsInstance(provider, Provider)
+        self.assertTrue(provider.has_query("a") and provider.has_mutation("m"))
+        self.assertTrue(provider.has_emit("e") and provider.has_navigate())
+
+    def test_host_owned_mutation_names_are_refused(self):
+        for name in ["open_path", "open_project", "open_pr", "open_file_dialog"]:
+            with self.assertRaises(ValueError, msg=name) as caught:
+                Provider().on_mutation(name, lambda s, c: Reply.json(1))
+            self.assertIn("host-owned", str(caught.exception))
+        # The decorator form refuses at decoration time too.
+        with self.assertRaises(ValueError):
+            @Provider().mutation("open_path")
+            def never(state, ctx):
+                return Reply.json(1)
+
+
+class BackgroundTests(unittest.TestCase):
+    def test_a_slow_handler_answers_loading_then_invalidates_then_serves(self):
+        release = threading.Event()
+        calls = []
+
+        def slow(state, ctx):
+            calls.append(ctx.arg_str())
+            release.wait(5.0)
+            return Reply.json({"rows": 3}).max_age(30.0)
+
+        handler = background(slow)
+        provider = Provider().query("stats", handler)
+        out = io.StringIO()
+        sink = ScriptSink(out)
+        ctx = Ctx(Init({"cwd": "/repo"}), "k", kind="stats", sink=sink)
+
+        # 1. The first ask returns at once, while the work is still blocked.
+        first = provider.answer(None, ctx)
+        self.assertTrue(first.is_loading())
+        # 2. A re-ask while in flight coalesces: still loading, still one job.
+        self.assertTrue(provider.answer(None, ctx).is_loading())
+        self.assertEqual(handler.pending(), 1)
+
+        release.set()
+        self.assertTrue(handler.wait(5.0))
+        self.assertEqual(calls, ["k"], "the two asks coalesced onto one run")
+
+        # 3. The worker pushed an invalidate for that exact key.
+        pushes = [json.loads(l) for l in out.getvalue().splitlines()]
+        self.assertEqual(pushes, [{"jsonrpc": "2.0", "method": "invalidate",
+                                   "params": {"kind": "stats", "arg": "k"}}])
+
+        # 4. The re-query the invalidate triggers gets the real answer, with
+        #    the handler's own cache policy.
+        landed = provider.answer(None, ctx)
+        self.assertEqual(landed.into_parts()[0], {"rows": 3})
+        self.assertEqual(landed._policy.to_wire(), {"maxAgeMs": 30000})
+
+    def test_background_keys_by_kind_and_arg(self):
+        handler = background(lambda s, ctx: Reply.json(ctx.arg["page"]))
+        provider = Provider().query("rows", handler)
+        init = Init({})
+        a = Ctx(init, {"page": 1}, kind="rows")
+        b = Ctx(init, {"page": 2}, kind="rows")
+        provider.answer(None, a)
+        provider.answer(None, b)
+        self.assertTrue(handler.wait(5.0))
+        self.assertEqual(provider.answer(None, a).into_parts()[0], 1)
+        self.assertEqual(provider.answer(None, b).into_parts()[0], 2)
+
+    def test_a_failing_background_handler_lands_as_an_error(self):
+        def boom(state, ctx):
+            raise AppError("upstream is down")
+
+        handler = background(boom)
+        provider = Provider().query("x", handler)
+        ctx = init_ctx(kind="x")
+        self.assertTrue(provider.answer(None, ctx).is_loading())
+        self.assertTrue(handler.wait(5.0))
+        self.assertEqual(provider.answer(None, ctx).into_parts()[1], "upstream is down")
+
+    def test_the_decorator_form_registers_a_background_handler(self):
+        provider = Provider()
+
+        @provider.background_query("slow")
+        def slow(state, ctx):
+            return Reply.json("done")
+
+        self.assertIsInstance(provider._queries["slow"], BackgroundQuery)
+        ctx = init_ctx(kind="slow")
+        self.assertTrue(provider.answer(None, ctx).is_loading())
+        provider._queries["slow"].wait(5.0)
+        self.assertEqual(provider.answer(None, ctx).into_parts()[0], "done")
+
+    def test_the_serve_loop_never_blocks_on_a_background_handler(self):
+        # The whole point: a slow query must not hold the pipe, so the second
+        # request in the same session is answered while the work runs.
+        release = threading.Event()
+        handler = background(lambda s, c: (release.wait(5.0), Reply.json("late"))[1])
+        provider = Provider().query("slow", handler).query("fast", lambda s, c: Reply.json("now"))
+        msgs = run(provider, PanelUi("d", "S"), [
+            init_req(),
+            req(11, "query", {"kind": "slow", "arg": ""}),
+            req(12, "query", {"kind": "fast", "arg": ""}),
+            notif("shutdown", {}),
+        ])
+        self.assertEqual(by_id(msgs, 11)["result"], {}, "loading, not a stall")
+        self.assertEqual(by_id(msgs, 12)["result"]["value"], "now")
+        release.set()
+        handler.wait(5.0)
+
+
+class SinkOpenPathTests(unittest.TestCase):
+    def test_open_path_emits_the_reserved_event_with_an_absolute_path(self):
+        out = io.StringIO()
+        ScriptSink(out).open_path("relative/file.txt")
+        env = json.loads(out.getvalue())
+        self.assertEqual(env["method"], "emit")
+        self.assertEqual(env["params"]["event"], "open_path")
+        path = env["params"]["arg"]["path"]
+        self.assertTrue(os.path.isabs(path), path)
+        self.assertTrue(path.endswith("relative/file.txt"))
+
+
+class HarnessTests(unittest.TestCase):
+    def test_the_harness_drives_a_whole_session_per_call(self):
+        provider = Provider(lambda init: init.repo_arg())
+        provider.query("repo", lambda repo, ctx: Reply.json(repo).max_age(5.0))
+        provider.query("boom", lambda s, ctx: Reply.error("nope"))
+        provider.query("slow", lambda s, ctx: Reply.loading())
+        ui = PanelUi("app", "SRC").screen("detail.ptl", "DETAIL")
+        h = TestHarness(provider, ui, args=["/somewhere"], cwd="/somewhere")
+
+        self.assertEqual(h.query("repo").value(), "/somewhere")
+        self.assertEqual(h.query("repo").cache(), {"maxAgeMs": 5000})
+        self.assertTrue(h.query("slow").is_loading())
+
+        failed = h.query("boom")
+        self.assertFalse(failed.ok())
+        self.assertEqual(failed.error_message(), "nope")
+        self.assertEqual(failed.error_code(), ErrorCode.APP)
+        with self.assertRaises(AssertionError):
+            failed.value()
+        with self.assertRaises(AssertionError):
+            h.query("repo").error_message()
+
+        self.assertEqual(h.navigate("detail.ptl", {"id": 7}).source(), "DETAIL")
+        self.assertIn("no such screen", h.navigate("nope.ptl").error_message())
+
+        # The handshake and the pushes are inspectable too.
+        head = h.handshake()
+        self.assertEqual(head[0]["result"]["name"], "app")
+        self.assertEqual(head[1]["params"]["source"], "SRC")
+        self.assertEqual(h.query("repo").pushed("setScript")[0]["params"]["source"], "SRC")
+
+    def test_the_harness_needs_no_panel_ui(self):
+        provider = Provider().query("x", lambda s, c: 1)
+        self.assertEqual(TestHarness(provider).query("x").value(), 1)
+
+    def test_send_runs_several_requests_in_one_session(self):
+        provider = Provider(lambda init: {"n": 0})
+        provider.on_mutation("bump", lambda s, c: Reply.json(s.__setitem__("n", s["n"] + 1) or s["n"]))
+        h = TestHarness(provider)
+        msgs = h.send(req(11, "mutate", {"name": "bump", "arg": None}),
+                      req(12, "mutate", {"name": "bump", "arg": None}))
+        self.assertEqual(by_id(msgs, 12)["result"]["value"], 2, "one state across the session")
+
+    def test_emit_returns_the_session_output(self):
+        seen = []
+        provider = Provider().on_emit("e", lambda s, c: seen.append(c.arg))
+        msgs = TestHarness(provider).emit("e", {"x": 1})
+        self.assertEqual(seen, [{"x": 1}])
+        self.assertEqual(len(msgs), 2, "an emit is answered by nothing")
+
+
+class CtxTests(unittest.TestCase):
+    def test_arg_str_and_label_describe_the_dispatch(self):
+        self.assertEqual(init_ctx({"a": 1}, kind="k").arg_str(), "")
+        self.assertEqual(init_ctx("s", kind="k").arg_str(), "s")
+        self.assertEqual(init_ctx(kind="k").label(), "query 'k'")
+        self.assertEqual(init_ctx(name="m").label(), "mutation 'm'")
+        self.assertEqual(init_ctx(event="e").label(), "emit 'e'")
+        self.assertEqual(init_ctx(screen="s").label(), "navigate 's'")
+
+    def test_the_serve_loop_hands_handlers_the_sink(self):
+        got = {}
+
+        def handler(state, ctx):
+            got["sink"] = ctx.sink
+            ctx.sink.status("working")
+            return Reply.json(1)
+
+        msgs = run(Provider().query("q", handler), PanelUi("d", "S"),
+                   [init_req(), req(4, "query", {"kind": "q", "arg": ""})])
+        self.assertIsInstance(got["sink"], ScriptSink)
+        statuses = [m for m in msgs if m.get("method") == "emit"]
+        self.assertEqual(statuses[0]["params"]["arg"], {"text": "working"})
 
 
 if __name__ == "__main__":

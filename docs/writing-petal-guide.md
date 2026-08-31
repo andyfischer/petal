@@ -458,16 +458,15 @@ end
 piped where it stands (`for x in xs do x end |> len()` is a parse error); bind
 it first, then pipe the name.
 
-Two rough edges in the collecting form, both worth recognizing so you don't
-debug the wrong thing:
+One thing to keep straight: a collecting loop cannot thread an accumulator — its
+value is the list of its iterations, not a running total. When you want to carry
+a value forward, use a **bare** `for` and rebind, as in
+[§3](#3-bindings-let-var-state).
 
-- A bare builtin call as the loop body **is** collected, but the discarded-result
-  lint fires on it anyway — `for row in g do reverse(row) end` warns
-  `result of \`reverse\` is discarded` while returning the right answer. Bind the
-  value (`let flipped = reverse(row)` then `flipped`) to silence it.
-- A collecting loop cannot thread an accumulator; its value is the list of its
-  iterations. When you want to carry a value forward, use a **bare** `for` and
-  rebind, as in [§3](#3-bindings-let-var-state).
+The one place tail position does *not* apply is the top level of a file: a
+trailing `for` there runs for side effects and collects nothing, so the
+discarded-result lint still fires on `for i in xs do append(a, i) end` written at
+module scope — which is the bug it exists to catch.
 
 ### `match`
 

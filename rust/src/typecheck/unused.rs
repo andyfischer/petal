@@ -16,9 +16,15 @@
 //! - A name shadowed by a local binding, or defined as a user `fn`, is treated
 //!   as user code of unknown effect and never warns.
 //! - Only *discarded* positions warn: a non-tail statement, or a block tail
-//!   whose block value is itself discarded (`for`/`while` bodies, a discarded
-//!   `if`/`match`/block). A value that flows into a `let`, an argument, a
-//!   `return`, or a used block tail is left alone.
+//!   whose block value is itself discarded (a side-effect `for`/`while` body, a
+//!   discarded `if`/`match`/block). A value that flows into a `let`, an
+//!   argument, a `return`, or a used block tail is left alone.
+//! - A **collecting** `for` uses its body's tail, so that tail never warns.
+//!   This holds for the expression form (`let ys = for … end`) and equally for
+//!   the statement form in tail position (`fn f() for x in xs do g(x) end end`),
+//!   which the compiler also collects. The rule tracks
+//!   `Compiler::compile_stmts`'s `value_used`, including its module-level
+//!   exception: a trailing `for` at the top level of a file does not collect.
 
 use std::collections::HashSet;
 
@@ -36,7 +42,10 @@ pub fn check_unused(stmts: &[Stmt]) -> Vec<Diagnostic> {
     collect_fn_names(stmts, &mut w.user_fns);
     // The top-level program's final expression is its result value — treat the
     // module block's value as used so a script's trailing expression is fine.
-    w.walk_block(stmts, true);
+    // A trailing `for` is the exception: the compiler only makes a tail loop
+    // collect inside a function body, a used branch or a collecting loop, never
+    // at module level, so the module's tail loop still runs for side effects.
+    w.walk_block_tail(stmts, true, false);
     w.diags
 }
 
@@ -81,13 +90,31 @@ impl Walker {
     /// The last statement's expression inherits `block_used`; every earlier
     /// statement is in discarded position.
     fn walk_block(&mut self, stmts: &[Stmt], block_used: bool) {
+        self.walk_block_tail(stmts, block_used, block_used);
+    }
+
+    /// [`Self::walk_block`], with the tail-`for` rule split out from the
+    /// tail-expression rule. They agree everywhere except the module block,
+    /// whose trailing expression is its result but whose trailing `for` does
+    /// not collect — mirroring `Compiler::compile_stmts`'s `value_used`.
+    fn walk_block_tail(&mut self, stmts: &[Stmt], block_used: bool, for_collects: bool) {
         self.push_scope();
         let last = stmts.len().wrapping_sub(1);
         for (i, stmt) in stmts.iter().enumerate() {
+            let tail = i == last;
             match &stmt.kind {
-                StmtKind::Expr(e) => {
-                    let used = i == last && block_used;
-                    self.walk_expr(e, used);
+                StmtKind::Expr(e) => self.walk_expr(e, tail && block_used),
+                // A `for` in the tail of a collecting block collects, exactly
+                // as the expression form does: the loop parses as a statement
+                // (`fn f() for x in xs do g(x) end end`), but tail position
+                // makes its value the block's value, so each iteration's tail
+                // becomes a list element rather than being thrown away.
+                StmtKind::For { var, iter, body } if tail && for_collects => {
+                    self.walk_expr(iter, true);
+                    self.push_scope();
+                    self.bind(var);
+                    self.walk_block(body, true);
+                    self.pop_scope();
                 }
                 _ => self.walk_stmt(stmt),
             }
@@ -347,6 +374,62 @@ mod tests {
             messages("let ys = for i in range(0, 3) do\n  append([], i)\nend\nprint(len(ys))")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn tail_for_in_fn_body_collects_and_is_silent() {
+        // Regression: the statement-form `for` in a function body's tail is a
+        // *collecting* loop — `mirror([[1, 2]])` really is `[[2, 1]]` — so its
+        // body tail is used and must not warn. The lint used to treat every
+        // `StmtKind::For` body as discarded and flagged this.
+        let m = messages("fn mirror(g)\n  for row in g do\n    reverse(row)\n  end\nend\nprint(mirror([[1, 2]]))");
+        assert!(m.is_empty(), "unexpected warnings: {m:?}");
+    }
+
+    #[test]
+    fn tail_for_in_used_if_branch_is_silent() {
+        // The `if` value flows into a `let`, so its branch tail collects too.
+        let m = messages(
+            "fn rows(g, on)\n  if on then\n    for row in g do\n      reverse(row)\n    end\n  else\n    []\n  end\nend\nprint(rows([[1, 2]], true))",
+        );
+        assert!(m.is_empty(), "unexpected warnings: {m:?}");
+    }
+
+    #[test]
+    fn tail_for_in_match_arm_is_silent() {
+        let m = messages(
+            "fn rows(g, n)\n  match n\n    when 0 -> []\n    when _ do\n      for row in g do\n        reverse(row)\n      end\n    end\n  end\nend\nprint(rows([[1, 2]], 1))",
+        );
+        assert!(m.is_empty(), "unexpected warnings: {m:?}");
+    }
+
+    #[test]
+    fn nested_tail_for_is_silent() {
+        // The inner loop is the outer collecting loop's body tail, so it
+        // collects as well — one list per outer iteration.
+        let m = messages(
+            "fn grid(g)\n  for row in g do\n    for cell in row do\n      reverse(cell)\n    end\n  end\nend\nprint(grid([[[1, 2]]]))",
+        );
+        assert!(m.is_empty(), "unexpected warnings: {m:?}");
+    }
+
+    #[test]
+    fn non_tail_for_in_fn_body_still_warns() {
+        // The `nil` puts the loop off the tail, so it is a side-effect loop
+        // again and the discarded `append` is a real bug.
+        let m = messages("fn f(xs)\n  let a = []\n  for i in xs do\n    append(a, i)\n  end\n  nil\nend\nprint(f([1]))");
+        assert_eq!(m.len(), 1, "expected exactly one warning, got {m:?}");
+        assert!(m[0].contains("`append`"));
+    }
+
+    #[test]
+    fn trailing_for_at_module_level_still_warns() {
+        // Module scope is the one place a tail `for` does *not* collect (see
+        // `Compiler::compile_stmts`), so the top-level loop stays a
+        // side-effect loop and the discarded `append` must still be reported.
+        let m = messages("let a = []\nfor i in range(0, 3) do\n  append(a, i)\nend");
+        assert_eq!(m.len(), 1, "expected exactly one warning, got {m:?}");
+        assert!(m[0].contains("`append`"));
     }
 
     #[test]

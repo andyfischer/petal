@@ -37,10 +37,7 @@ end
 
 fn mirror(g: list) -> list
   for row in g do
-    // NOTE: written as a `let` because a bare `reverse(row)` in this collecting
-    // position trips the "result is discarded" lint even though it is collected.
-    let flipped = reverse(row)
-    flipped
+    reverse(row)
   end
 end
 

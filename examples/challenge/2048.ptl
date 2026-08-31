@@ -1,0 +1,242 @@
+// 2048 — headless console version.
+//
+// A 4x4 board with the real slide-and-merge rules: a tile merges at most once
+// per move, merges resolve from the leading edge, and a new tile spawns only on
+// moves that actually changed the board. Spawns come from a small built-in LCG
+// with a fixed seed, so the run is byte-identical every time.
+//
+// Run:  ./ts/bin/run-petal.ts run examples/challenge/2048.ptl
+
+config let seed = 20482048
+config let target = 2048
+
+// ---------------------------------------------------------------- randomness
+
+// Own PRNG rather than `random_int` so the program is deterministic without
+// needing `--seed` on the command line.
+var rng = seed
+
+fn next_rand(limit: num) -> num
+  set rng = (get rng * 1103515245 + 12345) % 2147483648
+  (get rng / 65536) % limit
+end
+
+// ---------------------------------------------------------------- board basics
+
+fn new_board() -> list
+  for r in range(0, 4) do
+    for c in range(0, 4) do 0 end
+  end
+end
+
+fn transpose(g: list) -> list
+  for i in range(0, 4) do
+    for j in range(0, 4) do g[j][i] end
+  end
+end
+
+fn mirror(g: list) -> list
+  for row in g do
+    // NOTE: written as a `let` because a bare `reverse(row)` in this collecting
+    // position trips the "result is discarded" lint even though it is collected.
+    let flipped = reverse(row)
+    flipped
+  end
+end
+
+fn boards_equal(a: list, b: list) -> bool
+  var same = true
+  for r in range(0, 4) do
+    for c in range(0, 4) do
+      if a[r][c] != b[r][c] then set same = false end
+    end
+  end
+  same
+end
+
+// -------------------------------------------------------------- slide + merge
+
+// Slide one row toward index 0. Returns {row, gained}. Each tile takes part in
+// at most one merge, and pairs are resolved starting from the leading edge.
+fn slide_row(row: list)
+  let vals = for v in row do
+    if v == 0 then continue end
+    v
+  end
+  var out = []
+  var gained = 0
+  var i = 0
+  while i < len(vals) do
+    if i + 1 < len(vals) && vals[i] == vals[i + 1] then
+      let merged = vals[i] * 2
+      set out = append(out, merged)
+      set gained = gained + merged
+      set i = i + 2
+    else
+      set out = append(out, vals[i])
+      set i = i + 1
+    end
+  end
+  while len(out) < 4 do
+    set out = append(out, 0)
+  end
+  {row: out, gained: gained}
+end
+
+fn slide_left(g: list)
+  var total = 0
+  let rows = for row in g do
+    let res = slide_row(row)
+    set total = total + res.gained
+    res.row
+  end
+  {grid: rows, gained: total}
+end
+
+// dir is one of "left", "right", "up", "down".
+fn move_board(g: list, dir: string)
+  match dir
+    when "left" -> slide_left(g)
+    when "right" do
+      let res = slide_left(mirror(g))
+      {grid: mirror(res.grid), gained: res.gained}
+    end
+    when "up" do
+      let res = slide_left(transpose(g))
+      {grid: transpose(res.grid), gained: res.gained}
+    end
+    when "down" do
+      let res = slide_left(mirror(transpose(g)))
+      {grid: transpose(mirror(res.grid)), gained: res.gained}
+    end
+    when d -> {grid: g, gained: 0, bad: d}
+  end
+end
+
+// ------------------------------------------------------------------- spawning
+
+fn empty_cells(g: list) -> list
+  var cells = []
+  for r in range(0, 4) do
+    for c in range(0, 4) do
+      if g[r][c] == 0 then
+        set cells = append(cells, {r: r, c: c})
+      end
+    end
+  end
+  cells
+end
+
+fn spawn(g: list) -> list
+  let cells = empty_cells(g)
+  if len(cells) == 0 then
+    g
+  else
+    let pick = cells[next_rand(len(cells))]
+    let value = if next_rand(10) == 0 then 4 else 2 end
+    g[pick.r][pick.c] = value
+    g
+  end
+end
+
+// -------------------------------------------------------------- game questions
+
+fn has_won(g: list) -> bool
+  var won = false
+  for row in g do
+    for v in row do
+      if v >= target then set won = true end
+    end
+  end
+  won
+end
+
+fn can_move(g: list) -> bool
+  if len(empty_cells(g)) > 0 then
+    true
+  else
+    var ok = false
+    for r in range(0, 4) do
+      for c in range(0, 4) do
+        if c + 1 < 4 && g[r][c] == g[r][c + 1] then set ok = true end
+        if r + 1 < 4 && g[r][c] == g[r + 1][c] then set ok = true end
+      end
+    end
+    ok
+  end
+end
+
+// -------------------------------------------------------------------- display
+
+fn cell_text(v: num) -> string
+  let s = if v == 0 then "." else str(v) end
+  pad_start(s, 5)
+end
+
+fn print_board(g: list, score: num)
+  print("+--------------------+")
+  for row in g do
+    let cells = for v in row do cell_text(v) end
+    print("|{join(cells, "")} |")
+  end
+  print("+--------------------+")
+  print("score: {score}")
+  nil
+end
+
+// ----------------------------------------------------------------------- game
+
+// A fixed, repeated pattern rather than a player: enough moves that the board
+// actually reaches a terminal state.
+config let pattern = ["left", "up", "right", "up", "down", "left", "up", "right"]
+config let repeats = 30
+
+var moves = []
+for rep in range(0, repeats) do
+  for m in pattern do
+    set moves = append(moves, m)
+  end
+end
+
+var board = new_board()
+set board = spawn(get board)
+set board = spawn(get board)
+
+var score = 0
+var turn = 0
+var finished = false
+var outcome = "out of scripted moves"
+
+print("2048 — scripted run, seed {seed}")
+print("")
+print("initial board")
+print_board(get board, 0)
+
+for dir in get moves do
+  if get finished then continue end
+  set turn = turn + 1
+  let before = get board
+  let res = move_board(before, dir)
+  let changed = !boards_equal(before, res.grid)
+  set score = get score + res.gained
+  var next = res.grid
+  if changed then
+    set next = spawn(next)
+  end
+  set board = get next
+  print("")
+  print("move {get turn}: {dir}{if changed then "" else "  (no change)" end}")
+  print_board(get board, get score)
+  if has_won(get board) then
+    set finished = true
+    set outcome = "reached {target}"
+  elsif !can_move(get board) then
+    set finished = true
+    set outcome = "no moves left"
+  end
+end
+
+print("")
+print("game over: {outcome}")
+print("final score: {get score}")
+print("moves played: {get turn}")

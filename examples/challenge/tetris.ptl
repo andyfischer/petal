@@ -149,9 +149,13 @@ fn collides(board: list, cells: list, px: int, py: int) -> bool
   for c in cells do
     let x = px + c[0]
     let y = py + c[1]
-    if x < 0 || x >= WIDTH || y >= HEIGHT then
+    // `y < 0` counts as a collision, not as free space: `merge_piece` only
+    // writes cells inside the well, so a lock above the ceiling would silently
+    // drop those minoes. Rejecting the position here keeps the two in step —
+    // a wall kick that would lift the piece out of the well is refused.
+    if x < 0 || x >= WIDTH || y >= HEIGHT || y < 0 then
       hit = true
-    elsif y >= 0 && board[y][x] != 0 then
+    elsif board[y][x] != 0 then
       hit = true
     end
   end

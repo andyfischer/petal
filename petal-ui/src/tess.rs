@@ -167,7 +167,8 @@ mod tests {
     fn area(mesh: &[ShadowVertex]) -> f32 {
         mesh.chunks(3)
             .map(|t| {
-                ((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y)).abs()
+                ((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y))
+                    .abs()
                     * 0.5
             })
             .sum()

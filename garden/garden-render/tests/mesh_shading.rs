@@ -109,7 +109,10 @@ fn the_mask_edge_is_feathered() {
         let v = px(&shot, i, i)[0];
         v > 8 && v < 247
     });
-    assert!(partial, "no partially covered pixel along the corner diagonal");
+    assert!(
+        partial,
+        "no partially covered pixel along the corner diagonal"
+    );
 }
 
 /// A zero radius is "no mask", the state every vertex Garden itself emits is

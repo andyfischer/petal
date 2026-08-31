@@ -55,9 +55,7 @@ fn a_gradient_stop_carries_its_own_alpha() {
     match (&out[0], &out[1]) {
         (
             DrawCommand::RectGradient { a0, a1, .. },
-            DrawCommand::RectGradient {
-                a0: b0, a1: b1, ..
-            },
+            DrawCommand::RectGradient { a0: b0, a1: b1, .. },
         ) => {
             assert_eq!((*a0, *a1), (40, 255));
             assert_eq!((*b0, *b1), (200, 0));
@@ -68,9 +66,8 @@ fn a_gradient_stop_carries_its_own_alpha() {
 
 #[test]
 fn rounded_rect_gradient_carries_the_radius_and_the_angle() {
-    let out = cmds(
-        "draw_rect_gradient_rounded({x: 0, y: 0, w: 10, h: 20}, 6, #ffffff, #000000, 1.5)",
-    );
+    let out =
+        cmds("draw_rect_gradient_rounded({x: 0, y: 0, w: 10, h: 20}, 6, #ffffff, #000000, 1.5)");
     match &out[0] {
         DrawCommand::RectGradient { radius, angle, .. } => {
             assert_eq!(*radius, 6);
@@ -106,7 +103,8 @@ fn circle_gradient_accepts_a_center_record_or_flat_coords() {
 fn a_multi_stop_gradient_subdivides_into_bands_that_meet_edge_to_edge() {
     // Three stops over a 100px-wide rect: two bands, each carrying one
     // consecutive pair, tiling the rect with no gap and no overlap.
-    let out = cmds("linear_gradient({x: 0, y: 0, w: 100, h: 20}, [#ff0000, #00ff00, #0000ff], 0.0)");
+    let out =
+        cmds("linear_gradient({x: 0, y: 0, w: 100, h: 20}, [#ff0000, #00ff00, #0000ff], 0.0)");
     assert_eq!(out.len(), 2);
     match (&out[0], &out[1]) {
         (
@@ -166,9 +164,8 @@ fn a_two_stop_linear_gradient_is_a_single_command() {
 fn a_rounded_multi_stop_gradient_clips_its_bands_to_the_rounded_shape() {
     // The corners come from a rounded clip, not from the bands: only the end
     // bands touch a corner, so rounding each one would notch the middle.
-    let out = cmds(
-        "linear_gradient({x: 0, y: 0, w: 90, h: 20}, [#ff0000, #00ff00, #0000ff], 0.0, 6)",
-    );
+    let out =
+        cmds("linear_gradient({x: 0, y: 0, w: 90, h: 20}, [#ff0000, #00ff00, #0000ff], 0.0, 6)");
     assert!(matches!(
         out.first(),
         Some(DrawCommand::ClipPush { radius: 6, .. })
@@ -178,7 +175,8 @@ fn a_rounded_multi_stop_gradient_clips_its_bands_to_the_rounded_shape() {
 
 #[test]
 fn shadow_takes_a_partial_options_record() {
-    let out = cmds("draw_shadow({x: 10, y: 20, w: 100, h: 50}, {radius: 8, blur: 16, dy: 4, a: 60})");
+    let out =
+        cmds("draw_shadow({x: 10, y: 20, w: 100, h: 50}, {radius: 8, blur: 16, dy: 4, a: 60})");
     assert_eq!(
         out,
         vec![DrawCommand::Shadow {
@@ -284,7 +282,10 @@ fn the_new_commands_serialize_without_their_defaults() {
         json(&out[1]),
         r#"{"op":"shadow","x":0,"y":0,"w":10,"h":10,"blur":8,"r":0,"g":0,"b":0,"a":64}"#
     );
-    assert_eq!(json(&out[2]), r#"{"op":"clip_push","x":0,"y":0,"w":4,"h":4}"#);
+    assert_eq!(
+        json(&out[2]),
+        r#"{"op":"clip_push","x":0,"y":0,"w":4,"h":4}"#
+    );
     assert_eq!(json(&out[3]), r#"{"op":"clip_pop"}"#);
     assert_eq!(
         json(&out[4]),

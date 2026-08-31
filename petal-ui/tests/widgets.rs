@@ -991,9 +991,7 @@ fn with_ui_face(source: &str) -> Headless {
 fn text_runs(cmds: &[DrawCommand]) -> Vec<(String, i32, Option<String>)> {
     cmds.iter()
         .filter_map(|c| match c {
-            DrawCommand::Text { text, x, font, .. } => {
-                Some((text.clone(), *x, font.clone()))
-            }
+            DrawCommand::Text { text, x, font, .. } => Some((text.clone(), *x, font.clone())),
             _ => None,
         })
         .collect()
@@ -1084,7 +1082,9 @@ fn every_alignment_helper_measures_the_face_it_draws() {
     let underline = cmds
         .iter()
         .find_map(|c| match c {
-            DrawCommand::Line { x1: 0, x2, y1: 95, .. } => Some(*x2),
+            DrawCommand::Line {
+                x1: 0, x2, y1: 95, ..
+            } => Some(*x2),
             _ => None,
         })
         .expect("section_label underline");

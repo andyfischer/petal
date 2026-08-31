@@ -426,7 +426,6 @@ impl Pane {
         self.view.show_line_numbers = line_numbers;
         self.file = file;
     }
-
 }
 
 /// A panel pane's titlebar/status label: the script's file name (its full path

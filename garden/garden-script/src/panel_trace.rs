@@ -346,7 +346,12 @@ pub fn hit_test(cmds: &[PanelCmd], x: i32, y: i32) -> Option<usize> {
                 saved.push(clip);
                 let want = (*cx, *cy, *cx + *w as i32, *cy + *h as i32);
                 clip = Some(match clip {
-                    Some(c) => (c.0.max(want.0), c.1.max(want.1), c.2.min(want.2), c.3.min(want.3)),
+                    Some(c) => (
+                        c.0.max(want.0),
+                        c.1.max(want.1),
+                        c.2.min(want.2),
+                        c.3.min(want.3),
+                    ),
                     None => want,
                 });
                 continue;
@@ -397,7 +402,8 @@ fn contains(cmd: &PanelCmd, x: i32, y: i32) -> bool {
                 && !(x >= rx + t && x < rx + *w as i32 - t && y >= ry + t && y < ry + *h as i32 - t)
         }
 
-        PanelCmd::Circle { cx, cy, radius, .. } | PanelCmd::CircleGradient { cx, cy, radius, .. } => {
+        PanelCmd::Circle { cx, cy, radius, .. }
+        | PanelCmd::CircleGradient { cx, cy, radius, .. } => {
             let (dx, dy) = ((x - cx) as f64, (y - cy) as f64);
             dx * dx + dy * dy <= (*radius as f64) * (*radius as f64)
         }

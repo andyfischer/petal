@@ -2103,9 +2103,9 @@ fn area_fill_follows_the_data_and_stops_at_the_baseline() {
         let bands: Vec<(i32, u32, u32, u8, u8)> = cmds
             .iter()
             .filter_map(|c| match c {
-                DrawCommand::RectGradient { x, w, h, a0, a1, .. } => {
-                    Some((*x, *w, *h, *a0, *a1))
-                }
+                DrawCommand::RectGradient {
+                    x, w, h, a0, a1, ..
+                } => Some((*x, *w, *h, *a0, *a1)),
                 _ => None,
             })
             .collect();
@@ -2120,7 +2120,10 @@ fn area_fill_follows_the_data_and_stops_at_the_baseline() {
         // Each column is sampled at its own midpoint, so the last one lands
         // 5/6 of the way up the ramp rather than exactly on the peak — the
         // fill is the area under the line, not a rect up to it.
-        assert_eq!(bands[2].3, 166, "the strongest column is nearly at the peak");
+        assert_eq!(
+            bands[2].3, 166,
+            "the strongest column is nearly at the peak"
+        );
     });
 }
 
@@ -2135,8 +2138,14 @@ fn text_along_a_path_sets_one_upright_glyph_at_a_time() {
         let runs: Vec<(String, i32, i32)> = cmds
             .iter()
             .filter_map(|c| match c {
-                DrawCommand::Text { text, x, y, font, .. } => {
-                    assert_eq!(font.as_deref(), Some("ui"), "the style travels with each glyph");
+                DrawCommand::Text {
+                    text, x, y, font, ..
+                } => {
+                    assert_eq!(
+                        font.as_deref(),
+                        Some("ui"),
+                        "the style travels with each glyph"
+                    );
                     Some((text.clone(), *x, *y))
                 }
                 _ => None,

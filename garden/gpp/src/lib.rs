@@ -633,9 +633,12 @@ mod tests {
         assert_eq!(p.name, "apply");
 
         // The success response: id + result { value }, no name echo, no cache.
-        let resp = Envelope::response(9, MutateResult {
-            value: Some(json!("wrote 2 files")),
-        });
+        let resp = Envelope::response(
+            9,
+            MutateResult {
+                value: Some(json!("wrote 2 files")),
+            },
+        );
         let rv = reparse(&resp);
         assert!(rv.get("method").is_none());
         assert!(rv["result"].get("name").is_none());
@@ -844,11 +847,7 @@ mod tests {
             ),
         )
         .unwrap();
-        write_message(
-            &mut buf,
-            &Envelope::notification("futureThing", json!({})),
-        )
-        .unwrap();
+        write_message(&mut buf, &Envelope::notification("futureThing", json!({}))).unwrap();
         write_message(
             &mut buf,
             &Envelope::notification(method::SHUTDOWN, json!({})),

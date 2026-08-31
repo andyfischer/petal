@@ -685,10 +685,7 @@ pub(in crate::app) fn build_script_client_pane(
     let source = match wait_for_set_script(&process, Duration::from_millis(500)) {
         Some(source) => source,
         None => {
-            view.set_external_content(
-                &format!("{command}: GPP client sent no script"),
-                None,
-            );
+            view.set_external_content(&format!("{command}: GPP client sent no script"), None);
             return Pane::editor(rect, None, view);
         }
     };

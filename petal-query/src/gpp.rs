@@ -32,14 +32,12 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex};
 
-use crate::provider::{
-    EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply,
-};
 use crate::CachePolicy;
+use crate::provider::{EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply};
 use ::gpp::{
-    error_code, method, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams,
-    MutateResult, NavigateParams, NavigateResult, QueryParams, QueryResult, SetScriptParams,
-    PROTOCOL_VERSION,
+    EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams, MutateResult,
+    NavigateParams, NavigateResult, PROTOCOL_VERSION, QueryParams, QueryResult, SetScriptParams,
+    error_code, method,
 };
 
 /// The capability names a `petal-query` app reports in its `initialize`
@@ -526,11 +524,13 @@ mod tests {
         let init = msgs[0].result.as_ref().unwrap();
         assert_eq!(init["protocol"], 2);
         assert_eq!(init["name"], "demo");
-        assert!(init["capabilities"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|c| c == "query"));
+        assert!(
+            init["capabilities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c == "query")
+        );
         assert!(msgs[1].is_method(method::SET_SCRIPT));
         assert_eq!(msgs[1].params.as_ref().unwrap()["source"], "SCRIPT");
     }
@@ -604,7 +604,11 @@ mod tests {
 
     #[test]
     fn a_failed_query_is_an_error_response() {
-        let mut r = input(vec![init_req(), query_req(4, "boom", json!("")), shutdown()]);
+        let mut r = input(vec![
+            init_req(),
+            query_req(4, "boom", json!("")),
+            shutdown(),
+        ]);
         let mut w: Vec<u8> = Vec::new();
         let provider =
             Provider::stateless().query("boom", |_s, _ctx| Reply::error("upstream failed"));
@@ -621,7 +625,11 @@ mod tests {
 
     #[test]
     fn a_loading_reply_is_an_empty_result() {
-        let mut r = input(vec![init_req(), query_req(4, "slow", json!("")), shutdown()]);
+        let mut r = input(vec![
+            init_req(),
+            query_req(4, "slow", json!("")),
+            shutdown(),
+        ]);
         let mut w: Vec<u8> = Vec::new();
         let provider = Provider::stateless().query("slow", |_s, _ctx| Reply::loading());
         serve_on(provider, PanelUi::new("demo", "S"), &mut r, &mut w).unwrap();
@@ -661,7 +669,10 @@ mod tests {
         let mut w: Vec<u8> = Vec::new();
         let provider = Provider::new(|_| 0i64).on_navigate(|visits: &mut i64, ctx| {
             *visits += 1;
-            Ok(format!("// {} for id {} visit {visits}", ctx.screen, ctx.arg["id"]))
+            Ok(format!(
+                "// {} for id {} visit {visits}",
+                ctx.screen, ctx.arg["id"]
+            ))
         });
         // The declared screen would say something else; the handler wins.
         let ui = PanelUi::new("home", "HOME").screen("detail.ptl", "DECLARED");
@@ -713,7 +724,12 @@ mod tests {
                 arg: json!({ "left_frac": 300 }),
             },
         );
-        let mut r = input(vec![init_req(), emit, query_req(2, "state", json!("")), shutdown()]);
+        let mut r = input(vec![
+            init_req(),
+            emit,
+            query_req(2, "state", json!("")),
+            shutdown(),
+        ]);
         let mut w: Vec<u8> = Vec::new();
         let provider = Provider::new(|_| 0i64)
             .on_emit("ui_state", |s: &mut i64, ctx| {

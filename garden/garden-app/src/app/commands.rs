@@ -314,7 +314,9 @@ impl App {
     /// client. The editing ex commands (`:w`, `:s`) report a friendly error
     /// instead of touching a pane whose pixels a script owns.
     fn focused_is_panel(&self) -> bool {
-        self.panes.get(self.focus).is_some_and(super::Pane::is_panel)
+        self.panes
+            .get(self.focus)
+            .is_some_and(super::Pane::is_panel)
     }
 
     /// Replace the focused pane's buffer with a fresh, untitled one (File ▸ New).

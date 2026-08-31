@@ -520,12 +520,11 @@ mod tests {
 
     #[test]
     fn custom_navigate_handler_runs_with_screen_and_arg() {
-        let mut p = Provider::new(|_| Vec::<String>::new()).on_navigate(
-            |visits: &mut Vec<String>, ctx| {
+        let mut p =
+            Provider::new(|_| Vec::<String>::new()).on_navigate(|visits: &mut Vec<String>, ctx| {
                 visits.push(format!("{}:{}", ctx.screen, ctx.arg["id"]));
                 Ok(format!("// source for {}", ctx.screen))
-            },
-        );
+            });
         let init = init();
         let mut state = p.build(&init);
         let arg = json!({ "id": 7 });
@@ -549,8 +548,8 @@ mod tests {
         let init = init();
         let mut state = p.build(&init);
         let arg = json!(null);
-        assert!(p
-            .navigate(
+        assert!(
+            p.navigate(
                 &mut state,
                 &NavigateContext {
                     screen: "x.ptl",
@@ -558,7 +557,8 @@ mod tests {
                     init: &init,
                 },
             )
-            .is_none());
+            .is_none()
+        );
     }
 
     #[test]

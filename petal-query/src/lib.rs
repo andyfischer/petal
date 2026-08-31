@@ -43,9 +43,7 @@ pub mod provider;
 
 pub use ::gpp::{CachePolicy, Freshness};
 pub use cache::{Cache, Lookup};
-pub use provider::{
-    EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply,
-};
+pub use provider::{EmitContext, MutateContext, NavigateContext, Provider, QueryContext, Reply};
 
 /// Version of the petal-query provider/cache contract. Bump when the wire shapes
 /// or [`CachePolicy`] semantics change incompatibly. Version 2 is the GPP v2

@@ -104,7 +104,13 @@ pub fn rect_rounded(
 pub type Shade<'a> = &'a dyn Fn(f32, f32) -> Color;
 
 /// [`triangle`] with a per-vertex color.
-fn triangle_shaded(buf: &mut Vec<Vertex>, a: (f32, f32), b: (f32, f32), c: (f32, f32), shade: Shade) {
+fn triangle_shaded(
+    buf: &mut Vec<Vertex>,
+    a: (f32, f32),
+    b: (f32, f32),
+    c: (f32, f32),
+    shade: Shade,
+) {
     buf.push(Vertex::new(a, shade(a.0, a.1)));
     buf.push(Vertex::new(b, shade(b.0, b.1)));
     buf.push(Vertex::new(c, shade(c.0, c.1)));
@@ -774,10 +780,10 @@ pub fn shadow(
     // The four corner centers stay fixed as the silhouette is expanded, which
     // is what makes ring i and ring i+1 correspond point for point.
     let centers = [
-        (cx0 + r, cy0 + r),                // top-left
-        (cx0 + cw - r, cy0 + r),           // top-right
-        (cx0 + cw - r, cy0 + ch - r),      // bottom-right
-        (cx0 + r, cy0 + ch - r),           // bottom-left
+        (cx0 + r, cy0 + r),           // top-left
+        (cx0 + cw - r, cy0 + r),      // top-right
+        (cx0 + cw - r, cy0 + ch - r), // bottom-right
+        (cx0 + r, cy0 + ch - r),      // bottom-left
     ];
     let blur = blur.max(0.0);
     // Segments per corner, sized from the outermost silhouette so the widest
@@ -852,8 +858,14 @@ mod tests {
         let (a, b) = (Color::rgb(0.0, 0.0, 0.0), Color::rgb(1.0, 1.0, 1.0));
         let mut buf = Vec::new();
         rect_gradient(&mut buf, 0.0, 0.0, 100.0, 40.0, 0.0, a, b, 0.0);
-        let left = buf.iter().find(|v| v.pos.0 == 0.0).expect("a left edge vertex");
-        let right = buf.iter().find(|v| v.pos.0 == 100.0).expect("a right edge vertex");
+        let left = buf
+            .iter()
+            .find(|v| v.pos.0 == 0.0)
+            .expect("a left edge vertex");
+        let right = buf
+            .iter()
+            .find(|v| v.pos.0 == 100.0)
+            .expect("a right edge vertex");
         assert_eq!(left.color, a);
         assert_eq!(right.color, b);
     }
@@ -895,7 +907,10 @@ mod tests {
     /// a stack of translucent discs.
     #[test]
     fn a_radial_gradient_runs_hub_to_rim() {
-        let (a, b) = (Color::rgba(1.0, 1.0, 1.0, 1.0), Color::rgba(1.0, 1.0, 1.0, 0.0));
+        let (a, b) = (
+            Color::rgba(1.0, 1.0, 1.0, 1.0),
+            Color::rgba(1.0, 1.0, 1.0, 0.0),
+        );
         let mut buf = Vec::new();
         circle_gradient(&mut buf, 50.0, 50.0, 20.0, a, b);
         assert!(buf.len() >= 3 && buf.len() % 3 == 0);
@@ -914,7 +929,9 @@ mod tests {
     fn the_shadow_fades_to_nothing_at_the_blur_radius() {
         let mut buf = Vec::new();
         let c = Color::rgba(0.0, 0.0, 0.0, 0.5);
-        shadow(&mut buf, 20.0, 20.0, 80.0, 40.0, 8.0, 16.0, 0.0, 0.0, 0.0, c);
+        shadow(
+            &mut buf, 20.0, 20.0, 80.0, 40.0, 8.0, 16.0, 0.0, 0.0, 0.0, c,
+        );
         let alphas: Vec<f32> = buf.iter().map(|v| v.color.a).collect();
         let max = alphas.iter().cloned().fold(0.0f32, f32::max);
         let min = alphas.iter().cloned().fold(1.0f32, f32::min);
@@ -935,12 +952,19 @@ mod tests {
         let mut levels: Vec<f32> = buf.iter().map(|v| v.color.a).collect();
         levels.sort_by(|a, b| b.partial_cmp(a).expect("no NaN alphas"));
         levels.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
-        assert_eq!(levels.len(), SHADOW_RINGS + 1, "one alpha per ring boundary");
+        assert_eq!(
+            levels.len(),
+            SHADOW_RINGS + 1,
+            "one alpha per ring boundary"
+        );
         // Halfway out, a smoothstep is at exactly 0.5; a straight line would
         // be too, so what distinguishes them is the ends — the first step down
         // from 1.0 must be smaller than the step across the middle.
         let mid = levels[SHADOW_RINGS / 2];
-        assert!((mid - 0.5).abs() < 1e-6, "midpoint is half alpha, got {mid}");
+        assert!(
+            (mid - 0.5).abs() < 1e-6,
+            "midpoint is half alpha, got {mid}"
+        );
         let first_step = levels[0] - levels[1];
         let middle_step = levels[SHADOW_RINGS / 2] - levels[SHADOW_RINGS / 2 + 1];
         assert!(

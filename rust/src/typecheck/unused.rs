@@ -382,7 +382,9 @@ mod tests {
         // *collecting* loop — `mirror([[1, 2]])` really is `[[2, 1]]` — so its
         // body tail is used and must not warn. The lint used to treat every
         // `StmtKind::For` body as discarded and flagged this.
-        let m = messages("fn mirror(g)\n  for row in g do\n    reverse(row)\n  end\nend\nprint(mirror([[1, 2]]))");
+        let m = messages(
+            "fn mirror(g)\n  for row in g do\n    reverse(row)\n  end\nend\nprint(mirror([[1, 2]]))",
+        );
         assert!(m.is_empty(), "unexpected warnings: {m:?}");
     }
 
@@ -417,7 +419,9 @@ mod tests {
     fn non_tail_for_in_fn_body_still_warns() {
         // The `nil` puts the loop off the tail, so it is a side-effect loop
         // again and the discarded `append` is a real bug.
-        let m = messages("fn f(xs)\n  let a = []\n  for i in xs do\n    append(a, i)\n  end\n  nil\nend\nprint(f([1]))");
+        let m = messages(
+            "fn f(xs)\n  let a = []\n  for i in xs do\n    append(a, i)\n  end\n  nil\nend\nprint(f([1]))",
+        );
         assert_eq!(m.len(), 1, "expected exactly one warning, got {m:?}");
         assert!(m[0].contains("`append`"));
     }

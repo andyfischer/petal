@@ -27,8 +27,8 @@ use std::thread;
 use std::time::Duration;
 
 use gpp::{
-    method, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams,
-    NavigateParams, QueryParams, PROTOCOL_VERSION,
+    method, EmitParams, Envelope, InitializeParams, InitializeResult, MutateParams, NavigateParams,
+    QueryParams, PROTOCOL_VERSION,
 };
 
 /// The capability names this host reports in its `initialize` request.

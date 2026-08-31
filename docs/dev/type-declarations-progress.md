@@ -4,8 +4,8 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-02 (chunk N: the stale-label fallback) ·
-Branch: `main`
+Last updated: 2026-08-30 (review pass: recorded chunks O–R, which had shipped
+but were never written down) · Branch: `main`
 
 ---
 
@@ -41,9 +41,39 @@ Branch: `main`
 | K — class names as types | ✅ done | (classes) | `Type::Class(ClassId)` + `Type::resolve`; `fn f(r: Rect)` checks, field reads are typed |
 | L — receiver, field & arity diagnostics | ✅ done | (this) | fatal receiver-annotation check; undeclared-field warning; signatures carried on bindings; no-matching-arity warning for fns, constructors and methods |
 | M — annotations drive static dispatch | ✅ done | `dc652e1` | `check_module` also returns the method-call sites it pinned to one class; the compiler binds those straight to `fn Class.method` |
-| N — stale-label fallback | ✅ done | (this) | an unpinned call carries its declaration's class, consulted only when the receiver's label names no class in this program; `Program.class_names` answers that at runtime |
+| N — stale-label fallback | ✅ done | `53a2251` | an unpinned call carries its declaration's class, consulted only when the receiver's label names no class in this program; `Program.class_names` answers that at runtime |
+| O — unused-result lint | ✅ done | `6cc18e5` | `typecheck/unused.rs`: warn when a known-pure builtin's result is discarded (`push(xs, x)` as a statement) |
+| P — builtin return types | ✅ done | `67b238a` | `typecheck/builtin_types.rs`: the checker learns `len(xs)` is `int`, `sqrt(x)` is `float`, and that `abs`/`min`/`clamp` preserve int-ness |
+| Q — inference gained a *rewriting* consumer | ✅ done | `67b238a` | `lint`'s drop-identity-casts rule detects via `typecheck::find_redundant_casts`, so inference now decides an edit, not just a warning |
+| R — tighter unknown-type carets | ✅ done | `12e97e6` | `TypeAnn` carries its own `SourceSpan`; the unknown-type warning underlines just the type name |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
+
+> **Chunks O–R were shipped but unrecorded** until the 2026-08-30 review. O, P
+> and Q predate N chronologically (2026-07-24 and 2026-08-02); the letters are
+> labels, not an order. R closes what the follow-up list called "tighter
+> unknown-type carets".
+
+### Review pass (2026-08-30)
+
+Re-verified against the current tree. Everything the board claims still holds;
+`cargo test --lib` is now **775** passing (was 587 at the audit), with 84
+`typecheck::` unit tests, 8 `type_annotations`, and 16 `static_dispatch`. Spot
+checks reconfirmed: the unknown-type caret underlines just `banana`,
+`check --strict` exits 1, and `list<int>` still gets its targeted parse error.
+
+The checker has been kept current with the syntax that landed since the audit,
+each in the same commit as the feature: `get` (`94b3982`), `??` on an absent
+field (`83c1f63`), `?.` (`cadf2e8`), and `config let` (`15d9da0`). The builtin
+return-type table grew twice, for the new string/list builtins (`6fcabef`) and
+for int-preserving `clamp`/`round` and the failable parsers (`405562a`).
+
+**Raised stakes worth knowing (chunk Q).** Inference is no longer advisory. When
+`lint --fix` drops an identity cast it is acting on `find_redundant_casts`, so a
+*wrong* inferred type becomes a wrong source rewrite rather than a spurious
+warning. The mitigation is the rule already stated in `builtin_types.rs`: list
+only certainties, and compute argument-dependent results rather than assuming
+them. Treat any addition to that table as a correctness change.
 
 ### Audit pass (2026-08-02)
 
@@ -67,7 +97,7 @@ above). Two apparent gaps were confirmed as *intended*, not bugs:
 
 ---
 
-## What exists now (A–G shipped)
+## What exists now (A–R shipped)
 
 Annotations parse, type-check (warning-only), and surface through the CLI/MCP.
 The runtime is untouched — annotations are stripped to names for codegen.
@@ -220,27 +250,65 @@ binding's initializer describes every later read.
 
 ---
 
-## Follow-up ideas (not scheduled)
+## What's next
 
-- **Tighter unknown-type carets.** Give `TypeAnn` its own `SourceSpan` so the
-  unknown-type warning underlines just the type name, not the whole statement.
-  (Today the checker uses the enclosing stmt/expr span since `TypeAnn` carries
-  no span — the four-place differential makes threading a span through both
-  parse paths the fiddly part.)
-- **Structured warnings in `run --json`.** `run` prints warnings as stderr text
-  only; a `warnings[]` channel on `run --json` (reusing `warnings_json`) would
-  let `TestSnippet` return them as data, not just text.
+Recommended: **`Type::Num`** (plan §12 Q5). It is the only follow-up with a
+consumer already blocked on it in-tree, and it is small.
+
+`rust/src/classes.rs:286` reads `const RECT_FIELD_TYPE: Option<Type> = None;`
+with a comment explaining why: a rect edge is a *number* — `int` for pixel
+geometry, `float` for the sub-pixel geometry layout and animation produce — and
+the language has no name for "int or float". Declaring `int` would be a lie the
+constructor could only keep by truncating, which is the implicit cast Petal
+does not do. So the built-in class the whole UI corpus is written against has
+un-annotated fields, and the static catch is given up:
+
+```
+$ petal check -e 'let r = Rect("a", 1, 2, 3)'      # silent, exit 0
+$ petal run   -e 'let r = Rect("a", 1, 2, 3)'
+Error: Rect(): field `x` expects a number, got string
+```
+
+Scope is contained — the same shape as chunk A:
+
+- `types.rs`: a `Type::Num` variant; `from_name("num")`; `name()` returns
+  `"num"`. It has no runtime `type_name` (like `Any` and `Class`), so exclude it
+  from `concrete_types()` in `from_name_round_trips_every_type` and
+  `name_matches_value_type_name_for_concretes`.
+- `is_assignable_to` (`types.rs:150`) gains two arms: `Int`/`Float`/`Dual` →
+  `Num` yes; `Num` → `Int`/`Float` **no** (needs an explicit cast, keeping "no
+  implicit casting"). Extend the existing truth-table test.
+- Flip `RECT_FIELD_TYPE` to `Some(Type::Num)` and pin the new compile-time
+  warning with a test.
+- Docs: the type vocabulary in `plan.md` §2, the Language Guide's Type
+  Annotations section, and the tree-sitter/vim keyword lists (the fifth place —
+  see Gotchas).
+
+Consider alongside it, in rough order of value:
+
+- **Method return types in inference.** `r.center_x()` infers `any` even when
+  the receiver's class is pinned and the method declares a return type. The
+  blocker is confirmed structural: `classes::MethodDef` carries only
+  `{ name, arity }` (`classes.rs:41-47`), so the class table would need to hold
+  an `FnSignature` per method. Worth doing after `Num`, since the built-in
+  `Rect` methods are exactly the ones that would become typed.
+- **Enum variant field annotations** (`Circle(radius: float)`, plan §12 Q4).
+  The shared param parser already *parses* these; `EnumVariant.fields` is still
+  `Vec<String>` (`ast.rs:207`), so the types are dropped on the floor. Cheap.
+- **Structured warnings in `run --json`.** `run` deliberately prints warnings to
+  stderr even under `--json`, so stdout stays clean for JSON consumers
+  (`cli/handlers.rs:88-92`). A `warnings[]` channel on the run report (reusing
+  `warnings_json`) would let `TestSnippet` return them as data. Small, but it
+  needs a decision about whether the report gains the field or `--json` gains a
+  flag.
+
+## Follow-up ideas (not scheduled)
 - **Parameterized / richer types** — `list<int>`, arrow types, structural
   records, user type aliases, deeper (non-local) inference. All explicitly
   deferred by the plan; writing one now gets a targeted parse error naming the
   bare type instead of a misleading downstream one (audit chunk J).
 - **Per-file `// @strict` pragma** to opt individual files into error-level
   enforcement (plan §12 Q3).
-- **Method return types in inference.** A `r.center_x()` call infers `any`, even
-  when the receiver's class is known and the method has a declared return type.
-  Deliberately conservative for now (a callable field of the same name would
-  make the inferred type wrong); the class table would need the method's
-  signature, not just its arity, to do better.
 - **Compile-time unknown-method warnings.** Calling a method a class does not
   have is a *runtime* error (`No method 'nope' on class Rect`). A check-time
   warning was considered and dropped: dispatch also reaches every global native,
@@ -250,9 +318,9 @@ binding's initializer describes every later read.
   matches a user method by name alone, so a mismatched count cannot fall through
   to a global and is always a runtime error. A callable field of the same name
   wins over the method, so a class that declares such a field is skipped.
-- **Enum variant field annotations** (`Circle(radius: float)`) — the shared
-  param parser already *parses* these; `EnumVariant.fields` is `Vec<String>`, so
-  the types are dropped. Keeping them is the remaining work (plan §12 Q4).
+
+> Method return types in inference, enum variant field annotations, and
+> structured `run --json` warnings moved up to [What's next](#whats-next).
 
 > `return`-statement checks are **done**, not pending: `check_return_type` is
 > called from both the body's tail expression and every explicit `return e`
@@ -265,10 +333,11 @@ binding's initializer describes every later read.
 
 ```bash
 # Rust: unit + CST/AST differential over the repo corpus
-cd rust && cargo test --lib            # expect: all pass (587 as of the audit)
-cargo test --lib typecheck::           # checker unit tests
-cargo test --lib prescan_tests         # signature side-table tests
-cargo test --test type_annotations     # the annotation *grammar* (all binding forms)
+cd rust && cargo test --lib            # expect: all pass (775 as of 2026-08-30)
+cargo test --lib typecheck::           # checker unit tests (84)
+cargo test --lib prescan               # signature side-table tests (4)
+cargo test --test type_annotations     # the annotation *grammar* (8)
+cargo test --test static_dispatch      # chunk M/N pinning + its guards (16)
 
 # TS integration (builds the binary via global-setup)
 cd ts && npx vitest run test/type-annotations.test.ts test/type-warnings.test.ts

@@ -1,6 +1,7 @@
 # Optional Static Type Declarations — Tech Plan
 
-Status: **shipped** (chunks A–K done, incl. class names as types — see
+Status: **shipped** (chunks A–R done, incl. class names as types and static
+dispatch — see
 [type-declarations-progress.md](type-declarations-progress.md)) · Author:
 investigation + plan, 2026-07-14
 
@@ -35,13 +36,13 @@ compile-time checking *projection* on top, not a new execution model.
 ### Decisions (locked with the requester)
 | Question | Decision |
 |---|---|
-| Enforcement on mismatch | **Warning, program still runs.** Non-fatal diagnostics; never blocks compilation. Consistent with the "forgiving types" line in `goals.md:239`. |
+| Enforcement on mismatch | **Warning, program still runs.** Non-fatal diagnostics; never blocks compilation. Consistent with the "forgiving types" line in `goals.md`. |
 | Inference depth | **Shallow / local** — from literals and called function signatures within a scope; fall back to `any`. |
 | Runtime boundary checks | **Static only** for phase 1. |
 | Syntax & type-name style | **Lowercase**, `:` for bindings/params, `->` for return type. Names mirror `type()` output. |
 
 ### Roadmap reconciliation
-`docs/dev/goals.md:142,180` currently describes types as "a projection … never
+`docs/dev/goals.md` ("Types as a projection") describes types as "a projection … never
 enforced." This plan is *consistent* with that: because mismatches are
 **warnings, not errors**, we are surfacing inferred/declared shapes to the
 programmer and tooling without enforcement. The one addition to the vision is
@@ -380,9 +381,9 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
 1. ~~Accept `str` as an alias for `string` in type position?~~ **Resolved: yes**,
    `str` and `string` are both accepted in type position; `from_name` maps both
    to `Type::String`.
-2. Should `petal check` exit non-zero when warnings exist (useful for CI), even
-   though `run` never fails? Recommend: `check --strict` exits non-zero;
-   plain `check`/`run` stay zero.
+2. ~~Should `petal check` exit non-zero when warnings exist (useful for CI),
+   even though `run` never fails?~~ **Resolved and shipped** (chunk F):
+   `check --strict` exits 1 when warnings exist; plain `check`/`run` stay 0.
 3. Do we want a per-file pragma (e.g. `// @strict`) to opt individual files into
    error-level enforcement later? Out of scope now; the warning channel is
    designed so this is a small future addition.
@@ -396,6 +397,9 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
    checked at runtime (`classes.rs`, `RECT_FIELD_TYPE`). `any` is honest but
    gives up the static catch on `Rect("a", …)`. A `Type::Num` — assignable from
    `int` and `float`, and to neither — would restore it.
+   **This is the recommended next chunk** — it is the only open question with a
+   consumer already blocked on it in-tree. Scope and test plan in
+   [type-declarations-progress.md](type-declarations-progress.md#whats-next).
 
 ---
 
@@ -412,4 +416,4 @@ suite / `TestSnippet` MCP), matching the repo's `swe-work` discipline.
 - Desugar template: `desugar.rs:59,96,153`.
 - Diagnostics: `source_map.rs:24-131`, `backend/errors.rs:97,131`.
 - Pass template + `check` command: `lint/mod.rs`, `cli/args.rs:17`.
-- Roadmap to reconcile: `goals.md:142,180,239`; README claim `README.md:13`.
+- Roadmap to reconcile: `goals.md` ("Types as a projection"); README types line.

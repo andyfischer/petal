@@ -100,12 +100,15 @@ All JSON request bodies and responses; errors are
 
 | Endpoint | Returns |
 |----------|---------|
-| `GET /state` | Editor state: the global `frame` counter (see [Frame consistency](#frame-consistency)), window size/scale, cell metrics, focused pane, status-bar error, status note (file reloaded / changed-on-disk warning), drained script `print` output, and per pane: `kind` (`editor`/`process`/`panel`), file, title, `mode` (vim mode label), `pending` (mid-command vim state, see below), dirty flag, cursor, selection (anchor/head/text, text capped at 10k chars), scroll_top, scroll_sub (wrapped sub-row at the top), scroll_frac (sub-row offset in rows, `0.0..1.0` — the smooth part of the position, invisible in the two fields above), scroll_left (fractional display columns), wrap (soft-wrap on/off), line_count, visible_lines, rect, `trace_highlight` (the direct-manipulation source range under the pointer, or `null`), and — for a panel pane — a `panel` object (see below). Plus a top-level `trace`: the whole traced draw call the pointer is over — `callee`, `call` span, and per argument its `source` (`literal`/`binding`/`computed`), `value`, `is_int`, `span` (where it is written in the call) and `editable_span` (the range a rewrite must replace, at the *definition* for a binding). `null` when the pointer is over no shape. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1) |
+| `GET /state` | Editor state: the global `frame` counter (see [Frame consistency](#frame-consistency)), window size/scale, cell metrics, focused pane, status-bar error, status note (file reloaded / changed-on-disk warning), script `print` output (see [Reading script output](#reading-script-output)), `text_atlas` + `unresolved_fonts` (see [Text rendering health](#text-rendering-health)), and per pane: `kind` (`editor`/`process`/`panel`), file, title, `mode` (vim mode label), `pending` (mid-command vim state, see below), dirty flag, cursor, selection (anchor/head/text, text capped at 10k chars), scroll_top, scroll_sub (wrapped sub-row at the top), scroll_frac (sub-row offset in rows, `0.0..1.0` — the smooth part of the position, invisible in the two fields above), scroll_left (fractional display columns), wrap (soft-wrap on/off), line_count, visible_lines, rect, `trace_highlight` (the direct-manipulation source range under the pointer, or `null`), and — for a panel pane — a `panel` object (see below). Plus a top-level `trace`: the whole traced draw call the pointer is over — `callee`, `call` span, and per argument its `source` (`literal`/`binding`/`computed`), `value`, `is_int`, `span` (where it is written in the call) and `editable_span` (the range a rewrite must replace, at the *definition* for a binding). `null` when the pointer is over no shape. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1) |
 | `GET /state?values=…` | The same, with each panel's `values` map narrowed — see [Filtering `panel.values`](#filtering-panelvalues). *Landed in 57b2c8e, 2026-08-12; feature flag `state.values-filter`.* |
+| `GET /state?output=…` | The same, choosing how the script `print` output is read: `new` (the default — everything since the last draining read, and it moves the cursor), `all`, or a line cursor. See [Reading script output](#reading-script-output). *Feature flag `state.output-cursor`.* |
 | `GET /version` | What build is answering: `version`, a `build` stamp (git commit + commit date, build date, dirty flag, prelude level), the named `features` this build has, and the petal-ui `prelude` (level, `ui_version`, and every export as `name/arity`). Answered without touching the event loop, so it works even when the app is busy. See [Which build am I talking to?](#which-build-am-i-talking-to). *Landed 2026-08-15; feature flag `debug.version`.* |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
-| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size, `visible` — plus `weight`/`italic`/`spacing` on a run that uses them, and a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
+| `GET /scene` | The primitives of the current frame: quads (rect + sRGB color), text runs (pos, text, color, clip, size, `visible`, `advance`, `weight`/`italic`/`spacing`, and the resolved `font` — a letter-spaced run appears as one entry per glyph), and meshes (`triangles`, plus the bounding `rect` and dominant `color` — see [Asserting panel geometry](#asserting-panel-geometry)) — "what would be drawn", like petal-sdl's `capture_draw_commands`. Every primitive carries `id`, its index in the draw-command stream. Panels are settled first and the dump carries its `frame` number, per the same consistency contract as `/screenshot` |
+| `GET /scene?pane=<n>` | The same, restricted to pane *n* and **rebased onto that pane's origin**, so it lines up with `GET /screenshot?pane=<n>` without the client doing the arithmetic. The reply carries `pane: {index, rect}` (the rect in window coordinates); `id`s stay the unfiltered indices, so the same primitive is named the same way in both dumps. *Feature flag `debug.pane-capture`.* |
 | `GET /screenshot` | PNG of a **complete, settled** frame at physical-pixel size, rendered offscreen; the captured frame number comes back in an `X-Garden-Frame` response header (see [Frame consistency](#frame-consistency)) |
+| `GET /screenshot?pane=<n>` | The same capture cropped to pane *n*'s rect — no tab strip, no status bar, no gutter. An unknown pane index is a 400. *Feature flag `debug.pane-capture`.* |
 | `GET /frame` | `{"ok": true, "frame": n}` — the current global frame counter, answered instantly (never blocks). Optional `?min=N` adds `"reached": true/false` (`frame >= N`) for one-liner client polls |
 | `GET /windows` | `{"ok": true, "windows": [{"window": 1, "focused": true, "panes": 2}, …]}` — the open OS windows by ordinal (see [Multiple windows](#multiple-windows)), which one is focused, and each one's pane count. Single-window frontends (headless, terminal) always report the one window as ordinal `1` |
 
@@ -162,6 +165,58 @@ to know:
   a branch that never ran, which is the exact opposite conclusion.
   `values_partial` carries the failing frame's own bindings, as far as it got.
 
+### Reading script output
+
+`script.output` is every `print(...)` line — the layout script's and every
+panel's, merged, because "where did my print go?" should have one answer. The
+read used to be a *drain*, which quietly made `/state` single-reader: two
+pollers each saw part of the output and neither saw all of it, so an observer
+could not run alongside a driver.
+
+| Query | Returns | Cursor |
+|-------|---------|--------|
+| *(none)* / `?output=new` | Everything since the last draining read | moves it |
+| `?output=all` | The whole retained buffer | untouched |
+| `?output=<n>` | From absolute line `n` on | untouched |
+
+Every reply carries `script.output_first` and `script.output_next`: absolute
+line numbers, so a second client resumes with `?output=<output_next>` instead
+of racing the drain, and can tell that lines fell off the back of the buffer
+because its cursor is below `output_first`. The session keeps 2000 lines (each
+panel keeps its own most recent 200 before they are collected).
+
+```bash
+curl -s '127.0.0.1:8080/state?values=none&output=all' | jq -r '.script.output[]'
+next=$(curl -s '127.0.0.1:8080/state?values=none&output=all' | jq .script.output_next)
+curl -s "127.0.0.1:8080/state?values=none&output=$next" | jq -r '.script.output[]'
+```
+
+*Feature flag `state.output-cursor`.*
+
+### Text rendering health
+
+`/state` carries two fields about the text the renderer actually managed to
+draw:
+
+```jsonc
+"text_atlas": {"runs": 4, "distinct_sizes": 2, "dropped_batches": 0, "overflows": 0},
+"unresolved_fonts": ["serif"]
+```
+
+- **`text_atlas`** is glyph-atlas pressure as of the last frame any renderer in
+  this process prepared (`null` before anything has been drawn — a headless
+  session that has taken no screenshot). The atlas has a hard ceiling, and once
+  it is full a whole text batch is **dropped**: the frame renders, looks
+  plausible, and is silently missing a line of text. A nonzero `overflows` or
+  `dropped_batches` is the signal to discard a run as invalid rather than score
+  the screenshot. `distinct_sizes` is the pressure reading the failure scales
+  with.
+- **`unresolved_fonts`** lists the font specs a panel asked for that this
+  machine cannot draw, in first-seen order. They degrade to the default
+  monospace face and keep drawing, which is right and completely silent.
+
+*Feature flag `state.text-atlas`.*
+
 ### Filtering `panel.values`
 
 Unfiltered, `values` is *every* binding the script made — colour constants,
@@ -186,7 +241,9 @@ well, so a failing frame is just as readable.
 
 | Endpoint | Body | Effect |
 |----------|------|--------|
-| `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance **every** panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600 per call. Replies with `panel_frames` (frames actually run) and each panel's new `frame`. |
+| `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance **every** panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600 per call. Also advances each panel's `time()` clock by `dt` per frame — see [Virtual time](#virtual-time-under-tick). Replies with `panel_frames` (frames actually run), each panel's new `frame`, and `clocks` (where each panel's `time()` now stands, and whether it is virtual). |
+| `POST /tick` | `{"n": 60, "advance_clock": false}` | The same, leaving the clock alone: ticked frames are extra frames of *real* time, the pre-virtual-clock behaviour. |
+| `POST /seed` | `{"seed": 42}` | Reseed every panel's `random()` stream (`Env::set_seed`), so a script that generates placeholder content draws the same content on two renders. Takes effect from the next frame; a `POST /panel/reset` rebuilds the panel and its clock-derived seed, so **reset first, then seed**. Replies `{"ok": true, "seed": n, "panels": n}`. *Feature flag `debug.seed`.* |
 | `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. Replies `{"ok": true, "panels_reset": n}`. |
 
 *Both landed in 216ec76, 2026-08-12; feature flags `debug.tick` and
@@ -197,6 +254,43 @@ deterministically, with the `dt` you asked for, and no input is fabricated. It
 supersedes the pattern of posting a no-op keypress per frame just to make a
 frame happen — that injected phantom edges into `panel.input` and gave each
 frame a wall-clock `dt`.
+
+#### Virtual time under `/tick`
+
+A ticked frame is not happening in real time, so its clock should not be the
+wall clock. `POST /tick` therefore switches each panel onto a **virtual**
+clock, and `time()` then advances by exactly the `dt` of each frame the
+harness drives:
+
+```bash
+curl -s -XPOST 127.0.0.1:8080/tick -d '{"n":60,"dt":0.016}' | jq .clocks
+# [{"pane":0,"time":12.34,"virtual":true}]   # +0.96 exactly, every time
+```
+
+Nothing else moves it. Frames Garden runs on its own schedule — the idle
+repaint cadence, the settle passes before a capture — are, to a virtual clock,
+no time at all, so a pause of any length between two tick batches advances the
+script by nothing and two identical tick sequences draw the identical frame.
+That is what makes a golden image of a *moving* UI stable:
+
+```bash
+curl -s -XPOST 127.0.0.1:8080/panel/reset
+curl -s -XPOST 127.0.0.1:8080/seed -d '{"seed":42}'
+curl -s -XPOST 127.0.0.1:8080/tick -d '{"n":30,"dt":0.016}'
+curl -s -o frame.png '127.0.0.1:8080/screenshot?pane=0'   # byte-identical each run
+```
+
+Before this, `time()` came from a wall-clock `Instant`: 60 ticks at `dt=0.016`
+advanced it by the ~54ms the batch took to run, and a two-second pause advanced
+it two seconds — so a `time()`-driven animation was neither steppable nor
+reproducible.
+
+The switch is **one-way per panel and deliberately so**: a session that drives
+frames explicitly is a harness, and a panel whose clock is part wall-clock and
+part virtual is worse than either. An interactive run never calls `/tick` and
+keeps the wall clock. `{"advance_clock": false}` opts a call out (and, on a
+panel that has never been ticked with the default, leaves it on the wall clock
+entirely). *Feature flag `debug.tick-clock`.*
 
 `POST /panel/reset` exists because `state` **surviving hot reload is correct**
 and is exactly what makes iterating on *seeded* data impossible in place: you
@@ -209,6 +303,18 @@ seconds after its last activity, which is right for an idle drawer and wrong for
 a running game that nobody is typing at. `garden --panel-wake` never sleeps;
 `--panel-wake 60` sets the window in seconds. `POST /tick` runs frames even on a
 sleeping panel (and re-stamps its activity), so it works either way.
+
+A panel can also opt *itself* out, which is the better answer for ambient
+motion (a skeleton shimmer, a spinner, a pulsing live dot, a marquee): a frame
+that calls **`request_frame()`** — or its alias `animating()` — re-stamps the
+panel's activity, so the wake window never closes on it. The claim covers only
+the frame that makes it, so motion that ends lets the panel sleep again on the
+usual schedule, and a still panel is unaffected. The idle heuristic is
+"nothing has happened for a while, so nothing is happening"; a frame that is
+mid-animation is exactly the case it gets wrong, and the script already knows.
+See
+[petal-graphical-panels.md](petal-graphical-panels.md#request_frame--staying-awake-while-animating).
+*Feature flag `panel.request-frame`.*
 
 *`--panel-wake` landed in 216ec76, 2026-08-12; feature flag `cli.panel-wake`.
 An older binary rejects it with `garden: unknown option --panel-wake` — check
@@ -242,13 +348,73 @@ without this a headless test could not tell a drawn row from a clipped-away one
 `sceneTextCount` / `sceneErrorCount` / `sceneVisibleTexts` in
 `tools/lib/debug-client.ts` count only visible runs.
 
-For a text run the vertical test is exact (its line box is `pos.y ..
-pos.y + size * LINE_HEIGHT_RATIO`); horizontally only the run's start is judged,
-since the dump carries no shaped advances. So `"visible": false` means "provably
-clipped away" and `true` means "not provably gone".
+For a text run **both axes are exact**: the line box is `pos.y ..
+pos.y + size * LINE_HEIGHT_RATIO`, and its width is the run's measured
+`advance` (below), so a run that starts inside its clip and runs off the right
+edge, and one that reaches in from the left, are both answered properly.
+(Before advances were reported, only the run's *start* was judged and `true`
+meant no more than "not provably gone".)
 
 *(Landed 2026-08-15; feature flag `debug.scene-visible`. The clipping it reports
 on is `panel.text-clip`.)*
+
+#### Text runs: the face, the axes, the width
+
+A text run dumps everything needed to compare a scene against a reference
+layout rather than eyeball it:
+
+```jsonc
+{"type": "text", "id": 7,
+ "pos": [20, 100], "text": "Hello title", "size": 24,
+ "advance": 110.52,                 // measured, in this run's own face
+ "weight": 700, "italic": false, "spacing": 0,
+ "font": {"family": "Inter", "weight": 700, "italic": false, "synthetic_bold": false},
+ "clip": {…}, "visible": true, "color": [1, 1, 1, 1]}
+```
+
+- **`font`** is what got *rasterized*, not what was asked for. `family` is the
+  face the shaper gets — for a spec this machine cannot draw that is the
+  default monospace, which is the most useful thing a harness can be told,
+  because such a run looks fine and is simply in the wrong typeface (the specs
+  that degraded are also listed in `/state`'s `unresolved_fonts`). `weight` and
+  `italic` are the **cut** fontdb picked, which for a family with no bold or no
+  italic is not the one requested, and `synthetic_bold` says the weight is
+  being faked by over-drawing rather than shaped.
+- **`weight` / `italic` / `spacing`** are always present. They used to appear
+  only on a run that differed from the default, which conflated "default" with
+  "not applicable" and made every consumer special-case the gap.
+- **`advance`** is the run's measured advance width in logical pixels, summed
+  from the same table the host shapes with (letter-spacing included, since the
+  pen carries it). Without it a scene comparison can only check origins, which
+  is blind to exactly the bugs that matter: a run measured in the wrong face is
+  in the right place and the wrong size. It is also what makes `visible` exact
+  horizontally.
+
+Every primitive — quad, text, mesh, image — carries **`id`**: its index in the
+draw-command stream. It is stable for a given frame, it is what two scenes are
+diffed by, and it is the *unfiltered* index, so `?pane=<n>` names the same
+primitive by the same id as the whole-window dump.
+
+*Feature flags `debug.scene-text-metrics` and `debug.scene-id`.*
+
+#### One pane, cropped and rebased
+
+```bash
+curl -s -o pane.png '127.0.0.1:8080/screenshot?pane=1'   # just that pane's pixels
+curl -s '127.0.0.1:8080/scene?pane=1' | jq '.pane, .primitives[0]'
+```
+
+`?pane=<n>` crops the capture to pane *n*'s rect and drops every primitive
+outside it, translating what remains onto the pane's own origin — so a
+coordinate from `/scene?pane=1` indexes straight into `screenshot?pane=1`.
+Every harness reimplemented this crop and the matching rebase, and an off-by-one
+origin there is silent: the image looks plausible and every measurement taken
+from it is shifted. The pane's rect in window coordinates comes back as
+`pane.rect` for anything that still needs to map back. Clips are narrowed to the
+pane too. An unknown index is a 400.
+
+There is no `--no-chrome` headless flag; `?pane=<n>` is the supported way to get
+chrome-free pixels.
 
 `rect` is the axis-aligned bounds of the mesh's vertices and `color` is the
 per-vertex colour with the largest total triangle area (a fill wins over the
@@ -626,9 +792,11 @@ fails the build.
 - One command per HTTP request; the connection closes after the response
   (`Connection: close`). Requests time out after ~5s if the event loop is
   unresponsive.
-- `GET /state` **drains** `script.output` — the layout script's *and* every
-  panel's `print(...)` lines, merged — so two concurrent pollers will each see
-  only part of it. A panel keeps its 200 most recent lines between reads.
+- `GET /state`'s default read of `script.output` — the layout script's *and*
+  every panel's `print(...)` lines, merged — still **drains**, so a poll loop
+  sees only what is new. It is no longer the only read: `?output=all` and
+  `?output=<cursor>` do not move the cursor, so an observer can run alongside
+  a driver. See [Reading script output](#reading-script-output).
 - Panel script errors — a script that won't compile at startup, a hot reload
   that won't compile, or a frame that raises — are reported in `panel_error`,
   and `status_error` falls back to it, so **one field answers "is anything

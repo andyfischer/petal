@@ -205,21 +205,41 @@ pub enum KeyOp {
 /// One parsed debug command, handled on the event-loop thread.
 pub enum DebugCmd {
     /// Editor + panel state. `values` narrows each panel's observed-value map
-    /// (see [`ValueFilter`]); the default reports all of it.
+    /// (see [`ValueFilter`]); the default reports all of it. `output` says how
+    /// the accumulated `print(...)` lines are read (see [`OutputRead`]).
     State {
         values: ValueFilter,
+        output: OutputRead,
     },
-    Scene,
+    /// The current frame's primitives. `pane` restricts the dump to one pane
+    /// and rebases every coordinate onto that pane's origin, so it lines up
+    /// with `GET /screenshot?pane=<n>` without the client doing the arithmetic.
+    Scene {
+        pane: Option<usize>,
+    },
     /// Advance every panel by `n` frames of `dt` seconds each, ignoring the
     /// sleep/wake window — deterministic panel time for animation and game
     /// tests, which otherwise have to inject a no-op key per frame.
     Tick {
         n: u32,
         dt: f64,
+        /// Whether these frames also advance the script clock `time()` reads,
+        /// by exactly `dt` each (the default). See [`crate::app::App::advance_panels`].
+        advance_clock: bool,
+    },
+    /// Reseed every panel's `random()` stream, so a script that generates
+    /// placeholder content draws the same content on two runs.
+    Seed {
+        seed: u64,
     },
     /// Restart every file-backed panel from source, discarding Petal `state`.
     PanelReset,
-    Screenshot,
+    /// A PNG of the settled frame. `pane` crops it to that pane's rect — no
+    /// tab strip, no status bar, no gutter — which every harness reimplements
+    /// today, and can get wrong silently.
+    Screenshot {
+        pane: Option<usize>,
+    },
     /// The global frame counter, answered instantly (the client polls it —
     /// blocking here would tie up the event-loop thread that must keep
     /// ticking to advance the very frame being waited on). `min` is echoed
@@ -478,6 +498,53 @@ fn is_static_endpoint(method: &str, path: &str) -> bool {
     (method, bare) == ("GET", "/version")
 }
 
+/// How `GET /state` should read the accumulated script `print(...)` lines.
+///
+/// The read used to be a *drain*, which quietly made `/state` single-reader:
+/// two pollers each saw part of a panel's output and neither saw all of it, so
+/// an observer could not run alongside a driver. Draining is still the default
+/// (a harness that polls in a loop wants only what is new), but it is now one
+/// of three explicit modes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OutputRead {
+    /// `?output=new` (the default): everything not yet handed to a draining
+    /// read, and it moves the cursor.
+    #[default]
+    Drain,
+    /// `?output=all`: the whole retained buffer, leaving the cursor alone.
+    All,
+    /// `?output=<n>`: everything from absolute line `n` on, leaving the cursor
+    /// alone — how a second reader resumes from where it got to. The cursor to
+    /// pass next time comes back as `script.output_next`.
+    From(u64),
+}
+
+impl OutputRead {
+    fn from_query(query: &[(String, String)]) -> Result<OutputRead, String> {
+        let Some((_, v)) = query.iter().find(|(k, _)| k == "output") else {
+            return Ok(OutputRead::Drain);
+        };
+        match v.as_str() {
+            "new" | "drain" | "" => Ok(OutputRead::Drain),
+            "all" => Ok(OutputRead::All),
+            n => n
+                .parse::<u64>()
+                .map(OutputRead::From)
+                .map_err(|_| format!("{n:?} is not \"new\", \"all\", or a line cursor")),
+        }
+    }
+}
+
+/// The `?pane=<n>` selector shared by `/screenshot` and `/scene`.
+fn pane_selector(query: &[(String, String)], path: &str) -> Result<Option<usize>, (u16, String)> {
+    query
+        .iter()
+        .find(|(k, _)| k == "pane")
+        .map(|(_, v)| v.parse::<usize>())
+        .transpose()
+        .map_err(|_| (400, format!("bad pane= in {path}")))
+}
+
 fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String)> {
     let parse_body = || -> Result<Value, (u16, String)> {
         serde_json::from_slice(body).map_err(|e| (400, format!("invalid JSON body: {e}")))
@@ -486,8 +553,12 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
     match (method, bare) {
         ("GET", "/state") => Ok(DebugCmd::State {
             values: ValueFilter::from_query(&query),
+            output: OutputRead::from_query(&query)
+                .map_err(|err| (400, format!("bad output= in {path}: {err}")))?,
         }),
-        ("GET", "/scene") => Ok(DebugCmd::Scene),
+        ("GET", "/scene") => Ok(DebugCmd::Scene {
+            pane: pane_selector(&query, path)?,
+        }),
         ("POST", "/tick") => {
             let v = if body.is_empty() {
                 Value::Null
@@ -506,10 +577,29 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
             if !dt.is_finite() || dt < 0.0 {
                 return Err((400, format!("bad dt {dt}")));
             }
-            Ok(DebugCmd::Tick { n: n as u32, dt })
+            // Ticked frames advance the script clock by `dt` each by default:
+            // the whole point of naming `dt` is that sixty frames of 0.016 are
+            // 0.96 seconds of script time, however long the batch took to run.
+            // `{"advance_clock": false}` keeps the wall clock for a caller that
+            // wants ticks to be extra frames of real time.
+            let advance_clock = v["advance_clock"].as_bool().unwrap_or(true);
+            Ok(DebugCmd::Tick {
+                n: n as u32,
+                dt,
+                advance_clock,
+            })
+        }
+        ("POST", "/seed") => {
+            let v = parse_body()?;
+            let seed = v["seed"]
+                .as_u64()
+                .ok_or((400, "missing integer \"seed\"".to_string()))?;
+            Ok(DebugCmd::Seed { seed })
         }
         ("POST", "/panel/reset") => Ok(DebugCmd::PanelReset),
-        ("GET", "/screenshot") => Ok(DebugCmd::Screenshot),
+        ("GET", "/screenshot") => Ok(DebugCmd::Screenshot {
+            pane: pane_selector(&query, path)?,
+        }),
         ("GET", "/frame") => {
             // Optional ?min=N: never blocks, just echoed back as `reached` so a
             // client poll loop is a one-liner. See the DebugCmd::Frame docs.
@@ -833,7 +923,7 @@ mod tests {
     #[test]
     fn state_route_parses_the_value_filter() {
         let filter = |path: &str| match route("GET", path, b"") {
-            Ok(DebugCmd::State { values }) => values,
+            Ok(DebugCmd::State { values, .. }) => values,
             _ => panic!("{path} must route to State"),
         };
         assert!(filter("/state").is_all(), "no selector means everything");
@@ -856,7 +946,7 @@ mod tests {
     #[test]
     fn tick_route_parses_count_and_dt() {
         match route("POST", "/tick", br#"{"n": 60, "dt": 0.016}"#) {
-            Ok(DebugCmd::Tick { n, dt }) => {
+            Ok(DebugCmd::Tick { n, dt, .. }) => {
                 assert_eq!(n, 60);
                 assert!((dt - 0.016).abs() < 1e-9);
             }
@@ -864,7 +954,7 @@ mod tests {
         }
         // An empty body is one frame at 60fps — the common "step once" call.
         match route("POST", "/tick", b"") {
-            Ok(DebugCmd::Tick { n, dt }) => {
+            Ok(DebugCmd::Tick { n, dt, .. }) => {
                 assert_eq!(n, 1);
                 assert!((dt - 1.0 / 60.0).abs() < 1e-9);
             }
@@ -1033,6 +1123,35 @@ mod tests {
         };
         assert!(legacy.shift);
     }
+}
+
+/// Crop a captured frame to `rect` (logical pixels at `scale`), returning
+/// `(width, height, rgba)` for [`encode_png`].
+///
+/// `GET /screenshot?pane=<n>` is this plus a pane rect. Every harness that
+/// wanted one pane's pixels reimplemented the crop, and an off-by-one origin
+/// there is silent: the image looks plausible and every measurement taken from
+/// it is shifted. The clamp to the capture's bounds means a pane rect that
+/// runs past the window (a stale viewport) yields a smaller image rather than
+/// an error or a panic.
+pub fn crop_rgba(
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    rect: garden_render::Rect,
+    scale: f64,
+) -> (u32, u32, Vec<u8>) {
+    let px = |v: f32| (v as f64 * scale).round().max(0.0) as u32;
+    let x0 = px(rect.x).min(width);
+    let y0 = px(rect.y).min(height);
+    let w = px(rect.w).min(width - x0);
+    let h = px(rect.h).min(height - y0);
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for row in y0..y0 + h {
+        let start = ((row * width + x0) * 4) as usize;
+        out.extend_from_slice(&rgba[start..start + (w * 4) as usize]);
+    }
+    (w, h, out)
 }
 
 /// Encode tightly packed RGBA8 pixels as a PNG.

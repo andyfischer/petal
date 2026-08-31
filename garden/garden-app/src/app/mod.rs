@@ -224,6 +224,12 @@ pub struct App {
     /// resets when its script hot-reloads), this never resets while the
     /// process lives, so clients can order captures against it reliably.
     frame: std::cell::Cell<u64>,
+    /// Every script `print(...)` line since startup (capped), with the cursor a
+    /// draining `GET /state` has reached — see
+    /// [`OutputLog`](crate::app::debug_server::OutputLog). Held here rather
+    /// than drained straight out of the panels so that reading `/state` twice,
+    /// or from two clients at once, can show the same lines to both.
+    output_log: debug_server::OutputLog,
     /// Files that must never be overwritten in place: saving a pane whose file
     /// is in this set opens a "save as" filename prompt instead. The Petal-IDE
     /// default (scratch) mode adds its scratch file here so edits are saved to a
@@ -345,6 +351,7 @@ impl App {
             native_dialogs: false,
             top_inset: 0.0,
             frame: std::cell::Cell::new(0),
+            output_log: debug_server::OutputLog::default(),
             save_as_paths: std::collections::HashSet::new(),
             ide: None,
             toolbar_h: 0.0,
@@ -572,7 +579,17 @@ impl App {
     /// panel time for a harness driving a game or an animation, which otherwise
     /// has to post a no-op keypress per frame just to make one happen. Returns
     /// how many panel frames actually ran.
-    pub fn advance_panels(&mut self, n: u32, dt: f64) -> u64 {
+    ///
+    /// `advance_clock` (the default) also switches each panel's `time()` onto a
+    /// **virtual** clock that accumulates `dt`: sixty frames of 0.016 then are
+    /// 0.96 seconds of script time, however long the batch took, and a pause
+    /// between two batches advances nothing. Without it a `time()`-driven
+    /// animation is neither steppable nor reproducible, so no golden image of a
+    /// moving UI is stable. The switch is one-way per panel and deliberately
+    /// so: a session that drives frames explicitly is a harness, and mixing
+    /// wall-clock and virtual time in one panel is worse than either. An
+    /// interactive run never calls this and keeps the wall clock.
+    pub fn advance_panels(&mut self, n: u32, dt: f64, advance_clock: bool) -> u64 {
         let cell = self.viewport.cell;
         let panel_theme = self.theme.to_panel_theme();
         let mut frames = 0u64;
@@ -583,6 +600,10 @@ impl App {
                     continue;
                 };
                 panel.set_theme(panel_theme.clone());
+                if advance_clock {
+                    panel.use_virtual_clock();
+                    panel.advance_clock(dt);
+                }
                 panel.tick_with_dt(now, dt, pane.rect, cell);
                 frames += 1;
             }

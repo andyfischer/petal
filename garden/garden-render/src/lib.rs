@@ -29,7 +29,7 @@ mod mesh;
 mod quad;
 mod text;
 
-pub use text::{AtlasStats, FONT_SIZE, LINE_HEIGHT_RATIO};
+pub use text::{last_atlas_stats, AtlasStats, FONT_SIZE, LINE_HEIGHT_RATIO};
 
 use std::sync::Arc;
 
@@ -315,6 +315,38 @@ pub fn ui_ascii_advance_ratios() -> Vec<f64> {
 /// the drawing looks broken.
 pub fn ui_bold_ascii_advance_ratios() -> Vec<f64> {
     text::measure_embedded_advances(fonts::FontId::UI, 700)
+}
+
+/// Advance ratio for a codepoint outside a face's measured table — the same
+/// monospace estimate `garden-script` falls back to, so a measurement here and
+/// a script's `text_width` stay in step off the table too.
+const FALLBACK_ADVANCE_RATIO: f64 = 0.6;
+
+/// The advance width of `text` drawn at `size` in `style`, in logical pixels:
+/// what the shaper will actually lay down, summed from the measured table of
+/// the cut this style resolves to, plus its letter-spacing after each glyph
+/// (the way [`TextStyle::spacing`] is drawn).
+///
+/// The host has already shaped every run it draws, so this is the width a
+/// scene dump can report — and without it a scene-level comparison against a
+/// reference layout can only compare origins, which is blind to exactly the
+/// bugs that matter (a run measured in the wrong face is in the right place and
+/// the wrong size).
+pub fn measure_text(text: &str, size: f32, style: TextStyle) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let ratios = fonts::advance_ratios(style.font, style.weight, style.italic);
+    let sum: f64 = text
+        .chars()
+        .map(|ch| {
+            ratios
+                .get(ch as usize)
+                .copied()
+                .unwrap_or(FALLBACK_ADVANCE_RATIO)
+        })
+        .sum();
+    sum as f32 * size + style.spacing * text.chars().count() as f32
 }
 
 /// The shared GPU handles every renderer is built on: one wgpu

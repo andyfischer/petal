@@ -181,7 +181,9 @@ impl Frontend for HeadlessFrontend {
                     let result = match request.window {
                         Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
                         _ => match request.cmd {
-                            DebugCmd::Screenshot => screenshot(&mut app, &mut renderer),
+                            DebugCmd::Screenshot { pane } => {
+                                screenshot(&mut app, &mut renderer, pane)
+                            }
                             DebugCmd::Windows => Ok(Reply::Json(json!({
                                 "ok": true,
                                 "windows": [{
@@ -238,7 +240,11 @@ impl Frontend for HeadlessFrontend {
 fn screenshot(
     app: &mut App,
     renderer: &mut Option<Result<HeadlessRenderer, String>>,
+    pane: Option<usize>,
 ) -> Result<Reply, String> {
+    // Resolved before the GPU work so a bad `?pane=` is a 400, not a wasted
+    // capture.
+    let crop = app.pane_capture_rect(pane)?;
     let renderer = renderer
         .get_or_insert_with(|| HeadlessRenderer::new(app.viewport().size, app.viewport().scale))
         .as_mut()
@@ -250,8 +256,14 @@ fn screenshot(
     app.settle_panels();
     let scene = app.build_scene();
     let cap = renderer.capture(&scene);
+    let (w, h, rgba) = match crop {
+        Some(rect) => {
+            debug::crop_rgba(cap.width, cap.height, &cap.rgba, rect, app.viewport().scale)
+        }
+        None => (cap.width, cap.height, cap.rgba),
+    };
     Ok(Reply::Png {
-        png: debug::encode_png(cap.width, cap.height, &cap.rgba),
+        png: debug::encode_png(w, h, &rgba),
         frame: app.frame(),
     })
 }

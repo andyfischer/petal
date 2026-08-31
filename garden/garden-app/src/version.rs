@@ -90,6 +90,29 @@ pub const HOST_FEATURES: &[&str] = &[
     // The Petal this binary embeds accepts `a?.b` / `a?.[i]` — absence-tolerant
     // reads without a `??` fallback.
     "lang.optional-access",
+    // Every `/scene` primitive carries `id`, its index in the draw-command
+    // stream, so two scenes can be diffed.
+    "debug.scene-id",
+    // Every `/scene` text run carries the face it is really drawn in, its
+    // weight/italic/spacing unconditionally, and its measured advance width.
+    "debug.scene-text-metrics",
+    // `GET /screenshot?pane=<n>` and `GET /scene?pane=<n>`: one pane's pixels,
+    // and a scene rebased onto that pane's origin.
+    "debug.pane-capture",
+    // `POST /tick` drives a virtual clock: `time()` advances by exactly the
+    // `dt` given, so a `time()`-driven animation is steppable and reproducible.
+    "debug.tick-clock",
+    // `POST /seed` reseeds every panel's `random()` stream.
+    "debug.seed",
+    // `GET /state?output=all` / `?output=<cursor>`: a non-draining read of the
+    // script output, so an observer can run beside a driver.
+    "state.output-cursor",
+    // `/state` reports glyph-atlas pressure under `text_atlas` and unresolvable
+    // font specs under `unresolved_fonts`.
+    "state.text-atlas",
+    // A panel script's `request_frame()` / `animating()` opt-out of the idle
+    // sleep window.
+    "panel.request-frame",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

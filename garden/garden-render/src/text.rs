@@ -5,6 +5,8 @@
 //! glyphs in its atlas), but the glyphon `Buffer`s themselves are pooled and
 //! reused across frames to limit allocation churn.
 
+use std::sync::Mutex;
+
 use glyphon::{
     fontdb, Attrs, Cache, Family, FontSystem, Metrics, Resolution, Shaping, Style, SwashCache,
     TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
@@ -154,6 +156,34 @@ pub struct AtlasStats {
     /// Total atlas-full events since startup. Nonzero means text has been
     /// missing from at least one frame.
     pub overflows: u64,
+}
+
+/// The stats of the most recently prepared frame, in *any* renderer in this
+/// process.
+///
+/// Per-renderer stats are the accurate reading ([`GlyphAtlas::atlas_stats`],
+/// [`crate::Renderer::text_atlas_stats`]), but they are only reachable from
+/// something holding a renderer — and the one caller that most needs them, the
+/// debug server's `/state`, is answered by the app with no renderer in hand. A
+/// process draws with one renderer per window and asking "did text go missing
+/// in the last frame?" does not want to know which window, so a global mirror
+/// answers it. `overflows` is cumulative and monotone, so it stays meaningful
+/// even across several renderers.
+static LAST_ATLAS_STATS: Mutex<Option<AtlasStats>> = Mutex::new(None);
+
+fn publish_atlas_stats(stats: AtlasStats) {
+    *LAST_ATLAS_STATS
+        .lock()
+        .expect("atlas stats mirror poisoned") = Some(stats);
+}
+
+/// Atlas pressure as of the last frame *any* renderer in this process
+/// prepared, or `None` if none ever has (no window, or nothing drawn yet). See
+/// [`LAST_ATLAS_STATS`].
+pub fn last_atlas_stats() -> Option<AtlasStats> {
+    *LAST_ATLAS_STATS
+        .lock()
+        .expect("atlas stats mirror poisoned")
 }
 
 /// A built font database plus what was learned while building it: the two
@@ -580,6 +610,7 @@ impl TextStack {
                 }
             }
         }
+        publish_atlas_stats(self.stats);
     }
 
     /// Draw text batch `index` (as partitioned by [`prepare`]) into the pass.

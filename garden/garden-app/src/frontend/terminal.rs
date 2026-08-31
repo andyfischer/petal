@@ -99,7 +99,9 @@ fn run_loop(config: AppConfig) -> io::Result<()> {
             let result = match request.window {
                 Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
                 _ => match request.cmd {
-                    DebugCmd::Screenshot => {
+                    // The TUI has no pixels to crop, so `?pane=` has no
+                    // meaning here; the grid is the whole window either way.
+                    DebugCmd::Screenshot { .. } => {
                         // The same settle-then-capture contract as the windowed
                         // and headless frontends, so the text grid reflects all
                         // previously injected input (see App::settle_panels).

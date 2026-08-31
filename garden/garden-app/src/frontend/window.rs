@@ -454,7 +454,7 @@ impl ApplicationHandler<DebugRequest> for Handler {
         };
         let state = self.windows.get_mut(id).expect("resolved window present");
         let result = match request.cmd {
-            DebugCmd::Screenshot => {
+            DebugCmd::Screenshot { pane } => {
                 // The consistency contract (same as the headless frontend):
                 // settle panel frames first so the capture reflects all
                 // previously injected input — two user events (a /key then
@@ -462,12 +462,26 @@ impl ApplicationHandler<DebugRequest> for Handler {
                 // between them. `capture` then renders the scene into its own
                 // offscreen texture, so it never races the live surface.
                 state.app.settle_panels();
-                let scene = state.app.build_scene();
-                let cap = state.renderer.capture(&scene);
-                Ok(Reply::Png {
-                    png: debug::encode_png(cap.width, cap.height, &cap.rgba),
-                    frame: state.app.frame(),
-                })
+                match state.app.pane_capture_rect(pane) {
+                    Err(err) => Err(err),
+                    Ok(crop) => {
+                        let scene = state.app.build_scene();
+                        let cap = state.renderer.capture(&scene);
+                        let scale = state.app.viewport().scale;
+                        // `?pane=<n>` crops to that pane's rect — no tab strip,
+                        // no status bar, no gutter.
+                        let (w, h, rgba) = match crop {
+                            Some(rect) => {
+                                debug::crop_rgba(cap.width, cap.height, &cap.rgba, rect, scale)
+                            }
+                            None => (cap.width, cap.height, cap.rgba),
+                        };
+                        Ok(Reply::Png {
+                            png: debug::encode_png(w, h, &rgba),
+                            frame: state.app.frame(),
+                        })
+                    }
+                }
             }
             cmd => state.app.handle_debug(cmd),
         };

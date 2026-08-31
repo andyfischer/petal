@@ -1477,6 +1477,34 @@ impl PanelView {
         self.run_frame(dt.clamp(0.0, MAX_DT), rect, cell);
     }
 
+    /// Publish `time()` from an accumulated virtual clock rather than the wall
+    /// clock, so ticked frames advance script time by exactly the `dt` they
+    /// were handed — and frames the host runs on its own schedule advance it
+    /// not at all. See [`PanelHost::use_virtual_clock`].
+    pub fn use_virtual_clock(&mut self) {
+        self.host.use_virtual_clock();
+    }
+
+    /// Advance the virtual clock by `dt`; a no-op on a wall-clock panel.
+    pub fn advance_clock(&mut self, dt: f64) {
+        self.host.advance_clock(dt);
+    }
+
+    /// Where this panel's `time()` clock stands, in seconds.
+    pub fn clock(&self) -> f64 {
+        self.host.clock()
+    }
+
+    /// Whether `time()` is the virtual (tick-driven) clock.
+    pub fn is_virtual_clock(&self) -> bool {
+        self.host.is_virtual_clock()
+    }
+
+    /// Reseed this panel's `random()` stream (`POST /seed`).
+    pub fn set_seed(&mut self, seed: u64) {
+        self.host.set_seed(seed);
+    }
+
     /// The body of one panel frame, shared by the wall-clock [`tick`](Self::tick)
     /// and the deterministic [`tick_with_dt`](Self::tick_with_dt).
     fn run_frame(&mut self, dt: f64, rect: Rect, cell: (f32, f32)) {
@@ -1504,6 +1532,16 @@ impl PanelView {
                 // Forward the frame's `emit(event, arg)` events to the pane's
                 // GPP subprocess as `emit` notifications — fire-and-forget, in
                 // call order. An in-process panel (no client) drops them.
+                // A frame that called `request_frame()`/`animating()` is
+                // mid-animation, so it re-stamps activity: the idle heuristic
+                // ("nothing has happened for a while, so nothing is
+                // happening") is exactly wrong for a shimmer or a spinner,
+                // which otherwise freeze mid-motion and read as a hang. The
+                // claim covers only this frame, so the panel sleeps again as
+                // soon as the motion stops asking.
+                if self.host.take_animating() {
+                    self.last_activity = Instant::now();
+                }
                 let emitted = self.host.take_emitted();
                 if let Some(client) = self.client.as_mut() {
                     for (event, arg) in emitted {
@@ -2326,13 +2364,7 @@ impl PanelView {
                         *top = base;
                     }
                 }
-                PanelCmd::ClipPush {
-                    x,
-                    y,
-                    w,
-                    h,
-                    radius,
-                } => {
+                PanelCmd::ClipPush { x, y, w, h, radius } => {
                     flush_mesh(prims, &mut verts, cur_clip);
                     clips.push(cur_clip.narrowed(local(x, y, w, h), *radius as f32));
                 }
@@ -3059,6 +3091,34 @@ mod tests {
         (pv, f)
     }
 
+    /// A panel from `src`, ticked once. The temp file must outlive `load`.
+    fn panel_of(src: &str, start: Instant) -> (PanelView, tempfile::NamedTempFile) {
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        write!(f, "{src}").unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let pv = PanelView::new(host, "test.ptl".into(), start);
+        (pv, f)
+    }
+
+    /// The wake heuristic ("nothing has happened for a while, so nothing is
+    /// happening") is exactly wrong for ambient motion, which freezes ten
+    /// seconds after the last input and reads as a hang. A frame that says it
+    /// is animating re-stamps activity, so the window never closes on it.
+    #[test]
+    fn an_animating_frame_restamps_the_wake_window() {
+        let start = Instant::now();
+        let (mut still, _f1) = panel_of("draw_rect(0, 0, 10, 10, 1, 2, 3)\n", start);
+        let (mut moving, _f2) =
+            panel_of("request_frame()\ndraw_rect(0, 0, 10, 10, 1, 2, 3)\n", start);
+        still.tick(start, RECT, CELL);
+        moving.tick(start, RECT, CELL);
+        // A full wake window after the panels were built: the still one has
+        // gone to sleep, the animating one restamped itself while drawing.
+        let later = start + panel_wake();
+        assert!(!still.is_awake(later), "a still panel sleeps on schedule");
+        assert!(moving.is_awake(later), "an animating panel keeps ticking");
+    }
+
     /// Count the translucent rectangles (a diff-row tint or a selection band,
     /// both < 1.0 alpha) a region contributed to the panel's **mesh** stream.
     /// They are tessellated into the panel's mesh rather than left as `Quad`s
@@ -3505,7 +3565,10 @@ edit_view_projection(1, {{
         );
         let clips = mesh_clips(&prims);
         // Base fill, then one mesh per clip region, then the tail flush.
-        assert!(clips.len() >= 5, "expected a mesh per clip region: {clips:?}");
+        assert!(
+            clips.len() >= 5,
+            "expected a mesh per clip region: {clips:?}"
+        );
         // The inner push intersects: x from the inner rect, w cut to 20.
         let inner = clips
             .iter()

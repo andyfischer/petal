@@ -125,6 +125,15 @@ const MUTATE_EVENTS: &str = "mutate_events";
 /// the host replaces its claim set wholesale rather than accumulating.
 const KEY_CLAIMS: &str = "key_claims";
 
+/// Output-buffer channel carrying the script's `request_frame()` calls — a
+/// frame declaring that the panel is mid-animation and must keep ticking.
+/// Drained by [`PanelHost::take_animating`] after each frame.
+///
+/// Like [`KEY_CLAIMS`] this is declarative rather than a latch: the claim
+/// covers only the frame that made it, so an animation that ends simply stops
+/// asking and the panel goes back to sleep on the host's usual schedule.
+const ANIMATING: &str = "animating";
+
 /// A browser-style history navigation intent a panel script raised this frame,
 /// drained by [`PanelHost::take_nav`]. `Push`/`Replace` name the target screen
 /// (a `.ptl` script the host resolves against the pane's whitelist) and the
@@ -157,6 +166,15 @@ pub enum NavIntent {
 /// measured ones with [`PanelHost::set_font_advance_ratios`]. See
 /// [`petal_ui::draw::bind_text_metrics`].
 const TEXT_ADVANCE_RATIO: f64 = 0.6;
+
+/// The face a text run that names none is drawn and measured in, unless the
+/// panel's theme names another ([`PanelHost::set_default_font`]). Garden draws
+/// its own chrome in the monospace role, and so does a drawer that never sets a
+/// theme font.
+const DEFAULT_FONT_NAME: &str = "mono";
+
+/// The proportional role a script (or a theme) names to get the host's UI face.
+const UI_FONT_NAME: &str = "ui";
 
 /// Ring-buffer size for the per-term execution trace a traced panel records, so
 /// a drag can solve computed arguments (see
@@ -877,33 +895,11 @@ impl PanelCmd {
                 b,
                 a,
             },
-            DrawCommand::Clip {
-                x,
-                y,
-                w,
-                h,
-                radius,
-            } => PanelCmd::Clip {
-                x,
-                y,
-                w,
-                h,
-                radius,
-            },
+            DrawCommand::Clip { x, y, w, h, radius } => PanelCmd::Clip { x, y, w, h, radius },
             DrawCommand::ClipNone => PanelCmd::ClipNone,
-            DrawCommand::ClipPush {
-                x,
-                y,
-                w,
-                h,
-                radius,
-            } => PanelCmd::ClipPush {
-                x,
-                y,
-                w,
-                h,
-                radius,
-            },
+            DrawCommand::ClipPush { x, y, w, h, radius } => {
+                PanelCmd::ClipPush { x, y, w, h, radius }
+            }
             DrawCommand::ClipPop => PanelCmd::ClipPop,
             DrawCommand::CreateCanvas { .. }
             | DrawCommand::SetTarget { .. }
@@ -971,6 +967,11 @@ pub struct PanelTheme {
     /// of `{ r, g, b, a }` color records under `panel_theme()`. Insertion order
     /// is preserved (an `IndexMap`-backed record on the script side).
     colors: Vec<(String, [u8; 4])>,
+    /// The face this panel's text is drawn and measured in when a run names
+    /// none (`"ui"`, `"mono"`, or any family the host can resolve), or `None`
+    /// for the host default. Published to the script host by
+    /// [`PanelHost::set_default_font`]; see it for why the two travel together.
+    font: Option<String>,
 }
 
 impl PanelTheme {
@@ -994,6 +995,18 @@ impl PanelTheme {
     /// empty one yields an empty `panel_theme()` record).
     pub fn is_empty(&self) -> bool {
         self.colors.is_empty()
+    }
+
+    /// Name the face a text run that names none is drawn and measured in.
+    /// Chainable, like [`set`](Self::set).
+    pub fn set_font(&mut self, font: &str) -> &mut PanelTheme {
+        self.font = Some(font.to_string());
+        self
+    }
+
+    /// The theme's default face, or `None` when it names none.
+    pub fn font(&self) -> Option<&str> {
+        self.font.as_deref()
     }
 
     /// The sRGB `[r, g, b, a]` set for `key`, or `None` if unset (host
@@ -1105,8 +1118,35 @@ pub struct PanelHost {
     edit_view_edits: HashMap<i64, PanelData>,
     /// Monotonic origin for the `time()`/`elapsed()` clock published each frame.
     /// Read fresh (`start.elapsed()`) rather than accumulated from `dt`, so
-    /// `elapsed()` does not drift.
+    /// `elapsed()` does not drift — *while the clock is the wall clock*. See
+    /// [`virtual_clock`](Self::virtual_clock) for the other mode.
     start: Instant,
+    /// Seconds published as `time()` when the clock is virtual, or `None` while
+    /// it is the wall clock (the interactive default).
+    ///
+    /// A frame driven by a harness (`POST /tick`) is not happening in real
+    /// time: sixty frames at `dt = 0.016` are meant to *be* 0.96 seconds of
+    /// script time, however long the batch actually took to run, and a pause
+    /// between two batches must advance nothing. Reading `start.elapsed()`
+    /// there made every `time()`-driven animation both unsteppable and
+    /// irreproducible — the same script, ticked identically, drew a different
+    /// frame each run. So a ticking host accumulates the `dt` it drives each
+    /// frame with ([`advance_clock`](Self::advance_clock)), and an interactive
+    /// one keeps the wall clock, where `dt` accumulation would drift against
+    /// `Instant::now`. Nothing but an explicit advance moves it: frames the
+    /// host runs on its own schedule are, to a virtual clock, no time at all.
+    virtual_clock: Option<f64>,
+    /// The face this panel's text is drawn and measured in when a run names
+    /// none — [`PanelTheme::font`], or `None` for the host default (`mono`).
+    /// Kept here because it has to survive a frame: the metrics are rebound
+    /// from it, and a decoded text command that named no face is filled in with
+    /// it, so measurement and drawing cannot disagree.
+    default_font: Option<String>,
+    /// The eagerly-published advance tables for the two roles, kept so
+    /// [`set_default_font`](Self::set_default_font) can promote either one to
+    /// be the *unnamed* default metric later. `None` until a host publishes
+    /// measured tables.
+    role_metrics: Option<(petal_ui::draw::FontMetrics, petal_ui::draw::FontMetrics)>,
     /// Whether this host records which call site drew each command
     /// ([`set_trace_origins`](Self::set_trace_origins)). Off by default, so an
     /// ordinary panel pays nothing; Petal IDE turns it on to map the canvas back
@@ -1167,6 +1207,9 @@ impl PanelHost {
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
+            virtual_clock: None,
+            default_font: None,
+            role_metrics: None,
             trace_origins: false,
             store: Some(crate::panel_store::PanelStore::for_script(path)),
             frame_origins: Vec::new(),
@@ -1225,6 +1268,9 @@ impl PanelHost {
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
+            virtual_clock: None,
+            default_font: None,
+            role_metrics: None,
             trace_origins: false,
             // A source-backed panel has no script file, but it does have a
             // stable virtual identity (`gpp:<cmd>`, a `garden:…` URI), which is
@@ -1250,7 +1296,7 @@ impl PanelHost {
     /// but a host rebuilt from scratch is a new host and must be told again.
     pub fn set_font_advance_ratios(&mut self, ratios: Vec<f64>) {
         let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
-        bind_font_advances(&mut self.env, &metrics, &metrics);
+        self.publish_role_metrics(metrics.clone(), metrics);
     }
 
     /// [`set_font_advance_ratios`](Self::set_font_advance_ratios) for a host
@@ -1267,7 +1313,106 @@ impl PanelHost {
     pub fn set_font_advance_ratios_with_ui(&mut self, mono: Vec<f64>, ui: Vec<f64>) {
         let mono = petal_ui::draw::FontMetrics::proportional(mono, TEXT_ADVANCE_RATIO);
         let ui = petal_ui::draw::FontMetrics::proportional(ui, TEXT_ADVANCE_RATIO);
-        bind_font_advances(&mut self.env, &mono, &ui);
+        self.publish_role_metrics(mono, ui);
+    }
+
+    /// Bind both roles' tables, remembering them so a later
+    /// [`set_default_font`](Self::set_default_font) can promote either to be
+    /// the unnamed default metric.
+    fn publish_role_metrics(
+        &mut self,
+        mono: petal_ui::draw::FontMetrics,
+        ui: petal_ui::draw::FontMetrics,
+    ) {
+        let default_font = self.default_font.clone();
+        bind_font_advances(&mut self.env, &mono, &ui, default_font.as_deref());
+        self.role_metrics = Some((mono, ui));
+    }
+
+    /// The face a text run that names none is drawn *and measured* in.
+    ///
+    /// Garden's default was `mono` for both, which is right only while the
+    /// panel's own type is monospace. A panel whose theme draws in the
+    /// proportional face has every bare `text_width(s, size)` answered from the
+    /// monospace table — a ~22% error on a real title, in the silent direction:
+    /// nothing looks broken, everything centered is simply off. Naming the
+    /// panel's face here moves three things at once, which is the point:
+    /// `text_width`'s default table, the face its weight/italic variants are
+    /// looked up under, and the face a `font`-less draw command is filled in
+    /// with on the way to the renderer.
+    ///
+    /// `None` restores the host default (`mono`). Set from
+    /// [`PanelTheme::font`] before each frame; an embedder with no theme can
+    /// call it directly.
+    pub fn set_default_font(&mut self, font: Option<&str>) {
+        if self.default_font.as_deref() == font {
+            return;
+        }
+        self.default_font = font.map(str::to_string);
+        if let Some((mono, ui)) = self.role_metrics.take() {
+            self.publish_role_metrics(mono, ui);
+        } else {
+            let font = self.default_font.clone();
+            petal_ui::draw::bind_default_font_name(
+                &mut self.env,
+                font.as_deref().unwrap_or(DEFAULT_FONT_NAME),
+            );
+        }
+    }
+
+    /// The face bare `draw_text`/`text_width` resolve to, or `None` for the
+    /// host default.
+    pub fn default_font(&self) -> Option<&str> {
+        self.default_font.as_deref()
+    }
+
+    /// Publish `time()` from an accumulated virtual clock instead of the wall
+    /// clock, starting at the current wall-clock reading so nothing jumps
+    /// backwards. Idempotent.
+    ///
+    /// A host driving frames explicitly (`POST /tick`) calls this: the point of
+    /// naming `dt` is that the script's clock advances by exactly that much per
+    /// frame, so an animation is steppable and two identical tick sequences
+    /// draw identical frames. Interactive ticking keeps the wall clock, where
+    /// `dt` is a measurement rather than an instruction.
+    pub fn use_virtual_clock(&mut self) {
+        if self.virtual_clock.is_none() {
+            self.virtual_clock = Some(self.start.elapsed().as_secs_f64());
+        }
+    }
+
+    /// Advance the virtual clock by `dt` seconds; a no-op while the clock is
+    /// the wall clock.
+    ///
+    /// Called by the host for a frame it is *driving* (`POST /tick`), and by
+    /// nothing else — which is the property that makes a virtual clock worth
+    /// having. Frames the host runs on its own schedule (an idle repaint, the
+    /// settle passes before a capture) leave it exactly where the last tick put
+    /// it, so two identical tick sequences produce the same `time()` however
+    /// much wall clock passed in between.
+    pub fn advance_clock(&mut self, dt: f64) {
+        if let Some(clock) = self.virtual_clock.as_mut() {
+            *clock += dt;
+        }
+    }
+
+    /// Whether `time()` is currently the accumulated virtual clock.
+    pub fn is_virtual_clock(&self) -> bool {
+        self.virtual_clock.is_some()
+    }
+
+    /// The value the next frame will publish as `time()`, in seconds.
+    pub fn clock(&self) -> f64 {
+        self.virtual_clock
+            .unwrap_or_else(|| self.start.elapsed().as_secs_f64())
+    }
+
+    /// Reseed this panel's `random()` stream, so a script that generates
+    /// placeholder content draws the *same* content on two renders. Applies
+    /// from the next frame on (the engine's seed is a property of the env, not
+    /// of a run), and survives hot reload like any other env state.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.env.set_seed(seed);
     }
 
     /// Publish the advance table for one *variant* of a face the host already
@@ -1379,7 +1524,11 @@ impl PanelHost {
     /// host calls this each tick before [`frame`](Self::frame). Cheap (stores the
     /// snapshot; the record is built at frame time).
     pub fn set_theme(&mut self, theme: PanelTheme) {
+        // The theme names the panel's face as well as its colors, and the face
+        // has to reach the measurement bindings before the frame runs.
+        let font = theme.font.clone();
         self.theme = theme;
+        self.set_default_font(font.as_deref());
     }
 
     /// Publish the argument this screen was navigated to with, read back by the
@@ -1401,7 +1550,8 @@ impl PanelHost {
     pub fn frame(&mut self, dt: f64, frame_count: i64) -> Result<Vec<PanelCmd>, String> {
         self.input.begin_frame(dt);
         input::bind_frame_info(&mut self.env, dt, frame_count);
-        input::bind_time(&mut self.env, self.start.elapsed().as_secs_f64());
+        let now = self.clock();
+        input::bind_time(&mut self.env, now);
         input::bind_input(&mut self.env, &self.input);
         bind_panel_theme(&mut self.env, &self.theme);
         bind_host_palette(&mut self.env, &self.theme);
@@ -1426,6 +1576,8 @@ impl PanelHost {
         let sym = self.env.intern_symbol(MUTATE_EVENTS);
         self.env.clear_output_buffer(sym);
         let sym = self.env.intern_symbol(KEY_CLAIMS);
+        self.env.clear_output_buffer(sym);
+        let sym = self.env.intern_symbol(ANIMATING);
         self.env.clear_output_buffer(sym);
         self.env.reset_stack(self.stack_id)?;
         // Make the data + query providers reachable from their natives for the
@@ -1501,7 +1653,19 @@ impl PanelHost {
                 }
                 other => PanelCmd::from_draw(other),
             };
-            if let Some(pc) = decoded {
+            if let Some(mut pc) = decoded {
+                // A run that named no face is drawn in the panel's default
+                // one — the same face `text_width` measured it with, since
+                // both come from `default_font`. Left as `None` the renderer
+                // would fall back to *its* default (monospace) and disagree
+                // with the measurement the layout was built from.
+                if let (PanelCmd::Text { font, .. }, Some(default)) =
+                    (&mut pc, self.default_font.as_deref())
+                {
+                    if font.is_none() {
+                        *font = Some(default.to_string());
+                    }
+                }
                 cmds.push(pc);
                 if self.trace_origins {
                     origins.push(crate::panel_trace::DrawOrigin(origin));
@@ -1744,6 +1908,21 @@ impl PanelHost {
             }
         }
         out
+    }
+
+    /// Whether the last frame called `request_frame()` (or its alias
+    /// `animating()`) — the panel's own statement that it is mid-animation and
+    /// the host's idle heuristic should not put it to sleep.
+    ///
+    /// The heuristic is "nothing has happened for a while, so nothing is
+    /// happening": right for a static drawer, exactly wrong for a shimmer, a
+    /// spinner, a marquee or a pulsing live dot, which freeze mid-motion and
+    /// read as a hang. A frame that says it is animating is the one case the
+    /// heuristic cannot see, and the script already knows.
+    /// Call after [`frame`](Self::frame).
+    pub fn take_animating(&mut self) -> bool {
+        let sym = self.env.intern_symbol(ANIMATING);
+        !self.env.take_output_buffer(sym).is_empty()
     }
 
     /// Drain the browser-history navigation intents the last frame published
@@ -2267,12 +2446,20 @@ fn bind_font_advances(
     env: &mut Env,
     mono: &petal_ui::draw::FontMetrics,
     ui: &petal_ui::draw::FontMetrics,
+    default_font: Option<&str>,
 ) {
-    // The *unnamed* default metrics stay the mono face: a script that measures
-    // without naming a role is measuring what Garden draws by default.
-    petal_ui::draw::bind_text_metrics(env, mono.advance);
-    if !mono.advances.is_empty() {
-        petal_ui::draw::bind_text_advance_table(env, &mono.advances);
+    // The *unnamed* default metrics are the panel's own face: a script that
+    // measures without naming a role is measuring what this panel draws by
+    // default, which is the mono role until its theme says otherwise
+    // ([`PanelHost::set_default_font`]). Measuring `ui` runs with the mono
+    // table is the silent kind of wrong — every centered label lands off.
+    let default = match default_font {
+        Some(name) if name.eq_ignore_ascii_case(UI_FONT_NAME) => ui,
+        _ => mono,
+    };
+    petal_ui::draw::bind_text_metrics(env, default.advance);
+    if !default.advances.is_empty() {
+        petal_ui::draw::bind_text_advance_table(env, &default.advances);
     }
     petal_ui::draw::bind_font_metrics(env, "mono", mono);
     // `ui` is a genuinely different face (proportional Inter) whenever the host
@@ -2280,9 +2467,9 @@ fn bind_font_advances(
     // is the old single-face behavior — measuring stays consistent with drawing
     // either way, which is the property that matters.
     petal_ui::draw::bind_font_metrics(env, "ui", ui);
-    // Garden's default font *is* the mono role, so a style naming no face
-    // resolves that role's variants.
-    petal_ui::draw::bind_default_font_name(env, "mono");
+    // …and the name a style with no face resolves its bold/italic variants
+    // under.
+    petal_ui::draw::bind_default_font_name(env, default_font.unwrap_or(DEFAULT_FONT_NAME));
 }
 
 /// Does this observed value hold a function? Petal's JSON dump has no callable
@@ -2328,7 +2515,7 @@ fn register_panel_natives(env: &mut Env) {
     // host that can measure its real face replaces it per instance with
     // [`PanelHost::set_font_advance_ratios`], which rebinds these same symbols.
     let floor = petal_ui::draw::FontMetrics::monospace(TEXT_ADVANCE_RATIO);
-    bind_font_advances(env, &floor, &floor);
+    bind_font_advances(env, &floor, &floor, None);
     // Garden-only: the host UI theme, injected read-only each frame (see
     // [`bind_panel_theme`]) so a drawer paints in the app's colors instead of a
     // hardcoded palette. Its record is bound before the run; the native returns
@@ -2352,6 +2539,11 @@ fn register_panel_natives(env: &mut Env) {
     // `claim_key(key, mods)` — the panel's own command keyspace: chords the host
     // must forward instead of consuming (drained by `take_key_claims`).
     env.register_native("claim_key", native_claim_key);
+    // `request_frame()` / `animating()` — the panel's opt-out of the host's
+    // idle-sleep heuristic, for a frame that is mid-animation (drained by
+    // `take_animating`).
+    env.register_native("request_frame", native_request_frame);
+    env.register_native("animating", native_request_frame);
     // The panel's own persistent key/value store, scoped to its script path —
     // the answer to "a todo app remembers your todos" without handing a sketch
     // a file API. See [`crate::panel_store`].
@@ -2655,6 +2847,19 @@ fn native_mutate_result(cxt: &mut PetalCxt) -> NativeResult {
         _ => None,
     };
     cxt.push_value(found.unwrap_or(Value::Nil));
+    Ok(1)
+}
+
+/// `request_frame()` (alias `animating()`) — tell the host this frame is part
+/// of an animation, so the panel keeps ticking past the idle window.
+///
+/// Costs one push into an output buffer and is meant to be called every frame
+/// the motion is running: the claim is per-frame, so the panel sleeps again by
+/// simply not asking. Returns nil.
+fn native_request_frame(cxt: &mut PetalCxt) -> NativeResult {
+    let sym = cxt.intern_symbol(ANIMATING);
+    cxt.push_output(sym, Value::Int(1));
+    cxt.push_nil();
     Ok(1)
 }
 
@@ -2971,6 +3176,162 @@ mod tests {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(f, "{src}").unwrap();
         f
+    }
+
+    /// The virtual clock is the whole point of naming `dt`: sixty frames of
+    /// 0.016 are 0.96 seconds of script time, whatever the wall clock did while
+    /// they ran. Without it a golden image of a moving UI is unreproducible.
+    #[test]
+    fn virtual_clock_accumulates_the_supplied_dt() {
+        let f = write_script("print(str(time()))\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.use_virtual_clock();
+        let base = host.clock();
+        for i in 0..60 {
+            host.advance_clock(0.016);
+            host.frame(0.016, i).unwrap();
+        }
+        let advanced = host.clock() - base;
+        assert!(
+            (advanced - 0.96).abs() < 1e-9,
+            "60 ticks at dt=0.016 advanced time() by {advanced}, not 0.96"
+        );
+        // …and the script saw the same number the host reports.
+        let last: f64 = host.take_output().last().unwrap().trim().parse().unwrap();
+        assert!((last - host.clock()).abs() < 1e-9);
+    }
+
+    /// A wall-clock host is unchanged: `dt` is a measurement there, and
+    /// accumulating it would drift against `Instant::now`.
+    #[test]
+    fn the_wall_clock_ignores_the_supplied_dt() {
+        let f = write_script("print(str(time()))\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        assert!(!host.is_virtual_clock());
+        for i in 0..10 {
+            host.advance_clock(1.0);
+            host.frame(1.0, i).unwrap();
+        }
+        assert!(
+            host.clock() < 0.5,
+            "ten frames of dt=1.0 must not move a wall clock: {}",
+            host.clock()
+        );
+    }
+
+    /// Switching mid-session must not rewind the clock a running animation is
+    /// already reading.
+    #[test]
+    fn switching_to_virtual_time_starts_where_the_wall_clock_stood() {
+        let f = write_script("draw_rect(0, 0, 1, 1, 1, 2, 3)\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.frame(0.016, 0).unwrap();
+        let wall = host.clock();
+        host.use_virtual_clock();
+        assert!(host.clock() >= wall);
+        host.advance_clock(0.5);
+        host.frame(0.5, 1).unwrap();
+        assert!((host.clock() - (wall + 0.5)).abs() < 0.05);
+        // A frame the host ran on its own schedule is no time at all to a
+        // virtual clock — that is what makes a tick sequence reproducible.
+        let held = host.clock();
+        host.frame(0.25, 2).unwrap();
+        assert_eq!(host.clock(), held);
+    }
+
+    /// Seeding is what makes generated placeholder content comparable between
+    /// two renders of the same script.
+    #[test]
+    fn a_seeded_panel_generates_the_same_numbers_twice() {
+        let src = "print(str(random(0, 1000)))\n";
+        let run = |seed: u64| {
+            let f = write_script(src);
+            let mut host = PanelHost::load(f.path()).unwrap();
+            host.set_seed(seed);
+            host.frame(0.016, 0).unwrap();
+            host.take_output()
+        };
+        assert_eq!(run(7), run(7));
+    }
+
+    /// The idle heuristic's opt-out: a frame that says it is animating is
+    /// reported to the host, and only for that frame.
+    #[test]
+    fn request_frame_is_reported_and_is_per_frame() {
+        let f = write_script(
+            "if frame_count() == 0 then\n  request_frame()\nend\n             draw_rect(0, 0, 1, 1, 1, 2, 3)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.frame(0.016, 0).unwrap();
+        assert!(host.take_animating(), "frame 0 asked to keep animating");
+        host.frame(0.016, 1).unwrap();
+        assert!(!host.take_animating(), "frame 1 did not ask");
+    }
+
+    /// `animating()` is the same native under the name a drawer reaches for.
+    #[test]
+    fn animating_is_an_alias_for_request_frame() {
+        let f = write_script("animating()\ndraw_rect(0, 0, 1, 1, 1, 2, 3)\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.frame(0.016, 0).unwrap();
+        assert!(host.take_animating());
+    }
+
+    /// The measurement half of the default-face fix: with the theme naming the
+    /// proportional role, a bare `text_width` must read the *ui* table, not the
+    /// monospace one it used to read whatever the panel drew in.
+    #[test]
+    fn the_theme_font_moves_the_default_measurement() {
+        let f = write_script("print(str(text_width(\"aaaa\", 100)))\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_font_advance_ratios_with_ui(vec![0.5; 128], vec![0.25; 128]);
+        host.frame(0.016, 0).unwrap();
+        assert_eq!(
+            host.take_output()[0].trim(),
+            "200",
+            "default is the mono table"
+        );
+
+        let mut theme = PanelTheme::new();
+        theme.set_font("ui");
+        host.set_theme(theme);
+        host.frame(0.016, 1).unwrap();
+        assert_eq!(
+            host.take_output()[0].trim(),
+            "100",
+            "theme font is the ui table"
+        );
+    }
+
+    /// …and the drawing half: a run that named no face carries the panel's
+    /// default one to the renderer, so it draws in what it was measured with.
+    #[test]
+    fn the_theme_font_fills_in_a_faceless_text_command() {
+        let f = write_script("draw_text(\"hi\", 0, 0, 14, 1, 2, 3)\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        let mut theme = PanelTheme::new();
+        theme.set_font("ui");
+        host.set_theme(theme);
+        let cmds = host.frame(0.016, 0).unwrap();
+        let PanelCmd::Text { font, .. } = &cmds[0] else {
+            panic!("expected a text command, got {:?}", cmds[0]);
+        };
+        assert_eq!(font.as_deref(), Some("ui"));
+    }
+
+    /// A run that names its own face still wins over the theme's.
+    #[test]
+    fn an_explicit_face_outranks_the_theme_font() {
+        let f = write_script("draw_text(\"hi\", {x: 0, y: 0}, {size: 14, font: \"mono\"})\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        let mut theme = PanelTheme::new();
+        theme.set_font("ui");
+        host.set_theme(theme);
+        let cmds = host.frame(0.016, 0).unwrap();
+        let PanelCmd::Text { font, .. } = &cmds[0] else {
+            panic!("expected a text command, got {:?}", cmds[0]);
+        };
+        assert_eq!(font.as_deref(), Some("mono"));
     }
 
     #[test]
@@ -4240,11 +4601,27 @@ mod tests {
         assert!(!obs.contains_key("draw_rect") && !obs.contains_key("rect"));
         assert!(!obs.contains_key("mine"));
 
-        // What survives is the script's own, plus the one documented leftover:
-        // the prelude's exported `theme` record.
-        let mut keys: Vec<&str> = obs.keys().map(String::as_str).collect();
-        keys.sort();
-        assert_eq!(keys, ["name", "sel", "theme"]);
+        // What survives is the script's own bindings, plus the documented
+        // leftovers: the prelude's *unprefixed, non-callable* exports (`theme`,
+        // the `GRAD_*` angles). Nothing in a name separates those from a
+        // script's own, and a script that wants one of the names simply takes
+        // it — later in program order wins the key (the next test). So the
+        // assertion is "nothing here is a surprise", not a fixed list, which
+        // would otherwise have to be edited every time the prelude exports
+        // another constant.
+        let prelude_consts: Vec<&str> = petal_ui::prelude_source()
+            .lines()
+            .filter_map(|l| l.strip_prefix("export let "))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        for key in obs.keys() {
+            assert!(
+                ["name", "sel"].contains(&key.as_str()) || prelude_consts.contains(&key.as_str()),
+                "unexpected observed key {key:?} (obs: {:?})",
+                obs.keys().collect::<Vec<_>>()
+            );
+        }
+        assert!(obs.contains_key("sel") && obs.contains_key("name") && obs.contains_key("theme"));
     }
 
     /// The `theme` leftover is harmless because a script that wants the name

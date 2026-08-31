@@ -801,6 +801,49 @@ Four rules are worth stating outright, because each was once false:
   `"cmd"` answer truthfully, as well as `mod_shift()` and friends.
 - **`click_count()` is the real chain**: 2 on a double click, 3 on a triple.
 
+### `request_frame` — staying awake while animating
+
+A panel sleeps ten seconds after its last activity. That is right for a still
+drawer and wrong for ambient motion: a skeleton shimmer, a spinner, a pulsing
+live dot or a marquee simply **freezes** ten seconds after the last input, and
+the stale frame stays on screen reading as a hang.
+
+```petal
+request_frame()   // this frame is part of an animation; keep ticking
+animating()       // the same native, under the name that reads better in a loop
+```
+
+Like `claim_key`, the call is **declarative and per frame**: it covers only the
+frame that makes it, so a script can ask while its motion is running and stop
+asking when it settles, and the panel then sleeps again on the usual schedule.
+Costs one push into an output buffer, so calling it every frame is free.
+
+```petal
+let busy = loading()
+if busy then
+  request_frame()
+end
+draw_spinner(rect(20, 20, 24, 24), time())
+```
+
+The idle heuristic is "nothing has happened for a while, so nothing is
+happening". A frame that is mid-animation is exactly the case it gets wrong,
+and the script is the only thing that knows. The process-wide alternatives
+remain for a harness driving someone else's script: `garden --panel-wake`
+(never sleep), `--panel-wake 60` (a longer window), and `POST /tick`, which
+runs frames regardless.
+
+### The panel's default face
+
+A text run that names no face is drawn — and measured by `text_width(s, size)`
+— in the panel's default face, which the host publishes from its theme. Garden's
+is the monospace role unless the embedder names another (`PanelTheme::set_font`
+/ `PanelHost::set_default_font`); the two always move together, so a bare
+`text_width` can never be answered from a different table than the one the run
+is drawn with. A run that names its own face (`{font: "ui"}`, `font("Inter")`)
+outranks the default, and petal-ui's widgets always pass an explicit style built
+from `theme.font`.
+
 ### `claim_key` — a panel's own command keyspace
 
 Garden owns the Cmd/Ctrl chords: they are the editor's shortcuts, and a panel

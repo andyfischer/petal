@@ -1,0 +1,222 @@
+// Minesweeper — a headless, fully deterministic game of Minesweeper.
+//
+// A 9x9 board with 10 mines placed by a self-contained LCG (fixed seed, so no
+// dependence on `--seed` or the host RNG), neighbour counts, flagging, and the
+// recursive flood-fill reveal of contiguous zero-count cells plus their
+// numbered border. A scripted sequence of moves drives it to a mine hit.
+//
+// Run:
+//   ./ts/bin/run-petal.ts run examples/challenge/minesweeper.ptl
+
+config let width = 9
+config let height = 9
+config let mine_count = 10
+config let rng_seed = 20260830
+
+// ---------------------------------------------------------------- board state
+
+var rng_state = rng_seed
+var mines = for r in range(0, height) do for c in range(0, width) do false end end
+var counts = for r in range(0, height) do for c in range(0, width) do 0 end end
+var revealed = for r in range(0, height) do for c in range(0, width) do false end end
+var flagged = for r in range(0, height) do for c in range(0, width) do false end end
+var exploded = false
+var moves_made = 0
+
+// ------------------------------------------------------------------- rng
+
+fn next_rand() -> int
+  set rng_state = (get rng_state * 1103515245 + 12345) % 2147483648
+  get rng_state
+end
+
+fn rand_below(n: int) -> int
+  next_rand() % n
+end
+
+// ------------------------------------------------------------------ geometry
+
+fn in_bounds(r: int, c: int) -> bool
+  r >= 0 && r < height && c >= 0 && c < width
+end
+
+// The up-to-8 neighbours of (r, c), as [row, col] pairs.
+fn neighbors(r: int, c: int) -> list
+  for d in range(0, 9) do
+    let dr = d / 3 - 1
+    let dc = d % 3 - 1
+    if dr == 0 && dc == 0 then continue end
+    let nr = r + dr
+    let nc = c + dc
+    if !in_bounds(nr, nc) then continue end
+    [nr, nc]
+  end
+end
+
+// ------------------------------------------------------------------- setup
+
+fn place_mines() -> nil
+  var placed = 0
+  while placed < mine_count do
+    let r = rand_below(height)
+    let c = rand_below(width)
+    if get mines[r][c] then continue end
+    set mines[r][c] = true
+    set placed = placed + 1
+  end
+  nil
+end
+
+fn adjacent_mines(r: int, c: int) -> int
+  var n = 0
+  for cell in neighbors(r, c) do
+    if get mines[cell[0]][cell[1]] then set n = n + 1 end
+  end
+  n
+end
+
+fn compute_counts() -> nil
+  for r in range(0, height) do
+    for c in range(0, width) do
+      set counts[r][c] = adjacent_mines(r, c)
+    end
+  end
+  nil
+end
+
+// ------------------------------------------------------------------- moves
+
+// Recursive flood fill: a zero-count cell opens all its neighbours, and each
+// numbered neighbour is revealed but does not recurse further. Flagged cells
+// are protected, exactly as in the real game.
+fn reveal(r: int, c: int) -> nil
+  if get revealed[r][c] || get flagged[r][c] then return nil end
+  set revealed[r][c] = true
+  if get mines[r][c] then
+    set exploded = true
+    return nil
+  end
+  if get counts[r][c] == 0 then
+    for cell in neighbors(r, c) do
+      reveal(cell[0], cell[1])
+    end
+  end
+  nil
+end
+
+fn toggle_flag(r: int, c: int) -> nil
+  if get revealed[r][c] then return nil end
+  set flagged[r][c] = !get flagged[r][c]
+  nil
+end
+
+fn flag_count() -> int
+  var n = 0
+  for r in range(0, height) do
+    for c in range(0, width) do
+      if get flagged[r][c] then set n = n + 1 end
+    end
+  end
+  n
+end
+
+fn hidden_safe_count() -> int
+  var n = 0
+  for r in range(0, height) do
+    for c in range(0, width) do
+      if !get mines[r][c] && !get revealed[r][c] then set n = n + 1 end
+    end
+  end
+  n
+end
+
+fn is_won() -> bool
+  !get exploded && hidden_safe_count() == 0
+end
+
+// ------------------------------------------------------------------ rendering
+
+fn count_char(n: int) -> string
+  match n
+    when 0 -> "_"
+    when x -> str(x)
+  end
+end
+
+fn cell_char(r: int, c: int) -> string
+  if get exploded && get mines[r][c] && !get flagged[r][c] then
+    "*"
+  elsif get flagged[r][c] then
+    "F"
+  elsif !get revealed[r][c] then
+    "."
+  elsif get mines[r][c] then
+    "*"
+  else
+    count_char(get counts[r][c])
+  end
+end
+
+fn print_board() -> nil
+  let header = for c in range(0, width) do str(c) end |> join(" ")
+  print("    " ++ header)
+  print("   " ++ ("--" |> repeat_str(width)))
+  for r in range(0, height) do
+    let row = for c in range(0, width) do cell_char(r, c) end |> join(" ")
+    print("{r} | " ++ row)
+  end
+  print("   mines: {mine_count}   flags: {flag_count()}   hidden safe cells: {hidden_safe_count()}")
+  nil
+end
+
+fn repeat_str(s: string, n: int) -> string
+  let parts = for i in range(0, n) do s end
+  parts.join("")
+end
+
+// -------------------------------------------------------------- driver
+
+fn do_reveal(r: int, c: int) -> nil
+  set moves_made = get moves_made + 1
+  print("")
+  print("== move {get moves_made}: reveal ({r}, {c})")
+  reveal(r, c)
+  print_board()
+  nil
+end
+
+fn do_flag(r: int, c: int) -> nil
+  set moves_made = get moves_made + 1
+  print("")
+  print("== move {get moves_made}: flag ({r}, {c})")
+  toggle_flag(r, c)
+  print_board()
+  nil
+end
+
+place_mines()
+compute_counts()
+
+print("Minesweeper {width}x{height}, {mine_count} mines, seed {rng_seed}")
+print("legend: . hidden   F flagged   _ empty   1-8 adjacent mines   * mine")
+print("")
+print("initial board")
+print_board()
+
+// Scripted game. The coordinates below were chosen against this exact seed.
+do_reveal(0, 0)   // a lone numbered cell: one mine touches the corner
+do_reveal(8, 0)   // flood fill opens the bottom-left zero region + its border
+do_flag(8, 2)     // deduced from the 1s along column 1 — really is a mine
+do_reveal(4, 4)   // the big flood fill down the middle
+do_flag(5, 2)     // deduced from the 2 at (4,2)
+do_reveal(5, 2)   // a flagged cell is protected: this move does nothing
+do_reveal(2, 6)   // ...and this one is a mine
+
+print("")
+if get exploded then
+  print("BOOM — you hit a mine. Game over.")
+elsif is_won() then
+  print("Cleared! All safe cells revealed.")
+else
+  print("Still playing: {hidden_safe_count()} safe cells left.")
+end

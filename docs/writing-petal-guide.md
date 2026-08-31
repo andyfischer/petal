@@ -45,7 +45,7 @@ petal run app.ptl      # then run it
 
 `check` is much cheaper than `run` and catches syntax errors, arity errors, type
 mismatches and a few lints. Reach for it after every edit; `run` only when you
-want output. More on the tooling in [§8](#8-the-tooling).
+want output. More on the tooling in [§10](#10-the-tooling).
 
 ---
 
@@ -86,6 +86,8 @@ Things to notice, because each is a rule you will meet again:
 - **`end` closes every block.** `if … then … end`, `for … do … end`,
   `fn … end`. No braces, no significant indentation.
 - **The last expression is the return value.** `Task.label` has no `return`.
+  An explicit `return expr` exists for early exit, and `return` on its own line
+  needs a value (`return nil`).
 - **`{}` inside a string interpolates**, like a JS template literal but with the
   plain double quote: `"[{mark}] {t.title}"`.
 - **Type annotations are optional and advisory.** `title: string` and
@@ -94,6 +96,8 @@ Things to notice, because each is a rule you will meet again:
 - **`t.label()` is a method call**, and a method is just a function whose first
   parameter is the receiver. There is no `self`.
 - **Commas are required** between list elements, and a trailing comma is fine.
+- **Recursion works, including mutual recursion**, because top-level `fn`s are
+  hoisted — a flood fill or a tree walk needs no forward declaration.
 
 ---
 
@@ -112,7 +116,7 @@ x = 20          // rebinds the name; not a write to a slot
 
 `x = 20` does not overwrite a cell — it *rebinds the name to a new value*. The
 compiler therefore knows exactly which earlier value every read came from, which
-is what makes the dataflow tools in [§8](#8-the-tooling) work. Use `let` unless
+is what makes the dataflow tools in [§10](#10-the-tooling) work. Use `let` unless
 you have a specific reason not to.
 
 Because it is a rebind, an `=` inside a function targeting a name bound outside
@@ -124,21 +128,50 @@ shadow and does not modify `n`. Use `let` for a new local, return the value,
 or — if it really must be mutable — declare it `var n = ...`
 ```
 
-### `var` / `set` / `get` — the mutable escape hatch
-
-When you genuinely need one slot several places write to, declare it `var`, and
-say so at every use:
+**A rebind inside a loop or an `if` carries out of it.** This is the rule that
+decides how most Petal code is written, so learn it before you reach for
+anything else: within one function, `=` reaches the enclosing scope, so an
+ordinary accumulator needs no special machinery.
 
 ```petal
 fn tally(xs)
-  var total = 0
+  let total = 0
   for x in xs do
-    set total = total + x
+    total = total + x      // carries to the next iteration, and out of the loop
   end
-  total
+  total                    // 6 for [1, 2, 3]
 end
-print(tally([1, 2, 3]))   // 6
+
+// Threading a value through a loop works the same way — this is how you write
+// a simulation step, and why a *bare* `for` is not a dead end.
+let flock = [1, 2, 3]
+for i in range(0, 3) do
+  flock = map(flock, fn(x) -> x * 2)
+end
+print(flock)               // [8, 16, 24]
 ```
+
+The boundary is the **function**, not the block. `=` crossing into a nested
+`fn` is the error above; `=` crossing into a `for`, `while`, `if` or `match` arm
+in the same function is just a rebind.
+
+### `var` / `set` / `get` — the mutable escape hatch
+
+Because of that carry rule, a plain accumulator does **not** need `var`. What
+needs `var` is a write from inside a *nested function* — a callback, a closure,
+or a recursive helper — which is exactly the case `=` refuses:
+
+```petal
+fn count_matching(xs, pred)
+  var hits = 0
+  forEach(xs, fn(x)
+    if pred(x) then set hits += 1 end   // a plain `hits = …` here is an error
+  end)
+  get hits
+end
+```
+
+Declare it `var`, and say so at every use:
 
 | | |
 |---|---|
@@ -238,6 +271,46 @@ function that assigns to a field of its parameter updates its own local binding,
 not the caller's record. To share one record between writers, declare it `var`
 and write it with `set r.a = …`.
 
+### Indexing, and writing to a grid
+
+`xs[i]` reads; `xs[i] = v` writes — and the write is a **rebind of `xs`**, on
+exactly the same terms as `r.a = 2`. It nests, which is what makes a 2D board
+practical:
+
+```petal
+let row = [1, 2, 3]
+row[0] = 99                 // row is now [99, 2, 3]
+
+let grid = for r in range(0, 3) do
+  for c in range(0, 3) do 0 end
+end                         // a 3x3 of zeros — nested collecting loops
+grid[1][2] = 5              // one cell, by row then column
+```
+
+Since it is a rebind, the same function-boundary rule applies: a helper cannot
+write a grid that its caller holds. When several functions — or a recursive one,
+like a flood fill — must all write one board, that is the case `var` exists for,
+and `set` takes index targets too:
+
+```petal
+var board = for r in range(0, 4) do
+  for c in range(0, 4) do 0 end
+end
+
+fn fill(r, c)
+  if r < 0 || r > 3 || c < 0 || c > 3 then return nil end
+  if get board[r][c] == 1 then return nil end
+  set board[r][c] = 1                    // `set` writes an index or a field
+  fill(r + 1, c)
+  fill(r, c + 1)
+  nil
+end
+```
+
+Note `get board[r][c]`: `get` binds tighter than `[]` and `.`, so it
+dereferences the cell first and indexes the contents — `(get board)[r][c]`,
+which is what you want.
+
 The classic newcomer bug is dropping the result of a pure call. The compiler
 lints it:
 
@@ -258,7 +331,83 @@ Use it where it reads well; it only works on `let` bindings.
 
 ---
 
-## 5. Control flow you should know before you write anything
+## 5. Numbers and strings — the four things that bite
+
+None of these produce an error. They produce a wrong answer, quietly, which is
+why they are worth a page this early.
+
+**`/` between two ints truncates.** There is no separate integer-division
+operator; `/` is integer division when both sides are ints, and float division
+as soon as either side is a float. It truncates *toward zero*, so it is not
+`floor` on negatives. `%` is a remainder that follows the sign of the left
+operand — not Python's always-positive modulo, so it does not wrap a negative
+index for you.
+
+```petal
+print(7 / 2)          // 3     — not 3.5
+print(-7 / 2)         // -3    — toward zero, not -4
+print(7.0 / 2)        // 3.5   — one float is enough
+print(float(7) / 2)   // 3.5   — how to force it
+print(-1 % 5)         // -1    — not 4
+print((-1 % 5 + 5) % 5)   // 4 — the wrap you probably meant
+```
+
+**Ints overflow loudly.** `9223372036854775807 + 1` aborts the run with
+`Integer overflow when trying to add` rather than wrapping. Hand-rolling a
+linear-congruential PRNG is the usual way to meet this; keep the modulus small
+or work in floats.
+
+**`floor`, `ceil` and `round` return floats** when given one, so an index has to
+be cast: `xs[int(floor(t))]`, not `xs[floor(t)]`. They are int-preserving in the
+other direction — `floor(7 / 2)` is the int `3`.
+
+**Strings concatenate with `++`, never `+`.** `"a" + "b"` is a hard error (a
+good one — it names `++` in the message). `++` also stringifies a number on
+either side, and interpolation is usually nicer than either:
+
+```petal
+print("n=" ++ 5)          // n=5
+print("n={5}")            // n=5   — prefer this
+print(str(5) ++ "!")      // 5!    — `str` converts explicitly
+```
+
+There is **no string-repeat builtin** (no `repeat`, no `"-" * 20`), which every
+ASCII-rendering program wants. Build one:
+
+```petal
+fn rep(s: string, n: int) -> string
+  let out = ""
+  for i in range(0, n) do out = out ++ s end
+  out
+end
+print(rep("-", 20))
+```
+
+`pad_start(s, width)` does exist for right-aligning a column, and
+`join(xs, sep)` turns a list of strings into one — between them most table and
+board rendering is a one-liner.
+
+**The operator set is small, and the boolean ones are symbols.** There is no
+`not` / `and` / `or` — those parse as identifiers and produce a confusing
+`Expected ',' between arguments`.
+
+| | |
+|---|---|
+| arithmetic | `+  -  *  /  %` (and `+=  -=  *=  /=  %=`) |
+| string | `++` (concatenate), `"{expr}"` (interpolate) |
+| comparison | `==  !=  <  <=  >  >=` |
+| boolean | `&&  \|\|  !` — short-circuiting |
+| absent fields | `??` (fallback), `?.` (optional read) |
+| other | `\|>` (pipe into first argument), `@` (rebind) |
+
+**Put spaces around `<`.** Petal has a JSX-like element syntax, so a `<` with no
+space after it opens a tag: `a<b` fails with `Expected ',' between arguments`,
+while `a < b` compares. `>` is unambiguous and needs no space, which makes this
+one asymmetric and easy to misread — space both, always.
+
+---
+
+## 6. Control flow you should know before you write anything
 
 ### `elsif`, not `else if`
 
@@ -292,6 +441,8 @@ end
 
 Inside a collecting loop `continue` filters the iteration out and `break` ends
 collection with what was gathered so far. Nested loops give you nested lists.
+Both keywords also work with their ordinary meanings in a plain side-effect
+`for` and in a `while`, including from inside a nested loop.
 
 The gotcha: a side-effect loop at the *end of a function body* is in tail
 position, so it collects. Add a trailing `nil` if you don't want the list:
@@ -303,7 +454,20 @@ fn draw_all(items)
 end
 ```
 
-`while` is statement-only — no collecting form.
+`while` is statement-only — no collecting form. A `for … end` also cannot be
+piped where it stands (`for x in xs do x end |> len()` is a parse error); bind
+it first, then pipe the name.
+
+Two rough edges in the collecting form, both worth recognizing so you don't
+debug the wrong thing:
+
+- A bare builtin call as the loop body **is** collected, but the discarded-result
+  lint fires on it anyway — `for row in g do reverse(row) end` warns
+  `result of \`reverse\` is discarded` while returning the right answer. Bind the
+  value (`let flipped = reverse(row)` then `flipped`) to silence it.
+- A collecting loop cannot thread an accumulator; its value is the list of its
+  iterations. When you want to carry a value forward, use a **bare** `for` and
+  rebind, as in [§3](#3-bindings-let-var-state).
 
 ### `match`
 
@@ -321,13 +485,30 @@ Patterns cover literals, bindings, enum variants (`when Circle(r) ->`), list
 destructuring (`when [head, ...tail] ->`) and guards (`when x if x > 100 ->`).
 An arm whose body is several statements uses `do … end` instead of `->`.
 
+The catch-all is `when _ ->` (or `when name ->` if you want the value bound).
+There is no `else` arm — `else -> …` is a parse error.
+
 ---
 
-## 6. Data: records, classes, enums, and absent fields
+## 7. Data: records, classes, enums, and absent fields
 
 ```petal
 let person = {name: "Alice", age: 30}
 let moved  = {...person, age: 31}     // spread; later fields win
+```
+
+There are **no tuples** and no destructuring `let`: `let [a, b] = pair` is a
+parse error (list patterns exist only inside `match`). A function that returns
+two things returns a record, and the caller reads its fields — this is the
+idiom, not a workaround:
+
+```petal
+fn slide(row)
+  {row: shifted, gained: points}
+end
+
+let res = slide(r)
+print(res.row, res.gained)
 ```
 
 **Reading a field a record does not carry is a hard error** — a typo'd field
@@ -346,6 +527,12 @@ out-of-bounds index stay hard errors, which is what you want.
 `class` names a record shape, gives it a constructor and a type name, and lets
 you hang methods on it — but an instance is still a plain record. No
 inheritance, no `self`, no static methods, no private fields.
+
+One caveat follows from that, and it is easy to trip over: **a spread drops the
+class tag**. `{...c, radius: 3}` is a plain `record`, so it no longer dispatches
+`c`'s methods (`No method 'area' on type record`). Field assignment keeps the
+tag — `c.radius = 3` still yields a `Circle` — so prefer it, or rebuild through
+the constructor.
 
 ```petal
 class Circle
@@ -370,7 +557,7 @@ end
 
 ---
 
-## 7. Idioms that make Petal code read like Petal
+## 8. Idioms that make Petal code read like Petal
 
 **Pipe into the first argument.**
 
@@ -381,14 +568,27 @@ let done_count = tasks |> filter(fn(t) -> t.done) |> len()
 **Lambdas are `fn(args) -> expr`** — the `->` introduces the body, which is why
 a lambda has no return-type annotation.
 
-**Method syntax works on anything**, because `value.name(args)` falls back to
-calling a global with the receiver as the first argument: `[1,2,3].len()`.
+**Method syntax reaches builtins, not your own functions.** `value.name(args)`
+falls back to a **builtin** with the receiver as the first argument, which is
+why `[1,2,3].len()` and `r.keys()` work. It does *not* fall back to a global you
+declared: with `fn steer(b, k)` in scope, `b.steer(2)` fails with
+`No method 'steer' on class B` (or `on type record`) — write `steer(b, 2)`, or
+declare it as a method, `fn Boid.steer(b: Boid, k)`.
 
 **Annotate where it buys you something.** Annotations are warnings-only, so they
 cost nothing at runtime and are worth adding on public function signatures, on
 `var` and `state` (where they are the *only* thing that makes those checkable),
 and on parameters you want method calls pinned on. Use `num` for a slot that
 takes an int or a float — that is most arithmetic.
+
+The vocabulary is closed, and every name is a **single bare word**: `int`,
+`float`, `num` (int *or* float), `bool`, `string` (alias `str`), `list`,
+`record`, `function`, `nil`, `enum`, `vec2`, `element`, `any` — plus the name of
+any class. There are no parameterized types: `list<int>` and record shapes are
+not expressible, so `list` and `record` are opaque and their elements are never
+checked. An unknown name warns (`unknown type name \`banana\``) rather than
+failing. An `int` satisfies a `float` slot; the reverse needs an explicit
+`int(x)`.
 
 **Mark your tuning knobs with `config let`.** It evaluates exactly like a `let`;
 what changes is that the goal-based editing tools and live-editing hosts prefer
@@ -418,12 +618,90 @@ Imports must come before any other statement. Methods are program-wide — decla
 `fn Rect.area(…)` in one module and every file's rects gain it — but the class
 *name* follows `export`.
 
-**Wrap long expressions** by ending a line with a binary operator, or starting
-the next one with it (`+`, `|>`, `&&`, `??`, … but not `-` or `<`).
+**Wrap long expressions by ending the line with the operator, not starting the
+next one with it.** This is the guide's one genuine footgun, because getting it
+wrong is silent. Most operators (`+`, `|>`, `&&`, `??`) continue a line from
+either end — but `-` does not, since a leading `-` is a valid unary minus
+starting a fresh statement. So this compiles, passes `check --strict`, and
+returns the wrong number:
+
+```petal
+fn score(a, b, c)
+  1.0 * a
+  - 2.0 * b
+  - 3.0 * c      // only THIS line is the return value: -30, not -40
+end
+```
+
+Every earlier line becomes a discarded statement. Put the operator at the end of
+the line and it means what it looks like:
+
+```petal
+fn score(a, b, c)
+  1.0 * a -
+  2.0 * b -
+  3.0 * c        // -40
+end
+```
+
+A weighted sum written down the page is exactly where this bites. When in doubt,
+wrap the whole expression in parentheses, or check the value with
+`petal run --observe`.
 
 ---
 
-## 8. The tooling
+## 9. The builtins you will actually use
+
+There is no import and no namespace — every name here is just in scope. This is
+the working set, not the full list; [Builtins.md](Builtins.md) has the rest with
+exact signatures. Reach for this table before you guess a name, because a wrong
+guess costs a compile round-trip (`Unknown builtin: flatten`).
+
+| | |
+|---|---|
+| **Output** | `print(a, b, …)` — space-separated, newline at the end |
+| **Length** | `len(x)` — list or string. Bytes for a string; `char_len` for characters |
+| **Build a list** | `range(a, b)` — `a`..`b-1`, **no step argument**. `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
+| **Read a list** | `xs[i]`, `slice(xs, start, end)` (end-exclusive, negatives allowed), `contains(xs, v)`, `index_of(xs, v)` (`-1` if absent) |
+| **Reshape** | `reverse(xs)`, `sort(xs)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
+| **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |
+| **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
+| **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
+| **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `lerp(a, b, t)`, `map_range(v, a, b, c, d)` |
+| **Trig** | `sin`, `cos`, `tan`, `atan2(y, x)`, `pi()`, `radians`, `degrees` |
+| **Convert** | `str(v)`, `int(v)`, `float(v)`, `parse_int(s)`, `parse_float(s)`, `type(v)` |
+| **Random** | `random(lo, hi)`, `random_int(lo, hi)` (half-open), `choose(xs)`, `noise(x[, y[, z]])`, `noise_seed(n)` |
+| **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` |
+
+Three of these are shaped differently than you will expect:
+
+- `min` and `max` take exactly **two** arguments. For the extent of a list,
+  `reduce(xs, xs[0], fn(a, b) -> if a < b then a else b end)`.
+- `noise` is centered on **0** and runs roughly −1..1, not 0..1. Terrain and
+  heightmap code wants `(noise(x, y) + 1.0) / 2.0`, or `map_range`.
+- `sort` takes an **optional comparator** as a second argument
+  (`sort(xs, fn(a, b) -> b - a)` for descending). Without one it orders numbers
+  and strings, and leaves records alone.
+
+### Determinism without a command-line flag
+
+`petal run --seed 42` pins `random`, `random_int` and `choose`, and
+`noise_seed(n)` pins `noise` from inside the program. When a program must be
+byte-identical under a bare `petal run f.ptl` with no flags, call `noise_seed`
+at the top, or carry your own generator — a small LCG in a `var` is the usual
+answer, and it keeps the sequence in the file where a reader can see it.
+
+```petal
+var rng = 20260830
+fn next_rand(limit: int) -> int
+  set rng = (get rng * 1103515245 + 12345) % 2147483648
+  (get rng / 65536) % limit
+end
+```
+
+---
+
+## 10. The tooling
 
 Petal's compiler is unusually willing to answer questions about your program.
 Using it beats reading your own code back to yourself.
@@ -553,7 +831,7 @@ binary automatically. See [dev/mcp-server.md](dev/mcp-server.md).
 
 ---
 
-## 9. A debugging recipe
+## 11. A debugging recipe
 
 When a program does the wrong thing:
 
@@ -582,7 +860,7 @@ tell you the fix in the message. A sample:
 
 ---
 
-## 10. Where to go next
+## 12. Where to go next
 
 | If you want… | Read |
 |---|---|

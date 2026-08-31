@@ -57,8 +57,11 @@ fn hash_2d(ix: int, iy: int, seed: int) -> num
   let b = (iy + 8192) * 2971215073
   let c = (seed + 8192) * 433494437
   let h0 = (a + b + c) % p
-  let h1 = (h0 * 1103515245 + 12345) % p
-  let h2 = (h1 * 1103515245 + 12345) % p
+  // Squaring is what makes this a hash: an all-affine chain (multiply, add,
+  // mod) composes back down to a single affine map, which would make the
+  // lattice a linear ramp rather than noise. h0 < p, so h0*h0 stays in i64.
+  let h1 = (h0 * h0 + 1103515245) % p
+  let h2 = (h1 * h1 + 12345) % p
   float(h2) / float(p)
 end
 

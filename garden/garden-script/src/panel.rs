@@ -870,6 +870,12 @@ pub struct PanelHost {
     /// Installed into the query channel for the duration of each
     /// [`frame`](Self::frame), the same way `provider` is.
     query_provider: Option<Box<dyn QueryProvider>>,
+    /// Font source behind `font(name)` / `fonts()` and the on-demand half of
+    /// `text_width`, swapped into petal-ui's thread-local channel for the
+    /// duration of each [`frame`](Self::frame). A host that attaches one lets a
+    /// panel name any face the machine has; without one, only the faces the
+    /// host published eagerly are measurable.
+    font_source: Option<petal_ui::draw::FontProvider>,
     /// Live text of each `edit_view` region, keyed by region id — the host
     /// publishes the current buffer contents here each tick
     /// ([`set_edit_view_texts`](Self::set_edit_view_texts)) so `edit_view_text(id)`
@@ -941,6 +947,7 @@ impl PanelHost {
             mutation_results: HashMap::new(),
             provider: None,
             query_provider: None,
+            font_source: None,
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
@@ -998,6 +1005,7 @@ impl PanelHost {
             mutation_results: HashMap::new(),
             provider: None,
             query_provider: None,
+            font_source: None,
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
             start: Instant::now(),
@@ -1044,6 +1052,47 @@ impl PanelHost {
         let mono = petal_ui::draw::FontMetrics::proportional(mono, TEXT_ADVANCE_RATIO);
         let ui = petal_ui::draw::FontMetrics::proportional(ui, TEXT_ADVANCE_RATIO);
         bind_font_advances(&mut self.env, &mono, &ui);
+    }
+
+    /// Publish the advance table for one *variant* of a face the host already
+    /// named — its bold, its italic, its bold-italic.
+    ///
+    /// A face with a real bold cut draws bold wider than regular, and
+    /// `text_width` will keep reporting the regular width until this is called:
+    /// a centered bold label then lands off-center, and nothing about the
+    /// drawing looks wrong, which is what makes it expensive to find. Publish
+    /// only the variants the host can really draw — an unpublished one falls
+    /// back within its family, which is exactly how it will render.
+    pub fn set_font_variant_ratios(
+        &mut self,
+        font: &str,
+        weight: u16,
+        italic: bool,
+        ratios: Vec<f64>,
+    ) {
+        let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
+        petal_ui::draw::bind_font_variant_metrics(&mut self.env, font, weight, italic, &metrics);
+    }
+
+    /// Attach the font source behind a script's `font(name)` and `fonts()`,
+    /// and the lazy half of `text_width`: the host is asked to resolve and
+    /// measure a family only when a panel actually names one, which is what
+    /// makes "any font on this machine" affordable at all — there are hundreds,
+    /// and measuring one means shaping every glyph in it.
+    ///
+    /// Orthogonal to
+    /// [`set_font_advance_ratios_with_ui`](Self::set_font_advance_ratios_with_ui):
+    /// that publishes the host's own roles up front and still wins for those
+    /// names, so the eager and lazy answers can never disagree.
+    ///
+    /// What a source answers is memoized for the whole *process*, not per
+    /// host — the answer is a property of the machine's font files, and a
+    /// panel reloading at 60fps must not re-measure a face every frame. A test
+    /// that attaches a *different* source in the same binary is the one case
+    /// where that matters, and must call
+    /// [`petal_ui::draw::clear_font_cache`] first.
+    pub fn set_font_source(&mut self, source: petal_ui::draw::FontProvider) {
+        self.font_source = Some(source);
     }
 
     /// Attach the host-side data source the script reaches through
@@ -1168,6 +1217,7 @@ impl PanelHost {
         // even on a script error) by swapping the saved values back in.
         let saved = host_data::swap_data_provider(self.provider.take());
         let saved_q = query::swap_query_provider(self.query_provider.take());
+        let saved_f = petal_ui::draw::swap_font_provider(self.font_source.take());
         let saved_e = swap_edit_view_texts(std::mem::take(&mut self.edit_view_texts));
         let saved_ee = swap_edit_view_edits(std::mem::take(&mut self.edit_view_edits));
         // The persistent store is reachable only while this panel's own frame
@@ -1183,6 +1233,7 @@ impl PanelHost {
         }
         self.edit_view_edits = swap_edit_view_edits(saved_ee);
         self.edit_view_texts = swap_edit_view_texts(saved_e);
+        self.font_source = petal_ui::draw::swap_font_provider(saved_f);
         self.query_provider = query::swap_query_provider(saved_q);
         self.provider = host_data::swap_data_provider(saved);
         self.output.append(&mut self.env.take_output());
@@ -2738,6 +2789,107 @@ mod tests {
                 PanelCmd::plain_text("hi", 5, 6, 14, 255, 255, 255, 255),
             ]
         );
+    }
+
+    /// A host that can draw two families and measure them — the shape of the
+    /// answer Garden's real renderer gives, small enough to assert against.
+    struct StubFonts;
+
+    impl petal_ui::draw::FontSource for StubFonts {
+        fn resolve(&mut self, name: &str) -> Option<String> {
+            match name.trim().to_lowercase().as_str() {
+                "georgia" => Some("Georgia".to_string()),
+                "mono" => Some("JetBrains Mono".to_string()),
+                _ => None,
+            }
+        }
+
+        fn metrics(
+            &mut self,
+            family: &str,
+            _weight: u16,
+            _italic: bool,
+        ) -> Option<petal_ui::draw::FontMetrics> {
+            match family {
+                "Georgia" => Some(petal_ui::draw::FontMetrics::monospace(0.25)),
+                _ => None,
+            }
+        }
+
+        fn families(&mut self) -> Vec<String> {
+            vec!["Georgia".to_string(), "JetBrains Mono".to_string()]
+        }
+    }
+
+    /// The whole point of the font object: a script names a face the host
+    /// happens to have, decorates it, and both the draw command and the
+    /// measurement follow it.
+    #[test]
+    fn a_script_can_name_a_host_font_and_draw_in_it() {
+        let f = write_script(
+            "let title = font_bold(font(\"georgia\", 20))\n\
+             draw_text(\"hi\", {x: text_width(\"hi\", title), y: 6}, title)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(100, 80);
+        host.set_font_source(Box::new(StubFonts));
+        let cmds = host.frame(0.016, 0).unwrap();
+        assert_eq!(
+            cmds,
+            vec![PanelCmd::Text {
+                text: "hi".into(),
+                // Measured through the source: 2 chars × 20 × 0.25 = 10. The
+                // host's own default ratio would have given a different number,
+                // so this also proves `text_width` used the named face.
+                x: 10,
+                y: 6,
+                size: 20,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                // The host's canonical spelling, not the script's "georgia".
+                font: Some("Georgia".into()),
+                weight: 700,
+                italic: false,
+                spacing: 0.0,
+            }]
+        );
+    }
+
+    /// A panel written on a machine that has the font must still lay out
+    /// sensibly on one that doesn't: the name survives, and measurement falls
+    /// back to the host's default face rather than erroring.
+    #[test]
+    fn a_font_this_host_lacks_degrades_instead_of_failing() {
+        let f = write_script(
+            "let s = font(\"Papyrus\", 10)\n\
+             draw_text(s.font, {x: text_width(\"abcd\", s), y: 0}, s)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(100, 80);
+        host.set_font_source(Box::new(StubFonts));
+        host.set_font_advance_ratios(vec![0.5; 128]);
+        let cmds = host.frame(0.016, 0).unwrap();
+        let PanelCmd::Text { text, x, font, .. } = &cmds[0] else {
+            panic!("expected a text command, got {:?}", cmds[0]);
+        };
+        assert_eq!(text, "Papyrus", "the name a script wrote must survive");
+        assert_eq!(font.as_deref(), Some("Papyrus"));
+        assert_eq!(*x, 20, "4 chars × 10 × the host's default 0.5 ratio");
+    }
+
+    #[test]
+    fn fonts_lists_what_the_host_can_draw() {
+        let f = write_script("draw_text(join(fonts(), \"|\"), 0, 0, 14, 1, 2, 3)\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(100, 80);
+        host.set_font_source(Box::new(StubFonts));
+        let cmds = host.frame(0.016, 0).unwrap();
+        let PanelCmd::Text { text, .. } = &cmds[0] else {
+            panic!("expected a text command, got {:?}", cmds[0]);
+        };
+        assert_eq!(text, "Georgia|JetBrains Mono");
     }
 
     #[test]

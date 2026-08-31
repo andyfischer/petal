@@ -54,12 +54,65 @@ fn measured_ui_advance_ratios() -> &'static [f64] {
     RATIOS.get_or_init(garden_render::ui_ascii_advance_ratios)
 }
 
-/// The advance table a run in this role measures with, so the pen in
+/// …and for Inter **Bold**, which a `font: "ui"` run at `weight >= 600` is
+/// really shaped with. It is a separate table because it is a separate face:
+/// bold Inter is wider than regular Inter at every glyph.
+fn measured_ui_bold_advance_ratios() -> &'static [f64] {
+    static RATIOS: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
+    RATIOS.get_or_init(garden_render::ui_bold_ascii_advance_ratios)
+}
+
+/// The advance table a run in this style measures with, so the pen in
 /// [`push_text_run`] steps exactly as `text_width` says it will.
-fn advance_ratios_for(role: garden_render::FontRole) -> &'static [f64] {
-    match role {
-        garden_render::FontRole::Mono => measured_advance_ratios(),
-        garden_render::FontRole::Ui => measured_ui_advance_ratios(),
+///
+/// It has to resolve the same way the *script's* `text_width` did, or a spaced
+/// run would be laid out on one set of advances and measured on another. That
+/// means: the two embedded roles come from the tables Garden publishes eagerly
+/// (regular only — those are the entries `text_width` finds first, whatever
+/// weight the run asks for), and every other family from the same on-demand
+/// measurement [`SystemFonts`] answers with.
+fn advance_ratios_for(style: TextStyle) -> Vec<f64> {
+    let bold = style.weight >= 600;
+    match style.font {
+        // JetBrains Mono has one cut, so its bold is synthetic and its
+        // advances do not change with weight.
+        garden_render::fonts::FontId::MONO => measured_advance_ratios().to_vec(),
+        garden_render::fonts::FontId::UI if bold => measured_ui_bold_advance_ratios().to_vec(),
+        garden_render::fonts::FontId::UI => measured_ui_advance_ratios().to_vec(),
+        id => garden_render::fonts::advance_ratios(id, style.weight, style.italic),
+    }
+}
+
+/// Garden's answer to a panel script's `font(name)` / `fonts()`: the families
+/// installed on this machine, resolved and measured through
+/// [`garden_render::fonts`].
+///
+/// Attached to every [`PanelHost`] by [`adopt_font`]. It is asked nothing until
+/// a script names a face — enumerating the system fonts and measuring one are
+/// both expensive, and a panel that never calls `font()` should pay for
+/// neither.
+struct SystemFonts;
+
+impl petal_ui::draw::FontSource for SystemFonts {
+    fn resolve(&mut self, name: &str) -> Option<String> {
+        garden_render::fonts::family_of(garden_render::fonts::try_resolve(name)?)
+    }
+
+    fn metrics(
+        &mut self,
+        family: &str,
+        weight: u16,
+        italic: bool,
+    ) -> Option<petal_ui::draw::FontMetrics> {
+        let id = garden_render::fonts::try_resolve(family)?;
+        Some(petal_ui::draw::FontMetrics::proportional(
+            garden_render::fonts::advance_ratios(id, weight, italic),
+            FALLBACK_ADVANCE_RATIO,
+        ))
+    }
+
+    fn families(&mut self) -> Vec<String> {
+        garden_render::fonts::available_families()
     }
 }
 
@@ -91,7 +144,7 @@ fn push_text_run(
         });
         return;
     }
-    let ratios = advance_ratios_for(style.font);
+    let ratios = advance_ratios_for(style);
     let mut pen = x;
     for ch in text.chars() {
         let advance = ratios
@@ -132,6 +185,12 @@ fn adopt_font(host: &mut PanelHost) {
         measured_advance_ratios().to_vec(),
         measured_ui_advance_ratios().to_vec(),
     );
+    // Inter Bold is a real, wider cut, so `{font: "ui", weight: 700}` has to
+    // measure it rather than the regular table.
+    host.set_font_variant_ratios("ui", 700, false, measured_ui_bold_advance_ratios().to_vec());
+    // …and the lazy half: any *other* family this machine has, resolved and
+    // measured only when a script names one.
+    host.set_font_source(Box::new(SystemFonts));
 }
 
 /// A native read-only editor rendered inside one `text_view(...)` region of a
@@ -703,9 +762,13 @@ impl PanelView {
                     Some(PendingRequest::Query { kind, arg }) => {
                         if let Some(shared) = self.client_shared.as_ref() {
                             if let Some(err) = env.error {
-                                shared
-                                    .borrow_mut()
-                                    .resolve(kind, &arg, None, Some(err.message), None);
+                                shared.borrow_mut().resolve(
+                                    kind,
+                                    &arg,
+                                    None,
+                                    Some(err.message),
+                                    None,
+                                );
                             } else if let Ok(r) = env.result_as::<gpp::QueryResult>() {
                                 shared
                                     .borrow_mut()
@@ -2547,10 +2610,11 @@ impl PanelView {
                     g,
                     b,
                     a,
-                    // `ui` selects the embedded proportional face; every other
-                    // name resolves to the monospace one. The measurement side
-                    // resolves names the same way (an unbound role falls back to
-                    // the default metrics), so the two agree either way.
+                    // A family name, a role name (`mono`/`ui`), or a CSS-style
+                    // fallback list. It resolves against the fonts installed on
+                    // this machine; one that resolves to nothing degrades to the
+                    // monospace face, which is the same direction the
+                    // measurement side degrades in, so the two agree either way.
                     font,
                     weight,
                     italic,
@@ -2579,10 +2643,11 @@ impl PanelView {
                             weight: *weight,
                             italic: *italic,
                             spacing: *spacing,
-                            font: font.as_deref().map_or(
-                                garden_render::FontRole::Mono,
-                                garden_render::FontRole::from_name,
-                            ),
+                            font: font
+                                .as_deref()
+                                .map_or(garden_render::fonts::FontId::MONO, |name| {
+                                    garden_render::fonts::resolve(name)
+                                }),
                         },
                     );
                 }
@@ -3344,7 +3409,7 @@ edit_view_projection(1, {{
                         weight: 700,
                         italic: false,
                         spacing: 0.0,
-                        font: garden_render::FontRole::Mono,
+                        font: garden_render::fonts::FontId::MONO,
                     }
                 ),
                 (
@@ -3353,7 +3418,7 @@ edit_view_projection(1, {{
                         weight: 400,
                         italic: true,
                         spacing: 0.0,
-                        font: garden_render::FontRole::Mono,
+                        font: garden_render::fonts::FontId::MONO,
                     }
                 ),
                 ("plain".to_string(), TextStyle::default()),

@@ -13,8 +13,10 @@
 //!   host side. Hosts implement only rasterization.
 //! - [`text`]: the font-metrics registry behind that vocabulary — what a host
 //!   publishes about the faces it can render ([`text::bind_font_metrics`] and
-//!   friends) so `text_width` measures what will actually be drawn. Its
-//!   public items are re-exported from [`draw`].
+//!   friends) so `text_width` measures what will actually be drawn, plus the
+//!   optional [`text::FontSource`] a host attaches so a script can name *any*
+//!   face the machine has (`font("Helvetica")`) and have it measured on
+//!   demand. Its public items are re-exported from [`draw`].
 //! - the `ui` Petal module (Layer 1): interaction primitives written in Petal
 //!   (`hovered`, `clicked`, `button`, `list_update`, …), a panel-global focus
 //!   registry (`focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
@@ -81,7 +83,13 @@ pub const UI_VERSION: i64 = 1;
 ///   the load-state family (`load_state` … `draw_load`), and caret editing in
 ///   `text_field` (`{focus, text, caret, submitted}`, 5-argument
 ///   `draw_text_field(r, text, has, caret, style)`).
-pub const PRELUDE_LEVEL: u32 = 3;
+/// - 4 — font objects (2026-08-30): `font(name)` / `font(name, size)` and the
+///   decorations `font_size`, `font_weight`, `font_bold`, `font_italic`,
+///   `font_spacing`, `font_color`, plus the `fonts()` native listing the
+///   families the host can draw. Backed by the optional
+///   [`text::FontSource`] a host attaches, which is what lets a script name a
+///   face installed on the machine rather than only the host's own.
+pub const PRELUDE_LEVEL: u32 = 4;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

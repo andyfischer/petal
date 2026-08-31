@@ -1,0 +1,86 @@
+// Fonts — the same sentence set in every family this machine has installed,
+// as a scrolling list you can walk with the arrow keys.
+//
+//   panel("examples/panels/fonts.ptl")                    // in a layout
+//   petal-ui-run examples/panels/fonts.ptl --frames 30    // headless (empty:
+//                                                         // no host fonts)
+//
+// The point of the demo is `font(name)`: the face comes back as a *value*, so
+// the size and the decorations ride along with it and one object both measures
+// and draws. See garden/docs/petal-graphical-panels.md § Any font on the
+// machine.
+
+state selected = 0
+state scroll = 0
+state families = []
+
+// `fonts()` reads the machine's font database on its first call, so it is
+// fetched once and kept rather than asked for every frame.
+if len(families) == 0 then
+  families = fonts()
+end
+
+let SAMPLE = "Hamburgefonstiv 0123"
+let ROW_H = 62
+let t = ui_theme()
+
+clear(t.bg.r, t.bg.g, t.bg.b)
+
+let full = rect(0, 0, screen_width(), screen_height())
+let header = cut_top(full, 34)
+let body = full
+
+// ── Header ────────────────────────────────────────────────────────────────
+draw_text(
+  str(len(families)) ++ " fonts",
+  {x: 12, y: 9},
+  {size: t.font_md, color: t.text, weight: 700}
+)
+draw_text_right(
+  "↑↓ to browse",
+  screen_width() - 12,
+  11,
+  {size: t.font_sm, color: t.dim}
+)
+draw_line(0, 33, screen_width(), 33, t.border.r, t.border.g, t.border.b)
+
+if len(families) == 0 then
+  // A host that publishes no font list — every petal-ui embedder but Garden,
+  // and Garden's own headless `petal-ui-run`.
+  empty_state(body, "No fonts", "This host publishes no font list.")
+else
+
+// ── Selection ─────────────────────────────────────────────────────────────
+let rows = max(1, body.h / ROW_H)
+if key_pressed("down") then selected = min(len(families) - 1, selected + 1) end
+if key_pressed("up") then selected = max(0, selected - 1) end
+scroll = ensure_visible(scroll, selected, rows)
+
+// ── Rows ──────────────────────────────────────────────────────────────────
+for i in range(0, min(rows, len(families) - scroll)) do
+  let index = scroll + i
+  let name = families[index]
+  let r = rect(body.x, body.y + i * ROW_H, body.w, ROW_H)
+
+  if index == selected then
+    draw_rect(r, t.selection)
+  elsif hovered(r) then
+    draw_rect(r, mix(t.bg, t.text, 0.06))
+  end
+  if clicked(r) then selected = index end
+
+  // The family, in Garden's own face — a label, not a specimen.
+  draw_text(name, {x: r.x + 12, y: r.y + 8}, {size: t.font_sm, color: t.dim})
+
+  // …and the specimen, in the family itself. One object measures and draws,
+  // so the width used to place the ellipsis is the width that gets rendered.
+  let specimen = font(name, 24)
+  draw_text(
+    ellipsize(SAMPLE, r.w - 24, specimen),
+    {x: r.x + 12, y: r.y + 26},
+    font_color(specimen, t.text)
+  )
+end
+
+draw_scrollbar(body, len(families), rows, scroll)
+end

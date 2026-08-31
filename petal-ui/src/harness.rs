@@ -45,6 +45,10 @@ pub struct Headless {
     /// Host data source for the `host_data` native, swapped into the
     /// thread-local channel around each run (see [`set_data_provider`](Self::set_data_provider)).
     provider: Option<DataProvider>,
+    /// Font source for the `font` / `fonts` / `text_width` natives, swapped in
+    /// around each run the same way (see
+    /// [`set_font_source`](Self::set_font_source)).
+    fonts: Option<draw::FontProvider>,
 }
 
 impl Headless {
@@ -102,6 +106,7 @@ impl Headless {
             commands: Vec::new(),
             result: Value::Nil,
             provider: None,
+            fonts: None,
         })
     }
 
@@ -111,6 +116,18 @@ impl Headless {
     /// provider around `env.run`.
     pub fn set_data_provider(&mut self, provider: DataProvider) {
         self.provider = Some(provider);
+    }
+
+    /// Attach a font source for the `font(name)` / `fonts()` natives and the
+    /// on-demand half of `text_width`, so widget logic that names a system
+    /// face is testable with no renderer attached.
+    ///
+    /// Answers from a source are memoized *per process*, not per `Headless`,
+    /// so attaching a second source in the same test binary would otherwise
+    /// see the first one's answers; this clears that cache.
+    pub fn set_font_source(&mut self, fonts: draw::FontProvider) {
+        draw::clear_font_cache();
+        self.fonts = Some(fonts);
     }
 
     /// Feed one input event (applied to the *next* frame's snapshot).
@@ -180,7 +197,9 @@ impl Headless {
         // Make the data provider reachable from the `host_data` native for this
         // run, then take it back (with any cache it updated) afterwards.
         let saved = host_data::swap_data_provider(self.provider.take());
+        let saved_fonts = draw::swap_font_provider(self.fonts.take());
         let run = self.env.run(self.stack_id);
+        self.fonts = draw::swap_font_provider(saved_fonts);
         self.provider = host_data::swap_data_provider(saved);
         self.result = run?;
         self.commands = draw::take_draw_commands(&mut self.env);

@@ -65,6 +65,7 @@ let _native_rect_outline = draw_rect_outline
 let _native_line = draw_line
 let _native_circle = draw_circle
 let _native_text = draw_text
+let _native_font = font
 
 // Every primitive takes an optional trailing alpha (0–255, 255 = opaque).
 // Lines and outlines also take an optional trailing stroke `width`. Rounded
@@ -184,6 +185,69 @@ end
 //   draw_text("#482", {x: 60, y: 20}, {size: 15, color: FG, weight: 700})
 export fn draw_text(text, pos, style)
   _native_text(text, pos.x, pos.y, style)
+end
+
+// ── Fonts ─────────────────────────────────────────────────────────────────
+
+// `font(name)` names a face as an *object* rather than a string, so the size
+// and decorations that belong with it can travel with it:
+//
+//   let title = font_bold(font("Helvetica Neue", 22))
+//   draw_text("Chapter One", {x: 20, y: 40}, title)
+//   let w = text_width("Chapter One", title)
+//
+// A font object is an ordinary style record — the same `{size, color, font,
+// weight, italic, spacing}` `draw_text`, `text_width` and every widget `style`
+// argument already take — so it drops into all of them, and merges with a
+// style the usual way (`{...title, color: FG}`). That is the point: one value
+// describes a run's whole appearance, so what you measure is what you draw.
+//
+// `name` is a family name (`"Helvetica Neue"`), one of the host's role names
+// (`"mono"`, `"ui"`), or a CSS-style fallback list (`"Menlo, mono"`). The host
+// resolves it against the fonts actually installed; one it cannot draw keeps
+// the name as written and falls back to the host's default face for both
+// measuring and drawing, so a script written on one machine still lays out
+// sensibly on another. `fonts()` lists what this host offers.
+export fn font(name)
+  _native_font(name)
+end
+
+// `font(name, size)` — the common case, in one call.
+export fn font(name, size)
+  {..._native_font(name), size: size}
+end
+
+// The decorations. Each returns a *new* font object with one field set, so
+// they compose and never mutate the font they were given:
+//   let body = font("Inter", 14)
+//   let emphasis = font_italic(font_color(body, ACCENT))
+export fn font_size(f, size)
+  {...f, size: size}
+end
+
+// CSS numeric weight, 100–900. A host draws the nearest cut the family ships,
+// synthesizing bold only for a family that has none.
+export fn font_weight(f, w)
+  {...f, weight: w}
+end
+
+export fn font_bold(f)
+  {...f, weight: 700}
+end
+
+export fn font_italic(f)
+  {...f, italic: true}
+end
+
+// Letter-spacing in pixels, added after each glyph.
+export fn font_spacing(f, px)
+  {...f, spacing: px}
+end
+
+// The color a run in this font draws in — a `{r, g, b}` (or `{r, g, b, a}`)
+// record, the same shape every other draw call takes.
+export fn font_color(f, c)
+  {...f, color: c}
 end
 
 // ── Text helpers ──────────────────────────────────────────────────────────

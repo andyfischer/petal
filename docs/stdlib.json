@@ -2306,7 +2306,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 824
+        "line": 830
       }
     },
     {
@@ -2331,7 +2331,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 815
+        "line": 821
       }
     },
     {
@@ -2372,7 +2372,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 837
+        "line": 843
       }
     },
     {
@@ -2417,7 +2417,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 848
+        "line": 854
       }
     },
     {
@@ -2458,7 +2458,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 878
+        "line": 884
       }
     },
     {
@@ -2499,7 +2499,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 924
+        "line": 930
       }
     },
     {
@@ -2528,7 +2528,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1179
+        "line": 1185
       }
     },
     {
@@ -2565,7 +2565,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 934
+        "line": 940
       }
     },
     {
@@ -2602,7 +2602,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 945
+        "line": 951
       }
     },
     {
@@ -2643,7 +2643,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 972
+        "line": 978
       }
     },
     {
@@ -2684,7 +2684,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 981
+        "line": 987
       }
     },
     {
@@ -2733,7 +2733,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1007
+        "line": 1013
       }
     },
     {
@@ -2782,7 +2782,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1039
+        "line": 1045
       }
     },
     {
@@ -2811,7 +2811,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1100
+        "line": 1106
       }
     },
     {
@@ -2840,7 +2840,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1126
+        "line": 1132
       }
     },
     {
@@ -2877,7 +2877,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1150
+        "line": 1156
       }
     },
     {
@@ -2902,7 +2902,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1206
+        "line": 1212
       }
     },
     {
@@ -2931,7 +2931,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1234
+        "line": 1240
       }
     },
     {
@@ -2943,7 +2943,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1241
+        "line": 1247
       }
     },
     {
@@ -2964,7 +2964,36 @@
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
-        "line": 425
+        "line": 593
+      }
+    },
+    {
+      "name": "font",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/text.rs",
+        "line": 418
+      }
+    },
+    {
+      "name": "fonts",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "petal-ui/src/text.rs",
+        "line": 433
       }
     },
     {
@@ -2985,7 +3014,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1247
+        "line": 1253
       }
     },
     {
@@ -3002,7 +3031,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1261
+        "line": 1267
       }
     },
     {
@@ -3014,7 +3043,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1268
+        "line": 1274
       }
     },
     {
@@ -3039,7 +3068,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1274
+        "line": 1280
       }
     },
     {

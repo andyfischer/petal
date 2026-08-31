@@ -10,6 +10,9 @@
 //! default font when the host lacks a face, so a script measures the same
 //! metrics that will be rasterized.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
 use petal::value::Value;
@@ -291,6 +294,171 @@ fn named_font_metrics(
     None
 }
 
+/// What a host can tell a script about the faces it can draw.
+///
+/// The [`bind_font_metrics`] registry answers for the handful of faces a host
+/// publishes up front — its roles, its embedded faces. That is the wrong shape
+/// for "any font installed on this machine": there can be hundreds, measuring
+/// one means shaping every glyph in it, and a script typically wants two. So a
+/// host that can reach a real font database attaches a `FontSource` instead
+/// and is asked, lazily, only about the faces a script actually names.
+///
+/// The pre-existing registry still wins when it has an answer, so a host can
+/// keep publishing its default roles eagerly and let the source cover the rest.
+/// A host with no source at all is unchanged: `font(name)` hands back the name
+/// it was given, and measuring it falls through to the default font.
+pub trait FontSource {
+    /// The canonical family name for `name` — the spelling this host will
+    /// shape with — or `None` if it cannot draw that family. `name` may be a
+    /// CSS-style fallback list (`"Helvetica, ui"`).
+    ///
+    /// Returning the *canonical* name is what keeps measuring and drawing in
+    /// step: it is the name that goes into the style record, so the same
+    /// string reaches [`metrics`](Self::metrics) here and the rasterizer
+    /// later.
+    fn resolve(&mut self, name: &str) -> Option<String>;
+
+    /// ASCII advance ratios for one cut of a resolved family. `None` when the
+    /// host cannot measure it, which degrades to the default font's metrics.
+    fn metrics(&mut self, family: &str, weight: u16, italic: bool) -> Option<FontMetrics>;
+
+    /// Every family a script could name here, for a font picker or a
+    /// diagnostic. May be empty.
+    fn families(&mut self) -> Vec<String>;
+}
+
+/// A host's attached [`FontSource`], owned between frames and swapped into the
+/// thread-local channel for the duration of `env.run` — the same shape as
+/// [`crate::host_data::swap_data_provider`], and for the same reason: natives
+/// are plain fn pointers with no place to hang host state.
+pub type FontProvider = Box<dyn FontSource>;
+
+thread_local! {
+    static FONT_PROVIDER: RefCell<Option<FontProvider>> = const { RefCell::new(None) };
+    /// Measurements already taken from the provider this process, keyed by
+    /// `(family, weight, italic)`. Measuring a face is expensive and its
+    /// answer cannot change while the process runs, so it is remembered
+    /// across frames — a `text_width` in a 60fps draw loop must not re-measure
+    /// a font every frame. `None` records "asked, and the host had no answer",
+    /// so a miss is not re-asked either.
+    static FONT_METRICS_CACHE: RefCell<HashMap<(String, u16, bool), Option<FontMetrics>>> =
+        RefCell::new(HashMap::new());
+    /// Names already resolved through the provider, for the same reason.
+    static FONT_NAME_CACHE: RefCell<HashMap<String, Option<String>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Install `provider` as the font source the `font` / `fonts` / `text_width`
+/// natives consult, returning whatever was there. Hosts swap theirs in around
+/// `env.run` and take it back afterwards, so a panic in the script cannot
+/// strand it.
+pub fn swap_font_provider(provider: Option<FontProvider>) -> Option<FontProvider> {
+    FONT_PROVIDER.with(|slot| std::mem::replace(&mut *slot.borrow_mut(), provider))
+}
+
+/// Run `f` with the provider borrowed out of the channel, or return `None` if
+/// no host attached one. The provider is moved out for the call and put back
+/// afterwards, so a provider that itself calls back into Petal cannot alias it.
+fn with_font_provider<T>(f: impl FnOnce(&mut dyn FontSource) -> T) -> Option<T> {
+    let mut provider = swap_font_provider(None)?;
+    let out = f(provider.as_mut());
+    swap_font_provider(Some(provider));
+    Some(out)
+}
+
+/// The canonical family name for `spec`, via the host's font source. `None`
+/// when there is no source, or the source cannot draw any name in `spec`.
+fn resolve_font_name(spec: &str) -> Option<String> {
+    if let Some(hit) = FONT_NAME_CACHE.with(|c| c.borrow().get(spec).cloned()) {
+        return hit;
+    }
+    let resolved = with_font_provider(|p| p.resolve(spec)).flatten();
+    FONT_NAME_CACHE.with(|c| {
+        c.borrow_mut().insert(spec.to_string(), resolved.clone());
+    });
+    resolved
+}
+
+/// Metrics for one cut of `family` from the host's font source, memoized.
+fn provider_font_metrics(family: &str, weight: u16, italic: bool) -> Option<FontMetrics> {
+    let key = (family.to_string(), weight, italic);
+    if let Some(hit) = FONT_METRICS_CACHE.with(|c| c.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let metrics = with_font_provider(|p| p.metrics(family, weight, italic)).flatten();
+    FONT_METRICS_CACHE.with(|c| {
+        c.borrow_mut().insert(key, metrics.clone());
+    });
+    metrics
+}
+
+/// Forget everything learned from a font source. Only useful in tests, where
+/// one process attaches several different sources and must not see an earlier
+/// one's answers.
+pub fn clear_font_cache() {
+    FONT_NAME_CACHE.with(|c| c.borrow_mut().clear());
+    FONT_METRICS_CACHE.with(|c| c.borrow_mut().clear());
+}
+
+/// `font(name) -> style`: a **font object** — the style record `draw_text`,
+/// `draw_text_center`, `text_width` and the widget `style` arguments all take,
+/// carrying nothing but the face.
+///
+/// Naming a face by object rather than by string is what lets a size, a
+/// weight, a slant or a letter-spacing travel with it: the prelude's
+/// `font_size` / `font_bold` / `font_italic` / `font_spacing` / `font_color`
+/// return the same record with one more field set, so one value describes the
+/// whole appearance of a run and measuring it cannot drift from drawing it.
+///
+/// The recorded name is the host's *canonical* spelling when it recognizes the
+/// family, so `font("helvetica")` and `font("Helvetica")` produce the same
+/// object and the rasterizer gets a name it can match. A face this host cannot
+/// draw keeps the name as written and measures with the default font — the
+/// same direction rendering degrades in.
+pub(crate) fn native_font(state: &mut PetalCxt) -> NativeResult {
+    let name = state.get_string(1)?;
+    let resolved = resolve_font_name(&name).unwrap_or(name);
+    let id = state.heap_mut().alloc_string(resolved);
+    let mut fields = indexmap::IndexMap::new();
+    fields.insert("font".to_string(), Value::String(id));
+    let map = state.heap_mut().alloc_map(fields);
+    state.push_value(Value::Map(map));
+    Ok(1)
+}
+
+/// `fonts() -> [string]`: the family names this host can draw, for a font
+/// picker. Empty when the host has attached no [`FontSource`] — a script
+/// should treat that as "this host offers only its own faces", not as an
+/// error.
+pub(crate) fn native_fonts(state: &mut PetalCxt) -> NativeResult {
+    let names = with_font_provider(|p| p.families()).unwrap_or_default();
+    let items: Vec<Value> = names
+        .into_iter()
+        .map(|n| Value::String(state.heap_mut().alloc_string(n)))
+        .collect();
+    state.push_list(items);
+    Ok(1)
+}
+
+/// [`named_font_metrics`] against the host's [`FontSource`] instead of the
+/// published registry: the first name in the fallback list the host can both
+/// resolve and measure wins.
+fn source_font_metrics(spec: &str, weight: u16, italic: bool) -> Option<FontMetrics> {
+    for name in spec.split(',') {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(family) = resolve_font_name(name) else {
+            continue;
+        };
+        if let Some(metrics) = provider_font_metrics(&family, weight, italic) {
+            return Some(metrics);
+        }
+    }
+    None
+}
+
 /// One text style, as a script writes it: a record of any subset of
 /// `{size, color, font, weight, italic, spacing}`. Missing fields take the
 /// defaults that describe every pre-typography `draw_text` — the host's own
@@ -450,8 +618,13 @@ pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
         }
         None => None,
     };
+    // Registry first (what the host published up front), then its font source
+    // (measured on demand), then the default font. A host that publishes a
+    // face eagerly and also attaches a source gets the eager answer, so the
+    // two can never disagree about the same name.
     let metrics = match &spec {
         Some(spec) => named_font_metrics(state, spec, style.weight, style.italic)
+            .or_else(|| source_font_metrics(spec, style.weight, style.italic))
             .unwrap_or_else(|| default_font_metrics(state)),
         None => default_font_metrics(state),
     };
@@ -544,6 +717,189 @@ mod tests {
             .run_source("text_width(\"iii\", 10, \"serif\")")
             .expect("run");
         assert_eq!(v, Value::Int(6));
+    }
+
+    /// A stand-in for a host with a real font database: two families it can
+    /// draw, one of which has a wider bold cut, and nothing else.
+    struct TestFonts;
+
+    impl FontSource for TestFonts {
+        fn resolve(&mut self, name: &str) -> Option<String> {
+            // Case-folded, and answers with the canonical spelling — the two
+            // properties `font()` promises about the name it records.
+            match name.trim().to_lowercase().as_str() {
+                "helvetica" => Some("Helvetica".to_string()),
+                "courier" => Some("Courier".to_string()),
+                _ => None,
+            }
+        }
+
+        fn metrics(&mut self, family: &str, weight: u16, _italic: bool) -> Option<FontMetrics> {
+            match (family, weight) {
+                ("Helvetica", 700) => Some(FontMetrics::monospace(0.8)),
+                ("Helvetica", _) => Some(FontMetrics::monospace(0.5)),
+                ("Courier", _) => Some(FontMetrics::monospace(0.6)),
+                _ => None,
+            }
+        }
+
+        fn families(&mut self) -> Vec<String> {
+            vec!["Courier".to_string(), "Helvetica".to_string()]
+        }
+    }
+
+    /// Run `source` with [`TestFonts`] attached, the way a host wraps its own
+    /// `env.run`.
+    fn with_test_fonts(env: &mut Env, source: &str) -> Value {
+        clear_font_cache();
+        let saved = swap_font_provider(Some(Box::new(TestFonts)));
+        let out = env.run_source(source);
+        swap_font_provider(saved);
+        clear_font_cache();
+        out.expect("run")
+    }
+
+    #[test]
+    fn font_returns_a_style_record_naming_the_canonical_family() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        crate::register_prelude(&mut env);
+        // However it was spelled, the object carries the host's spelling — the
+        // one the rasterizer will match.
+        let v = with_test_fonts(&mut env, r#"font("helvetica").font"#);
+        let Value::String(id) = v else {
+            panic!("font() must record a family name, got {v:?}");
+        };
+        assert_eq!(env.heap().get_string(id), "Helvetica");
+    }
+
+    #[test]
+    fn a_font_this_host_cannot_draw_keeps_its_name() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        crate::register_prelude(&mut env);
+        let v = with_test_fonts(&mut env, r#"font("Papyrus").font"#);
+        let Value::String(id) = v else {
+            panic!("font() must always produce a record with a name");
+        };
+        assert_eq!(env.heap().get_string(id), "Papyrus");
+    }
+
+    /// The reason `font()` returns an object instead of a string: the size and
+    /// the decorations ride along, and one value both measures and draws.
+    #[test]
+    fn a_font_object_carries_size_and_decorations_into_measuring_and_drawing() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        crate::register_prelude(&mut env);
+
+        // Regular: 4 chars × 20 × 0.5 = 40. Bold is a real, wider cut in this
+        // host, so measuring it must not report the regular's width.
+        let regular = with_test_fonts(&mut env, r#"text_width("abcd", font("Helvetica", 20))"#);
+        assert_eq!(regular, Value::Int(40));
+        let bold = with_test_fonts(
+            &mut env,
+            r#"text_width("abcd", font_bold(font("Helvetica", 20)))"#,
+        );
+        assert_eq!(bold, Value::Int(64), "4 × 20 × 0.8");
+
+        // …and the same object drawn emits exactly those axes.
+        with_test_fonts(
+            &mut env,
+            r#"draw_text("abcd", {x: 3, y: 5},
+                 font_spacing(font_italic(font_bold(font("Helvetica", 20))), 2))"#,
+        );
+        let cmds = take_draw_commands(&mut env);
+        assert_eq!(
+            cmds[0],
+            DrawCommand::Text {
+                text: "abcd".into(),
+                x: 3,
+                y: 5,
+                size: 20,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                font: Some("Helvetica".into()),
+                weight: 700,
+                italic: true,
+                spacing: 2.0,
+            }
+        );
+    }
+
+    #[test]
+    fn the_decorations_do_not_mutate_the_font_they_are_given() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        crate::register_prelude(&mut env);
+        let v = with_test_fonts(
+            &mut env,
+            r#"
+            let body = font("Helvetica", 20)
+            let heading = font_size(font_bold(body), 40)
+            [text_width("abcd", body), text_width("abcd", heading)]
+            "#,
+        );
+        let Value::List(id) = v else {
+            panic!("expected a list, got {v:?}");
+        };
+        // body is still 20px regular (40), heading is 40px bold (4 × 40 × 0.8).
+        assert_eq!(
+            env.heap().get_list(id),
+            &[Value::Int(40), Value::Int(128)][..]
+        );
+    }
+
+    #[test]
+    fn text_width_falls_through_to_the_font_source_and_back_to_the_default() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_metrics(&mut env, 0.6);
+        // Bound in the registry: the eager answer wins over the source's.
+        bind_font_metrics(&mut env, "Helvetica", &FontMetrics::monospace(0.1));
+        let published = with_test_fonts(&mut env, r#"text_width("abcd", 10, "Helvetica")"#);
+        assert_eq!(published, Value::Int(4));
+
+        // Not in the registry: measured through the source.
+        let measured = with_test_fonts(&mut env, r#"text_width("abcd", 10, "Courier")"#);
+        assert_eq!(measured, Value::Int(24));
+
+        // Neither: the default font, rather than an error.
+        let fallback = with_test_fonts(&mut env, r#"text_width("abcd", 10, "Papyrus")"#);
+        assert_eq!(fallback, Value::Int(24));
+
+        // A fallback list skips past the name this host lacks.
+        let listed = with_test_fonts(&mut env, r#"text_width("abcd", 10, "Papyrus, Courier")"#);
+        assert_eq!(listed, Value::Int(24));
+    }
+
+    #[test]
+    fn fonts_lists_what_the_host_offers_and_is_empty_without_a_source() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        let v = with_test_fonts(&mut env, "fonts()");
+        let Value::List(id) = v else {
+            panic!("fonts() must return a list, got {v:?}");
+        };
+        let names: Vec<String> = env
+            .heap()
+            .get_list(id)
+            .iter()
+            .map(|v| match v {
+                Value::String(id) => env.heap().get_string(*id).to_string(),
+                other => panic!("expected strings, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(names, vec!["Courier".to_string(), "Helvetica".to_string()]);
+
+        // A host with no font source offers none — not an error.
+        let v = env.run_source("fonts()").expect("run");
+        let Value::List(id) = v else {
+            panic!("fonts() must return a list even with no source");
+        };
+        assert!(env.heap().get_list(id).is_empty());
     }
 
     #[test]

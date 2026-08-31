@@ -438,9 +438,52 @@ time, so shaping the ASCII range once is enough), but nothing about the
 *setting* is process-wide: an embedder with a different face, or a test with a
 made-up table, tells its own hosts and disturbs no one else's.
 
-A face can be named — `text_width(s, size, "mono")` — for portability with
-other petal-ui hosts; Garden has one embedded face, so both `mono` and `ui`
-resolve to it and an unknown name degrades to it too.
+A face can be named — `text_width(s, size, "mono")` — and Garden resolves the
+name against the fonts actually installed (see [Any font on the
+machine](#any-font-on-the-machine)). A name it can't resolve degrades to the
+monospace face, on both the measuring and the drawing side.
+
+### Any font on the machine
+
+`font(name)` returns the face as a value, so its size and decorations travel
+with it:
+
+```petal
+let body = font("Helvetica Neue", 15)
+let title = font_size(font_bold(body), 28)
+
+draw_text("Chapter One", {x: 20, y: 40}, title)
+let w = text_width("Chapter One", title)      // measures that exact cut
+```
+
+`name` is a family name, one of the two role names (`mono`, `ui`), or a
+CSS-style fallback list (`"Menlo, mono"`). Garden resolves it against every
+family the machine has installed, case-insensitively, and records the system's
+own spelling — so `font("helvetica")` and `font("Helvetica")` are the same
+object, and the name in the draw command is one the shaper will match. A family
+this machine lacks keeps the name as written and falls back to the monospace
+face for both measuring and drawing, so a panel written on one machine still
+lays out sensibly on another.
+
+A font object *is* a style record (next section), so it goes anywhere one does
+and merges the same way: `{...title, color: palette().accent}`. The decorations
+— `font_size`, `font_weight`, `font_bold`, `font_italic`, `font_spacing`,
+`font_color` — each return a new object rather than mutating the one they were
+given.
+
+`fonts()` lists the families available, for a picker.
+
+Discovery and measurement are **lazy and process-wide**: the font directories
+are not scanned until a panel first calls `font()` or `fonts()`, and a family's
+advances are measured once and then reused by every panel and every frame.
+Naming a face costs one measurement, not one per frame — but it is a real
+measurement, so a panel that cycles through hundreds of families will feel it.
+
+The two embedded roles are pinned to the cuts Garden ships (`mono` → JetBrains
+Mono Regular, `ui` → Inter Regular/Bold) even when the machine has a family of
+the same name installed. The editor's entire column arithmetic is derived from
+the embedded advances, so `mono` has to mean the file in the binary and nothing
+else.
 
 ### Styled text
 
@@ -460,23 +503,28 @@ with omitted ones meaning plain text. What Garden does with each:
 | Axis | In a Garden pane |
 |---|---|
 | `size` | honored per run |
-| `font` | **two** embedded faces: `"ui"` selects proportional Inter, everything else (`mono`, `serif`, a concrete family, an unknown name) resolves to JetBrains Mono. The measurement side resolves names the same way, so what you measure is what you get |
+| `font` | any family installed on the machine, plus the two embedded faces as `mono` (JetBrains Mono) and `ui` (proportional Inter); CSS-style fallback lists work, and an unresolvable name degrades to JetBrains Mono. The measurement side resolves names the same way, so what you measure is what you get. `font(name)` is the same thing as a value — see [Any font on the machine](#any-font-on-the-machine) |
 | `italic` | passed to cosmic-text; resolves when a matching face is available (no italic cut is embedded, so this is currently upright) |
-| `weight` | **real** on `font: "ui"` — Inter Bold is embedded, so `weight >= 600` shapes the Bold cut with its own advances. Still **synthetic** on the monospace face, where only Regular is embedded: a heavy run is drawn twice at a size-proportional sub-pixel offset, which thickens without changing advances, so it measures regular and layout stays correct |
+| `weight` | **real** on a system family (its own cuts, its own advances) and on `font: "ui"` (Inter Bold is embedded, so `weight >= 600` shapes the Bold cut). **Synthetic** on the monospace face, where only Regular is embedded: a heavy run is drawn twice at a size-proportional sub-pixel offset, which thickens without changing advances, so it measures regular and layout stays correct |
 | `spacing` | honored — the host places each glyph, with the pen matching `text_width` exactly |
 
-Embedding a mono Bold face would light `weight` up there too, with no protocol change.
+Embedding a mono Bold face would light `weight` up there too, with no protocol
+change — or a panel can just name a system monospace family that has one.
 
-### Measuring the UI face
+### Measuring a named face
 
 `text_width(s, size, "ui")` sums a **separate advance table**, because Inter is
 proportional — `i` and `W` are nowhere near the same width, so the single ratio
-that fully describes a monospace face does not describe this one. The host
-publishes both tables (`PanelHost::set_font_advance_ratios_with_ui`), so
-centering and right-alignment are exact in either face. Measure in the face you
-draw in: measuring a `font: "ui"` run without the third argument sums monospace
-advances and the result lands visibly wrong while nothing about the drawing
-looks broken.
+that fully describes a monospace face does not describe this one. The same goes
+for every system family. Garden publishes the two embedded tables up front
+(`PanelHost::set_font_advance_ratios_with_ui`) and measures any other family on
+demand (`PanelHost::set_font_source`), so centering and right-alignment are
+exact in every face.
+
+Measure in the face you draw in. Measuring a `font: "ui"` run without the third
+argument sums monospace advances, and the result lands visibly wrong while
+nothing about the drawing looks broken. Passing a font object to both
+`draw_text` and `text_width` is the way not to have this problem.
 
 ```petal
 let TITLE = {size: 22, weight: 700, font: "ui", color: palette().text}

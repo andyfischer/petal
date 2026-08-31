@@ -1,0 +1,240 @@
+// terrain.ptl — procedural terrain generator (console).
+//
+// Builds a heightmap from multi-octave value noise (fractal brownian motion:
+// each octave doubles the frequency and halves the amplitude), normalizes it
+// to 0..1, and renders it as ASCII with bands for deep water, shallow water,
+// beach, grass, forest, rock and snow. A histogram of the terrain-type
+// distribution is printed alongside the map so the output is checkable
+// numerically. Fully deterministic — the noise is a pure integer hash of the
+// lattice coordinates, so no PRNG and no --seed flag are involved.
+//
+// Run:   ./ts/bin/run-petal.ts run examples/challenge/terrain.ptl
+// Check: ./ts/bin/run-petal.ts check --strict examples/challenge/terrain.ptl
+
+// ---------------------------------------------------------------- knobs ----
+
+config let map_width = 78
+config let map_height = 28
+config let octaves = 5
+config let lacunarity = 2.0
+config let persistence = 0.5
+config let base_scale = 0.07
+config let noise_seed = 1337
+config let sea_level = 0.42
+config let island_falloff = 0.55
+
+// ---------------------------------------------------------------- bands ----
+
+class Band
+  name: string,
+  glyph: string,
+  ceiling: num,
+end
+
+// `ceiling` is the exclusive upper bound of the band, expressed as a fraction
+// of the full 0..1 height range. Sea level splits water from land, so the
+// water bands are placed relative to it and the land bands above it.
+fn terrain_bands(sea: num) -> list
+  [
+    Band("deep water", "~", sea * 0.55),
+    Band("shallow water", "-", sea),
+    Band("beach", ".", sea + 0.05),
+    Band("grass", "\"", sea + 0.22),
+    Band("forest", "*", sea + 0.38),
+    Band("rock", "^", sea + 0.50),
+    Band("snow", "#", 1.01),
+  ]
+end
+
+// ---------------------------------------------------------------- noise ----
+
+// A 32-bit-ish integer hash of a lattice point. Petal has no bitwise
+// operators, so this is a modular-multiply mixer; every product below stays
+// under i64 range, which the compiler enforces at runtime.
+fn hash_2d(ix: int, iy: int, seed: int) -> num
+  let p = 2147483647
+  let a = (ix + 8192) * 1836311903
+  let b = (iy + 8192) * 2971215073
+  let c = (seed + 8192) * 433494437
+  let h0 = (a + b + c) % p
+  let h1 = (h0 * 1103515245 + 12345) % p
+  let h2 = (h1 * 1103515245 + 12345) % p
+  float(h2) / float(p)
+end
+
+fn smoothstep(t: num) -> num
+  t * t * (3.0 - 2.0 * t)
+end
+
+fn lerp(a: num, b: num, t: num) -> num
+  a + (b - a) * t
+end
+
+// Bilinearly interpolated value noise over the integer lattice.
+fn value_noise(x: num, y: num, seed: int) -> num
+  let ix = int(floor(x))
+  let iy = int(floor(y))
+  let fx = smoothstep(x - float(ix))
+  let fy = smoothstep(y - float(iy))
+  let top = lerp(hash_2d(ix, iy, seed), hash_2d(ix + 1, iy, seed), fx)
+  let bot = lerp(hash_2d(ix, iy + 1, seed), hash_2d(ix + 1, iy + 1, seed), fx)
+  lerp(top, bot, fy)
+end
+
+// Fractal brownian motion: `octaves` layers of value noise, frequency scaled
+// by `lacunarity` and amplitude by `persistence` at each step. The result is
+// divided by the total amplitude so it stays inside 0..1.
+fn fbm(x: num, y: num) -> num
+  var freq = 1.0
+  var amp = 1.0
+  var total = 0.0
+  var norm = 0.0
+  for o in range(0, octaves) do
+    set total = get total
+    + get amp * value_noise(x * get freq, y * get freq, noise_seed + o * 101)
+    set norm = get norm + get amp
+    set amp = get amp * persistence
+    set freq = get freq * lacunarity
+  end
+  get total / get norm
+end
+
+// Radial falloff so the map reads as an island rather than as a noise tile:
+// 1.0 at the centre, dropping toward the edges.
+fn island_mask(x: int, y: int) -> num
+  let nx = (float(x) / float(map_width - 1)) * 2.0 - 1.0
+  let ny = (float(y) / float(map_height - 1)) * 2.0 - 1.0
+  // The map is twice as wide as tall in character cells, so squash x to keep
+  // the island round on screen.
+  let d = sqrt(nx * nx * 0.55 + ny * ny)
+  max(0.0, 1.0 - island_falloff * d * d * 1.6)
+end
+
+// -------------------------------------------------------------- heightmap --
+
+fn raw_heightmap() -> list
+  for y in range(0, map_height) do
+    for x in range(0, map_width) do
+      let n = fbm(float(x) * base_scale, float(y) * base_scale * 2.0)
+      // Ridge sharpening: bias the noise toward peaks before masking.
+      let ridged = n * n * (3.0 - 2.0 * n)
+      ridged * island_mask(x, y)
+    end
+  end
+end
+
+fn grid_min(grid: list) -> num
+  reduce(grid, 1000000.0, fn(acc, row) -> min(acc, reduce(row, 1000000.0, fn(a, v) -> min(a, v))))
+end
+
+fn grid_max(grid: list) -> num
+  reduce(grid, -1000000.0, fn(acc, row) -> max(acc, reduce(row, -1000000.0, fn(a, v) -> max(a, v))))
+end
+
+// Rescale so the lowest cell is 0.0 and the highest is 1.0.
+fn normalize(grid: list) -> list
+  let lo = grid_min(grid)
+  let hi = grid_max(grid)
+  let span = max(hi - lo, 0.000001)
+  for row in grid do
+    for v in row do (v - lo) / span end
+  end
+end
+
+// ------------------------------------------------------------ classifying --
+
+// Index into `terrain_bands(sea_level)` for a normalized height.
+fn band_index(h: num, bands: list) -> int
+  // The ceilings ascend, so the band is simply how many `h` has cleared.
+  min(count(bands, fn(b) -> h >= b.ceiling), len(bands) - 1)
+end
+
+fn band_glyph(h: num, bands: list) -> string
+  bands[band_index(h, bands)].glyph
+end
+
+// A one-word summary of a cell, used by the legend line. `match` on the band
+// index keeps the mapping in one readable place.
+fn slope_hint(idx: int) -> string
+  match idx
+    when 0 -> "abyssal"
+    when 1 -> "coastal shelf"
+    when 2 -> "sand"
+    when 3 -> "meadow"
+    when 4 -> "woodland"
+    when 5 -> "bare rock"
+    when _ -> "ice cap"
+  end
+end
+
+// ---------------------------------------------------------------- render ----
+
+fn render_row(row: list, bands: list) -> string
+  join(for h in row do band_glyph(h, bands) end, "")
+end
+
+fn render_map(grid: list, bands: list) -> string
+  join(for row in grid do render_row(row, bands) end, "\n")
+end
+
+fn bar(n: int, total: int, width: int) -> string
+  let filled = int(floor(float(n) * float(width) / float(max(total, 1))))
+  pad_end(join(for i in range(0, filled) do "#" end, ""), width, " ")
+end
+
+fn percent(n: int, total: int) -> string
+  format("%.1f", float(n) * 100.0 / float(max(total, 1)))
+end
+
+fn count_band(grid: list, bands: list, idx: int) -> int
+  reduce(grid, 0, fn(acc, row) ->
+    acc + count(row, fn(h) -> band_index(h, bands) == idx))
+end
+
+// ------------------------------------------------------------------ main ----
+
+let bands = terrain_bands(sea_level)
+let heights = normalize(raw_heightmap())
+let cell_count = map_width * map_height
+
+print("Procedural terrain — {map_width}x{map_height}, seed {noise_seed}")
+print("fBm: {octaves} octaves, lacunarity {lacunarity}, persistence {persistence}, scale {base_scale}")
+print("sea level {sea_level}, island falloff {island_falloff}")
+print("")
+print(render_map(heights, bands))
+print("")
+
+let counts = for i in range(0, len(bands)) do count_band(heights, bands, i) end
+
+print("terrain distribution ({cell_count} cells)")
+for i in range(0, len(bands)) do
+  let b = bands[i]
+  let n = counts[i]
+  print("  {b.glyph}  " ++ pad_end(b.name, 15, " ")
+    ++ pad_start(str(n), 5, " ") ++ "  "
+    ++ pad_start(percent(n, cell_count), 5, " ") ++ "%  "
+    ++ bar(n, cell_count, 32)
+    ++ "  " ++ slope_hint(i))
+end
+print("")
+
+let water = counts[0] + counts[1]
+let land = cell_count - water
+print("water {percent(water, cell_count)}%   land {percent(land, cell_count)}%"
+  ++ "   checksum {reduce(counts, 0, fn(a, b) -> a + b)}")
+
+// Sea-level sweep: how the coastline responds to the one knob people actually
+// tune. Each line re-classifies the same heightmap at a different sea level,
+// which is the cheap stand-in for dragging the slider in a live host.
+print("")
+print("sea-level sweep (same heightmap, re-banded)")
+for step in range(0, 9) do
+  let sea = 0.20 + float(step) * 0.05
+  let sweep_bands = terrain_bands(sea)
+  let wet = reduce(heights, 0, fn(acc, row) ->
+    acc + count(row, fn(h) -> band_index(h, sweep_bands) < 2))
+  print("  sea " ++ format("%.2f", sea)
+    ++ "  water " ++ pad_start(percent(wet, cell_count), 5, " ") ++ "%  "
+    ++ bar(wet, cell_count, 40))
+end
+nil

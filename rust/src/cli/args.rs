@@ -3,7 +3,8 @@
 
 use std::process;
 
-use super::{CliArgs, Command, ErrorFormat, ProposeEditOpts, RunOpts, SourceInput, print_usage};
+use super::help;
+use super::{CliArgs, Command, ErrorFormat, ProposeEditOpts, RunOpts, SourceInput};
 
 /// The "no source given" message shared by the show/query commands.
 const MISSING_SOURCE: &str = "Expected a file path or -e <code>";
@@ -86,11 +87,24 @@ fn parse_source_args(
 pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
 
+    // `petal <command> --help` reads as a request for that command's page,
+    // wherever the flag sits — the parsers below would otherwise take it for
+    // a file path.
+    if args.len() > 1
+        && help::is_command(first)
+        && args[1..].iter().any(|a| a == "--help" || a == "-h")
+    {
+        help::print_command_help(first);
+    }
+
     match first.as_str() {
-        "help" | "--help" | "-h" => {
-            print_usage();
-            process::exit(0);
-        }
+        "help" | "--help" | "-h" => match args.get(1) {
+            Some(topic) => help::print_command_help(topic),
+            None => {
+                help::print_usage(true);
+                process::exit(0);
+            }
+        },
         "version" | "--version" | "-V" => {
             println!("petal {}", env!("CARGO_PKG_VERSION"));
             process::exit(0);

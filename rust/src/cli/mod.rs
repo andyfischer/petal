@@ -11,6 +11,7 @@ use std::process;
 
 mod args;
 mod handlers;
+mod help;
 
 /// How human-readable (non-`--json`) errors are printed.
 ///
@@ -215,131 +216,13 @@ pub fn parse_args() -> CliArgs {
     }
 
     if args.is_empty() {
-        print_usage();
+        help::print_usage(false);
         process::exit(1);
     }
 
     let mut cli = args::dispatch_args(&args);
     cli.include_dirs = include_dirs;
     cli
-}
-
-fn print_usage() {
-    let out = "\
-Usage: petal <command> [options] <file>
-
-Commands:
-  check [--json] [--strict] [--ir] [--error-format full|bare] <file>
-                                 Lex+parse+compile+lower without executing
-                                 (exit 0/1)
-                                 --ir: check <file> as JSON IR (show-ir --json
-                                 output) instead of source; use '-' for stdin
-  run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] <file>
-                                 Execute a program
-                                 --ir: load <file> as JSON IR (show-ir --json
-                                 output) instead of source; use '-' for stdin
-                                 --observe: after the run, dump the last value
-                                 bound to every named variable, keyed by
-                                 function-qualified name (fn-local 'x' inside
-                                 'fn f' reads as 'f.x'). Dumped even when the
-                                 run errors; --json emits it as an object
-                                 --dup-stats: print value-duplication and heap
-                                 allocation stats to stderr after the run (debug
-                                 builds / dup-stats feature)
-                                 --trace-pending: record pending absorptions and
-                                 print the frame pending report to stderr after
-                                 the run (PETAL_TRACE_PENDING=1 also enables it)
-                                 --trace-emits: attribute every buffered emit
-                                 (push_output / draw commands) to the call that
-                                 produced it and dump values + call sites +
-                                 per-argument edit info after the run; --json
-                                 emits the structured report
-                                 --seed <n>: seed the PRNG so random() replays
-                                 (decimal or 0x-hex; PETAL_SEED=<n> does the
-                                 same for every command, flag wins)
-                                 --error-format bare: print only the error
-                                 message on stderr, with no [line N, column M]
-                                 suffix and no echoed source line / caret, so
-                                 two sources differing only in layout fail
-                                 identically. Also on 'check'.
-  propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+
-               [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>
-                                 Run with emit tracing, then propose source
-                                 edits that make argument <k> of the call that
-                                 produced emit <n> evaluate to <value>. Repeat
-                                 --arg/--to pairs to state a multi-goal batch
-                                 (one gesture changing several arguments),
-                                 resolved consistently. Several proposals may
-                                 come back when several variables feed a value;
-                                 narrow with --configurable / --static, or
-                                 declare knobs in-source with `config let`.
-                                 --apply rewrites the file when every goal
-                                 resolves to exactly one proposal.
-  explain [--json] --term <name> <file>
-                                 Run with trace, show value chain for a term
-                                 --json: emit errors as structured JSON
-                                 --trace: emit per-term events to stderr
-                                 (PETAL_DEBUG=1 also enables trace)
-  run -e <code>                  Execute inline code
-  lint [--fix | --check] [--verify[=ir|strict]] <file>
-                                 Normalize source (2-space indent, drop identity
-                                 casts like int(n) where n is already an int)
-                                 default: report and exit 1 if changes needed
-                                 --fix: rewrite the file in place
-                                 --check: CI mode, exit 0/1 with no output on success
-                                 --verify: prove the rewrite before writing it —
-                                 compile both sides and compare their IR. Not
-                                 provably equal means no write and exit 3.
-                                 --verify=ir (the default) accepts the semantic
-                                 passes (identity casts, if-chain to match) as
-                                 expected-to-differ and only proves the
-                                 formatting pass; --verify=strict demands IR
-                                 equality of the whole rewrite, so a file with a
-                                 semantic rewrite pending exits 3 and needs a
-                                 run-diff instead
-  lint -e <code>                 Lint inline code, print result to stdout
-  ir-equal [--json] <a.ptl> <b.ptl>
-                                 Compare two files' compiled IR, ignoring spans,
-                                 comments and whitespace. Exit 0 equivalent,
-                                 1 with the first difference, 2 if a side fails
-                                 to compile
-  lint-fix <file>                Same as 'lint --fix <file>': rewrite in place.
-                                 Makes no change if the file fails to parse.
-  show-ir [--json] [--all] [--user-only] <file>
-                                 Display compiled IR. Text output hides builtin
-                                 phantom terms and the auto-loaded prelude /
-                                 imported modules; --all restores them.
-                                 --json emits the complete Program object (the
-                                 `run --ir` interchange format); add --user-only
-                                 for a filtered debugging view with phantoms,
-                                 prelude content, and prelude-only constants
-                                 removed (not loadable by `run --ir`)
-  show-bytecode [--json] <file>  Display the bytecode lowering of the compiled IR
-  show-ast [--json] <file>       Display parsed AST
-  show-tokens [--json] <file>    Display lexer tokens
-  show-provenance [--json] --term <name> <file>
-                                 Trace provenance (backward slice) of a term
-  show-dependents [--json] --term <name> <file>
-                                 Trace dependents (forward slice) of a term
-  show-slice [--json] --term <name> [--term <name2>] <file>
-                                 Compute minimal dataflow slice for targets
-  show-graph [--all] <file>      Output DOT-format dataflow graph (--all to include builtins)
-  pending-report [--json] <file> Run the program and report every live pending
-                                 resource (state, age, origin, absorbed count).
-                                 --json emits the raw report array for tooling.
-
-  lsp                            Serve the language server over stdio
-                                 (Content-Length-framed JSON-RPC). Editors
-                                 spawn this; it takes no file.
-
-  petal <file>                   Shorthand for 'run'
-  version | --version | -V       Print the Petal version and exit
-
-Options accepted by every compiling command:
-  -I <dir>                       Add a module search directory (repeatable).
-                                 Imports also resolve from the importing
-                                 file's directory and PETAL_PATH.";
-    eprintln!("{}", out);
 }
 
 fn read_source(input: &SourceInput) -> String {

@@ -107,8 +107,15 @@ pass, a prelude rewrite — wants proof that it was behavior-preserving.
 dir) or a directory. Each file gets one row — its `kind` (`console`, `ui`,
 `module`, `unsupported`, classified by evidence, not a hand list) and a verdict
 (`identical-ir`, `identical-trace`, `nondeterministic`, `changed`,
-`compile-error`, `unsupported`, `module`). The process exits non-zero if
-anything is `changed` or `compile-error`.
+`compile-error`, `driver-error`, `unsupported`, `module`). The process exits
+non-zero if anything is `changed`, `compile-error` or `driver-error`.
+
+`driver-error` is a driver binary that never launched, as opposed to one that
+ran and failed. It is called out separately because both sides of a spawn
+failure emit the same empty output, which compares equal — so without it a
+missing `petal-ui-run` reports every UI app as `identical-trace` and exits 0.
+A UI corpus checks for the driver up front (`cd petal-ui && cargo build --bin
+petal-ui-run`); a binary that exists but cannot be executed is caught per file.
 
 A failure leaves a replay bundle under `.temp/verify-runs/<plan>-<timestamp>/<file>/`:
 the resolved `plan.json`, the `scenario.json` and `seed` used, both traces, and

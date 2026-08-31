@@ -42,7 +42,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 type Kind = 'console' | 'ui' | 'module' | 'unsupported';
 type Verdict =
     | 'identical-ir' | 'identical-trace' | 'nondeterministic'
-    | 'changed' | 'compile-error' | 'unsupported' | 'module';
+    | 'changed' | 'compile-error' | 'driver-error' | 'unsupported' | 'module';
 
 interface PlanStep {
     check: 'compiles' | 'ir-equal' | 'control-run' | 'run-diff' | 'golden';
@@ -91,7 +91,13 @@ interface Outcome {
     bundle?: string;
 }
 
-interface Run { code: number; stdout: string; stderr: string }
+/**
+ * `spawnFailed` is the driver never having started — a missing or unexecutable
+ * binary — as opposed to it running and exiting non-zero. The two must not be
+ * confused: a driver that fails to launch produces the *same* empty output on
+ * both sides, which compares equal and reads as a pass. See `driverGuard`.
+ */
+interface Run { code: number; stdout: string; stderr: string; spawnFailed: boolean }
 
 /** A concrete driver invocation: which binary and its argv. */
 interface Cmd { bin: string; args: string[] }
@@ -120,8 +126,8 @@ function exec(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pr
         let stdout = '', stderr = '';
         child.stdout.on('data', d => { stdout += d; });
         child.stderr.on('data', d => { stderr += d; });
-        child.on('error', e => res({ code: 127, stdout, stderr: String(e) }));
-        child.on('close', code => res({ code: code ?? -1, stdout, stderr }));
+        child.on('error', e => res({ code: 127, stdout, stderr: String(e), spawnFailed: true }));
+        child.on('close', code => res({ code: code ?? -1, stdout, stderr, spawnFailed: false }));
     });
 }
 
@@ -132,15 +138,15 @@ function exec(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pr
  * caller re-runs the pair with `--out`, which is the only time the bytes are
  * kept.
  */
-function execHash(cmd: string, args: string[]): Promise<{ code: number; hash: string; stderr: string }> {
+function execHash(cmd: string, args: string[]): Promise<{ code: number; hash: string; stderr: string; spawnFailed: boolean }> {
     return new Promise(res => {
         const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         const h = createHash('sha256');
         let stderr = '';
         child.stdout.on('data', d => h.update(d));
         child.stderr.on('data', d => { stderr += d; });
-        child.on('error', e => res({ code: 127, hash: '', stderr: String(e) }));
-        child.on('close', code => res({ code: code ?? -1, hash: h.digest('hex'), stderr }));
+        child.on('error', e => res({ code: 127, hash: '', stderr: String(e), spawnFailed: true }));
+        child.on('close', code => res({ code: code ?? -1, hash: h.digest('hex'), stderr, spawnFailed: false }));
     });
 }
 
@@ -574,11 +580,25 @@ async function traceHash(kind: Kind, side: Side, path: string, seed: number, sc:
     const r = await execHash(bin, args);
     // A console run's stderr is part of its observable output; a UI run's is not
     // (errors land in the trace's `error` field), so only stdout is hashed there.
-    if (kind === 'ui') return { hash: r.hash, code: r.code, stderr: r.stderr };
+    if (kind === 'ui') return { hash: r.hash, code: r.code, stderr: r.stderr, spawnFailed: r.spawnFailed, bin };
     return {
         hash: createHash('sha256').update(`${r.hash}\n${r.code}\n${r.stderr}`).digest('hex'),
-        code: r.code, stderr: r.stderr,
+        code: r.code, stderr: r.stderr, spawnFailed: r.spawnFailed, bin,
     };
+}
+
+/**
+ * Turn a driver that never launched into a `driver-error`, never a comparison.
+ * Both sides of a spawn failure produce identical empty output, so without this
+ * the file would be reported `identical-trace` and the run would exit 0 — a
+ * false pass in the one tool whose whole job is to prove nothing changed.
+ */
+function driverGuard(rel: string, kind: Kind, steps: string[],
+                     runs: { spawnFailed: boolean; bin: string; stderr: string }[]): Outcome | null {
+    const bad = runs.find(r => r.spawnFailed);
+    if (!bad) return null;
+    return { rel, kind, verdict: 'driver-error', steps,
+             detail: `driver failed to launch: ${bad.bin} (${bad.stderr.trim()})` };
 }
 
 /** Re-run a pair with output kept, for the divergence report and the bundle. */
@@ -609,6 +629,9 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
         ? await exec(ctx.after.uiRun, [t.after, '--frames', '1', '--seed', '1',
                                        '--error-format', 'bare', '--out', '/dev/null'])
         : await exec(ctx.after.petal, ['run', '--seed', '1', '--error-format', 'bare', t.after]);
+    const probeBin = kind === 'ui' ? ctx.after.uiRun : ctx.after.petal;
+    const probeFailed = driverGuard(t.rel, kind, steps, [{ ...probe, bin: probeBin }]);
+    if (probeFailed) return probeFailed;
     const missing = UNKNOWN_BUILTIN_RE.exec(probe.stdout + probe.stderr);
     if (missing) {
         return { rel: t.rel, kind: 'unsupported', verdict: 'unsupported', steps,
@@ -652,6 +675,8 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
                 traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
                 traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
             ]);
+            const g = driverGuard(t.rel, kind, steps, [x, y]);
+            if (g) return g;
             if (x.hash !== y.hash) {
                 const dir = bundleDir(ctx, t);
                 const a = await traceToFile(kind, ctx.before, t.before, seed, sc, frames, size, join(dir, 'before.a'));
@@ -675,6 +700,8 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
                         traceHash(kind, ctx.before, t.before, seed, sc, frames, size),
                         traceHash(kind, ctx.after, t.after, seed, sc, frames, size),
                     ]);
+                    const g = driverGuard(t.rel, kind, steps, [b, a]);
+                    if (g) return g;
                     if (b.hash === a.hash) {
                         // Identical *and* both failed on a native nobody provides:
                         // the file is unsupported, not verified.
@@ -717,6 +744,8 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             };
             const key = `${t.rel}/${sc.id}-s${seed}`;
             const got = await traceHash(kind, ctx.after, t.after, seed, sc, frames, size);
+            const g = driverGuard(t.rel, kind, steps, [got]);
+            if (g) return g;
             if (ctx.opts.updateGolden) {
                 ctx.golden[key] = got.hash;
                 ctx.goldenDirty = true;
@@ -732,7 +761,7 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
 // ── Main ─────────────────────────────────────────────────────────────────
 
 const VERDICT_ORDER: Verdict[] = ['identical-ir', 'identical-trace', 'module', 'unsupported',
-                                  'nondeterministic', 'changed', 'compile-error'];
+                                  'nondeterministic', 'changed', 'compile-error', 'driver-error'];
 
 async function main() {
     const opts = parseArgs(process.argv.slice(2));
@@ -778,6 +807,18 @@ async function main() {
     }
     const targets = pairSides(files, before, after, notes);
     const mods = moduleSet(targets);
+
+    // The UI driver is only required if the corpus actually has a UI app in it,
+    // so a console-only plan does not need petal-ui built. When it *is* needed,
+    // say so here rather than letting every UI file fail one at a time.
+    if (targets.some(t => staticKind(t, mods) === 'ui')) {
+        for (const s of [before, after]) {
+            if (!existsSync(s.uiRun)) {
+                fail(`no petal-ui-run binary at ${s.uiRun}, and the corpus has UI apps `
+                    + `(cd petal-ui && cargo build --bin petal-ui-run)`);
+            }
+        }
+    }
 
     // `ir-equal` is landing separately; probe rather than assume. An unknown
     // subcommand falls through to "run the first file", which would silently
@@ -841,7 +882,8 @@ async function main() {
     for (const r of results) counts.set(r.verdict, (counts.get(r.verdict) ?? 0) + 1);
     console.log('\nsummary:');
     for (const v of VERDICT_ORDER) if (counts.get(v)) console.log(`  ${v.padEnd(17)} ${counts.get(v)}`);
-    const bad = (counts.get('changed') ?? 0) + (counts.get('compile-error') ?? 0);
+    const bad = (counts.get('changed') ?? 0) + (counts.get('compile-error') ?? 0)
+        + (counts.get('driver-error') ?? 0);
     console.log(`  ${'total'.padEnd(17)} ${results.length}`);
     console.log(`artifacts: ${outDir}`);
     writeFileSync(join(outDir, 'results.json'),

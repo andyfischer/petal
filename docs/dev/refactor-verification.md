@@ -206,7 +206,7 @@ The checks:
 
 Output: one table row per file (`kind`, `steps run`, `verdict`), non-zero exit
 if any `changed`. Verdicts: `identical-ir`, `identical-trace`,
-`nondeterministic`, `changed`, `compile-error`.
+`nondeterministic`, `changed`, `compile-error`, `driver-error`.
 
 ### 6. Replayability
 

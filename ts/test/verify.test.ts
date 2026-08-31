@@ -4,7 +4,7 @@
 // bundle it leaves behind actually reproduces the diff it reported.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -59,7 +59,12 @@ function verify(
     ["--plan", planPath, "--before", before, "--after", after, "--out", out, "--jobs", "2", ...extraArgs],
     { encoding: "utf-8", timeout: 120_000 },
   );
-  const results: Result[] = JSON.parse(readFileSync(join(out, "results.json"), "utf-8"));
+  // A preflight failure (exit 2) aborts before any file is judged, so there is
+  // no results.json to read — that is a valid outcome to assert on, not a crash.
+  const resultsPath = join(out, "results.json");
+  const results: Result[] = existsSync(resultsPath)
+    ? JSON.parse(readFileSync(resultsPath, "utf-8"))
+    : [];
   const byPath = new Map(results.map(x => [x.rel, x]));
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, results, byPath, out };
 }
@@ -147,6 +152,42 @@ describe("verify.ts verdicts", () => {
     const v = verify("both-broken", [{ path: "a.ptl", before: 'print(1\n' }]);
     expect(v.status).toBe(0);
     expect(v.byPath.get("a.ptl")?.verdict).toBe("unsupported");
+  });
+});
+
+// A driver that never launches produces the same empty output on both sides,
+// which compares equal. Left unguarded that reads as `identical-trace` and
+// exit 0 — the verifier reporting "nothing changed" precisely because it
+// measured nothing. Both layers of the guard are pinned here.
+describe("verify.ts driver failures are never a pass", () => {
+  it("refuses to start when the corpus has UI apps and no UI driver is built", () => {
+    const v = verify(
+      "no-ui-bin",
+      [{ path: "ui.ptl", before: UI_APP, after: UI_APP.replace("40, 20", "41, 20") }],
+      [{ check: "compiles" }, { check: "run-diff", seeds: [1], frames: 5 }],
+      ["--after-ui-bin", join(scratch, "does-not-exist")],
+    );
+    expect(v.status).toBe(2);
+    expect(v.stderr).toContain("no petal-ui-run binary");
+    expect(v.results).toEqual([]);
+  });
+
+  it("reports a UI driver that cannot be executed as driver-error, not identical", () => {
+    // Exists (so it clears the preflight) but cannot be spawned: the failure
+    // surfaces from the run-diff comparison itself.
+    const dud = join(scratch, "dud-ui-run");
+    writeFileSync(dud, "not a binary\n");
+    chmodSync(dud, 0o644);
+    const v = verify(
+      "dud-ui-bin",
+      [{ path: "ui.ptl", before: UI_APP, after: UI_APP.replace("40, 20", "41, 20") }],
+      [{ check: "compiles" }, { check: "run-diff", seeds: [1], frames: 5 }],
+      ["--before-ui-bin", dud],
+    );
+    expect(v.status).toBe(1);
+    const r = v.byPath.get("ui.ptl")!;
+    expect(r.verdict).toBe("driver-error");
+    expect(r.detail).toContain("failed to launch");
   });
 });
 

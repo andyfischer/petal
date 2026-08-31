@@ -225,11 +225,23 @@ alpha-blend, so overlapping translucent tints composite:
 | `fill_polygon(points,r,g,b[,a])` | a **concave-correct** fill (ear clipping) |
 | `fill_fan(cx,cy,points,r,g,b[,a])` | a triangle fan from an explicit center |
 | `draw_text(s,x,y,size,r,g,b[,a])` | one `Text` run at `size` logical px (glyphon) |
-| `draw_image(source,x,y,w,h[,a])` | a cached PNG texture scaled into the destination rect |
+| `draw_image(source,x,y,w,h[,a[,radius]])` | a cached PNG texture scaled into the destination rect |
+| `draw_rect_gradient(x,y,w,h,r0,g0,b0,a0,r1,g1,b1,a1,angle)` | a rect filled with a linear gradient along `angle` |
+| `draw_rect_gradient_rounded(x,y,w,h,radius,…,angle)` | the same, with rounded corners |
+| `draw_circle_gradient(cx,cy,radius,r0,g0,b0,a0,r1,g1,b1,a1)` | a disc shading center → rim (glow, vignette) |
+| `draw_shadow(x,y,w,h,radius,blur,spread,dx,dy,r,g,b[,a])` | a CSS box-shadow — **non-overlapping**, see below |
+| `clip_push(x,y,w,h[,radius])` / `clip_pop()` | a clip that nests inside the enclosing one, and its restore |
 
 `examples/panels/shapes.ptl` draws every one of them on one screen.
 
-Three of these exist because the naive composition of the older calls is
+The prelude adds record-and-color-record overloads over all of these — plus
+`linear_gradient(rect, stops, angle[, radius])`, which subdivides three or more
+stops into one two-stop band per pair, and `draw_shadow(rect, {radius, blur,
+spread, dx, dy, color, a})`. A gradient stop may carry its own `a` field; it is
+the one primitive where alpha rides with the color, because a two-stop fade
+needs two of them.
+
+Four of these exist because the naive composition of the older calls is
 **wrong**, not merely slower:
 
 - **`draw_polyline` and translucency.** Alpha blending is not idempotent: two
@@ -248,6 +260,16 @@ Three of these exist because the naive composition of the older calls is
 - **`draw_rect_rounded_outline`.** A rounded border drawn as a rounded fill
   with a smaller rounded fill on top is opaque (nothing behind shows through),
   costs two meshes, and degenerates at radius 1. This is one hollow frame.
+- **`draw_shadow` and translucency, again.** A soft shadow hand-rolled as a
+  stack of concentric translucent rounded rects double-composites every ring
+  over the ones inside it, so the falloff is wrong and every seam shows — the
+  same non-idempotence that makes `draw_polyline` necessary. `draw_shadow` is
+  tessellated by `petal_ui::tess::shadow_mesh` as **one** mesh: a solid core
+  plus a ring whose per-vertex alpha runs from 1 at the shape boundary to 0 at
+  `blur` px out. Both rings are the same rounded rect sampled at radius `r` and
+  `r + blur`, so their vertices correspond one-to-one and the quads between
+  them tile the ring with no gap and no overlap. It is not a blur pass, and it
+  needs no render target.
 
 plus the input/timing reads `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
@@ -397,7 +419,30 @@ workarounds; they are no longer needed.)
 
 `clip(x, y, w, h)` narrows every following call to that rect until `clip_none()`
 restores the pane; the clip is itself intersected with the pane, so a script can
-never paint outside its own pane. **It applies to everything drawn under it** —
+never paint outside its own pane.
+
+`clip` **replaces** whatever clip is active — which is fine at the top level and
+wrong inside anything reusable, since a widget that clips its own contents would
+throw away the clip its caller set. `clip_push(x, y, w, h)` instead *intersects*
+with the clip in force, and `clip_pop()` restores it, so clips nest:
+
+```
+clip_push(list_rect)          -- the viewport
+for row in rows do
+  clip_push(row.badge_rect)   -- intersected with the viewport
+  ...
+  clip_pop()                  -- back to the viewport
+end
+clip_pop()                    -- back to the pane
+```
+
+The pane rect is the base of the stack and is never popped, so an unmatched
+`clip_pop()` means "back to the pane" and still cannot paint outside it; a clip
+left pushed when the frame ends simply ends with it.
+
+Both forms take an optional trailing `radius` to round the clip's corners.
+Garden's GPU scissor is rectangular, so today the radius is carried through the
+command and clipped square — a degradation, never a dropped clip. **It applies to everything drawn under it** —
 fills, lines, images, `draw_text`, and the text inside a `text_view` /
 `edit_view` region declared while it is active (a region carries its own
 interior clip; the two are intersected).

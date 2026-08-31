@@ -55,6 +55,9 @@ fn is_opaque(a: &u8) -> bool {
 fn is_zero(v: &u32) -> bool {
     *v == 0
 }
+fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
 fn is_one(v: &u32) -> bool {
     *v == 1
 }
@@ -82,6 +85,11 @@ pub enum DrawCommand {
         h: u32,
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
+        /// Corner radius in px; 0 = square corners. A host that can't round a
+        /// bitmap draws the square image, which is what this command has
+        /// always meant.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
     },
     Clear {
         r: u8,
@@ -276,15 +284,133 @@ pub enum DrawCommand {
         #[serde(skip_serializing_if = "is_opaque")]
         a: u8,
     },
+    /// A (optionally rounded) rect filled with a **linear gradient** from
+    /// color 0 to color 1 along `angle` — radians clockwise from the +x axis
+    /// with y growing downward, the same screen convention [`Arc`](Self::Arc)
+    /// uses. `0` runs left→right, `PI/2` top→bottom.
+    ///
+    /// The gradient spans the rect's full extent along that axis: the stop-0
+    /// color sits on the corner furthest *against* the axis, stop 1 on the
+    /// corner furthest along it, so the whole rect is covered whatever the
+    /// angle. Both stops carry their own alpha, so a fade-to-nothing scrim is
+    /// one command rather than a stack of translucent rects.
+    ///
+    /// A host that can't gradient may fill the rect with either stop; a host
+    /// without rounded corners draws it square. Neither is silent omission.
+    RectGradient {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        /// Corner radius in px; 0 = square corners.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
+        r0: u8,
+        g0: u8,
+        b0: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a0: u8,
+        r1: u8,
+        g1: u8,
+        b1: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a1: u8,
+        /// Gradient axis in radians, clockwise from +x (screen y-down).
+        angle: f32,
+    },
+    /// A disc filled with a **radial gradient**: color 0 at (`cx`, `cy`)
+    /// fading to color 1 at `radius`. The cheap glow / vignette / spotlight,
+    /// and the radial sibling of [`RectGradient`](Self::RectGradient) — it
+    /// tessellates as the fan [`Fan`](Self::Fan) already draws, with the two
+    /// colors interpolated per vertex (center vs. rim), so a host that has
+    /// the fan path has this one nearly for free.
+    CircleGradient {
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        r0: u8,
+        g0: u8,
+        b0: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a0: u8,
+        r1: u8,
+        g1: u8,
+        b1: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a1: u8,
+    },
+    /// A CSS `box-shadow` cast by the rounded rect (`x`, `y`, `w`, `h`,
+    /// `radius`): offset by (`dx`, `dy`), grown by `spread`, its edge falling
+    /// off over `blur` px.
+    ///
+    /// This is **not** a blur pass. It is meant to be tessellated on the CPU
+    /// as a single *non-overlapping* mesh — a solid core plus a ring whose
+    /// per-vertex alpha runs from the shape boundary to 0 at `blur` — the
+    /// same trick [`Polyline`](Self::Polyline) uses so a translucent shape
+    /// composited in one go doesn't double up where its parts meet. A shadow
+    /// is translucent by definition, so a mesh that overlapped itself would
+    /// show every seam. [`crate::tess::shadow_mesh`] is the shared
+    /// tessellator; a host without one may approximate with a few nested
+    /// translucent rounded rects, but must not drop the command.
+    Shadow {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        /// Corner radius of the *casting shape*, before `spread`.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
+        /// Falloff distance in px, outward from the (spread) shape boundary.
+        blur: u32,
+        /// Grow the shape by this many px before blurring; negative shrinks.
+        #[serde(default, skip_serializing_if = "is_zero_i32")]
+        spread: i32,
+        #[serde(default, skip_serializing_if = "is_zero_i32")]
+        dx: i32,
+        #[serde(default, skip_serializing_if = "is_zero_i32")]
+        dy: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+    },
     /// Restrict subsequent drawing to a rectangle (intersected with the
     /// drawable). Cleared by [`DrawCommand::ClipNone`].
+    ///
+    /// `Clip` *replaces* whatever clip is active — it does not nest. Use
+    /// [`ClipPush`](Self::ClipPush)/[`ClipPop`](Self::ClipPop) to clip inside
+    /// an enclosing clip and get it back.
     Clip {
         x: i32,
         y: i32,
         w: u32,
         h: u32,
+        /// Corner radius in px; 0 = a plain rectangular clip, which is what
+        /// this command has always meant. A host that can only scissor a rect
+        /// ignores it and clips square.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
     },
     ClipNone,
+    /// Push a clip that is *intersected* with the enclosing one, so a widget
+    /// can clip its own contents without knowing (or destroying) the clip its
+    /// caller set. [`ClipPop`](Self::ClipPop) restores the enclosing clip.
+    ///
+    /// The stack is per-frame and starts empty (the whole drawable). An
+    /// unmatched `ClipPop` is a no-op, and any clip left pushed when the
+    /// frame ends simply ends with it.
+    ClipPush {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        radius: u32,
+    },
+    /// Restore the clip in force before the matching
+    /// [`ClipPush`](Self::ClipPush).
+    ClipPop,
     /// Allocate an offscreen canvas (render target) of size `w`×`h`,
     /// identified by `id`. Canvases are transparent until drawn into and are
     /// recreated fresh each frame from the command stream. Optional — hosts
@@ -471,6 +597,7 @@ impl DrawCommand {
                     w: u32_at(3)?,
                     h: u32_at(4)?,
                     a: opt_u8(5, 255),
+                    radius: opt_u32(6, 0),
                 }
             }
             "clear" => DrawCommand::Clear {
@@ -640,13 +767,75 @@ impl DrawCommand {
                     spacing: data.get(11).and_then(num_as_f64).unwrap_or(0.0) as f32,
                 }
             }
+            // The gradients and the shadow carry every field positionally —
+            // there is no "short form" of them to stay compatible with, since
+            // they postdate every existing consumer.
+            "rect_gradient" => {
+                let angle = data
+                    .get(13)
+                    .and_then(num_as_f64)
+                    .ok_or_else(|| "rect_gradient command needs an angle at arg 13".to_string())?;
+                DrawCommand::RectGradient {
+                    x: i32_at(0)?,
+                    y: i32_at(1)?,
+                    w: u32_at(2)?,
+                    h: u32_at(3)?,
+                    radius: u32_at(4)?,
+                    r0: u8_at(5)?,
+                    g0: u8_at(6)?,
+                    b0: u8_at(7)?,
+                    a0: u8_at(8)?,
+                    r1: u8_at(9)?,
+                    g1: u8_at(10)?,
+                    b1: u8_at(11)?,
+                    a1: u8_at(12)?,
+                    angle: angle as f32,
+                }
+            }
+            "circle_gradient" => DrawCommand::CircleGradient {
+                cx: i32_at(0)?,
+                cy: i32_at(1)?,
+                radius: i32_at(2)?,
+                r0: u8_at(3)?,
+                g0: u8_at(4)?,
+                b0: u8_at(5)?,
+                a0: u8_at(6)?,
+                r1: u8_at(7)?,
+                g1: u8_at(8)?,
+                b1: u8_at(9)?,
+                a1: u8_at(10)?,
+            },
+            "shadow" => DrawCommand::Shadow {
+                x: i32_at(0)?,
+                y: i32_at(1)?,
+                w: u32_at(2)?,
+                h: u32_at(3)?,
+                radius: u32_at(4)?,
+                blur: u32_at(5)?,
+                spread: i32_at(6)?,
+                dx: i32_at(7)?,
+                dy: i32_at(8)?,
+                r: u8_at(9)?,
+                g: u8_at(10)?,
+                b: u8_at(11)?,
+                a: opt_u8(12, 255),
+            },
             "clip" => DrawCommand::Clip {
                 x: i32_at(0)?,
                 y: i32_at(1)?,
                 w: u32_at(2)?,
                 h: u32_at(3)?,
+                radius: opt_u32(4, 0),
             },
             "clip_none" => DrawCommand::ClipNone,
+            "clip_push" => DrawCommand::ClipPush {
+                x: i32_at(0)?,
+                y: i32_at(1)?,
+                w: u32_at(2)?,
+                h: u32_at(3)?,
+                radius: opt_u32(4, 0),
+            },
+            "clip_pop" => DrawCommand::ClipPop,
             "create_canvas" => DrawCommand::CreateCanvas {
                 id: u32_at(0)?,
                 w: u32_at(1)?,
@@ -766,6 +955,13 @@ pub fn register_draw(env: &mut Env) {
         "draw_rect_rounded_outline",
         native_draw_rect_rounded_outline,
     );
+    env.register_native("draw_rect_gradient", native_draw_rect_gradient);
+    env.register_native(
+        "draw_rect_gradient_rounded",
+        native_draw_rect_gradient_rounded,
+    );
+    env.register_native("draw_circle_gradient", native_draw_circle_gradient);
+    env.register_native("draw_shadow", native_draw_shadow);
     env.register_native("draw_line", native_draw_line);
     env.register_native("draw_polyline", native_draw_polyline);
     env.register_native("draw_circle", native_draw_circle);
@@ -780,6 +976,8 @@ pub fn register_draw(env: &mut Env) {
     env.register_native("draw_text", native_draw_text);
     env.register_native("clip", native_clip);
     env.register_native("clip_none", native_clip_none);
+    env.register_native("clip_push", native_clip_push);
+    env.register_native("clip_pop", native_clip_pop);
     env.register_native("text_width", native_text_width);
     env.register_native("font", native_font);
     env.register_native("fonts", native_fonts);
@@ -826,7 +1024,8 @@ fn native_clear(state: &mut PetalCxt) -> NativeResult {
 }
 
 // `draw_rect(x, y, w, h, r, g, b, [a])` — trailing alpha is optional (opaque).
-/// `draw_image(source, x, y, w, h, [alpha])` — draw a host-resolved bitmap.
+/// `draw_image(source, x, y, w, h, [alpha], [radius])` — draw a host-resolved
+/// bitmap, optionally with rounded corners (an avatar, a card thumbnail).
 fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
     let source = state.get_string(1)?;
     let source = Value::String(state.heap_mut().alloc_string(source));
@@ -835,6 +1034,7 @@ fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
         args.push(Value::Int(state.get_int(index)?));
     }
     args.push(Value::Int(opt_int(state, 6, 255)?));
+    args.push(Value::Int(opt_int(state, 7, 0)?)); // radius
     emit_draw(state, "image", args);
     state.push_nil();
     Ok(1)
@@ -920,6 +1120,154 @@ fn native_draw_rect_rounded_outline(state: &mut PetalCxt) -> NativeResult {
             Value::Int(a),
             Value::Int(width),
             Value::Int(radius),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+/// Build the flat `rect_gradient` arg list. Shared by the square and rounded
+/// natives so the two can never drift in field order.
+#[allow(clippy::too_many_arguments)]
+fn rect_gradient_args(
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
+    radius: i64,
+    c0: [i64; 4],
+    c1: [i64; 4],
+    angle: f64,
+) -> Vec<Value> {
+    vec![
+        Value::Int(x),
+        Value::Int(y),
+        Value::Int(w),
+        Value::Int(h),
+        Value::Int(radius),
+        Value::Int(c0[0]),
+        Value::Int(c0[1]),
+        Value::Int(c0[2]),
+        Value::Int(c0[3]),
+        Value::Int(c1[0]),
+        Value::Int(c1[1]),
+        Value::Int(c1[2]),
+        Value::Int(c1[3]),
+        Value::Float(angle),
+    ]
+}
+
+/// Read the two gradient stops (`r0 g0 b0 a0 r1 g1 b1 a1`) starting at
+/// 1-indexed argument `first`.
+fn gradient_stops(state: &PetalCxt, first: usize) -> Result<([i64; 4], [i64; 4]), String> {
+    let stop = |i: usize| -> Result<[i64; 4], String> {
+        Ok([
+            state.get_int(i)?,
+            state.get_int(i + 1)?,
+            state.get_int(i + 2)?,
+            state.get_int(i + 3)?,
+        ])
+    };
+    Ok((stop(first)?, stop(first + 4)?))
+}
+
+/// `draw_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle)` —
+/// a rect filled with a linear gradient along `angle` (radians, clockwise from
+/// +x, screen y-down). Both stops carry an alpha, so the fade-to-transparent
+/// scrim under a caption is one command.
+fn native_draw_rect_gradient(state: &mut PetalCxt) -> NativeResult {
+    let x = state.get_int(1)?;
+    let y = state.get_int(2)?;
+    let w = state.get_int(3)?;
+    let h = state.get_int(4)?;
+    let (c0, c1) = gradient_stops(state, 5)?;
+    let angle = get_num(state, 13, "draw_rect_gradient")?;
+    let args = rect_gradient_args(x, y, w, h, 0, c0, c1, angle);
+    emit_draw(state, "rect_gradient", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1,
+/// a1, angle)` — [`native_draw_rect_gradient`] with rounded corners, the same
+/// way `draw_rect_rounded` relates to `draw_rect`.
+fn native_draw_rect_gradient_rounded(state: &mut PetalCxt) -> NativeResult {
+    let x = state.get_int(1)?;
+    let y = state.get_int(2)?;
+    let w = state.get_int(3)?;
+    let h = state.get_int(4)?;
+    let radius = state.get_int(5)?;
+    let (c0, c1) = gradient_stops(state, 6)?;
+    let angle = get_num(state, 14, "draw_rect_gradient_rounded")?;
+    let args = rect_gradient_args(x, y, w, h, radius, c0, c1, angle);
+    emit_draw(state, "rect_gradient", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_circle_gradient(cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1)` — a
+/// disc shading from the center color to the rim color: the glow, the vignette,
+/// the soft spotlight.
+fn native_draw_circle_gradient(state: &mut PetalCxt) -> NativeResult {
+    let cx = state.get_int(1)?;
+    let cy = state.get_int(2)?;
+    let radius = state.get_int(3)?;
+    let (c0, c1) = gradient_stops(state, 4)?;
+    emit_draw(
+        state,
+        "circle_gradient",
+        vec![
+            Value::Int(cx),
+            Value::Int(cy),
+            Value::Int(radius),
+            Value::Int(c0[0]),
+            Value::Int(c0[1]),
+            Value::Int(c0[2]),
+            Value::Int(c0[3]),
+            Value::Int(c1[0]),
+            Value::Int(c1[1]),
+            Value::Int(c1[2]),
+            Value::Int(c1[3]),
+        ],
+    );
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, [a])` — the
+/// CSS box-shadow of the rounded rect (`x`, `y`, `w`, `h`, `radius`). The
+/// argument order is CSS's, with the casting shape first.
+fn native_draw_shadow(state: &mut PetalCxt) -> NativeResult {
+    let x = state.get_int(1)?;
+    let y = state.get_int(2)?;
+    let w = state.get_int(3)?;
+    let h = state.get_int(4)?;
+    let radius = state.get_int(5)?;
+    let blur = state.get_int(6)?;
+    let spread = state.get_int(7)?;
+    let dx = state.get_int(8)?;
+    let dy = state.get_int(9)?;
+    let r = state.get_int(10)?;
+    let g = state.get_int(11)?;
+    let b = state.get_int(12)?;
+    let a = opt_int(state, 13, 255)?;
+    emit_draw(
+        state,
+        "shadow",
+        vec![
+            Value::Int(x),
+            Value::Int(y),
+            Value::Int(w),
+            Value::Int(h),
+            Value::Int(radius),
+            Value::Int(blur.max(0)),
+            Value::Int(spread),
+            Value::Int(dx),
+            Value::Int(dy),
+            Value::Int(r),
+            Value::Int(g),
+            Value::Int(b),
+            Value::Int(a),
         ],
     );
     state.push_nil();
@@ -1237,8 +1585,11 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+/// `clip(x, y, w, h, [radius])` — *replace* the active clip. `clip_none`
+/// clears it.
 fn native_clip(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 4)?;
+    let mut args = int_args(state, 4)?;
+    args.push(Value::Int(opt_int(state, 5, 0)?)); // radius
     emit_draw(state, "clip", args);
     state.push_nil();
     Ok(1)
@@ -1246,6 +1597,24 @@ fn native_clip(state: &mut PetalCxt) -> NativeResult {
 
 fn native_clip_none(state: &mut PetalCxt) -> NativeResult {
     emit_draw(state, "clip_none", vec![]);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `clip_push(x, y, w, h, [radius])` — clip *inside* the enclosing clip
+/// (intersected with it), restored by `clip_pop()`. The composable form: a
+/// widget that clips its own contents no longer has to know, or destroy, the
+/// clip its caller set.
+fn native_clip_push(state: &mut PetalCxt) -> NativeResult {
+    let mut args = int_args(state, 4)?;
+    args.push(Value::Int(opt_int(state, 5, 0)?)); // radius
+    emit_draw(state, "clip_push", args);
+    state.push_nil();
+    Ok(1)
+}
+
+fn native_clip_pop(state: &mut PetalCxt) -> NativeResult {
+    emit_draw(state, "clip_pop", vec![]);
     state.push_nil();
     Ok(1)
 }
@@ -1307,7 +1676,8 @@ mod tests {
                 x: 1,
                 y: 2,
                 w: 30,
-                h: 40
+                h: 40,
+                radius: 0
             }
         );
         match &cmds[1] {
@@ -1339,6 +1709,7 @@ mod tests {
                     w: 30,
                     h: 40,
                     a: 255,
+                    radius: 0,
                 },
                 DrawCommand::Image {
                     source: "assets/glow.png".into(),
@@ -1347,6 +1718,7 @@ mod tests {
                     w: 70,
                     h: 80,
                     a: 128,
+                    radius: 0,
                 },
             ]
         );

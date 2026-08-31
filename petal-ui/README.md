@@ -21,8 +21,17 @@ input events → begin_frame(dt) → bind_frame_info / bind_input
   polling natives (`mouse_x`, `key_pressed`, `text_input`, `dt`, `time`, …).
   Scripts poll each frame; there are no callbacks.
 - **Layer 2 — draw** (`src/draw.rs`): draw natives (`draw_rect`, `draw_text`,
-  `fill_arc`, `clip`, …) append `DrawCommand`s to a buffer; the host drains
-  the buffer and turns it into pixels. Hosts implement rasterization only.
+  `fill_arc`, `draw_rect_gradient`, `draw_shadow`, `clip`/`clip_push`, …)
+  append `DrawCommand`s to a buffer; the host drains the buffer and turns it
+  into pixels. Hosts implement rasterization only.
+  - A host that can't do a thing **degrades** it — a gradient filled with one
+    of its stops, a rounded clip scissored square — rather than dropping the
+    command. Silent omission is the one wrong answer.
+  - `src/tess.rs` holds the CPU tessellation no host should re-derive.
+    `shadow_mesh` turns a `Shadow` command into a single *non-overlapping*
+    triangle list (a solid core plus a ring whose per-vertex alpha falls to 0
+    at `blur`), because a translucent shadow assembled from overlapping pieces
+    double-composites and shows every seam.
 - **The `ui` prelude** (`prelude/ui.ptl`): the widget library, registered as an
   implicit import so scripts call `button(...)`, `list_update(...)`,
   `checkbox(...)` bare. Implicit bindings are weak — a script's own

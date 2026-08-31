@@ -86,8 +86,46 @@ pub fn render<T: TextTarget>(
     // The active render target. `0` is the main framebuffer; any other value is
     // an offscreen canvas id set via `SetTarget` (i.e. `draw_to`).
     let mut target: u32 = 0;
+    // The clip stack behind `ClipPush`/`ClipPop`. `cur` is the clip in force
+    // (`None` = the whole drawable) and `saved` holds the enclosing clips a
+    // push displaced. It is resolved here rather than in `render_one` because
+    // a push has to *intersect* with the clip already set, which means knowing
+    // it — and `render_one` is per-command and stateless.
+    let mut cur_clip: Option<Rect> = None;
+    let mut saved_clips: Vec<Option<Rect>> = Vec::new();
 
     for cmd in commands {
+        // Resolve the stack ops into the plain `Clip`/`ClipNone` the renderer
+        // already knows, so there is one clip implementation, not three.
+        let cmd = match cmd {
+            DrawCommand::ClipPush { x, y, w, h, .. } => {
+                saved_clips.push(cur_clip);
+                let want = Rect::new(x, y, w.max(1), h.max(1));
+                cur_clip = Some(match cur_clip {
+                    // An empty intersection must clip *everything* out, so it
+                    // becomes a 1px rect far off the drawable — SDL has no
+                    // zero-sized clip rect to say it with.
+                    Some(c) => c.intersection(want).unwrap_or_else(empty_clip),
+                    None => want,
+                });
+                clip_cmd(cur_clip)
+            }
+            DrawCommand::ClipPop => {
+                // An unmatched pop is a no-op back to "no clip", which is what
+                // the command means when the stack is empty.
+                cur_clip = saved_clips.pop().flatten();
+                clip_cmd(cur_clip)
+            }
+            DrawCommand::Clip { x, y, w, h, .. } => {
+                cur_clip = Some(Rect::new(x, y, w.max(1), h.max(1)));
+                cmd
+            }
+            DrawCommand::ClipNone => {
+                cur_clip = None;
+                cmd
+            }
+            other => other,
+        };
         match cmd {
             DrawCommand::CreateCanvas { id, w, h } => {
                 if let Ok(mut surface) = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888)
@@ -415,10 +453,80 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
                 }
             }
         }
-        DrawCommand::Clip { x, y, w, h } => {
+        DrawCommand::RectGradient {
+            x,
+            y,
+            w,
+            h,
+            radius,
+            r0,
+            g0,
+            b0,
+            a0,
+            r1,
+            g1,
+            b1,
+            a1,
+            angle,
+        } => {
+            fill_rect_gradient(
+                canvas,
+                x,
+                y,
+                w,
+                h,
+                radius,
+                [r0, g0, b0, a0],
+                [r1, g1, b1, a1],
+                angle,
+            );
+        }
+        DrawCommand::CircleGradient {
+            cx,
+            cy,
+            radius,
+            r0,
+            g0,
+            b0,
+            a0,
+            r1,
+            g1,
+            b1,
+            a1,
+        } => {
+            fill_circle_gradient(canvas, cx, cy, radius, [r0, g0, b0, a0], [r1, g1, b1, a1]);
+        }
+        DrawCommand::Shadow {
+            x,
+            y,
+            w,
+            h,
+            radius,
+            blur,
+            spread,
+            dx,
+            dy,
+            r,
+            g,
+            b,
+            a,
+        } => {
+            fill_shadow(canvas, x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a);
+        }
+        // The corner radius is dropped: SDL's clip is a scissor rectangle, so
+        // a rounded clip degrades to the square one this command has always
+        // meant. `ClipPush`/`ClipPop` are resolved to plain rects by `render`
+        // (which owns the stack) before they ever reach here.
+        DrawCommand::Clip { x, y, w, h, .. } => {
             canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
         }
         DrawCommand::ClipNone => {
+            canvas.set_clip_rect(None);
+        }
+        DrawCommand::ClipPush { x, y, w, h, .. } => {
+            canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
+        }
+        DrawCommand::ClipPop => {
             canvas.set_clip_rect(None);
         }
         // Bitmap loading is host-specific and this integration has not opted
@@ -680,6 +788,221 @@ fn stroke_rounded_rect_outline<T: RenderTarget>(
                 start + PI / 2.0,
             ),
         );
+    }
+}
+
+/// The clip rect that means "nothing is visible": 1px, far outside any
+/// drawable. SDL's clip is a `Rect`, which cannot be empty, so an empty
+/// intersection of two clips has to be spelled this way.
+fn empty_clip() -> Rect {
+    Rect::new(i32::MIN / 2, i32::MIN / 2, 1, 1)
+}
+
+/// Turn the clip this renderer is tracking back into the draw command that
+/// applies it, so the stack ops share `render_one`'s one clip implementation.
+fn clip_cmd(clip: Option<Rect>) -> DrawCommand {
+    match clip {
+        Some(c) => DrawCommand::Clip {
+            x: c.x(),
+            y: c.y(),
+            w: c.width(),
+            h: c.height(),
+            radius: 0,
+        },
+        None => DrawCommand::ClipNone,
+    }
+}
+
+/// Linear interpolation between two RGBA stops at `t` ∈ [0, 1].
+fn lerp_rgba(c0: [u8; 4], c1: [u8; 4], t: f64) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |a: u8, b: u8| (a as f64 + (b as f64 - a as f64) * t).round() as u8;
+    Color::RGBA(
+        mix(c0[0], c1[0]),
+        mix(c0[1], c1[1]),
+        mix(c0[2], c1[2]),
+        mix(c0[3], c1[3]),
+    )
+}
+
+/// How far a rounded rect's edge is inset at `d` px from the near end of the
+/// side — 0 along the straight run, ramping up through the corner arc.
+fn corner_inset(d: f64, span: f64, radius: f64) -> f64 {
+    // Distance into the nearer corner arc, or 0 between them.
+    let into = if d < radius {
+        radius - d
+    } else if d > span - radius {
+        radius - (span - d)
+    } else {
+        return 0.0;
+    };
+    radius - (radius * radius - into * into).max(0.0).sqrt()
+}
+
+/// Fill a (optionally rounded) rect with a linear gradient, one 1px line at a
+/// time along whichever axis the gradient leans toward.
+///
+/// This is the software fallback, not a shader: the color is evaluated once
+/// per line, at the line's midpoint, so a diagonal gradient banks its steps
+/// along the dominant axis. Axis-aligned angles — very nearly all of them in
+/// practice — are exact. The rounded case narrows each line to the rounded
+/// rect's own span at that offset, so the corners are shaped, not clipped.
+#[allow(clippy::too_many_arguments)]
+fn fill_rect_gradient<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    radius: u32,
+    c0: [u8; 4],
+    c1: [u8; 4],
+    angle: f32,
+) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    canvas.set_blend_mode(BlendMode::Blend);
+    let (wf, hf) = (w as f64, h as f64);
+    let rad = (radius as f64).min(wf * 0.5).min(hf * 0.5);
+    let (dx, dy) = ((angle as f64).cos(), (angle as f64).sin());
+    // The gradient spans the rect's whole extent along the axis, so the
+    // projection is normalized by the projected width of the rect.
+    let extent = dx.abs() * wf + dy.abs() * hf;
+    let t_at = |px: f64, py: f64| {
+        // Offset from the corner the gradient starts at.
+        let ox = if dx >= 0.0 { px } else { wf - px };
+        let oy = if dy >= 0.0 { py } else { hf - py };
+        (ox * dx.abs() + oy * dy.abs()) / extent.max(1.0)
+    };
+    if dy.abs() >= dx.abs() {
+        for row in 0..h as i32 {
+            let inset = corner_inset(row as f64 + 0.5, hf, rad);
+            let line_w = wf - 2.0 * inset;
+            if line_w <= 0.0 {
+                continue;
+            }
+            canvas.set_draw_color(lerp_rgba(c0, c1, t_at(wf * 0.5, row as f64 + 0.5)));
+            let _ = canvas.fill_rect(Rect::new(
+                x + inset.round() as i32,
+                y + row,
+                line_w.round().max(1.0) as u32,
+                1,
+            ));
+        }
+    } else {
+        for col in 0..w as i32 {
+            let inset = corner_inset(col as f64 + 0.5, wf, rad);
+            let line_h = hf - 2.0 * inset;
+            if line_h <= 0.0 {
+                continue;
+            }
+            canvas.set_draw_color(lerp_rgba(c0, c1, t_at(col as f64 + 0.5, hf * 0.5)));
+            let _ = canvas.fill_rect(Rect::new(
+                x + col,
+                y + inset.round() as i32,
+                1,
+                line_h.round().max(1.0) as u32,
+            ));
+        }
+    }
+}
+
+/// Fill a disc with a radial gradient, center color to rim color, per pixel —
+/// the same per-pixel idiom `fill_disc_aa` uses, with the rim antialiased by
+/// disc coverage.
+fn fill_circle_gradient<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    cx: i32,
+    cy: i32,
+    radius: i32,
+    c0: [u8; 4],
+    c1: [u8; 4],
+) {
+    if radius <= 0 {
+        return;
+    }
+    canvas.set_blend_mode(BlendMode::Blend);
+    let (fx, fy, fr) = (cx as f64 + 0.5, cy as f64 + 0.5, radius as f64);
+    for py in (cy - radius - 1)..=(cy + radius + 1) {
+        for px in (cx - radius - 1)..=(cx + radius + 1) {
+            let coverage = disc_coverage(px, py, fx, fy, fr);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let d = ((px as f64 + 0.5 - fx).powi(2) + (py as f64 + 0.5 - fy).powi(2)).sqrt();
+            let color = lerp_rgba(c0, c1, d / fr);
+            let a = (color.a as f64 * coverage).round() as u8;
+            if a > 0 {
+                canvas.set_draw_color(Color::RGBA(color.r, color.g, color.b, a));
+                let _ = canvas.draw_point((px, py));
+            }
+        }
+    }
+}
+
+/// Draw a soft shadow per pixel, from the signed distance to the (offset,
+/// spread) rounded rect: full alpha inside, ramping linearly to 0 at `blur`.
+///
+/// That is the same falloff [`petal_ui::tess::shadow_mesh`] tessellates for a
+/// GPU host, evaluated analytically instead — which on a software canvas is
+/// both simpler and exact, and shares the property that matters: every pixel
+/// is written once, so the shadow never double-composites over itself.
+#[allow(clippy::too_many_arguments)]
+fn fill_shadow<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    radius: u32,
+    blur: u32,
+    spread: i32,
+    dx: i32,
+    dy: i32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+) {
+    let sw = w as f64 + 2.0 * spread as f64;
+    let sh = h as f64 + 2.0 * spread as f64;
+    if sw <= 0.0 || sh <= 0.0 || a == 0 {
+        return;
+    }
+    let sx = (x + dx) as f64 - spread as f64;
+    let sy = (y + dy) as f64 - spread as f64;
+    // The spread grows the corners with the shape, as CSS does.
+    let rad = (radius as f64 + spread as f64).clamp(0.0, sw.min(sh) * 0.5);
+    let blur = blur as f64;
+    let (hx, hy) = (sw * 0.5, sh * 0.5);
+    let (mx, my) = (sx + hx, sy + hy);
+
+    canvas.set_blend_mode(BlendMode::Blend);
+    let x0 = (sx - blur - 1.0).floor() as i32;
+    let x1 = (sx + sw + blur + 1.0).ceil() as i32;
+    let y0 = (sy - blur - 1.0).floor() as i32;
+    let y1 = (sy + sh + blur + 1.0).ceil() as i32;
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            // Signed distance to the rounded rect: positive outside.
+            let qx = (px as f64 + 0.5 - mx).abs() - hx + rad;
+            let qy = (py as f64 + 0.5 - my).abs() - hy + rad;
+            let outside = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
+            let d = outside + qx.max(qy).min(0.0) - rad;
+            let falloff = if d <= 0.0 {
+                1.0
+            } else if blur <= 0.0 {
+                0.0
+            } else {
+                (1.0 - d / blur).max(0.0)
+            };
+            let pa = (a as f64 * falloff).round() as u8;
+            if pa > 0 {
+                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
+                let _ = canvas.draw_point((px, py));
+            }
+        }
     }
 }
 

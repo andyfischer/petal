@@ -23,6 +23,9 @@
 //!   `focus_update`) and the focus-aware `text_field` widget + gated
 //!   `list_update` built on it, registered with [`register_prelude`] and
 //!   delivered through the module system as an implicit import.
+//! - [`tess`]: shared CPU tessellation for the commands a host can't fill in
+//!   one go — currently the soft shadow, whose non-overlapping mesh every
+//!   host needs and none should re-derive.
 //! - [`harness`]: a headless test driver so widget logic is unit-testable
 //!   with no renderer attached.
 //! - [`scenario`]: declarative, replayable input scripts for that driver
@@ -48,6 +51,7 @@ pub mod input;
 pub mod panel_stubs;
 pub mod pending;
 pub mod scenario;
+pub mod tess;
 pub mod text;
 
 /// Version of the petal-ui contract, exposed to scripts as `ui_version()`.
@@ -89,7 +93,14 @@ pub const UI_VERSION: i64 = 1;
 ///   families the host can draw. Backed by the optional
 ///   [`text::FontSource`] a host attaches, which is what lets a script name a
 ///   face installed on the machine rather than only the host's own.
-pub const PRELUDE_LEVEL: u32 = 4;
+/// - 5 — gradients, shadows and nested clips (2026-08-30):
+///   `draw_rect_gradient` / `draw_rect_gradient_rounded` /
+///   `draw_circle_gradient` and the multi-stop `linear_gradient(rect, stops,
+///   angle, [radius])`; `draw_shadow(rect, opts)` and its positional form,
+///   backed by [`tess::shadow_mesh`]; `clip_push`/`clip_pop` (clips that nest
+///   instead of replacing), a trailing `radius` on `clip` and `draw_image`,
+///   and the record overloads of `clip`.
+pub const PRELUDE_LEVEL: u32 = 5;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

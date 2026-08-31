@@ -323,15 +323,36 @@ pub enum DragOutcome {
 /// query would make every miss look like a hit on the line that cleared.
 pub fn hit_test(cmds: &[PanelCmd], x: i32, y: i32) -> Option<usize> {
     let mut clip: Option<(i32, i32, i32, i32)> = None;
+    // The `ClipPush`/`ClipPop` stack, tracked here for the same reason the
+    // renderer tracks it: a push intersects with the clip already in force, so
+    // reading the stream without it would hit-test against the wrong rect.
+    let mut saved: Vec<Option<(i32, i32, i32, i32)>> = Vec::new();
     let mut hit = None;
     for (i, cmd) in cmds.iter().enumerate() {
         match cmd {
-            PanelCmd::Clip { x: cx, y: cy, w, h } => {
+            PanelCmd::Clip {
+                x: cx, y: cy, w, h, ..
+            } => {
                 clip = Some((*cx, *cy, *cx + *w as i32, *cy + *h as i32));
                 continue;
             }
             PanelCmd::ClipNone => {
                 clip = None;
+                continue;
+            }
+            PanelCmd::ClipPush {
+                x: cx, y: cy, w, h, ..
+            } => {
+                saved.push(clip);
+                let want = (*cx, *cy, *cx + *w as i32, *cy + *h as i32);
+                clip = Some(match clip {
+                    Some(c) => (c.0.max(want.0), c.1.max(want.1), c.2.min(want.2), c.3.min(want.3)),
+                    None => want,
+                });
+                continue;
+            }
+            PanelCmd::ClipPop => {
+                clip = saved.pop().flatten();
                 continue;
             }
             _ => {}
@@ -354,6 +375,9 @@ fn contains(cmd: &PanelCmd, x: i32, y: i32) -> bool {
         PanelCmd::Rect {
             x: rx, y: ry, w, h, ..
         }
+        | PanelCmd::RectGradient {
+            x: rx, y: ry, w, h, ..
+        }
         | PanelCmd::Image {
             x: rx, y: ry, w, h, ..
         } => in_rect(*rx, *ry, *w, *h, x, y),
@@ -373,7 +397,7 @@ fn contains(cmd: &PanelCmd, x: i32, y: i32) -> bool {
                 && !(x >= rx + t && x < rx + *w as i32 - t && y >= ry + t && y < ry + *h as i32 - t)
         }
 
-        PanelCmd::Circle { cx, cy, radius, .. } => {
+        PanelCmd::Circle { cx, cy, radius, .. } | PanelCmd::CircleGradient { cx, cy, radius, .. } => {
             let (dx, dy) = ((x - cx) as f64, (y - cy) as f64);
             dx * dx + dy * dy <= (*radius as f64) * (*radius as f64)
         }
@@ -502,7 +526,9 @@ fn contains(cmd: &PanelCmd, x: i32, y: i32) -> bool {
         }
 
         // Everything else is either not a painted shape (region declarations,
-        // scroll/wrap actions) or is the background itself.
+        // scroll/wrap actions), is the background itself, or is decoration
+        // that must not steal the pick from the thing it decorates — a
+        // `Shadow` belongs to the card it falls behind, not to itself.
         _ => false,
     }
 }
@@ -630,6 +656,7 @@ mod tests {
                 y: 0,
                 w: 30,
                 h: 30,
+                radius: 0,
             },
             rect(0, 0, 100, 100),
             PanelCmd::ClipNone,

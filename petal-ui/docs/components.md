@@ -225,13 +225,47 @@ early — see the comment in ui.ptl), and `drag_state`/`drag_update`/
 `draw_text_right/center`, `mix`, `lerp_color`, `luma`, `contrast_text`,
 `elapsed`.
 
+## Draw primitives — gradients, shadows, nested clips
+
+Beyond the fills and strokes (`draw_rect`, `draw_rect_rounded`, `draw_line`,
+`fill_arc`, …), each of which takes a rect record and a color record:
+
+| Call | Draws |
+|---|---|
+| `draw_rect_gradient(rect, c0, c1, angle[, a0, a1])` | a linear gradient across the rect |
+| `draw_rect_gradient_rounded(rect, radius, c0, c1, angle[, a0, a1])` | the same, with rounded corners |
+| `draw_circle_gradient(center, radius, c0, c1[, a0, a1])` | a disc shading center → rim |
+| `linear_gradient(rect, stops, angle[, radius])` | 3+ stops, subdivided into bands |
+| `draw_shadow(rect, {radius, blur, spread, dx, dy, color, a})` | a CSS box-shadow |
+| `draw_shadow(rect, radius, blur, color[, a])` | the positional short form |
+| `clip_push(rect[, radius])` / `clip_pop()` | a clip that nests inside the enclosing one |
+| `clip(rect[, radius])` / `clip_none()` | replace / clear the clip (unchanged) |
+| `draw_image(source, rect[, a[, radius]])` | a bitmap, optionally round-cornered |
+
+`angle` is radians, clockwise from +x with y growing downward — the screen
+convention `fill_arc` uses. `0` runs left→right, `PI/2` top→bottom.
+
+A gradient stop may carry an `a` field, and then that is the stop's alpha. It is
+the one primitive where alpha rides *with* the color, because a two-stop fade
+needs two of them; the trailing `a0, a1` overloads override it.
+
+Prefer `clip_push`/`clip_pop` inside anything reusable: `clip` *replaces* the
+active clip, so a widget that clips its own contents would throw away the clip
+its caller set.
+
+`draw_shadow` is one command rather than a stack of translucent rounded rects
+on purpose — alpha blending is not idempotent, so nested rings double-composite
+and show every seam. Hosts tessellate it as a single non-overlapping mesh
+(`petal_ui::tess::shadow_mesh`).
+
 ## Compatibility
 
 Level 3 is strictly additive: every pre-existing export keeps its signature,
 and apps that shadow prelude names with their own (`fn spinner`,
 `fn draw_scrollbar`, …) keep working — implicit-import bindings are weak.
-Check a binary's surface with `garden --version --json` (`prelude.exports`)
-or `petal_ui::PRELUDE_LEVEL`.
+Level 5 adds the gradient/shadow/nested-clip primitives above, and is additive
+in the same way. Check a binary's surface with `garden --version --json`
+(`prelude.exports`) or `petal_ui::PRELUDE_LEVEL`.
 
 ## Testing your UI
 

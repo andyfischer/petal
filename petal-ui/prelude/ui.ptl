@@ -83,6 +83,14 @@ end
 export fn draw_image(source, r, a)
   _native_image(source, r.x, r.y, r.w, r.h, a)
 end
+// Rounded corners — the avatar, the card thumbnail. A host that can't round a
+// bitmap draws the square image rather than nothing.
+export fn draw_image(source, x, y, w, h, a, radius)
+  _native_image(source, x, y, w, h, a, radius)
+end
+export fn draw_image(source, r, a, radius)
+  _native_image(source, r.x, r.y, r.w, r.h, a, radius)
+end
 
 export fn draw_rect(x, y, w, h, r, g, b)
   _native_rect(x, y, w, h, r, g, b)
@@ -185,6 +193,218 @@ end
 //   draw_text("#482", {x: 60, y: 20}, {size: 15, color: FG, weight: 700})
 export fn draw_text(text, pos, style)
   _native_text(text, pos.x, pos.y, style)
+end
+
+// ── Clipping ──────────────────────────────────────────────────────────────
+
+// `clip` *replaces* the active clip and `clip_none()` clears it — the pair
+// this prelude has always had. `clip_push`/`clip_pop` are the composable form:
+// a push intersects with the clip already in force and a pop puts it back, so
+// a widget can clip its own contents without knowing (or destroying) the clip
+// its caller set. Prefer them inside anything reusable.
+//
+// The optional trailing `radius` rounds the clip's corners, so a card can clip
+// its content to its own rounded shape. A host that can only scissor a
+// rectangle ignores it and clips square.
+
+let _native_clip = clip
+let _native_clip_push = clip_push
+let _native_clip_pop = clip_pop
+
+export fn clip(x, y, w, h)
+  _native_clip(x, y, w, h)
+end
+export fn clip(x, y, w, h, radius)
+  _native_clip(x, y, w, h, radius)
+end
+export fn clip(r)
+  _native_clip(r.x, r.y, r.w, r.h)
+end
+export fn clip(r, radius)
+  _native_clip(r.x, r.y, r.w, r.h, radius)
+end
+
+export fn clip_push(x, y, w, h)
+  _native_clip_push(x, y, w, h)
+end
+export fn clip_push(x, y, w, h, radius)
+  _native_clip_push(x, y, w, h, radius)
+end
+export fn clip_push(r)
+  _native_clip_push(r.x, r.y, r.w, r.h)
+end
+export fn clip_push(r, radius)
+  _native_clip_push(r.x, r.y, r.w, r.h, radius)
+end
+
+export fn clip_pop()
+  _native_clip_pop()
+end
+
+// ── Gradients ─────────────────────────────────────────────────────────────
+// A gradient stop is an ordinary color record. It may carry an `a` field, in
+// which case that is the stop's alpha — the only primitive where alpha rides
+// *with* the color, because a two-stop fade needs two of them and there is no
+// sensible positional place for the second. The trailing `a0, a1` overloads
+// override it when you'd rather pass alpha the way every other primitive does.
+//
+// `angle` is radians, clockwise from +x with y growing downward (the screen
+// convention `fill_arc` uses): 0 runs left→right, PI/2 top→bottom.
+
+// A stop's own alpha, or opaque when it carries none.
+fn _stop_a(c)
+  c["a"] ?? 255
+end
+
+// Captured like the other primitives' natives, so the record overloads below
+// can shadow the builtin names without cutting off the flat arities.
+let _native_rect_gradient = draw_rect_gradient
+let _native_rect_gradient_rounded = draw_rect_gradient_rounded
+let _native_circle_gradient = draw_circle_gradient
+
+export fn draw_rect_gradient(rect, c0, c1, angle)
+  _native_rect_gradient(rect.x, rect.y, rect.w, rect.h, c0.r, c0.g, c0.b, _stop_a(c0),
+                        c1.r, c1.g, c1.b, _stop_a(c1), angle)
+end
+export fn draw_rect_gradient(rect, c0, c1, angle, a0, a1)
+  _native_rect_gradient(rect.x, rect.y, rect.w, rect.h, c0.r, c0.g, c0.b, a0,
+                        c1.r, c1.g, c1.b, a1, angle)
+end
+export fn draw_rect_gradient(x, y, w, h, c0, c1, angle)
+  _native_rect_gradient(x, y, w, h, c0.r, c0.g, c0.b, _stop_a(c0),
+                        c1.r, c1.g, c1.b, _stop_a(c1), angle)
+end
+// The flat form, forwarded so the native stays reachable through the prelude.
+export fn draw_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle)
+  _native_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle)
+end
+
+export fn draw_rect_gradient_rounded(rect, radius, c0, c1, angle)
+  _native_rect_gradient_rounded(rect.x, rect.y, rect.w, rect.h, radius,
+                                c0.r, c0.g, c0.b, _stop_a(c0),
+                                c1.r, c1.g, c1.b, _stop_a(c1), angle)
+end
+export fn draw_rect_gradient_rounded(rect, radius, c0, c1, angle, a0, a1)
+  _native_rect_gradient_rounded(rect.x, rect.y, rect.w, rect.h, radius,
+                                c0.r, c0.g, c0.b, a0, c1.r, c1.g, c1.b, a1, angle)
+end
+export fn draw_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
+  _native_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
+end
+
+// A disc shading from `c0` at the center to `c1` at the rim — glow, vignette,
+// soft spotlight.
+export fn draw_circle_gradient(center, radius, c0, c1)
+  _native_circle_gradient(center.x, center.y, radius, c0.r, c0.g, c0.b, _stop_a(c0),
+                          c1.r, c1.g, c1.b, _stop_a(c1))
+end
+export fn draw_circle_gradient(center, radius, c0, c1, a0, a1)
+  _native_circle_gradient(center.x, center.y, radius, c0.r, c0.g, c0.b, a0,
+                          c1.r, c1.g, c1.b, a1)
+end
+export fn draw_circle_gradient(cx, cy, radius, c0, c1)
+  _native_circle_gradient(cx, cy, radius, c0.r, c0.g, c0.b, _stop_a(c0),
+                          c1.r, c1.g, c1.b, _stop_a(c1))
+end
+export fn draw_circle_gradient(cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1)
+  _native_circle_gradient(cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1)
+end
+
+// A multi-stop gradient: `stops` is a list of color records, spaced evenly
+// along the axis. Two stops is exactly `draw_rect_gradient`; more than two is
+// subdivided here into one two-stop band per pair, so a three-stop sky or a
+// heat ramp costs no new draw command. Neighbouring bands share their edge
+// color and the host interpolates per vertex, so the seams do not show.
+//
+// The bands are laid out along whichever axis the angle leans toward, which
+// makes them exact for an axis-aligned `angle` and an approximation for a
+// diagonal one (each band still gradates along the true angle; only the band
+// *boundaries* are axis-aligned). Two stops has no bands and is exact at any
+// angle.
+export fn linear_gradient(rect, stops, angle)
+  linear_gradient(rect, stops, angle, 0)
+end
+
+export fn linear_gradient(rect, stops, angle, radius)
+  let n = len(stops)
+  if n == 1 then
+    draw_rect_rounded(rect, radius, stops[0], _stop_a(stops[0]))
+  end
+  if n == 2 then
+    draw_rect_gradient_rounded(rect, radius, stops[0], stops[1], angle)
+  end
+  if n > 2 then
+    // The rounded corners come from a rounded clip rather than from the
+    // bands: only the first and last band touch a corner, and asking each to
+    // round the ones it doesn't touch would notch the middle of the shape.
+    if radius > 0 then
+      clip_push(rect, radius)
+    end
+    let bands = n - 1
+    let along_x = abs(cos(angle)) >= abs(sin(angle))
+    let forward = cos(angle) >= 0.0
+    if !along_x then
+      forward = sin(angle) >= 0.0
+    end
+    for i in range(0, bands) do
+      // The band's span along the layout axis, as fractions of the rect. A
+      // gradient pointing backwards along the axis lays its bands out from
+      // the far end, so stop 0 is still where the gradient starts.
+      let t0 = (i * 1.0) / bands
+      let t1 = ((i + 1) * 1.0) / bands
+      if !forward then
+        let swap = t0
+        t0 = 1.0 - t1
+        t1 = 1.0 - swap
+      end
+      let band = {x: rect.x + t0 * rect.w, y: rect.y, w: (t1 - t0) * rect.w, h: rect.h}
+      if !along_x then
+        band = {x: rect.x, y: rect.y + t0 * rect.h, w: rect.w, h: (t1 - t0) * rect.h}
+      end
+      // Band `i` is the i-th *along the gradient*, so it always carries stops
+      // i→i+1; a backwards angle only moved where it sits, and the angle
+      // itself still orients the fade inside it.
+      draw_rect_gradient(band, stops[i], stops[i + 1], angle)
+    end
+    if radius > 0 then
+      clip_pop()
+    end
+  end
+  nil
+end
+
+// ── Shadows ───────────────────────────────────────────────────────────────
+
+// A CSS box-shadow cast by the rounded rect `rect`. `opts` is a partial record
+// of {radius, blur, spread, dx, dy, color, a} — anything omitted defaults to
+// the plain drop shadow (square corners, no spread, no offset, black at 25%).
+// The whole shadow composites once, so it never shows a seam:
+//
+//   draw_shadow(card, {radius: 8, blur: 16, dy: 4, a: 60})
+//   draw_rect_rounded(card, 8, t.panel)
+let _native_shadow = draw_shadow
+
+export fn draw_shadow(rect, opts)
+  let c = opts["color"] ?? #000000
+  _native_shadow(rect.x, rect.y, rect.w, rect.h,
+                 opts["radius"] ?? 0, opts["blur"] ?? 8, opts["spread"] ?? 0,
+                 opts["dx"] ?? 0, opts["dy"] ?? 0,
+                 c.r, c.g, c.b, opts["a"] ?? 64)
+end
+
+// The positional form, for the common "soft shadow under this card" call.
+export fn draw_shadow(rect, radius, blur, c)
+  _native_shadow(rect.x, rect.y, rect.w, rect.h, radius, blur, 0, 0, 0, c.r, c.g, c.b, _stop_a(c))
+end
+export fn draw_shadow(rect, radius, blur, c, a)
+  _native_shadow(rect.x, rect.y, rect.w, rect.h, radius, blur, 0, 0, 0, c.r, c.g, c.b, a)
+end
+// The flat form the native takes, forwarded so it stays reachable.
+export fn draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b)
+  _native_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b)
+end
+export fn draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a)
+  _native_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a)
 end
 
 // ── Fonts ─────────────────────────────────────────────────────────────────

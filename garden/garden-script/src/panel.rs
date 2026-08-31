@@ -182,6 +182,7 @@ pub enum PanelCmd {
     /// rebuilds the region's projection only when it genuinely changes.
     TextViewProjection { id: i64, spec: ProjectionSpec },
     /// A host-resolved bitmap scaled into a panel-local destination rectangle.
+    /// `radius` rounds its corners (0 = square) — the avatar, the thumbnail.
     Image {
         source: String,
         x: i32,
@@ -189,6 +190,7 @@ pub enum PanelCmd {
         w: u32,
         h: u32,
         a: u8,
+        radius: u32,
     },
     /// Filled rectangle. `radius` px rounds the corners (0 = square).
     Rect {
@@ -348,12 +350,91 @@ pub enum PanelCmd {
         italic: bool,
         spacing: f32,
     },
+    /// A (optionally rounded) rect filled with a linear gradient from color 0
+    /// to color 1 along `angle` — radians clockwise from +x with y growing
+    /// downward, like [`Arc`](PanelCmd::Arc). Both stops carry their own
+    /// alpha, so a fade-to-nothing scrim is one command.
+    RectGradient {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        radius: u32,
+        r0: u8,
+        g0: u8,
+        b0: u8,
+        a0: u8,
+        r1: u8,
+        g1: u8,
+        b1: u8,
+        a1: u8,
+        angle: f32,
+    },
+    /// A disc shading from the center color to the rim color: the radial
+    /// sibling of [`RectGradient`](PanelCmd::RectGradient).
+    CircleGradient {
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        r0: u8,
+        g0: u8,
+        b0: u8,
+        a0: u8,
+        r1: u8,
+        g1: u8,
+        b1: u8,
+        a1: u8,
+    },
+    /// A CSS box-shadow cast by the rounded rect (`x`, `y`, `w`, `h`,
+    /// `radius`): offset by (`dx`, `dy`), grown by `spread`, its edge falling
+    /// off over `blur` px. Tessellated on the CPU as one non-overlapping mesh
+    /// (`petal_ui::tess::shadow_mesh`) rather than blurred — a shadow is
+    /// translucent, so a mesh that overlapped itself would show every seam.
+    Shadow {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        radius: u32,
+        blur: u32,
+        spread: i32,
+        dx: i32,
+        dy: i32,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
     /// Restrict subsequent draws to this sub-rect (panel-local) until the next
     /// [`ClipNone`](PanelCmd::ClipNone). The host intersects it with the pane so
     /// a script still can't paint outside its own pane. Used for scroll regions.
-    Clip { x: i32, y: i32, w: u32, h: u32 },
+    ///
+    /// `radius` rounds the clip's corners (0 = square, which is what this
+    /// command has always meant). Clip *replaces* the active clip — see
+    /// [`ClipPush`](PanelCmd::ClipPush) for the nesting form.
+    Clip {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        radius: u32,
+    },
     /// Clear any active clip; subsequent draws use the whole pane again.
     ClipNone,
+    /// Clip *inside* the enclosing clip (intersected with it) until the
+    /// matching [`ClipPop`](PanelCmd::ClipPop) restores it. The composable
+    /// form, so a widget can clip its own contents without knowing — or
+    /// destroying — the clip its caller set.
+    ClipPush {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        radius: u32,
+    },
+    /// Restore the clip in force before the matching
+    /// [`ClipPush`](PanelCmd::ClipPush). Unmatched, it resets to the pane.
+    ClipPop,
     /// Declare a read-only, natively-selectable text region: the host renders a
     /// real [`EditorView`](../../garden_app/editor_view/struct.EditorView.html)
     /// (buffer-backed, with selection + system-clipboard copy) inside this
@@ -437,6 +518,25 @@ impl PanelCmd {
     }
 }
 
+/// Complain — once per process — that a panel used the offscreen-canvas ops.
+///
+/// Garden registers [`petal_ui::draw::register_draw`] but not
+/// `register_canvas`, so a script can only reach these by emitting the tags by
+/// hand; either way the commands are dropped. Dropping them *silently* is the
+/// bad outcome: a drawer that renders everything through a canvas draws
+/// nothing at all and gives no clue why. Once is enough — a panel reruns every
+/// frame, so a per-command warning would be a firehose.
+fn warn_canvas_unsupported() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        eprintln!(
+            "[garden panel] offscreen-canvas draw commands (create_canvas / \
+             draw_to / draw_canvas) are not supported by Garden panels and were \
+             dropped; draw directly into the pane instead."
+        );
+    });
+}
+
 impl PanelCmd {
     /// Project a `petal-ui` draw command onto Garden's render vocabulary,
     /// carrying the full field set (alpha, corner `radius`, stroke `width`).
@@ -452,6 +552,7 @@ impl PanelCmd {
                 w,
                 h,
                 a,
+                radius,
             } => PanelCmd::Image {
                 source,
                 x,
@@ -459,6 +560,7 @@ impl PanelCmd {
                 w,
                 h,
                 a,
+                radius,
             },
             DrawCommand::Clear { r, g, b } => PanelCmd::Clear { r, g, b },
             DrawCommand::Rect {
@@ -690,12 +792,126 @@ impl PanelCmd {
                 italic,
                 spacing,
             },
-            DrawCommand::Clip { x, y, w, h } => PanelCmd::Clip { x, y, w, h },
+            DrawCommand::RectGradient {
+                x,
+                y,
+                w,
+                h,
+                radius,
+                r0,
+                g0,
+                b0,
+                a0,
+                r1,
+                g1,
+                b1,
+                a1,
+                angle,
+            } => PanelCmd::RectGradient {
+                x,
+                y,
+                w,
+                h,
+                radius,
+                r0,
+                g0,
+                b0,
+                a0,
+                r1,
+                g1,
+                b1,
+                a1,
+                angle,
+            },
+            DrawCommand::CircleGradient {
+                cx,
+                cy,
+                radius,
+                r0,
+                g0,
+                b0,
+                a0,
+                r1,
+                g1,
+                b1,
+                a1,
+            } => PanelCmd::CircleGradient {
+                cx,
+                cy,
+                radius,
+                r0,
+                g0,
+                b0,
+                a0,
+                r1,
+                g1,
+                b1,
+                a1,
+            },
+            DrawCommand::Shadow {
+                x,
+                y,
+                w,
+                h,
+                radius,
+                blur,
+                spread,
+                dx,
+                dy,
+                r,
+                g,
+                b,
+                a,
+            } => PanelCmd::Shadow {
+                x,
+                y,
+                w,
+                h,
+                radius,
+                blur,
+                spread,
+                dx,
+                dy,
+                r,
+                g,
+                b,
+                a,
+            },
+            DrawCommand::Clip {
+                x,
+                y,
+                w,
+                h,
+                radius,
+            } => PanelCmd::Clip {
+                x,
+                y,
+                w,
+                h,
+                radius,
+            },
             DrawCommand::ClipNone => PanelCmd::ClipNone,
+            DrawCommand::ClipPush {
+                x,
+                y,
+                w,
+                h,
+                radius,
+            } => PanelCmd::ClipPush {
+                x,
+                y,
+                w,
+                h,
+                radius,
+            },
+            DrawCommand::ClipPop => PanelCmd::ClipPop,
             DrawCommand::CreateCanvas { .. }
             | DrawCommand::SetTarget { .. }
-            | DrawCommand::DrawCanvas { .. }
-            | DrawCommand::Host { .. } => return None,
+            | DrawCommand::DrawCanvas { .. } => {
+                warn_canvas_unsupported();
+                return None;
+            }
+            DrawCommand::Host { .. } => return None,
         })
     }
 }
@@ -3371,6 +3587,7 @@ mod tests {
                 w: 20,
                 h: 30,
                 a: 128,
+                radius: 0,
             }]
         );
     }
@@ -3450,7 +3667,8 @@ mod tests {
                     x: 4,
                     y: 8,
                     w: 20,
-                    h: 30
+                    h: 30,
+                    radius: 0
                 },
                 PanelCmd::Rect {
                     x: 0,
@@ -3513,6 +3731,79 @@ mod tests {
         );
         // Sanity: 4 chars at size 14 is ~34 px (0.6 ratio), not zero.
         assert_eq!(widths[0].trim(), "34");
+    }
+
+    #[test]
+    fn the_gradient_shadow_and_clip_stack_commands_reach_the_panel_vocabulary() {
+        // Every field of the new draw commands has to survive the projection
+        // onto `PanelCmd` — a dropped angle or blur is invisible until it is
+        // rendered wrong.
+        let f = write_script(
+            "draw_rect_gradient_rounded(1, 2, 30, 40, 6, 255, 0, 0, 255, 0, 0, 255, 128, 1.5)\n\
+             draw_circle_gradient(5, 6, 7, 1, 2, 3, 255, 4, 5, 6, 0)\n\
+             draw_shadow(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)\n\
+             clip_push(1, 2, 3, 4, 5)\n\
+             clip_pop()\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(64, 48);
+        assert_eq!(
+            host.frame(0.0, 0).unwrap(),
+            vec![
+                PanelCmd::RectGradient {
+                    x: 1,
+                    y: 2,
+                    w: 30,
+                    h: 40,
+                    radius: 6,
+                    r0: 255,
+                    g0: 0,
+                    b0: 0,
+                    a0: 255,
+                    r1: 0,
+                    g1: 0,
+                    b1: 255,
+                    a1: 128,
+                    angle: 1.5,
+                },
+                PanelCmd::CircleGradient {
+                    cx: 5,
+                    cy: 6,
+                    radius: 7,
+                    r0: 1,
+                    g0: 2,
+                    b0: 3,
+                    a0: 255,
+                    r1: 4,
+                    g1: 5,
+                    b1: 6,
+                    a1: 0,
+                },
+                PanelCmd::Shadow {
+                    x: 1,
+                    y: 2,
+                    w: 3,
+                    h: 4,
+                    radius: 5,
+                    blur: 6,
+                    spread: 7,
+                    dx: 8,
+                    dy: 9,
+                    r: 10,
+                    g: 11,
+                    b: 12,
+                    a: 13,
+                },
+                PanelCmd::ClipPush {
+                    x: 1,
+                    y: 2,
+                    w: 3,
+                    h: 4,
+                    radius: 5,
+                },
+                PanelCmd::ClipPop,
+            ]
+        );
     }
 
     #[test]

@@ -1165,7 +1165,7 @@ the writes.
 
 A `var` binds a mutable heap cell (see
 [`var` and `set`](language-guide.md#var-and-set); the design rationale is in
-`docs/dev/var-next-steps.md`, Cells). The cell operand of a `CellRead`,
+`docs/var.md`, Cells). The cell operand of a `CellRead`,
 a `CellWrite` or a closure capture is an *identity* edge — it names which box,
 not which value — so a backward walk never crosses one. Every stop is reported
 as a **frontier** entry naming the var, its declaration, and the complete set

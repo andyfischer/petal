@@ -87,7 +87,7 @@ field on the result rather than a convention:
 Runtime error messages ("Caused by:") share the same walk and print the
 frontier for the same reason.
 
-See [`var-next-steps.md`](var-next-steps.md) (Provenance) for the argument.
+See [`var.md`](../var.md) (Provenance) for the argument.
 
 ### 1b. Observation: every named value, right now
 

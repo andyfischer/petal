@@ -1832,7 +1832,7 @@ fn bytecode_trace_records_call_results() {
 /// naming a local `take`, which collides with `std::take` from the auto-loaded
 /// core prelude: the phi was initialized from the prelude's root-block closure,
 /// so lowering failed with "not in this function" — and renaming the local was
-/// the only fix. See docs/dev/var-next-steps.md (Lexical shadowing).
+/// the only fix. See docs/var.md (Lexical shadowing).
 #[test]
 fn a_local_shadowing_an_outer_name_lowers() {
     // `outer` stands in for the prelude binding; the nesting is `_wrap_segment`'s.

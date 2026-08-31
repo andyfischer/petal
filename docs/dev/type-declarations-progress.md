@@ -189,7 +189,7 @@ The runtime is untouched — annotations are stripped to names for codegen.
   runs clean and is in the manifest.
 
 ### `var` / `set` cells — DONE
-See [`var-next-steps.md`](var-next-steps.md) (Cells).
+See [`var.md`](../var.md) (Cells).
 A `var` binds a heap cell, so it breaks the checker's usual assumption that a
 binding's initializer describes every later read.
 

@@ -26,6 +26,7 @@ How the implementation works and where it's headed:
 | Document | Description |
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | Internal design: IR term graph, evaluator, state, provenance |
+| [`var` / mutable cells](var.md) | How `var`, `set` and `get` work: cells, containment, the write/read keyword rules, and the provenance frontier |
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: natives, values, host channels |
 | [Embedding Guide](embedding-guide.md) | Patterns for embedding without host globals: observing function calls, reading arbitrary named values, feeding inputs, per-run ids |
 | [Direct Manipulation](direct-manipulation.md) | Tracing an emitted value back to the code that produced it: point at a drawn shape, find (and rewrite) its call |
@@ -55,7 +56,6 @@ working documents — expect internal shorthand and point-in-time status:
 | [Typography Progress](dev/typography-progress.md) | Status tracker for the typography phases |
 | [Bytecode Future Ideas](dev/bytecode-future-ideas.md) | Open follow-ups for the bytecode backend (the backend itself is complete) |
 | [Linter Plan](dev/linter-plan.md) | `petal lint` / `lint-fix` design; re-indent + identity-cast rules shipped, normalization catalogue remains |
-| [`var` / `set` Next Steps](dev/var-next-steps.md) | The rules mutable cells are built on, plus what's left: a typed phase channel for compiler errors |
 | [Pending Values Plan](dev/pending-values-plan.md) | Async/pending-value semantics; language+observability shipped, petal-query remains |
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | Early, unfinished surface for constructing/transforming a program as IR data |

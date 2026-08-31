@@ -324,7 +324,7 @@ impl Compiler {
     /// local — and carry *its* value out to the outer name. Freezing here means
     /// the pre-shadow assignment carries out and everything after the
     /// declaration stays local, which is what the source says.
-    /// See docs/dev/var-next-steps.md (Lexical shadowing).
+    /// See docs/var.md (Lexical shadowing).
     pub(super) fn note_shadow(&mut self, name: &str) {
         // Only the value that lives in this block can be carried out of it; a
         // binding from an enclosing block means the block contributed nothing
@@ -395,7 +395,7 @@ impl Compiler {
 /// term belongs to another function (the core prelude, say), lowering fails
 /// with `term tNN in block bN not in this function`. `petal-ui`'s
 /// `_wrap_segment` hit exactly that by naming a local `take`, which collides
-/// with `std::take`. See docs/dev/var-next-steps.md (Lexical shadowing).
+/// with `std::take`. See docs/var.md (Lexical shadowing).
 struct AssignedNames<'a> {
     out: &'a mut Vec<String>,
     /// Names shadowed by a declaration in an enclosing block of the scanned
@@ -508,7 +508,7 @@ impl ExprVisitor for AssignedNames<'_> {
             // compiler never rebinds, and for a `set` inside a lambda that phi
             // would be initialized from a term in another function: exactly the
             // lowering failure `var` exists to fix.
-            // See docs/dev/var-next-steps.md (Cells).
+            // See docs/var.md (Cells).
             StmtKind::Set { value, .. } => {
                 self.visit_expr(value);
             }
@@ -638,7 +638,7 @@ mod walker_tests {
         );
     }
 
-    // ---- shadowing (docs/dev/var-next-steps.md, Lexical shadowing) ----
+    // ---- shadowing (docs/var.md, Lexical shadowing) ----
 
     #[test]
     fn a_let_in_the_scanned_region_shadows_the_outer_name() {
@@ -674,7 +674,7 @@ mod walker_tests {
         // `y = f(y)` lexically targets the OUTER y — the shadow starts on the
         // next line — so it is reported. `Compiler::note_shadow` freezes the
         // carry-out at the `let`, so the shadowed local's later value cannot
-        // leak back out. See docs/dev/var-next-steps.md (Lexical shadowing).
+        // leak back out. See docs/var.md (Lexical shadowing).
         assert_eq!(assigned("y = f(y)\nlet y = 1\n"), vec!["y"]);
         assert_eq!(assigned("y = f(y)\nlet y = 1\ny = g(y)\n"), vec!["y"]);
         // A declaration on the first line still shadows everything after it.

@@ -302,7 +302,7 @@ pub enum StmtKind {
         value: Expr,
         /// Written `var x = …` rather than `let x = …`: a mutable cell, which
         /// is written with `set` and rejects `=`.
-        /// See docs/dev/var-next-steps.md (Two write keywords).
+        /// See docs/var.md (Two write keywords).
         #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
         /// Written `config let x = …`: the binding is declared as a tuning

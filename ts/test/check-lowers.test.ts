@@ -3,7 +3,7 @@
 // still fail to lower, and `check` is what CI and editors call — so a check
 // that stops before lowering reports a green build for a program that aborts on
 // first run. That is exactly how the shadowed-name phi bug survived in the
-// shipped `petal-ui` prelude. See docs/dev/var-next-steps.md (Lexical shadowing).
+// shipped `petal-ui` prelude. See docs/var.md (Lexical shadowing).
 //
 // The negative direction is asserted on *injected IR*, not on a source program.
 // Lowering has exactly two failure sites, and neither is reachable from source
@@ -11,8 +11,8 @@
 // `FnLowerer::flat` ("term tN in block bN not in this function") needs an input
 // edge that crosses a function boundary. The compiler stopped emitting that
 // edge when cross-function assignment became a compile error (see
-// docs/dev/var-next-steps.md §2a); ~50 candidate shapes were probed — match-arm
-// phi, loop-carried closures, nested capture chains, `state var` in nested
+// docs/var.md, Cross-function assignment); ~50 candidate shapes were probed —
+// match-arm phi, loop-carried closures, nested capture chains, `state var` in nested
 // scopes, an exported `var` written through a nested fn, break/continue phi
 // carry-outs — and every one lowers cleanly.
 //

@@ -196,7 +196,7 @@ writes to `CellWrite`, so the name is never rebound and never needs a phi —
 which is exactly what lets a `var` be written from inside a conditional or a
 closure, where a phi would have to initialize from a term in another
 function. The cost is that a cell read has no dataflow edge to walk back,
-so provenance stops there. See [var-next-steps.md](var-next-steps.md) for the
+so provenance stops there. See [var.md](../var.md) for the
 full argument, including the containment invariant that keeps cells out of the
 value domain (no expression evaluates to a `Value::Cell`).
 

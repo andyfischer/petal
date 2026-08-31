@@ -68,7 +68,7 @@ pub struct ElementId(pub u32);
 /// *containment invariant*: no expression evaluates to a `Value::Cell`, so a
 /// cell id never reaches a collection payload, a host, or user code. Reads
 /// dereference; only closure capture shares one. See
-/// docs/dev/var-next-steps.md (Containment).
+/// docs/var.md (Containment).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CellId(pub u32);
 

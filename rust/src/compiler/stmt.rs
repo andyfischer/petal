@@ -428,7 +428,7 @@ impl Compiler {
     /// bindings, `set` writes `var` cells, and each rejects the other. Erroring
     /// in only one direction would leave `=` meaning two different things
     /// depending on a distant declaration, which is exactly the ambiguity `set`
-    /// exists to remove. See docs/dev/var-next-steps.md (Two write keywords).
+    /// exists to remove. See docs/var.md (Two write keywords).
     ///
     /// Returns false when the statement is in error and should not be compiled.
     fn check_write_keyword(
@@ -523,7 +523,7 @@ impl Compiler {
     /// was an implementation detail showing through as a language rule; now
     /// both halves fail, at the assignment site, and `var`/`set` is the escape
     /// hatch for code that genuinely wanted mutation.
-    /// See docs/dev/var-next-steps.md (Why the feature exists).
+    /// See docs/var.md (Cross-function assignment).
     ///
     /// Returns false when the statement is in error and should not be compiled
     /// — abandoning it is what keeps a rejected assignment from emitting the

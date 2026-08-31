@@ -97,7 +97,7 @@ export function checkFileJson(path: string): any {
 
 // ---------------------------------------------------------------------------
 // Dataflow-query helpers. Shared rather than redefined per suite so the cell
-// frontier (docs/dev/var-next-steps.md, Provenance) is asserted the same way
+// frontier (docs/var.md, Provenance) is asserted the same way
 // everywhere it surfaces.
 // ---------------------------------------------------------------------------
 

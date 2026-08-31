@@ -36,6 +36,10 @@ input events → begin_frame(dt) → bind_frame_info / bind_input
   implicit import so scripts call `button(...)`, `list_update(...)`,
   `checkbox(...)` bare. Implicit bindings are weak — a script's own
   `fn button` shadows the prelude's.
+  - Widget text is set in the theme's `font` face (`"ui"` — proportional), and
+    every widget **measures and draws with the same style record**. The bare
+    `text_width(s, size)` / `draw_text(s, pos, size, color)` pair disagrees
+    about which face it means, which is why nothing in the library uses it.
 
 **See [docs/components.md](docs/components.md) for the full component
 reference**: theme system, RectCut layout, every widget, motion helpers, and
@@ -87,8 +91,11 @@ headlessly and as a Garden panel.
 
 - `UI_VERSION` — the input/draw native contract (scripts read `ui_version()`).
 - `PRELUDE_LEVEL` — the prelude export surface; level 3 is the component
-  library described in docs/components.md. `garden --version --json` lists the
-  exact exports compiled into a binary.
+  library described in docs/components.md, level 5 the gradient/shadow/clip
+  primitives, level 6 the theme's type face (`font`, defaulting to the
+  proportional `"ui"`), the elevation scale and the `over`/`tint` compositing
+  helpers. `garden --version --json` lists the exact exports compiled into a
+  binary.
 
 ## Tests
 

@@ -67,6 +67,26 @@ Scales (numbers, merged and overridden the same way):
 `space_sm/space/space_lg` (4/8/16), `radius_sm/radius/radius_lg` (3/6/10),
 `font_sm/font_md/font_lg/font_xl` (12/14/18/24).
 
+Typography and elevation:
+
+| token | role |
+|---|---|
+| `font` | the face widget text is set in — **`"ui"`**, the host's proportional interface face |
+| `elevation_1/2/3` | the shadow scale, as `{blur, spread, dy, a}` records: resting / floating / lifted |
+
+`font` is deliberately *not* the host's default face. Every host in this
+ecosystem defaults to monospace, and a whole interface set in monospace is the
+loudest possible tell that a panel was not designed. A drawer that genuinely
+wants monospace chrome — a diff viewer, a data grid — opts back in with one
+line, and every widget follows:
+
+```
+theme_set({font: "mono"})
+```
+
+Text a drawer draws itself with the bare `draw_text(s, pos, size, color)` form
+is untouched: that still means "the host's own face", as it always has.
+
 A style record and a theme record are interchangeable — `theme_set` carries
 extra keys through, so an app can hang its own names on the theme.
 
@@ -225,6 +245,60 @@ early — see the comment in ui.ptl), and `drag_state`/`drag_update`/
 `draw_text_right/center`, `mix`, `lerp_color`, `luma`, `contrast_text`,
 `elapsed`.
 
+### Measure the face you draw
+
+Inside a widget there is exactly one way to put text on screen: build a style
+record once and hand it to **both** `text_width` and `draw_text`.
+
+```
+let ts = {size: t.font_md, font: t.font, color: t.text}
+let x = r.x + (r.w - text_width(label, ts)) / 2      // measured in ts
+draw_text(label, {x: x, y: y}, ts)                   // drawn in ts
+```
+
+The bare pair — `draw_text(s, pos, size, color)` with `text_width(s, size)` —
+cannot be used for anything positioned, because the two do not mean the same
+thing: the draw goes to the host's default *face* while the measure falls back
+to the default *metric table*. Ask for a proportional face and measure it with
+the monospace ruler and a centred title lands about a fifth of its width off.
+Every alignment helper, every widget, and the ellipsize/wrap family all take a
+style record for this reason.
+
+### Compositing flat tints
+
+A hover wash, a disabled label, a hairline divider or a zebra stripe is a
+translucent ink over a surface you already know. Drawing it translucent is not
+idempotent — two 50% fills on one pixel read 75%, so a widget drawn twice in a
+frame comes out the wrong colour.
+
+| Call | Returns |
+|---|---|
+| `over(bg, fg, a)` | `fg` composited over `bg` in sRGB, **opaque**. `a` is 0–255, or a 0.0–1.0 float |
+| `tint(bg, fg, pct)` | `over` with the alpha written as a percentage |
+| `hairline(bg, ink)` | the 10% rule every divider wants |
+| `alpha_pct(p)` | a percentage as the 0–255 alpha the primitives take |
+
+This is for tints over a **known** surface. Genuine translucency — a modal
+backdrop, a fading tooltip, anything over content the widget did not paint —
+still takes a plain alpha, because there is nothing to composite against ahead
+of time. Widgets that flatten a tint (`pill`, `tab_bar`, `table`) take an `on`
+style key naming the surface they sit on.
+
+### Text that would rather be rotated
+
+**Rotated text is not available** — no host here can rotate a run; the
+rasterizers place a run by its left/top and scale, and that is the whole
+transform. The two honest workarounds:
+
+| Call | Draws |
+|---|---|
+| `draw_text_along(points, s, style)` | one upright glyph at a time along a polyline (an arc of text, a label following a route) |
+| `draw_axis_labels(r, ticks[, style])` | upright x-axis labels under their ticks, thinned when they collide, or staggered onto two rows with `{stagger: true}` |
+| `draw_axis_labels_y(r, ticks[, style])` | the y-axis counterpart, right-aligned beside each tick |
+
+`ticks` is a list of `{x, label}` (or `{y, label}`); both return how many were
+drawn.
+
 ## Draw primitives — gradients, shadows, nested clips
 
 Beyond the fills and strokes (`draw_rect`, `draw_rect_rounded`, `draw_line`,
@@ -253,6 +327,37 @@ Prefer `clip_push`/`clip_pop` inside anything reusable: `clip` *replaces* the
 active clip, so a widget that clips its own contents would throw away the clip
 its caller set.
 
+### Elevation
+
+The widget set never calls `draw_shadow` with ad-hoc numbers; it casts from
+one named scale, so a card, a menu and a modal read as three heights of the
+same light rather than three unrelated greys.
+
+| Call | Draws |
+|---|---|
+| `draw_elevation(rect, radius, level[, style])` | the theme's elevation 1/2/3 shadow (`style` overrides `{blur, spread, dx, dy, color, a}`) |
+| `elevation(level)` | that level's opts record, for a call that needs to tweak it |
+| `draw_focus_ring(rect, radius[, style])` | the accent bloomed around a focused widget instead of a doubled border |
+| `draw_scroll_shadow(header_rect, frac[, style])` | the fade a sticky header casts over content scrolled under it; `frac` 0 draws nothing |
+
+`card` is elevation 1, `context_menu` and `tooltip` are 2, `draw_modal` is 3.
+
+### Scrims, fades and area fills
+
+| Call | Draws |
+|---|---|
+| `draw_scrim(rect[, style])` | a band fading from solid at one `edge` to nothing — text over a photo |
+| `draw_fade(rect[, style])` | the same in the theme background: content dissolving at the end of a scroll region |
+| `draw_area_fill(points, baseline_y, color[, style])` | the fill under a line chart, fading to transparent at the baseline |
+
+`draw_area_fill` cuts each segment into `step`-px columns and gives each its
+own vertical gradient. That is exact rather than approximate: the fill's alpha
+is a function of y alone, so starting each column at its own top with the
+alpha the global ramp has *there* reproduces one ramp across the whole area.
+
+`button` and `badge` take `gradient: [c0, c1]` (plus `gradient_angle`) for a
+ramp-filled face; `button` also takes `radius` and `elevation`.
+
 `draw_shadow` is one command rather than a stack of translucent rounded rects
 on purpose — alpha blending is not idempotent, so nested rings double-composite
 and show every seam. Hosts tessellate it as a single non-overlapping mesh
@@ -266,6 +371,13 @@ and apps that shadow prelude names with their own (`fn spinner`,
 Level 5 adds the gradient/shadow/nested-clip primitives above, and is additive
 in the same way. Check a binary's surface with `garden --version --json`
 (`prelude.exports`) or `petal_ui::PRELUDE_LEVEL`.
+
+Level 6 is additive in signature but **not** in appearance, and deliberately
+so: widget text moved from the host's default face to the theme's `font`
+(`"ui"`), and the three hard-edged offset rectangles that stood in for
+shadows became real `draw_shadow` commands off the elevation scale. A drawer
+that wants the old typography back adds `theme_set({font: "mono"})`; there is
+no way to ask for the old shadows back, because they were not shadows.
 
 ## Testing your UI
 

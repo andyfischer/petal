@@ -373,6 +373,131 @@ export fn linear_gradient(rect, stops, angle, radius)
   nil
 end
 
+// The four axis-aligned gradient angles, named. `angle` is radians clockwise
+// from +x with y downward, so these are the directions a fade *travels*:
+// `GRAD_DOWN` starts opaque at the top edge.
+export let GRAD_RIGHT = 0.0
+export let GRAD_DOWN = 1.5707963267948966
+export let GRAD_LEFT = 3.141592653589793
+export let GRAD_UP = 4.71238898038469
+
+// ── Scrims, fades and area fills ──────────────────────────────────────────
+// The three things a two-stop gradient is for in an interface, as helpers, so
+// no panel has to work out the stop-and-angle arithmetic again.
+
+// A scrim: a band of `color` fading to nothing, laid over content so text can
+// sit on top of it and stay legible — a caption over a photo, a title over a
+// hero image, a toolbar over a map. The band is opaque at the edge the text is
+// anchored to and gone at the other, which is what keeps the underlying image
+// visible everywhere the text is not.
+//
+//   draw_scrim(caption_band, {edge: "bottom"})
+//   draw_text(caption, {x: ..., y: ...}, ...)
+export fn draw_scrim(r)
+  draw_scrim(r, {})
+end
+
+// `style` overrides {color, a, edge} — `edge` is which side of `r` the scrim
+// is solid at: "bottom" (the default — a caption band), "top", "left",
+// "right".
+export fn draw_scrim(r, style)
+  let c = _get(style, "color", #000000)
+  let a = _get(style, "a", 190)
+  let edge = _get(style, "edge", "bottom")
+  // The fade runs *away* from the solid edge, so the angle is the direction
+  // the alpha decreases in.
+  let angle = GRAD_UP
+  if edge == "top" then
+    angle = GRAD_DOWN
+  elsif edge == "left" then
+    angle = GRAD_RIGHT
+  elsif edge == "right" then
+    angle = GRAD_LEFT
+  end
+  draw_rect_gradient(r, c, c, angle, a, 0)
+end
+
+// A fade-out mask along one edge of a scrolling region: the region's own
+// background, opaque at the edge and transparent a few pixels in, so content
+// scrolling past the boundary dissolves instead of being guillotined by the
+// clip. The counterpart to a scrim — a scrim hides what is under it, a fade
+// hides where content *ends*.
+//
+//   clip_push(list_rect)
+//   ...rows...
+//   clip_pop()
+//   draw_fade(cut_bottom(list_rect, 24).cut, {edge: "bottom"})
+export fn draw_fade(r)
+  draw_fade(r, {})
+end
+
+// `style` overrides {color, a, edge}; `color` defaults to the theme background
+// (what the fade is dissolving *into*) and `edge` is the side it is solid at.
+export fn draw_fade(r, style)
+  let t = _palette()
+  draw_scrim(r, {
+    color: _get(style, "color", t.bg),
+    a: _get(style, "a", 255),
+    edge: _get(style, "edge", "bottom")
+  })
+end
+
+// The filled area under a line chart, fading to transparent at the baseline —
+// the shape a plain rect fill cannot make, because the top edge follows the
+// data.
+//
+// `points` is the polyline, in order, as {x, y} records; `baseline_y` is the
+// axis the fill drops to. Each segment is cut into `step`-px columns and each
+// column drawn as its own vertical gradient. That is exact rather than
+// approximate: the fill's alpha at a pixel is a linear function of y alone, so
+// starting each column at its own top with the alpha that ramp has *there*
+// reproduces the single global ramp, column by column.
+export fn draw_area_fill(points, baseline_y, color)
+  draw_area_fill(points, baseline_y, color, {})
+end
+
+// `style` overrides {a, step} — `a` is the alpha at the highest point of the
+// series (the fill is weakest where the data is lowest, which is what reads as
+// depth), `step` the column width in px.
+export fn draw_area_fill(points, baseline_y, color, style)
+  let n = len(points)
+  if n >= 2 then
+    let peak = _get(style, "a", 110)
+    let step = max(1, _get(style, "step", 3))
+    // The top of the ramp: the highest point of the series. Everything below
+    // it is proportionally weaker.
+    let top = points[0].y
+    for p in points do
+      if p.y < top then top = p.y end
+    end
+    let span = float(baseline_y - top)
+    for i in range(0, n - 1) do
+      let a = points[i]
+      let b = points[i + 1]
+      let dx = float(b.x - a.x)
+      if dx > 0.0 then
+        let cols = max(1, int(dx / float(step)))
+        for j in range(0, cols) do
+          let x0 = float(a.x) + dx * float(j) / float(cols)
+          let x1 = float(a.x) + dx * float(j + 1) / float(cols)
+          // The column's own top, on the segment.
+          let cy = float(a.y) + float(b.y - a.y) * (float(j) + 0.5) / float(cols)
+          if float(baseline_y) > cy then
+            // The global ramp's alpha at this column's top.
+            let a0 = peak
+            if span > 0.0 then
+              a0 = int(float(peak) * (float(baseline_y) - cy) / span)
+            end
+            let band = {x: x0, y: cy, w: x1 - x0, h: float(baseline_y) - cy}
+            draw_rect_gradient(band, color, color, GRAD_DOWN, a0, 0)
+          end
+        end
+      end
+    end
+  end
+  nil
+end
+
 // ── Shadows ───────────────────────────────────────────────────────────────
 
 // A CSS box-shadow cast by the rounded rect `rect`. `opts` is a partial record
@@ -405,6 +530,93 @@ export fn draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b)
 end
 export fn draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a)
   _native_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a)
+end
+
+// ── Elevation ─────────────────────────────────────────────────────────────
+// The named scale the widget set casts its shadows from — `elevation_1/2/3` on
+// the theme. One scale for every floating thing (cards at 1, menus and
+// popovers and dropdowns at 2, modals and toasts at 3) is what makes a panel
+// read as one surface lit by one light. The alternative, which this library
+// shipped for years, is a hard-edged offset rectangle per widget: that does
+// not read as elevation at all, it reads as a misaligned duplicate.
+//
+//   draw_elevation(card_rect, t.radius, 1)
+//   draw_rect_rounded(card_rect, t.radius, t.surface)
+
+// The `draw_shadow` opts record for elevation `level` (1–3, clamped).
+export fn elevation(level)
+  let t = _palette()
+  let l = clamp(level, 1, 3)
+  if l == 1 then
+    t.elevation_1
+  elsif l == 2 then
+    t.elevation_2
+  else
+    t.elevation_3
+  end
+end
+
+// Cast elevation `level`'s shadow for a rounded rect. Draw it *before* the
+// surface itself — the shadow is what is behind the card, not on it.
+export fn draw_elevation(r, radius, level)
+  draw_elevation(r, radius, level, {})
+end
+
+// `style` overrides any of {blur, spread, dx, dy, color, a} over the level's
+// values — for a coloured glow, or a shadow that has to lean a particular way.
+export fn draw_elevation(r, radius, level, style)
+  let e = elevation(level)
+  draw_shadow(r, {
+    radius: radius,
+    blur: _get(style, "blur", e.blur),
+    spread: _get(style, "spread", e.spread),
+    dx: _get(style, "dx", 0),
+    dy: _get(style, "dy", e.dy),
+    color: _get(style, "color", #000000),
+    a: _get(style, "a", e.a)
+  })
+end
+
+// A focus ring: the accent colour bloomed around `r` rather than a hard
+// second outline, so focus reads as attention rather than as a doubled
+// border. Draw it before the widget's own surface, like any other shadow.
+export fn draw_focus_ring(r, radius)
+  draw_focus_ring(r, radius, {})
+end
+
+// `style` overrides {color, blur, spread, a}.
+export fn draw_focus_ring(r, radius, style)
+  let t = _palette()
+  let c = _get(style, "color", t.accent)
+  draw_shadow(r, {
+    radius: radius,
+    blur: _get(style, "blur", 8),
+    spread: _get(style, "spread", 1),
+    color: c,
+    a: _get(style, "a", 150)
+  })
+end
+
+// The shadow a sticky header casts over content scrolled underneath it: a
+// short vertical fade below `header_rect`, at a strength that follows how far
+// the content has scrolled, so a list at rest shows no seam at all. `frac` is
+// 0 (at the top, nothing drawn) to 1 (fully lifted); scaling it by
+// `min(1.0, scroll_px / 24.0)` is the usual call.
+export fn draw_scroll_shadow(header_rect, frac)
+  draw_scroll_shadow(header_rect, frac, {})
+end
+
+// `style` overrides {height, color, a}.
+export fn draw_scroll_shadow(header_rect, frac, style)
+  let f = clamp(float(frac), 0.0, 1.0)
+  if f > 0.004 then
+    let h = _get(style, "height", 8)
+    let c = _get(style, "color", #000000)
+    let peak = int(float(_get(style, "a", 70)) * f)
+    let band = rect(header_rect.x, header_rect.y + header_rect.h, header_rect.w, h)
+    // Downward: opaque at the header's edge, gone `h` px later.
+    draw_rect_gradient(band, c, c, GRAD_DOWN, peak, 0)
+  end
 end
 
 // ── Fonts ─────────────────────────────────────────────────────────────────
@@ -689,6 +901,148 @@ export fn fit_parts(parts, avail_px, size)
   fit_parts_n(parts, avail_px, size).text
 end
 
+// ── Text on a path, and labels that would rather be rotated ───────────────
+// **Rotated text is not available.** No host in this ecosystem can rotate a
+// text run — the rasterizers place a run by its left/top and scale, and that
+// is the whole of the transform they expose. Rather than let every panel
+// rediscover that halfway through drawing a chart, the two honest workarounds
+// live here.
+
+// The point `d` px along the polyline `points`, and the segment index it fell
+// on. Past either end it clamps to the end point.
+fn _path_point(points, lens, d)
+  let i = 0
+  let rest = float(d)
+  let last = len(lens) - 1
+  while i < last && rest > lens[i] do
+    rest = rest - lens[i]
+    i = i + 1
+  end
+  let a = points[i]
+  let b = points[i + 1]
+  let f = if lens[i] > 0.0 then clamp(rest / lens[i], 0.0, 1.0) else 0.0 end
+  {x: float(a.x) + (float(b.x) - float(a.x)) * f,
+   y: float(a.y) + (float(b.y) - float(a.y)) * f,
+   seg: i}
+end
+
+// Set `s` character by character along the polyline `points` ({x, y} records,
+// in order), each glyph *upright* and centred on the path. The workaround for
+// the rotated run no host can draw: an arc of text around a dial, a label
+// following a route, a curved chart annotation.
+//
+// The glyphs step along the path but never turn, so this reads well on a
+// gentle curve and badly on a tight one — which is the real constraint, stated
+// plainly, rather than a promise the renderer cannot keep. `style` is the same
+// record `draw_text` and `text_width` take, and it is the record used for both
+// here, so what is measured is what is drawn.
+//
+// By default the run is centred on the path; `style.start` places its first
+// glyph that many px along instead.
+export fn draw_text_along(points, s, style)
+  let n = char_len(s)
+  if n > 0 && len(points) >= 2 then
+    let size = _get(style, "size", 14)
+    let lens = []
+    let total = 0.0
+    for i in range(0, len(points) - 1) do
+      let d = distance(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
+      lens = append(lens, d)
+      total = total + d
+    end
+    let run = float(text_width(s, style))
+    let at = float(_get(style, "start", (total - run) / 2.0))
+    for i in range(0, n) do
+      let ch = char_slice(s, i, i + 1)
+      let cw = float(text_width(ch, style))
+      // Placed by the glyph's own midpoint, so a proportional face keeps its
+      // spacing along the curve instead of bunching at the wide letters.
+      let p = _path_point(points, lens, at + cw / 2.0)
+      draw_text(ch, {x: p.x - cw / 2.0, y: p.y - float(size) / 2.0}, style)
+      at = at + cw
+    end
+  end
+  nil
+end
+
+// Upright labels under the ticks of a horizontal axis — the other half of the
+// no-rotation answer, and the one charts actually need. Long category labels
+// are conventionally rotated 45°; since they cannot be, they are instead kept
+// upright and *thinned*: a label is drawn only when it clears the previous one
+// it drew, and with `stagger` it drops to a second row rather than being
+// dropped entirely. Both are more legible than rotation, and neither lies
+// about the tick a label belongs to.
+//
+// `r` is the label strip (the band below the plot), `ticks` a list of
+// {x, label} — `x` in the same coordinates as `r`. Returns the number drawn.
+export fn draw_axis_labels(r, ticks)
+  draw_axis_labels(r, ticks, {})
+end
+
+// `style` overrides {size, fg, font, gap, stagger} — `gap` is the minimum
+// clear space between neighbours (default 8px), `stagger` alternates rows for
+// labels that would otherwise be dropped.
+export fn draw_axis_labels(r, ticks, style)
+  let t = _palette()
+  let size = _get(style, "size", t.font_sm)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.dim))
+  let gap = _get(style, "gap", 8)
+  let stagger = _get(style, "stagger", false)
+  let rows = if stagger then 2 else 1 end
+  // The rightmost x each row has committed to, so a row only has to clear its
+  // own neighbours. Two rows is the whole stagger, so two cells is the whole
+  // bookkeeping.
+  let taken_0 = r.x - gap
+  let taken_1 = r.x - gap
+  let drawn = 0
+  let row = 0
+  for tick in ticks do
+    let label = str(tick.label)
+    let w = text_width(label, ts)
+    // Centred on the tick, but never hanging outside the strip: the first and
+    // last label of an axis otherwise run off the plot.
+    let x = clamp(tick.x - w / 2, r.x, max(r.x, r.x + r.w - w))
+    let taken = if row == 0 then taken_0 else taken_1 end
+    if x >= taken + gap then
+      draw_text(label, {x: x, y: r.y + row * (size + 4)}, ts)
+      if row == 0 then
+        taken_0 = x + w
+      else
+        taken_1 = x + w
+      end
+      drawn = drawn + 1
+      row = (row + 1) % rows
+    end
+  end
+  drawn
+end
+
+// The vertical counterpart: labels right-aligned against `r`'s right edge and
+// centred on their tick, for a y axis. `ticks` is a list of {y, label}.
+export fn draw_axis_labels_y(r, ticks)
+  draw_axis_labels_y(r, ticks, {})
+end
+
+// `style` overrides {size, fg, font, gap}.
+export fn draw_axis_labels_y(r, ticks, style)
+  let t = _palette()
+  let size = _get(style, "size", t.font_sm)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.dim))
+  let gap = _get(style, "gap", 4)
+  let taken = r.y - gap - size
+  let drawn = 0
+  for tick in ticks do
+    let label = str(tick.label)
+    let y = clamp(tick.y - size / 2, r.y, max(r.y, r.y + r.h - size))
+    if y >= taken + gap then
+      draw_text_right(label, r.x + r.w, y, ts)
+      taken = y + size
+      drawn = drawn + 1
+    end
+  end
+  drawn
+end
+
 // ── Color helpers ─────────────────────────────────────────────────────────
 
 // Blend two colors: `t` = 0 is `a`, 1 is `b`. Thin wrapper over the `color_lerp`
@@ -719,6 +1073,52 @@ export fn contrast_text(bg)
   if luma(bg) > 140 then #14161c else #f2f5fa end
 end
 
+// ── Compositing ───────────────────────────────────────────────────────────
+// A flat tint — a hover wash, a disabled label, a hairline divider, a zebra
+// stripe — is a translucent ink over a surface *you already know*. Drawing it
+// as a translucent fill hands the compositor a job it does not need, and one
+// it is easy to get subtly wrong; worse, it is not idempotent, so two 50%
+// fills that land on the same pixel read as 75% and a widget drawn twice in a
+// frame (a hover under a selection, say) comes out the wrong colour.
+//
+// `over` does that composite here, on the CPU, in sRGB — the same space and
+// the same source-over formula a correct renderer uses — and returns an
+// **opaque** colour. Passing that to a plain `draw_rect` gives the identical
+// pixel, once, no matter how many times it is drawn.
+//
+// This is for tints over a *known* surface only. Genuine translucency — a
+// modal backdrop, a fading tooltip, anything over content the widget did not
+// paint — still takes a plain alpha, because there is nothing to composite
+// against ahead of time. Widgets that flatten a tint therefore take an `on`
+// style key naming the surface they sit on.
+
+// A percentage as the 0–255 alpha every draw primitive takes: alpha_pct(40)
+// is 102. The unit conversion that flat-tint percentages keep needing.
+export fn alpha_pct(p)
+  clamp(int(p * 255 / 100), 0, 255)
+end
+
+// `fg` composited over `bg` at alpha `a`, as an opaque colour. `a` is either
+// the 0–255 alpha every primitive takes or a 0.0–1.0 fraction — a float is
+// read as the fraction, an int as the byte.
+export fn over(bg, fg, a)
+  let f = if type(a) == "float" then clamp(a, 0.0, 1.0) else clamp(float(a) / 255.0, 0.0, 1.0) end
+  color_lerp(bg, fg, f)
+end
+
+// `over` with the alpha written as a percentage — how tints are actually
+// specified ("a 10% hairline", "disabled text at 40%").
+export fn tint(bg, fg, pct)
+  over(bg, fg, alpha_pct(pct))
+end
+
+// The hairline every divider, rule and table gridline wants: the surface's own
+// ink at 10%, which stays a hairline on a light theme and on a dark one
+// without either being hand-tuned.
+export fn hairline(bg, ink)
+  tint(bg, ink, 10)
+end
+
 // ── Style ─────────────────────────────────────────────────────────────────
 // `theme` is the *default* palette. The live palette every prelude widget
 // paints with is `ui_theme()`, resolved in this order:
@@ -742,8 +1142,22 @@ end
 //
 // Beyond colors, the theme carries the scales widgets default their geometry
 // and typography from: spacing (space_sm/space/space_lg), corner radius
-// (radius_sm/radius/radius_lg), and type sizes (font_sm/font_md/font_lg/
-// font_xl). Numbers, not colors — but merged and overridden the same way.
+// (radius_sm/radius/radius_lg), type sizes (font_sm/font_md/font_lg/font_xl),
+// the type *face* (`font`), and the elevation scale (elevation_1/2/3). Not
+// colors — but merged and overridden the same way.
+//
+// `font` is the face every widget sets its text in, and it is "ui" — the
+// host's proportional interface face — not the host's default face, which on
+// most hosts is monospace. A whole UI in monospace is the single loudest tell
+// that a panel was not designed, so the component library opts into
+// proportional type for you. A drawer that genuinely wants monospace chrome
+// (a diff viewer, a data grid) asks for it once:
+//
+//   theme_set({font: "mono"})
+//
+// and every widget follows. Text a drawer draws itself with the bare
+// `draw_text(s, pos, size, color)` form is untouched by this — that still
+// means "the host's own face", as it always has.
 
 export let theme = {
   // Surfaces
@@ -777,7 +1191,17 @@ export let theme = {
   font_sm: 12,
   font_md: 14,
   font_lg: 18,
-  font_xl: 24
+  font_xl: 24,
+  // The face widget text is set in. See the section comment above.
+  font: "ui",
+  // Elevation: how far off the surface a floating thing sits, as the
+  // `draw_shadow` opts record it expands to. One scale, three steps, so a
+  // card, a menu and a modal read as three heights of the *same* light rather
+  // than three unrelated grey rectangles. `dy` grows faster than `blur` on
+  // purpose — that is what reads as "further away" rather than "blurrier".
+  elevation_1: {blur: 6, spread: 0, dy: 1, a: 40},    // resting: cards, chips
+  elevation_2: {blur: 16, spread: 0, dy: 4, a: 56},   // floating: menus, popovers
+  elevation_3: {blur: 32, spread: 0, dy: 10, a: 72}   // lifted: modals, toasts
 }
 
 // Field `key` of `rec`, or `fallback` when the record does not carry it. The
@@ -786,6 +1210,33 @@ export let theme = {
 // prelude import, so the ui prelude spells it locally.
 fn _get(rec, key, fallback)
   rec[key] ?? fallback
+end
+
+// The face a widget draws in: this call's `style.font` if it names one, else
+// the theme's. Every widget resolves it exactly once, at the top.
+fn _face(t, style)
+  _get(style, "font", t.font)
+end
+
+// The text style a widget both *measures with* and *draws with*.
+//
+// This is the whole discipline of the widget set's typography: one record,
+// built once, handed to `text_width` and to `draw_text`. The bare
+// `draw_text(s, pos, size, color)` / `text_width(s, size)` pair cannot be used
+// inside a widget, because those two mean different things — the draw goes to
+// the host's default face while the measure falls back to the default *metric
+// table*, so a proportional face is drawn and a monospace one is measured, and
+// everything centred lands ~20% off. Passing one style record to both makes
+// that class of bug unrepresentable.
+fn _ts(face, size, color)
+  {size: size, font: face, color: color}
+end
+
+// The measure-only half, for the input pass of a widget whose draw half is a
+// separate function (see `text_field_update`). The two must agree on size and
+// face or click-to-place lands the caret in the wrong character.
+fn _tm(face, size)
+  {size: size, font: face}
 end
 
 // Every key the default theme carries, in order. `theme_set` merges by these
@@ -921,24 +1372,71 @@ export fn button(r, label)
   button(r, label, {})
 end
 
-// `style` overrides any of {bg, hover, fg, outline, size}; anything it omits
-// comes from `ui_theme()`. A `{}` style is the themed button. The face eases
-// between its resting and hover colors (~120ms) and dips toward black while
-// pressed; at rest it paints exactly the resting color, so a still frame is
+// `style` overrides any of {bg, hover, fg, outline, size, font, radius,
+// gradient, gradient_angle, elevation}; anything it omits comes from
+// `ui_theme()`. A `{}` style is the themed button. The face eases between its
+// resting and hover colors (~120ms) and dips toward black while pressed; at
+// rest it paints exactly the resting color, so a still frame is
 // pixel-identical to the pre-animation button.
+//
+// `gradient: [c0, c1]` fills the face with a two-stop ramp instead of a flat
+// colour — the primary-action button, where a flat fill reads as inert. The
+// hover and press states still apply, as a lightening and a darkening of both
+// stops, so the whole ramp reacts together. `elevation: 1` (or 2) casts the
+// shared elevation shadow under it.
 export fn button(r, label, style)
   let t = _palette()
   let hov = _anim_flag(hovered(r), 16.0)
-  let bg = mix(_get(style, "bg", t.panel), _get(style, "hover", t.hover), hov)
-  if hovered(r) && mouse_down(0) then
-    bg = mix(bg, #000000, 0.18)
+  let press = hovered(r) && mouse_down(0)
+  let rad = _get(style, "radius", 0)
+  let lift = _get(style, "elevation", 0)
+  if lift > 0 && !press then
+    draw_elevation(r, rad, lift)
   end
-  draw_rect(r, bg)
-  draw_rect_outline(r, _get(style, "outline", t.outline))
-  let size = _get(style, "size", 14)
-  let tx = r.x + (r.w - text_width(label, size)) / 2
+  let outline = _get(style, "outline", t.outline)
+  // A rounded button's border is the rounded rect *behind* its face, inset by
+  // one pixel — the same trick `card` uses, since there is no rounded-outline
+  // primitive. A square one keeps the outline command it always drew.
+  let face = r
+  if rad > 0 then
+    draw_rect_rounded(r, rad, outline)
+    face = pad(r, 1)
+  end
+  let grad = _get(style, "gradient", [])
+  if len(grad) < 2 then
+    let bg = mix(_get(style, "bg", t.panel), _get(style, "hover", t.hover), hov)
+    if press then
+      bg = mix(bg, #000000, 0.18)
+    end
+    if rad > 0 then
+      draw_rect_rounded(face, max(0, rad - 1), bg)
+    else
+      draw_rect(face, bg)
+      draw_rect_outline(r, outline)
+    end
+  else
+    // Both stops take the same hover lift and press dip, so the ramp keeps its
+    // shape through the interaction instead of flattening at one end.
+    let stops = []
+    for c in grad do
+      let s = mix(c, t.text, hov * 0.10)
+      if press then
+        s = mix(s, #000000, 0.18)
+      end
+      stops = append(stops, s)
+    end
+    linear_gradient(face, stops, _get(style, "gradient_angle", GRAD_DOWN), max(0, rad - 1))
+    if rad == 0 then
+      draw_rect_outline(r, outline)
+    end
+  end
+  let size = _get(style, "size", t.font_md)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
+  // Measured and drawn with the one record: a centred label that measures in
+  // a different face than it draws in is off by a fifth of its width.
+  let tx = r.x + (r.w - text_width(label, ts)) / 2
   let ty = r.y + (r.h - size) / 2
-  draw_text(label, {x: tx, y: ty}, size, _get(style, "fg", t.text))
+  draw_text(label, {x: tx, y: ty}, ts)
   clicked(r)
 end
 
@@ -1187,16 +1685,19 @@ export fn section_label(label, x, y, active)
   section_label(label, x, y, active, {})
 end
 
-// `style` overrides any of {active, inactive, size}; omitted keys come from
-// `ui_theme()`.
+// `style` overrides any of {active, inactive, size, font}; omitted keys come
+// from `ui_theme()`.
 export fn section_label(label, x, y, active, style)
   let t = _palette()
-  let size = _get(style, "size", 14)
+  let size = _get(style, "size", t.font_md)
   let color = if active then _get(style, "active", t.accent) else _get(style, "inactive", t.dim) end
-  draw_text(label, {x: x, y: y}, size, color)
+  let ts = _ts(_face(t, style), size, color)
+  draw_text(label, {x: x, y: y}, ts)
   if active then
+    // The underline is exactly as wide as the run, so it has to measure the
+    // style the run was drawn in.
     let uy = y + size + 1
-    draw_line({x: x, y: uy}, {x: x + text_width(label, size), y: uy}, color)
+    draw_line({x: x, y: uy}, {x: x + text_width(label, ts), y: uy}, color)
   end
 end
 
@@ -1215,13 +1716,14 @@ end
 // (Selection is not modeled — the field is for names, paths and filters, not
 // prose.)
 
-// Char index of the caret slot nearest pixel offset `px` into `text`.
-fn _caret_from_x(text, px, size)
+// Char index of the caret slot nearest pixel offset `px` into `text`, measured
+// in the style `ts` the field draws in.
+fn _caret_from_x(text, px, ts)
   let n = char_len(text)
   let best = 0
   let best_d = abs(px)
   for i in range(1, n + 1) do
-    let d = abs(text_width(char_slice(text, 0, i), size) - px)
+    let d = abs(text_width(char_slice(text, 0, i), ts) - px)
     if d < best_d then
       best = i
       best_d = d
@@ -1258,10 +1760,15 @@ export fn text_field_update(fc, id, r, buf)
   text_field_update(fc, id, r, buf, {})
 end
 
-// The update half reads only {size, inset} from `style` — they must match what
-// the draw half uses, or click-to-place lands the caret a few pixels off.
+// The update half reads only {size, font, inset} from `style` — they must
+// match what the draw half uses, or click-to-place lands the caret a few
+// pixels off. The face matters as much as the size: measuring monospace
+// advances against a proportionally-drawn run puts the caret several
+// characters away by the end of a long field.
 export fn text_field_update(fc, id, r, buf, style)
-  let size = _get(style, "size", 14)
+  let t = _palette()
+  let size = _get(style, "size", t.font_md)
+  let ts = _tm(_face(t, style), size)
   let inset = _get(style, "inset", 6)
   // The caret, in characters. -1 means "end of text" until first placed, and
   // any external change to `buf` that leaves the caret past the end clamps it.
@@ -1274,7 +1781,7 @@ export fn text_field_update(fc, id, r, buf, style)
   end
   if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
     f = focus_set(fc, id)
-    caret = _caret_from_x(text, mouse_x() - (r.x + inset), size)
+    caret = _caret_from_x(text, mouse_x() - (r.x + inset), ts)
   end
   let has = focused(f, id)
   let submitted = false
@@ -1313,7 +1820,7 @@ export fn draw_text_field(r, text, has)
   draw_text_field(r, text, has, char_len(text), {})
 end
 
-// `style` overrides any of {bg, fg, outline, focus, caret, size, inset};
+// `style` overrides any of {bg, fg, outline, focus, caret, size, font, inset};
 // omitted keys come from `ui_theme()`.
 export fn draw_text_field(r, text, has, style)
   draw_text_field(r, text, has, char_len(text), style)
@@ -1326,13 +1833,17 @@ export fn draw_text_field(r, text, has, caret, style)
   draw_rect(r, _get(style, "bg", t.panel))
   let border = if has then accent else _get(style, "outline", t.outline) end
   draw_rect_outline(r, border)
-  let size = _get(style, "size", 14)
+  let size = _get(style, "size", t.font_md)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
   let tx = r.x + _get(style, "inset", 6)
   let ty = r.y + (r.h - size) / 2
-  draw_text(text, {x: tx, y: ty}, size, _get(style, "fg", t.text))
+  draw_text(text, {x: tx, y: ty}, ts)
   if has then
+    // The caret sits where the drawn run actually ends, so it measures the
+    // same style — this is the one place a face mismatch is visible as a
+    // caret drifting away from the text it is inside.
     let c = clamp(caret, 0, char_len(text))
-    let cx = tx + text_width(char_slice(text, 0, c), size)
+    let cx = tx + text_width(char_slice(text, 0, c), ts)
     draw_line({x: cx, y: ty}, {x: cx, y: ty + size}, _get(style, "caret", accent))
   end
 end
@@ -1440,7 +1951,11 @@ export fn menu_metrics(style)
     row_h: _get(style, "row_h", _MENU_ROW_H),
     sep_h: _get(style, "sep_h", _MENU_SEP_H),
     pad: _get(style, "pad", _MENU_PAD),
-    size: _get(style, "size", _MENU_SIZE)
+    size: _get(style, "size", _MENU_SIZE),
+    // The face travels with the metrics because the width the menu sizes
+    // itself to is measured in it — a menu measured in one face and drawn in
+    // another is either padded or clipped.
+    font: _face(_palette(), style)
   }
 end
 
@@ -1461,8 +1976,9 @@ end
 // off the screen and a very short menu is still comfortably clickable.
 fn _menu_w(items, mm)
   let widest = 0
+  let ts = _tm(mm.font, mm.size)
   for it in items do
-    let tw = text_width(it.label, mm.size)
+    let tw = text_width(it.label, ts)
     if !it.sep && tw > widest then
       widest = tw
     end
@@ -1547,8 +2063,9 @@ export fn context_menu(m, items)
   context_menu(m, items, {})
 end
 
-// `style` overrides any of {bg, fg, dim, outline, selection, shadow, size,
-// row_h, sep_h, pad}; omitted keys come from `ui_theme()` and the menu metrics.
+// `style` overrides any of {bg, fg, dim, outline, rule, selection, shadow,
+// radius, size, font, row_h, sep_h, pad}; omitted keys come from `ui_theme()`
+// and the menu metrics.
 export fn context_menu(m, items, style)
   if !m.open || len(items) == 0 then
     {menu: m, index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
@@ -1599,30 +2116,35 @@ export fn context_menu(m, items, style)
 
     // Drawn after the input so the highlight reflects this frame's pointer.
     // A soft drop shadow lifts the menu off whatever it covers; without it a
-    // dark menu over a dark panel reads as part of the background.
-    // Alpha is 0–255, not a 0–1 fraction: a float here truncates to 0 and the
-    // shadow disappears entirely.
+    // dark menu over a dark panel reads as part of the background. It is the
+    // shared elevation-2 shadow, so a menu, a popover and a dropdown all sit
+    // at the same height under the same light.
     let bg = _get(style, "bg", t.panel)
     let fg_on = _get(style, "fg", t.text)
-    let fg_off = _get(style, "dim", t.dim)
+    // A disabled row is its own ink at 40% over the menu's surface — an
+    // opaque colour, so it is the same grey whether or not the row under it
+    // was highlighted first.
+    let fg_off = _get(style, "dim", tint(bg, fg_on, 40))
     let outline = _get(style, "outline", t.outline)
-    draw_rect({x: r.x + 2, y: r.y + 3, w: r.w, h: r.h}, _get(style, "shadow", #000000), 89)
+    let rad = _get(style, "radius", 0)
+    draw_elevation(r, rad, 2, {color: _get(style, "shadow", #000000)})
     draw_rect(r, bg)
     draw_rect_outline(r, outline)
+    let rule = _get(style, "rule", hairline(bg, fg_on))
     let y = r.y + mm.pad
     for i in range(0, len(items)) do
       let it = items[i]
       let rh = _menu_row_h(it, mm)
       if it.sep then
         let sy = y + rh / 2
-        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, outline)
+        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, rule)
       else
         let fg = if it.enabled then fg_on else fg_off end
         if i == hover then
           draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, _get(style, "selection", t.selection))
           fg = fg_on
         end
-        draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, mm.size, fg)
+        draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, _ts(mm.font, mm.size, fg))
       end
       y = y + rh
     end
@@ -2005,7 +2527,8 @@ export fn checkbox(r, label, value, style)
     draw_line({x: mx2, y: my2}, {x: bx, y: by}, ink, al, 2)
   end
   let size = _get(style, "size", t.font_md)
-  draw_text(label, {x: br.x + box + t.space, y: r.y + (r.h - size) / 2}, size, _get(style, "fg", t.text))
+  draw_text(label, {x: br.x + box + t.space, y: r.y + (r.h - size) / 2},
+            _ts(_face(t, style), size, _get(style, "fg", t.text)))
   v
 end
 
@@ -2043,6 +2566,7 @@ export fn radio_group(r, labels, selected, style)
   let sel = selected
   let row_h = _get(style, "row_h", 24)
   let size = _get(style, "size", t.font_md)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
   for i in range(0, len(labels)) do
     let rr = rect(r.x, r.y + i * row_h, r.w, row_h)
     if clicked(rr) then sel = i end
@@ -2056,7 +2580,7 @@ export fn radio_group(r, labels, selected, style)
     if on > 0.05 then
       draw_circle(cc, float(d) * 0.28 * ease_out(on), _get(style, "fill", t.accent))
     end
-    draw_text(labels[i], {x: r.x + d + t.space, y: rr.y + (row_h - size) / 2}, size, _get(style, "fg", t.text))
+    draw_text(labels[i], {x: r.x + d + t.space, y: rr.y + (row_h - size) / 2}, ts)
   end
   sel
 end
@@ -2100,7 +2624,9 @@ end
 // ── Tab bar ───────────────────────────────────────────────────────────────
 // A horizontal tab strip along the top of `r` (use the full height of `r` as
 // the strip). Returns the new active index; click a tab to switch. `style`
-// overrides {size, gap, fg, fg_active, underline, hover}.
+// overrides {size, font, gap, fg, fg_active, underline, hover, rule, on} —
+// `on` is the surface colour the strip is drawn over, which the hover wash is
+// composited against.
 export fn tab_bar(r, labels, active)
   tab_bar(r, labels, active, {})
 end
@@ -2109,36 +2635,44 @@ export fn tab_bar(r, labels, active, style)
   let t = _palette()
   let act = active
   let size = _get(style, "size", t.font_md)
+  let face = _face(t, style)
   let gap = _get(style, "gap", 4)
+  // The surface the strip sits on, so its hover wash can be composited to an
+  // opaque colour here rather than left as a translucent fill (see `over`).
+  let on = _get(style, "on", t.bg)
   let x = r.x
   for i in range(0, len(labels)) do
-    let wl = text_width(labels[i], size) + 24
+    // Each tab is exactly as wide as its label plus padding, so the measure
+    // and the draw below share one style record.
+    let is = act == i
+    let fg0 = if is then
+      _get(style, "fg_active", t.text)
+    else
+      _get(style, "fg", t.dim)
+    end
+    let ts = _ts(face, size, fg0)
+    let wl = text_width(labels[i], ts) + 24
     let tr = rect(x, r.y, wl, r.h)
     if clicked(tr) then act = i end
     let hov = _anim_flag(hovered(tr), 16.0)
-    let is = act == i
     if !is && hov > 0.01 then
-      draw_rect(tr, _get(style, "hover", t.hover), int(hov * 160.0))
+      draw_rect(tr, over(on, _get(style, "hover", t.hover), hov * 160.0 / 255.0))
     end
-    let fg = if is then
-      _get(style, "fg_active", t.text)
-    else
-      mix(_get(style, "fg", t.dim), t.text, hov * 0.5)
-    end
-    draw_text_center(labels[i], tr.x + wl / 2, r.y + (r.h - size) / 2, size, fg)
+    let fg = if is then fg0 else mix(fg0, t.text, hov * 0.5) end
+    draw_text_center(labels[i], tr.x + wl / 2, r.y + (r.h - size) / 2, {...ts, color: fg})
     if is then
       draw_rect(rect(tr.x + 6, r.y + r.h - 2, wl - 12, 2), _get(style, "underline", t.accent))
     end
     x = x + wl + gap
   end
-  draw_line({x: r.x, y: r.y + r.h}, {x: r.x + r.w, y: r.y + r.h}, t.outline)
+  draw_line({x: r.x, y: r.y + r.h}, {x: r.x + r.w, y: r.y + r.h}, _get(style, "rule", t.outline))
   act
 end
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
 // Show `text` near the pointer after it has rested over `anchor` for a beat
 // (default 0.45s), fading in. Call it late in the frame so the tip draws over
-// the widgets beneath. `style` overrides {delay, size, bg, fg, outline}.
+// the widgets beneath. `style` overrides {delay, size, font, bg, fg, outline}.
 export fn tooltip(anchor, text)
   tooltip(anchor, text, {})
 end
@@ -2155,17 +2689,23 @@ export fn tooltip(anchor, text, style)
     let t = _palette()
     let a = clamp((time() - hover_since - delay) / 0.12, 0.0, 1.0)
     let size = _get(style, "size", t.font_sm)
-    let wpx = text_width(text, size) + 16
+    let fg = _get(style, "fg", t.text)
+    let ts = _ts(_face(t, style), size, fg)
+    let wpx = text_width(text, ts) + 16
     let hpx = size + 10
     let x = clamp(mouse_x() + 12, 0, max(0, screen_width() - wpx))
     let y = mouse_y() + 18
     if y + hpx > screen_height() then
       y = mouse_y() - hpx - 6
     end
+    // The tip is over content it did not paint and is *fading in*, so its
+    // alpha is genuine translucency, not a flat tint: it stays an alpha.
     let alpha = int(a * 235.0)
-    draw_rect_rounded(rect(x, y, wpx, hpx), t.radius_sm, _get(style, "bg", t.overlay), alpha)
-    draw_rect_outline(rect(x, y, wpx, hpx), _get(style, "outline", t.outline), alpha)
-    draw_text(text, {x: x + 8, y: y + 5}, size, _get(style, "fg", t.text), alpha)
+    let tr = rect(x, y, wpx, hpx)
+    draw_elevation(tr, t.radius_sm, 2, {a: int(a * float(elevation(2).a))})
+    draw_rect_rounded(tr, t.radius_sm, _get(style, "bg", t.overlay), alpha)
+    draw_rect_outline(tr, _get(style, "outline", t.outline), alpha)
+    draw_text(text, {x: x + 8, y: y + 5}, {...ts, color: {...fg, a: alpha}})
   end
 end
 
@@ -2228,8 +2768,13 @@ export fn draw_modal_backdrop()
   draw_modal_backdrop({})
 end
 
+// The backdrop is the one place a flat alpha is right rather than lazy: it
+// covers content the modal did not paint, so there is nothing to composite it
+// against ahead of time (see `over`). What was wrong was the *number* being a
+// bare 120 with no stated intent — it is 47% dim, written as such.
 export fn draw_modal_backdrop(style)
-  draw_rect(rect(0, 0, screen_width(), screen_height()), _get(style, "shadow", #000000), _get(style, "dim", 120))
+  draw_rect(rect(0, 0, screen_width(), screen_height()),
+            _get(style, "shadow", #000000), _get(style, "dim", alpha_pct(47)))
 end
 
 // The dialog chrome: shadow, rounded panel, title. Returns the content rect.
@@ -2239,12 +2784,16 @@ end
 
 export fn draw_modal(r, title, style)
   let t = _palette()
-  draw_rect_rounded(rect(r.x + 3, r.y + 5, r.w, r.h), t.radius_lg, #000000, 90)
+  // Elevation 3 — the top of the scale, because a modal is the frontmost
+  // thing on screen. The old offset rectangle read as a second, misaligned
+  // dialog behind this one.
+  draw_elevation(r, t.radius_lg, 3, {color: _get(style, "shadow", #000000)})
   draw_rect_rounded(r, t.radius_lg, _get(style, "outline", t.border_strong))
   draw_rect_rounded(pad(r, 1), t.radius_lg - 1, _get(style, "bg", t.panel))
   let size = _get(style, "size", t.font_lg)
   let inset = _get(style, "pad", t.space_lg)
-  draw_text(title, {x: r.x + inset, y: r.y + inset - 2}, {size: size, color: _get(style, "fg", t.text), weight: 600})
+  draw_text(title, {x: r.x + inset, y: r.y + inset - 2},
+            {..._ts(_face(t, style), size, _get(style, "fg", t.text)), weight: 600})
   rect(r.x + inset, r.y + inset + size + 8, r.w - inset * 2, r.h - inset * 2 - size - 8)
 end
 
@@ -2269,7 +2818,9 @@ end
 // ── Badge / pill / card / empty state / hint bar ──────────────────────────
 
 // A small rounded label chip at (x, y). Returns the rect it drew (so callers
-// can flow the next one after it). `style` overrides {size, bg, fg}.
+// can flow the next one after it). `style` overrides {size, font, bg, fg,
+// gradient, gradient_angle} — `gradient: [c0, c1]` fills the chip with a ramp
+// instead of a flat colour.
 export fn badge(x, y, text)
   badge(x, y, text, {})
 end
@@ -2277,16 +2828,26 @@ end
 export fn badge(x, y, text, style)
   let t = _palette()
   let size = _get(style, "size", t.font_sm)
-  let wpx = text_width(text, size) + 14
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.muted))
+  // The chip is sized to its own label, so the width it reserves has to come
+  // from the style it will draw that label in.
+  let wpx = text_width(text, ts) + 14
   let hpx = size + 8
   let r = rect(x, y, wpx, hpx)
-  draw_rect_rounded(r, hpx / 2, _get(style, "bg", t.overlay))
-  draw_text(text, {x: x + 7, y: y + 4}, size, _get(style, "fg", t.muted))
+  let grad = _get(style, "gradient", [])
+  if len(grad) < 2 then
+    draw_rect_rounded(r, hpx / 2, _get(style, "bg", t.overlay))
+  else
+    linear_gradient(r, grad, _get(style, "gradient_angle", GRAD_DOWN), hpx / 2)
+  end
+  draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
 end
 
-// The colored badge: `color` tints a translucent fill and the text — the
-// status-chip look (pass t.success / t.warn / t.danger / t.accent).
+// The colored badge: `color` tints the fill and the text — the status-chip
+// look (pass t.success / t.warn / t.danger / t.accent). `style` overrides
+// {size, font, on} — `on` is the surface colour the chip sits on, which the
+// tint is composited against.
 export fn pill(x, y, text, color)
   pill(x, y, text, color, {})
 end
@@ -2294,17 +2855,22 @@ end
 export fn pill(x, y, text, color, style)
   let t = _palette()
   let size = _get(style, "size", t.font_sm)
-  let wpx = text_width(text, size) + 14
+  let ts = _ts(_face(t, style), size, color)
+  let wpx = text_width(text, ts) + 14
   let hpx = size + 8
   let r = rect(x, y, wpx, hpx)
-  draw_rect_rounded(r, hpx / 2, color, 42)
-  draw_text(text, {x: x + 7, y: y + 4}, size, color)
+  // The tint is flattened against the surface the pill sits on rather than
+  // drawn translucent: two pills overlapping, or one drawn twice in a frame,
+  // then still read as one 16% wash instead of stacking to 31%.
+  draw_rect_rounded(r, hpx / 2, over(_get(style, "on", t.surface), color, 42))
+  draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
 end
 
 // A raised surface with a rounded border and a soft shadow. Returns the
-// padded content rect. `style` overrides {radius, pad, bg, outline, shadow}
-// (`shadow: false` to skip the drop shadow).
+// padded content rect. `style` overrides {radius, pad, bg, outline, shadow,
+// elevation} — `shadow: false` skips the drop shadow, `elevation` picks a
+// step of the theme's elevation scale (1 by default).
 export fn card(r)
   card(r, {})
 end
@@ -2313,7 +2879,8 @@ export fn card(r, style)
   let t = _palette()
   let rad = _get(style, "radius", t.radius)
   if _get(style, "shadow", true) then
-    draw_rect_rounded(rect(r.x + 2, r.y + 3, r.w, r.h), rad, #000000, 60)
+    // Elevation 1: a card is resting on the surface, not floating over it.
+    draw_elevation(r, rad, _get(style, "elevation", 1))
   end
   draw_rect_rounded(r, rad, _get(style, "outline", t.border))
   draw_rect_rounded(pad(r, 1), max(0, rad - 1), _get(style, "bg", t.surface))
@@ -2321,7 +2888,7 @@ export fn card(r, style)
 end
 
 // Centered "nothing here" copy for an empty region: a dim title plus an even
-// dimmer hint line. `style` overrides {size, fg}.
+// dimmer hint line. `style` overrides {size, font, fg}.
 export fn empty_state(r, title, hint_text)
   empty_state(r, title, hint_text, {})
 end
@@ -2329,11 +2896,14 @@ end
 export fn empty_state(r, title, hint_text, style)
   let t = _palette()
   let size = _get(style, "size", t.font_lg)
+  let face = _face(t, style)
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
-  draw_text_center(title, cx, cy - size + 2, size, _get(style, "fg", t.dim))
+  // Centred copy is exactly what breaks when the measure and the draw
+  // disagree about the face, so both go through one style record.
+  draw_text_center(title, cx, cy - size + 2, _ts(face, size, _get(style, "fg", t.dim)))
   if len(hint_text) > 0 then
-    draw_text_center(hint_text, cx, cy + 8, t.font_sm, mix(t.dim, t.bg, 0.35))
+    draw_text_center(hint_text, cx, cy + 8, _ts(face, t.font_sm, mix(t.dim, t.bg, 0.35)))
   end
 end
 
@@ -2351,19 +2921,28 @@ end
 
 export fn hint_bar(r, hints, style)
   let t = _palette()
-  draw_rect(r, _get(style, "bg", t.panel))
-  draw_line({x: r.x, y: r.y}, {x: r.x + r.w, y: r.y}, t.outline)
+  let bg = _get(style, "bg", t.panel)
+  draw_rect(r, bg)
+  // The bar paints its own background, so its top rule is a hairline of its
+  // own ink over it rather than a full-strength border.
+  draw_line({x: r.x, y: r.y}, {x: r.x + r.w, y: r.y},
+            _get(style, "rule", hairline(bg, _get(style, "fg", t.dim))))
   let size = _get(style, "size", t.font_sm)
+  let face = _face(t, style)
+  let cap_ts = _ts(face, size, _get(style, "cap_fg", t.muted))
+  let lbl_ts = _ts(face, size, _get(style, "fg", t.dim))
   let x = r.x + 10
   for hn in hints do
-    let kw = text_width(hn.key, size) + 10
+    let kw = text_width(hn.key, cap_ts) + 10
     let kh = size + 6
     let kr = rect(x, r.y + (r.h - kh) / 2, kw, kh)
     draw_rect_rounded(kr, t.radius_sm, _get(style, "cap", t.overlay))
-    draw_text_center(hn.key, kr.x + kw / 2, kr.y + 3, size, _get(style, "cap_fg", t.muted))
+    draw_text_center(hn.key, kr.x + kw / 2, kr.y + 3, cap_ts)
     x = x + kw + 6
-    draw_text(hn.label, {x: x, y: r.y + (r.h - size) / 2}, size, _get(style, "fg", t.dim))
-    x = x + text_width(hn.label, size) + 16
+    draw_text(hn.label, {x: x, y: r.y + (r.h - size) / 2}, lbl_ts)
+    // The next cap flows after this label, so the advance is measured in the
+    // style the label was drawn in.
+    x = x + text_width(hn.label, lbl_ts) + 16
   end
 end
 
@@ -2496,13 +3075,19 @@ export fn table(tb, r, cols, rows_data)
   table(tb, r, cols, rows_data, {})
 end
 
-// `style` overrides {row_h, head_h, size, head_bg, selection, zebra, active}
-// — `active` gates keyboard navigation, like list_update's.
+// `style` overrides {row_h, head_h, size, font, fg, head_bg, selection, zebra,
+// rule, on, active} — `active` gates keyboard navigation, like list_update's,
+// and `on` is the surface colour the grid sits on (what the zebra stripe is
+// composited against).
 export fn table(tb, r, cols, rows_data, style)
   let t = _palette()
   let row_h = _get(style, "row_h", 26)
   let head_h = _get(style, "head_h", 28)
   let size = _get(style, "size", t.font_md)
+  let face = _face(t, style)
+  // The surface the grid sits on, so the zebra stripe can be flattened
+  // against it (see `over`) instead of stacking with the hover wash.
+  let on = _get(style, "on", t.bg)
   let nt = tb
   let parts = cut_top(r, head_h)
   let head = parts.cut
@@ -2520,13 +3105,17 @@ export fn table(tb, r, cols, rows_data, style)
     end
     let label = _get(cols[i], "label", "")
     let fg = if nt.sort_col == i then t.text else t.muted end
-    draw_text(label, {x: cr.x + 8, y: head.y + (head_h - size) / 2}, {size: size, color: fg, weight: 600})
+    // Semibold headings, in the theme face: the record measured below is the
+    // record drawn, so the sort arrow lands against the label's real width.
+    let head_ts = {..._ts(face, size, fg), weight: 600}
+    draw_text(label, {x: cr.x + 8, y: head.y + (head_h - size) / 2}, head_ts)
     if nt.sort_col == i then
       let arrow = if nt.sort_asc then "▲" else "▼" end
-      draw_text(arrow, {x: cr.x + 12 + text_width(label, size), y: head.y + (head_h - size) / 2 + 2}, size - 4, t.accent)
+      draw_text(arrow, {x: cr.x + 12 + text_width(label, head_ts), y: head.y + (head_h - size) / 2 + 2},
+                _ts(face, size - 4, t.accent))
     end
   end
-  draw_line({x: r.x, y: body.y}, {x: r.x + r.w, y: body.y}, t.border)
+  draw_line({x: r.x, y: body.y}, {x: r.x + r.w, y: body.y}, _get(style, "rule", t.border))
   let visible = max(1, body.h / row_h)
   let lr = rect(body.x, body.y, body.w, visible * row_h)
   let lst = list_update({selected: nt.selected, scroll: nt.scroll}, len(rows_data), visible, lr, _get(style, "active", true))
@@ -2540,12 +3129,16 @@ export fn table(tb, r, cols, rows_data, style)
     elsif hovered(rr) then
       draw_rect(rr, t.hover)
     elsif zebra && idx % 2 == 1 then
-      draw_rect(rr, t.hover, 70)
+      draw_rect(rr, over(on, t.hover, 70))
     end
     let cells = rows_data[idx]
+    let cell_ts = _ts(face, size, _get(style, "fg", t.text))
     for ci in range(0, min(len(cols), len(cells))) do
       let cr = crects[ci]
-      draw_text(ellipsize(str(cells[ci]), cr.w - 16, size), {x: cr.x + 8, y: rr.y + (row_h - size) / 2}, size, t.text)
+      // Fitting and drawing take the same record, so a cell trimmed to fit
+      // really does fit.
+      draw_text(ellipsize(str(cells[ci]), cr.w - 16, cell_ts),
+                {x: cr.x + 8, y: rr.y + (row_h - size) / 2}, cell_ts)
     end
   end
   draw_scrollbar(lr, len(rows_data), visible, lst.scroll)

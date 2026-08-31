@@ -527,10 +527,25 @@ fn card_returns_the_padded_content_rect() {
             Some("[26, 26, 168, 68]"),
             "content is the card inset by the theme's space_lg"
         );
+        // A real drop shadow, then the border rect and the surface inside it.
+        // The shadow is a `Shadow` command, not a fourth offset rectangle —
+        // the hard-edged duplicate this widget used to draw read as a
+        // misaligned copy of the card rather than as elevation.
         assert!(
-            rects(&cmds).len() >= 3,
-            "shadow + border + surface: {cmds:?}"
+            matches!(
+                cmds[0],
+                DrawCommand::Shadow {
+                    x: 10,
+                    y: 10,
+                    w: 200,
+                    h: 100,
+                    dy: 1,
+                    ..
+                }
+            ),
+            "elevation-1 shadow behind the card: {cmds:?}"
         );
+        assert_eq!(rects(&cmds).len(), 2, "border + surface: {cmds:?}");
     });
 }
 
@@ -949,4 +964,176 @@ fn gallery_runs_headlessly_across_all_tabs() {
         assert!(!ui.commands.is_empty(), "tab {label} draws something");
         x += w + 4;
     }
+}
+
+// ── Typography: the face widgets set their text in ────────────────────────
+// Two defects that only make sense together. The library used to draw every
+// widget label in the host's *default* face — monospace on every host in this
+// ecosystem — and it used to measure those labels with the bare
+// `text_width(s, size)` form, which falls back to the default *metric table*
+// no matter which face the run is drawn in. Fixing the face alone would move
+// the bug from "wrong font" to "everything centred is a fifth of its width
+// off", so both are pinned here.
+
+/// A face bound under the "ui" role with an advance ratio nothing else in the
+/// harness uses (the default table is 0.6), so a width measured *in it* is
+/// unmistakably distinguishable from the default ruler.
+fn with_ui_face(source: &str) -> Headless {
+    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    petal_ui::draw::bind_font_metrics(
+        &mut ui.env,
+        "ui",
+        &petal_ui::text::FontMetrics::monospace(0.3),
+    );
+    ui
+}
+
+fn text_runs(cmds: &[DrawCommand]) -> Vec<(String, i32, Option<String>)> {
+    cmds.iter()
+        .filter_map(|c| match c {
+            DrawCommand::Text { text, x, font, .. } => {
+                Some((text.clone(), *x, font.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn widget_text_is_set_in_the_theme_face() {
+    // A default-theme button names a face, and it is the proportional "ui"
+    // one — not `None`, which is what "whatever the host draws by default"
+    // (monospace, everywhere) serializes as.
+    run_headless("button({x: 0, y: 0, w: 100, h: 24}, \"Go\")", |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let runs = text_runs(&cmds);
+        assert_eq!(
+            runs.iter()
+                .find(|(t, _, _)| t == "Go")
+                .map(|(_, _, f)| f.as_deref()),
+            Some(Some("ui")),
+            "default-theme button label is set in the ui face: {cmds:?}"
+        );
+    });
+
+    // And a drawer that genuinely wants monospace chrome still gets it with
+    // one line — the theme token is the whole opt-out.
+    let src = "theme_set({font: \"mono\"})\n\
+               button({x: 0, y: 0, w: 100, h: 24}, \"Go\")";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert_eq!(
+            text_runs(&cmds)
+                .iter()
+                .find(|(t, _, _)| t == "Go")
+                .map(|(_, _, f)| f.as_deref()),
+            Some(Some("mono")),
+            "theme_set({{font: \"mono\"}}) puts widget text back in mono: {cmds:?}"
+        );
+    });
+}
+
+#[test]
+fn every_alignment_helper_measures_the_face_it_draws() {
+    // With "ui" bound at a 0.3 advance and the default table at 0.6, a run
+    // measured with the wrong ruler is twice the width of the one drawn. Each
+    // assertion below is the position the widget computed; it can only be
+    // right if the measure and the draw took the same style record.
+    let src = "state w14 = 0\n\
+               state w18 = 0\n\
+               state wdef = 0\n\
+               state bw = 0\n\
+               w14 = text_width(\"Handle\", {size: 14, font: \"ui\"})\n\
+               w18 = text_width(\"Handle\", {size: 18, font: \"ui\"})\n\
+               wdef = text_width(\"Handle\", 14)\n\
+               button({x: 0, y: 0, w: 200, h: 24}, \"Handle\")\n\
+               let b = badge(0, 40, \"Handle\", {size: 14})\n\
+               bw = b.w\n\
+               section_label(\"Handle\", 0, 80, true)\n\
+               empty_state({x: 0, y: 100, w: 200, h: 60}, \"Handle\", \"\")\n\
+               draw_text_field({x: 0, y: 170, w: 200, h: 24}, \"Handle\", true)";
+    let mut ui = with_ui_face(src);
+    let cmds = ui.frame().unwrap().to_vec();
+    let w14 = ui.state_int("w14").expect("w14") as i32;
+    let w18 = ui.state_int("w18").expect("w18") as i32;
+    let wdef = ui.state_int("wdef").expect("wdef") as i32;
+    assert_ne!(
+        w14, wdef,
+        "the test is only meaningful while the two rulers disagree"
+    );
+
+    let runs = text_runs(&cmds);
+    assert!(
+        runs.iter().all(|(_, _, f)| f.as_deref() == Some("ui")),
+        "every widget run names the theme face: {runs:?}"
+    );
+
+    // button: the label is centred in the button's own width.
+    assert_eq!(
+        runs[0].1,
+        (200 - w14) / 2,
+        "button centres on the width it will draw: {runs:?}"
+    );
+    // badge: the chip is sized to its label plus 14px of padding.
+    assert_eq!(
+        ui.state_int("bw").expect("bw") as i32,
+        w14 + 14,
+        "badge sizes itself to the run it draws"
+    );
+    // section_label: the underline is exactly as wide as the run.
+    let underline = cmds
+        .iter()
+        .find_map(|c| match c {
+            DrawCommand::Line { x1: 0, x2, y1: 95, .. } => Some(*x2),
+            _ => None,
+        })
+        .expect("section_label underline");
+    assert_eq!(underline, w14, "underline spans the run it sits under");
+    // empty_state: centred copy, at the large size — the size travels in the
+    // same record as the face.
+    assert_eq!(
+        runs.iter()
+            .find(|(t, x, _)| t == "Handle" && *x == 100 - w18 / 2)
+            .is_some(),
+        true,
+        "empty_state centres its title measured at font_lg: {runs:?}"
+    );
+    // text_field: the caret bar sits at the end of the run it is inside.
+    let caret = cmds
+        .iter()
+        .rev()
+        .find_map(|c| match c {
+            DrawCommand::Line { x1, x2, .. } if x1 == x2 => Some(*x1),
+            _ => None,
+        })
+        .expect("caret bar");
+    assert_eq!(caret, 6 + w14, "caret lands at the end of the drawn run");
+}
+
+#[test]
+fn over_flattens_a_tint_and_is_idempotent() {
+    // The point of `over`: the same pixel, however many times it is drawn.
+    // Two 50% fills stacked read 75%; one `over` at 50% drawn twice reads 50%.
+    let src = "state a = \"\"\n\
+               state b = \"\"\n\
+               let c = over(#000000, #ffffff, 0.5)\n\
+               a = str([c.r, c.g, c.b])\n\
+               let d = over(c, #ffffff, 0)\n\
+               b = str([d.r, d.g, d.b])\n\
+               state pct = 0\n\
+               pct = alpha_pct(40)";
+    run_headless(src, |ui| {
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.state_string("a").as_deref(),
+            Some("[128, 128, 128]"),
+            "a 50% white over black is mid grey, opaque"
+        );
+        assert_eq!(
+            ui.state_string("b").as_deref(),
+            Some("[128, 128, 128]"),
+            "compositing nothing over it changes nothing"
+        );
+        assert_eq!(ui.state_int("pct"), Some(102), "40% of 255");
+    });
 }

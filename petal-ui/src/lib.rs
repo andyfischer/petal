@@ -100,7 +100,14 @@ pub const UI_VERSION: i64 = 1;
 ///   backed by [`tess::shadow_mesh`]; `clip_push`/`clip_pop` (clips that nest
 ///   instead of replacing), a trailing `radius` on `clip` and `draw_image`,
 ///   and the record overloads of `clip`.
-pub const PRELUDE_LEVEL: u32 = 5;
+/// - 6 — proportional type, real elevation, sRGB tints (2026-08-31): the theme
+///   gained a `font` face (defaulting to `"ui"`, so widget text is no longer
+///   monospace) and an `elevation_1/2/3` scale; every widget now measures and
+///   draws through one style record; `over` / `tint` / `hairline` /
+///   `alpha_pct` composite flat tints to opaque colours; `draw_elevation`,
+///   `draw_focus_ring`, `draw_scroll_shadow`, `draw_scrim`, `draw_fade`,
+///   `draw_area_fill`, `draw_text_along` and the axis-label helpers.
+pub const PRELUDE_LEVEL: u32 = 6;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

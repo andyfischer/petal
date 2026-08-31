@@ -2033,3 +2033,161 @@ fn script_definitions_shadow_the_new_color_helpers() {
         assert_eq!(ui.state_int("m"), Some(7), "the script's own mix wins");
     });
 }
+
+// ── Elevation, tints and the gradient helpers ─────────────────────────────
+
+#[test]
+fn elevation_is_one_named_scale_the_widgets_share() {
+    // A card, a menu and a modal are three heights of the same light, not
+    // three unrelated shadows: each is a `Shadow` command whose blur/dy/alpha
+    // come from the theme's elevation_1/2/3.
+    let src = "state s = \"\"\n\
+               let t = ui_theme()\n\
+               s = str([t.elevation_1.blur, t.elevation_2.blur, t.elevation_3.blur])\n\
+               draw_elevation({x: 10, y: 10, w: 100, h: 40}, 6, 1)\n\
+               draw_elevation({x: 10, y: 60, w: 100, h: 40}, 6, 3)\n\
+               draw_elevation({x: 10, y: 110, w: 100, h: 40}, 6, 99)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert_eq!(ui.state_string("s").as_deref(), Some("[6, 16, 32]"));
+        let shadows: Vec<(u32, i32, u8)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Shadow { blur, dy, a, .. } => Some((*blur, *dy, *a)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            shadows,
+            vec![(6, 1, 40), (32, 10, 72), (32, 10, 72)],
+            "levels map to the theme scale, and out-of-range clamps: {cmds:?}"
+        );
+    });
+}
+
+#[test]
+fn scrim_fades_away_from_the_edge_it_is_anchored_to() {
+    // A caption band is opaque where the text sits and gone at the far side,
+    // which is the whole reason it can be laid over a photograph.
+    let src = "draw_scrim({x: 0, y: 100, w: 200, h: 60})\n\
+               draw_scrim({x: 0, y: 0, w: 200, h: 60}, {edge: \"top\", a: 120})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        match &cmds[0] {
+            DrawCommand::RectGradient { a0, a1, angle, .. } => {
+                // Anchored at the bottom: the ramp runs upward, opaque first.
+                assert_eq!((*a0, *a1), (190, 0));
+                assert!((*angle - 4.712_389).abs() < 1e-4, "GRAD_UP, got {angle}");
+            }
+            other => panic!("expected a gradient, got {other:?}"),
+        }
+        match &cmds[1] {
+            DrawCommand::RectGradient { a0, a1, angle, .. } => {
+                assert_eq!((*a0, *a1), (120, 0));
+                assert!((*angle - 1.570_796).abs() < 1e-4, "GRAD_DOWN, got {angle}");
+            }
+            other => panic!("expected a gradient, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn area_fill_follows_the_data_and_stops_at_the_baseline() {
+    // The fill under a line chart: one vertical gradient per column, each
+    // starting on the polyline and ending, transparent, on the baseline. The
+    // alpha at a column's top is the global ramp's alpha *there*, so the fade
+    // is one ramp across the whole area rather than one per column.
+    let src = "draw_area_fill([{x: 0, y: 100}, {x: 60, y: 40}], 100, #3c8cff, {step: 20, a: 200})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let bands: Vec<(i32, u32, u32, u8, u8)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::RectGradient { x, w, h, a0, a1, .. } => {
+                    Some((*x, *w, *h, *a0, *a1))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bands.len(), 3, "60px of data at a 20px step: {cmds:?}");
+        // Every band bottoms out on the baseline, transparent.
+        assert!(bands.iter().all(|(_, _, _, _, a1)| *a1 == 0));
+        // Taller column ⇒ stronger fill, because the ramp is a function of y.
+        assert!(
+            bands[0].3 < bands[1].3 && bands[1].3 < bands[2].3,
+            "alpha follows the height of the column: {bands:?}"
+        );
+        // Each column is sampled at its own midpoint, so the last one lands
+        // 5/6 of the way up the ramp rather than exactly on the peak — the
+        // fill is the area under the line, not a rect up to it.
+        assert_eq!(bands[2].3, 166, "the strongest column is nearly at the peak");
+    });
+}
+
+#[test]
+fn text_along_a_path_sets_one_upright_glyph_at_a_time() {
+    // The honest workaround for the rotated run no host can draw: characters
+    // step along the path, upright, measured and drawn with the one style.
+    let src = "draw_text_along([{x: 0, y: 50}, {x: 200, y: 50}], \"abc\",\n\
+                               {size: 10, font: \"ui\", color: #ffffff})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let runs: Vec<(String, i32, i32)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { text, x, y, font, .. } => {
+                    assert_eq!(font.as_deref(), Some("ui"), "the style travels with each glyph");
+                    Some((text.clone(), *x, *y))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            runs.iter().map(|(t, _, _)| t.as_str()).collect::<Vec<_>>(),
+            vec!["a", "b", "c"],
+            "one command per character, in order"
+        );
+        assert!(
+            runs[0].1 < runs[1].1 && runs[1].1 < runs[2].1,
+            "glyphs advance along the path: {runs:?}"
+        );
+        assert!(
+            runs.iter().all(|(_, _, y)| *y == runs[0].2),
+            "a straight path leaves every glyph on one baseline: {runs:?}"
+        );
+    });
+}
+
+#[test]
+fn axis_labels_thin_and_stagger_instead_of_rotating() {
+    // Rotated tick labels are unavailable, so crowded ones are dropped —
+    // or, with `stagger`, dropped to a second row instead.
+    let src = "state a = 0\n\
+               state b = 0\n\
+               let ticks = [{x: 0, label: \"Monday\"}, {x: 20, label: \"Tuesday\"},\n\
+                            {x: 40, label: \"Wednesday\"}, {x: 200, label: \"Thursday\"}]\n\
+               a = draw_axis_labels({x: 0, y: 100, w: 300, h: 20}, ticks)\n\
+               b = draw_axis_labels({x: 0, y: 200, w: 300, h: 20}, ticks, {stagger: true})";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let a = ui.state_int("a").expect("a");
+        let b = ui.state_int("b").expect("b");
+        assert!(a < 4, "crowded labels are thinned, not overlapped: {a}");
+        assert!(
+            b > a,
+            "staggering two rows fits more of them ({a} in one row, {b} in two)"
+        );
+        // Staggered labels alternate between two baselines.
+        let ys: Vec<i32> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { y, .. } if *y >= 200 => Some(*y),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            ys.iter().any(|y| *y == 200) && ys.iter().any(|y| *y > 200),
+            "both rows are used: {ys:?}"
+        );
+    });
+}

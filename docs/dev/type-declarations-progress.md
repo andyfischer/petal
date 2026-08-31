@@ -4,9 +4,9 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-30 (chunk S: the `num` type; and a review pass that
-recorded chunks O–R, which had shipped but were never written down) ·
-Branch: `main`
+Last updated: 2026-08-30 (chunks S and T: the `num` type and method
+signatures; and a review pass that recorded chunks O–R, which had shipped but
+were never written down) · Branch: `main`
 
 ---
 
@@ -47,7 +47,8 @@ Branch: `main`
 | P — builtin return types | ✅ done | `67b238a` | `typecheck/builtin_types.rs`: the checker learns `len(xs)` is `int`, `sqrt(x)` is `float`, and that `abs`/`min`/`clamp` preserve int-ness |
 | Q — inference gained a *rewriting* consumer | ✅ done | `67b238a` | `lint`'s drop-identity-casts rule detects via `typecheck::find_redundant_casts`, so inference now decides an edit, not just a warning |
 | R — tighter unknown-type carets | ✅ done | `12e97e6` | `TypeAnn` carries its own `SourceSpan`; the unknown-type warning underlines just the type name |
-| S — the `num` type | ✅ done | (this) | `Type::Num` (`int` or `float`), resolving plan §12 Q5; the built-in `Rect`'s edges are declared with it, so a non-numeric field is caught at check time |
+| S — the `num` type | ✅ done | `8b5d73e` | `Type::Num` (`int` or `float`), resolving plan §12 Q5; the built-in `Rect`'s edges are declared with it, so a non-numeric field is caught at check time |
+| T — method signatures | ✅ done | (this) | `MethodDef` carries an `FnSignature`, so a pinned `recv.m()` infers its declared return type and checks its arguments; the built-in `Rect` methods are typed |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -99,7 +100,7 @@ above). Two apparent gaps were confirmed as *intended*, not bugs:
 
 ---
 
-## What exists now (A–S shipped)
+## What exists now (A–T shipped)
 
 Annotations parse, type-check (warning-only), and surface through the CLI/MCP.
 The runtime is untouched — annotations are stripped to names for codegen.
@@ -305,16 +306,59 @@ false alarm, which is the direction this checker always errs in.
 gained a warning. The 7 files that warn today warn for pre-existing reasons
 (discarded pure results, capture-lag, an unknown-type fixture).
 
+## Chunk T — method return types and parameters
+
+`r.center_x()` used to infer `any`. The blocker was structural: `MethodDef`
+carried only `{ name, arity }`, so the class table had nothing to answer with.
+It now carries an `FnSignature` — the same shape `collect_fn_signatures` builds
+for a free function, receiver in slot 0 — filled from the `fn Class.m(...)`
+declaration in `collect_classes`.
+
+**Inference is gated on dispatch.** `check_method_call` now *returns* the
+resolved signature, and returns `None` from every path that leaves the call
+dispatched: a field of that name (data beats declarations), a method the class
+does not declare (dispatch can still reach a global native), an arity no
+overload accepts, and a receiver of unknown class. So the set of calls that get
+a type is exactly the set chunk M already proved safe to bind — inferring from a
+declaration the call might not reach would be worse than inferring nothing.
+`the_dispatch_guards_also_block_return_type_inference` pins all four.
+
+**Arguments are checked too**, against the declared parameters. The receiver
+occupies slot 0 but is never written, so written argument `i` pairs with
+parameter `i + 1` and the message numbers what the reader typed
+(`check_method_args`).
+
+**The built-in `Rect` methods are now typed**, which is the payoff chunk S set
+up:
+
+| Method | Signature |
+|---|---|
+| `center_x` `center_y` `right` `bottom` | `(Rect) -> num` |
+| `inset` | `(Rect, num) -> Rect` |
+| `offset` | `(Rect, num, num) -> Rect` |
+
+`num` is exactly right for the four accessors: they run the *same* arithmetic
+the language does, so an int rect yields ints (`/` truncates) and a float
+anywhere yields a float. `inset`/`offset` return `Rect`, so they chain —
+`Rect(0,0,8,8).inset(1).offset(2,3)` type-checks end to end.
+
+`RECT_CLASS_ID` is hardcoded as `ClassId(0)` so those signatures can name the
+class they return before a table exists to look it up in;
+`the_rect_class_id_is_stable` and `builtin_method_signatures_match_their_arity`
+pin the two assumptions that makes.
+
+**One test fixture changed, and it was a real finding.** `ts/test/classes.test.ts`
+had `fn cx(r: Rect) -> int  r.center_x() end`, which now warns: an edge accessor
+returns `num`, and `num` does not narrow to `int` without a cast. The
+declaration was an unprovable claim — true for an int rect, false for a float
+one — so the fixture moved to `-> num`, and a new case pins both the warning and
+that `int(r.center_x())` clears it. This is the one place in the tree where the
+chunk-S narrowing rule bites; the 195-file `.ptl` corpus gained no warnings.
+
 ## What's next
 
 In rough order of value:
 
-- **Method return types in inference.** `r.center_x()` infers `any` even when
-  the receiver's class is pinned and the method declares a return type. The
-  blocker is confirmed structural: `classes::MethodDef` carries only
-  `{ name, arity }` (`classes.rs:41-47`), so the class table would need to hold
-  an `FnSignature` per method. Worth doing after `Num`, since the built-in
-  `Rect` methods are exactly the ones that would become typed.
 - **Enum variant field annotations** (`Circle(radius: float)`, plan §12 Q4).
   The shared param parser already *parses* these; `EnumVariant.fields` is still
   `Vec<String>` (`ast.rs:207`), so the types are dropped on the floor. Cheap.
@@ -342,8 +386,9 @@ In rough order of value:
   to a global and is always a runtime error. A callable field of the same name
   wins over the method, so a class that declares such a field is skipped.
 
-> Method return types in inference, enum variant field annotations, and
-> structured `run --json` warnings moved up to [What's next](#whats-next).
+> Method return types in inference shipped as chunk T. Enum variant field
+> annotations and structured `run --json` warnings moved up to
+> [What's next](#whats-next).
 
 > `return`-statement checks are **done**, not pending: `check_return_type` is
 > called from both the body's tail expression and every explicit `return e`
@@ -356,10 +401,10 @@ In rough order of value:
 
 ```bash
 # Rust: unit + CST/AST differential over the repo corpus
-cd rust && cargo test --lib            # expect: all pass (775 as of 2026-08-30)
-cargo test --lib typecheck::           # checker unit tests (84)
+cd rust && cargo test --lib            # expect: all pass (792 as of 2026-08-30)
+cargo test --lib typecheck::           # checker unit tests (93)
 cargo test --lib prescan               # signature side-table tests (4)
-cargo test --test type_annotations     # the annotation *grammar* (8)
+cargo test --test type_annotations     # the annotation *grammar* (9)
 cargo test --test static_dispatch      # chunk M/N pinning + its guards (16)
 
 # TS integration (builds the binary via global-setup)

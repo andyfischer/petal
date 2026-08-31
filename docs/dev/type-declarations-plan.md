@@ -1,7 +1,7 @@
 # Optional Static Type Declarations — Tech Plan
 
-Status: **shipped** (chunks A–R done, incl. class names as types and static
-dispatch — see
+Status: **shipped** (chunks A–T done, incl. class names as types, static
+dispatch and method signatures — see
 [type-declarations-progress.md](type-declarations-progress.md)) · Author:
 investigation + plan, 2026-07-14
 

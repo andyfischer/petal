@@ -1131,11 +1131,11 @@ center_x("nope")   // warning: argument 1 to `center_x`: expected `Rect`, found 
 ```
 
 A field read is typed by its declaration, so with `class Point x: int end`,
-`Point(4).x` is an `int`. An un-annotated field is `any` and reads as `any` —
-which is what the built-in `Rect`'s fields are, since an edge may be an `int` or
-a `float`. Two classes are never interchangeable, however alike their fields. An instance
-*is* assignable to a `record` slot; a plain record is not assignable to a class
-slot.
+`Point(4).x` is an `int`. An un-annotated field is `any` and reads as `any`. The
+built-in `Rect`'s edges are declared [`num`](#type-annotations), since an edge
+may be an `int` or a `float`. Two classes are never interchangeable, however
+alike their fields. An instance *is* assignable to a `record` slot; a plain
+record is not assignable to a class slot.
 
 The declared fields are also the *only* ones the checker expects, so reading a
 name the class does not declare is a warning:
@@ -1175,6 +1175,33 @@ it before the top-level code that calls it. Two methods may share a name on one
 class only if their arities differ (the same rule as
 [function overloading](function-overloading.md)); the same name on *different*
 classes is entirely independent.
+
+A method's annotations are read at the call site, exactly like a function's: the
+arguments you write are checked against the declared parameters, and the call
+takes the declared return type.
+
+```petal
+fn Rect.scaled(rect: Rect, by: num) -> Rect
+  Rect(rect.x, rect.y, rect.w * by, rect.h * by)
+end
+
+let r = Rect(0, 0, 10, 10)
+r.scaled("2")                  // warning: argument 1 to `scaled`: expected `num`, found `string`
+let s: string = r.scaled(2)    // warning: `s` declared `string` but assigned `Rect`
+```
+
+The receiver is not one of the arguments you write, so `argument 1` is the
+first one in the parentheses.
+
+This only happens when the call resolves to exactly one method — the same
+condition as step 2 of [resolution order](#resolution-order) below. If a field
+of that name could win, if the class declares no such method, or if the
+receiver's type is unknown, the call stays `any` and nothing is checked, because
+the declaration you can see may not be the code that runs.
+
+The built-in `Rect` methods carry signatures too: `center_x`, `center_y`,
+`right` and `bottom` return `num` (an int rect yields ints, a float rect
+floats), while `inset` and `offset` return a `Rect`, so they chain.
 
 ### Resolution order
 

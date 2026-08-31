@@ -1688,6 +1688,7 @@ pub fn collect_classes(
         let StmtKind::FnDecl {
             class: Some(class),
             params,
+            ret,
             ..
         } = &stmt.kind
         else {
@@ -1736,7 +1737,17 @@ pub fn collect_classes(
                 ),
             );
         }
-        if let Err(msg) = classes.declare_method(id, method, params.len()) {
+        // The same signature shape `collect_fn_signatures` builds for a free
+        // function, receiver included — it is what lets a call site read the
+        // method's return type instead of inferring `any`.
+        let sig = FnSignature {
+            params: params
+                .iter()
+                .map(|p| resolve_ann(p.ty.as_ref(), classes))
+                .collect(),
+            ret: resolve_ann(ret.as_ref(), classes),
+        };
+        if let Err(msg) = classes.declare_method(id, method, sig) {
             err(stmt.span, msg);
         }
     }

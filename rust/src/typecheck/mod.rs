@@ -772,10 +772,11 @@ impl<'a> Checker<'a> {
                 // by a call: `name` is looked up among the receiver's methods
                 // (and, failing those, the globals), so walking it as a field
                 // would report every method as a missing field.
+                let mut method_sig = None;
                 match &function.kind {
                     ExprKind::FieldAccess { object, field } => {
                         let recv = self.check_expr(object);
-                        self.check_method_call(recv, field, args.len(), expr.span);
+                        method_sig = self.check_method_call(recv, field, args.len(), expr.span);
                         // The receiver has no knowable type, but its declaration
                         // named a class. Not enough to bind the call — the slot
                         // may legitimately hold another class by now — but
@@ -809,6 +810,16 @@ impl<'a> Checker<'a> {
                     })
                     .collect();
                 self.note_redundant_cast(expr, function, args, &arg_types, slot);
+                // A pinned method call is already fully resolved — its
+                // signature answers both the argument check and the result
+                // type, and `check_call` has no name to look up for it.
+                if let Some(sig) = method_sig {
+                    let name = match &function.kind {
+                        ExprKind::FieldAccess { field, .. } => field.clone(),
+                        _ => String::new(),
+                    };
+                    return self.check_method_args(&sig, &name, args, &arg_types);
+                }
                 self.check_call(function, args, &arg_types, expr.span)
             }
             ExprKind::If {
@@ -1031,11 +1042,24 @@ impl<'a> Checker<'a> {
     /// The guards are exactly the cases where the two would disagree: a field of
     /// the same name outranks the method, and an unknown class or a
     /// no-such-method site can still reach a global native.
-    fn check_method_call(&mut self, recv: Type, name: &str, args: usize, span: SourceSpan) {
-        let Type::Class(id) = recv else { return };
+    /// Returns the method's declared signature when the call resolves to
+    /// exactly one — which is also exactly when [`Self::check_call`] may use
+    /// its return type. Every path that leaves the call *dispatched* (a field
+    /// of that name, an unknown method, an arity no overload accepts, a
+    /// receiver of unknown class) returns `None`, so a call this pass could not
+    /// pin keeps inferring `any` rather than claiming a type from a
+    /// declaration it may never reach.
+    fn check_method_call(
+        &mut self,
+        recv: Type,
+        name: &str,
+        args: usize,
+        span: SourceSpan,
+    ) -> Option<FnSignature> {
+        let Type::Class(id) = recv else { return None };
         let def = self.classes.get(id);
         if def.field(name).is_some() {
-            return;
+            return None;
         }
         let mut arities: Vec<usize> = def
             .methods
@@ -1047,13 +1071,17 @@ impl<'a> Checker<'a> {
         // with the receiver prepended (`r.len()`), which this pass knows
         // nothing about.
         if arities.is_empty() {
-            return;
+            return None;
         }
         if arities.contains(&(args + 1)) {
             self.dispatch
                 .pinned
                 .insert(span, self.classes.name_of(id).to_string());
-            return;
+            return def
+                .methods
+                .iter()
+                .find(|m| m.name == name && m.arity == args + 1)
+                .map(|m| m.sig.clone());
         }
         arities.sort_unstable();
         // Report what the call site writes, which excludes the receiver the
@@ -1061,6 +1089,44 @@ impl<'a> Checker<'a> {
         let written: Vec<usize> = arities.iter().map(|a| a - 1).collect();
         let what = format!("method `{}.{}`", self.spell(recv), name);
         self.warn_arity(span, &what, &written, args);
+        None
+    }
+
+    /// Check a resolved method call's written arguments against the method's
+    /// declared parameters, and answer with its declared return type.
+    ///
+    /// The receiver occupies slot 0 of the signature but is never *written* at
+    /// the call site — `r.inset(4)` writes one argument against a two-slot
+    /// signature — so parameter `i + 1` pairs with written argument `i`, and
+    /// the numbering in the message counts what the reader typed.
+    fn check_method_args(
+        &mut self,
+        sig: &FnSignature,
+        name: &str,
+        args: &[Expr],
+        arg_types: &[Type],
+    ) -> Type {
+        for (i, at) in arg_types.iter().enumerate() {
+            let Some(Some(pt)) = sig.params.get(i + 1) else {
+                continue;
+            };
+            if *pt == Type::Any || *at == Type::Any {
+                continue;
+            }
+            if !at.is_assignable_to(pt) {
+                self.warn(
+                    args[i].span,
+                    format!(
+                        "argument {} to `{}`: expected `{}`, found `{}`",
+                        i + 1,
+                        name,
+                        self.spell(*pt),
+                        self.spell(*at)
+                    ),
+                );
+            }
+        }
+        sig.ret.unwrap_or(Type::Any)
     }
 
     /// Resolve a call's result type and check the call against whatever the
@@ -1737,6 +1803,77 @@ mod tests {
         let two =
             "class Q\n  x: int,\nend\nfn Q.f(q: Q)\n  1\nend\nfn Q.f(q: Q, n: int)\n  n\nend\n";
         assert!(warns(&format!("{two}print(Q(1).f())\nprint(Q(1).f(2))")).is_empty());
+    }
+
+    // ── Method return types (chunk T) ───────────────────────────────────────
+
+    const P: &str = "class P\n  x: int,\nend\n";
+
+    #[test]
+    fn a_methods_declared_return_type_is_inferred() {
+        let src = format!("{P}fn P.n(p: P) -> int\n  p.x\nend\n");
+        let w = warns(&format!("{src}let s: string = P(1).n()"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("int"), "{w:?}");
+        assert!(warns(&format!("{src}let i: int = P(1).n()")).is_empty());
+    }
+
+    #[test]
+    fn a_method_with_no_return_annotation_still_infers_any() {
+        let src = format!("{P}fn P.n(p: P)\n  p.x\nend\n");
+        assert!(warns(&format!("{src}let s: string = P(1).n()")).is_empty());
+    }
+
+    #[test]
+    fn a_methods_declared_parameters_check_its_arguments() {
+        let src = format!("{P}fn P.shift(p: P, dx: int)\n  p.x + dx\nend\n");
+        let w = warns(&format!(r#"{src}print(P(1).shift("a"))"#));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("int"), "{w:?}");
+        assert!(warns(&format!("{src}print(P(1).shift(2))")).is_empty());
+    }
+
+    /// Every guard that leaves a call *dispatched* must also leave its type
+    /// unknown — inferring from a declaration the call may not reach would be
+    /// worse than inferring nothing.
+    #[test]
+    fn the_dispatch_guards_also_block_return_type_inference() {
+        // A field of that name outranks the method: data beats declarations.
+        let shadow = "class F\n  n: function,\nend\nfn F.n(f: F) -> int\n  1\nend\n";
+        assert!(warns(&format!("{shadow}let s: string = F(fn() -> 1).n()")).is_empty());
+        // A method the class does not declare can still reach a global native.
+        assert!(warns(&format!("{P}let s: string = P(1).keys()")).is_empty());
+        // An arity no overload accepts resolves to nothing at runtime, so the
+        // arity warning is the only one — no type claim rides along with it.
+        let src = format!("{P}fn P.n(p: P) -> int\n  p.x\nend\n");
+        let w = warns(&format!("{src}let s: string = P(1).n(1, 2)"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument"), "{w:?}");
+        // An un-annotated receiver is `any`, so there is no class to consult.
+        let any = format!("{P}fn P.n(p: P) -> int\n  p.x\nend\n");
+        assert!(warns(&format!("{any}fn f(v)\n  let s: string = v.n()\nend")).is_empty());
+    }
+
+    /// The built-in `Rect` methods are the ones every UI script calls, and
+    /// `num` (chunk S) is exactly what the four edge accessors return — they
+    /// run the same arithmetic the language does, so an int rect stays int.
+    #[test]
+    fn the_builtin_rect_methods_are_typed() {
+        for m in ["center_x", "center_y", "right", "bottom"] {
+            let w = warns(&format!("let s: string = Rect(0, 0, 4, 4).{m}()"));
+            assert_eq!(w.len(), 1, "{m}: {w:?}");
+            assert!(w[0].contains("num"), "{m}: {w:?}");
+            assert!(warns(&format!("let n: num = Rect(0, 0, 4, 4).{m}()")).is_empty());
+        }
+        // `inset` and `offset` return another Rect, so they chain.
+        let w = warns("let s: string = Rect(0, 0, 4, 4).inset(1)");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("Rect"), "{w:?}");
+        assert!(warns("let r: Rect = Rect(0, 0, 8, 8).inset(1).offset(2, 3)").is_empty());
+        // And their margin arguments are numbers.
+        let bad = warns(r#"print(Rect(0, 0, 4, 4).inset("a"))"#);
+        assert_eq!(bad.len(), 1, "{bad:?}");
+        assert!(bad[0].contains("num"), "{bad:?}");
     }
 
     #[test]

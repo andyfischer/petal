@@ -196,6 +196,19 @@ pub struct FnSignature {
     pub ret: Option<Type>,
 }
 
+impl FnSignature {
+    /// The signature of a wholly un-annotated callable of `arity` parameters:
+    /// every slot `None`, no return type. Constrains nothing — the checker
+    /// reads each `None` as [`Type::Any`] — so it is the honest stand-in
+    /// wherever a signature is structurally required but none was written.
+    pub fn untyped(arity: usize) -> FnSignature {
+        FnSignature {
+            params: vec![None; arity],
+            ret: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

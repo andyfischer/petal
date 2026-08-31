@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::types::Type;
+use crate::types::{FnSignature, Type};
 
 /// Index of a class in a [`ClassTable`]. Small and `Copy` so [`Type`] stays
 /// `Copy`; the name and fields live in the table entry it points at.
@@ -38,13 +38,20 @@ pub struct ClassField {
 }
 
 /// One method known to be callable on a class: `fn Rect.inset(r: Rect, n: int)`
-/// is `MethodDef { name: "inset", arity: 2 }` — the arity *includes* the
+/// is `MethodDef { name: "inset", arity: 2, … }` — the arity *includes* the
 /// receiver, which is what the call site `r.inset(4)` supplies implicitly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDef {
     pub name: String,
-    /// Parameter count including the receiver.
+    /// Parameter count including the receiver. Always `sig.params.len()`.
     pub arity: usize,
+    /// What the declaration says this method takes and returns, positionally,
+    /// with the receiver in slot 0. An absent or unrecognized annotation is a
+    /// `None` slot, which the checker reads as `any` — so a wholly
+    /// un-annotated method carries a signature of all-`None` and constrains
+    /// nothing. This is what lets a method call be *typed* rather than
+    /// inferring `any`; see `crate::typecheck`.
+    pub sig: FnSignature,
     /// Whether this method is built into the language rather than declared by
     /// a `fn Class.name(...)` statement. A user declaration of the same name
     /// and arity replaces a built-in one — which is also what runtime dispatch
@@ -206,11 +213,18 @@ impl ClassTable {
     /// Record `fn Class.name(...)` on an already-declared class. Overriding a
     /// *built-in* method replaces it (dispatch prefers user methods, so the
     /// table has to agree); declaring the same *user* method twice is an error.
-    pub fn declare_method(&mut self, id: ClassId, name: &str, arity: usize) -> Result<(), String> {
+    pub fn declare_method(
+        &mut self,
+        id: ClassId,
+        name: &str,
+        sig: FnSignature,
+    ) -> Result<(), String> {
         let def = &mut self.defs[id.0 as usize];
+        let arity = sig.params.len();
         let new = MethodDef {
             name: name.to_string(),
             arity,
+            sig,
             builtin: false,
         };
         if let Some(existing) = def
@@ -301,6 +315,43 @@ pub const RECT_METHODS: [(&str, usize); 6] = [
     ("offset", 3),
 ];
 
+/// `Rect` is the first entry of [`builtin_classes`], so it is always
+/// `ClassId(0)`. Naming it lets the built-in method signatures below refer to
+/// the class they return before any table exists to look it up in;
+/// `the_rect_class_id_is_stable` pins the assumption.
+const RECT_CLASS_ID: ClassId = ClassId(0);
+
+/// The declared signature of one built-in `Rect` method, receiver first.
+///
+/// The four edge accessors return [`Type::Num`] rather than a fixed width
+/// because they run the *same* arithmetic the language does
+/// (`crate::builtins::classes::arith`): an int rect yields ints — `/` truncates
+/// — and a float anywhere yields a float. `num` is precisely that contract.
+/// `inset` and `offset` rebuild the rect, so they return `Rect` and chain.
+fn rect_method_sig(name: &str, arity: usize) -> FnSignature {
+    let recv = Some(Type::Class(RECT_CLASS_ID));
+    match name {
+        "center_x" | "center_y" | "right" | "bottom" => FnSignature {
+            params: vec![recv],
+            ret: Some(Type::Num),
+        },
+        // The margin and the deltas go through the same `number()` guard the
+        // fields do, so they are `num` for the same reason.
+        "inset" | "offset" => FnSignature {
+            params: std::iter::once(recv)
+                .chain(std::iter::repeat_n(Some(Type::Num), arity - 1))
+                .collect(),
+            ret: Some(Type::Class(RECT_CLASS_ID)),
+        },
+        // A built-in method with no signature written here constrains nothing,
+        // exactly like an un-annotated user method.
+        _ => FnSignature {
+            params: vec![None; arity],
+            ret: None,
+        },
+    }
+}
+
 /// Every class built into the language. Ordering is load-bearing only in that
 /// [`ClassId`]s are positional within one table; nothing serializes them.
 fn builtin_classes() -> Vec<ClassDef> {
@@ -318,6 +369,7 @@ fn builtin_classes() -> Vec<ClassDef> {
             .map(|(name, arity)| MethodDef {
                 name: name.to_string(),
                 arity: *arity,
+                sig: rect_method_sig(name, *arity),
                 builtin: true,
             })
             .collect(),
@@ -385,6 +437,33 @@ mod tests {
         assert!(def.builtin);
     }
 
+    /// [`RECT_CLASS_ID`] is hardcoded so the built-in method signatures can
+    /// name the class they return before a table exists. Pin the assumption
+    /// that made it safe: `Rect` is the first built-in class.
+    #[test]
+    fn the_rect_class_id_is_stable() {
+        let t = ClassTable::new();
+        assert_eq!(t.lookup("Rect"), Some(RECT_CLASS_ID));
+        assert_eq!(t.get(RECT_CLASS_ID).name, "Rect");
+    }
+
+    /// Each built-in method's signature has one slot per parameter, receiver
+    /// included, so `arity` and `sig` cannot drift apart.
+    #[test]
+    fn builtin_method_signatures_match_their_arity() {
+        let t = ClassTable::new();
+        let def = t.get(t.lookup("Rect").unwrap());
+        for m in &def.methods {
+            assert_eq!(m.sig.params.len(), m.arity, "method `{}`", m.name);
+            assert_eq!(
+                m.sig.params[0],
+                Some(Type::Class(RECT_CLASS_ID)),
+                "method `{}` receiver",
+                m.name
+            );
+        }
+    }
+
     /// A rect edge may be an int or a float, so the fields are declared `num` —
     /// the type that says "either" — and never `int`, which the constructor
     /// could only honour by truncating (see [`RECT_FIELD_TYPE`]).
@@ -441,7 +520,8 @@ mod tests {
     fn a_user_method_overrides_a_builtin_method() {
         let mut t = ClassTable::new();
         let rect = t.lookup("Rect").unwrap();
-        t.declare_method(rect, "center_x", 1).expect("override");
+        t.declare_method(rect, "center_x", FnSignature::untyped(1))
+            .expect("override");
         let def = t.get(rect);
         let m = def.method("center_x").unwrap();
         assert!(!m.builtin);
@@ -451,17 +531,24 @@ mod tests {
             "the built-in entry was replaced, not duplicated"
         );
         // Doing it twice is now an ordinary duplicate.
-        assert!(t.declare_method(rect, "center_x", 1).is_err());
+        assert!(
+            t.declare_method(rect, "center_x", FnSignature::untyped(1))
+                .is_err()
+        );
     }
 
     #[test]
     fn duplicate_method_of_the_same_arity_is_an_error() {
         let mut t = ClassTable::new();
         let id = t.declare(user_class("Point", &["x"]), None).unwrap();
-        t.declare_method(id, "shifted", 2).expect("first");
+        t.declare_method(id, "shifted", FnSignature::untyped(2))
+            .expect("first");
         // A different arity is a legal overload.
-        t.declare_method(id, "shifted", 3).expect("overload");
-        let err = t.declare_method(id, "shifted", 2).unwrap_err();
+        t.declare_method(id, "shifted", FnSignature::untyped(3))
+            .expect("overload");
+        let err = t
+            .declare_method(id, "shifted", FnSignature::untyped(2))
+            .unwrap_err();
         assert!(err.contains("already declared"), "{err}");
     }
 

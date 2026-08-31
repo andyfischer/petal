@@ -435,9 +435,19 @@ describe("the built-in Rect class", () => {
   });
 
   it("checks a Rect annotation", () => {
-    const out = checkJson('fn cx(r: Rect) -> int\n  r.center_x()\nend\nprint(cx("nope"))');
+    // `-> num`, not `-> int`: an edge accessor returns whichever width the
+    // rect holds, so declaring `int` is a claim the checker rightly rejects.
+    const out = checkJson('fn cx(r: Rect) -> num\n  r.center_x()\nend\nprint(cx("nope"))');
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toMatch(/Rect/);
+  });
+
+  it("a Rect edge accessor returns num, so narrowing it to int must be explicit", () => {
+    const loose = checkJson('fn cx(r: Rect) -> int\n  r.center_x()\nend');
+    expect(loose.warnings).toHaveLength(1);
+    expect(loose.warnings[0].message).toMatch(/num/);
+    const cast = checkJson('fn cx(r: Rect) -> int\n  int(r.center_x())\nend');
+    expect(cast.warnings).toHaveLength(0);
   });
 
   it("lets a user method be declared on the built-in class", () => {
